@@ -1,0 +1,31 @@
+{
+  "name": "Search Clipboard Items",
+  "type": "http",
+  "request": {
+    "url": "{{baseUrl}}/api/clipboard",
+    "method": "GET",
+    "headers": {
+      "Authorization": "Bearer {{token}}",
+      "X-CSRF-Token": "{{csrfToken}}"
+    },
+    "params": {
+      "search": "test",
+      "limit": "20",
+      "offset": "0"
+    }
+  },
+  "tests": [
+    {
+      "name": "Status is 200",
+      "script": "expect(res.status).to.equal(200)"
+    },
+    {
+      "name": "Response has items array",
+      "script": "expect(res.body).to.have.property('items')"
+    },
+    {
+      "name": "Items have relevance score",
+      "script": "if (res.body.items.length > 0) { expect(res.body.items[0]).to.have.property('relevance'); }"
+    }
+  ]
+}

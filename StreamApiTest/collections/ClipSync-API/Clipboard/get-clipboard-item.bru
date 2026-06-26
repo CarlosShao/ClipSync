@@ -1,0 +1,13 @@
+meta {
+    name: Get Clipboard Item
+    type: http
+    seq: 4
+}
+
+get {
+    url: {{baseUrl}}/api/clipboard/{{itemId}}
+}
+
+headers {
+    Authorization: Bearer {{token}}
+}

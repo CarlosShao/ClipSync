@@ -1,0 +1,25 @@
+meta {
+  name: "Delete Account (GDPR)",
+  type: "http",
+  seq: 1
+}
+
+get {
+  url: "{{baseUrl}}/api/auth/account",
+  body: {
+    "password": "test_password",
+    "confirmation": "DELETE"
+  },
+  header: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer {{authToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  assert(resp.status === 200 || resp.status === 401, "预期200或401");
+}
+
+// 注意：此端点会永久删除用户账户，仅用于测试环境
+// 测试前需确保使用测试账户

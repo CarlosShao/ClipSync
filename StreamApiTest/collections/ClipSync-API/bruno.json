@@ -1,0 +1,8 @@
+{
+  "version": "1",
+  "name": "ClipSync API",
+  "type": "collection",
+  "runner": {
+    "runtime": "node"
+  }
+}

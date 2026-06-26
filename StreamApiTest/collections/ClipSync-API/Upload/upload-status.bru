@@ -1,0 +1,13 @@
+meta {
+    name: Upload Status
+    type: http
+    seq: 5
+}
+
+get {
+    url: {{baseUrl}}/api/upload/{{uploadId}}/status
+}
+
+headers {
+    Authorization: Bearer {{token}}
+}

@@ -1,0 +1,21 @@
+meta {
+    name: Update Profile
+    type: http
+    seq: 5
+}
+
+put {
+    url: {{baseUrl}}/api/auth/profile
+    body: json
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    Content-Type: application/json
+}
+
+body:json {
+    {
+        "nickname": "{{nickname}}"
+    }
+}

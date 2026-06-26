@@ -1,0 +1,30 @@
+{
+  "name": "Pull with Diff",
+  "type": "http",
+  "request": {
+    "url": "{{baseUrl}}/api/sync/pull",
+    "method": "GET",
+    "headers": {
+      "Authorization": "Bearer {{token}}",
+      "X-CSRF-Token": "{{csrfToken}}"
+    },
+    "params": {
+      "limit": "20",
+      "since": ""
+    }
+  },
+  "tests": [
+    {
+      "name": "Status is 200",
+      "script": "expect(res.status).to.equal(200)"
+    },
+    {
+      "name": "Response has items array",
+      "script": "expect(res.body).to.have.property('items')"
+    },
+    {
+      "name": "Items may have contentDiff",
+      "script": "if (res.body.items.length > 0) { expect(res.body.items[0]).to.have.property('contentDiff'); }"
+    }
+  ]
+}

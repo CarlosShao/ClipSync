@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+*.pyc
+__pycache__/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Environment
+.env
+.env.*
+!.env.example
+!.env.test
+!.env.development
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Database
+*.db
+*.sqlite
+
+# Tauri
+src/desktop/src-tauri/target/
+src/desktop/src-tauri/Cargo.lock
+
+# Flutter
+build/
+.dart_tool/
+.flutter-plugins-dependencies
+
+# Test coverage
+coverage/
+*.lcov
+
+# Docker
+docker-compose.override.yml
+
+# Temporary
+*.tmp
+*.temp
+.temp/

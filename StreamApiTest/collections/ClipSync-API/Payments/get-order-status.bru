@@ -1,0 +1,30 @@
+meta {
+  name: "Get Order Status",
+  type: "http",
+  seq: 2
+}
+
+get {
+  url: "{{baseUrl}}/api/payments/order/{{orderNo}}/status",
+  header: {
+    "Authorization": "Bearer {{authToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  if (resp.status === 200) {
+    assert(resp.body.order !== undefined, "应包含订单信息");
+    assert(resp.body.order.id !== undefined, "订单应有ID");
+    assert(resp.body.order.status !== undefined, "订单应有状态");
+    console.log("订单状态:", resp.body.order.status);
+  } else if (resp.status === 404) {
+    // 订单可能不存在
+    assert(resp.body.error !== undefined, "应包含错误信息");
+    console.log("订单不存在(预期):", resp.body.error);
+  } else {
+    assert(false, "预期200或404，实际" + resp.status);
+  }
+}
+
+// 查询订单支付状态（需要先创建订单获取orderNo）

@@ -1,0 +1,24 @@
+meta {
+  name: "Export Data (GDPR)",
+  type: "http",
+  seq: 2
+}
+
+get {
+  url: "{{baseUrl}}/api/auth/export-data",
+  header: {
+    "Authorization": "Bearer {{authToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  assert(resp.status === 200, "预期200");
+  assert(resp.body.exportDate !== undefined, "应包含导出日期");
+  assert(resp.body.user !== undefined, "应包含用户数据");
+  assert(resp.body.devices !== undefined, "应包含设备数据");
+  assert(resp.body.clipboardItems !== undefined, "应包含剪贴板数据");
+}
+
+// GDPR 数据可移植性测试
+// 验证用户可以导出其所有个人数据

@@ -1,0 +1,140 @@
+# ClipSync 生产环境 Docker Compose 配置
+# 使用: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  # PostgreSQL 数据库（生产环境）
+  postgres-prod:
+    image: postgres:15-alpine
+    container_name: clipsync-postgres-prod
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      TZ: Asia/Shanghai
+    ports: []  # 生产环境不暴露数据库端口到宿主机
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./backups:/backups:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - clipsync-prod-net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 1.0
+    labels:
+      - "com.clipsync.env=production"
+      - "com.clipsync.service=postgres"
+
+  # Redis 缓存（生产环境）
+  redis-prod:
+    image: redis:7-alpine
+    container_name: clipsync-redis-prod
+    restart: always
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --bind 0.0.0.0
+    ports: []  # 生产环境不暴露 Redis 端口到宿主机
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - clipsync-prod-net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
+    labels:
+      - "com.clipsync.env=production"
+      - "com.clipsync.service=redis"
+
+  # ClipSync API 服务（生产环境）
+  api-prod:
+    build:
+      context: ./src/server
+      dockerfile: Dockerfile
+    container_name: clipsync-api-prod
+    restart: always
+    environment:
+      # 基础配置
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      TZ: Asia/Shanghai
+
+      # 数据库配置（使用内部网络）
+      DB_HOST: postgres-prod
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      # Redis 配置（使用内部网络）
+      REDIS_HOST: redis-prod
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+      # 安全配置（必须从环境变量读取，不允许默认值）
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      CSRF_SECRET: ${CSRF_SECRET}
+
+      # 文件上传配置
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
+      UPLOAD_DIR: /app/uploads
+
+      # CORS 配置
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+
+      # 日志配置
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${API_PORT:-3000}:3000"
+    volumes:
+      - ./src/server/uploads:/app/uploads:rw
+      - ./backups:/app/backups:rw
+    depends_on:
+      postgres-prod:
+        condition: service_healthy
+      redis-prod:
+        condition: service_healthy
+    networks:
+      - clipsync-prod-net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    cpus: 2.0
+    labels:
+      - "com.clipsync.env=production"
+      - "com.clipsync.service=api"
+      - "traefik.enable=true"  # 如果使用 Traefik 作为反向代理
+
+networks:
+  clipsync-prod-net:
+    driver: bridge
+    internal: false
+    labels:
+      - "com.clipsync.env=production"
+
+volumes:
+  postgres_prod_data:
+    labels:
+      - "com.clipsync.env=production"
+  redis_prod_data:
+    labels:
+      - "com.clipsync.env=production"

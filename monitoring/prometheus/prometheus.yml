@@ -1,0 +1,73 @@
+# Prometheus 配置文件
+# ClipSync 生产环境监控配置
+
+global:
+  # 抓取间隔
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  
+  # 外部标签
+  external_labels:
+    monitor: 'clipsync-monitor'
+    environment: 'production'
+
+# 告警规则配置（可选）
+# rule_files:
+#   - "alerts.yml"
+
+# 抓取配置
+scrape_configs:
+  # ClipSync API 服务
+  - job_name: 'clipsync-api'
+    # 抓取间隔
+    scrape_interval: 10s
+    # 超时时间
+    scrape_timeout: 10s
+    # 目标地址（Docker 内部网络）
+    static_configs:
+      - targets: ['api-prod:3000']
+        labels:
+          service: 'clipsync-api'
+          env: 'production'
+    # metrics 端点路径
+    metrics_path: '/api/metrics/prometheus'
+    # 抓取失败重试
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # PostgreSQL 数据库（可选，需要 postgres_exporter）
+  # - job_name: 'postgres'
+  #   scrape_interval: 30s
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']
+
+  # Redis 缓存（可选，需要 redis_exporter）
+  # - job_name: 'redis'
+  #   scrape_interval: 30s
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+
+  # Node Exporter（系统指标）
+  - job_name: 'node'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'system'
+          env: 'production'
+
+  # Prometheus 自身指标
+  - job_name: 'prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          env: 'production'
+
+# 告警管理器配置（可选）
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']

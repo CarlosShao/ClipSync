@@ -1,0 +1,13 @@
+meta {
+    name: Get Version History
+    type: http
+    seq: 4
+}
+
+get {
+    url: {{baseUrl}}/api/versions?clipboardItemId={{itemId}}
+}
+
+headers {
+    Authorization: Bearer {{token}}
+}

@@ -1,0 +1,22 @@
+meta {
+  name: "Send Email Code",
+  type: "http",
+  seq: 1
+}
+
+post {
+  url: "{{baseUrl}}/api/auth/send-email-code",
+  body: {
+    "email": "test@example.com"
+  },
+  header: {
+    "Content-Type": "application/json"
+  }
+}
+
+post-response {
+  assert(resp.status === 200, "预期200");
+  console.log("MVP模式：邮箱验证码为 888888");
+}
+
+// 发送邮箱验证码（MVP：验证码固定为888888）

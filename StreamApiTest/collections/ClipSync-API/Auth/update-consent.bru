@@ -1,0 +1,33 @@
+meta {
+  name: "Update Consent Preferences",
+  type: "http",
+  version: "1.1"
+}
+
+put {
+  url: "{{base_url}}/api/auth/consent",
+  body: {
+    mode: "json",
+    json: {
+      "analytics_consent": true,
+      "functional_consent": true,
+      "marketing_consent": false
+    }
+  },
+  header: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer {{auth_token}}"
+  }
+}
+
+response: >
+  status: 200
+  body: {
+    "message": "同意偏好已更新",
+    "consent": {
+      "analyticsConsent": true,
+      "functionalConsent": true,
+      "marketingConsent": false,
+      "updatedAt": "..."
+    }
+  }

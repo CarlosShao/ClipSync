@@ -1,0 +1,20 @@
+# ClipSync 基础 Docker Compose 配置
+# 此文件定义公共配置，可被 dev/prod 配置引用
+# 
+# 使用方式：
+#   开发环境: docker compose -f docker-compose.dev.yml up -d
+#   生产环境: docker compose -f docker-compose.prod.yml up -d
+
+networks:
+  clipsync-net:
+    driver: bridge
+    labels:
+      - "com.clipsync.network=main"
+
+volumes:
+  postgres_data:
+    labels:
+      - "com.clipsync.volume=postgres"
+  redis_data:
+    labels:
+      - "com.clipsync.volume=redis"

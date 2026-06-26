@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数据处理协议（DPA）- ClipSync</title>
+  <style>
+    * { margin:0; padding:0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }
+    .container { max-width: 800px; margin:0 auto; padding: 40px 20px; background: white; min-height:100vh; }
+    h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom:10px; margin-bottom:30px; }
+    h2 { color: #34495e; margin-top:30px; margin-bottom:15px; }
+    h3 { color: #555; margin-top:20px; margin-bottom:10px; }
+    p { margin-bottom:15px; }
+    ul { margin-left:20px; margin-bottom:15px; }
+    li { margin-bottom:8px; }
+    .last-updated { color: #7f8c8d; font-size:14px; margin-bottom:30px; }
+    .highlight { background:#e8f4fd; padding:15px; border-left:4px solid #3498db; margin-bottom:20px; }
+    .contact { background:#ecf0f1; padding:20px; border-radius:5px; margin-top:30px; }
+    table { width:100%; border-collapse: collapse; margin-bottom:20px; }
+    th, td { border:1px solid #ddd; padding:12px; text-align:left; }
+    th { background:#f8f9fa; font-weight:600; }
+    @media (prefers-color-scheme: dark) {
+      body { background:#1a1a1a; color:#e0e0e0; }
+      .container { background:#2d2d2d; }
+      h1 { color:#3498db; }
+      h2 { color:#5dade2; }
+      h3 { color:#bbb; }
+      .highlight { background:#1e3a5f; border-color:#3498db; }
+      .contact { background:#34495e; }
+      th { background:#444; }
+      th, td { border-color:#555; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ClipSync 数据处理协议（DPA）</h1>
+    <p class="last-updated">最后更新：2026年6月24日</p>
+
+    <div class="highlight">
+      <p><strong>本协议（"DPA"）</strong> 是根据 GDPR 第28条要求的数据处理协议，规定了 ClipSync（"数据处理者"）如何处理用户（"数据控制者"）的数据。</p>
+    </div>
+
+    <h2>1. 定义</h2>
+    <ul>
+      <li><strong>个人数据</strong>：与已识别或可识别的自然人相关的任何信息。</li>
+      <li><strong>数据主体</strong>：个人数据所指向的自然人（例如您的用户）。</li>
+      <li><strong>数据控制者</strong>：决定处理个人数据的目的和方式的自然人或法人（例如您）。</li>
+      <li><strong>数据处理者</strong>：代表控制者处理个人数据的自然人或法人（例如 ClipSync）。</li>
+      <li><strong>处理</strong>：对个人数据执行的任何操作（收集、存储、传输等）。</li>
+    </ul>
+
+    <h2>2. 数据处理的范围和目的</h2>
+    <p>ClipSync 作为数据处理者，仅为了以下目的处理个人数据：</p>
+    <ul>
+      <li>提供剪贴板同步服务（存储、同步、传输剪贴板数据）</li>
+      <li>提供客服支持（响应查询、解决问题）</li>
+      <li>改进服务（分析汇总数据，不识别个人）</li>
+    </ul>
+    <p>ClipSync <strong>不会</strong>：</p>
+    <ul>
+      <li>出售个人数据</li>
+      <li>用于未经授权的目的</li>
+      <li>传输给第三方（除非法律要求或您授权）</li>
+    </ul>
+
+    <h2>3. 数据主体的权利</h2>
+    <p>ClipSync 将协助数据控制者履行 GDPR 规定的数据主体权利：</p>
+    <table>
+      <tr><th>权利</th><th>ClipSync 的义务</th></tr>
+      <tr><td>访问权</td><td>提供API端点，让控制者检索数据主体数据</td></tr>
+      <tr><td>更正权</td><td>提供API端点，让控制者更新数据主体数据</td></tr>
+      <tr><td>被遗忘权</td><td>提供API端点，让控制者删除数据主体数据</td></tr>
+      <tr><td>数据可移植性</td><td>提供API端点，导出数据主体数据为JSON格式</td></tr>
+      <tr><td>限制处理权</td><td>提供API端点，让控制者限制处理</td></tr>
+      <tr><td>反对权</td><td>提供API端点，让控制者标记反对</td></tr>
+    </table>
+
+    <h2>4. 数据处理者的义务</h2>
+    <h3>4.1 保密</h3>
+    <p>ClipSync 保证所有有权访问个人数据的员工都承担了保密义务。</p>
+
+    <h3>4.2 安全措施</h3>
+    <p>ClipSync 实施了适当的技术和组织措施，包括：</p>
+    <ul>
+      <li><strong>加密</strong>：端到端加密（AES-256-GCM）</li>
+      <li><strong>访问控制</strong>：多重身份验证，最小权限原则</li>
+      <li><strong>备份</strong>：定期备份，加密存储</li>
+      <li><strong>安全审计</strong>：定期安全审计和渗透测试</li>
+    </ul>
+
+    <h3>4.3 数据泄露通知</h3>
+    <ul>
+      <li>ClipSync 将在发现数据泄露后 <strong>72小时内</strong> 通知数据控制者。</li>
+      <li>通知将包含：泄露性质、受影响数据主体数量、可能后果、已采取补救措施。</li>
+      <li>ClipSync 将协助控制者履行向监管机构报告的义务。</li>
+    </ul>
+
+    <h3>4.4 数据删除或返还</h3>
+    <ul>
+      <li>服务终止后，ClipSync 将<strong>删除</strong>所有个人数据（除非法律要求保留）。</li>
+      <li>控制者可以请求导出数据（数据可移植性）。</li>
+    </ul>
+
+    <h2>5. 次处理器（Sub-processors）</h2>
+    <p>ClipSync 使用以下次处理器（必须通知控制者任何变更）：</p>
+    <table>
+      <tr><th>次处理器</th><th>服务</th><th>位置</th><th>安全措施</th></tr>
+      <tr><td>云服务器提供商（示例）</td><td>服务器托管</td><td>中国</td><td>加密、访问控制</td></tr>
+      <tr><td>短信服务提供商（示例）</td><td>发送验证码</td><td>中国</td><td>TLS传输加密</td></tr>
+      <tr><td>邮件服务提供商（示例）</td><td>发送验证邮件</td><td>中国</td><td>TLS传输加密</td></tr>
+    </table>
+    <p>ClipSync 确保次处理器承诺遵守与本协议相同的义务。</p>
+
+    <h2>6. 国际数据传输</h2>
+    <ul>
+      <li>如果个人数据从 EEA 传输到第三国，ClipSync 将确保适当的保护措施到位。</li>
+      <li>措施包括：欧盟委员会标准合同条款（SCC）、充分性决定、或具有约束力的公司规则（BCR）。</li>
+    </ul>
+
+    <h2>7. 审计权利</h2>
+    <ul>
+      <li>数据控制者有权审计 ClipSync 是否遵守本协议。</li>
+      <li>审计将提前 <strong>30天</strong> 通知，每年最多 <strong>1次</strong>。</li>
+      <li>审计将由独立的第三方进行。</li>
+    </ul>
+
+    <h2>8. 责任与赔偿</h2>
+    <ul>
+      <li>ClipSync 对未经授权的数据处理造成的损失承担责任。</li>
+      <li>ClipSync 的责任限于最近一年的服务费用总额。</li>
+      <li>间接损害（利润损失、业务中断）不包括在内。</li>
+    </ul>
+
+    <h2>9. 协议期限与终止</h2>
+    <ul>
+      <li>本协议在服务使用期间保持有效。</li>
+      <li>控制者可以在提前 <strong>30天</strong> 书面通知的情况下终止本协议。</li>
+      <li>终止后，ClipSync 将删除或返还所有个人数据。</li>
+    </ul>
+
+    <h2>10. 管辖法律与争议解决</h2>
+    <ul>
+      <li>本协议受 <strong>欧盟通用数据保护条例（GDPR）</strong> 管辖。</li>
+      <li>如果控制者在欧盟，则受 <strong>欧盟成员国法律</strong> 管辖。</li>
+      <li>争议应友好协商解决；协商不成的，提交有管辖权的法院。</li>
+    </ul>
+
+    <h2>11. 联系我们</h2>
+    <div class="contact">
+      <p>如果您对本 DPA 有任何疑问，请通过以下方式联系我们：</p>
+      <p>数据保护官（DPO）：<a href="mailto:dpo@clipsync.example.com">dpo@clipsync.example.com</a></p>
+      <p>地址：中国北京市海淀区（示例地址）</p>
+    </div>
+
+    <hr style="margin-top:40px; border:none; border-top:1px solid #ddd;">
+    <p style="text-align:center; color:#7f8c8d; margin-top:20px;">© 2026 ClipSync. 保留所有权利。</p>
+  </div>
+</body>
+</html>

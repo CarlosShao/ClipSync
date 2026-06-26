@@ -1,0 +1,24 @@
+meta {
+    name: Register Device
+    type: http
+    seq: 3
+}
+
+post {
+    url: {{baseUrl}}/api/devices
+    body: json
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+    Content-Type: application/json
+}
+
+body:json {
+    {
+        "deviceName": "{{deviceName}}",
+        "deviceType": "{{deviceType}}",
+        "pushToken": "{{pushToken}}"
+    }
+}

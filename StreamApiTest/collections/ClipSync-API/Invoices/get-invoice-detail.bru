@@ -1,0 +1,30 @@
+meta {
+  name: "Get Invoice Detail",
+  type: "http",
+  seq: 2
+}
+
+get {
+  url: "{{baseUrl}}/api/invoices/{{invoiceId}}",
+  header: {
+    "Authorization": "Bearer {{authToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  if (resp.status === 200) {
+    assert(resp.body.invoice !== undefined, "应包含发票详情");
+    assert(resp.body.invoice.id !== undefined, "发票应有ID");
+    assert(resp.body.invoice.invoiceNo !== undefined, "发票应有发票号");
+    console.log("发票详情获取成功:", resp.body.invoice.invoiceNo);
+  } else if (resp.status === 404) {
+    // 发票可能不存在
+    assert(resp.body.error !== undefined, "应包含错误信息");
+    console.log("发票不存在(预期):", resp.body.error);
+  } else {
+    assert(false, "预期200或404，实际" + resp.status);
+  }
+}
+
+// 获取发票详情（需要先获取invoiceId）

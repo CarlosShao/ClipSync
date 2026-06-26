@@ -1,0 +1,52 @@
+name: clipsync_mobile
+description: "ClipSync - Cross-device clipboard synchronization"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.0-167.0.dev
+
+generate: true
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  
+  # Network & API
+  http: ^1.2.0
+  web_socket_channel: ^3.0.0
+  
+  # Local Storage
+  shared_preferences: ^2.2.0
+  flutter_secure_storage: ^9.0.0
+  
+  # UI
+  flutter_svg: ^2.0.0
+  cached_network_image: ^3.3.0  # 优化网络图片加载
+  
+  # State Management
+  provider: ^6.1.0
+  
+  # Utils
+  intl: ^0.20.2
+  uuid: ^4.2.0
+  package_info_plus: ^8.0.0
+  device_info_plus: ^11.0.0
+  diff_match_patch: ^0.4.1
+  
+  # Performance Optimization
+  # flutter_native_image: ^0.0.6+1  # 图片压缩 - 临时注释，版本不存在
+  photo_view: ^0.14.0  # 图片预览优化
+  skeletonizer: ^1.1.0  # 骨架屏加载效果
+  shimmer: ^3.0.0  # 加载动画
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

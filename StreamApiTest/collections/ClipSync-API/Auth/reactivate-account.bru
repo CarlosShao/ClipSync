@@ -1,0 +1,28 @@
+meta {
+  name: "Reactivate Account",
+  type: "http",
+  version: "1.1"
+}
+
+put {
+  url: "{{base_url}}/api/auth/reactivate",
+  body: {
+    mode: "json",
+    json: {
+      "email": "test@example.com"
+    }
+  },
+  header: {
+    "Content-Type": "application/json"
+  }
+}
+
+response: >
+  status: 200
+  body: {
+    "message": "账户已重新激活，您现在可以登录",
+    "user": {
+      "id": "...",
+      "isActive": true
+    }
+  }

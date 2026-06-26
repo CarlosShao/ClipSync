@@ -1,0 +1,21 @@
+meta {
+  name: "Revoke All Other Sessions",
+  type: "http",
+  seq: 3
+}
+
+delete {
+  url: "{{baseUrl}}/api/auth/sessions",
+  header: {
+    "Authorization": "Bearer {{authToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  assert(resp.status === 200, "预期200");
+  assert(resp.body.message !== undefined, "应包含成功消息");
+  assert(resp.body.revokedCount !== undefined, "应包含撤销数量");
+}
+
+// 撤销所有其他会话（登出所有其他设备）

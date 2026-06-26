@@ -1,0 +1,129 @@
+# ClipSync 开发环境 Docker Compose 配置
+# 使用: docker compose -p clipsync -f docker-compose.dev.yml up -d
+# 容器层级结构（同 word-helper-mobile）:
+#   - 项目名: clipsync
+#   - 应用容器: clipsync (端口 3001)
+#   - 数据库容器: clipsync-db (端口 5433→5432)
+#   - Redis容器: clipsync-redis (端口 6380→6379)
+
+services:
+  # PostgreSQL 数据库
+  clipsync-db:
+    image: postgres:15-alpine
+    container_name: clipsync-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-clipsync}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
+      POSTGRES_DB: ${DB_NAME:-clipsync_dev}
+      TZ: Asia/Shanghai
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      # 使用Bind Mount，数据存储在Windows本地目录（防止WSL崩溃丢失数据）
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-clipsync}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - clipsync-net
+    labels:
+      - "com.clipsync.service=postgres"
+
+  # Redis 缓存
+  clipsync-redis:
+    image: redis:7-alpine
+    container_name: clipsync-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-dev_redis_password}
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      # 使用Bind Mount，数据存储在Windows本地目录
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-dev_redis_password}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - clipsync-net
+    labels:
+      - "com.clipsync.service=redis"
+
+  # ClipSync API 服务
+  clipsync:
+    build:
+      context: ./src/server
+      dockerfile: Dockerfile
+      target: builder
+    container_name: clipsync
+    restart: unless-stopped
+    environment:
+      # 基础配置
+      NODE_ENV: development
+      PORT: 3001
+      HOST: 0.0.0.0
+      TZ: Asia/Shanghai
+
+      # 数据库配置
+      DB_HOST: clipsync-db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-clipsync_dev}
+      DB_USER: ${DB_USER:-clipsync}
+      DB_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
+
+      # Redis 配置
+      REDIS_HOST: clipsync-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-dev_redis_password}
+
+      # 安全配置
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_change_me_in_production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev_encryption_key_32chars_min!!}
+      CSRF_SECRET: ${CSRF_SECRET:-dev_csrf_secret_change_me!!}
+
+      # 文件上传配置
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
+      UPLOAD_DIR: /app/uploads
+
+      # CORS 配置
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+
+      # 日志配置
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+    ports:
+      - "${API_PORT:-3001}:3001"
+    volumes:
+      # 代码热重载（开发环境）
+      - ./src/server/src:/app/src:ro
+      # 测试文件热重载（开发环境）
+      - ./src/server/tests:/app/tests:ro
+      - ./src/server/uploads:/app/uploads
+      - ./src/server/logs:/app/logs
+      # 不覆盖 node_modules
+      - /app/node_modules
+    depends_on:
+      clipsync-db:
+        condition: service_healthy
+      clipsync-redis:
+        condition: service_healthy
+    networks:
+      - clipsync-net
+    labels:
+      - "com.clipsync.service=api"
+    # 开发环境直接运行（不使用nodemon，避免Windows Docker Desktop文件监控导致重启循环）
+    # 改完代码后手动执行：docker restart clipsync
+    command: node src/index.js
+
+networks:
+  clipsync-net:
+    driver: bridge
+
+# 注意：不再使用Docker managed volumes，改用Bind Mount（见上方volumes配置）
+# 数据存储在 ./data/postgres 和 ./data/redis 目录

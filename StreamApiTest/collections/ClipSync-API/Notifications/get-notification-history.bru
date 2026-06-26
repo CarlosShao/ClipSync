@@ -1,0 +1,26 @@
+meta {
+  name: "Get Notification History",
+  type: "http",
+  version: "1.1"
+}
+
+get {
+  url: "{{base_url}}/api/notifications/history?limit=10",
+  header: {
+    "Authorization": "Bearer {{auth_token}}"
+  }
+}
+
+response: >
+  status: 200
+  body: {
+    "history": [
+      {
+        "type": "new_device_login",
+        "message": "新设备登录：Windows PC (desktop)",
+        "timestamp": "...",
+        "read": false
+      }
+    ],
+    "total": 1
+  }
