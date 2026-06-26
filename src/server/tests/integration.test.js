@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import pool from '../src/db/pool.js';
 import Redis from 'redis';
+import config from '../src/config.js';
 
 describe('集成测试环境', () => {
   let redisClient;
@@ -13,10 +14,10 @@ describe('集成测试环境', () => {
     // 连接 Redis（使用测试环境配置）
     redisClient = Redis.createClient({
       socket: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379'),
+        host: config.redis.host,
+        port: config.redis.port,
       },
-      password: process.env.REDIS_PASSWORD || undefined,
+      password: config.redis.password || undefined,
     });
 
     await redisClient.connect();

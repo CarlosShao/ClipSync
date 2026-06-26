@@ -30,40 +30,53 @@ function deepMerge(base, override) {
 }
 
 // Environment variable overrides (highest priority)
-const envOverrides = {
-  port: parseInt(process.env.PORT || '', 10) || undefined,
-  host: process.env.HOST || undefined,
-  logLevel: process.env.LOG_LEVEL || undefined,
-  db: {
-    host: process.env.DB_HOST || undefined,
-    port: parseInt(process.env.DB_PORT || '', 10) || undefined,
-    name: process.env.DB_NAME || undefined,
-    user: process.env.DB_USER || undefined,
-    password: process.env.DB_PASSWORD || undefined,
-  },
-  redis: {
-    host: process.env.REDIS_HOST || undefined,
-    port: parseInt(process.env.REDIS_PORT || '', 10) || undefined,
-    password: process.env.REDIS_PASSWORD || undefined,
-  },
-  jwt: {
-    secret: process.env.JWT_SECRET || undefined,
-    expiresIn: process.env.JWT_EXPIRES_IN || undefined,
-  },
-  cors: {
-    origins: process.env.CORS_ORIGINS || undefined,
-  },
-  ws: {
-    heartbeatInterval: parseInt(process.env.WS_HEARTBEAT_INTERVAL || '', 10) || undefined,
-    heartbeatTimeout: parseInt(process.env.WS_HEARTBEAT_TIMEOUT || '', 10) || undefined,
-  },
-  encryption: {
-    algorithm: process.env.ENCRYPTION_ALGORITHM || undefined,
-  },
-};
+// NOTE: only include keys when the env var is actually set,
+// otherwise leave them out so deepMerge doesn't overwrite with undefined.
+const envOverrides = {};
+
+if (process.env.PORT) envOverrides.port = parseInt(process.env.PORT, 10);
+if (process.env.HOST) envOverrides.host = process.env.HOST;
+if (process.env.LOG_LEVEL) envOverrides.logLevel = process.env.LOG_LEVEL;
+
+if (process.env.DB_HOST || process.env.DB_PORT || process.env.DB_NAME || process.env.DB_USER || process.env.DB_PASSWORD) {
+  envOverrides.db = {};
+  if (process.env.DB_HOST) envOverrides.db.host = process.env.DB_HOST;
+  if (process.env.DB_PORT) envOverrides.db.port = parseInt(process.env.DB_PORT, 10);
+  if (process.env.DB_NAME) envOverrides.db.name = process.env.DB_NAME;
+  if (process.env.DB_USER) envOverrides.db.user = process.env.DB_USER;
+  if (process.env.DB_PASSWORD) envOverrides.db.password = process.env.DB_PASSWORD;
+}
+
+if (process.env.REDIS_HOST || process.env.REDIS_PORT || process.env.REDIS_PASSWORD) {
+  envOverrides.redis = {};
+  if (process.env.REDIS_HOST) envOverrides.redis.host = process.env.REDIS_HOST;
+  if (process.env.REDIS_PORT) envOverrides.redis.port = parseInt(process.env.REDIS_PORT, 10);
+  if (process.env.REDIS_PASSWORD) envOverrides.redis.password = process.env.REDIS_PASSWORD;
+}
+
+if (process.env.JWT_SECRET) {
+  envOverrides.jwt = { ...(envOverrides.jwt || {}), secret: process.env.JWT_SECRET };
+}
+if (process.env.JWT_EXPIRES_IN) {
+  envOverrides.jwt = { ...(envOverrides.jwt || {}), expiresIn: process.env.JWT_EXPIRES_IN };
+}
+
+if (process.env.CORS_ORIGINS) {
+  envOverrides.cors = { origins: process.env.CORS_ORIGINS.split(',') };
+}
+
+if (process.env.WS_HEARTBEAT_INTERVAL || process.env.WS_HEARTBEAT_TIMEOUT) {
+  envOverrides.ws = {};
+  if (process.env.WS_HEARTBEAT_INTERVAL) envOverrides.ws.heartbeatInterval = parseInt(process.env.WS_HEARTBEAT_INTERVAL, 10);
+  if (process.env.WS_HEARTBEAT_TIMEOUT) envOverrides.ws.heartbeatTimeout = parseInt(process.env.WS_HEARTBEAT_TIMEOUT, 10);
+}
+
+if (process.env.ENCRYPTION_ALGORITHM) {
+  envOverrides.encryption = { algorithm: process.env.ENCRYPTION_ALGORITHM };
+}
 
 // Final config: envConfig (base) ← envOverrides (highest priority)
-const config = deepMerge(envConfig, envOverrides);
+const config = Object.keys(envOverrides).length > 0 ? deepMerge(envConfig, envOverrides) : envConfig;
 
 // Validate critical production settings
 if (nodeEnv === 'production') {
@@ -74,10 +87,10 @@ if (nodeEnv === 'production') {
   if (!config.db.password) {
     warnings.push('DB_PASSWORD must be set in production');
   }
-  if (!config.redis.password) {
+  if (!config.redis || !config.redis.password) {
     warnings.push('REDIS_PASSWORD should be set in production');
   }
-  if (config.cors.origins === '*' || !config.cors.origins) {
+  if (!config.cors || !config.cors.origins || config.cors.origins === '*') {
     warnings.push('CORS_ORIGINS must be explicitly whitelisted in production');
   }
   if (warnings.length > 0) {
