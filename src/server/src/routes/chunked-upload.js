@@ -78,8 +78,10 @@ async function removeUploadSession(uploadId) {
     } catch (err) {
       logger.error('Failed to delete upload session from Redis', err);
     }
+  } else {
+    // 仅非 Redis 模式才操作内存
+    memoryUploadSessions.delete(uploadId);
   }
-  memoryUploadSessions.delete(uploadId);
 }
 
 // 内存存储分片（暂时保留，后续迁移到Redis）  

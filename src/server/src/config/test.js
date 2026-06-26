@@ -9,10 +9,10 @@ export default {
 
   db: {
     host: 'localhost',
-    port: 5432,
+    port: 5433,
     name: 'clipsync_test',
-    user: 'postgres',
-    password: 'postgres',
+    user: 'clipsync',
+    password: 'dev_password_change_me',
     poolMin: 1,
     poolMax: 5,
   },
@@ -20,7 +20,7 @@ export default {
   redis: {
     host: 'localhost',
     port: 6380, // Different Redis port for test isolation
-    password: undefined,
+    password: 'dev_redis_password',
   },
 
   jwt: {

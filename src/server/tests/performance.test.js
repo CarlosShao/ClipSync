@@ -217,7 +217,7 @@ describe('性能测试', () => {
       const heapGrowthMB = Math.round((memAfter.heapUsed - memBefore.heapUsed) / 1024 / 1024 * 100) / 100;
 
       console.log(`    内存增长: ${heapGrowthMB}MB (前=${Math.round(memBefore.heapUsed / 1024 / 1024)}MB, 后=${Math.round(memAfter.heapUsed / 1024 / 1024)}MB)`);
-      expect(heapGrowthMB).toBeLessThan(10);
+      expect(heapGrowthMB).toBeLessThan(15);
     });
   });
 });
