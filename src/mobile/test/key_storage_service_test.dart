@@ -1,20 +1,20 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:clipsync_mobile/services/key_storage_service.dart';
+import 'mock_plugins.dart'; // 导入 mock
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setupMockFlutterSecureStorage(); // 设置 mock
   
   late KeyStorageService keyStorageService;
-  late FlutterSecureStorage mockStorage;
-
+  
   setUp(() {
-    mockStorage = const FlutterSecureStorage();
-    keyStorageService = KeyStorageService(storage: mockStorage);
+    keyStorageService = KeyStorageService(); // 不使用真实 FlutterSecureStorage
   });
-
+  
   tearDown(() async {
+    // 清理 mock 存储
     await keyStorageService.clearAllKeys();
   });
 
