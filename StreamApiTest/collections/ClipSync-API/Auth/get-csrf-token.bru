@@ -1,0 +1,13 @@
+meta {
+    name: Get CSRF Token
+    type: http
+    seq: 1
+}
+
+get {
+    url: {{baseUrl}}/api/csrf-token
+}
+
+headers {
+    Content-Type: application/json
+}

@@ -1,0 +1,22 @@
+meta {
+    name: Batch Delete Clipboard
+    type: http
+    seq: 1
+}
+
+delete {
+    url: {{baseUrl}}/api/clipboard/batch
+    body: json
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+    Content-Type: application/json
+}
+
+body:json {
+    {
+        "ids": ["{{itemId1}}", "{{itemId2}}"]
+    }
+}

@@ -1,0 +1,126 @@
+name: CI - ClipSync
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_ENV: test
+  PORT: 3001
+  DB_HOST: localhost
+  DB_PORT: 5432
+  DB_NAME: clipsync_test
+  DB_USER: postgres
+  DB_PASSWORD: postgres
+  REDIS_HOST: localhost
+  REDIS_PORT: 6380
+  JWT_SECRET: clipsync-test-secret
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: clipsync_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: src/server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: src/server
+        run: npm ci
+
+      - name: Run database migrations
+        working-directory: src/server
+        run: node src/db/migrate.js
+
+      - name: Run linter
+        working-directory: src/server
+        run: npm run lint --if-present
+
+      - name: Run unit tests
+        working-directory: src/server
+        run: npm test -- --reporter=verbose
+
+      - name: Run integration tests
+        working-directory: src/server
+        run: npm test -- tests/integration.test.js --reporter=verbose
+
+      - name: Run security tests
+        working-directory: src/server
+        run: npm test -- tests/security.test.js --reporter=verbose
+
+      - name: Run E2E tests
+        working-directory: src/server
+        run: npm test -- tests/e2e.test.js --reporter=verbose
+        timeout-minutes: 10
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: src/server/test-results/
+          retention-days: 7
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build Docker image
+        run: docker build -t clipsync:${{ github.sha }} .
+
+      - name: Login to Docker Hub
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Push Docker image
+        if: github.event_name == 'push'
+        run: |
+          docker tag clipsync:${{ github.sha }} clipsync:latest
+          docker push clipsync:latest

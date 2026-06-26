@@ -1,0 +1,30 @@
+meta {
+  name: "Accept ToS",
+  type: "http",
+  version: "1.1"
+}
+
+get {
+  url: "{{base_url}}/api/auth/accept-tos",
+  body: {
+    mode: "json",
+    json: {
+      "accept_tos": true,
+      "accept_privacy": true,
+      "marketing_consent": false
+    }
+  },
+  header: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer {{auth_token}}"
+  }
+}
+
+response: >
+  status: 200
+  body: {
+    "message": "已接受服务条款和隐私政策",
+    "tosAcceptedAt": "...",
+    "privacyAcceptedAt": "...",
+    "marketingConsent": false
+  }

@@ -1,0 +1,30 @@
+meta {
+  name: "Get Current Subscription",
+  type: "http",
+  seq: 2
+}
+
+get {
+  url: "{{baseUrl}}/api/subscriptions/current",
+  header: {
+    "Authorization": "Bearer {{authToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  assert(resp.status === 200, "预期200");
+  
+  // 如果是Free套餐，subscription应为null
+  if (resp.body.subscription === null) {
+    assert(resp.body.plan !== null, "Free用户应有plan信息");
+    assert(resp.body.plan.name === "Free", "应为Free套餐");
+  } else {
+    // 如果有订阅，验证字段
+    assert(resp.body.subscription.id !== undefined, "订阅应有ID");
+    assert(resp.body.subscription.status !== undefined, "订阅应有状态");
+    assert(resp.body.plan !== null, "应有plan信息");
+  }
+}
+
+// 查询当前用户的订阅状态

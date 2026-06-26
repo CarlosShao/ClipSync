@@ -1,0 +1,21 @@
+meta {
+    name: Verify Code
+    type: http
+    seq: 6
+}
+
+post {
+    url: {{baseUrl}}/api/auth/verify-code
+    body: json
+}
+
+headers {
+    Content-Type: application/json
+}
+
+body:json {
+    {
+        "phone": "{{phone}}",
+        "code": "{{code}}"
+    }
+}

@@ -1,0 +1,35 @@
+meta {
+  name: "Deactivate Account",
+  type: "http",
+  version: "1.1"
+}
+
+put {
+  url: "{{base_url}}/api/auth/deactivate",
+  body: {
+    mode: "json",
+    json: {
+      "reason": "临时停用测试"
+    }
+  },
+  header: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer {{auth_token}}"
+  }
+}
+
+response: >
+  status: 200
+  body: {
+    "message": "账户已停用",
+    "user": {
+      "id": "...",
+      "isActive": false,
+      "deactivatedAt": "...",
+      "deactivationReason": "临时停用测试"
+    },
+    "reactivationInfo": {
+      "message": "如需重新激活账户，请联系支持团队",
+      "contactEmail": "support@clipsync.example.com"
+    }
+  }

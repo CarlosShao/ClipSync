@@ -1,0 +1,22 @@
+meta {
+    name: Get Sync Status
+    type: http
+    seq: 3
+}
+
+method GET
+url {{baseUrl}}/api/sync/status/{{deviceId}}
+
+headers {
+    Authorization: Bearer {{token}}
+}
+
+response {
+    status: 200
+    body {
+        "synced": true,
+        "lastSyncAt": "2026-06-22T...",
+        "lastSyncedItemId": "uuid",
+        "deviceName": "My Phone"
+    }
+}

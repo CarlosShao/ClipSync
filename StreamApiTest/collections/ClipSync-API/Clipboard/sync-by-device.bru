@@ -1,0 +1,13 @@
+meta {
+    name: Sync Clipboard by Device
+    type: http
+    seq: 6
+}
+
+get {
+    url: {{baseUrl}}/api/clipboard/sync?deviceId={{deviceId}}&since={{timestamp}}
+}
+
+headers {
+    Authorization: Bearer {{token}}
+}

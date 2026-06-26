@@ -1,0 +1,28 @@
+meta {
+  name: "Get Subscription Plans",
+  type: "http",
+  seq: 1
+}
+
+get {
+  url: "{{baseUrl}}/api/subscriptions/plans",
+  header: {
+    "Authorization": "Bearer {{authToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  assert(resp.status === 200, "预期200");
+  assert(resp.body.plans !== undefined, "应包含套餐列表");
+  assert(Array.isArray(resp.body.plans), "套餐应为数组");
+  assert(resp.body.plans.length >= 3, "应有至少3个套餐（Free/Pro/Enterprise）");
+  
+  // 验证Free套餐
+  const freePlan = resp.body.plans.find(p => p.name === "Free");
+  assert(freePlan !== undefined, "应包含Free套餐");
+  assert(freePlan.price === 0, "Free套餐价格应为0");
+  assert(freePlan.maxDevices === 2, "Free套餐最大设备数应为2");
+}
+
+// 获取当前可用的订阅套餐列表

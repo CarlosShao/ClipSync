@@ -1,0 +1,13 @@
+meta {
+    name: Version Stats
+    type: http
+    seq: 6
+}
+
+get {
+    url: {{baseUrl}}/api/versions/stats/overview
+}
+
+headers {
+    Authorization: Bearer {{token}}
+}

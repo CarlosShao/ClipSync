@@ -1,0 +1,27 @@
+meta {
+  name: "Get Notification Preferences",
+  type: "http",
+  version: "1.1"
+}
+
+get {
+  url: "{{base_url}}/api/notifications/preferences",
+  header: {
+    "Authorization": "Bearer {{auth_token}}"
+  }
+}
+
+response: >
+  status: 200
+  body: {
+    "preferences": {
+      "clipboard_sync": true,
+      "new_device_login": true,
+      "password_changed": true,
+      "account_deactivated": true
+    },
+    "availableTypes": [
+      {"type": "clipboard_sync", "description": "剪贴板同步完成时通知"},
+      {"type": "new_device_login", "description": "新设备登录时通知"}
+    ]
+  }

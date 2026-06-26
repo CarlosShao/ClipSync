@@ -1,0 +1,43 @@
+{
+  "name": "clipsync-server",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "ClipSync backend server - cross-device clipboard synchronization",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:env": "cd ../.. && bash scripts/start-test-env.sh",
+    "test:env:stop": "cd ../.. && bash scripts/stop-test-env.sh",
+    "db:migrate": "node src/db/migrate.js",
+    "db:seed": "node src/db/seed.js"
+  },
+  "keywords": [
+    "clipboard",
+    "sync",
+    "websocket"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsdiff": "^1.1.1",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.2.0",
+    "pg": "^8.22.0",
+    "redis": "^6.0.0",
+    "sharp": "^0.35.2",
+    "uuid": "^14.0.1",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.9"
+  }
+}

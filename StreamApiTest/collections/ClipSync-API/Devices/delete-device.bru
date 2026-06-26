@@ -1,0 +1,14 @@
+meta {
+    name: Delete Device
+    type: http
+    seq: 1
+}
+
+delete {
+    url: {{baseUrl}}/api/devices/{{deviceId}}
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+}

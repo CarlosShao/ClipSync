@@ -1,0 +1,41 @@
+meta {
+  name: "Download Invoice PDF",
+  type: "http",
+  seq: 3
+}
+
+get {
+  url: "{{baseUrl}}/api/invoices/{{invoiceId}}/download",
+  header: {
+    "Authorization": "Bearer {{authToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  if (resp.status === 200) {
+    // 可能是PDF文件或重定向
+    const contentType = resp.headers['content-type'] || resp.headers['Content-Type'] || '';
+    console.log("下载响应 Content-Type:", contentType);
+    
+    if (contentType.includes('application/pdf')) {
+      console.log("✅ 返回PDF文件");
+    } else if (resp.status === 302 || resp.status === 301) {
+      console.log("✅ 重定向到发票URL");
+    } else {
+      console.log("⚠️  意外响应类型:", contentType);
+    }
+  } else if (resp.status === 404) {
+    // 发票可能不存在
+    assert(resp.body.error !== undefined, "应包含错误信息");
+    console.log("发票不存在(预期):", resp.body.error);
+  } else if (resp.status === 501) {
+    // PDF生成功能尚未实现
+    assert(resp.body.error !== undefined, "应包含错误信息");
+    console.log("PDF生成功能尚未实现(预期):", resp.body.error);
+  } else {
+    assert(false, "预期200、404或501，实际" + resp.status);
+  }
+}
+
+// 下载电子发票PDF（需要先获取invoiceId）

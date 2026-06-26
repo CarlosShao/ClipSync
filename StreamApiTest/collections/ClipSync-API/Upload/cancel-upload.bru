@@ -1,0 +1,14 @@
+meta {
+    name: Cancel Upload
+    type: http
+    seq: 1
+}
+
+delete {
+    url: {{baseUrl}}/api/upload/{{uploadId}}
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+}

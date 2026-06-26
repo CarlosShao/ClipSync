@@ -1,0 +1,34 @@
+meta {
+  name: "Update Notification Preferences",
+  type: "http",
+  version: "1.1"
+}
+
+put {
+  url: "{{base_url}}/api/notifications/preferences",
+  body: {
+    mode: "json",
+    json: {
+      "preferences": {
+        "clipboard_sync": true,
+        "new_device_login": false,
+        "password_changed": true
+      }
+    }
+  },
+  header: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer {{auth_token}}"
+  }
+}
+
+response: >
+  status: 200
+  body: {
+    "message": "通知偏好已更新",
+    "preferences": {
+      "clipboard_sync": true,
+      "new_device_login": false,
+      "password_changed": true
+    }
+  }

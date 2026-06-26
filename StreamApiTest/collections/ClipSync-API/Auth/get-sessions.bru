@@ -1,0 +1,21 @@
+meta {
+  name: "Get Sessions",
+  type: "http",
+  seq: 1
+}
+
+get {
+  url: "{{baseUrl}}/api/auth/sessions",
+  header: {
+    "Authorization": "Bearer {{authToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  assert(resp.status === 200, "预期200");
+  assert(resp.body.sessions !== undefined, "应包含会话列表");
+  assert(Array.isArray(resp.body.sessions), "会话应为数组");
+}
+
+// 获取当前用户的所有活跃会话

@@ -1,0 +1,38 @@
+meta {
+  name: "Subscribe",
+  type: "http",
+  seq: 3
+}
+
+post {
+  url: "{{baseUrl}}/api/subscriptions/subscribe",
+  header: {
+    "Authorization": "Bearer {{authToken}}",
+    "Content-Type": "application/json",
+    "X-CSRF-Token": "{{csrfToken}}"
+  },
+  body: {
+    mode: "json",
+    json: {
+      "planId": "{{planId}}",
+      "billingCycle": "monthly"
+    }
+  }
+}
+
+post-response {
+  // 验证响应
+  if (resp.status === 200) {
+    assert(resp.body.message !== undefined, "应包含消息");
+    assert(resp.body.subscriptionId !== undefined, "应包含订阅ID");
+    console.log("订阅成功:", resp.body.message);
+  } else if (resp.status === 400) {
+    // 可能已经是该套餐
+    assert(resp.body.error !== undefined, "应包含错误信息");
+    console.log("订阅失败(预期):", resp.body.error);
+  } else {
+    assert(false, "预期200或400，实际" + resp.status);
+  }
+}
+
+// 创建/升级订阅（需要先获取planId）

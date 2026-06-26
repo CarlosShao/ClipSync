@@ -1,0 +1,14 @@
+meta {
+    name: Cleanup Versions
+    type: http
+    seq: 1
+}
+
+delete {
+    url: {{baseUrl}}/api/versions/cleanup?olderThanDays={{days}}
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+}

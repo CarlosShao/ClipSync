@@ -1,0 +1,21 @@
+meta {
+  name: "Revoke Session",
+  type: "http",
+  seq: 2
+}
+
+delete {
+  url: "{{baseUrl}}/api/auth/sessions/{{sessionIdToRevoke}}",
+  header: {
+    "Authorization": "Bearer {{authToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  assert(resp.status === 200, "预期200");
+  assert(resp.body.message !== undefined, "应包含成功消息");
+}
+
+// 撤销指定会话
+// 注意：需要先运行 get-sessions 获取 sessionId

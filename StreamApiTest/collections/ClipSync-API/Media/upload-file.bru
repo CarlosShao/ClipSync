@@ -1,0 +1,15 @@
+meta {
+    name: Upload File
+    type: http
+    seq: 4
+}
+
+post {
+    url: {{baseUrl}}/api/media/upload
+    body: multipart
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+}

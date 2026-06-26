@@ -1,0 +1,13 @@
+meta {
+    name: Preview Image
+    type: http
+    seq: 3
+}
+
+get {
+    url: {{baseUrl}}/api/media/{{mediaId}}/preview
+}
+
+headers {
+    Authorization: Bearer {{token}}
+}

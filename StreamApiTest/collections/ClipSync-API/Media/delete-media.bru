@@ -1,0 +1,14 @@
+meta {
+    name: Delete Media
+    type: http
+    seq: 1
+}
+
+delete {
+    url: {{baseUrl}}/api/media/{{mediaId}}
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+}

@@ -1,0 +1,13 @@
+meta {
+    name: Download Media
+    type: http
+    seq: 2
+}
+
+get {
+    url: {{baseUrl}}/api/media/{{mediaId}}/download
+}
+
+headers {
+    Authorization: Bearer {{token}}
+}

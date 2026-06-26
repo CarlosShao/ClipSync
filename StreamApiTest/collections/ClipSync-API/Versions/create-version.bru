@@ -1,0 +1,23 @@
+meta {
+    name: Create Version
+    type: http
+    seq: 2
+}
+
+post {
+    url: {{baseUrl}}/api/versions
+    body: json
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+    Content-Type: application/json
+}
+
+body:json {
+    {
+        "clipboardItemId": "{{itemId}}",
+        "filePath": "{{filePath}}"
+    }
+}

@@ -1,0 +1,25 @@
+meta {
+    name: Init Upload
+    type: http
+    seq: 3
+}
+
+post {
+    url: {{baseUrl}}/api/upload/init
+    body: json
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+    Content-Type: application/json
+}
+
+body:json {
+    {
+        "filename": "{{filename}}",
+        "fileSize": {{fileSize}},
+        "mimeType": "{{mimeType}}",
+        "checksum": "{{checksum}}"
+    }
+}

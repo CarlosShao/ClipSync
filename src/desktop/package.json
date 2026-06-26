@@ -1,0 +1,15 @@
+{
+  "name": "clipsync-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ClipSync Desktop - Cross-device clipboard synchronization",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

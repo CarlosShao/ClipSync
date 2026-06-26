@@ -1,0 +1,22 @@
+meta {
+    name: Complete Upload
+    type: http
+    seq: 2
+}
+
+post {
+    url: {{baseUrl}}/api/upload/{{uploadId}}/complete
+    body: json
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+    Content-Type: application/json
+}
+
+body:json {
+    {
+        "checksum": "{{checksum}}"
+    }
+}

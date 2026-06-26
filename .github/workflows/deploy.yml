@@ -1,0 +1,47 @@
+name: ClipSync Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    needs: []
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        run: |
+          echo "Building version ${{ steps.version.outputs.VERSION }}..."
+
+          # Build server image
+          cd src/server
+          docker build -t clipsync-server:${{ steps.version.outputs.VERSION }} .
+          docker tag clipsync-server:${{ steps.version.outputs.VERSION }} clipsync-server:latest
+
+          echo "Docker image built successfully"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref }}
+          name: ClipSync ${{ steps.version.outputs.VERSION }}
+          body: |
+            ## ClipSync ${{ steps.version.outputs.VERSION }}
+
+            ### Changes
+            - See commit history for details
+
+            ### Deployment
+            ```bash
+            docker-compose up -d
+            ```
+          draft: false
+          prerelease: false

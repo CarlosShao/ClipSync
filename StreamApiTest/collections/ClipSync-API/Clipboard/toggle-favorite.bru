@@ -1,0 +1,14 @@
+meta {
+    name: Toggle Favorite
+    type: http
+    seq: 7
+}
+
+patch {
+    url: {{baseUrl}}/api/clipboard/{{itemId}}/favorite
+}
+
+headers {
+    Authorization: Bearer {{token}}
+    x-csrf-token: {{csrfToken}}
+}

@@ -1,0 +1,12 @@
+opencollection: 1.0.0
+info:
+  name: "ClipSync API Workspace"
+  type: workspace
+
+collections:
+  - name: "ClipSync API"
+    path: "collections/ClipSync-API"
+
+specs:
+
+docs: ''

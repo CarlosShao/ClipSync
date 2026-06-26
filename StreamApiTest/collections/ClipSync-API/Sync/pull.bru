@@ -1,0 +1,13 @@
+meta {
+    name: Pull Sync
+    type: http
+    seq: 1
+}
+
+get {
+    url: {{baseUrl}}/api/sync/pull?deviceId={{deviceId}}&since={{timestamp}}&limit={{limit}}
+}
+
+headers {
+    Authorization: Bearer {{token}}
+}

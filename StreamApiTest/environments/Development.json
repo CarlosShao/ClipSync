@@ -1,0 +1,1 @@
+{"name": "Development", "variables": [{"name": "baseUrl", "value": "http://localhost:3001", "enabled": true}, {"name": "token", "value": "", "enabled": true}, {"name": "csrfToken", "value": "", "enabled": true}, {"name": "deviceId", "value": "", "enabled": true}, {"name": "phone", "value": "13800138000", "enabled": true}, {"name": "code", "value": "888888", "enabled": true}]}

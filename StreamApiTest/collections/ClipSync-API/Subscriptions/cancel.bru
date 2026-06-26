@@ -1,0 +1,31 @@
+meta {
+  name: "Cancel Subscription",
+  type: "http",
+  seq: 4
+}
+
+post {
+  url: "{{baseUrl}}/api/subscriptions/cancel",
+  header: {
+    "Authorization": "Bearer {{authToken}}",
+    "Content-Type": "application/json",
+    "X-CSRF-Token": "{{csrfToken}}"
+  }
+}
+
+post-response {
+  // 验证响应
+  if (resp.status === 200) {
+    assert(resp.body.message !== undefined, "应包含消息");
+    assert(resp.body.currentPeriodEnd !== undefined, "应包含当前周期结束时间");
+    console.log("订阅已取消:", resp.body.message);
+  } else if (resp.status === 400) {
+    // 可能没有活跃订阅
+    assert(resp.body.error !== undefined, "应包含错误信息");
+    console.log("取消失败(预期):", resp.body.error);
+  } else {
+    assert(false, "预期200或400，实际" + resp.status);
+  }
+}
+
+// 取消订阅（期末生效）
