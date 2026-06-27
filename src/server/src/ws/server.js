@@ -3,6 +3,12 @@ import jwt from 'jsonwebtoken';
 import pool from '../db/pool.js';
 import config from '../config.js';
 import { logger } from '../utils/logger.js';
+import {
+  initWsRedisPubSub,
+  publishToUser,
+  closeWsRedisPubSub,
+  isWsRedisEnabled,
+} from '../utils/ws-redis-pubsub.js';
 
 // Map<userId, Map<deviceId, WebSocket>>
 const connections = new Map();
@@ -23,6 +29,15 @@ export function setupWebSocket(server) {
   const maxListeners = process.env.NODE_ENV === 'test' ? 500 : 100;
   wss.setMaxListeners(maxListeners);
   if (server.setMaxListeners) server.setMaxListeners(maxListeners);
+
+  // 初始化 WebSocket Redis Pub/Sub（如果 Redis 已配置）
+  initWsRedisPubSub(connections).then((enabled) => {
+    if (enabled) {
+      logger.info('[WebSocket] Redis Pub/Sub enabled for multi-instance deployment');
+    } else {
+      logger.info('[WebSocket] Redis Pub/Sub disabled, using local broadcast only');
+    }
+  });
 
   wss.on('connection', (ws, req) => {
     console.log('WebSocket connection attempt');
@@ -94,19 +109,27 @@ export function setupWebSocket(server) {
               return;
             }
 
+            const clipboardMessage = {
+              type: 'clipboard',
+              sourceDeviceId: deviceId,
+              content: message.content,
+              contentType: message.contentType,
+              timestamp: Date.now(),
+            };
+
+            // 本地广播（同一实例内的其他设备）
             const userDevices = connections.get(userId);
             if (userDevices) {
               for (const [otherDeviceId, otherWs] of userDevices) {
                 if (otherDeviceId !== deviceId && otherWs.readyState === 1) {
-                  otherWs.send(JSON.stringify({
-                    type: 'clipboard',
-                    sourceDeviceId: deviceId,
-                    content: message.content,
-                    contentType: message.contentType,
-                    timestamp: Date.now(),
-                  }));
+                  otherWs.send(JSON.stringify(clipboardMessage));
                 }
               }
+            }
+
+            // Redis Pub/Sub 广播（其他实例的设备）
+            if (isWsRedisEnabled()) {
+              await publishToUser(userId, clipboardMessage);
             }
             break;
 
@@ -195,6 +218,7 @@ export function setupWebSocket(server) {
 
 // Broadcast to all devices of a user
 export function broadcastToUser(userId, message) {
+  // 本地广播（当前实例内的设备）
   const userDevices = connections.get(userId);
   if (userDevices) {
     for (const [deviceId, ws] of userDevices) {
@@ -202,6 +226,13 @@ export function broadcastToUser(userId, message) {
         ws.send(JSON.stringify(message));
       }
     }
+  }
+
+  // Redis Pub/Sub 广播（其他实例的设备）
+  if (isWsRedisEnabled()) {
+    publishToUser(userId, message).catch((err) => {
+      console.error('[WebSocket] Redis Pub/Sub broadcast failed:', err.message);
+    });
   }
 }
 
@@ -236,4 +267,34 @@ export function hasOnlineDevices(userId) {
   return getOnlineDeviceCount(userId) > 0;
 }
 
+// Get all online users (for admin/monitoring)
+export function getOnlineUsers() {
+  const onlineUsers = [];
+  for (const [userId, devices] of connections) {
+    if (devices.size > 0) {
+      onlineUsers.push({
+        userId,
+        deviceCount: devices.size,
+        devices: Array.from(devices.keys()),
+      });
+    }
+  }
+  return onlineUsers;
+}
+
 export { connections };
+
+// 进程退出时清理 Redis Pub/Sub 连接
+process.on('exit', () => {
+  closeWsRedisPubSub();
+});
+
+process.on('SIGINT', () => {
+  closeWsRedisPubSub();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  closeWsRedisPubSub();
+  process.exit(0);
+});
