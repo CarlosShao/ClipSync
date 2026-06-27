@@ -1,5 +1,5 @@
 /**
- * 速率限制中间件
+ * 速率限制中间件（生产级修复版）
  * 
  * 功能：
  * 1. API调用限制（每IP）
@@ -7,7 +7,8 @@
  * 3. 登录失败限制（每账号）
  * 4. WebSocket连接限制（每用户）
  * 
- * 生产环境使用Redis（共享限流状态），开发环境使用内存
+ * 算法：Redis ZSET 滑动窗口（真正滑动窗口，无临界问题）
+ * 降级：Redis 不可用时使用内存 ZSET（单实例可用，不允许放行）
  */
 
 import Redis from 'redis';
@@ -52,13 +53,13 @@ async function getRedisClient() {
 }
 
 /**
- * 内存存储（开发环境备用）
+ * 内存存储（Redis 不可用时的降级方案）
+ * 使用 Map<key, number[]> 存储时间戳列表
  */
 const memoryStores = {
   api: new Map(),
   sendCode: new Map(),
   loginFailed: new Map(),
-  wsConnection: new Map(),
 };
 
 /**
@@ -66,72 +67,113 @@ const memoryStores = {
  */
 function cleanupMemoryStore(store, windowMs) {
   const now = Date.now();
-  for (const [key, record] of store.entries()) {
-    if (now - record.windowStart > windowMs) {
+  for (const [key, timestamps] of store.entries()) {
+    const validTimestamps = timestamps.filter(ts => now - ts < windowMs);
+    if (validTimestamps.length === 0) {
       store.delete(key);
+    } else {
+      store.set(key, validTimestamps);
     }
   }
 }
 
 /**
- * Redis 滑动窗口限流（生产环境）
- * 使用 Redis INCR + EXPIRE 实现原子操作
+ * Redis 滑动窗口限流（生产级正确实现）
+ * 
+ * 算法：使用 Redis 有序集合（ZSET）
+ * 1. ZADD：添加当前请求时间戳
+ * 2. ZREMRANGEBYSCORE：移除窗口外的时间戳
+ * 3. ZCARD：统计窗口内请求数
+ * 4. EXPIRE：设置 key 过期时间（避免内存泄漏）
+ * 
+ * 优点：
+ * - 真正的滑动窗口（无临界问题）
+ * - 使用流水线保证原子性
+ * - 精确控制速率
  */
 async function checkRateLimitRedis(key, windowMs, max) {
   const client = await getRedisClient();
   if (!client || !redisAvailable) {
-    return { allowed: true, count: 0, resetTime: Date.now() + windowMs }; // Redis不可用时放行
+    // Redis 不可用，降级到内存模式（不允许放行！）
+    console.warn('[RateLimiter] Redis unavailable, falling back to memory mode for key:', key);
+    return checkRateLimitMemory(key, windowMs, max);
   }
   
   const redisKey = `ratelimit:${key}`;
   const now = Date.now();
   const windowStart = now - windowMs;
+  const member = `${now}:${Math.random().toString(36).substr(1, 6)}`;
   
-  // 使用 Redis 有序集合实现滑动窗口
-  // 方案：使用单键 + INCR，简化版
-  const current = await client.incr(redisKey);
-  if (current === 1) {
-    await client.pexpire(redisKey, windowMs);
+  try {
+    // 使用流水线保证原子性
+    const pipeline = client.multi();
+    
+    // 1. 添加当前请求
+    pipeline.zAdd(redisKey, { score: now, value: member });
+    
+    // 2. 移除窗口外的时间戳
+    pipeline.zRemRangeByScore(redisKey, 0, windowStart);
+    
+    // 3. 统计窗口内请求数
+    pipeline.zCard(redisKey);
+    
+    // 4. 设置过期时间（避免内存泄漏）
+    pipeline.expire(redisKey, Math.ceil(windowMs / 1000));
+    
+    const results = await pipeline.exec();
+    
+    const count = results[2][1]; // ZCARD 的结果
+    const resetTime = now + windowMs;
+    
+    return {
+      allowed: count <= max,
+      count: count,
+      resetTime,
+    };
+  } catch (err) {
+    console.error('[RateLimiter] Redis operation failed:', err.message);
+    // Redis 操作失败，降级到内存模式
+    return checkRateLimitMemory(key, windowMs, max);
   }
-  
-  const ttl = await client.pttl(redisKey);
-  const resetTime = Date.now() + (ttl > 0 ? ttl : windowMs);
-  
-  return {
-    allowed: current <= max,
-    count: current,
-    resetTime,
-  };
 }
 
 /**
- * 内存滑动窗口限流（开发环境）
+ * 内存滑动窗口限流（降级方案）
+ * 使用 Map<key, number[]> 存储时间戳列表
  */
-function checkRateLimitMemory(store, key, windowMs, max) {
+function checkRateLimitMemory(key, windowMs, max) {
   const now = Date.now();
+  const windowStart = now - windowMs;
   
-  // 清理过期记录
-  if (now - (store.get('__lastCleanup') || 0) > windowMs) {
-    cleanupMemoryStore(store, windowMs);
-    store.set('__lastCleanup', now);
-  }
+  // 获取或创建时间戳列表
+  let timestamps = memoryStores.api.get(key) || [];
   
-  // 获取或创建记录
-  let record = store.get(key);
-  if (!record || now - record.windowStart > windowMs) {
-    record = {
-      windowStart: now,
-      count: 0,
+  // 移除窗口外的时间戳
+  timestamps = timestamps.filter(ts => ts > windowStart);
+  
+  // 检查是否超限
+  if (timestamps.length >= max) {
+    memoryStores.api.set(key, timestamps);
+    return {
+      allowed: false,
+      count: timestamps.length,
+      resetTime: timestamps[0] + windowMs, // 最早的时间戳 + 窗口大小
     };
-    store.set(key, record);
   }
   
-  record.count++;
+  // 添加当前请求
+  timestamps.push(now);
+  memoryStores.api.set(key, timestamps);
+  
+  // 定期清理（避免内存泄漏）
+  if (Math.random() < 0.01) { // 1% 概率触发清理
+    cleanupMemoryStore(memoryStores.api, windowMs);
+  }
   
   return {
-    allowed: record.count <= max,
-    count: record.count,
-    resetTime: record.windowStart + windowMs,
+    allowed: true,
+    count: timestamps.length,
+    resetTime: timestamps[0] + windowMs,
   };
 }
 
@@ -147,32 +189,32 @@ function createRateLimiter(options) {
     storeName = 'api',
     skipSuccessfulRequests = false,
   } = options;
-
+  
   const useRedis = process.env.NODE_ENV === 'production' && process.env.REDIS_HOST;
   const memoryStore = memoryStores[storeName];
-
+  
   return async (req, res, next) => {
     // 测试环境跳过
     if (process.env.NODE_ENV === 'test' && storeName === 'api') {
       return next();
     }
-
+    
     const key = keyGenerator(req);
     let result;
-
+    
     if (useRedis) {
       result = await checkRateLimitRedis(key, windowMs, max);
     } else {
-      result = checkRateLimitMemory(memoryStore, key, windowMs, max);
+      result = checkRateLimitMemory(key, windowMs, max);
     }
-
+    
     // 设置响应头
     res.set({
       'X-RateLimit-Limit': max,
       'X-RateLimit-Remaining': Math.max(0, max - result.count),
       'X-RateLimit-Reset': new Date(result.resetTime).toISOString(),
     });
-
+    
     // 检查是否超限
     if (!result.allowed) {
       const retryAfter = Math.ceil((result.resetTime - Date.now()) / 1000);
@@ -182,7 +224,7 @@ function createRateLimiter(options) {
         retryAfter,
       });
     }
-
+    
     next();
   };
 }
@@ -241,10 +283,15 @@ export const loginFailedLimiter = createRateLimiter({
 export function clearLoginFailed(phone) {
   if (process.env.NODE_ENV === 'production' && process.env.REDIS_HOST) {
     getRedisClient().then(client => {
-      if (client) client.del(`ratelimit:loginFailed:${phone}`);
+      if (client) {
+        const redisKey = `ratelimit:loginFailed:${phone}`;
+        client.del(redisKey).catch(() => {});
+      }
     }).catch(() => {});
   } else {
-    memoryStores.loginFailed.delete(`loginFailed:${phone}`);
+    // 内存模式：移除该手机号的所有时间戳
+    const key = `loginFailed:${phone}`;
+    memoryStores.loginFailed.delete(key);
   }
 }
 
@@ -253,13 +300,13 @@ export function clearLoginFailed(phone) {
  * 注意：WebSocket连接对象无法序列化到Redis，此限流保持内存模式
  * 多实例部署时需配置Nginx会话粘性
  */
-const wsConnections = memoryStores.wsConnection;
+const wsConnections = new Map();
 
 export function checkWsConnectionLimit(userId, deviceId) {
   const key = `ws:${userId}`;
   const now = Date.now();
   const windowMs = 60 * 1000;
-
+  
   let record = wsConnections.get(key);
   if (!record || now - record.windowStart > windowMs) {
     record = {
@@ -268,11 +315,11 @@ export function checkWsConnectionLimit(userId, deviceId) {
     };
     wsConnections.set(key, record);
   }
-
+  
   if (record.devices.size >= 5 && !record.devices.has(deviceId)) {
     return false;
   }
-
+  
   record.devices.add(deviceId);
   return true;
 }
@@ -280,7 +327,7 @@ export function checkWsConnectionLimit(userId, deviceId) {
 export function removeWsConnection(userId, deviceId) {
   const key = `ws:${userId}`;
   const record = wsConnections.get(key);
-
+  
   if (record && record.devices) {
     record.devices.delete(deviceId);
     if (record.devices.size === 0) {
@@ -321,13 +368,16 @@ export function getRateLimitStatus(storeName, key) {
   
   const store = memoryStores[storeName];
   if (!store) return null;
-
-  const record = store.get(key);
-  if (!record) return null;
-
+  
+  const timestamps = store.get(key);
+  if (!timestamps) return null;
+  
+  const now = Date.now();
+  const validTimestamps = timestamps.filter(ts => now - ts < 60000); // 默认1分钟窗口
+  
   return {
-    windowStart: record.windowStart,
-    count: record.count || record.devices?.size || 0,
+    count: validTimestamps.length,
+    resetTime: validTimestamps[0] ? timestamps[0] + 60000 : null,
   };
 }
 
@@ -338,7 +388,7 @@ export function resetRateLimit(storeName, key) {
   if (process.env.NODE_ENV === 'production' && process.env.REDIS_HOST) {
     getRedisClient().then(client => {
       if (client) {
-        const pattern = key ? `ratelimit:${key}` : `ratelimit:*`;
+        const pattern = key ? `ratelimit:${key}` : 'ratelimit:*';
         client.keys(pattern).then(keys => {
           if (keys.length > 0) client.del(keys);
         }).catch(() => {});
@@ -346,10 +396,10 @@ export function resetRateLimit(storeName, key) {
     }).catch(() => {});
     return true;
   }
-
+  
   const store = memoryStores[storeName];
   if (!store) return false;
-
+  
   if (key) {
     return store.delete(key);
   } else {

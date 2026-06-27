@@ -55,3 +55,6 @@ docker-compose.override.yml
 *.temp
 .temp/
 data/
+
+# WorkBuddy (local workspace data, not project code)
+.workbuddy/
