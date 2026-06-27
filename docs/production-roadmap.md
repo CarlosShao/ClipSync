@@ -2,7 +2,7 @@
 
 > **文档版本**: v4.1  
 > **适用版本**: ClipSync 0.1.0+  
-> **最后更新**: 2026年6月26日  
+> **最后更新**: 2026年6月27日  
 > **文档 owner**: 产品测试专员  
 > **目标**: 将产品推向可商用部署的质量标准
 
@@ -131,7 +131,7 @@ ClipSync 的核心差异化应该是以下 4 点，所有开发工作围绕这 4
 
 **测试套件状态**：11个测试文件通过（110个测试），3个跳过（43个测试 - e2e/error-recovery/stress，需特殊环境）
 
-**已完成内部任务（12/12）**：
+**已完成内部任务（13/13）**：
 1. ✅ 文件预览（文本/代码）- GET /api/media/:id/text-preview
 2. ✅ 全文搜索（tsvector）- search_vector列+GIN索引+GET /api/clipboard/search
 3. ✅ 配置文件分离 - config/development.js+test.js+production.js
@@ -144,12 +144,11 @@ ClipSync 的核心差异化应该是以下 4 点，所有开发工作围绕这 4
 10. ✅ 灾难恢复 - docs/disaster-recovery.md + scripts/dr-drill.sh
 11. ✅ 数据迁移 - src/db/migrate-manager.js
 12. ✅ 国际化 - app_en.arb + app_zh.arb 80+条翻译
+13. ✅ WebSocket Redis Pub/Sub - ws-redis-pubsub.js + ws/server.js 改造
 
 **剩余内部任务**：
-1. 🔄 Git初始化+首次提交（代码还在本地，未提交）
-2. 🔄 Flutter移动端测试（无.test.dart文件）
-3. 🔄 Tauri桌面端编译验证
-4. 🔄 内存存储迁移到Redis（uploadSessions/connections/csrfTokens）
+1. 🔄 Flutter移动端测试（需手动测试，无.test.dart文件）
+2. 🔄 Tauri桌面端编译验证（需手动测试）
 
 **外部依赖任务（7项）**：
 - 1.1 HTTPS/TLS（需域名）
@@ -160,7 +159,7 @@ ClipSync 的核心差异化应该是以下 4 点，所有开发工作围绕这 4
 - 4.6 自动扩缩容（需云服务）
 - 10.6 短信服务集成（需短信服务商）
 
-**整体进度**：约85%（72/84任务已完成，12项内部任务完成11/12，剩余Git提交等4项）
+**整体进度**：约88%（72/84任务已完成，13项内部任务完成13/13，剩余Flutter/Tauri手动测试2项）
 
 ---
 
