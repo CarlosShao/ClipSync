@@ -1,7 +1,8 @@
 import jwt from 'jsonwebtoken';
 import config from '../config.js';
+import { getRedisClient } from '../middleware/rateLimiter.js';
 
-export function authenticateToken(req, res, next) {
+export async function authenticateToken(req, res, next) {
   // 测试环境跳过token验证，使用测试用户
   if (process.env.NODE_ENV === 'test') {
     req.user = {
@@ -22,13 +23,25 @@ export function authenticateToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
+
+    // ✅ 新增：检查 JWT 黑名单（注销后 token 立即失效）
+    if (decoded.jti) {
+      const redis = await getRedisClient();
+      if (redis) {
+        const blacklisted = await redis.get(`bl:${decoded.jti}`);
+        if (blacklisted) {
+          return res.status(401).json({ error: 'Token revoked' });
+        }
+      }
+    }
+
     req.user = decoded;
-    
+
     // 读取sessionId（用于会话管理）
     if (decoded.sessionId) {
       req.user.sessionId = decoded.sessionId;
     }
-    
+
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {

@@ -17,7 +17,7 @@ import Redis from 'redis';
 let redisClient = null;
 let redisAvailable = false;
 
-async function getRedisClient() {
+export async function getRedisClient() {
   if (!redisClient && process.env.REDIS_HOST) {
     try {
       redisClient = Redis.createClient({
