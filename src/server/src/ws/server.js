@@ -22,7 +22,12 @@ export function setupWebSocket(server) {
     return _setupServers.get(server);
   }
 
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  // WebSocket 服务（限制消息大小为 1MB，防止内存耗尽）
+  const wss = new WebSocketServer({ 
+    server, 
+    path: '/ws',
+    maxPayload: 1024 * 1024 // 1MB
+  });
   _setupServers.set(server, wss);
 
   // 测试环境大幅提升 listener 上限，避免 MaxListenersExceededWarning
