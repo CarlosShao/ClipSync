@@ -3,6 +3,7 @@ import cors from 'cors';
 import { createServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import Redis from 'redis';
 import config from './config.js';
 import { setupWebSocket } from './ws/server.js';
 import { authenticateToken } from './middleware/auth.js';
@@ -108,34 +109,77 @@ const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, '../../views')));
 
 // ============================================
-// Health Check（增强版）
+// Health Check（增强版 - 符合 Kubernetes 标准）
 // ============================================
+// 存活探针（Liveness Probe）：检查进程是否崩溃，总是返回 200
 app.get('/api/health', async (req, res) => {
-  const health = {
-    status: 'ok',
-    version: '0.3.0',
+  res.json({
+    status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    checks: {
-      database: 'unknown',
-      memory: {
-        rss: Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB',
-        heap: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
-      },
-    },
+  });
+});
+
+// 就绪探针（Readiness Probe）：检查依赖是否可用
+app.get('/api/ready', async (req, res) => {
+  const checks = {
+    database: false,
+    redis: false,
+    filesystem: false,
   };
 
-  // 检查数据库连接
+  const details = {};
+
+  // 1. 检查数据库
   try {
     await pool.query('SELECT 1');
-    health.checks.database = 'ok';
+    checks.database = true;
+    details.database = 'connected';
   } catch (err) {
-    health.checks.database = 'error';
-    health.status = 'degraded';
+    details.database = `error: ${err.message}`;
   }
 
-  const statusCode = health.status === 'ok' ? 200 : 503;
-  res.status(statusCode).json(health);
+  // 2. 检查 Redis
+  if (process.env.REDIS_HOST) {
+    try {
+      const client = Redis.createClient({
+        url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT || 6379}`,
+        password: process.env.REDIS_PASSWORD || undefined,
+      });
+      await client.connect();
+      const pong = await client.ping();
+      await client.quit();
+      
+      checks.redis = true;
+      details.redis = 'connected';
+    } catch (err) {
+      details.redis = `error: ${err.message}`;
+    }
+  } else {
+    checks.redis = true; // Redis 未配置，视为通过
+    details.redis = 'not configured';
+  }
+
+  // 3. 检查文件系统（上传目录）
+  try {
+    const fs = await import('fs/promises');
+    await fs.access(config.upload.dir, fs.constants.W_OK);
+    checks.filesystem = true;
+    details.filesystem = 'writable';
+  } catch (err) {
+    details.filesystem = `error: ${err.message}`;
+  }
+
+  // 判断是否就绪
+  const isReady = Object.values(checks).every(v => v === true);
+  const statusCode = isReady ? 200 : 503;
+
+  res.status(statusCode).json({
+    status: isReady ? 'ready' : 'not ready',
+    timestamp: new Date().toISOString(),
+    checks,
+    details,
+  });
 });
 
 // ============================================
