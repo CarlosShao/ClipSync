@@ -6,7 +6,7 @@ import pool from '../db/pool.js';
 import config from '../config.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { isValidPhone, isValidCode, sanitizeString } from '../validation/validator.js';
-import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter } from '../middleware/rateLimiter.js';
+import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter, getRedisClient } from '../middleware/rateLimiter.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
 
 const router = Router();
@@ -27,9 +27,9 @@ async function createSessionAndGenerateToken(user, req) {
     [sessionId, user.id, deviceName, deviceType, platform, ipAddress, userAgent]
   );
 
-  // Generate JWT（包含session_id）
+  // Generate JWT（包含session_id 和 jti）
   const token = jwt.sign(
-    { userId: user.id, phone: user.phone, email: user.email, sessionId: sessionId },
+    { userId: user.id, phone: user.phone, email: user.email, sessionId: sessionId, jti: sessionId },
     config.jwt.secret,
     { expiresIn: config.jwt.expiresIn }
   );
@@ -1050,6 +1050,38 @@ router.put('/consent', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Update consent error:', err);
     res.status(500).json({ error: '更新同意偏好失败' });
+  }
+});
+
+// 注销
+router.post('/logout', authenticateToken, async (req, res) => {
+  try {
+    const token = req.headers['authorization'].split(' ')[1];
+    const decoded = jwt.verify(token, config.jwt.secret);
+    
+    // 将 jti 加入 Redis 黑名单（TTL = token 剩余有效期）
+    if (decoded.jti) {
+      const redis = await getRedisClient();
+      if (redis) {
+        const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+        if (ttl > 0) {
+          await redis.setEx(`bl:${decoded.jti}`, ttl, '1');
+        }
+      }
+    }
+    
+    // 标记会话为不活跃
+    if (decoded.sessionId) {
+      await pool.query(
+        'UPDATE user_sessions SET is_active = FALSE, revoked_at = NOW() WHERE id = $1',
+        [decoded.sessionId]
+      );
+    }
+    
+    res.json({ message: '已注销' });
+  } catch (err) {
+    console.error('Logout error:', err);
+    res.status(500).json({ error: '注销失败' });
   }
 });
 
