@@ -157,6 +157,15 @@ export const AUDIT_ACTIONS = {
   DELETE_CLIPBOARD: 'delete_clipboard',
   UPLOAD_FILE: 'upload_file',
   DELETE_FILE: 'delete_file',
+  DOWNLOAD_FILE: 'download_file',
   ADMIN_LOGIN: 'admin_login',
   ADMIN_ACTION: 'admin_action',
+  // 支付相关
+  PAYMENT_CREATE: 'payment_create',
+  PAYMENT_COMPLETE: 'payment_complete',
+  PAYMENT_FAILED: 'payment_failed',
+  PAYMENT_REFUND: 'payment_refund',
+  SUBSCRIPTION_CREATE: 'subscription_create',
+  SUBSCRIPTION_CANCEL: 'subscription_cancel',
+  SUBSCRIPTION_RENEW: 'subscription_renew',
 };
