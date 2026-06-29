@@ -3,8 +3,8 @@
  * 使用 pdfkit 生成电子发票 PDF
  */
 
-import PDFDocument from 'pdfkit';
-import { logger } from './logger.js';
+const PDFDocument = require('pdfkit');
+const { logger } = require('./logger');
 
 /**
  * 生成发票 PDF
