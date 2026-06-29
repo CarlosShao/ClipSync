@@ -136,6 +136,52 @@ class SubscriptionApiService {
       return false;
     }
   }
+
+  /// 获取支付历史
+  static Future<List<dynamic>> getPaymentHistory(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/payments/history'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['payments'] as List<dynamic>;
+      } else {
+        throw Exception('获取支付历史失败: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('⚠️ 获取支付历史失败: $e');
+      return [];
+    }
+  }
+
+  /// 获取发票列表
+  static Future<List<dynamic>> getInvoices(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/invoices'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['invoices'] as List<dynamic>;
+      } else {
+        throw Exception('获取发票列表失败: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('⚠️ 获取发票列表失败: $e');
+      return [];
+    }
+  }
   
   /// 模拟数据（后端不可用时的降级方案）
   static List<SubscriptionPlan> _getMockPlans() {
