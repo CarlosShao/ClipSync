@@ -4,6 +4,7 @@ import { broadcastToUser, sendNotification } from '../ws/server.js';
 import { isValidUUID, isValidContentType, validatePagination, validateSearch, sanitizeString } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
 import { logger } from '../utils/logger.js';
+import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 
 const router = Router();
 
@@ -342,6 +343,13 @@ router.post('/', apiLimiter, async (req, res) => {
       data: { itemId: item.id, contentType: detectedType },
     });
 
+    // 审计日志：记录剪贴板创建
+    await logAuditEvent(req.userId, AUDIT_ACTIONS.CLIPBOARD_CREATE, 'clipboard', item.id, {
+      contentType: detectedType,
+      sourceDeviceId,
+      contentSize,
+    }, req);
+
     res.status(201).json({
       id: item.id,
       contentType: item.content_type,
@@ -411,6 +419,11 @@ router.delete('/:id', apiLimiter, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Clipboard item not found' });
     }
+
+    // 审计日志：记录剪贴板删除
+    await logAuditEvent(req.userId, AUDIT_ACTIONS.CLIPBOARD_DELETE, 'clipboard', id, {
+      contentType: null, // 已删除，无法获取
+    }, req);
 
     res.json({ message: 'Clipboard item deleted' });
 
