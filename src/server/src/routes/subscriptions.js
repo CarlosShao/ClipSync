@@ -2,6 +2,7 @@ import { Router } from 'express';
 import pool from '../db/pool.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
+import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 
 const router = Router();
 
@@ -192,6 +193,14 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
       
       logger.info(`User ${userId} subscribed to plan ${plan.name}`);
       
+      // 审计日志：记录订阅创建
+      await logAuditEvent(userId, AUDIT_ACTIONS.SUBSCRIPTION_CREATE, 'subscription', newSubscriptionResult.rows[0].id, {
+        planId,
+        planName: plan.name,
+        billingCycle,
+        price,
+      }, req);
+
       return res.json({
         message: 'Subscription successful',
         subscriptionId: newSubscriptionResult.rows[0].id,
@@ -226,6 +235,15 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
       
       logger.info(`User ${userId} started new subscription to plan ${plan.name}, trial: ${isTrial}`);
       
+      // 审计日志：记录新订阅
+      await logAuditEvent(userId, AUDIT_ACTIONS.SUBSCRIPTION_CREATE, 'subscription', subscriptionResult.rows[0].id, {
+        planId,
+        planName: plan.name,
+        billingCycle,
+        price,
+        isTrial,
+      }, req);
+
       return res.json({
         message: isTrial ? 'Trial period started, auto-renewal in 7 days' : 'Subscription successful',
         subscriptionId: subscriptionResult.rows[0].id,
@@ -267,6 +285,11 @@ router.post('/cancel', authenticateToken, async (req, res) => {
     
     logger.info(`User ${userId} cancelled subscription ${subscription.id}, will end at period end`);
     
+    // 审计日志：记录订阅取消
+    await logAuditEvent(userId, AUDIT_ACTIONS.SUBSCRIPTION_CANCEL, 'subscription', subscription.id, {
+      currentPeriodEnd: subscription.current_period_end,
+    }, req);
+
     res.json({
       message: 'Subscription marked for cancellation, effective at the end of the current billing period',
       currentPeriodEnd: subscription.current_period_end,
@@ -305,6 +328,11 @@ router.post('/resume', authenticateToken, async (req, res) => {
     
     logger.info(`User ${userId} resumed subscription ${subscription.id}`);
     
+    // 审计日志：记录订阅恢复
+    await logAuditEvent(userId, AUDIT_ACTIONS.SUBSCRIPTION_RESUME, 'subscription', subscription.id, {
+      currentPeriodEnd: subscription.current_period_end,
+    }, req);
+
     res.json({
       message: 'Subscription restored',
       subscriptionId: subscription.id,
