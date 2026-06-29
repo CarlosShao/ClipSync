@@ -361,3 +361,159 @@ router.get('/invoices/:id/download', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to download invoice' });
   }
 });
+
+/**
+ * POST /api/payments/refund
+ * 申请退款
+ */
+router.post('/refund', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { orderId, reason = '用户申请退款' } = req.body;
+    
+    if (!orderId) {
+      return res.status(400).json({ error: 'Missing orderId parameter' });
+    }
+    
+    // 查询订单
+    const orderResult = await pool.query(
+      'SELECT * FROM payment_orders WHERE id = $1 AND user_id = $2',
+      [orderId, userId]
+    );
+    
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    const order = orderResult.rows[0];
+    
+    // 检查订单状态
+    if (order.status !== 'paid') {
+      return res.status(400).json({ error: 'Order is not paid, cannot refund' });
+    }
+    
+    // Mock退款：直接标记为已退款
+    await pool.query(`
+      UPDATE payment_orders 
+      SET status = 'refunded', refunded_at = NOW(), updated_at = NOW()
+      WHERE id = $1
+    `, [orderId]);
+    
+    // 更新订阅状态
+    await pool.query(`
+      UPDATE user_subscriptions 
+      SET status = 'canceled', canceled_at = NOW(), updated_at = NOW()
+      WHERE order_id = $1
+    `, [orderId]);
+    
+    logger.info(`Refund successful for order ${order.order_no}, user: ${userId}`);
+    
+    res.json({
+      message: 'Refund successful',
+      order: {
+        id: order.id,
+        orderNo: order.order_no,
+        amount: parseFloat(order.amount),
+        status: 'refunded',
+        refundedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    logger.error('Refund error:', err);
+    res.status(500).json({ error: 'Failed to process refund' });
+  }
+});
+
+
+/**
+ * GET /api/payments/reconciliation
+ * 财务对账（管理员功能）
+ */
+router.get('/reconciliation', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    // 检查是否为管理员
+    const userResult = await pool.query(
+      'SELECT is_admin FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (userResult.rows.length === 0 || !userResult.rows[0].is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'Missing startDate or endDate parameter' });
+    }
+    
+    // 查询订单
+    const ordersResult = await pool.query(`
+      SELECT 
+        po.id,
+        po.order_no,
+        po.amount,
+        po.currency,
+        po.payment_method,
+        po.status,
+        po.paid_at,
+        po.transaction_id,
+        u.phone,
+        u.email,
+        sp.name as plan_name
+      FROM payment_orders po
+      JOIN users u ON po.user_id = u.id
+      LEFT JOIN user_subscriptions us ON po.subscription_id = us.id
+      LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
+      WHERE po.paid_at BETWEEN $1 AND $2
+      ORDER BY po.paid_at DESC
+    `, [startDate, endDate]);
+    
+    // 统计
+    const statsResult = await pool.query(`
+      SELECT 
+        COUNT(*) as total_orders,
+        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_paid_amount,
+        SUM(CASE WHEN status = 'refunded' THEN amount ELSE 0 END) as total_refunded_amount,
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_orders,
+        COUNT(CASE WHEN status = 'refunded' THEN 1 END) as refunded_orders
+      FROM payment_orders
+      WHERE paid_at BETWEEN $1 AND $2
+    `, [startDate, endDate]);
+    
+    const stats = statsResult.rows[0];
+    
+    res.json({
+      startDate,
+      endDate,
+      statistics: {
+        totalOrders: parseInt(stats.total_orders),
+        totalPaidAmount: parseFloat(stats.total_paid_amount || 0),
+        totalRefundedAmount: parseFloat(stats.total_refunded_amount || 0),
+        paidOrders: parseInt(stats.paid_orders),
+        refundedOrders: parseInt(stats.refunded_orders),
+      },
+      orders: ordersResult.rows.map(order => ({
+        id: order.id,
+        orderNo: order.order_no,
+        amount: parseFloat(order.amount),
+        currency: order.currency,
+        paymentMethod: order.payment_method,
+        status: order.status,
+        paidAt: order.paid_at,
+        transactionId: order.transaction_id,
+        userPhone: order.phone,
+        userEmail: order.email,
+        planName: order.plan_name,
+      })),
+    });
+  } catch (err) {
+    logger.error('Reconciliation error:', err);
+    res.status(500).json({ error: 'Failed to generate reconciliation report' });
+  }
+});
+
+
+export default router;
