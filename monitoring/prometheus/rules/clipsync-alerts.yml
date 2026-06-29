@@ -1,0 +1,105 @@
+# Prometheus 告警规则 - ClipSync
+# 定义关键指标的告警条件
+
+groups:
+  - name: clipsync_alerts
+    interval: 30s
+    rules:
+      # 高错误率告警
+      - alert: HighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: clipsync
+        annotations:
+          summary: "高错误率: {{ $value | humanizePercentage }}"
+          description: "ClipSync API 错误率超过 5%，持续时间超过 5 分钟"
+
+      # 数据库连接池耗尽告警
+      - alert: DatabaseConnectionPoolExhausted
+        expr: pg_pool_active_connections / pg_pool_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: critical
+          service: clipsync
+        annotations:
+          summary: "数据库连接池即将耗尽"
+          description: "数据库连接池使用率超过 80%，当前: {{ $value | humanizePercentage }}"
+
+      # Redis 连接失败告警
+      - alert: RedisConnectionFailure
+        expr: redis_connected_clients == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: clipsync
+        annotations:
+          summary: "Redis 连接失败"
+          description: "Redis 客户端连接数为 0，请检查 Redis 服务"
+
+      # 高响应时间告警
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: clipsync
+        annotations:
+          summary: "高响应时间: P95 = {{ $value }}s"
+          description: "API P95 响应时间超过 2 秒，当前: {{ $value }}s"
+
+      # WebSocket 连接数异常告警
+      - alert: WebSocketConnectionAnomaly
+        expr: ws_active_connections > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: clipsync
+        annotations:
+          summary: "WebSocket 连接数异常: {{ $value }} 个连接"
+          description: "WebSocket 活跃连接数超过 1000，请检查是否有异常连接"
+
+      # 磁盘空间不足告警
+      - alert: LowDiskSpace
+        expr: node_filesystem_free_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.2
+        for: 10m
+        labels:
+          severity: critical
+          service: clipsync
+        annotations:
+          summary: "磁盘空间不足"
+          description: "根分区磁盘剩余空间小于 20%"
+
+      # 内存使用率过高告警
+      - alert: HighMemoryUsage
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.2
+        for: 5m
+        labels:
+          severity: warning
+          service: clipsync
+        annotations:
+          summary: "内存使用率过高"
+          description: "可用内存小于 20%，当前: {{ $value | humanizePercentage }}"
+
+      # CPU 使用率过高告警
+      - alert: HighCpuUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          service: clipsync
+        annotations:
+          summary: "CPU 使用率过高: {{ $value }}%"
+          description: "CPU 使用率超过 80%，持续时间超过 10 分钟"
+
+      # 订阅到期告警（需在应用层实现）
+      # - alert: SubscriptionExpiring
+      #   expr: time() > (subscription_end_date - 86400 * 7)
+      #   for: 1h
+      #   labels:
+      #     severity: info
+      #     service: clipsync
+      #   annotations:
+      #     summary: "订阅即将到期"
+      #     description: "用户 {{ $labels.user_id }} 的订阅将在 7 天内到期"
