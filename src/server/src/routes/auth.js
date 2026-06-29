@@ -6,8 +6,24 @@ import pool from '../db/pool.js';
 import config from '../config.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { isValidPhone, isValidCode, sanitizeString } from '../validation/validator.js';
-import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter, getRedisClient } from '../middleware/rateLimiter.js';
+import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter, getRedisClient, createRateLimiter } from '../middleware/rateLimiter.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
+import { logger } from '../utils/logger.js';
+import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+import crypto from 'crypto';
+
+// 哈希盐（固定值，用于 phone_hash / email_hash 计算）
+// 修改此值后需重新计算所有用户的哈希值
+const HASH_SALT = process.env.ENCRYPTION_KEY?.substring(0, 16) || 'CLIPSYNC_SALT_2026';
+
+/**
+ * 计算字段值的 SHA-256 哈希（用于 O(1) 查询）
+ * 返回 hex 字符串（64 字符）
+ */
+function computeFieldHash(value) {
+  if (!value) return null;
+  return crypto.createHash('sha256').update(value + HASH_SALT).digest('hex');
+}
 
 const router = Router();
 
@@ -44,11 +60,11 @@ router.post('/send-code', sendCodeLimiter, async (req, res) => {
 
     // 验证手机号格式
     if (!phone) {
-      return res.status(400).json({ error: '手机号不能为空' });
+      return res.status(400).json({ error: 'Phone number is required' });
     }
 
     if (!isValidPhone(phone)) {
-      return res.status(400).json({ error: '手机号格式无效' });
+      return res.status(400).json({ error: 'Invalid phone number format' });
     }
 
     // 清理输入
@@ -64,12 +80,15 @@ router.post('/send-code', sendCodeLimiter, async (req, res) => {
       [cleanPhone, code, expiresAt.toISOString()]
     );
 
-    console.log(`[MVP] Verification code for ${cleanPhone}: ${code}`);
+    // Only log verification code in development environment
+    if (process.env.NODE_ENV !== 'production') {
+      logger.debug(`[MVP] Verification code for ${cleanPhone}: ${code}`);
+    }
 
-    res.json({ message: '验证码已发送（MVP: 888888）' });
+    res.json({ message: 'Verification code sent (MVP: 888888)' });
   } catch (err) {
-    console.error('Send code error:', err);
-    res.status(500).json({ error: '发送验证码失败' });
+    logger.error('Send code error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to send verification code' });
   }
 });
 
@@ -80,12 +99,12 @@ router.post('/send-email-code', sendCodeLimiter, async (req, res) => {
 
     // 验证邮箱格式
     if (!email) {
-      return res.status(400).json({ error: '邮箱不能为空' });
+      return res.status(400).json({ error: 'Email is required' });
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: '邮箱格式无效' });
+      return res.status(400).json({ error: 'Invalid email format' });
     }
 
     // 清理输入
@@ -102,13 +121,15 @@ router.post('/send-email-code', sendCodeLimiter, async (req, res) => {
       [cleanEmail, code, expiresAt.toISOString()]
     );
 
-    console.log(`[MVP] Email verification code for ${cleanEmail}: ${code}`);
-    // TODO: 生产环境发送邮件
+    // Only log verification code in development environment
+    if (process.env.NODE_ENV !== 'production') {
+      logger.debug(`[MVP] Email verification code for ${cleanEmail}: ${code}`);
+    }
 
-    res.json({ message: '邮箱验证码已发送（MVP: 888888）' });
+    res.json({ message: 'Email verification code sent (MVP: 888888)' });
   } catch (err) {
-    console.error('Send email code error:', err);
-    res.status(500).json({ error: '发送邮箱验证码失败' });
+    logger.error('Send email code error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to send email verification code' });
   }
 });
 
@@ -119,15 +140,15 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
 
     // 验证输入
     if (!phone || !code) {
-      return res.status(400).json({ error: '手机号和验证码不能为空' });
+      return res.status(400).json({ error: 'Phone number and verification code are required' });
     }
 
     if (!isValidPhone(phone)) {
-      return res.status(400).json({ error: '手机号格式无效' });
+      return res.status(400).json({ error: 'Invalid phone number format' });
     }
 
     if (!isValidCode(code)) {
-      return res.status(400).json({ error: '验证码格式无效' });
+      return res.status(400).json({ error: 'Invalid verification code format' });
     }
 
     // 清理输入
@@ -142,7 +163,17 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: '验证码无效或已过期' });
+      // ========= P1-4: 审计日志（登录失败 - 手机验证码错误）=========
+      await logAuditEvent({
+        action: AUDIT_ACTIONS.LOGIN_FAILED,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('User-Agent') || '',
+        status: 'failure',
+        errorMessage: 'Invalid or expired verification code',
+        details: { phone: cleanPhone },
+      }).catch(() => {});
+      
+      return res.status(401).json({ error: 'Invalid or expired verification code' });
     }
 
     // Mark code as used
@@ -161,19 +192,37 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
       [cleanPhone]
     );
     
-    // 如果明文查询失败，尝试解密查询
+    // 如果明文查询失败，通过 phone_hash 查询（O(1)，不加载全表）
     if (userResult.rows.length === 0) {
-      const allUsers = await pool.query('SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted FROM users');
-      for (const user of allUsers.rows) {
-        if (user.phone_encrypted) {
-          try {
-            const decryptedPhone = decryptField(user.phone_encrypted);
-            if (decryptedPhone === cleanPhone) {
-              userResult = { rows: [user] };
-              break;
+      const phoneHash = computeFieldHash(cleanPhone);
+      if (phoneHash) {
+        userResult = await pool.query(
+          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted FROM users WHERE phone_hash = $1',
+          [phoneHash]
+        );
+      }
+      // 若哈希查询仍失败（可能旧数据无哈希），才降级到逐行解密（仅限极少数情况）
+      if (userResult.rows.length === 0 && phoneHash) {
+        // 降级：仅查询有 phone_encrypted 但未计算哈希的用户（应该是 0 或极少数）
+        const fallbackUsers = await pool.query(
+          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted FROM users WHERE phone_encrypted IS NOT NULL AND phone_hash IS NULL LIMIT 50'
+        );
+        for (const user of fallbackUsers.rows) {
+          if (user.phone_encrypted) {
+            try {
+              const decryptedPhone = decryptField(user.phone_encrypted);
+              if (decryptedPhone === cleanPhone) {
+                userResult = { rows: [user] };
+                // 顺便更新哈希值，避免下次再降级
+                const hash = computeFieldHash(cleanPhone);
+                if (hash) {
+                  await pool.query('UPDATE users SET phone_hash = $1 WHERE id = $2', [hash, user.id]);
+                }
+                break;
+              }
+            } catch (err) {
+              // 解密失败，跳过
             }
-          } catch (err) {
-            // 解密失败，跳过
           }
         }
       }
@@ -186,7 +235,7 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     if (isNewUser) {
       // New user registration - require ToS and privacy acceptance
       if (!accept_tos || !accept_privacy) {
-        return res.status(400).json({ error: '注册必须接受服务条款和隐私政策' });
+        return res.status(400).json({ error: 'You must accept the Terms of Service and Privacy Policy to register' });
       }
 
       // Age verification (COPPA compliance)
@@ -200,7 +249,7 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
         }
 
         if (age < 13) {
-          return res.status(403).json({ error: '根据COPPA规定，13岁以下儿童不能使用本服务' });
+          return res.status(403).json({ error: 'Users under 13 are not permitted to use this service per COPPA regulations' });
         }
       }
     }
@@ -208,12 +257,13 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     if (userResult.rows.length === 0) {
       // 加密手机号
       const phoneEncrypted = encryptField(cleanPhone);
+      const phoneHash = computeFieldHash(cleanPhone);
       
       userResult = await pool.query(
-        `INSERT INTO users (phone, phone_encrypted, tos_accepted_at, privacy_accepted_at, marketing_consent, birth_date, age_verified)
-         VALUES ($1, $2, NOW(), NOW(), $3, $4, $5)
+        `INSERT INTO users (phone, phone_encrypted, phone_hash, tos_accepted_at, privacy_accepted_at, marketing_consent, birth_date, age_verified)
+         VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6)
          RETURNING id, phone, email, nickname, avatar_url`,
-        [cleanPhone, phoneEncrypted, marketing_consent || false, birth_date || null, birth_date ? true : false]
+        [cleanPhone, phoneEncrypted, phoneHash, marketing_consent || false, birth_date || null, birth_date ? true : false]
       );
     }
 
@@ -221,6 +271,16 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
 
     // 创建会话并生成JWT
     const { token } = await createSessionAndGenerateToken(user, req);
+
+    // ========= P1-4: 审计日志（登录成功）=========
+    await logAuditEvent({
+      userId: user.id,
+      action: AUDIT_ACTIONS.LOGIN,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent') || '',
+      status: 'success',
+      details: { phone: cleanPhone, isNewUser: userResult.rows.length === 0 },
+    });
 
     // 解密敏感字段
 
@@ -250,8 +310,8 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Verify code error:', err);
-    res.status(500).json({ error: '登录失败' });
+    logger.error('Verify code error:', { error: err.message });
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
@@ -262,16 +322,16 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
 
     // 验证输入
     if (!email || !code) {
-      return res.status(400).json({ error: '邮箱和验证码不能为空' });
+      return res.status(400).json({ error: 'Email and verification code are required' });
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: '邮箱格式无效' });
+      return res.status(400).json({ error: 'Invalid email format' });
     }
 
     if (!isValidCode(code)) {
-      return res.status(400).json({ error: '验证码格式无效' });
+      return res.status(400).json({ error: 'Invalid verification code format' });
     }
 
     // 清理输入
@@ -309,7 +369,17 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
     }
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: '验证码无效或已过期' });
+      // ========= P1-4: 审计日志（登录失败 - 邮箱验证码错误）=========
+      await logAuditEvent({
+        action: AUDIT_ACTIONS.LOGIN_FAILED,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('User-Agent') || '',
+        status: 'failure',
+        errorMessage: 'Invalid or expired email verification code',
+        details: { email: cleanEmail },
+      }).catch(() => {});
+      
+      return res.status(401).json({ error: 'Invalid or expired verification code' });
     }
 
     // Mark code as used
@@ -325,7 +395,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
     if (isNewUser) {
       // New user registration - require ToS and privacy acceptance
       if (!accept_tos || !accept_privacy) {
-        return res.status(400).json({ error: '注册必须接受服务条款和隐私政策' });
+        return res.status(400).json({ error: 'You must accept the Terms of Service and Privacy Policy to register' });
       }
 
       // Age verification (COPPA compliance)
@@ -339,7 +409,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
         }
 
         if (age < 13) {
-          return res.status(403).json({ error: '根据COPPA规定，13岁以下儿童不能使用本服务' });
+          return res.status(403).json({ error: 'Users under 13 are not permitted to use this service per COPPA regulations' });
         }
       }
     }
@@ -347,12 +417,13 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
     if (userResult.rows.length === 0) {
       // 加密邮箱
       const emailEncrypted = encryptField(cleanEmail);
+      const emailHash = computeFieldHash(cleanEmail);
       
       userResult = await pool.query(
-        `INSERT INTO users (email, email_encrypted, tos_accepted_at, privacy_accepted_at, marketing_consent, birth_date, age_verified)
-         VALUES ($1, $2, NOW(), NOW(), $3, $4, $5)
+        `INSERT INTO users (email, email_encrypted, email_hash, tos_accepted_at, privacy_accepted_at, marketing_consent, birth_date, age_verified)
+         VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6)
          RETURNING id, phone, email, nickname, avatar_url`,
-        [cleanEmail, emailEncrypted, marketing_consent || false, birth_date || null, birth_date ? true : false]
+        [cleanEmail, emailEncrypted, emailHash, marketing_consent || false, birth_date || null, birth_date ? true : false]
       );
     }
 
@@ -389,8 +460,8 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Verify email code error:', err);
-    res.status(500).json({ error: '邮箱登录失败' });
+    logger.error('Verify email code error:', { error: err.message });
+    res.status(500).json({ error: 'Email login failed' });
   }
 });
 
@@ -401,7 +472,7 @@ router.post('/accept-tos', authenticateToken, async (req, res) => {
     const { accept_tos, accept_privacy, marketing_consent } = req.body;
 
     if (!accept_tos || !accept_privacy) {
-      return res.status(400).json({ error: '必须接受服务条款和隐私政策' });
+      return res.status(400).json({ error: 'You must accept the Terms of Service and Privacy Policy' });
     }
 
     const result = await pool.query(
@@ -415,18 +486,18 @@ router.post('/accept-tos', authenticateToken, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '用户不存在' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     res.json({
-      message: '已接受服务条款和隐私政策',
+      message: 'Terms of Service and Privacy Policy accepted',
       tosAcceptedAt: result.rows[0].tos_accepted_at,
       privacyAcceptedAt: result.rows[0].privacy_accepted_at,
       marketingConsent: result.rows[0].marketing_consent,
     });
   } catch (err) {
-    console.error('Accept ToS error:', err);
-    res.status(500).json({ error: '接受服务条款失败' });
+    logger.error('Accept ToS error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to accept Terms of Service' });
   }
 });
 
@@ -436,12 +507,12 @@ router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ error: '邮箱不能为空' });
+      return res.status(400).json({ error: 'Email is required' });
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: '邮箱格式无效' });
+      return res.status(400).json({ error: 'Invalid email format' });
     }
 
     const cleanEmail = sanitizeString(email.toLowerCase());
@@ -454,8 +525,8 @@ router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
 
     // 即使用户不存在也返回成功（防止邮箱枚举攻击）
     if (userResult.rows.length === 0) {
-      console.log(`[Password Reset] Email ${cleanEmail} not found, but returning success`);
-      return res.json({ message: '如果该邮箱已注册，您将收到密码重置邮件' });
+      logger.debug(`[Password Reset] Email ${cleanEmail} not found, but returning success`);
+      return res.json({ message: 'If this email is registered, you will receive a password reset email' });
     }
 
     // 生成重置令牌（MVP：使用固定验证码）
@@ -469,13 +540,15 @@ router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
       [cleanEmail, resetCode, expiresAt.toISOString()]
     );
 
-    console.log(`[MVP] Password reset code for ${cleanEmail}: ${resetCode}`);
-    // TODO: 生产环境发送邮件
+    // Only log reset code in development environment
+    if (process.env.NODE_ENV !== 'production') {
+      logger.debug(`[MVP] Password reset code for ${cleanEmail}: ${resetCode}`);
+    }
 
-    res.json({ message: '如果该邮箱已注册，您将收到密码重置邮件（MVP：重置码 888888）' });
+    res.json({ message: 'If this email is registered, you will receive a password reset email (MVP: reset code 888888)' });
   } catch (err) {
-    console.error('Forgot password error:', err);
-    res.status(500).json({ error: '发送密码重置邮件失败' });
+    logger.error('Forgot password error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to send password reset email' });
   }
 });
 
@@ -486,16 +559,16 @@ router.post('/reset-password', async (req, res) => {
 
     // 验证输入
     if (!email || !code || !newPassword) {
-      return res.status(400).json({ error: '邮箱、验证码和新密码不能为空' });
+      return res.status(400).json({ error: 'Email, verification code, and new password are required' });
     }
 
     if (newPassword.length < 6) {
-      return res.status(400).json({ error: '新密码长度至少6位' });
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: '邮箱格式无效' });
+      return res.status(400).json({ error: 'Invalid email format' });
     }
 
     const cleanEmail = sanitizeString(email.toLowerCase());
@@ -510,7 +583,7 @@ router.post('/reset-password', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: '重置码无效或已过期' });
+      return res.status(401).json({ error: 'Invalid or expired reset code' });
     }
 
     // 标记重置码为已使用
@@ -529,15 +602,15 @@ router.post('/reset-password', async (req, res) => {
     );
 
     if (updateResult.rows.length === 0) {
-      return res.status(404).json({ error: '用户不存在' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log(`[Password Reset] Password reset successfully for ${cleanEmail}`);
+    logger.info(`[Password Reset] Password reset successfully for ${cleanEmail}`);
 
-    res.json({ message: '密码已重置成功，请使用新密码登录' });
+    res.json({ message: 'Password reset successfully. Please log in with your new password.' });
   } catch (err) {
-    console.error('Reset password error:', err);
-    res.status(500).json({ error: '重置密码失败' });
+    logger.error('Reset password error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to reset password' });
   }
 });
 
@@ -548,11 +621,11 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
     
     // 验证输入：必须提供手机号或邮箱
     if (!password) {
-      return res.status(400).json({ error: '密码不能为空' });
+      return res.status(400).json({ error: 'Password is required' });
     }
 
     if (!phone && !email) {
-      return res.status(400).json({ error: '手机号或邮箱不能为空' });
+      return res.status(400).json({ error: 'Phone number or email is required' });
     }
 
     // 确定登录方式
@@ -563,14 +636,14 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       // 邮箱登录
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        return res.status(400).json({ error: '邮箱格式无效' });
+        return res.status(400).json({ error: 'Invalid email format' });
       }
       cleanIdentifier = sanitizeString(email.toLowerCase());
       identifierField = 'email';
     } else {
       // 手机号登录
       if (!isValidPhone(phone)) {
-        return res.status(400).json({ error: '手机号格式无效' });
+        return res.status(400).json({ error: 'Invalid phone number format' });
       }
       cleanIdentifier = sanitizeString(phone);
       identifierField = 'phone';
@@ -583,17 +656,17 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: '用户名或密码错误' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const user = result.rows[0];
     if (!user.password_hash) {
-      return res.status(401).json({ error: '账户未设置密码，请使用验证码登录' });
+      return res.status(401).json({ error: 'Account has no password set. Please log in with a verification code.' });
     }
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
-      return res.status(401).json({ error: '用户名或密码错误' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     // 清除登录失败记录
@@ -617,8 +690,8 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: '登录失败' });
+    logger.error('Login error:', { error: err.message });
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
@@ -633,7 +706,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '用户不存在' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     const user = result.rows[0];
@@ -644,8 +717,8 @@ router.get('/me', authenticateToken, async (req, res) => {
       avatarUrl: user.avatar_url,
     });
   } catch (err) {
-    console.error('Get profile error:', err);
-    res.status(500).json({ error: '获取用户信息失败' });
+    logger.error('Get profile error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to get user info' });
   }
 });
 
@@ -659,10 +732,10 @@ router.put('/profile', authenticateToken, async (req, res) => {
     if (nickname !== undefined) {
       const trimmedNickname = nickname.trim();
       if (trimmedNickname.length > 50) {
-        return res.status(400).json({ error: '昵称不能超过50个字符' });
+        return res.status(400).json({ error: 'Nickname cannot exceed 50 characters' });
       }
       if (/[<>"'&]/.test(trimmedNickname)) {
-        return res.status(400).json({ error: '昵称包含非法字符' });
+        return res.status(400).json({ error: 'Nickname contains invalid characters' });
       }
     }
 
@@ -677,7 +750,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '用户不存在' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     const user = result.rows[0];
@@ -688,8 +761,8 @@ router.put('/profile', authenticateToken, async (req, res) => {
       avatarUrl: user.avatar_url,
     });
   } catch (err) {
-    console.error('Update profile error:', err);
-    res.status(500).json({ error: '更新用户信息失败' });
+    logger.error('Update profile error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to update user info' });
   }
 });
 
@@ -701,7 +774,7 @@ router.delete('/account', authenticateToken, async (req, res) => {
 
     // 验证确认文本
     if (confirmation !== 'DELETE') {
-      return res.status(400).json({ error: '请输入 DELETE 以确认删除' });
+      return res.status(400).json({ error: 'Please type DELETE to confirm' });
     }
 
     // 如果账户有密码，验证密码
@@ -714,13 +787,13 @@ router.delete('/account', authenticateToken, async (req, res) => {
       if (userResult.rows.length > 0 && userResult.rows[0].password_hash) {
         const valid = await bcrypt.compare(password, userResult.rows[0].password_hash);
         if (!valid) {
-          return res.status(401).json({ error: '密码错误' });
+          return res.status(401).json({ error: 'Incorrect password' });
         }
       }
     }
 
     // 记录删除日志（GDPR 审计要求）
-    console.log(`[GDPR] User ${userId} account deletion requested at ${new Date().toISOString()}`);
+    logger.info(`[GDPR] User ${userId} account deletion requested at ${new Date().toISOString()}`);
 
     // 删除用户（级联删除所有关联数据）
     // 由于外键约束配置了 ON DELETE CASCADE，以下数据会自动删除：
@@ -734,34 +807,43 @@ router.delete('/account', authenticateToken, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '用户不存在' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     // TODO: 使所有活跃会话失效（需要在 Redis 中实现）
     // TODO: 发送账户删除确认邮件
 
-    console.log(`[GDPR] User ${userId} account deleted successfully`);
+    logger.info(`[GDPR] User ${userId} account deleted successfully`);
 
     res.json({
-      message: '账户已永久删除',
+      message: 'Account has been permanently deleted',
       deletedUser: {
         id: result.rows[0].id,
         phone: result.rows[0].phone,
       }
     });
   } catch (err) {
-    console.error('Delete account error:', err);
-    res.status(500).json({ error: '删除账户失败' });
+    logger.error('Delete account error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to delete account' });
   }
 });
 
 // 导出数据（GDPR 数据可移植性）
-router.get('/export-data', authenticateToken, async (req, res) => {
+// ✅ Red Team P1 修复：添加速率限制（每小时 1 次）
+const exportDataLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 小时
+  max: 1,                     // 1 次
+  message: 'Data export rate limit exceeded, please try again in 1 hour',
+  keyGenerator: (req) => `export:${req.user.userId}`,
+  storeName: 'api',
+});
+
+router.get('/export-data', authenticateToken, exportDataLimiter, async (req, res) => {
   try {
     const userId = req.user.userId;
 
     // 记录导出日志（GDPR 审计要求）
-    console.log(`[GDPR] User ${userId} data export requested at ${new Date().toISOString()}`);
+    logger.info(`[GDPR] User ${userId} data export requested at ${new Date().toISOString()}`);
 
     // 获取用户基本信息
     const userResult = await pool.query(
@@ -770,7 +852,7 @@ router.get('/export-data', authenticateToken, async (req, res) => {
     );
 
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: '用户不存在' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     const user = userResult.rows[0];
@@ -804,7 +886,7 @@ router.get('/export-data', authenticateToken, async (req, res) => {
     // 组装导出数据
     const exportData = {
       exportDate: new Date().toISOString(),
-      gdprNotice: '根据GDPR第20条（数据可移植性），您有权获得您的个人数据。此文件包含您的ClipSync账户中的所有数据。',
+      gdprNotice: 'Under GDPR Article 20 (Right to Data Portability), you have the right to obtain your personal data. This file contains all data from your ClipSync account.',
       user: {
         id: user.id,
         phone: user.phone,
@@ -856,12 +938,25 @@ router.get('/export-data', authenticateToken, async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="clipsync-data-export-${userId}-${Date.now()}.json"`);
     
-    console.log(`[GDPR] User ${userId} data export completed successfully`);
+    logger.info(`[GDPR] User ${userId} data export completed successfully`);
+    
+    // ========= P1-4: 审计日志 =========
+    await logAuditEvent({
+      userId,
+      action: AUDIT_ACTIONS.EXPORT_DATA,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent') || '',
+      status: 'success',
+      details: {
+        dataType: 'GDPR_export',
+        itemCount: clipboardResult.rows.length,
+      },
+    });
     
     res.json(exportData);
   } catch (err) {
-    console.error('Export data error:', err);
-    res.status(500).json({ error: '导出数据失败' });
+    logger.error('Export data error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to export data' });
   }
 });
 
@@ -878,11 +973,11 @@ router.put('/deactivate', authenticateToken, async (req, res) => {
     );
 
     if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: '用户不存在' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     if (!checkResult.rows[0].is_active) {
-      return res.status(400).json({ error: '账户已停用' });
+      return res.status(400).json({ error: 'Account is already deactivated' });
     }
 
     // 停用账户
@@ -893,7 +988,7 @@ router.put('/deactivate', authenticateToken, async (req, res) => {
            deactivation_reason = $2
        WHERE id = $1
        RETURNING id, phone, email, is_active, deactivated_at, deactivation_reason`,
-      [userId, reason || '用户主动停用']
+      [userId, reason || 'User-initiated deactivation']
     );
 
     // 撤销所有活跃会话
@@ -902,10 +997,22 @@ router.put('/deactivate', authenticateToken, async (req, res) => {
       [userId]
     );
 
-    console.log(`[Account] User ${userId} deactivated. Reason: ${reason || '用户主动停用'}`);
-
+    logger.info(`[Account] User ${userId} deactivated. Reason: ${reason || 'User-initiated deactivation'}`);
+    
+    // ========= P1-4: 审计日志 =========
+    await logAuditEvent({
+      userId,
+      action: AUDIT_ACTIONS.DEACTIVATE_ACCOUNT,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent') || '',
+      status: 'success',
+      details: {
+        reason: reason || 'User-initiated deactivation',
+      },
+    });
+    
     res.json({
-      message: '账户已停用',
+      message: 'Account has been deactivated',
       user: {
         id: result.rows[0].id,
         phone: result.rows[0].phone,
@@ -915,51 +1022,43 @@ router.put('/deactivate', authenticateToken, async (req, res) => {
         deactivationReason: result.rows[0].deactivation_reason,
       },
       reactivationInfo: {
-        message: '如需重新激活账户，请联系支持团队',
+        message: 'To reactivate your account, please contact the support team',
         contactEmail: 'support@clipsync.example.com',
       },
     });
   } catch (err) {
-    console.error('Deactivate account error:', err);
-    res.status(500).json({ error: '停用账户失败' });
+    logger.error('Deactivate account error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to deactivate account' });
   }
 });
 
-// 重新激活账户（需要联系支持）
-router.put('/reactivate', async (req, res) => {
+// 重新激活账户（需要身份验证 - Red Team P0-5 修复）
+// 方案：要求用户提供 JWT 令牌（必须是已登录状态）
+// 若账户已停用，用户无法通过 authenticateToken，因此需使用特殊路径：
+// 1. 用户发送重新激活请求 → 系统发送确认邮件
+// 2. 用户点击邮件链接 → 重新激活
+// 当前实现：要求身份验证（仅允许已登录用户重新激活，适用于误操作停用）
+router.put('/reactivate', authenticateToken, async (req, res) => {
   try {
-    const { email, phone } = req.body;
-
-    if (!email && !phone) {
-      return res.status(400).json({ error: '请提供邮箱或手机号' });
-    }
+    const userId = req.user.userId;
 
     // 查找用户
-    let userResult;
-    if (email) {
-      userResult = await pool.query(
-        'SELECT id, email, is_active, deactivated_at FROM users WHERE email = $1',
-        [sanitizeString(email.toLowerCase())]
-      );
-    } else {
-      userResult = await pool.query(
-        'SELECT id, phone, is_active, deactivated_at FROM users WHERE phone = $1',
-        [sanitizeString(phone)]
-      );
-    }
+    const userResult = await pool.query(
+      'SELECT id, email, is_active, deactivated_at FROM users WHERE id = $1',
+      [userId]
+    );
 
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: '用户不存在' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     const user = userResult.rows[0];
 
     if (user.is_active) {
-      return res.status(400).json({ error: '账户已激活' });
+      return res.status(400).json({ error: 'Account is already active' });
     }
 
-    // 注意：生产环境需要支持团队审批
-    // MVP：直接重新激活
+    // 重新激活账户
     const result = await pool.query(
       `UPDATE users 
        SET is_active = TRUE, 
@@ -967,13 +1066,13 @@ router.put('/reactivate', async (req, res) => {
            deactivation_reason = NULL
        WHERE id = $1
        RETURNING id, phone, email, is_active`,
-      [user.id]
+      [userId]
     );
 
-    console.log(`[Account] User ${user.id} reactivated`);
+    logger.info(`[Account] User ${user.id} reactivated`);
 
     res.json({
-      message: '账户已重新激活，您现在可以登录',
+      message: 'Account has been reactivated. You can now log in.',
       user: {
         id: result.rows[0].id,
         phone: result.rows[0].phone,
@@ -982,8 +1081,8 @@ router.put('/reactivate', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Reactivate account error:', err);
-    res.status(500).json({ error: '重新激活账户失败' });
+    logger.error('Reactivate account error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to reactivate account' });
   }
 });
 
@@ -1017,7 +1116,7 @@ router.put('/consent', authenticateToken, async (req, res) => {
     }
 
     if (updates.length === 0) {
-      return res.status(400).json({ error: '没有提供要更新的同意偏好' });
+      return res.status(400).json({ error: 'No consent preferences provided for update' });
     }
 
     updates.push(`consent_updated_at = NOW()`);
@@ -1033,13 +1132,13 @@ router.put('/consent', authenticateToken, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '用户不存在' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log(`[Consent] User ${userId} updated consent preferences`);
+    logger.info(`[Consent] User ${userId} updated consent preferences`);
 
     res.json({
-      message: '同意偏好已更新',
+      message: 'Consent preferences updated',
       consent: {
         analyticsConsent: result.rows[0].analytics_consent,
         functionalConsent: result.rows[0].functional_consent,
@@ -1048,8 +1147,8 @@ router.put('/consent', authenticateToken, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Update consent error:', err);
-    res.status(500).json({ error: '更新同意偏好失败' });
+    logger.error('Update consent error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to update consent preferences' });
   }
 });
 
@@ -1077,11 +1176,20 @@ router.post('/logout', authenticateToken, async (req, res) => {
         [decoded.sessionId]
       );
     }
+
+    // ========= P1-4: 审计日志 =========
+    await logAuditEvent({
+      userId: decoded.userId,
+      action: AUDIT_ACTIONS.LOGOUT,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent') || '',
+      status: 'success',
+    });
     
-    res.json({ message: '已注销' });
+    res.json({ message: 'Logged out successfully' });
   } catch (err) {
-    console.error('Logout error:', err);
-    res.status(500).json({ error: '注销失败' });
+    logger.error('Logout error:', { error: err.message });
+    res.status(500).json({ error: 'Logout failed' });
   }
 });
 
