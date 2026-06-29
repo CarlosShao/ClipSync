@@ -59,7 +59,7 @@ const imageUpload = multer({
     if (IMAGE_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`不支持的图片类型: ${file.mimetype}`));
+      cb(new Error(`Unsupported image type: ${file.mimetype}`));
     }
   },
 });
@@ -74,7 +74,7 @@ const fileUpload = multer({
     if (SAFE_FILE_EXTENSIONS.has(ext) || FILE_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`不支持的文件类型: ${file.mimetype}`));
+      cb(new Error(`Unsupported file type: ${file.mimetype}`));
     }
   },
 });
@@ -112,13 +112,13 @@ async function compressImage(buffer, mimetype) {
 router.post('/image', apiLimiter, imageUpload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: '请选择要上传的图片' });
+      return res.status(400).json({ error: 'Please select an image to upload' });
     }
 
     const { sourceDeviceId, expiresAt } = req.body;
 
     if (!sourceDeviceId || !isValidUUID(sourceDeviceId)) {
-      return res.status(400).json({ error: 'sourceDeviceId 无效' });
+      return res.status(400).json({ error: 'Invalid sourceDeviceId' });
     }
 
     // Verify device belongs to user
@@ -127,7 +127,7 @@ router.post('/image', apiLimiter, imageUpload.single('image'), async (req, res) 
       [sourceDeviceId, req.userId]
     );
     if (deviceCheck.rows.length === 0) {
-      return res.status(404).json({ error: '设备不存在' });
+      return res.status(404).json({ error: 'Device not found' });
     }
 
     // Compress image
@@ -216,7 +216,7 @@ router.post('/image', apiLimiter, imageUpload.single('image'), async (req, res) 
     });
   } catch (err) {
     logger.error('Upload image error', { error: err.message });
-    res.status(500).json({ error: '图片上传失败' });
+    res.status(500).json({ error: 'Image upload failed' });
   }
 });
 
@@ -224,13 +224,13 @@ router.post('/image', apiLimiter, imageUpload.single('image'), async (req, res) 
 router.post('/file', apiLimiter, fileUpload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: '请选择要上传的文件' });
+      return res.status(400).json({ error: 'Please select a file to upload' });
     }
 
     const { sourceDeviceId, expiresAt } = req.body;
 
     if (!sourceDeviceId || !isValidUUID(sourceDeviceId)) {
-      return res.status(400).json({ error: 'sourceDeviceId 无效' });
+      return res.status(400).json({ error: 'Invalid sourceDeviceId' });
     }
 
     // Verify device belongs to user
@@ -239,7 +239,7 @@ router.post('/file', apiLimiter, fileUpload.single('file'), async (req, res) => 
       [sourceDeviceId, req.userId]
     );
     if (deviceCheck.rows.length === 0) {
-      return res.status(404).json({ error: '设备不存在' });
+      return res.status(404).json({ error: 'Device not found' });
     }
 
     // Save file
@@ -305,7 +305,7 @@ router.post('/file', apiLimiter, fileUpload.single('file'), async (req, res) => 
     });
   } catch (err) {
     logger.error('Upload file error', { error: err.message });
-    res.status(500).json({ error: '文件上传失败' });
+    res.status(500).json({ error: 'File upload failed' });
   }
 });
 
@@ -314,7 +314,7 @@ router.get('/:id/download', apiLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isValidUUID(id)) {
-      return res.status(400).json({ error: 'ID格式无效' });
+      return res.status(400).json({ error: 'Invalid ID format' });
     }
 
     // Get item from DB
@@ -325,7 +325,7 @@ router.get('/:id/download', apiLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '文件不存在' });
+      return res.status(404).json({ error: 'File not found' });
     }
 
     const item = result.rows[0];
@@ -338,14 +338,14 @@ router.get('/:id/download', apiLimiter, async (req, res) => {
     } else if (item.content_type === 'file') {
       filePath = path.join(FILE_DIR, filename);
     } else {
-      return res.status(400).json({ error: '此类型不支持下载' });
+      return res.status(400).json({ error: 'This content type does not support download' });
     }
 
     // Check file exists
     try {
       await fs.access(filePath);
     } catch {
-      return res.status(404).json({ error: '文件未找到' });
+      return res.status(404).json({ error: 'File not found on disk' });
     }
 
     const stat = await fs.stat(filePath);
@@ -383,7 +383,7 @@ router.get('/:id/download', apiLimiter, async (req, res) => {
     }
   } catch (err) {
     logger.error('Download error', { error: err.message });
-    res.status(500).json({ error: '下载失败' });
+    res.status(500).json({ error: 'Download failed' });
   }
 });
 
@@ -392,7 +392,7 @@ router.get('/:id/preview', apiLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isValidUUID(id)) {
-      return res.status(400).json({ error: 'ID格式无效' });
+      return res.status(400).json({ error: 'Invalid ID format' });
     }
 
     const result = await pool.query(
@@ -402,14 +402,14 @@ router.get('/:id/preview', apiLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '文件不存在' });
+      return res.status(404).json({ error: 'File not found' });
     }
 
     const item = result.rows[0];
     const metadata = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
 
     if (item.content_type !== 'image') {
-      return res.status(400).json({ error: '仅图片支持预览' });
+      return res.status(400).json({ error: 'Only images support preview' });
     }
 
     // Serve thumbnail
@@ -430,12 +430,12 @@ router.get('/:id/preview', apiLimiter, async (req, res) => {
         const { createReadStream } = await import('fs');
         createReadStream(imgPath).pipe(res);
       } catch {
-        return res.status(404).json({ error: '图片未找到' });
+        return res.status(404).json({ error: 'Image not found' });
       }
     }
   } catch (err) {
     logger.error('Preview error', { error: err.message });
-    res.status(500).json({ error: '预览失败' });
+    res.status(500).json({ error: 'Preview failed' });
   }
 });
 
@@ -464,7 +464,7 @@ router.get('/:id/text-preview', apiLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isValidUUID(id)) {
-      return res.status(400).json({ error: 'ID格式无效' });
+      return res.status(400).json({ error: 'Invalid ID format' });
     }
 
     const result = await pool.query(
@@ -474,7 +474,7 @@ router.get('/:id/text-preview', apiLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '文件不存在' });
+      return res.status(404).json({ error: 'File not found' });
     }
 
     const item = result.rows[0];
@@ -482,25 +482,25 @@ router.get('/:id/text-preview', apiLimiter, async (req, res) => {
 
     // Only support text/code preview for file-type items
     if (item.content_type !== 'file') {
-      return res.status(400).json({ error: '仅文件类型支持文本预览' });
+      return res.status(400).json({ error: 'Only file types support text preview' });
     }
 
     const ext = (metadata?.extension || '').toLowerCase();
     if (!TEXT_PREVIEW_EXTENSIONS.has(ext)) {
-      return res.status(400).json({ error: '此文件类型不支持文本预览', ext });
+      return res.status(400).json({ error: 'This file type does not support text preview', ext });
     }
 
     const filePath = path.join(FILE_DIR, item.content_encrypted);
     try {
       await fs.access(filePath);
     } catch {
-      return res.status(404).json({ error: '文件未找到' });
+      return res.status(404).json({ error: 'File not found on disk' });
     }
 
     // Read file content with size limit
     const stat = await fs.stat(filePath);
     if (stat.size > 5 * 1024 * 1024) { // 5MB - skip preview for very large files
-      return res.status(400).json({ error: '文件过大，不支持预览', size: stat.size });
+      return res.status(400).json({ error: 'File too large for preview', size: stat.size });
     }
 
     const rawBuffer = await fs.readFile(filePath);
@@ -555,7 +555,7 @@ router.get('/:id/text-preview', apiLimiter, async (req, res) => {
     });
   } catch (err) {
     logger.error('Text preview error', { error: err.message });
-    res.status(500).json({ error: '文本预览失败' });
+    res.status(500).json({ error: 'Text preview failed' });
   }
 });
 
@@ -564,7 +564,7 @@ router.delete('/:id', apiLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isValidUUID(id)) {
-      return res.status(400).json({ error: 'ID格式无效' });
+      return res.status(400).json({ error: 'Invalid ID format' });
     }
 
     const result = await pool.query(
@@ -574,7 +574,7 @@ router.delete('/:id', apiLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '文件不存在' });
+      return res.status(404).json({ error: 'File not found' });
     }
 
     const item = result.rows[0];
@@ -600,10 +600,10 @@ router.delete('/:id', apiLimiter, async (req, res) => {
       itemId: id,
     });
 
-    res.json({ message: '文件已删除' });
+    res.json({ message: 'File deleted' });
   } catch (err) {
     logger.error('Delete media error', { error: err.message });
-    res.status(500).json({ error: '删除失败' });
+    res.status(500).json({ error: 'Delete failed' });
   }
 });
 

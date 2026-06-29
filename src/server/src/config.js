@@ -94,7 +94,9 @@ if (nodeEnv === 'production') {
     warnings.push('CORS_ORIGINS must be explicitly whitelisted in production');
   }
   if (warnings.length > 0) {
+    // eslint-disable-next-line no-console
     console.warn('⚠️  Production configuration warnings:');
+    // eslint-disable-next-line no-console
     warnings.forEach(w => console.warn(`  - ${w}`));
   }
 }

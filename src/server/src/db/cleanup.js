@@ -1,4 +1,5 @@
 import pool from './pool.js';
+import { logger } from '../utils/logger.js';
 
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
 
@@ -18,7 +19,7 @@ async function cleanupExpiredItems() {
     );
 
     if (result.rowCount > 0) {
-      console.log(`[Cleanup] Deleted ${result.rowCount} expired clipboard items`);
+      logger.info(`[Cleanup] Deleted ${result.rowCount} expired clipboard items`);
     }
 
     // Clean up old verification codes (older than 24 hours)
@@ -29,9 +30,9 @@ async function cleanupExpiredItems() {
     );
 
     if (vcResult.rowCount > 0) {
-      console.log(`[Cleanup] Deleted ${vcResult.rowCount} old verification codes`);
+      logger.info(`[Cleanup] Deleted ${vcResult.rowCount} old verification codes`);
     }
   } catch (err) {
-    console.error('[Cleanup] Error:', err);
+    logger.error('[Cleanup] Error:', { error: err.message });
   }
 }

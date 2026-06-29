@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: namespace
+    env: production
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clipsync-config
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: config
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  HOST: "0.0.0.0"
+  TZ: "Asia/Shanghai"
+  DB_HOST: "clipsync-postgres"
+  DB_PORT: "5432"
+  DB_NAME: "clipsync"
+  REDIS_HOST: "clipsync-redis"
+  REDIS_PORT: "6379"
+  MAX_FILE_SIZE: "10485760"
+  UPLOAD_DIR: "/app/uploads"
+  LOG_LEVEL: "info"
+  ALLOWED_ORIGINS: "https://sync.clipsync.app"
+  # CORS 白名单（生产环境必须配置）
+  # ALLOWED_ORIGINS: "https://app1.example.com,https://app2.example.com"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: clipsync-secrets
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: secret
+type: Opaque
+# ⚠️ 生产环境请使用 sealed-secrets 或 external-secrets 管理密钥
+# 以下为示例值，实际部署时通过 kubectl create secret 或 overlay 注入
+stringData:
+  DB_USER: "clipsync"
+  DB_PASSWORD: ""              # 必须设置强密码
+  REDIS_PASSWORD: ""           # 必须设置强密码
+  JWT_SECRET: ""               # 必须 >= 32 字符随机字符串
+  ENCRYPTION_KEY: ""           # ECDH 加密密钥
+  CSRF_SECRET: ""              # CSRF 保护密钥
+---
+# PostgreSQL 持久化存储
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard  # 根据云服务商调整 (gp3 / standard / local-path)
+---
+# Redis 持久化存储
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: cache
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+---
+# 上传文件存储
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads-data
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard

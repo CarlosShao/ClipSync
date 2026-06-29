@@ -72,31 +72,108 @@ export function isValidPlatform(platform) {
 
 /**
  * 清理字符串输入（防XSS）
- * @param {string} input 
- * @returns {string}
+ * 
+ * 使用OWASP推荐的HTML实体转义防止XSS攻击
+ * 适用于HTML上下文的输出转义
+ * 
+ * @param {string} input - 输入字符串
+ * @returns {string} - 转义后的安全字符串
  */
 export function sanitizeString(input) {
   if (typeof input !== 'string') return '';
   
+  // OWASP推荐的HTML实体转义
+  // 转义顺序很重要：必须先转义&，否则其他转义会被二次转义
   return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
-    .replace(/\//g, '&#x2F;');
+    .replace(/&/g, '&amp;')   // & 必须第一个转义
+    .replace(/</g, '&lt;')    // < 标签开始
+    .replace(/>/g, '&gt;')    // > 标签结束
+    .replace(/"/g, '&quot;')  // " 属性引号
+    .replace(/'/g, '&#x27;')  // ' 属性引号（十六进制）
+    .replace(/\//g, '&#x2F;'); // / 防止关闭标签
 }
 
 /**
- * 清理HTML内容（保留基本格式）
- * @param {string} html 
- * @returns {string}
+ * 清理HTML内容（保留安全的HTML标签）
+ * 
+ * 如果需要允许某些HTML标签（如<b>、<i>），使用此函数
+ * 当前实现：移除所有HTML标签（保守做法）
+ * 
+ * 注意：对于生产环境，建议使用专门的HTML清理库（如xss）
+ * 
+ * @param {string} html - 输入HTML字符串
+ * @returns {string} - 清理后的字符串
  */
 export function sanitizeHtml(html) {
   if (typeof html !== 'string') return '';
   
-  // 移除所有HTML标签
+  // 保守做法：移除所有HTML标签
+  // 如需保留某些标签，应使用DOM解析+白名单
   return html.replace(/<[^>]*>/g, '');
+}
+
+/**
+ * 上下文感知的XSS防护
+ * 
+ * 根据不同的输出上下文使用不同的转义策略
+ */
+
+/**
+ * 用于HTML正文上下文的转义
+ * 例：<div>此处是用户输入</div>
+ */
+export function escapeHtmlContext(input) {
+  return sanitizeString(input);
+}
+
+/**
+ * 用于HTML属性上下文的转义
+ * 例：<div attr="此处是用户输入"> </>
+ */
+export function escapeAttributeContext(input) {
+  if (typeof input !== 'string') return '';
+  
+  // 属性上下文需要转义引号和其他特殊字符
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/=/g, '&#x3D;')
+    .replace(/`/g, '&#x60;');
+}
+
+/**
+ * 用于JavaScript字符串上下文的转义
+ * 例：<script>var x = "此处是用户输入";</script>
+ */
+export function escapeJsContext(input) {
+  if (typeof input !== 'string') return '';
+  
+  // JS字符串上下文：转义反斜杠、引号和换行
+  return input
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/`/g, '\\`');
+}
+
+/**
+ * 用于URL上下文的转义
+ * 例：<a href="此处是用户输入">
+ */
+export function escapeUrlContext(input) {
+  if (typeof input !== 'string') return '';
+  
+  // URL编码：使用encodeURIComponent
+  try {
+    return encodeURIComponent(input);
+  } catch (err) {
+    return '';
+  }
 }
 
 /**
@@ -191,23 +268,23 @@ export function isValidEmail(email) {
  */
 export function validateNickname(nickname) {
   if (!nickname || typeof nickname !== 'string') {
-    return { valid: false, error: '昵称不能为空' };
+    return { valid: false, error: 'Nickname cannot be empty' };
   }
 
   const trimmed = nickname.trim();
   
   if (trimmed.length === 0) {
-    return { valid: false, error: '昵称不能为空' };
+    return { valid: false, error: 'Nickname cannot be empty' };
   }
 
   if (trimmed.length > 50) {
-    return { valid: false, error: '昵称不能超过50个字符' };
+    return { valid: false, error: 'Nickname cannot exceed 50 characters' };
   }
 
   // 检查是否包含特殊字符
   const invalidChars = /[<>"'&]/;
   if (invalidChars.test(trimmed)) {
-    return { valid: false, error: '昵称包含非法字符' };
+    return { valid: false, error: 'Nickname contains invalid characters' };
   }
 
   return { valid: true };
@@ -220,17 +297,17 @@ export function validateNickname(nickname) {
  */
 export function validateDeviceName(name) {
   if (!name || typeof name !== 'string') {
-    return { valid: false, error: '设备名称不能为空' };
+    return { valid: false, error: 'Device name cannot be empty' };
   }
 
   const trimmed = name.trim();
   
   if (trimmed.length === 0) {
-    return { valid: false, error: '设备名称不能为空' };
+    return { valid: false, error: 'Device name cannot be empty' };
   }
 
   if (trimmed.length > 100) {
-    return { valid: false, error: '设备名称不能超过100个字符' };
+    return { valid: false, error: 'Device name cannot exceed 100 characters' };
   }
 
   return { valid: true };
@@ -245,31 +322,31 @@ export function validateClipboardData(data) {
   const { sourceDeviceId, contentType, contentEncrypted } = data;
 
   if (!sourceDeviceId) {
-    return { valid: false, error: 'sourceDeviceId 不能为空' };
+    return { valid: false, error: 'sourceDeviceId is required' };
   }
 
   if (!isValidUUID(sourceDeviceId)) {
-    return { valid: false, error: 'sourceDeviceId 格式无效' };
+    return { valid: false, error: 'Invalid sourceDeviceId format' };
   }
 
   if (!contentType) {
-    return { valid: false, error: 'contentType 不能为空' };
+    return { valid: false, error: 'contentType is required' };
   }
 
   if (!isValidContentType(contentType)) {
-    return { valid: false, error: 'contentType 无效' };
+    return { valid: false, error: 'Invalid contentType' };
   }
 
   if (!contentEncrypted) {
-    return { valid: false, error: 'contentEncrypted 不能为空' };
+    return { valid: false, error: 'contentEncrypted is required' };
   }
 
   if (typeof contentEncrypted !== 'string') {
-    return { valid: false, error: 'contentEncrypted 必须是字符串' };
+    return { valid: false, error: 'contentEncrypted must be a string' };
   }
 
   if (contentEncrypted.length > 10 * 1024 * 1024) { // 10MB limit
-    return { valid: false, error: '内容过大' };
+    return { valid: false, error: 'Content too large' };
   }
 
   return { valid: true };
@@ -289,19 +366,19 @@ export function validateDeviceData(data) {
   }
 
   if (!deviceType) {
-    return { valid: false, error: 'deviceType 不能为空' };
+    return { valid: false, error: 'deviceType is required' };
   }
 
   if (!isValidDeviceType(deviceType)) {
-    return { valid: false, error: 'deviceType 无效' };
+    return { valid: false, error: 'Invalid deviceType' };
   }
 
   if (!platform) {
-    return { valid: false, error: 'platform 不能为空' };
+    return { valid: false, error: 'platform is required' };
   }
 
   if (!isValidPlatform(platform)) {
-    return { valid: false, error: 'platform 无效' };
+    return { valid: false, error: 'Invalid platform' };
   }
 
   return { valid: true };
@@ -335,19 +412,19 @@ export const validators = {
     const { phone, code } = data;
 
     if (!phone) {
-      return { valid: false, error: '手机号不能为空' };
+      return { valid: false, error: 'Phone number is required' };
     }
 
     if (!isValidPhone(phone)) {
-      return { valid: false, error: '手机号格式无效' };
+      return { valid: false, error: 'Invalid phone number format' };
     }
 
     if (!code) {
-      return { valid: false, error: '验证码不能为空' };
+      return { valid: false, error: 'Verification code is required' };
     }
 
     if (!isValidCode(code)) {
-      return { valid: false, error: '验证码格式无效' };
+      return { valid: false, error: 'Invalid verification code format' };
     }
 
     return { valid: true };
@@ -358,11 +435,11 @@ export const validators = {
     const { phone } = data;
 
     if (!phone) {
-      return { valid: false, error: '手机号不能为空' };
+      return { valid: false, error: 'Phone number is required' };
     }
 
     if (!isValidPhone(phone)) {
-      return { valid: false, error: '手机号格式无效' };
+      return { valid: false, error: 'Invalid phone number format' };
     }
 
     return { valid: true };

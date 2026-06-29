@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import config from '../config.js';
-import { getRedisClient } from '../middleware/rateLimiter.js';
+import { getRedisClient } from '../utils/redis-client.js';
+import { pool } from '../db/pool.js';
 
 export async function authenticateToken(req, res, next) {
   // 测试环境跳过token验证，使用测试用户
@@ -40,6 +41,20 @@ export async function authenticateToken(req, res, next) {
     // 读取sessionId（用于会话管理）
     if (decoded.sessionId) {
       req.user.sessionId = decoded.sessionId;
+    }
+
+    // ✅ Red Team 修复 P0-1: 检查账户是否已停用
+    try {
+      const userCheck = await pool.query(
+        'SELECT is_active FROM users WHERE id = $1',
+        [decoded.userId]
+      );
+      if (userCheck.rows.length === 0 || !userCheck.rows[0].is_active) {
+        return res.status(401).json({ error: 'Account deactivated' });
+      }
+    } catch (err) {
+      // 数据库查询失败，记录日志但允许请求继续（避免误杀）
+      console.warn('[auth] is_active check failed:', err.message);
     }
 
     next();

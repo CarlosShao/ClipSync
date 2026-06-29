@@ -1,0 +1,112 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: clipsync-ingress
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: ingress
+  annotations:
+    # NGINX Ingress Controller 配置
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"       # 支持大文件上传
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"    # WebSocket 超时 1 小时
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    # WebSocket 粘性会话 - 确保同一客户端连接到同一 Pod
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "CLIPSYNC_AFFINITY"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "86400"
+    nginx.ingress.kubernetes.io/session-cookie-path: "/"
+    # 启用 WebSocket 支持
+    nginx.ingress.kubernetes.io/websocket-services: "clipsync-api"
+    # Rate limiting（可选）
+    # nginx.ingress.kubernetes.io/limit-rps: "100"
+    # nginx.ingress.kubernetes.io/limit-connections: "50"
+    # SSL/TLS (配合 cert-manager)
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx  # 根据集群的 IngressClass 调整
+  tls:
+    - hosts:
+        - api.clipsync.app       # 替换为你的域名
+        - ws.clipsync.app        # WebSocket 域名（如需要）
+      secretName: clipsync-tls-cert  # cert-manager 自动创建或手动导入
+  rules:
+    - host: api.clipsync.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: clipsync-api
+                port:
+                  number: 80
+    - host: ws.clipsync.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: clipsync-api
+                port:
+                  number: 80
+---
+# NetworkPolicy - 网络隔离
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: clipsync-network-policy
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}  # 应用于 namespace 内所有 Pod
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # 允许命名空间内 Pod 互相通信
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000   # API 服务
+        - protocol: TCP
+          port: 5432   # PostgreSQL（仅内部）
+        - protocol: TCP
+          port: 6379   # Redis（仅内部）
+    # 允许 Ingress 流量进入 API
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+    # 允许 Prometheus 抓取指标
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 9121
+  egress:
+    # 允许所有出站流量（DNS、外部 API 等）
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+        - protocol: UDP
+    - to: []  # 允许任何目标（用于外部服务）
+      ports:
+        - protocol: TCP
+        - protocol: UDP

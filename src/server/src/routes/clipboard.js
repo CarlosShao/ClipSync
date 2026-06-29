@@ -3,6 +3,7 @@ import pool from '../db/pool.js';
 import { broadcastToUser, sendNotification } from '../ws/server.js';
 import { isValidUUID, isValidContentType, validatePagination, validateSearch, sanitizeString } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -45,7 +46,7 @@ router.get('/', apiLimiter, async (req, res) => {
 
     if (contentType) {
       if (!isValidContentType(contentType)) {
-        return res.status(400).json({ error: 'contentType 无效' });
+        return res.status(400).json({ error: 'Invalid contentType' });
       }
       whereClause += ` AND content_type = $${paramIndex}`;
       params.push(contentType);
@@ -125,8 +126,8 @@ router.get('/', apiLimiter, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('List clipboard items error:', err);
-    res.status(500).json({ error: '获取剪贴板列表失败' });
+    logger.error('List clipboard items error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to get clipboard list' });
   }
 });
 
@@ -136,7 +137,7 @@ router.get('/search', apiLimiter, async (req, res) => {
     const { q, contentType, page = 1, limit = 50 } = req.query;
 
     if (!q || q.trim().length < 2) {
-      return res.status(400).json({ error: '搜索关键词至少2个字符' });
+      return res.status(400).json({ error: 'Search keyword must be at least 2 characters' });
     }
 
     const cleanSearch = sanitizeString(q.trim());
@@ -149,7 +150,7 @@ router.get('/search', apiLimiter, async (req, res) => {
 
     if (contentType) {
       if (!isValidContentType(contentType)) {
-        return res.status(400).json({ error: 'contentType 无效' });
+        return res.status(400).json({ error: 'Invalid contentType' });
       }
       whereClause += ` AND ci.content_type = $${paramIndex}`;
       params.push(contentType);
@@ -214,8 +215,8 @@ router.get('/search', apiLimiter, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Full-text search error:', err);
-    res.status(500).json({ error: '搜索失败' });
+    logger.error('Full-text search error:', { error: err.message });
+    res.status(500).json({ error: 'Search failed' });
   }
 });
 
@@ -226,7 +227,7 @@ router.get('/:id', apiLimiter, async (req, res) => {
 
     // 验证ID格式
     if (!isValidUUID(id)) {
-      return res.status(400).json({ error: 'ID格式无效' });
+      return res.status(400).json({ error: 'Invalid ID format' });
     }
 
     const result = await pool.query(
@@ -238,7 +239,7 @@ router.get('/:id', apiLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '剪贴板项不存在' });
+      return res.status(404).json({ error: 'Clipboard item not found' });
     }
 
     const item = result.rows[0];
@@ -259,8 +260,8 @@ router.get('/:id', apiLimiter, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Get clipboard item error:', err);
-    res.status(500).json({ error: '获取剪贴板项失败' });
+    logger.error('Get clipboard item error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to get clipboard item' });
   }
 });
 
@@ -271,23 +272,23 @@ router.post('/', apiLimiter, async (req, res) => {
 
     // 验证必填字段
     if (!sourceDeviceId || !contentEncrypted) {
-      return res.status(400).json({ error: 'sourceDeviceId 和 contentEncrypted 不能为空' });
+      return res.status(400).json({ error: 'sourceDeviceId and contentEncrypted are required' });
     }
 
     // 验证 UUID 格式
     if (!isValidUUID(sourceDeviceId)) {
-      return res.status(400).json({ error: 'sourceDeviceId 格式无效' });
+      return res.status(400).json({ error: 'Invalid sourceDeviceId format' });
     }
 
     // 验证内容大小（最大10MB）
     if (typeof contentEncrypted === 'string' && contentEncrypted.length > 10 * 1024 * 1024) {
-      return res.status(400).json({ error: '内容过大，最大支持10MB' });
+      return res.status(400).json({ error: 'Content too large, maximum size is 10MB' });
     }
 
     // Detect content type from preview or declared type
     const detectedType = detectContentType(contentPreview, contentType);
     if (!isValidContentType(detectedType)) {
-      return res.status(400).json({ error: `contentType 无效，可选值: text, image, file, link, code` });
+      return res.status(400).json({ error: 'Invalid contentType. Valid values: text, image, file, link, code' });
     }
 
     // 清理预览内容
@@ -300,7 +301,7 @@ router.post('/', apiLimiter, async (req, res) => {
     );
 
     if (deviceCheck.rows.length === 0) {
-      return res.status(404).json({ error: '设备不存在' });
+      return res.status(404).json({ error: 'Device not found' });
     }
 
     const result = await pool.query(
@@ -336,8 +337,8 @@ router.post('/', apiLimiter, async (req, res) => {
 
     // Send notification for new sync
     sendNotification(req.userId, {
-      title: '新内容已同步',
-      body: `${detectedType.toUpperCase()} 内容来自 ${deviceCheck.rows[0]?.device_name || '未知设备'}`,
+      title: 'New content synced',
+      body: `${detectedType.toUpperCase()} content from ${deviceCheck.rows[0]?.device_name || 'Unknown device'}`,
       data: { itemId: item.id, contentType: detectedType },
     });
 
@@ -351,8 +352,8 @@ router.post('/', apiLimiter, async (req, res) => {
       createdAt: item.created_at,
     });
   } catch (err) {
-    console.error('Create clipboard item error:', err);
-    res.status(500).json({ error: '创建剪贴板项失败' });
+    logger.error('Create clipboard item error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to create clipboard item' });
   }
 });
 
@@ -363,7 +364,7 @@ router.put('/:id/favorite', apiLimiter, async (req, res) => {
 
     // 验证ID格式
     if (!isValidUUID(id)) {
-      return res.status(400).json({ error: 'ID格式无效' });
+      return res.status(400).json({ error: 'Invalid ID format' });
     }
 
     const result = await pool.query(
@@ -375,7 +376,7 @@ router.put('/:id/favorite', apiLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '剪贴板项不存在' });
+      return res.status(404).json({ error: 'Clipboard item not found' });
     }
 
     res.json({ id: result.rows[0].id, isFavorite: result.rows[0].is_favorite });
@@ -387,8 +388,8 @@ router.put('/:id/favorite', apiLimiter, async (req, res) => {
       isFavorite: result.rows[0].is_favorite,
     });
   } catch (err) {
-    console.error('Toggle favorite error:', err);
-    res.status(500).json({ error: '切换收藏状态失败' });
+    logger.error('Toggle favorite error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to toggle favorite status' });
   }
 });
 
@@ -399,7 +400,7 @@ router.delete('/:id', apiLimiter, async (req, res) => {
 
     // 验证ID格式
     if (!isValidUUID(id)) {
-      return res.status(400).json({ error: 'ID格式无效' });
+      return res.status(400).json({ error: 'Invalid ID format' });
     }
 
     const result = await pool.query(
@@ -408,10 +409,10 @@ router.delete('/:id', apiLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '剪贴板项不存在' });
+      return res.status(404).json({ error: 'Clipboard item not found' });
     }
 
-    res.json({ message: '剪贴板项已删除' });
+    res.json({ message: 'Clipboard item deleted' });
 
     // Broadcast deletion to other devices
     broadcastToUser(req.userId, {
@@ -419,8 +420,8 @@ router.delete('/:id', apiLimiter, async (req, res) => {
       itemId: id,
     });
   } catch (err) {
-    console.error('Delete clipboard item error:', err);
-    res.status(500).json({ error: '删除剪贴板项失败' });
+    logger.error('Delete clipboard item error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to delete clipboard item' });
   }
 });
 
@@ -430,18 +431,18 @@ router.delete('/', apiLimiter, async (req, res) => {
     const { ids } = req.body;
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'ids 数组不能为空' });
+      return res.status(400).json({ error: 'ids array is required and cannot be empty' });
     }
 
     // 限制批量删除数量
     if (ids.length > 100) {
-      return res.status(400).json({ error: '单次最多删除100条' });
+      return res.status(400).json({ error: 'Maximum 100 items per batch delete' });
     }
 
     // 验证所有ID格式
     const invalidIds = ids.filter(id => !isValidUUID(id));
     if (invalidIds.length > 0) {
-      return res.status(400).json({ error: '存在无效的ID格式' });
+      return res.status(400).json({ error: 'One or more invalid ID formats' });
     }
 
     const result = await pool.query(
@@ -449,7 +450,7 @@ router.delete('/', apiLimiter, async (req, res) => {
       [ids, req.userId]
     );
 
-    res.json({ message: `${result.rowCount} 条记录已删除`, deletedIds: result.rows.map(r => r.id) });
+    res.json({ message: `${result.rowCount} records deleted`, deletedIds: result.rows.map(r => r.id) });
 
     // Broadcast batch deletion to other devices
     broadcastToUser(req.userId, {
@@ -457,8 +458,8 @@ router.delete('/', apiLimiter, async (req, res) => {
       itemIds: result.rows.map(r => r.id),
     });
   } catch (err) {
-    console.error('Batch delete error:', err);
-    res.status(500).json({ error: '批量删除失败' });
+    logger.error('Batch delete error:', { error: err.message });
+    res.status(500).json({ error: 'Batch delete failed' });
   }
 });
 
@@ -469,7 +470,7 @@ router.get('/sync/:deviceId', apiLimiter, async (req, res) => {
 
     // 验证设备ID格式
     if (!isValidUUID(deviceId)) {
-      return res.status(400).json({ error: '设备ID格式无效' });
+      return res.status(400).json({ error: 'Invalid device ID format' });
     }
 
     // 验证设备属于当前用户
@@ -479,7 +480,7 @@ router.get('/sync/:deviceId', apiLimiter, async (req, res) => {
     );
 
     if (deviceCheck.rows.length === 0) {
-      return res.status(404).json({ error: '设备不存在' });
+      return res.status(404).json({ error: 'Device not found' });
     }
 
     // Get last sync state
@@ -538,8 +539,8 @@ router.get('/sync/:deviceId', apiLimiter, async (req, res) => {
       hasMore: result.rows.length === 100,
     });
   } catch (err) {
-    console.error('Sync error:', err);
-    res.status(500).json({ error: '同步失败' });
+    logger.error('Sync error:', { error: err.message });
+    res.status(500).json({ error: 'Sync failed' });
   }
 });
 

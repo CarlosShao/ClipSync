@@ -77,7 +77,7 @@ router.get('/', authenticateToken, async (req, res) => {
     });
   } catch (err) {
     logger.error('Get invoices error:', err);
-    res.status(500).json({ error: '获取发票列表失败' });
+    res.status(500).json({ error: 'Failed to get invoice list' });
   }
 });
 
@@ -96,7 +96,7 @@ router.get('/:id/download', authenticateToken, async (req, res) => {
     );
     
     if (invoiceResult.rows.length === 0) {
-      return res.status(404).json({ error: '发票不存在' });
+      return res.status(404).json({ error: 'Invoice not found' });
     }
     
     const invoice = invoiceResult.rows[0];
@@ -115,10 +115,10 @@ router.get('/:id/download', authenticateToken, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="invoice_${invoice.invoice_no}.pdf"`);
     
     // 这里应该生成真实的PDF，暂时返回空响应
-    res.status(501).json({ error: 'PDF生成功能尚未实现' });
+    res.status(501).json({ error: 'PDF generation not yet implemented' });
   } catch (err) {
     logger.error('Download invoice error:', err);
-    res.status(500).json({ error: '下载发票失败' });
+    res.status(500).json({ error: 'Failed to download invoice' });
   }
 });
 
@@ -147,7 +147,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     `, [id, userId]);
     
     if (invoiceResult.rows.length === 0) {
-      return res.status(404).json({ error: '发票不存在' });
+      return res.status(404).json({ error: 'Invoice not found' });
     }
     
     const invoice = invoiceResult.rows[0];
@@ -170,7 +170,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     });
   } catch (err) {
     logger.error('Get invoice detail error:', err);
-    res.status(500).json({ error: '获取发票详情失败' });
+    res.status(500).json({ error: 'Failed to get invoice details' });
   }
 });
 

@@ -1,0 +1,22 @@
+info:
+  name: Minimax remaining
+  type: http
+  seq: 1
+
+http:
+  method: GET
+  url: https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains
+  headers:
+    - name: Authorization
+      value: Bearer sk-cp-XzIC7LHaj_EA4s9u850ONPWv12kNCNznLas5piQPdbHxbtv5-O-Un7AXyObSL0KzKpthMm4yO7cv_L_Y17v0JvsaIxb08toCqxHidpLpblah-ZEIC10VyvU
+  params:
+    - name: ""
+      value: ""
+      type: query
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

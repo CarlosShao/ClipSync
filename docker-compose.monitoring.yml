@@ -11,6 +11,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -24,6 +25,39 @@ services:
       - clipsync-monitoring-net
     labels:
       - "com.clipsync.service=prometheus"
+      - "com.clipsync.env=monitoring"
+
+  # Alertmanager 告警管理器
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: clipsync-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    networks:
+      - clipsync-monitoring-net
+    labels:
+      - "com.clipsync.service=alertmanager"
+      - "com.clipsync.env=monitoring"
+
+  # Blackbox Exporter（HTTP/SSL/TCP 探测）
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: clipsync-blackbox-exporter
+    restart: unless-stopped
+    ports:
+      - "9115:9115"
+    networks:
+      - clipsync-monitoring-net
+    labels:
+      - "com.clipsync.service=blackbox-exporter"
       - "com.clipsync.env=monitoring"
 
   # Grafana 可视化服务
@@ -41,6 +75,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
     networks:
@@ -63,7 +98,7 @@ services:
     command:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.filesystem.mount-points-exclude=^(/sys|/proc|/dev|/host|/etc)($$|/)'
     networks:
       - clipsync-monitoring-net
     labels:
@@ -80,6 +115,9 @@ volumes:
   prometheus_data:
     labels:
       - "com.clipsync.service=prometheus"
+  alertmanager_data:
+    labels:
+      - "com.clipsync.service=alertmanager"
   grafana_data:
     labels:
       - "com.clipsync.service=grafana"

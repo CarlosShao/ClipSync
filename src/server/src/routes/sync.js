@@ -24,15 +24,15 @@ router.post('/push', apiLimiter, async (req, res) => {
     const { deviceId, changes } = req.body;
 
     if (!deviceId || !isValidUUID(deviceId)) {
-      return res.status(400).json({ error: 'deviceId 无效' });
+      return res.status(400).json({ error: 'Invalid deviceId' });
     }
 
     if (!changes || !Array.isArray(changes) || changes.length === 0) {
-      return res.status(400).json({ error: 'changes 不能为空' });
+      return res.status(400).json({ error: 'Changes array is required and cannot be empty' });
     }
 
     if (changes.length > 50) {
-      return res.status(400).json({ error: '单次最多同步50条' });
+      return res.status(400).json({ error: 'Maximum 50 changes per request' });
     }
 
     // Verify device belongs to user
@@ -41,7 +41,7 @@ router.post('/push', apiLimiter, async (req, res) => {
       [deviceId, req.userId]
     );
     if (deviceCheck.rows.length === 0) {
-      return res.status(404).json({ error: '设备不存在' });
+      return res.status(404).json({ error: 'Device not found' });
     }
 
     const results = [];
@@ -225,7 +225,7 @@ router.post('/push', apiLimiter, async (req, res) => {
     res.json({ results, conflicts });
   } catch (err) {
     logger.error('Sync push error', { error: err.message });
-    res.status(500).json({ error: '同步推送失败' });
+    res.status(500).json({ error: 'Sync push failed' });
   }
 });
 
@@ -242,7 +242,7 @@ router.get('/pull/:deviceId', apiLimiter, async (req, res) => {
     const { since, limit = 100 } = req.query;
 
     if (!isValidUUID(deviceId)) {
-      return res.status(400).json({ error: '设备ID无效' });
+      return res.status(400).json({ error: 'Invalid device ID' });
     }
 
     // Verify device belongs to user
@@ -251,7 +251,7 @@ router.get('/pull/:deviceId', apiLimiter, async (req, res) => {
       [deviceId, req.userId]
     );
     if (deviceCheck.rows.length === 0) {
-      return res.status(404).json({ error: '设备不存在' });
+      return res.status(404).json({ error: 'Device not found' });
     }
 
     let query;
@@ -259,6 +259,7 @@ router.get('/pull/:deviceId', apiLimiter, async (req, res) => {
     let paramIndex = 3;
 
     if (since) {
+      // Optimized query: uses JOIN instead of NOT IN for better performance
       query = `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
                       ci.metadata, ci.is_favorite, ci.expires_at, ci.created_at, ci.updated_at,
                       ci.content_diff,
@@ -266,11 +267,9 @@ router.get('/pull/:deviceId', apiLimiter, async (req, res) => {
                       d.device_name, d.platform
                FROM clipboard_items ci
                LEFT JOIN devices d ON ci.source_device_id = d.id
+               LEFT JOIN device_sync_state dss ON dss.device_id = $2 AND dss.last_synced_item_id = ci.id
                WHERE ci.user_id = $1
-                 AND ci.id NOT IN (
-                   SELECT device_id FROM device_sync_state
-                   WHERE device_id = $2
-                 )
+                 AND dss.device_id IS NULL
                  AND ci.created_at > $${paramIndex}
                ORDER BY ci.created_at DESC
                LIMIT $2`;
@@ -325,7 +324,7 @@ router.get('/pull/:deviceId', apiLimiter, async (req, res) => {
     });
   } catch (err) {
     logger.error('Sync pull error', { error: err.message });
-    res.status(500).json({ error: '同步拉取失败' });
+    res.status(500).json({ error: 'Sync pull failed' });
   }
 });
 
@@ -336,7 +335,7 @@ router.get('/status/:deviceId', apiLimiter, async (req, res) => {
   try {
     const { deviceId } = req.params;
     if (!isValidUUID(deviceId)) {
-      return res.status(400).json({ error: '设备ID无效' });
+      return res.status(400).json({ error: 'Invalid device ID' });
     }
 
     const result = await pool.query(
@@ -360,7 +359,7 @@ router.get('/status/:deviceId', apiLimiter, async (req, res) => {
     });
   } catch (err) {
     logger.error('Sync status error', { error: err.message });
-    res.status(500).json({ error: '获取同步状态失败' });
+    res.status(500).json({ error: 'Failed to get sync status' });
   }
 });
 

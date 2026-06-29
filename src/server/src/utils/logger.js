@@ -6,7 +6,16 @@
  * 2. 结构化输出（JSON格式）
  * 3. 请求日志中间件
  * 4. 错误日志收集
+ * 5. 文件持久化（生产环境）
  */
+
+import { createWriteStream, appendFileSync } from 'fs';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const LOG_LEVELS = {
   debug: 0,
@@ -16,6 +25,25 @@ const LOG_LEVELS = {
 };
 
 const currentLevel = LOG_LEVELS[process.env.LOG_LEVEL || 'info'] || LOG_LEVELS.info;
+
+// 日志文件传输（生产环境）
+let logStream = null;
+const logFilePath = process.env.LOG_FILE || join(__dirname, '../../logs/clipsync.log');
+
+if (process.env.NODE_ENV === 'production') {
+  try {
+    const { mkdirSync } = await import('fs');
+    const logDir = join(__dirname, '../../logs');
+    mkdirSync(logDir, { recursive: true });
+    
+    logStream = createWriteStream(logFilePath, { flags: 'a' });
+    logStream.on('error', (err) => {
+      console.error('[Logger] Failed to write to log file:', err.message);
+    });
+  } catch (err) {
+    console.error('[Logger] Failed to initialize log file:', err.message);
+  }
+}
 
 /**
  * 格式化日志消息
@@ -33,30 +61,82 @@ function formatLog(level, message, meta = {}) {
 }
 
 /**
+ * 脱敏处理（防止敏感信息泄露）
+ */
+function sanitizeLog(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  
+  const sensitiveFields = ['password', 'token', 'secret', 'authorization', 'phone', 'email'];
+  const sanitized = { ...obj };
+  
+  for (const field of sensitiveFields) {
+    if (sanitized[field]) {
+      if (field === 'phone') {
+        // 手机号脱敏：138****5678
+        sanitized[field] = sanitized[field].replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
+      } else {
+        sanitized[field] = '***';
+      }
+    }
+  }
+  
+  return sanitized;
+}
+
+/**
+ * 写入日志（控制台 + 文件）
+ */
+function writeLog(level, message, meta = {}) {
+  const formatted = formatLog(level, message, meta);
+  
+  // 控制台输出
+  switch (level) {
+    case 'debug':
+      console.debug(formatted);
+      break;
+    case 'info':
+      console.info(formatted);
+      break;
+    case 'warn':
+      console.warn(formatted);
+      break;
+    case 'error':
+      console.error(formatted);
+      break;
+  }
+  
+  // 文件输出（生产环境）
+  if (logStream) {
+    const sanitized = sanitizeLog(JSON.parse(formatted));
+    logStream.write(JSON.stringify(sanitized) + '\n');
+  }
+}
+
+/**
  * 日志器
  */
 export const logger = {
   debug(message, meta = {}) {
     if (currentLevel <= LOG_LEVELS.debug) {
-      console.debug(formatLog('debug', message, meta));
+      writeLog('debug', message, meta);
     }
   },
 
   info(message, meta = {}) {
     if (currentLevel <= LOG_LEVELS.info) {
-      console.info(formatLog('info', message, meta));
+      writeLog('info', message, meta);
     }
   },
 
   warn(message, meta = {}) {
     if (currentLevel <= LOG_LEVELS.warn) {
-      console.warn(formatLog('warn', message, meta));
+      writeLog('warn', message, meta);
     }
   },
 
   error(message, meta = {}) {
     if (currentLevel <= LOG_LEVELS.error) {
-      console.error(formatLog('error', message, meta));
+      writeLog('error', message, meta);
     }
   },
 };

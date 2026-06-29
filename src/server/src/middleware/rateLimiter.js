@@ -11,51 +11,11 @@
  * 降级：Redis 不可用时使用内存 ZSET（单实例可用，不允许放行）
  */
 
-import Redis from 'redis';
+import { getRedisClient as getSharedRedisClient } from '../utils/redis-client.js';
+import { logger } from '../utils/logger.js';
 
-// Redis客户端（单例）
-let redisClient = null;
-let redisAvailable = false;
-
-export async function getRedisClient() {
-  if (!redisClient && process.env.REDIS_HOST) {
-    try {
-      redisClient = Redis.createClient({
-        url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT || 6379}`,
-        password: process.env.REDIS_PASSWORD || undefined,
-      });
-      redisClient.on('error', (err) => {
-        console.error('[RateLimiter] Redis error:', err.message);
-        redisAvailable = false;
-      });
-      redisClient.on('connect', () => {
-        console.log('[RateLimiter] Redis connected');
-        redisAvailable = true;
-      });
-      await redisClient.connect();
-      redisAvailable = true;
-    } catch (err) {
-      console.error('[RateLimiter] Failed to connect to Redis:', err.message);
-      redisAvailable = false;
-    }
-  }
-  
-  if (redisClient && !redisClient.isOpen) {
-    try {
-      await redisClient.connect();
-      redisAvailable = true;
-    } catch (err) {
-      redisAvailable = false;
-    }
-  }
-  
-  return redisClient;
-}
-
-/**
- * 内存存储（Redis 不可用时的降级方案）
- * 使用 Map<key, number[]> 存储时间戳列表
- */
+// 内存存储（Redis 不可用时的降级方案）
+// 使用 Map<key, number[]> 存储时间戳列表
 const memoryStores = {
   api: new Map(),
   sendCode: new Map(),
@@ -92,10 +52,10 @@ function cleanupMemoryStore(store, windowMs) {
  * - 精确控制速率
  */
 async function checkRateLimitRedis(key, windowMs, max) {
-  const client = await getRedisClient();
-  if (!client || !redisAvailable) {
+  const client = await getSharedRedisClient();
+  if (!client) {
     // Redis 不可用，降级到内存模式（不允许放行！）
-    console.warn('[RateLimiter] Redis unavailable, falling back to memory mode for key:', key);
+    logger.warn('[RateLimiter] Redis unavailable, falling back to memory mode for key:', { key });
     return checkRateLimitMemory(key, windowMs, max);
   }
   
@@ -131,7 +91,7 @@ async function checkRateLimitRedis(key, windowMs, max) {
       resetTime,
     };
   } catch (err) {
-    console.error('[RateLimiter] Redis operation failed:', err.message);
+    logger.error('[RateLimiter] Redis operation failed:', { error: err.message });
     // Redis 操作失败，降级到内存模式
     return checkRateLimitMemory(key, windowMs, max);
   }
@@ -184,7 +144,7 @@ function createRateLimiter(options) {
   const {
     windowMs = 60 * 1000,
     max = 100,
-    message = '请求过于频繁，请稍后再试',
+    message = 'Too many requests, please try again later',
     keyGenerator = (req) => req.ip || req.connection?.remoteAddress,
     storeName = 'api',
     skipSuccessfulRequests = false,
@@ -238,7 +198,7 @@ export const apiLimiter = process.env.NODE_ENV === 'test'
   : createRateLimiter({
       windowMs: 60 * 1000,  // 1分钟
       max: 100,             // 100次
-      message: 'API请求过于频繁，请稍后再试',
+      message: 'API rate limit exceeded, please try again later',
       keyGenerator: (req) => {
         return req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
                req.ip ||
@@ -254,7 +214,7 @@ export const apiLimiter = process.env.NODE_ENV === 'test'
 export const sendCodeLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,  // 1小时
   max: 5,                     // 5次
-  message: '验证码发送过于频繁，请1小时后再试',
+  message: 'Verification code rate limit exceeded, please try again in 1 hour',
   keyGenerator: (req) => {
     const phone = req.body?.phone;
     return phone ? `sendCode:${phone}` : 'sendCode:unknown';
@@ -269,7 +229,7 @@ export const sendCodeLimiter = createRateLimiter({
 export const loginFailedLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,  // 15分钟
   max: 5,                     // 5次
-  message: '登录失败次数过多，请15分钟后再试',
+  message: 'Too many login attempts, please try again in 15 minutes',
   keyGenerator: (req) => {
     const phone = req.body?.phone;
     return phone ? `loginFailed:${phone}` : 'loginFailed:unknown';
@@ -281,18 +241,20 @@ export const loginFailedLimiter = createRateLimiter({
  * 登录成功后清除失败记录
  */
 export function clearLoginFailed(phone) {
-  if (process.env.NODE_ENV === 'production' && process.env.REDIS_HOST) {
-    getRedisClient().then(client => {
-      if (client) {
-        const redisKey = `ratelimit:loginFailed:${phone}`;
-        client.del(redisKey).catch(() => {});
-      }
-    }).catch(() => {});
-  } else {
-    // 内存模式：移除该手机号的所有时间戳
+  getSharedRedisClient().then(client => {
+    if (client) {
+      const redisKey = `ratelimit:loginFailed:${phone}`;
+      client.del(redisKey).catch(() => {});
+    } else {
+      // Redis 不可用，清除内存存储
+      const key = `loginFailed:${phone}`;
+      memoryStores.loginFailed.delete(key);
+    }
+  }).catch(() => {
+    // Redis 不可用，清除内存存储
     const key = `loginFailed:${phone}`;
     memoryStores.loginFailed.delete(key);
-  }
+  });
 }
 
 /**
@@ -343,7 +305,7 @@ export function removeWsConnection(userId, deviceId) {
 export const strictLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 10,
-  message: '操作过于频繁，请稍后再试',
+  message: 'Too many requests, please try again later',
   storeName: 'api',
 });
 
@@ -354,18 +316,26 @@ export const strictLimiter = createRateLimiter({
 export const uploadLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 20,
-  message: '文件上传过于频繁，请稍后再试',
+  message: 'File upload rate limit exceeded, please try again later',
   storeName: 'api',
 });
 
 /**
  * 获取限流状态（用于调试）
  */
-export function getRateLimitStatus(storeName, key) {
-  if (process.env.NODE_ENV === 'production' && process.env.REDIS_HOST) {
-    return null; // Redis状态需直接查询Redis
+export async function getRateLimitStatus(storeName, key) {
+  const client = await getSharedRedisClient();
+  if (client) {
+    // Redis 模式：直接查询 Redis
+    const redisKey = `ratelimit:${key}`;
+    const timestamps = await client.zRangeByScore(redisKey, Date.now() - 60000, Date.now());
+    return {
+      count: timestamps.length,
+      resetTime: timestamps.length > 0 ? parseInt(timestamps[0].split(':')[0]) + 60000 : null,
+    };
   }
   
+  // Redis 不可用，查询内存存储
   const store = memoryStores[storeName];
   if (!store) return null;
   
@@ -383,20 +353,31 @@ export function getRateLimitStatus(storeName, key) {
 
 /**
  * 重置限流（用于测试）
+ * 使用 scan() 替代 keys() 避免阻塞 Redis
  */
-export function resetRateLimit(storeName, key) {
-  if (process.env.NODE_ENV === 'production' && process.env.REDIS_HOST) {
-    getRedisClient().then(client => {
-      if (client) {
-        const pattern = key ? `ratelimit:${key}` : 'ratelimit:*';
-        client.keys(pattern).then(keys => {
-          if (keys.length > 0) client.del(keys);
-        }).catch(() => {});
+export async function resetRateLimit(storeName, key) {
+  const client = await getSharedRedisClient();
+  if (client) {
+    const pattern = key ? `ratelimit:${key}` : 'ratelimit:*';
+    // 使用 scan() 迭代删除，避免 keys() 阻塞 Redis
+    let cursor = '0';
+    let deletedCount = 0;
+    do {
+      const [nextCursor, foundKeys] = await client.scan(cursor, {
+        MATCH: pattern,
+        COUNT: 100,
+      });
+      cursor = nextCursor;
+      if (foundKeys.length > 0) {
+        await client.del(foundKeys);
+        deletedCount += foundKeys.length;
       }
-    }).catch(() => {});
+    } while (cursor !== '0');
+    logger.info('[RateLimiter] Reset rate limits', { pattern, deletedCount });
     return true;
   }
   
+  // Redis 不可用，清除内存存储
   const store = memoryStores[storeName];
   if (!store) return false;
   

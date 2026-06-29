@@ -11,6 +11,7 @@ import {
   limitVersionsPerItem,
 } from '../utils/versionManager.js';
 import pool from '../db/pool.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -21,11 +22,11 @@ router.post('/', apiLimiter, async (req, res) => {
 
     // 验证必填字段
     if (!clipboardItemId) {
-      return res.status(400).json({ error: 'clipboardItemId 不能为空' });
+      return res.status(400).json({ error: 'clipboardItemId is required' });
     }
 
     if (!isValidUUID(clipboardItemId)) {
-      return res.status(400).json({ error: 'clipboardItemId 格式无效' });
+      return res.status(400).json({ error: 'Invalid clipboardItemId format' });
     }
 
     // 验证剪贴板项属于当前用户
@@ -35,7 +36,7 @@ router.post('/', apiLimiter, async (req, res) => {
     );
 
     if (itemCheck.rows.length === 0) {
-      return res.status(404).json({ error: '剪贴板项不存在' });
+      return res.status(404).json({ error: 'Clipboard item not found' });
     }
 
     const version = await createVersion({
@@ -56,8 +57,8 @@ router.post('/', apiLimiter, async (req, res) => {
       createdAt: version.created_at,
     });
   } catch (err) {
-    console.error('Create version error:', err);
-    res.status(500).json({ error: '创建版本失败' });
+    logger.error('Create version error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to create version' });
   }
 });
 
@@ -67,7 +68,7 @@ router.get('/:clipboardItemId', apiLimiter, async (req, res) => {
     const { clipboardItemId } = req.params;
 
     if (!isValidUUID(clipboardItemId)) {
-      return res.status(400).json({ error: 'clipboardItemId 格式无效' });
+      return res.status(400).json({ error: 'Invalid clipboardItemId format' });
     }
 
     const { page = 1, limit = 20 } = req.query;
@@ -80,8 +81,8 @@ router.get('/:clipboardItemId', apiLimiter, async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.error('Get version history error:', err);
-    res.status(500).json({ error: '获取版本历史失败' });
+    logger.error('Get version history error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to get version history' });
   }
 });
 
@@ -91,19 +92,19 @@ router.get('/detail/:versionId', apiLimiter, async (req, res) => {
     const { versionId } = req.params;
 
     if (!isValidUUID(versionId)) {
-      return res.status(400).json({ error: 'versionId 格式无效' });
+      return res.status(400).json({ error: 'Invalid versionId format' });
     }
 
     const version = await getVersionDetail(versionId, req.userId);
 
     if (!version) {
-      return res.status(404).json({ error: '版本不存在' });
+      return res.status(404).json({ error: 'Version not found' });
     }
 
     res.json(version);
   } catch (err) {
-    console.error('Get version detail error:', err);
-    res.status(500).json({ error: '获取版本详情失败' });
+    logger.error('Get version detail error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to get version detail' });
   }
 });
 
@@ -113,13 +114,13 @@ router.post('/restore/:versionId', apiLimiter, async (req, res) => {
     const { versionId } = req.params;
 
     if (!isValidUUID(versionId)) {
-      return res.status(400).json({ error: 'versionId 格式无效' });
+      return res.status(400).json({ error: 'Invalid versionId format' });
     }
 
     const result = await restoreVersion(versionId, req.userId);
 
     res.json({
-      message: '版本恢复成功',
+      message: 'Version restored successfully',
       item: {
         id: result.item.id,
         contentType: result.item.content_type,
@@ -131,11 +132,11 @@ router.post('/restore/:versionId', apiLimiter, async (req, res) => {
       newVersionNumber: result.newVersionNumber,
     });
   } catch (err) {
-    console.error('Restore version error:', err);
-    if (err.message === '版本不存在' || err.message === '剪贴板项不存在') {
+    logger.error('Restore version error:', { error: err.message });
+    if (err.message === 'Version not found' || err.message === 'Clipboard item not found') {
       return res.status(404).json({ error: err.message });
     }
-    res.status(500).json({ error: '恢复版本失败' });
+    res.status(500).json({ error: 'Failed to restore version' });
   }
 });
 
@@ -145,8 +146,8 @@ router.get('/stats/overview', apiLimiter, async (req, res) => {
     const stats = await getVersionStats(req.userId);
     res.json(stats);
   } catch (err) {
-    console.error('Get version stats error:', err);
-    res.status(500).json({ error: '获取版本统计失败' });
+    logger.error('Get version stats error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to get version stats' });
   }
 });
 
@@ -159,14 +160,14 @@ router.post('/cleanup', apiLimiter, async (req, res) => {
     const cleanedByCount = await limitVersionsPerItem(maxVersionsPerItem);
 
     res.json({
-      message: '版本清理完成',
+      message: 'Version cleanup completed',
       cleanedByAge,
       cleanedByCount,
       totalCleaned: cleanedByAge + cleanedByCount,
     });
   } catch (err) {
-    console.error('Cleanup versions error:', err);
-    res.status(500).json({ error: '版本清理失败' });
+    logger.error('Cleanup versions error:', { error: err.message });
+    res.status(500).json({ error: 'Version cleanup failed' });
   }
 });
 

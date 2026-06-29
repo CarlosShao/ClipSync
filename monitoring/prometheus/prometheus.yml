@@ -1,73 +1,91 @@
-# Prometheus 配置文件
-# ClipSync 生产环境监控配置
-
+# ClipSync Prometheus 配置
 global:
-  # 抓取间隔
   scrape_interval: 15s
   evaluation_interval: 15s
-  
-  # 外部标签
+  scrape_timeout: 10s
   external_labels:
-    monitor: 'clipsync-monitor'
-    environment: 'production'
+    monitor: 'clipsync-monitoring'
 
-# 告警规则配置（可选）
-# rule_files:
-#   - "alerts.yml"
+# 告警管理器配置
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'alertmanager:9093'
+
+# 告警规则文件
+rule_files:
+  - '/etc/prometheus/rules/clipsync-alerts.yml'
 
 # 抓取配置
 scrape_configs:
-  # ClipSync API 服务
+  # ClipSync API 服务（自身指标）
   - job_name: 'clipsync-api'
-    # 抓取间隔
-    scrape_interval: 10s
-    # 超时时间
-    scrape_timeout: 10s
-    # 目标地址（Docker 内部网络）
-    static_configs:
-      - targets: ['api-prod:3000']
-        labels:
-          service: 'clipsync-api'
-          env: 'production'
-    # metrics 端点路径
+    scrape_interval: 5s
     metrics_path: '/api/metrics/prometheus'
-    # 抓取失败重试
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: instance
-
-  # PostgreSQL 数据库（可选，需要 postgres_exporter）
-  # - job_name: 'postgres'
-  #   scrape_interval: 30s
-  #   static_configs:
-  #     - targets: ['postgres-exporter:9187']
-
-  # Redis 缓存（可选，需要 redis_exporter）
-  # - job_name: 'redis'
-  #   scrape_interval: 30s
-  #   static_configs:
-  #     - targets: ['redis-exporter:9121']
+    static_configs:
+      - targets: ['host.docker.internal:3000']
+        labels:
+          env: 'production'
+          service: 'clipsync-api'
 
   # Node Exporter（系统指标）
-  - job_name: 'node'
+  - job_name: 'node-exporter'
     scrape_interval: 15s
     static_configs:
       - targets: ['node-exporter:9100']
         labels:
-          service: 'system'
           env: 'production'
+          service: 'node-exporter'
 
-  # Prometheus 自身指标
+  # Prometheus 自身监控
   - job_name: 'prometheus'
-    scrape_interval: 15s
+    scrape_interval: 30s
     static_configs:
       - targets: ['localhost:9090']
-        labels:
-          service: 'prometheus'
-          env: 'production'
 
-# 告警管理器配置（可选）
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets: ['alertmanager:9093']
+  # Blackbox Exporter（HTTP/SSL 探测）
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - 'http://host.docker.internal:3000/api/health'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 'blackbox-exporter:9115'
+
+  # PostgreSQL 连接探测
+  - job_name: 'clipsync-db'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets: ['host.docker.internal:5432']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 'blackbox-exporter:9115'
+
+  # Redis 连接探测
+  - job_name: 'clipsync-redis'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets: ['host.docker.internal:6379']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 'blackbox-exporter:9115'

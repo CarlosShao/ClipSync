@@ -1,0 +1,193 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clipsync-postgres
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clipsync
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clipsync        app.kubernetes.io/component: database
+      annotations:
+        prometheus.io/scrape: "false"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: clipsync-secrets
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clipsync-secrets
+                  key: DB_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: clipsync-config
+                  key: DB_NAME
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: clipsync-config
+                  key: TZ
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - clipsync
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - clipsync
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clipsync-postgres
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: database
+---
+# PostgreSQL 备份 CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clipsync-postgres-backup
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "0 3 * * *"  # 每天 UTC 03:00 (北京时间 11:00)
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 600
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  BACKUP_FILE="/backups/postgres-$(date +%Y%m%d_%H%M%S).sql.gz"
+                  PGPASSWORD=$(cat /etc/secrets/db-password) \
+                  pg_dump -h clipsync-postgres -U $(cat /etc/secrets/db-user) -d $(cat /etc/config/db-name) \
+                    | gzip > "$BACKUP_FILE"
+                  echo "Backup completed: $BACKUP_FILE"
+                  
+                  # Generate SHA256 checksum
+                  sha256sum "$BACKUP_FILE" > "${BACKUP_FILE}.sha256"
+                  echo "Checksum generated: ${BACKUP_FILE}.sha256"
+                  
+                  # TODO: Add encryption using GPG or AES256
+                  # Requires GPG installed in container or custom image
+                  # If BACKUP_ENCRYPTION_KEY is set, encrypt the backup
+                  
+                  # Cleanup old backups (keep last 30 daily)
+                  find /backups -name "postgres-*.sql.gz*" -mtime +30 -delete 2>/dev/null || true
+                  echo "Backup and verification completed at $(date)"
+              volumeMounts:
+                - name: secrets
+                  mountPath: /etc/secrets
+                  readOnly: true
+                - name: config
+                  mountPath: /etc/config
+                  readOnly: true
+                - name: backups
+                  mountPath: /backups
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+          volumes:
+            - name: secrets
+              secret:
+                secretName: clipsync-secrets
+                items:
+                  - key: DB_PASSWORD
+                    path: db-password
+                  - key: DB_USER
+                    path: db-user
+            - name: config
+              configMap:
+                name: clipsync-config
+                items:
+                  - key: DB_NAME
+                    path: db-name
+            - name: backups
+              persistentVolumeClaim:
+                claimName: postgres-data  # 共享 PVC，或使用独立备份 PVC

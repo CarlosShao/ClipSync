@@ -1,13 +1,14 @@
 import pool from './pool.js';
+import { logger } from '../utils/logger.js';
 
 async function resetDatabase() {
-  console.log('⚠️  警告：这将删除所有数据！');
-  console.log('开始重置数据库...');
+  logger.warn('⚠️  警告：这将删除所有数据！');
+  logger.info('开始重置数据库...');
   
   const client = await pool.connect();
   try {
     // 删除所有表（按依赖顺序）
-    console.log('删除现有表...');
+    logger.info('删除现有表...');
     await client.query('DROP TABLE IF EXISTS file_versions CASCADE');
     await client.query('DROP TABLE IF EXISTS device_sync_state CASCADE');
     await client.query('DROP TABLE IF EXISTS clipboard_items CASCADE');
@@ -18,11 +19,10 @@ async function resetDatabase() {
     // 删除触发器（如果存在）
     await client.query('DROP FUNCTION IF EXISTS clipsync_update_search_vector() CASCADE');
     
-    console.log('✅ 所有表已删除');
-    console.log('');
+    logger.info('✅ 所有表已删除');
     
     // 重新运行迁移
-    console.log('开始重新创建表...');
+    logger.info('开始重新创建表...');
     
     const migrations = [
       // 1. Users table
@@ -116,16 +116,14 @@ async function resetDatabase() {
     ];
 
     for (let i = 0; i < migrations.length; i++) {
-      console.log(`  迁移 ${i + 1}/${migrations.length}...`);
+      logger.info(`  迁移 ${i + 1}/${migrations.length}...`);
       await client.query(migrations[i]);
     }
     
-    console.log('');
-    console.log('✅ 所有表创建成功');
-    console.log('');
+    logger.info('✅ 所有表创建成功');
     
     // 添加全文搜索支持
-    console.log('添加全文搜索支持...');
+    logger.info('添加全文搜索支持...');
     await client.query(`
       DO $$
       BEGIN
@@ -148,12 +146,11 @@ async function resetDatabase() {
     
     await client.query(`CREATE INDEX IF NOT EXISTS idx_clipboard_search ON clipboard_items USING GIN(search_vector)`);
     
-    console.log('✅ 全文搜索支持已添加');
-    console.log('');
-    console.log('🎉 数据库重置完成！');
+    logger.info('✅ 全文搜索支持已添加');
+    logger.info('🎉 数据库重置完成！');
     
   } catch (err) {
-    console.error('❌ 重置失败:', err.message);
+    logger.error('❌ 重置失败:', { error: err.message });
     throw err;
   } finally {
     client.release();
@@ -162,6 +159,6 @@ async function resetDatabase() {
 }
 
 resetDatabase().catch((err) => {
-  console.error(err);
+  logger.error('Reset failed:', { error: err.message });
   process.exit(1);
 });
