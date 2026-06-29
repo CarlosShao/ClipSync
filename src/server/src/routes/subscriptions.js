@@ -174,10 +174,10 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
       `, ['cancelled', current.id]);
       
       const newSubscriptionResult = await pool.query(`
-        INSERT INTO user_subscriptions (user_id, plan_id, status, current_period_start, current_period_end)
-        VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '1 ${billingCycle === 'yearly' ? 'year' : 'month'}')
+        INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, end_date, current_period_start, current_period_end, billing_cycle)
+        VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '1 ${billingCycle === 'yearly' ? 'year' : 'month'}', NOW(), NOW() + INTERVAL '1 ${billingCycle === 'yearly' ? 'year' : 'month'}', $4)
         RETURNING id
-      `, [userId, planId, 'active']);
+      `, [userId, planId, 'active', billingCycle]);
       
       // 更新用户订阅状态
       await pool.query(
@@ -217,13 +217,14 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
       const trialEnd = isTrial ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null;
       
       const subscriptionResult = await pool.query(`
-        INSERT INTO user_subscriptions (user_id, plan_id, status, current_period_start, current_period_end, trial_end)
-        VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '1 ${billingCycle === 'yearly' ? 'year' : 'month'}', $4)
+        INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, end_date, current_period_start, current_period_end, billing_cycle, trial_end)
+        VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '1 ${billingCycle === 'yearly' ? 'year' : 'month'}', NOW(), NOW() + INTERVAL '1 ${billingCycle === 'yearly' ? 'year' : 'month'}', $4, $5)
         RETURNING id
       `, [
         userId,
         planId,
         isTrial ? 'trial' : 'active',
+        billingCycle,
         trialEnd
       ]);
       
