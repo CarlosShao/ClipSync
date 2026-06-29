@@ -18,7 +18,7 @@ router.post('/create-order', authenticateToken, async (req, res) => {
     const { subscriptionId, paymentMethod = 'mock' } = req.body;
     
     if (!subscriptionId) {
-      return res.status(400).json({ error: '缺少subscriptionId参数' });
+      return res.status(400).json({ error: 'Missing subscriptionId parameter' });
     }
     
     // 验证订阅是否存在
@@ -28,7 +28,7 @@ router.post('/create-order', authenticateToken, async (req, res) => {
     );
     
     if (subscriptionResult.rows.length === 0) {
-      return res.status(404).json({ error: '订阅不存在' });
+      return res.status(404).json({ error: 'Subscription not found' });
     }
     
     const subscription = subscriptionResult.rows[0];
@@ -72,7 +72,7 @@ router.post('/create-order', authenticateToken, async (req, res) => {
       logger.info(`Mock payment successful for order ${orderNo}`);
       
       return res.json({
-        message: '订单创建成功，Mock支付已完成',
+        message: 'Order created, mock payment completed',
         order: {
           id: order.id,
           orderNo: order.order_no,
@@ -89,7 +89,7 @@ router.post('/create-order', authenticateToken, async (req, res) => {
     logger.info(`Payment order created: ${orderNo}, method: ${paymentMethod}`);
     
     res.json({
-      message: '订单创建成功，请完成支付',
+      message: 'Order created, please complete payment',
       order: {
         id: order.id,
         orderNo: order.order_no,
@@ -106,7 +106,7 @@ router.post('/create-order', authenticateToken, async (req, res) => {
     });
   } catch (err) {
     logger.error('Create payment order error:', err);
-    res.status(500).json({ error: '创建支付订单失败' });
+    res.status(500).json({ error: 'Failed to create payment order' });
   }
 });
 
@@ -125,7 +125,7 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
     );
     
     if (orderResult.rows.length === 0) {
-      return res.status(404).json({ error: '订单不存在' });
+      return res.status(404).json({ error: 'Order not found' });
     }
     
     const order = orderResult.rows[0];
@@ -145,7 +145,7 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
     });
   } catch (err) {
     logger.error('Get order status error:', err);
-    res.status(500).json({ error: '查询订单状态失败' });
+    res.status(500).json({ error: 'Failed to query order status' });
   }
 });
 
@@ -155,13 +155,9 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
  */
 router.post('/webhooks/wechat-pay', webhookSignatureVerifier, webhookIdempotencyMiddleware(), async (req, res) => {
   try {
-    logger.info('WeChat Pay webhook received (mock)', { body: req.body });
+    logger.info('WeChat Pay webhook received', { orderNo: req.body.orderNo });
     
-    // TODO: 验证签名（需要微信支付商户号）
-    // const isValid = verifyWeChatSignature(req.headers['x-wxp-signature'], req.body);
-    // if (!isValid) return res.status(401).json({ error: 'Invalid signature' });
-    
-    // Mock处理逻辑
+    // 签名验证已由 webhookSignatureVerifier 中间件完成
     const { orderNo, transactionId, status } = req.body;
     
     if (status === 'SUCCESS') {
@@ -189,10 +185,10 @@ router.post('/webhooks/wechat-pay', webhookSignatureVerifier, webhookIdempotency
     }
     
     // 微信支付要求返回特定格式
-    res.json({ code: 'SUCCESS', message: '成功' });
+    res.json({ code: 'SUCCESS', message: 'Success' });
   } catch (err) {
     logger.error('WeChat Pay webhook error:', err);
-    res.status(500).json({ code: 'FAIL', message: '失败' });
+    res.status(500).json({ code: 'FAIL', message: 'Failed' });
   }
 });
 
@@ -202,13 +198,9 @@ router.post('/webhooks/wechat-pay', webhookSignatureVerifier, webhookIdempotency
  */
 router.post('/webhooks/alipay', webhookSignatureVerifier, webhookIdempotencyMiddleware(), async (req, res) => {
   try {
-    logger.info('Alipay webhook received (mock)', { body: req.body });
+    logger.info('Alipay webhook received', { outTradeNo: req.body.out_trade_no });
     
-    // TODO: 验证签名（需要支付宝商户号）
-    // const isValid = verifyAlipaySignature(req.body);
-    // if (!isValid) return res.status(401).send('failure');
-    
-    // Mock处理逻辑
+    // 签名验证已由 webhookSignatureVerifier 中间件完成
     const { out_trade_no, trade_no, trade_status } = req.body;
     
     if (trade_status === 'TRADE_SUCCESS') {
@@ -245,25 +237,22 @@ router.post('/webhooks/alipay', webhookSignatureVerifier, webhookIdempotencyMidd
 
 /**
  * POST /api/webhooks/stripe
- * Stripe Webhook 事件处理（Mock）
+ * Stripe Webhook 事件处理
  */
 router.post('/webhooks/stripe', webhookSignatureVerifier, webhookIdempotencyMiddleware(), async (req, res) => {
   try {
     const sig = req.headers['stripe-signature'];
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || 'mock_secret';
     
-    logger.info('Stripe webhook received (mock)', { headers: req.headers });
+    logger.info('Stripe webhook received', { hasSignature: !!sig });
     
-    // TODO: 验证Stripe签名
-    // let event;
-    // try {
-    //   event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-    // } catch (err) {
-    //   return res.status(401).send(`Webhook signature verification failed.`);
-    // }
+    // 使用验证后的事件（由webhookSignatureVerifier中间件附加）
+    const event = req.stripeEvent || req.body;
     
-    // Mock处理逻辑
-    const event = req.body;
+    if (!event || !event.type) {
+      logger.error('Stripe webhook: Invalid event object');
+      return res.status(400).json({ error: 'Invalid event' });
+    }
     
     switch (event.type) {
       case 'checkout.session.completed':
@@ -309,3 +298,66 @@ router.post('/webhooks/stripe', webhookSignatureVerifier, webhookIdempotencyMidd
 });
 
 export default router;
+
+/**
+ * GET /api/invoices/:id/download
+ * 下载电子发票 PDF
+ */
+router.get('/invoices/:id/download', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const invoiceId = req.params.id;
+    
+    // 查询发票
+    const invoiceResult = await pool.query(
+      'SELECT * FROM invoices WHERE id = $1 AND user_id = $2',
+      [invoiceId, userId]
+    );
+    
+    if (invoiceResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+    
+    const invoice = invoiceResult.rows[0];
+    
+    // 查询订单
+    const orderResult = await pool.query(
+      'SELECT * FROM payment_orders WHERE id = $1 AND user_id = $2',
+      [invoice.order_id, userId]
+    );
+    
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    const order = orderResult.rows[0];
+    
+    // 查询用户
+    const userResult = await pool.query(
+      'SELECT id, phone, email, nickname FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // 生成 PDF
+    const { generateInvoicePDF } = await import('../utils/pdf-invoice.js');
+    const pdfBuffer = await generateInvoicePDF(invoice, user, order);
+    
+    // 返回 PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.invoice_no}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    res.send(pdfBuffer);
+    
+    logger.info(`Invoice PDF downloaded: ${invoice.invoice_no}, user: ${userId}`);
+  } catch (err) {
+    logger.error('Download invoice PDF error:', err);
+    res.status(500).json({ error: 'Failed to download invoice' });
+  }
+});
