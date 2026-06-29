@@ -3,8 +3,8 @@
  * 使用 pdfkit 生成电子发票 PDF
  */
 
-const PDFDocument = require('pdfkit');
-const { logger } = require('./logger');
+import PDFDocument from 'pdfkit';
+import { logger } from './logger.js';
 
 /**
  * 生成发票 PDF
@@ -221,6 +221,6 @@ function _getPaymentMethodText(method) {
   return methodMap[method] || method;
 }
 
-module.exports = {
+export {
   generateInvoicePDF,
 };
