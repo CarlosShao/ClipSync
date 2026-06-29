@@ -81,8 +81,8 @@ describe('Subscription API - Database Tests', () => {
         const planId = planRes.rows[0].id;
 
         const res = await pool.query(`
-          INSERT INTO user_subscriptions (user_id, plan_id, status, current_period_start, current_period_end, subscription_token_encrypted)
-          VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 month', 'encrypted_token_test')
+          INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, end_date, current_period_start, current_period_end, billing_cycle, subscription_token_encrypted)
+          VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 month', NOW(), NOW() + INTERVAL '1 month', 'monthly', 'encrypted_token_test')
           RETURNING id, status
         `, [testUserId, planId]);
 
@@ -112,18 +112,18 @@ describe('Subscription API - Database Tests', () => {
 
         // 先创建一个订阅
         const subRes = await pool.query(`
-          INSERT INTO user_subscriptions (user_id, plan_id, status, current_period_start, current_period_end)
-          VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 month')
+          INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, end_date, current_period_start, current_period_end, billing_cycle)
+          VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 month', NOW(), NOW() + INTERVAL '1 month', 'monthly')
           RETURNING id
         `, [testUserId, planId]);
 
         const subscriptionId = subRes.rows[0].id;
 
         const res = await pool.query(`
-          INSERT INTO payment_orders (user_id, subscription_id, order_no, amount, currency, payment_method, status, payment_token_encrypted)
+          INSERT INTO payment_orders (user_id, plan_id, order_no, amount, currency, payment_method, status, payment_token_encrypted)
           VALUES ($1, $2, 'TEST_ORDER_001', 9.99, 'CNY', 'wechat', 'pending', 'encrypted_payment_token')
           RETURNING id, status
-        `, [testUserId, subscriptionId]);
+        `, [testUserId, planId]);
 
         expect(res.rows.length).toBe(1);
         expect(res.rows[0].status).toBe('pending');

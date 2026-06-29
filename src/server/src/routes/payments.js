@@ -297,12 +297,8 @@ router.post('/webhooks/stripe', webhookSignatureVerifier, webhookIdempotencyMidd
   }
 });
 
-export default router;
 
 /**
- * GET /api/invoices/:id/download
- * 下载电子发票 PDF
- */
 router.get('/invoices/:id/download', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;

@@ -401,3 +401,6 @@ export default {
   getRateLimitStatus,
   resetRateLimit,
 };
+
+// Export factory function for creating custom rate limiters
+export { createRateLimiter };

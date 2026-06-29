@@ -11,7 +11,7 @@
  * - 可针对特定路由设置不同超时
  */
 
-import { logger } from './logger.js';
+import { logger } from '../utils/logger.js';
 
 // 默认超时（毫秒）
 const DEFAULT_TIMEOUT = 30000; // 30 秒

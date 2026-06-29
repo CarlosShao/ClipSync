@@ -1,6 +1,26 @@
 -- Phase 9.3 通知偏好 - 数据库迁移
 -- 执行日期：2026-06-26
 
+-- 9.3.0 创建用户通知偏好表（如果不存在）
+CREATE TABLE IF NOT EXISTS notification_preferences (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  notification_type VARCHAR(50) NOT NULL,
+  enabled BOOLEAN DEFAULT true,
+  title VARCHAR(255),
+  content TEXT,
+  status VARCHAR(20) DEFAULT 'sent' CHECK (status IN ('sent', 'failed', 'pending')),
+  sent_at TIMESTAMP,
+  read_at TIMESTAMP,
+  metadata JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(user_id, notification_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_preferences_user_id ON notification_preferences(user_id);
+CREATE INDEX IF NOT EXISTS idx_notification_preferences_type ON notification_preferences(notification_type);
+
 -- 9.3.1 用户通知偏好表（已存在，验证结构）
 -- 实际表结构：id, user_id, notification_type, enabled, created_at, updated_at
 -- 如果缺少字段则补充

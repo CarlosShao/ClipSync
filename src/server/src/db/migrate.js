@@ -1,5 +1,7 @@
 import pool from './pool.js';
 import { logger } from '../utils/logger.js';
+import fs from 'fs';
+import path from 'path';
 
 const migrations = [
   // 1. Users table
@@ -119,15 +121,64 @@ async function migrate() {
   logger.info('Running database migrations...');
   const client = await pool.connect();
   try {
+    // 创建 schema_migrations 表（如果不存在）
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version VARCHAR(50) PRIMARY KEY,
+        applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+
+    // 执行内嵌迁移
     for (let i = 0; i < migrations.length; i++) {
       logger.info(`  Migration ${i + 1}/${migrations.length}...`);
       await client.query(migrations[i]);
     }
+
+    // 执行 migrations/ 目录中的 SQL 文件
+    const migrationsDir = path.resolve('./src/db/migrations');
+    
+    if (fs.existsSync(migrationsDir)) {
+      const files = fs.readdirSync(migrationsDir)
+        .filter(f => f.endsWith('.sql'))
+        .sort(); // 按文件名排序（004, 005, 006...）
+      
+      for (const file of files) {
+        const version = file.split('_')[0]; // 提取版本号（如 "004"）
+        
+        // 检查是否已执行
+        const result = await client.query(
+          'SELECT 1 FROM schema_migrations WHERE version = $1',
+          [version]
+        );
+        
+        if (result.rows.length === 0) {
+          logger.info(`  SQL Migration ${file}...`);
+          const sql = fs.readFileSync(`${migrationsDir}/${file}`, 'utf8');
+          
+          // 执行 SQL（可能包含多个语句）
+          await client.query(sql);
+          
+          // 记录已执行
+          await client.query(
+            'INSERT INTO schema_migrations (version, applied_at) VALUES ($1, NOW()) ON CONFLICT DO NOTHING',
+            [version]
+          );
+          
+          logger.info(`    ✓ ${file} applied successfully`);
+        } else {
+          logger.info(`  SQL Migration ${file} (skipped, already applied)`);
+        }
+      }
+    }
+
+    // 执行后迁移
     logger.info('Running post-migrations (tsvector)...');
     for (let i = 0; i < postMigrations.length; i++) {
       logger.info(`  Post-migration ${i + 1}/${postMigrations.length}...`);
       await client.query(postMigrations[i]);
     }
+
     logger.info('All migrations completed successfully.');
   } finally {
     client.release();

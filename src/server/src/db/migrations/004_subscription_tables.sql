@@ -29,8 +29,11 @@ CREATE TABLE IF NOT EXISTS user_subscriptions (
   billing_cycle VARCHAR(10) NOT NULL CHECK (billing_cycle IN ('monthly', 'yearly')),
   start_date TIMESTAMP NOT NULL,
   end_date TIMESTAMP NOT NULL,
+  current_period_start TIMESTAMP,
+  current_period_end TIMESTAMP,
   auto_renew BOOLEAN NOT NULL DEFAULT true,
   payment_method VARCHAR(20), -- wechat, alipay, stripe, apple_iap, google_play
+  subscription_token_encrypted TEXT, -- 加密的订阅令牌（用于第三方支付）
   external_subscription_id VARCHAR(255), -- 第三方订阅ID
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
