@@ -13,7 +13,7 @@ const { logger } = require('./logger');
  * @param {Object} order - 订单数据
  * @returns {Promise<Buffer>} PDF Buffer
  */
-export async function generateInvoicePDF(invoice, user, order) {
+async function generateInvoicePDF(invoice, user, order) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -221,6 +221,6 @@ function _getPaymentMethodText(method) {
   return methodMap[method] || method;
 }
 
-export default {
+module.exports = {
   generateInvoicePDF,
 };
