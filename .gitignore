@@ -13,7 +13,7 @@ build/
 .env.*
 !.env.example
 !.env.test
-!.env.development
+!.env.development.example
 
 # IDE
 .vscode/

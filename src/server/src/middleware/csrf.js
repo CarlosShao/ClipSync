@@ -174,7 +174,7 @@ export async function csrfProtection(req, res, next) {
     });
     
     return res.status(403).json({ 
-      error: 'CSRF令牌无效或已过期',
+      error: 'Invalid or expired CSRF token',
       code: 'CSRF_INVALID'
     });
   }
@@ -188,7 +188,7 @@ export async function handleGetCsrfToken(req, res) {
   const sessionId = req.sessionID || req.headers['x-session-id'];
   
   if (!userId) {
-    return res.status(401).json({ error: '需要登录' });
+    return res.status(401).json({ error: 'Authentication required' });
   }
   
   const token = await generateCsrfToken(userId, sessionId);

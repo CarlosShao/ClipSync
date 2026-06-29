@@ -71,7 +71,7 @@ export async function createVersion({
         contentSize,
         JSON.stringify(metadata || {}),
         sourceDeviceId,
-        changeDescription || `版本 ${nextVersionNumber}`,
+        changeDescription || `Version ${nextVersionNumber}`,
       ]
     );
 
@@ -194,7 +194,7 @@ export async function restoreVersion(versionId, userId) {
     );
 
     if (versionResult.rows.length === 0) {
-      throw new Error('版本不存在');
+      throw new Error('Version not found');
     }
 
     const version = versionResult.rows[0];
@@ -220,7 +220,7 @@ export async function restoreVersion(versionId, userId) {
     );
 
     if (updateResult.rows.length === 0) {
-      throw new Error('剪贴板项不存在');
+      throw new Error('Clipboard item not found');
     }
 
     // 为恢复操作创建新版本记录
@@ -245,7 +245,7 @@ export async function restoreVersion(versionId, userId) {
         version.content_size,
         version.metadata,
         version.source_device_id,
-        `恢复到版本 ${version.version_number}`,
+        `Restored to version ${version.version_number}`,
       ]
     );
 

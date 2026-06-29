@@ -1,16 +1,23 @@
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import { createServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Redis from 'redis';
+import { getRedisClient } from './middleware/rateLimiter.js';
 import config from './config.js';
-import { setupWebSocket } from './ws/server.js';
+import { setupWebSocket, gracefulShutdown as gracefulShutdownWs } from './ws/server.js';
 import { authenticateToken } from './middleware/auth.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { metricsMiddleware, getMetrics, getPrometheusMetrics } from './middleware/metrics.js';
 import { requestLogger, errorLogger, logger } from './utils/logger.js';
+import { requestTimeout, requestId } from './middleware/request-timeout.js';
 import authRoutes from './routes/auth.js';
+import authVerifyRoutes from './routes/auth-verify.js';
+import authPasswordRoutes from './routes/auth-password.js';
+import authProfileRoutes from './routes/auth-profile.js';
+import authSessionRoutes from './routes/auth-session.js';
 import deviceRoutes from './routes/device.js';
 import clipboardRoutes from './routes/clipboard.js';
 import mediaRoutes from './routes/media.js';
@@ -27,6 +34,8 @@ import notificationRoutes from './routes/notifications.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import paymentRoutes from './routes/payments.js';
 import invoiceRoutes from './routes/invoices.js';
+import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
+import { memoryMonitor } from './utils/db-retry.js';
 import metricsRoutes from './routes/metrics.js';
 
 const app = express();
@@ -46,12 +55,19 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   // 权限策略
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // CSP（防XSS和数据注入）
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'");
   // HSTS（生产环境启用）
   if (config.nodeEnv === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
   next();
 });
+
+// ============================================
+// Request ID（请求追踪）
+// ============================================
+app.use(requestId());
 
 // ============================================
 // CSRF Protection - placed after authenticateToken for protected routes
@@ -86,6 +102,23 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // ============================================
+// Raw Body Saver (for webhook signature verification)
+// ============================================
+// 保存原始请求体用于Webhook签名验证（如Stripe）
+app.use((req, res, next) => {
+  if (req.path.includes('/webhooks/') || req.headers['stripe-signature']) {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      req.rawBody = Buffer.concat(chunks).toString('utf8');
+      next();
+    });
+  } else {
+    next();
+  }
+});
+
+// ============================================
 // Body Parser with size limits
 // ============================================
 app.use(express.json({ limit: '5mb' }));
@@ -95,10 +128,65 @@ app.use(express.urlencoded({ extended: false, limit: '5mb' }));
 app.disable('x-powered-by');
 
 // ============================================
+// Request Timeout Middleware
+// ============================================
+// 所有请求超时设置（防止挂起请求消耗资源）
+const REQUEST_TIMEOUT = parseInt(process.env.REQUEST_TIMEOUT) || 30000; // 默认30秒
+
+app.use((req, res, next) => {
+  // 设置请求超时
+  req.setTimeout(REQUEST_TIMEOUT, () => {
+    if (!res.headersSent) {
+      logger.warn('Request timeout', {
+        path: req.path,
+        method: req.method,
+        timeout: REQUEST_TIMEOUT,
+      });
+      res.status(408).json({ error: 'Request timeout' });
+    }
+    req.destroy();
+  });
+
+  // 响应超时（如果请求处理时间超过限制）
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      logger.warn('Response timeout', {
+        path: req.path,
+        method: req.method,
+      });
+      res.status(408).json({ error: 'Response timeout' });
+    }
+  }, REQUEST_TIMEOUT);
+
+  res.on('finish', () => {
+    clearTimeout(timeout);
+  });
+
+  next();
+});
+
+// ============================================
 // Request Logging
 // ============================================
 // app.use(requestLogger);
 app.use(metricsMiddleware);
+
+// ============================================
+// Memory Monitor (内存使用监控)
+// ============================================
+app.use(memoryMonitor);
+
+// ============================================
+// Response Compression（响应压缩 - 减少带宽占用）
+// ============================================
+app.use(compression({
+  filter: (req, res) => {
+    // 不压缩 WebSocket 升级请求
+    if (req.headers['upgrade']) return false;
+    return compression.filter(req, res);
+  },
+  threshold: 1024, // 仅压缩大于 1KB 的响应
+}));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -139,19 +227,17 @@ app.get('/api/ready', async (req, res) => {
     details.database = `error: ${err.message}`;
   }
 
-  // 2. 检查 Redis
+  // 2. 检查 Redis (reuse existing client)
   if (process.env.REDIS_HOST) {
     try {
-      const client = Redis.createClient({
-        url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT || 6379}`,
-        password: process.env.REDIS_PASSWORD || undefined,
-      });
-      await client.connect();
-      const pong = await client.ping();
-      await client.quit();
-      
-      checks.redis = true;
-      details.redis = 'connected';
+      const client = await getRedisClient();
+      if (client) {
+        const pong = await client.ping();
+        checks.redis = true;
+        details.redis = 'connected';
+      } else {
+        details.redis = 'client not available';
+      }
     } catch (err) {
       details.redis = `error: ${err.message}`;
     }
@@ -195,9 +281,47 @@ app.get('/api/metrics/prometheus', (req, res) => {
 });
 
 // ============================================
+// Admin API（慢查询、连接池状态）
+// ============================================
+app.get('/api/admin/slow-queries', authenticateToken, async (req, res) => {
+  // ✅ Red Team 修复 P0-4: 管理员权限检查
+  // 方案：检查 users.is_admin 字段（需在数据库中 ALTER TABLE ADD COLUMN is_admin BOOLEAN DEFAULT FALSE）
+  // 临时方案：检查 JWT 中的管理员声明（需手动设置 JWT secret 为特定值）
+  // 生产环境建议使用专门的管理员认证中间件
+  try {
+    const adminCheck = await pool.query('SELECT is_admin FROM users WHERE id = $1', [req.user.userId]);
+    if (!adminCheck.rows[0]?.is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+  } catch (err) {
+    logger.error('Admin check failed:', { error: err.message });
+    return res.status(500).json({ error: 'Admin check failed' });
+  }
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+    const minTime = parseInt(req.query.minTime) || 1000;
+    const slowQueries = await getSlowQueries(limit, minTime);
+    const poolStatus = await getPoolStatus();
+
+    res.json({
+      slowQueries,
+      poolStatus,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.error('Failed to get slow queries:', { error: err.message });
+    res.status(500).json({ error: 'Failed to get slow queries' });
+  }
+});
+
+// ============================================
 // API Routes（全局速率限制）
 // ============================================
 app.use('/api/auth', authRoutes);
+app.use('/api/auth', authVerifyRoutes);
+app.use('/api/auth', authPasswordRoutes);
+app.use('/api/auth', authProfileRoutes);
+app.use('/api/auth', authSessionRoutes);
 app.use('/api/devices', apiLimiter, authenticateToken, csrfProtection, subscriptionCheck, checkDeviceLimit, (req, res, next) => {
   req.userId = req.user.userId;
   next();
@@ -247,7 +371,7 @@ app.use('/api/invoices', apiLimiter, authenticateToken, csrfProtection, invoiceR
 // ============================================
 app.use((req, res) => {
   logger.warn('404 Not Found', { method: req.method, url: req.url, ip: req.ip });
-  res.status(404).json({ error: '接口不存在' });
+  res.status(404).json({ error: 'Endpoint not found' });
 });
 
 // ============================================
@@ -257,23 +381,23 @@ app.use(errorLogger);
 app.use((err, req, res, next) => {
   // CORS错误
   if (err.message === 'CORS not allowed') {
-    return res.status(403).json({ error: '跨域请求被拒绝' });
+    return res.status(403).json({ error: 'CORS request rejected' });
   }
 
   // JSON解析错误
   if (err.type === 'entity.parse.failed') {
-    return res.status(400).json({ error: '请求体JSON格式无效' });
+    return res.status(400).json({ error: 'Invalid JSON in request body' });
   }
 
   // 请求体过大
   if (err.type === 'entity.too.large') {
-    return res.status(413).json({ error: '请求体过大' });
+    return res.status(413).json({ error: 'Request body too large' });
   }
 
   // 其他错误
   const statusCode = err.statusCode || 500;
   res.status(statusCode).json({
-    error: config.nodeEnv === 'production' ? '服务器内部错误' : err.message,
+    error: config.nodeEnv === 'production' ? 'Internal server error' : err.message,
   });
 });
 
@@ -293,7 +417,7 @@ if (process.env.NODE_ENV !== 'test') {
       pid: process.pid,
     });
 
-    console.log(`
+    logger.info(`
   ╔══════════════════════════════════════════╗
   ║          ClipSync Server v0.2.0          ║
   ╠══════════════════════════════════════════╣
@@ -305,30 +429,65 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Start periodic cleanup of expired items
     startCleanupScheduler();
+
+    // 启用查询性能监控（非生产环境或明确启用时）
+    if (config.nodeEnv !== 'production' || process.env.ENABLE_QUERY_MONITORING === 'true') {
+      enableQueryMonitoring();
+    }
   });
 }
 
 // ============================================
-// Graceful Shutdown
+// Graceful Shutdown（增强版）
 // ============================================
-function gracefulShutdown(signal) {
+async function gracefulShutdown(signal) {
   logger.info(`${signal} received. Shutting down gracefully...`);
 
-  // 停止接受新连接
+  // 1. 停止接受新连接
   server.close(() => {
-    logger.info('HTTP server closed');
-
-    // 关闭WebSocket
-    wss.close(() => {
-      logger.info('WebSocket server closed');
-
-      // 关闭数据库连接池
-      pool.end(() => {
-        logger.info('Database pool closed');
-        process.exit(0);
-      });
-    });
+    logger.info('HTTP server closed (no longer accepting connections)');
   });
+
+  // 2. 通知所有 WebSocket 客户端准备重连
+  try {
+    await gracefulShutdownWs(10000); // 等待 10 秒让客户端重连
+  } catch (err) {
+    logger.warn('WebSocket graceful shutdown error:', { error: err.message });
+  }
+
+  // 3. 关闭 WebSocket 服务器
+  wss.close(() => {
+    logger.info('WebSocket server closed');
+  });
+
+  // 4. 关闭数据库连接池
+  try {
+    await pool.end();
+    logger.info('Database pool closed');
+  } catch (err) {
+    logger.error('Error closing database pool:', { error: err.message });
+  }
+
+  // 5. 关闭 Redis 连接
+  try {
+    const { closeRedisClient } = await import('./utils/redis-client.js');
+    await closeRedisClient();
+    logger.info('Redis client closed');
+  } catch (err) {
+    logger.error('Error closing Redis client:', { error: err.message });
+  }
+
+  // 6. 关闭 WebSocket Redis Pub/Sub
+  try {
+    const { closeWsRedisPubSub } = await import('./ws/ws-redis-pubsub.js');
+    await closeWsRedisPubSub();
+    logger.info('WebSocket Redis Pub/Sub closed');
+  } catch (err) {
+    logger.error('Error closing WebSocket Redis Pub/Sub:', { error: err.message });
+  }
+
+  logger.info('Graceful shutdown complete, exiting...');
+  process.exit(0);
 
   // 强制退出（10秒超时）
   setTimeout(() => {

@@ -9,6 +9,46 @@ import { authenticateToken } from '../middleware/auth.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
 import { logger } from '../utils/logger.js';
 import { storeUploadSession, getUploadSession, deleteUploadSession } from '../utils/redis-client.js';
+import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+
+// 允许的文件 MIME类型（安全白名单）
+const ALLOWED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+  'text/plain',
+  'text/csv',
+  'text/html',
+  'text/css',
+  'text/javascript',
+  'application/json',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/zip',
+  'application/gzip',
+  'application/x-tar',
+  'audio/mpeg',
+  'audio/wav',
+  'video/mp4',
+  'video/webm',
+]);
+
+// 危险的文件扩展名（可能被恶意利用）
+const DANGEROUS_EXTENSIONS = new Set([
+  '.exe', '.msi', '.bat', '.cmd', '.ps1', '.vbs', '.js', '.wsf',
+  '.sh', '.bash', '.zsh', '.fish',
+  '.php', '.phtml', '.php3', '.php4', '.php5', '.phps',
+  '.asp', '.aspx', '.jsp', '.jspx',
+  '.htaccess', '.htpasswd',
+  '.py', '.pyc', '.pyo', '.rb', '.pl', '.cgi',
+]);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,18 +109,19 @@ async function loadUploadSession(uploadId) {
 }
 
 /**
- * 删除上传会话（支持Redis和内存）
+ * 删除上传会话（同时清理 Redis 和内存回退，防止泄漏）
  */
 async function removeUploadSession(uploadId) {
+  // 始终清理内存回退（无论 Redis 是否启用）
+  memoryUploadSessions.delete(uploadId);
+
   if (useRedis) {
     try {
       await deleteUploadSession(uploadId);
     } catch (err) {
       logger.error('Failed to delete upload session from Redis', err);
+      // 内存已清理，不影响一致性
     }
-  } else {
-    // 仅非 Redis 模式才操作内存
-    memoryUploadSessions.delete(uploadId);
   }
 }
 
@@ -100,7 +141,45 @@ router.post('/init', authenticateToken, apiLimiter, async (req, res) => {
     const { filename, fileSize, mimeType, totalChunks } = req.body;
     
     if (!filename || !fileSize || !mimeType || !totalChunks) {
-      return res.status(400).json({ error: '缺少必要参数' });
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    // ========== P1-3: 文件类型验证（基础病毒扫描）==========
+    // 检查 MIME 类型是否在白名单中
+    if (!ALLOWED_MIME_TYPES.has(mimeType)) {
+      logger.warn('File upload rejected: Invalid MIME type', { 
+        userId: req.userId, 
+        filename, 
+        mimeType 
+      });
+      return res.status(400).json({ 
+        error: 'File type not allowed',
+        allowedTypes: Array.from(ALLOWED_MIME_TYPES)
+      });
+    }
+    
+    // 检查文件扩展名是否危险
+    const fileExt = path.extname(filename).toLowerCase();
+    if (DANGEROUS_EXTENSIONS.has(fileExt)) {
+      logger.warn('File upload rejected: Dangerous file extension', { 
+        userId: req.userId, 
+        filename, 
+        extension: fileExt 
+      });
+      return res.status(400).json({ 
+        error: 'File type not allowed',
+        reason: 'Potentially dangerous file type'
+      });
+    }
+    
+    // 检查文件大小（防止磁盘耗尽攻击）
+    const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+    if (fileSize > MAX_FILE_SIZE) {
+      return res.status(400).json({ 
+        error: 'File too large',
+        maxSize: MAX_FILE_SIZE,
+        receivedSize: fileSize
+      });
     }
     
     const uploadId = uuidv4();
@@ -133,7 +212,7 @@ router.post('/init', authenticateToken, apiLimiter, async (req, res) => {
     });
   } catch (err) {
     logger.error('Chunked upload init error', { error: err.message });
-    res.status(500).json({ error: '初始化上传失败' });
+    res.status(500).json({ error: 'Failed to initialize upload' });
   }
 });
 
@@ -148,24 +227,24 @@ router.post('/chunk/:uploadId/:chunkIndex', authenticateToken, apiLimiter, uploa
     // 验证上传会话  
     const session = await loadUploadSession(uploadId);
     if (!session) {
-      return res.status(404).json({ error: '上传会话不存在' });
+      return res.status(404).json({ error: 'Upload session not found' });
     }
     
     if (session.userId !== req.userId) {
-      return res.status(403).json({ error: '无权访问此上传会话' });
+      return res.status(403).json({ error: 'Unauthorized access to this upload session' });
     }
     
     if (Date.now() > session.expiresAt) {
       await removeUploadSession(uploadId);
-      return res.status(410).json({ error: '上传会话已过期' });
+      return res.status(410).json({ error: 'Upload session expired' });
     }
     
     if (chunkIndexNum < 0 || chunkIndexNum >= session.totalChunks) {
-      return res.status(400).json({ error: '分片索引无效' });
+      return res.status(400).json({ error: 'Invalid chunk index' });
     }
     
     if (!req.file) {
-      return res.status(400).json({ error: '未找到分片数据' });
+      return res.status(400).json({ error: 'No chunk data found' });
     }
     
     // 保存分片到临时目录  
@@ -190,7 +269,7 @@ router.post('/chunk/:uploadId/:chunkIndex', authenticateToken, apiLimiter, uploa
     });
   } catch (err) {
     logger.error('Chunk upload error', { error: err.message });
-    res.status(500).json({ error: '上传分片失败' });
+    res.status(500).json({ error: 'Failed to upload chunk' });
   }
 });
 
@@ -203,11 +282,11 @@ router.get('/status/:uploadId', authenticateToken, apiLimiter, async (req, res) 
     
     const session = await loadUploadSession(uploadId);
     if (!session) {
-      return res.status(404).json({ error: '上传会话不存在' });
+      return res.status(404).json({ error: 'Upload session not found' });
     }
     
     if (session.userId !== req.userId) {
-      return res.status(403).json({ error: '无权访问此上传会话' });
+      return res.status(403).json({ error: 'Unauthorized access to this upload session' });
     }
     
     // 获取已上传的分片列表（排序）  
@@ -234,7 +313,7 @@ router.get('/status/:uploadId', authenticateToken, apiLimiter, async (req, res) 
     });
   } catch (err) {
     logger.error('Upload status error', { error: err.message });
-    res.status(500).json({ error: '获取上传状态失败' });
+    res.status(500).json({ error: 'Failed to get upload status' });
   }
 });
 
@@ -247,16 +326,16 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
     
     const session = await loadUploadSession(uploadId);
     if (!session) {
-      return res.status(404).json({ error: '上传会话不存在' });
+      return res.status(404).json({ error: 'Upload session not found' });
     }
     
     if (session.userId !== req.userId) {
-      return res.status(403).json({ error: '无权访问此上传会话' });
+      return res.status(403).json({ error: 'Unauthorized access to this upload session' });
     }
     
     if (Date.now() > session.expiresAt) {
       await removeUploadSession(uploadId);
-      return res.status(410).json({ error: '上传会话已过期' });
+      return res.status(410).json({ error: 'Upload session expired' });
     }
     
     // 检查所有分片是否已上传  
@@ -268,7 +347,7 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
         }
       }
       return res.status(400).json({ 
-        error: '分片未完全上传',
+        error: 'Not all chunks have been uploaded',
         missingChunks 
       });
     }
@@ -331,7 +410,7 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
     });
   } catch (err) {
     logger.error('Chunked upload complete error', { error: err.message });
-    res.status(500).json({ error: '完成上传失败' });
+    res.status(500).json({ error: 'Failed to complete upload' });
   }
 });
 
@@ -344,11 +423,11 @@ router.delete('/cancel/:uploadId', authenticateToken, apiLimiter, async (req, re
     
     const session = await loadUploadSession(uploadId);
     if (!session) {
-      return res.status(404).json({ error: '上传会话不存在' });
+      return res.status(404).json({ error: 'Upload session not found' });
     }
     
     if (session.userId !== req.userId) {
-      return res.status(403).json({ error: '无权访问此上传会话' });
+      return res.status(403).json({ error: 'Unauthorized access to this upload session' });
     }
     
     // 清理分片文件  
@@ -362,11 +441,11 @@ router.delete('/cancel/:uploadId', authenticateToken, apiLimiter, async (req, re
     
     res.json({
       success: true,
-      message: '上传已取消'
+      message: 'Upload cancelled'
     });
   } catch (err) {
     logger.error('Chunked upload cancel error', { error: err.message });
-    res.status(500).json({ error: '取消上传失败' });
+    res.status(500).json({ error: 'Failed to cancel upload' });
   }
 });
 

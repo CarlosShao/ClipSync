@@ -1,0 +1,3 @@
+id,phone,email,nickname,avatar_url,password_hash,created_at,updated_at,subscription_status,current_subscription_id,phone_encrypted,email_encrypted,tos_accepted_at,privacy_accepted_at,marketing_consent,birth_date,age_verified,is_active,deactivated_at,deactivation_reason,consent_updated_at,analytics_consent,functional_consent,subscription_expires_at,max_devices,max_clipboard_items,max_storage_mb
+7cc8b8dd-b255-4c67-b009-54e05812e811,13812345678,,test_13812345678,"",test_hash,2026-06-26 17:35:00.647294+08,2026-06-26 17:54:49.079423+08,free,,,,,,f,,f,t,,,,f,t,,2,50,100
+a52564d6-1488-4105-9edf-ae22843968da,13900440000,,test_13900440000,"",test_hash,2026-06-26 17:54:49.079533+08,2026-06-26 17:54:49.079533+08,free,,,,,,f,,f,t,,,,f,t,,2,50,100

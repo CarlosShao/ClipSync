@@ -1,0 +1,158 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: clipsync
+namePrefix: staging-
+commonLabels:
+  env: staging
+
+resources:
+  - ../../base
+
+# Staging 环境覆盖配置
+patches:
+  # PostgreSQL: 小规格
+  - target:
+      kind: Deployment
+      name: clipsync-postgres
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+
+  # Redis: 小规格，去掉 exporter
+  - target:
+      kind: Deployment
+      name: clipsync-redis
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers
+        value:
+          - name: redis
+            image: redis:7-alpine
+            command:
+              - redis-server
+              - --appendonly
+              - "yes"
+              - --maxmemory
+              - 64mb
+              - --maxmemory-policy
+              - allkeys-lru
+            ports:
+              - containerPort: 6379
+                protocol: TCP
+            env:
+              - name: REDIS_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: clipsync-secrets
+                    key: REDIS_PASSWORD
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 128Mi
+            volumeMounts:
+              - name: redis-data
+                mountPath: /data
+            livenessProbe:
+              exec:
+                command:
+                  - redis-cli
+                  - -a
+                  - "$(REDIS_PASSWORD)"
+                  - ping
+              initialDelaySeconds: 10
+              periodSeconds: 15
+            readinessProbe:
+              exec:
+                command:
+                  - redis-cli
+                  - -a
+                  - "$(REDIS_PASSWORD)"
+                  - ping
+              initialDelaySeconds: 5
+              periodSeconds: 5
+
+  # API: 单副本 + 小规格
+  - target:
+      kind: Deployment
+      name: clipsync-api
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+  # PVC: 小容量
+  - target:
+      kind: PersistentVolumeClaim
+      name: postgres-data
+    patch: |-
+      - op: replace
+        path:/spec/resources/requests/storage
+        value: 5Gi
+
+  - target:
+      kind: PersistentVolumeClaim
+      name: redis-data
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 1Gi
+
+  - target:
+      kind: PersistentVolumeClaim
+      name: uploads-data
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 10Gi
+
+configMapGenerator:
+  - name: clipsync-config
+    behavior: merge
+    literals:
+      - NODE_ENV=staging
+      - LOG_LEVEL=debug
+      - ALLOWED_ORIGINS=*
+
+# HPA: 缩小范围
+- target:
+    kind: HorizontalPodAutoscaler
+    name: clipsync-api-hpa
+  patch: |-
+    - op: replace
+      path: /spec/minReplicas
+      value: 1
+    - op: replace
+      path: /spec/maxReplicas
+      value: 3
+
+# Ingress: 使用 staging 域名（注释掉，需按实际环境修改）
+# - target:
+#     kind: Ingress
+#     name: clipsync-ingress
+#   patch: |-
+#     - op: replace
+#       path: /spec/tls/0/hosts
+#       value: ["staging-api.clipsync.app"]
+#     - op: replace
+#       path: /spec/rules/0/host
+#       value: "staging-api.clipsync.app"

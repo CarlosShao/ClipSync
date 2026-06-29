@@ -31,7 +31,7 @@ router.get('/plans', async (req, res) => {
     });
   } catch (err) {
     logger.error('Get subscription plans error:', err);
-    res.status(500).json({ error: '获取套餐列表失败' });
+    res.status(500).json({ error: 'Failed to get subscription plans' });
   }
 });
 
@@ -109,7 +109,7 @@ router.get('/current', authenticateToken, async (req, res) => {
     });
   } catch (err) {
     logger.error('Get current subscription error:', err);
-    res.status(500).json({ error: '获取订阅信息失败' });
+    res.status(500).json({ error: 'Failed to get subscription info' });
   }
 });
 
@@ -123,13 +123,13 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
     const { planId, billingCycle = 'monthly' } = req.body;
     
     if (!planId) {
-      return res.status(400).json({ error: '缺少planId参数' });
+      return res.status(400).json({ error: 'Missing planId parameter' });
     }
     
     // 验证套餐是否存在
     const planResult = await pool.query('SELECT * FROM subscription_plans WHERE id = $1 AND is_active = true', [planId]);
     if (planResult.rows.length === 0) {
-      return res.status(404).json({ error: '套餐不存在' });
+      return res.status(404).json({ error: 'Plan not found' });
     }
     
     const plan = planResult.rows[0];
@@ -146,7 +146,7 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
       const current = existingSubscription.rows[0];
       
       if (current.plan_id === planId) {
-        return res.status(400).json({ error: '您当前已是该套餐' });
+        return res.status(400).json({ error: 'You are already on this plan' });
       }
       
       // 创建支付订单
@@ -193,7 +193,7 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
       logger.info(`User ${userId} subscribed to plan ${plan.name}`);
       
       return res.json({
-        message: '订阅成功',
+        message: 'Subscription successful',
         subscriptionId: newSubscriptionResult.rows[0].id,
         orderNo: orderNo,
       });
@@ -227,7 +227,7 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
       logger.info(`User ${userId} started new subscription to plan ${plan.name}, trial: ${isTrial}`);
       
       return res.json({
-        message: isTrial ? '试用期已开始，7天后自动续费' : '订阅成功',
+        message: isTrial ? 'Trial period started, auto-renewal in 7 days' : 'Subscription successful',
         subscriptionId: subscriptionResult.rows[0].id,
         isTrial,
         trialEnd,
@@ -235,7 +235,7 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
     }
   } catch (err) {
     logger.error('Subscribe error:', err);
-    res.status(500).json({ error: '订阅失败' });
+    res.status(500).json({ error: 'Subscription failed' });
   }
 });
 
@@ -254,7 +254,7 @@ router.post('/cancel', authenticateToken, async (req, res) => {
     );
     
     if (subscriptionResult.rows.length === 0) {
-      return res.status(400).json({ error: '没有活跃订阅' });
+      return res.status(400).json({ error: 'No active subscription' });
     }
     
     const subscription = subscriptionResult.rows[0];
@@ -268,12 +268,12 @@ router.post('/cancel', authenticateToken, async (req, res) => {
     logger.info(`User ${userId} cancelled subscription ${subscription.id}, will end at period end`);
     
     res.json({
-      message: '订阅已标记为取消，将在当前计费周期结束时生效',
+      message: 'Subscription marked for cancellation, effective at the end of the current billing period',
       currentPeriodEnd: subscription.current_period_end,
     });
   } catch (err) {
     logger.error('Cancel subscription error:', err);
-    res.status(500).json({ error: '取消订阅失败' });
+    res.status(500).json({ error: 'Failed to cancel subscription' });
   }
 });
 
@@ -292,7 +292,7 @@ router.post('/resume', authenticateToken, async (req, res) => {
     );
     
     if (subscriptionResult.rows.length === 0) {
-      return res.status(400).json({ error: '没有可恢复的取消订阅' });
+      return res.status(400).json({ error: 'No cancellable subscription to restore' });
     }
     
     const subscription = subscriptionResult.rows[0];
@@ -306,12 +306,12 @@ router.post('/resume', authenticateToken, async (req, res) => {
     logger.info(`User ${userId} resumed subscription ${subscription.id}`);
     
     res.json({
-      message: '订阅已恢复',
+      message: 'Subscription restored',
       subscriptionId: subscription.id,
     });
   } catch (err) {
     logger.error('Resume subscription error:', err);
-    res.status(500).json({ error: '恢复订阅失败' });
+    res.status(500).json({ error: 'Failed to restore subscription' });
   }
 });
 

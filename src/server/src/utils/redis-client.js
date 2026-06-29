@@ -5,6 +5,7 @@
 
 import redis from 'redis';
 import config from '../config.js';
+import { logger } from './logger.js';
 
 let client = null;
 let isConnected = false;
@@ -28,16 +29,16 @@ export async function getRedisClient() {
     });
 
     client.on('error', (err) => {
-      console.error('Redis Client Error:', err);
+      logger.error('Redis Client Error:', { error: err.message });
     });
 
     client.on('connect', () => {
-      console.log('Redis connected');
+      logger.info('Redis connected');
       isConnected = true;
     });
 
     client.on('disconnect', () => {
-      console.log('Redis disconnected');
+      logger.info('Redis disconnected');
       isConnected = false;
     });
   }
@@ -154,11 +155,16 @@ export async function deleteWebSocketConnection(userId, deviceId) {
  */
 export async function getUserWebSocketConnections(userId) {
   const client = await getRedisClient();
-  const pattern = `ws:connection:${userId}:*`;
-  const keys = await client.keys(pattern);
+  if (!client) return [];
   
+  // 使用 SCAN 替代 KEYS，避免阻塞 Redis
   const connections = [];
-  for (const key of keys) {
+  const pattern = `ws:connection:${userId}:*`;
+  
+  for await (const key of client.scanIterator({
+    MATCH: pattern,
+    COUNT: 100,
+  })) {
     const data = await client.get(key);
     if (data) {
       connections.push(JSON.parse(data));
@@ -173,7 +179,42 @@ export async function getUserWebSocketConnections(userId) {
  */
 export async function cleanupExpiredData() {
   // Redis TTL 会自动清理过期数据，无需手动清理
-  console.log('Redis TTL auto cleanup enabled');
+  logger.info('Redis TTL auto cleanup enabled');
+}
+
+// ============================================
+// 幂等性操作（Idempotency）
+// Key: idempotency:{key}
+// Value: JSON string { status, headers, body, timestamp }
+// TTL: 24 hours
+// ============================================
+
+/**
+ * 存储已处理请求的响应（幂等性保证）
+ */
+export async function storeProcessedRequest(key, data) {
+  const client = await getRedisClient();
+  const redisKey = `idempotency:${key}`;
+  await client.setEx(redisKey, 24 * 60 * 60, JSON.stringify(data));
+}
+
+/**
+ * 获取已处理的请求响应
+ */
+export async function getProcessedRequest(key) {
+  const client = await getRedisClient();
+  const redisKey = `idempotency:${key}`;
+  const data = await client.get(redisKey);
+  return data ? JSON.parse(data) : null;
+}
+
+/**
+ * 删除已处理的请求记录
+ */
+export async function deleteProcessedRequest(key) {
+  const client = await getRedisClient();
+  const redisKey = `idempotency:${key}`;
+  await client.del(redisKey);
 }
 
 export default {
@@ -189,4 +230,7 @@ export default {
   deleteWebSocketConnection,
   getUserWebSocketConnections,
   cleanupExpiredData,
+  storeProcessedRequest,
+  getProcessedRequest,
+  deleteProcessedRequest,
 };

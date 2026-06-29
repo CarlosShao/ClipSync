@@ -1,0 +1,87 @@
+# Alertmanager 配置文件
+# 告警通知到钉钉/企业微信/Slack
+
+global:
+  # 钉钉 Webhook（需替换为实际 URL）
+  # wechat_api_url: 'https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN'
+
+  # 企业微信 Webhook（需替换为实际 URL）
+  # wecom_api_url: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY'
+
+  # Slack Webhook（需替换为实际 URL）
+  # slack_api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+
+  # 邮件配置（需配置 SMTP）
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'clipsync-alert@example.com'
+  smtp_auth_username: 'clipsync-alert@example.com'
+  smtp_auth_password: 'YOUR_APP_PASSWORD'
+
+# 告警路由
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default-receiver'
+  routes:
+    # 严重告警 → 立即通知
+    - match:
+        severity: critical
+      receiver: 'critical-receiver'
+      group_wait: 0s
+
+    # 警告级告警 → 延迟通知
+    - match:
+        severity: warning
+      receiver: 'warning-receiver'
+      group_wait: 30s
+
+# 接收器
+receivers:
+  - name: 'default-receiver'
+    # 邮件通知
+    email_configs:
+      - to: 'ops-team@example.com'
+        subject: '[ClipSync告警] {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          - 告警: {{ .Annotations.summary }}
+            描述: {{ .Annotations.description }}
+            时间: {{ .StartsAt }}
+          {{ end }}
+
+  - name: 'critical-receiver'
+    email_configs:
+      - to: 'ops-team@example.com,oncall@example.com'
+        subject: '🚨 [紧急] ClipSync告警: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          - 告警: {{ .Annotations.summary }}
+            描述: {{ .Annotations.description }}
+            时间: {{ .StartsAt }}
+          {{ end }}
+    # 钉钉通知（取消注释后启用）
+    # webhook_configs:
+    #   - url: 'https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN'
+    #     send_resolved: true
+
+  - name: 'warning-receiver'
+    email_configs:
+      - to: 'ops-team@example.com'
+        subject: '⚠️ [警告] ClipSync告警: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          - 告警: {{ .Annotations.summary }}
+            描述: {{ .Annotations.description }}
+            时间: {{ .StartsAt }}
+          {{ end }}
+
+# 抑制规则（可选）
+inhibit_rules:
+  # 同类告警，critical 抑制 warning
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']

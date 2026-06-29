@@ -1,15 +1,15 @@
 import { Router } from 'express';
-import fs from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 
 const router = Router();
 
 // GET /api/app/version - 返回当前版本信息
-router.get('/version', (req, res) => {
+router.get('/version', async (req, res) => {
   try {
     const packagePath = path.resolve('package.json');
-    const packageData = JSON.parse(fs.readFileSync(packagePath, 'utf-8'));
-    
+    const packageData = JSON.parse(await fs.readFile(packagePath, 'utf-8'));
+
     res.json({
       version: packageData.version || '0.1.0',
       name: packageData.name || 'clipsync-server',

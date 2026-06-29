@@ -3,17 +3,53 @@ import { logger } from './logger.js';
 
 /**
  * 加密工具类
- * 
+ *
  * 支持多种加密算法：
  * 1. AES-256-GCM（对称加密）- 用于加密敏感字段
  * 2. RSA-OAEP（非对称加密）- 用于加密 AES 密钥（密钥轮换）
- * 
+ *
  * 需要配置环境变量：
  * - ENCRYPTION_MASTER_KEY: 主密钥（AES-256 需要 32 字节）
  * - ENCRYPTION_IV: 初始化向量（AES-GCM 需要 12 字节）
  * - RSA_PRIVATE_KEY: RSA 私钥（PEM 格式）
  * - RSA_PUBLIC_KEY: RSA 公钥（PEM 格式）
  */
+
+// Production security check: reject default keys
+const DEFAULT_KEYS = ['default_master_key_32b', 'default_iv_12b', 'dev_encryption_key_32chars_min!!'];
+
+function validateEncryptionConfig() {
+  const masterKey = process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_MASTER_KEY;
+  const iv = process.env.ENCRYPTION_IV;
+
+  if (process.env.NODE_ENV === 'production') {
+    if (!masterKey) {
+      logger.error('FATAL: ENCRYPTION_KEY environment variable is required in production');
+      process.exit(1);
+    }
+
+    if (DEFAULT_KEYS.includes(masterKey)) {
+      logger.error('FATAL: ENCRYPTION_KEY must not use default value in production');
+      process.exit(1);
+    }
+
+    if (masterKey.length < 32) {
+      logger.error('FATAL: ENCRYPTION_KEY must be at least 32 characters in production');
+      process.exit(1);
+    }
+
+    if (!iv) {
+      logger.warn('ENCRYPTION_IV not set, using derived IV from master key');
+    }
+  } else {
+    if (!masterKey || DEFAULT_KEYS.includes(masterKey)) {
+      logger.warn('WARNING: Using default encryption key. Set ENCRYPTION_KEY for production.');
+    }
+  }
+}
+
+// Validate on module load
+validateEncryptionConfig();
 
 // 从环境变量获取加密配置（支持 ENCRYPTION_KEY 和 ENCRYPTION_MASTER_KEY）
 const MASTER_KEY_RAW = process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_MASTER_KEY || 'default_master_key_32b';

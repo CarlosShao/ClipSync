@@ -6,6 +6,8 @@ info:
 collections:
   - name: "ClipSync API"
     path: "collections/ClipSync-API"
+  - name: "TestApiRemaing"
+    path: "collections/TestApiRemaing"
 
 specs:
 

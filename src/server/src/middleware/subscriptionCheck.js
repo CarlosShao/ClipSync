@@ -20,7 +20,7 @@ async function subscriptionCheck(req, res, next) {
     );
     
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: '用户不存在' });
+      return res.status(404).json({ error: 'User not found' });
     }
     
     const user = userResult.rows[0];
@@ -79,7 +79,7 @@ async function subscriptionCheck(req, res, next) {
     next();
   } catch (err) {
     logger.error('Subscription check error:', err);
-    res.status(500).json({ error: '订阅检查失败' });
+    res.status(500).json({ error: 'Subscription check failed' });
   }
 }
 
@@ -93,14 +93,14 @@ function requireFeature(featureName) {
       const plan = req.user.plan;
       
       if (!plan) {
-        return res.status(403).json({ error: '无法获取订阅信息' });
+        return res.status(403).json({ error: 'Unable to retrieve subscription info' });
       }
       
       const features = typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features;
       
       if (!features || features[featureName] !== true) {
         return res.status(403).json({
-          error: '此功能需要更高级别的订阅',
+          error: 'This feature requires a higher subscription tier',
           feature: featureName,
           currentPlan: plan.name || 'Free',
           upgradeUrl: '/subscribe',
@@ -110,7 +110,7 @@ function requireFeature(featureName) {
       next();
     } catch (err) {
       logger.error('Feature check error:', err);
-      res.status(500).json({ error: '功能检查失败' });
+      res.status(500).json({ error: 'Feature check failed' });
     }
   };
 }
@@ -135,7 +135,7 @@ async function checkDeviceLimit(req, res, next) {
     
     if (currentDeviceCount >= plan.maxDevices) {
       return res.status(403).json({
-        error: `设备数量已达上限（${plan.maxDevices}台）`,
+        error: `Device limit reached (${plan.maxDevices} devices)`,
         currentCount: currentDeviceCount,
         maxDevices: plan.maxDevices,
         upgradeUrl: '/subscribe',
@@ -145,7 +145,7 @@ async function checkDeviceLimit(req, res, next) {
     next();
   } catch (err) {
     logger.error('Device limit check error:', err);
-    res.status(500).json({ error: '设备限制检查失败' });
+    res.status(500).json({ error: 'Device limit check failed' });
   }
 }
 
@@ -169,7 +169,7 @@ async function checkClipboardLimit(req, res, next) {
     
     if (currentClipboardCount >= plan.maxClipboardItems) {
       return res.status(403).json({
-        error: `剪贴板条数已达上限（${plan.maxClipboardItems}条）`,
+        error: `Clipboard item limit reached (${plan.maxClipboardItems} items)`,
         currentCount: currentClipboardCount,
         maxItems: plan.maxClipboardItems,
         upgradeUrl: '/subscribe',
@@ -179,7 +179,7 @@ async function checkClipboardLimit(req, res, next) {
     next();
   } catch (err) {
     logger.error('Clipboard limit check error:', err);
-    res.status(500).json({ error: '剪贴板限制检查失败' });
+    res.status(500).json({ error: 'Clipboard limit check failed' });
   }
 }
 
@@ -195,7 +195,7 @@ function checkFileSizeLimit(maxSizeMb) {
       
       if (maxSizeMb > plan.maxFileSizeMb) {
         return res.status(403).json({
-          error: `文件大小超出套餐限制（最大${plan.maxFileSizeMb}MB）`,
+          error: `File size exceeds plan limit (max ${plan.maxFileSizeMb}MB)`,
           fileSize: maxSizeMb,
           maxFileSize: plan.maxFileSizeMb,
           upgradeUrl: '/subscribe',
@@ -205,7 +205,7 @@ function checkFileSizeLimit(maxSizeMb) {
       next();
     } catch (err) {
       logger.error('File size limit check error:', err);
-      res.status(500).json({ error: '文件大小限制检查失败' });
+      res.status(500).json({ error: 'File size limit check failed' });
     }
   };
 }

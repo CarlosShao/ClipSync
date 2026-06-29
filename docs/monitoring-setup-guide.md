@@ -12,6 +12,7 @@
    - 抓取 ClipSync 后端的 metrics 端点（`/api/metrics/prometheus`）
    - 存储时间序列数据
    - 提供 PromQL 查询接口
+   - 加载告警规则（`monitoring/prometheus/rules/clipsync-alerts.yml`）
 
 2. **Grafana** (端口 3001)
    - 可视化 Prometheus 数据
@@ -21,6 +22,16 @@
 3. **Node Exporter** (端口 9100)
    - 收集系统指标（CPU、内存、磁盘）
    - Prometheus 抓取其 metrics
+
+4. **Alertmanager** (端口 9093)
+   - 接收 Prometheus 告警通知
+   - 支持多种通知渠道（邮件、Slack、企业微信、钉钉）
+   - 告警分组、抑制、静默
+
+5. **Blackbox Exporter** (端口 9115)
+   - HTTP/HTTPS/TCP/ICMP 探测
+   - 监控外部服务可用性
+   - 验证 SSL 证书有效性
 
 ## 🚀 快速启动
 
@@ -56,6 +67,12 @@ curl http://localhost:3001/api/health
 
 # 检查 Node Exporter 是否正常运行
 curl http://localhost:9100/metrics
+
+# 检查 Alertmanager 是否正常运行
+curl http://localhost:9093/-/healthy
+
+# 检查 Blackbox Exporter 是否正常运行
+curl http://localhost:9115/health
 ```
 
 3. **访问 Grafana 仪表盘**
@@ -240,6 +257,12 @@ docker logs clipsync-grafana
 
 # Node Exporter 日志
 docker logs clipsync-node-exporter
+
+# Alertmanager 日志
+docker logs clipsync-alertmanager
+
+# Blackbox Exporter 日志
+docker logs clipsync-blackbox-exporter
 ```
 
 ### 清理数据

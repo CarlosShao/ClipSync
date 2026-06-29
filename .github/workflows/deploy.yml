@@ -1,47 +1,355 @@
-name: ClipSync Deploy
+# ClipSync 生产部署流水线
+# 触发方式: 推送 v* 标签时自动部署到生产环境
+#
+# 使用前需要配置的 GitHub Secrets:
+#   - DOCKER_REGISTRY: 容器仓库地址 (默认 ghcr.io)
+#   - DOCKER_USERNAME: 仓库用户名
+#   - DOCKER_PASSWORD: 仓库密码/PAT
+#   - KUBE_CONFIG_BASE64: Kubeconfig (base64 编码)
+#   或使用 K8s Service Account + Workload Identity
+
+name: Deploy - Production
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'        # 正式版: v1.0.0
+      - 'v[0-9]+.[0-9]+.[0-9]+-[a-z]+'    # 预发布: v1.0.0-beta
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/clipsync-server
+  # 部署环境判断
+  IS_PRERELEASE: ${{ contains(github.ref, '-') }}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  # ==================== 构建并推送镜像 ====================
+  build-and-push:
+    name: "Build & Push Image"
     runs-on: ubuntu-latest
-    needs: []
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+      digest: ${{ steps.build.outputs.digest }}
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract version
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Extract version metadata
+        id: meta
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$(date +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: docker-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/server
+          file: ./src/server/Dockerfile
+          push: true
+          tags: ${{ steps.docker-meta.outputs.tags }}
+          labels: ${{ steps.docker-meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+          build-args: |
+            NODE_ENV=production
+            VERSION=${{ steps.meta.outputs.version }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+      - name: Upload Trivy scan results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+        continue-on-error: true
+
+  # ==================== 部署到 Kubernetes ====================
+  deploy-k8s:
+    name: "Deploy to K8s (${{ needs.build-and-push.outputs.image_tag }})"
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment:
+      name: production
+      url: https://api.clipsync.app
+    if: success()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.30.0'
+
+      - name: Configure Kubeconfig
         run: |
-          echo "Building version ${{ steps.version.outputs.VERSION }}..."
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_BASE64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
 
-          # Build server image
-          cd src/server
-          docker build -t clipsync-server:${{ steps.version.outputs.VERSION }} .
-          docker tag clipsync-server:${{ steps.version.outputs.VERSION }} clipsync-server:latest
+      - name: Verify cluster connectivity
+        run: |
+          kubectl get nodes
+          kubectl get ns clipsync || kubectl create ns clipsync
 
-          echo "Docker image built successfully"
+      # === 注入生产环境密钥（首次部署或更新） ===
+      - name: Create/Update secrets
+        run: |
+          kubectl create secret generic clipsync-secrets \
+            --from-literal=DB_USER="${{ secrets.K8S_DB_USER }}" \
+            --from-literal=DB_PASSWORD="${{ secrets.K8S_DB_PASSWORD }}" \
+            --from-literal=REDIS_PASSWORD="${{ secrets.K8S_REDIS_PASSWORD }}" \
+            --from-literal=JWT_SECRET="${{ secrets.K8S_JWT_SECRET }}" \
+            --from-literal=ENCRYPTION_KEY="${{ secrets.K8S_ENCRYPTION_KEY }}" \
+            --from-literal=CSRF_SECRET="${{ secrets.K8S_CSRF_SECRET }}" \
+            --namespace=clipsync \
+            --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Create release
+      # === 使用 Kustomize 部署 ===
+      - name: Deploy with Kustomize (Production)
+        run: |
+          cd k8s/overlays/production
+          kustomize edit set image clipsync/server=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}
+          kustomize build . | kubectl apply -f -
+          echo "✅ Kustomize 部署完成"
+
+      - name: Wait for rollout to complete
+        run: |
+          echo "⏳ 等待 API 滚动更新..."
+          kubectl rollout status deployment/clipsync-api -n clipsync --timeout=300s
+          
+          echo "⏳ 等待 PostgreSQL 就绪..."
+          kubectl rollout status statefulset/clipsync-postgres -n clipsync --timeout=120s || true
+          
+          echo "⏳ 等待 Redis 就绪..."
+          kubectl rollout status deployment/clipsync-redis -n clipsync --timeout=60s
+
+      # === 部署后健康检查 ===
+      - name: Post-deploy health check
+        run: |
+          echo "🔍 执行部署后健康检查..."
+          
+          MAX_RETRIES=10
+          RETRY_INTERVAL=15
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_CODE=$(kubectl exec deployment/clipsync-api -n clipsync -- \
+              curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ 健康检查通过! (尝试 $i/$MAX_RETRIES, HTTP $HTTP_CODE)"
+              
+              # 额外验证 readiness
+              READY_CODE=$(kubectl exec deployment/clipsync-api -n clipsync -- \
+                curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/health/ready 2>/dev/null || echo "000")
+              echo "📊 Readiness: HTTP $READY_CODE"
+              exit 0
+            fi
+            
+            echo "⏳ 健康检查中... (尝试 $i/$MAX_RETRIES, HTTP $HTTP_CODE)"
+            sleep $RETRY_INTERVAL
+          done
+          
+          echo "❌ 健康检查失败! 超过最大重试次数"
+          exit 1
+
+      # === 记录部署信息 ===
+      - name: Record deployment info
+        run: |
+          echo "📋 部署信息:"
+          echo "  版本: ${{ needs.build-and-push.outputs.image_tag }}"
+          echo "  镜像: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}"
+          echo "  Digest: ${{ needs.build-and-push.outputs.digest }}"
+          echo ""
+          kubectl get pods -n clipsync -l app.kubernetes.io/component=api -o wide
+          echo ""
+          kubectl get all -n clipsync
+
+  # ==================== 回滚机制 ====================
+  rollback-if-failed:
+    name: "Rollback on Failure"
+    runs-on: ubuntu-latest
+    needs: [build-and-push, deploy-k8s]
+    if: failure() && needs.deploy-k8s.result == 'failure'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.30.0'
+
+      - name: Configure Kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_BASE64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Automatic Rollback
+        run: |
+          echo "⚠️ 部署失败，执行自动回滚..."
+          
+          # 回滚 API
+          echo "→ 回滚 clipsync-api..."
+          kubectl rollout undo deployment/clipsync-api -n clipsync
+          kubectl rollout status deployment/clipsync-api -n clipsync --timeout=180s
+          
+          # 验证回滚成功
+          sleep 10
+          ROLLBACK_STATUS=$(kubectl exec deployment/clipsync-api -n clipsync -- \
+            curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "000")
+          
+          if [ "$ROLLBACK_STATUS" = "200" ]; then
+            echo "✅ 回滚成功! 服务已恢复到上一个稳定版本"
+            
+            # 获取回滚到的版本
+            REVISION=$(kubectl rollout history deployment/clipsync-api -n clipsync | tail -1)
+            echo "当前版本: $REVISION"
+          else
+            echo "❌ 回滚失败! 需要手动介入"
+            exit 1
+          fi
+
+      - name: Notify on rollback
+        if: always()
+        run: |
+          echo "::warning::ClipSync 生产部署失败并已自动回滚，请立即检查！"
+          echo "版本: ${{ needs.build-and-push.outputs.image_tag }}"
+          echo "时间: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+  # ==================== 创建 GitHub Release ====================
+  release:
+    name: "Create Release"
+    runs-on: ubuntu-latest
+    needs: deploy-k8s
+    if: success() && !env.IS_PRERELEASE
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %h %s (%an)" --no-merges)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %h %s (%an)" --no-merges -20)
+          fi
+          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref }}
-          name: ClipSync ${{ steps.version.outputs.VERSION }}
+          tag_name: ${{ github.ref_name }}
+          name: "ClipSync ${{ needs.build-and-push.outputs.image_tag }}"
           body: |
-            ## ClipSync ${{ steps.version.outputs.VERSION }}
+            ## ClipSync ${{ needs.build-and-push.outputs.image_tag }}
 
-            ### Changes
-            - See commit history for details
+            ### 变更内容
+            ${{ steps.changelog.outputs.changelog }}
 
-            ### Deployment
+            ### 镜像信息
+            - **Registry**: `${{ env.REGISTRY }}`
+            - **Image**: `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}`
+            - **Digest**: `${{ needs.build-andpush.outputs.digest }}`
+
+            ### 部署命令
             ```bash
-            docker-compose up -d
+            # K8s 部署
+            cd k8s/overlays/production
+            kustomize edit set image clipsync/server=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}
+            kustomize build . | kubectl apply -f -
+
+            # 或者直接用 tag 触发 CI/CD 自动部署
+            git tag v${NEXT_VERSION}
+            git push origin v${NEXT_VERSION}
             ```
+
+            ---
+            🤖 由 GitHub Actions 自动发布
           draft: false
-          prerelease: false
+          prerelease: ${{ fromJSON('["false","true"]')[env.IS_PRERELEASE == 'true'] }}
+          generate_release_notes: false
+
+  # ==================== 部署通知 ====================
+  notify:
+    name: "Deployment Notification"
+    runs-on: ubuntu-latest
+    needs: [deploy-k8s, release, rollback-if-failed]
+    if: always()
+
+    steps:
+      - name: Determine deployment status
+        id: status
+        run: |
+          if [ "${{ needs.deploy-k8s.result }}" = "success" ]; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+            echo "emoji=✅" >> "$GITHUB_OUTPUT"
+            echo "message=部署成功!" >> "$GITHUB_OUTPUT"
+          elif [ "${{ needs.rollback-if-failed.result }}" = "success" ]; then
+            echo "status=rolled_back" >> "$GITHUB_OUTPUT"
+            echo "emoji=↩️" >> "$GITHUB_OUTPUT"
+            echo "message=部署失败已回滚" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            echo "emoji=❌" >> "$GITHUB_OUTPUT"
+            echo "message=部署失败!" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send notification summary
+        run: |
+          cat << EOF
+          ==========================================
+           ${{ steps.status.outputs.emoji }} ClipSync 部署状态
+          ==========================================
+          版本: ${{ needs.build-and-push.outputs.image_tag }}
+          状态: ${{ steps.status.outputs.message }}
+          时间: $(date -u '+%Y-%m-%dT%H:%M:%S UTC')
+          触发: ${{ github.actor }}
+          Commit: ${{ github.sha }}
+          ==========================================
+          EOF

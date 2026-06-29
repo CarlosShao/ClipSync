@@ -1,4 +1,5 @@
 import pool from './pool.js';
+import { logger } from '../utils/logger.js';
 
 const migrations = [
   // 1. Users table
@@ -115,19 +116,19 @@ const postMigrations = [
 ];
 
 async function migrate() {
-  console.log('Running database migrations...');
+  logger.info('Running database migrations...');
   const client = await pool.connect();
   try {
     for (let i = 0; i < migrations.length; i++) {
-      console.log(`  Migration ${i + 1}/${migrations.length}...`);
+      logger.info(`  Migration ${i + 1}/${migrations.length}...`);
       await client.query(migrations[i]);
     }
-    console.log('Running post-migrations (tsvector)...');
+    logger.info('Running post-migrations (tsvector)...');
     for (let i = 0; i < postMigrations.length; i++) {
-      console.log(`  Post-migration ${i + 1}/${postMigrations.length}...`);
+      logger.info(`  Post-migration ${i + 1}/${postMigrations.length}...`);
       await client.query(postMigrations[i]);
     }
-    console.log('All migrations completed successfully.');
+    logger.info('All migrations completed successfully.');
   } finally {
     client.release();
   }
@@ -138,7 +139,7 @@ if (process.argv[1] && process.argv[1].includes('migrate')) {
   migrate()
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error('Migration failed:', err);
+      logger.error('Migration failed:', { error: err.message });
       process.exit(1);
     });
 }

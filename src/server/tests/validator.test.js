@@ -10,6 +10,10 @@ import {
   validateSearch,
   sanitizeString,
   isValidDeviceName,
+  escapeHtmlContext,
+  escapeAttributeContext,
+  escapeJsContext,
+  escapeUrlContext,
 } from '../src/validation/validator.js';
 
 describe('Validator', () => {
@@ -157,6 +161,58 @@ describe('Validator', () => {
     it('should handle quotes', () => {
       const result = sanitizeString('He said "hello"');
       expect(result).toContain('&quot;');
+    });
+  });
+
+  describe('escapeHtmlContext', () => {
+    it('should escape HTML entities', () => {
+      const result = escapeHtmlContext('<script>alert(1)</script>');
+      expect(result).not.toContain('<script>');
+      expect(result).toContain('&lt;');
+    });
+
+    it('should handle normal text', () => {
+      expect(escapeHtmlContext('Hello World')).toBe('Hello World');
+    });
+  });
+
+  describe('escapeAttributeContext', () => {
+    it('should escape quotes and special chars', () => {
+      const result = escapeAttributeContext('"onmouseover="alert(1)');
+      expect(result).not.toContain('"');
+      expect(result).toContain('&quot;');
+    });
+
+    it('should escape equals sign', () => {
+      const result = escapeAttributeContext('test=value');
+      expect(result).toContain('&#x3D;');
+    });
+  });
+
+  describe('escapeJsContext', () => {
+    it('should escape JS string breakers', () => {
+      const result = escapeJsContext('"; alert(1); //');
+      // " 应该被转义为 \"
+      expect(result).toContain('\\"');
+      // 原始未转义的 " 不应该存在
+      expect(result.startsWith('"')).toBe(false);
+    });
+
+    it('should escape backslashes and newlines', () => {
+      const result = escapeJsContext('line1\\nline2');
+      expect(result).toContain('\\\\n');
+    });
+  });
+
+  describe('escapeUrlContext', () => {
+    it('should URL-encode input', () => {
+      const result = escapeUrlContext('hello world');
+      expect(result).toBe('hello%20world');
+    });
+
+    it('should handle special characters', () => {
+      const result = escapeUrlContext('a&b/c');
+      expect(result).toBe('a%26b%2Fc');
     });
   });
 });

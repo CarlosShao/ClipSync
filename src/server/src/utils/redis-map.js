@@ -5,6 +5,7 @@
  */
 
 import Redis from 'redis';
+import { logger } from './logger.js';
 
 let redisClient = null;
 
@@ -17,7 +18,7 @@ export function getRedisClient() {
       url: `redis://${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`,
       password: process.env.REDIS_PASSWORD || undefined,
     });
-    redisClient.on('error', (err) => console.error('Redis Client Error', err));
+    redisClient.on('error', (err) => logger.error('Redis Client Error', { error: err.message }));
   }
   if (!redisClient.isOpen) {
     await redisClient.connect();

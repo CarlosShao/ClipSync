@@ -11,6 +11,7 @@
 
 import redis from 'redis';
 import config from '../config.js';
+import { logger } from './logger.js';
 
 let subscriberClient = null; // Redis Pub/Sub 订阅客户端（独立连接）
 let publisherClient = null;  // Redis 发布客户端（复用主连接或独立）
@@ -26,7 +27,7 @@ let localConnections = null; // 引用本地 connections Map
 export async function initWsRedisPubSub(connections) {
   // 检查 Redis 是否配置
   if (!config.redis?.host) {
-    console.log('[WS Redis Pub/Sub] Redis not configured, using local broadcast only');
+    logger.info('[WS Redis Pub/Sub] Redis not configured, using local broadcast only');
     return false;
   }
 
@@ -45,11 +46,11 @@ export async function initWsRedisPubSub(connections) {
     });
 
     subscriberClient.on('error', (err) => {
-      console.error('[WS Redis Pub/Sub] Subscriber error:', err.message);
+      logger.error('[WS Redis Pub/Sub] Subscriber error:', { error: err.message });
     });
 
     subscriberClient.on('connect', () => {
-      console.log('[WS Redis Pub/Sub] Subscriber connected');
+      logger.info('[WS Redis Pub/Sub] Subscriber connected');
     });
 
     await subscriberClient.connect();
@@ -60,10 +61,10 @@ export async function initWsRedisPubSub(connections) {
     });
 
     isRedisEnabled = true;
-    console.log(`[WS Redis Pub/Sub] Initialized, instanceId=${instanceId}`);
+    logger.info(`[WS Redis Pub/Sub] Initialized, instanceId=${instanceId}`);
     return true;
   } catch (err) {
-    console.error('[WS Redis Pub/Sub] Failed to initialize:', err.message);
+    logger.error('[WS Redis Pub/Sub] Failed to initialize:', { error: err.message });
     isRedisEnabled = false;
     return false;
   }
@@ -96,7 +97,7 @@ function handleRedisMessage(message, channel) {
       }
     }
   } catch (err) {
-    console.error('[WS Redis Pub/Sub] Error handling message:', err.message);
+    logger.error('[WS Redis Pub/Sub] Error handling message:', { error: err.message });
   }
 }
 
@@ -126,7 +127,7 @@ export async function publishToUser(userId, data) {
     const channel = `ws:user:${userId}`;
     await client.publish(channel, JSON.stringify(message));
   } catch (err) {
-    console.error('[WS Redis Pub/Sub] Failed to publish:', err.message);
+    logger.error('[WS Redis Pub/Sub] Failed to publish:', { error: err.message });
   }
 }
 
@@ -154,7 +155,7 @@ export async function publishSystemNotification(notification) {
     // 发布到系统通知频道
     await client.publish('ws:system', JSON.stringify(message));
   } catch (err) {
-    console.error('[WS Redis Pub/Sub] Failed to publish system notification:', err.message);
+    logger.error('[WS Redis Pub/Sub] Failed to publish system notification:', { error: err.message });
   }
 }
 
@@ -175,12 +176,12 @@ export async function initSystemNotificationSubscriber(onSystemNotification) {
           onSystemNotification(parsed.notification);
         }
       } catch (err) {
-        console.error('[WS Redis Pub/Sub] Error handling system notification:', err.message);
+        logger.error('[WS Redis Pub/Sub] Error handling system notification:', { error: err.message });
       }
     });
     return true;
   } catch (err) {
-    console.error('[WS Redis Pub/Sub] Failed to subscribe to system notifications:', err.message);
+    logger.error('[WS Redis Pub/Sub] Failed to subscribe to system notifications:', { error: err.message });
     return false;
   }
 }
@@ -194,9 +195,9 @@ export async function closeWsRedisPubSub() {
       await subscriberClient.quit();
       subscriberClient = null;
       isRedisEnabled = false;
-      console.log('[WS Redis Pub/Sub] Closed');
+      logger.info('[WS Redis Pub/Sub] Closed');
     } catch (err) {
-      console.error('[WS Redis Pub/Sub] Error closing:', err.message);
+      logger.error('[WS Redis Pub/Sub] Error closing:', { error: err.message });
     }
   }
 }

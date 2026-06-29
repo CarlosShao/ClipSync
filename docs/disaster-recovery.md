@@ -125,9 +125,12 @@ curl http://localhost:3000/api/health
 
 | 角色 | 职责 | 联系方式 |
 |------|------|----------|
-| 系统管理员 | 服务器运维、Docker管理 | [配置] |
-| 数据库管理员 | 数据库备份恢复、迁移 | [配置] |
-| 开发负责人 | 应用层故障排查、代码修复 | [配置] |
+| 系统管理员 | 服务器运维、Docker管理 | admin@clipsync.com |
+| 数据库管理员 | 数据库备份恢复、迁移 | dba@clipsync.com |
+| 开发负责人 | 应用层故障排查、代码修复 | dev@clipsync.com |
+| 安全负责人 | 安全事件响应 | security@clipsync.com |
+
+> **注意**: 请在部署前更新为实际联系人信息
 
 ---
 
@@ -147,12 +150,22 @@ docker-compose restart api
 # 完全重建
 docker-compose down && docker-compose up -d
 
-# 数据库备份
+# 数据库备份（带校验和）
 ./scripts/backup-db.sh manual
 
-# 数据库恢复
-gunzip -c backups/clipsync_manual_YYYYMMDD.sql.gz | docker exec -i clipsync-postgres psql -U postgres clipsync
+# 数据库备份（带加密）
+BACKUP_ENCRYPTION_KEY=your_key ./scripts/backup-db.sh manual
+
+# 数据库恢复（未加密备份）
+gunzip -c backups/clipsync_manual_YYYYMMDD.sql.gz | docker exec -i clipsync-postgres psql -U clipsync clipsync
+
+# 数据库恢复（加密备份）
+export BACKUP_ENCRYPTION_KEY=your_key
+./scripts/verify-backup.sh backups/clipsync_manual_YYYYMMDD.sql.gz.gpg
 
 # 备份验证
 ./scripts/verify-backup.sh
+
+# 查看备份列表
+ls -lh backups/
 ```

@@ -347,16 +347,16 @@ if (process.argv[1] && process.argv[1].includes('migrate-manager')) {
     case 'migrate':
       runMigrations()
         .then(result => {
-          console.log(`Migrations applied: ${result.applied}, current version: ${result.currentVersion}`);
+          logger.info(`Migrations applied: ${result.applied}, current version: ${result.currentVersion}`);
           // Backfill search_vector if needed
           return backfillSearchVector();
         })
         .then(count => {
-          console.log(`Search vector backfill: ${count} rows`);
+          logger.info(`Search vector backfill: ${count} rows`);
           process.exit(0);
         })
         .catch(err => {
-          console.error('Migration failed:', err);
+          logger.error('Migration failed:', { error: err.message });
           process.exit(1);
         });
       break;
@@ -365,12 +365,12 @@ if (process.argv[1] && process.argv[1].includes('migrate-manager')) {
       ensureVersionTable()
         .then(() => getCurrentVersion())
         .then(version => {
-          console.log(`Current schema version: ${version}`);
-          console.log(`Available versions: ${SCHEMA_VERSIONS.map(v => `${v.version}: ${v.description}`).join('\n')}`);
+          logger.info(`Current schema version: ${version}`);
+          logger.info(`Available versions: ${SCHEMA_VERSIONS.map(v => `${v.version}: ${v.description}`).join('\n')}`);
           process.exit(0);
         })
         .catch(err => {
-          console.error('Status check failed:', err);
+          logger.error('Status check failed:', { error: err.message });
           process.exit(1);
         });
       break;
@@ -378,17 +378,17 @@ if (process.argv[1] && process.argv[1].includes('migrate-manager')) {
     case 'backfill':
       backfillSearchVector()
         .then(count => {
-          console.log(`Backfill completed: ${count} rows updated`);
+          logger.info(`Backfill completed: ${count} rows updated`);
           process.exit(0);
         })
         .catch(err => {
-          console.error('Backfill failed:', err);
+          logger.error('Backfill failed:', { error: err.message });
           process.exit(1);
         });
       break;
 
     default:
-      console.log('Usage: node migrate-manager.js [migrate|status|backfill]');
+      logger.info('Usage: node migrate-manager.js [migrate|status|backfill]');
       process.exit(0);
   }
 }

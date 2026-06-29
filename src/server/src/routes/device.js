@@ -4,6 +4,7 @@ import pool from '../db/pool.js';
 import { broadcastToUser } from '../ws/server.js';
 import { isValidUUID, isValidDeviceType, isValidPlatform, sanitizeString, validateDeviceName } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -22,8 +23,8 @@ router.get('/', apiLimiter, async (req, res) => {
 
     res.json(result.rows);
   } catch (err) {
-    console.error('Get devices error:', err);
-    res.status(500).json({ error: '获取设备列表失败' });
+    logger.error('Get devices error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to get device list' });
   }
 });
 
@@ -35,7 +36,7 @@ router.post('/', apiLimiter, async (req, res) => {
 
     // 验证必填字段
     if (!deviceName || !deviceType || !platform) {
-      return res.status(400).json({ error: 'deviceName, deviceType, platform 不能为空' });
+      return res.status(400).json({ error: 'deviceName, deviceType, and platform are required' });
     }
 
     // 验证设备名称
@@ -46,12 +47,12 @@ router.post('/', apiLimiter, async (req, res) => {
 
     // 验证设备类型
     if (!isValidDeviceType(deviceType)) {
-      return res.status(400).json({ error: 'deviceType 无效，可选值: desktop, mobile, tablet' });
+      return res.status(400).json({ error: 'Invalid deviceType. Valid values: desktop, mobile, tablet' });
     }
 
     // 验证平台
     if (!isValidPlatform(platform)) {
-      return res.status(400).json({ error: 'platform 无效，可选值: windows, macos, linux, ios, android, browser' });
+      return res.status(400).json({ error: 'Invalid platform. Valid values: windows, macos, linux, ios, android, browser' });
     }
 
     // 清理输入
@@ -67,7 +68,7 @@ router.post('/', apiLimiter, async (req, res) => {
 
     if (existing.rows.length > 0) {
       return res.status(409).json({
-        error: '设备名称已存在',
+        error: 'Device name already exists',
         deviceId: existing.rows[0].id,
       });
     }
@@ -89,8 +90,8 @@ router.post('/', apiLimiter, async (req, res) => {
 
     res.status(201).json(device);
   } catch (err) {
-    console.error('Register device error:', err);
-    res.status(500).json({ error: '注册设备失败' });
+    logger.error('Register device error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to register device' });
   }
 });
 
@@ -103,7 +104,7 @@ router.put('/:deviceId', apiLimiter, async (req, res) => {
 
     // 验证 deviceId
     if (!isValidUUID(deviceId)) {
-      return res.status(400).json({ error: '设备ID格式无效' });
+      return res.status(400).json({ error: 'Invalid device ID format' });
     }
 
     // 验证设备名称
@@ -131,13 +132,13 @@ router.put('/:deviceId', apiLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '设备不存在' });
+      return res.status(404).json({ error: 'Device not found' });
     }
 
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('Update device error:', err);
-    res.status(500).json({ error: '更新设备失败' });
+    logger.error('Update device error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to update device' });
   }
 });
 
@@ -149,7 +150,7 @@ router.delete('/:deviceId', apiLimiter, async (req, res) => {
 
     // 验证 deviceId
     if (!isValidUUID(deviceId)) {
-      return res.status(400).json({ error: '设备ID格式无效' });
+      return res.status(400).json({ error: 'Invalid device ID format' });
     }
 
     const result = await pool.query(
@@ -158,7 +159,7 @@ router.delete('/:deviceId', apiLimiter, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '设备不存在' });
+      return res.status(404).json({ error: 'Device not found' });
     }
 
     // Broadcast device removal to other devices
@@ -167,10 +168,10 @@ router.delete('/:deviceId', apiLimiter, async (req, res) => {
       deviceId: result.rows[0].id,
     });
 
-    res.json({ message: '设备已删除' });
+    res.json({ message: 'Device deleted' });
   } catch (err) {
-    console.error('Delete device error:', err);
-    res.status(500).json({ error: '删除设备失败' });
+    logger.error('Delete device error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to delete device' });
   }
 });
 
