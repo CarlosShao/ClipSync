@@ -2,6 +2,7 @@ import { Router } from 'express';
 import pool from '../db/pool.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
+import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { webhookSignatureVerifier, createWeChatSignatureVerifier, createAlipaySignatureVerifier, createStripeSignatureVerifier } from '../middleware/webhook-signature.js';
 import { webhookIdempotencyMiddleware } from '../middleware/idempotency.js';
 
@@ -54,6 +55,23 @@ router.post('/create-order', authenticateToken, async (req, res) => {
     
     const order = orderResult.rows[0];
     
+    // 审计日志：记录支付订单创建
+    await logAuditEvent({
+      userId,
+      action: AUDIT_ACTIONS.PAYMENT_CREATE,
+      resourceType: 'payment_order',
+      resourceId: order.id.toString(),
+      details: {
+        orderNo: order.order_no,
+        amount: order.amount,
+        currency: order.currency,
+        paymentMethod,
+        subscriptionId,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    }).catch(err => logger.error('Audit log failed', { error: err.message }));
+    
     // Mock支付：直接标记为已支付
     if (paymentMethod === 'mock') {
       await pool.query(`
@@ -68,6 +86,24 @@ router.post('/create-order', authenticateToken, async (req, res) => {
         INSERT INTO invoices (user_id, order_id, invoice_no, amount, tax, status)
         VALUES ($1, $2, $3, $4, $5, $6)
       `, [userId, order.id, invoiceNo, order.amount, 0, 'issued']);
+      
+      // 审计日志：记录支付完成
+      await logAuditEvent({
+        userId,
+        action: AUDIT_ACTIONS.PAYMENT_COMPLETE,
+        resourceType: 'payment_order',
+        resourceId: order.id.toString(),
+        details: {
+          orderNo: order.order_no,
+          amount: order.amount,
+          currency: order.currency,
+          paymentMethod,
+          transactionId: `MOCK${Date.now()}`,
+          invoiceNo,
+        },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      }).catch(err => logger.error('Audit log failed', { error: err.message }));
       
       logger.info(`Mock payment successful for order ${orderNo}`);
       

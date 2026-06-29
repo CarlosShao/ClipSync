@@ -10,6 +10,7 @@ import { broadcastToUser } from '../ws/server.js';
 import { isValidUUID } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
 import { logger } from '../utils/logger.js';
+import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -201,7 +202,26 @@ router.post('/image', apiLimiter, imageUpload.single('image'), async (req, res) 
     });
 
     logger.info('Image uploaded', { itemId: item.id, filename, size: compressed.length });
-
+    
+    // 审计日志：记录图片上传
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: AUDIT_ACTIONS.UPLOAD_FILE,
+      resourceType: 'clipboard_item',
+      resourceId: item.id,
+      details: {
+        contentType: 'image',
+        filename,
+        originalName: req.file.originalname,
+        originalSize: req.file.size,
+        compressedSize: compressed.length,
+        width: metadata.width,
+        height: metadata.height,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    }).catch(err => logger.error('Audit log failed', { error: err.message }));
+    
     res.status(201).json({
       id: item.id,
       contentType: 'image',
@@ -293,7 +313,24 @@ router.post('/file', apiLimiter, fileUpload.single('file'), async (req, res) => 
     });
 
     logger.info('File uploaded', { itemId: item.id, filename, size: req.file.size });
-
+    
+    // 审计日志：记录文件上传
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: AUDIT_ACTIONS.UPLOAD_FILE,
+      resourceType: 'clipboard_item',
+      resourceId: item.id,
+      details: {
+        contentType: 'file',
+        filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimeType: req.file.mimetype,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    }).catch(err => logger.error('Audit log failed', { error: err.message }));
+    
     res.status(201).json({
       id: item.id,
       contentType: 'file',
