@@ -170,12 +170,11 @@ fn check_clipboard_image_info() -> serde_json::Value {
 }
 
 /// Read image from Windows clipboard (CF_DIB / CF_BITMAP)
-/// Returns base64 PNG data URL. Manually parses Windows DIB (including V5 header + BI_BITFIELDS)
-/// because image crate's BMP decoder cannot handle clipboard format.
+/// Returns base64 PNG data URL. Uses image crate for reliable BMP decoding,
+/// with manual DIB parser as fallback for non-standard formats.
 #[tauri::command]
 fn get_clipboard_image() -> Result<String, String> {
     use clipboard_win::raw;
-    use base64::Engine;
 
     raw::open().map_err(|e| format!("open clipboard: {}", e))?;
 
@@ -196,10 +195,27 @@ fn get_clipboard_image() -> Result<String, String> {
         return Ok(String::new());
     }
 
-    // clipboard-win::raw::get_bitmap() returns data WITH a 14-byte BM file header!
-    // Strip it to get raw DIB (BITMAPINFOHEADER + pixel data)
-    let actual_dib = if &dib[0..2] == b"BM" && dib.len() > 14 { &dib[14..] } else { &dib };
+    eprintln!("[get_clipboard_image] raw {} bytes, starts with {:02x?}, has_BM={}",
+        dib.len(), dib.iter().take(4).collect::<Vec<_>>(),
+        dib.len() > 2 && &dib[0..2] == b"BM");
 
+    // === Try 1: image crate BMP decoder (most reliable for standard BMP) ===
+    if dib.len() > 14 && &dib[0..2] == b"BM" {
+        match image::load_from_memory(&dib) {
+            Ok(img) => {
+                let rgba = img.to_rgba8();
+                let (w, h) = rgba.dimensions();
+                eprintln!("[get_clipboard_image] image crate OK: {}x{}", w, h);
+                return encode_rgba_to_png_data_url(&rgba, w, h);
+            }
+            Err(e) => {
+                eprintln!("[get_clipboard_image] image crate failed: {}, trying manual parser", e);
+            }
+        }
+    }
+
+    // === Try 2: Manual DIB parsing (fallback for non-standard formats) ===
+    let actual_dib = if &dib[0..2] == b"BM" && dib.len() > 14 { &dib[14..] } else { &dib };
     dib_to_png_data_url(actual_dib).map_err(|e| format!("get_clipboard_image: {}", e))
 }
 
