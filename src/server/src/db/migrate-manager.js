@@ -158,16 +158,16 @@ const SCHEMA_VERSIONS = [
       END $$`,
 
       // Insert default subscription plans
-      `INSERT INTO subscription_plans (name, plan_type, price_monthly, price_yearly, currency, device_limit, clipboard_limit, file_size_limit, storage_limit, features)
-       SELECT 'Free', 'free', 0, 0, 'CNY', 2, 50, 1, 100, '{"ai_classify": true, "offline_queue": true, "e2e_encryption": true, "push_notification": false, "full_text_search": false, "version_history_days": 3}'::jsonb
+      `INSERT INTO subscription_plans (name, display_name, description, price_monthly, price_yearly, max_devices, max_clipboard_items, max_file_size_mb, max_storage_mb, features)
+       SELECT 'Free', '免费版', '基础功能', 0, 0, 2, 50, 1, 100, '{"ai_classify": true, "offline_queue": true, "e2e_encryption": true, "push_notification": false, "full_text_search": false, "version_history_days": 3}'::jsonb
        WHERE NOT EXISTS (SELECT 1 FROM subscription_plans WHERE name = 'Free')`,
       
-      `INSERT INTO subscription_plans (name, plan_type, price_monthly, price_yearly, currency, device_limit, clipboard_limit, file_size_limit, storage_limit, features)
-       SELECT 'Pro', 'pro', 9.9, 99, 'CNY', 5, 999999, 20, 5120, '{"ai_classify": true, "offline_queue": true, "e2e_encryption": true, "push_notification": true, "full_text_search": true, "version_history_days": 30}'::jsonb
+      `INSERT INTO subscription_plans (name, display_name, description, price_monthly, price_yearly, max_devices, max_clipboard_items, max_file_size_mb, max_storage_mb, features)
+       SELECT 'Pro', '专业版', '高级功能', 9.9, 99, 5, 999999, 20, 5120, '{"ai_classify": true, "offline_queue": true, "e2e_encryption": true, "push_notification": true, "full_text_search": true, "version_history_days": 30}'::jsonb
        WHERE NOT EXISTS (SELECT 1 FROM subscription_plans WHERE name = 'Pro')`,
       
-      `INSERT INTO subscription_plans (name, plan_type, price_monthly, price_yearly, currency, device_limit, clipboard_limit, file_size_limit, storage_limit, features)
-             SELECT 'Enterprise', 'enterprise', 29.9, 299, 'CNY', 999999, 999999, 100, 51200, '{"ai_classify": true, "offline_queue": true, "e2e_encryption": true, "push_notification": true, "full_text_search": true, "version_history_days": -1}'::jsonb
+      `INSERT INTO subscription_plans (name, display_name, description, price_monthly, price_yearly, max_devices, max_clipboard_items, max_file_size_mb, max_storage_mb, features)
+            SELECT 'Enterprise', '企业版', '企业级功能', 29.9, 299, 999999, 999999, 100, 51200, '{"ai_classify": true, "offline_queue": true, "e2e_encryption": true, "push_notification": true, "full_text_search": true, "version_history_days": -1}'::jsonb
        WHERE NOT EXISTS (SELECT 1 FROM subscription_plans WHERE name = 'Enterprise')`,
 
       // Create indexes
