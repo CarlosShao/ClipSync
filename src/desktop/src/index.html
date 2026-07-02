@@ -958,7 +958,25 @@
             return;
           }
 
-          // 2) Check for text via invoke
+          // 2) Check for image via invoke
+          const imgInfo = await _invoke('check_clipboard_image_info');
+          if (imgInfo && imgInfo.available) {
+            const imgHash = 'img:' + (imgInfo.size || 0);
+            if (_isDuplicateHash(imgHash)) return;
+            console.log('[TauriPoll] 🖼️ IMAGE detected, size:', imgInfo.size);
+            try {
+              const dataUrl = await _invoke('get_clipboard_image');
+              if (dataUrl && dataUrl.startsWith('data:')) {
+                await uploadImageClipboard(dataUrl, 'image/png', imgInfo.size || 0);
+                _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+              }
+            } catch (imgErr) {
+              console.warn('[TauriPoll] get_clipboard_image failed:', imgErr.message || imgErr);
+            }
+            return;
+          }
+
+          // 3) Check for text via invoke
           const text = await _invoke('get_clipboard_content');
           if (text && text !== _lastPolledText && text !== state.currentClipboard) {
             // Hash-based dedup for text
@@ -970,7 +988,7 @@
             _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
           }
 
-          // 3) Reset file tracking when files are cleared
+          // 4) Reset file tracking when files are cleared
           if (_lastPolledFiles && (!files || files.length === 0)) {
             _lastPolledFiles = '';
           }
