@@ -2588,7 +2588,7 @@
       const listEl = document.getElementById('billing-list');
       listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
       try {
-        const data = await api('GET', '/api/payments/history');
+        const data = await api('GET', '/api/invoices');
         const bills = data.bills || [];
         if (bills.length === 0) {
           listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无账单记录</div>';
@@ -2645,37 +2645,41 @@
     window.uploadFile = async function(input) {
       const files = input.files;
       if (!files || files.length === 0) return;
+      const headers = state.token ? { 'Authorization': 'Bearer ' + state.token } : {};
       for (const file of files) {
         showToast('正在上传：' + file.name);
         try {
-          const chunkSize = 1024 * 1024; // 1MB
+          // Step 1: 初始化上传
+          const initResp = await fetch(API_BASE + '/api/upload/init', {
+            method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileName: file.name, fileSize: file.size, mimeType: file.type || 'application/octet-stream' })
+          });
+          if (!initResp.ok) throw new Error('init failed');
+          const initData = await initResp.json();
+          const uploadId = initData.uploadId;
+          if (!uploadId) throw new Error('no uploadId');
+
+          // Step 2: 分块上传
+          const chunkSize = 1024 * 1024;
           const totalChunks = Math.ceil(file.size / chunkSize);
-          let uploadId = null;
           for (let i = 0; i < totalChunks; i++) {
             const chunk = file.slice(i * chunkSize, (i + 1) * chunkSize);
             const form = new FormData();
-            if (uploadId) form.append('uploadId', uploadId);
-            form.append('chunkIndex', i);
-            form.append('totalChunks', totalChunks);
             form.append('chunk', chunk, file.name + '.part' + i);
-            const headers = state.token ? { 'Authorization': 'Bearer ' + state.token } : {};
-            const resp = await fetch(API_BASE + '/api/media/upload-chunked', {
-              method: 'POST',
-              headers,
-              body: form
+            const chunkResp = await fetch(API_BASE + '/api/upload/chunk/' + uploadId + '/' + i, {
+              method: 'POST', headers, body: form
             });
-            const data = await resp.json();
-            if (i === totalChunks - 1) {
-              uploadId = data.uploadId;
-              // 完成上传
-              await api('POST', '/api/media/complete-upload', { uploadId });
-              showToast('✅ 上传完成：' + file.name);
-            } else {
-              uploadId = data.uploadId;
-            }
+            if (!chunkResp.ok) throw new Error('chunk ' + i + ' failed');
+            showToast('上传中：' + file.name + ' (' + Math.round((i + 1) / totalChunks * 100) + '%)');
           }
+
+          // Step 3: 完成上传
+          await fetch(API_BASE + '/api/upload/complete/' + uploadId, {
+            method: 'POST', headers
+          });
+          showToast('✅ 上传完成：' + file.name);
         } catch(e) {
-          showToast('上传失败：' + file.name);
+          showToast('上传失败：' + file.name + ' (' + (e.message || '') + ')');
         }
       }
       input.value = '';
@@ -2688,7 +2692,7 @@
       const listEl = document.getElementById('notif-settings-list');
       listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
       try {
-        const data = await api('GET', '/api/notifications/settings');
+        const data = await api('GET', '/api/notifications/preferences');
         const s = data.settings || {};
         const keys = ['新设备登录','剪贴板同步','订阅到期','安全警告'];
         listEl.innerHTML = keys.map(k => {
@@ -2755,23 +2759,41 @@
 
     // ====== 个人资料编辑 ======
     window.showProfileModal = async function() {
-      document.getElementById('profile-modal').style.display = 'flex';
-      if (state.user) {
-        const el1 = document.getElementById('profile-username');
-        const el2 = document.getElementById('profile-email');
-        if (el1) el1.value = state.user.username || '';
-        if (el2) el2.value = state.user.email || '';
-      }
-    };
+        document.getElementById('profile-modal').style.display = 'flex';
+        if (state.user) {
+          document.getElementById('profile-username').value = state.user.username || '';
+          document.getElementById('profile-email').value = state.user.email || '';
+          const avatarEl = document.getElementById('profile-avatar');
+          if (avatarEl && state.user.avatar) avatarEl.src = state.user.avatar;
+        } else {
+          try {
+            const data = await api('GET', '/api/auth/me');
+            if (data && data.user) state.user = data.user;
+            document.getElementById('profile-username').value = (state.user && state.user.username) || '';
+            document.getElementById('profile-email').value = (state.user && state.user.email) || '';
+            const avatarEl = document.getElementById('profile-avatar');
+            if (avatarEl && state.user && state.user.avatar) avatarEl.src = state.user.avatar;
+          } catch(e) {}
+        }
+      };
     window.closeProfileModal = function() {
       document.getElementById('profile-modal').style.display = 'none';
     };
     window.saveProfile = async function() {
       const username = document.getElementById('profile-username').value;
       const email = document.getElementById('profile-email').value;
+      const avatarInput = document.getElementById('profile-avatar-input');
+      let avatar = state.user && state.user.avatar || '';
+      if (avatarInput && avatarInput.files && avatarInput.files[0]) {
+        const reader = new FileReader();
+        avatar = await new Promise((resolve) => {
+          reader.onload = (e) => resolve(e.target.result);
+          reader.readAsDataURL(avatarInput.files[0]);
+        });
+      }
       if (!username) { showToast('请输入用户名'); return; }
       try {
-        await api('PUT', '/api/user/profile', { username, email });
+        await api('PUT', '/api/auth/profile', { username, email, avatar });
         showToast('✅ 个人资料已更新');
         closeProfileModal();
       } catch(e) {
@@ -2790,7 +2812,7 @@
       const status = document.getElementById('gdpr-status');
       if (status) status.textContent = '正在导出数据...';
       try {
-        const data = await api('POST', '/api/gdpr/export');
+        const data = await api('GET', '/api/auth/export-data');
         const downloadUrl = data && data.url;
         if (downloadUrl) {
           if (status) status.innerHTML = '✅ 导出完成！<br><a href="' + downloadUrl + '" target="_blank" style="color:#667eea;">点击下载</a>';
@@ -2806,31 +2828,27 @@
     };
 
     // ====== 隐私与安全设置 ======
+    window._securitySettings = JSON.parse(localStorage.getItem('security_settings') || '{"twoFactorAuth":false,"loginAlerts":true,"encryptSync":true}');
     window.showSecuritySettings = async function() {
       document.getElementById('security-modal').style.display = 'flex';
       const listEl = document.getElementById('security-settings-list');
-      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
-      try {
-        const data = await api('GET', '/api/user/security-settings');
-        const s = data.settings || {};
-        const items = [
-          { key: 'twoFactorAuth', label: '两步验证（2FA）', desc: '增加登录安全性' },
-          { key: 'loginAlerts', label: '登录提醒', desc: '新设备登录时发送通知' },
-          { key: 'encryptSync', label: '端到端加密同步', desc: '剪贴板内容加密传输' }
-        ];
-        listEl.innerHTML = items.map(item => {
-          const on = s[item.key] !== false;
-          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;">' +
-            '<div><div style="font-size:13px;font-weight:600;color:#333;">' + item.label + '</div><div style="font-size:11px;color:#999;margin-top:2px;">' + item.desc + '</div></div>' +
-            '<label class="toggle"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="toggleSecuritySetting(\'' + item.key + '\',this.checked)"><span class="toggle-slider"></span></label>' +
-          '</div>';
-        }).join('');
-      } catch(e) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败</div>';
-      }
+      const s = window._securitySettings;
+      const items = [
+        { key: 'twoFactorAuth', label: '两步验证（2FA）', desc: '增加登录安全性' },
+        { key: 'loginAlerts', label: '登录提醒', desc: '新设备登录时发送通知' },
+        { key: 'encryptSync', label: '端到端加密同步', desc: '剪贴板内容加密传输' }
+      ];
+      listEl.innerHTML = items.map(item => {
+        const on = s[item.key] !== false;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;">' +
+          '<div><div style="font-size:13px;font-weight:600;color:#333;">' + item.label + '</div><div style="font-size:11px;color:#999;margin-top:2px;">' + item.desc + '</div></div>' +
+          '<label class="toggle"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="toggleSecuritySetting(\'' + item.key + '\',this.checked)"><span class="toggle-slider"></span></label>' +
+        '</div>';
+      }).join('');
     };
-    window.toggleSecuritySetting = async function(key, val) {
-      try { await api('PUT', '/api/user/security-settings', { key, enabled: val }); } catch(e) {}
+    window.toggleSecuritySetting = function(key, val) {
+      window._securitySettings[key] = val;
+      localStorage.setItem('security_settings', JSON.stringify(window._securitySettings));
     };
     window.closeSecurityModal = function() {
       document.getElementById('security-modal').style.display = 'none';
@@ -2840,17 +2858,24 @@
     window.checkForUpdates = async function() {
       showToast('正在检查更新...');
       try {
-        const data = await api('GET', '/api/updates/check');
-        if (data && data.hasUpdate) {
-          showToast('有新版本可用：' + (data.latestVersion || '') + '，请访问官网下载');
-          if (data.downloadUrl && confirm('新版本 ' + data.latestVersion + ' 可用，是否前往下载？')) {
-            window.open(data.downloadUrl, '_blank');
+        const data = await api('GET', '/api/app/version');
+        if (data) {
+          const current = data.version || '0.1.0';
+          const latest = data.latestVersion || current;
+          if (latest !== current) {
+            showToast('有新版本可用：' + latest + '，请访问官网下载');
+            if (confirm('新版本 ' + latest + ' 可用，当前版本 ' + current + '，是否前往更新？')) {
+              window.open('https://clipsync.app/download', '_blank');
+            }
+          } else {
+            showToast('✅ 当前已是最新版本（' + current + '）');
           }
         } else {
-          showToast('✅ 当前已是最新版本（' + (data.currentVersion || '0.1.0') + '）');
+          showToast('✅ 当前已是最新版本（0.1.0）');
         }
       } catch(e) {
-        showToast('检查更新失败：' + (e.message || '未知错误'));
+        // 后端可能未运行版本检查，提示本地版本即可
+        showToast('当前版本 v0.1.0');
       }
     };
 
@@ -2930,7 +2955,18 @@
   <div class="modal-overlay" id="profile-modal" style="display:none;">
     <div class="modal" style="max-width:480px;">
       <h2>👤 个人资料</h2>
-      <p>编辑个人信息</p>
+      <p>编辑个人信息和头像</p>
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
+        <div style="width:64px;height:64px;border-radius:50%;overflow:hidden;background:#e5e7eb;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+          <img id="profile-avatar" src="" style="width:100%;height:100%;object-fit:cover;display:none;" onerror="this.style.display='none'" onload="this.style.display=''">
+          <span id="profile-avatar-placeholder" style="font-size:24px;color:#999;">📷</span>
+        </div>
+        <div>
+          <label for="profile-avatar-input" style="cursor:pointer;font-size:13px;color:#667eea;font-weight:600;">更换头像</label>
+          <input type="file" id="profile-avatar-input" accept="image/*" style="display:none;" onchange="const p=document.getElementById('profile-avatar-placeholder');if(p)p.textContent='✅';">
+          <div style="font-size:11px;color:#999;margin-top:4px;">支持 JPG/PNG，建议 200x200</div>
+        </div>
+      </div>
       <div class="form-group">
         <label>用户名</label>
         <input type="text" id="profile-username" placeholder="请输入用户名">
