@@ -2659,7 +2659,7 @@
             form.append('totalChunks', totalChunks);
             form.append('chunk', chunk, file.name + '.part' + i);
             const headers = state.token ? { 'Authorization': 'Bearer ' + state.token } : {};
-            const resp = await fetch(API_URL + '/api/media/upload-chunked', {
+            const resp = await fetch(API_BASE + '/api/media/upload-chunked', {
               method: 'POST',
               headers,
               body: form
@@ -2752,79 +2752,6 @@
     window.closeSessionModal = function() {
       document.getElementById('session-modal').style.display = 'none';
     };
-
-
-    // ====== 通知设置 ======
-    window.showNotifSettings = async function() {
-      document.getElementById('notif-settings-modal').style.display = 'flex';
-      const listEl = document.getElementById('notif-settings-list');
-      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
-      try {
-        const data = await api('GET', '/api/notifications/settings');
-        const s = data.settings || {};
-        const keys = ['新设备登录','剪贴板同步','订阅到期','安全警告'];
-        listEl.innerHTML = keys.map(k => {
-          const on = s[k] !== false;
-          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #f0f0f0;">' +
-            '<span style="font-size:13px;color:#333;">' + k + '</span>' +
-            '<label class="toggle"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="toggleNotifSetting(\'' + k + '\',this.checked)"><span class="toggle-slider"></span></label>' +
-          '</div>';
-        }).join('');
-      } catch(e) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败</div>';
-      }
-    };
-
-    window.toggleNotifSetting = async function(key, val) {
-      try { await api('PUT', '/api/notifications/settings', { key, enabled: val }); } catch(e) {}
-    };
-
-    window.closeNotifSettingsModal = function() {
-      document.getElementById('notif-settings-modal').style.display = 'none';
-    };
-
-    // ====== 会话管理 ======
-    window.showSessionManagement = async function() {
-      document.getElementById('session-modal').style.display = 'flex';
-      const listEl = document.getElementById('session-list');
-      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
-      try {
-        const data = await api('GET', '/api/sessions');
-        const sessions = data.sessions || [];
-        if (sessions.length === 0) {
-          listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无会话</div>';
-        } else {
-          listEl.innerHTML = sessions.map(s => {
-            const isCurrent = s.id === state.sessionId;
-            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;">' +
-              '<div>' +
-                '<div style="font-size:13px;font-weight:600;color:#333;">' + (s.deviceName || '未知设备') + (isCurrent ? ' (当前)' : '') + '</div>' +
-                '<div style="font-size:11px;color:#999;margin-top:2px;">' + (s.ip || '') + ' · ' + new Date(s.lastActive).toLocaleString() + '</div>' +
-              '</div>' +
-              (isCurrent ? '<span style="font-size:12px;color:#999;">当前</span>' : '<button class="btn btn-secondary" style="padding:4px 12px;font-size:12px;color:#e74c3c;border-color:#e74c3c;" onclick="kickSession(" + s.id + ")">踢出</button>') +
-            '</div>';
-          }).join('');
-        }
-      } catch(e) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败</div>';
-      }
-    };
-
-    window.kickSession = async function(sessionId) {
-      if (!confirm('确认踢出该会话？')) return;
-      try {
-        await api('DELETE', '/api/sessions/' + sessionId);
-        showToast('✅ 已踢出');
-        showSessionManagement();
-      } catch(e) {
-        showToast('操作失败：' + (e.message || '未知错误'));
-      }
-    };
-
-    window.closeSessionModal = function() {
-      document.getElementById('session-modal').style.display = 'none';
-    };
-
 
     // ====== 个人资料编辑 ======
     window.showProfileModal = async function() {
