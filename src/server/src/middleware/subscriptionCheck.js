@@ -13,17 +13,32 @@ async function subscriptionCheck(req, res, next) {
   try {
     const userId = req.user.userId;
     
-    // 获取用户订阅状态
+    // 获取用户订阅状态（含管理员标记）
     const userResult = await pool.query(
-      'SELECT subscription_status, current_subscription_id FROM users WHERE id = $1',
+      'SELECT subscription_status, current_subscription_id, is_admin FROM users WHERE id = $1',
       [userId]
     );
-    
+
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     const user = userResult.rows[0];
+
+    // 管理员：直接赋予无限额度
+    if (user.is_admin) {
+      req.user.subscriptionStatus = 'admin';
+      req.user.plan = {
+        name: 'Admin',
+        maxDevices: 9999,
+        maxClipboardItems: 99999,
+        maxFileSizeMb: 500,
+        maxStorageMb: 100000,
+        features: JSON.stringify(['all']),
+        isUnlimited: true,
+      };
+      return next();
+    }
     req.user.subscriptionStatus = user.subscription_status || 'free';
     req.user.currentSubscriptionId = user.current_subscription_id;
     
@@ -117,12 +132,21 @@ function requireFeature(featureName) {
 
 /**
  * 设备数量限制中间件
+ * 只拦截 POST（创建设备）请求，不拦截 GET（列表）请求
  */
 async function checkDeviceLimit(req, res, next) {
+  // 只对创建设备的 POST 请求做限制
+  if (req.method !== 'POST') {
+    return next();
+  }
+
   try {
     const userId = req.user.userId;
     const plan = req.user.plan;
-    
+
+    // 管理员绕过所有限制
+    if (plan && plan.isUnlimited) return next();
+
     if (!plan) return next();
     
     // 获取用户当前设备数量
@@ -156,7 +180,9 @@ async function checkClipboardLimit(req, res, next) {
   try {
     const userId = req.user.userId;
     const plan = req.user.plan;
-    
+
+    // 管理员绕过所有限制
+    if (plan && plan.isUnlimited) return next();
     if (!plan) return next();
     
     // 获取用户当前剪贴板条数

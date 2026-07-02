@@ -1,0 +1,15 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart
+00:00 +0: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should generate and store a new key
+00:00 +1: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should store and retrieve a key
+00:00 +2: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should delete a key
+00:00 +3: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should check if key exists
+00:00 +4: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should get all key IDs
+00:00 +5: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should clear all keys
+00:00 +6: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should generate unique key IDs
+00:00 +7: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should store key with custom ID
+00:00 +8: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should derive key from password
+00:00 +9: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should derive key from password
+00:01 +10: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should derive key from password
+00:01 +11: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should return null for non-existent key
+00:01 +12: All tests passed!

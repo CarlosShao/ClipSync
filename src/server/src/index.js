@@ -70,14 +70,7 @@ app.use((req, res, next) => {
 app.use(requestId());
 
 // ============================================
-// CSRF Protection - placed after authenticateToken for protected routes
-// ============================================
-
-// CSRF令牌获取端点
-app.get('/api/csrf-token', authenticateToken, handleGetCsrfToken);
-
-// ============================================
-// CORS Configuration
+// CORS Configuration (must be BEFORE any API routes)
 // ============================================
 const corsOptions = {
   origin: function (origin, callback) {
@@ -96,10 +89,18 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  maxAge: 86400, // 预检请求缓存24小时
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-csrf-token', 'x-csrf-token-v2'],
+  // 开发环境用短缓存，避免改了配置后浏览器还缓存旧的失败结果
+  maxAge: config.nodeEnv === 'development' ? 10 : 86400,
 };
 app.use(cors(corsOptions));
+
+// ============================================
+// CSRF Protection - placed after authenticateToken for protected routes
+// ============================================
+
+// CSRF令牌获取端点（必须在CORS中间件之后）
+app.get('/api/csrf-token', authenticateToken, handleGetCsrfToken);
 
 // ============================================
 // Raw Body Saver (for webhook signature verification)
@@ -326,7 +327,7 @@ app.use('/api/devices', apiLimiter, authenticateToken, csrfProtection, subscript
   req.userId = req.user.userId;
   next();
 }, deviceRoutes);
-app.use('/api/clipboard', apiLimiter, authenticateToken, csrfProtection, subscriptionCheck, checkClipboardLimit, (req, res, next) => {
+app.use('/api/clipboard', apiLimiter, authenticateToken, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, clipboardRoutes);

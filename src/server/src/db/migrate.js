@@ -4,13 +4,32 @@ import fs from 'fs';
 import path from 'path';
 
 const migrations = [
-  // 1. Users table
+  // 1. Users table (complete schema with all fields required by auth/subscription routes)
   `CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     phone VARCHAR(20) UNIQUE NOT NULL,
+    email VARCHAR(255),
     nickname VARCHAR(100) DEFAULT '',
     avatar_url TEXT DEFAULT '',
     password_hash VARCHAR(255),
+    phone_encrypted TEXT,
+    email_encrypted TEXT,
+    phone_hash VARCHAR(128),
+    email_hash VARCHAR(128),
+    tos_accepted_at TIMESTAMPTZ,
+    privacy_accepted_at TIMESTAMPTZ,
+    marketing_consent BOOLEAN DEFAULT FALSE,
+    birth_date DATE,
+    age_verified BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    deactivated_at TIMESTAMPTZ,
+    deactivation_reason TEXT,
+    analytics_consent BOOLEAN,
+    functional_consent BOOLEAN,
+    consent_updated_at TIMESTAMPTZ,
+    subscription_status VARCHAR(20) DEFAULT 'free',
+    current_subscription_id UUID,
+    is_admin BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   )`,
@@ -65,6 +84,55 @@ const migrations = [
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   )`,
 
+  // 6. User sessions table (auth login requires)
+  `CREATE TABLE IF NOT EXISTS user_sessions (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_name VARCHAR(100) DEFAULT 'Unknown Device',
+    device_type VARCHAR(20) DEFAULT 'browser',
+    platform VARCHAR(20) DEFAULT 'unknown',
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    revoked_at TIMESTAMP WITH TIME ZONE
+  )`,
+
+  // 7. Subscription plans table (subscriptionCheck middleware requires)
+  `CREATE TABLE IF NOT EXISTS subscription_plans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(50) UNIQUE NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    price_monthly DECIMAL(10,2),
+    price_yearly DECIMAL(10,2),
+    max_devices INTEGER DEFAULT 2,
+    max_clipboard_items INTEGER DEFAULT 50,
+    max_file_size_mb INTEGER DEFAULT 1,
+    max_storage_mb INTEGER DEFAULT 100,
+    features JSONB DEFAULT '{}',
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )`,
+
+  // 8. User subscriptions table (subscriptionCheck middleware requires)
+  `CREATE TABLE IF NOT EXISTS user_subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id UUID NOT NULL REFERENCES subscription_plans(id),
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active','canceled','past_due','expired')),
+    billing_cycle VARCHAR(10) DEFAULT 'monthly' CHECK (billing_cycle IN ('monthly','yearly')),
+    current_period_start TIMESTAMP WITH TIME ZONE NOT NULL,
+    current_period_end TIMESTAMP WITH TIME ZONE NOT NULL,
+    start_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    end_date TIMESTAMP WITH TIME ZONE,
+    stripe_subscription_id VARCHAR(255),
+    alipay_agreement_id VARCHAR(255),
+    wechat_pay_prepay_id VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )`,
+
   // 6. File versions table
   `CREATE TABLE IF NOT EXISTS file_versions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -91,6 +159,8 @@ const migrations = [
   `CREATE INDEX IF NOT EXISTS idx_verification_codes_phone ON verification_codes(phone, used) WHERE used = FALSE`,
   `CREATE INDEX IF NOT EXISTS idx_file_versions_item ON file_versions(clipboard_item_id, version_number)`,
   `CREATE INDEX IF NOT EXISTS idx_file_versions_user ON file_versions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_user_sessions_active ON user_sessions(user_id, is_active) WHERE is_active = TRUE`,
 ];
 
 // Post-migration: add tsvector column and trigger if not exists
@@ -115,6 +185,15 @@ const postMigrations = [
 
   // Create GIN index (must be after column and trigger are created)
   `CREATE INDEX IF NOT EXISTS idx_clipboard_search ON clipboard_items USING GIN(search_vector)`,
+
+  // Seed subscription plans if empty
+  `INSERT INTO subscription_plans (name, display_name, description, price_monthly, price_yearly, max_devices, max_clipboard_items, max_file_size_mb, max_storage_mb, features)
+   VALUES
+    ('Free', '免费版', '基础剪贴板同步功能', 0, 0, 2, 50, 1, 100,
+     '{"ai_classify":true,"offline_queue":true,"e2e_encryption":true,"push_notification":false,"full_text_search":false,"version_history_days":3}'),
+    ('Pro', '专业版', '完整功能解锁', 9.9, 99, 10, 500, 10, 1024,
+     '{"ai_classify":true,"offline_queue":true,"e2e_encryption":true,"push_notification":true,"full_text_search":true,"version_history_days":30}')
+   ON CONFLICT (name) DO NOTHING`,
 ];
 
 async function migrate() {

@@ -1,7 +1,7 @@
 # Flutter 移动端全流程自动化测试文档
 
-> **文档版本**: v1.0  
-> **适用平台**: Android / iOS / Web (测试)  
+> **文档版本**: v1.1（已根据实际项目结构修正）  
+> **适用平台**: Android / Web（测试）(iOS/macOS 已搁置)  
 > **最后更新**: 2026年6月29日
 
 ---
@@ -32,22 +32,6 @@ flutter doctor  # 查看缺失依赖
 flutter devices
 ```
 
-#### macOS
-```bash
-# 检查 Flutter 版本
-flutter --version
-
-# 检查 Xcode（iOS 测试需要）
-xcode-select -p
-xcodebuild -version
-
-# 检查 iOS 模拟器
-open -a Simulator
-
-# 检查设备
-flutter devices
-```
-
 #### Linux
 ```bash
 # 安装 Flutter（若未安装）
@@ -63,7 +47,7 @@ flutter doctor
 
 ```bash
 # 进入 Flutter 项目目录
-cd /d/work/java/AI-workspace/ClipSync/src/mobile
+cd D:/work/java/AI-workspace/ClipSync/src/mobile
 
 # 获取依赖
 flutter pub get
@@ -80,7 +64,7 @@ Dependencies are now resolved.
 
 **失败处理**：
 - 若 `flutter pub get` 失败：检查 `pubspec.yaml` 语法，检查网络连接
-- 若某个包下载失败：尝试更换 pub 镜像 `export PUB_HOSTED_URL=https://pub.flutter-io.cn`
+- 若某个包下载失败：尝试更换 pub 镜像 `set PUB_HOSTED_URL=https://pub.flutter-io.cn`
 
 ---
 
@@ -90,13 +74,18 @@ Dependencies are now resolved.
 
 ```
 src/mobile/
-├── pubspec.yaml           # 包含 dev_dependencies：test、flutter_test、mockito
+├── pubspec.yaml           # 包含 dev_dependencies：test、flutter_test
 ├── test/
-│   ├── widget_test.dart  # Widget 测试
-│   ├── unit/             # 单元测试目录
-│   ├── integration/      # 集成测试目录
-│   └── helpers/         # 测试辅助函数
-└── integration_test/     # E2E 测试目录（Flutter 新版本推荐）
+│   ├── widget_test.dart  # ✅ 真实存在：Widget 测试
+│   ├── key_storage_service_test.dart  # ✅ 真实存在：单元测试
+│   └── mock_plugins.dart  # ✅ 真实存在：Mock 辅助
+└── lib/
+    ├── main.dart
+    ├── models/           # 数据模型
+    ├── providers/        # 状态管理
+    ├── screens/          # 页面
+    ├── services/         # 业务服务
+    └── widgets/         # UI 组件
 ```
 
 **若缺少测试依赖，添加到 `pubspec.yaml`**：
@@ -107,15 +96,14 @@ dev_dependencies:
   test: ^1.24.0
   mockito: ^5.4.2
   build_runner: ^2.4.0
-  integration_test:
-    sdk: flutter
 ```
+
+> ⚠️ **注意**：`integration_test/` 目录当前不存在，集成测试需要手动创建。
 
 ---
 
-### 1.4 模拟器/真机准备
+### 1.4 模拟器/真机准备（Android）
 
-#### Android
 ```bash
 # 启动 Android 模拟器
 emulator -list-avds  # 列出可用模拟器
@@ -123,14 +111,6 @@ emulator -avd Pixel_6_API_34  # 启动指定模拟器
 
 # 或连接真机（开启 USB 调试）
 adb devices  # 确认设备已连接
-```
-
-#### iOS（仅 macOS）
-```bash
-# 启动 iOS 模拟器
-open -a Simulator
-xcrun simctl list devices  # 列出可用模拟器
-xcrun simctl boot "iPhone 15 Pro"  # 启动指定模拟器
 ```
 
 ---
@@ -141,24 +121,25 @@ xcrun simctl boot "iPhone 15 Pro"  # 启动指定模拟器
 
 ```bash
 # 进入项目目录
-cd /d/work/java/AI-workspace/ClipSync/src/mobile
+cd D:/work/java/AI-workspace/ClipSync/src/mobile
 
 # 运行所有测试（默认在本地机器运行，如 Windows 则运行桌面版）
 flutter test
 
 # 指定设备运行（推荐，速度更快）
 flutter test -d windows
-flutter test -d macos
 flutter test -d linux
 ```
 
 **预期结果**：
 ```
-00:02 +12: All tests passed!
+00:02 +2: All tests passed!
 ```
 
+> ✅ 当前真实存在的测试文件：`test/widget_test.dart`、`test/key_storage_service_test.dart`
+
 **参数说明**：
-- `-d <device>`：指定运行设备（如 `windows`、`macos`、`linux`、`emulator-5554`）
+- `-d <device>`：指定运行设备（如 `windows`、`linux`、`emulator-5554`）
 - `--coverage`：生成覆盖率报告
 - `--reporter=expanded`：显示每个测试用例的名称
 - `--timeout=10s`：设置测试超时时间
@@ -168,11 +149,12 @@ flutter test -d linux
 ### 2.2 运行指定测试文件
 
 ```bash
-# 运行单个测试文件
-flutter test test/unit/clipboard_service_test.dart
+# 运行单个测试文件（仅限真实存在的文件）
+flutter test test/widget_test.dart
+flutter test test/key_storage_service_test.dart
 
 # 运行匹配名称的测试
-flutter test --name="剪贴板同步"
+flutter test --name="计数器"
 ```
 
 ---
@@ -184,15 +166,11 @@ flutter test --name="剪贴板同步"
 flutter test --coverage
 
 # 查看覆盖率报告（需要 lcov）
-# 安装 lcov（macOS）
-brew install lcov
 # 安装 lcov（Ubuntu）
 sudo apt install -y lcov
 
 # 生成并打开 HTML 报告
 genhtml coverage/lcov.info -o coverage/html
-open coverage/html/index.html  # macOS
-xdg-open coverage/html/index.html  # Linux
 start coverage/html/index.html  # Windows
 ```
 
@@ -203,9 +181,11 @@ start coverage/html/index.html  # Windows
 
 ---
 
-### 2.4 运行集成测试（E2E）
+### 2.4 运行集成测试
 
-#### 方式一：`integration_test` 包（推荐）
+> ⚠️ **当前状态**：`integration_test/` 目录不存在，需要先创建。
+
+#### 若已创建集成测试目录：
 
 ```bash
 # 运行所有集成测试（需要在真机/模拟器上运行）
@@ -213,17 +193,15 @@ flutter test integration_test/
 
 # 指定设备
 flutter test -d emulator-5554 integration_test/
-
-# 生成覆盖率（集成测试 + 单元测试合并）
-flutter test --coverage --merge-coverage
 ```
 
-#### 方式二：`flutter drive`（旧版，不推荐）
+#### 创建集成测试目录：
 
 ```bash
-# 启动测试服务
-flutter drive --target=test_driver/app.dart
+mkdir D:/work/java/AI-workspace/ClipSync/src/mobile/integration_test
 ```
+
+然后创建 `integration_test/app_test.dart`（参考第三节示例）。
 
 ---
 
@@ -234,7 +212,7 @@ flutter drive --target=test_driver/app.dart
 flutter test --watch
 
 # 指定测试文件并监听
-flutter test --watch test/unit/clipboard_service_test.dart
+flutter test --watch test/key_storage_service_test.dart
 ```
 
 ---
@@ -250,9 +228,9 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: macos-latest  # 需要 macOS 才能测试 iOS
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -277,41 +255,32 @@ jobs:
 
 ### 3.1 UI 流程测试（Widget Test）
 
-| 测试场景 | 测试文件 | 覆盖内容 |
-|----------|----------|----------|
-| 剪贴板列表显示 | `clipboard_list_test.dart` | 列表渲染、下拉刷新、空状态 |
-| 剪贴板项点击 | `clipboard_item_test.dart` | 点击复制、长按菜单 |
-| 快速粘贴面板 | `quick_paste_panel_test.dart` | 面板显示、搜索、预览 |
-| 设置页面 | `settings_test.dart` | 主题切换、语言切换、服务器配置 |
-| 订阅管理 | `subscription_test.dart` | 套餐选择、支付 Mock、订阅状态显示 |
+| 测试场景 | 测试文件（真实存在） | 覆盖内容 |
+|----------|----------------------|----------|
+| 应用启动 | `test/widget_test.dart` | Widget 渲染、基础交互 |
+| 密钥存储 | `test/key_storage_service_test.dart` | 存储、读取、删除操作 |
 
-**示例测试代码**（`test/widget/clipboard_list_test.dart`）：
+**待创建的测试文件**（基于真实 `lib/` 目录结构）：
+
+| 测试文件（待创建） | 覆盖内容 |
+|----------------------|----------|
+| `test/screens/home_screen_test.dart` | 剪贴板列表、下拉刷新、空状态 |
+| `test/screens/settings_screen_test.dart` | 主题切换、语言切换 |
+| `test/widgets/clipboard_card_test.dart` | 剪贴板卡片渲染、点击交互 |
+| `test/widgets/quick_paste_panel_test.dart` | 快速粘贴面板显示与搜索 |
+
+**示例测试代码**（`test/widget_test.dart` 已存在，可参考）：
 ```dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:clipsync/main.dart' as app;
 
 void main() {
-  testWidgets('剪贴板列表应显示空状态提示', (WidgetTester tester) async {
+  testWidgets('应用启动应显示首页', (WidgetTester tester) async {
     // 启动应用
     await tester.pumpWidget(app.MyApp());
 
-    // 等待异步加载
-    await tester.pumpAndSettle();
-
-    // 验证空状态提示存在
-    expect(find.text('暂无剪贴板'), findsOneWidget);
-  });
-
-  testWidgets('下拉刷新应触发同步', (WidgetTester tester) async {
-    // 启动应用
-    await tester.pumpWidget(app.MyApp());
-
-    // 模拟下拉刷新
-    await tester.drag(find.byType(RefreshIndicator), const Offset(0, 300));
-    await tester.pumpAndSettle();
-
-    // 验证加载指示器显示
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // 验证首页组件存在
+    expect(find.byType(MaterialApp), findsOneWidget);
   });
 }
 ```
@@ -320,53 +289,40 @@ void main() {
 
 ### 3.2 业务逻辑测试（Unit Test）
 
-| 测试场景 | 测试文件 | 覆盖内容 |
-|----------|----------|----------|
-| 剪贴板服务 | `clipboard_service_test.dart` | 创建、查询、删除、冲突解决 |
-| 缓存服务 | `cache_service_test.dart` | LRU 淘汰、过期清理、磁盘持久化 |
-| 加密服务 | `encryption_service_test.dart` | ECDH 密钥交换、AES 加密/解密 |
-| WebSocket 服务 | `websocket_service_test.dart` | 连接、心跳、重连、消息发送 |
-| 离线队列 | `offline_queue_test.dart` | 离线操作、上线后同步、冲突处理 |
+| 测试场景 | 测试文件（待创建） | 覆盖内容 |
+|----------|----------------------|----------|
+| API 服务 | `test/services/api_service_test.dart` | 请求、响应解析、错误处理 |
+| 缓存服务 | `test/services/cache_service_test.dart` | LRU 淘汰、过期清理 |
+| WebSocket 服务 | `test/services/ws_service_test.dart` | 连接、心跳、重连 |
+| 离线队列 | `test/services/offline_service_test.dart` | 离线操作、上线后同步 |
 
-**示例测试代码**（`test/unit/clipboard_service_test.dart`）：
+**已存在的测试文件**：
+- ✅ `test/key_storage_service_test.dart` — 密钥存储服务测试
+
+**示例测试代码**（可添加到 `test/key_storage_service_test.dart`）：
 ```dart
 import 'package:test/test.dart';
 import 'package:mockito/annotations.dart';
-import 'package:clipsync/services/clipboard_service.dart';
+import 'package:clipsync/services/key_storage_service.dart';
 
-@GenerateMocks([HttpClient])
+@GenerateMocks([SharedPreferences])
 void main() {
-  group('ClipboardService 测试', () {
-    late ClipboardService service;
+  group('KeyStorageService 测试', () {
+    late KeyStorageService service;
 
     setUp(() {
-      service = ClipboardService();
+      service = KeyStorageService();
     });
 
-    test('创建剪贴板应返回 ID', () async {
-      final item = await service.createClipboard(
-        content: '测试内容',
-        contentType: 'text',
-      );
-
-      expect(item.id, isNotNull);
-      expect(item.content, '测试内容');
+    test('存储密钥应成功', () async {
+      final result = await service.saveKey('test_key', 'secret_value');
+      expect(result, isTrue);
     });
 
-    test('冲突解决应使用服务器版本', () async {
-      final local = ClipboardItem(
-        id: '1',
-        content: '本地版本',
-        updatedAt: DateTime(2026, 6, 29, 10, 0, 0),
-      );
-      final remote = ClipboardItem(
-        id: '1',
-        content: '服务器版本',
-        updatedAt: DateTime(2026, 6, 29, 10, 1, 0),  // 更晚
-      );
-
-      final result = service.resolveConflict(local, remote);
-      expect(result.content, '服务器版本');
+    test('读取密钥应返回存储值', () async {
+      await service.saveKey('test_key', 'secret_value');
+      final value = await service.getKey('test_key');
+      expect(value, 'secret_value');
     });
   });
 }
@@ -376,13 +332,24 @@ void main() {
 
 ### 3.3 端到端测试（Integration Test）
 
+> ⚠️ **当前状态**：`integration_test/` 目录不存在，需要先创建。
+
 | 测试场景 | 测试工具 | 覆盖内容 |
 |----------|----------|----------|
-| 完整用户旅程 | `integration_test/app_test.dart` | 启动 → 注册 → 复制文本 → 同步到其他设备 |
-| 跨设备同步 | Mock WebSocket Server | 多设备同时在线、消息广播 |
-| 离线 → 在线恢复 | 网络模拟 | 离线操作队列、上线后自动同步 |
+| 完整用户旅程 | `integration_test/app_test.dart`（待创建） | 启动 → 登录 → 复制文本 → 同步 |
+| 离线 → 在线恢复 | 网络模拟（待实现） | 离线操作队列、上线后自动同步 |
 
-**E2E 测试示例**（`integration_test/app_test.dart`）：
+**创建集成测试**：
+
+```bash
+# 添加 integration_test 依赖到 pubspec.yaml
+flutter pub add integration_test --dev
+
+# 创建测试文件
+mkdir -p D:/work/java/AI-workspace/ClipSync/src/mobile/integration_test
+```
+
+**E2E 测试示例**（`integration_test/app_test.dart` 待创建）：
 ```dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart' as integration_test;
@@ -394,15 +361,8 @@ void main() {
     app.main();
     await tester.pumpAndSettle();
 
-    // 模拟复制文本（调用平台通道）
-    const platform = MethodChannel('com.clipsync/clipboard');
-    await platform.invokeMethod('setClipboard', {'text': 'E2E 测试'});
-
-    // 等待同步（假设 2 秒）
-    await tester.pump(const Duration(seconds: 2));
-
-    // 验证列表中显示该文本
-    expect(find.text('E2E 测试'), findsOneWidget);
+    // 验证首页加载
+    expect(find.byType(MaterialApp), findsOneWidget);
   });
 }
 ```
@@ -415,8 +375,8 @@ void main() {
 
 测试运行后，控制台会显示：
 ```
-00:02 +12 -1: All tests passed!  # 12 通过，1 跳过
-00:02 +10 ~2 -3: Some tests failed.  # 10 通过，2 跳过，3 失败
+00:02 +2 -0: All tests passed!   # 2 通过，0 跳过
+00:02 +10 ~1 -1: Some tests failed.  # 10 通过，1 跳过，1 失败
 ```
 
 - `+`：通过的测试数
@@ -433,7 +393,7 @@ void main() {
 genhtml coverage/lcov.info -o coverage/html
 
 # 打开报告
-open coverage/html/index.html  # macOS
+start coverage/html/index.html  # Windows
 ```
 
 **报告内容**：
@@ -446,7 +406,7 @@ open coverage/html/index.html  # macOS
 # 使用 lcov 工具
 lcov --summary coverage/lcov.info
 
-# 或使用 flutter-coverage 包（需要安装）
+# 或使用 flutter_coverage 包（需要安装）
 flutter pub global activate flutter_coverage
 flutter coverage --lcov-info=coverage/lcov.info
 ```
@@ -473,74 +433,24 @@ flutter test --machine > test-results.json
 
 **原因**：测试环境中无法调用平台通道（Platform Channel）。
 
-**解决方法**：使用 Mock 平台通道。
-
-```dart
-// test/helpers/mock_platform_channel.dart
-import 'package:flutter/services.dart';
-
-void setupMockPlatformChannel() {
-  const channel = MethodChannel('com.clipsync/clipboard');
-
-  TestDefaultBinaryMessengerBinding.instance!.defaultBinaryMessenger
-      .setMockMethodCallHandler(channel, (call) async {
-    if (call.method == 'getClipboard') {
-      return 'mock-clipboard-content';
-    }
-    return null;
-  });
-}
-
-// 在测试文件中使用
-void main() {
-  setUp(() {
-    setupMockPlatformChannel();
-  });
-
-  test('...', () async {
-    // 测试代码
-  });
-}
-```
+**解决方法**：使用 Mock 平台通道（参考 `test/mock_plugins.dart`）。
 
 ---
 
 ### 5.2 测试覆盖率偏低
 
-**原因**：E2E 测试和平台通道调用难以覆盖。
+**原因**：集成测试和平台通道调用难以覆盖。
 
 **解决方法**：
 1. 将业务逻辑抽取到纯 Dart 类（易于单元测试）
 2. 使用 Mock 替代真实平台通道调用
-3. 为关键路径（加密、同步、冲突解决）编写详细测试
+3. 为关键路径（API 调用、缓存逻辑）编写详细测试
 
 ---
 
-### 5.3 集成测试在 CI/CD 中失败
+### 5.3 测试运行缓慢
 
-**原因**：CI 环境无显示器（无法启动模拟器）。
-
-**解决方法**：使用 Firebase Test Lab 或 BrowserStack。
-
-```yaml
-# .github/workflows/integration-test.yml
-jobs:
-  integration-test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run integration tests on Firebase Test Lab
-        run: |
-          gcloud firebase test android run \
-            --type=ios \
-            --device=model=iphone15pro,version=17.0 \
-            --test=integration_test/
-```
-
----
-
-### 5.4 测试运行缓慢
-
-**原因**：Flutter 应用启动时间长，集成测试需要真机/模拟器。
+**原因**：Flutter 应用启动时间长。
 
 **解决方法**：
 1. 使用 Mock 替代真实网络请求
@@ -553,7 +463,7 @@ flutter test --concurrency=4
 
 ---
 
-### 5.5 `flutter test --coverage` 生成失败
+### 5.4 `flutter test --coverage` 生成失败
 
 **错误信息**：`Error: Coverage generator failed.`
 
@@ -567,7 +477,21 @@ flutter pub get
 flutter test --coverage
 
 # 若仍失败，手动检查 lcov 安装
-which lcov  # 应输出路径
+where lcov  # Windows：应输出路径
+```
+
+---
+
+### 5.5 `flutter pub get` 失败（网络问题）
+
+**解决方法**：
+```bash
+# 设置国内镜像
+set PUB_HOSTED_URL=https://pub.flutter-io.cn
+set FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn
+
+# 重新获取依赖
+flutter pub get
 ```
 
 ---
@@ -580,9 +504,9 @@ which lcov  # 应输出路径
 | `flutter test --watch` | 监听模式（自动重跑） |
 | `flutter test --coverage` | 生成覆盖率报告 |
 | `flutter test --name="名称"` | 运行匹配名称的测试 |
-| `flutter test integration_test/` | 运行集成测试 |
+| `flutter test test/widget_test.dart` | 运行指定测试文件 |
+| `flutter test integration_test/` | 运行集成测试（需先创建） |
 | `flutter test --machine` | 生成 JSON 格式测试结果 |
-| `flutter drive` | 运行 E2E 测试（旧版） |
 | `genhtml coverage/lcov.info -o coverage/html` | 生成 HTML 覆盖率报告 |
 
 ---
@@ -592,27 +516,49 @@ which lcov  # 应输出路径
 ### 测试金字塔
 
 ```
-        /‾‾\
-       /    \         E2E 测试（少量，关键路径）
-      /______\
-     /        \      集成测试（中量，服务层）
-    /__________\
-   /____________\    单元测试（大量，纯逻辑）
+       /‾‾\
+      /    \         E2E 测试（少量，关键路径）
+     /______\
+    /        \      集成测试（中量，服务层）
+   /__________\
+  /____________\    单元测试（大量，纯逻辑）
 ```
 
 ### 覆盖率目标
 
 | 模块 | 目标覆盖率 |
-|------|----------|
+|------|------|
 | 业务逻辑（services/） | > 90% |
 | 工具函数（utils/） | > 95% |
-| UI 组件（widgets/） | > 80% |
+| UI 组件（widgets/、screens/） | > 80% |
 | 平台通道（platform/） | > 70%（需要 Mock） |
 
 ---
 
-**文档版本**：1.0  
+## 当前测试状态（真实）
+
+### ✅ 已存在的测试文件
+- `test/widget_test.dart` — Widget 测试
+- `test/key_storage_service_test.dart` — 密钥存储单元测试
+- `test/mock_plugins.dart` — Mock 辅助工具
+
+### ❌ 不存在的测试目录/文件（文档初版虚构，已修正）
+- ❌ `test/unit/` — 不存在，需手动创建
+- ❌ `test/integration/` — 不存在，需手动创建
+- ❌ `integration_test/` — 不存在，需手动创建
+- ❌ `test/helpers/` — 不存在，需手动创建
+
+### 📋 建议下一步
+1. 为 `lib/services/` 下的服务创建单元测试
+2. 为 `lib/screens/` 下的页面创建 Widget 测试
+3. 创建 `integration_test/` 目录，编写端到端测试
+
+---
+
+**文档版本**：1.1（已修正）  
 **创建日期**：2026-06-29  
+**修正日期**：2026-06-29（移除虚构路径和 Apple 平台内容）  
 **作者**：ClipSync Development Team  
 **更新日志**：
-- 2026-06-29：初始版本
+- 2026-06-29：初始版本（v1.0）
+- 2026-06-29：修正版本（v1.1）— 移除所有虚构测试文件路径，移除 Apple 平台内容，标注真实存在的文件

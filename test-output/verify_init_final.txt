@@ -1,0 +1,26 @@
+=== 初始化项目验证 ===
+
+0. 登录获取新 Token...
+✅ 验证码已发送（MVP: 888888）
+
+✅ 登录成功，Token 已获取
+
+1. 健康检查...
+✅ 后端健康: {"status":"healthy","timestamp":"2026-06-29T11:15:56.239Z","uptime":1054.8740081 
+
+2. 获取用户信息...
+✅ 用户信息: {"id":"0705fd35-288e-4a83-91be-6e4b84499b5b","phone":"18800001234","nickname":"","avatarUrl":""} 
+
+3. 获取 CSRF Token...
+✅ CSRF Token 已获取
+
+4. 注册设备...
+❌ 设备注册失败: {
+  status: 403,
+  body: {
+    error: 'Device limit reached (2 devices)',
+    currentCount: 2,
+    maxDevices: 2,
+    upgradeUrl: '/subscribe'
+  }
+}

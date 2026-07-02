@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Default capabilities for ClipSync desktop app","local":true,"windows":["main"],"permissions":["core:default","core:webview:default","core:webview:allow-internal-toggle-devtools","shell:allow-open","global-shortcut:default","autostart:default","notification:default","notification:allow-is-permission-granted","notification:allow-request-permission","updater:default"]}}

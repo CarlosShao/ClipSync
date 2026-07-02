@@ -9,7 +9,11 @@ resources:
   - namespace-config-pvc.yaml
   - postgres.yaml
   - redis.yaml
+  - configmap.yaml
+  - secret.yaml
+  - pvc.yaml
   - api.yaml
+  - ingress.yaml
   - ingress-networkpolicy.yaml
 
 images:

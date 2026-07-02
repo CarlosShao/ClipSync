@@ -1,0 +1,56 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart
+lib/services/key_storage_service.dart:156:1: Error: Expected a declaration, but got '}'.
+}
+^
+test/key_storage_service_test.dart:107:50: Error: The method 'deriveKeyFromPassword' isn't defined for the type 'KeyStorageService'.
+ - 'KeyStorageService' is from 'package:clipsync_mobile/services/key_storage_service.dart' ('lib/services/key_storage_service.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'deriveKeyFromPassword'.
+      final derivedKey = await keyStorageService.deriveKeyFromPassword(
+                                                 ^^^^^^^^^^^^^^^^^^^^^
+test/key_storage_service_test.dart:116:51: Error: The method 'deriveKeyFromPassword' isn't defined for the type 'KeyStorageService'.
+ - 'KeyStorageService' is from 'package:clipsync_mobile/services/key_storage_service.dart' ('lib/services/key_storage_service.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'deriveKeyFromPassword'.
+      final derivedKey2 = await keyStorageService.deriveKeyFromPassword(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+00:00 +0 -1: loading D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart [E]
+  Failed to load "D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart":
+  Compilation failed for testPath=D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: lib/services/key_storage_service.dart:156:1: Error: Expected a declaration, but got '}'.
+  }
+  ^
+  test/key_storage_service_test.dart:107:50: Error: The method 'deriveKeyFromPassword' isn't defined for the type 'KeyStorageService'.
+   - 'KeyStorageService' is from 'package:clipsync_mobile/services/key_storage_service.dart' ('lib/services/key_storage_service.dart').
+  Try correcting the name to the name of an existing method, or defining a method named 'deriveKeyFromPassword'.
+        final derivedKey = await keyStorageService.deriveKeyFromPassword(
+                                                   ^^^^^^^^^^^^^^^^^^^^^
+  test/key_storage_service_test.dart:116:51: Error: The method 'deriveKeyFromPassword' isn't defined for the type 'KeyStorageService'.
+   - 'KeyStorageService' is from 'package:clipsync_mobile/services/key_storage_service.dart' ('lib/services/key_storage_service.dart').
+  Try correcting the name to the name of an existing method, or defining a method named 'deriveKeyFromPassword'.
+        final derivedKey2 = await keyStorageService.deriveKeyFromPassword(
+                                                    ^^^^^^^^^^^^^^^^^^^^^
+  .
+  Error: The Dart compiler exited unexpectedly.
+  package:flutter_tools/src/base/common.dart 34:3  throwToolExit
+  package:flutter_tools/src/compile.dart 1011:11   DefaultResidentCompiler._compile.<fn>
+  dart:async/zone_root.dart 48:47                  _rootRunUnary
+  dart:async/zone.dart 733:19                      _CustomZone.runUnary
+  dart:async/future_impl.dart 948:45               Future._propagateToListeners.handleValueCallback
+  dart:async/future_impl.dart 977:13               Future._propagateToListeners
+  dart:async/future_impl.dart 862:9                Future._propagateToListeners
+  dart:async/future_impl.dart 720:5                Future._completeWithValue
+  dart:async/future_impl.dart 804:7                Future._asyncCompleteWithValue.<fn>
+  dart:async/zone_root.dart 35:13                  _rootRun
+  dart:async/zone.dart 726:19                      _CustomZone.run
+  dart:async/zone.dart 625:7                       _CustomZone.runGuarded
+  dart:async/zone.dart 666:23                      _CustomZone.bindCallbackGuarded.<fn>
+  dart:async/schedule_microtask.dart 40:35         _microtaskLoop
+  dart:async/schedule_microtask.dart 49:5          _startMicrotaskLoop
+  dart:isolate-patch/isolate_patch.dart 127:13     _runPendingImmediateCallback
+  dart:isolate-patch/isolate_patch.dart 193:5      _RawReceivePort._handleMessage
+  
+00:00 +0 -1: D:/work/java/AI-workspace/ClipSync/src/mobile/test/widget_test.dart: App builds without crash
+00:00 +1 -1: D:/work/java/AI-workspace/ClipSync/src/mobile/test/widget_test.dart: Basic UI components render
+00:01 +2 -1: Some tests failed.
+
+Failing tests:
+  D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: loading D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart

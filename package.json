@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "jsdom": "^29.1.1",
+    "playwright": "^1.61.1",
+    "ws": "^8.21.0"
+  }
+}

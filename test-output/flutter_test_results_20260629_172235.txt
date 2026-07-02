@@ -1,0 +1,563 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart
+00:00 +0: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should generate and store a new key
+00:00 +0 -1: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should generate and store a new key [E]
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  package:clipsync_mobile/services/key_storage_service.dart 17:11                                         KeyStorageService.generateKey
+  test\key_storage_service_test.dart 23:45                                                                main.<fn>.<fn>
+  
+00:00 +0 -1: D:/work/java/AI-workspace/ClipSync/src/mobile/test/widget_test.dart: App builds without crash
+00:00 +0 -1: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should generate and store a new key [E]
+  FormatException: Unexpected character (at character 1)
+  write
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  package:clipsync_mobile/services/key_storage_service.dart 17:11                                         KeyStorageService.generateKey
+  test\key_storage_service_test.dart 23:45                                                                main.<fn>.<fn>
+  
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  readAll
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                              _CustomZone.registerBinaryCallback
+  test\key_storage_service_test.dart 18:5                                                                 main.<fn>
+  
+00:00 +0 -2: D:/work/java/AI-workspace/ClipSync/src/mobile/test/widget_test.dart: App builds without crash
+00:00 +0 -2: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should store and retrieve a key [E]
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  test\key_storage_service_test.dart 37:31                                                                main.<fn>.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  write
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  test\key_storage_service_test.dart 37:31                                                                main.<fn>.<fn>
+  
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  readAll
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                              _CustomZone.registerBinaryCallback
+  test\key_storage_service_test.dart 18:5                                                                 main.<fn>
+  
+00:00 +0 -3: D:/work/java/AI-workspace/ClipSync/src/mobile/test/widget_test.dart: App builds without crash
+00:00 +0 -3: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should delete a key [E]
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  test\key_storage_service_test.dart 47:31                                                                main.<fn>.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  write
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  test\key_storage_service_test.dart 47:31                                                                main.<fn>.<fn>
+  
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  readAll
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                              _CustomZone.registerBinaryCallback
+  test\key_storage_service_test.dart 18:5                                                                 main.<fn>
+  
+00:00 +0 -4: D:/work/java/AI-workspace/ClipSync/src/mobile/test/widget_test.dart: App builds without crash
+00:00 +0 -4: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should check if key exists [E]
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 65:16  MethodChannelFlutterSecureStorage.read
+  package:flutter_secure_storage/flutter_secure_storage.dart 150:17                                       FlutterSecureStorage.read
+  package:clipsync_mobile/services/key_storage_service.dart 42:34                                         KeyStorageService.hasKey
+  test\key_storage_service_test.dart 57:38                                                                main.<fn>.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  read
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 65:16  MethodChannelFlutterSecureStorage.read
+  package:flutter_secure_storage/flutter_secure_storage.dart 150:17                                       FlutterSecureStorage.read
+  package:clipsync_mobile/services/key_storage_service.dart 42:34                                         KeyStorageService.hasKey
+  test\key_storage_service_test.dart 57:38                                                                main.<fn>.<fn>
+  
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  readAll
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                              _CustomZone.registerBinaryCallback
+  test\key_storage_service_test.dart 18:5                                                                 main.<fn>
+  
+00:00 +0 -5: D:/work/java/AI-workspace/ClipSync/src/mobile/test/widget_test.dart: App builds without crash
+00:00 +0 -5: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should get all key IDs [E]
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  test\key_storage_service_test.dart 64:31                                                                main.<fn>.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  write
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  test\key_storage_service_test.dart 64:31                                                                main.<fn>.<fn>
+  
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  readAll
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                              _CustomZone.registerBinaryCallback
+  test\key_storage_service_test.dart 18:5                                                                 main.<fn>
+  
+00:00 +0 -6: D:/work/java/AI-workspace/ClipSync/src/mobile/test/widget_test.dart: App builds without crash
+00:00 +0 -6: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should clear all keys [E]
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  test\key_storage_service_test.dart 75:31                                                                main.<fn>.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  write
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  test\key_storage_service_test.dart 75:31                                                                main.<fn>.<fn>
+  
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  readAll
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                              _CustomZone.registerBinaryCallback
+  test\key_storage_service_test.dart 18:5                                                                 main.<fn>
+  
+00:00 +0 -7: D:/work/java/AI-workspace/ClipSync/src/mobile/test/widget_test.dart: App builds without crash
+00:00 +0 -7: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should generate unique key IDs [E]
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  package:clipsync_mobile/services/key_storage_service.dart 17:11                                         KeyStorageService.generateKey
+  test\key_storage_service_test.dart 85:46                                                                main.<fn>.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  write
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  package:clipsync_mobile/services/key_storage_service.dart 17:11                                         KeyStorageService.generateKey
+  test\key_storage_service_test.dart 85:46                                                                main.<fn>.<fn>
+  
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  readAll
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                              _CustomZone.registerBinaryCallback
+  test\key_storage_service_test.dart 18:5                                                                 main.<fn>
+  
+00:00 +0 -8: D:/work/java/AI-workspace/ClipSync/src/mobile/test/widget_test.dart: App builds without crash
+00:00 +0 -8: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should store key with custom ID [E]
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  package:clipsync_mobile/services/key_storage_service.dart 17:11                                         KeyStorageService.generateKey
+  test\key_storage_service_test.dart 93:45                                                                main.<fn>.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  write
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 93:16  MethodChannelFlutterSecureStorage.write
+  package:flutter_secure_storage/flutter_secure_storage.dart 114:23                                       FlutterSecureStorage.write
+  package:clipsync_mobile/services/key_storage_service.dart 24:20                                         KeyStorageService.storeKey
+  package:clipsync_mobile/services/key_storage_service.dart 17:11                                         KeyStorageService.generateKey
+  test\key_storage_service_test.dart 93:45                                                                main.<fn>.<fn>
+  
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  readAll
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                              _CustomZone.registerBinaryCallback
+  test\key_storage_service_test.dart 18:5                                                                 main.<fn>
+  
+00:01 +1 -8: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should derive key from password
+00:01 +2 -8: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should derive key from password
+00:02 +2 -9: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should derive key from password [E]
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  readAll
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                              _CustomZone.registerBinaryCallback
+  test\key_storage_service_test.dart 18:5                                                                 main.<fn>
+  
+00:02 +2 -9: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should return null for non-existent key
+00:02 +2 -10: D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should return null for non-existent key [E]
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 65:16  MethodChannelFlutterSecureStorage.read
+  package:flutter_secure_storage/flutter_secure_storage.dart 150:17                                       FlutterSecureStorage.read
+  package:clipsync_mobile/services/key_storage_service.dart 30:27                                         KeyStorageService.getKey
+  test\key_storage_service_test.dart 125:43                                                               main.<fn>.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  read
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 65:16  MethodChannelFlutterSecureStorage.read
+  package:flutter_secure_storage/flutter_secure_storage.dart 150:17                                       FlutterSecureStorage.read
+  package:clipsync_mobile/services/key_storage_service.dart 30:27                                         KeyStorageService.getKey
+  test\key_storage_service_test.dart 125:43                                                               main.<fn>.<fn>
+  
+  Invalid argument(s) (onError): The error handler of Future.catchError must return a value of the future's type
+  dart:async                                                                                              Future._asyncCompleteError
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  
+  FormatException: Unexpected character (at character 1)
+  readAll
+  ^
+  
+  dart:convert                                                                                            JsonCodec.decode
+  package:flutter/src/services/message_codecs.dart 110:17                                                 JSONMessageCodec.decodeMessage
+  package:flutter/src/services/message_codecs.dart 146:54                                                 JSONMethodCodec.decodeMethodCall
+  test\mock_plugins.dart 18:24                                                                            setupMockFlutterSecureStorage.<fn>
+  package:flutter_test/src/test_default_binary_messenger.dart 147:29                                      TestDefaultBinaryMessenger.send
+  package:flutter/src/services/platform_channel.dart 359:33                                               MethodChannel._invokeMethod
+  package:flutter/src/services/platform_channel.dart 539:12                                               MethodChannel.invokeMethod
+  package:flutter_secure_storage_platform_interface/src/method_channel_flutter_secure_storage.dart 77:36  MethodChannelFlutterSecureStorage.readAll
+  package:flutter_secure_storage/flutter_secure_storage.dart 257:17                                       FlutterSecureStorage.readAll
+  package:clipsync_mobile/services/key_storage_service.dart 57:36                                         KeyStorageService.clearAllKeys
+  test\key_storage_service_test.dart 18:29                                                                main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                              _CustomZone.registerBinaryCallback
+  test\key_storage_service_test.dart 18:5                                                                 main.<fn>
+  
+00:02 +2 -10: Some tests failed.
+
+Failing tests:
+  D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should check if key exists
+  D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should clear all keys
+  D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should delete a key
+  D:/work/java/AI-workspace/ClipSync/src/mobile/test/key_storage_service_test.dart: KeyStorageService should derive key from password
+  ... and 6 more

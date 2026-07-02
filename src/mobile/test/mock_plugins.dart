@@ -5,12 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 
 void setupMockFlutterSecureStorage() {
-  const channel = MethodChannel('plugins.it_nomads.com/flutter_secure_storage', JSONMethodCodec());
-
+  const channel = MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
+  
   TestWidgetsFlutterBinding.ensureInitialized();
 
   // 内存存储
-  final mockStorage = <String, dynamic>{};
+  final mockStorage = <String, String>{};
 
   TestDefaultBinaryMessengerBinding.instance!.defaultBinaryMessenger
       .setMockMethodCallHandler(channel, (MethodCall call) async {
@@ -18,19 +18,19 @@ void setupMockFlutterSecureStorage() {
       case 'write':
         final Map<dynamic, dynamic> args = call.arguments;
         mockStorage['${args['key']}'] = args['value'];
-        return;
+        return null;
       case 'read':
         final Map<dynamic, dynamic> args = call.arguments;
         return mockStorage['${args['key']}'];
       case 'delete':
         final Map<dynamic, dynamic> args = call.arguments;
         mockStorage.remove('${args['key']}');
-        return;
+        return null;
       case 'readAll':
         return Map<String, String>.from(mockStorage);
       case 'deleteAll':
         mockStorage.clear();
-        return;
+        return null;
       case 'containsKey':
         final Map<dynamic, dynamic> args = call.arguments;
         return mockStorage.containsKey('${args['key']}');
