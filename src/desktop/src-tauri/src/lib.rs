@@ -299,9 +299,23 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
         eprintln!("[dib_to_png] {:04x}: {}{} {}", row, marker, hex.join(" "), ascii);
     }
 
-    // === Determine pixel_offset ===
-    // Strategy: try multiple candidates and find which produces non-blank image data
-    let mut candidate_offsets = vec![header_size as usize]; // default: right after header
+    // === Try standard approach first (header_size offset + BGRA for 32bpp) ===
+    // Windows clipboard DIB is almost always BGRA at header_size offset
+    if (header_size as usize) + (row_stride * h) as usize <= dib.len() {
+        let standard_fn: fn(&[u8]) -> [u8; 4] = if bytes_per_pixel == 4 { order_bgra } else { order_bgr };
+        let standard_name = if bytes_per_pixel == 4 { "BGRA" } else { "BGR" };
+        if let Ok(stats) = try_pixel_extraction(dib, w, h, top_down, header_size as usize, row_stride, bytes_per_pixel, standard_fn) {
+            let pct = stats.non_blank as f64 / stats.total.max(1) as f64 * 100.0;
+            eprintln!("[dib_to_png] STANDARD offset={} ORDER={} → {:.1}%", header_size, standard_name, pct);
+            if stats.total > 0 && pct > 30.0 {
+                eprintln!("[dib_to_png] ACCEPTED standard: offset={} order={}", header_size, standard_name);
+                return encode_rgba_to_png_data_url(&stats.rgba, w, h);
+            }
+        }
+    }
+
+    // === Fallback: heuristic — try all candidates, pick the best ===
+    let mut candidate_offsets = vec![header_size as usize];
 
     // For BI_BITFIELDS (compression=3) with 40-byte header: 12 bytes of masks follow
     if compression == 3 && header_size == 40 {
@@ -339,14 +353,16 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
         }
     }
 
-    eprintln!("[dib_to_png] Trying {} candidate offsets", candidate_offsets.len());
+    eprintln!("[dib_to_png] Trying {} candidate offsets (fallback)", candidate_offsets.len());
+    let mut best_result: Option<(String, usize, PixelExtractionResult)> = None;
+
     for (idx, &pix_off) in candidate_offsets.iter().enumerate() {
         eprintln!("[dib_to_png] Candidate #{}: offset={} (need {}, have {})",
             idx, pix_off, pix_off + (row_stride * h) as usize, dib.len());
 
         // Skip obviously invalid offsets
         if pix_off + (row_stride * h) as usize > dib.len() {
-            eprintln!("[dib_to_png]   → SKIP: truncated");
+            eprintln!("[dib_to_png]   -> SKIP: truncated");
             continue;
         }
 
@@ -368,23 +384,34 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
             let result = try_pixel_extraction(dib, w, h, top_down, pix_off, row_stride, bytes_per_pixel, *convert_fn);
             match result {
                 Ok(stats) => {
-                    eprintln!("[dib_to_png] ✓ OFFSET#{} @{} ORDER={} → non_blank={}/{} ({:.1}%)",
-                        idx, pix_off, order_name, stats.non_blank, stats.total,
-                        stats.non_blank as f64 / stats.total.max(1) as f64 * 100.0);
+                    let pct = stats.non_blank as f64 / stats.total.max(1) as f64 * 100.0;
+                    eprintln!("[dib_to_png] OFFSET#{} @{} ORDER={} -> non_blank={}/{} ({:.1}%)",
+                        idx, pix_off, order_name, stats.non_blank, stats.total, pct);
 
-                    // Accept if >10% non-blank pixels (real images are usually >90%)
-                    if stats.total > 0 && stats.non_blank as f64 / stats.total as f64 > 0.10 {
-                        eprintln!("[dib_to_png] ACCEPTED: offset={} order={}", pix_off, order_name);
-
-                        // Encode the accepted rgba as PNG
-                        return encode_rgba_to_png_data_url(&stats.rgba, w, h);
+                    // Keep track of the best result
+                    if stats.total > 0 {
+                        let is_better = match &best_result {
+                            None => true,
+                            Some((_, _, prev)) => stats.non_blank > prev.non_blank,
+                        };
+                        if is_better {
+                            best_result = Some((order_name.to_string(), pix_off, stats));
+                        }
                     }
-                    // Otherwise keep trying other combinations
                 }
                 Err(e) => {
-                    eprintln!("[dib_to_png] ✗ OFFSET#{} @{} ORDER={} → err: {}", idx, pix_off, order_name, e);
+                    eprintln!("[dib_to_png] OFFSET#{} @{} ORDER={} -> err: {}", idx, pix_off, order_name, e);
                 }
             }
+        }
+    }
+
+    // Accept best result if >30% non-blank
+    if let Some((order_name, pix_off, stats)) = best_result {
+        let pct = stats.non_blank as f64 / stats.total.max(1) as f64 * 100.0;
+        if pct > 30.0 {
+            eprintln!("[dib_to_png] ACCEPTED fallback: offset={} order={:.1}%", pix_off, pct);
+            return encode_rgba_to_png_data_url(&stats.rgba, w, h);
         }
     }
 
