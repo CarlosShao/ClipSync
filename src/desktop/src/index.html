@@ -348,10 +348,10 @@
     }
     .card-image-desc { font-size: 11.5px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
-    /* Image viewer */
-    #image-viewer .modal { width: auto; max-width: 90vw; max-height: 90vh; padding: 16px; }
-    #image-viewer img { max-width: 100%; max-height: 70vh; border-radius: 8px; display: block; margin: 0 auto; }
-    .viewer-actions { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+    /* Image viewer - Canvas based, no CSS background needed */
+    #image-viewer { background: #000000; }
+    #viewer-canvas { display: block; }
+    #image-viewer-bar { margin-top: 14px; display: flex; gap: 10px; padding: 8px 16px; background: #222; border-radius: 8px; }
 
     /* ===== Right Panel (Devices) ===== */
     :root { --rp-w: 240px; }
@@ -409,7 +409,7 @@
     .btn-block { width: 100%; padding: 9px 14px; }
 
     /* ===== Modal ===== */
-    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.35); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.35); display: flex; align-items: center; justify-content: center; z-index: 100; }
     .modal {
       background: white; border-radius: 16px; padding: 28px; width: 400px; max-width: 92vw;
       box-shadow: 0 24px 48px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04);
@@ -484,7 +484,7 @@
       position: fixed; inset: 0; z-index: 99999;
       display: none; align-items: flex-start; justify-content: center;
       padding-top: 12vh;
-      background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);
+      background: rgba(0,0,0,0.45);
     }
     #quick-paste-panel.open { display: flex; }
     .qp-card {
@@ -625,15 +625,11 @@
   </div>
 
   <!-- Image Viewer Modal -->
-  <div class="modal-overlay hidden" id="image-viewer">
-    <div class="modal">
-      <div id="image-viewer-content">
-        <img id="viewer-image" src="" alt="Image preview">
-      </div>
-      <div class="viewer-actions">
-        <button class="btn btn-primary" id="copy-image-btn" onclick="copyImageFromViewer()">复制图片</button>
-        <button class="btn btn-secondary" onclick="closeImageViewer()">关闭</button>
-      </div>
+  <div id="image-viewer" style="display:none;position:fixed;inset:0;z-index:999999;flex-direction:column;align-items:center;justify-content:center;">
+    <canvas id="viewer-canvas"></canvas>
+    <div id="image-viewer-bar">
+      <button class="btn btn-primary" id="copy-image-btn" onclick="copyImageFromViewer()" style="background:#6366f1;"><svg style="width:13px;height:13px;display:inline-block;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>复制图片</button>
+      <button class="btn btn-secondary" onclick="closeImageViewer()" style="background:#444;color:#fff;border-color:#555;"><svg style="width:13px;height:13px;display:inline-block;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>关闭</button>
     </div>
   </div>
 
@@ -909,11 +905,28 @@
       let _lastPolledText = '';
       let _lastPolledFiles = '';
       let pollCount = 0;
+      // 🔑 Global throttle: prevent duplicate uploads from multi-format clipboard bursts
+      let _globalThrottleUntil = 0;
+      const _recentUploadHashes = new Map(); // hash -> timestamp
+      const GLOBAL_THROTTLE_MS = 5000;
+      const HASH_TTL_MS = 10000;
+
+      function _isDuplicateHash(hash) {
+        const now = Date.now();
+        // Cleanup expired entries
+        for (const [k, v] of _recentUploadHashes) { if (now - v > HASH_TTL_MS) _recentUploadHashes.delete(k); }
+        if (_recentUploadHashes.has(hash)) return true;
+        _recentUploadHashes.set(hash, now);
+        return false;
+      }
 
       console.log('[TauriPoll] ✓ invoke-based polling STARTED (500ms)');
 
       async function pollTauri() {
         pollCount++;
+        // Global throttle: block ALL uploads within cooldown period
+        if (Date.now() < _globalThrottleUntil) return;
+
         // Resolve invoke function from any available source
         const tauri = window.__TAURI__;
         let _invoke = null;
@@ -926,33 +939,35 @@
         }
         if (!_invoke) return;
         if (!state.autoSync) return;
-        if (!deviceReady && !state.deviceId) return; // Wait for device to be ready
+        if (!deviceReady && !state.deviceId) return;
 
         try {
           // 1) Check for files via invoke
           const files = await _invoke('get_clipboard_files');
           if (Array.isArray(files) && files.length > 0) {
             const fileKey = files.join('|');
+            // Hash-based dedup for files
+            if (_isDuplicateHash('file:' + fileKey)) return;
             if (fileKey !== _lastPolledFiles) {
               _lastPolledFiles = fileKey;
-              console.log('[TauriPoll] 📁 FILE detected:', files.length, 'file(s), first:', files[0].split(/[/\\]/).pop());
-              const fileName = files[0].split(/[/\\]/).pop() || 'unknown';
-              const preview = files.length === 1
-                ? '[文件] ' + fileName + ' (1个文件)'
-                : '[文件] ' + fileName + ' 等 ' + files.length + ' 个文件';
-              // Upload as file item with metadata.filePaths (NOT text!)
+              console.log('[TauriPoll] 📁 FILE detected:', files.length, 'file(s)');
               await uploadTauriFileClipboard(files);
-              showToast('📁 检测到文件复制: ' + fileName);
+              _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+              showToast('📁 检测到文件复制: ' + (files[0].split(/[/\\]/).pop() || 'unknown'));
             }
-            return; // Files take priority over text
+            return;
           }
 
           // 2) Check for text via invoke
           const text = await _invoke('get_clipboard_content');
           if (text && text !== _lastPolledText && text !== state.currentClipboard) {
+            // Hash-based dedup for text
+            const textHash = 'text:' + text.substring(0, 200);
+            if (_isDuplicateHash(textHash)) return;
             _lastPolledText = text;
             console.log('[TauriPoll] 📝 TEXT detected:', text.length, 'chars');
             uploadClipboard(text);
+            _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
           }
 
           // 3) Reset file tracking when files are cleared
@@ -1812,36 +1827,114 @@
     // ====== Image Viewer ======
     let _viewingImageUrl = null;
 
-    async function viewImageItem(id) {
+    let _viewingImageUrl = null;
+    let _viewingBlobUrl = null;
+    const _deletingIds = new Set();
+
+    // Helper: get Tauri Window for native APIs
+    function _getTauriWindow() {
       try {
+        return window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow
+          ? window.__TAURI__.window.getCurrentWindow() : null;
+      } catch(e) { return null; }
+    }
+
+    async function viewImageItem(id) {
+      const LOG_PREFIX = '[ViewImg]';
+      try {
+        console.log(LOG_PREFIX, 'fetching', id);
         const item = await api('GET', '/api/clipboard/' + id);
-        if (item.contentType !== 'image' || !item.contentEncrypted) {
-          showToast('无法查看此项目');
-          return;
+        if (item.contentType !== 'image') { showToast('not an image'); return; }
+        let dataUrl = (item.contentEncrypted || '').trim();
+        if (!dataUrl || !dataUrl.startsWith('data:')) { showToast('no image data'); return; }
+
+        // BMP -> PNG conversion via Rust
+        if (/image\/(bmp|x-ms-bmp)/i.test(dataUrl.split(',')[0])) {
+          try {
+            const inv = window.__TAURI_INVOKE__ || (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) || (window.__TAURI__ && window.__TAURI__.invoke);
+            if (!inv) throw new Error('no invoke');
+            dataUrl = await inv('convert_bmp_to_png', { bmpDataUrl: dataUrl });
+            if (!dataUrl || !dataUrl.startsWith('data:image/png')) throw new Error('bad png');
+          } catch(e) { console.error(LOG_PREFIX, e); showToast('convert failed'); return; }
         }
-        _viewingImageUrl = item.contentEncrypted;
-        document.getElementById('viewer-image').src = item.contentEncrypted;
-        document.getElementById('image-viewer').classList.remove('hidden');
-      } catch (e) {
-        showToast('加载失败：' + e.message);
+
+        // Set Win32 background to black (below WebView layer)
+        const tauriWin = _getTauriWindow();
+        if (tauriWin && typeof tauriWin.setBackgroundColor === 'function') {
+          try { await tauriWin.setBackgroundColor({ r: 0, g: 0, b: 0, a: 255 }); } catch(e) {}
+        }
+
+        // Canvas rendering: fill black pixels, then draw image
+        const viewer = document.getElementById('image-viewer');
+        const canvas = document.getElementById('viewer-canvas');
+        if (!viewer || !canvas) { showToast('viewer DOM not found'); return; }
+
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error('图片加载失败'));
+          img.src = dataUrl;
+        });
+
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        canvas.width = w;
+        canvas.height = h;
+        canvas.style.cssText = 'width:' + w + 'px;height:' + h + 'px;display:block;';
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, w, h);
+
+        const pad = 40;
+        const maxW = w - pad * 2;
+        const maxH = h - pad * 2 - 60;
+        const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
+        const dw = img.naturalWidth * scale;
+        const dh = img.naturalHeight * scale;
+        const dx = (w - dw) / 2;
+        const dy = ((h - 60) - dh) / 2;
+        ctx.drawImage(img, dx, dy, dw, dh);
+
+        viewer.style.display = 'flex';
+        _viewingImageUrl = dataUrl;
+        console.log(LOG_PREFIX, 'OK - canvas rendered', img.naturalWidth + 'x' + img.naturalHeight);
+      } catch(e) {
+        console.error(LOG_PREFIX, e);
+        showToast('preview failed: ' + e.message.substring(0, 80));
       }
     }
 
-    function closeImageViewer() {
-      document.getElementById('image-viewer').classList.add('hidden');
-      document.getElementById('viewer-image').src = '';
+    async function closeImageViewer() {
+      const viewer = document.getElementById('image-viewer');
+      if (viewer) { viewer.style.display = 'none'; }
+      if (_viewingBlobUrl) { URL.revokeObjectURL(_viewingBlobUrl); _viewingBlobUrl = null; }
       _viewingImageUrl = null;
+      // Restore Win32 background to white
+      try {
+        const tw = _getTauriWindow();
+        if (tw && typeof tw.setBackgroundColor === 'function') {
+          await tw.setBackgroundColor({ r: 255, g: 255, b: 255, a: 255 });
+        }
+      } catch(e) {}
     }
 
     async function copyImageFromViewer() {
       if (!_viewingImageUrl) return;
       try {
-        // Fetch the blob from the data URL and write to clipboard
-        const resp = await fetch(_viewingImageUrl);
-        const blob = await resp.blob();
-        await navigator.clipboard.write([
-          new ClipboardItem({ [blob.type]: blob })
-        ]);
+        const img = new Image();
+        img.src = _viewingImageUrl;
+        await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error('图片加载失败')); });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+        if (!blob) throw new Error('Canvas 转 Blob 失败');
+
+        await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
         showToast('图片已复制');
         closeImageViewer();
       } catch (e) {
@@ -1896,12 +1989,16 @@
     }
 
     async function deleteItem(id) {
+      if (_deletingIds.has(id)) return; // Prevent double-delete
+      if (!confirm('确认删除？')) return;
+      _deletingIds.add(id);
       try {
-        await api('DELETE', `/api/clipboard/${id}`);
+        await api('DELETE', '/api/clipboard/' + id);
         state.items = state.items.filter(i => i.id !== id);
         renderClipboardItems();
         showToast('已删除');
-      } catch (e) { showToast('删除失败'); }
+      } catch(e) { showToast('删除失败'); }
+      finally { _deletingIds.delete(id); }
     }
 
     function onSearch(value) {
