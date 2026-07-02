@@ -2631,7 +2631,7 @@
       }
       if (!confirm(`确认订阅「${planName}」？\n价格：¥${price}/月\n\n将在浏览器中完成支付，完成后请返回本应用。`)) return;
       try {
-        const data = await api('POST', '/api/payments/create', { planId, paymentMethod: 'wechat' });
+        const data = await api('POST', '/api/payments/create-order', { planId, paymentMethod: 'wechat' });
         if (data && data.paymentUrl) {
           // 用系统浏览器打开支付链接
           window.open(data.paymentUrl, '_blank');
@@ -2771,7 +2771,7 @@
     };
 
     window.toggleNotifSetting = async function(key, val) {
-      try { await api('PUT', '/api/notifications/settings', { key, enabled: val }); } catch(e) {}
+      try { await api('PUT', '/api/notifications/preferences', { key, enabled: val }); } catch(e) {}
     };
 
     window.closeNotifSettingsModal = function() {
