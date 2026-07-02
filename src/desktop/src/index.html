@@ -904,6 +904,7 @@
 
       let _lastPolledText = '';
       let _lastPolledFiles = '';
+      let _lastImageSize = -1;  // Track last uploaded image size to prevent re-uploads
       let pollCount = 0;
       // 🔑 Global throttle: prevent duplicate uploads from multi-format clipboard bursts
       let _globalThrottleUntil = 0;
@@ -960,9 +961,12 @@
 
           // 2) Check for image via invoke
           const imgInfo = await _invoke('check_clipboard_image_info');
-          if (imgInfo && imgInfo.available) {
-            const imgHash = 'img:' + (imgInfo.size || 0);
+          if (imgInfo && imgInfo.available && imgInfo.size > 0) {
+            // Skip if same image as last upload (prevents infinite re-uploads)
+            if (imgInfo.size === _lastImageSize) return;
+            const imgHash = 'img:' + imgInfo.size;
             if (_isDuplicateHash(imgHash)) return;
+            _lastImageSize = imgInfo.size;
             console.log('[TauriPoll] 🖼️ IMAGE detected, size:', imgInfo.size);
             try {
               const dataUrl = await _invoke('get_clipboard_image');
