@@ -59,3 +59,7 @@ data/
 # WorkBuddy (local workspace data, not project code)
 .workbuddy/
 NUL
+
+# Upload chunks
+src/server/uploads/
+uploads/
