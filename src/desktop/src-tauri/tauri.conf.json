@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.clipsync.desktop",
   "build": {
-    "frontendDist": "../src"
+    "frontendDist": "../src",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
   },
   "app": {
     "windows": [
@@ -17,7 +19,8 @@
         "resizable": true,
         "decorations": true,
         "transparent": false,
-        "center": true
+        "center": true,
+        "backgroundColor": "#000000"
       }
     ],
     "security": {
