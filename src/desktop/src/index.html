@@ -710,7 +710,7 @@
 
       <div class="user-section">
         <div class="user-info">
-          <div class="user-avatar" id="user-avatar">?</div>
+          <div class="user-avatar" id="user-avatar"><span id="user-avatar-text">?</span><img id="user-avatar-img" style="width:100%;height:100%;object-fit:cover;display:none;border-radius:8px;" onerror="this.style.display='none';document.getElementById('user-avatar-text').style.display=''"></div>
           <div>
             <div class="user-name" id="user-name">未登录</div>
             <div class="user-phone" id="user-phone"></div>
@@ -2600,15 +2600,22 @@
         const data = await api('GET', '/api/subscriptions/plans');
         const plans = data.plans || [];
         listEl.innerHTML = plans.map(p => `
-          <div class="plan-card" style="border:2px solid ${p.price > 0 ? '#667eea' : '#e5e7eb'};border-radius:12px;padding:20px;cursor:pointer;transition:all 0.15s;"
-               onmouseover="this.style.box-shadow='0 4px 16px rgba(102,126,234,0.18)'"
-               onmouseout="this.style.box-shadow='none'"
-               onclick="selectPlan(${p.id},'${p.name.replace(/'/g, "\\'")}',${p.price})">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-              <div style="font-size:18px;font-weight:700;color:#1a1a2e;">${p.name}</div>
-              <div style="font-size:22px;font-weight:800;color:#667eea;">¥${p.price}<span style="font-size:13px;font-weight:500;color:#999;">/${p.billingCycle === 'month' ? '月' : '年'}</span></div>
-            </div>
-            <div style="font-size:12px;color:#666;margin-bottom:12px;">${p.maxDevices} 台设备 · ${p.maxClipboardItems} 条记录 · ${p.maxStorageMb}MB 存储</div>
+          <div class="plan-card" style="border:2px solid ${p.price > 0 ? '#667eea' : '#e5e7eb'};border-radius:16px;padding:24px;cursor:pointer;transition:all 0.2s;position:relative;${p.price > 0 ? 'background:linear-gradient(135deg,#fafafe 0%,#f0f0ff 100%);' : ''}"
+                         onmouseover="this.style.boxShadow='0 8px 24px rgba(102,126,234,0.2)';this.style.transform='translateY(-2px)'"
+                         onmouseout="this.style.boxShadow='none';this.style.transform='none'"
+                         onclick="selectPlan(${p.id},'${p.name.replace(/'/g, "\\'")}',${p.price})">
+                      ${p.price > 0 ? '<div style="position:absolute;top:-10px;right:16px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;">推荐</div>' : ''}
+                      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+                        <div>
+                          <div style="font-size:15px;color:#666;margin-bottom:4px;">${p.displayName || p.name}</div>
+                          <div style="font-size:24px;font-weight:800;color:#1a1a2e;">¥${p.price}<span style="font-size:14px;font-weight:500;color:#999;">/${p.billingCycle === 'month' ? '月' : '年'}</span></div>
+                        </div>
+                      </div>
+                      <div style="font-size:12px;color:#666;margin-bottom:16px;padding:12px;background:rgba(0,0,0,0.03);border-radius:8px;">
+                        <div style="margin-bottom:4px;">📱 ${p.maxDevices} 台设备</div>
+                        <div style="margin-bottom:4px;">📋 ${p.maxClipboardItems} 条记录</div>
+                        <div>💾 ${p.maxStorageMb}MB 存储</div>
+                      </div>
             <ul style="list-style:none;padding:0;margin:0;font-size:13px;color:#444;">
               ${Object.entries(p.features || {}).filter(([k,v]) => v === true || typeof v === 'number').map(([k,v]) => {
                 const labels = {ai_classify:'AI智能分类',offline_queue:'离线队列',e2e_encryption:'端到端加密',push_notification:'推送通知',full_text_search:'全文搜索',version_history_days:'版本历史'};
@@ -2717,7 +2724,7 @@
           try {
             const r = await fetch(API_BASE + '/api/csrf-token', { headers: { 'Authorization': 'Bearer ' + state.token } });
             const d = await r.json();
-            if (d.token) { _cachedCsrfToken = d.token; _csrfFetchTime = Date.now(); h['x-csrf-token'] = d.token; }
+            if (d.csrfToken) { _cachedCsrfToken = d.csrfToken; _csrfFetchTime = Date.now(); h['x-csrf-token'] = d.csrfToken; }
           } catch(e) {}
         }
       }
@@ -2881,8 +2888,16 @@
         // 更新左下角显示
         const sidebarUser = document.getElementById('user-name');
         if (sidebarUser) sidebarUser.textContent = nickname || state.phone || '';
-        const sidebarAvatar = document.getElementById('user-avatar');
-        if (sidebarAvatar && nickname) sidebarAvatar.textContent = nickname.charAt(0).toUpperCase();
+        // 更新头像
+        const avatarText = document.getElementById('user-avatar-text');
+        const avatarImg = document.getElementById('user-avatar-img');
+        if (avatarImg && avatarUrl && avatarUrl.startsWith('data:')) {
+          avatarImg.src = avatarUrl;
+          avatarImg.style.display = '';
+          if (avatarText) avatarText.style.display = 'none';
+        } else if (avatarText && nickname) {
+          avatarText.textContent = nickname.charAt(0).toUpperCase();
+        }
         closeProfileModal();
       } catch(e) {
         showToast('更新失败：' + (e.message || '未知错误'));
