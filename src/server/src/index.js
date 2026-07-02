@@ -359,7 +359,7 @@ app.use('/api/sessions', authenticateToken, sessionRoutes);
 app.use('/api/notifications', authenticateToken, notificationRoutes);
 
 // 订阅管理路由
-app.use('/api/subscriptions', apiLimiter, authenticateToken, csrfProtection, subscriptionRoutes);
+app.use('/api/subscriptions', apiLimiter, subscriptionRoutes);
 
 // 支付管理路由
 app.use('/api/payments', apiLimiter, authenticateToken, csrfProtection, paymentRoutes);
