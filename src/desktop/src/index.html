@@ -348,10 +348,8 @@
     }
     .card-image-desc { font-size: 11.5px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
-    /* Image viewer - Canvas based, no CSS background needed */
-    #image-viewer { background: #000000; }
-    #viewer-canvas { display: block; }
-    #image-viewer-bar { margin-top: 14px; display: flex; gap: 10px; padding: 8px 16px; background: #222; border-radius: 8px; }
+    /* Image viewer */
+    #image-viewer-bar { margin-top: 14px; display: flex; gap: 10px; padding: 8px 16px; background: rgba(30,30,30,0.9); border-radius: 8px; }
 
     /* ===== Right Panel (Devices) ===== */
     :root { --rp-w: 240px; }
@@ -625,8 +623,8 @@
   </div>
 
   <!-- Image Viewer Modal -->
-  <div id="image-viewer" style="display:none;position:fixed;inset:0;z-index:999999;flex-direction:column;align-items:center;justify-content:center;">
-    <canvas id="viewer-canvas"></canvas>
+  <div id="image-viewer" style="display:none;position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.85);flex-direction:column;align-items:center;justify-content:center;" onclick="if(event.target===this)closeImageViewer()">
+    <img id="viewer-img" style="max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.5);object-fit:contain;">
     <div id="image-viewer-bar">
       <button class="btn btn-primary" id="copy-image-btn" onclick="copyImageFromViewer()" style="background:#6366f1;"><svg style="width:13px;height:13px;display:inline-block;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>复制图片</button>
       <button class="btn btn-secondary" onclick="closeImageViewer()" style="background:#444;color:#fff;border-color:#555;"><svg style="width:13px;height:13px;display:inline-block;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>关闭</button>
@@ -1878,46 +1876,19 @@
           } catch(e) { console.error(LOG_PREFIX, e); showToast('convert failed'); return; }
         }
 
-        // Set Win32 background to black (below WebView layer)
-        const tauriWin = _getTauriWindow();
-        if (tauriWin && typeof tauriWin.setBackgroundColor === 'function') {
-          try { await tauriWin.setBackgroundColor({ r: 0, g: 0, b: 0, a: 255 }); } catch(e) {}
-        }
-
-        // Canvas rendering: fill black pixels, then draw image
         const viewer = document.getElementById('image-viewer');
-        const canvas = document.getElementById('viewer-canvas');
-        if (!viewer || !canvas) { showToast('viewer DOM not found'); return; }
+        const img = document.getElementById('viewer-img');
+        if (!viewer || !img) { showToast('viewer DOM not found'); return; }
 
-        const img = new Image();
+        img.src = dataUrl;
         await new Promise((resolve, reject) => {
           img.onload = resolve;
           img.onerror = () => reject(new Error('图片加载失败'));
-          img.src = dataUrl;
         });
-
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        canvas.width = w;
-        canvas.height = h;
-        canvas.style.cssText = 'width:' + w + 'px;height:' + h + 'px;display:block;';
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, w, h);
-
-        const pad = 40;
-        const maxW = w - pad * 2;
-        const maxH = h - pad * 2 - 60;
-        const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
-        const dw = img.naturalWidth * scale;
-        const dh = img.naturalHeight * scale;
-        const dx = (w - dw) / 2;
-        const dy = ((h - 60) - dh) / 2;
-        ctx.drawImage(img, dx, dy, dw, dh);
 
         viewer.style.display = 'flex';
         _viewingImageUrl = dataUrl;
-        console.log(LOG_PREFIX, 'OK - canvas rendered', img.naturalWidth + 'x' + img.naturalHeight);
+        console.log(LOG_PREFIX, 'OK -', img.naturalWidth + 'x' + img.naturalHeight);
       } catch(e) {
         console.error(LOG_PREFIX, e);
         showToast('preview failed: ' + e.message.substring(0, 80));
@@ -1929,21 +1900,15 @@
       if (viewer) { viewer.style.display = 'none'; }
       if (_viewingBlobUrl) { URL.revokeObjectURL(_viewingBlobUrl); _viewingBlobUrl = null; }
       _viewingImageUrl = null;
-      // Restore Win32 background to white
-      try {
-        const tw = _getTauriWindow();
-        if (tw && typeof tw.setBackgroundColor === 'function') {
-          await tw.setBackgroundColor({ r: 255, g: 255, b: 255, a: 255 });
-        }
-      } catch(e) {}
+      const img = document.getElementById('viewer-img');
+      if (img) img.src = '';
     }
 
     async function copyImageFromViewer() {
       if (!_viewingImageUrl) return;
       try {
-        const img = new Image();
-        img.src = _viewingImageUrl;
-        await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error('图片加载失败')); });
+        const img = document.getElementById('viewer-img');
+        if (!img || !img.naturalWidth) throw new Error('图片未加载');
 
         const canvas = document.createElement('canvas');
         canvas.width = img.naturalWidth;
