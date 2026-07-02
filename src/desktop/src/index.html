@@ -2610,7 +2610,7 @@
         const data = await api('GET', '/api/subscriptions/plans');
         const plans = data.plans || [];
         listEl.innerHTML = plans.map(p => `
-          <div class="plan-card" style="border:2px solid ${p.price > 0 ? '#667eea' : '#e5e7eb'};border-radius:16px;padding:24px;cursor:pointer;transition:all 0.2s;position:relative;${p.price > 0 ? 'background:linear-gradient(135deg,#fafafe 0%,#f0f0ff 100%);' : ''}"
+          <div class="plan-card" style="border:2px solid ${p.price > 0 ? '#667eea' : '#e5e7eb'};flex:1;min-width:180px;max-width:220px;border-radius:16px;padding:20px;cursor:pointer;transition:all 0.2s;position:relative;${p.price > 0 ? 'background:linear-gradient(135deg,#fafafe 0%,#f0f0ff 100%);' : ''}"
                          onmouseover="this.style.boxShadow='0 8px 24px rgba(102,126,234,0.2)';this.style.transform='translateY(-2px)'"
                          onmouseout="this.style.boxShadow='none';this.style.transform='none'"
                          onclick="selectPlan(${p.id},'${p.name.replace(/'/g, "\\'")}',${p.price})">
@@ -2768,7 +2768,11 @@
             const chunkResp = await fetch(API_BASE + '/api/upload/chunk/' + uploadId + '/' + i, {
               method: 'POST', headers: chunkHeaders, body: form
             });
-            if (!chunkResp.ok) throw new Error('chunk ' + i + ' failed');
+            if (!chunkResp.ok) {
+              const errBody = await chunkResp.text().catch(() => '');
+              console.error('[Upload] chunk', i, 'failed:', chunkResp.status, errBody);
+              throw new Error('chunk ' + i + ' failed (' + chunkResp.status + ')');
+            }
             showToast('上传中：' + file.name + ' (' + Math.round((i + 1) / totalChunks * 100) + '%)');
           }
 
