@@ -1405,7 +1405,17 @@
       const name = (u && u.nickname) || (u && u.phone) || '?';
       document.getElementById('user-name').textContent = name;
       document.getElementById('user-phone').textContent = u?.phone || '';
-      document.getElementById('user-avatar').textContent = name[0].toUpperCase();
+      // 头像：优先显示图片，否则显示首字母
+      const avatarText = document.getElementById('user-avatar-text');
+      const avatarImg = document.getElementById('user-avatar-img');
+      if (avatarImg && u && u.avatarUrl && u.avatarUrl.startsWith('data:')) {
+        avatarImg.src = u.avatarUrl;
+        avatarImg.style.display = '';
+        if (avatarText) avatarText.style.display = 'none';
+      } else if (avatarText) {
+        avatarText.textContent = name[0].toUpperCase();
+        if (avatarImg) avatarImg.style.display = 'none';
+      }
     }
 
     // ====== Drag & Drop File Upload ======
@@ -2858,6 +2868,7 @@
           const data = await api('GET', '/api/auth/me');
           if (data) {
             state.user = { nickname: data.nickname || '', avatarUrl: data.avatarUrl || '', id: data.id, phone: data.phone };
+            localStorage.setItem('cs_user', JSON.stringify(state.user));
           }
         } catch(e) {}
         const u = state.user || {};
@@ -3004,7 +3015,7 @@
     <div class="modal" style="max-width:620px;">
       <h2>选择套餐</h2>
       <p>选择适合你的订阅方案</p>
-      <div id="plans-list" style="display:flex;flex-direction:column;gap:12px;margin:16px 0;"></div>
+      <div id="plans-list" style="display:flex;flex-direction:row;gap:16px;margin:16px 0;flex-wrap:wrap;justify-content:center;"></div>
       <button class="btn btn-block" onclick="closeSubscriptionModal()" style="background:#eee;color:#333;">关闭</button>
     </div>
   </div>
