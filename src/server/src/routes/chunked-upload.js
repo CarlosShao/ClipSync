@@ -13,6 +13,17 @@ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 
 // 允许的文件 MIME类型（安全白名单）
 const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/vnd.android.package-archive',
+  'text/plain',
+  'text/csv',
+  'application/json',
   'image/jpeg',
   'image/png',
   'image/gif',
