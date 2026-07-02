@@ -48,3 +48,4 @@ pool.on('connect', (client) => {
 });
 
 export default pool;
+export { pool };

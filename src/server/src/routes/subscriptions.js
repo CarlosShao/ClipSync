@@ -43,15 +43,14 @@ router.get('/plans', async (req, res) => {
 router.get('/current', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    
+
     // 获取用户当前订阅
     const subscriptionResult = await pool.query(`
-      SELECT 
+      SELECT
         us.*,
         sp.name as plan_name,
-        sp.price,
-        sp.currency,
-        sp.billing_cycle,
+        sp.price_monthly,
+        sp.price_yearly,
         sp.max_devices,
         sp.max_clipboard_items,
         sp.max_file_size_mb,
@@ -63,7 +62,7 @@ router.get('/current', authenticateToken, async (req, res) => {
       ORDER BY us.created_at DESC
       LIMIT 1
     `, [userId]);
-    
+
     if (subscriptionResult.rows.length === 0) {
       // 没有活跃订阅，返回Free套餐
       const freePlan = await pool.query('SELECT * FROM subscription_plans WHERE name = $1', ['Free']);
@@ -72,9 +71,9 @@ router.get('/current', authenticateToken, async (req, res) => {
         plan: freePlan.rows[0] ? {
           id: freePlan.rows[0].id,
           name: freePlan.rows[0].name,
-          price: parseFloat(freePlan.rows[0].price),
-          currency: freePlan.rows[0].currency,
-          billingCycle: freePlan.rows[0].billing_cycle,
+          price: parseFloat(freePlan.rows[0].price_monthly || 0),
+          currency: 'CNY',
+          billingCycle: 'month',
           maxDevices: freePlan.rows[0].max_devices,
           maxClipboardItems: freePlan.rows[0].max_clipboard_items,
           maxFileSizeMb: freePlan.rows[0].max_file_size_mb,
@@ -83,9 +82,9 @@ router.get('/current', authenticateToken, async (req, res) => {
         } : null,
       });
     }
-    
+
     const subscription = subscriptionResult.rows[0];
-    
+
     res.json({
       subscription: {
         id: subscription.id,
@@ -98,9 +97,9 @@ router.get('/current', authenticateToken, async (req, res) => {
       plan: {
         id: subscription.plan_id,
         name: subscription.plan_name,
-        price: parseFloat(subscription.price),
-        currency: subscription.currency,
-        billingCycle: subscription.billing_cycle,
+        price: parseFloat(subscription.price_monthly || 0),
+        currency: 'CNY',
+        billingCycle: 'month',
         maxDevices: subscription.max_devices,
         maxClipboardItems: subscription.max_clipboard_items,
         maxFileSizeMb: subscription.max_file_size_mb,

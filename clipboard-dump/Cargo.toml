@@ -1,0 +1,7 @@
+[package]
+name = "clipboard-dump"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clipboard-win = { version = "5", features = ["std"] }

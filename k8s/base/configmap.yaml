@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clipsync-config
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: api
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  DB_HOST: "clipsync-postgres"
+  DB_PORT: "5432"
+  DB_USER: "clipsync"
+  DB_NAME: "clipsync_prod"
+  REDIS_HOST: "clipsync-redis"
+  REDIS_PORT: "6379"
+  LOG_LEVEL: "info"
+  TZ: "Asia/Shanghai"
+  ALLOWED_ORIGINS: "https://app.clipsync.com,https://clipsync.com"
+  CSRF_SECRET: "CHANGE_ME_32chars_min!!"
+  JWT_SECRET: "CHANGE_ME_32chars_min!!"
+  ENCRYPTION_KEY: "CHANGE_ME_32chars_min!!"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: clipsync-secrets
+  namespace: clipsync
+  labels:
+    app.kubernetes.io/name: clipsync
+    app.kubernetes.io/component: api
+type: Opaque
+stringData:
+  DB_PASSWORD: "CHANGE_ME_strong_password"
+  # 生产环境请用 sealed-secrets 或 Vault 管理密钥
+  # kubectl create secret generic clipsync-secrets --from-literal=DB_PASSWORD=xxx -n clipsync

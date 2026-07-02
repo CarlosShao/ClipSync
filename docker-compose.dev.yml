@@ -92,8 +92,8 @@ services:
       MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
       UPLOAD_DIR: /app/uploads
 
-      # CORS 配置
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      # CORS 配置（包含 Tauri dev server 端口 + 生产环境 tauri://localhost）
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080,http://localhost:1420,http://127.0.0.1:1420,http://127.0.0.1:1430,http://localhost:1430,tauri://localhost,null}
 
       # 日志配置
       LOG_LEVEL: ${LOG_LEVEL:-debug}

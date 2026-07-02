@@ -404,3 +404,6 @@ export default {
 
 // Export factory function for creating custom rate limiters
 export { createRateLimiter };
+
+// Re-export getRedisClient for ws/server.js usage
+export { getRedisClient as getRedisClient } from '../utils/redis-client.js';

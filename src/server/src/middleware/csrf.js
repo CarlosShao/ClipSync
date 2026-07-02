@@ -149,6 +149,14 @@ export async function csrfProtection(req, res, next) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     return next();
   }
+
+  // 🔑 关键修复：使用 Bearer JWT Token 的请求不需要 CSRF 保护
+  // CSRF 攻击只对 Cookie 认证有效（浏览器自动发送 Cookie）。
+  // Bearer Token 必须由 JS 显式添加到 header，跨站页面无法做到。
+  const authHeader = req.headers['authorization'] || '';
+  if (authHeader.startsWith('Bearer ')) {
+    return next();
+  }
   
   // 从请求头或查询参数获取CSRF令牌
   const csrfToken = req.headers['x-csrf-token'] || 

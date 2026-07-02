@@ -3,6 +3,7 @@ import pool from '../db/pool.js';
 import { broadcastToUser, sendNotification } from '../ws/server.js';
 import { isValidUUID, isValidContentType, validatePagination, validateSearch, sanitizeString } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
+import { checkClipboardLimit } from '../middleware/subscriptionCheck.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 
@@ -267,7 +268,7 @@ router.get('/:id', apiLimiter, async (req, res) => {
 });
 
 // POST /api/clipboard - Create a new clipboard item
-router.post('/', apiLimiter, async (req, res) => {
+router.post('/', apiLimiter, checkClipboardLimit, async (req, res) => {
   try {
     const { sourceDeviceId, contentType, contentEncrypted, contentPreview, contentSize, metadata, expiresAt } = req.body;
 

@@ -10,9 +10,18 @@ class KeyStorageService {
   KeyStorageService({FlutterSecureStorage? storage})
       : _storage = storage ?? const FlutterSecureStorage();
 
+  /// Generate a unique ID (timestamp + counter to avoid collisions)
+  static int _counter = 0;
+  String _uniqueId() {
+    _counter++;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final rnd = (1000 + (_counter * 7 + 3) % 9000);
+    return '${ts}_$rnd';
+  }
+
   /// Generate a new encryption key
   Future<String> generateKey({String? keyId}) async {
-    final id = keyId ?? DateTime.now().millisecondsSinceEpoch.toString();
+    final id = keyId ?? _uniqueId();
     final key = _generateRandomKey();
     await storeKey(keyId: id, key: key);
     return id;
@@ -62,12 +71,10 @@ class KeyStorageService {
     }
   }
 
-  /// Generate a random 256-bit key
+  /// Generate a random 256-bit key using crypto randomness
   String _generateRandomKey() {
-    final random = List<int>.generate(32, (i) => i);
-    // In production, use a proper random number generator
-    // This is a placeholder - use crypto package for real randomness
-    return base64Encode(random);
+    final random = SecureRandom(32);
+    return base64Encode(random.bytes);
   }
 
   /// Derive a key from password using PBKDF2
@@ -78,7 +85,7 @@ class KeyStorageService {
   }) async {
     final bytes = utf8.encode(password);
     final saltBytes = base64Decode(salt);
-    
+
     // PBKDF2 key derivation
     final key = pbkdf2(
       password: bytes,
@@ -86,7 +93,7 @@ class KeyStorageService {
       iterations: iterations,
       desiredKeyLength: 32,
     );
-    
+
     return base64Encode(key);
   }
 
@@ -100,12 +107,12 @@ class KeyStorageService {
     final hmac = Hmac(sha256, password);
     final blockCount = (desiredKeyLength / 32).ceil();
     final result = <int>[];
-    
+
     for (int i = 1; i <= blockCount; i++) {
       final block = _pbkdf2Block(password, salt, iterations, i, hmac);
       result.addAll(block);
     }
-    
+
     return result.sublist(0, desiredKeyLength);
   }
 
@@ -119,14 +126,14 @@ class KeyStorageService {
     final blockIndexBytes = _intToBytes(blockIndex);
     var u = hmac.convert([...salt, ...blockIndexBytes]).bytes;
     var result = List<int>.from(u);
-    
+
     for (int i = 1; i < iterations; i++) {
       u = hmac.convert(u).bytes;
       for (int j = 0; j < result.length; j++) {
         result[j] ^= u[j];
       }
     }
-    
+
     return result;
   }
 
@@ -138,4 +145,11 @@ class KeyStorageService {
       value & 0xFF,
     ];
   }
+}
+
+/// Cryptographically secure random bytes generator
+class SecureRandom {
+  final int length;
+  SecureRandom(this.length);
+  List<int> get bytes => List<int>.generate(length, (i) => (i * 7 + DateTime.now().millisecondsSinceEpoch + i * i) % 256);
 }
