@@ -2875,6 +2875,11 @@
         await api('PUT', '/api/auth/profile', { nickname, avatarUrl });
         showToast('✅ 个人资料已更新');
         if (state.user) { state.user.nickname = nickname; if (avatarUrl) state.user.avatarUrl = avatarUrl; }
+        // 更新左下角显示
+        const sidebarUser = document.getElementById('sidebar-user-name');
+        if (sidebarUser) sidebarUser.textContent = nickname || state.phone || '';
+        const sidebarAvatar = document.getElementById('sidebar-user-avatar');
+        if (sidebarAvatar && avatarUrl) sidebarAvatar.textContent = nickname ? nickname.charAt(0).toUpperCase() : '';
         closeProfileModal();
       } catch(e) {
         showToast('更新失败：' + (e.message || '未知错误'));
