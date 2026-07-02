@@ -13,21 +13,22 @@ const router = Router();
 router.get('/plans', async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, name, price, currency, billing_cycle, max_devices, max_clipboard_items, max_file_size_mb, max_storage_mb, features FROM subscription_plans WHERE is_active = true ORDER BY price ASC'
+      'SELECT id, name, price_monthly, price_yearly, currency, device_limit, clipboard_limit, file_size_limit, storage_limit, features FROM subscription_plans WHERE is_active = true ORDER BY price_monthly ASC'
     );
     
     res.json({
       plans: result.rows.map(plan => ({
         id: plan.id,
-        name: plan.name,
-        price: parseFloat(plan.price),
-        currency: plan.currency,
-        billingCycle: plan.billing_cycle,
-        maxDevices: plan.max_devices,
-        maxClipboardItems: plan.max_clipboard_items,
-        maxFileSizeMb: plan.max_file_size_mb,
-        maxStorageMb: plan.max_storage_mb,
-        features: plan.features,
+                    name: plan.name,
+                    price: parseFloat(plan.price_monthly || 0),
+                    priceYearly: parseFloat(plan.price_yearly || 0),
+                    currency: plan.currency,
+                    billingCycle: 'month',
+                    maxDevices: plan.device_limit,
+                    maxClipboardItems: plan.clipboard_limit,
+                    maxFileSizeMb: plan.file_size_limit,
+                    maxStorageMb: plan.storage_limit,
+                    features: plan.features,
       }))
     });
   } catch (err) {

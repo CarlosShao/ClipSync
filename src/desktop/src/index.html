@@ -2715,7 +2715,7 @@
           // Step 1: 初始化上传
           const initResp = await fetch(API_BASE + '/api/upload/init', {
             method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fileName: file.name, fileSize: file.size, mimeType: file.type || 'application/octet-stream' })
+            body: JSON.stringify({ filename: file.name, fileSize: file.size, mimeType: file.type || 'application/octet-stream', totalChunks: Math.ceil(file.size / (1024*1024)) })
           });
           if (!initResp.ok) throw new Error('init failed');
           const initData = await initResp.json();
@@ -2780,30 +2780,34 @@
 
     // ====== 会话管理 ======
     window.showSessionManagement = async function() {
-      document.getElementById('session-modal').style.display = 'flex';
-      const listEl = document.getElementById('session-list');
-      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
-      try {
-        const data = await api('GET', '/api/sessions');
-        const sessions = data.sessions || [];
-        if (sessions.length === 0) {
-          listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无会话</div>';
-        } else {
-          listEl.innerHTML = sessions.map(s => {
-            const isCurrent = s.id === state.sessionId;
-            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;">' +
-              '<div>' +
-                '<div style="font-size:13px;font-weight:600;color:#333;">' + (s.deviceName || '未知设备') + (isCurrent ? ' (当前)' : '') + '</div>' +
-                '<div style="font-size:11px;color:#999;margin-top:2px;">' + (s.ip || '') + ' · ' + new Date(s.lastActive).toLocaleString() + '</div>' +
-              '</div>' +
-              (isCurrent ? '<span style="font-size:12px;color:#999;">当前</span>' : '<button class="btn btn-secondary" style="padding:4px 12px;font-size:12px;color:#e74c3c;border-color:#e74c3c;" onclick="kickSession(" + s.id + ")">踢出</button>') +
-            '</div>';
-          }).join('');
-        }
-      } catch(e) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败</div>';
-      }
-    };
+          document.getElementById('session-modal').style.display = 'flex';
+          const listEl = document.getElementById('session-list');
+          listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
+          try {
+            const headers = state.token ? { 'Authorization': 'Bearer ' + state.token } : {};
+            if (state.sessionId) headers['x-session-id'] = state.sessionId;
+            const resp = await fetch(API_BASE + '/api/sessions', { headers });
+            const data = await resp.json();
+            const sessions = (data.data && data.data.sessions) || [];
+            if (sessions.length === 0) {
+              listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无会话</div>';
+            } else {
+              listEl.innerHTML = sessions.map(s => {
+                const isCurrent = s.isCurrent;
+                const time = s.lastActiveAt ? new Date(s.lastActiveAt).toLocaleString() : '';
+                return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;">' +
+                  '<div>' +
+                    '<div style="font-size:13px;font-weight:600;color:#333;">' + (s.deviceName || '未知设备') + (isCurrent ? ' (当前)' : '') + '</div>' +
+                    '<div style="font-size:11px;color:#999;margin-top:2px;">' + (s.ipAddress || '') + ' · ' + time + '</div>' +
+                  '</div>' +
+                  (isCurrent ? '<span style="font-size:12px;color:#999;">当前</span>' : '<button class="btn btn-secondary" style="padding:4px 12px;font-size:12px;color:#e74c3c;border-color:#e74c3c;" onclick="kickSession(\'' + s.id + '\')">踢出</button>') +
+                '</div>';
+              }).join('');
+            }
+          } catch(e) {
+            listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败：' + (e.message || '') + '</div>';
+          }
+        };
 
     window.kickSession = async function(sessionId) {
       if (!confirm('确认踢出该会话？')) return;
@@ -2823,41 +2827,37 @@
     // ====== 个人资料编辑 ======
     window.showProfileModal = async function() {
         document.getElementById('profile-modal').style.display = 'flex';
-        if (state.user) {
-          document.getElementById('profile-username').value = state.user.username || '';
-          document.getElementById('profile-email').value = state.user.email || '';
-          const avatarEl = document.getElementById('profile-avatar');
-          if (avatarEl && state.user.avatar) avatarEl.src = state.user.avatar;
-        } else {
-          try {
-            const data = await api('GET', '/api/auth/me');
-            if (data && data.user) state.user = data.user;
-            document.getElementById('profile-username').value = (state.user && state.user.username) || '';
-            document.getElementById('profile-email').value = (state.user && state.user.email) || '';
-            const avatarEl = document.getElementById('profile-avatar');
-            if (avatarEl && state.user && state.user.avatar) avatarEl.src = state.user.avatar;
-          } catch(e) {}
-        }
+        try {
+          const data = await api('GET', '/api/auth/me');
+          if (data) {
+            state.user = { nickname: data.nickname || '', avatarUrl: data.avatarUrl || '', id: data.id, phone: data.phone };
+          }
+        } catch(e) {}
+        const u = state.user || {};
+        document.getElementById('profile-username').value = u.nickname || '';
+        const avatarEl = document.getElementById('profile-avatar');
+        const placeholder = document.getElementById('profile-avatar-placeholder');
+        if (avatarEl && u.avatarUrl) { avatarEl.src = u.avatarUrl; avatarEl.style.display = ''; if (placeholder) placeholder.style.display = 'none'; }
       };
     window.closeProfileModal = function() {
       document.getElementById('profile-modal').style.display = 'none';
     };
     window.saveProfile = async function() {
-      const username = document.getElementById('profile-username').value;
-      const email = document.getElementById('profile-email').value;
+      const nickname = document.getElementById('profile-username').value;
       const avatarInput = document.getElementById('profile-avatar-input');
-      let avatar = state.user && state.user.avatar || '';
+      let avatarUrl = state.user && state.user.avatarUrl || '';
       if (avatarInput && avatarInput.files && avatarInput.files[0]) {
         const reader = new FileReader();
-        avatar = await new Promise((resolve) => {
+        avatarUrl = await new Promise((resolve) => {
           reader.onload = (e) => resolve(e.target.result);
           reader.readAsDataURL(avatarInput.files[0]);
         });
       }
-      if (!username) { showToast('请输入用户名'); return; }
+      if (!nickname) { showToast('请输入用户名'); return; }
       try {
-        await api('PUT', '/api/auth/profile', { username, email, avatar });
+        await api('PUT', '/api/auth/profile', { nickname, avatarUrl });
         showToast('✅ 个人资料已更新');
+        if (state.user) { state.user.nickname = nickname; if (avatarUrl) state.user.avatarUrl = avatarUrl; }
         closeProfileModal();
       } catch(e) {
         showToast('更新失败：' + (e.message || '未知错误'));
@@ -2876,17 +2876,17 @@
       if (status) status.textContent = '正在导出数据...';
       try {
         const data = await api('GET', '/api/auth/export-data');
-        const downloadUrl = data && data.url;
-        if (downloadUrl) {
-          if (status) status.innerHTML = '✅ 导出完成！<br><a href="' + downloadUrl + '" target="_blank" style="color:#667eea;">点击下载</a>';
-          showToast('✅ 数据导出完成');
-        } else {
-          if (status) status.textContent = '✅ 导出完成！数据已准备就绪';
-          showToast('✅ 数据导出完成，请查看邮箱');
+        if (data) {
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = 'clipsync-gdpr-export-' + new Date().toISOString().slice(0,10) + '.json';
+          a.click(); URL.revokeObjectURL(url);
+          if (status) status.textContent = '✅ 导出完成！已下载 JSON 文件';
+          showToast('✅ 数据已导出为本地文件');
         }
       } catch(e) {
         if (status) status.textContent = '❌ 导出失败：' + (e.message || '未知错误');
-        showToast('导出失败：' + (e.message || '未知错误'));
       }
     };
 
@@ -3034,10 +3034,7 @@
         <label>用户名</label>
         <input type="text" id="profile-username" placeholder="请输入用户名">
       </div>
-      <div class="form-group">
-        <label>邮箱</label>
-        <input type="email" id="profile-email" placeholder="请输入邮箱">
-      </div>
+      
       <div style="display:flex;gap:12px;margin-top:16px;">
         <button class="btn btn-primary btn-block" onclick="saveProfile()">保存</button>
         <button class="btn btn-block" onclick="closeProfileModal()" style="background:#eee;color:#333;">取消</button>
