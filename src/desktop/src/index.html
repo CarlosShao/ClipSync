@@ -6,6 +6,24 @@
   <title>ClipSync</title>
   <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%236366f1'/><text x='16' y='22' text-anchor='middle' font-size='18' fill='white'>📋</text></svg>">
   <script>
+    // ===== 主题初始化 =====
+    (function() {
+      const saved = localStorage.getItem('clipsync_theme');
+      if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+    window.toggleTheme = function() {
+      const html = document.documentElement;
+      const isDark = html.getAttribute('data-theme') === 'dark';
+      if (isDark) {
+        html.removeAttribute('data-theme');
+        localStorage.setItem('clipsync_theme', 'light');
+      } else {
+        html.setAttribute('data-theme', 'dark');
+        localStorage.setItem('clipsync_theme', 'dark');
+      }
+      const el = document.getElementById('theme-toggle-status');
+      if (el) el.textContent = isDark ? '浅色模式' : '深色模式';
+    };
     // 拦截窗口关闭：点 X 按钮 = 隐藏到托盘，不退出进程
     // 只有托盘菜单"退出"才真正退出
     (function() {
@@ -109,6 +127,23 @@
       --radius: 10px;
       --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
       --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+    }
+    [data-theme="dark"] {
+      --primary: #818CF8;
+      --primary-light: #1E1B4B;
+      --primary-dark: #6366F1;
+      --bg: #0F172A;
+      --bg-card: #1E293B;
+      --text: #F1F5F9;
+      --text-secondary: #CBD5E1;
+      --text-muted: #64748B;
+      --border: #334155;
+      --border-light: #1E293B;
+      --success: #4ADE80;
+      --danger: #F87171;
+      --warning: #FBBF24;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -2218,16 +2253,6 @@
               </div>
               <span class="settings-arrow" id="plan-upgrade-btn">升级 ›</span>
             </div>
-            <div class="settings-item" onclick="showBillingHistory()">
-              <div class="settings-item-left">
-                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                <div>
-                  <div class="settings-item-label">账单记录</div>
-                  <div class="settings-item-desc">订单历史、支付凭证、发票下载</div>
-                </div>
-              </div>
-              <span class="settings-arrow">查看 ›</span>
-            </div>
           </div>
 
           <!-- Preferences -->
@@ -2243,12 +2268,22 @@
               </div>
               <span class="settings-arrow">设置 ›</span>
             </div>
+            <div class="settings-item" onclick="toggleTheme()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+                <div>
+                  <div class="settings-item-label">外观主题</div>
+                  <div class="settings-item-desc"><span id="theme-toggle-status">浅色模式</span></div>
+                </div>
+              </div>
+              <span class="settings-arrow" id="theme-btn">切换 ›</span>
+            </div>
             <div class="settings-item" onclick="checkForUpdates()">
               <div class="settings-item-left">
                 <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 <div>
                   <div class="settings-item-label">检查更新</div>
-                  <div class="settings-item-desc">当前版本 v0.1.0 · 检查是否有新版本</div>
+                  <div class="settings-item-desc">当前版本 v0.1.0</div>
                 </div>
               </div>
               <span class="settings-arrow">检查 ›</span>
@@ -2262,6 +2297,31 @@
                 </div>
               </div>
               <span class="settings-arrow">导出 ›</span>
+            </div>
+          </div>
+
+          <!-- Data -->
+          <div class="settings-group">
+            <div class="settings-group-title">数据管理</div>
+            <div class="settings-item" onclick="document.getElementById('file-input').click()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <div>
+                  <div class="settings-item-label">上传文件</div>
+                  <div class="settings-item-desc">向剪贴板添加文件附件</div>
+                </div>
+              </div>
+              <span class="settings-arrow">上传 ›</span>
+            </div>
+            <div class="settings-item" onclick="showBillingHistory()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <div>
+                  <div class="settings-item-label">账单记录</div>
+                  <div class="settings-item-desc">订单历史、支付凭证</div>
+                </div>
+              </div>
+              <span class="settings-arrow">查看 ›</span>
             </div>
           </div>
 
@@ -2280,6 +2340,9 @@
           </div>
 
         `;
+        // Update theme label in preferences after render
+        const themeEl = document.getElementById('theme-toggle-status');
+        if (themeEl) themeEl.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '深色模式' : '浅色模式';
     }
 
     // ====== Helpers ======
