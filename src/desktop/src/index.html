@@ -2610,7 +2610,10 @@
             </div>
             <div style="font-size:12px;color:#666;margin-bottom:12px;">${p.maxDevices} 台设备 · ${p.maxClipboardItems} 条记录 · ${p.maxStorageMb}MB 存储</div>
             <ul style="list-style:none;padding:0;margin:0;font-size:13px;color:#444;">
-              ${(p.features || []).map(f => `<li style="padding:3px 0;">✅ ${f}</li>`).join('')}
+              ${Object.entries(p.features || {}).filter(([k,v]) => v === true || typeof v === 'number').map(([k,v]) => {
+                const labels = {ai_classify:'AI智能分类',offline_queue:'离线队列',e2e_encryption:'端到端加密',push_notification:'推送通知',full_text_search:'全文搜索',version_history_days:'版本历史'};
+                return '<li style="padding:3px 0;">✅ ' + (labels[k] || k) + (typeof v === 'number' && v > 0 ? ' (' + v + '天)' : '') + '</li>';
+              }).join('')}
             </ul>
           </div>
         `).join('');
@@ -2876,10 +2879,10 @@
         showToast('✅ 个人资料已更新');
         if (state.user) { state.user.nickname = nickname; if (avatarUrl) state.user.avatarUrl = avatarUrl; }
         // 更新左下角显示
-        const sidebarUser = document.getElementById('sidebar-user-name');
+        const sidebarUser = document.getElementById('user-name');
         if (sidebarUser) sidebarUser.textContent = nickname || state.phone || '';
-        const sidebarAvatar = document.getElementById('sidebar-user-avatar');
-        if (sidebarAvatar && avatarUrl) sidebarAvatar.textContent = nickname ? nickname.charAt(0).toUpperCase() : '';
+        const sidebarAvatar = document.getElementById('user-avatar');
+        if (sidebarAvatar && nickname) sidebarAvatar.textContent = nickname.charAt(0).toUpperCase();
         closeProfileModal();
       } catch(e) {
         showToast('更新失败：' + (e.message || '未知错误'));
