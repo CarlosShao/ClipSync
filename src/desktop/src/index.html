@@ -2705,13 +2705,28 @@
     });
 
     // ====== 文件上传 ======
+    async function _getUploadHeaders() {
+      const h = state.token ? { 'Authorization': 'Bearer ' + state.token } : {};
+      if (state.token) {
+        if (_cachedCsrfToken && (Date.now() - _csrfFetchTime < CSRF_CACHE_MS)) {
+          h['x-csrf-token'] = _cachedCsrfToken;
+        } else {
+          try {
+            const r = await fetch(API_BASE + '/api/csrf-token', { headers: { 'Authorization': 'Bearer ' + state.token } });
+            const d = await r.json();
+            if (d.token) { _cachedCsrfToken = d.token; _csrfFetchTime = Date.now(); h['x-csrf-token'] = d.token; }
+          } catch(e) {}
+        }
+      }
+      return h;
+    }
     window.uploadFile = async function(input) {
       const files = input.files;
       if (!files || files.length === 0) return;
-      const headers = state.token ? { 'Authorization': 'Bearer ' + state.token } : {};
       for (const file of files) {
         showToast('正在上传：' + file.name);
         try {
+          const headers = await _getUploadHeaders();
           // Step 1: 初始化上传
           const initResp = await fetch(API_BASE + '/api/upload/init', {
             method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
@@ -2729,16 +2744,18 @@
             const chunk = file.slice(i * chunkSize, (i + 1) * chunkSize);
             const form = new FormData();
             form.append('chunk', chunk, file.name + '.part' + i);
+            const chunkHeaders = await _getUploadHeaders();
             const chunkResp = await fetch(API_BASE + '/api/upload/chunk/' + uploadId + '/' + i, {
-              method: 'POST', headers, body: form
+              method: 'POST', headers: chunkHeaders, body: form
             });
             if (!chunkResp.ok) throw new Error('chunk ' + i + ' failed');
             showToast('上传中：' + file.name + ' (' + Math.round((i + 1) / totalChunks * 100) + '%)');
           }
 
           // Step 3: 完成上传
+          const completeHeaders = await _getUploadHeaders();
           await fetch(API_BASE + '/api/upload/complete/' + uploadId, {
-            method: 'POST', headers
+            method: 'POST', headers: completeHeaders
           });
           showToast('✅ 上传完成：' + file.name);
         } catch(e) {
