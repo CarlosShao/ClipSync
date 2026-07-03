@@ -41,6 +41,7 @@ pub struct AppState {
 #[tauri::command]
 fn tray_show_window(app: tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
@@ -56,6 +57,17 @@ fn tray_hide_window(app: tauri::AppHandle) {
 #[tauri::command]
 fn tray_quit(app: tauri::AppHandle) {
     let _ = app.exit(0);
+}
+
+/// Helper: ensure main window is visible and focused (handles both minimized + hidden states)
+fn ensure_window_visible(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();   // 先取消最小化
+        let _ = window.show();         // 再显示（从隐藏/托盘恢复）
+        let _ = window.set_focus();    // 最后聚焦
+        return Some(window);
+    }
+    None
 }
 
 #[tauri::command]
@@ -683,16 +695,11 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
             eprintln!("[Tray] Menu event: id={:?}", event.id);
             match event.id.as_ref() {
                 "show" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                        eprintln!("[Tray] -> show window");
-                    }
+                    ensure_window_visible(&app);
+                    eprintln!("[Tray] -> show window");
                 }
                 "quick_paste" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                    if let Some(window) = ensure_window_visible(&app) {
                         match window.eval("window.toggleQuickPaste()") {
                             Ok(_) => eprintln!("[Tray] -> toggleQuickPaste"),
                             Err(e) => eprintln!("[Tray] eval error: {}", e),
@@ -700,21 +707,17 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
                     }
                 }
                 "settings" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                    if let Some(window) = ensure_window_visible(&app) {
                         // 切换到设置页
                         match window.eval("window.switchPage('settings')") {
                             Ok(_) => eprintln!("[Tray] -> open settings"),
                             Err(e) => eprintln!("[Tray] settings eval error: {}", e),
                         }
-                        eprintln!("[Tray] -> open settings");
                     }
+                    eprintln!("[Tray] -> open settings");
                 }
                 "check_update" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                    if let Some(window) = ensure_window_visible(&app) {
                         match window.eval("if(window.checkForUpdates) window.checkForUpdates()") {
                             Ok(_) => eprintln!("[Tray] -> check updates"),
                             Err(e) => eprintln!("[Tray] check_updates eval error: {}", e),
@@ -752,21 +755,20 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
             tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, button_state: tauri::tray::MouseButtonState::Up, .. } => {
                 let app = tray.app_handle();
                 if let Some(window) = app.get_webview_window("main") {
-                    match window.is_visible() {
-                        Ok(true) => {
-                            let _ = window.hide();
-                            eprintln!("[Tray] Left-click -> hide");
-                        }
-                        Ok(false) => {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            eprintln!("[Tray] Left-click -> show");
-                        }
-                        Err(_) => {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            eprintln!("[Tray] Left-click -> show (visibility unknown)");
-                        }
+                    // Check if window is minimized or hidden
+                    let is_minimized = window.is_minimized().unwrap_or(false);
+                    let is_visible = window.is_visible().unwrap_or(false);
+
+                    if !is_visible || is_minimized {
+                        // Hidden or minimized → show + unminimize + focus
+                        let _ = window.unminimize();
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        eprintln!("[Tray] Left-click -> show (was {})", if is_minimized { "minimized" } else { "hidden" });
+                    } else {
+                        // Visible and not minimized → hide to tray
+                        let _ = window.hide();
+                        eprintln!("[Tray] Left-click -> hide");
                     }
                 }
             }
