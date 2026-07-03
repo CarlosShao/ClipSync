@@ -1,0 +1,3890 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClipSync</title>
+  <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%236366f1'/><text x='16' y='22' text-anchor='middle' font-size='18' fill='white'>📋</text></svg>">
+  <script>
+    // ===== 主题初始化 =====
+    (function() {
+      const saved = localStorage.getItem('clipsync_theme');
+      if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+    window.toggleTheme = function() {
+      const html = document.documentElement;
+      const isDark = html.getAttribute('data-theme') === 'dark';
+      if (isDark) {
+        html.removeAttribute('data-theme');
+        localStorage.setItem('clipsync_theme', 'light');
+      } else {
+        html.setAttribute('data-theme', 'dark');
+        localStorage.setItem('clipsync_theme', 'dark');
+      }
+      const el = document.getElementById('theme-toggle-status');
+      if (el) el.textContent = isDark ? '浅色模式' : '深色模式';
+    };
+    // 拦截窗口关闭：点 X 按钮 = 隐藏到托盘，不退出进程
+    // 只有托盘菜单"退出"才真正退出
+    (function() {
+      if (!window.__TAURI__) return;
+      // 等待 Tauri API 加载
+      function setupCloseGuard() {
+        if (window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+          const win = window.__TAURI__.window.getCurrentWindow();
+          win.onCloseRequested((event) => {
+            event.preventDefault();
+            win.hide();
+            console.log('[CloseGuard] Window close intercepted, hiding to tray instead.');
+          });
+          console.log('[CloseGuard] ✅ Close event intercepted — window will hide to tray on X click');
+        } else if (window.__TAURI__.core && window.__TAURI__.core.invoke) {
+          // 降级方案：用 invoke 通知 Rust 拦截关闭
+          console.log('[CloseGuard] Using invoke fallback for close guard');
+        } else {
+          // API 还未加载，等 500ms 再试
+          setTimeout(setupCloseGuard, 500);
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupCloseGuard);
+      } else {
+        setupCloseGuard();
+      }
+    })();
+
+    // ===== 卡片菜单 =====
+    let _openCardMenu = null;
+    window.toggleCardMenu = function(itemId, btnEl) {
+      const menu = document.getElementById('menu-' + itemId);
+      if (!menu) return;
+      document.querySelectorAll('.card-menu-dropdown').forEach(m => { if (m !== menu) m.style.display = 'none'; });
+      if (_openCardMenu === itemId) {
+        menu.style.display = 'none'; _openCardMenu = null; if (btnEl) btnEl.style.background = 'none';
+      } else {
+        menu.style.display = 'block'; _openCardMenu = itemId; if (btnEl) btnEl.style.background = '#e5e7eb';
+      }
+    };
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.card-menu-dropdown').forEach(m => m.style.display = 'none');
+      document.querySelectorAll('.card-menu-btn').forEach(b => b.style.background = 'none');
+      _openCardMenu = null;
+    });
+
+    // ===== 版本历史 =====
+    window.showVersionHistory = async function(itemId) {
+      document.getElementById('version-modal').style.display = 'flex';
+      const listEl = document.getElementById('version-list');
+      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
+      try {
+        const data = await api('GET', '/api/versions?clipboardItemId=' + itemId);
+        const versions = data.versions || [];
+        if (versions.length === 0) {
+          listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无历史版本</div>';
+        } else {
+          listEl.innerHTML = versions.map(v => `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #f0f0f0;"><div><div style="font-size:13px;font-weight:600;color:#333;">版本 ${v.versionNumber}</div><div style="font-size:11px;color:#999;margin-top:2px;">${new Date(v.createdAt).toLocaleString()}</div></div><button class="btn btn-secondary" style="padding:4px 12px;font-size:12px;" onclick="restoreVersion('${itemId}','${v.id}')">恢复</button></div>`).join('');
+        }
+      } catch(e) { listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败</div>'; }
+    };
+
+    window.restoreVersion = async function(itemId, versionId) {
+      if (!confirm('确认恢复到此版本？')) return;
+      try {
+        await api('POST', '/api/versions/' + versionId + '/restore');
+        showToast('已恢复到该版本');
+        document.getElementById('version-modal').style.display = 'none';
+        loadClipboardItems();
+      } catch(e) { showToast('恢复失败：' + (e.message || '未知错误')); }
+    };
+
+    window.closeVersionModal = function() { document.getElementById('version-modal').style.display = 'none'; };
+
+    // ===== 收藏/删除 =====
+    window.toggleFavorite = async function(itemId) {
+      try { await api('POST', '/api/clipboard/' + itemId + '/favorite'); showToast('操作成功'); loadClipboardItems(); } catch(e) { showToast('操作失败'); }
+    };
+    window.deleteItem = async function(itemId) {
+      if (!confirm('确认删除？')) return;
+      try { await api('DELETE', '/api/clipboard/' + itemId); showToast('已删除'); loadClipboardItems(); } catch(e) { showToast('删除失败'); }
+    };
+
+  </script>
+  <style>
+    :root {
+      --primary: #6366F1;
+      --primary-light: #EEF2FF;
+      --primary-dark: #4F46E5;
+      --bg: #F8FAFC;
+      --bg-card: #FFFFFF;
+      --bg-secondary: #F1F5F9;
+      --text: #0F172A;
+      --text-secondary: #475569;
+      --text-muted: #94A3B8;
+      --border: #E2E8F0;
+      --border-light: #F1F5F9;
+      --success: #22C55E;
+      --danger: #EF4444;
+      --warning: #F59E0B;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --radius-xl: 20px;
+      --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+      --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.05);
+      --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.05);
+      --transition-fast: 0.12s ease;
+      --transition-normal: 0.2s ease;
+    }
+    [data-theme="dark"] {
+      --primary: #818CF8;
+      --primary-light: #1E1B4B;
+      --primary-dark: #6366F1;
+      --bg: #0F172A;
+      --bg-card: #1E293B;
+      --text: #F1F5F9;
+      --text-secondary: #CBD5E1;
+      --text-muted: #64748B;
+      --border: #334155;
+      --border-light: #1E293B;
+      --success: #4ADE80;
+      --danger: #F87171;
+      --warning: #FBBF24;
+      --shadow-xs: 0 1px 2px rgba(0,0,0,0.2);
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.4), 0 2px 4px -2px rgba(0,0,0,0.3);
+      --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5), 0 4px 6px -4px rgba(0,0,0,0.4);
+      --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.6), 0 8px 10px -6px rgba(0,0,0,0.5);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+      background: linear-gradient(135deg, #F0F4FF 0%, #F8FAFC 40%, #FAFBFC 100%);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== App Layout ===== */
+    .app {
+      display: grid;
+      grid-template-columns: 196px 1fr var(--rp-w, 240px);
+      height: 100vh;
+      transition: grid-template-columns 0.25s cubic-bezier(.4,0,.2,1);
+    }
+    .app.panel-collapsed { grid-template-columns: 196px 1fr 28px; }
+    .app.panel-collapsed .devices-panel { opacity:0; padding:0; border:none; overflow:visible; position:relative; }
+    .app.panel-collapsed .device-list { display:none; }
+    .app.panel-collapsed .devices-title { display:none; }
+    /* Expand button stays visible when panel is collapsed */
+    .panel-expand-btn {
+      position:absolute; right:4px; top:10px;
+      width:22px; height:22px; border:1px solid var(--border); border-radius:var(--radius-sm);
+      background:var(--bg-card); cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+      color:var(--text-muted); z-index:20; transition:all var(--transition-fast);
+      font-size:11px;
+    }
+    .panel-expand-btn:hover { border-color:var(--primary); color:var(--primary); }
+
+    /* ===== Left Sidebar ===== */
+    .sidebar {
+      background: linear-gradient(180deg, #FFFFFF 0%, #FAFBFC 100%);
+      border-right: 1px solid var(--border-light);
+      padding: 16px 12px;
+      display: flex; flex-direction: column;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      padding: 4px 8px 16px; margin-bottom: 6px;
+    }
+    .logo-icon {
+      width: 30px; height: 30px; border-radius: var(--radius-md);
+      background: linear-gradient(135deg, #6366F1 0%, #818CF8 50%, #A78BFA 100%);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(99,102,241,0.35);
+      transition: transform var(--transition-fast);
+    }
+    .logo-icon:hover { transform: scale(1.05); }
+    .logo-icon svg { width: 16px; height: 16px; fill: white; }
+    .logo-text { font-size: 16px; font-weight: 700; letter-spacing: -0.4px; color: var(--text); }
+
+    .conn-status {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; color: var(--text-muted);
+      padding: 6px 10px; border-radius: var(--radius-md);
+      background: var(--bg); margin-bottom: 12px;
+    }
+    .conn-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .conn-dot.online { background: var(--success); box-shadow: 0 0 0 3px rgba(34,197,94,0.12); }
+    .conn-dot.offline { background: var(--text-muted); }
+
+    .nav-list { list-style: none; flex: 1; }
+    .nav-item {
+      padding: 8px 10px; border-radius: var(--radius-md); cursor: pointer;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; font-weight: 500; color: var(--text-secondary);
+      transition: all var(--transition-fast); margin-bottom: 2px;
+    }
+    .nav-item:hover { background: var(--bg); color: var(--text); }
+    .nav-item.active { background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%); color: var(--primary-dark); font-weight: 600; }
+    .nav-icon { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
+    .nav-icon svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; }
+    .nav-item.active .nav-icon svg { stroke-width: 2.2; }
+
+    .user-section {
+      border-top: 1px solid var(--border-light);
+      padding-top: 12px; margin-top: auto;
+    }
+    .user-info { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
+    .user-avatar {
+      width: 32px; height: 32px; border-radius: var(--radius-md);
+      background: linear-gradient(135deg, #E0E7FF, #C7D2FE);
+      color: var(--primary-dark);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 12px; flex-shrink: 0;
+      transition: transform var(--transition-fast);
+    }
+    .user-avatar:hover { transform: scale(1.08); }
+    .user-name { font-size: 13px; font-weight: 600; line-height: 1.3; }
+    .user-phone { font-size: 11px; color: var(--text-muted); line-height: 1.3; }
+    .btn-logout {
+      margin-top: 8px; padding: 6px 10px; border: 1px solid transparent;
+      background: transparent; color: var(--text-muted);
+      border-radius: var(--radius-sm); cursor: pointer; font-size: 11px; width: 100%;
+      transition: all var(--transition-fast);
+    }
+    .btn-logout:hover { background: #FEF2F2; color: var(--danger); border-color: #FECACA; }
+
+    /* ===== Main Content ===== */
+    .main { display: flex; flex-direction: column; overflow: hidden; }
+    .header {
+      padding: 0 28px; height: 58px;
+      border-bottom: 1px solid var(--border-light);
+      background: rgba(255,255,255,0.8);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .header h1 { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+    .search-box {
+      display: flex; align-items: center; background: var(--bg);
+      border: 1px solid transparent; border-radius: var(--radius-md);
+      padding: 6px 12px; gap: 8px; width: 260px;
+      transition: all var(--transition-fast);
+    }
+    .search-box:focus-within { border-color: var(--primary); background: var(--bg-card); box-shadow: 0 0 0 3px rgba(99,102,241,0.08); }
+    .search-box input { border: none; background: transparent; outline: none; flex: 1; font-size: 13px; color: var(--text); }
+    .search-box input::placeholder { color: var(--text-muted); }
+    .search-clear-btn {
+      display: none; width: 20px; height: 20px; border: none;
+      background: var(--border); cursor: pointer; border-radius: 50%;
+      align-items: center; justify-content: center;
+      color: var(--text-muted); flex-shrink: 0; padding: 0; font-size: 11px;
+      transition: all var(--transition-fast);
+    }
+    .search-clear-btn:hover { background: var(--text-muted); color: #fff; }
+    .search-box.has-value .search-clear-btn { display: flex; }
+    .content { flex: 1; overflow-y: auto; padding: 24px 28px; }
+
+    /* ===== Clipboard Grid — multi-column layout ===== */
+    .clipboard-grid { display: flex; flex-direction: column; gap: 0; }
+
+    /* Category headers */
+    .category-header {
+      display: flex; align-items: center; gap: 10px;
+      cursor: pointer; user-select: none;
+      font-size: 12px; font-weight: 600;
+      color: var(--text-muted); padding: 16px 4px 10px;
+      border-bottom: 1px solid var(--border-light); margin-bottom: 12px;
+      transition: color var(--transition-fast);
+      letter-spacing: 0.3px; text-transform: uppercase;
+    }
+    .category-header:first-child { padding-top: 6px; }
+    .category-header:hover { color: var(--text-secondary); }
+    .category-chevron {
+      font-size: 10px; transition: transform var(--transition-normal); color: var(--text-muted);
+      display: flex; align-items: center;
+    }
+    .category-header.collapsed .category-chevron { transform: rotate(-90deg); }
+    .category-count {
+      background: var(--bg); color: var(--text-muted);
+      font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 10px;
+    }
+
+    /* Category body */
+    .category-body {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+      margin-bottom: 8px;
+      transition: all var(--transition-normal) ease;
+    }
+    .category-body.collapsed { display: none; }
+
+    /* Card styles — modern, clean, shadow-based */
+    .clipboard-card {
+      background: var(--bg-card);
+      border-radius: 14px;
+      border: 1px solid rgba(0,0,0,0.04);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(.4,0,.2,1); padding: 16px 18px;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+    }
+    .clipboard-card:hover {
+      border-color: transparent;
+      box-shadow: 0 8px 24px -4px rgba(0,0,0,0.1), 0 4px 8px -2px rgba(0,0,0,0.04);
+      transform: translateY(-3px);
+    }
+    .clipboard-card.new-item { animation: cardIn 0.3s ease; background: #FAF9FF; }
+    @keyframes cardIn { from { opacity:0; transform:translateY(-8px) scale(0.98); } to { opacity:1; transform:translateY(0) scale(1); } }
+
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .card-type {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 500; color: var(--text-muted);
+    }
+    .card-type-icon {
+      width: 22px; height: 22px; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .card-type-icon svg { display: block; }
+    .card-type-icon.type-file   { background: #FEF3C7; color: #D97706; }
+    .card-type-icon.type-image  { background: #DBEAFE; color: #2563EB; }
+    .card-type-icon.type-text   { background: #F1F5F9; color: #475569; }
+    .card-type-icon.type-link   { background: #DCFCE7; color: #16A34A; }
+    .card-type-icon.type-code   { background: #F3E8FF; color: #7C3AED; }
+
+    .card-fav { cursor: pointer; font-size: 14px; color: var(--text-muted); transition: all var(--transition-fast); line-height: 1; }
+    .card-fav:hover { color: #F59E0B; transform: scale(1.2); }
+    .card-fav.active { color: #F59E0B; }
+    .card-actions { display: flex; gap: 2px; }
+    .card-actions button {
+      background: none; border: none; cursor: pointer;
+      font-size: 12px; color: var(--text-muted);
+      padding: 4px 5px; border-radius: var(--radius-sm); transition: all var(--transition-fast); line-height: 1;
+    }
+    .card-actions button:hover { background: var(--bg); color: var(--danger); }
+
+    .card-content {
+      font-size: 13px; line-height: 1.6; color: var(--text);
+      max-height: 120px; overflow: hidden;
+      display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical;
+      word-break: break-word;
+    }
+
+    .card-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-light);
+      font-size: 11px; color: var(--text-muted);
+    }
+    .card-device { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+
+    /* Image placeholder */
+    .card-image-placeholder {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px; background: var(--bg); border-radius: var(--radius-md); margin-bottom: 10px;
+    }
+    .card-image-icon {
+      width: 40px; height: 40px; border-radius: var(--radius-md);
+      background: linear-gradient(135deg, #DBEAFE, #BFDBFE);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    .card-image-desc { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+ /* Image hover preview tooltip */
+ .img-hover-preview {
+   position: fixed; z-index: 99999;
+   max-width: 280px; max-height: 200px;
+   border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+   pointer-events: none; opacity: 0;
+   transition: opacity 0.15s ease;
+   background: #fff; padding: 4px;
+ }
+ .img-hover-preview.visible { opacity: 1; }
+ .img-hover-preview img {
+   width: 100%; height: auto; display: block;
+   border-radius: 6px; object-fit: contain;
+ }
+
+ /* Image viewer */
+    #image-viewer-bar { margin-top: 14px; display: flex; gap: 10px; padding: 8px 16px; background: rgba(30,30,30,0.9); border-radius: 8px; }
+
+    /* ===== Right Panel (Devices) ===== */
+    :root { --rp-w: 260px; }
+    .devices-panel {
+      background: var(--bg-card);
+      border-left: 1px solid var(--border-light);
+      padding: 16px; display: flex; flex-direction: column;
+      position: relative; transition: all var(--transition-normal) cubic-bezier(.4,0,.2,1); min-width: 0;
+    }
+    .devices-title {
+      font-size: 12px; font-weight: 600; margin-bottom: 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      color: var(--text); flex-shrink: 0;
+    }
+    .device-count-badge {
+      font-size: 10px; font-weight: 500; color: var(--text-muted);
+      background: var(--bg); padding: 2px 8px; border-radius: 10px;
+    }
+    .panel-toggle-btn {
+      position: absolute; top: 12px; right: 12px;
+      width: 24px; height: 24px; border: 1px solid transparent; border-radius: var(--radius-sm);
+      background: transparent; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted); z-index: 10; transition: all var(--transition-fast);
+    }
+    .panel-toggle-btn:hover { border-color: var(--border); background: var(--bg); color: var(--text); }
+    .device-list { flex: 1; overflow-y: auto; }
+    .device-item {
+      display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+      border-radius: var(--radius-md); margin-bottom: 6px; background: var(--bg);
+      border: 1px solid transparent; transition: all var(--transition-fast);
+    }
+    .device-item:hover { border-color: var(--border-light); box-shadow: var(--shadow-xs); }
+    .device-icon {
+      width: 36px; height: 36px; border-radius: var(--radius-md);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0;
+    }
+    .device-icon.dev-desktop { background: #FFF1F2; }
+    .device-icon.dev-mobile  { background: #F0FDF4; }
+    .device-icon.dev-tablet  { background: #FFF7ED; }
+    .device-info { flex: 1; min-width: 0; }
+    .device-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .device-status { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+    .status-dot.offline { background: var(--text-muted); }
+
+    /* ===== Buttons ===== */
+    .btn { padding: 8px 16px; border-radius: 9px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s ease; }
+    .btn-primary { background: linear-gradient(135deg, #6366F1, #4F46E5); color: white; box-shadow: 0 2px 8px -2px rgba(99,102,241,0.4); }
+    .btn-primary:hover { background: linear-gradient(135deg, #5558E3, #4338CA); box-shadow: 0 4px 12px -2px rgba(99,102,241,0.5); transform: translateY(-1px); }
+    .btn-primary:active { transform: scale(0.97); }
+    .btn-secondary { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--bg); border-color: var(--text-muted); }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-danger:hover { background: #DC2626; }
+    .btn-block { width: 100%; padding: 10px 16px; }
+
+    /* ===== Modal ===== */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+    @keyframes slideUp { from { opacity:0; transform: translateY(8px) scale(0.98); } to { opacity:1; transform: translateY(0) scale(1); } }
+    .modal {
+      background: var(--bg-card); border-radius: 20px; padding: 32px; width: 440px; max-width: 92vw;
+      box-shadow: 0 24px 48px -12px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.04);
+      animation: slideUp 0.2s cubic-bezier(.4,0,.2,1);
+    }
+    .modal h2 { font-size: 20px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.4px; color: var(--text); }
+    .modal p { color: var(--text-secondary); margin-bottom: 24px; font-size: 14px; line-height: 1.5; }
+    .form-group { margin-bottom: 18px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary); }
+    .form-group input {
+      width: 100%; padding: 10px 14px; border: 1.5px solid var(--border);
+      border-radius: var(--radius-md); font-size: 14px; outline: none;
+      transition: all var(--transition-fast); background: var(--bg);
+      font-family: inherit;
+    }
+    .form-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,0.08); }
+    .form-row { display: flex; gap: 10px; }
+    .form-row .form-group { flex: 1; }
+    .hidden { display: none !important; }
+
+    /* ===== Subscription Modal ===== */
+    .subscription-modal {
+      max-width: 720px; width: 92vw;
+    }
+    .subscription-modal #plans-list {
+      display: flex;
+      flex-direction: row;
+      gap: 20px;
+      justify-content: center;
+      align-items: stretch;
+    }
+    .plan-card {
+      flex: 1;
+      min-width: 0;
+      max-width: 260px;
+      border-radius: var(--radius-xl);
+      padding: 28px 24px;
+      cursor: pointer;
+      transition: all var(--transition-normal) ease;
+      position: relative;
+      border: 2px solid var(--border);
+      background: var(--bg-card);
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-sm);
+    }
+    .plan-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-lg), 0 0 0 1px rgba(99,102,241,0.08);
+    }
+    .plan-card.plan-featured {
+      border-color: var(--primary);
+      background: linear-gradient(180deg, #FAF9FF 0%, #F5F3FF 100%);
+    }
+    .plan-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 14px;
+      border-radius: 12px;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(102,126,234,0.35);
+    }
+    .plan-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    .plan-price-row {
+      display: flex;
+      align-items: baseline;
+      gap: 2px;
+      margin-bottom: 16px;
+    }
+    .plan-price {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1;
+    }
+    .plan-period {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+    .plan-specs {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      background: rgba(0,0,0,0.03);
+      border-radius: 10px;
+      line-height: 1.8;
+    }
+    .plan-features {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      flex: 1;
+    }
+    .plan-features li {
+      padding: 3.5px 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    [data-theme="dark"] .plan-card.plan-featured {
+      background: linear-gradient(180deg, #1E1845 0%, #16162D 100%);
+    }
+    [data-theme="dark"] .plan-specs {
+      background: rgba(255,255,255,0.04);
+    }
+    .profile-modal {
+      max-width: 480px;
+      padding: 0 !important;
+      overflow: hidden;
+    }
+    .profile-modal h2 { margin-bottom: 4px !important; }
+    .profile-modal > p { margin-bottom: 20px !important; color: var(--text-muted) !important; font-size: 13px; }
+    .profile-header {
+      display: flex; align-items: center; gap: 18px;
+      padding: 24px 24px 8px; background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 50%, #f5f0ff 100%);
+    }
+    .profile-avatar-wrap {
+      width: 80px; height: 80px; border-radius: 50%; overflow: hidden;
+      background: linear-gradient(135deg, #c7d2fe, #a78bfa);
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      border: 3px solid #fff; box-shadow: 0 2px 12px rgba(99,102,241,.2); position: relative;
+    }
+    .profile-avatar-wrap img { width: 100%; height: 100%; object-fit: cover; display:none; }
+    .profile-avatar-wrap .avatar-placeholder { font-size:32px; }
+    .profile-avatar-info { flex: 1; min-width: 0; }
+    .profile-avatar-info label {
+      display: inline-block; cursor:pointer; font-size:13px; color:var(--primary);
+      font-weight:600; padding: 5px 14px; border-radius:20px; background:#fff;
+      box-shadow: 0 1px 4px rgba(99,102,241,.15); transition: all .2s;
+    }
+    .profile-avatar-info label:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(99,102,241,.25); }
+    .profile-avatar-info .avatar-hint { font-size:11px; color:var(--text-muted); margin-top:4px; }
+    .profile-body { padding: 16px 24px 24px; }
+    .profile-section-title {
+      font-size: 11px; font-weight:700; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.8px;
+      margin-bottom: 10px; padding-left: 2px;
+    }
+    .profile-info-card {
+      background: var(--bg); border-radius: 12px; padding: 14px 16px;
+      margin-bottom: 18px; border: 1px solid rgba(0,0,0,.04);
+    }
+    .profile-info-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,.04);
+      font-size: 13px; color: var(--text-secondary);
+    }
+    .profile-info-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .profile-info-row:first-child { padding-top: 0; }
+    .profile-info-icon { width:28px; height:28px; border-radius:8px; background: #f0f0ff; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:13px; }
+    .profile-info-label { color: var(--text-muted); min-width: 70px; }
+    .profile-info-value { font-weight:500; color: var(--text-primary); word-break: break-all; }
+    .profile-form-group { margin-bottom: 16px; }
+    .profile-form-group label {
+      display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary);
+      margin-bottom: 6px; padding-left: 2px;
+    }
+    .profile-form-group label span { font-weight:400; color: var(--text-muted); }
+    .profile-form-group input[type="text"] {
+      width: 100%; padding: 10px 14px; border-radius: 10px; border: 1.5px solid #e2e5ea;
+      font-size: 14px; transition: all .2s; outline: none; box-sizing:border-box;
+      background: #fff;
+    }
+    .profile-form-group input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+    .profile-actions {
+      display: flex; gap: 12px; margin-top: 22px;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #1E293B; color: white; padding: 8px 18px; border-radius: 8px;
+      font-size: 12px; z-index: 200; animation: toastIn 0.25s ease;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+    @keyframes toastIn { from { opacity:0; transform:translate(-50%, 8px) scale(0.96); } to { opacity:1; transform:translate(-50%,0) scale(1); } }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 100px 20px; color: var(--text-muted); }
+    .empty-state .icon { 
+      width: 56px; height: 56px; border-radius: 16px; 
+      background: var(--bg); display: inline-flex; align-items: center; justify-content: center;
+      margin-bottom: 16px; font-size: 26px;
+    }
+    .empty-state p { font-size: 14px; color: var(--text-secondary); margin-top: 12px; }
+    .empty-state p + p { font-size: 13px; margin-top: 8px; color: var(--text-muted); }
+
+    /* Settings page */
+    .settings-page { max-width: 520px; }
+    .settings-group { background: var(--bg-card); border-radius: 16px; border: 1px solid rgba(0,0,0,0.04); margin-bottom: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+    .settings-group-title { padding: 16px 18px 8px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; }
+    .settings-item { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border-light); transition: background 0.15s ease; }
+    .settings-item:last-child { border-bottom: none; }
+    .settings-item:hover { background: #F8FAFC; }
+    .settings-item-left { display: flex; align-items: center; gap: 10px; }
+    .settings-item-icon { font-size: 16px; }
+    .settings-item-label { font-size: 13px; font-weight: 500; }
+    .settings-item-desc { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+    /* Toggle switch */
+    .toggle { position: relative; width: 38px; height: 21px; cursor: pointer; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 11px; transition: var(--transition-fast); }
+    .toggle-slider:before { content:''; position:absolute; width:17px;height:17px;left:2px;bottom:2px;background:white;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,0.12); }
+    .toggle input:checked + .toggle-slider { background: var(--primary); }
+    .toggle input:checked + .toggle-slider:before { transform: translateX(17px); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+    ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+    /* Diag banner */
+    .diag-badge {
+      position: fixed; top: 6px; right: 6px;
+      padding: 2px 8px; border-radius: 4px;
+      font-size: 9.5px; font-weight: 600; z-index: 9999;
+      letter-spacing: 0.2px;
+    }
+    /* ===== 快速粘贴面板 ===== */
+    #quick-paste-panel {
+      position: fixed; inset: 0; z-index: 99999;
+      display: none; align-items: flex-start; justify-content: center;
+      padding-top: 12vh;
+      background: rgba(0,0,0,0.45);
+    }
+    #quick-paste-panel.open { display: flex; }
+    .qp-card {
+      width: 580px; max-height: 65vh;
+      background: #fff; border-radius: 14px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.25);
+      display: flex; flex-direction: column; overflow: hidden;
+      animation: qpIn 0.18s ease-out;
+    }
+    @keyframes qpIn { from { opacity:0; transform: translateY(-12px) scale(0.97); } to { opacity:1; transform: none; } }
+    .qp-search {
+      padding: 12px 16px; border-bottom: 1px solid #e5e7eb;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .qp-search input {
+      flex: 1; border: none; outline: none;
+      font-size: 15px; background: transparent; color: #1f2937;
+    }
+    .qp-search input::placeholder { color: #9ca3af; }
+    .qp-search svg { flex-shrink: 0; color: #9ca3af; }
+    .qp-list {
+      flex: 1; overflow-y: auto; padding: 8px;
+    }
+    .qp-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 12px; border-radius: 8px; cursor: pointer;
+      transition: background 0.12s;
+    }
+    .qp-item:hover, .qp-item.active { background: #f3f4f6; }
+    .qp-item-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; flex-shrink: 0;
+    }
+    .type-text .qp-item-icon { background: #dbeafe; color: #2563eb; }
+    .type-link .qp-item-icon { background: #d1fae5; color: #059669; }
+    .type-image .qp-item-icon { background: #fce7f3; color: #db2777; }
+    .type-code .qp-item-icon { background: #f3e8ff; color: #7c3aed; }
+    .type-file .qp-item-icon { background: #ffedd5; color: #ea580c; }
+    .qp-item-body { flex: 1; min-width: 0; }
+    .qp-item-label { font-size: 11.5px; font-weight: 600; color: #6b7280; margin-bottom: 3px; }
+    .qp-item-preview {
+      font-size: 13px; color: #1f2937; line-height: 1.45;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .qp-item-time { font-size: 10.5px; color: #9ca3af; margin-top: 3px; }
+    .qp-empty { text-align: center; padding: 40px 20px; color: #9ca3af; font-size: 13.5px; }
+    .qp-footer {
+      padding: 8px 16px; border-top: 1px solid #e5e7eb;
+      display: flex; gap: 16px; font-size: 11px; color: #9ca3af;
+    }
+    .qp-footer kbd {
+      display: inline-block; padding: 1px 5px; border-radius: 4px;
+      background: #f3f4f6; border: 1px solid #e5e7eb; font-size: 10.5px;
+    }
+  
+    /* Settings page improvements */
+    .settings-item-icon-svg { width:20px; height:20px; margin-right:12px; flex-shrink:0; opacity:0.85; }
+    .settings-arrow { color:#6366f1; font-size:13px; font-weight:500; white-space:nowrap; flex-shrink:0; transition:transform 0.15s; }
+    .settings-item:hover .settings-arrow { transform:translateX(2px); color:#4f46e5; }
+    .settings-item:hover .settings-item-icon-svg { opacity:1; }
+</style>
+</head>
+<body>
+  <!-- Onboarding Flow (shown only on first launch) -->
+  <div id="onboarding-overlay" style="display:none; position:fixed; inset:0; z-index:9999; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); align-items:center; justify-content:center;">
+    <div id="onboarding-card" style="background:var(--bg-card); border-radius:var(--radius-xl); width:540px; max-width:90vw; padding:48px 44px; text-align:center; box-shadow:var(--shadow-xl); position:relative; overflow:hidden;">
+      <!-- Progress dots -->
+      <div id="onboarding-dots" style="display:flex; justify-content:center; gap:8px; margin-bottom:32px;"></div>
+
+      <!-- Page 1: Welcome -->
+      <div class="ob-page" id="ob-page-1">
+        <div style="font-size:64px; margin-bottom:16px;">📋</div>
+        <h2 style="font-size:24px; color:#1a1a2e; margin-bottom:8px;">欢迎使用 ClipSync</h2>
+        <p style="color:#666; font-size:14px; line-height:1.6;">跨设备剪贴板同步工具<br>让你的剪贴内容在手机和电脑间无缝流转</p>
+      </div>
+
+      <!-- Page 3: Global Shortcut -->
+      <div class="ob-page" id="ob-page-3" style="display:none;">
+        <div style="font-size:64px; margin-bottom:16px;">⌨️</div>
+        <h2 style="font-size:24px; color:#1a1a2e; margin-bottom:8px;">快速粘贴快捷键</h2>
+        <p style="color:#666; font-size:14px; line-height:1.6;">按 <kbd style="background:#f0f0f0; padding:2px 8px; border-radius:4px; font-size:13px;">Ctrl+Shift+V</kbd> 可呼出快速粘贴面板<br>在任意界面快速选择并粘贴历史内容</p>
+      </div>
+
+      <!-- Page 4: Clipboard Monitoring -->
+      <div class="ob-page" id="ob-page-4" style="display:none;">
+        <div style="font-size:64px; margin-bottom:16px;">🔄</div>
+        <h2 style="font-size:24px; color:#1a1a2e; margin-bottom:8px;">自动同步</h2>
+        <p style="color:#666; font-size:14px; line-height:1.6;">开启剪贴板监控后<br>复制内容将自动同步到云端<br>其他设备可实时接收</p>
+      </div>
+
+      <!-- Page 5: Ready -->
+      <div class="ob-page" id="ob-page-5" style="display:none;">
+        <div style="font-size:64px; margin-bottom:16px;">🚀</div>
+        <h2 style="font-size:24px; color:#1a1a2e; margin-bottom:8px;">准备开始！</h2>
+        <p style="color:#666; font-size:14px; line-height:1.6;">请先登录你的账号<br>然后开启剪贴板监控，开始同步</p>
+      </div>
+
+      <!-- Navigation buttons -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:36px;">
+        <button id="ob-skip-btn" onclick="skipOnboarding()" style="background:none; border:none; color:#999; font-size:13px; cursor:pointer; padding:8px 12px;">跳过</button>
+        <div style="display:flex; gap:12px;">
+          <button id="ob-prev-btn" onclick="obPrev()" style="display:none; background:none; border:1px solid #ddd; color:#666; font-size:13px; cursor:pointer; padding:8px 20px; border-radius:8px;">上一步</button>
+          <button id="ob-next-btn" onclick="obNext()" style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); border:none; color:#fff; font-size:13px; cursor:pointer; padding:8px 28px; border-radius:8px; font-weight:500;">下一步</button>
+          <button id="ob-start-btn" onclick="finishOnboarding()" style="display:none; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); border:none; color:#fff; font-size:13px; cursor:pointer; padding:8px 28px; border-radius:8px; font-weight:500;">开始使用</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div class="modal-overlay" id="login-modal">
+    <div class="modal">
+      <h2>登录 ClipSync</h2>
+      <p>使用手机号登录，开始跨设备同步</p>
+      <div class="form-group">
+        <label>手机号</label>
+        <input type="tel" placeholder="请输入手机号" id="phone-input" maxlength="11">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>验证码</label>
+          <input type="text" placeholder="请输入验证码" id="code-input" maxlength="6">
+        </div>
+        <div class="form-group" style="flex: 0 0 auto; display: flex; align-items: flex-end;">
+          <button class="btn btn-secondary" id="send-code-btn" onclick="sendCode()">发送验证码</button>
+        </div>
+      </div>
+      <div style="margin-top: 12px; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #666;">
+        <input type="checkbox" id="tos-checkbox" checked style="cursor: pointer;">
+        <span>我已阅读并同意</span>
+        <a href="#" onclick="event.preventDefault();" style="color: #6366f1; text-decoration: none;">服务条款</a>
+        <span>和</span>
+        <a href="#" onclick="event.preventDefault();" style="color: #6366f1; text-decoration: none;">隐私政策</a>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="login()">登录</button>
+    </div>
+  </div>
+
+  <!-- Image Viewer Modal -->
+  <div id="image-viewer" style="display:none;position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.85);flex-direction:column;align-items:center;justify-content:center;" onclick="if(event.target===this)closeImageViewer()">
+    <img id="viewer-img" style="max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.5);object-fit:contain;">
+    <div id="image-viewer-bar">
+      <button class="btn btn-primary" id="copy-image-btn" onclick="copyImageFromViewer()" style="background:#6366f1;"><svg style="width:13px;height:13px;display:inline-block;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>复制图片</button>
+      <button class="btn btn-secondary" onclick="closeImageViewer()" style="background:#444;color:#fff;border-color:#555;"><svg style="width:13px;height:13px;display:inline-block;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>关闭</button>
+    </div>
+  </div>
+
+  <div class="app" id="main-app" style="display:none;">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l3.59-3.58L17 12l-5 5z"/></svg>
+        </div>
+        <span class="logo-text">ClipSync</span>
+      </div>
+
+      <div class="conn-status" id="conn-status">
+        <span class="conn-dot offline" id="conn-dot"></span>
+        <span id="conn-text">未连接</span>
+      </div>
+
+      <ul class="nav-list">
+        <li class="nav-item active" data-page="clipboard" onclick="switchPage('clipboard')">
+          <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 14h6M9 10h6"/></svg></span> 剪贴板
+        </li>
+        <li class="nav-item" data-page="devices" onclick="switchPage('devices')">
+          <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span> 设备管理
+        </li>
+        <li class="nav-item" data-page="settings" onclick="switchPage('settings')">
+          <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span> 设置
+        </li>
+      </ul>
+
+      <div class="user-section">
+        <div class="user-info">
+          <div class="user-avatar" id="user-avatar"><span id="user-avatar-text">?</span><img id="user-avatar-img" style="width:100%;height:100%;object-fit:cover;display:none;border-radius:8px;" onerror="this.style.display='none';document.getElementById('user-avatar-text').style.display=''"></div>
+          <div>
+            <div class="user-name" id="user-name">未登录</div>
+            <div class="user-phone" id="user-phone"></div>
+          </div>
+        </div>
+        <button class="btn-logout" onclick="logout()">退出登录</button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <header class="header">
+        <h1 id="page-title">剪贴板</h1>
+        <div class="search-box" id="search-box">
+          <svg style="width:14px;height:14px;flex-shrink:0;color:var(--text-muted)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="搜索剪贴板内容..." id="search-input" oninput="onSearch(this.value)">
+          <button class="search-clear-btn" onclick="clearSearch()" title="清空搜索">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      
+        <button class="upload-btn" onclick="document.getElementById('file-upload-input').click()" title="上传文件" style="margin-left:8px;padding:6px 14px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          上传文件
+        </button>
+        <input type="file" id="file-upload-input" style="display:none" onchange="uploadFile(this)" multiple>
+</header>
+      <div class="content" id="content-area"></div>
+    </main>
+
+    <!-- Right Panel (Devices) — Collapsible -->
+    <aside class="devices-panel" id="right-panel">
+      <div class="devices-title" style="display:flex;align-items:center;gap:8px;">
+        我的设备
+        <span class="device-count-badge" id="device-count">0 台</span>
+        <button class="panel-toggle-btn" onclick="toggleRightPanel()" title="折叠面板">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15,18 9,12 15,6"/></svg>
+        </button>
+      </div>
+      <div class="device-list" id="device-list"></div>
+    </aside>
+  </div>
+
+  <!-- Tauri 2.x JS API — invoke lives in @tauri-apps/api/core -->
+  <script type="module">
+    // In Tauri v2, invoke() is exported from the 'core' submodule
+    import { invoke } from 'https://esm.sh/@tauri-apps/api@2/core';
+    window.__TAURI_INVOKE__ = invoke;
+    console.log('[TauriAPI] ✓ invoke loaded from api/core');
+  </script>
+
+  <script>
+    // ====== State ======
+    // API 基础路径 — 开发环境通过 dev-server.py 代理，同源请求无需 CORS
+    const API_BASE = window.location.origin;  // http://localhost:1420 (proxied to 3001)
+    // WS 也走代理，但 WebSocket 不支持 HTTP 代理，所以直连后端
+    const WS_URL = 'ws://localhost:3001/ws';
+    let state = {
+      token: localStorage.getItem('cs_token') || null,
+      user: JSON.parse(localStorage.getItem('cs_user') || 'null'),
+      deviceId: localStorage.getItem('cs_device_id') || null,
+      items: [],
+      devices: [],
+      ws: null,
+      wsConnected: false,
+      currentPage: 'clipboard',
+      searchQuery: '',
+      autoSync: true,
+      currentClipboard: '',
+    };
+
+    // ====== Init ======
+    // Track whether device is ready (loaded from API or registered)
+    let deviceReady = false;
+    let tauriRetryCount = 0;
+    const MAX_TAURI_RETRIES = 3;
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      // ====== DIAGNOSTIC: Check Tauri IPC availability ======
+      const hasTAURI = !!(window.__TAURI__);
+      const t = window.__TAURI__;
+      // Tauri 2.x: invoke at .core.invoke; Tauri 1.x: at .invoke; CDN fallback: __TAURI_INVOKE__
+      const hasCdnInvoke = !!window.__TAURI_INVOKE__;
+      const hasInvoke = !!(
+        (t && t.core && typeof t.core.invoke === 'function') ||
+        (t && typeof t.invoke === 'function') ||
+        hasCdnInvoke
+      );
+      const hasTAURIInternals = !!(window.__TAURI_INTERNALS__);
+      console.log('[Diag] __TAURI__:', hasTAURI, '| core.invoke:', !!(t && t.core), '| invoke(1.x):', !!(t && t.invoke));
+      console.log('[Diag] CDN invoke:', hasCdnInvoke, '| final hasInvoke:', hasInvoke, '| __TAURI_INTERNALS__:', !!window.__TAURI_INTERNALS__);
+      if (window.__TAURI_INTERNALS__) {
+        console.log('[Diag] __TAURI_INTERNALS__ keys:', Object.keys(window.__TAURI_INTERNALS__));
+      }
+      console.log('[Diag] url:', window.location.href);
+
+      // Visual indicator for Tauri mode vs browser mode
+      const modeIndicator = document.createElement('div');
+      modeIndicator.className = 'diag-badge';
+      if (hasInvoke) {
+        modeIndicator.textContent = 'Tauri IPC';
+        modeIndicator.style.background = '#D1FAE5'; modeIndicator.style.color = '#059669';
+      } else if (hasTAURI) {
+        modeIndicator.textContent = 'Tauri no invoke';
+        modeIndicator.style.background = '#FEE2E2'; modeIndicator.style.color = '#DC2626';
+      } else if (hasTAURIInternals) {
+        modeIndicator.textContent = 'Tauri Internals';
+        modeIndicator.style.background = '#FEF3C7'; modeIndicator.style.color = '#D97706';
+      } else {
+        modeIndicator.textContent = 'Browser';
+        modeIndicator.style.background = '#FEE2E2'; modeIndicator.style.color = '#DC2626';
+      }
+      document.body.appendChild(modeIndicator);
+
+      // Request clipboard read permission upfront for image detection
+      try {
+        await navigator.permissions.query({ name: 'clipboard-read' });
+      } catch (permErr) {
+        console.log('[Init] clipboard-read permission query not supported, will try anyway');
+      }
+
+      // Paste event listener for file detection
+      // Browser Clipboard API cannot read file paths from system-level copies (Ctrl+C in Explorer).
+      // But when user pastes (Ctrl+V), paste.clipboardData.files will contain the file!
+      document.addEventListener('paste', (event) => {
+        const files = event.clipboardData?.files;
+        const items = event.clipboardData?.items;
+        if (files && files.length > 0) {
+          console.log('[Paste] detected', files.length, 'file(s)');
+          for (const file of files) {
+            console.log('[Paste] file:', file.name, file.size, file.type);
+            if (file.type.startsWith('image/')) {
+              // Upload as image
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                uploadImageClipboard(e.target.result, file.type, file.size);
+              };
+              reader.readAsDataURL(file);
+            } else {
+              // Upload as file
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                uploadFileBlobFromPaste(e.target.result, file.name, file.type, file.size);
+              };
+              reader.readAsDataURL(file);
+            }
+          }
+        } else if (items && items.length > 0) {
+          // Check for text/uri-list (file references)
+          for (const item of items) {
+            if (item.type === 'text/uri-list') {
+              item.getAsString((uri) => {
+                if (uri && uri.startsWith('file://')) {
+                  console.log('[Paste] file URI:', uri.substring(0, 60));
+                  uploadFileUri(uri);
+                }
+              });
+            }
+          }
+        }
+      });
+
+      if (state.token && state.user) {
+        showMainApp();
+        // Drag-and-drop file upload
+        setupDragDrop();
+        // CRITICAL: Must load devices FIRST, then connect WS + start clipboard
+        try {
+          await loadDevices();
+          deviceReady = true;
+        } catch (e) {
+          console.error('[Init] loadDevices failed:', e.message);
+          showToast('设备加载失败，请刷新重试');
+          return;
+        }
+        loadClipboardItems();
+        connectWebSocket();
+        attachClipboardListener();
+      } else {
+        document.getElementById('login-modal').classList.remove('hidden');
+        attachClipboardListener();  // Attach but won't upload without deviceId
+      }
+    });
+
+    // ====== Clipboard Listener (Tauri native or browser fallback) ======
+    // Tauri 2.x detection: check for window.__TAURI__.invoke (the most reliable indicator)
+    // DO NOT check window.__TAURI__.event — it doesn't exist in Tauri 2.x!
+    async function attachClipboardListener() {
+      // Guard: prevent multiple attachments
+      if (state._listenerAttached) return;
+      state._listenerAttached = true;
+
+      // Check ALL possible invoke sources:
+      // 1) Tauri 2.x: window.__TAURI__.core.invoke
+      // 2) Tauri 1.x: window.__TAURI__.invoke
+      // 3) CDN import: window.__TAURI_INVOKE__ (for external devUrl)
+      const tauri = window.__TAURI__;
+      let hasInvoke = !!(
+        (tauri && tauri.core && typeof tauri.core.invoke === 'function') ||
+        (tauri && typeof tauri.invoke === 'function') ||
+        window.__TAURI_INVOKE__
+      );
+
+      // If running inside Tauri (__TAURI_INTERNALS__ exists) but invoke isn't ready yet,
+      // the CDN module may still be loading — poll for it up to 3s
+      if (!hasInvoke && window.__TAURI_INTERNALS__) {
+        console.log('[Clipboard] ⏳ Inside Tauri but invoke not ready yet, waiting for CDN module...');
+        for (let i = 0; i < 15 && !hasInvoke; i++) {
+          await new Promise(r => setTimeout(r, 200));
+          hasInvoke = !!(
+            (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') ||
+            (window.__TAURI__ && typeof window.__TAURI__.invoke === 'function') ||
+            window.__TAURI_INVOKE__
+          );
+        }
+        console.log('[Clipboard] After wait:', hasInvoke ? '✅ invoke found!' : '❌ still no invoke');
+      }
+
+      if (hasInvoke) {
+        // ✅ Tauri mode: use invoke-based polling (reliable, no event issues)
+        console.log('[Clipboard] ✅ Tauri detected — using invoke-based polling (500ms)');
+        startTauriClipboardPoll();
+      } else {
+        // ❌ Browser mode: use Clipboard API (limited — cannot detect file copies from Explorer)
+        console.log('[Clipboard] ⚠️ Browser mode — Clipboard API only (no native file detection)');
+        console.log('[Clipboard] → Files copied in Explorer will NOT be auto-detected in browser mode');
+        console.log('[Clipboard] → Use Tauri app window for full file detection');
+        startBrowserClipboardPoll();
+      }
+    }
+
+    // ====== Tauri invoke-based clipboard polling (primary mechanism) ======
+    // This is the ONLY clipboard detection mechanism — no Rust thread, no events.
+    // Polls `invoke('get_clipboard_files')` + `invoke('get_clipboard_content')` every 500ms.
+
+    function startTauriClipboardPoll() {
+      if (state._tauriPollStarted) return;
+      state._tauriPollStarted = true;
+
+      let _lastPolledText = '';
+      let _lastPolledFiles = '';
+      let _lastImageSize = -1;  // Track last uploaded image size to prevent re-uploads
+      let pollCount = 0;
+      // 🔑 Global throttle: prevent duplicate uploads from multi-format clipboard bursts
+      let _globalThrottleUntil = 0;
+      const _recentUploadHashes = new Map(); // hash -> timestamp
+      const GLOBAL_THROTTLE_MS = 5000;
+      const HASH_TTL_MS = 10000;
+
+      function _isDuplicateHash(hash) {
+        const now = Date.now();
+        // Cleanup expired entries
+        for (const [k, v] of _recentUploadHashes) { if (now - v > HASH_TTL_MS) _recentUploadHashes.delete(k); }
+        if (_recentUploadHashes.has(hash)) return true;
+        _recentUploadHashes.set(hash, now);
+        return false;
+      }
+
+      console.log('[TauriPoll] ✓ invoke-based polling STARTED (500ms)');
+
+      async function pollTauri() {
+        pollCount++;
+        // Global throttle: block ALL uploads within cooldown period
+        if (Date.now() < _globalThrottleUntil) return;
+
+        // Resolve invoke function from any available source
+        const tauri = window.__TAURI__;
+        let _invoke = null;
+        if (tauri && tauri.core && typeof tauri.core.invoke === 'function') {
+          _invoke = tauri.core.invoke.bind(tauri.core);
+        } else if (tauri && typeof tauri.invoke === 'function') {
+          _invoke = tauri.invoke.bind(tauri);
+        } else if (window.__TAURI_INVOKE__) {
+          _invoke = window.__TAURI_INVOKE__;
+        }
+        if (!_invoke) return;
+        if (!state.autoSync) return;
+        if (!deviceReady && !state.deviceId) return;
+
+        try {
+          // 1) Check for files via invoke
+          const files = await _invoke('get_clipboard_files');
+          if (Array.isArray(files) && files.length > 0) {
+            const fileKey = files.join('|');
+            // Hash-based dedup for files
+            if (_isDuplicateHash('file:' + fileKey)) return;
+            if (fileKey !== _lastPolledFiles) {
+              _lastPolledFiles = fileKey;
+              console.log('[TauriPoll] 📁 FILE detected:', files.length, 'file(s)');
+              await uploadTauriFileClipboard(files);
+              _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+              showToast('📁 检测到文件复制: ' + (files[0].split(/[/\\]/).pop() || 'unknown'));
+            }
+            return;
+          }
+
+          // 2) Check for image via invoke
+          const imgInfo = await _invoke('check_clipboard_image_info');
+          if (imgInfo && imgInfo.available && imgInfo.size > 0) {
+            // Skip if same image as last upload (prevents infinite re-uploads)
+            if (imgInfo.size === _lastImageSize) return;
+            const imgHash = 'img:' + imgInfo.size;
+            if (_isDuplicateHash(imgHash)) return;
+            _lastImageSize = imgInfo.size;
+            console.log('[TauriPoll] 🖼️ IMAGE detected, size:', imgInfo.size);
+            try {
+              const dataUrl = await _invoke('get_clipboard_image');
+              if (dataUrl && dataUrl.startsWith('data:')) {
+                await uploadImageClipboard(dataUrl, 'image/png', imgInfo.size || 0);
+                _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+              }
+            } catch (imgErr) {
+              console.warn('[TauriPoll] get_clipboard_image failed:', imgErr.message || imgErr);
+            }
+            return;
+          }
+
+          // 3) Check for text via invoke
+          const text = await _invoke('get_clipboard_content');
+          if (text && text !== _lastPolledText && text !== state.currentClipboard) {
+            // Hash-based dedup for text
+            const textHash = 'text:' + text.substring(0, 200);
+            if (_isDuplicateHash(textHash)) return;
+            _lastPolledText = text;
+            console.log('[TauriPoll] 📝 TEXT detected:', text.length, 'chars');
+            uploadClipboard(text);
+            _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+          }
+
+          // 4) Reset file tracking when files are cleared
+          if (_lastPolledFiles && (!files || files.length === 0)) {
+            _lastPolledFiles = '';
+          }
+        } catch (e) {
+          if (pollCount % 60 === 1) {
+            console.warn('[TauriPoll] invoke error:', e.message || e);
+          }
+        }
+      }
+
+      setInterval(pollTauri, 500);
+      pollTauri();
+    }
+
+    function startBrowserClipboardPoll() {
+      if (state._clipboardPolling) return;
+      state._clipboardPolling = true;
+      let lastText = '';
+      let lastImageHash = '';
+      let lastFileKey = '';
+      console.log('[Clipboard] browser poll started (1s interval)');
+
+      // Simple hash for image data comparison (first 100 chars of b64)
+      function imgHash(b64) { return b64 ? b64.substring(0, 100) : ''; }
+
+      async function pollClipboard() {
+        try {
+          if (!state.autoSync || !state.deviceId || !deviceReady) return;
+
+          // Use read() for image + file detection (more types available)
+          try {
+            const items = await navigator.clipboard.read();
+            if (items && items.length > 0) {
+              for (const item of items) {
+                // --- IMAGE ---
+                const imgType = item.types.find(t => t.startsWith('image/'));
+                if (imgType) {
+                  const blob = await item.getType(imgType);
+                  if (blob.size > 0) {
+                    const b64 = await blobToBase64(blob);
+                    const hash = imgHash(b64);
+                    if (hash !== lastImageHash) {
+                      lastImageHash = hash;
+                      lastText = '';
+                      lastFileKey = '';
+                      state.currentClipboard = '';
+                      console.log('[Clipboard] detected image, size=', blob.size);
+                      uploadImageClipboard(b64, blob.type, blob.size);
+                      return;
+                    }
+                  }
+                  break;
+                }
+
+                // --- FILE (actual File objects from clipboard) ---
+                const fileType = item.types.find(t => t === 'Files' || t.startsWith('application/x-file'));
+                if (fileType) {
+                  const blob = await item.getType(fileType);
+                  const fileKey = blob.size + '|' + (blob.name || blob.type || '');
+                  if (fileKey !== lastFileKey) {
+                    lastFileKey = fileKey;
+                    lastText = '';
+                    lastImageHash = '';
+                    state.currentClipboard = '';
+                    console.log('[Clipboard] detected file, type=', fileType, 'size=', blob.size);
+                    uploadFileClipboard(blob, fileType);
+                    return;
+                  }
+                  break;
+                }
+
+                // --- URI list (file paths like file:///C:/path/to/file.txt) ---
+                if (item.types.includes('text/uri-list')) {
+                  const blob = await item.getType('text/uri-list');
+                  const uriText = await blob.text();
+                  if (uriText && uriText.startsWith('file://')) {
+                    const fileKey = uriText;
+                    if (fileKey !== lastFileKey) {
+                      lastFileKey = fileKey;
+                      lastText = '';
+                      lastImageHash = '';
+                      state.currentClipboard = '';
+                      console.log('[Clipboard] detected file URI:', uriText.substring(0, 80));
+                      uploadFileUri(uriText);
+                      return;
+                    }
+                  }
+                  break;
+                }
+              }
+            }
+          } catch (e) {
+            // Debug: log what types are actually available
+            console.warn('[Clipboard] navigator.clipboard.read() failed:', e.message);
+            // Try to enumerate types via a more permissive approach
+            try {
+              // navigator.clipboard.read() doesn't support file types from system in most browsers
+              // Fallback: check if ClipboardEvent has files
+            } catch (_) {}
+          }
+
+          // --- Try text ---
+          const text = await navigator.clipboard.readText();
+          if (text && text !== lastText && text !== state.currentClipboard && !text.startsWith('file://')) {
+            lastText = text;
+            state.currentClipboard = text;
+            lastImageHash = '';
+            lastFileKey = '';
+            console.log('[Clipboard] browser poll detected text change, len=', text.length);
+            uploadClipboard(text);
+          }
+        } catch (e) {
+          // Clipboard API requires permission or not available — silently ignore
+        }
+      }
+      setInterval(pollClipboard, 1000);
+      pollClipboard();
+    }
+
+    // Helper: Blob → base64 data URL
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result); // data:image/png;base64,...
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    // Upload image clipboard item
+    async function uploadImageClipboard(dataUrl, mimeType, fileSize) {
+      if (!state.deviceId) {
+        state.deviceId = localStorage.getItem('cs_device_id');
+      }
+      if (!state.deviceId || !deviceReady) {
+        console.warn('[UploadImage] SKIPPED: deviceId=', state.deviceId);
+        return;
+      }
+      console.log('[UploadImage] START', { mimeType, size: fileSize, deviceId: state.deviceId.substring(0, 12) });
+      try {
+        await api('POST', '/api/clipboard', {
+          sourceDeviceId: state.deviceId,
+          contentType: 'image',
+          contentEncrypted: dataUrl, // Base64 data URL or raw b64
+          contentPreview: '[图片] ' + mimeType + ' (' + (fileSize / 1024).toFixed(1) + 'KB)',
+          contentSize: fileSize,
+        });
+        console.log('[UploadImage] SUCCESS');
+        loadClipboardItems();
+        showToast('图片已同步');
+      } catch (e) {
+        console.error('[UploadImage] FAILED:', e.message);
+        showToast('图片同步失败：' + e.message);
+      }
+    }
+
+    // Upload file clipboard item (actual file blob from clipboard)
+    async function uploadFileClipboard(blob, type) {
+      if (!state.deviceId) {
+        state.deviceId = localStorage.getItem('cs_device_id');
+      }
+      if (!state.deviceId || !deviceReady) return;
+      const fileName = blob.name || ('clipboard_file_' + Date.now());
+      const fileSize = blob.size;
+      const fileNameDisplay = fileName.length > 50 ? fileName.substring(0, 47) + '...' : fileName;
+      console.log('[UploadFile] START', { fileName, type, size: fileSize });
+      try {
+        // Convert file blob to base64
+        const b64 = await blobToBase64(blob);
+        await api('POST', '/api/clipboard', {
+          sourceDeviceId: state.deviceId,
+          contentType: 'file',
+          contentEncrypted: b64,
+          contentPreview: '[文件] ' + fileNameDisplay + ' (' + (fileSize / 1024).toFixed(1) + 'KB)',
+          contentSize: fileSize,
+          metadata: { fileName, mimeType: type },
+        });
+        console.log('[UploadFile] SUCCESS');
+        loadClipboardItems();
+        showToast('文件已同步');
+      } catch (e) {
+        console.error('[UploadFile] FAILED:', e.message);
+        showToast('文件同步失败：' + e.message);
+      }
+    }
+
+    // Upload file URI (file path like file:///C:/path/to/file.txt)
+    async function uploadFileUri(uri) {
+      if (!state.deviceId) {
+        state.deviceId = localStorage.getItem('cs_device_id');
+      }
+      if (!state.deviceId || !deviceReady) return;
+      // Extract file name from path
+      const filePath = decodeURIComponent(uri.replace(/^file:\/\/\//, ''));
+      const fileName = filePath.split(/[/\\]/).pop() || 'unknown';
+      console.log('[UploadFileURI] START', { uri: uri.substring(0, 60), fileName });
+      try {
+        // Clean up Windows paths: file:///C:/... → C:/...
+        let cleanPath = uri.replace(/^file:\/\/\//, '');
+        // Decode percent-encoded characters
+        cleanPath = decodeURIComponent(cleanPath);
+        await api('POST', '/api/clipboard', {
+          sourceDeviceId: state.deviceId,
+          contentType: 'file',
+          contentEncrypted: uri,
+          contentPreview: '[文件] ' + fileName,
+          contentSize: 0,
+          metadata: { filePath: cleanPath, fileName },
+        });
+        console.log('[UploadFileURI] SUCCESS');
+        loadClipboardItems();
+        showToast('文件已同步');
+      } catch (e) {
+        console.error('[UploadFileURI] FAILED:', e.message);
+        showToast('文件同步失败：' + e.message);
+      }
+    }
+
+    // Upload file blob from paste event (actual file content)
+    async function uploadFileBlobFromPaste(dataUrl, fileName, mimeType, fileSize) {
+      if (!state.deviceId) {
+        state.deviceId = localStorage.getItem('cs_device_id');
+      }
+      if (!state.deviceId || !deviceReady) {
+        console.warn('[UploadPaste] SKIPPED: no deviceId');
+        return;
+      }
+      const sizeKB = (fileSize / 1024).toFixed(1);
+      console.log('[UploadPaste] START', { fileName, mimeType, size: sizeKB + 'KB' });
+      try {
+        await api('POST', '/api/clipboard', {
+          sourceDeviceId: state.deviceId,
+          contentType: mimeType.startsWith('image/') ? 'image' : 'file',
+          contentEncrypted: dataUrl,
+          contentPreview: (mimeType.startsWith('image/') ? '[图片粘贴] ' : '[文件粘贴] ') + fileName + ' (' + sizeKB + 'KB)',
+          contentSize: fileSize,
+          metadata: { fileName, mimeType, source: 'paste' },
+        });
+        console.log('[UploadPaste] SUCCESS');
+        loadClipboardItems();
+        showToast((mimeType.startsWith('image/') ? '图片' : '文件') + '已同步');
+      } catch (e) {
+        console.error('[UploadPaste] FAILED:', e.message);
+      }
+    }
+
+    // Upload file item from Tauri poll — stores original file paths
+    // so that viewFileItem() can restore CF_HDROP later.
+    async function uploadTauriFileClipboard(files) {
+      if (!state.deviceId) {
+        state.deviceId = localStorage.getItem('cs_device_id');
+      }
+      if (!state.deviceId || !deviceReady) {
+        console.warn('[UploadTauriFile] SKIPPED: deviceId=', state.deviceId);
+        if (!state.deviceId && state.token) {
+          try {
+            await loadDevices();
+            deviceReady = true;
+            if (state.deviceId) return uploadTauriFileClipboard(files);
+          } catch (e) {
+            console.error('[UploadTauriFile] Registration failed:', e.message);
+          }
+        }
+        return;
+      }
+      const fileName = files[0].split(/[/\\]/).pop() || 'unknown';
+      const preview = files.length === 1
+        ? fileName
+        : fileName + ' 等 ' + files.length + ' 个文件';
+      console.log('[UploadTauriFile] START', { count: files.length, deviceId: state.deviceId.substring(0, 12) });
+      try {
+        await api('POST', '/api/clipboard', {
+          sourceDeviceId: state.deviceId,
+          contentType: 'file',
+          contentEncrypted: btoa(unescape(encodeURIComponent(files.join('\n')))),
+          contentPreview: preview,
+          metadata: { fileName, filePaths: files },
+        });
+        console.log('[UploadTauriFile] SUCCESS');
+        loadClipboardItems();
+      } catch (e) {
+        console.error('[UploadTauriFile] FAILED:', e.message);
+      }
+    }
+
+    // ====== Log clipboard API capability for debugging ======
+    // (Inform the user why file auto-sync from Explorer doesn't work)
+    if (navigator.clipboard && navigator.clipboard.read) {
+      console.log('[Clipboard] navigator.clipboard.read() supported — can detect text/images');
+      console.log('[Clipboard] Note: file system copies (Ctrl+C in Explorer) are NOT accessible via web APIs');
+      console.log('[Clipboard] For files: paste (Ctrl+V) or drag-drop directly into the app');
+    }
+
+    // ====== Auth ======
+    async function sendCode() {
+      const phone = document.getElementById('phone-input').value.trim();
+      if (!phone || phone.length !== 11) { showToast('请输入11位手机号'); return; }
+      const btn = document.getElementById('send-code-btn');
+      btn.disabled = true;
+      try {
+        await api('POST', '/api/auth/send-code', { phone });
+        showToast('验证码已发送（MVP: 888888）');
+        let sec = 60;
+        btn.textContent = sec + 's';
+        const timer = setInterval(() => {
+          sec--;
+          btn.textContent = sec + 's';
+          if (sec <= 0) { clearInterval(timer); btn.textContent = '发送验证码'; btn.disabled = false; }
+        }, 1000);
+      } catch (e) {
+        showToast('发送失败: ' + e.message);
+        btn.disabled = false;
+      }
+    }
+
+    async function login() {
+      const phone = document.getElementById('phone-input').value.trim();
+      const code = document.getElementById('code-input').value.trim();
+      const tosAccepted = document.getElementById('tos-checkbox').checked;
+      if (!phone || !code) { showToast('请输入手机号和验证码'); return; }
+      if (!tosAccepted) { showToast('请先同意服务条款和隐私政策'); return; }
+      try {
+        const data = await api('POST', '/api/auth/verify-code', { phone, code, accept_tos: tosAccepted, accept_privacy: tosAccepted });
+        state.token = data.token;
+        state.user = data.user;
+        localStorage.setItem('cs_token', data.token);
+        localStorage.setItem('cs_user', JSON.stringify(data.user));
+        showMainApp();
+        // Sequential init: devices → clipboard → websocket
+        try {
+          await loadDevices();
+          deviceReady = true;
+        } catch (e) {
+          console.error('[Login] loadDevices failed:', e.message);
+        }
+        loadClipboardItems();
+        connectWebSocket();
+        // Ensure clipboard listener is attached
+        if (!state._listenerAttached) attachClipboardListener();
+        showToast('登录成功');
+      } catch (e) {
+        showToast('登录失败: ' + e.message);
+      }
+    }
+
+    function logout() {
+      state.token = null;
+      state.user = null;
+      state.deviceId = null;
+      localStorage.removeItem('cs_token');
+      localStorage.removeItem('cs_user');
+      localStorage.removeItem('cs_device_id');
+      if (state.ws) { state.ws.close(); state.ws = null; }
+      document.getElementById('main-app').style.display = 'none';
+      document.getElementById('login-modal').classList.remove('hidden');
+    }
+
+    function showMainApp() {
+      document.getElementById('login-modal').classList.add('hidden');
+      document.getElementById('main-app').style.display = 'grid';
+      const u = state.user;
+      const name = (u && u.nickname) || (u && u.phone) || '?';
+      document.getElementById('user-name').textContent = name;
+      document.getElementById('user-phone').textContent = u?.phone || '';
+      // 头像：优先显示图片，否则显示首字母
+      const avatarText = document.getElementById('user-avatar-text');
+      const avatarImg = document.getElementById('user-avatar-img');
+      if (avatarImg && u && u.avatarUrl && u.avatarUrl.startsWith('data:')) {
+        avatarImg.src = u.avatarUrl;
+        avatarImg.style.display = '';
+        if (avatarText) avatarText.style.display = 'none';
+      } else if (avatarText) {
+        avatarText.textContent = name[0].toUpperCase();
+        if (avatarImg) avatarImg.style.display = 'none';
+      }
+    }
+
+    // ====== Drag & Drop File Upload ======
+    function setupDragDrop() {
+      // Listen on document level to catch drag events on all child elements
+      document.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        document.getElementById('main-app').style.opacity = '0.7';
+      });
+      document.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        document.getElementById('main-app').style.opacity = '1';
+      });
+      document.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        document.getElementById('main-app').style.opacity = '1';
+        const files = e.dataTransfer?.files;
+        if (files && files.length > 0) {
+          console.log('[Drop] received', files.length, 'file(s)');
+          for (const file of files) {
+            console.log('[Drop] file:', file.name, file.size, file.type);
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              if (file.type.startsWith('image/')) {
+                uploadImageClipboard(ev.target.result, file.type, file.size);
+              } else {
+                uploadFileBlobFromPaste(ev.target.result, file.name, file.type, file.size);
+              }
+            };
+            reader.readAsDataURL(file);
+          }
+        } else {
+          console.warn('[Drop] no files detected in drop event');
+        }
+      });
+      console.log('[Drop] drag-and-drop file upload ready (document-level)');
+    }
+
+    // ====== API helper ======
+    // Cached CSRF token (single-use on server, but we cache briefly for resilience)
+    let _cachedCsrfToken = null;
+    let _csrfFetchTime = 0;
+    const CSRF_CACHE_MS = 5000; // Cache token for 5 seconds max
+
+    async function api(method, path, body) {
+      const opts = { method, headers: {} };
+      if (state.token) opts.headers['Authorization'] = 'Bearer ' + state.token;
+
+      // CSRF: fetch fresh token before each non-GET request
+      if (state.token && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+        const now = Date.now();
+        // Use cached token if still fresh (<5s old)
+        if (_cachedCsrfToken && (now - _csrfFetchTime < CSRF_CACHE_MS)) {
+          opts.headers['x-csrf-token'] = _cachedCsrfToken;
+          console.log('[CSRF] using cached token');
+        } else {
+          try {
+            const csrfResp = await fetch(API_BASE + '/api/csrf-token', {
+              headers: { 'Authorization': 'Bearer ' + state.token },
+              mode: 'cors',
+            });
+            if (csrfResp.ok) {
+              const { csrfToken } = await csrfResp.json();
+              _cachedCsrfToken = csrfToken;
+              _csrfFetchTime = Date.now();
+              opts.headers['x-csrf-token'] = csrfToken;
+              console.log('[CSRF] fetched fresh token');
+            } else {
+              console.warn('[CSRF] server returned', csrfResp.status);
+            }
+          } catch (e) {
+            // If CORS blocks or network fails, use stale cache or proceed without
+            console.warn('[CSRF] fetch failed:', e.message, '- will retry on 403');
+          }
+        }
+      }
+
+      if (body) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+      }
+      const resp = await fetch(API_BASE + path, opts);
+
+      // Safe JSON parse: handle non-JSON responses gracefully
+      let data;
+      const text = await resp.text();
+      try {
+        data = JSON.parse(text);
+      } catch (parseErr) {
+        // Response is not valid JSON — return structured error
+        console.error('[API] Non-JSON response for', method, path, ':', text.substring(0, 200));
+        throw new Error('Server returned invalid response (' + resp.status + ')');
+      }
+
+      // If 403 due to CSRF issue, retry ONCE with fresh token
+      if (resp.status === 403 && (data.error || '').includes('CSRF') && !opts._csrfRetried) {
+        console.warn('[API] 403 CSRF error, invalidating cache and retrying...');
+        _cachedCsrfToken = null;
+        _csrfFetchTime = 0;
+        opts._csrfRetried = true; // Mark as retried to prevent infinite loops
+        return api(method, path, body); // Recursive retry with fresh token
+      }
+
+      if (!resp.ok) throw new Error(data.error || 'Request failed (' + resp.status + ')');
+      return data;
+    }
+
+    // ====== WebSocket ======
+    function connectWebSocket() {
+      if (state.ws) { state.ws.close(); }
+      updateConnStatus('connecting');
+      const ws = new WebSocket(WS_URL + '?token=' + state.token);
+      state.ws = ws;
+
+      ws.onopen = () => {
+        updateConnStatus('online');
+        // Register current device
+        if (state.deviceId) {
+          ws.send(JSON.stringify({ type: 'register', deviceId: state.deviceId }));
+        }
+        // Heartbeat
+        setInterval(() => {
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 30000);
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        handleWsMessage(msg);
+      };
+
+      ws.onclose = () => {
+        updateConnStatus('offline');
+        // Auto reconnect after 5s
+        setTimeout(() => {
+          if (state.token) connectWebSocket();
+        }, 5000);
+      };
+
+      ws.onerror = () => {
+        updateConnStatus('offline');
+      };
+    }
+
+    function handleWsMessage(msg) {
+      switch (msg.type) {
+        case 'registered':
+          const wasNew = (state.deviceId !== msg.deviceId);
+          state.deviceId = msg.deviceId;
+          localStorage.setItem('cs_device_id', msg.deviceId);
+          deviceReady = true;
+          if (wasNew) showToast('设备已注册');
+          break;
+        case 'error':
+          console.error('WS error:', msg.message);
+          // Handle "Device not found" — stale deviceId, need to re-register
+          if (msg.message === 'Device not found') {
+            console.warn('[WS] Device not found — clearing stale deviceId and re-registering');
+            state.deviceId = null;
+            localStorage.removeItem('cs_device_id');
+            deviceReady = false;
+            // Re-register device
+            loadDevices().then(() => {
+              deviceReady = true;
+              console.log('[WS] Device re-registered successfully');
+            }).catch(e => {
+              console.error('[WS] Re-registration failed:', e.message);
+              showToast('设备注册失败：' + e.message);
+            });
+          }
+          break;
+        case 'clipboard':
+        case 'new_clipboard':
+          // New item from another device
+          if (msg.item) {
+            state.items.unshift(msg.item);
+            if (state.currentPage === 'clipboard') renderClipboardItems();
+            showToast('收到新同步内容');
+          }
+          break;
+        case 'clipboard_deleted':
+          if (msg.itemId) {
+            state.items = state.items.filter(i => i.id !== msg.itemId);
+          } else if (msg.itemIds) {
+            state.items = state.items.filter(i => !msg.itemIds.includes(i.id));
+          }
+          if (state.currentPage === 'clipboard') renderClipboardItems();
+          break;
+        case 'clipboard_favorite':
+          const item = state.items.find(i => i.id === msg.itemId);
+          if (item) { item.isFavorite = msg.isFavorite; renderClipboardItems(); }
+          break;
+      }
+    }
+
+    function updateConnStatus(status) {
+      const dot = document.getElementById('conn-dot');
+      const text = document.getElementById('conn-text');
+      dot.className = 'conn-dot ' + status;
+      const labels = { online: '已连接', offline: '未连接', connecting: '连接中...' };
+      text.textContent = labels[status] || status;
+      state.wsConnected = (status === 'online');
+    }
+
+    // ====== Clipboard ======
+    async function loadClipboardItems() {
+      try {
+        const data = await api('GET', '/api/clipboard?limit=50');
+        state.items = data.items || data.clipboardItems || [];
+        console.log('[Clipboard] loaded', state.items.length, 'items');
+        renderClipboardItems();
+      } catch (e) {
+        console.error('[Clipboard] Failed to load:', e);
+        // 如果是 403 limit 错误，尝试用不带 limit 参数的请求
+        if ((e.message || '').includes('limit') || (e.message || '').includes('Forbidden')) {
+          try {
+            const fallbackData = await fetch(API_BASE + '/api/clipboard', {
+              headers: state.token ? { 'Authorization': 'Bearer ' + state.token } : {}
+            });
+            if (fallbackData.ok) {
+              const json = await fallbackData.json();
+              state.items = json.items || json.clipboardItems || [];
+              renderClipboardItems();
+            }
+          } catch (fallbackErr) { /* ignore */ }
+        }
+      }
+    }
+
+    async function uploadClipboard(content) {
+      // Ensure we have a valid deviceId
+      if (!state.deviceId) {
+        state.deviceId = localStorage.getItem('cs_device_id');
+      }
+      if (!state.deviceId || !deviceReady || !content.trim()) {
+        console.warn('[Upload] SKIPPED: deviceId=', state.deviceId, 'deviceReady=', deviceReady, 'content.len=', content?.length);
+        // If no deviceId, try to register
+        if (!state.deviceId && state.token) {
+          console.warn('[Upload] No deviceId — attempting device registration');
+          try {
+            await loadDevices();
+            deviceReady = true;
+            if (state.deviceId) {
+              console.log('[Upload] Device registered, retrying upload');
+              return uploadClipboard(content);  // Retry with new deviceId
+            }
+          } catch (e) {
+            console.error('[Upload] Registration failed:', e.message);
+          }
+        }
+        return;
+      }
+      const type = detectContentType(content);
+      console.log('[Upload] START', { type, size: content.length, deviceId: state.deviceId.substring(0, 12) });
+      try {
+        await api('POST', '/api/clipboard', {
+          sourceDeviceId: state.deviceId,
+          contentType: type,
+          contentEncrypted: btoa(unescape(encodeURIComponent(content))), // Base64 for MVP
+          contentPreview: content.length > 5000 ? content.substring(0, 5000) + '…(' + content.length + '字符)' : content,
+          contentSize: content.length,
+        });
+        console.log('[Upload] SUCCESS');
+        // Reload to get the item with proper ID
+        loadClipboardItems();
+        showToast('已同步到服务器');
+      } catch (e) {
+        console.error('[Upload] FAILED:', e.message);
+        // 清晰提示用户具体原因
+        if (e.message.includes('limit') || e.message.includes('Forbidden')) {
+          showToast('⚠️ 剪贴板数量已达上限，请清理旧记录', 'error');
+        }
+        // If "Device not found", clear stale ID and re-register
+        if (e.message.includes('Device not found')) {
+          console.warn('[Upload] Device not found from API — re-registering');
+          state.deviceId = null;
+          localStorage.removeItem('cs_device_id');
+          deviceReady = false;
+          try {
+            await loadDevices();
+            deviceReady = true;
+            if (state.deviceId) {
+              console.log('[Upload] Re-registered, retrying upload');
+              return uploadClipboard(content);
+            }
+          } catch (re) {
+            console.error('[Upload] Re-registration failed:', re.message);
+          }
+        }
+        showToast('同步失败：' + e.message);
+      }
+    }
+
+    function detectContentType(text) {
+      if (/^https?:\/\//.test(text.trim())) return 'link';
+      if (/[{}\[\]];?|function |const |let |var |=>|import |class /.test(text)) return 'code';
+      return 'text';
+    }
+
+    // Track collapsed category state (persists across re-renders)
+    const _collapsedCategories = new Set();
+
+    function renderClipboardItems() {
+      const container = document.getElementById('content-area');
+      let items = state.items;
+      if (state.searchQuery) {
+        const q = state.searchQuery.toLowerCase();
+        items = items.filter(i =>
+          (i.contentPreview || '').toLowerCase().includes(q) ||
+          (i.sourceDevice?.name || '').toLowerCase().includes(q)
+        );
+      }
+      if (items.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">&#x1F4C4;</div>
+            <p>${state.searchQuery ? '没有匹配的内容' : '暂无剪贴板内容'}</p>
+            <p style="margin-top:8px;font-size:12px;">复制内容后将自动同步到此处 &middot; 文件可拖拽或粘贴( Ctrl+V )</p>
+          </div>`;
+        return;
+      }
+
+      // Group items by type
+      const groups = { recent: [], file: [], image: [], text: [] };
+      items.forEach(item => {
+        groups.recent.push(item);
+        if (item.contentType === 'file') groups.file.push(item);
+        else if (item.contentType === 'image') groups.image.push(item);
+        else groups.text.push(item);
+      });
+
+      const groupTitles = {
+        recent: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg> 最近',
+        file: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg> 文件',
+        image: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg> 图片 / 视频',
+        text: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg> 文字'
+      };
+
+      let html = '<div class="clipboard-grid">';
+      for (const [type, typeItems] of Object.entries(groups)) {
+        if (typeItems.length === 0) continue;
+        const catId = 'cat-' + type;
+        const collapsed = _collapsedCategories.has(type);
+        html += `<div class="category-header${collapsed ? ' collapsed' : ''}" onclick="toggleCategory('${type}')">
+          <span class="category-chevron"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></span>
+          ${groupTitles[type]}
+          <span class="category-count">${typeItems.length}</span>
+        </div>`;
+        html += `<div class="category-body${collapsed ? ' collapsed' : ''}">`;
+        html += typeItems.map(item => {
+          const isImage = item.contentType === 'image';
+          const isFile = item.contentType === 'file';
+          const t = item.contentType || 'text';
+          const cardClick = isImage ? `viewImageItem('${item.id}')`
+                         : isFile ? `viewFileItem('${item.id}')`
+                         : `copyTextItem('${item.id}')`;
+          const hoverHandlers = isImage
+            ? `onmouseenter="showImgHover(event,'${item.id}')" onmouseleave="hideImgHover()"`
+            : '';
+          return `
+          <div class="clipboard-card" onclick="${cardClick}" ${hoverHandlers}>
+            <div class="card-header">
+              <div class="card-type">
+                <div class="card-type-icon ${getTypeClass(t)}">${getTypeIcon(t)}</div>
+                ${getTypeLabel(t)}
+              </div>
+              <div class="card-actions">
+                <span class="card-fav ${item.isFavorite ? 'active' : ''}" onclick="event.stopPropagation();toggleFav('${item.id}')">${item.isFavorite ? '&#x2605;' : '&#x2606;'}</span>
+                <button onclick="event.stopPropagation();deleteItem('${item.id}')" title="\u5220\u9664">&#xD7;</button>
+              </div>
+            </div>
+            ${isImage
+              ? `<div class="card-image-placeholder">
+                  <div class="card-image-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                  </div>
+                  <span class="card-image-desc">${escapeHtml(item.contentPreview || '\u56FE\u7247')}</span>
+                </div>`
+              : isFile
+              ? `<div class="card-image-placeholder">
+                  <div class="card-image-icon" style="background:linear-gradient(135deg,#FEF3C7,#FDE68A)">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                  </div>
+                  <span class="card-image-desc">${escapeHtml(item.contentPreview || '\u6587\u4EF6')}</span>
+                </div>`
+              : `<div class="card-content">${escapeHtml(item.contentPreview || '(空内容)')}</div>`
+            }
+            <div class="card-footer">
+              <div class="card-device"><svg style="width:12px;height:12px;vertical-align:-1px;margin-right:2px;opacity:.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> ${escapeHtml(item.sourceDevice?.name || '\u672A\u77E5\u8BBE\u5907')}</div>
+              <span>${formatTime(item.createdAt)}</span>
+            </div>
+          </div>`;
+        }).join('');
+        html += '</div>'; // end category-body
+      }
+      html += '</div>';
+      container.innerHTML = html;
+      // 动态添加卡片菜单按钮
+      container.querySelectorAll('.clipboard-card').forEach(card => {
+        const footer = card.querySelector('.card-footer');
+        if (!footer || footer.querySelector('.card-menu-btn')) return;
+        const rightDiv = footer.querySelector('div[style*="display:flex"]') || footer.lastElementChild;
+        if (!rightDiv) return;
+        const btn = document.createElement('button');
+        btn.className = 'card-menu-btn';
+        btn.innerHTML = '⋮';
+        btn.title = '更多操作';
+        btn.style.cssText = 'background:none;border:none;cursor:pointer;padding:2px 6px;font-size:15px;color:#999;border-radius:4px;margin-left:4px;';
+        btn.onmouseover = () => btn.style.background = '#f0f0f0';
+        btn.onmouseout = () => { if (!btn.dataset.open) btn.style.background = 'none'; };
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          toggleCardMenu(card.dataset.id, btn);
+        };
+        rightDiv.insertBefore(btn, rightDiv.firstChild);
+      });
+    }
+
+    function toggleCategory(type) {
+      if (_collapsedCategories.has(type)) _collapsedCategories.delete(type);
+      else _collapsedCategories.add(type);
+      renderClipboardItems();
+    }
+
+    let _rightPanelCollapsed = false;
+    // Create persistent expand button (stays visible even when panel collapsed)
+    let _expandBtn = null;
+    function _ensureExpandBtn() {
+      if (!_expandBtn) {
+        _expandBtn = document.createElement('button');
+        _expandBtn.className = 'panel-expand-btn';
+        _expandBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9,18 15,12 9,6"/></svg>';
+        _expandBtn.title = '展开面板';
+        _expandBtn.onclick = toggleRightPanel;
+      }
+      const rp = document.getElementById('right-panel');
+      if (_expandBtn.parentNode !== rp) {
+        rp.appendChild(_expandBtn);
+      }
+    }
+    function toggleRightPanel() {
+      const app = document.getElementById('main-app');
+      const btn = document.querySelector('.panel-toggle-btn');
+      const chevronLeft = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15,18 9,12 15,6"/></svg>';
+      const chevronRight = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9,18 15,12 9,6"/></svg>';
+      _rightPanelCollapsed = !_rightPanelCollapsed;
+      if (_rightPanelCollapsed) {
+        app.classList.add('panel-collapsed');
+        btn.innerHTML = chevronLeft;
+        btn.title = '折叠面板';
+        _ensureExpandBtn();
+        _expandBtn.style.display = '';
+      } else {
+        app.classList.remove('panel-collapsed');
+        btn.innerHTML = chevronLeft;
+        btn.title = '折叠面板';
+        if (_expandBtn) _expandBtn.style.display = 'none';
+      }
+    }
+
+    async function copyItem(content) {
+      try {
+        await navigator.clipboard.writeText(content);
+        state.currentClipboard = content;
+        showToast('已复制到剪贴板');
+      } catch (e) { showToast('复制失败'); }
+    }
+
+    // Click a text card → fetch full content and copy to clipboard
+    async function copyTextItem(id) {
+      try {
+        const item = await api('GET', '/api/clipboard/' + id);
+        let fullContent = '';
+        if (item.contentEncrypted) {
+          // Decode base64 contentEncrypted to get original text
+          try { fullContent = decodeURIComponent(escape(atob(item.contentEncrypted))); } catch(e) { fullContent = item.contentEncrypted; }
+        } else {
+          fullContent = item.contentPreview || '';
+        }
+        await navigator.clipboard.writeText(fullContent);
+        state.currentClipboard = fullContent;
+        showToast('已复制到剪贴板（' + fullContent.length + '字符）');
+      } catch (e) { showToast('复制失败：' + e.message); }
+    }
+
+    // ====== Image Viewer ======
+    let _viewingImageUrl = null;
+    let _viewingBlobUrl = null;
+    const _deletingIds = new Set();
+
+    // Helper: get Tauri Window for native APIs
+    function _getTauriWindow() {
+      try {
+        return window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow
+          ? window.__TAURI__.window.getCurrentWindow() : null;
+      } catch(e) { return null; }
+    }
+
+    // ====== Image Hover Preview ======
+    const _imgPreviewCache = new Map();
+    let _imgHoverTimer = null;
+
+    window.showImgHover = async function(e, id) {
+      const preview = document.getElementById('img-hover-preview');
+      const previewImg = document.getElementById('img-hover-preview-img');
+      if (!preview || !previewImg) return;
+      const x = e.clientX + 12;
+      const y = e.clientY + 12;
+      preview.style.left = Math.min(x, window.innerWidth - 300) + 'px';
+      preview.style.top = Math.min(y, window.innerHeight - 220) + 'px';
+      _imgHoverTimer = setTimeout(async () => {
+        try {
+          let dataUrl = _imgPreviewCache.get(id);
+          if (!dataUrl) {
+            const item = await api('GET', '/api/clipboard/' + id);
+            dataUrl = (item.contentEncrypted || '').trim();
+            if (!dataUrl || !dataUrl.startsWith('data:')) return;
+            _imgPreviewCache.set(id, dataUrl);
+            if (_imgPreviewCache.size > 20) {
+              _imgPreviewCache.delete(_imgPreviewCache.keys().next().value);
+            }
+          }
+          previewImg.src = dataUrl;
+          preview.classList.add('visible');
+        } catch(err) {}
+      }, 300);
+    };
+
+    window.hideImgHover = function() {
+      clearTimeout(_imgHoverTimer);
+      const p = document.getElementById('img-hover-preview');
+      if (p) p.classList.remove('visible');
+    };
+
+    // ====== Image Viewer ======
+    async function viewImageItem(id) {
+      const LOG_PREFIX = '[ViewImg]';
+      try {
+        console.log(LOG_PREFIX, 'fetching', id);
+        const item = await api('GET', '/api/clipboard/' + id);
+        if (item.contentType !== 'image') { showToast('not an image'); return; }
+        let dataUrl = (item.contentEncrypted || '').trim();
+        if (!dataUrl || !dataUrl.startsWith('data:')) { showToast('no image data'); return; }
+
+        // BMP -> PNG conversion via Rust
+        if (/image\/(bmp|x-ms-bmp)/i.test(dataUrl.split(',')[0])) {
+          try {
+            const inv = window.__TAURI_INVOKE__ || (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) || (window.__TAURI__ && window.__TAURI__.invoke);
+            if (!inv) throw new Error('no invoke');
+            dataUrl = await inv('convert_bmp_to_png', { bmpDataUrl: dataUrl });
+            if (!dataUrl || !dataUrl.startsWith('data:image/png')) throw new Error('bad png');
+          } catch(e) { console.error(LOG_PREFIX, e); showToast('convert failed'); return; }
+        }
+
+        const viewer = document.getElementById('image-viewer');
+        const img = document.getElementById('viewer-img');
+        if (!viewer || !img) { showToast('viewer DOM not found'); return; }
+
+        img.src = dataUrl;
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error('图片加载失败'));
+        });
+
+        viewer.style.display = 'flex';
+        _viewingImageUrl = dataUrl;
+        console.log(LOG_PREFIX, 'OK -', img.naturalWidth + 'x' + img.naturalHeight);
+      } catch(e) {
+        console.error(LOG_PREFIX, e);
+        showToast('preview failed: ' + e.message.substring(0, 80));
+      }
+    }
+
+    async function closeImageViewer() {
+      const viewer = document.getElementById('image-viewer');
+      if (viewer) { viewer.style.display = 'none'; }
+      if (_viewingBlobUrl) { URL.revokeObjectURL(_viewingBlobUrl); _viewingBlobUrl = null; }
+      _viewingImageUrl = null;
+      const img = document.getElementById('viewer-img');
+      if (img) img.src = '';
+    }
+
+    async function copyImageFromViewer() {
+      if (!_viewingImageUrl) return;
+      try {
+        const img = document.getElementById('viewer-img');
+        if (!img || !img.naturalWidth) throw new Error('图片未加载');
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+        if (!blob) throw new Error('Canvas 转 Blob 失败');
+
+        await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+        showToast('图片已复制');
+        closeImageViewer();
+      } catch (e) {
+        showToast('复制失败：' + e.message);
+      }
+    }
+
+    // ====== File Viewer ======
+    // Clicking a file card should write the file paths to the Windows clipboard
+    // in CF_HDROP format, so pasting in Explorer pastes the actual files.
+    async function viewFileItem(id) {
+      try {
+        const item = await api('GET', '/api/clipboard/' + id);
+        const meta = item.metadata || {};
+        const filePaths = meta.filePaths || [];
+
+        if (filePaths.length === 0) {
+          showToast('没有可用的文件路径');
+          return;
+        }
+
+        // Try to write CF_HDROP via Tauri backend
+        const _invoke = window.__TAURI_INVOKE__ ||
+          (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) ||
+          (window.__TAURI__ && window.__TAURI__.invoke);
+
+        if (_invoke) {
+          try {
+            await _invoke('set_clipboard_files', { paths: filePaths });
+            const label = filePaths.length === 1
+              ? filePaths[0].split(/[/\\]/).pop()
+              : filePaths.length + ' 个文件';
+            showToast('已复制 ' + label + ' 到剪贴板，可粘贴');
+          } catch (e) {
+            console.error('[viewFileItem] set_clipboard_files failed:', e);
+            showToast('复制失败：' + e.message);
+          }
+        } else {
+          // Browser fallback — cannot write CF_HDROP; show file info
+          showToast('文件: ' + (meta.fileName || filePaths[0].split(/[/\\]/).pop()));
+        }
+      } catch (e) {
+        showToast('加载失败：' + e.message);
+      }
+    }
+
+    async function toggleFav(id) {
+      try {
+        await api('PUT', `/api/clipboard/${id}/favorite`);
+        loadClipboardItems();
+      } catch (e) { showToast('操作失败'); }
+    }
+
+    async function deleteItem(id) {
+      if (_deletingIds.has(id)) return; // Prevent double-delete
+      if (!confirm('确认删除？')) return;
+      _deletingIds.add(id);
+      try {
+        await api('DELETE', '/api/clipboard/' + id);
+        state.items = state.items.filter(i => i.id !== id);
+        renderClipboardItems();
+        showToast('已删除');
+      } catch(e) { showToast('删除失败'); }
+      finally { _deletingIds.delete(id); }
+    }
+
+    function onSearch(value) {
+      state.searchQuery = value;
+      const box = document.getElementById('search-box');
+      if (box) box.classList.toggle('has-value', value.length > 0);
+      renderClipboardItems();
+    }
+    function clearSearch() {
+      const inp = document.getElementById('search-input');
+      if (inp) { inp.value = ''; onSearch(''); inp.focus(); }
+    }
+
+    // ====== Devices ======
+    async function loadDevices() {
+      try {
+        const devices = await api('GET', '/api/devices');
+        state.devices = Array.isArray(devices) ? devices : [];
+
+        if (state.devices.length === 0) {
+          // No devices → auto-register this desktop
+          const newDevice = await api('POST', '/api/devices', {
+            deviceName: 'Desktop-' + navigator.platform,
+            deviceType: 'desktop',
+            platform: 'windows',
+          });
+          state.deviceId = newDevice.id;
+          localStorage.setItem('cs_device_id', newDevice.id);
+          state.devices = [newDevice];
+          showToast('设备已注册');
+        } else {
+          // Devices exist → always sync deviceId with the first one from DB
+          // (localStorage may be stale from a previous session)
+          const firstId = state.devices[0].id;
+          if (state.deviceId !== firstId) {
+            console.log('[Devices] syncing deviceId:', state.deviceId, '->', firstId);
+          }
+          state.deviceId = firstId;
+          localStorage.setItem('cs_device_id', state.deviceId);
+        }
+
+        renderDevices();
+
+        // Register with WebSocket if connected
+        if (state.ws && state.ws.readyState === 1 && state.deviceId) {
+          state.ws.send(JSON.stringify({ type: 'register', deviceId: state.deviceId }));
+        }
+      } catch (e) {
+        console.error('Failed to load devices:', e);
+      }
+    }
+
+    function renderDevices() {
+      const dt = (d) => d.deviceType || d.type;
+      // Update sidebar device list
+      const container = document.getElementById('device-list');
+      document.getElementById('device-count').textContent = state.devices.length + ' 台';
+      const devSvgs = {
+        desktop: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+        mobile: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="1.8"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',
+        tablet: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="1.8"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>'
+      };
+      container.innerHTML = state.devices.map(d => {
+        const t = dt(d);
+        return `
+        <div class="device-item">
+          <div class="device-icon ${getDeviceClass(t)}">${devSvgs[t] || devSvgs.desktop}</div>
+          <div class="device-info">
+            <div class="device-name">${escapeHtml(d.deviceName || d.name || '未知设备')}</div>
+            <div class="device-status">
+              <span class="status-dot ${d.isOnline ? '' : 'offline'}"></span>
+              ${d.isOnline ? '在线' : (d.platform || '离线')}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+      // Update main content area with device management view
+      const mainArea = document.getElementById('content-area');
+      if (!state.devices.length) {
+        mainArea.innerHTML = '<div class="empty-state"><div class="icon">&#x1F4F1;</div><p>暂无已连接的设备</p><p style="margin-top:8px;font-size:12px;">在其他设备上登录 ClipSync 即可自动发现</p></div>';
+      } else {
+        mainArea.innerHTML = `
+          <div class="settings-page">
+            ${state.devices.map((d) => {
+              const t = dt(d);
+              return `
+              <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg-card);border-radius:10px;margin-bottom:8px;border:1px solid var(--border-light);transition:border-color 0.12s;" onmouseenter="this.style.borderColor='var(--border)'" onmouseleave="this.style.borderColor='var(--border-light)'">
+                <div class="device-icon ${getDeviceClass(t)}" style="width:40px;height:40px;border-radius:10px;">${devSvgs[t] || devSvgs.desktop}</div>
+                <div style="flex:1;">
+                  <div style="font-weight:600;font-size:13px;color:var(--text);">${escapeHtml(d.deviceName || d.name || '未知设备')}</div>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${escapeHtml(d.platform || '')} &middot; ${d.isOnline ? '<span style="color:var(--success);font-weight:500;">在线</span>' : '<span>离线</span>'}</div>
+                </div>
+              </div>`}).join('')}
+          </div>`;
+      }
+    }
+
+    // ====== Pages ======
+    function switchPage(page) {
+      state.currentPage = page;
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelector(`[data-page="${page}"]`).classList.add('active');
+      const titles = { clipboard: '剪贴板', devices: '设备管理', settings: '设置' };
+      document.getElementById('page-title').textContent = titles[page] || page;
+      if (page === 'clipboard') renderClipboardItems();
+      else if (page === 'devices') renderDevices();
+      else if (page === 'settings') { renderSettings(); setTimeout(() => { if(window.loadAutostartStatus) window.loadAutostartStatus(); }, 100); }
+    }
+    window.switchPage = switchPage;  // expose for Tauri tray menu etc.
+
+    // ====== Settings ======
+        function renderSettings() {
+      const container = document.getElementById('content-area');
+      container.innerHTML = `
+        <div class="settings-page">
+
+          <!-- Sync -->
+          <div class="settings-group">
+            <div class="settings-group-title">同步与监控</div>
+            <div class="settings-item">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0118.8-4.3M22 12.5a10 10 0 01-18.8 4.3"/></svg>
+                <div>
+                  <div class="settings-item-label">自动同步</div>
+                  <div class="settings-item-desc">复制内容后自动上传到云端</div>
+                </div>
+              </div>
+              <label class="toggle"><input type="checkbox" ${state.autoSync ? 'checked' : ''} onchange="state.autoSync=this.checked"><span class="toggle-slider"></span></label>
+            </div>
+          </div>
+
+          <!-- Account & Security -->
+          <div class="settings-group">
+            <div class="settings-group-title">账号与安全</div>
+            <div class="settings-item" onclick="showProfileModal()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <div>
+                  <div class="settings-item-label">个人资料</div>
+                  <div class="settings-item-desc">编辑用户名、头像、邮箱</div>
+                </div>
+              </div>
+              <span class="settings-arrow">编辑 ›</span>
+            </div>
+            <div class="settings-item" onclick="showSessionManagement()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <div>
+                  <div class="settings-item-label">登录会话</div>
+                  <div class="settings-item-desc">管理已登录的设备，可踢出异常设备</div>
+                </div>
+              </div>
+              <span class="settings-arrow">管理 ›</span>
+            </div>
+            <div class="settings-item" onclick="showSecuritySettings()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <div>
+                  <div class="settings-item-label">隐私与安全</div>
+                  <div class="settings-item-desc">两步验证、登录提醒、端到端加密</div>
+                </div>
+              </div>
+              <span class="settings-arrow">设置 ›</span>
+            </div>
+          </div>
+
+          <!-- Subscription -->
+          <div class="settings-group" id="subscription-settings-group">
+            <div class="settings-group-title">订阅管理</div>
+            <div class="settings-item" onclick="showSubscriptionPlans()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                <div>
+                  <div class="settings-item-label">当前套餐</div>
+                  <div class="settings-item-desc" id="settings-current-plan">加载中...</div>
+                </div>
+              </div>
+              <span class="settings-arrow" id="plan-upgrade-btn">升级 ›</span>
+            </div>
+            <div class="settings-item" onclick="showBillingHistory()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+                <div>
+                  <div class="settings-item-label">账单与发票</div>
+                  <div class="settings-item-desc">订单历史、支付凭证与发票下载</div>
+                </div>
+              </div>
+              <span class="settings-arrow">查看 ›</span>
+            </div>
+          </div>
+
+          <!-- Preferences -->
+          <div class="settings-group">
+            <div class="settings-group-title">偏好设置</div>
+            <div class="settings-item" onclick="showShortcutSettings()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
+                <div>
+                  <div class="settings-item-label">键盘快捷键</div>
+                  <div class="settings-item-desc" id="shortcut-desc">快速粘贴：Ctrl+Shift+V</div>
+                </div>
+              </div>
+              <span class="settings-arrow">设置 ›</span>
+            </div>
+            <div class="settings-item" onclick="showNotifSettings()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                <div>
+                  <div class="settings-item-label">通知偏好</div>
+                  <div class="settings-item-desc">选择接收哪些通知提醒</div>
+                </div>
+              </div>
+              <span class="settings-arrow">设置 ›</span>
+            </div>
+            <div class="settings-item" onclick="toggleTheme()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+                <div>
+                  <div class="settings-item-label">外观主题</div>
+                  <div class="settings-item-desc"><span id="theme-toggle-status">浅色模式</span></div>
+                </div>
+              </div>
+              <span class="settings-arrow" id="theme-btn">切换 ›</span>
+            </div>
+            <div class="settings-item" onclick="checkForUpdates()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <div>
+                  <div class="settings-item-label">检查更新</div>
+                  <div class="settings-item-desc">当前版本 v0.1.0</div>
+                </div>
+              </div>
+              <span class="settings-arrow">检查 ›</span>
+            </div>
+            <div class="settings-item" onclick="showGDPRExport()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <div>
+                  <div class="settings-item-label">数据导出 (GDPR)</div>
+                  <div class="settings-item-desc">导出你的所有个人数据副本</div>
+                </div>
+              </div>
+              <span class="settings-arrow">导出 ›</span>
+            </div>
+          </div>
+
+          <!-- System -->
+          <div class="settings-group">
+            <div class="settings-group-title">系统</div>
+            <div class="settings-item">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M18 10h-4V6M14 10l7-7M6 14H2v4M6 14l-7 7"/><circle cx="12" cy="12" r="3"/></svg>
+                <div>
+                  <div class="settings-item-label">开机自启动</div>
+                  <div class="settings-item-desc">系统启动时自动运行 ClipSync</div>
+                </div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="autostart-toggle" onchange="toggleAutostart(this.checked)"><span class="toggle-slider"></span></label>
+            </div>
+          </div>
+
+          <!-- Data -->
+          <div class="settings-group">
+            <div class="settings-group-title">数据管理</div>
+            <div class="settings-item" onclick="document.getElementById('file-upload-input') ? document.getElementById('file-upload-input').click() : showToast('上传功能不可用')">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <div>
+                  <div class="settings-item-label">上传文件</div>
+                  <div class="settings-item-desc">向剪贴板添加文件附件</div>
+                </div>
+              </div>
+              <span class="settings-arrow">上传 ›</span>
+            </div>
+            <div class="settings-item" onclick="showBillingHistory()">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <div>
+                  <div class="settings-item-label">账单记录</div>
+                  <div class="settings-item-desc">订单历史、支付凭证</div>
+                </div>
+              </div>
+              <span class="settings-arrow">查看 ›</span>
+            </div>
+          </div>
+
+          <!-- About -->
+          <div class="settings-group">
+            <div class="settings-group-title">关于</div>
+            <div class="settings-item" style="cursor:default;">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <div>
+                  <div class="settings-item-label">ClipSync</div>
+                  <div class="settings-item-desc">版本 0.1.0 (MVP) · 跨设备剪贴板同步工具</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        `;
+        // Update theme label in preferences after render
+        const themeEl = document.getElementById('theme-toggle-status');
+        if (themeEl) themeEl.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '深色模式' : '浅色模式';
+    }
+
+    // ====== Helpers ======
+    function getTypeIcon(type) {
+      const icons = {
+        text: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>',
+        link: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>',
+        image: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+        code: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="16,18 22,12 16,6"/><polyline points="8,6 2,12 8,18"/></svg>',
+        file: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>'
+      };
+      return icons[type] || '?';
+    }
+    function getTypeLabel(type) {
+      return { text: '文本', link: '链接', image: '图片', code: '代码', file: '文件' }[type] || type;
+    }
+    function getTypeClass(type) {
+      return { text: 'type-text', link: 'type-link', image: 'type-image', code: 'type-code', file: 'type-file' }[type] || 'type-text';
+    }
+    function getDeviceIcon(type) {
+      const map = { desktop: '&#x1F4BB;', mobile: '&#x1F4F1;', tablet: '&#x1F4FA;' };
+      return map[type] || '&#x1F4BB;';
+    }
+    function getDeviceClass(type) {
+      return { desktop: 'dev-desktop', mobile: 'dev-mobile', tablet: 'dev-tablet' }[type] || 'dev-desktop';
+    }
+    function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+    function escapeAttr(t) { return t.replace(/'/g, "\\'").replace(/\n/g, '\\n'); }
+    function formatTime(iso) {
+      if (!iso) return '';
+      const diff = Date.now() - new Date(iso).getTime();
+      if (diff < 60000) return '刚刚';
+      if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
+      if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
+      return new Date(iso).toLocaleDateString();
+    }
+    function showToast(msg) {
+      const old = document.querySelector('.toast');
+      if (old) old.remove();
+      const el = document.createElement('div');
+      el.className = 'toast';
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2500);
+    }
+    // ====== 快速粘贴面板 (Ctrl+Shift+V) ======
+    // 挂到 window 上，让 Rust 的 window.eval() 能找到这些函数
+    window._quickPasteOpen = false;
+    window.toggleQuickPaste = function() {
+      console.log('[QuickPaste] toggle called, current state:', window._quickPasteOpen);
+      if (window._quickPasteOpen) { window.hideQuickPaste(); return; }
+      window.showQuickPaste();
+    };
+    window.showQuickPaste = function() {
+      const panel = document.getElementById('quick-paste-panel');
+      if (!panel) return;
+      window._quickPasteOpen = true;
+      panel.classList.add('open');
+      window.loadQuickPasteItems();
+      setTimeout(() => {
+        const inp = document.getElementById('quick-paste-search');
+        if (inp) inp.focus();
+      }, 100);
+    };
+
+    window.hideQuickPaste = function() {
+      const panel = document.getElementById('quick-paste-panel');
+      if (panel) panel.classList.remove('open');
+      window._quickPasteOpen = false;
+    };
+    window.loadQuickPasteItems = async function(filter) {
+      try {
+        const items = await api('GET', '/api/clipboard?limit=50');
+        window.renderQuickPasteItems(items, filter || '');
+      } catch (e) { console.error('[QuickPaste] load failed:', e); }
+    };
+    window.renderQuickPasteItems = function(items, filter) {
+      const list = document.getElementById('quick-paste-list');
+      if (!list) return;
+      let filtered = items;
+      if (filter) {
+        const f = filter.toLowerCase();
+        filtered = items.filter(it =>
+          (it.contentPreview || '').toLowerCase().includes(f) ||
+          (it.contentType || '').toLowerCase().includes(f)
+        );
+      }
+      if (filtered.length === 0) {
+        list.innerHTML = '<div class="qp-empty">暂无剪贴板记录</div>';
+        return;
+      }
+      list.innerHTML = filtered.map((item, i) => {
+        const icon = getTypeIcon(item.contentType);
+        const label = getTypeLabel(item.contentType);
+        const preview = (item.contentPreview || '').substring(0, 120);
+        const time = formatTime(item.createdAt);
+        return `<div class="qp-item${i === 0 ? ' active' : ''}" data-id="${item.id}" data-type="${item.contentType}" onclick="quickPasteSelect(this, '${item.id}', '${item.contentType}')">
+          <div class="qp-item-icon ${getTypeClass(item.contentType)}">${icon}</div>
+          <div class="qp-item-body">
+            <div class="qp-item-label">${label}</div>
+            <div class="qp-item-preview">${escapeHtml(preview)}</div>
+            <div class="qp-item-time">${time}</div>
+          </div>
+        </div>`;
+      }).join('');
+      // 键盘导航
+      window._qpIndex = 0;
+    }
+    window._qpIndex = 0;
+    window.updateQPActive = function() {
+      const items = document.querySelectorAll('#quick-paste-list .qp-item');
+      items.forEach((el, i) => el.classList.toggle('active', i === window._qpIndex));
+      const active = items[window._qpIndex];
+      if (active) active.scrollIntoView({ block: 'nearest' });
+    };
+    window.quickPasteSelect = async function(el, id, type) {
+      // 写入剪贴板并隐藏面板
+      try {
+        if (type === 'file') {
+          const item = await api('GET', '/api/clipboard/' + id);
+          if (item.metadata && item.metadata.filePaths && window.__TAURI_INVOKE__) {
+            const { invoke } = window.__TAURI_INVOKE__ ? { invoke: window.__TAURI_INVOKE__ } : {};
+            // 通过 Tauri 命令写入 CF_HDROP
+            if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+              await window.__TAURI__.core.invoke('set_clipboard_files', { paths: item.metadata.filePaths });
+            } else if (window.__TAURI_INVOKE__) {
+              await window.__TAURI_INVOKE__( 'set_clipboard_files', { paths: item.metadata.filePaths });
+            }
+          }
+        } else if (type === 'image') {
+          // 图片：复制 base64 到剪贴板
+          const item = await api('GET', '/api/clipboard/' + id);
+          if (item.contentEncrypted && item.contentEncrypted.startsWith('data:')) {
+            const blob = await (await fetch(item.contentEncrypted)).blob();
+            await navigator.clipboard.write([
+              new ClipboardItem({ 'image/png': blob })
+            ]);
+          }
+        } else {
+          // 文字：解码并写入
+          const item = await api('GET', '/api/clipboard/' + id);
+          let text = '';
+          try { text = decodeURIComponent(escape(atob(item.contentEncrypted))); } catch(e) { text = item.contentPreview || ''; }
+          await navigator.clipboard.writeText(text);
+        }
+        showToast('已复制，可粘贴');
+      } catch (e) {
+        showToast('复制失败: ' + e.message);
+      }
+      hideQuickPaste();
+    }
+
+    // ESC 关闭面板
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && window._quickPasteOpen) { window.hideQuickPaste(); return; }
+      if (window._quickPasteOpen) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); window._qpIndex = Math.min(window._qpIndex + 1, document.querySelectorAll('#quick-paste-list .qp-item').length - 1); window.updateQPActive(); }
+        if (e.key === 'ArrowUp') { e.preventDefault(); window._qpIndex = Math.max(window._qpIndex - 1, 0); window.updateQPActive(); }
+        if (e.key === 'Enter') { e.preventDefault(); const active = document.querySelector('#quick-paste-list .qp-item.active'); if (active) active.click(); }
+      }
+    });
+
+    // 搜索过滤
+    window._qpSearchTimer = null;
+    window.onQuickPasteSearch = function(e) {
+      clearTimeout(window._qpSearchTimer);
+      window._qpSearchTimer = setTimeout(() => window.loadQuickPasteItems(e.target.value), 200);
+    };
+
+    // ====== Onboarding ======
+    (function() {
+      window._obPage = 1;
+      const TOTAL = 4;
+
+      function renderDots() {
+        const dots = document.getElementById('onboarding-dots');
+        if (!dots) return;
+        dots.innerHTML = Array.from({length: TOTAL}, (_, i) =>
+          '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;transition:all 0.2s;' +
+          (i + 1 === window._obPage ? 'background:#667eea;transform:scale(1.3);' : 'background:#ddd;') +
+          '"></span>'
+        ).join('');
+      }
+
+      function renderPage() {
+        for (let i = 1; i <= TOTAL; i++) {
+          const el = document.getElementById('ob-page-' + i);
+          if (el) el.style.display = (i === window._obPage) ? '' : 'none';
+        }
+        const prevBtn = document.getElementById('ob-prev-btn');
+        const nextBtn = document.getElementById('ob-next-btn');
+        const startBtn = document.getElementById('ob-start-btn');
+        if (prevBtn) prevBtn.style.display = window._obPage > 1 ? '' : 'none';
+        if (nextBtn) nextBtn.style.display = window._obPage < TOTAL ? '' : 'none';
+        if (startBtn) startBtn.style.display = window._obPage === TOTAL ? '' : 'none';
+        renderDots();
+      }
+
+      window.obNext = function() {
+        if (window._obPage < TOTAL) { window._obPage++; renderPage(); }
+      };
+      window.obPrev = function() {
+        if (window._obPage > 1) { window._obPage--; renderPage(); }
+      };
+      window.skipOnboarding = function() {
+        localStorage.setItem('onboarding_done', 'true');
+        document.getElementById('onboarding-overlay').style.display = 'none';
+      };
+      window.finishOnboarding = function() {
+        localStorage.setItem('onboarding_done', 'true');
+        document.getElementById('onboarding-overlay').style.display = 'none';
+      };
+
+      // Show onboarding on first launch
+      document.addEventListener('DOMContentLoaded', function() {
+        const done = localStorage.getItem('onboarding_done');
+        if (!done) {
+          document.getElementById('onboarding-overlay').style.display = 'flex';
+          renderPage();
+        }
+      });
+    })();
+
+    // 点击面板外部关闭
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('quick-paste-panel');
+      if (window._quickPasteOpen && panel && !panel.contains(e.target)) window.hideQuickPaste();
+    });
+
+    // ====== 订阅管理 ======
+    async function loadSubscriptionInfo() {
+      if (!state.token) return;
+      try {
+        const data = await api('GET', '/api/subscriptions/current', false); // silent: don't log 500 errors
+        const el = document.getElementById('settings-current-plan');
+        if (el) {
+          if (data && data.plan) {
+            el.textContent = `${data.plan.name} · ¥${data.plan.price}/${data.plan.billingCycle === 'month' ? '月' : '年'}`;
+          } else {
+            el.textContent = '免费版（Free）';
+          }
+        }
+      } catch (e) {
+        const el = document.getElementById('settings-current-plan');
+        if (el) el.textContent = '免费版（Free）';
+      }
+    }
+
+    // Helper: format "unlimited" values for plan display
+    function _fmtUnlimited(val, suffix, isStorage) {
+      if (val === null || val === undefined || val === -1 || val >= 99999) return '不限' + (suffix ? ' ' + suffix : '');
+      return val + (suffix ? ' ' + suffix : '');
+    }
+
+    // Helper: escape HTML to prevent XSS in innerHTML
+    function _escHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function showSubscriptionPlans() {
+      if (!state.token) { showToast('请先登录'); return; }
+      document.getElementById('subscription-modal').style.display = 'flex';
+      const listEl = document.getElementById('plans-list');
+      listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">加载中...</div>';
+      try {
+        const data = await api('GET', '/api/subscriptions/plans');
+        const plans = data.plans || [];
+        if (plans.length === 0) {
+          listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">暂无可用套餐</div>';
+          return;
+        }
+        listEl.innerHTML = plans.map((p, idx) => `
+          <div class="plan-card ${p.price > 0 ? 'plan-featured' : ''}" data-plan-id="${p.id}" data-plan-name="${(p.displayName || p.name || '').replace(/"/g, '&quot;')}" data-plan-price="${p.price || 0}">
+            ${p.price > 0 ? '<div class="plan-badge">推荐</div>' : ''}
+            <div class="plan-name">${_escHtml(p.displayName || p.name)}</div>
+            <div class="plan-price-row">
+              <span class="plan-price">¥${p.price}</span>
+              <span class="plan-period">/${p.billingCycle === 'month' ? '月' : '年'}</span>
+            </div>
+            <div class="plan-specs">
+              <div>📱 ${_fmtUnlimited(p.maxDevices)} 台设备</div>
+              <div>📋 ${_fmtUnlimited(p.maxClipboardItems, '条记录')}</div>
+              <div>💾 ${_fmtUnlimited(p.maxStorageMb, 'MB 存储', true)} </div>
+            </div>
+            <ul class="plan-features">
+              ${Object.entries(p.features || {}).filter(([k,v]) => v === true || typeof v === 'number').map(([k,v]) => {
+                const labels = {ai_classify:'AI智能分类',offline_queue:'离线队列',e2e_encryption:'端到端加密',push_notification:'推送通知',full_text_search:'全文搜索',version_history_days:'版本历史'};
+                return '<li><span style="color:var(--success);font-weight:600;">✓</span> <span>' + (labels[k] || k) + (typeof v === 'number' && v > 0 ? ' (' + v + '天)' : '') + '</span></li>';
+              }).join('')}
+            </ul>
+          </div>
+        `).join('');
+
+        // Event delegation: click on plan card → read data attrs → call selectPlan
+        listEl.querySelectorAll('.plan-card').forEach(card => {
+          card.addEventListener('click', () => selectPlan(
+            card.dataset.planId,
+            card.dataset.planName,
+            Number(card.dataset.planPrice) || 0
+          ));
+        });
+      } catch (e) {
+        listEl.innerHTML = '<div style="text-align:center;padding:40px;color:#e74c3c;">加载失败，请重试</div>';
+      }
+    }
+
+    function closeSubscriptionModal() {
+      document.getElementById('subscription-modal').style.display = 'none';
+    }
+
+    // 支付方式选择
+    window._pendingPlan = null;
+    window.showPaymentMethod = function(planId, planName, price) {
+      window._pendingPlan = { planId, planName, price };
+      document.getElementById('payment-method-modal').style.display = 'flex';
+      document.getElementById('payment-plan-name').textContent = planName;
+      document.getElementById('payment-plan-price').textContent = '¥' + price + '/月';
+    };
+    window.selectPaymentMethod = async function(method) {
+      const p = window._pendingPlan;
+      if (!p) return;
+      document.getElementById('payment-method-modal').style.display = 'none';
+      try {
+        showToast('正在处理订阅...');
+        // 调用 subscribe API（后端当前为 mock 模式，会自动激活）
+        const data = await api('POST', '/api/subscriptions/subscribe', { planId: p.planId, billingCycle: 'monthly' });
+        showToast('✅ 订阅成功：' + p.planName);
+        closeSubscriptionModal();
+        loadSubscriptionInfo();
+      } catch (e) {
+        showToast('订阅失败：' + (e.message || '未知错误'));
+      }
+      window._pendingPlan = null;
+    };
+    window.closePaymentMethodModal = function() {
+      document.getElementById('payment-method-modal').style.display = 'none';
+      window._pendingPlan = null;
+    };
+
+    async function selectPlan(planId, planName, price) {
+      if (price === 0) {
+        showToast('已是免费版');
+        closeSubscriptionModal();
+        return;
+      }
+      // 显示支付方式选择弹窗
+      showPaymentMethod(planId, planName, price);
+    }
+
+    async function showBillingHistory() {
+      if (!state.token) { showToast('请先登录'); return; }
+      document.getElementById('billing-modal').style.display = 'flex';
+      const listEl = document.getElementById('billing-list');
+      listEl.innerHTML = '<div style="text-align:center;padding:32px 20px;color:#999;font-size:14px;">加载中...</div>';
+      try {
+        const data = await api('GET', '/api/invoices');
+        const bills = data.invoices || [];
+        if (bills.length === 0) {
+          listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#999;font-size:14px;">📭 暂无账单记录<br><span style="font-size:12px;color:#bbb;margin-top:4px;display:inline-block;">订阅套餐后这里会显示发票</span></div>';
+        } else {
+          listEl.innerHTML = bills.map(b => {
+            const statusMap = { paid: { label: '已支付', color: '#059669', bg: '#ecfdf5' }, pending: { label: '待支付', color: '#d97706', bg: '#fffbeb' }, cancelled: { label: '已取消', color: '#e74c3c', bg: '#fef2f2' }, issued: { label: '已开票', color: '#6366f1', bg: '#eef2ff' } };
+            const s = statusMap[b.status] || { label: b.status, color: '#666', bg: '#f5f5f5' };
+            return `<div onclick="showInvoiceDetail('${b.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;margin-bottom:8px;border:1px solid #f0f0f0;border-radius:10px;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#f8f9ff'" onmouseout="this.style.background=''">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:14px;font-weight:600;color:#1a1a2e;margin-bottom:4px;">${escapeHtml(b.planName || '未知套餐')}</div>
+                <div style="font-size:12px;color:#999;">${new Date(b.createdAt).toLocaleDateString('zh-CN')} · ${b.invoiceNo || b.orderNo || ''}</div>
+              </div>
+              <div style="text-align:right;margin-right:12px;">
+                <div style="font-size:15px;font-weight:700;color:#1a1a2e;">¥${parseFloat(b.amount).toFixed(2)}</div>
+              </div>
+              <div style="padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;color:${s.color};background:${s.bg};white-space:nowrap;">${s.label}</div>
+            </div>`;
+          }).join('');
+        }
+      } catch (e) {
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;font-size:13px;">加载失败：' + (e.message || '未知错误') + '</div>';
+      }
+    }
+
+    window.showInvoiceDetail = async function(invoiceId) {
+      try {
+        const data = await api('GET', '/api/invoices/' + invoiceId);
+        const inv = data.invoice || data;
+        const statusMap = { paid: '已支付', pending: '待支付', cancelled: '已取消', issued: '已开票' };
+        const detailHtml = `
+          <div style="margin:16px 0;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">发票号</span>
+              <span style="font-size:13px;font-weight:600;">${inv.invoiceNo || '--'}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">订单号</span>
+              <span style="font-size:13px;font-weight:600;">${inv.orderNo || '--'}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">套餐</span>
+              <span style="font-size:13px;font-weight:600;">${escapeHtml(inv.planName || '--')}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">金额</span>
+              <span style="font-size:15px;font-weight:700;color:#1a1a2e;">¥${parseFloat(inv.amount).toFixed(2)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">支付方式</span>
+              <span style="font-size:13px;">${inv.paymentMethod === 'wechat' ? '微信支付' : inv.paymentMethod === 'alipay' ? '支付宝' : inv.paymentMethod || '--'}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">状态</span>
+              <span style="font-size:13px;font-weight:600;color:${inv.status === 'paid' || inv.status === 'issued' ? '#059669' : inv.status === 'pending' ? '#d97706' : '#e74c3c'}">${statusMap[inv.status] || inv.status}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">日期</span>
+              <span style="font-size:13px;">${new Date(inv.createdAt).toLocaleString('zh-CN')}</span>
+            </div>
+          </div>
+          ${inv.invoiceUrl ? `<button class="btn btn-primary btn-block" onclick="window.open('${inv.invoiceUrl}','_blank')" style="margin-top:12px;">下载发票 PDF</button>` : ''}
+        `;
+        // Use a simple alert-like modal for invoice detail (or reuse billing modal)
+        const detailModal = document.getElementById('invoice-detail-modal') || (() => {
+          const d = document.createElement('div');
+          d.id = 'invoice-detail-modal';
+          d.className = 'modal-overlay';
+          d.style.display = 'none';
+          d.innerHTML = '<div class="modal" style="max-width:420px;"><h2>发票详情</h2><div id="invoice-detail-body"></div><button class="btn btn-block" onclick="document.getElementById(\'invoice-detail-modal\').style.display=\'none\'" style="background:#eee;color:#333;margin-top:12px;">关闭</button></div>';
+          document.body.appendChild(d);
+          return d;
+        })();
+        document.getElementById('invoice-detail-body').innerHTML = detailHtml;
+        detailModal.style.display = 'flex';
+      } catch (e) {
+        showToast('加载发票详情失败：' + (e.message || ''));
+      }
+    };
+
+    function closeBillingModal() {
+      document.getElementById('billing-modal').style.display = 'none';
+    }
+
+    // 修改 renderSettings 加载订阅信息
+    const _origRenderSettings = window.renderSettings;
+    window.renderSettings = function() {
+      if (_origRenderSettings) _origRenderSettings();
+      loadSubscriptionInfo();
+    };
+
+    // 支付结果轮询（从浏览器返回时检查）
+    let _paymentCheckTimer = null;
+    window.addEventListener('focus', () => {
+      if (state.token && _paymentCheckTimer === null) {
+        _paymentCheckTimer = setTimeout(async () => {
+          _paymentCheckTimer = null;
+          try {
+            const data = await api('GET', '/api/subscriptions/current');
+            if (data && data.subscription && data.subscription.status === 'active') {
+              showToast('✅ 支付成功！订阅已激活：' + (data.plan?.name || ''));
+              loadSubscriptionInfo();
+            }
+          } catch (e) {}
+        }, 1000);
+      }
+    });
+
+    // ====== 文件上传 ======
+    async function _getUploadHeaders() {
+      const h = state.token ? { 'Authorization': 'Bearer ' + state.token } : {};
+      if (state.token) {
+        if (_cachedCsrfToken && (Date.now() - _csrfFetchTime < CSRF_CACHE_MS)) {
+          h['x-csrf-token'] = _cachedCsrfToken;
+        } else {
+          try {
+            const r = await fetch(API_BASE + '/api/csrf-token', { headers: { 'Authorization': 'Bearer ' + state.token } });
+            const d = await r.json();
+            if (d.csrfToken) { _cachedCsrfToken = d.csrfToken; _csrfFetchTime = Date.now(); h['x-csrf-token'] = d.csrfToken; }
+          } catch(e) {}
+        }
+      }
+      return h;
+    }
+
+    // Retry helper: handles 429 Too Many Requests with exponential backoff
+    async function _fetchWithRetry(url, options, maxRetries = 5) {
+      let lastErr;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const resp = await fetch(url, options);
+        if (resp.ok) return resp;
+
+        if (resp.status === 429 && attempt < maxRetries) {
+          const errBody = await resp.text().catch(() => '');
+          let waitMs = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s, 8s, 16s
+          try { const parsed = JSON.parse(errBody); if (parsed.retryAfter) waitMs = parsed.retryAfter * 1000; } catch(e) {}
+          console.warn('[Upload] 429 rate limited, retry #' + (attempt+1) + ' after ' + Math.round(waitMs/1000) + 's');
+          showToast('⏳ 上传限速中，等待 ' + Math.round(waitMs/1000) + 's...');
+          await new Promise(r => setTimeout(r, waitMs));
+          lastErr = new Error('429');
+          continue;
+        }
+        // Non-429 or final attempt: return as-is (caller will handle)
+        return resp;
+      }
+      throw lastErr || new Error('max retries exceeded');
+    }
+
+    window.uploadFile = async function(input) {
+      const files = input.files;
+      if (!files || files.length === 0) return;
+      for (const file of files) {
+        showToast('正在上传：' + file.name);
+        try {
+          const headers = await _getUploadHeaders();
+          // Use 5MB chunks to reduce request count and avoid 429 rate limiting
+          const _chunkSize = 5 * 1024 * 1024;
+          // Step 1: 初始化上传
+          const initResp = await _fetchWithRetry(API_BASE + '/api/upload/init', {
+            method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: file.name, fileSize: file.size, mimeType: file.type || 'application/octet-stream', totalChunks: Math.ceil(file.size / _chunkSize) })
+          });
+          if (!initResp.ok) throw new Error('init failed');
+          const initData = await initResp.json();
+          const uploadId = initData.uploadId;
+          if (!uploadId) throw new Error('no uploadId');
+
+          // Step 2: 分块上传 (5MB chunks to reduce request count & avoid 429 rate limiting)
+          const chunkSize = 5 * 1024 * 1024;
+          const totalChunks = Math.ceil(file.size / chunkSize);
+          const chunkHeaders = await _getUploadHeaders(); // cache once, reuse for all chunks
+          for (let i = 0; i < totalChunks; i++) {
+            const chunk = file.slice(i * chunkSize, (i + 1) * chunkSize);
+            const form = new FormData();
+            form.append('chunk', chunk, file.name + '.part' + i);
+            const chunkResp = await _fetchWithRetry(
+              API_BASE + '/api/upload/chunk/' + uploadId + '/' + i,
+              { method: 'POST', headers: chunkHeaders, body: form },
+              3 // up to 3 retries per chunk
+            );
+            if (!chunkResp.ok) {
+              const errBody = await chunkResp.text().catch(() => '');
+              console.error('[Upload] chunk', i, 'failed:', chunkResp.status, errBody);
+              throw new Error('chunk ' + i + ' failed (' + chunkResp.status + ')');
+            }
+            showToast('上传中：' + file.name + ' (' + Math.round((i + 1) / totalChunks * 100) + '%)');
+            // Small delay between chunks to avoid hammering server
+            if (i < totalChunks - 1) await new Promise(r => setTimeout(r, 150));
+          }
+
+          // Step 3: 完成上传并获取结果
+          const completeHeaders = await _getUploadHeaders();
+          const completeResp = await fetch(API_BASE + '/api/upload/complete/' + uploadId, {
+            method: 'POST', headers: completeHeaders
+          });
+          if (!completeResp.ok) {
+            const errText = await completeResp.text().catch(() => '');
+            console.error('[Upload] complete failed:', completeResp.status, errText);
+            throw new Error('complete failed (' + completeResp.status + ')');
+          }
+          const result = await completeResp.json();
+          console.log('[Upload] completed:', result);
+          showToast('✅ 上传完成：' + (result.originalName || file.name) + ' → 已保存到剪贴板 (ID: ' + (result.itemId || '?') + ')');
+        } catch(e) {
+          showToast('上传失败：' + file.name + ' (' + (e.message || '') + ')');
+        }
+      }
+      input.value = '';
+      loadClipboardItems();
+    };
+
+    // ====== 通知设置 ======
+    window.showNotifSettings = async function() {
+      document.getElementById('notif-settings-modal').style.display = 'flex';
+      const listEl = document.getElementById('notif-settings-list');
+      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
+      try {
+        const data = await api('GET', '/api/notifications/preferences');
+        const s = data.settings || {};
+        const keys = ['新设备登录','剪贴板同步','订阅到期','安全警告'];
+        listEl.innerHTML = keys.map(k => {
+          const on = s[k] !== false;
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #f0f0f0;">' +
+            '<span style="font-size:13px;color:#333;">' + k + '</span>' +
+            '<label class="toggle"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="toggleNotifSetting(\'' + k + '\',this.checked)"><span class="toggle-slider"></span></label>' +
+          '</div>';
+        }).join('');
+      } catch(e) {
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败</div>';
+      }
+    };
+
+    window.toggleNotifSetting = async function(key, val) {
+      try { await api('PUT', '/api/notifications/preferences', { key, enabled: val }); } catch(e) {}
+    };
+
+    window.closeNotifSettingsModal = function() {
+      document.getElementById('notif-settings-modal').style.display = 'none';
+    };
+
+    // ====== 会话管理 ======
+    window.showSessionManagement = async function() {
+          document.getElementById('session-modal').style.display = 'flex';
+          const listEl = document.getElementById('session-list');
+          listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
+          try {
+            const headers = state.token ? { 'Authorization': 'Bearer ' + state.token } : {};
+            if (state.sessionId) headers['x-session-id'] = state.sessionId;
+            const resp = await fetch(API_BASE + '/api/sessions', { headers });
+            const data = await resp.json();
+            const sessions = (data.data && data.data.sessions) || [];
+            if (sessions.length === 0) {
+              listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无会话</div>';
+            } else {
+              listEl.innerHTML = sessions.map(s => {
+                const isCurrent = s.isCurrent;
+                const time = s.lastActiveAt ? new Date(s.lastActiveAt).toLocaleString() : '';
+                return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;">' +
+                  '<div>' +
+                    '<div style="font-size:13px;font-weight:600;color:#333;">' + (s.deviceName || '未知设备') + (isCurrent ? ' (当前)' : '') + '</div>' +
+                    '<div style="font-size:11px;color:#999;margin-top:2px;">' + (s.ipAddress || '') + ' · ' + time + '</div>' +
+                  '</div>' +
+                  (isCurrent ? '<span style="font-size:12px;color:#999;">当前</span>' : '<button class="btn btn-secondary" style="padding:4px 12px;font-size:12px;color:#e74c3c;border-color:#e74c3c;" onclick="kickSession(\'' + s.id + '\')">踢出</button>') +
+                '</div>';
+              }).join('');
+            }
+          } catch(e) {
+            listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败：' + (e.message || '') + '</div>';
+          }
+        };
+
+    window.kickSession = async function(sessionId) {
+      if (!confirm('确认踢出该会话？')) return;
+      try {
+        await api('DELETE', '/api/sessions/' + sessionId);
+        showToast('✅ 已踢出');
+        showSessionManagement();
+      } catch(e) {
+        showToast('操作失败：' + (e.message || '未知错误'));
+      }
+    };
+
+    window.closeSessionModal = function() {
+      document.getElementById('session-modal').style.display = 'none';
+    };
+
+    // ====== 个人资料编辑 ======
+    window.showProfileModal = async function() {
+        document.getElementById('profile-modal').style.display = 'flex';
+        try {
+          const data = await api('GET', '/api/auth/me');
+          if (data) {
+            state.user = { nickname: data.nickname || '', avatarUrl: data.avatarUrl || '', id: data.id, phone: data.phone, email: data.email, createdAt: data.created_at };
+            localStorage.setItem('cs_user', JSON.stringify(state.user));
+          }
+        } catch(e) {}
+        const u = state.user || {};
+        document.getElementById('profile-username').value = u.nickname || '';
+        const avatarEl = document.getElementById('profile-avatar');
+        const placeholder = document.getElementById('profile-avatar-placeholder');
+        if (avatarEl && u.avatarUrl) { avatarEl.src = u.avatarUrl; avatarEl.style.display = ''; if (placeholder) placeholder.style.display = 'none'; }
+
+        // Populate read-only account info
+        const acctInfoEl = document.getElementById('profile-account-info');
+        if (acctInfoEl) {
+          let html = '';
+          if (u.phone) {
+            html += '<div class="profile-info-row"><div class="profile-info-icon">📱</div><span class="profile-info-label">手机</span><span class="profile-info-value">' + u.phone + '</span></div>';
+          }
+          if (u.email) {
+            html += '<div class="profile-info-row"><div class="profile-info-icon">📧</div><span class="profile-info-label">邮箱</span><span class="profile-info-value">' + u.email + '</span></div>';
+          }
+          if (u.id) {
+            html += '<div class="profile-info-row"><div class="profile-info-icon">🆔</div><span class="profile-info-label">ID</span><span class="profile-info-value" style="font-family:monospace;font-size:12px;">' + u.id.substring(0,8) + '…</span></div>';
+          }
+          if (u.createdAt) {
+            html += '<div class="profile-info-row"><div class="profile-info-icon">🕐</div><span class="profile-info-label">注册</span><span class="profile-info-value">' + new Date(u.createdAt).toLocaleDateString('zh-CN') + '</span></div>';
+          }
+          if (!html) html = '<div style="padding:8px 0;color:var(--text-muted);font-size:13px;">加载中...</div>';
+          acctInfoEl.innerHTML = html;
+        }
+    };
+    window.closeProfileModal = function() {
+      document.getElementById('profile-modal').style.display = 'none';
+    };
+    window.saveProfile = async function() {
+      const nickname = document.getElementById('profile-username').value;
+      const avatarInput = document.getElementById('profile-avatar-input');
+      let avatarUrl = state.user && state.user.avatarUrl || '';
+      if (avatarInput && avatarInput.files && avatarInput.files[0]) {
+        const reader = new FileReader();
+        avatarUrl = await new Promise((resolve) => {
+          reader.onload = (e) => resolve(e.target.result);
+          reader.readAsDataURL(avatarInput.files[0]);
+        });
+      }
+      if (!nickname) { showToast('请输入用户名'); return; }
+      try {
+        await api('PUT', '/api/auth/profile', { nickname, avatarUrl });
+        showToast('✅ 个人资料已更新');
+        if (state.user) { state.user.nickname = nickname; if (avatarUrl) state.user.avatarUrl = avatarUrl; }
+        // 更新左下角显示
+        const sidebarUser = document.getElementById('user-name');
+        if (sidebarUser) sidebarUser.textContent = nickname || state.phone || '';
+        // 更新头像
+        const avatarText = document.getElementById('user-avatar-text');
+        const avatarImg = document.getElementById('user-avatar-img');
+        if (avatarImg && avatarUrl && avatarUrl.startsWith('data:')) {
+          avatarImg.src = avatarUrl;
+          avatarImg.style.display = '';
+          if (avatarText) avatarText.style.display = 'none';
+        } else if (avatarText && nickname) {
+          avatarText.textContent = nickname.charAt(0).toUpperCase();
+        }
+        closeProfileModal();
+      } catch(e) {
+        showToast('更新失败：' + (e.message || '未知错误'));
+      }
+    };
+
+    // ====== GDPR 数据导出 ======
+    window.showGDPRExport = function() {
+      document.getElementById('gdpr-modal').style.display = 'flex';
+    };
+    window.closeGDPRModal = function() {
+      document.getElementById('gdpr-modal').style.display = 'none';
+    };
+    window.exportGDPRData = async function() {
+      const status = document.getElementById('gdpr-status');
+      if (status) status.textContent = '正在导出数据...';
+      try {
+        const data = await api('GET', '/api/auth/export-data');
+        if (data) {
+          const jsonStr = JSON.stringify(data, null, 2);
+          const filename = 'clipsync-gdpr-export-' + new Date().toISOString().slice(0,10) + '.json';
+
+          // Try Tauri save dialog first (desktop), fallback to browser download
+          let savedPath = null;
+          if (window.__TAURI__) {
+            try {
+              const { save } = await import('@tauri-plugins/dialog') || {};
+              const { writeTextFile } = await import('@tauri-plugin-fs') || {};
+              if (save && writeTextFile) {
+                savedPath = await save({ defaultPath: filename, filters: [{ name: 'JSON', extensions: ['json'] }] });
+                await writeTextFile(savedPath, jsonStr);
+              }
+            } catch(e) { console.warn('[Export] Tauri dialog failed, falling back:', e.message); }
+          }
+
+          if (!savedPath) {
+            // Fallback: browser blob download
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            a.click(); URL.revokeObjectURL(url);
+            savedPath = '下载文件夹（' + filename + '）';
+          }
+          if (status) status.innerHTML = '✅ 导出完成！<br><span style="font-size:12px;color:#999;">📁 位置：' + savedPath + '</span>';
+          showToast('✅ 数据已导出：' + filename);
+        }
+      } catch(e) {
+        if (status) status.textContent = '❌ 导出失败：' + (e.message || '未知错误');
+      }
+    };
+
+    // ====== 隐私与安全设置 ======
+    window._securitySettings = JSON.parse(localStorage.getItem('security_settings') || '{"twoFactorAuth":false,"loginAlerts":true,"encryptSync":true}');
+    window.showSecuritySettings = async function() {
+      document.getElementById('security-modal').style.display = 'flex';
+      const listEl = document.getElementById('security-settings-list');
+      const s = window._securitySettings;
+      const items = [
+        { key: 'twoFactorAuth', label: '两步验证（2FA）', desc: '增加登录安全性' },
+        { key: 'loginAlerts', label: '登录提醒', desc: '新设备登录时发送通知' },
+        { key: 'encryptSync', label: '端到端加密同步', desc: '剪贴板内容加密传输' }
+      ];
+      listEl.innerHTML = items.map(item => {
+        const on = s[item.key] !== false;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;">' +
+          '<div><div style="font-size:13px;font-weight:600;color:#333;">' + item.label + '</div><div style="font-size:11px;color:#999;margin-top:2px;">' + item.desc + '</div></div>' +
+          '<label class="toggle"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="toggleSecuritySetting(\'' + item.key + '\',this.checked)"><span class="toggle-slider"></span></label>' +
+        '</div>';
+      }).join('');
+    };
+    window.toggleSecuritySetting = function(key, val) {
+      window._securitySettings[key] = val;
+      localStorage.setItem('security_settings', JSON.stringify(window._securitySettings));
+    };
+    window.closeSecurityModal = function() {
+      document.getElementById('security-modal').style.display = 'none';
+    };
+
+    // ====== 检查更新 ======
+    window.checkForUpdates = async function() {
+      showToast('正在检查更新...');
+      try {
+        const data = await api('GET', '/api/app/version');
+        if (data) {
+          const current = data.version || '0.1.0';
+          const latest = data.latestVersion || current;
+          if (latest !== current) {
+            showToast('有新版本可用：' + latest + '，请访问官网下载');
+            if (confirm('新版本 ' + latest + ' 可用，当前版本 ' + current + '，是否前往更新？')) {
+              window.open('https://clipsync.app/download', '_blank');
+            }
+          } else {
+            showToast('✅ 当前已是最新版本（' + current + '）');
+          }
+        } else {
+          showToast('✅ 当前已是最新版本（0.1.0）');
+        }
+      } catch(e) {
+        // 后端可能未运行版本检查，提示本地版本即可
+        showToast('当前版本 v0.1.0');
+      }
+    };
+
+    // 开机自启动
+    window._tauriInvoke = function(cmd, args) {
+      const fn = window.__TAURI_INVOKE__ ||
+        (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) ||
+        (window.__TAURI__ && window.__TAURI__.invoke);
+      if (!fn) return Promise.reject(new Error('Tauri invoke not available'));
+      return fn(cmd, args || {});
+    };
+    window.toggleAutostart = async function(enabled) {
+      try {
+        if (enabled) {
+          await window._tauriInvoke('enable_autostart');
+          showToast('✅ 已开启开机自启动');
+        } else {
+          await window._tauriInvoke('disable_autostart');
+          showToast('已关闭开机自启动');
+        }
+      } catch(e) {
+        showToast('操作失败：' + (e.message || e));
+        document.getElementById('autostart-toggle').checked = !enabled;
+      }
+    };
+    window.loadAutostartStatus = async function() {
+      try {
+        const enabled = await window._tauriInvoke('is_autostart_enabled');
+        const toggle = document.getElementById('autostart-toggle');
+        if (toggle) toggle.checked = enabled;
+      } catch(e) {
+        // 忽略错误（可能在浏览器环境运行）
+      }
+    };
+
+    // ====== Shortcut Settings (Keyboard Capture - Codex/VS Code style) ======
+
+    var SHORTCUT_DEFINITIONS = [
+      { id: 'quick_paste', name: '快速粘贴', desc: '唤起剪贴板快速粘贴面板', icon: '⌨️', defaultShortcut: 'Ctrl+Shift+V' }
+    ];
+
+    // Editing state per definition
+    window._shortcutState = {};
+
+    // Key code → display name mapping
+    var _keyCodeMap = {
+      // Letters
+      'KeyA':'A','KeyB':'B','KeyC':'C','KeyD':'D','KeyE':'E','KeyF':'F',
+      'KeyG':'G','KeyH':'H','KeyI':'I','KeyJ':'J','KeyK':'K','KeyL':'L',
+      'KeyM':'M','KeyN':'N','KeyO':'O','KeyP':'P','KeyQ':'Q','KeyR':'R',
+      'KeyS':'S','KeyT':'T','KeyU':'U','KeyV':'V','KeyW':'W','KeyX':'X',
+      'KeyY':'Y','KeyZ':'Z',
+      // Digits
+      'Digit0':'0','Digit1':'1','Digit2':'2','Digit3':'3','Digit4':'4',
+      'Digit5':'5','Digit6':'6','Digit7':'7','Digit8':'8','Digit9':'9',
+      // F-keys
+      'F1':'F1','F2':'F2','F3':'F3','F4':'F4','F5':'F5','F6':'F6',
+      'F7':'F7','F8':'F8','F9':'F9','F10':'F10','F11':'F11','F12':'F12',
+      // Special keys
+      'ArrowLeft':'Left','ArrowRight':'Right','ArrowUp':'Up','ArrowDown':'Down',
+      'Enter':'Enter','Space':'Space','Tab':'Tab','Backspace':'Backspace',
+      'Delete':'Delete'
+    };
+
+    function _formatShortcut(s) {
+      if (!s) return '';
+      return s;
+    }
+
+    function _renderShortcutBadge(shortcut) {
+      if (!shortcut) return '<span class="sc-badge sc-badge-empty">未设置</span>';
+      var parts = shortcut.split('+');
+      return parts.map(function(p) {
+        return '<kbd class="sc-kbd">' + p + '</kbd>';
+      }).join('<span class="sc-plus">+</span>');
+    }
+
+    // --- Keyboard Capture Input ---
+
+    function _startCapture(defId) {
+      var state = window._shortcutState[defId];
+      state.editing = true;
+      state.captured = '';
+
+      var row = document.getElementById('sc-row-' + defId);
+      row.querySelector('.sc-row-display').style.display = 'none';
+      row.querySelector('.sc-row-capture').style.display = '';
+
+      var input = document.getElementById('sc-input-' + defId);
+      input.value = '';
+      input.focus();
+      input.placeholder = '按下快捷键组合...';
+    }
+
+    function _endCapture(defId, save) {
+      var state = window._shortcutState[defId];
+      var row = document.getElementById('sc-row-' + defId);
+
+      if (save && state.captured) {
+        state.currentShortcut = state.captured;
+        row.querySelector('.sc-badge-area').innerHTML = _renderShortcutBadge(state.captured);
+      } else if (!save) {
+        // revert display
+        row.querySelector('.sc-badge-area').innerHTML = _renderShortcutBadge(state.currentShortcut);
+      }
+
+      state.editing = false;
+      state.captured = '';
+      row.querySelector('.sc-row-display').style.display = '';
+      row.querySelector('.sc-row-capture').style.display = 'none';
+      row.querySelector('.sc-capture-error').textContent = '';
+    }
+
+    function _onCaptureKeyDown(e, defId) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      var state = window._shortcutState[defId];
+      var input = document.getElementById('sc-input-' + defId);
+      var errEl = document.querySelector('#sc-row-' + defId + ' .sc-capture-error');
+
+      // Esc → cancel
+      if (e.key === 'Escape') { _endCapture(defId, false); return; }
+      // Enter → confirm
+      if (e.key === 'Enter' && state.captured) { _endCapture(defId, true); return; }
+
+      // Build combo from modifier flags + main key
+      var mods = [];
+      if (e.ctrlKey || e.metaKey) mods.push('Ctrl');
+      if (e.shiftKey) mods.push('Shift');
+      if (e.altKey) mods.push('Alt');
+
+      var mainKey = null;
+      if (_keyCodeMap[e.code]) mainKey = _keyCodeMap[e.code];
+
+      // Must have at least 1 modifier + 1 main key
+      if (!mainKey || mods.length === 0) {
+        errEl.textContent = '请按 修饰键(Ctrl/Shift/Alt) + 按键';
+        return;
+      }
+
+      var combo = mods.concat([mainKey]).join('+');
+      state.captured = combo;
+      input.value = combo;
+      errEl.textContent = '';
+
+      // Auto-confirm after short delay (like VS Code)
+      clearTimeout(state._autoConfirmTimer);
+      state._autoConfirmTimer = setTimeout(function() {
+        if (state.editing && state.captured === combo) {
+          _endCapture(defId, true);
+        }
+      }, 800);
+    }
+
+    window._showShortcutSettings = async function() {
+      document.getElementById('shortcut-modal').style.display = 'flex';
+      var listEl = document.getElementById('shortcut-list-body');
+      listEl.innerHTML = '';
+
+      try {
+        var cfg = await window._tauriInvoke('get_config');
+        var globalShortcut = (cfg && cfg.quick_paste_shortcut) || 'Ctrl+Shift+V';
+      } catch(e) {
+        var globalShortcut = 'Ctrl+Shift+V';
+      }
+
+      SHORTCUT_DEFINITIONS.forEach(function(def) {
+        var saved = def.id === 'quick_paste' ? globalShortcut : def.defaultShortcut;
+
+        window._shortcutState[def.id] = {
+          currentShortcut: saved,
+          captured: '',
+          editing: false,
+          _autoConfirmTimer: null
+        };
+
+        var row = document.createElement('div');
+        row.className = 'sc-row';
+        row.id = 'sc-row-' + def.id;
+
+        // Display mode (normal)
+        var displayDiv = document.createElement('div');
+        displayDiv.className = 'sc-row-display';
+        displayDiv.innerHTML =
+          '<div class="sc-row-info">' +
+            '<span class="sc-row-icon">' + def.icon + '</span>' +
+            '<div class="sc-row-text">' +
+              '<div class="sc-row-name">' + def.name + '</div>' +
+              '<div class="sc-row-desc">' + def.desc + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="sc-badge-area" onclick="_startCapture(\'' + def.id + '\')">' +
+            _renderShortcutBadge(saved) +
+          '</div>';
+
+        // Capture mode (editing)
+        var captureDiv = document.createElement('div');
+        captureDiv.className = 'sc-row-capture';
+        captureDiv.style.display = 'none';
+        captureDiv.innerHTML =
+          '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px 12px 48px;border-top:1px solid var(--border-light);">' +
+            '<input id="sc-input-' + def.id + '" class="sc-capture-input" type="text" readonly placeholder="按下快捷键组合..." autocomplete="off" spellcheck="false" />' +
+            '<button class="btn" onclick="_endCapture(\'' + def.id + '\',false)" style="padding:6px 14px;font-size:13px;background:var(--bg);color:var(--text-muted);border:1px solid var(--border);">Cancel</button>' +
+          '</div>' +
+          '<div class="sc-capture-error" style="font-size:12px;color:var(--danger);padding:0 16px 10px 48px;"></div>';
+
+        row.appendChild(displayDiv);
+        row.appendChild(captureDiv);
+
+        // Bind keydown on the input
+        var bindInput = function() {
+          var inp = document.getElementById('sc-input-' + def.id);
+          if (inp) {
+            inp.addEventListener('keydown', function(e) { _onCaptureKeyDown(e, def.id); });
+          }
+        };
+        setTimeout(bindInput, 0);
+
+        listEl.appendChild(row);
+      });
+    };
+    window.showShortcutSettings = window._showShortcutSettings;
+    window.closeShortcutModal = function() {
+      document.getElementById('shortcut-modal').style.display = 'none';
+      // Cancel any active captures
+      SHORTCUT_DEFINITIONS.forEach(function(def) {
+        var state = window._shortcutState[def.id];
+        if (state && state.editing) _endCapture(def.id, false);
+      });
+    };
+    window.saveShortcut = async function() {
+      var errors = [];
+      for (var si = 0; si < SHORTCUT_DEFINITIONS.length; si++) {
+        var def = SHORTCUT_DEFINITIONS[si];
+        var state = window._shortcutState[def.id];
+        var s = state.currentShortcut;
+        if (!s) { errors.push(def.name + ': 请设置快捷键'); return; }
+        try {
+          if (def.id === 'quick_paste') {
+            await window._tauriInvoke('register_shortcut', { shortcut: s });
+          }
+        } catch(e) { errors.push(def.name + ': ' + (e.message || e)); }
+      }
+      if (errors.length > 0) { showToast(errors.join('\n')); return; }
+
+      var qpState = window._shortcutState['quick_paste'];
+      showToast('快捷键已更新：' + qpState.currentShortcut);
+      var desc = document.getElementById('shortcut-desc');
+      if (desc) desc.textContent = 'Quick Paste: ' + qpState.currentShortcut;
+      closeShortcutModal();
+    };
+  </script>
+
+    <!-- 快速粘贴面板 (Ctrl+Shift+V) -->
+    <div id="quick-paste-panel">
+      <div class="qp-card">
+        <div class="qp-search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="quick-paste-search" type="text" placeholder="搜索剪贴板记录..." oninput="onQuickPasteSearch(event)">
+        </div>
+        <div class="qp-list" id="quick-paste-list"></div>
+        <div class="qp-footer">
+          <span><kbd>↑↓</kbd> 导航</span>
+          <span><kbd>Enter</kbd> 选择</span>
+          <span><kbd>Esc</kbd> 关闭</span>
+        </div>
+      </div>
+    </div>
+    <!-- Subscription Plans Modal -->
+  <div class="modal-overlay" id="subscription-modal" style="display:none;">
+    <div class="modal subscription-modal">
+      <h2>选择套餐</h2>
+      <p>选择适合你的订阅方案</p>
+      <div id="plans-list" style="display:flex;flex-direction:row;gap:20px;margin:24px 0;flex-wrap:nowrap;justify-content:center;align-items:stretch;"></div>
+      <button class="btn btn-block" onclick="closeSubscriptionModal()" style="background:#eee;color:#333;">关闭</button>
+    </div>
+  </div>
+
+  <!-- Payment Method Selection Modal -->
+  <div class="modal-overlay" id="payment-method-modal" style="display:none;">
+    <div class="modal" style="max-width:420px;">
+      <h2>选择支付方式</h2>
+      <p id="payment-plan-name" style="font-weight:600;font-size:15px;color:var(--primary);"></p>
+      <p id="payment-plan-price" style="font-size:13px;color:var(--text-muted);margin-bottom:16px;"></p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+        <button class="btn btn-primary btn-block" onclick="selectPaymentMethod('wechat')" style="display:flex;align-items:center;justify-content:center;gap:8px;">
+          <span style="font-size:18px;">💬</span> 微信支付
+        </button>
+        <button class="btn btn-block" onclick="selectPaymentMethod('alipay')" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#e8f4fd;color:#1677ff;border-color:#1677ff;">
+          <span style="font-size:18px;">💰</span> 支付宝
+        </button>
+      </div>
+      <button class="btn btn-block" onclick="closePaymentMethodModal()" style="background:#eee;color:#333;">取消</button>
+    </div>
+  </div>
+
+    <!-- Shortcut Settings Modal -->
+    <div class="modal-overlay" id="shortcut-modal" style="display:none;">
+      <div class="modal" style="max-width:480px;padding:0;overflow:hidden;">
+        <div style="padding:24px 24px 16px;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <h2 style="margin:0;font-size:18px;font-weight:700;">⌨️ 键盘快捷键</h2>
+              <p style="margin:4px 0 0;font-size:13px;color:var(--text-muted);">点击快捷键即可重新绑定</p>
+            </div>
+            <button onclick="closeShortcutModal()" style="background:none;border:none;font-size:20px;color:var(--text-muted);cursor:pointer;padding:4px;line-height:1;">✕</button>
+          </div>
+        </div>
+
+        <div id="shortcut-list-body" style="max-height:420px;overflow-y:auto;">
+          <!-- rows rendered by JS -->
+        </div>
+
+        <div style="padding:14px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
+          <button class="btn btn-primary" onclick="saveShortcut()" style="padding:8px 24px;">保存更改</button>
+        </div>
+      </div>
+    </div>
+
+  <style>
+    /* ===== Shortcut Settings - Codex/VS Code Style ===== */
+    .sc-row { border-bottom:1px solid var(--border-light); }
+    .sc-row:last-child { border-bottom:none; }
+
+    /* Row layout: info | badge */
+    .sc-row-display {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:16px 20px; cursor:pointer; transition:background 0.12s;
+    }
+    .sc-row-display:hover { background:var(--bg); }
+    .sc-row-info { display:flex; align-items:center; gap:14px; min-width:0; flex:1; }
+    .sc-row-icon { font-size:22px; flex-shrink:0; line-height:1; }
+    .sc-row-text { min-width:0; }
+    .sc-row-name { font-size:14px; font-weight:600; color:var(--text); letter-spacing:-0.2px; }
+    .sc-row-desc { font-size:12px; color:var(--text-muted); margin-top:2px; }
+    .sc-badge-area {
+      cursor:pointer; padding:4px 8px; border-radius:6px;
+      transition:all 0.12s; display:flex; align-items:center;
+    }
+    .sc-badge-area:hover { background:#f0edff; }
+
+    /* Kbd-style badges (like Codex/VS Code) */
+    .sc-kbd {
+      display:inline-block; padding:2px 7px; border-radius:4px;
+      background:var(--bg); color:var(--text-secondary);
+      font-size:11px; font-weight:600; font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+      border:1px solid var(--border); line-height:1.7; user-select:none;-webkit-user-select:none;
+      box-shadow:0 1px 0 var(--border);
+    }
+    .sc-plus { color:var(--text-muted); margin:0 2px; font-size:10px; }
+    .sc-badge-empty { color:var(--text-muted); font-size:12px; font-style:italic; }
+
+    /* Capture input (editing mode) */
+    .sc-capture-input {
+      flex:1; min-width:0; padding:8px 12px; border:1.5px solid var(--primary);
+      border-radius:6px; font-size:13px; font-family:'SF Mono',SFMono-Regular,Consolas,monospace;
+      font-weight:600; color:var(--primary-dark); outline:none;
+      background:var(--primary-light); text-align:center; letter-spacing:0.5px;
+      caret-color:var(--primary); animation:capturePulse 1.5s ease-in-out infinite;
+    }
+    @keyframes capturePulse {
+      0%,100% { box-shadow:0 0 0 3px rgba(99,102,241,0); }
+      50% { box-shadow:0 0 0 3px rgba(99,102,241,0.15); }
+    }
+    .sc-capture-input:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(99,102,241,0.15); }
+
+    #shortcut-list-body::-webkit-scrollbar { width:5px; }
+    #shortcut-list-body::-webkit-scrollbar-thumb { background:#ccc;border-radius:3px; }
+  </style>
+
+  <!-- Billing History Modal -->
+  <div class="modal-overlay" id="billing-modal" style="display:none;">
+    <div class="modal" style="max-width:640px;">
+      <h2>账单记录</h2>
+      <p>历史订单和发票</p>
+      <div id="billing-list" style="max-height:440px;overflow-y:auto;margin:16px 0;"></div>
+      <button class="btn btn-block" onclick="closeBillingModal()" style="background:#eee;color:#333;">关闭</button>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast-container" style="position:fixed;top:20px;right:20px;z-index:10000;"></div>
+
+
+  <!-- Version History Modal -->
+  <div class="modal-overlay" id="version-modal" style="display:none;">
+    <div class="modal" style="max-width:580px;">
+      <h2>📜 版本历史</h2>
+      <p>选择版本进行恢复</p>
+      <div id="version-list" style="max-height:420px;overflow-y:auto;margin:16px 0;"></div>
+      <button class="btn btn-block" onclick="closeVersionModal()" style="background:#eee;color:#333;">关闭</button>
+    </div>
+  </div>
+
+
+  <!-- Notification Settings Modal -->
+  <div class="modal-overlay" id="notif-settings-modal" style="display:none;">
+    <div class="modal" style="max-width:520px;">
+      <h2>🔔 通知偏好设置</h2>
+      <p>选择接收哪些通知</p>
+      <div id="notif-settings-list" style="margin:16px 0;"></div>
+      <button class="btn btn-block" onclick="closeNotifSettingsModal()" style="background:#eee;color:#333;">关闭</button>
+    </div>
+  </div>
+
+  <!-- Session Management Modal -->
+  <div class="modal-overlay" id="session-modal" style="display:none;">
+    <div class="modal" style="max-width:560px;">
+      <h2>🔒 会话管理</h2>
+      <p>管理当前登录的会话，可踢出其他设备</p>
+      <div id="session-list" style="max-height:400px;overflow-y:auto;margin:16px 0;"></div>
+      <button class="btn btn-block" onclick="closeSessionModal()" style="background:#eee;color:#333;">关闭</button>
+    </div>
+  </div>
+
+  <!-- Profile Edit Modal -->
+  <div class="modal-overlay" id="profile-modal" style="display:none;">
+    <div class="modal profile-modal">
+      <h2>👤 个人资料</h2>
+      <p>编辑你的个人信息</p>
+
+      <!-- Header with avatar -->
+      <div class="profile-header">
+        <div class="profile-avatar-wrap">
+          <img id="profile-avatar" src="" onerror="this.style.display='none'" onload="this.style.display=''">
+          <span id="profile-avatar-placeholder" class="avatar-placeholder">👤</span>
+        </div>
+        <div class="profile-avatar-info">
+          <label for="profile-avatar-input">📷 更换头像</label>
+          <input type="file" id="profile-avatar-input" accept="image/*" style="display:none;" onchange="const p=document.getElementById('profile-avatar-placeholder');if(p){p.textContent='✅';p.style.fontSize='20px';}document.getElementById('profile-avatar').src=URL.createObjectURL(this.files[0]);document.getElementById('profile-avatar').style.display='';if(p)p.style.display='none';">
+          <div class="avatar-hint">支持 JPG / PNG，建议 200×200</div>
+        </div>
+      </div>
+
+      <!-- Body content -->
+      <div class="profile-body">
+
+        <!-- Read-only account info -->
+        <div class="profile-section-title">账户信息</div>
+        <div class="profile-info-card">
+          <div id="profile-account-info">
+            <!-- Filled dynamically -->
+          </div>
+        </div>
+
+        <!-- Editable fields -->
+        <div class="profile-section-title">编辑资料</div>
+        <div class="profile-form-group">
+          <label>用户名 <span>(昵称/显示名)</span></label>
+          <input type="text" id="profile-username" placeholder="请输入用户名" maxlength="50">
+        </div>
+
+        <div class="profile-actions">
+          <button class="btn btn-primary" onclick="saveProfile()" style="flex:1;padding:10px;border-radius:10px;font-size:14px;">💾 保存</button>
+          <button class="btn btn-secondary" onclick="closeProfileModal()" style="flex:1;padding:10px;border-radius:10px;font-size:14px;">取消</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- GDPR Export Modal -->
+  <div class="modal-overlay" id="gdpr-modal" style="display:none;">
+    <div class="modal" style="max-width:520px;">
+      <h2>📥 数据导出</h2>
+      <p>导出你的个人数据（GDPR合规）</p>
+      <div style="margin:16px 0;text-align:center;padding:20px;background:#f8f9ff;border-radius:12px;">
+        <div style="font-size:48px;margin-bottom:12px;">📦</div>
+        <div style="font-size:14px;color:#333;margin-bottom:8px;">导出你的所有剪贴板数据、设备信息和账户设置</div>
+        <button class="btn btn-primary btn-block" onclick="exportGDPRData()" style="margin-top:12px;">开始导出</button>
+        <div id="gdpr-status" style="font-size:13px;color:#666;margin-top:8px;"></div>
+      </div>
+      <button class="btn btn-block" onclick="closeGDPRModal()" style="background:#eee;color:#333;">关闭</button>
+    </div>
+  </div>
+
+
+  <!-- Security Settings Modal -->
+  <div class="modal-overlay" id="security-modal" style="display:none;">
+    <div class="modal" style="max-width:520px;">
+      <h2>🔐 隐私与安全</h2>
+      <p>管理安全相关设置</p>
+      <div id="security-settings-list" style="margin:16px 0;"></div>
+      <button class="btn btn-block" onclick="closeSecurityModal()" style="background:#eee;color:#333;">关闭</button>
+    </div>
+  </div>
+
+  <!-- Image hover preview tooltip -->
+  <div class="img-hover-preview" id="img-hover-preview"><img id="img-hover-preview-img"></div>
+
+</body>
+</html>
