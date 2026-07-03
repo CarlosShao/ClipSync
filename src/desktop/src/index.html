@@ -3270,8 +3270,10 @@ function startBrowserClipboardPoll() {
                 const hash = imgHash(b64);
                 if (hash !== lastImageHash) {
                   lastImageHash = hash; lastText = ''; lastFileKey = ''; state.currentClipboard = '';
-                  console.log('[Clipboard] detected image, size=', blob.size);
-                  uploadImageClipboard(b64, blob.type, blob.size); return;
+                  console.log('[Clipboard] detected NEW image, size=', blob.size);
+                  await uploadImageClipboard(b64, blob.type, blob.size); return;
+                } else {
+                  console.log('[Clipboard] skip duplicate image, checking text...');
                 }
               }
               break;
@@ -3291,11 +3293,15 @@ function startBrowserClipboardPoll() {
         }
       } catch (_) {}
       const text = await navigator.clipboard.readText();
+      console.log('[Clipboard] text check: len=' + (text ? text.length : 0) + ' lastText=' + (lastText ? lastText.length : 0) + ' curClip=' + (state.currentClipboard ? state.currentClipboard.length : 0));
       if (text && text !== lastText && text !== state.currentClipboard && !text.startsWith('file://')) {
         lastText = text; state.currentClipboard = text; lastImageHash = ''; lastFileKey = '';
-        uploadClipboard(text, state.deviceId);
+        console.log('[Clipboard] detected NEW text, len=' + text.length + ', preview=' + text.substring(0, 50));
+        await uploadClipboard(text);
+      } else if (!text) {
+        console.log('[Clipboard] readText returned empty');
       }
-    } catch (_) {}
+    } catch (_) { console.log('[Clipboard] read/readText error (expected in Tauri WebView)'); }
   }
   setInterval(pollClipboard, 1000);
   pollClipboard();
