@@ -2354,7 +2354,7 @@
       document.getElementById('page-title').textContent = titles[page] || page;
       if (page === 'clipboard') renderClipboardItems();
       else if (page === 'devices') renderDevices();
-      else if (page === 'settings') renderSettings();
+      else if (page === 'settings') { renderSettings(); setTimeout(() => { if(window.loadAutostartStatus) window.loadAutostartStatus(); }, 100); }
     }
 
     // ====== Settings ======
@@ -2470,6 +2470,21 @@
                 </div>
               </div>
               <span class="settings-arrow">导出 ›</span>
+            </div>
+          </div>
+
+          <!-- System -->
+          <div class="settings-group">
+            <div class="settings-group-title">系统</div>
+            <div class="settings-item">
+              <div class="settings-item-left">
+                <svg class="settings-item-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M18 10h-4V6M14 10l7-7M6 14H2v4M6 14l-7 7"/><circle cx="12" cy="12" r="3"/></svg>
+                <div>
+                  <div class="settings-item-label">开机自启动</div>
+                  <div class="settings-item-desc">系统启动时自动运行 ClipSync</div>
+                </div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="autostart-toggle" onchange="toggleAutostart(this.checked)"><span class="toggle-slider"></span></label>
             </div>
           </div>
 
@@ -3332,6 +3347,37 @@
       }
     };
 
+    // 开机自启动
+    window._tauriInvoke = function(cmd, args) {
+      const fn = window.__TAURI_INVOKE__ ||
+        (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) ||
+        (window.__TAURI__ && window.__TAURI__.invoke);
+      if (!fn) return Promise.reject(new Error('Tauri invoke not available'));
+      return fn(cmd, args || {});
+    };
+    window.toggleAutostart = async function(enabled) {
+      try {
+        if (enabled) {
+          await window._tauriInvoke('enable_autostart');
+          showToast('✅ 已开启开机自启动');
+        } else {
+          await window._tauriInvoke('disable_autostart');
+          showToast('已关闭开机自启动');
+        }
+      } catch(e) {
+        showToast('操作失败：' + (e.message || e));
+        document.getElementById('autostart-toggle').checked = !enabled;
+      }
+    };
+    window.loadAutostartStatus = async function() {
+      try {
+        const enabled = await window._tauriInvoke('is_autostart_enabled');
+        const toggle = document.getElementById('autostart-toggle');
+        if (toggle) toggle.checked = enabled;
+      } catch(e) {
+        // 忽略错误（可能在浏览器环境运行）
+      }
+    };
   </script>
 
     <!-- 快速粘贴面板 (Ctrl+Shift+V) -->
