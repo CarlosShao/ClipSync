@@ -894,16 +894,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 /* ============================================================
    CONTROL BAR (outside app shell)
    ============================================================ */
-.control-bar {
-  position: sticky; top: 0; z-index: 500;
-  background: rgba(255,255,255,.88); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border-default); padding: 10px 24px;
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  border-radius: 0;
-}
-[data-style*="dark"] .control-bar, [data-style="linear"] .control-bar, [data-style="raycast"] .control-bar {
-  background: rgba(10,10,10,.88);
-}
+
 .cb-label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
 .cb-seg { display: flex; gap: 3px; background: var(--bg-hover); padding: 3px; border-radius: var(--radius-md); }
 .cb-btn {
@@ -1142,30 +1133,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 <body>
 
 <!-- ============== CONTROL BAR ============== -->
-<div class="control-bar" id="ctrlBar">
-  <span class="cb-label">Style</span>
-  <div class="cb-seg" id="styleSeg">
-    <button class="cb-btn star active" data-s="vercel">Vercel</button>
-    <button class="cb-btn" data-s="clipsync">ClipSync</button>
-    <button class="cb-btn" data-s="notion">Notion</button>
-    <button class="cb-btn" data-s="linear">Linear</button>
-    <button class="cb-btn" data-s="apple">Apple HIG</button>
-    <button class="cb-btn" data-s="raycast">Raycast</button>
-    <button class="cb-btn" data-s="arc">Arc</button>
-  </div>
 
-  <span class="cb-label">Mode</span>
-  <div class="cb-seg" id="modeSeg">
-    <button class="cb-btn active" data-m="light">☀ Light</button>
-    <button class="cb-btn" data-m="dark">◐ Dark</button>
-  </div>
-
-  <div class="cb-navs" id="pageNav">
-    <button class="cb-page-btn active" data-p="login">Login</button>
-    <button class="cb-page-btn" data-p="app">App</button>
-    <button class="cb-page-btn" onclick="showQuickPaste()">Quick Paste</button>
-  </div>
-</div>
 
 <div class="demo-wrap">
 
@@ -1997,6 +1965,18 @@ async function doLogin() {
     loadClipboardItems();
     loadDevices();
     connectWebSocket();
+
+// Global hotkey: Quick Paste (will be overridden by Tauri shortcut)
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'KeyV') {
+    e.preventDefault();
+    toggleQuickPaste();
+  }
+  if (e.key === 'Escape') {
+    const qp = document.getElementById('qpOverlay');
+    if (qp && qp.style.display === 'flex') { toggleQuickPaste(false); }
+  }
+});
     showToast('登录成功', 'success');
   } catch (e) { showToast('登录失败：' + e.message, 'error'); }
 }
@@ -2725,6 +2705,194 @@ async function requestDataExport() {
   }
 }
 
+async function attachClipboardListener() {
+      // Guard: prevent multiple attachments
+      if (state._listenerAttached) return;
+      state._listenerAttached = true;
+
+      // Check ALL possible invoke sources:
+      // 1) Tauri 2.x: window.__TAURI__.core.invoke
+      // 2) Tauri 1.x: window.__TAURI__.invoke
+      // 3) CDN import: window.__TAURI_INVOKE__ (for external devUrl)
+      const tauri = window.__TAURI__;
+      let hasInvoke = !!(
+        (tauri && tauri.core && typeof tauri.core.invoke === 'function') ||
+        (tauri && typeof tauri.invoke === 'function') ||
+        window.__TAURI_INVOKE__
+      );
+
+      // If running inside Tauri (__TAURI_INTERNALS__ exists) but invoke isn't ready yet,
+      // the CDN module may still be loading — poll for it up to 3s
+      if (!hasInvoke && window.__TAURI_INTERNALS__) {
+        console.log('[Clipboard] ⏳ Inside Tauri but invoke not ready yet, waiting for CDN module...');
+        for (let i = 0; i < 15 && !hasInvoke; i++) {
+          await new Promise(r => setTimeout(r, 200));
+          hasInvoke = !!(
+            (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') ||
+            (window.__TAURI__ && typeof window.__TAURI__.invoke === 'function') ||
+            window.__TAURI_INVOKE__
+          );
+        }
+        console.log('[Clipboard] After wait:', hasInvoke ? '✅ invoke found!' : '❌ still no invoke');
+      }
+
+      if (hasInvoke) {
+        // ✅ Tauri mode: use invoke-based polling (reliable, no event issues)
+        console.log('[Clipboard] ✅ Tauri detected — using invoke-based polling (500ms)');
+        startTauriClipboardPoll();
+      } else {
+        // ❌ Browser mode: use Clipboard API (limited — cannot detect file copies from Explorer)
+        console.log('[Clipboard] ⚠️ Browser mode — Clipboard API only (no native file detection)');
+        console.log('[Clipboard] → Files copied in Explorer will NOT be auto-detected in browser mode');
+        console.log('[Clipboard] → Use Tauri app window for full file detection');
+        startBrowserClipboardPoll();
+      }
+    }
+
+async function uploadImageClipboard(dataUrl, mimeType, fileSize) {
+      if (!state.deviceId) {
+        state.deviceId = localStorage.getItem('cs_device_id');
+      }
+      if (!state.deviceId || !deviceReady) {
+        console.warn('[UploadImage] SKIPPED: deviceId=', state.deviceId);
+        return;
+      }
+      console.log('[UploadImage] START', { mimeType, size: fileSize, deviceId: state.deviceId.substring(0, 12) });
+      try {
+        await api('POST', '/api/clipboard', {
+          sourceDeviceId: state.deviceId,
+          contentType: 'image',
+          contentEncrypted: dataUrl, // Base64 data URL or raw b64
+          contentPreview: '[图片] ' + mimeType + ' (' + (fileSize / 1024).toFixed(1) + 'KB)',
+          contentSize: fileSize,
+        });
+        console.log('[UploadImage] SUCCESS');
+        loadClipboardItems();
+        showToast('图片已同步');
+      } catch (e) {
+        console.error('[UploadImage] FAILED:', e.message);
+        showToast('图片同步失败：' + e.message);
+      }
+    }
+
+async function uploadFileBlobFromPaste(dataUrl, fileName, mimeType, fileSize) {
+      if (!state.deviceId) {
+        state.deviceId = localStorage.getItem('cs_device_id');
+      }
+      if (!state.deviceId || !deviceReady) {
+        console.warn('[UploadPaste] SKIPPED: no deviceId');
+        return;
+      }
+      const sizeKB = (fileSize / 1024).toFixed(1);
+      console.log('[UploadPaste] START', { fileName, mimeType, size: sizeKB + 'KB' });
+      try {
+        await api('POST', '/api/clipboard', {
+          sourceDeviceId: state.deviceId,
+          contentType: mimeType.startsWith('image/') ? 'image' : 'file',
+          contentEncrypted: dataUrl,
+          contentPreview: (mimeType.startsWith('image/') ? '[图片粘贴] ' : '[文件粘贴] ') + fileName + ' (' + sizeKB + 'KB)',
+          contentSize: fileSize,
+          metadata: { fileName, mimeType, source: 'paste' },
+        });
+        console.log('[UploadPaste] SUCCESS');
+        loadClipboardItems();
+        showToast((mimeType.startsWith('image/') ? '图片' : '文件') + '已同步');
+      } catch (e) {
+        console.error('[UploadPaste] FAILED:', e.message);
+      }
+    }
+
+async function showSubscriptionPlans() {
+      if (!state.token) { showToast('请先登录'); return; }
+      document.getElementById('subscription-modal').style.display = 'flex';
+      const listEl = document.getElementById('plans-list');
+      listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">加载中...</div>';
+      try {
+        const data = await api('GET', '/api/subscriptions/plans');
+        const plans = data.plans || [];
+        if (plans.length === 0) {
+          listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">暂无可用套餐</div>';
+          return;
+        }
+        listEl.innerHTML = plans.map((p, idx) => `
+          <div class="plan-card ${p.price > 0 ? 'plan-featured' : ''}" data-plan-id="${p.id}" data-plan-name="${(p.displayName || p.name || '').replace(/"/g, '&quot;')}" data-plan-price="${p.price || 0}">
+            ${p.price > 0 ? '<div class="plan-badge">推荐</div>' : ''}
+            <div class="plan-name">${_escHtml(p.displayName || p.name)}</div>
+            <div class="plan-price-row">
+              <span class="plan-price">¥${p.price}</span>
+              <span class="plan-period">/${p.billingCycle === 'month' ? '月' : '年'}</span>
+            </div>
+            <div class="plan-specs">
+              <div>📱 ${_fmtUnlimited(p.maxDevices)} 台设备</div>
+              <div>📋 ${_fmtUnlimited(p.maxClipboardItems, '条记录')}</div>
+              <div>💾 ${_fmtUnlimited(p.maxStorageMb, 'MB 存储', true)} </div>
+            </div>
+            <ul class="plan-features">
+              ${Object.entries(p.features || {}).filter(([k,v]) => v === true || typeof v === 'number').map(([k,v]) => {
+                const labels = {ai_classify:'AI智能分类',offline_queue:'离线队列',e2e_encryption:'端到端加密',push_notification:'推送通知',full_text_search:'全文搜索',version_history_days:'版本历史'};
+                return '<li><span style="color:var(--success);font-weight:600;">✓</span> <span>' + (labels[k] || k) + (typeof v === 'number' && v > 0 ? ' (' + v + '天)' : '') + '</span></li>';
+              }).join('')}
+            </ul>
+          </div>
+        `).join('');
+
+        // Event delegation: click on plan card → read data attrs → call selectPlan
+        listEl.querySelectorAll('.plan-card').forEach(card => {
+          card.addEventListener('click', () => selectPlan(
+            card.dataset.planId,
+            card.dataset.planName,
+            Number(card.dataset.planPrice) || 0
+          ));
+        });
+      } catch (e) {
+        listEl.innerHTML = '<div style="text-align:center;padding:40px;color:#e74c3c;">加载失败，请重试</div>';
+      }
+    }
+
+async function showBillingHistory() {
+      if (!state.token) { showToast('请先登录'); return; }
+      document.getElementById('billing-modal').style.display = 'flex';
+      const listEl = document.getElementById('billing-list');
+      listEl.innerHTML = '<div style="text-align:center;padding:32px 20px;color:#999;font-size:14px;">加载中...</div>';
+      try {
+        const data = await api('GET', '/api/invoices');
+        const bills = data.invoices || [];
+        if (bills.length === 0) {
+          listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#999;font-size:14px;">📭 暂无账单记录<br><span style="font-size:12px;color:#bbb;margin-top:4px;display:inline-block;">订阅套餐后这里会显示发票</span></div>';
+        } else {
+          listEl.innerHTML = bills.map(b => {
+            const statusMap = { paid: { label: '已支付', color: '#059669', bg: '#ecfdf5' }, pending: { label: '待支付', color: '#d97706', bg: '#fffbeb' }, cancelled: { label: '已取消', color: '#e74c3c', bg: '#fef2f2' }, issued: { label: '已开票', color: '#6366f1', bg: '#eef2ff' } };
+            const s = statusMap[b.status] || { label: b.status, color: '#666', bg: '#f5f5f5' };
+            return `<div onclick="showInvoiceDetail('${b.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;margin-bottom:8px;border:1px solid #f0f0f0;border-radius:10px;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#f8f9ff'" onmouseout="this.style.background=''">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:14px;font-weight:600;color:#1a1a2e;margin-bottom:4px;">${escapeHtml(b.planName || '未知套餐')}</div>
+                <div style="font-size:12px;color:#999;">${new Date(b.createdAt).toLocaleDateString('zh-CN')} · ${b.invoiceNo || b.orderNo || ''}</div>
+              </div>
+              <div style="text-align:right;margin-right:12px;">
+                <div style="font-size:15px;font-weight:700;color:#1a1a2e;">¥${parseFloat(b.amount).toFixed(2)}</div>
+              </div>
+              <div style="padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;color:${s.color};background:${s.bg};white-space:nowrap;">${s.label}</div>
+            </div>`;
+          }).join('');
+        }
+      } catch (e) {
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;font-size:13px;">加载失败：' + (e.message || '未知错误') + '</div>';
+      }
+    }
+
+
+function toggleQuickPaste(forceState) {
+  const qp = document.getElementById('qpOverlay');
+  if (!qp) return;
+  const shouldShow = forceState !== undefined ? forceState : qp.style.display !== 'flex';
+  qp.style.display = shouldShow ? 'flex' : 'none';
+  if (shouldShow) {
+    const input = document.getElementById('qpInput');
+    if (input) { input.value = ''; input.focus(); }
+    renderQPClips();
+  }
+}
+
 // ===== Init =====
 if (state.token) {
   showPage('app');
@@ -2734,7 +2902,7 @@ if (state.token) {
   connectWebSocket();
   setupDragDrop();
 }
-applyStyle('vercel', 'light');
+// Theme will be set by loadSettings()
 </script>
 
 
