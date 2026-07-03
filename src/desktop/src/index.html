@@ -476,6 +476,107 @@
     .form-row .form-group { flex: 1; }
     .hidden { display: none !important; }
 
+    /* ===== Subscription Modal ===== */
+    .subscription-modal {
+      max-width: 720px; width: 92vw;
+    }
+    .subscription-modal #plans-list {
+      display: flex;
+      flex-direction: row;
+      gap: 20px;
+      justify-content: center;
+      align-items: stretch;
+    }
+    .plan-card {
+      flex: 1;
+      min-width: 0;
+      max-width: 240px;
+      border-radius: 16px;
+      padding: 24px 20px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      border: 2px solid var(--border);
+      background: var(--bg-card);
+      display: flex;
+      flex-direction: column;
+    }
+    .plan-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 28px rgba(99,102,241,0.18), 0 0 0 1px rgba(99,102,241,0.08);
+    }
+    .plan-card.plan-featured {
+      border-color: var(--primary);
+      background: linear-gradient(180deg, #FAF9FF 0%, #F5F3FF 100%);
+    }
+    .plan-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 14px;
+      border-radius: 12px;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(102,126,234,0.35);
+    }
+    .plan-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    .plan-price-row {
+      display: flex;
+      align-items: baseline;
+      gap: 2px;
+      margin-bottom: 16px;
+    }
+    .plan-price {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1;
+    }
+    .plan-period {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+    .plan-specs {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      background: rgba(0,0,0,0.03);
+      border-radius: 10px;
+      line-height: 1.8;
+    }
+    .plan-features {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      flex: 1;
+    }
+    .plan-features li {
+      padding: 3.5px 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    [data-theme="dark"] .plan-card.plan-featured {
+      background: linear-gradient(180deg, #1E1845 0%, #16162D 100%);
+    }
+    [data-theme="dark"] .plan-specs {
+      background: rgba(255,255,255,0.04);
+    }
+
     /* Toast */
     .toast {
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -2605,37 +2706,37 @@
       if (!state.token) { showToast('请先登录'); return; }
       document.getElementById('subscription-modal').style.display = 'flex';
       const listEl = document.getElementById('plans-list');
-      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
+      listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">加载中...</div>';
       try {
         const data = await api('GET', '/api/subscriptions/plans');
         const plans = data.plans || [];
-        listEl.innerHTML = plans.map(p => `
-          <div class="plan-card" style="border:2px solid ${p.price > 0 ? '#667eea' : '#e5e7eb'};flex:1;min-width:180px;max-width:220px;border-radius:16px;padding:20px;cursor:pointer;transition:all 0.2s;position:relative;${p.price > 0 ? 'background:linear-gradient(135deg,#fafafe 0%,#f0f0ff 100%);' : ''}"
-                         onmouseover="this.style.boxShadow='0 8px 24px rgba(102,126,234,0.2)';this.style.transform='translateY(-2px)'"
-                         onmouseout="this.style.boxShadow='none';this.style.transform='none'"
-                         onclick="selectPlan(${p.id},'${p.name.replace(/'/g, "\\'")}',${p.price})">
-                      ${p.price > 0 ? '<div style="position:absolute;top:-10px;right:16px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;">推荐</div>' : ''}
-                      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
-                        <div>
-                          <div style="font-size:15px;color:#666;margin-bottom:4px;">${p.displayName || p.name}</div>
-                          <div style="font-size:24px;font-weight:800;color:#1a1a2e;">¥${p.price}<span style="font-size:14px;font-weight:500;color:#999;">/${p.billingCycle === 'month' ? '月' : '年'}</span></div>
-                        </div>
-                      </div>
-                      <div style="font-size:12px;color:#666;margin-bottom:16px;padding:12px;background:rgba(0,0,0,0.03);border-radius:8px;">
-                        <div style="margin-bottom:4px;">📱 ${p.maxDevices} 台设备</div>
-                        <div style="margin-bottom:4px;">📋 ${p.maxClipboardItems} 条记录</div>
-                        <div>💾 ${p.maxStorageMb}MB 存储</div>
-                      </div>
-            <ul style="list-style:none;padding:0;margin:0;font-size:13px;color:#444;">
+        if (plans.length === 0) {
+          listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">暂无可用套餐</div>';
+          return;
+        }
+        listEl.innerHTML = plans.map((p, idx) => `
+          <div class="plan-card ${p.price > 0 ? 'plan-featured' : ''}" data-plan-id="${p.id}" onclick="selectPlan(${p.id},'${(p.displayName || p.name).replace(/'/g, "\\'")}',${p.price})">
+            ${p.price > 0 ? '<div class="plan-badge">推荐</div>' : ''}
+            <div class="plan-name">${p.displayName || p.name}</div>
+            <div class="plan-price-row">
+              <span class="plan-price">¥${p.price}</span>
+              <span class="plan-period">/${p.billingCycle === 'month' ? '月' : '年'}</span>
+            </div>
+            <div class="plan-specs">
+              <div>📱 ${p.maxDevices || '∞'} 台设备</div>
+              <div>📋 ${(p.maxClipboardItems === -1 ? '不限' : p.maxClipboardItems) + ' 条记录'}</div>
+              <div>💾 ${(p.maxStorageMb === -1 ? '不限' : p.maxStorageMb + 'MB') + ' 存储'}</div>
+            </div>
+            <ul class="plan-features">
               ${Object.entries(p.features || {}).filter(([k,v]) => v === true || typeof v === 'number').map(([k,v]) => {
                 const labels = {ai_classify:'AI智能分类',offline_queue:'离线队列',e2e_encryption:'端到端加密',push_notification:'推送通知',full_text_search:'全文搜索',version_history_days:'版本历史'};
-                return '<li style="padding:3px 0;">✅ ' + (labels[k] || k) + (typeof v === 'number' && v > 0 ? ' (' + v + '天)' : '') + '</li>';
+                return '<li><span style="color:var(--success);font-weight:600;">✓</span> <span>' + (labels[k] || k) + (typeof v === 'number' && v > 0 ? ' (' + v + '天)' : '') + '</span></li>';
               }).join('')}
             </ul>
           </div>
         `).join('');
       } catch (e) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败，请重试</div>';
+        listEl.innerHTML = '<div style="text-align:center;padding:40px;color:#e74c3c;">加载失败，请重试</div>';
       }
     }
 
@@ -2740,6 +2841,30 @@
       }
       return h;
     }
+
+    // Retry helper: handles 429 Too Many Requests with exponential backoff
+    async function _fetchWithRetry(url, options, maxRetries = 5) {
+      let lastErr;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const resp = await fetch(url, options);
+        if (resp.ok) return resp;
+
+        if (resp.status === 429 && attempt < maxRetries) {
+          const errBody = await resp.text().catch(() => '');
+          let waitMs = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s, 8s, 16s
+          try { const parsed = JSON.parse(errBody); if (parsed.retryAfter) waitMs = parsed.retryAfter * 1000; } catch(e) {}
+          console.warn('[Upload] 429 rate limited, retry #' + (attempt+1) + ' after ' + Math.round(waitMs/1000) + 's');
+          showToast('⏳ 上传限速中，等待 ' + Math.round(waitMs/1000) + 's...');
+          await new Promise(r => setTimeout(r, waitMs));
+          lastErr = new Error('429');
+          continue;
+        }
+        // Non-429 or final attempt: return as-is (caller will handle)
+        return resp;
+      }
+      throw lastErr || new Error('max retries exceeded');
+    }
+
     window.uploadFile = async function(input) {
       const files = input.files;
       if (!files || files.length === 0) return;
@@ -2748,7 +2873,7 @@
         try {
           const headers = await _getUploadHeaders();
           // Step 1: 初始化上传
-          const initResp = await fetch(API_BASE + '/api/upload/init', {
+          const initResp = await _fetchWithRetry(API_BASE + '/api/upload/init', {
             method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
             body: JSON.stringify({ filename: file.name, fileSize: file.size, mimeType: file.type || 'application/octet-stream', totalChunks: Math.ceil(file.size / (1024*1024)) })
           });
@@ -2757,23 +2882,27 @@
           const uploadId = initData.uploadId;
           if (!uploadId) throw new Error('no uploadId');
 
-          // Step 2: 分块上传
+          // Step 2: 分块上传 (with retry + small inter-chunk delay)
           const chunkSize = 1024 * 1024;
           const totalChunks = Math.ceil(file.size / chunkSize);
+          const chunkHeaders = await _getUploadHeaders(); // cache once, reuse for all chunks
           for (let i = 0; i < totalChunks; i++) {
             const chunk = file.slice(i * chunkSize, (i + 1) * chunkSize);
             const form = new FormData();
             form.append('chunk', chunk, file.name + '.part' + i);
-            const chunkHeaders = await _getUploadHeaders();
-            const chunkResp = await fetch(API_BASE + '/api/upload/chunk/' + uploadId + '/' + i, {
-              method: 'POST', headers: chunkHeaders, body: form
-            });
+            const chunkResp = await _fetchWithRetry(
+              API_BASE + '/api/upload/chunk/' + uploadId + '/' + i,
+              { method: 'POST', headers: chunkHeaders, body: form },
+              3 // up to 3 retries per chunk
+            );
             if (!chunkResp.ok) {
               const errBody = await chunkResp.text().catch(() => '');
               console.error('[Upload] chunk', i, 'failed:', chunkResp.status, errBody);
               throw new Error('chunk ' + i + ' failed (' + chunkResp.status + ')');
             }
             showToast('上传中：' + file.name + ' (' + Math.round((i + 1) / totalChunks * 100) + '%)');
+            // Small delay between chunks to avoid hammering server
+            if (i < totalChunks - 1) await new Promise(r => setTimeout(r, 80));
           }
 
           // Step 3: 完成上传
@@ -3016,10 +3145,10 @@
     </div>
     <!-- Subscription Plans Modal -->
   <div class="modal-overlay" id="subscription-modal" style="display:none;">
-    <div class="modal" style="max-width:620px;">
+    <div class="modal subscription-modal">
       <h2>选择套餐</h2>
       <p>选择适合你的订阅方案</p>
-      <div id="plans-list" style="display:flex;flex-direction:row;gap:16px;margin:16px 0;flex-wrap:wrap;justify-content:center;"></div>
+      <div id="plans-list" style="display:flex;flex-direction:row;gap:20px;margin:24px 0;flex-wrap:nowrap;justify-content:center;align-items:stretch;"></div>
       <button class="btn btn-block" onclick="closeSubscriptionModal()" style="background:#eee;color:#333;">关闭</button>
     </div>
   </div>
