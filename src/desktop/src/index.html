@@ -1114,6 +1114,29 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   50% { opacity: 0.4; }
 }
 
+
+/* ===== Image Viewer ===== */
+.image-viewer {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(0,0,0,0.85); z-index: 9998;
+  display: none; flex-direction: column; align-items: center; justify-content: center;
+}
+.image-viewer[style*="display: flex"] { display: flex !important; }
+.iv-toolbar {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; background: rgba(0,0,0,0.5); color: white; z-index: 1;
+}
+.iv-title { font-size: 13px; font-weight: 500; }
+.iv-actions { display: flex; gap: 8px; }
+.iv-btn {
+  padding: 6px 14px; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px;
+  background: rgba(255,255,255,0.1); color: white; cursor: pointer; font-size: 12px;
+}
+.iv-btn:hover { background: rgba(255,255,255,0.2); }
+.iv-image-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 50px; }
+.iv-image { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 8px; }
+
 </style>
 </head>
 <body>
@@ -2198,6 +2221,110 @@ function connectWebSocket() {
   state.ws.onerror = () => updateConnStatus('offline');
 }
 
+// ===== Image Viewer =====
+let _viewingImageUrl = null;
+let _viewingBlobUrl = null;
+
+async function viewImageItem(id) {
+  try {
+    const item = await api('GET', '/api/clipboard/' + id);
+    if (item.contentType !== 'image') { showToast('不是图片', 'error'); return; }
+    let dataUrl = (item.contentEncrypted || '').trim();
+    if (!dataUrl || !dataUrl.startsWith('data:')) { showToast('无图片数据', 'error'); return; }
+
+    // BMP -> PNG conversion via Tauri (if available)
+    if (/image\/(bmp|x-ms-bmp)/i.test(dataUrl.split(',')[0])) {
+      try {
+        const inv = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+        if (inv) {
+          dataUrl = await inv('convert_bmp_to_png', { bmpDataUrl: dataUrl });
+        }
+      } catch(e) { console.error('[ViewImg] BMP convert failed:', e); }
+    }
+
+    const viewer = document.getElementById('image-viewer');
+    const img = document.getElementById('viewer-img');
+    if (!viewer || !img) { showToast(' viewer not found', 'error'); return; }
+
+    img.src = dataUrl;
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error('图片加载失败'));
+    });
+
+    viewer.style.display = 'flex';
+    _viewingImageUrl = dataUrl;
+  } catch(e) {
+    console.error('[ViewImg]', e);
+    showToast('预览失败: ' + e.message, 'error');
+  }
+}
+
+function closeImageViewer() {
+  const viewer = document.getElementById('image-viewer');
+  if (viewer) viewer.style.display = 'none';
+  if (_viewingBlobUrl) { URL.revokeObjectURL(_viewingBlobUrl); _viewingBlobUrl = null; }
+  _viewingImageUrl = null;
+  const img = document.getElementById('viewer-img');
+  if (img) img.src = '';
+}
+
+async function copyImageFromViewer() {
+  if (!_viewingImageUrl) return;
+  try {
+    const img = document.getElementById('viewer-img');
+    if (!img || !img.naturalWidth) throw new Error('图片未加载');
+
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('Canvas 转 Blob 失败');
+
+    await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+    showToast('图片已复制', 'success');
+    closeImageViewer();
+  } catch(e) {
+    showToast('复制失败: ' + e.message, 'error');
+  }
+}
+
+// ===== File Viewer =====
+async function viewFileItem(id) {
+  try {
+    const item = await api('GET', '/api/clipboard/' + id);
+    const meta = item.metadata || {};
+    const filePaths = meta.filePaths || [];
+
+    if (filePaths.length === 0) {
+      showToast('没有可用的文件路径', 'error');
+      return;
+    }
+
+    // Try to write CF_HDROP via Tauri backend
+    const _invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+    if (_invoke) {
+      try {
+        await _invoke('set_clipboard_files', { paths: filePaths });
+        const label = filePaths.length === 1
+          ? filePaths[0].split(/[/\\]/).pop()
+          : filePaths.length + ' 个文件';
+        showToast('已复制 ' + label + ' 到剪贴板，可粘贴', 'success');
+      } catch(e) {
+        console.error('[viewFileItem] set_clipboard_files failed:', e);
+        showToast('复制失败: ' + e.message, 'error');
+      }
+    } else {
+      showToast('文件: ' + (meta.fileName || filePaths[0].split(/[/\\]/).pop()), 'info');
+    }
+  } catch(e) {
+    showToast('加载失败: ' + e.message, 'error');
+  }
+}
+
 // ===== Init =====
 if (state.token) {
   showPage('app');
@@ -2210,5 +2337,19 @@ if (state.token) {
 applyStyle('vercel', 'light');
 </script>
 
+
+  <!-- Image Viewer Overlay -->
+  <div id="image-viewer" class="image-viewer">
+    <div class="iv-toolbar">
+      <span class="iv-title" id="ivTitle"></span>
+      <div class="iv-actions">
+        <button onclick="copyImageFromViewer()">复制</button>
+        <button onclick="closeImageViewer()">关闭</button>
+      </div>
+    </div>
+    <div class="iv-image-wrap">
+      <img id="viewer-img" style="max-width:90vw;max-height:85vh;object-fit:contain;">
+    </div>
+  </div>
 </body>
 </html>
