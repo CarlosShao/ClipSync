@@ -295,7 +295,7 @@
    RESET & BASE
    ============================================================ */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-size: 14px; height: 100%; }
+html { font-size: 14px; height: 100%; width: 100%; overflow: hidden; }
 body {
   font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
   background: var(--bg-base);
@@ -304,7 +304,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
   transition: background .25s ease, color .2s ease;
-  height: 100%; overflow: hidden;
+  height: 100vh; width: 100vw; overflow: hidden;
 }
 
 /* ============================================================
@@ -330,12 +330,9 @@ body {
    APP SHELL
    ============================================================ */
 .app-shell {
-  display: flex; width: 100%; max-width: 1280px;
-  height: 100%; max-height: calc(100vh - 24px);
+  display: flex;
+  width: 100vw; height: 100vh;
   overflow: hidden;
-  margin: 0 auto;
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-modal);
   transition: background .25s ease;
 }
 
@@ -920,12 +917,9 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .page { display: none; }
 .page.active { display: block; }
 
-/* Demo wrapper — centers app-shell as a floating card */
+/* Demo wrapper — full window for desktop app */
 .demo-wrap {
-  width: 100%; height: 100%;
-  display: flex; align-items: center; justify-content: center;
-  padding: 12px;
-  box-sizing: border-box;
+  width: 100vw; height: 100vh;
 }
 /* ===== QUICK PASTE OVERLAY ===== */
 #qpOverlay {
@@ -1186,23 +1180,23 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
           <div class="nav-item active" data-sub="clipboard" onclick="switchSub('clipboard')">
-            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 01 -2 2H6a2 2 0 01 -2-2V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard<span class="nav-counter">24</span>
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard<span class="nav-counter">24</span>
           </div>
           <div class="nav-item" data-sub="devices" onclick="switchSub('devices')">
             <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices<span class="nav-counter">3</span>
           </div>
           <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')">
-            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3 -3a5 5 0 00 -7.07 -7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00 -7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71 -1.71"/></svg></span>Shared Links
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span>Shared Links
           </div>
           <div class="nav-section-label">Account</div>
           <div class="nav-item" data-sub="profile" onclick="switchSub('profile')">
-            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10 -16 0"/></svg></span>Profile
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile
           </div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')">
             <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription
           </div>
           <div class="nav-item" data-sub="settings" onclick="switchSub('settings')">
-            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06-.06a1.65 1.65 0 00 -1.82-.33 1.65 1.65 0 00 -1 1.51V21a2 2 0 01 -4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 00 -1.82.33l-.06.06a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1H3a2 2 0 0 1 0 -4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00-.33 -1.82l-.06-.06a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2.83 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M 19.4 15a1.65 1.65 0 00.33 1.82 l.06.06 a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06 -.06 a1.65 1.65 0 00 -1.82 -.33 1.65 1.65 0 00 -1 1.51 V 21a2 2 0 01 -4 0v-.09 A1.65 1.65 0 0 0 9 19.4 a1.65 1.65 0 00 -1.82 .33 l-.06.06 a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83 l.06 -.06 A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1 H3a2 2 0 0 1 0 -4h.09 A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00 -.33 -1.82 l-.06 -.06 a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06 A1.65 1.65 0 0 0 9 4.68 V3a2 2 0 0 1 4 0v.09 a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82 -.33 l.06 -.06 a2 2 0 0 1 2.83 0 2.83 0 0 1 0 2.83 l-.06.06 A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1 H 21a2 2 0 0 1 0 4h-.09 a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings
           </div>
         </nav>
         <div class="sidebar-bottom">
@@ -1227,7 +1221,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="content-scroll clip-view">
           <div class="list-head"><div>Content</div><div>Source</div><div>Type</div><div>Time</div><div style="text-align:right;">Actions</div></div>
           <div class="empty-state show" id="clipEmptyState">
-            <div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 01 -2 2H6a2 2 0 01 -2-2V6a2 2 0 0 1 2 -2h2"/></svg></span></div>
+            <div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span></div>
             <div class="empty-title">No clips yet</div>
             <div class="empty-desc">Clips from all your devices will appear here.<br>Start copying to sync!</div>
           </div>
@@ -1243,13 +1237,13 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
-          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 01 -2 2H6a2 2 0 01 -2-2V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
           <div class="nav-item active" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices<span class="nav-counter">3</span></div>
-          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3 -3a5 5 0 00 -7.07 -7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00 -7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71 -1.71"/></svg></span>Shared Links</div>
+          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span>Shared Links</div>
           <div class="nav-section-label">Account</div>
-          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06-.06a1.65 1.65 0 00 -1.82-.33 1.65 1.65 0 00 -1 1.51V21a2 2 0 01 -4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 00 -1.82.33l-.06.06a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1H3a2 2 0 0 1 0 -4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00-.33 -1.82l-.06-.06a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2.83 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M 19.4 15a1.65 1.65 0 00.33 1.82 l.06.06 a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06 -.06 a1.65 1.65 0 00 -1.82 -.33 1.65 1.65 0 00 -1 1.51 V 21a2 2 0 01 -4 0v-.09 A1.65 1.65 0 0 0 9 19.4 a1.65 1.65 0 00 -1.82 .33 l-.06.06 a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83 l.06 -.06 A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1 H3a2 2 0 0 1 0 -4h.09 A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00 -.33 -1.82 l-.06 -.06 a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06 A1.65 1.65 0 0 0 9 4.68 V3a2 2 0 0 1 4 0v.09 a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82 -.33 l.06 -.06 a2 2 0 0 1 2.83 0 2.83 0 0 1 0 2.83 l-.06.06 A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1 H 21a2 2 0 0 1 0 4h-.09 a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1273,12 +1267,12 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
-          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 01 -2 2H6a2 2 0 01 -2-2V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
           <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
           <div class="nav-section-label">Account</div>
-          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06-.06a1.65 1.65 0 00 -1.82-.33 1.65 1.65 0 00 -1 1.51V21a2 2 0 01 -4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 00 -1.82.33l-.06.06a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1H3a2 2 0 0 1 0 -4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00-.33 -1.82l-.06-.06a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2.83 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M 19.4 15a1.65 1.65 0 00.33 1.82 l.06.06 a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06 -.06 a1.65 1.65 0 00 -1.82 -.33 1.65 1.65 0 00 -1 1.51 V 21a2 2 0 01 -4 0v-.09 A1.65 1.65 0 0 0 9 19.4 a1.65 1.65 0 00 -1.82 .33 l-.06.06 a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83 l.06 -.06 A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1 H3a2 2 0 0 1 0 -4h.09 A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00 -.33 -1.82 l-.06 -.06 a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06 A1.65 1.65 0 0 0 9 4.68 V3a2 2 0 0 1 4 0v.09 a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82 -.33 l.06 -.06 a2 2 0 0 1 2.83 0 2.83 0 0 1 0 2.83 l-.06.06 A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1 H 21a2 2 0 0 1 0 4h-.09 a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1312,12 +1306,12 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
-          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 01 -2 2H6a2 2 0 01 -2-2V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
           <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
           <div class="nav-section-label">Account</div>
-          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
+          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06-.06a1.65 1.65 0 00 -1.82-.33 1.65 1.65 0 00 -1 1.51V21a2 2 0 01 -4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 00 -1.82.33l-.06.06a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1H3a2 2 0 0 1 0 -4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00-.33 -1.82l-.06-.06a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2.83 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M 19.4 15a1.65 1.65 0 00.33 1.82 l.06.06 a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06 -.06 a1.65 1.65 0 00 -1.82 -.33 1.65 1.65 0 00 -1 1.51 V 21a2 2 0 01 -4 0v-.09 A1.65 1.65 0 0 0 9 19.4 a1.65 1.65 0 00 -1.82 .33 l-.06.06 a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83 l.06 -.06 A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1 H3a2 2 0 0 1 0 -4h.09 A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00 -.33 -1.82 l-.06 -.06 a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06 A1.65 1.65 0 0 0 9 4.68 V3a2 2 0 0 1 4 0v.09 a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82 -.33 l.06 -.06 a2 2 0 0 1 2.83 0 2.83 0 0 1 0 2.83 l-.06.06 A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1 H 21a2 2 0 0 1 0 4h-.09 a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1347,13 +1341,13 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
-          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 01 -2 2H6a2 2 0 01 -2-2V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
           <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
-          <div class="nav-item active" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3 -3a5 5 0 00 -7.07 -7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00 -7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71 -1.71"/></svg></span>Shared Links<span class="nav-counter">5</span></div>
+          <div class="nav-item active" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span>Shared Links<span class="nav-counter">5</span></div>
           <div class="nav-section-label">Account</div>
-          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06-.06a1.65 1.65 0 00 -1.82-.33 1.65 1.65 0 00 -1 1.51V21a2 2 0 01 -4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 00 -1.82.33l-.06.06a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1H3a2 2 0 0 1 0 -4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00-.33 -1.82l-.06-.06a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 022.83 0 2.83 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M 19.4 15a1.65 1.65 0 00.33 1.82 l.06.06 a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06 -.06 a1.65 1.65 0 00 -1.82 -.33 1.65 1.65 0 00 -1 1.51 V 21a2 2 0 01 -4 0v-.09 A1.65 1.65 0 0 0 9 19.4 a1.65 1.65 0 00 -1.82 .33 l-.06.06 a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83 l.06 -.06 A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1 H3a2 2 0 0 1 0 -4h.09 A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00 -.33 -1.82 l-.06 -.06 a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06 A1.65 1.65 0 0 0 9 4.68 V3a2 2 0 0 1 4 0v.09 a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82 -.33 l.06 -.06 a2 2 0 022.83 0 2.83 0 0 1 0 2.83 l-.06.06 A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1 H 21a2 2 0 0 1 0 4h-.09 a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1366,7 +1360,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="content-scroll" style="padding:24px;">
           <div style="display:flex;flex-direction:column;gap:12px;">
             <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
-              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3 -3a5 5 0 00 -7.07 -7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00 -7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71 -1.71"/></svg></span></div>
+              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span></div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">Project Alpha — Design Specs</div>
                 <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/xK9mP2qL</div>
@@ -1374,7 +1368,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
               <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--text-tertiary);">127 views</div><div style="font-size:11.5px;color:var(--text-tertiary);">Created 2d ago</div></div>
             </div>
             <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
-              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3 -3a5 5 0 00 -7.07 -7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00 -7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71 -1.71"/></svg></span></div>
+              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span></div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">Meeting Recording — July Sprint Review</div>
                 <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/nR4wT8vF</div>
@@ -1382,7 +1376,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
               <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--text-tertiary);">84 views</div><div style="font-size:11.5px;color:var(--text-tertiary);">Created 5d ago</div></div>
             </div>
             <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
-              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3 -3a5 5 0 00 -7.07 -7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00 -7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71 -1.71"/></svg></span></div>
+              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span></div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">API Documentation v2.4</div>
                 <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/qZ3pK7mN</div>
@@ -1402,13 +1396,13 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync"></span></div>
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
-          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 01 -2 2H6a2 2 0 01 -2-2V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
           <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
-          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3 -3a5 5 0 00 -7.07 -7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00 -7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71 -1.71"/></svg></span>Shared Links</div>
+          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span>Shared Links</div>
           <div class="nav-section-label">Account</div>
-          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
           <div class="nav-item active" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06-.06a1.65 1.65 0 00 -1.82-.33 1.65 1.65 0 00 -1 1.51V21a2 2 0 01 -4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 00 -1.82.33l-.06.06a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1H3a2 2 0 0 1 0 -4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00-.33 -1.82l-.06-.06a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 L0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 022.83 0 2.83 0 0 1 0 2.83l-.06.06A1.65 1.65 0 L0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M 19.4 15a1.65 1.65 0 00.33 1.82 l.06.06 a2 2 0 0 1 0 2.83 2 2 0 01 -2.83 0l-.06 -.06 a1.65 1.65 0 00 -1.82 -.33 1.65 1.65 0 00 -1 1.51 V 21a2 2 0 01 -4 0v-.09 A1.65 1.65 0 0 0 9 19.4 a1.65 1.65 0 00 -1.82 .33 l-.06.06 a2 2 0 01 -2.83 0 2 2 0 0 1 0 -2.83 l.06 -.06 A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 00 -1.51 -1 H3a2 2 0 0 1 0 -4h.09 A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 00 -.33 -1.82 l-.06 -.06 a2 2 0 0 1 0 -2.83 2 2 0 0 1 2.83 0l.06.06 A1.65 1.65 0 L0 9 4.68 V3a2 2 0 0 1 4 0v.09 a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82 -.33 l.06 -.06 a2 2 0 022.83 0 2.83 0 0 1 0 2.83 l-.06.06 A1.65 1.65 0 L0 19.4 9a1.65 1.65 0 0 0 1.51 1 H 21a2 2 0 0 1 0 4h-.09 a1.65 1.65 0 00 -1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1462,8 +1456,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
     <div class="qp-list" id="qpList">
       <div class="qp-item sel" data-idx="0" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-text"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span></div><div class="qp-txt">Fix the clipboard sync bug in the Rust backend service</div><div class="qp-ts">2m</div></div>
       <div class="qp-item" data-idx="1" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-img"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span></div><div class="qp-txt">Screenshot_2026-07-03_14_22_05.png</div><div class="qp-ts">15m</div></div>
-      <div class="qp-item" data-idx="2" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-link"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3 -3a5 5 0 00 -7.07 -7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00 -7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71 -1.71"/></svg></span></div><div class="qp-txt">github.com/CarlosShao/ClipSync/pull/42</div><div class="qp-ts">1h</div></div>
-      <div class="qp-item" data-idx="3" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-file"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00 -2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span></div><div class="qp-txt">design-spec-v2.figma</div><div class="qp-ts">3h</div></div>
+      <div class="qp-item" data-idx="2" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-link"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span></div><div class="qp-txt">github.com/CarlosShao/ClipSync/pull/42</div><div class="qp-ts">1h</div></div>
+      <div class="qp-item" data-idx="3" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-file"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M 14 2 H6a2 2 0 00 -2 2v 16a2 2 0 0 0 2 2h 12a2 2 0 0 0 2 -2 V8z"/><polyline points="14 2 14 8 20 8"/></svg></span></div><div class="qp-txt">design-spec-v2.figma</div><div class="qp-ts">3h</div></div>
     </div>
     <div class="qp-foot">
       <div class="kbd-pair"><kbd>↑↓</kbd>Navigate</div>
@@ -1583,7 +1577,7 @@ const modalTemplates = {
   billing: () => `
     <div class="modal-header"><span class="modal-title">Billing History</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
-      <div class="empty-state"><div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00 -2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span></div><div class="empty-title">No invoices yet</div><div class="empty-desc">Your billing history will appear here once you make a purchase.</div></div>
+      <div class="empty-state"><div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><path d="M 14 2 H6a2 2 0 00 -2 2v 16a2 2 0 0 0 2 2h 12a2 2 0 0 0 2 -2 V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span></div><div class="empty-title">No invoices yet</div><div class="empty-desc">Your billing history will appear here once you make a purchase.</div></div>
     </div>`,
 
   shortcuts: () => `
@@ -1641,7 +1635,7 @@ const modalTemplates = {
   export: () => `
     <div class="modal-header"><span class="modal-title">Export My Data</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
-      <div class="export-box"><div class="export-icon"><span class="icon icon-xl" style="color:var(--accent)"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01 -2 2H5a2 2 0 01 -2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></div><div class="export-msg">We'll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You'll receive a download link via email within 24 hours.</div></div>
+      <div class="export-box"><div class="export-icon"><span class="icon icon-xl" style="color:var(--accent)"><svg viewBox="0 0 24 24"><path d="M 21 15v4a2 2 0 01 -2 2 H5a2 2 0 01 -2 -2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></div><div class="export-msg">We'll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You'll receive a download link via email within 24 hours.</div></div>
     </div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-danger" onclick="closeModal()">Request Export</button></div>`,
 
@@ -2894,11 +2888,11 @@ function closeBillingModal() {
 
 function getTypeIcon(type) {
       const icons = {
-        text: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>',
-        link: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10 13a5 5 0 0 0 7.54.54l3 -3a5 5 0 00 -7.07 -7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00 -7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71 -1.71"/></svg>',
-        image: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5 -5L5 21"/></svg>',
+        text: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 7 V4h 16v3"/><path d="M9 20h6"/><path d="M 12 4v 16"/></svg>',
+        link: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg>',
+        image: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M 21 15l-5 -5L5 21"/></svg>',
         code: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="16,18 22,12 16,6"/><polyline points="8,6 2,12 8,18"/></svg>',
-        file: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 00 -2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2V8z"/><polyline points="14,2 14,8 20,8"/></svg>'
+        file: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M 14 2 H6a2 2 0 00 -2 2v 16a2 2 0 0 0 2 2h 12a2 2 0 0 0 2 -2 V8z"/><polyline points="14,2 14,8 20,8"/></svg>'
       };
       return icons[type] || '?';
     }
