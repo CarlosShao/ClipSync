@@ -2400,6 +2400,20 @@ async function toggleAutostart(enable) {
   }
 }
 
+
+async function copyTextItem(id) {
+  try {
+    const item = await api('GET', '/api/clipboard/' + id);
+    let fullContent = '';
+    if (item.contentEncrypted) {
+      try { fullContent = decodeURIComponent(escape(atob(item.contentEncrypted))); } catch(e) { fullContent = item.contentPreview || ''; }
+    } else {
+      fullContent = item.contentPreview || '';
+    }
+    await navigator.clipboard.writeText(fullContent);
+    showToast('已复制 (' + fullContent.length + '字符)', 'success');
+  } catch (e) { showToast('复制失败: ' + e.message, 'error'); }
+}
 // ===== Init =====
 if (state.token) {
   showPage('app');
