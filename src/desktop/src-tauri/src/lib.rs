@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Listener, Manager};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 
