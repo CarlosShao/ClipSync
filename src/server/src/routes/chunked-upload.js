@@ -381,18 +381,47 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
       await fileHandle.close();
     }
     
-    // 清理分片文件  
+    // 清理分片文件
     const chunkDir = path.join(CHUNK_DIR, uploadId);
     await fs.rm(chunkDir, { recursive: true, force: true });
-    
-    // 保存到数据库  
+
+    // Resolve source_device_id (must be valid UUID, FK → devices.id)
+    let sourceDeviceId = (req.body && req.body.deviceId) || session.metadata?.deviceId || '';
+    if (!sourceDeviceId || sourceDeviceId === 'unknown') {
+      try {
+        const devRes = await pool.query(
+          'SELECT id FROM devices WHERE user_id = $1 ORDER BY last_seen_at DESC NULLS LAST LIMIT 1',
+          [req.userId]
+        );
+        if (devRes.rows.length > 0) {
+          sourceDeviceId = devRes.rows[0].id;
+          logger.info('Upload complete: resolved deviceId from devices table', { deviceId: sourceDeviceId });
+        } else {
+          // No device found — create a placeholder so FK is satisfied
+          const devInsert = await pool.query(
+            `INSERT INTO devices (id, user_id, name, type, platform, app_version, is_online, last_seen_at)
+             VALUES ($1, $2, 'Desktop', 'desktop', 'windows', '0.0.0', false, now())
+             ON CONFLICT (id) DO NOTHING
+             RETURNING id`,
+            [uuidv4(), req.userId]
+          );
+          sourceDeviceId = devInsert.rows[0]?.id || devInsert.rows[0]?.id;
+          logger.info('Upload complete: created placeholder device', { deviceId: sourceDeviceId });
+        }
+      } catch (devErr) {
+        logger.error('Upload complete: failed to resolve deviceId', { error: devErr.message });
+        return res.status(500).json({ error: 'Failed to resolve device' });
+      }
+    }
+
+    // 保存到数据库
     const result = await pool.query(
       `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata)
        VALUES ($1, $2, 'file', $3, $4, $5, $6)
        RETURNING id, content_type, content_preview, content_size, created_at`,
       [
         req.userId,
-        (req.body && req.body.deviceId) || session.metadata?.deviceId || 'unknown',
+        sourceDeviceId,
         finalFilename,
         session.filename,
         session.fileSize,
