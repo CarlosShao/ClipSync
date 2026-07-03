@@ -1718,7 +1718,7 @@ function switchClipTab(btn, type) {
       visible++;
     } else {
       const rowType = row.dataset.type;
-      const typeMap = { 'text': 'text', 'images': 'images', 'links': 'links', 'files': 'files' };
+      const typeMap = { 'text': 'text', 'images': 'img', 'links': 'link', 'files': 'file' };
       const show = (rowType === typeMap[type]);
       row.style.display = show ? '' : 'none';
       if (show) visible++;
@@ -3183,6 +3183,9 @@ function handleClipRowClick(rowEl) {
 function startTauriClipboardPoll() {
   if (state._tauriPollStarted) return;
   state._tauriPollStarted = true;
+  // Stop browser poll if running (it doesn't work in Tauri WebView)
+  state._clipboardPolling = true;
+  console.log('[TauriPoll] ✓ Stopped browser poll, switching to Tauri IPC');
   let _lastPolledText = '';
   let _lastPolledFiles = '';
   let _lastImageSize = -1;
@@ -3265,6 +3268,8 @@ function startBrowserClipboardPoll() {
   async function pollClipboard() {
     try {
       if (!state.autoSync || !state.deviceId || !deviceReady) return;
+      // If Tauri poll has started, stop this browser poll immediately
+      if (state._tauriPollStarted) { state._clipboardPolling = false; return; }
       try {
         const items = await navigator.clipboard.read();
         if (items && items.length > 0) {
