@@ -1471,6 +1471,12 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 <div id="modalRoot"></div>
 <div id="toastContainer" class="toast-container"></div>
 
+<!-- Tauri 2.x JS API — invoke lives in @tauri-apps/api/core -->
+<script type="module">
+  import { invoke } from 'https://esm.sh/@tauri-apps/api@2/core';
+  window.__TAURI_INVOKE__ = invoke;
+  console.log('[TauriAPI] ✓ invoke loaded from api/core');
+</script>
 <script>
 // ========== STATE ==========
 let currentStyle = 'vercel';
@@ -3393,13 +3399,23 @@ async function uploadTauriFileClipboard(files) {
 // 启动轮询（在 doLogin 成功后调用）
 function startClipboardPolls() {
   console.log('[ClipSync] starting clipboard polls... deviceReady=' + deviceReady + ' deviceId=' + (state.deviceId || 'none'));
-  const tauri = window.__TAURI__;
-  if (tauri && (tauri.core || tauri.invoke || window.__TAURI_INVOKE__)) {
+  // Check Tauri availability (may load async from CDN)
+  var tauri = window.__TAURI__;
+  var hasInvoke = !!(window.__TAURI_INVOKE__ || (tauri && tauri.core && tauri.core.invoke) || (tauri && tauri.invoke));
+  if (hasInvoke) {
     console.log('[ClipSync] Tauri detected, starting Tauri clipboard poll');
     startTauriClipboardPoll();
   } else {
-    console.log('[ClipSync] Browser mode, starting browser clipboard poll');
+    // Tauri module might still be loading, check again in 2s
+    console.log('[ClipSync] Tauri not yet available, using browser poll (will check Tauri again later)');
     startBrowserClipboardPoll();
+    setTimeout(function() {
+      var t2 = window.__TAURI__;
+      if (window.__TAURI_INVOKE__ || (t2 && (t2.core || t2.invoke))) {
+        console.log('[ClipSync] Tauri module loaded late, switching to Tauri poll');
+        startTauriClipboardPoll();
+      }
+    }, 3000);
   }
 }
     // ====== 快捷粘贴面板 (Quick Paste) ======
