@@ -576,7 +576,68 @@
     [data-theme="dark"] .plan-specs {
       background: rgba(255,255,255,0.04);
     }
-    .profile-modal { max-width:480px; }
+    .profile-modal {
+      max-width: 480px;
+      padding: 0 !important;
+      overflow: hidden;
+    }
+    .profile-modal h2 { margin-bottom: 4px !important; }
+    .profile-modal > p { margin-bottom: 20px !important; color: var(--text-muted) !important; font-size: 13px; }
+    .profile-header {
+      display: flex; align-items: center; gap: 18px;
+      padding: 24px 24px 8px; background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 50%, #f5f0ff 100%);
+    }
+    .profile-avatar-wrap {
+      width: 80px; height: 80px; border-radius: 50%; overflow: hidden;
+      background: linear-gradient(135deg, #c7d2fe, #a78bfa);
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      border: 3px solid #fff; box-shadow: 0 2px 12px rgba(99,102,241,.2); position: relative;
+    }
+    .profile-avatar-wrap img { width: 100%; height: 100%; object-fit: cover; display:none; }
+    .profile-avatar-wrap .avatar-placeholder { font-size:32px; }
+    .profile-avatar-info { flex: 1; min-width: 0; }
+    .profile-avatar-info label {
+      display: inline-block; cursor:pointer; font-size:13px; color:var(--primary);
+      font-weight:600; padding: 5px 14px; border-radius:20px; background:#fff;
+      box-shadow: 0 1px 4px rgba(99,102,241,.15); transition: all .2s;
+    }
+    .profile-avatar-info label:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(99,102,241,.25); }
+    .profile-avatar-info .avatar-hint { font-size:11px; color:var(--text-muted); margin-top:4px; }
+    .profile-body { padding: 16px 24px 24px; }
+    .profile-section-title {
+      font-size: 11px; font-weight:700; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.8px;
+      margin-bottom: 10px; padding-left: 2px;
+    }
+    .profile-info-card {
+      background: var(--bg); border-radius: 12px; padding: 14px 16px;
+      margin-bottom: 18px; border: 1px solid rgba(0,0,0,.04);
+    }
+    .profile-info-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,.04);
+      font-size: 13px; color: var(--text-secondary);
+    }
+    .profile-info-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .profile-info-row:first-child { padding-top: 0; }
+    .profile-info-icon { width:28px; height:28px; border-radius:8px; background: #f0f0ff; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:13px; }
+    .profile-info-label { color: var(--text-muted); min-width: 70px; }
+    .profile-info-value { font-weight:500; color: var(--text-primary); word-break: break-all; }
+    .profile-form-group { margin-bottom: 16px; }
+    .profile-form-group label {
+      display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary);
+      margin-bottom: 6px; padding-left: 2px;
+    }
+    .profile-form-group label span { font-weight:400; color: var(--text-muted); }
+    .profile-form-group input[type="text"] {
+      width: 100%; padding: 10px 14px; border-radius: 10px; border: 1.5px solid #e2e5ea;
+      font-size: 14px; transition: all .2s; outline: none; box-sizing:border-box;
+      background: #fff;
+    }
+    .profile-form-group input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+    .profile-actions {
+      display: flex; gap: 12px; margin-top: 22px;
+    }
 
     /* Toast */
     .toast {
@@ -3030,10 +3091,19 @@
         const acctInfoEl = document.getElementById('profile-account-info');
         if (acctInfoEl) {
           let html = '';
-          if (u.phone) html += '<div><span style="color:var(--text-muted);">📱 手机：</span>' + u.phone + '</div>';
-          if (u.email) html += '<div><span style="color:var(--text-muted);">📧 邮箱：</span>' + u.email + '</div>';
-          if (u.createdAt) html += '<div><span style="color:var(--text-muted);">🕐 注册时间：</span>' + new Date(u.createdAt).toLocaleDateString('zh-CN') + '</div>';
-          if (!html) html = '<div style="color:var(--text-muted);">加载中...</div>';
+          if (u.phone) {
+            html += '<div class="profile-info-row"><div class="profile-info-icon">📱</div><span class="profile-info-label">手机</span><span class="profile-info-value">' + u.phone + '</span></div>';
+          }
+          if (u.email) {
+            html += '<div class="profile-info-row"><div class="profile-info-icon">📧</div><span class="profile-info-label">邮箱</span><span class="profile-info-value">' + u.email + '</span></div>';
+          }
+          if (u.id) {
+            html += '<div class="profile-info-row"><div class="profile-info-icon">🆔</div><span class="profile-info-label">ID</span><span class="profile-info-value" style="font-family:monospace;font-size:12px;">' + u.id.substring(0,8) + '…</span></div>';
+          }
+          if (u.createdAt) {
+            html += '<div class="profile-info-row"><div class="profile-info-icon">🕐</div><span class="profile-info-label">注册</span><span class="profile-info-value">' + new Date(u.createdAt).toLocaleDateString('zh-CN') + '</span></div>';
+          }
+          if (!html) html = '<div style="padding:8px 0;color:var(--text-muted);font-size:13px;">加载中...</div>';
           acctInfoEl.innerHTML = html;
         }
     };
@@ -3250,35 +3320,43 @@
     <div class="modal profile-modal">
       <h2>👤 个人资料</h2>
       <p>编辑你的个人信息</p>
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
-        <div style="width:72px;height:72px;border-radius:50%;overflow:hidden;background:#e5e7eb;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:3px solid var(--primary-light);position:relative;">
-          <img id="profile-avatar" src="" style="width:100%;height:100%;object-fit:cover;display:none;" onerror="this.style.display='none'" onload="this.style.display=''">
-          <span id="profile-avatar-placeholder" style="font-size:26px;color:#999;">📷</span>
-        </div>
-        <div>
-          <label for="profile-avatar-input" style="cursor:pointer;font-size:13px;color:var(--primary);font-weight:600;">更换头像</label>
-          <input type="file" id="profile-avatar-input" accept="image/*" style="display:none;" onchange="const p=document.getElementById('profile-avatar-placeholder');if(p)p.textContent='✅';document.getElementById('profile-avatar').src=URL.createObjectURL(this.files[0]);document.getElementById('profile-avatar').style.display='';if(p)p.style.display='none';">
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">支持 JPG/PNG，建议 200x200</div>
-        </div>
-      </div>
 
-      <!-- Read-only account info -->
-      <div style="background:var(--bg);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
-        <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">账户信息</div>
-        <div id="profile-account-info" style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text-secondary);">
-          <!-- Filled dynamically -->
+      <!-- Header with avatar -->
+      <div class="profile-header">
+        <div class="profile-avatar-wrap">
+          <img id="profile-avatar" src="" onerror="this.style.display='none'" onload="this.style.display=''">
+          <span id="profile-avatar-placeholder" class="avatar-placeholder">👤</span>
+        </div>
+        <div class="profile-avatar-info">
+          <label for="profile-avatar-input">📷 更换头像</label>
+          <input type="file" id="profile-avatar-input" accept="image/*" style="display:none;" onchange="const p=document.getElementById('profile-avatar-placeholder');if(p){p.textContent='✅';p.style.fontSize='20px';}document.getElementById('profile-avatar').src=URL.createObjectURL(this.files[0]);document.getElementById('profile-avatar').style.display='';if(p)p.style.display='none';">
+          <div class="avatar-hint">支持 JPG / PNG，建议 200×200</div>
         </div>
       </div>
 
-      <!-- Editable fields -->
-      <div class="form-group">
-        <label>用户名 <span style="color:var(--text-muted);font-weight:400;">(昵称/显示名)</span></label>
-        <input type="text" id="profile-username" placeholder="请输入用户名" maxlength="50">
-      </div>
+      <!-- Body content -->
+      <div class="profile-body">
 
-      <div style="display:flex;gap:12px;margin-top:20px;">
-        <button class="btn btn-primary btn-block" onclick="saveProfile()" style="flex:1;">保存</button>
-        <button class="btn btn-block" onclick="closeProfileModal()" style="background:#eee;color:#333;">取消</button>
+        <!-- Read-only account info -->
+        <div class="profile-section-title">账户信息</div>
+        <div class="profile-info-card">
+          <div id="profile-account-info">
+            <!-- Filled dynamically -->
+          </div>
+        </div>
+
+        <!-- Editable fields -->
+        <div class="profile-section-title">编辑资料</div>
+        <div class="profile-form-group">
+          <label>用户名 <span>(昵称/显示名)</span></label>
+          <input type="text" id="profile-username" placeholder="请输入用户名" maxlength="50">
+        </div>
+
+        <div class="profile-actions">
+          <button class="btn btn-primary" onclick="saveProfile()" style="flex:1;padding:10px;border-radius:10px;font-size:14px;">💾 保存</button>
+          <button class="btn btn-secondary" onclick="closeProfileModal()" style="flex:1;padding:10px;border-radius:10px;font-size:14px;">取消</button>
+        </div>
+
       </div>
     </div>
   </div>
