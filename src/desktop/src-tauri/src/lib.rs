@@ -4,7 +4,7 @@ use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 
-use tauri_plugin_global_shortcut::GlobalShortcutExt;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_autostart::MacosLauncher;
 
 mod clipboard_monitor;
@@ -27,7 +27,7 @@ impl Default for AppConfig {
             token: None,
             device_id: None,
             user_id: None,
-            quick_paste_shortcut: Some("CmdOrCtrl+Shift+V".to_string()),
+            quick_paste_shortcut: Some("Ctrl+Shift+V".to_string()),
         }
     }
 }
@@ -578,20 +578,27 @@ fn is_autostart_enabled(app: tauri::AppHandle) -> Result<bool, String> {
 fn register_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), String> {
     #[cfg(not(mobile))]
     {
-        use tauri_plugin_global_shortcut::ShortcutWrapper;
         let handle = app.clone();
         let shortcut_clone = shortcut.clone();
         handle.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
-        let wrapper = ShortcutWrapper::try_from(shortcut_clone.as_str()).map_err(|e| e.to_string())?;
+
+        // Tauri v2: parse shortcut string, then register
+        let shortcut_obj: Shortcut = shortcut_clone
+            .parse()
+            .map_err(|e| format!("Invalid shortcut '{}': {}", shortcut_clone, e))?;
+
         let handle_clone = handle.clone();
-        handle.global_shortcut().on_shortcut(wrapper, move |_, _, _| {
-            eprintln!("[RegisterShortcut] Shortcut '{}' pressed!", shortcut_clone);
-            if let Some(window) = handle_clone.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-                let _ = window.eval("window.toggleQuickPaste()");
+        handle.global_shortcut().register(shortcut_obj, move |app_handle, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                eprintln!("[RegisterShortcut] Shortcut pressed!");
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    let _ = window.eval("window.toggleQuickPaste()");
+                }
             }
         }).map_err(|e| e.to_string())?;
+
         if let Some(state) = app.try_state::<AppState>() {
             let mut config = state.config.lock().unwrap();
             config.quick_paste_shortcut = Some(shortcut);
@@ -817,50 +824,54 @@ pub fn run() {
             // 如果主快捷键被占用，自动尝试备选键位
             #[cfg(not(mobile))]
             {
-                use tauri_plugin_global_shortcut::ShortcutWrapper;
-
                 let handle = app.handle().clone();
                 let cfg = app.state::<AppState>().config.lock().unwrap().clone();
+                // Tauri v2 shortcut string format: "Ctrl+Shift+V", "Alt+Shift+V", etc.
+                // (CmdOrCtrl is NOT supported in v2; use platform-appropriate modifier)
                 let primary = cfg.quick_paste_shortcut
-                    .unwrap_or_else(|| "CmdOrCtrl+Shift+V".to_string());
+                    .unwrap_or_else(|| "Ctrl+Shift+V".to_string());
+                // Normalize: replace CmdOrCtrl with Ctrl for Windows/Linux
+                let primary_normalized = primary.replace("CmdOrCtrl", "Ctrl");
 
                 // 先卸载所有已有快捷键
                 let _ = handle.global_shortcut().unregister_all();
 
-                // 快捷键候选列表（按优先级）
+                // 快捷键候选列表（按优先级，Tauri v2 格式）
                 let candidates: Vec<&str> = {
-                    if primary.contains("Shift+V") {
-                        vec![&primary, "Ctrl+Alt+V", "Ctrl+Shift+K", "Ctrl+Alt+Space"]
+                    if primary_normalized.contains("Shift+V") {
+                        vec![&primary_normalized, "Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
                     } else {
-                        vec![&primary, "CmdOrCtrl+Shift+V", "Ctrl+Alt+V", "Ctrl+Shift+K"]
+                        vec![&primary_normalized, "Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
                     }
                 };
 
                 let mut registered = false;
                 for (i, candidate) in candidates.iter().enumerate() {
-                    // 1. 解析快捷键字符串
-                    let wrapper = match ShortcutWrapper::try_from(*candidate) {
-                        Ok(w) => w,
+                    // 1. 解析快捷键字符串 (Tauri v2: Shortcut implements FromStr)
+                    let shortcut: Shortcut = match candidate.parse() {
+                        Ok(s) => s,
                         Err(e) => {
-                            eprintln!("[Setup] Failed to parse '{}': {}", candidate, e);
+                            eprintln!("[Setup] Failed to parse shortcut '{}': {}", candidate, e);
                             continue;
                         }
                     };
 
-                    // 2. 注册快捷键
+                    // 2. 注册快捷键 (Tauri v2: register(shortcut, handler))
                     let handle_clone = handle.clone();
                     let cand_str = candidate.to_string();
-                    let reg_result = handle.global_shortcut().on_shortcut(wrapper, move |_, _, _| {
-                        eprintln!("[GlobalShortcut] Shortcut '{}' pressed!", cand_str);
-                        if let Some(window) = handle_clone.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            match window.eval("window.toggleQuickPaste()") {
-                                Ok(_) => eprintln!("[GlobalShortcut] toggleQuickPaste() called"),
-                                Err(e) => eprintln!("[GlobalShortcut] eval failed: {}", e),
+                    let reg_result = handle.global_shortcut().register(shortcut, move |app_handle, _shortcut, event| {
+                        if event.state == ShortcutState::Pressed {
+                            eprintln!("[GlobalShortcut] Shortcut '{}' pressed!", cand_str);
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                match window.eval("window.toggleQuickPaste()") {
+                                    Ok(_) => eprintln!("[GlobalShortcut] toggleQuickPaste() called"),
+                                    Err(e) => eprintln!("[GlobalShortcut] eval failed: {}", e),
+                                }
+                            } else {
+                                eprintln!("[GlobalShortcut] Main window not found!");
                             }
-                        } else {
-                            eprintln!("[GlobalShortcut] Main window not found!");
                         }
                     });
 
