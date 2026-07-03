@@ -715,19 +715,10 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.show();
                         let _ = window.set_focus();
-                        // 触发检查更新
-                        let app_clone = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            match app_clone.state::<AppState>().config.lock() {
-                                Ok(cfg) => {
-                                    eprintln!("[Tray] Checking for updates...");
-                                    // Call the check_for_updates tauri command
-                                    // This is async, so we need to handle it properly
-                                }
-                                Err(_) => {}
-                            }
-                        });
-                        eprintln!("[Tray] Checking for updates...");
+                        match window.eval("if(window.checkForUpdates) window.checkForUpdates()") {
+                            Ok(_) => eprintln!("[Tray] -> check updates"),
+                            Err(e) => eprintln!("[Tray] check_updates eval error: {}", e),
+                        }
                     }
                 }
                 "hide" => {
