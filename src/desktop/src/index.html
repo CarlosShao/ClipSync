@@ -1464,8 +1464,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           </div>
           <!-- Actions -->
           <div class="settings-group"><div class="sg-header">Manage</div>
-            <div class="sg-row" onclick="openModal('billing')"><div class="sg-label"><div class="sg-name">Billing history</div><div class="sg-hint">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-            <div class="sg-row" onclick="openModal('pricing')"><div class="sg-label"><div class="sg-name">Change plan</div><div class="sg-hint">Upgrade or downgrade your subscription</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('billing', loadBilling)"><div class="sg-label"><div class="sg-name">Billing history</div><div class="sg-hint">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('pricing', loadPlans)"><div class="sg-label"><div class="sg-name">Change plan</div><div class="sg-hint">Upgrade or downgrade your subscription</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Cancel subscription</div><div class="sg-hint">End your subscription at the next billing date</div></div><div class="sg-control"><button class="btn btn-ghost" style="font-size:12px;padding:5px 12px;color:var(--danger);border-color:var(--danger);">Cancel</button></div></div>
           </div>
         </div>
@@ -1744,11 +1744,12 @@ const modalTemplates = {
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="closeModal()">Download</button></div>`,
 };
 
-function openModal(name) {
+function openModal(name, onOpen) {
   const tmpl = modalTemplates[name];
   if (!tmpl) return;
   const root = document.getElementById('modalRoot');
   root.innerHTML = `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${tmpl()}</div></div>`;
+  if (typeof onOpen === 'function') setTimeout(onOpen, 100);
 }
 
 function closeModal() {
@@ -2526,6 +2527,201 @@ async function loadSubscription() {
     }
   } catch (e) {
     console.warn('加载订阅信息失败:', e.message);
+  }
+}
+
+
+// 加载安全设置
+async function loadSecurity() {
+  const body = document.querySelector('#modalRoot .modal-body');
+  if (!body) return;
+  // 从服务器加载 2FA 状态、登录通知等
+  try {
+    const data = await api('GET', '/api/users/security');
+    const sec = data.security || {};
+    // 更新 toggle 状态
+    const toggles = body.querySelectorAll('.sec-toggle-row .toggle');
+    if (toggles[0]) toggles[0].classList.toggle('on', !!sec.twoFactorEnabled);
+    if (toggles[1]) toggles[1].classList.toggle('on', !!sec.loginNotifications);
+    if (toggles[2]) toggles[2].classList.toggle('on', !!sec.e2eEnabled);
+  } catch (e) {
+    console.warn('加载安全设置失败:', e.message);
+  }
+}
+
+// 保存安全设置
+async function saveSecurity() {
+  const body = document.querySelector('#modalRoot .modal-body');
+  if (!body) return;
+  const toggles = body.querySelectorAll('.sec-toggle-row .toggle');
+  try {
+    await api('PUT', '/api/users/security', {
+      twoFactorEnabled: toggles[0]?.classList.contains('on'),
+      loginNotifications: toggles[1]?.classList.contains('on'),
+    });
+    showToast('安全设置已保存', 'success');
+  } catch (e) {
+    showToast('保存失败: ' + e.message);
+  }
+}
+
+// 加载套餐列表
+async function loadPlans() {
+  const body = document.querySelector('#modalRoot .modal-body');
+  if (!body) return;
+  const grid = body.querySelector('.pricing-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary);">加载中...</div>';
+  try {
+    const data = await api('GET', '/api/subscriptions/plans');
+    const plans = data.plans || [];
+    grid.innerHTML = plans.map((p, idx) => `
+      <div class="price-card ${p.price > 0 && idx === 1 ? 'popular' : ''}" onclick="selectPlan('${p.id}','${p.displayName || p.name}',${p.price || 0})">
+        ${p.price > 0 && idx === 1 ? '<div class="pc-popular-tag">推荐</div>' : ''}
+        <div class="pc-name">${escapeHtml(p.displayName || p.name)}</div>
+        <div class="pc-price">¥${p.price}<span>/mo</span></div>
+        <div class="pc-feat">${p.maxDevices ? p.maxDevices + ' 台设备' : '无限设备'}<br>${p.maxClipboardItems ? p.maxClipboardItems + ' 条记录' : '无限历史'}<br>${p.features?.prioritySupport ? '优先支持' : '社区支持'}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    grid.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">加载失败</div>';
+  }
+}
+
+// 选择套餐
+window.selectPlan = async function(planId, planName, price) {
+  if (price === 0) {
+    showToast('已是免费版');
+    closeModal();
+    return;
+  }
+  // 显示支付方式选择
+  openModal('payment', '', '', () => {
+    // 设置支付信息
+    const planNameEl = document.querySelector('#modalRoot .modal-body .pc-name');
+    const planPriceEl = document.querySelector('#modalRoot .modal-body .pc-price');
+    if (planNameEl) planNameEl.textContent = planName;
+    if (planPriceEl) planPriceEl.innerHTML = '¥' + price + '<span>/month</span>';
+    // 保存待支付套餐
+    window._pendingPlan = { planId, planName, price };
+  });
+};
+
+// 选择支付方式
+window.selectPaymentMethod = async function(method) {
+  const p = window._pendingPlan;
+  if (!p) return;
+  closeModal();
+  try {
+    showToast('正在处理订阅...');
+    await api('POST', '/api/subscriptions/subscribe', { planId: p.planId, billingCycle: 'monthly' });
+    showToast('✅ 订阅成功: ' + p.planName, 'success');
+    loadSubscription();
+  } catch (e) {
+    showToast('订阅失败: ' + e.message);
+  }
+  window._pendingPlan = null;
+};
+
+// 加载账单历史
+async function loadBilling() {
+  const body = document.querySelector('#modalRoot .modal-body');
+  if (!body) return;
+  const emptyState = body.querySelector('.empty-state');
+  try {
+    const data = await api('GET', '/api/invoices');
+    const bills = data.invoices || [];
+    if (bills.length === 0) {
+      if (emptyState) emptyState.style.display = 'block';
+      return;
+    }
+    // 渲染账单列表
+    body.innerHTML = bills.map(b => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;margin-bottom:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;" onclick="showInvoiceDetail('${b.id}')">
+        <div style="flex:1;">
+          <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">${escapeHtml(b.planName || '未知套餐')}</div>
+          <div style="font-size:12px;color:var(--text-tertiary);">${new Date(b.createdAt).toLocaleDateString('zh-CN')}</div>
+        </div>
+        <div style="font-size:15px;font-weight:700;color:var(--text-primary);">¥${parseFloat(b.amount).toFixed(2)}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    if (emptyState) emptyState.innerHTML = '<div style="color:var(--danger);">加载失败: ' + e.message + '</div>';
+  }
+}
+
+// 显示发票详情
+window.showInvoiceDetail = async function(invoiceId) {
+  try {
+    const data = await api('GET', '/api/invoices/' + invoiceId);
+    const inv = data.invoice || data;
+    showToast('发票详情: ' + (inv.invoiceNo || invoiceId));
+    // 这里可以打开一个详情弹窗
+  } catch (e) {
+    showToast('加载发票详情失败: ' + e.message);
+  }
+};
+
+// 加载通知偏好
+async function loadNotifPrefs() {
+  const body = document.querySelector('#modalRoot .modal-body');
+  if (!body) return;
+  try {
+    const data = await api('GET', '/api/users/notifications');
+    const prefs = data.preferences || {};
+    const toggles = body.querySelectorAll('.nf-item .toggle');
+    if (toggles[0]) toggles[0].classList.toggle('on', !!prefs.newDevice);
+    if (toggles[1]) toggles[1].classList.toggle('on', !!prefs.syncComplete);
+    if (toggles[2]) toggles[2].classList.toggle('on', !!prefs.securityAlerts);
+    if (toggles[3]) toggles[3].classList.toggle('on', !!prefs.productUpdates);
+  } catch (e) {
+    console.warn('加载通知偏好失败:', e.message);
+  }
+}
+
+// 保存通知偏好
+async function saveNotifPrefs() {
+  const body = document.querySelector('#modalRoot .modal-body');
+  if (!body) return;
+  const toggles = body.querySelectorAll('.nf-item .toggle');
+  try {
+    await api('PUT', '/api/users/notifications', {
+      newDevice: toggles[0]?.classList.contains('on'),
+      syncComplete: toggles[1]?.classList.contains('on'),
+      securityAlerts: toggles[2]?.classList.contains('on'),
+      productUpdates: toggles[3]?.classList.contains('on'),
+    });
+    showToast('通知设置已保存', 'success');
+  } catch (e) {
+    showToast('保存失败: ' + e.message);
+  }
+}
+
+// 检查更新
+async function checkForUpdates() {
+  try {
+    const data = await api('GET', '/api/system/version');
+    const current = '2.4.1'; // 从 somewhere 获取
+    const latest = data.version || current;
+    if (latest > current) {
+      showToast('发现新版本: v' + latest, 'info');
+    } else {
+      showToast('已是最新版本', 'success');
+    }
+  } catch (e) {
+    showToast('检查更新失败: ' + e.message);
+  }
+}
+
+// GDPR 数据导出
+async function requestDataExport() {
+  if (!confirm('确定要导出所有数据吗？导出链接将在24小时内发送到你的邮箱。')) return;
+  try {
+    await api('POST', '/api/users/export');
+    showToast('数据导出请求已提交，请查收邮件', 'success');
+    closeModal();
+  } catch (e) {
+    showToast('导出请求失败: ' + e.message);
   }
 }
 
