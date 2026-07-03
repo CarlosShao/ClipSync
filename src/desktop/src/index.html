@@ -2325,6 +2325,81 @@ async function viewFileItem(id) {
   }
 }
 
+
+// ===== Settings =====
+async function loadSettings() {
+  try {
+    const data = await api('GET', '/api/settings');
+    if (data.autoSync !== undefined) {
+      state.autoSync = data.autoSync;
+      const el = document.getElementById('toggleAutoSync');
+      if (el) el.checked = data.autoSync;
+    }
+    if (data.imgCompress !== undefined) {
+      const el = document.getElementById('toggleImgCompress');
+      if (el) el.checked = data.imgCompress;
+    }
+    if (data.syncInterval) {
+      const el = document.getElementById('selectSyncInterval');
+      if (el) el.value = data.syncInterval;
+    }
+    if (data.maxHistory) {
+      const el = document.getElementById('selectMaxHistory');
+      if (el) el.value = data.maxHistory;
+    }
+  } catch (e) {
+    console.error('[Settings] load failed:', e.message);
+  }
+}
+
+async function saveSettings() {
+  const settings = {};
+  const autoSync = document.getElementById('toggleAutoSync');
+  if (autoSync) settings.autoSync = autoSync.checked;
+  const imgCompress = document.getElementById('toggleImgCompress');
+  if (imgCompress) settings.imgCompress = imgCompress.checked;
+  const syncInterval = document.getElementById('selectSyncInterval');
+  if (syncInterval) settings.syncInterval = syncInterval.value;
+  const maxHistory = document.getElementById('selectMaxHistory');
+  if (maxHistory) settings.maxHistory = maxHistory.value;
+
+  try {
+    await api('PUT', '/api/settings', settings);
+    showToast('设置已保存', 'success');
+  } catch (e) {
+    showToast('保存失败: ' + e.message, 'error');
+  }
+}
+
+function toggleTheme() {
+  const root = document.documentElement;
+  const currentMode = root.getAttribute('data-mode') || 'light';
+  const newMode = currentMode === 'light' ? 'dark' : 'light';
+  const currentStyle = root.getAttribute('data-style') || 'vercel';
+  if (currentStyle === 'linear' || currentStyle === 'raycast') {
+    showToast('当前主题不支持浅色模式', 'info');
+    return;
+  }
+  applyStyle(currentStyle, newMode);
+  showToast('已切换到' + (newMode === 'dark' ? '深色' : '浅色') + '模式', 'success');
+}
+
+async function toggleAutostart(enable) {
+  try {
+    if (window.__TAURI__) {
+      const invoke = window.__TAURI__.core?.invoke || window.__TAURI__.invoke;
+      if (invoke) {
+        await invoke('set_autostart', { enable });
+        showToast(enable ? '已开启开机自启动' : '已关闭开机自启动', 'success');
+      }
+    } else {
+      showToast('自启动设置仅支持桌面端', 'info');
+    }
+  } catch (e) {
+    showToast('设置失败: ' + e.message, 'error');
+  }
+}
+
 // ===== Init =====
 if (state.token) {
   showPage('app');
