@@ -331,7 +331,7 @@ body {
    ============================================================ */
 .app-shell {
   display: flex; width: 100%; max-width: 1280px;
-  height: 100%; max-height: calc(100vh - 48px);
+  height: 100%; max-height: calc(100vh - 24px);
   overflow: hidden;
   margin: 0 auto;
   border-radius: var(--radius-xl);
@@ -350,7 +350,7 @@ body {
 }
 
 .sidebar-brand {
-  height: 52px; padding: 0 16px;
+  height: 48px; padding: 0 16px;
   display: flex; align-items: center; gap: 10px;
   border-bottom: 1px solid var(--border-default);
   flex-shrink: 0;
@@ -924,7 +924,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .demo-wrap {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
-  padding: 24px;
+  padding: 12px;
   box-sizing: border-box;
 }
 /* ===== QUICK PASTE OVERLAY ===== */
@@ -1226,12 +1226,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="tab-bar"><div class="tab-btn active" onclick="switchClipTab(this,'all')">All</div><div class="tab-btn" onclick="switchClipTab(this,'text')">Text</div><div class="tab-btn" onclick="switchClipTab(this,'images')">Images</div><div class="tab-btn" onclick="switchClipTab(this,'links')">Links</div><div class="tab-btn" onclick="switchClipTab(this,'files')">Files</div></div>
         <div class="content-scroll clip-view">
           <div class="list-head"><div>Content</div><div>Source</div><div>Type</div><div>Time</div><div style="text-align:right;">Actions</div></div>
-          <div class="clip-row" data-type="text"><div class="cr-main"><div class="type-badge tb-text"><span class="icon icon-md"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span></div><span class="cr-preview">Fix the clipboard sync bug in Rust backend service layer</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>MacBook Pro</div><div><span class="cr-tag ct-text">Text</span></div><div class="cr-time">2m ago</div><div class="cr-actions"><button class="act-btn" title="Copy" onclick="showToast('Copied to clipboard!','success')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01 -2-2V4a2 2 0 0 1 2 -2h9a2 2 0 0 1 2 2v1"/></svg></span></button><button class="act-btn" title="Open"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01 -2 2H5a2 2 0 01 -2-2V8a2 2 0 0 1 2 -2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Item deleted','info',{text:'Undo',callback:()=>showToast('Restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01 -2 2H7a2 2 0 01 -2-2V6m3 0V4a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v2"/></svg></span></button></div></div>
-          <div class="clip-row" data-type="images"><div class="cr-main"><div class="type-badge tb-img"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span></div><span class="cr-preview">Screenshot_2026-07-03_14_22_05.png</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>iPhone 15 Pro</div><div><span class="cr-tag ct-img">Image</span></div><div class="cr-time">15m ago</div><div class="cr-actions"><button class="act-btn" onclick="openModal('imagePreview')" title="Preview"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4 -8 11 -8 11 8 11 8 -4 8 -11 8 -11 -8-11 -8z"/><circle cx="12" cy="12" r="3"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening image...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01 -2 2H5a2 2 0 01 -2-2V8a2 2 0 0 1 2 -2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Image deleted','info',{text:'Undo',callback:()=>showToast('Image restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01 -2 2H7a2 2 0 01 -2-2V6m3 0V4a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v2"/></svg></span></button></div></div>
-          <div class="clip-row" data-type="links"><div class="cr-main"><div class="type-badge tb-link"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3 -3a5 5 0 00 -7.07 -7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00 -7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71 -1.71"/></svg></span></div><span class="cr-preview">github.com/CarlosShao/ClipSync/pull/42</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>iPad Air</div><div><span class="cr-tag ct-link">Link</span></div><div class="cr-time">1h ago</div><div class="cr-actions"><button class="act-btn" title="Copy" onclick="showToast('Link copied!','success')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01 -2-2V4a2 2 0 0 1 2 -2h9a2 2 0 0 1 2 2v1"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening link...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01 -2 2H5a2 2 0 01 -2-2V8a2 2 0 0 1 2 -2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Link deleted','info',{text:'Undo',callback:()=>showToast('Link restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01 -2 2H7a2 2 0 01 -2-2V6m3 0V4a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v2"/></svg></span></button></div></div>
-          <div class="clip-row" data-type="files"><div class="cr-main"><div class="type-badge tb-file"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00 -2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span></div><span class="cr-preview">design-spec-v2.figma</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>MacBook Pro</div><div><span class="cr-tag ct-file">File</span></div><div class="cr-time">3h ago</div><div class="cr-actions"><button class="act-btn" title="Download" onclick="showToast('Downloading file...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01 -2 2H5a2 2 0 01 -2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening file...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01 -2 2H5a2 2 0 01 -2-2V8a2 2 0 0 1 2 -2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('File deleted','info',{text:'Undo',callback:()=>showToast('File restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01 -2 2H7a2 2 0 01 -2-2V6m3 0V4a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v2"/></svg></span></button></div></div>
-          <div class="clip-row" data-type="text"><div class="cr-main"><div class="type-badge tb-text"><span class="icon icon-md"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span></div><span class="cr-preview">Meeting notes from today's sprint review session...</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>iPhone 15 Pro</div><div><span class="cr-tag ct-text">Text</span></div><div class="cr-time">5h ago</div><div class="cr-actions"><button class="act-btn" title="Copy" onclick="showToast('Copied to clipboard!','success')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01 -2-2V4a2 2 0 0 1 2 -2h9a2 2 0 0 1 2 2v1"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening notes...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01 -2 2H5a2 2 0 01 -2-2V8a2 2 0 0 1 2 -2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Note deleted','info',{text:'Undo',callback:()=>showToast('Note restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01 -2 2H7a2 2 0 01 -2-2V6m3 0V4a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v2"/></svg></span></button></div></div>
-          <div class="empty-state" id="clipEmptyState">
+          <div class="empty-state show" id="clipEmptyState">
             <div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 01 -2 2H6a2 2 0 01 -2-2V6a2 2 0 0 1 2 -2h2"/></svg></span></div>
             <div class="empty-title">No clips yet</div>
             <div class="empty-desc">Clips from all your devices will appear here.<br>Start copying to sync!</div>
@@ -1996,11 +1991,9 @@ function renderClipboardItems() {
     const tr = document.createElement('div');
     tr.className = 'clip-row'; tr.dataset.type = typeClass; tr.dataset.id = item.id;
     tr.style.cursor = 'pointer';
-    tr.onclick = (e) => {
-      if (e.target.closest('.cr-actions')) return;
-      viewItem(item.id, typeClass);
-    };
-    tr.innerHTML = `<div class="cr-main"><div class="type-badge tb-${typeClass}"><span class="icon icon-md">${typeClass === 'text' ? '📝' : typeClass === 'img' ? '🖼️' : typeClass === 'link' ? '🔗' : '📁'}</span></div><span class="cr-preview">${escapeHtml((item.content||'').substring(0, 120))}</span></div><div class="cr-device"><span class="icon icon-sm">💻</span>${escapeHtml(item.deviceName || 'Unknown')}</div><div><span class="cr-tag ct-${typeClass}">${typeLabel}</span></div><div class="cr-time">${formatTime(item.createdAt)}</div><div class="cr-actions"><button class="act-btn" title="复制" onclick="copyItem('${item.id}')"><span class="icon icon-sm">📋</span></button><button class="act-btn" title="删除" onclick="deleteItem('${item.id}')"><span class="icon icon-sm">🗑️</span></button></div>`;
+    // Double insurance: inline onclick + event delegation both call handleClipRowClick
+    tr.setAttribute('onclick', "handleClipRowClick(this)");
+    tr.innerHTML = `<div class="cr-main"><div class="type-badge tb-${typeClass}"><span class="icon icon-md">${typeClass === 'text' ? '📝' : typeClass === 'img' ? '🖼️' : typeClass === 'link' ? '🔗' : '📁'}</span></div><span class="cr-preview">${escapeHtml((item.content||'').substring(0, 120))}</span></div><div class="cr-device"><span class="icon icon-sm">💻</span>${escapeHtml(item.deviceName || 'Unknown')}</div><div><span class="cr-tag ct-${typeClass}">${typeLabel}</span></div><div class="cr-time">${formatTime(item.createdAt)}</div><div class="cr-actions"><button class="act-btn" title="复制" onclick="event.stopPropagation();copyItem('${item.id}')"><span class="icon icon-sm">📋</span></button><button class="act-btn" title="删除" onclick="event.stopPropagation();deleteItem('${item.id}')"><span class="icon icon-sm">🗑️</span></button></div>`;
     if (listHead) listHead.after(tr); else container.appendChild(tr);
   });
 }
@@ -2008,8 +2001,27 @@ function renderClipboardItems() {
 async function copyItem(id) {
   const item = clipboardItems.find(i => i.id === id);
   if (!item) return;
-  try { await navigator.clipboard.writeText(item.content || ''); showToast('已复制', 'success'); }
-  catch { showToast('复制失败', 'error'); }
+  await copyToClipboard(item.content || '');
+}
+
+// Unified clipboard write with Tauri fallback
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('已复制', 'success');
+  } catch (e) {
+    // Fallback: Tauri clipboard API
+    try {
+      const inv = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+      if (inv) { await inv('write_text', { text: text }); showToast('已复制', 'success'); return; }
+    } catch (e2) { /* ignore tauri fallback error */ }
+    // Last resort: textarea trick
+    try {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta); showToast('已复制', 'success');
+    } catch (e3) { showToast('复制失败: ' + e.message, 'error'); }
+  }
 }
 
 async function deleteItem(id) {
@@ -2367,7 +2379,7 @@ async function copyTextItem(id) {
     } else {
       fullContent = item.contentPreview || '';
     }
-    await navigator.clipboard.writeText(fullContent);
+    await copyToClipboard(fullContent);
     showToast('已复制 (' + fullContent.length + '字符)', 'success');
   } catch (e) { showToast('复制失败: ' + e.message, 'error'); }
 }
@@ -3033,27 +3045,27 @@ if (state.token) {
 }
 applyStyle("vercel", "light"); loadSettings();
 
-// Event delegation: clipboard row clicks (handles both static HTML & dynamic rows)
-document.querySelector('.clip-view')?.addEventListener('click', function(e) {
-  const row = e.target.closest('.clip-row');
-  if (!row || e.target.closest('.cr-actions')) return;
-  const id = row.dataset.id;
-  // Map data-type to viewItem type: text→text, images→img, links→link, files→file
-  const rawType = row.dataset.type || 'text';
+// Clipboard row click handler — called from both event delegation & inline onclick
+function handleClipRowClick(rowEl) {
+  const id = rowEl.dataset.id;
+  const rawType = rowEl.dataset.type || 'text';
   const typeMap = { text:'text', images:'img', image:'img', links:'link', link:'link', files:'file', file:'file' };
   const type = typeMap[rawType] || 'text';
-  if (id) {
-    viewItem(id, type);
-  } else {
-    // Static prototype row without real ID — copy preview text
-    const preview = row.querySelector('.cr-preview');
-    if (preview) {
-      navigator.clipboard.writeText(preview.textContent).then(() => {
-        showToast('已复制', 'success');
-      }).catch(() => showToast('复制失败', 'error'));
-    }
-  }
-});
+  console.log('[click] row id=', id, 'type=', type);
+  if (id) { viewItem(id, type); }
+}
+
+// Event delegation on .clip-view container
+(function attachClipViewListener() {
+  var cv = document.querySelector('.clip-view');
+  if (!cv) { console.warn('[init] .clip-view not found at script time'); return; }
+  cv.addEventListener('click', function(e) {
+    var row = e.target.closest('.clip-row');
+    if (!row || e.target.closest('.cr-actions')) return;
+    handleClipRowClick(row);
+  });
+  console.log('[init] clip-view click listener attached');
+})();
 </script>
 
 
