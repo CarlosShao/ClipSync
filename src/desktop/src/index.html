@@ -2166,24 +2166,31 @@ function detectContentType(text) {
 }
 
 async function uploadClipboard(content) {
+  console.log('[UploadClipboard] called, len=' + content.length + ', deviceId=' + (state.deviceId || 'none'));
   if (!state.deviceId) {
     state.deviceId = localStorage.getItem('cs_device_id');
+    console.log('[UploadClipboard] restored deviceId from localStorage: ' + state.deviceId);
   }
-  if (!state.deviceId || !content.trim()) return;
+  if (!state.deviceId || !content.trim()) {
+    console.log('[UploadClipboard] SKIP: deviceId=' + state.deviceId + ' content=' + content.length);
+    return;
+  }
 
   const type = detectContentType(content);
+  console.log('[UploadClipboard] type=' + type + ', posting to /api/clipboard');
   try {
-    await api('POST', '/api/clipboard', {
+    const res = await api('POST', '/api/clipboard', {
       sourceDeviceId: state.deviceId,
       contentType: type,
       contentEncrypted: btoa(unescape(encodeURIComponent(content))),
       contentPreview: content.length > 5000 ? content.substring(0, 5000) + '...(' + content.length + '字符)' : content,
       contentSize: content.length,
     });
-    loadClipboardItems();
+    console.log('[UploadClipboard] API success, response:', JSON.stringify(res).substring(0, 100));
+    await loadClipboardItems();
     showToast('已同步到服务器', 'success');
   } catch (e) {
-    console.error('[Upload] failed:', e.message);
+    console.error('[UploadClipboard] FAILED:', e.message);
     showToast('同步失败: ' + e.message, 'error');
   }
 }
