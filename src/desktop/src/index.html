@@ -1920,6 +1920,7 @@ async function resendCode() {
 }
 
 async function doLogin() {
+  console.log('[doLogin] called');
   const phone = document.getElementById('loginPhone')?.value?.trim();
   const code = document.getElementById('loginCode')?.value?.trim();
   if (!phone || !code) { showToast('请输入手机号和验证码', 'error'); return; }
@@ -1928,10 +1929,13 @@ async function doLogin() {
     state.token = data.token; state.user = data.user;
     localStorage.setItem('cs_token', data.token);
     localStorage.setItem('cs_user', JSON.stringify(data.user));
+    console.log('[doLogin] verify-code OK');
     showPage('app');
     updateUserInfo();
     loadClipboardItems();
+    console.log('[doLogin] calling loadDevices...');
     await loadDevices();
+    console.log('[doLogin] loadDevices done, deviceReady=' + deviceReady + ' deviceId=' + (state.deviceId || 'none'));
     connectWebSocket();
     startClipboardPolls();
     showToast('登录成功', 'success');
@@ -2054,12 +2058,16 @@ let devices = [];
 async function loadDevices() {
   try {
     const data = await api('GET', '/api/devices');
-    const devList = data.devices || data.data || [];
-    if (Array.isArray(devList)) devices = devList; else devices = [];
+    // Backend returns raw array, not { devices: [...] }
+    let devList = data;
+    if (devList && devList.devices) devList = devList.devices;
+    else if (devList && devList.data) devList = devList.data;
+    if (!Array.isArray(devList)) devList = [];
+    devices = devList;
     // Auto-register if no device exists
     if (devices.length === 0 && state.token) {
       try {
-        const reg = await api('POST', '/api/devices/register', {
+        const reg = await api('POST', '/api/devices', {
           deviceName: '浏览器桌面 (' + navigator.platform + ')',
           deviceType: 'desktop',
           platform: navigator.platform,
