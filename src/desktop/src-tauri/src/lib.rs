@@ -423,7 +423,7 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
     }
 
     // Accept best result if >30% non-blank
-    if let Some((order_name, pix_off, stats)) = best_result {
+    if let Some((_order_name, pix_off, stats)) = best_result {
         let pct = stats.non_blank as f64 / stats.total.max(1) as f64 * 100.0;
         if pct > 30.0 {
             eprintln!("[dib_to_png] ACCEPTED fallback: offset={} order={:.1}%", pix_off, pct);
@@ -582,22 +582,12 @@ fn register_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), Stri
         let shortcut_clone = shortcut.clone();
         handle.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
 
-        // Tauri v2: parse shortcut string, then register
+        // Tauri v2: parse shortcut string, then register (handler is global via on_global_shortcut_event)
         let shortcut_obj: Shortcut = shortcut_clone
             .parse()
             .map_err(|e| format!("Invalid shortcut '{}': {}", shortcut_clone, e))?;
 
-        let handle_clone = handle.clone();
-        handle.global_shortcut().register(shortcut_obj, move |app_handle, _shortcut, event| {
-            if event.state == ShortcutState::Pressed {
-                eprintln!("[RegisterShortcut] Shortcut pressed!");
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    let _ = window.eval("window.toggleQuickPaste()");
-                }
-            }
-        }).map_err(|e| e.to_string())?;
+        handle.global_shortcut().register(shortcut_obj).map_err(|e| e.to_string())?;
 
         if let Some(state) = app.try_state::<AppState>() {
             let mut config = state.config.lock().unwrap();
@@ -876,6 +866,25 @@ pub fn run() {
                 // 先卸载所有已有快捷键
                 let _ = handle.global_shortcut().unregister_all();
 
+                // Tauri v2: 先注册全局快捷键事件监听器 (handler)
+                // register() 只接受 shortcut 参数，不接受闭包
+                let handle_evt = handle.clone();
+                app.on_global_shortcut_event(move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        eprintln!("[GlobalShortcut] Global shortcut pressed!");
+                        if let Some(window) = handle_evt.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            match window.eval("window.toggleQuickPaste()") {
+                                Ok(_) => eprintln!("[GlobalShortcut] toggleQuickPaste() called"),
+                                Err(e) => eprintln!("[GlobalShortcut] eval failed: {}", e),
+                            }
+                        } else {
+                            eprintln!("[GlobalShortcut] Main window not found!");
+                        }
+                    }
+                });
+
                 // 快捷键候选列表（按优先级，Tauri v2 格式）
                 let candidates: Vec<&str> = {
                     if primary_normalized.contains("Shift+V") {
@@ -887,33 +896,17 @@ pub fn run() {
 
                 let mut registered = false;
                 for (i, candidate) in candidates.iter().enumerate() {
-                    // 1. 解析快捷键字符串 (Tauri v2: Shortcut implements FromStr)
+                    // 1. 解析快捷键字符串
                     let shortcut: Shortcut = match candidate.parse() {
                         Ok(s) => s,
                         Err(e) => {
-                            eprintln!("[Setup] Failed to parse shortcut '{}': {}", candidate, e);
+                            eprintln!("[Setup] Failed to parse '{}': {}", candidate, e);
                             continue;
                         }
                     };
 
-                    // 2. 注册快捷键 (Tauri v2: register(shortcut, handler))
-                    let handle_clone = handle.clone();
-                    let cand_str = candidate.to_string();
-                    let reg_result = handle.global_shortcut().register(shortcut, move |app_handle, _shortcut, event| {
-                        if event.state == ShortcutState::Pressed {
-                            eprintln!("[GlobalShortcut] Shortcut '{}' pressed!", cand_str);
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                                match window.eval("window.toggleQuickPaste()") {
-                                    Ok(_) => eprintln!("[GlobalShortcut] toggleQuickPaste() called"),
-                                    Err(e) => eprintln!("[GlobalShortcut] eval failed: {}", e),
-                                }
-                            } else {
-                                eprintln!("[GlobalShortcut] Main window not found!");
-                            }
-                        }
-                    });
+                    // 2. 注册快捷键 (Tauri v2: 只传 shortcut，handler 通过 on_global_shortcut_event 统一注册)
+                    let reg_result = handle.global_shortcut().register(shortcut);
 
                     // 3. 检查注册结果
                     match reg_result {
