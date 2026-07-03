@@ -1995,7 +1995,20 @@ function renderClipboardItems() {
     tr.style.cursor = 'pointer';
     // Double insurance: inline onclick + event delegation both call handleClipRowClick
     tr.setAttribute('onclick', "handleClipRowClick(this)");
-    tr.innerHTML = `<div class="cr-main"><div class="type-badge tb-${typeClass}"><span class="icon icon-md">${typeClass === 'text' ? '📝' : typeClass === 'img' ? '🖼️' : typeClass === 'link' ? '🔗' : '📁'}</span></div><span class="cr-preview">${escapeHtml((item.content||'').substring(0, 120))}</span></div><div class="cr-device"><span class="icon icon-sm">💻</span>${escapeHtml(item.deviceName || 'Unknown')}</div><div><span class="cr-tag ct-${typeClass}">${typeLabel}</span></div><div class="cr-time">${formatTime(item.createdAt)}</div><div class="cr-actions"><button class="act-btn" title="复制" onclick="event.stopPropagation();copyItem('${item.id}')"><span class="icon icon-sm">📋</span></button><button class="act-btn" title="删除" onclick="event.stopPropagation();deleteItem('${item.id}')"><span class="icon icon-sm">🗑️</span></button></div>`;
+    const typeIcons = {
+      text: '<svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
+      img:  '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+      link: '<svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l 3 -3 a5 5 0 0 0 -7.07 -7.07 l -1.72 1.71"/><path d="M 14 11a5 5 0 0 0 -7.54 -.54 l -3 3 a5 5 0 0 0 7.07 7.07 l 1.71 -1.71"/></svg>',
+      file: '<svg viewBox="0 0 24 24"><path d="M 14 2 H6 a2 2 0 0 0 -2 2 v16 a2 2 0 0 0 2 2 h12 a2 2 0 0 0 2 -2 V8 z"/><polyline points="14 2 14 8 20 8"/></svg>'
+    };
+    const devIcons = {
+      mobile: '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',
+      desktop: '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+      tablet: '<svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>'
+    };
+    const devType = (item.deviceType || '').toLowerCase();
+    const devIcon = devIcons[devType] || devIcons.desktop;
+    tr.innerHTML = `<div class="cr-main"><div class="type-badge tb-${typeClass}"><span class="icon icon-md">${typeIcons[typeClass] || typeIcons.text}</span></div><span class="cr-preview">${escapeHtml((item.content||'').substring(0, 120))}</span></div><div class="cr-device"><span class="icon icon-sm">${devIcon}</span>${escapeHtml(item.deviceName || 'Unknown')}</div><div><span class="cr-tag ct-${typeClass}">${typeLabel}</span></div><div class="cr-time">${formatTime(item.createdAt)}</div><div class="cr-actions"><button class="act-btn" title="复制" onclick="event.stopPropagation();copyItem('${item.id}')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M 5 15 H4 a2 2 0 0 1 -2 -2 V4 a2 2 0 0 1 2 -2 h9 a2 2 0 0 1 2 2 v1"/></svg></span></button><button class="act-btn" title="删除" onclick="event.stopPropagation();deleteItem('${item.id}')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M 19 6v14 a2 2 0 0 1 -2 2 H7 a2 2 0 0 1 -2 -2 V6 m3 0 V4 a2 2 0 0 1 2 -2 h4 a2 2 0 0 1 2 2 v2"/></svg></span></button></div>`;
     if (listHead) listHead.after(tr); else container.appendChild(tr);
   });
 }
@@ -2041,9 +2054,15 @@ async function loadDevices() {
 function renderDevices() {
   const container = document.querySelector('.device-grid');
   if (!container) return; container.innerHTML = '';
+  const devIcons = {
+    mobile: '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',
+    desktop: '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+    tablet: '<svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>'
+  };
   devices.forEach(dev => {
     const card = document.createElement('div'); card.className = 'dev-card';
-    card.innerHTML = `<div class="dev-card-top"><div class="dev-icon"><span class="icon icon-lg">${dev.type === 'mobile' ? '📱' : '💻'}</span></div><div><div class="dev-name">${escapeHtml(dev.name || '')}</div><div class="dev-status"><span class="status-dot ${dev.online ? 'on' : 'off'}"></span>${dev.online ? '在线' : '离线'}</div></div></div><div class="dev-stats"><div class="stat-cell"><div class="stat-lbl">同步片段</div><div class="stat-val">${dev.clipCount || 0}</div></div><div class="stat-cell"><div class="stat-lbl">状态</div><div class="stat-val ${dev.online ? 'ok' : 'dim'}">${dev.online ? '活跃' : '空闲'}</div></div></div>`;
+    const iconSvg = devIcons[(dev.type||'').toLowerCase()] || devIcons.desktop;
+    card.innerHTML = `<div class="dev-card-top"><div class="dev-icon"><span class="icon icon-lg">${iconSvg}</span></div><div><div class="dev-name">${escapeHtml(dev.name || '')}</div><div class="dev-status"><span class="status-dot ${dev.online ? 'on' : 'off'}"></span>${dev.online ? '在线' : '离线'}</div></div></div><div class="dev-stats"><div class="stat-cell"><div class="stat-lbl">同步片段</div><div class="stat-val">${dev.clipCount || 0}</div></div><div class="stat-cell"><div class="stat-lbl">状态</div><div class="stat-val ${dev.online ? 'ok' : 'dim'}">${dev.online ? '活跃' : '空闲'}</div></div></div>`;
     container.appendChild(card);
   });
 }
@@ -2413,7 +2432,7 @@ async function loadSessions() {
     body.innerHTML = `<ul class="session-list">
       ${sessions.map(s => `
         <li class="session-item">
-          <div class="session-dev-icon"><span class="icon icon-md">${s.deviceType === 'mobile' ? '📱' : s.deviceType === 'tablet' ? '📱' : '💻'}</span></div>
+          <div class="session-dev-icon"><span class="icon icon-md">${s.deviceType === 'mobile' ? '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>' : s.deviceType === 'tablet' ? '<svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>' : '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'}</span></div>
           <div class="session-info">
             <div class="session-name">${escapeHtml(s.deviceName || 'Unknown')}</div>
             <div class="session-detail">${escapeHtml(s.location || '--')} · ${s.isCurrent ? '当前会话' : (s.lastActive || 'Active')}</div>
