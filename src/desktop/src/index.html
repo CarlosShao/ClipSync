@@ -3426,109 +3426,125 @@
       }
     };
 
-    // ====== Shortcut Settings (Modern List UI) ======
+    // ====== Shortcut Settings (Keyboard Capture - Codex/VS Code style) ======
 
     var SHORTCUT_DEFINITIONS = [
-      { id: 'quick_paste', name: '快速粘贴', desc: '唤起剪贴板快速粘贴面板', icon: '📋', defaultShortcut: 'Ctrl+Shift+V' }
+      { id: 'quick_paste', name: '快速粘贴', desc: '唤起剪贴板快速粘贴面板', icon: '⌨️', defaultShortcut: 'Ctrl+Shift+V' }
     ];
 
-    // Available keys for selection
-    var SHORTCUT_KEY_OPTIONS = [];
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(function(ch) { SHORTCUT_KEY_OPTIONS.push(ch); });
-    '0123456789'.split('').forEach(function(ch) { SHORTCUT_KEY_OPTIONS.push(ch); });
-    for (var fi = 1; fi <= 12; fi++) SHORTCUT_KEY_OPTIONS.push('F' + fi);
-    ['Left','Right','Up','Down','Enter','Space','Tab','Backspace','Delete'].forEach(function(k) { SHORTCUT_KEY_OPTIONS.push(k); });
+    // Editing state per definition
+    window._shortcutState = {};
 
-    // Editing state per shortcut definition
-    window._shortcutEditState = {};
+    // Key code → display name mapping
+    var _keyCodeMap = {
+      // Letters
+      'KeyA':'A','KeyB':'B','KeyC':'C','KeyD':'D','KeyE':'E','KeyF':'F',
+      'KeyG':'G','KeyH':'H','KeyI':'I','KeyJ':'J','KeyK':'K','KeyL':'L',
+      'KeyM':'M','KeyN':'N','KeyO':'O','KeyP':'P','KeyQ':'Q','KeyR':'R',
+      'KeyS':'S','KeyT':'T','KeyU':'U','KeyV':'V','KeyW':'W','KeyX':'X',
+      'KeyY':'Y','KeyZ':'Z',
+      // Digits
+      'Digit0':'0','Digit1':'1','Digit2':'2','Digit3':'3','Digit4':'4',
+      'Digit5':'5','Digit6':'6','Digit7':'7','Digit8':'8','Digit9':'9',
+      // F-keys
+      'F1':'F1','F2':'F2','F3':'F3','F4':'F4','F5':'F5','F6':'F6',
+      'F7':'F7','F8':'F8','F9':'F9','F10':'F10','F11':'F11','F12':'F12',
+      // Special keys
+      'ArrowLeft':'Left','ArrowRight':'Right','ArrowUp':'Up','ArrowDown':'Down',
+      'Enter':'Enter','Space':'Space','Tab':'Tab','Backspace':'Backspace',
+      'Delete':'Delete'
+    };
 
-    function _renderShortcutPills(mods, key) {
-      var pills = [];
-      mods.forEach(function(m) { pills.push('<span class="sc-pill">' + m + '</span>'); });
-      if (key) pills.push('<span class="sc-pill sc-pill-key">' + key + '</span>');
-      return pills.join('');
+    function _formatShortcut(s) {
+      if (!s) return '';
+      return s;
     }
 
-    function _parseShortcut(s) {
-      if (!s) return { mods: ['Ctrl', 'Shift'], key: 'V' };
-      var parts = s.split('+');
-      var mods = [], key = '';
-      parts.forEach(function(p) {
-        if (p === 'Ctrl' || p === 'Shift' || p === 'Alt') mods.push(p);
-        else key = p;
-      });
-      if (mods.length === 0) mods = ['Ctrl', 'Shift'];
-      if (!key) key = 'V';
-      return { mods: mods, key: key };
+    function _renderShortcutBadge(shortcut) {
+      if (!shortcut) return '<span class="sc-badge sc-badge-empty">未设置</span>';
+      var parts = shortcut.split('+');
+      return parts.map(function(p) {
+        return '<kbd class="sc-kbd">' + p + '</kbd>';
+      }).join('<span class="sc-plus">+</span>');
     }
 
-    function _buildShortcutString(mods, key) {
-      if (mods.length === 0 || !key) return '';
-      var parts = mods.slice();
-      parts.push(key);
-      return parts.join('+');
-    }
+    // --- Keyboard Capture Input ---
 
-    function _openShortcutEditor(defId) {
-      var state = window._shortcutEditState[defId];
+    function _startCapture(defId) {
+      var state = window._shortcutState[defId];
       state.editing = true;
+      state.captured = '';
+
       var row = document.getElementById('sc-row-' + defId);
-      var editor = document.getElementById('sc-editor-' + defId);
       row.querySelector('.sc-row-display').style.display = 'none';
-      editor.style.display = 'block';
-      _renderEditorContent(defId);
+      row.querySelector('.sc-row-capture').style.display = '';
+
+      var input = document.getElementById('sc-input-' + defId);
+      input.value = '';
+      input.focus();
+      input.placeholder = '按下快捷键组合...';
     }
 
-    function _closeShortcutEditor(defId, save) {
-      var state = window._shortcutEditState[defId];
+    function _endCapture(defId, save) {
+      var state = window._shortcutState[defId];
       var row = document.getElementById('sc-row-' + defId);
-      var editor = document.getElementById('sc-editor-' + defId);
-      if (save) {
-        var s = _buildShortcutString(state.mods, state.key);
-        state.currentShortcut = s;
-        row.querySelector('.sc-pills').innerHTML = _renderShortcutPills(state.mods, state.key);
-      } else {
-        // revert to saved
-        var parsed = _parseShortcut(state.currentShortcut);
-        state.mods = parsed.mods;
-        state.key = parsed.key;
+
+      if (save && state.captured) {
+        state.currentShortcut = state.captured;
+        row.querySelector('.sc-badge-area').innerHTML = _renderShortcutBadge(state.captured);
+      } else if (!save) {
+        // revert display
+        row.querySelector('.sc-badge-area').innerHTML = _renderShortcutBadge(state.currentShortcut);
       }
+
       state.editing = false;
+      state.captured = '';
       row.querySelector('.sc-row-display').style.display = '';
-      editor.style.display = 'none';
+      row.querySelector('.sc-row-capture').style.display = 'none';
+      row.querySelector('.sc-capture-error').textContent = '';
     }
 
-    function _renderEditorContent(defId) {
-      var state = window._shortcutEditState[defId];
-      var modArea = document.getElementById('sc-mods-' + defId);
-      var keyArea = document.getElementById('sc-keys-' + defId);
+    function _onCaptureKeyDown(e, defId) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
 
-      modArea.innerHTML = ['Ctrl','Shift','Alt'].map(function(m) {
-        var active = state.mods.indexOf(m) >= 0;
-        return '<button class="sc-edit-pill' + (active ? ' active' : '') + '" data-mod="' + m + '">' + m + '</button>';
-      }).join('');
+      var state = window._shortcutState[defId];
+      var input = document.getElementById('sc-input-' + defId);
+      var errEl = document.querySelector('#sc-row-' + defId + ' .sc-capture-error');
 
-      modArea.querySelectorAll('.sc-edit-pill').forEach(function(btn) {
-        btn.onclick = function() {
-          this.classList.toggle('active');
-          var m = this.getAttribute('data-mod');
-          var idx = state.mods.indexOf(m);
-          if (idx >= 0) state.mods.splice(idx, 1);
-          else state.mods.push(m);
-        };
-      });
+      // Esc → cancel
+      if (e.key === 'Escape') { _endCapture(defId, false); return; }
+      // Enter → confirm
+      if (e.key === 'Enter' && state.captured) { _endCapture(defId, true); return; }
 
-      keyArea.innerHTML = SHORTCUT_KEY_OPTIONS.map(function(k) {
-        return '<span class="sc-key-chip' + (state.key === k ? ' selected' : '') + '" data-k="' + k + '">' + k + '</span>';
-      }).join('');
+      // Build combo from modifier flags + main key
+      var mods = [];
+      if (e.ctrlKey || e.metaKey) mods.push('Ctrl');
+      if (e.shiftKey) mods.push('Shift');
+      if (e.altKey) mods.push('Alt');
 
-      keyArea.querySelectorAll('.sc-key-chip').forEach(function(chip) {
-        chip.onclick = function() {
-          keyArea.querySelectorAll('.sc-key-chip').forEach(function(c) { c.classList.remove('selected'); });
-          this.classList.add('selected');
-          state.key = this.getAttribute('data-k');
-        };
-      });
+      var mainKey = null;
+      if (_keyCodeMap[e.code]) mainKey = _keyCodeMap[e.code];
+
+      // Must have at least 1 modifier + 1 main key
+      if (!mainKey || mods.length === 0) {
+        errEl.textContent = '请按 修饰键(Ctrl/Shift/Alt) + 按键';
+        return;
+      }
+
+      var combo = mods.concat([mainKey]).join('+');
+      state.captured = combo;
+      input.value = combo;
+      errEl.textContent = '';
+
+      // Auto-confirm after short delay (like VS Code)
+      clearTimeout(state._autoConfirmTimer);
+      state._autoConfirmTimer = setTimeout(function() {
+        if (state.editing && state.captured === combo) {
+          _endCapture(defId, true);
+        }
+      }, 800);
     }
 
     window._showShortcutSettings = async function() {
@@ -3545,69 +3561,87 @@
 
       SHORTCUT_DEFINITIONS.forEach(function(def) {
         var saved = def.id === 'quick_paste' ? globalShortcut : def.defaultShortcut;
-        var parsed = _parseShortcut(saved);
 
-        window._shortcutEditState[def.id] = {
+        window._shortcutState[def.id] = {
           currentShortcut: saved,
-          mods: parsed.mods.slice(),
-          key: parsed.key,
-          editing: false
+          captured: '',
+          editing: false,
+          _autoConfirmTimer: null
         };
 
         var row = document.createElement('div');
         row.className = 'sc-row';
         row.id = 'sc-row-' + def.id;
-        row.innerHTML =
-          '<div class="sc-row-display" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer;" onclick="_openShortcutEditor(\'' + def.id + '\')">' +
-            '<div style="display:flex;align-items:center;gap:12px;">' +
-              '<span style="font-size:20px;">' + def.icon + '</span>' +
-              '<div>' +
-                '<div style="font-size:14px;font-weight:600;color:var(--text-primary);">' + def.name + '</div>' +
-                '<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">' + def.desc + '</div>' +
-              '</div>' +
+
+        // Display mode (normal)
+        var displayDiv = document.createElement('div');
+        displayDiv.className = 'sc-row-display';
+        displayDiv.innerHTML =
+          '<div class="sc-row-info">' +
+            '<span class="sc-row-icon">' + def.icon + '</span>' +
+            '<div class="sc-row-text">' +
+              '<div class="sc-row-name">' + def.name + '</div>' +
+              '<div class="sc-row-desc">' + def.desc + '</div>' +
             '</div>' +
-            '<div class="sc-pills">' + _renderShortcutPills(parsed.mods, parsed.key) + '</div>' +
           '</div>' +
-          '<div class="sc-row-editor" id="sc-editor-' + def.id + '" style="display:none;padding:0 16px 16px 48px;border-top:1px solid var(--border);">' +
-            '<div style="padding-top:12px;">' +
-              '<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">修饰键</div>' +
-              '<div id="sc-mods-' + def.id + '" class="sc-mod-row"></div>' +
-            '</div>' +
-            '<div style="margin-top:10px;">' +
-              '<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">主按键</div>' +
-              '<div id="sc-keys-' + def.id + '" class="sc-key-row"></div>' +
-            '</div>' +
-            '<div style="display:flex;gap:8px;margin-top:14px;">' +
-              '<button class="btn btn-primary" style="padding:6px 18px;font-size:13px;" onclick="_closeShortcutEditor(\'' + def.id + '\',true)">确定</button>' +
-              '<button class="btn" style="padding:6px 18px;font-size:13px;background:#eee;color:#666;border:none;" onclick="_closeShortcutEditor(\'' + def.id + '\',false)">取消</button>' +
-            '</div>' +
+          '<div class="sc-badge-area" onclick="_startCapture(\'' + def.id + '\')">' +
+            _renderShortcutBadge(saved) +
           '</div>';
+
+        // Capture mode (editing)
+        var captureDiv = document.createElement('div');
+        captureDiv.className = 'sc-row-capture';
+        captureDiv.style.display = 'none';
+        captureDiv.innerHTML =
+          '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px 12px 48px;border-top:1px solid var(--border-light);">' +
+            '<input id="sc-input-' + def.id + '" class="sc-capture-input" type="text" readonly placeholder="按下快捷键组合..." autocomplete="off" spellcheck="false" />' +
+            '<button class="btn" onclick="_endCapture(\'' + def.id + '\',false)" style="padding:6px 14px;font-size:13px;background:var(--bg);color:var(--text-muted);border:1px solid var(--border);">Cancel</button>' +
+          '</div>' +
+          '<div class="sc-capture-error" style="font-size:12px;color:var(--danger);padding:0 16px 10px 48px;"></div>';
+
+        row.appendChild(displayDiv);
+        row.appendChild(captureDiv);
+
+        // Bind keydown on the input
+        var bindInput = function() {
+          var inp = document.getElementById('sc-input-' + def.id);
+          if (inp) {
+            inp.addEventListener('keydown', function(e) { _onCaptureKeyDown(e, def.id); });
+          }
+        };
+        setTimeout(bindInput, 0);
+
         listEl.appendChild(row);
       });
     };
     window.showShortcutSettings = window._showShortcutSettings;
     window.closeShortcutModal = function() {
       document.getElementById('shortcut-modal').style.display = 'none';
+      // Cancel any active captures
+      SHORTCUT_DEFINITIONS.forEach(function(def) {
+        var state = window._shortcutState[def.id];
+        if (state && state.editing) _endCapture(def.id, false);
+      });
     };
     window.saveShortcut = async function() {
       var errors = [];
-      SHORTCUT_DEFINITIONS.forEach(function(def) {
-        var state = window._shortcutEditState[def.id];
-        var s = _buildShortcutString(state.mods, state.key);
-        if (!s) { errors.push(def.name + ': 请选择完整的快捷键组合'); return; }
+      for (var si = 0; si < SHORTCUT_DEFINITIONS.length; si++) {
+        var def = SHORTCUT_DEFINITIONS[si];
+        var state = window._shortcutState[def.id];
+        var s = state.currentShortcut;
+        if (!s) { errors.push(def.name + ': 请设置快捷键'); return; }
         try {
           if (def.id === 'quick_paste') {
-            window._tauriInvoke('register_shortcut', { shortcut: s });
+            await window._tauriInvoke('register_shortcut', { shortcut: s });
           }
         } catch(e) { errors.push(def.name + ': ' + (e.message || e)); }
-      });
+      }
       if (errors.length > 0) { showToast(errors.join('\n')); return; }
 
-      var qpState = window._shortcutEditState['quick_paste'];
-      var finalShortcut = _buildShortcutString(qpState.mods, qpState.key);
-      showToast('快捷键已更新：' + finalShortcut);
+      var qpState = window._shortcutState['quick_paste'];
+      showToast('快捷键已更新：' + qpState.currentShortcut);
       var desc = document.getElementById('shortcut-desc');
-      if (desc) desc.textContent = 'Quick Paste: ' + finalShortcut;
+      if (desc) desc.textContent = 'Quick Paste: ' + qpState.currentShortcut;
       closeShortcutModal();
     };
   </script>
@@ -3679,51 +3713,54 @@
     </div>
 
   <style>
-    /* ===== Modern Shortcut List UI Styles ===== */
-    .sc-row { border-bottom:1px solid var(--border); transition:background 0.1s; }
-    .sc-row:hover { background:rgba(99,102,241,0.03); }
+    /* ===== Shortcut Settings - Codex/VS Code Style ===== */
+    .sc-row { border-bottom:1px solid var(--border-light); }
     .sc-row:last-child { border-bottom:none; }
 
-    /* Pill badges for displaying current shortcut */
-    .sc-pill {
-      display:inline-block;padding:3px 10px;border-radius:6px;
-      background:var(--bg-secondary);color:var(--text-primary);
-      font-size:12px;font-weight:600;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
-      border:1px solid var(--border);line-height:1.6;user-select:none;-webkit-user-select:none;
+    /* Row layout: info | badge */
+    .sc-row-display {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:16px 20px; cursor:pointer; transition:background 0.12s;
     }
-    .sc-pill-key { background:#f0edff;color:#4f46e5;border-color:#c7d2fe; }
-    .sc-pills { display:flex;gap:4px;align-items:center; }
-
-    /* Editor inline area */
-    .sc-row-editor { animation:slideDown 0.15s ease; }
-    @keyframes slideDown { from{opacity:0;transform translateY(-6px);} to{opacity:1;transform translateY(0);} }
-
-    /* Modifier toggle pills in editor */
-    .sc-mod-row { display:flex;gap:6px;flex-wrap:wrap; }
-    .sc-edit-pill {
-      padding:5px 14px;border-radius:6px;border:1.5px solid var(--border);
-      background:#fff;color:var(--text-secondary);font-size:13px;font-weight:600;
-      font-family:'SF Mono',SFMono-Regular,Consolas,monospace;cursor:pointer;
-      transition:all 0.12s;user-select:none;-webkit-user-select:none;
+    .sc-row-display:hover { background:var(--bg); }
+    .sc-row-info { display:flex; align-items:center; gap:14px; min-width:0; flex:1; }
+    .sc-row-icon { font-size:22px; flex-shrink:0; line-height:1; }
+    .sc-row-text { min-width:0; }
+    .sc-row-name { font-size:14px; font-weight:600; color:var(--text); letter-spacing:-0.2px; }
+    .sc-row-desc { font-size:12px; color:var(--text-muted); margin-top:2px; }
+    .sc-badge-area {
+      cursor:pointer; padding:4px 8px; border-radius:6px;
+      transition:all 0.12s; display:flex; align-items:center;
     }
-    .sc-edit-pill:hover { border-color:#6366f1;color:#4f46e5; }
-    .sc-edit-pill.active { background:#6366f1;color:#fff;border-color:#6366f1; }
+    .sc-badge-area:hover { background:#f0edff; }
 
-    /* Key chips in editor - compact grid */
-    .sc-key-row { display:flex;flex-wrap:wrap;gap:4px;max-height:160px;overflow-y:auto;padding:6px;background:#fafafa;border-radius:8px;border:1px solid var(--border); }
-    .sc-key-chip {
-      display:inline-flex;align-items:center;justify-content:center;
-      min-width:28px;height:28px;padding:0 6px;border-radius:5px;border:1px solid #e2e2e2;
-      background:#fff;color:var(--text-secondary);font-size:12px;font-weight:500;
-      font-family:'SF Mono',SFMono-Regular,Consolas,monospace;cursor:pointer;
-      transition:all 0.08s;user-select:none;-webkit-user-select:none;
+    /* Kbd-style badges (like Codex/VS Code) */
+    .sc-kbd {
+      display:inline-block; padding:2px 7px; border-radius:4px;
+      background:var(--bg); color:var(--text-secondary);
+      font-size:11px; font-weight:600; font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+      border:1px solid var(--border); line-height:1.7; user-select:none;-webkit-user-select:none;
+      box-shadow:0 1px 0 var(--border);
     }
-    .sc-key-chip:hover { border-color:#a5b4fc;background:#f0edff;color:#4f46e5; }
-    .sc-key-chip.selected { background:#4f46e5;color:#fff;border-color:#4f46e5;font-weight:600;box-shadow:0 1px 4px rgba(79,70,229,0.3); }
+    .sc-plus { color:var(--text-muted); margin:0 2px; font-size:10px; }
+    .sc-badge-empty { color:var(--text-muted); font-size:12px; font-style:italic; }
 
-    /* Scrollbar */
-    .sc-key-row::-webkit-scrollbar, #shortcut-list-body::-webkit-scrollbar { width:5px; }
-    .sc-key-row::-webkit-scrollbar-thumb, #shortcut-list-body::-webkit-scrollbar-thumb { background:#ccc;border-radius:3px; }
+    /* Capture input (editing mode) */
+    .sc-capture-input {
+      flex:1; min-width:0; padding:8px 12px; border:1.5px solid var(--primary);
+      border-radius:6px; font-size:13px; font-family:'SF Mono',SFMono-Regular,Consolas,monospace;
+      font-weight:600; color:var(--primary-dark); outline:none;
+      background:var(--primary-light); text-align:center; letter-spacing:0.5px;
+      caret-color:var(--primary); animation:capturePulse 1.5s ease-in-out infinite;
+    }
+    @keyframes capturePulse {
+      0%,100% { box-shadow:0 0 0 3px rgba(99,102,241,0); }
+      50% { box-shadow:0 0 0 3px rgba(99,102,241,0.15); }
+    }
+    .sc-capture-input:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(99,102,241,0.15); }
+
+    #shortcut-list-body::-webkit-scrollbar { width:5px; }
+    #shortcut-list-body::-webkit-scrollbar-thumb { background:#ccc;border-radius:3px; }
   </style>
 
   <!-- Billing History Modal -->
