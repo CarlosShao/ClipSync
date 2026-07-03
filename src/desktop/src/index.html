@@ -3512,13 +3512,26 @@
 
       var shortcut = parts.join('+');
 
+      // VALIDATION: must have at least ONE modifier (Ctrl/Shift/Alt)
+      // OS global hotkeys require a modifier — single keys like "Backspace" won't work
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+        input.value = '❌ 无效：需要 Ctrl/Shift/Alt + 字母键';
+        _setInputStyle(input, 'default');
+        input.style.borderColor = '#ef4444';
+        input.style.color = '#ef4444';
+        _ setStatus('⚠️ 快捷键必须包含修饰键（Ctrl / Shift / Alt）+ 字母键', '');
+        document.getElementById('shortcut-status').style.color = '#ef4444';
+        // Don't stop recording — let user try again
+        return false;
+      }
+
       // Success!
-      input.value = shortcut;
+      input.value = shortcut + '  ✏️ 点击可修改';
       _setInputStyle(input, 'success');
       window._recordedShortcut = shortcut;
       window._recordingShortcut = false;  // auto-stop
 
-      _setStatus('✅ 已捕获：' + shortcut + '（点击保存生效）', 'success');
+      _setStatus('✅ 已捕获：' + shortcut + '（点击输入框可重新录制）', 'success');
 
       // Remove global listeners
       document.removeEventListener('keydown', _shortcutKeydownHandler, true);
@@ -3587,12 +3600,14 @@
       });
 
       // Layer 2: click also triggers recording (for users who click instead of tab-to-focus)
+      // Also allows RE-RECORDING after a successful capture
       input.addEventListener('click', function() {
-        if (!window._recordingShortcut) {
-          _startRecording();
-        } else {
-          // Already recording — re-focus to ensure we capture keys
+        if (window._recordingShortcut) {
+          // Already recording — just re-focus
           this.focus();
+        } else {
+          // Not recording → start recording (first time OR re-recording after success)
+          _startRecording();
         }
       });
 

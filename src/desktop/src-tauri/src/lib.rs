@@ -592,14 +592,27 @@ fn register_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), Stri
     {
         let handle = app.clone();
         let shortcut_clone = shortcut.clone();
-        handle.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
+        eprintln!("[Shortcut] Registering custom shortcut: '{}'", shortcut_clone);
 
-        // Tauri v2: parse shortcut string, then register (handler is global via on_global_shortcut_event)
+        handle.global_shortcut().unregister_all().map_err(|e| {
+            eprintln!("[Shortcut] unregister_all failed: {}", e);
+            e.to_string()
+        })?;
+
+        // Tauri v2: parse shortcut string, then register (handler is global via app.listen)
         let shortcut_obj: Shortcut = shortcut_clone
             .parse()
-            .map_err(|e| format!("Invalid shortcut '{}': {}", shortcut_clone, e))?;
+            .map_err(|e| {
+                eprintln!("[Shortcut] Failed to parse '{}': {}", shortcut_clone, e);
+                format!("Invalid shortcut '{}': {}", shortcut_clone, e)
+            })?;
 
-        handle.global_shortcut().register(shortcut_obj).map_err(|e| e.to_string())?;
+        handle.global_shortcut().register(shortcut_obj).map_err(|e| {
+            eprintln!("[Shortcut] register failed for '{}': {}", shortcut_clone, e);
+            e.to_string()
+        })?;
+
+        eprintln!("[Shortcut] ✅ Successfully registered: '{}'", shortcut_clone);
 
         if let Some(state) = app.try_state::<AppState>() {
             let mut config = state.config.lock().unwrap();
