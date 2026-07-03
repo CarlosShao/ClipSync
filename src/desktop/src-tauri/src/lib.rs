@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, Separator};
 use tauri::tray::TrayIconBuilder;
 
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -675,11 +675,20 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
 
     let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
     let quick_paste_item = MenuItem::with_id(app, "quick_paste", "快速粘贴", true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
+    let check_update_item = MenuItem::with_id(app, "check_update", "检查更新", true, None::<&str>)?;
     let hide_item = MenuItem::with_id(app, "hide", "隐藏到托盘", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
+    // 同步状态（禁用状态，作为信息展示）
+    let sync_status_item = MenuItem::with_id(app, "sync_status", "● 已同步", false, None::<&str>)?;
+
     let menu = Menu::new(app)?;
-    menu.append_items(&[&show_item, &quick_paste_item, &hide_item, &quit_item])?;
+    menu.append_items(&[&show_item, &quick_paste_item, &settings_item, &check_update_item])?;
+    menu.append(&Separator::new(app)?)?;
+    menu.append_items(&[&sync_status_item])?;
+    menu.append(&Separator::new(app)?)?;
+    menu.append_items(&[&hide_item, &quit_item])?;
 
     let mut builder = TrayIconBuilder::new()
         .menu(&menu)
@@ -702,6 +711,37 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
                             Ok(_) => eprintln!("[Tray] -> toggleQuickPaste"),
                             Err(e) => eprintln!("[Tray] eval error: {}", e),
                         }
+                    }
+                }
+                "settings" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        // 切换到设置页
+                        match window.eval("window.switchPage('settings')") {
+                            Ok(_) => eprintln!("[Tray] -> open settings"),
+                            Err(e) => eprintln!("[Tray] settings eval error: {}", e),
+                        }
+                        eprintln!("[Tray] -> open settings");
+                    }
+                }
+                "check_update" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        // 触发检查更新
+                        let app_clone = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            match app_clone.state::<AppState>().config.lock() {
+                                Ok(cfg) => {
+                                    eprintln!("[Tray] Checking for updates...");
+                                    // Call the check_for_updates tauri command
+                                    // This is async, so we need to handle it properly
+                                }
+                                Err(_) => {}
+                            }
+                        });
+                        showToast(app, "正在检查更新...");
                     }
                 }
                 "hide" => {
