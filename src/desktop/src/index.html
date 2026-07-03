@@ -2043,6 +2043,11 @@ function renderClipboardItems() {
     const typeLabel = typeClass === 'img' ? '图片' : typeClass === 'link' ? '链接' : typeClass === 'file' ? '文件' : '文本';
     const tr = document.createElement('div');
     tr.className = 'clip-row'; tr.dataset.type = typeClass;
+    tr.style.cursor = 'pointer';
+    tr.onclick = (e) => {
+      if (e.target.closest('.cr-actions')) return;
+      viewItem(item.id, typeClass);
+    };
     tr.innerHTML = `<div class="cr-main"><div class="type-badge tb-${typeClass}"><span class="icon icon-md">${typeClass === 'text' ? '📝' : typeClass === 'img' ? '🖼️' : typeClass === 'link' ? '🔗' : '📁'}</span></div><span class="cr-preview">${escapeHtml((item.content||'').substring(0, 120))}</span></div><div class="cr-device"><span class="icon icon-sm">💻</span>${escapeHtml(item.deviceName || 'Unknown')}</div><div><span class="cr-tag ct-${typeClass}">${typeLabel}</span></div><div class="cr-time">${formatTime(item.createdAt)}</div><div class="cr-actions"><button class="act-btn" title="复制" onclick="copyItem('${item.id}')"><span class="icon icon-sm">📋</span></button><button class="act-btn" title="删除" onclick="deleteItem('${item.id}')"><span class="icon icon-sm">🗑️</span></button></div>`;
     if (listHead) listHead.after(tr); else container.appendChild(tr);
   });
@@ -2414,6 +2419,59 @@ async function copyTextItem(id) {
     showToast('已复制 (' + fullContent.length + '字符)', 'success');
   } catch (e) { showToast('复制失败: ' + e.message, 'error'); }
 }
+
+// 查看条目：根据类型调用不同处理函数
+function viewItem(id, type) {
+  if (type === 'img') {
+    viewImageItem(id);
+  } else if (type === 'file') {
+    viewFileItem(id);
+  } else {
+    copyTextItem(id);
+  }
+}
+
+
+// 加载活跃会话
+async function loadSessions() {
+  const body = document.getElementById('sessions-body');
+  if (!body) return;
+  body.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-tertiary);">加载中...</div>';
+  try {
+    const data = await api('GET', '/api/auth/sessions');
+    const sessions = data.sessions || [];
+    if (sessions.length === 0) {
+      body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary);">暂无活跃会话</div>';
+      return;
+    }
+    body.innerHTML = `<ul class="session-list">
+      ${sessions.map(s => `
+        <li class="session-item">
+          <div class="session-dev-icon"><span class="icon icon-md">${s.deviceType === 'mobile' ? '📱' : s.deviceType === 'tablet' ? '📱' : '💻'}</span></div>
+          <div class="session-info">
+            <div class="session-name">${escapeHtml(s.deviceName || 'Unknown')}</div>
+            <div class="session-detail">${escapeHtml(s.location || '--')} · ${s.isCurrent ? '当前会话' : (s.lastActive || 'Active')}</div>
+          </div>
+          ${s.isCurrent ? '<span class="session-current">当前</span>' : '<button class="session-kick" onclick="revokeSession(\'' + s.id + '\')">退出</button>'}
+        </li>
+      `).join('')}
+    </ul>`;
+  } catch (e) {
+    body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">加载失败</div>';
+  }
+}
+
+async function revokeSession(sessionId) {
+  if (!confirm('确定要退出此会话吗？')) return;
+  try {
+    await api('DELETE', '/api/auth/sessions/' + sessionId);
+    showToast('已退出会话');
+    loadSessions();
+  } catch (e) {
+    showToast('操作失败：' + e.message);
+  }
+}
+
 // ===== Init =====
 if (state.token) {
   showPage('app');
