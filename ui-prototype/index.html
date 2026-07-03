@@ -1,107 +1,1885 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>ClipSync UI</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',-apple-system,sans-serif;background:#1A1D26;color:#1A1D26}
-:root{--p:#6C5CE7;--pl:#A29BFE;--bg:#F8F9FC;--s:#FFF;--t1:#1A1D26;--t2:#6B7280;--tm:#9CA3AF;--bd:#E5E7EB;--g:#10B981;--b:#3B82F6;--o:#F59E0B;--r:#EF4444}
-.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(26,29,38,.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.08);padding:0 32px;height:64px;display:flex;align-items:center;justify-content:space-between}
-.nav .logo{display:flex;align-items:center;gap:10px;color:#fff;font-size:18px;font-weight:700}
-.nav .logo i{width:32px;height:32px;background:var(--p);border-radius:10px;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:16px}
-.tabs{display:flex;gap:4px}
-.tab{padding:8px 20px;border-radius:999px;color:rgba(255,255,255,.5);font-size:13px;font-weight:600;cursor:pointer;border:none;background:none;font-family:inherit;transition:.2s}
-.tab:hover{color:rgba(255,255,255,.8);background:rgba(255,255,255,.05)}
-.tab.on{color:#fff;background:var(--p)}
-.screens{padding-top:64px}
-.scr{display:none;padding:40px 0}.scr.on{display:block;animation:fi .3s ease}
-@keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.st{color:rgba(255,255,255,.9);font-size:28px;font-weight:800;text-align:center;margin-bottom:8px}
-.sd{color:rgba(255,255,255,.4);font-size:14px;text-align:center;margin-bottom:40px}
-.row{display:flex;gap:40px;justify-content:center;align-items:flex-start;flex-wrap:wrap;padding:0 40px}
-.ph{width:320px;height:640px;background:#000;border-radius:40px;padding:12px;box-shadow:0 20px 60px rgba(0,0,0,.5),inset 0 0 0 2px rgba(255,255,255,.1);flex-shrink:0}
-.ph-in{width:100%;height:100%;background:var(--bg);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;position:relative}
-.nt{width:100px;height:28px;background:#000;border-radius:0 0 16px 16px;position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:10}
-.sb{height:44px;padding:8px 20px 0;display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600;color:var(--t1)}
-.pc{flex:1;overflow-y:auto;display:flex;flex-direction:column}
-.bn{display:flex;background:var(--s);border-top:1px solid var(--bd);padding:6px 8px 20px}
-.bni{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;border-radius:12px;cursor:pointer}
-.bni.on{color:var(--p)}.bni:not(.on){color:var(--tm)}
-.bni svg{width:20px;height:20px}.bni span{font-size:10px;font-weight:600}
-.dt{width:680px;height:520px;background:#000;border-radius:16px;padding:8px;box-shadow:0 20px 60px rgba(0,0,0,.5);flex-shrink:0}
-.dt-in{width:100%;height:100%;background:var(--bg);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
-.dtb{height:36px;background:rgba(0,0,0,.03);border-bottom:1px solid var(--bd);display:flex;align-items:center;padding:0 12px;gap:6px}
-.dot{width:10px;height:10px;border-radius:50%}.dr{background:#EF4444}.dy{background:#F59E0B}.dg{background:#10B981}
-.dsb{width:180px;background:var(--s);border-right:1px solid var(--bd);display:flex;flex-direction:column;padding:12px 8px}
-.dsi{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:500;color:var(--t2);cursor:pointer}
-.dsi.on{background:#EDE9FE;color:var(--p);font-weight:600}
-.dsi svg{width:16px;height:16px;flex-shrink:0}
-.dsep{height:1px;background:var(--bd);margin:8px 4px}
-.dm{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.dtl{height:48px;padding:0 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--bd);background:var(--s)}
-.dsr{flex:1;display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:8px;padding:6px 12px;border:1px solid var(--bd)}
-.dsr input{border:none;outline:none;background:none;font-size:12px;color:var(--t1);width:100%;font-family:inherit}
-.dfb{padding:6px 12px;border-radius:8px;font-size:11px;font-weight:600;border:1px solid var(--bd);background:var(--s);color:var(--t2);cursor:pointer}
-.dfb.on{background:var(--p);color:#fff;border-color:var(--p)}
-.dc{flex:1;padding:16px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
-.dr2{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;border:1px solid transparent;transition:.15s;cursor:pointer}
-.dr2:hover{background:var(--s);border-color:var(--bd)}
-.dr2.sel{background:#F3F0FF;border-color:var(--pl)}
-.dp{width:240px;background:var(--s);border-left:1px solid var(--bd);padding:16px;display:flex;flex-direction:column;gap:12px}
-.dpt{font-size:12px;font-weight:700;color:var(--t2)}
-.dpc{background:var(--bg);border-radius:8px;padding:12px;font-size:11px;line-height:1.6;word-break:break-all;max-height:120px;overflow-y:auto}
-.dpr{display:flex;justify-content:space-between;font-size:11px}
-.dpl{color:var(--tm)}.dpv{color:var(--t1);font-weight:500}
-.dpb{width:100%;padding:8px;border-radius:8px;background:var(--p);color:#fff;border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}
-.dpb.s2{background:var(--s);color:var(--t2);border:1px solid var(--bd)}
-.mh{padding:8px 20px 16px}
-.mht{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
-.mhg{font-size:20px;font-weight:700}.mhs{font-size:12px;color:var(--tm);margin-top:2px}
-.av{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--pl));display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700}
-.srch{display:flex;align-items:center;gap:10px;background:var(--s);border:1px solid var(--bd);border-radius:12px;padding:10px 14px;margin-bottom:16px}
-.srch input{border:none;outline:none;background:none;font-size:13px;color:var(--t1);width:100%;font-family:inherit}
-.srch input::placeholder{color:var(--tm)}
-.sts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px}
-.sti{background:var(--s);border:1px solid var(--bd);border-radius:12px;padding:14px 12px;text-align:center}
-.stn{font-size:20px;font-weight:800;color:var(--p)}.stl{font-size:10px;color:var(--tm);margin-top:4px;font-weight:500}
-.sec{font-size:13px;font-weight:700;color:var(--t2);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;padding:0 2px}
-.sec span{font-size:11px;color:var(--p);font-weight:600;cursor:pointer}
-.cl{display:flex;flex-direction:column;gap:8px;padding:0 0 8px}
-.ci{background:var(--s);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer;transition:border-color .15s}
-.ci:hover{border-color:var(--pl)}
-.cic{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px}
-.cic.tx{background:#EDE9FE;color:var(--p)}.cic.lk{background:#DBEAFE;color:var(--b)}.cic.cd{background:#D1FAE5;color:var(--g)}.cic.im{background:#FEF3C7;color:var(--o)}
-.cb{flex:1;min-width:0}
-.cct{font-size:13px;color:var(--t1);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all}
-.cm{display:flex;gap:8px;margin-top:6px;font-size:10px;color:var(--tm);font-weight:500;align-items:center;flex-wrap:wrap}
-.cdv{display:inline-flex;align-items:center;gap:3px;background:var(--bg);padding:2px 6px;border-radius:8px;font-size:9px;font-weight:600}
-.ct{display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:600}
-.ct.v{background:#FEF3C7;color:#D97706}.ct.l{background:#DBEAFE;color:#2563EB}.ct.c{background:#D1FAE5;color:#059669}
-.cf{margin-left:auto;color:var(--tm);cursor:pointer;font-size:14px}.cf.on{color:var(--o)}
-.dc2{background:var(--s);border:1px solid var(--bd);border-radius:12px;padding:14px;display:flex;gap:12px;align-items:center}
-.dc2+.dc2{margin-top:10px}
-.dci{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px}
-.dci.pc{background:#EDE9FE}.dci.ph{background:#D1FAE5}
-.din{flex:1}.dnm{font-size:14px;font-weight:600}
-.dst{font-size:11px;color:var(--tm);margin-top:2px;display:flex;align-items:center;gap:4px}
-.dso{width:6px;height:6px;border-radius:50%;background:var(--g)}
-.db{padding:6px 10px;border-radius:8px;font-size:10px;font-weight:600;border:1px solid var(--bd);background:var(--s);color:var(--t2);cursor:pointer}
-.db.r{color:var(--r);border-color:#FECACA}
-.sg{background:var(--s);border:1px solid var(--bd);border-radius:12px;overflow:hidden;margin-bottom:12px}
-.si{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--bd)}.si:last-child{border-bottom:none}
-.sic{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
-.sl{flex:1;font-size:13px;font-weight:500}.sv{font-size:12px;color:var(--tm)}.sa{color:var(--tm);font-size:12px}
-.tg{width:44px;height:24px;border-radius:12px;background:var(--bd);position:relative;cursor:pointer;transition:.2s;flex-shrink:0}
-.tg.on{background:var(--p)}
-.tg::after{content:'';position:absolute;width:20px;height:20px;border-radius:50%;background:#fff;top:2px;left:2px;box-shadow:0 1px 3px rgba(0,0,0,.1);transition:.2s}
-.tg.on::after{transform:translateX(20px)}
-.li{width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:#fff;font-size:13px;font-family:inherit;outline:none}
-.li::placeholder{color:rgba(255,255,255,.25)}
-.li2{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--bd);background:var(--s);color:var(--t1);font-size:13px;font-family:inherit;outline:none}
-.li2::placeholder{color:var(--tm)}
-.lb{width:100%;padding:12px;border-radius:12px;background:var(--p);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 4px 16px rgba(108,92,231,.3)}</style></head><body>
-<nav class="nav"><div class="logo"><i>📋</i> ClipSync UI 设计稿</div><div class="tabs" id="tabs"></div></nav>
-<div class="screens" id="screens"></div>
-<script>var S=[],T=document.getElementById('tabs'),SC=document.getElementById('screens');S.push(["login","登录",`<div class="st">登录 / 注册</div><div class="sd">手机号快捷登录 + 第三方社交登录</div><div class="row"><div class="ph"><div class="ph-in"><div class="nt"></div><div class="sb"><span>9:41</span><span>●●● WiFi 🔋</span></div><div class="pc"><div style="padding:20px 24px;display:flex;flex-direction:column;align-items:center;gap:18px;"><div style="width:56px;height:56px;background:#6C5CE7;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff;">📋</div><div style="font-size:20px;font-weight:800;">ClipSync</div><div style="font-size:12px;color:#9CA3AF;margin-top:-10px;">让每一次复制，都能在任何设备上粘贴</div><div style="width:100%;display:flex;flex-direction:column;gap:10px;"><input class="li2" placeholder="手机号"><div style="display:flex;gap:8px;"><input class="li2" placeholder="验证码" style="flex:1;"><button style="padding:0 14px;border-radius:12px;border:1px solid #6C5CE7;background:none;color:#6C5CE7;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">获取验证码</button></div><button class="lb">登录 / 注册</button></div><div style="display:flex;align-items:center;gap:12px;width:100%;color:#9CA3AF;font-size:11px;"><div style="flex:1;height:1px;background:#E5E7EB;"></div>或<div style="flex:1;height:1px;background:#E5E7EB;"></div></div><div style="display:flex;gap:8px;width:100%;"><div style="flex:1;padding:10px;border-radius:12px;border:1px solid #E5E7EB;background:#fff;font-size:12px;text-align:center;">微信</div><div style="flex:1;padding:10px;border-radius:12px;border:1px solid #E5E7EB;background:#fff;font-size:12px;text-align:center;">Apple</div></div></div></div><div class="bn"><div class="bni on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg><span>剪贴板</span></div><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>设备</span></div><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg><span>收藏</span></div><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06"/></svg><span>设置</span></div></div></div></div><div class="dt"><div class="dt-in"><div class="dtb"><div class="dot dr"></div><div class="dot dy"></div><div class="dot dg"></div></div><div style="display:flex;flex:1;overflow:hidden;"><div class="dsb"><div style="padding:8px 12px;margin-bottom:8px;"><div style="font-size:15px;font-weight:700;color:#6C5CE7;">📋 ClipSync</div></div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg> 剪贴板</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> 我的设备</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> 收藏</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15"/></svg> 设置</div></div><div class="dm"><div style="flex:1;background:linear-gradient(135deg,#1A1D26 0%,#2D1B69 50%,#1A1D26 100%);display:flex;align-items:center;justify-content:center;"><div style="max-width:320px;display:flex;flex-direction:column;align-items:center;gap:24px;width:100%;padding:20px;"><div style="width:64px;height:64px;background:#6C5CE7;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff;">📋</div><div style="color:#fff;font-size:22px;font-weight:800;">欢迎使用 ClipSync</div><div style="color:rgba(255,255,255,.4);font-size:13px;margin-top:-16px;">让每一次复制，都能在任何设备上粘贴</div><div style="width:100%;display:flex;flex-direction:column;gap:10px;"><input class="li" placeholder="手机号" value="138****8888"><div style="display:flex;gap:8px;"><input class="li" placeholder="验证码" style="flex:1;"><button style="padding:0 16px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:none;color:rgba(255,255,255,.6);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">获取验证码</button></div><button class="lb">登录 / 注册</button></div><div style="display:flex;align-items:center;gap:12px;width:100%;color:rgba(255,255,255,.2);font-size:11px;"><div style="flex:1;height:1px;background:rgba(255,255,255,.1);"></div>或<div style="flex:1;height:1px;background:rgba(255,255,255,.1);"></div></div><div style="display:flex;gap:10px;width:100%;"><div style="flex:1;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#fff;font-size:12px;text-align:center;">微信登录</div><div style="flex:1;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#fff;font-size:12px;text-align:center;">Apple</div><div style="flex:1;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#fff;font-size:12px;text-align:center;">Google</div></div><div style="font-size:11px;color:rgba(255,255,255,.2);">登录即表示同意服务条款和隐私政策</div></div></div></div><div style="width:240px;"></div></div></div></div></div>`]);S.push(["home","主页",`<div class="st">剪贴板主页</div><div class="sd">查看历史记录、搜索、收藏</div><div class="row"><div class="ph"><div class="ph-in"><div class="nt"></div><div class="sb"><span>9:41</span><span>●●● WiFi 🔋</span></div><div class="pc"><div class="mh"><div class="mht"><div><div class="mhg">我的剪贴板</div><div class="mhs">已同步 3 台设备</div></div><div class="av">W</div></div><div class="srch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="搜索剪贴板内容..."></div><div class="sts"><div class="sti"><div class="stn">127</div><div class="stl">总记录</div></div><div class="sti"><div class="stn">12</div><div class="stl">今日同步</div></div><div class="sti"><div class="stn">3</div><div class="stl">在线设备</div></div></div></div><div style="padding:0 20px;"><div class="sec">最近同步 <span>查看全部</span></div><div class="cl"><div class="ci"><div class="cic tx">📝</div><div class="cb"><div class="cct">验证码：482961，10分钟内有效，请勿泄露给他人</div><div class="cm"><div class="ct v">验证码</div><div class="cdv">📱 iPhone</div>2分钟前<div class="cf on">★</div></div></div></div><div class="ci"><div class="cic lk">🔗</div><div class="cb"><div class="cct">https://docs.google.com/document/d/1a2b3c4d5e6f7g8h9i0j/edit</div><div class="cm"><div class="ct l">链接</div><div class="cdv">💻 MacBook</div>15分钟前</div></div></div><div class="ci"><div class="cic cd">{ }</div><div class="cb"><div class="cct">const handleSubmit = async (data) => { const res = await fetch("/api/submit"); return res.json(); }</div><div class="cm"><div class="ct c">代码</div><div class="cdv">💻 MacBook</div>1小时前</div></div></div><div class="ci"><div class="cic tx">📝</div><div class="cb"><div class="cct">北京市朝阳区望京SOHO T3 15层</div><div class="cm"><div class="cdv">📱 iPhone</div>2小时前</div></div></div><div class="ci"><div class="cic im">🖼️</div><div class="cb"><div class="cct">截图_2026-06-21_18-23-46.png</div><div class="cm"><div class="cdv">💻 MacBook</div>3小时前</div></div></div></div></div></div><div class="bn"><div class="bni on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg><span>剪贴板</span></div><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>设备</span></div><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg><span>收藏</span></div><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06"/></svg><span>设置</span></div></div></div></div><div class="dt"><div class="dt-in"><div class="dtb"><div class="dot dr"></div><div class="dot dy"></div><div class="dot dg"></div></div><div style="display:flex;flex:1;overflow:hidden;"><div class="dsb"><div style="padding:8px 12px;margin-bottom:8px;"><div style="font-size:15px;font-weight:700;color:#6C5CE7;">📋 ClipSync</div></div><div class="dsep"></div><div class="dsi on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg> 剪贴板</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> 我的设备</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> 收藏</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15"/></svg> 设置</div></div><div class="dm"><div class="dtl"><div class="dsr"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="搜索剪贴板内容..."></div><div class="dfb on">全部</div><div class="dfb">文本</div><div class="dfb">链接</div><div class="dfb">代码</div><div class="dfb">图片</div></div><div class="dc"><div class="dr2 sel"><div class="cic tx" style="width:32px;height:32px;font-size:14px;">📝</div><div class="cb"><div class="cct" style="font-size:12px;">验证码：482961，10分钟内有效</div><div class="cm" style="font-size:10px;"><div class="ct v">验证码</div><div class="cdv">📱 iPhone</div></div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap;">2分钟前</div></div><div class="dr2"><div class="cic lk" style="width:32px;height:32px;font-size:14px;">🔗</div><div class="cb"><div class="cct" style="font-size:12px;">https://docs.google.com/document/d/1a2b3c...</div><div class="cm" style="font-size:10px;"><div class="ct l">链接</div><div class="cdv">💻 MacBook</div></div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap;">15分钟前</div></div><div class="dr2"><div class="cic cd" style="width:32px;height:32px;font-size:14px;">{ }</div><div class="cb"><div class="cct" style="font-size:12px;">const handleSubmit = async (data) => { ... }</div><div class="cm" style="font-size:10px;"><div class="ct c">代码</div><div class="cdv">💻 MacBook</div></div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap;">1小时前</div></div><div class="dr2"><div class="cic tx" style="width:32px;height:32px;font-size:14px;">📝</div><div class="cb"><div class="cct" style="font-size:12px;">北京市朝阳区望京SOHO T3 15层</div><div class="cm" style="font-size:10px;"><div class="cdv">📱 iPhone</div></div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap;">2小时前</div></div><div class="dr2"><div class="cic im" style="width:32px;height:32px;font-size:14px;">🖼️</div><div class="cb"><div class="cct" style="font-size:12px;">截图_2026-06-21_18-23-46.png</div><div class="cm" style="font-size:10px;"><div class="cdv">💻 MacBook</div></div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap;">3小时前</div></div></div></div><div class="dp"><div class="dpt">内容详情</div><div class="dpc">验证码：482961，10分钟内有效，请勿泄露给他人。此验证码用于 ClipSync 账号登录验证。</div><div style="display:flex;flex-direction:column;gap:6px;"><div class="dpr"><div class="dpl">类型</div><div class="dpv">验证码</div></div><div class="dpr"><div class="dpl">来源设备</div><div class="dpv">📱 iPhone 15 Pro</div></div><div class="dpr"><div class="dpl">同步时间</div><div class="dpv">2分钟前</div></div></div><button class="dpb">📋 复制</button><button class="dpb s2">⭐ 收藏</button></div></div></div></div></div>`]);S.push(["devices","设备",`<div class="st">设备管理</div><div class="sd">查看和管理已绑定的设备</div><div class="row"><div class="ph"><div class="ph-in"><div class="nt"></div><div class="sb"><span>9:41</span><span>●●● WiFi 🔋</span></div><div class="pc"><div class="mh"><div class="mht"><div class="mhg">我的设备</div><div style="color:#6C5CE7;font-size:13px;font-weight:600;">+ 添加</div></div></div><div style="padding:0 20px;display:flex;flex-direction:column;gap:10px;"><div class="dc2"><div class="dci pc">💻</div><div class="din"><div class="dnm">MacBook Pro</div><div class="dst"><div class="dso"></div>在线 · macOS</div></div><div class="db r">移除</div></div><div class="dc2"><div class="dci ph">📱</div><div class="din"><div class="dnm">iPhone 15 Pro</div><div class="dst"><div class="dso"></div>在线 · iOS 19</div></div><div class="db r">移除</div></div><div class="dc2"><div class="dci pc">🖥️</div><div class="din"><div class="dnm">Windows 台式机</div><div class="dst"><div class="dso"></div>在线 · Win 11</div></div><div class="db r">移除</div></div><div class="dc2" style="border-style:dashed;opacity:.6;"><div class="dci" style="background:#F8F9FC;">+</div><div class="din"><div class="dnm" style="color:#9CA3AF;">添加新设备</div></div></div></div><div style="padding:20px;margin-top:auto;"><div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:16px;text-align:center;"><div style="font-size:11px;color:#9CA3AF;margin-bottom:8px;">当前配对码</div><div style="font-size:28px;font-weight:800;color:#6C5CE7;letter-spacing:4px;">8 3 7 2 9 1</div><div style="font-size:10px;color:#9CA3AF;margin-top:6px;">5分钟后失效</div></div></div></div><div class="bn"><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg><span>剪贴板</span></div><div class="bni on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>设备</span></div><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg><span>收藏</span></div><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06"/></svg><span>设置</span></div></div></div></div><div class="dt"><div class="dt-in"><div class="dtb"><div class="dot dr"></div><div class="dot dy"></div><div class="dot dg"></div></div><div style="display:flex;flex:1;overflow:hidden;"><div class="dsb"><div style="padding:8px 12px;margin-bottom:8px;"><div style="font-size:15px;font-weight:700;color:#6C5CE7;">📋 ClipSync</div></div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg> 剪贴板</div><div class="dsep"></div><div class="dsi on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> 我的设备</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> 收藏</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15"/></svg> 设置</div></div><div class="dm"><div class="dtl"><div style="font-size:14px;font-weight:700;">我的设备 (3)</div><div style="margin-left:auto;"><div class="dfb on">+ 添加设备</div></div></div><div class="dc" style="gap:12px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:10px;"><div style="display:flex;align-items:center;gap:10px;"><div class="dci pc" style="width:40px;height:40px;font-size:18px;">💻</div><div><div style="font-size:13px;font-weight:600;">MacBook Pro</div><div style="font-size:11px;color:#10B981;">● 在线</div></div></div><div style="font-size:11px;color:#9CA3AF;">macOS · 刚刚同步</div><button class="db r" style="align-self:flex-start;">移除</button></div><div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:10px;"><div style="display:flex;align-items:center;gap:10px;"><div class="dci ph" style="width:40px;height:40px;font-size:18px;">📱</div><div><div style="font-size:13px;font-weight:600;">iPhone 15 Pro</div><div style="font-size:11px;color:#10B981;">● 在线</div></div></div><div style="font-size:11px;color:#9CA3AF;">iOS 19 · 2分钟前</div><button class="db r" style="align-self:flex-start;">移除</button></div><div style="border:2px dashed #E5E7EB;border-radius:12px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;opacity:.5;"><div style="font-size:24px;color:#9CA3AF;">+</div><div style="font-size:12px;color:#9CA3AF;font-weight:600;">添加新设备</div></div></div></div></div><div class="dp"><div class="dpt">添加设备</div><div style="background:#F8F9FC;border-radius:12px;padding:20px;text-align:center;"><div style="width:120px;height:120px;background:#fff;border:1px solid #E5E7EB;border-radius:8px;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:10px;color:#9CA3AF;">QR Code</div><div style="font-size:11px;color:#9CA3AF;margin-top:8px;">用手机扫描</div></div><div style="background:#F8F9FC;border-radius:8px;padding:12px;text-align:center;margin-top:8px;"><div style="font-size:24px;font-weight:800;color:#6C5CE7;letter-spacing:4px;">8 3 7 2 9 1</div></div><button class="dpb s2" style="margin-top:8px;">刷新配对码</button></div></div></div></div></div>`]);S.push(["settings","设置",`<div class="st">设置</div><div class="sd">同步偏好、隐私、账号管理</div><div class="row"><div class="ph"><div class="ph-in"><div class="nt"></div><div class="sb"><span>9:41</span><span>●●● WiFi 🔋</span></div><div class="pc"><div class="mh"><div class="mhg" style="margin-bottom:0;">设置</div></div><div style="padding:0 20px;"><div class="sg"><div class="si"><div class="sic" style="background:#EDE9FE;">🔄</div><div class="sl">自动同步</div><div class="tg on"></div></div><div class="si"><div class="sic" style="background:#D1FAE5;">🖼️</div><div class="sl">同步图片</div><div class="tg on"></div></div><div class="si"><div class="sic" style="background:#DBEAFE;">📄</div><div class="sl">同步文件</div><div class="tg"></div></div><div class="si"><div class="sic" style="background:#FEF3C7;">📊</div><div class="sl">历史记录上限</div><div class="sv">100条</div><div class="sa">›</div></div></div><div class="sg"><div class="si"><div class="sic" style="background:#FEE2E2;">🔒</div><div class="sl">端到端加密</div><div class="tg on"></div></div><div class="si"><div class="sic" style="background:#F3F4F6;">🤖</div><div class="sl">AI智能分类</div><div class="tg on"></div></div></div><div class="sg"><div class="si"><div class="sic" style="background:#F3F4F6;">👤</div><div class="sl">账号信息</div><div class="sa">›</div></div><div class="si"><div class="sic" style="background:#F3F4F6;">⭐</div><div class="sl">专业版</div><div class="sv">¥28买断</div><div class="sa">›</div></div></div><div style="text-align:center;padding:16px;font-size:11px;color:#9CA3AF;">ClipSync v1.0.0</div></div></div><div class="bn"><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg><span>剪贴板</span></div><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>设备</span></div><div class="bni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg><span>收藏</span></div><div class="bni on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06"/></svg><span>设置</span></div></div></div></div><div class="dt"><div class="dt-in"><div class="dtb"><div class="dot dr"></div><div class="dot dy"></div><div class="dot dg"></div></div><div style="display:flex;flex:1;overflow:hidden;"><div class="dsb"><div style="padding:8px 12px;margin-bottom:8px;"><div style="font-size:15px;font-weight:700;color:#6C5CE7;">📋 ClipSync</div></div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg> 剪贴板</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> 我的设备</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> 收藏</div><div class="dsep"></div><div class="dsi on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15"/></svg> 设置</div></div><div class="dm"><div class="dtl"><div style="font-size:14px;font-weight:700;">设置</div></div><div class="dc" style="gap:16px;"><div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;overflow:hidden;"><div style="padding:12px 16px;font-size:12px;font-weight:700;color:#6B7280;border-bottom:1px solid #E5E7EB;">同步设置</div><div class="si"><div class="sic" style="background:#EDE9FE;">🔄</div><div class="sl">自动同步</div><div class="tg on"></div></div><div class="si"><div class="sic" style="background:#D1FAE5;">🖼️</div><div class="sl">同步图片</div><div class="tg on"></div></div><div class="si"><div class="sic" style="background:#DBEAFE;">📄</div><div class="sl">同步文件</div><div class="tg"></div></div></div><div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;overflow:hidden;"><div style="padding:12px 16px;font-size:12px;font-weight:700;color:#6B7280;border-bottom:1px solid #E5E7EB;">隐私与安全</div><div class="si"><div class="sic" style="background:#FEE2E2;">🔒</div><div class="sl">端到端加密</div><div class="tg on"></div></div><div class="si"><div class="sic" style="background:#EDE9FE;">🤖</div><div class="sl">AI智能分类</div><div class="tg on"></div></div></div></div></div><div class="dp"><div class="dpt">账号信息</div><div style="text-align:center;padding:16px 0;"><div class="av" style="width:48px;height:48px;font-size:18px;margin:0 auto;">W</div><div style="font-size:13px;font-weight:600;margin-top:8px;">用户</div><div style="font-size:11px;color:#9CA3AF;">138****8888</div></div><div class="dpr"><div class="dpl">订阅</div><div class="dpv">专业版</div></div><div class="dpr"><div class="dpl">设备</div><div class="dpv">3/5</div></div><button class="dpb" style="margin-top:8px;">编辑资料</button><button class="dpb s2">升级家庭版 ¥48</button></div></div></div></div></div>`]);S.push(["desktop","桌面端",`<div class="st">桌面端完整视图</div><div class="sd">Tauri 桌面客户端 — 三栏布局</div><div class="row"><div class="dt"><div class="dt-in"><div class="dtb"><div class="dot dr"></div><div class="dot dy"></div><div class="dot dg"></div></div><div style="display:flex;flex:1;overflow:hidden;"><div class="dsb"><div style="padding:8px 12px;margin-bottom:8px;"><div style="font-size:15px;font-weight:700;color:#6C5CE7;">📋 ClipSync</div></div><div class="dsep"></div><div class="dsi on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg> 剪贴板</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> 我的设备</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> 收藏</div><div class="dsep"></div><div class="dsi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15"/></svg> 设置</div></div><div class="dm"><div class="dtl"><div class="dsr"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="搜索..."></div><div class="dfb on">全部</div><div class="dfb">文本</div><div class="dfb">链接</div><div class="dfb">代码</div><div class="dfb">图片</div></div><div class="dc"><div class="dr2 sel"><div class="cic tx" style="width:32px;height:32px;font-size:14px;">📝</div><div class="cb"><div class="cct" style="font-size:12px;">验证码：482961，10分钟内有效</div><div class="cm" style="font-size:10px;"><div class="ct v">验证码</div><div class="cdv">📱 iPhone</div></div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap;">2分钟前</div></div><div class="dr2"><div class="cic lk" style="width:32px;height:32px;font-size:14px;">🔗</div><div class="cb"><div class="cct" style="font-size:12px;">https://docs.google.com/document/d/1a2b3c...</div><div class="cm" style="font-size:10px;"><div class="ct l">链接</div><div class="cdv">💻 MacBook</div></div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap;">15分钟前</div></div><div class="dr2"><div class="cic cd" style="width:32px;height:32px;font-size:14px;">{ }</div><div class="cb"><div class="cct" style="font-size:12px;">const handleSubmit = async (data) => { ... }</div><div class="cm" style="font-size:10px;"><div class="ct c">代码</div><div class="cdv">💻 MacBook</div></div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap;">1小时前</div></div><div class="dr2"><div class="cic tx" style="width:32px;height:32px;font-size:14px;">📝</div><div class="cb"><div class="cct" style="font-size:12px;">北京市朝阳区望京SOHO T3 15层</div><div class="cm" style="font-size:10px;"><div class="cdv">📱 iPhone</div></div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap;">2小时前</div></div><div class="dr2"><div class="cic im" style="width:32px;height:32px;font-size:14px;">🖼️</div><div class="cb"><div class="cct" style="font-size:12px;">截图_2026-06-21_18-23-46.png</div><div class="cm" style="font-size:10px;"><div class="cdv">💻 MacBook</div></div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap;">3小时前</div></div></div></div><div class="dp"><div class="dpt">详情</div><div class="dpc">验证码：482961，10分钟内有效。</div><div class="dpr"><div class="dpl">类型</div><div class="dpv">验证码</div></div><div class="dpr"><div class="dpl">设备</div><div class="dpv">iPhone</div></div><button class="dpb">📋 复制</button><button class="dpb s2">⭐ 收藏</button></div></div></div></div></div>`]);
-S.forEach(function(s,i){
-var b=document.createElement('button');b.className='tab'+(i===0?' on':'');b.textContent=s[1];
-b.onclick=function(){document.querySelectorAll('.scr,.tab').forEach(function(e){e.classList.remove('on')});
-document.getElementById('s-'+s[0]).classList.add('on');T.children[i].classList.add('on')};T.appendChild(b);
-var d=document.createElement('div');d.className='scr'+(i===0?' on':'');d.id='s-'+s[0];d.innerHTML=s[2];SC.appendChild(d)});</script></body></html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync — Definitive UI Prototype v4</title>
+<style>
+/* ============================================================
+   DESIGN TOKEN SYSTEM — 7 Styles × Light/Dark Modes
+   Each style has its own visual DNA: colors, radii, shadows,
+   icon weight (via --icon-stroke), and component personality.
+   ============================================================ */
+
+/* ===== VERCEL ★ (Default) — Clean SaaS Geometric ===== */
+[data-style="vercel"][data-mode="light"] {
+  --bg-base: #FAFAFA;
+  --bg-sidebar: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-hover: #F5F5F5;
+  --bg-active: #EEEEEE;
+  --bg-selected: rgba(0,0,0,0.05);
+  --bg-modal-overlay: rgba(0,0,0,0.35);
+  --border-default: #E5E5E5;
+  --border-subtle: #F0F0F0;
+  --border-focus: #000000;
+  --text-primary: #111111;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
+  --text-inverse: #FFFFFF;
+  --accent: #111111;
+  --accent-hover: #333333;
+  --accent-light: rgba(0,0,0,0.06);
+  --accent-bg: #F5F5F5;
+  --gradient-accent: linear-gradient(135deg, #111 0%, #444 100%);
+  --logo-gradient: linear-gradient(135deg, #111 0%, #666 100%);
+  --success: #16a34a; --success-bg: #f0fdf4;
+  --warning: #d97706; --warning-bg: #fffbeb;
+  --danger: #dc2626; --danger-bg: #fef2f2;
+  --info: #2563eb; --info-bg: #eff6ff;
+  --radius-xs: 4px; --radius-sm: 6px; --radius-md: 10px;
+  --radius-lg: 14px; --radius-xl: 18px; --radius-full: 9999px;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-elevated: 0 4px 16px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-dropdown: 0 8px 30px rgba(0,0,0,0.12);
+  --shadow-modal: 0 24px 64px rgba(0,0,0,0.15);
+  --icon-stroke: 2;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+}
+[data-style="vercel"][data-mode="dark"] {
+  --bg-base: #0A0A0A; --bg-sidebar: #111111; --bg-surface: #161616;
+  --bg-hover: #222222; --bg-active: #2A2A2A; --bg-selected: rgba(255,255,255,0.06);
+  --bg-modal-overlay: rgba(0,0,0,0.65); --border-default: #262626;
+  --border-subtle: #1E1E1E; --border-focus: #555555;
+  --text-primary: #F5F5F5; --text-secondary: #A0A0A0; --text-tertiary: #666666;
+  --text-inverse: #000000; --accent: #F5F5F5; --accent-hover: #FFFFFF;
+  --accent-light: rgba(255,255,255,0.06); --accent-bg: #1E1E1E;
+  --gradient-accent: linear-gradient(135deg, #FFF 0%, #AAA 100%);
+  --logo-gradient: linear-gradient(135deg, #FFF 0%, #888 100%);
+  --success: #4ade80; --success-bg: rgba(74,222,128,0.08);
+  --warning: #fbbf24; --warning-bg: rgba(251,191,36,0.08);
+  --danger: #f87171; --danger-bg: rgba(248,113,113,0.08);
+  --info: #60a5fa; --info-bg: rgba(96,165,250,0.08);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-elevated: 0 4px 16px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.2);
+  --shadow-dropdown: 0 8px 30px rgba(0,0,0,0.5);
+  --shadow-modal: 0 24px 64px rgba(0,0,0,0.6);
+}
+
+/* ===== CLIPSYNC FUSION — Unique Purple Identity ===== */
+[data-style="clipsync"][data-mode="light"] {
+  --bg-base: #FBF8FF; --bg-sidebar: #F5F0FF; --bg-surface: #FFFFFF;
+  --bg-hover: #EFEBFF; --bg-active: #E4DAFF; --bg-selected: #EDE7FF;
+  --bg-modal-overlay: rgba(99,102,241,0.15); --border-default: #DDD6FE;
+  --border-subtle: #EDE9FE; --border-focus: #6366F1;
+  --text-primary: #1E1B4B; --text-secondary: #5B54B0; --text-tertiary: #938EC5;
+  --text-inverse: #FFFFFF; --accent: #6366F1; --accent-hover: #4F46E5;
+  --accent-light: rgba(99,102,241,0.08); --accent-bg: #EEEDFF;
+  --gradient-accent: linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #A78BFA 100%);
+  --logo-gradient: linear-gradient(135deg, #4F46E5 0%, #7C3AED 50%, #A78BFA 100%);
+  --success: #059669; --success-bg: #D1FAE5;
+  --warning: #D97706; --warning-bg: #FEF3C7;
+  --danger: #DC2626; --danger-bg: #FEE2E2;
+  --info: #2563EB; --info-bg: #DBEAFE;
+  --radius-xs: 6px; --radius-sm: 8px; --radius-md: 12px;
+  --radius-lg: 16px; --radius-xl: 20px; --radius-full: 9999px;
+  --shadow-card: 0 1px 3px rgba(99,102,241,0.06), 0 1px 2px rgba(99,102,241,0.03);
+  --shadow-elevated: 0 6px 20px rgba(99,102,241,0.12), 0 1px 4px rgba(99,102,241,0.05);
+  --shadow-dropdown: 0 10px 40px rgba(99,102,241,0.18);
+  --shadow-modal: 0 28px 72px rgba(99,102,24,0.2);
+  --icon-stroke: 1.85;
+}
+[data-style="clipsync"][data-mode="dark"] {
+  --bg-base: #0C0A1D; --bg-sidebar: #110E29; --bg-surface: #17143A;
+  --bg-hover: #211E48; --bg-active: #2B2658; --bg-selected: #252054;
+  --bg-modal-overlay: rgba(12,10,29,0.72); --border-default: #2D2858;
+  --border-subtle: #231F4A; --border-focus: #818CF8;
+  --text-primary: #EDE9FE; --text-secondary: #A5B4FC; --text-tertiary: #6366F1;
+  --text-inverse: #0C0A1D; --accent: #818CF8; --accent-hover: #A5B4FC;
+  --accent-light: rgba(129,140,248,0.1); --accent-bg: #1E1B4B;
+  --gradient-accent: linear-gradient(135deg, #818CF8 0%, #A78BFA 50%, #C4B5FD 100%);
+  --logo-gradient: linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #C4B5FD 100%);
+  --success: #34D399; --success-bg: rgba(52,211,153,0.1);
+  --warning: #FBBF24; --warning-bg: rgba(251,191,36,0.1);
+  --danger: #F87171; --danger-bg: rgba(248,113,113,0.1);
+  --info: #60A5FA; --info-bg: rgba(96,165,250,0.1);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-elevated: 0 6px 20px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.2);
+  --shadow-dropdown: 0 10px 40px rgba(0,0,0,0.5);
+  --shadow-modal: 0 28px 72px rgba(0,0,0,0.6);
+}
+
+/* ===== NOTION — Content-Focused Warm ===== */
+[data-style="notion"][data-mode="light"] {
+  --bg-base: #FFFFFF; --bg-sidebar: #F7F6F3; --bg-surface: #FFFFFF;
+  --bg-hover: #F0F0EF; --bg-active: #E9E9E7; --bg-selected: #EBECEB;
+  --bg-modal-overlay: rgba(0,0,0,0.3); --border-default: #E8E7E3;
+  --border-subtle: #EFEEEc; --border-focus: #2383E2;
+  --text-primary: #37352F; --text-secondary: #787774; --text-tertiary: #9B9A97;
+  --text-inverse: #FFFFFF; --accent: #2383E2; --accent-hover: #1A6EC2;
+  --accent-light: rgba(35,131,226,0.07); --accent-bg: #EBF4FF;
+  --gradient-accent: linear-gradient(135deg, #2383E2 0%, #0BA5E9 100%);
+  --logo-gradient: linear-gradient(135deg, #2383E2 0%, #0BA5E9 100%);
+  --success: #0F7B6C; --success-bg: #EDEDED;
+  --warning: #D9730D; --warning-bg: #FBF3DB;
+  --danger: #D44C47; --danger-bg: #FDEDED;
+  --info: #2383E2; --info-bg: #EBF4FF;
+  --radius-xs: 4px; --radius-sm: 6px; --radius-md: 8px;
+  --radius-lg: 12px; --radius-xl: 16px; --radius-full: 9999px;
+  --shadow-card: 0 1px 2px rgba(55,53,47,0.06);
+  --shadow-elevated: 0 2px 8px rgba(55,53,47,0.1), 0 1px 2px rgba(55,53,47,0.04);
+  --shadow-dropdown: 0 6px 28px rgba(55,53,47,0.14);
+  --shadow-modal: 0 20px 56px rgba(55,53,47,0.18);
+  --icon-stroke: 1.6;
+}
+[data-style="notion"][data-mode="dark"] {
+  --bg-base: #191919; --bg-sidebar: #202020; --bg-surface: #282828;
+  --bg-hover: #333333; --bg-active: #3A3A3A; --bg-selected: #2E3030;
+  --bg-modal-overlay: rgba(0,0,0,0.6); --border-default: #3A3A3A;
+  --border-subtle: #303030; --border-focus: #4AA3DF;
+  --text-primary: #ECECEC; --text-secondary: #9B9A97; --text-tertiary: #6B6B6B;
+  --text-inverse: #191919; --accent: #4AA3DF; --accent-hover: #6DB8E8;
+  --accent-light: rgba(74,163,223,0.1); --accent-bg: #232B33;
+  --gradient-accent: linear-gradient(135deg, #4AA3DF 0%, #0BA5E9 100%);
+  --logo-gradient: linear-gradient(135deg, #4AA3DF 0%, #0BA5E9 100%);
+  --success: #4AC493; --success-bg: rgba(74,196,147,0.1);
+  --warning: #FDBC4A; --warning-bg: rgba(253,188,74,0.1);
+  --danger: #E86D68; --danger-bg: rgba(232,109,104,0.1);
+  --info: #4AA3DF; --info-bg: rgba(74,163,223,0.1);
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-elevated: 0 2px 8px rgba(0,0,0,0.4);
+  --shadow-dropdown: 0 6px 28px rgba(0,0,0,0.5);
+  --shadow-modal: 0 20px 56px rgba(0,0,0,0.55);
+}
+
+/* ===== LINEAR — Dev Tool Ultra-Minimal ===== */
+[data-style="linear"] {
+  /* Linear is dark-only by nature */
+  --bg-base: #080808; --bg-sidebar: #000000; --bg-surface: #111113;
+  --bg-hover: #18181b; --bg-active: #1e1e21; --bg-selected: #1a162d;
+  --bg-modal-overlay: rgba(0,0,0,0.7); --border-default: #27272a;
+  --border-subtle: #1c1c1f; --border-focus: #818cf8;
+  --text-primary: #fafafa; --text-secondary: #a1a1aa; --text-tertiary: #71717a;
+  --text-inverse: #080808; --accent: #818cf8; --accent-hover: #a5b4fc;
+  --accent-light: rgba(129,140,248,0.1); --accent-bg: #1e1b4b;
+  --gradient-accent: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+  --logo-gradient: linear-gradient(135deg, #6366F1 0%, #A78BFA 100%);
+  --success: #4ade80; --success-bg: rgba(74,222,128,0.08);
+  --warning: #fbbf24; --warning-bg: rgba(251,191,36,0.08);
+  --danger: #f87171; --danger-bg: rgba(248,113,113,0.08);
+  --info: #60a5fa; --info-bg: rgba(96,165,250,0.08);
+  --radius-xs: 3px; --radius-sm: 5px; --radius-md: 6px;
+  --radius-lg: 8px; --radius-xl: 10px; --radius-full: 9999px;
+  --shadow-card: none;
+  --shadow-elevated: 0 0 0 1px rgba(255,255,255,0.06);
+  --shadow-dropdown: 0 0 0 1px rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.45);
+  --shadow-modal: 0 0 0 1px rgba(255,255,255,0.08), 0 24px 64px rgba(0,0,0,0.55);
+  --icon-stroke: 1.4;
+}
+
+/* ===== APPLE HIG — Native macOS Feel ===== */
+[data-style="apple"][data-mode="light"] {
+  --bg-base: #F5F5F7; --bg-sidebar: #F0F0F2; --bg-surface: #FFFFFF;
+  --bg-hover: #E8E8EA; --bg-active: #DDDDE0; --bg-selected: #E8E8ED;
+  --bg-modal-overlay: rgba(0,0,0,0.3); --border-default: #D2D2D7;
+  --border-subtle: #E5E5EA; --border-focus: #007AFF;
+  --text-primary: #1D1D1F; --text-secondary: #6E6E73; --text-tertiary: #AEAEB2;
+  --text-inverse: #FFFFFF; --accent: #007AFF; --accent-hover: #0056CC;
+  --accent-light: rgba(0,122,255,0.08); --accent-bg: #E5F1FF;
+  --gradient-accent: linear-gradient(135deg, #007AFF 0%, #5856D6 100%);
+  --logo-gradient: linear-gradient(135deg, #007AFF 0%, #5856D6 100%);
+  --success: #34C759; --success-bg: #E8FAED;
+  --warning: #FF9F0A; --warning-bg: #FFF6E5;
+  --danger: #FF3B30; --danger-bg: #FFECEB;
+  --info: #007AFF; --info-bg: #E5F1FF;
+  --radius-xs: 5px; --radius-sm: 8px; --radius-md: 10px;
+  --radius-lg: 14px; --radius-xl: 18px; --radius-full: 9999px;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-elevated: 0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-dropdown: 0 8px 32px rgba(0,0,0,0.12);
+  --shadow-modal: 0 20px 56px rgba(0,0,0,0.2);
+  --icon-stroke: 1.7;
+}
+[data-style="apple"][data-mode="dark"] {
+  --bg-base: #1C1C1E; --bg-sidebar: #1C1C1E; --bg-surface: #2C2C2E;
+  --bg-hover: #3A3A3C; --bg-active: #48484A; --bg-selected: #2C2C3E;
+  --bg-modal-overlay: rgba(0,0,0,0.6); --border-default: #38383A;
+  --border-subtle: #323235; --border-focus: #0A84FF;
+  --text-primary: #F5F5F7; --text-secondary: #98989D; --text-tertiary: #636366;
+  --text-inverse: #1C1C1E; --accent: #0A84FF; --accent-hover: #409CFF;
+  --accent-light: rgba(10,132,255,0.12); --accent-bg: #1C2D42;
+  --gradient-accent: linear-gradient(135deg, #0A84FF 0%, #5E5CE6 100%);
+  --logo-gradient: linear-gradient(135deg, #0A84FF 0%, #5E5CE6 100%);
+  --success: #30D158; --success-bg: rgba(48,209,88,0.12);
+  --warning: #FF9F0A; --warning-bg: rgba(255,159,10,0.12);
+  --danger: #FF453A; --danger-bg: rgba(255,69,58,0.12);
+  --info: #0A84FF; --info-bg: rgba(10,132,255,0.12);
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-elevated: 0 4px 12px rgba(0,0,0,0.35);
+  --shadow-dropdown: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-modal: 0 20px 56px rgba(0,0,0,0.55);
+}
+
+/* ===== RAYCAST — Power Utility Dark ===== */
+[data-style="raycast"] {
+  /* Raycast is dark-only */
+  --bg-base: #07080a; --bg-sidebar: #07080a; --bg-surface: #101111;
+  --bg-hover: #18191b; --bg-active: #1b1c1e; --bg-selected: rgba(85,179,255,0.1);
+  --bg-modal-overlay: rgba(7,8,10,0.75); --border-default: rgba(255,255,255,0.06);
+  --border-subtle: rgba(255,255,255,0.03); --border-focus: #55b3ff;
+  --text-primary: #f9f9f9; --text-secondary: #cecece; --text-tertiary: #9c9c9d;
+  --text-inverse: #07080a; --accent: #f9f9f9; --accent-hover: #ffffff;
+  --accent-light: rgba(255,255,255,0.05); --accent-bg: #18191b;
+  --gradient-accent: linear-gradient(135deg, #f9f9f9 0%, #cecece 100%);
+  --logo-gradient: linear-gradient(135deg, #FF6363 0%, #55b3ff 100%);
+  --success: #5fc992; --success-bg: rgba(95,201,146,0.1);
+  --warning: #ffbc33; --warning-bg: rgba(255,188,51,0.1);
+  --danger: #FF6363; --danger-bg: rgba(255,99,99,0.1);
+  --info: #55b3ff; --info-bg: rgba(85,179,255,0.12);
+  --radius-xs: 4px; --radius-sm: 6px; --radius-md: 8px;
+  --radius-lg: 11px; --radius-xl: 14px; --radius-full: 86px;
+  --shadow-card: 0 0 0 1px rgba(255,255,255,0.06);
+  --shadow-elevated: 0 0 0 1px rgba(27,28,30,1), 0 0 0 1px inset rgba(7,8,10,1);
+  --shadow-dropdown: 0 0 0 2px rgba(0,0,0,0.5), 0 0 14px rgba(255,255,255,0.19);
+  --shadow-modal: 0 0 0 2px rgba(0,0,0,0.5), 0 24px 64px rgba(0,0,0,0.55);
+  --icon-stroke: 1.65;
+}
+
+/* ===== ARC — Vibrant Colorful Playful ===== */
+[data-style="arc"][data-mode="light"] {
+  --bg-base: #FEFEFE; --bg-sidebar: #FAFAFA; --bg-surface: #FFFFFF;
+  --bg-hover: #F5F3FF; --bg-active: #EDE9FE; --bg-selected: #F3EEFF;
+  --bg-modal-overlay: rgba(0,0,0,0.3); --border-default: #E5E4E8;
+  --border-subtle: #F0EFF4; --border-focus: #7C3AED;
+  --text-primary: #1A1A2E; --text-secondary: #5B5B6E; --text-tertiary: #9393AB;
+  --text-inverse: #FFFFFF; --accent: #7C3AED; --accent-hover: #6D28D9;
+  --accent-light: rgba(124,58,237,0.07); --accent-bg: #F3EEFF;
+  --gradient-accent: linear-gradient(135deg, #7C3AED 0%, #EC4899 40%, #F59E0B 100%);
+  --logo-gradient: linear-gradient(135deg, #6366F1 0%, #EC4899 50%, #F59E0B 100%);
+  --success: #10B981; --success-bg: #D1FAE5;
+  --warning: #F59E0B; --warning-bg: #FEF3C7;
+  --danger: #EF4444; --danger-bg: #FEE2E2;
+  --info: #3B82F6; --info-bg: #DBEAFE;
+  --arc-pink: #EC4899; --arc-orange: #F59E0B; --arc-green: #10B981; --arc-blue: #3B82F6;
+  --radius-xs: 8px; --radius-sm: 10px; --radius-md: 14px;
+  --radius-lg: 18px; --radius-xl: 22px; --radius-full: 9999px;
+  --shadow-card: 0 2px 8px rgba(124,58,237,0.06), 0 1px 2px rgba(0,0,0,0.02);
+  --shadow-elevated: 0 8px 24px rgba(124,58,237,0.1), 0 2px 6px rgba(0,0,0,0.03);
+  --shadow-dropdown: 0 12px 40px rgba(124,58,237,0.16);
+  --shadow-modal: 0 28px 72px rgba(124,58,237,0.2);
+  --icon-stroke: 2.0;
+}
+[data-style="arc"][data-mode="dark"] {
+  --bg-base: #12101E; --bg-sidebar: #0F0D1C; --bg-surface: #1A182B;
+  --bg-hover: #252240; --bg-active: #2E2A4E; --bg-selected: #282245;
+  --bg-modal-overlay: rgba(18,16,30,0.72); --border-default: #2E2A48;
+  --border-subtle: #24213A; --border-focus: #A78BFA;
+  --text-primary: #F0EEFA; --text-secondary: #A5A0C4; --text-tertiary: #6B658E;
+  --text-inverse: #12101E; --accent: #A78BFA; --accent-hover: #C4B5FD;
+  --accent-light: rgba(167,139,250,0.1); --accent-bg: #211E3E;
+  --gradient-accent: linear-gradient(135deg, #A78BFA 0%, #F472B6 40%, #FBBF24 100%);
+  --logo-gradient: linear-gradient(135deg, #818CF8 0%, #F472B6 50%, #FBBF24 100%);
+  --success: #34D399; --success-bg: rgba(52,211,153,0.1);
+  --warning: #FBBF24; --warning-bg: rgba(251,191,36,0.1);
+  --danger: #F87171; --danger-bg: rgba(248,113,113,0.1);
+  --info: #60A5FA; --info-bg: rgba(96,165,250,0.1);
+  --arc-pink: #F472B6; --arc-orange: #FBBF24; --arc-green: #34D399; --arc-blue: #60A5FA;
+  --shadow-card: 0 2px 8px rgba(0,0,0,0.3);
+  --shadow-elevated: 0 8px 24px rgba(0,0,0,0.4);
+  --shadow-dropdown: 0 12px 40px rgba(0,0,0,0.5);
+  --shadow-modal: 0 28px 72px rgba(0,0,0,0.6);
+}
+
+/* ============================================================
+   RESET & BASE
+   ============================================================ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { font-size: 14px; }
+body {
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  transition: background .25s ease, color .2s ease;
+}
+
+/* ============================================================
+   ICON SYSTEM — SVG inline, stroke-weight adapts to theme
+   ============================================================ */
+.icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.icon svg {
+  width: 100%; height: 100%;
+  fill: none; stroke: currentColor;
+  stroke-width: var(--icon-stroke, 1.75);
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.icon-xs { width: 14px; height: 14px; }
+.icon-sm { width: 16px; height: 16px; }
+.icon-md { width: 18px; height: 18px; }
+.icon-lg { width: 22px; height: 22px; }
+.icon-xl { width: 26px; height: 26px; }
+
+/* ============================================================
+   APP SHELL
+   ============================================================ */
+.app-shell {
+  display: flex; height: 100vh; max-width: 1280px;
+  margin: 0 auto; border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-modal);
+  transition: background .25s ease;
+}
+
+/* ---- SIDEBAR ---- */
+.sidebar {
+  width: 248px; min-width: 248px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-default);
+  display: flex; flex-direction: column;
+  transition: background .25s ease, border-color .25s ease;
+  z-index: 10;
+}
+
+.sidebar-brand {
+  height: 52px; padding: 0 16px;
+  display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+.logo-icon {
+  width: 30px; height: 30px; border-radius: var(--radius-md);
+  background: var(--logo-gradient);
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-size: 13px; font-weight: 800;
+  letter-spacing: -0.5px; flex-shrink: 0; position: relative; overflow: hidden;
+}
+.logo-icon::after {
+  content:''; position:absolute; top:0; right:0;
+  width:12px; height:12px;
+  background:rgba(255,255,255,.18);
+  border-radius:0 0 0 var(--radius-md);
+}
+.logo-type {
+  font-size: 15.5px; font-weight: 700; letter-spacing: -0.3px;
+  color: var(--text-primary);
+}
+
+.sidebar-nav { flex: 1; padding: 8px 6px; overflow-y: auto; }
+.nav-section-label {
+  font-size: 10.5px; font-weight: 600; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 12px 10px 6px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 10px; border-radius: var(--radius-sm);
+  color: var(--text-secondary); font-size: 13px; font-weight: 450;
+  cursor: pointer; transition: all .1s ease; user-select: none;
+}
+.nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.nav-item.active {
+  background: var(--bg-selected); color: var(--accent); font-weight: 500;
+}
+.nav-item .ni-icon { opacity: .75; }
+.nav-item.active .ni-icon { opacity: 1; }
+.nav-counter {
+  margin-left: auto; font-size: 11px; font-weight: 500;
+  font-family: var(--font-mono, monospace); color: var(--text-tertiary);
+  background: var(--bg-hover); padding: 1px 7px; border-radius: 10px;
+  line-height: 1.7;
+}
+.nav-item.active .nav-counter {
+  background: var(--accent-light); color: var(--accent);
+}
+
+.sidebar-bottom {
+  padding: 8px 6px; border-top: 1px solid var(--border-default);
+}
+.user-chip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; border-radius: var(--radius-sm);
+  cursor: pointer; transition: background .1s ease;
+}
+.user-chip:hover { background: var(--bg-hover); }
+.user-avatar-ring {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--gradient-accent); padding: 2px; flex-shrink: 0;
+}
+.user-avatar-in {
+  width: 100%; height: 100%; border-radius: 50%;
+  background: var(--bg-sidebar); display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: var(--accent);
+}
+.user-info { flex: 1; min-width: 0; }
+.user-name { font-size: 12.5px; font-weight: 550; color: var(--text-primary); line-height: 1.3; }
+.user-role { font-size: 11px; color: var(--accent); font-weight: 400; font-family: var(--font-mono,monospace); }
+
+/* ---- MAIN AREA ---- */
+.main-area {
+  flex: 1; display: flex; flex-direction: column; min-width: 0;
+  background: var(--bg-base);
+}
+
+.topbar {
+  height: 48px; background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
+  display: flex; align-items: center; padding: 0 20px; gap: 10px;
+  flex-shrink: 0; transition: background .25s, border-color .25s;
+}
+.topbar-title { font-size: 14px; font-weight: 650; color: var(--text-primary); letter-spacing: -.2px; }
+.topbar-spacer { flex: 1; }
+
+.content-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; }
+
+/* ---- TAB BAR ---- */
+.tab-bar {
+  display: flex; gap: 0; padding: 0 20px;
+  background: var(--bg-surface); border-bottom: 1px solid var(--border-default);
+  transition: background .25s, border-color .25s;
+}
+.tab-btn {
+  padding: 10px 14px; font-size: 12.5px; font-weight: 450;
+  color: var(--text-tertiary); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: all .12s ease; background: transparent; border-top: none; border-left: none; border-right: none;
+}
+.tab-btn:hover { color: var(--text-secondary); }
+.tab-btn.active { color: var(--accent); font-weight: 500; border-bottom-color: var(--accent); }
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 14px; border-radius: var(--radius-sm);
+  font-size: 12.5px; font-weight: 550; font-family: inherit;
+  cursor: pointer; border: none; outline: none;
+  white-space: nowrap; transition: all .12s ease;
+}
+.btn:focus-visible { box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--border-focus); }
+.btn-primary { background: var(--accent); color: var(--text-inverse); }
+.btn-primary:hover { background: var(--accent-hover); transform: translateY(-0.5px); }
+.btn-secondary { background: var(--bg-surface); color: var(--text-secondary); border: 1px solid var(--border-default); }
+.btn-secondary:hover { background: var(--bg-hover); border-color: var(--text-tertiary); }
+.btn-ghost { background: transparent; color: var(--text-tertiary); padding: 6px 8px; }
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text-secondary); }
+.btn-icon { width: 32px; height: 32px; padding: 0; border-radius: var(--radius-sm); }
+.btn-danger { background: var(--danger); color: white; }
+.btn-danger:hover { opacity: .9; transform: translateY(-0.5px); }
+
+/* ============================================================
+   TOGGLE SWITCH
+   ============================================================ */
+.toggle {
+  width: 40px; height: 24px; border-radius: 12px;
+  background: var(--text-tertiary); cursor: pointer;
+  position: relative; transition: background .2s ease;
+  border: none; flex-shrink: 0;
+}
+.toggle.on { background: var(--accent); }
+.toggle::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: white; box-shadow: 0 .5px 2px rgba(0,0,0,.15);
+  transition: left .2s cubic-bezier(.4,.2,.2,1);
+}
+.toggle.on::after { left: 18px; }
+
+/* ============================================================
+   SELECT / INPUT
+   ============================================================ */
+.select-wrap {
+  position: relative;
+}
+.styled-select {
+  padding: 6px 28px 6px 11px;
+  border-radius: var(--radius-sm); border: 1px solid var(--border-default);
+  background: var(--bg-surface); font-size: 12.5px; color: var(--text-primary);
+  font-family: inherit; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239B9A97' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  transition: border-color .15s;
+}
+.styled-select:focus { border-color: var(--border-focus); outline: none; }
+[data-style="dark"] .styled-select,
+[data-style*="dark"] .styled-select,
+[data-style="linear"] .styled-select,
+[data-style="raycast"] .styled-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2371717a' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.styled-input {
+  width: 100%; padding: 8px 12px;
+  border-radius: var(--radius-sm); border: 1px solid var(--border-default);
+  background: var(--bg-surface); font-size: 13px; color: var(--text-primary);
+  font-family: inherit; outline: none; transition: border-color .15s;
+}
+.styled-input:focus { border-color: var(--border-focus); }
+.styled-input::placeholder { color: var(--text-tertiary); }
+
+/* ============================================================
+   CLIPBOARD LIST — Table-like rows
+   ============================================================ */
+.clip-view { display: flex; flex-direction: column; min-height: 100%; }
+.list-head {
+  display: grid; grid-template-columns: 1fr 110px 76px 84px 84px;
+  gap: 16px; padding: 12px 24px 8px;
+  font-size: 10.5px; font-weight: 600; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.clip-row {
+  display: grid; grid-template-columns: 1fr 110px 76px 84px 84px;
+  gap: 16px; align-items: center; padding: 10px 24px;
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: background .1s ease;
+}
+.clip-row:hover { background: var(--bg-hover); }
+
+.cr-main { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.type-badge {
+  width: 34px; height: 34px; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: transform .15s ease;
+}
+.clip-row:hover .type-badge { transform: scale(1.06); }
+.tb-text { background: var(--accent-bg); color: var(--accent); }
+.tb-img  { background: var(--warning-bg); color: var(--warning); }
+.tb-link { background: var(--info-bg); color: var(--info); }
+.tb-file { background: var(--success-bg); color: var(--success); }
+
+.cr-preview {
+  font-size: 13px; color: var(--text-primary); font-weight: 430;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 320px;
+}
+.cr-device { font-size: 12.5px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; }
+.cr-tag {
+  font-size: 11px; font-weight: 500; display: inline-flex;
+  padding: 2px 9px; border-radius: var(--radius-full);
+}
+.ct-text { background: var(--accent-bg); color: var(--accent); }
+.ct-img  { background: var(--warning-bg); color: var(--warning); }
+.ct-link { background: var(--info-bg); color: var(--info); }
+.ct-file { background: var(--success-bg); color: var(--success); }
+.cr-time { font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono,monospace); }
+.cr-actions { display: flex; gap: 2px; justify-content: flex-end; opacity: 0; transition: opacity .12s ease; }
+.clip-row:hover .cr-actions { opacity: 1; }
+.act-btn {
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-tertiary); cursor: pointer;
+  border: none; background: transparent; transition: all .1s ease;
+}
+.act-btn:hover { background: var(--bg-active); color: var(--text-primary); }
+
+/* ============================================================
+   DEVICES GRID
+   ============================================================ */
+.devices-view { padding: 24px; }
+.ph-header { margin-bottom: 24px; display: flex; align-items: flex-start; justify-content: space-between; }
+.ph-title { font-size: 26px; font-weight: 700; color: var(--text-primary); letter-spacing: -.6px; line-height: 1.2; }
+.ph-desc { font-size: 13px; color: var(--text-tertiary); margin-top: 4px; font-weight: 400; }
+
+.device-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+
+.dev-card {
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg); padding: 20px; cursor: pointer;
+  transition: all .2s ease;
+}
+.dev-card:hover {
+  border-color: var(--text-tertiary);
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-2px);
+}
+.dev-card-top { display: flex; align-items: center; gap: 13px; margin-bottom: 16px; }
+.dev-icon {
+  width: 44px; height: 44px; border-radius: var(--radius-md);
+  background: var(--bg-hover); display: flex; align-items: center; justify-content: center;
+  color: var(--text-tertiary); flex-shrink: 0;
+}
+.dev-name { font-size: 14px; font-weight: 600; color: var(--text-primary); letter-spacing: -.2px; }
+.dev-status { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 12px; color: var(--text-tertiary); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.on { background: var(--success); box-shadow: 0 0 6px rgba(22,163,74,.3); }
+.status-dot.off { background: var(--text-tertiary); }
+.dev-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.stat-cell { background: var(--bg-base); border-radius: var(--radius-sm); padding: 10px 12px; }
+.stat-lbl { font-size: 10.5px; font-weight: 550; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .04em; }
+.stat-val { font-size: 17px; font-weight: 700; color: var(--text-primary); margin-top: 2px; font-family: var(--font-mono,monospace); }
+.stat-val.ok { color: var(--success); }
+.stat-val.dim { color: var(--text-tertiary); font-size: 12px; font-weight: 500; }
+
+/* ============================================================
+   SETTINGS PAGE — Reorganized (no duplicate Profile!)
+   ============================================================ */
+.settings-view { padding: 24px; max-width: 720px; }
+.sv-title { font-size: 26px; font-weight: 700; color: var(--text-primary); letter-spacing: -.6px; margin-bottom: 24px; }
+
+.settings-group {
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 16px;
+}
+.sg-header {
+  padding: 14px 20px 8px; font-size: 10.5px; font-weight: 600;
+  color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .06em;
+}
+.sg-row {
+  display: flex; align-items: center; padding: 12px 20px; gap: 14px;
+  border-top: 1px solid var(--border-subtle); transition: background .1s ease;
+  cursor: pointer;
+}
+.sg-row:hover { background: var(--bg-hover); }
+.sg-label { flex: 1; }
+.sg-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.sg-hint { font-size: 12px; color: var(--text-tertiary); margin-top: 1px; }
+.sg-control { flex-shrink: 0; }
+.sg-arrow { color: var(--text-tertiary); opacity: .5; flex-shrink: 0; }
+
+/* ============================================================
+   PROFILE PAGE (in sidebar, not duplicated in settings)
+   ============================================================ */
+.profile-view { padding: 28px; max-width: 560px; }
+.profile-header { display: flex; align-items: center; gap: 20px; margin-bottom: 28px; }
+.p-avatar-large {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: var(--gradient-accent); padding: 3px; flex-shrink: 0; cursor: pointer;
+}
+.p-avatar-inner {
+  width: 100%; height: 100%; border-radius: 50%;
+  background: var(--bg-surface); display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 700; color: var(--accent);
+}
+.p-info h2 { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -.3px; }
+.p-meta { font-size: 13px; color: var(--text-tertiary); margin-top: 3px; }
+.p-email { font-size: 13px; color: var(--text-secondary); margin-top: 2px; font-family: var(--font-mono,monospace); }
+
+.profile-field {
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 12px;
+}
+.pf-label { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.pf-value { font-size: 14px; color: var(--text-primary); font-weight: 450; }
+
+/* ============================================================
+   QUICK PASTE OVERLAY (⌘K)
+   ============================================================ */
+.qp-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.25);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; z-index: 2000;
+}
+.qp-panel {
+  width: 540px; background: var(--bg-surface);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-dropdown);
+  border: 1px solid var(--border-default); overflow: hidden;
+  animation: qpIn .18s ease-out;
+}
+@keyframes qpIn { from { opacity:0; transform:scale(.96) translateY(-8px); } to { opacity:1; transform:scale(1) translateY(0); } }
+
+.qp-search { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border-default); }
+.qp-search input { flex: 1; border: none; outline: none; background: transparent; font-size: 14.5px; font-family: inherit; color: var(--text-primary); }
+.qp-search input::placeholder { color: var(--text-tertiary); }
+.qp-kbd {
+  font-size: 10.5px; font-family: var(--font-mono,monospace); color: var(--text-tertiary);
+  background: var(--bg-hover); padding: 2px 7px; border-radius: 4px; white-space: nowrap;
+}
+.qp-list { max-height: 330px; overflow-y: auto; }
+.qp-item { display: flex; align-items: center; gap: 11px; padding: 10px 16px; cursor: pointer; transition: background .08s ease; }
+.qp-item:hover, .qp-item.sel { background: var(--bg-hover); }
+.qp-ti { width: 30px; height: 30px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.qp-txt { flex: 1; font-size: 13px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qp-ts { font-size: 11.5px; color: var(--text-tertiary); font-family: var(--font-mono,monospace); flex-shrink: 0; }
+.qp-foot {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px; border-top: 1px solid var(--border-default);
+  font-size: 11px; color: var(--text-tertiary);
+}
+.kbd-pair { display: flex; align-items: center; gap: 3px; }
+kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--bg-hover); border: 1px solid var(--border-default); color: var(--text-secondary); line-height: 1.7; }
+
+/* ============================================================
+   MODAL SYSTEM
+   ============================================================ */
+.modal-backdrop {
+  position: fixed; inset: 0; background: var(--bg-modal-overlay);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; z-index: 3000;
+  animation: fadeIn .15s ease;
+}
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+.modal {
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl); box-shadow: var(--shadow-modal);
+  width: 480px; max-width: 90vw; max-height: 85vh;
+  overflow-y: auto; animation: modalIn .2s ease-out;
+}
+@keyframes modalIn { from{opacity:0;transform:scale(.96) translateY(8px)} to{opacity:1;transform:scale(1) translateY(0)} }
+
+.modal-header { padding: 20px 24px 0; display: flex; align-items: center; justify-content: space-between; }
+.modal-title { font-size: 17px; font-weight: 650; color: var(--text-primary); letter-spacing: -.2px; }
+.modal-close {
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-tertiary); cursor: pointer; border: none; background: transparent; transition: all .1s;
+}
+.modal-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.modal-body { padding: 20px 24px; }
+.modal-footer {
+  padding: 16px 24px; display: flex; justify-content: flex-end; gap: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Modal-specific: Sessions */
+.session-list { list-style: none; }
+.session-item {
+  display: flex; align-items: center; gap: 12px; padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.session-item:last-child { border-bottom: none; }
+.session-dev-icon { width: 36px; height: 36px; border-radius: var(--radius-md); background: var(--bg-hover); display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); flex-shrink: 0; }
+.session-info { flex: 1; }
+.session-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.session-detail { font-size: 11.5px; color: var(--text-tertiary); margin-top: 1px; }
+.session-current { font-size: 10.5px; font-weight: 600; color: var(--success); background: var(--success-bg); padding: 1px 7px; border-radius: 8px; }
+.session-kick { font-size: 12px; color: var(--danger); cursor: pointer; font-weight: 500; background: transparent; border: none; }
+.session-kick:hover { text-decoration: underline; }
+
+/* Modal: Pricing Cards */
+.pricing-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 16px 0; }
+.price-card {
+  border: 1px solid var(--border-default); border-radius: var(--radius-lg);
+  padding: 18px 14px; cursor: pointer; transition: all .15s ease; text-align: center;
+  position: relative;
+}
+.price-card:hover { border-color: var(--accent); box-shadow: var(--shadow-card); }
+.price-card.popular { border-color: var(--accent); background: var(--accent-light); }
+.pc-popular-tag {
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  font-size: 10px; font-weight: 600; color: var(--accent); background: var(--bg-surface);
+  padding: 2px 10px; border-radius: var(--radius-full); border: 1px solid var(--border-default);
+}
+.pc-name { font-size: 14px; font-weight: 650; color: var(--text-primary); }
+.pc-price { font-size: 22px; font-weight: 800; color: var(--text-primary); margin: 8px 0 4px; font-family: var(--font-mono,monospace); }
+.pc-price span { font-size: 12px; font-weight: 400; color: var(--text-tertiary); }
+.pc-feat { font-size: 11.5px; color: var(--text-tertiary); line-height: 1.6; }
+
+/* Modal: Payment Methods */
+.pay-options { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+.pay-opt {
+  display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  cursor: pointer; transition: all .12s ease; background: var(--bg-surface);
+}
+.pay-opt:hover { border-color: var(--accent); background: var(--bg-hover); }
+.pay-icon { width: 32px; height: 32px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 16px; }
+.pay-wechat { background: #07C160; color: white; }
+.pay-alipay { background: #1677FF; color: white; }
+.pay-name { font-size: 14px; font-weight: 550; color: var(--text-primary); }
+
+/* Modal: Shortcuts */
+.shortcut-list { list-style: none; }
+.sk-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+.sk-item:last-child { border-bottom: none; }
+.sk-action { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.sk-keys { display: flex; gap: 3px; }
+
+/* Modal: Notifications */
+.notif-list { list-style: none; }
+.nf-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
+.nf-item:last-child { border-bottom: none; }
+.nf-label { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.nf-hint { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
+
+/* Modal: Theme Selector (Appearance) */
+.theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
+.theme-opt {
+  border: 2px solid var(--border-default); border-radius: var(--radius-lg);
+  padding: 16px; cursor: pointer; transition: all .12s ease; text-align: center;
+}
+.theme-opt:hover { border-color: var(--text-tertiary); }
+.theme-opt.selected { border-color: var(--accent); background: var(--accent-light); }
+.to-preview { height: 64px; border-radius: var(--radius-md); margin-bottom: 10px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: white; font-size: 11px;}
+.to-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+
+/* Modal: Export / GDPR */
+.export-box {
+  background: var(--bg-base); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); padding: 20px; text-align: center;
+}
+.export-icon { font-size: 36px; margin-bottom: 10px; }
+.export-msg { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+
+/* Modal: Empty State */
+.empty-state { text-align: center; padding: 32px 20px; }
+.empty-icon { font-size: 40px; margin-bottom: 12px; opacity: .4; }
+.empty-title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.empty-desc { font-size: 13px; color: var(--text-tertiary); line-height: 1.5; }
+
+/* Modal: Security Toggles */
+.sec-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border-subtle); }
+.sec-toggle-row:last-child { border-bottom: none; }
+.sec-label { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.sec-hint { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
+
+/* ============================================================
+   LOGIN PAGE
+   ============================================================ */
+.login-page { min-height: 100vh; display: flex; }
+.login-left {
+  flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;
+  padding: 40px; background: var(--bg-base); transition: background .25s;
+}
+.login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 36px; }
+.login-brand .logo-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); font-size: 18px; }
+.login-brand .logo-type { font-size: 22px; }
+.login-welcome { font-size: 26px; font-weight: 750; color: var(--text-primary); letter-spacing: -.5px; margin-bottom: 8px; text-align: center; }
+.login-sub { font-size: 14.5px; color: var(--text-tertiary); margin-bottom: 32px; text-align: center; }
+.login-form { width: 100%; max-width: 340px; }
+.lf-field { margin-bottom: 16px; }
+.lf-label { font-size: 12px; font-weight: 550; color: var(--text-secondary); margin-bottom: 6px; display: block; }
+.lf-input {
+  width: 100%; padding: 10px 14px; border-radius: var(--radius-md);
+  border: 1px solid var(--border-default); background: var(--bg-surface);
+  font-size: 14px; color: var(--text-primary); font-family: inherit; outline: none; transition: border-color .15s;
+}
+.lf-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
+.lf-input::placeholder { color: var(--text-tertiary); }
+.lf-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.lf-remember { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; }
+.lf-forgot { font-size: 12.5px; color: var(--accent); cursor: pointer; font-weight: 500; }
+.lf-submit {
+  width: 100%; padding: 11px; border-radius: var(--radius-md);
+  background: var(--accent); color: var(--text-inverse);
+  font-size: 14px; font-weight: 600; font-family: inherit;
+  border: none; cursor: pointer; transition: all .15s;
+}
+.lf-submit:hover { filter: brightness(1.05); transform: translateY(-0.5px); }
+.login-divider { display: flex; align-items: center; gap: 14px; margin: 24px 0; color: var(--text-tertiary); font-size: 12px; }
+.login-divider::before, .login-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-default); }
+.login-socials { display: flex; gap: 10px; justify-content: center; }
+.social-btn {
+  width: 42px; height: 42px; border-radius: var(--radius-md);
+  border: 1px solid var(--border-default); background: var(--bg-surface);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .12s; color: var(--text-secondary);
+}
+.social-btn:hover { border-color: var(--text-tertiary); background: var(--bg-hover); color: var(--text-primary); }
+.login-footer { margin-top: 28px; font-size: 12.5px; color: var(--text-tertiary); text-align: center; }
+.login-footer a { color: var(--accent); text-decoration: none; font-weight: 500; }
+
+.login-right {
+  width: 400px; background: var(--gradient-accent);
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  padding: 40px; color: white; position: relative; overflow: hidden;
+}
+.lr-pattern {
+  position: absolute; inset: 0; opacity: .06;
+  background-image: radial-gradient(circle at 2px 2px, white 1px, transparent 0);
+  background-size: 24px 24px;
+}
+.lr-content { position: relative; z-index: 1; text-align: center; }
+.lr-quote { font-size: 22px; font-weight: 600; line-height: 1.5; margin-bottom: 20px; }
+.lr-author { font-size: 13px; opacity: .7; }
+
+@media (max-width: 900px) { .login-right { display: none; } }
+
+/* ============================================================
+   CONTROL BAR (outside app shell)
+   ============================================================ */
+.control-bar {
+  position: sticky; top: 0; z-index: 500;
+  background: rgba(255,255,255,.88); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-default); padding: 10px 24px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  border-radius: 0;
+}
+[data-style*="dark"] .control-bar, [data-style="linear"] .control-bar, [data-style="raycast"] .control-bar {
+  background: rgba(10,10,10,.88);
+}
+.cb-label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
+.cb-seg { display: flex; gap: 3px; background: var(--bg-hover); padding: 3px; border-radius: var(--radius-md); }
+.cb-btn {
+  padding: 5px 12px; border-radius: var(--radius-sm); font-size: 11.5px; font-weight: 500;
+  color: var(--text-tertiary); cursor: pointer; border: none; background: transparent;
+  transition: all .12s; font-family: inherit; white-space: nowrap;
+}
+.cb-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-card); font-weight: 550; }
+.cb-btn.star { position: relative; }
+.cb-btn.star::after { content:'★'; position: absolute; top:1px; right:4px; font-size: 8px; color: #f59e0b; }
+.cb-navs { margin-left: auto; display: flex; gap: 4px; }
+.cb-page-btn {
+  padding: 5px 11px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 500;
+  color: var(--text-tertiary); cursor: pointer; border: 1px solid var(--border-default);
+  background: var(--bg-surface); transition: all .12s; font-family: inherit;
+}
+.cb-page-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+
+/* Page visibility */
+.page { display: none; }
+.page.active { display: block; }
+
+/* Demo wrapper spacing */
+.demo-wrap { padding: 24px 0 48px; }
+/* ===== QUICK PASTE OVERLAY ===== */
+#qpOverlay {
+  position: fixed; inset: 0; z-index: 10000;
+  display: none; align-items: flex-start; justify-content: center;
+  padding-top: 18vh;
+  background: var(--bg-modal-overlay, rgba(0,0,0,0.35));
+  animation: qpFadeIn 0.15s ease;
+}
+#qpOverlay.show { display: flex; }
+@keyframes qpFadeIn { from { opacity: 0; } to { opacity: 1; } }
+#qpOverlay .qp-panel {
+  width: 560px; max-width: 92vw;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+  animation: qpSlideIn 0.18s ease;
+}
+@keyframes qpSlideIn { from { transform: translateY(-12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+#qpOverlay .qp-search {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border-default);
+}
+#qpOverlay .qp-search input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-size: 14.5px; font-family: inherit; color: var(--text-primary);
+}
+#qpOverlay .qp-search input::placeholder { color: var(--text-tertiary); }
+#qpOverlay .qp-kbd {
+  font-size: 11px; color: var(--text-tertiary);
+  background: var(--bg-hover); border: 1px solid var(--border-default);
+  border-radius: 4px; padding: 2px 6px; font-family: var(--font-mono);
+}
+#qpOverlay .qp-list { max-height: 320px; overflow-y: auto; padding: 6px 0; }
+#qpOverlay .qp-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; cursor: pointer; border-radius: 0;
+  transition: background 0.1s;
+}
+#qpOverlay .qp-item:hover, #qpOverlay .qp-item.sel {
+  background: var(--bg-selected);
+}
+#qpOverlay .qp-ti { flex-shrink: 0; }
+#qpOverlay .qp-txt {
+  flex: 1; font-size: 13.5px; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#qpOverlay .qp-ts { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
+#qpOverlay .qp-foot {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 16px; border-top: 1px solid var(--border-default);
+  font-size: 11px; color: var(--text-tertiary);
+}
+#qpOverlay .kbd-pair { display: flex; align-items: center; gap: 3px; }
+#qpOverlay kbd {
+  font-size: 11px; background: var(--bg-hover); border: 1px solid var(--border-default);
+  border-radius: 3px; padding: 1px 5px; font-family: var(--font-mono);
+}
+
+/* Empty state */
+.empty-state {
+  display: none; flex-direction: column; align-items: center; justify-content: center;
+  padding: 60px 20px; text-align: center;
+}
+.empty-state.show { display: flex; }
+.empty-state .empty-icon {
+  width: 64px; height: 64px; border-radius: 16px;
+  background: var(--bg-hover); display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px;
+}
+.empty-state .empty-title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.empty-state .empty-desc { font-size: 13px; color: var(--text-secondary); max-width: 280px; line-height: 1.5; }
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  min-width: 280px;
+  max-width: 400px;
+  animation: toastSlideIn 0.3s ease;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.toast.hiding {
+  opacity: 0;
+  transform: translateX(100%);
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.toast-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.toast-message {
+  flex: 1;
+}
+
+.toast-action {
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.toast-close {
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.toast-close:hover {
+  opacity: 1;
+}
+
+</style>
+</head>
+<body>
+
+<!-- ============== CONTROL BAR ============== -->
+<div class="control-bar" id="ctrlBar">
+  <span class="cb-label">Style</span>
+  <div class="cb-seg" id="styleSeg">
+    <button class="cb-btn star active" data-s="vercel">Vercel</button>
+    <button class="cb-btn" data-s="clipsync">ClipSync</button>
+    <button class="cb-btn" data-s="notion">Notion</button>
+    <button class="cb-btn" data-s="linear">Linear</button>
+    <button class="cb-btn" data-s="apple">Apple HIG</button>
+    <button class="cb-btn" data-s="raycast">Raycast</button>
+    <button class="cb-btn" data-s="arc">Arc</button>
+  </div>
+
+  <span class="cb-label">Mode</span>
+  <div class="cb-seg" id="modeSeg">
+    <button class="cb-btn active" data-m="light">☀ Light</button>
+    <button class="cb-btn" data-m="dark">◐ Dark</button>
+  </div>
+
+  <div class="cb-navs" id="pageNav">
+    <button class="cb-page-btn active" data-p="login">Login</button>
+    <button class="cb-page-btn" data-p="app">App</button>
+    <button class="cb-page-btn" onclick="showQuickPaste()">Quick Paste</button>
+  </div>
+</div>
+
+<div class="demo-wrap">
+
+<!-- ============== PAGE: LOGIN ============== -->
+<div class="page active" id="pg-login">
+  <div class="login-page">
+    <div class="login-left">
+      <div class="login-brand">
+        <div class="logo-icon">C</div><span class="logo-type">ClipSync</span>
+      </div>
+      <div class="login-welcome">Welcome back</div>
+      <div class="login-sub">Sign in to sync your clipboard across all devices</div>
+      <div class="login-form">
+        <div class="lf-field"><label class="lf-label">Email or Phone</label><input class="lf-input" type="text" placeholder="carlos@example.com" value="carlos@example.com"></div>
+        <div class="lf-field"><label class="lf-label">Password</label><input class="lf-input" type="password" placeholder="••••••••"></div>
+        <div class="lf-row">
+          <label class="lf-remember"><input type="checkbox" checked> Remember me</label>
+          <span class="lf-forgot" style="cursor:pointer;color:var(--accent);" onclick="showToast('Password reset email sent! Check your inbox.','info')">Forgot password?</span>
+        </div>
+        <button class="lf-submit" onclick="showPage('app')">Sign In</button>
+        <div class="login-divider">or continue with</div>
+        <div class="login-socials">
+          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg></span></button>
+          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></span></button>
+          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></span></button>
+          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></span></button>
+        </div>
+      </div>
+      <div class="login-footer">Don't have an account? <a href="javascript:void(0)" onclick="showToast('Sign up flow coming soon!','info')" style="color:var(--accent);">Create one free</a></div>
+    </div>
+    <div class="login-right" id="loginRight">
+      <div class="lr-pattern"></div>
+      <div class="lr-content">
+        <div class="lr-quote">"The best way to sync your<br>clipboard across devices."</div>
+        <div class="lr-author">— Carlos Shao, Founder</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============== PAGE: APP SHELL + SUB-PAGES ============== -->
+<div class="page" id="pg-app">
+
+  <!-- ============== CLIPBOARD VIEW ============== -->
+  <div class="page active" id="sub-clipboard">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
+        <nav class="sidebar-nav">
+          <div class="nav-section-label">Main</div>
+          <div class="nav-item active" data-sub="clipboard" onclick="switchSub('clipboard')">
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard<span class="nav-counter">24</span>
+          </div>
+          <div class="nav-item" data-sub="devices" onclick="switchSub('devices')">
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices<span class="nav-counter">3</span>
+          </div>
+          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')">
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span>Shared Links
+          </div>
+          <div class="nav-section-label">Account</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')">
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile
+          </div>
+          <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')">
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription
+          </div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')">
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings
+          </div>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="user-chip" onclick="switchSub('profile')">
+            <div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div>
+            <div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro Plan</div></div>
+          </div>
+        </div>
+      </aside>
+      <main class="main-area">
+        <header class="topbar">
+          <span class="topbar-title">Clipboard</span>
+          <span class="topbar-spacer"></span>
+          <button class="btn btn-primary"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>New Clip</button>
+          <button class="btn btn-ghost btn-icon" onclick="showQuickPaste()" title="Search clips (⌘K)"><span class="icon icon-md"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span></button>
+        </header>
+        <div class="tab-bar"><div class="tab-btn active" onclick="switchClipTab(this,'all')">All</div><div class="tab-btn" onclick="switchClipTab(this,'text')">Text</div><div class="tab-btn" onclick="switchClipTab(this,'images')">Images</div><div class="tab-btn" onclick="switchClipTab(this,'links')">Links</div><div class="tab-btn" onclick="switchClipTab(this,'files')">Files</div></div>
+        <div class="content-scroll clip-view">
+          <div class="list-head"><div>Content</div><div>Source</div><div>Type</div><div>Time</div><div style="text-align:right;">Actions</div></div>
+          <div class="clip-row" data-type="text"><div class="cr-main"><div class="type-badge tb-text"><span class="icon icon-md"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span></div><span class="cr-preview">Fix the clipboard sync bug in Rust backend service layer</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>MacBook Pro</div><div><span class="cr-tag ct-text">Text</span></div><div class="cr-time">2m ago</div><div class="cr-actions"><button class="act-btn" title="Copy" onclick="showToast('Copied to clipboard!','success')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" title="Open"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Item deleted','info',{text:'Undo',callback:()=>showToast('Restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></div>
+          <div class="clip-row" data-type="images"><div class="cr-main"><div class="type-badge tb-img"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span></div><span class="cr-preview">Screenshot_2026-07-03_14_22_05.png</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>iPhone 15 Pro</div><div><span class="cr-tag ct-img">Image</span></div><div class="cr-time">15m ago</div><div class="cr-actions"><button class="act-btn" onclick="openModal('imagePreview')" title="Preview"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening image...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Image deleted','info',{text:'Undo',callback:()=>showToast('Image restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></div>
+          <div class="clip-row" data-type="links"><div class="cr-main"><div class="type-badge tb-link"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div><span class="cr-preview">github.com/CarlosShao/ClipSync/pull/42</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>iPad Air</div><div><span class="cr-tag ct-link">Link</span></div><div class="cr-time">1h ago</div><div class="cr-actions"><button class="act-btn" title="Copy" onclick="showToast('Link copied!','success')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening link...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Link deleted','info',{text:'Undo',callback:()=>showToast('Link restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></div>
+          <div class="clip-row" data-type="files"><div class="cr-main"><div class="type-badge tb-file"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span></div><span class="cr-preview">design-spec-v2.figma</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>MacBook Pro</div><div><span class="cr-tag ct-file">File</span></div><div class="cr-time">3h ago</div><div class="cr-actions"><button class="act-btn" title="Download" onclick="showToast('Downloading file...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening file...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('File deleted','info',{text:'Undo',callback:()=>showToast('File restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></div>
+          <div class="clip-row" data-type="text"><div class="cr-main"><div class="type-badge tb-text"><span class="icon icon-md"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span></div><span class="cr-preview">Meeting notes from today's sprint review session...</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>iPhone 15 Pro</div><div><span class="cr-tag ct-text">Text</span></div><div class="cr-time">5h ago</div><div class="cr-actions"><button class="act-btn" title="Copy" onclick="showToast('Copied to clipboard!','success')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening notes...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Note deleted','info',{text:'Undo',callback:()=>showToast('Note restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></div>
+          <div class="empty-state" id="clipEmptyState">
+            <div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span></div>
+            <div class="empty-title">No clips yet</div>
+            <div class="empty-desc">Clips from all your devices will appear here.<br>Start copying to sync!</div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ============== DEVICES VIEW ============== -->
+  <div class="page" id="sub-devices">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
+        <nav class="sidebar-nav">
+          <div class="nav-section-label">Main</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item active" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices<span class="nav-counter">3</span></div>
+          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span>Shared Links</div>
+          <div class="nav-section-label">Account</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
+        </nav>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
+      </aside>
+      <main class="main-area">
+        <div class="content-scroll devices-view">
+          <div class="ph-header"><div><div class="ph-title">Devices</div><div class="ph-desc">Manage connected devices and sync status</div></div><button class="btn btn-primary" onclick="openModal('addDevice')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Add Device</button></div>
+          <div class="device-grid">
+            <div class="dev-card"><div class="dev-card-top"><div class="dev-icon"><span class="icon icon-lg"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span></div><div><div class="dev-name">MacBook Pro</div><div class="dev-status"><span class="status-dot on"></span>Online · Synced 2m ago</div></div></div><div class="dev-stats"><div class="stat-cell"><div class="stat-lbl">Clips Synced</div><div class="stat-val">1,284</div></div><div class="stat-cell"><div class="stat-lbl">Status</div><div class="stat-val ok">Active</div></div></div></div>
+            <div class="dev-card"><div class="dev-card-top"><div class="dev-icon"><span class="icon icon-lg"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span></div><div><div class="dev-name">iPhone 15 Pro</div><div class="dev-status"><span class="status-dot on"></span>Online · Synced 15m ago</div></div></div><div class="dev-stats"><div class="stat-cell"><div class="stat-lbl">Clips Synced</div><div class="stat-val">892</div></div><div class="stat-cell"><div class="stat-lbl">Status</div><div class="stat-val ok">Active</div></div></div></div>
+            <div class="dev-card"><div class="dev-card-top"><div class="dev-icon"><span class="icon icon-lg"><svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span></div><div><div class="dev-name">iPad Air</div><div class="dev-status"><span class="status-dot off"></span>Offline · Synced 3h ago</div></div></div><div class="dev-stats"><div class="stat-cell"><div class="stat-lbl">Clips Synced</div><div class="stat-val">456</div></div><div class="stat-cell"><div class="stat-lbl">Status</div><div class="stat-val dim">Idle</div></div></div></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ============== SETTINGS VIEW ============== -->
+  <div class="page" id="sub-settings">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
+        <nav class="sidebar-nav">
+          <div class="nav-section-label">Main</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
+          <div class="nav-section-label">Account</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
+          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
+        </nav>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
+      </aside>
+      <main class="main-area">
+        <div class="content-scroll settings-view">
+          <div class="sv-title">Settings</div>
+
+          <!-- General -->
+          <div class="settings-group"><div class="sg-header">General</div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Auto-sync clipboard</div><div class="sg-hint">Automatically sync across devices when content changes</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')"></button></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Launch at startup</div><div class="sg-hint">Start ClipSync automatically when you log in</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')"></button></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Language</div><div class="sg-hint">Interface language preference</div></div><div class="sg-control"><select class="styled-select"><option>English</option><option>中文（简体）</option><option>日本語</option></select></div></div>
+          </div>
+
+          <!-- Sync -->
+          <div class="settings-group"><div class="sg-header">Sync</div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Sync interval</div><div class="sg-hint">How often to check for new clips</div></div><div class="sg-control"><select class="styled-select"><option>Real-time</option><option>Every 5 min</option><option>Every 15 min</option></select></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Max history</div><div class="sg-hint">Number of clips retained in history</div></div><div class="sg-control"><select class="styled-select"><option>100</option><option>500</option><option>1,000</option><option>Unlimited</option></select></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Image compression</div><div class="sg-hint">Reduce image size before syncing</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
+          </div>
+
+          <!-- Privacy & Security → opens modal -->
+          <div class="settings-group"><div class="sg-header">Privacy &amp; Security</div>
+            <div class="sg-row" onclick="openModal('security')"><div class="sg-label"><div class="sg-name">Two-factor authentication</div><div class="sg-hint">Add an extra layer of security to your account</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('sessions')"><div class="sg-label"><div class="sg-name">Active sessions</div><div class="sg-hint">Manage devices currently logged into your account</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">End-to-end encryption</div><div class="sg-hint">Your clips are encrypted before leaving your device</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')" disabled style="opacity:.5;cursor:not-allowed;"></button></div></div>
+          </div>
+
+          <!-- Subscription & Billing -->
+          <div class="settings-group"><div class="sg-header">Subscription &amp; Billing</div>
+            <div class="sg-row" onclick="openModal('pricing')"><div class="sg-label"><div class="sg-name">Current plan</div><div class="sg-hint">You are on the <strong>Professional</strong> plan · Renews Jul 15</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('billing')"><div class="sg-label"><div class="sg-name">Billing history</div><div class="sg-hint">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+          </div>
+
+          <!-- Shortcuts -->
+          <div class="settings-group"><div class="sg-header">Shortcuts</div>
+            <div class="sg-row" onclick="openModal('shortcuts')"><div class="sg-label"><div class="sg-name">Keyboard shortcuts</div><div class="sg-hint">Customize global hotkeys for quick actions</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+          </div>
+
+          <!-- Notifications -->
+          <div class="settings-group"><div class="sg-header">Notifications</div>
+            <div class="sg-row" onclick="openModal('notifications')"><div class="sg-label"><div class="sg-name">Notification preferences</div><div class="sg-hint">Choose which alerts you want to receive</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+          </div>
+
+          <!-- Appearance (★ THEME SELECTOR) -->
+          <div class="settings-group"><div class="sg-header">Appearance</div>
+            <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name">Theme &amp; Style</div><div class="sg-hint">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Reduce motion</div><div class="sg-hint">Minimize animations throughout the interface</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
+          </div>
+
+          <!-- Data -->
+          <div class="settings-group"><div class="sg-header">Data</div>
+            <div class="sg-row" onclick="openModal('export')"><div class="sg-label"><div class="sg-name">Export my data (GDPR)</div><div class="sg-hint">Download a copy of all your data in standard formats</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" id="checkUpdateRow"><div class="sg-label"><div class="sg-name">Check for updates</div><div class="sg-hint">Current version v2.4.1 · Last checked today</div></div><div class="sg-control"><button class="btn btn-secondary" style="font-size:11.5px;padding:5px 10px;" onclick="openModal('updates')">Check Now</button></div></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ============== PROFILE VIEW ============== -->
+  <div class="page" id="sub-profile">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
+        <nav class="sidebar-nav">
+          <div class="nav-section-label">Main</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
+          <div class="nav-section-label">Account</div>
+          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
+        </nav>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
+      </aside>
+      <main class="main-area">
+        <div class="content-scroll profile-view">
+          <div class="profile-header">
+            <div class="p-avatar-large"><div class="p-avatar-inner">CS</div></div>
+            <div class="p-info"><h2>Carlos Shao</h2><div class="p-meta">Member since Jan 2025</div><div class="p-email">carlos@clipsync.io</div></div>
+          </div>
+          <div class="profile-field"><div class="pf-label">User ID</div><div class="pf-value" style="font-family:var(--font-mono)">0b8e77d8-a3f4-4b2c-9e1d-<span style="color:var(--text-tertiary)">****</span>-f2a1</div></div>
+          <div class="profile-field"><div class="pf-label">Phone</div><div class="pf-value" style="display:flex;align-items:center;gap:8px;"><span class="icon icon-sm" style="color:var(--accent)"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>+86 135 0511 0772</div></div>
+          <div class="profile-field"><div class="pf-label">Display Name</div><div class="pf-value"><input class="styled-input" value="Carlos" style="padding:6px 10px;font-size:13px;"></div></div>
+          <div class="profile-field"><div class="pf-label">Plan</div><div class="pf-value" style="display:flex;align-items:center;gap:8px;color:var(--accent);font-weight:550;"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Professional</div></div>
+          <div style="margin-top:20px;display:flex;gap:10px;">
+            <button class="btn btn-primary" style="flex:1;padding:10px;" onclick="showToast('Changes saved!','success')">Save Changes</button>
+            <button class="btn btn-secondary" style="padding:10px;">Cancel</button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ============== SHARED LINKS VIEW ============== -->
+  <div class="page" id="sub-shared-links">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
+        <nav class="sidebar-nav">
+          <div class="nav-section-label">Main</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
+          <div class="nav-item active" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span>Shared Links<span class="nav-counter">5</span></div>
+          <div class="nav-section-label">Account</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 022.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
+        </nav>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
+      </aside>
+      <main class="main-area">
+        <header class="topbar">
+          <span class="topbar-title">Shared Links</span>
+          <span class="topbar-spacer"></span>
+          <button class="btn btn-primary"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>New Link</button>
+        </header>
+        <div class="content-scroll" style="padding:24px;">
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
+              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">Project Alpha — Design Specs</div>
+                <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/xK9mP2qL</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--text-tertiary);">127 views</div><div style="font-size:11.5px;color:var(--text-tertiary);">Created 2d ago</div></div>
+            </div>
+            <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
+              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">Meeting Recording — July Sprint Review</div>
+                <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/nR4wT8vF</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--text-tertiary);">84 views</div><div style="font-size:11.5px;color:var(--text-tertiary);">Created 5d ago</div></div>
+            </div>
+            <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
+              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">API Documentation v2.4</div>
+                <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/qZ3pK7mN</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--text-tertiary);">256 views</div><div style="font-size:11.5px;color:var(--text-tertiary);">Created 1w ago</div></div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ============== SUBSCRIPTION VIEW ============== -->
+  <div class="page" id="sub-subscription">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync"></span></div>
+        <nav class="sidebar-nav">
+          <div class="nav-section-label">Main</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
+          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span>Shared Links</div>
+          <div class="nav-section-label">Account</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
+          <div class="nav-item active" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 L0 9 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 022.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 L0 19.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
+        </nav>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
+      </aside>
+      <main class="main-area">
+        <div class="content-scroll settings-view">
+          <div class="sv-title">Subscription</div>
+          <!-- Current Plan Card -->
+          <div class="dev-card" style="margin-bottom:20px;background:var(--gradient-accent);color:var(--text-inverse);border:none;">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px;">
+              <div><div style="font-size:13px;opacity:.75;margin-bottom:4px;">Current Plan</div><div style="font-size:24px;font-weight:700;">Professional</div></div>
+              <span style="background:rgba(255,255,255,.2);padding:4px 12px;border-radius:9999px;font-size:12px;font-weight:500;">Active</span>
+            </div>
+            <div style="display:flex;gap:32px;font-size:13px;opacity:.85;">
+              <div><div style="opacity:.6;">Price</div><div style="font-weight:550;">¥9.9/month</div></div>
+              <div><div style="opacity:.6;">Renews</div><div style="font-weight:550;">July 15, 2026</div></div>
+              <div><div style="opacity:.6;">Devices</div><div style="font-weight:550;">Unlimited</div></div>
+            </div>
+          </div>
+          <!-- Usage Stats -->
+          <div class="settings-group"><div class="sg-header">Usage This Month</div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Clips synced</div><div class="sg-hint">Total clipboard items synchronized across devices</div></div><div class="sg-control" style="font-weight:600;font-size:18px;color:var(--accent);">1,284</div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Data transferred</div><div class="sg-hint">Bandwidth used for sync this billing cycle</div></div><div class="sg-control" style="font-weight:600;font-size:18px;color:var(--accent);">2.4 GB</div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Shared links created</div><div class="sg-hint">Number of shareable links generated</div></div><div class="sg-control" style="font-weight:600;font-size:18px;color:var(--accent);">5 / 50</div></div>
+          </div>
+          <!-- Actions -->
+          <div class="settings-group"><div class="sg-header">Manage</div>
+            <div class="sg-row" onclick="openModal('billing')"><div class="sg-label"><div class="sg-name">Billing history</div><div class="sg-hint">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('pricing')"><div class="sg-label"><div class="sg-name">Change plan</div><div class="sg-hint">Upgrade or downgrade your subscription</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Cancel subscription</div><div class="sg-hint">End your subscription at the next billing date</div></div><div class="sg-control"><button class="btn btn-ghost" style="font-size:12px;padding:5px 12px;color:var(--danger);border-color:var(--danger);">Cancel</button></div></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+</div><!-- end pg-app -->
+
+<!-- ============== QUICK PASTE (standalone page) ============== -->
+<!-- Quick Paste overlay is defined below -->
+</div><!-- end demo-wrap -->
+
+<!-- ============== MODALS (rendered on demand) ============== -->
+<!-- ============== QUICK PASTE OVERLAY ============== -->
+<div id="qpOverlay" onclick="if(event.target===this)hideQuickPaste()">
+  <div class="qp-panel">
+    <div class="qp-search">
+      <span class="icon icon-md" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+      <input type="text" id="qpSearchInput" placeholder="Search clipboard history..." oninput="filterQuickPaste(this.value)">
+      <div class="qp-kbd">⌘K</div>
+    </div>
+    <div class="qp-list" id="qpList">
+      <div class="qp-item sel" data-idx="0" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-text"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span></div><div class="qp-txt">Fix the clipboard sync bug in the Rust backend service</div><div class="qp-ts">2m</div></div>
+      <div class="qp-item" data-idx="1" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-img"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span></div><div class="qp-txt">Screenshot_2026-07-03_14_22_05.png</div><div class="qp-ts">15m</div></div>
+      <div class="qp-item" data-idx="2" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-link"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div><div class="qp-txt">github.com/CarlosShao/ClipSync/pull/42</div><div class="qp-ts">1h</div></div>
+      <div class="qp-item" data-idx="3" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-file"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span></div><div class="qp-txt">design-spec-v2.figma</div><div class="qp-ts">3h</div></div>
+    </div>
+    <div class="qp-foot">
+      <div class="kbd-pair"><kbd>↑↓</kbd>Navigate</div>
+      <div class="kbd-pair"><kbd>↵</kbd>Paste</div>
+      <div class="kbd-pair"><kbd>ESC</kbd>Close</div>
+      <div style="margin-left:auto;">24 items</div>
+    </div>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toastContainer" class="toast-container"></div>
+
+<script>
+// ========== STATE ==========
+let currentStyle = 'vercel';
+let currentMode = 'light';
+
+function applyStyle(s, m) {
+  currentStyle = s; currentMode = m;
+  const root = document.documentElement;
+  root.setAttribute('data-style', s);
+
+  // Handle dark-only styles
+  if (s === 'linear' || s === 'raycast') {
+    root.removeAttribute('data-mode');
+  } else {
+    root.setAttribute('data-mode', m);
+  }
+
+  // Update control bar buttons
+  document.querySelectorAll('#styleSeg .cb-btn').forEach(b => b.classList.toggle('active', b.dataset.s === s));
+  document.querySelectorAll('#modeSeg .cb-btn').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+
+  // Disable light mode button for dark-only styles
+  const lightBtn = document.querySelector('#modeSeg [data-m="light"]');
+  if (s === 'linear' || s === 'raycast') {
+    lightBtn.style.opacity = '.35';
+    lightBtn.style.pointerEvents = 'none';
+  } else {
+    lightBtn.style.opacity = '';
+    lightBtn.style.pointerEvents = '';
+  }
+}
+
+// Style buttons — auto-reset to light when leaving dark-only styles
+document.querySelectorAll('#styleSeg .cb-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    const newStyle = b.dataset.s;
+    const wasDarkOnly = (currentStyle === 'linear' || currentStyle === 'raycast');
+    const isDarkOnly = (newStyle === 'linear' || newStyle === 'raycast');
+    let targetMode = currentMode;
+    if (wasDarkOnly && !isDarkOnly) targetMode = 'light';
+    applyStyle(newStyle, targetMode);
+  });
+});
+// Mode buttons
+document.querySelectorAll('#modeSeg .cb-btn').forEach(b => {
+  b.addEventListener('click', () => applyStyle(currentStyle, b.dataset.m));
+});
+
+// Page navigation
+let lastAppSub = 'clipboard'; // Remember last sub-page within app shell
+
+function showPage(p) {
+  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+  const target = document.getElementById('pg-' + p);
+  if (target) target.classList.add('active');
+  document.querySelectorAll('.cb-page-btn').forEach(b => b.classList.toggle('active', b.dataset.p === p));
+
+  // If switching to app shell, restore last sub-page (not always clipboard)
+  if (p === 'app') switchSub(lastAppSub);
+}
+document.querySelectorAll('.cb-page-btn').forEach(b => {
+  b.addEventListener('click', () => showPage(b.dataset.p));
+});
+
+// Sub-page navigation within app shell
+function switchSub(sub) {
+  // Remember last sub-page
+  lastAppSub = sub;
+
+  // Show target sub-page
+  document.querySelectorAll('[id^="sub-"]').forEach(el => el.classList.remove('active'));
+  const target = document.getElementById('sub-' + sub);
+  if (target) target.classList.add('active');
+
+  // Update sidebar nav active states — use data-sub attribute (robust, doesn't depend on text content)
+  document.querySelectorAll('.sidebar .nav-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.sub === sub);
+  });
+}
+
+// ========== MODAL SYSTEM ==========
+const modalTemplates = {
+  sessions: () => `
+    <div class="modal-header"><span class="modal-title">Active Sessions</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body">
+      <ul class="session-list">
+        <li class="session-item"><div class="session-dev-icon"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span></div><div class="session-info"><div class="session-name">MacBook Pro</div><div class="session-detail">San Francisco, CA · Current session</div></div><span class="session-current">Current</span></li>
+        <li class="session-item"><div class="session-dev-icon"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span></div><div class="session-info"><div class="session-name">iPhone 15 Pro</div><div class="session-detail">Beijing, CN · Active 15m ago</div></div><button class="session-kick">Sign out</button></li>
+        <li class="session-item"><div class="session-dev-icon"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span></div><div class="session-info"><div class="session-name">iPad Air</div><div class="session-detail">Shanghai, CN · Active 3h ago</div></div><button class="session-kick">Sign out</button></li>
+      </ul>
+    </div>`,
+
+  security: () => `
+    <div class="modal-header"><span class="modal-title">Privacy &amp; Security</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body">
+      <div class="sec-toggle-row"><div><div class="sec-label">Two-factor Authentication (2FA)</div><div class="sec-hint">Require a code from your authenticator app when signing in</div></div><button class="toggle" onclick="this.classList.toggle('on')"></button></div>
+      <div class="sec-toggle-row"><div><div class="sec-label">Login notifications</div><div class="sec-hint">Get an email when someone signs in from a new device</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></div>
+      <div class="sec-toggle-row"><div><div class="sec-label">End-to-end Encryption</div><div class="sec-hint">Your clips are encrypted before they leave your device</div></div><button class="toggle on" disabled style="opacity:.5;cursor:not-allowed;"></button></div>
+    </div>`,
+
+  pricing: () => `
+    <div class="modal-header"><span class="modal-title">Choose Your Plan</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body">
+      <div class="pricing-grid">
+        <div class="price-card" onclick="openModal('payment')"><div class="pc-name">Free</div><div class="pc-price">¥0<span>/mo</span></div><div class="pc-feat">3 devices<br>100 clip history<br>Community support</div></div>
+        <div class="price-card popular" onclick="openModal('payment')"><div class="pc-popular-tag">Popular</div><div class="pc-name">Professional</div><div class="pc-price">¥9.9<span>/mo</span></div><div class="pc-feat">Unlimited devices<br>Unlimited history<br>Priority support</div></div>
+        <div class="price-card" onclick="openModal('payment')"><div class="pc-name">Enterprise</div><div class="pc-price">¥29<span>/mo</span></div><div class="pc-feat">Everything in Pro<br>Team management<br>API access</div></div>
+      </div>
+    </div>`,
+
+  payment: () => `
+    <div class="modal-header"><span class="modal-title">Select Payment Method</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body">
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:4px;">Professional Plan</div>
+      <div style="font-size:20px;font-weight:700;margin-bottom:16px;">¥9.9<span style="font-size:13px;font-weight:400;color:var(--text-tertiary);">/month</span></div>
+      <div class="pay-options">
+        <div class="pay-opt"><div class="pay-icon pay-wechat"><span style="font-size:16px;">微</span></div><div class="pay-name">WeChat Pay 微信支付</div></div>
+        <div class="pay-opt"><div class="pay-icon pay-alipay"><span style="font-size:14px;">支</span></div><div class="pay-name">Alipay 支付宝</div></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button></div>`,
+
+  billing: () => `
+    <div class="modal-header"><span class="modal-title">Billing History</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body">
+      <div class="empty-state"><div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span></div><div class="empty-title">No invoices yet</div><div class="empty-desc">Your billing history will appear here once you make a purchase.</div></div>
+    </div>`,
+
+  shortcuts: () => `
+    <div class="modal-header"><span class="modal-title">Keyboard Shortcuts</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body">
+      <ul class="shortcut-list">
+        <li class="sk-item"><span class="sk-action">Quick Paste Panel</span><div class="sk-keys"><kbd>⌘</kbd><kbd>K</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">Copy selected clip</span><div class="sk-keys"><kbd>↵</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">Paste as plain text</span><div class="sk-keys"><kbd>⇧</kbd><kbd>↵</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">Delete selected clip</span><div class="sk-keys"><kbd>⌘</kbd><kbd>D</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">Search clips</span><div class="sk-keys"><kbd>⌘</kbd><kbd>F</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">New clip from selection</span><div class="sk-keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>C</kbd></div></li>
+      </ul>
+    </div>`,
+
+  notifications: () => `
+    <div class="modal-header"><span class="modal-title">Notification Preferences</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body">
+      <ul class="notif-list">
+        <li class="nf-item"><div><div class="nf-label">New device connected</div><div class="nf-hint">When a new device joins your sync group</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></li>
+        <li class="nf-item"><div><div class="nf-label">Sync completed</div><div class="nf-hint">When all clips finish syncing</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></li>
+        <li class="nf-item"><div><div class="nf-label">Security alerts</div><div class="nf-hint">Suspicious sign-in attempts or security events</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></li>
+        <li class="nf-item"><div><div class="nf-label">Product updates</div><div class="nf-hint">New features, tips, and product news</div></div><button class="toggle" onclick="this.classList.toggle('on')"></button></li>
+      </ul>
+    </div>`,
+
+  themes: () => `
+    <div class="modal-header"><span class="modal-title">Theme &amp; Style</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body">
+      <div class="theme-grid">
+        <div class="theme-opt" data-style="vercel" onclick="applyStyle('vercel','${currentMode==='linear'||currentMode==='raycast'?currentMode:currentMode}');closeModal();">
+          <div class="to-preview" style="background:linear-gradient(135deg,#FAFAFA 0%,#E5E5E5 100%);color:#111;">Vercel</div><div class="to-name">Vercel ★</div>
+        </div>
+        <div class="theme-opt" data-style="clipsync" onclick="applyStyle('clipsync','${currentMode==='linear'||currentMode==='raycast'?currentMode:currentMode}');closeModal();">
+          <div class="to-preview" style="background:linear-gradient(135deg,#6366F1 0%,#A78BFA 100%);">ClipSync</div><div class="to-name">ClipSync Fusion</div>
+        </div>
+        <div class="theme-opt" data-style="notion" onclick="applyStyle('notion','${currentMode==='linear'||currentMode==='raycast'?currentMode:currentMode}');closeModal();">
+          <div class="to-preview" style="background:linear-gradient(135deg,#FFFFFF 0%,#EBF4FF 100%);color:#2383E2;border:1px solid #E8E7E3;">Notion</div><div class="to-name">Notion</div>
+        </div>
+        <div class="theme-opt" data-style="linear" onclick="applyStyle('linear','dark');closeModal();">
+          <div class="to-preview" style="background:linear-gradient(135deg,#0A0A0A 0%,#1a162d 100%);">Linear</div><div class="to-name">Linear</div>
+        </div>
+        <div class="theme-opt" data-style="apple" onclick="applyStyle('apple','${currentMode==='linear'||currentMode==='raycast'?currentMode:currentMode}');closeModal();">
+          <div class="to-preview" style="background:linear-gradient(135deg,#F5F5F7 0%,#E5F1FF 100%);color:#007AFF;">Apple</div><div class="to-name">Apple HIG</div>
+        </div>
+        <div class="theme-opt" data-style="raycast" onclick="applyStyle('raycast','dark');closeModal();">
+          <div class="to-preview" style="background:linear-gradient(135deg,#07080a 0%,#1b1c1e 100%);">Raycast</div><div class="to-name">Raycast</div>
+        </div>
+        <div class="theme-opt" data-style="arc" onclick="applyStyle('arc','${currentMode==='linear'||currentMode==='raycast'?currentMode:currentMode}');closeModal();">
+          <div class="to-preview" style="background:linear-gradient(135deg,#7C3AED 0%,#EC4899 50%,#F59E0B 100%);">Arc</div><div class="to-name">Arc</div>
+        </div>
+      </div>
+    </div>`,
+
+  export: () => `
+    <div class="modal-header"><span class="modal-title">Export My Data</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body">
+      <div class="export-box"><div class="export-icon"><span class="icon icon-xl" style="color:var(--accent)"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></div><div class="export-msg">We'll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You'll receive a download link via email within 24 hours.</div></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-danger" onclick="closeModal()">Request Export</button></div>`,
+
+  addDevice: () => `
+    <div class="modal-header"><span class="modal-title">Add a Device</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body" style="text-align:center;padding:24px 20px;">
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;">Scan this QR code with the ClipSync mobile app to instantly link this device.</div>
+      <div style="width:200px;height:200px;margin:0 auto 20px;background:var(--bg-hover);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;position:relative;border:2px solid var(--border-default);">
+        <!-- QR Code visual placeholder -->
+        <div style="width:160px;height:160px;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:4px;">
+          ${Array(64).fill(0).map((_,i) => `<div style="background:${[0,3,4,7,8,11,12,15,16,19,20,23,24,27,28,31,32,35,36,39,40,43,44,47,48,51,52,55,56,59,60,63].includes(i)?'var(--text-primary)':'transparent'};border-radius:1px;"></div>`).join('')}
+        </div>
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;background:var(--bg-surface);border:2px solid var(--text-primary);border-radius:4px;"></div>
+      </div>
+      <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:16px;">Or enter this code manually on your other device:</div>
+      <div style="font-family:var(--font-mono);font-size:18px;font-weight:700;letter-spacing:3px;color:var(--accent);background:var(--accent-light);padding:12px 20px;border-radius:var(--radius-sm);display:inline-block;">8K2M-Q4XZ</div>
+      <div style="margin-top:20px;font-size:12px;color:var(--text-tertiary);">This code expires in <strong style="color:var(--text-primary);">5:00</strong> minutes</div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-secondary" onclick="closeModal();showToast('New device code sent!','info')">Refresh Code</button></div>`,
+
+  updates: () => `
+    <div class="modal-header"><span class="modal-title">Updates</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body">
+      <div style="display:flex;align-items:center;gap:12px;padding:8px 0;">
+        <div style="width:40px;height:40px;border-radius:10px;background:var(--success-bg);display:flex;align-items:center;justify-content:center;"><span class="icon icon-lg" style="color:var(--success)"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+        <div><div style="font-weight:600;font-size:14.5px;color:var(--text-primary);">ClipSync is up to date</div><div style="font-size:13px;color:var(--text-secondary);margin-top:1px;">Current version <strong>v2.4.1</strong> — You're on the latest release.</div></div>
+      </div>
+      <div style="margin-top:16px;padding:12px 14px;border-radius:var(--radius-md);background:var(--bg-hover);font-size:12.5px;color:var(--text-secondary);line-height:1.55;">
+        <strong style="color:var(--text-primary);">What's new in v2.4.1:</strong><br>
+        • Fixed clipboard sync bug in Rust backend service layer<br>
+        • Improved dark mode switching for Linear/Raycast styles<br>
+        • Added Shared Links and Subscription management pages<br>
+        • Performance optimizations for large clip histories
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button><a href="https://github.com/CarlosShao/ClipSync/releases" target="_blank" class="btn btn-primary" onclick="closeModal()">View Release Notes</a></div>`,
+
+  imagePreview: (src, name) => `
+    <div class="modal-header"><span class="modal-title">Image Preview</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body" style="text-align:center;padding:20px;">
+      <div style="width:100%;max-height:400px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:60px 40px;margin-bottom:16px;position:relative;overflow:hidden;">
+        <div style="position:absolute;top:20px;right:20px;font-size:64px;opacity:0.15;">🏔️</div>
+        <div style="position:absolute;bottom:20px;left:20px;font-size:48px;opacity:0.1;">🌅</div>
+        <div style="background:rgba(255,255,255,0.95);border-radius:12px;padding:24px 32px;font-size:14px;color:#1a1a2e;font-weight:600;box-shadow:0 20px 60px rgba(0,0,0,0.3);">Screenshot_2026-07-03_14_22_05.png</div>
+      </div>
+      <div style="font-size:13.5px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">${name || 'Screenshot.png'}</div>
+      <div style="font-size:12px;color:var(--text-secondary);">PNG · 1920×1080 · 245 KB · From: iPhone 15 Pro</div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="closeModal()">Download</button></div>`,
+};
+
+function openModal(name) {
+  const tmpl = modalTemplates[name];
+  if (!tmpl) return;
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${tmpl()}</div></div>`;
+}
+
+function closeModal() {
+  document.getElementById('modalRoot').innerHTML = '';
+}
+
+function updateThemeSelection() {
+  // Robust: use data-style attribute instead of fragile regex
+  document.querySelectorAll('.theme-opt').forEach(opt => {
+    const styleName = opt.dataset.style;
+    opt.classList.toggle('selected', styleName === currentStyle);
+  });
+}
+
+// Clipboard tab switching
+function switchClipTab(btn, type) {
+  document.querySelectorAll('.tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  let visible = 0;
+  document.querySelectorAll('.clip-row').forEach(row => {
+    if (type === 'all') {
+      row.style.display = '';
+      visible++;
+    } else {
+      const rowType = row.dataset.type;
+      const typeMap = { 'text': 'text', 'images': 'images', 'links': 'links', 'files': 'files' };
+      const show = (rowType === typeMap[type]);
+      row.style.display = show ? '' : 'none';
+      if (show) visible++;
+    }
+  });
+  document.getElementById('clipEmptyState').classList.toggle('show', visible === 0);
+}
+
+// Toast Notification System
+function showToast(message, type = 'success', action = null) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  
+  const icons = {
+    success: '<span class="toast-icon" style="color:var(--success)"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg></span>',
+    error: '<span class="toast-icon" style="color:var(--error)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/><line x1="15" y1="9" x2="9" y2="15" stroke="currentColor" stroke-width="2"/><line x1="9" y1="9" x2="15" y2="15" stroke="currentColor" stroke-width="2"/></svg></span>',
+    info: '<span class="toast-icon" style="color:var(--accent)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/><line x1="12" y1="16" x2="12" y2="12" stroke="currentColor" stroke-width="2"/><line x1="12" y1="8" x2="12.01" y2="8" stroke="currentColor" stroke-width="2"/></svg></span>'
+  };
+  
+  toast.innerHTML = `
+    ${icons[type] || icons.info}
+    <span class="toast-message">${message}</span>
+    ${action ? `<span class="toast-action" onclick="(${action.callback})();this.closest('.toast').remove();">${action.text}</span>` : ''}
+    <span class="toast-close" onclick="hideToast(this.closest('.toast'))"><svg viewBox="0 0 24 24" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/></svg></span>
+  `;
+  
+  container.appendChild(toast);
+  
+  // Auto remove after 3 seconds
+  setTimeout(() => hideToast(toast), 3000);
+  
+  return toast;
+}
+
+function hideToast(toastEl) {
+  if (!toastEl || toastEl.classList.contains('hiding')) return;
+  toastEl.classList.add('hiding');
+  setTimeout(() => toastEl.remove(), 300);
+}
+
+// Quick Paste overlay
+let qpSelIdx = 0;
+
+function showQuickPaste() {
+  const el = document.getElementById('qpOverlay');
+  el.classList.add('show');
+  const inp = document.getElementById('qpSearchInput');
+  inp.value = '';
+  inp.focus();
+  qpSelIdx = 0;
+  updateQpSelection();
+}
+
+function hideQuickPaste() {
+  document.getElementById('qpOverlay').classList.remove('show');
+}
+
+function selectQpItem(el) {
+  document.querySelectorAll('#qpList .qp-item').forEach(i => i.classList.remove('sel'));
+  el.classList.add('sel');
+  qpSelIdx = parseInt(el.dataset.idx) || 0;
+}
+
+function updateQpSelection() {
+  const items = document.querySelectorAll('#qpList .qp-item');
+  items.forEach((i, n) => i.classList.toggle('sel', n === qpSelIdx));
+  const sel = items[qpSelIdx];
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+function filterQuickPaste(val) {
+  const items = document.querySelectorAll('#qpList .qp-item');
+  const q = val.toLowerCase();
+  items.forEach(i => {
+    const txt = i.querySelector('.qp-txt').textContent.toLowerCase();
+    i.style.display = txt.includes(q) ? '' : 'none';
+  });
+  qpSelIdx = 0;
+  updateQpSelection();
+}
+
+// Global keyboard shortcuts
+document.addEventListener('keydown', e => {
+  // ESC: close modal or Quick Paste
+  if (e.key === 'Escape') {
+    if (document.getElementById('qpOverlay').classList.contains('show')) {
+      hideQuickPaste();
+      return;
+    }
+    if (document.getElementById('modalRoot').innerHTML.trim()) {
+      closeModal();
+      return;
+    }
+  }
+  // Quick Paste: ⌘K (mac) or Ctrl+K (other)
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    if (document.getElementById('qpOverlay').classList.contains('show')) {
+      hideQuickPaste();
+    } else {
+      showQuickPaste();
+    }
+    return;
+  }
+  // Quick Paste keyboard navigation (only when overlay is open)
+  const qpOpen = document.getElementById('qpOverlay').classList.contains('show');
+  if (qpOpen) {
+    const items = document.querySelectorAll('#qpList .qp-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      qpSelIdx = Math.min(qpSelIdx + 1, items.length - 1);
+      updateQpSelection();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      qpSelIdx = Math.max(qpSelIdx - 1, 0);
+      updateQpSelection();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      // Simulate "paste" - flash the selected item
+      const sel = document.querySelector('#qpList .qp-item.sel');
+      if (sel) {
+        sel.style.background = 'var(--accent-light)';
+        setTimeout(() => { sel.style.background = ''; }, 300);
+        // In real app: paste the selected clip content
+      }
+    }
+  }
+});
+
+// Initialize
+applyStyle('vercel', 'light');
+</script>
+
+</body>
+</html>
