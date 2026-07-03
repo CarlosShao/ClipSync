@@ -3115,12 +3115,16 @@ function _fmtUnlimited(val, suffix, isStorage) {
     }
 // ===== Init =====
 if (state.token) {
+  console.log('[Init] restoring session from localStorage');
   showPage('app');
   updateUserInfo();
   loadClipboardItems();
-  loadDevices();
-  connectWebSocket();
-  setupDragDrop();
+  (async function() {
+    await loadDevices();
+    connectWebSocket();
+    setupDragDrop();
+    startClipboardPolls();
+  })();
 }
 applyStyle("vercel", "light"); loadSettings();
 
