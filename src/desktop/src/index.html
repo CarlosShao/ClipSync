@@ -1857,6 +1857,7 @@ let state = {
   deviceId: localStorage.getItem('cs_device_id'),
   items: [],
   ws: null,
+  autoSync: true,
 };
 const API_BASE = 'http://localhost:3001';
 
@@ -1930,11 +1931,14 @@ async function doLogin() {
     showPage('app');
     updateUserInfo();
     loadClipboardItems();
-    loadDevices();
+    await loadDevices();
     connectWebSocket();
     startClipboardPolls();
+    showToast('登录成功', 'success');
+  } catch (e) { showToast('登录失败：' + e.message, 'error'); }
+}
 
-// Global hotkey: Quick Paste (will be overridden by Tauri shortcut)
+// Global hotkey: Quick Paste (registered once at script load, not inside doLogin)
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'KeyV') {
     e.preventDefault();
@@ -1942,12 +1946,9 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Escape') {
     const qp = document.getElementById('qpOverlay');
-    if (qp && qp.style.display === 'flex') { toggleQuickPaste(false); }
+    if (qp && qp.classList.contains('show')) { hideQuickPaste(); }
   }
 });
-    showToast('登录成功', 'success');
-  } catch (e) { showToast('登录失败：' + e.message, 'error'); }
-}
 
 function logout() {
   state.token = null; state.user = null; state.deviceId = null;
@@ -3366,10 +3367,13 @@ async function uploadTauriFileClipboard(files) {
 
 // 启动轮询（在 doLogin 成功后调用）
 function startClipboardPolls() {
+  console.log('[ClipSync] starting clipboard polls... deviceReady=' + deviceReady + ' deviceId=' + (state.deviceId || 'none'));
   const tauri = window.__TAURI__;
   if (tauri && (tauri.core || tauri.invoke || window.__TAURI_INVOKE__)) {
+    console.log('[ClipSync] Tauri detected, starting Tauri clipboard poll');
     startTauriClipboardPoll();
   } else {
+    console.log('[ClipSync] Browser mode, starting browser clipboard poll');
     startBrowserClipboardPoll();
   }
 }
