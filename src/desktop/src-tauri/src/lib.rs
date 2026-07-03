@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
-use tauri::menu::{Menu, MenuItem, Separator};
+use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_autostart::MacosLauncher;
 
 mod clipboard_monitor;
@@ -674,11 +674,7 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     let sync_status_item = MenuItem::with_id(app, "sync_status", "● 已同步", false, None::<&str>)?;
 
     let menu = Menu::new(app)?;
-    menu.append_items(&[&show_item, &quick_paste_item, &settings_item, &check_update_item])?;
-    menu.append(&Separator::new(app)?)?;
-    menu.append_items(&[&sync_status_item])?;
-    menu.append(&Separator::new(app)?)?;
-    menu.append_items(&[&hide_item, &quit_item])?;
+    menu.append_items(&[&show_item, &quick_paste_item, &settings_item, &check_update_item, &sync_status_item, &hide_item, &quit_item])?;
 
     let mut builder = TrayIconBuilder::new()
         .menu(&menu)
@@ -731,7 +727,7 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
                                 Err(_) => {}
                             }
                         });
-                        showToast(app, "正在检查更新...");
+                        eprintln!("[Tray] Checking for updates...");
                     }
                 }
                 "hide" => {
@@ -856,32 +852,26 @@ pub fn run() {
             {
                 let handle = app.handle().clone();
                 let cfg = app.state::<AppState>().config.lock().unwrap().clone();
-                // Tauri v2 shortcut string format: "Ctrl+Shift+V", "Alt+Shift+V", etc.
-                // (CmdOrCtrl is NOT supported in v2; use platform-appropriate modifier)
                 let primary = cfg.quick_paste_shortcut
                     .unwrap_or_else(|| "Ctrl+Shift+V".to_string());
-                // Normalize: replace CmdOrCtrl with Ctrl for Windows/Linux
                 let primary_normalized = primary.replace("CmdOrCtrl", "Ctrl");
 
                 // 先卸载所有已有快捷键
                 let _ = handle.global_shortcut().unregister_all();
 
-                // Tauri v2: 先注册全局快捷键事件监听器 (handler)
-                // register() 只接受 shortcut 参数，不接受闭包
+                // Tauri v2: 通过事件系统监听全局快捷键
                 let handle_evt = handle.clone();
-                app.on_global_shortcut_event(move |_app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        eprintln!("[GlobalShortcut] Global shortcut pressed!");
-                        if let Some(window) = handle_evt.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            match window.eval("window.toggleQuickPaste()") {
-                                Ok(_) => eprintln!("[GlobalShortcut] toggleQuickPaste() called"),
-                                Err(e) => eprintln!("[GlobalShortcut] eval failed: {}", e),
-                            }
-                        } else {
-                            eprintln!("[GlobalShortcut] Main window not found!");
+                app.listen("global-shortcut", move |_event| {
+                    eprintln!("[GlobalShortcut] Global shortcut pressed!");
+                    if let Some(window) = handle_evt.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        match window.eval("window.toggleQuickPaste()") {
+                            Ok(_) => eprintln!("[GlobalShortcut] toggleQuickPaste() called"),
+                            Err(e) => eprintln!("[GlobalShortcut] eval failed: {}", e),
                         }
+                    } else {
+                        eprintln!("[GlobalShortcut] Main window not found!");
                     }
                 });
 
@@ -896,7 +886,6 @@ pub fn run() {
 
                 let mut registered = false;
                 for (i, candidate) in candidates.iter().enumerate() {
-                    // 1. 解析快捷键字符串
                     let shortcut: Shortcut = match candidate.parse() {
                         Ok(s) => s,
                         Err(e) => {
@@ -905,10 +894,9 @@ pub fn run() {
                         }
                     };
 
-                    // 2. 注册快捷键 (Tauri v2: 只传 shortcut，handler 通过 on_global_shortcut_event 统一注册)
+                    // 注册快捷键（handler 通过上面的 app.listen 统一处理）
                     let reg_result = handle.global_shortcut().register(shortcut);
 
-                    // 3. 检查注册结果
                     match reg_result {
                         Ok(()) => {
                             println!("[Setup] Global shortcut registered: {}", candidate);
