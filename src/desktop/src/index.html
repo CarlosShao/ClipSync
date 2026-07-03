@@ -1075,6 +1075,45 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   opacity: 1;
 }
 
+/* ===== Connection Status ===== */
+.conn-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: 8px;
+}
+
+.conn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #999;
+  flex-shrink: 0;
+}
+
+.conn-dot.online {
+  background: #16a34a;
+  box-shadow: 0 0 6px rgba(22, 163, 74, 0.4);
+}
+
+.conn-dot.connecting {
+  background: #f59e0b;
+  animation: pulse 1s infinite;
+}
+
+.conn-dot.offline {
+  background: #999;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 </style>
 </head>
 <body>
@@ -1168,6 +1207,10 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           </div>
         </nav>
         <div class="sidebar-bottom">
+          <div class="conn-status" id="connStatus">
+            <span class="conn-dot" id="connDot"></span>
+            <span class="conn-text" id="connText">未连接</span>
+          </div>
           <div class="user-chip" onclick="switchSub('profile')">
             <div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div>
             <div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro Plan</div></div>
@@ -1251,8 +1294,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
           <!-- General -->
           <div class="settings-group"><div class="sg-header">General</div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Auto-sync clipboard</div><div class="sg-hint">Automatically sync across devices when content changes</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')"></button></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Launch at startup</div><div class="sg-hint">Start ClipSync automatically when you log in</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')"></button></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">自动同步剪贴板</div><div class="sg-hint">内容变化时自动跨设备同步</div></div><div class="sg-control"><button class="toggle" id="toggleAutoSync" onclick="this.classList.toggle('on');saveSettings()"></button></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">开机自启动</div><div class="sg-hint">登录系统时自动启动 ClipSync</div></div><div class="sg-control"><button class="toggle" id="toggleAutostart" onclick="this.classList.toggle('on');saveSettings()"></button></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Language</div><div class="sg-hint">Interface language preference</div></div><div class="sg-control"><select class="styled-select"><option>English</option><option>中文（简体）</option><option>日本語</option></select></div></div>
           </div>
 
@@ -1260,43 +1303,9 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="settings-group"><div class="sg-header">Sync</div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Sync interval</div><div class="sg-hint">How often to check for new clips</div></div><div class="sg-control"><select class="styled-select"><option>Real-time</option><option>Every 5 min</option><option>Every 15 min</option></select></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Max history</div><div class="sg-hint">Number of clips retained in history</div></div><div class="sg-control"><select class="styled-select"><option>100</option><option>500</option><option>1,000</option><option>Unlimited</option></select></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Image compression</div><div class="sg-hint">Reduce image size before syncing</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
-          </div>
-
-          <!-- Privacy & Security → opens modal -->
-          <div class="settings-group"><div class="sg-header">Privacy &amp; Security</div>
-            <div class="sg-row" onclick="openModal('security')"><div class="sg-label"><div class="sg-name">Two-factor authentication</div><div class="sg-hint">Add an extra layer of security to your account</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-            <div class="sg-row" onclick="openModal('sessions')"><div class="sg-label"><div class="sg-name">Active sessions</div><div class="sg-hint">Manage devices currently logged into your account</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">End-to-end encryption</div><div class="sg-hint">Your clips are encrypted before leaving your device</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')" disabled style="opacity:.5;cursor:not-allowed;"></button></div></div>
-          </div>
-
-          <!-- Subscription & Billing -->
-          <div class="settings-group"><div class="sg-header">Subscription &amp; Billing</div>
-            <div class="sg-row" onclick="openModal('pricing')"><div class="sg-label"><div class="sg-name">Current plan</div><div class="sg-hint">You are on the <strong>Professional</strong> plan · Renews Jul 15</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-            <div class="sg-row" onclick="openModal('billing')"><div class="sg-label"><div class="sg-name">Billing history</div><div class="sg-hint">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-          </div>
-
-          <!-- Shortcuts -->
-          <div class="settings-group"><div class="sg-header">Shortcuts</div>
-            <div class="sg-row" onclick="openModal('shortcuts')"><div class="sg-label"><div class="sg-name">Keyboard shortcuts</div><div class="sg-hint">Customize global hotkeys for quick actions</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-          </div>
-
-          <!-- Notifications -->
-          <div class="settings-group"><div class="sg-header">Notifications</div>
-            <div class="sg-row" onclick="openModal('notifications')"><div class="sg-label"><div class="sg-name">Notification preferences</div><div class="sg-hint">Choose which alerts you want to receive</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-          </div>
-
-          <!-- Appearance (★ THEME SELECTOR) -->
-          <div class="settings-group"><div class="sg-header">Appearance</div>
-            <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name">Theme &amp; Style</div><div class="sg-hint">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Reduce motion</div><div class="sg-hint">Minimize animations throughout the interface</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
-          </div>
-
-          <!-- Data -->
-          <div class="settings-group"><div class="sg-header">Data</div>
-            <div class="sg-row" onclick="openModal('export')"><div class="sg-label"><div class="sg-name">Export my data (GDPR)</div><div class="sg-hint">Download a copy of all your data in standard formats</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-            <div class="sg-row" id="checkUpdateRow"><div class="sg-label"><div class="sg-name">Check for updates</div><div class="sg-hint">Current version v2.4.1 · Last checked today</div></div><div class="sg-control"><button class="btn btn-secondary" style="font-size:11.5px;padding:5px 10px;" onclick="openModal('updates')">Check Now</button></div></div>
-          </div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">图片压缩</div><div class="sg-hint">同步前压缩图片大小</div></div><div class="sg-control"><button class="toggle" id="toggleImgCompress" onclick="this.classList.toggle('on');saveSettings()"></button></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">同步间隔</div><div class="sg-hint">检查新剪贴板的频率</div></div><div class="sg-control"><select class="styled-select" id="selectSyncInterval" onchange="saveSettings()"><option value="realtime">实时</option><option value="5min">每5分钟</option><option value="15min">每15分钟</option></select></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">历史上限</div><div class="sg-hint">保留的历史片段数量</div></div><div class="sg-control"><select class="styled-select" id="selectMaxHistory" onchange="saveSettings()"><option value="100">100</option><option value="500">500</option><option value="1000">1000</option><option value="0">无限制</option></select></div></div>
         </div>
       </main>
     </div>
@@ -2045,19 +2054,148 @@ function renderDevices() {
   });
 }
 
-// ===== WebSocket =====
+// ===== WebSocket Message Handler =====
+function handleWsMessage(msg) {
+  switch (msg.type) {
+    case 'registered':
+      const wasNew = (state.deviceId !== msg.deviceId);
+      state.deviceId = msg.deviceId;
+      localStorage.setItem('cs_device_id', msg.deviceId);
+      if (wasNew) showToast('设备已注册', 'success');
+      break;
+    case 'error':
+      console.error('[WS] error:', msg.message);
+      if (msg.message === 'Device not found') {
+        state.deviceId = null;
+        localStorage.removeItem('cs_device_id');
+        loadDevices().catch(e => console.error('[WS] re-reg failed:', e));
+      }
+      break;
+    case 'clipboard':
+    case 'new_clipboard':
+      if (msg.item) {
+        clipboardItems.unshift(msg.item);
+        if (document.querySelector('.clip-view')) renderClipboardItems();
+        showToast('收到新同步内容', 'info');
+      }
+      break;
+    case 'clipboard_deleted':
+      if (msg.itemId) {
+        clipboardItems = clipboardItems.filter(i => i.id !== msg.itemId);
+      } else if (msg.itemIds) {
+        clipboardItems = clipboardItems.filter(i => !msg.itemIds.includes(i.id));
+      }
+      if (document.querySelector('.clip-view')) renderClipboardItems();
+      break;
+    case 'clipboard_favorite':
+      const favItem = clipboardItems.find(i => i.id === msg.itemId);
+      if (favItem) { favItem.isFavorite = msg.isFavorite; renderClipboardItems(); }
+      break;
+  }
+}
+
+function updateConnStatus(status) {
+  const dot = document.getElementById('connDot');
+  const text = document.getElementById('connText');
+  if (!dot || !text) return;
+  dot.className = 'conn-dot ' + status;
+  const labels = { online: '已连接', offline: '未连接', connecting: '连接中...' };
+  text.textContent = labels[status] || status;
+}
+
+// ===== Upload Local Clipboard =====
+function detectContentType(text) {
+  if (/^https?:\/\//.test(text.trim())) return 'link';
+  if (/[{}\[\]];?|function |const |let |var |=>|import |class /.test(text)) return 'code';
+  return 'text';
+}
+
+async function uploadClipboard(content) {
+  if (!state.deviceId) {
+    state.deviceId = localStorage.getItem('cs_device_id');
+  }
+  if (!state.deviceId || !content.trim()) return;
+
+  const type = detectContentType(content);
+  try {
+    await api('POST', '/api/clipboard', {
+      sourceDeviceId: state.deviceId,
+      contentType: type,
+      contentEncrypted: btoa(unescape(encodeURIComponent(content))),
+      contentPreview: content.length > 5000 ? content.substring(0, 5000) + '...(' + content.length + '字符)' : content,
+      contentSize: content.length,
+    });
+    loadClipboardItems();
+    showToast('已同步到服务器', 'success');
+  } catch (e) {
+    console.error('[Upload] failed:', e.message);
+    showToast('同步失败: ' + e.message, 'error');
+  }
+}
+
+// ===== Drag & Drop =====
+function setupDragDrop() {
+  document.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  });
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      for (const file of files) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          if (file.type.startsWith('image/')) {
+            uploadClipboard(ev.target.result);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  });
+  console.log('[DragDrop] initialized');
+}
+
+// ===== Search =====
+function onSearch(value) {
+  state.searchQuery = value;
+  renderClipboardItems();
+}
+
+function clearSearch() {
+  const inp = document.getElementById('searchInput');
+  if (inp) { inp.value = ''; state.searchQuery = ''; renderClipboardItems(); }
+}
+
+// ===== Toggle Favorite =====
+async function toggleFav(id) {
+  try {
+    await api('PUT', `/api/clipboard/${id}/favorite`);
+    loadClipboardItems();
+  } catch (e) { showToast('操作失败', 'error'); }
+}
+
+// ===== WebSocket (updated) =====
 function connectWebSocket() {
   if (state.ws) state.ws.close();
+  updateConnStatus('connecting');
   const wsUrl = API_BASE.replace('http', 'ws') + '/ws?token=' + encodeURIComponent(state.token || '');
   state.ws = new WebSocket(wsUrl);
-  state.ws.onopen = () => console.log('[WS] connected');
-  state.ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'clipboard:new') { clipboardItems.unshift(msg.item); renderClipboardItems(); }
-    } catch {}
+  state.ws.onopen = () => {
+    updateConnStatus('online');
+    if (state.deviceId) {
+      state.ws.send(JSON.stringify({ type: 'register', deviceId: state.deviceId }));
+    }
   };
-  state.ws.onclose = () => console.log('[WS] disconnected');
+  state.ws.onmessage = (e) => {
+    try { handleWsMessage(JSON.parse(e.data)); }
+    catch {}
+  };
+  state.ws.onclose = () => updateConnStatus('offline');
+  state.ws.onerror = () => updateConnStatus('offline');
 }
 
 // ===== Init =====
@@ -2067,6 +2205,7 @@ if (state.token) {
   loadClipboardItems();
   loadDevices();
   connectWebSocket();
+  setupDragDrop();
 }
 applyStyle('vercel', 'light');
 </script>
