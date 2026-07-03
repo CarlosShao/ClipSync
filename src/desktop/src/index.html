@@ -2770,6 +2770,14 @@
       return val + (suffix ? ' ' + suffix : '');
     }
 
+    // Helper: escape HTML to prevent XSS in innerHTML
+    function _escHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
     async function showSubscriptionPlans() {
       if (!state.token) { showToast('请先登录'); return; }
       document.getElementById('subscription-modal').style.display = 'flex';
@@ -2783,9 +2791,9 @@
           return;
         }
         listEl.innerHTML = plans.map((p, idx) => `
-          <div class="plan-card ${p.price > 0 ? 'plan-featured' : ''}" data-plan-id="${p.id}" onclick="selectPlan(${p.id},'${(p.displayName || p.name).replace(/'/g, "\\'")}',${p.price})">
+          <div class="plan-card ${p.price > 0 ? 'plan-featured' : ''}" data-plan-id="${p.id}" data-plan-name="${(p.displayName || p.name || '').replace(/"/g, '&quot;')}" data-plan-price="${p.price || 0}">
             ${p.price > 0 ? '<div class="plan-badge">推荐</div>' : ''}
-            <div class="plan-name">${p.displayName || p.name}</div>
+            <div class="plan-name">${_escHtml(p.displayName || p.name)}</div>
             <div class="plan-price-row">
               <span class="plan-price">¥${p.price}</span>
               <span class="plan-period">/${p.billingCycle === 'month' ? '月' : '年'}</span>
@@ -2803,6 +2811,15 @@
             </ul>
           </div>
         `).join('');
+
+        // Event delegation: click on plan card → read data attrs → call selectPlan
+        listEl.querySelectorAll('.plan-card').forEach(card => {
+          card.addEventListener('click', () => selectPlan(
+            card.dataset.planId,
+            card.dataset.planName,
+            Number(card.dataset.planPrice) || 0
+          ));
+        });
       } catch (e) {
         listEl.innerHTML = '<div style="text-align:center;padding:40px;color:#e74c3c;">加载失败，请重试</div>';
       }
