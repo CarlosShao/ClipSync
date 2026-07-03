@@ -3411,8 +3411,8 @@
       {label:'Left',value:'Left'},{label:'Right',value:'Right'},{label:'Up',value:'Up'},{label:'Down',value:'Down'},
       {label:'Enter',value:'Enter'},{label:'Space',value:'Space'},{label:'Tab',value:'Tab'},
       {label:'Backspace',value:'Backspace'},{label:'Delete',value:'Delete'},
-      {label:',',value:','},{label:'.',value:'.'},{label:'/',value:'/'},{label:';',value:';'},
-      {label:'[',value:'['},{label:']',value:'}]'},{'label:'-',value:'-'},{label:'=',value:'='}
+      ,
+      {label:'[',value:'['},{label:']',value:']'}
     ].forEach(function(k) { SHORTCUT_KEYS.push(k); });
 
     window._shortcutMods = ['Ctrl', 'Shift'];
@@ -3519,7 +3519,7 @@
         showToast('Save failed: ' + (e.message || e));
       }
     };
-
+  </script>
 
     <!-- 快速粘贴面板 (Ctrl+Shift+V) -->
     <div id="quick-paste-panel">
