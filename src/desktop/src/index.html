@@ -3634,7 +3634,7 @@
       window._recordingShortcut = true;
       window._recordedShortcut = '';
 
-      _ setStatus('正在录制，请按 Ctrl/Shift/Alt + 字母键，Esc 取消', 'recording');
+      _setStatus('正在录制，请按 Ctrl/Shift/Alt + 字母键，Esc 取消', 'recording');
 
       // Capture-phase listeners on document intercept keystrokes before anything else
       document.addEventListener('keydown', _shortcutKeydownHandler, true);
