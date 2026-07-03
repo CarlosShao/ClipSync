@@ -2829,58 +2829,130 @@
       document.getElementById('subscription-modal').style.display = 'none';
     }
 
+    // 支付方式选择
+    window._pendingPlan = null;
+    window.showPaymentMethod = function(planId, planName, price) {
+      window._pendingPlan = { planId, planName, price };
+      document.getElementById('payment-method-modal').style.display = 'flex';
+      document.getElementById('payment-plan-name').textContent = planName;
+      document.getElementById('payment-plan-price').textContent = '¥' + price + '/月';
+    };
+    window.selectPaymentMethod = async function(method) {
+      const p = window._pendingPlan;
+      if (!p) return;
+      document.getElementById('payment-method-modal').style.display = 'none';
+      try {
+        showToast('正在处理订阅...');
+        // 调用 subscribe API（后端当前为 mock 模式，会自动激活）
+        const data = await api('POST', '/api/subscriptions/subscribe', { planId: p.planId, billingCycle: 'monthly' });
+        showToast('✅ 订阅成功：' + p.planName);
+        closeSubscriptionModal();
+        loadSubscriptionInfo();
+      } catch (e) {
+        showToast('订阅失败：' + (e.message || '未知错误'));
+      }
+      window._pendingPlan = null;
+    };
+    window.closePaymentMethodModal = function() {
+      document.getElementById('payment-method-modal').style.display = 'none';
+      window._pendingPlan = null;
+    };
+
     async function selectPlan(planId, planName, price) {
       if (price === 0) {
         showToast('已是免费版');
         closeSubscriptionModal();
         return;
       }
-      if (!confirm(`确认订阅「${planName}」？\n价格：¥${price}/月\n\n将在浏览器中完成支付，完成后请返回本应用。`)) return;
-      try {
-        const data = await api('POST', '/api/payments/create-order', { planId, paymentMethod: 'wechat' });
-        if (data && data.paymentUrl) {
-          // 用系统浏览器打开支付链接
-          window.open(data.paymentUrl, '_blank');
-          showToast('支付页面已打开，完成后会自动同步');
-        } else {
-          showToast('创建支付订单失败');
-        }
-      } catch (e) {
-        showToast('创建支付订单失败：' + (e.message || '未知错误'));
-      }
-      closeSubscriptionModal();
+      // 显示支付方式选择弹窗
+      showPaymentMethod(planId, planName, price);
     }
 
     async function showBillingHistory() {
       if (!state.token) { showToast('请先登录'); return; }
       document.getElementById('billing-modal').style.display = 'flex';
       const listEl = document.getElementById('billing-list');
-      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
+      listEl.innerHTML = '<div style="text-align:center;padding:32px 20px;color:#999;font-size:14px;">加载中...</div>';
       try {
         const data = await api('GET', '/api/invoices');
-        const bills = data.bills || [];
+        const bills = data.invoices || [];
         if (bills.length === 0) {
-          listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无账单记录</div>';
+          listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#999;font-size:14px;">📭 暂无账单记录<br><span style="font-size:12px;color:#bbb;margin-top:4px;display:inline-block;">订阅套餐后这里会显示发票</span></div>';
         } else {
-          listEl.innerHTML = bills.map(b => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;">
-              <div>
-                <div style="font-size:14px;font-weight:600;color:#1a1a2e;">${b.planName || '未知套餐'}</div>
-                <div style="font-size:12px;color:#999;margin-top:2px;">${new Date(b.createdAt).toLocaleString()}</div>
+          listEl.innerHTML = bills.map(b => {
+            const statusMap = { paid: { label: '已支付', color: '#059669', bg: '#ecfdf5' }, pending: { label: '待支付', color: '#d97706', bg: '#fffbeb' }, cancelled: { label: '已取消', color: '#e74c3c', bg: '#fef2f2' }, issued: { label: '已开票', color: '#6366f1', bg: '#eef2ff' } };
+            const s = statusMap[b.status] || { label: b.status, color: '#666', bg: '#f5f5f5' };
+            return `<div onclick="showInvoiceDetail('${b.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;margin-bottom:8px;border:1px solid #f0f0f0;border-radius:10px;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#f8f9ff'" onmouseout="this.style.background=''">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:14px;font-weight:600;color:#1a1a2e;margin-bottom:4px;">${escapeHtml(b.planName || '未知套餐')}</div>
+                <div style="font-size:12px;color:#999;">${new Date(b.createdAt).toLocaleDateString('zh-CN')} · ${b.invoiceNo || b.orderNo || ''}</div>
               </div>
-              <div style="text-align:right;">
-                <div style="font-size:15px;font-weight:700;color:#1a1a2e;">¥${b.amount}</div>
-                <div style="font-size:11px;color:${b.status === 'paid' ? '#059669' : b.status === 'pending' ? '#d97706' : '#e74c3c'};margin-top:2px;">
-                  ${b.status === 'paid' ? '已支付' : b.status === 'pending' ? '待支付' : '已取消'}
-                </div>
+              <div style="text-align:right;margin-right:12px;">
+                <div style="font-size:15px;font-weight:700;color:#1a1a2e;">¥${parseFloat(b.amount).toFixed(2)}</div>
               </div>
-            </div>
-          `).join('');
+              <div style="padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;color:${s.color};background:${s.bg};white-space:nowrap;">${s.label}</div>
+            </div>`;
+          }).join('');
         }
       } catch (e) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败，请重试</div>';
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;font-size:13px;">加载失败：' + (e.message || '未知错误') + '</div>';
       }
     }
+
+    window.showInvoiceDetail = async function(invoiceId) {
+      try {
+        const data = await api('GET', '/api/invoices/' + invoiceId);
+        const inv = data.invoice || data;
+        const statusMap = { paid: '已支付', pending: '待支付', cancelled: '已取消', issued: '已开票' };
+        const detailHtml = `
+          <div style="margin:16px 0;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">发票号</span>
+              <span style="font-size:13px;font-weight:600;">${inv.invoiceNo || '--'}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">订单号</span>
+              <span style="font-size:13px;font-weight:600;">${inv.orderNo || '--'}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">套餐</span>
+              <span style="font-size:13px;font-weight:600;">${escapeHtml(inv.planName || '--')}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">金额</span>
+              <span style="font-size:15px;font-weight:700;color:#1a1a2e;">¥${parseFloat(inv.amount).toFixed(2)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">支付方式</span>
+              <span style="font-size:13px;">${inv.paymentMethod === 'wechat' ? '微信支付' : inv.paymentMethod === 'alipay' ? '支付宝' : inv.paymentMethod || '--'}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">状态</span>
+              <span style="font-size:13px;font-weight:600;color:${inv.status === 'paid' || inv.status === 'issued' ? '#059669' : inv.status === 'pending' ? '#d97706' : '#e74c3c'}">${statusMap[inv.status] || inv.status}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:#999;font-size:13px;">日期</span>
+              <span style="font-size:13px;">${new Date(inv.createdAt).toLocaleString('zh-CN')}</span>
+            </div>
+          </div>
+          ${inv.invoiceUrl ? `<button class="btn btn-primary btn-block" onclick="window.open('${inv.invoiceUrl}','_blank')" style="margin-top:12px;">下载发票 PDF</button>` : ''}
+        `;
+        // Use a simple alert-like modal for invoice detail (or reuse billing modal)
+        const detailModal = document.getElementById('invoice-detail-modal') || (() => {
+          const d = document.createElement('div');
+          d.id = 'invoice-detail-modal';
+          d.className = 'modal-overlay';
+          d.style.display = 'none';
+          d.innerHTML = '<div class="modal" style="max-width:420px;"><h2>发票详情</h2><div id="invoice-detail-body"></div><button class="btn btn-block" onclick="document.getElementById(\'invoice-detail-modal\').style.display=\'none\'" style="background:#eee;color:#333;margin-top:12px;">关闭</button></div>';
+          document.body.appendChild(d);
+          return d;
+        })();
+        document.getElementById('invoice-detail-body').innerHTML = detailHtml;
+        detailModal.style.display = 'flex';
+      } catch (e) {
+        showToast('加载发票详情失败：' + (e.message || ''));
+      }
+    };
 
     function closeBillingModal() {
       document.getElementById('billing-modal').style.display = 'none';
@@ -3287,12 +3359,30 @@
     </div>
   </div>
 
+  <!-- Payment Method Selection Modal -->
+  <div class="modal-overlay" id="payment-method-modal" style="display:none;">
+    <div class="modal" style="max-width:420px;">
+      <h2>选择支付方式</h2>
+      <p id="payment-plan-name" style="font-weight:600;font-size:15px;color:var(--primary);"></p>
+      <p id="payment-plan-price" style="font-size:13px;color:var(--text-muted);margin-bottom:16px;"></p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+        <button class="btn btn-primary btn-block" onclick="selectPaymentMethod('wechat')" style="display:flex;align-items:center;justify-content:center;gap:8px;">
+          <span style="font-size:18px;">💬</span> 微信支付
+        </button>
+        <button class="btn btn-block" onclick="selectPaymentMethod('alipay')" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#e8f4fd;color:#1677ff;border-color:#1677ff;">
+          <span style="font-size:18px;">💰</span> 支付宝
+        </button>
+      </div>
+      <button class="btn btn-block" onclick="closePaymentMethodModal()" style="background:#eee;color:#333;">取消</button>
+    </div>
+  </div>
+
   <!-- Billing History Modal -->
   <div class="modal-overlay" id="billing-modal" style="display:none;">
-    <div class="modal" style="max-width:600px;">
+    <div class="modal" style="max-width:640px;">
       <h2>账单记录</h2>
-      <p>历史订单和支付记录</p>
-      <div id="billing-list" style="max-height:400px;overflow-y:auto;margin:16px 0;"></div>
+      <p>历史订单和发票</p>
+      <div id="billing-list" style="max-height:440px;overflow-y:auto;margin:16px 0;"></div>
       <button class="btn btn-block" onclick="closeBillingModal()" style="background:#eee;color:#333;">关闭</button>
     </div>
   </div>
