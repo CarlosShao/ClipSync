@@ -392,7 +392,7 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
        RETURNING id, content_type, content_preview, content_size, created_at`,
       [
         req.userId,
-        req.body.deviceId || 'unknown',
+        (req.body && req.body.deviceId) || session.metadata?.deviceId || 'unknown',
         finalFilename,
         session.filename,
         session.fileSize,
