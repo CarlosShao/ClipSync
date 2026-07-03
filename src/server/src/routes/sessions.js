@@ -12,24 +12,21 @@ const router = Router();
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const sessionId = req.headers['x-session-id'] || req.body.sessionId;
+    const sessionId = req.headers['x-session-id'] || req.body?.sessionId;
 
     const result = await pool.query(`
       SELECT
-        s.id,
-        s.device_id,
-        d.device_name,
-        d.platform,
-        d.app_version,
-        s.ip_address,
-        s.user_agent,
-        s.created_at,
-        s.last_active_at,
-        CASE WHEN s.id = $2 THEN true ELSE false END as is_current
-      FROM user_sessions s
-      LEFT JOIN devices d ON s.device_id = d.id
-      WHERE s.user_id = $1 AND s.is_active = true
-      ORDER BY s.last_active_at DESC
+        id,
+        device_name,
+        device_type,
+        platform,
+        ip_address,
+        user_agent,
+        created_at,
+        CASE WHEN id = $2 THEN true ELSE false END as is_current
+      FROM user_sessions
+      WHERE user_id = $1 AND is_active = true
+      ORDER BY created_at DESC
     `, [userId, sessionId || null]);
 
     res.json({
@@ -37,13 +34,12 @@ router.get('/', authenticateToken, async (req, res) => {
       data: {
         sessions: result.rows.map(row => ({
           id: row.id,
-          deviceName: row.device_name,
-          platform: row.platform,
-          appVersion: row.app_version,
-          ipAddress: row.ip_address,
-          userAgent: row.user_agent,
+          deviceName: row.device_name || '未知设备',
+          platform: row.device_type || row.platform || 'unknown',
+          ipAddress: row.ip_address || '',
+          userAgent: '',
           createdAt: row.created_at,
-          lastActiveAt: row.last_active_at,
+          lastActiveAt: row.created_at,
           isCurrent: row.is_current,
         })),
       },
