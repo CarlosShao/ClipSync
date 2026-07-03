@@ -2016,7 +2016,7 @@ function renderClipboardItems() {
     };
     const devType = (item.deviceType || '').toLowerCase();
     const devIcon = devIcons[devType] || devIcons.desktop;
-    tr.innerHTML = `<div class="cr-main"><div class="type-badge tb-${typeClass}"><span class="icon icon-md">${typeIcons[typeClass] || typeIcons.text}</span></div><span class="cr-preview">${escapeHtml((item.content||'').substring(0, 120))}</span></div><div class="cr-device"><span class="icon icon-sm">${devIcon}</span>${escapeHtml(item.deviceName || 'Unknown')}</div><div><span class="cr-tag ct-${typeClass}">${typeLabel}</span></div><div class="cr-time">${formatTime(item.createdAt)}</div><div class="cr-actions">${typeClass === 'img' ? `<button class="act-btn" title="预览" onclick="event.stopPropagation();viewImageItem('${item.imageUrl || item.content || ''}','${escapeHtml(item.contentPreview || '')}')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M 1 12s4 -8 11 -8 11 8 11 8 -4 8 -11 8 -11 -8 -11 -8z"/><circle cx="12" cy="12" r="3"/></svg></span></button>` : ''}<button class="act-btn" title="复制" onclick="event.stopPropagation();copyItem('${item.id}')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M 5 15 H4 a2 2 0 0 1 -2 -2 V4 a2 2 0 0 1 2 -2 h9 a2 2 0 0 1 2 2 v1"/></svg></span></button><button class="act-btn" title="删除" onclick="event.stopPropagation();deleteItem('${item.id}')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M 19 6v 14 a2 2 0 0 1 -2 2 H7 a2 2 0 0 1 -2 -2 V6 m3 0 V4 a2 2 0 0 1 2 -2 h4 a2 2 0 0 1 2 2 v2"/></svg></span></button></div>`;
+    tr.innerHTML = `<div class="cr-main"><div class="type-badge tb-${typeClass}"><span class="icon icon-md">${typeIcons[typeClass] || typeIcons.text}</span></div><span class="cr-preview">${escapeHtml((item.contentPreview || item.content || '').substring(0, 120))}</span></div><div class="cr-device"><span class="icon icon-sm">${devIcon}</span>${escapeHtml(item.deviceName || 'Unknown')}</div><div><span class="cr-tag ct-${typeClass}">${typeLabel}</span></div><div class="cr-time">${formatTime(item.createdAt)}</div><div class="cr-actions"><button class="act-btn" title="${typeClass === 'img' ? '预览图片' : typeClass === 'link' ? '打开链接' : typeClass === 'file' ? '下载文件' : '复制'}" onclick="event.stopPropagation();viewItem('${item.id}','${typeClass}')"><span class="icon icon-sm">${typeClass === 'img' ? '<svg viewBox="0 0 24 24"><path d="M 1 12s4 -8 11 -8 11 8 11 8 -4 8 -11 8 -11 -8 -11 -8z"/><circle cx="12" cy="12" r="3"/></svg>' : typeClass === 'link' ? '<svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l 3 -3 a5 5 0 0 0 -7.07 -7.07 l -1.72 1.71"/><path d="M 14 11a5 5 0 0 0 -7.54 -.54 l -3 3 a5 5 0 0 0 7.07 7.07 l 1.71 -1.71"/></svg>' : typeClass === 'file' ? '<svg viewBox="0 0 24 24"><path d="M 21 15 v4 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' : '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M 5 15 H4 a2 2 0 0 1 -2 -2 V4 a2 2 0 0 1 2 -2 h9 a2 2 0 0 1 2 2 v1"/></svg>'}</span></button><button class="act-btn" title="复制" onclick="event.stopPropagation();copyItem('${item.id}')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M 5 15 H4 a2 2 0 0 1 -2 -2 V4 a2 2 0 0 1 2 -2 h9 a2 2 0 0 1 2 2 v1"/></svg></span></button><button class="act-btn" title="删除" onclick="event.stopPropagation();deleteItem('${item.id}')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M 19 6v 14 a2 2 0 0 1 -2 2 H7 a2 2 0 0 1 -2 -2 V6 m3 0 V4 a2 2 0 0 1 2 -2 h4 a2 2 0 0 1 2 2 v2"/></svg></span></button></div>`;
     if (listHead) listHead.after(tr); else container.appendChild(tr);
   });
 }
@@ -2024,7 +2024,20 @@ function renderClipboardItems() {
 async function copyItem(id) {
   const item = clipboardItems.find(i => i.id === id);
   if (!item) return;
-  await copyToClipboard(item.content || '');
+  // Fetch full item to get contentEncrypted
+  try {
+    const full = await api('GET', '/api/clipboard/' + id);
+    const text = full.contentEncrypted || full.contentPreview || item.contentPreview || '';
+    if (text.startsWith('data:')) {
+      showToast('图片内容不支持直接复制文本', 'error'); return;
+    }
+    await copyToClipboard(text);
+    showToast('已复制到剪贴板', 'success');
+  } catch(e) {
+    // Fallback: use what we have
+    const text = item.contentPreview || item.contentEncrypted || '';
+    await copyToClipboard(text.substring(0, 5000));
+  }
 }
 
 // Unified clipboard write with Tauri fallback
@@ -2309,6 +2322,18 @@ async function viewImageItem(urlOrId, previewText) {
   }
 }
 
+async function viewImageItemById(id) {
+  try {
+    const item = await api('GET', '/api/clipboard/' + id);
+    if (!item || !item.contentEncrypted || !item.contentEncrypted.startsWith('data:')) {
+      showToast('不是图片或图片数据不可用', 'error'); return;
+    }
+    await viewImageItem(item.contentEncrypted, item.contentPreview || '图片预览');
+  } catch(e) {
+    showToast('加载图片失败: ' + e.message, 'error');
+  }
+}
+
 function closeImageViewer() {
   const viewer = document.getElementById('image-viewer');
   if (viewer) viewer.style.display = 'none';
@@ -2473,11 +2498,16 @@ async function copyTextItem(id) {
 // 查看条目：根据类型调用不同处理函数
 function viewItem(id, type) {
   if (type === 'img') {
-    viewImageItem(id);
+    viewImageItemById(id);
+  } else if (type === 'link') {
+    const item = clipboardItems.find(i => i.id === id);
+    if (item && item.content) {
+      window.open(item.content.startsWith('http') ? item.content : 'https://' + item.content, '_blank');
+    } else { showToast('无链接地址', 'error'); }
   } else if (type === 'file') {
     viewFileItem(id);
   } else {
-    copyTextItem(id);
+    copyItem(id);
   }
 }
 
