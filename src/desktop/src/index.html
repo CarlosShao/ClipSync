@@ -1856,7 +1856,7 @@ const state = {
   deviceId: localStorage.getItem('cs_device_id') || null,
   ws: null,
 };
-const API_BASE = 'http://localhost:3000';
+const API_BASE = 'http://localhost:3001';
 
 // ===== Toast (real) =====
 
@@ -1866,12 +1866,20 @@ async function api(method, path, body) {
   const opts = { method, headers: {} };
   if (state.token) opts.headers['Authorization'] = 'Bearer ' + state.token;
   if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
-  const resp = await fetch(API_BASE + path, opts);
-  const text = await resp.text();
-  let data;
-  try { data = JSON.parse(text); } catch { throw new Error('Server returned invalid response (' + resp.status + ')'); }
-  if (!resp.ok) throw new Error(data.error || 'Request failed (' + resp.status + ')');
-  return data;
+  try {
+    const resp = await fetch(API_BASE + path, opts);
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); } catch { throw new Error('Server returned invalid response (' + resp.status + ')'); }
+    if (!resp.ok) throw new Error(data.error || 'Request failed (' + resp.status + ')');
+    return data;
+  } catch (e) {
+    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.name === 'TypeError') {
+      updateConnStatus('offline');
+      throw new Error('无法连接到服务器，请检查网络或后端服务是否启动');
+    }
+    throw e;
+  }
 }
 
 // ===== Login =====
