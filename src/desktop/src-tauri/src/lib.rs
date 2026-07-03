@@ -870,6 +870,8 @@ pub fn run() {
                 app.listen("global-shortcut", move |_event| {
                     eprintln!("[GlobalShortcut] Global shortcut pressed!");
                     if let Some(window) = handle_evt.get_webview_window("main") {
+                        // Must unminimize first — show() alone doesn't restore minimized windows
+                        let _ = window.unminimize();
                         let _ = window.show();
                         let _ = window.set_focus();
                         match window.eval("window.toggleQuickPaste()") {
