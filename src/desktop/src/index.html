@@ -3400,286 +3400,126 @@
       }
     };
 
-    // ====== Shortcut Settings ======
-    window._recordingShortcut = false;
-    window._recordedShortcut = '';  // final captured shortcut string
+    // ====== Shortcut Settings (Combinator UI - no keyboard capture) ======
+
+    // Available keys for selection
+    var SHORTCUT_KEYS = [];
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(function(ch) { SHORTCUT_KEYS.push({label: ch, value: ch}); });
+    '0123456789'.split('').forEach(function(ch) { SHORTCUT_KEYS.push({label: ch, value: ch}); });
+    for (var fi = 1; fi <= 12; fi++) SHORTCUT_KEYS.push({label: 'F' + fi, value: 'F' + fi});
+    [
+      {label:'Left',value:'Left'},{label:'Right',value:'Right'},{label:'Up',value:'Up'},{label:'Down',value:'Down'},
+      {label:'Enter',value:'Enter'},{label:'Space',value:'Space'},{label:'Tab',value:'Tab'},
+      {label:'Backspace',value:'Backspace'},{label:'Delete',value:'Delete'},
+      {label:',',value:','},{label:'.',value:'.'},{label:'/',value:'/'},{label:';',value:';'},
+      {label:'[',value:'['},{label:']',value:'}]'},{'label:'-',value:'-'},{label:'=',value:'='}
+    ].forEach(function(k) { SHORTCUT_KEYS.push(k); });
+
+    window._shortcutMods = ['Ctrl', 'Shift'];
+    window._shortcutKey = 'V';
+
+    function _buildShortcutString() {
+      if (window._shortcutMods.length === 0 || !window._shortcutKey) return '';
+      var parts = window._shortcutMods.slice();
+      parts.push(window._shortcutKey);
+      return parts.join('+');
+    }
+
+    function _updatePreview() {
+      var s = _buildShortcutString();
+      var el = document.getElementById('shortcut-preview');
+      var statusEl = document.getElementById('shortcut-status');
+      if (!s) {
+        el.textContent = '- - -';
+        el.style.color = '#999';
+        el.style.background = '#f5f5f5';
+        el.style.borderColor = '#ddd';
+        statusEl.textContent = '[!] Pick at least one modifier + one key';
+        statusEl.style.color = '#ef4444';
+      } else {
+        el.textContent = s;
+        el.style.color = '#4f46e5';
+        el.style.background = '#f5f3ff';
+        el.style.borderColor = '#6366f1';
+        statusEl.textContent = '';
+      }
+      window._recordedShortcut = s;
+    }
+
+    function _renderKeyGrid() {
+      var container = document.getElementById('shortcut-keys');
+      container.innerHTML = SHORTCUT_KEYS.map(function(k) {
+        return '<button class="key-btn' + (window._shortcutKey === k.value ? ' selected' : '') +
+          '" data-key="' + k.value + '">' + k.label + '</button>';
+      }).join('');
+      container.querySelectorAll('.key-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          container.querySelectorAll('.key-btn').forEach(function(b) { b.classList.remove('selected'); });
+          this.classList.add('selected');
+          window._shortcutKey = this.getAttribute('data-key');
+          _updatePreview();
+        });
+      });
+    }
+
     window._showShortcutSettings = async function() {
       document.getElementById('shortcut-modal').style.display = 'flex';
       document.getElementById('shortcut-status').textContent = '';
-      var input = document.getElementById('shortcut-input');
-      // Reset visual to default state
-      _setInputStyle(input, 'default');
-      // Load current shortcut
       try {
         var cfg = await window._tauriInvoke('get_config');
         var current = (cfg && cfg.quick_paste_shortcut) || 'Ctrl+Shift+V';
-        input.value = current;
-        input.setAttribute('data-original', current);
-        window._recordedShortcut = current;
+        var parts = current.split('+');
+        window._shortcutMods = [];
+        window._shortcutKey = '';
+        parts.forEach(function(p) {
+          if (p === 'Ctrl' || p === 'Shift' || p === 'Alt') window._shortcutMods.push(p);
+          else window._shortcutKey = p;
+        });
+        if (window._shortcutMods.length === 0) window._shortcutMods = ['Ctrl', 'Shift'];
+        if (!window._shortcutKey) window._shortcutKey = 'V';
       } catch(e) {
-        input.value = 'Ctrl+Shift+V';
-        input.setAttribute('data-original', 'Ctrl+Shift+V');
-        window._recordedShortcut = 'Ctrl+Shift+V';
+        window._shortcutMods = ['Ctrl', 'Shift'];
+        window._shortcutKey = 'V';
       }
-      // Auto-enter recording mode when modal opens
-      setTimeout(function() { _startRecording(); }, 100);
+      var modContainer = document.getElementById('shortcut-modifiers');
+      modContainer.querySelectorAll('.mod-btn').forEach(function(btn) {
+        var mod = btn.getAttribute('data-mod');
+        btn.classList.toggle('active', window._shortcutMods.indexOf(mod) >= 0);
+      });
+      _renderKeyGrid();
+      _updatePreview();
+      if (!modContainer._bound) {
+        modContainer.querySelectorAll('.mod-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            this.classList.toggle('active');
+            var mod = this.getAttribute('data-mod');
+            var idx = window._shortcutMods.indexOf(mod);
+            if (idx >= 0) window._shortcutMods.splice(idx, 1);
+            else window._shortcutMods.push(mod);
+            _updatePreview();
+          });
+        });
+        modContainer._bound = true;
+      }
     };
-    // Keep old name as alias
     window.showShortcutSettings = window._showShortcutSettings;
     window.closeShortcutModal = function() {
       document.getElementById('shortcut-modal').style.display = 'none';
-      _stopShortcutRecording();
     };
-
-    // --- Visual style helper for the input ---
-    function _setInputStyle(input, mode) {
-      switch(mode) {
-        case 'recording':
-          input.style.borderColor = '#6366f1';
-          input.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.25)';
-          input.style.color = '#6366f1';
-          input.style.background = '#f5f3ff';
-          break;
-        case 'success':
-          input.style.borderColor = '#059669';
-          input.style.boxShadow = '0 0 0 3px rgba(5,150,105,0.2)';
-          input.style.color = '#059669';
-          input.style.background = '#ecfdf5';
-          break;
-        default:
-          input.style.borderColor = 'var(--border)';
-          input.style.boxShadow = '';
-          input.style.color = 'var(--text)';
-          input.style.background = 'var(--bg)';
-          break;
-      }
-    }
-
-    // --- Shortcut recording: uses <input> with 4-layer IME/text blocking ---
-    function _stopShortcutRecording() {
-      window._recordingShortcut = false;
-      var input = document.getElementById('shortcut-input');
-      if (input) {
-        _setInputStyle(input, 'default');
-        input.removeAttribute('data-recording');
-      }
-      document.removeEventListener('keydown', _shortcutKeydownHandler, true);
-      document.removeEventListener('keyup', _shortcutKeyupHandler, true);
-    }
-
-    function _shortcutKeydownHandler(e) {
-      if (!window._recordingShortcut) return;
-
-      // Block EVERYTHING during recording - this prevents text entry AND IME
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-
-      var input = document.getElementById('shortcut-input');
-
-      // Escape → cancel
-      if (e.key === 'Escape') {
-        var original = input.getAttribute('data-original') || 'Ctrl+Shift+V';
-        input.value = original;
-        _setInputStyle(input, 'default');
-        _stopShortcutRecording();
-        _setStatus('已取消（恢复原值）', 'muted');
-        return false;
-      }
-
-      // Build modifier list from current key state
-      var parts = [];
-      if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
-      if (e.shiftKey) parts.push('Shift');
-      if (e.altKey) parts.push('Alt');
-
-      var key = e.key;
-
-      // Modifier-only key (holding Ctrl/Shift/Alt): show live feedback, don't complete yet
-      if (key === 'Control' || key === 'Meta' || key === 'Shift' || key === 'Alt') {
-        if (parts.length > 0) {
-          input.value = parts.join('+') + ' + ...';
-        } else {
-          input.value = '按下快捷键组合...';
-        }
-        return false;
-      }
-
-      // Non-modifier key pressed → COMPLETE the combination
-      // Map the key to a display-friendly name
-      var displayKey = _mapKeyName(key);
-      parts.push(displayKey);
-
-      var shortcut = parts.join('+');
-
-      // VALIDATION: must have at least ONE modifier (Ctrl/Shift/Alt)
-      // OS global hotkeys require a modifier — single keys like "Backspace" won't work
-      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
-        input.value = '❌ 无效：需要 Ctrl/Shift/Alt + 字母键';
-        _setInputStyle(input, 'default');
-        input.style.borderColor = '#ef4444';
-        input.style.color = '#ef4444';
-        _setStatus('⚠️ 快捷键必须包含修饰键（Ctrl / Shift / Alt）+ 字母键', '');
-        document.getElementById('shortcut-status').style.color = '#ef4444';
-        // Don't stop recording — let user try again
-        return false;
-      }
-
-      // Success!
-      input.value = shortcut + '  ✏️ 点击可修改';
-      _setInputStyle(input, 'success');
-      window._recordedShortcut = shortcut;
-      window._recordingShortcut = false;  // auto-stop
-
-      _setStatus('✅ 已捕获：' + shortcut + '（点击输入框可重新录制）', 'success');
-
-      // Remove global listeners
-      document.removeEventListener('keydown', _shortcutKeydownHandler, true);
-      document.removeEventListener('keyup', _shortcutKeyupHandler, true);
-
-      return false;
-    }
-
-    function _shortcutKeyupHandler(e) {
-      if (!window._recordingShortcut) return;
-      e.preventDefault();
-
-      var input = document.getElementById('shortcut-input');
-
-      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
-        // All keys released but no combo captured
-        input.value = '按下快捷键组合...';
-      } else {
-        // Still holding modifiers — show what's held
-        var parts = [];
-        if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
-        if (e.shiftKey) parts.push('Shift');
-        if (e.altKey) parts.push('Alt');
-        input.value = parts.join('+') + ' + ?';
-      }
-      return false;
-    }
-
-    /** Map browser key names to user-friendly shortcut notation */
-    function _mapKeyName(key) {
-      if (key === ' ') return 'Space';
-      if (key.length === 1) return key.toUpperCase();
-      var map = {
-        'ArrowUp': '↑', 'ArrowDown': '↓', 'ArrowLeft': '←', 'ArrowRight': '→',
-        'Enter': 'Enter', 'Backspace': 'Backspace', 'Tab': 'Tab',
-        'Delete': 'Delete', 'Insert': 'Insert',
-        'Home': 'Home', 'End': 'End', 'PageUp': 'PageUp', 'PageDown': 'PageDown',
-        'F1':'F1','F2':'F2','F3':'F3','F4':'F4','F5':'F5','F6':'F6','F7':'F7',
-        'F8':'F8','F9':'F9','F10':'F10','F11':'F11','F12':'F12',
-        'CapsLock': 'CapsLock', 'NumLock': 'NumLock', 'ScrollLock': 'ScrollLock',
-        'PrintScreen': 'PrtSc', 'Pause': 'Pause'
-      };
-      // Strip "Digit" / "Key" prefix that some browsers use
-      if (key.startsWith('Digit')) return key.slice(5);
-      if (key.startsWith('Key')) return key.slice(3);
-      return map[key] || key;
-    }
-
-    function _setStatus(text, color) {
-      var el = document.getElementById('shortcut-status');
-      el.textContent = text;
-      if (color === 'success') el.style.color = '#059669';
-      else if (color === 'recording') el.style.color = '#6366f1';
-      else el.style.color = 'var(--text-muted)';
-    }
-
-    function _initShortcutRecording() {
-      var input = document.getElementById('shortcut-input');
-      if (!input) return;
-
-      // Layer 1: focus → enter recording mode immediately
-      input.addEventListener('focus', function() {
-        if (!window._recordingShortcut) {
-          setTimeout(_startRecording, 50);  // small delay so UI updates first
-        }
-      });
-
-      // Layer 2: click also triggers recording (for users who click instead of tab-to-focus)
-      // Also allows RE-RECORDING after a successful capture
-      input.addEventListener('click', function() {
-        if (window._recordingShortcut) {
-          // Already recording — just re-focus
-          this.focus();
-        } else {
-          // Not recording → start recording (first time OR re-recording after success)
-          _startRecording();
-        }
-      });
-
-      // Layer 3: BLOCK compositionstart (IME trying to compose Chinese/Japanese)
-      input.addEventListener('compositionstart', function(e) {
-        if (window._recordingShortcut) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }
-      });
-
-      // Layer 4: BLOCK input event (text being inserted by any means)
-      input.addEventListener('input', function(e) {
-        if (window._recordingShortcut) {
-          // Immediately clear any text that got in
-          this.value = '';
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }
-      });
-
-      // Prevent context menu on right-click
-      input.addEventListener('contextmenu', function(e) { e.preventDefault(); });
-    }
-
-    function _startRecording() {
-      var input = document.getElementById('shortcut-input');
-      if (!input || window._recordingShortcut) return;
-
-      // Mark as recording (used by layer 3 & 4 event handlers)
-      input.setAttribute('data-recording', 'true');
-
-      // Visual: recording mode — very obvious purple glow
-      _setInputStyle(input, 'recording');
-      input.value = '🎯 正在录制... 按下快捷键';
-
-      window._recordingShortcut = true;
-      window._recordedShortcut = '';
-
-      _setStatus('正在录制，请按 Ctrl/Shift/Alt + 字母键，Esc 取消', 'recording');
-
-      // Capture-phase listeners on document intercept keystrokes before anything else
-      document.addEventListener('keydown', _shortcutKeydownHandler, true);
-      document.addEventListener('keyup', _shortcutKeyupHandler, true);
-
-      // Ensure input has focus so keyboard events flow through it too
-      input.focus();
-    }
-
-    // Init shortcut recorder once DOM is ready
-    _initShortcutRecording();
-
     window.saveShortcut = async function() {
-      var shortcut = window._recordedShortcut;
-      // Validate: must be a real shortcut (contain at least one modifier + key)
-      if (!shortcut || shortcut.indexOf('+') < 0 || shortcut.includes('录制') || shortcut.includes('...')) {
-        showToast('请先录制快捷键（点击输入框后按键组合）');
-        return;
-      }
+      var shortcut = _buildShortcutString();
+      if (!shortcut) { showToast('Please select a complete shortcut combination'); return; }
       try {
         await window._tauriInvoke('register_shortcut', { shortcut: shortcut });
-        showToast('✅ 快捷键已更新为：' + shortcut);
+        showToast('Shortcut updated: ' + shortcut);
         var desc = document.getElementById('shortcut-desc');
-        if (desc) desc.textContent = '快速粘贴：' + shortcut;
+        if (desc) desc.textContent = 'Quick Paste: ' + shortcut;
         closeShortcutModal();
       } catch(e) {
-        showToast('保存失败：' + (e.message || e) + '，请尝试其他组合');
+        showToast('Save failed: ' + (e.message || e));
       }
     };
-  </script>
+
 
     <!-- 快速粘贴面板 (Ctrl+Shift+V) -->
     <div id="quick-paste-panel">
@@ -3726,24 +3566,60 @@
 
     <!-- Shortcut Settings Modal -->
   <div class="modal-overlay" id="shortcut-modal" style="display:none;">
-    <div class="modal" style="max-width:440px;">
+    <div class="modal" style="max-width:460px;">
       <h2>⌨️ 键盘快捷键</h2>
-      <p style="color:var(--text-muted);font-size:13px;">点击下方输入框，然后按下快捷键组合（如 Ctrl+Shift+V）</p>
-      <div style="margin:20px 0;">
-        <div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:10px;">快速粘贴面板</div>
-        <!-- Use real input so it can get keyboard focus, but block ALL text/IME entry -->
-        <input id="shortcut-input" type="text"
-          inputmode="none" autocomplete="off" spellcheck="false"
-          style="width:100%;padding:14px 18px;border:2px solid var(--border);border-radius:12px;font-size:16px;font-family:monospace;background:var(--bg);color:var(--text);text-align:center;letter-spacing:1px;cursor:text;transition:border-color 0.2s,box-shadow 0.2s;outline:none;"
-          placeholder="点击此处开始录制..." />
-        <div id="shortcut-status" style="font-size:12px;color:var(--text-muted);margin-top:8px;text-align:center;"></div>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:18px;">选择修饰键和主按键来组合你的快捷键</p>
+
+      <!-- Live Preview -->
+      <div id="shortcut-preview"
+        style="width:100%;padding:16px;border:2px solid #6366f1;border-radius:12px;background:#f5f3ff;text-align:center;font-size:20px;font-weight:700;font-family:monospace;color:#4f46e5;letter-spacing:2px;margin-bottom:18px;box-shadow:0 0 0 3px rgba(99,102,241,0.15);">
+        Ctrl+Shift+V
       </div>
+
+      <!-- Modifier Keys -->
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">第一步：选择修饰键（至少选一个）</div>
+      <div id="shortcut-modifiers" style="display:flex;gap:8px;margin-bottom:20px;">
+        <button data-mod="Ctrl" class="mod-btn active">Ctrl</button>
+        <button data-mod="Shift" class="mod-btn active">Shift</button>
+        <button data-mod="Alt" class="mod-btn">Alt</button>
+      </div>
+
+      <!-- Main Key -->
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">第二步：选择主按键</div>
+      <div id="shortcut-keys" style="display:grid;grid-template-columns:repeat(8,1fr);gap:5px;max-height:200px;overflow-y:auto;padding:4px;background:#f8f8f8;border-radius:10px;padding:10px;margin-bottom:20px;">
+      </div>
+
+      <!-- Status -->
+      <div id="shortcut-status" style="font-size:12px;color:var(--text-muted);text-align:center;margin-bottom:16px;min-height:18px;"></div>
+
+      <!-- Buttons -->
       <div style="display:flex;gap:10px;">
-        <button id="shortcut-save-btn" class="btn btn-primary btn-block" onclick="saveShortcut()">保存</button>
+        <button id="shortcut-save-btn" class="btn btn-primary btn-block" onclick="saveShortcut()">保存快捷键</button>
         <button class="btn btn-block" onclick="closeShortcutModal()" style="background:#eee;color:#333;">取消</button>
       </div>
     </div>
   </div>
+
+  <style>
+    /* Combinator UI Styles */
+    .mod-btn {
+      flex:1;padding:10px 16px;border:2px solid var(--border);border-radius:10px;
+      background:#fff;color:var(--text);font-size:14px;font-weight:600;cursor:pointer;
+      transition:all 0.15s;font-family:monospace;user-select:none;-webkit-user-select:none;
+    }
+    .mod-btn:hover { border-color:#6366f1; }
+    .mod-btn.active { background:#6366f1;color:#fff;border-color:#6366f1;box-shadow:0 2px 8px rgba(99,102,241,0.3); }
+    .key-btn {
+      padding:7px 2px;border:1.5px solid #e0e0e0;border-radius:6px;background:#fff;
+      color:var(--text);font-size:13px;font-weight:500;font-family:monospace;cursor:pointer;
+      transition:all 0.1s;text-align:center;user-select:none;-webkit-user-select:none;
+    }
+    .key-btn:hover { border-color:#6366f1;background:#f5f3ff;color:#4f46e5; }
+    .key-btn.selected { background:#6366f1;color:#fff;border-color:#6366f1;box-shadow:0 2px 6px rgba(99,102,241,0.25); }
+    /* Scrollbar for key grid */
+    #shortcut-keys::-webkit-scrollbar { width:6px; }
+    #shortcut-keys::-webkit-scrollbar-thumb { background:#ccc;border-radius:3px; }
+  </style>
 
   <!-- Billing History Modal -->
   <div class="modal-overlay" id="billing-modal" style="display:none;">
