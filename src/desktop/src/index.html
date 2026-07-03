@@ -295,7 +295,7 @@
    RESET & BASE
    ============================================================ */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-size: 14px; }
+html { font-size: 14px; height: 100%; }
 body {
   font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
   background: var(--bg-base);
@@ -304,6 +304,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
   transition: background .25s ease, color .2s ease;
+  height: 100%; overflow: hidden;
 }
 
 /* ============================================================
@@ -329,10 +330,8 @@ body {
    APP SHELL
    ============================================================ */
 .app-shell {
-  display: flex; height: 100vh; max-width: 1280px;
-  margin: 0 auto; border-radius: var(--radius-xl);
+  display: flex; width: 100%; height: 100%;
   overflow: hidden;
-  box-shadow: var(--shadow-modal);
   transition: background .25s ease;
 }
 
@@ -917,8 +916,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .page { display: none; }
 .page.active { display: block; }
 
-/* Demo wrapper spacing */
-.demo-wrap { padding: 24px 0 48px; }
+/* Demo wrapper — production app: no extra padding */
+.demo-wrap { width: 100%; height: 100vh; overflow: hidden; }
 /* ===== QUICK PASTE OVERLAY ===== */
 #qpOverlay {
   position: fixed; inset: 0; z-index: 10000;
@@ -1986,7 +1985,7 @@ function renderClipboardItems() {
     const typeClass = type === 'image' ? 'img' : type === 'link' ? 'link' : type === 'file' ? 'file' : 'text';
     const typeLabel = typeClass === 'img' ? '图片' : typeClass === 'link' ? '链接' : typeClass === 'file' ? '文件' : '文本';
     const tr = document.createElement('div');
-    tr.className = 'clip-row'; tr.dataset.type = typeClass;
+    tr.className = 'clip-row'; tr.dataset.type = typeClass; tr.dataset.id = item.id;
     tr.style.cursor = 'pointer';
     tr.onclick = (e) => {
       if (e.target.closest('.cr-actions')) return;
@@ -3024,6 +3023,28 @@ if (state.token) {
   setupDragDrop();
 }
 applyStyle("vercel", "light"); loadSettings();
+
+// Event delegation: clipboard row clicks (handles both static HTML & dynamic rows)
+document.querySelector('.clip-view')?.addEventListener('click', function(e) {
+  const row = e.target.closest('.clip-row');
+  if (!row || e.target.closest('.cr-actions')) return;
+  const id = row.dataset.id;
+  // Map data-type to viewItem type: text→text, images→img, links→link, files→file
+  const rawType = row.dataset.type || 'text';
+  const typeMap = { text:'text', images:'img', image:'img', links:'link', link:'link', files:'file', file:'file' };
+  const type = typeMap[rawType] || 'text';
+  if (id) {
+    viewItem(id, type);
+  } else {
+    // Static prototype row without real ID — copy preview text
+    const preview = row.querySelector('.cr-preview');
+    if (preview) {
+      navigator.clipboard.writeText(preview.textContent).then(() => {
+        showToast('已复制', 'success');
+      }).catch(() => showToast('复制失败', 'error'));
+    }
+  }
+});
 </script>
 
 
