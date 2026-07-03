@@ -2879,18 +2879,20 @@
         showToast('正在上传：' + file.name);
         try {
           const headers = await _getUploadHeaders();
+          // Use 5MB chunks to reduce request count and avoid 429 rate limiting
+          const _chunkSize = 5 * 1024 * 1024;
           // Step 1: 初始化上传
           const initResp = await _fetchWithRetry(API_BASE + '/api/upload/init', {
             method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename: file.name, fileSize: file.size, mimeType: file.type || 'application/octet-stream', totalChunks: Math.ceil(file.size / (1024*1024)) })
+            body: JSON.stringify({ filename: file.name, fileSize: file.size, mimeType: file.type || 'application/octet-stream', totalChunks: Math.ceil(file.size / _chunkSize) })
           });
           if (!initResp.ok) throw new Error('init failed');
           const initData = await initResp.json();
           const uploadId = initData.uploadId;
           if (!uploadId) throw new Error('no uploadId');
 
-          // Step 2: 分块上传 (with retry + small inter-chunk delay)
-          const chunkSize = 1024 * 1024;
+          // Step 2: 分块上传 (5MB chunks to reduce request count & avoid 429 rate limiting)
+          const chunkSize = 5 * 1024 * 1024;
           const totalChunks = Math.ceil(file.size / chunkSize);
           const chunkHeaders = await _getUploadHeaders(); // cache once, reuse for all chunks
           for (let i = 0; i < totalChunks; i++) {
@@ -2909,15 +2911,22 @@
             }
             showToast('上传中：' + file.name + ' (' + Math.round((i + 1) / totalChunks * 100) + '%)');
             // Small delay between chunks to avoid hammering server
-            if (i < totalChunks - 1) await new Promise(r => setTimeout(r, 80));
+            if (i < totalChunks - 1) await new Promise(r => setTimeout(r, 150));
           }
 
-          // Step 3: 完成上传
+          // Step 3: 完成上传并获取结果
           const completeHeaders = await _getUploadHeaders();
-          await fetch(API_BASE + '/api/upload/complete/' + uploadId, {
+          const completeResp = await fetch(API_BASE + '/api/upload/complete/' + uploadId, {
             method: 'POST', headers: completeHeaders
           });
-          showToast('✅ 上传完成：' + file.name);
+          if (!completeResp.ok) {
+            const errText = await completeResp.text().catch(() => '');
+            console.error('[Upload] complete failed:', completeResp.status, errText);
+            throw new Error('complete failed (' + completeResp.status + ')');
+          }
+          const result = await completeResp.json();
+          console.log('[Upload] completed:', result);
+          showToast('✅ 上传完成：' + (result.originalName || file.name) + ' → 已保存到剪贴板 (ID: ' + (result.itemId || '?') + ')');
         } catch(e) {
           showToast('上传失败：' + file.name + ' (' + (e.message || '') + ')');
         }
