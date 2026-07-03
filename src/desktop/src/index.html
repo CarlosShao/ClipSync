@@ -1335,7 +1335,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   </div>
 
   <!-- ============== PROFILE VIEW ============== -->
-  <div class="page" id="sub-profile">
+  <div class="page" id="sub-profile" data-onload="loadProfile()">
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
@@ -1425,7 +1425,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   </div>
 
   <!-- ============== SUBSCRIPTION VIEW ============== -->
-  <div class="page" id="sub-subscription">
+  <div class="page" id="sub-subscription" data-onload="loadSubscription()">
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync"></span></div>
@@ -1579,6 +1579,9 @@ function switchSub(sub) {
   document.querySelectorAll('[id^="sub-"]').forEach(el => el.classList.remove('active'));
   const target = document.getElementById('sub-' + sub);
   if (target) target.classList.add('active');
+      // Call onload function if specified
+      const onload = target.dataset.onload;
+      if (onload) { try { eval(onload); } catch (e) { console.warn('onload error:', e); } }
 
   // Update sidebar nav active states — use data-sub attribute (robust, doesn't depend on text content)
   document.querySelectorAll('.sidebar .nav-item').forEach(item => {
@@ -2469,6 +2472,60 @@ async function revokeSession(sessionId) {
     loadSessions();
   } catch (e) {
     showToast('操作失败：' + e.message);
+  }
+}
+
+
+// 加载用户资料
+async function loadProfile() {
+  if (!state.token) return;
+  try {
+    const data = await api('GET', '/api/users/me');
+    const user = data.user || {};
+    state.currentUser = user;
+    // 更新页面显示
+    const nameEl = document.querySelector('#sub-profile h2');
+    const emailEl = document.querySelector('#sub-profile .p-email');
+    const phoneEl = document.querySelector('#sub-profile .pf-value');
+    if (nameEl) nameEl.textContent = user.name || 'User';
+    if (emailEl) emailEl.textContent = user.email || '--';
+    if (phoneEl && user.phone) phoneEl.innerHTML = '<span class="icon icon-sm" style="color:var(--accent)">📱</span> ' + escapeHtml(user.phone);
+    // 更新侧边栏
+    updateUserInfo();
+  } catch (e) {
+    console.warn('加载用户资料失败:', e.message);
+  }
+}
+
+// 保存用户资料
+async function saveProfile() {
+  const nameInput = document.querySelector('#sub-profile input.styled-input');
+  if (!nameInput) return;
+  try {
+    await api('PUT', '/api/users/me', { name: nameInput.value });
+    showToast('资料已保存', 'success');
+    loadProfile();
+  } catch (e) {
+    showToast('保存失败: ' + e.message);
+  }
+}
+
+// 加载订阅信息
+async function loadSubscription() {
+  if (!state.token) return;
+  try {
+    const data = await api('GET', '/api/subscriptions/current');
+    const sub = data.subscription || {};
+    // 更新页面显示
+    const planName = document.querySelector('#sub-subscription .dev-card div div');
+    if (planName) planName.textContent = sub.planName || 'Free';
+    // 更新使用量
+    if (sub.usage) {
+      const clipsEl = document.querySelector('#sub-subscription .sg-control');
+      if (clipsEl) clipsEl.textContent = (sub.usage.clips || 0).toLocaleString();
+    }
+  } catch (e) {
+    console.warn('加载订阅信息失败:', e.message);
   }
 }
 
