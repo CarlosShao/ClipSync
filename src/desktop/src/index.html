@@ -3373,6 +3373,213 @@ function startClipboardPolls() {
     startBrowserClipboardPoll();
   }
 }
+    // ====== 快捷粘贴面板 (Quick Paste) ======
+    let _qpSearchTimer = null;
+    let _qpIndex = -1;
+    window._quickPasteOpen = false;
+
+    window.showQuickPaste = function() {
+      window._quickPasteOpen = true;
+      const overlay = document.getElementById('qpOverlay');
+      if (overlay) overlay.classList.add('show');
+      loadQuickPasteItems();
+      setTimeout(() => {
+        const inp = document.getElementById('qpSearchInput');
+        if (inp) inp.focus();
+      }, 100);
+    };
+    window.hideQuickPaste = function() {
+      window._quickPasteOpen = false;
+      const overlay = document.getElementById('qpOverlay');
+      if (overlay) overlay.classList.remove('show');
+    };
+    window.toggleQuickPaste = function() {
+      if (window._quickPasteOpen) { hideQuickPaste(); return; }
+      showQuickPaste();
+    };
+    window.loadQuickPasteItems = async function() {
+      const list = document.getElementById('qpList');
+      if (!list) return;
+      list.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
+      try {
+        const data = await api('GET', '/api/clipboard?limit=20');
+        const items = data.items || data.data || [];
+        window._clipboardItems = items;
+        renderQuickPasteItems(items);
+        _qpIndex = -1;
+      } catch (e) {
+        list.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载失败</div>';
+      }
+    };
+    window.renderQuickPasteItems = function(items) {
+      const list = document.getElementById('qpList');
+      if (!list) return;
+      if (!items || items.length === 0) {
+        list.innerHTML = '<div class="qp-empty">暂无剪贴板记录</div>';
+        return;
+      }
+      list.innerHTML = items.map((item, i) => {
+        const type = item.contentType || 'text';
+        const preview = item.contentPreview || item.contentEncrypted || '';
+        const textPreview = preview.length > 80 ? preview.substring(0, 80) + '...' : preview;
+        const icon = type === 'image' ? '🖼️' : type === 'link' ? '🔗' : type === 'file' ? '📁' : '📋';
+        return '<div class="qp-item" data-index="' + i + '" onclick="selectQpItem(this)" onmouseenter="_qpIndex=' + i + '; updateQpSelection();">' +
+          '<span class="qp-item-icon">' + icon + '</span>' +
+          '<span class="qp-item-text">' + escapeHtml(textPreview) + '</span>' +
+        '</div>';
+      }).join('');
+      updateQpSelection();
+    };
+    window.updateQpSelection = function() {
+      document.querySelectorAll('.qp-item').forEach((el, i) => {
+        el.classList.toggle('active', i === _qpIndex);
+      });
+    };
+
+    // ====== 图片悬停预览 ======
+    window._hideImgTimer = null;
+    window.showImgHover = function(itemId) {
+      clearTimeout(window._hideImgTimer);
+      const tip = document.getElementById('img-hover-tip');
+      if (!tip) return;
+      // Try to find the image content
+      const item = window._clipboardItems ? window._clipboardItems.find(i => i.id === itemId) : null;
+      if (!item) { tip.style.display = 'none'; return; }
+      const raw = item.contentEncrypted || '';
+      if (!raw.startsWith('data:image/')) { tip.style.display = 'none'; return; }
+      const img = tip.querySelector('img');
+      if (img) img.src = raw;
+      tip.style.display = 'block';
+    };
+    window.hideImgHover = function() {
+      clearTimeout(window._hideImgTimer);
+      window._hideImgTimer = setTimeout(() => {
+        const tip = document.getElementById('img-hover-tip');
+        if (tip) tip.style.display = 'none';
+      }, 200);
+    };
+
+    // ====== 版本历史 ======
+    window.showVersionHistory = async function(itemId) {
+      document.getElementById('version-modal').style.display = 'flex';
+      const listEl = document.getElementById('version-list');
+      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
+      try {
+        const data = await api('GET', '/api/versions/' + itemId);
+        const versions = data.versions || [];
+        if (versions.length === 0) {
+          listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无历史版本</div>';
+        } else {
+          listEl.innerHTML = versions.map(function(v) {
+            return '<div class="ver-item" data-id="' + itemId + '" data-ver="' + v.id + '" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #f0f0f0;"><div><div style="font-size:13px;font-weight:600;color:#333;">版本 ' + v.versionNumber + '</div><div style="font-size:11px;color:#999;margin-top:2px;">' + new Date(v.createdAt).toLocaleString() + '</div></div><button class="btn btn-secondary restore-ver-btn" style="padding:4px 12px;font-size:12px;">恢复</button></div>';
+          }).join('');
+        }
+      } catch(e) { listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败</div>'; }
+    };
+    // Event delegation for version restore buttons
+    document.addEventListener('click', function(ev) {
+      if (ev.target.closest('.restore-ver-btn')) {
+        var item = ev.target.closest('.ver-item');
+        if (item) window.restoreVersion(item.dataset.id, item.dataset.ver);
+      }
+    });
+    window.closeVersionModal = function() { document.getElementById('version-modal').style.display = 'none'; };
+    window.restoreVersion = async function(itemId, versionId) {
+      if (!confirm('确认恢复到此版本？')) return;
+      try {
+        await api('POST', '/api/versions/' + versionId + '/restore');
+        showToast('已恢复到该版本');
+        document.getElementById('version-modal').style.display = 'none';
+        loadClipboardItems();
+      } catch(e) { showToast('恢复失败: ' + (e.message || '未知错误')); }
+    };
+
+    // ====== 收藏/删除 ======
+    window.toggleFavorite = async function(itemId) {
+      try { await api('POST', '/api/clipboard/' + itemId + '/favorite'); showToast('操作成功'); loadClipboardItems(); } catch(e) { showToast('操作失败'); }
+    };
+    window.deleteItem = async function(itemId) {
+      if (!confirm('确认删除？')) return;
+      try { await api('DELETE', '/api/clipboard/' + itemId); showToast('已删除'); loadClipboardItems(); } catch(e) { showToast('删除失败'); }
+    };
+
+    // ====== 右侧面板 ======
+    window._viewingImageUrl = null;
+    window.toggleRightPanel = function() {
+      const panel = document.getElementById('right-panel');
+      if (!panel) return;
+      const isOpen = panel.style.display !== 'none';
+      panel.style.display = isOpen ? 'none' : 'flex';
+      if (!isOpen) loadClipboardItems();
+    };
+
+    // ====== 分类筛选 ======
+    let _activeCategory = 'all';
+    window.toggleCategory = function(cat) {
+      _activeCategory = cat;
+      document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
+      loadClipboardItems();
+    };
+
+    // ====== 分页 ======
+    let _currentPage = 1;
+    let _totalPages = 1;
+    window.renderDots = function() {
+      const dots = document.getElementById('page-dots');
+      if (!dots) return;
+      dots.innerHTML = '';
+      for (let i = 1; i <= _totalPages; i++) {
+        const dot = document.createElement('span');
+        dot.className = 'page-dot' + (i === _currentPage ? ' active' : '');
+        dot.textContent = i;
+        dot.onclick = () => { _currentPage = i; loadClipboardItems(); };
+        dots.appendChild(dot);
+      }
+    };
+    // ====== 首次引导 (Onboarding) ======
+    window.finishOnboarding = function() {
+      localStorage.setItem('cs_onboarding_done', 'true');
+      document.getElementById('onboarding-overlay').style.display = 'none';
+    };
+    window.skipOnboarding = function() {
+      localStorage.setItem('cs_onboarding_done', 'true');
+      document.getElementById('onboarding-overlay').style.display = 'none';
+    };
+
+    // ====== 快捷键设置 ======
+    window._showShortcutSettings = function() {
+      document.getElementById('shortcut-modal').style.display = 'flex';
+    };
+    window.closeShortcutModal = function() {
+      document.getElementById('shortcut-modal').style.display = 'none';
+    };
+    window.saveShortcut = function() {
+      // Read shortcuts from UI and save to localStorage
+      try {
+        const items = document.querySelectorAll('[data-shortcut]');
+        const shortcuts = {};
+        items.forEach(el => { shortcuts[el.dataset.shortcut] = el.value || el.textContent || ''; });
+        localStorage.setItem('cs_shortcuts', JSON.stringify(shortcuts));
+        showToast('快捷键已保存');
+        closeShortcutModal();
+      } catch(e) { showToast('保存失败'); }
+    };
+    window.loadAutostartStatus = async function() {
+      // Check if autostart is supported (Tauri only)
+      if (window.__TAURI__) {
+        try {
+          const enabled = await window.__TAURI__.invoke('is_autostart_enabled');
+          const el = document.getElementById('toggleAutostart');
+          if (el) el.checked = enabled;
+        } catch(e) {}
+      }
+    };
+    window.toggleAutostart = async function(el) {
+      if (window.__TAURI__) {
+        try { await window.__TAURI__.invoke('set_autostart', { enabled: el.checked }); showToast(el.checked ? '已开启开机自启' : '已关闭开机自启'); }
+        catch(e) { showToast('设置失败'); el.checked = !el.checked; }
+      }
+    };
 
 </script>
 
