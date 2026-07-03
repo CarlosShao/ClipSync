@@ -1850,10 +1850,12 @@ document.addEventListener('keydown', e => {
 });
 
 // ===== ClipSync Real Functionality =====
-const state = {
-  token: localStorage.getItem('cs_token') || null,
-  user: JSON.parse(localStorage.getItem('cs_user') || 'null'),
-  deviceId: localStorage.getItem('cs_device_id') || null,
+let deviceReady = false;
+let state = {
+  token: localStorage.getItem('cs_token'),
+  user: JSON.parse(localStorage.getItem('cs_user')),
+  deviceId: localStorage.getItem('cs_device_id'),
+  items: [],
   ws: null,
 };
 const API_BASE = 'http://localhost:3001';
@@ -1930,6 +1932,7 @@ async function doLogin() {
     loadClipboardItems();
     loadDevices();
     connectWebSocket();
+    startClipboardPolls();
 
 // Global hotkey: Quick Paste (will be overridden by Tauri shortcut)
 document.addEventListener('keydown', (e) => {
@@ -2048,8 +2051,38 @@ async function deleteItem(id) {
 // ===== Devices =====
 let devices = [];
 async function loadDevices() {
-  try { const data = await api('GET', '/api/devices'); devices = data.devices || []; renderDevices(); }
-  catch (e) { showToast('加载设备失败：' + e.message, 'error'); }
+  try {
+    const data = await api('GET', '/api/devices');
+    const devList = data.devices || data.data || [];
+    if (Array.isArray(devList)) devices = devList; else devices = [];
+    // Auto-register if no device exists
+    if (devices.length === 0 && state.token) {
+      try {
+        const reg = await api('POST', '/api/devices/register', {
+          deviceName: '浏览器桌面 (' + navigator.platform + ')',
+          deviceType: 'desktop',
+          platform: navigator.platform,
+        });
+        if (reg && reg.deviceId) {
+          state.deviceId = reg.deviceId;
+          localStorage.setItem('cs_device_id', reg.deviceId);
+          devices = [{ id: reg.deviceId, name: reg.deviceName || '桌面端', online: true }];
+        }
+      } catch (regErr) {
+        // Use stored deviceId if registration fails
+        state.deviceId = state.deviceId || localStorage.getItem('cs_device_id');
+      }
+    } else if (devices.length > 0 && !state.deviceId) {
+      state.deviceId = devices[0].id;
+      localStorage.setItem('cs_device_id', state.deviceId);
+    }
+    deviceReady = true;
+    renderDevices();
+  } catch (e) {
+    console.warn('[Devices] load failed:', e.message);
+    state.deviceId = state.deviceId || localStorage.getItem('cs_device_id');
+    deviceReady = !!state.deviceId;
+  }
 }
 function renderDevices() {
   const container = document.querySelector('.device-grid');
@@ -3125,6 +3158,222 @@ function handleClipRowClick(rowEl) {
   });
   console.log('[init] clip-view click listener attached');
 })();
+
+// ===== 剪贴板轮询 (从旧版迁移) =====
+function startTauriClipboardPoll() {
+  if (state._tauriPollStarted) return;
+  state._tauriPollStarted = true;
+  let _lastPolledText = '';
+  let _lastPolledFiles = '';
+  let _lastImageSize = -1;
+  let pollCount = 0;
+  let _globalThrottleUntil = 0;
+  const _recentUploadHashes = new Map();
+  const GLOBAL_THROTTLE_MS = 5000;
+  const HASH_TTL_MS = 10000;
+  function _isDuplicateHash(hash) {
+    const now = Date.now();
+    for (const [k, v] of _recentUploadHashes) { if (now - v > HASH_TTL_MS) _recentUploadHashes.delete(k); }
+    if (_recentUploadHashes.has(hash)) return true;
+    _recentUploadHashes.set(hash, now);
+    return false;
+  }
+  console.log('[TauriPoll] ✓ invoke-based polling STARTED (500ms)');
+  async function pollTauri() {
+    pollCount++;
+    if (Date.now() < _globalThrottleUntil) return;
+    const tauri = window.__TAURI__;
+    let _invoke = null;
+    if (tauri && tauri.core && typeof tauri.core.invoke === 'function') _invoke = tauri.core.invoke.bind(tauri.core);
+    else if (tauri && typeof tauri.invoke === 'function') _invoke = tauri.invoke.bind(tauri);
+    else if (window.__TAURI_INVOKE__) _invoke = window.__TAURI_INVOKE__;
+    if (!_invoke) return;
+    if (!state.autoSync) return;
+    if (!deviceReady && !state.deviceId) return;
+    try {
+      const files = await _invoke('get_clipboard_files');
+      if (Array.isArray(files) && files.length > 0) {
+        const fileKey = files.join('|');
+        if (_isDuplicateHash('file:' + fileKey)) return;
+        if (fileKey !== _lastPolledFiles) {
+          _lastPolledFiles = fileKey;
+          console.log('[TauriPoll] 📁 FILE detected:', files.length, 'file(s)');
+          await uploadTauriFileClipboard(files);
+          _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+          showToast('📁 检测到文件: ' + (files[0].split(/[/\\]/).pop() || 'unknown'));
+        }
+        return;
+      }
+      const imgInfo = await _invoke('check_clipboard_image_info');
+      if (imgInfo && imgInfo.available && imgInfo.size > 0) {
+        if (imgInfo.size === _lastImageSize) return;
+        if (_isDuplicateHash('img:' + imgInfo.size)) return;
+        _lastImageSize = imgInfo.size;
+        console.log('[TauriPoll] 🖼️ IMAGE detected, size:', imgInfo.size);
+        try {
+          const dataUrl = await _invoke('get_clipboard_image');
+          if (dataUrl && dataUrl.startsWith('data:')) {
+            await uploadImageClipboard(dataUrl, 'image/png', imgInfo.size || 0);
+            _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+          }
+        } catch (imgErr) { console.warn('[TauriPoll] get_clipboard_image failed:', imgErr.message || imgErr); }
+        return;
+      }
+      const text = await _invoke('get_clipboard_content');
+      if (text && text !== _lastPolledText && text !== state.currentClipboard) {
+        if (_isDuplicateHash('text:' + text.substring(0, 200))) return;
+        _lastPolledText = text;
+        console.log('[TauriPoll] 📝 TEXT detected:', text.length, 'chars');
+        uploadClipboard(text);
+        _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+      }
+      if (_lastPolledFiles && (!files || files.length === 0)) _lastPolledFiles = '';
+    } catch (e) { if (pollCount % 60 === 1) console.warn('[TauriPoll] invoke error:', e.message || e); }
+  }
+  setInterval(pollTauri, 500);
+  pollTauri();
+}
+
+function startBrowserClipboardPoll() {
+  if (state._clipboardPolling) return;
+  state._clipboardPolling = true;
+  let lastText = '';
+  let lastImageHash = '';
+  let lastFileKey = '';
+  console.log('[Clipboard] browser poll started (1s interval)');
+  function imgHash(b64) { return b64 ? b64.substring(0, 100) : ''; }
+  async function pollClipboard() {
+    try {
+      if (!state.autoSync || !state.deviceId || !deviceReady) return;
+      try {
+        const items = await navigator.clipboard.read();
+        if (items && items.length > 0) {
+          for (const item of items) {
+            const imgType = item.types.find(t => t.startsWith('image/'));
+            if (imgType) {
+              const blob = await item.getType(imgType);
+              if (blob.size > 0) {
+                const b64 = await blobToBase64(blob);
+                const hash = imgHash(b64);
+                if (hash !== lastImageHash) {
+                  lastImageHash = hash; lastText = ''; lastFileKey = ''; state.currentClipboard = '';
+                  console.log('[Clipboard] detected image, size=', blob.size);
+                  uploadImageClipboard(b64, blob.type, blob.size); return;
+                }
+              }
+              break;
+            }
+            // Files
+            const fileType = item.types.find(t => t === 'Files' || t.startsWith('application/x-file'));
+            if (fileType) {
+              const blob = await item.getType(fileType);
+              const fk = blob.size + '|' + (blob.name || blob.type || '');
+              if (fk !== lastFileKey) {
+                lastFileKey = fk; lastText = ''; lastImageHash = ''; state.currentClipboard = '';
+                uploadFileClipboard(blob, fileType); return;
+              }
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+      const text = await navigator.clipboard.readText();
+      if (text && text !== lastText && text !== state.currentClipboard && !text.startsWith('file://')) {
+        lastText = text; state.currentClipboard = text; lastImageHash = ''; lastFileKey = '';
+        uploadClipboard(text, state.deviceId);
+      }
+    } catch (_) {}
+  }
+  setInterval(pollClipboard, 1000);
+  pollClipboard();
+}
+
+// ===== 上传辅助 =====
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function uploadImageClipboard(dataUrl, mimeType, fileSize) {
+  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
+  if (!state.deviceId || !deviceReady) return;
+  try {
+    await api('POST', '/api/clipboard', {
+      sourceDeviceId: state.deviceId,
+      contentType: 'image',
+      contentEncrypted: dataUrl,
+      contentPreview: '[图片] ' + mimeType + ' (' + (fileSize / 1024).toFixed(1) + 'KB)',
+      contentSize: fileSize,
+    });
+    loadClipboardItems();
+  } catch (e) { console.error('[UploadImage] FAILED:', e.message); }
+}
+
+async function uploadFileClipboard(blob, type) {
+  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
+  if (!state.deviceId || !deviceReady) return;
+  const fileName = blob.name || ('clipboard_file_' + Date.now());
+  const fileSize = blob.size;
+  try {
+    const b64 = await blobToBase64(blob);
+    await api('POST', '/api/clipboard', {
+      sourceDeviceId: state.deviceId,
+      contentType: 'file',
+      contentEncrypted: b64,
+      contentPreview: '[文件] ' + (fileName.length > 50 ? fileName.substring(0, 47) + '...' : fileName) + ' (' + (fileSize / 1024).toFixed(1) + 'KB)',
+      contentSize: fileSize,
+    });
+    loadClipboardItems();
+  } catch (e) { console.error('[UploadFile] FAILED:', e.message); }
+}
+
+async function uploadFileUri(uriText) {
+  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
+  if (!state.deviceId || !deviceReady) return;
+  try {
+    const paths = uriText.split('\n').filter(Boolean);
+    const preview = '[文件] ' + paths.map(p => p.split(/[/\\\\]/).pop()).filter(Boolean).join(', ').substring(0, 50);
+    await api('POST', '/api/clipboard', {
+      sourceDeviceId: state.deviceId,
+      contentType: 'file',
+      contentEncrypted: uriText,
+      contentPreview: preview,
+      contentSize: 0,
+    });
+    loadClipboardItems();
+  } catch (e) { console.error('[UploadURI] FAILED:', e.message); }
+}
+
+async function uploadTauriFileClipboard(files) {
+  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
+  if (!state.deviceId || !deviceReady) return;
+  try {
+    const preview = '[文件] ' + files.map(f => f.split(/[/\\\\]/).pop()).filter(Boolean).join(', ').substring(0, 50);
+    await api('POST', '/api/clipboard', {
+      sourceDeviceId: state.deviceId,
+      contentType: 'file',
+      contentEncrypted: JSON.stringify(files),
+      contentPreview: preview,
+      contentSize: 0,
+    });
+    loadClipboardItems();
+  } catch (e) { console.error('[UploadTauriFile] FAILED:', e.message); }
+}
+
+// 启动轮询（在 doLogin 成功后调用）
+function startClipboardPolls() {
+  const tauri = window.__TAURI__;
+  if (tauri && (tauri.core || tauri.invoke || window.__TAURI_INVOKE__)) {
+    startTauriClipboardPoll();
+  } else {
+    startBrowserClipboardPoll();
+  }
+}
+
 </script>
 
 
