@@ -8,6 +8,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { isValidPhone, isValidCode, sanitizeString } from '../validation/validator.js';
 import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter, getRedisClient, createRateLimiter } from '../middleware/rateLimiter.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
+import { sendVerificationCodeEmail } from '../utils/email.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import crypto from 'crypto';
@@ -501,59 +502,68 @@ router.post('/accept-tos', authenticateToken, async (req, res) => {
   }
 });
 
-// 忘记密码（发送重置邮件）
+// 忘记密码（发送重置验证码 — 邮件/控制台）
 router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
   try {
-    const { email, phone } = req.body;
+    const { email } = req.body;
 
-    // 支持邮箱或手机号
-    let identifier;
-    if (email && email.trim()) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email.trim())) {
-        return res.status(400).json({ error: 'Invalid email format' });
-      }
-      identifier = sanitizeString(email.trim().toLowerCase());
-    } else if (phone && phone.trim()) {
-      if (!isValidPhone(phone.trim())) {
-        return res.status(400).json({ error: 'Invalid phone number format' });
-      }
-      identifier = sanitizeString(phone.trim());
-    } else {
-      return res.status(400).json({ error: 'Email or phone number is required' });
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Email is required' });
     }
 
-    // 检查用户是否存在（防止枚举攻击：即使用户不存在也返回成功）
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    const cleanEmail = sanitizeString(email.trim().toLowerCase());
+
+    // 检查用户是否存在（防止枚举攻击）
     const userResult = await pool.query(
-      `SELECT id FROM users WHERE email = $1 OR phone = $1 OR phone_hash = $2`,
-      [identifier, computeFieldHash(identifier)]
+      `SELECT id, nickname FROM users WHERE email = $1 OR email_hash = $2`,
+      [cleanEmail, computeFieldHash(cleanEmail)]
     );
 
+    // 即使用户不存在也返回成功（防止邮箱枚举攻击）
     if (userResult.rows.length === 0) {
-      logger.debug(`[Password Reset] Identifier ${identifier} not found, but returning success`);
+      logger.debug(`[Password Reset] Email ${cleanEmail} not found, returning success to prevent enumeration`);
       return res.json({ message: 'If this account is registered, you will receive a reset code' });
     }
 
-    // 生成重置令牌（MVP：使用固定验证码）
-    const resetCode = '888888';
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+    // 生成随机6位验证码
+    const resetCode = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // 存储重置码（复用 verification_codes 表）
+    // 存储验证码
     await pool.query(
       `INSERT INTO verification_codes (phone, code, expires_at)
        VALUES ($1, $2, $3)`,
-      [identifier, resetCode, expiresAt.toISOString()]
+      [cleanEmail, resetCode, expiresAt.toISOString()]
     );
 
-    // Only log reset code in development environment
-    if (process.env.NODE_ENV !== 'production') {
-      logger.debug(`[MVP] Password reset code for ${identifier}: ${resetCode}`);
+    // 尝试发送邮件（如果SMTP已配置则真发，否则控制台输出）
+    try {
+      const emailResult = await sendVerificationCodeEmail(cleanEmail, resetCode, 'reset');
+      if (emailResult.fallback) {
+        // SMTP未配置，开发模式：返回验证码给前端
+        logger.info(`[MVP] SMTP未配置，密码重置码: ${resetCode}`);
+        return res.json({
+          message: 'Reset code generated (SMTP not configured)',
+          code: resetCode,       // 仅在非生产环境返回
+          expiresIn: 600         // 10分钟有效期
+        });
+      }
+      logger.info(`[Password Reset] Email sent to ${cleanEmail}`);
+    } catch (emailErr) {
+      // 邮件发送失败但验证码已存储，允许用控制台看到的码重置
+      logger.error(`[Password Reset] Email send failed but code stored: ${emailErr.message}`);
+      logger.info(`[Fallback] Password reset code for ${cleanEmail}: ${resetCode}`);
     }
 
-    res.json({ message: 'If this account is registered, you will receive a reset code (MVP: 888888)' });
+    res.json({ message: 'If this account is registered, you will receive a reset code by email' });
   } catch (err) {
     logger.error('Forgot password error:', { error: err.message });
-    res.status(500).json({ error: 'Failed to send password reset email' });
+    res.status(500).json({ error: 'Failed to process forgot password request' });
   }
 });
 

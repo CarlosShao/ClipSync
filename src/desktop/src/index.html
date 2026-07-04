@@ -1924,6 +1924,7 @@ var _i18n = {
     fp_title:'Reset Password',fp_email_label:'Email Address',
     fp_email_hint:'Enter your registered email',fp_send_code:'Send Reset Code',
     fp_code_sent:'Reset code sent! Check your email (MVP code: 888888)',
+    fp_code_sent_dev:'开发模式 — 验证码: ',
     fp_reset_btn:'Reset Password',fp_send_fail:'Failed to send reset code: ',
     fp_reset_success:'Password reset successfully! Please sign in with your new password.',
     fp_reset_fail:'Password reset failed: ',
@@ -2085,6 +2086,7 @@ var _i18n = {
     fp_title:'重置密码',fp_email_label:'邮箱地址',
     fp_email_hint:'输入注册时使用的邮箱',fp_send_code:'发送重置码',
     fp_code_sent:'重置码已发送！请查收邮箱（测试验证码：888888）',
+    fp_code_sent_dev:'开发模式 — 验证码: ',
     fp_reset_btn:'重置密码',fp_send_fail:'发送重置码失败：',
     fp_reset_success:'密码重置成功！请使用新密码登录。',
     fp_reset_fail:'密码重置失败：',
@@ -2798,11 +2800,16 @@ async function _handleForgotSend() {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { shakeElement(emailEl); showToast(t('val_email_format'), 'error'); return; }
   btn.classList.add('loading'); btn.disabled = true;
   try {
-    await api('POST', '/api/auth/forgot-password', { email });
+    var resp = await api('POST', '/api/auth/forgot-password', { email });
     btn.classList.remove('loading'); btn.disabled = false;
     _forgotStep = 2;
     document.getElementById('forgotPwdBody').innerHTML = _renderForgotStep2();
-    showToast(t('fp_code_sent'), 'success');
+    // SMTP未配置时后端会返回code（开发模式）
+    if (resp.code) {
+      showToast(t('fp_code_sent_dev') + resp.code, 'info', 15000);
+    } else {
+      showToast(t('fp_code_sent'), 'success');
+    }
   } catch(e) {
     btn.classList.remove('loading'); btn.disabled = false;
     showToast(t('fp_send_fail') + e.message, 'error');
