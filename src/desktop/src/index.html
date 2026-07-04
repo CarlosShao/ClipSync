@@ -1799,11 +1799,10 @@ function applyI18n(){
       }
     }
   });
-  // Theme & Style row (has embedded icon)
+  // Theme & Style row — detect by .theme-hint-icon child, not text (text changes on i18n switch)
   document.querySelectorAll('.sg-name').forEach(function(el){
-    var raw=el.textContent.trim();
-    if(raw.toLowerCase().indexOf('theme')>=0&&raw.toLowerCase().indexOf('style')>=0){
-      var iconHtml=el.querySelector('.theme-hint-icon')?el.querySelector('.theme-hint-icon').outerHTML:'';
+    if(el.querySelector('.theme-hint-icon')){
+      var iconHtml=el.querySelector('.theme-hint-icon').outerHTML;
       el.innerHTML=t('sg_theme')+iconHtml;
     }
   });
