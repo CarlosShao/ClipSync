@@ -1168,37 +1168,15 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       </aside>
       <main class="main-area">
         <header class="topbar">
-          <span class="topbar-title">Shared Links</span>
+          <span class="topbar-title">Clipboard</span>
           <span class="topbar-spacer"></span>
-          <button class="btn btn-primary"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>New Link</button>
+          <button class="btn btn-primary"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>New Clip</button>
+          <button class="btn btn-ghost" style="margin-left:8px;"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span></button>
         </header>
-        <div class="content-scroll" style="padding:24px;">
-          <div style="display:flex;flex-direction:column;gap:12px;">
-            <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
-              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div>
-              <div style="flex:1;min-width:0;">
-                <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">Project Alpha — Design Specs</div>
-                <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/xK9mP2qL</div>
-              </div>
-              <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--text-tertiary);">127 views</div><div style="font-size:11.5px;color:var(--text-tertiary);">Created 2d ago</div></div>
-            </div>
-            <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
-              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div>
-              <div style="flex:1;min-width:0;">
-                <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">Meeting Recording — July Sprint Review</div>
-                <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/nR4wT8vF</div>
-              </div>
-              <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--text-tertiary);">84 views</div><div style="font-size:11.5px;color:var(--text-tertiary);">Created 5d ago</div></div>
-            </div>
-            <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
-              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div>
-              <div style="flex:1;min-width:0;">
-                <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">API Documentation v2.4</div>
-                <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/qZ3pK7mN</div>
-              </div>
-              <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--text-tertiary);">256 views</div><div style="font-size:11.5px;color:var(--text-tertiary);">Created 1w ago</div></div>
-            </div>
-          </div>
+        <div class="tab-bar"><button class="tab-btn active" onclick="switchClipTab(this,'all')">All</button><button class="tab-btn" onclick="switchClipTab(this,'text')">Text</button><button class="tab-btn" onclick="switchClipTab(this,'images')">Images</button><button class="tab-btn" onclick="switchClipTab(this,'links')">Links</button><button class="tab-btn" onclick="switchClipTab(this,'files')">Files</button></div>
+        <div class="list-head"><div>CONTENT</div><div>SOURCE</div><div>TYPE</div><div>TIME</div><div>ACTIONS</div></div>
+        <div class="clip-view">
+          <div id="clipEmptyState" class="empty-state"><div class="empty-icon"><svg viewBox="0 0 24 24" width="48" height="48" stroke="var(--text-tertiary)" fill="none" stroke-width="1.5"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></div><div class="empty-title">No clips yet</div><div class="empty-desc">Clips from all your devices will appear here.</div><div class="empty-action">Start copying to sync!</div></div>
         </div>
       </main>
     </div>
