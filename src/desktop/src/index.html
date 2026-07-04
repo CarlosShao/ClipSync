@@ -2006,7 +2006,7 @@ const modalTemplates = {
   export: () => `
     <div class="modal-header"><span class="modal-title">${t('export_title')||'Export My Data'}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
-      <div class="export-box"><div class="export-icon"><span class="icon icon-xl" style="color:var(--accent)"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></div><div class="export-msg">${t('export_msg')||'We\\'ll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You\\'ll receive a download link via email within 24 hours.'}</div></div>
+      <div class="export-box"><div class="export-icon"><span class="icon icon-xl" style="color:var(--accent)"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></div><div class="export-msg">${t('export_msg')||"We'll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You'll receive a download link via email within 24 hours."}</div></div>
     </div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">${t('pay_cancel')}</button><button class="btn btn-danger" onclick="closeModal()">${t('export_request_btn')||'Request Export'}</button></div>`,
 
