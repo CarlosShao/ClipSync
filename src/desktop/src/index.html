@@ -1807,11 +1807,7 @@ function applyI18n(){
       el.innerHTML=t('sg_theme')+iconHtml;
     }
   });
-  // Select options in settings
-  var optMap={'real-time':'int_rt','every 5 min':'int_5m','every 15 min':'int_15m','100':'hist_100','500':'hist_500','1,000':'hist_1k','unlimited':'hist_unl'};
-  document.querySelectorAll('.styled-select option,.styled-select').forEach(function(el){
-    if(el.tagName==='OPTION'){var k=optMap[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);}
-  });
+  // Select options handled by [data-i18n-options] generic handler below
   // Mode buttons text
   document.querySelectorAll('.mode-btn[data-mode]').forEach(function(btn){
     if(btn.dataset.mode==='light'&&btn.textContent.indexOf('Light')>=0)btn.innerHTML=btn.innerHTML.replace(/Light|浅色/,t('mode_light'));
@@ -1829,9 +1825,9 @@ function applyI18n(){
   var pfMap={'DISPLAY NAME':'pf_name','Display Name':'pf_name','显示名称':'pf_name','EMAIL':'pf_email','Email':'pf_email','邮箱':'pf_email','PHONE':'pf_phone','Phone':'pf_phone','手机号':'pf_phone','PLAN':'pf_plan','Plan':'pf_plan','套餐':'pf_plan'};
   document.querySelectorAll('.pf-label').forEach(function(el){var k=pfMap[el.textContent.trim()];if(k)el.textContent=t(k);});
   document.querySelectorAll('.pf-value').forEach(function(el){
-    var t=el.textContent.trim();
-    if(t==='Not set'||t==='未设置')el.textContent=_i18n[_lang].pf_noset;
-    if(t==='Free Plan'||t==='免费版')el.textContent=_i18n[_lang].pf_free;
+    var _val=el.textContent.trim();
+    if(_val==='Not set'||_val==='未设置')el.textContent=_i18n[_lang].pf_noset;
+    if(_val==='Free Plan'||_val==='免费版')el.textContent=_i18n[_lang].pf_free;
   });
   // User role in sidebar
   document.querySelectorAll('.user-role').forEach(function(el){
@@ -1879,7 +1875,7 @@ function applyI18n(){
   });
   // ============ GENERIC data-i18n-options ATTRIBUTE HANDLER (select dropdowns) ============
   document.querySelectorAll('[data-i18n-options]').forEach(function(el){
-    try{var map=JSON.parse(el.getAttribute('data-i18n-options'));if(map)el.querySelectorAll('option').forEach(function(opt){var k=map[opt.textContent];if(k&&_i18n[_lang]&&_i18n[_lang][k])opt.textContent=t(k);});}catch(e){}
+    try{var map=JSON.parse(el.getAttribute('data-i18n-options'));if(map)el.querySelectorAll('option').forEach(function(opt){if(!opt.dataset.orig)opt.dataset.orig=opt.textContent;var k=map[opt.dataset.orig];if(k&&_i18n[_lang]&&_i18n[_lang][k])opt.textContent=t(k);});}catch(e){}
   });
   // Re-render dynamic content (clipboard list uses t() for type/source/time)
   if(typeof clipboardItems!=='undefined'&&clipboardItems&&clipboardItems.length>0&&typeof renderClipboardItems==='function')renderClipboardItems();
