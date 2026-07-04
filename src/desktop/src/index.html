@@ -1227,7 +1227,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <span class="topbar-title">Clipboard</span><span id="clipCount" style="font-size:12px;color:var(--text-secondary);margin-left:10px;font-weight:400;"></span>
           <span class="topbar-spacer"></span>
           <button class="btn btn-primary" onclick="showToast(t('new_clip_toast'),'info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span><span data-i18n="new_clip">New Clip</span></button>
-                    <button class="btn btn-ghost" style="margin-left:4px;" onclick="toggleBatchMode()" title="Batch select"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span></button>
+                    <button class="btn btn-ghost" style="margin-left:4px;" onclick="toggleBatchMode()" title="" data-i18n-title="batch_select"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span></button>
                     <button id="batchDeleteBtn" class="btn btn-ghost" style="margin-left:4px;display:none;color:var(--danger);" onclick="batchDelete()"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span><span id="batchCount">0</span></button>
                     <div class="search-wrap" id="searchWrap"><button class="search-toggle" onclick="var w=document.getElementById('searchWrap');w.classList.add('open');w.querySelector('input').focus();"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span></button><input type="text" placeholder="Search clips..." class="search-input" oninput="filterClipboard(this.value)" onblur="if(!this.value){document.getElementById('searchWrap').classList.remove('open');}"></div>
         </header>
@@ -1391,7 +1391,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           </div>
           <div class="settings-group"><div class="sg-header">Appearance</div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Mode</div><div class="sg-hint">Switch between light and dark mode</div></div><div class="sg-control"><div class="mode-seg"><button class="mode-btn active" onclick="setMode('light',this)" data-mode="light"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:3px;"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>Light</button><button class="mode-btn" onclick="setMode('dark',this)" data-mode="dark"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:3px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/></svg>Dark</button></div></div></div>
-            <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name" style="display:inline-flex;align-items:center;gap:6px;">Theme &amp; Style<span class="theme-hint-icon" title="Linear and Raycast are inherently dark themes — they don&#39;t support light mode. Switching mode only affects other themes."><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.5;cursor:help;"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span></div><div class="sg-hint">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name" style="display:inline-flex;align-items:center;gap:6px;">Theme &amp; Style<span class="theme-hint-icon" title="" data-i18n-title="sg_theme_hint"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.5;cursor:help;"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span></div><div class="sg-hint">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Reduce motion</div><div class="sg-hint">Minimize animations throughout the interface</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Data</div>
@@ -1515,7 +1515,8 @@ var _i18n = {
     sg_notifp:'Notification preferences',sg_notifp_h:'Choose which alerts you want to receive',
     sg_mode:'Mode',sg_mode_h:'Switch between light and dark mode',
     mode_light:'Light',mode_dark:'Dark',
-    sg_theme:'Theme & Style',sg_theme_h:'Choose visual theme and interface style',
+    sg_theme:'Theme & Style',sg_theme_h:'Choose visual theme and interface style',sg_theme_hint:'Linear and Raycast are inherently dark themes — they don\'t support light mode. Switching mode only affects other themes.',
+    batch_select:'Batch select',
     sg_motion:'Reduce motion',sg_motion_h:'Minimize animations throughout the interface',
     sg_export:'Export my data (GDPR)',sg_export_h:'Download a copy of all your data in standard formats',
     sg_update:'Check for updates',sg_update_h:'Current version v2.4.1 · Last checked today',
@@ -1525,7 +1526,7 @@ var _i18n = {
     pf_noset:'Not set',pf_free:'Free Plan',
     upgrade:'Upgrade',upgrade_soon:'Upgrade coming soon!',
     new_clip_toast:'New Clip: Copy something to sync!',
-    items_c:'items',
+    items_c:'items',filtered:'filtered',
     link_opened:'Link opened!',no_url:'No URL found',
     login_success:'Login successful',login_failed:'Login failed: ',
     sg_imgcomp:'Image compression',sg_imgcomp_h:'Reduce image size before syncing',
@@ -1595,6 +1596,8 @@ var _i18n = {
     qp_navigate:'Navigate',qp_paste:'Paste',qp_close:'Close',
     // Export & Device
     sess_active:'Active',export_title:'Export My Data',export_msg:"We'll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You'll receive a download link via email within 24 hours.",export_request_btn:'Request Export',
+    upd_title:'Updates',upd_uptodate:'ClipSync is up to date',upd_version:'Current version',upd_latest:"You're on the latest release.",upd_whatsnew:"What's new in v2.4.1:",upd_changelog_1:'Fixed clipboard sync bug in Rust backend service layer',upd_changelog_2:'Improved dark mode switching for Linear/Raycast styles',upd_changelog_3:'Added Shared Links and Subscription management pages',upd_changelog_4:'Performance optimizations for large clip histories',    upd_release_notes:'View Release Notes',
+    text_detail_title:'Text Detail',img_preview_title:'Image Preview',
   },
   zh: {
     nav_main:'主菜单',nav_account:'账号',nav_clipboard:'剪贴板',nav_devices:'设备',nav_shared_links:'共享链接',
@@ -1622,7 +1625,8 @@ var _i18n = {
     sg_notifp:'通知偏好',sg_notifp_h:'选择您想接收的提醒类型',
     sg_mode:'模式',sg_mode_h:'切换浅色/深色主题',
     mode_light:'浅色',mode_dark:'深色',
-    sg_theme:'主题与风格',sg_theme_h:'选择视觉主题和界面风格',
+    sg_theme:'主题与风格',sg_theme_h:'选择视觉主题和界面风格',sg_theme_hint:'Linear 和 Raycast 是固有暗色系主题，不支持亮色模式。切换模式仅影响其他主题。',
+    batch_select:'批量选择',
     sg_motion:'减少动画',sg_motion_h:'减少界面中的动画效果',
     sg_export:'导出我的数据 (GDPR)',sg_export_h:'下载所有数据的标准格式副本',
     sg_update:'检查更新',sg_update_h:'当前版本 v2.4.1 · 上次检查于今天',
@@ -1631,7 +1635,7 @@ var _i18n = {
     pf_name:'显示名称',pf_email:'邮箱',pf_phone:'手机号',pf_plan:'套餐',
     pf_noset:'未设置',pf_free:'免费版',
     upgrade:'升级',upgrade_soon:'即将推出升级功能！',
-    new_clip_toast:'新剪贴：复制内容即可开始同步！',items_c:'条记录',
+    new_clip_toast:'新剪贴：复制内容即可开始同步！',items_c:'条记录',filtered:'已筛选',
     link_opened:'链接已打开！',no_url:'未找到网址',
     login_success:'登录成功',login_failed:'登录失败：',
     sg_imgcomp:'图片压缩',sg_imgcomp_h:'同步前减小图片体积',
@@ -1701,6 +1705,8 @@ var _i18n = {
     qp_navigate:'导航',qp_paste:'粘贴',qp_close:'关闭',
     // Export & Device
     sess_active:'活跃',export_title:'导出我的数据',export_msg:"我们将为您准备一份完整的数据存档，包括剪贴板历史、设备信息和账户设置。<br><br>您将在 24 小时内收到一封包含下载链接的邮件。",export_request_btn:'申请导出',
+    upd_title:'更新',upd_uptodate:'ClipSync 已是最新版本',upd_version:'当前版本',upd_latest:'您正在使用最新版本。',upd_whatsnew:"v2.4.1 更新内容：",upd_changelog_1:'修复了 Rust 后端服务层的剪贴板同步 bug',upd_changelog_2:'优化了 Linear/Raycast 风格的暗色模式切换',upd_changelog_3:'新增共享链接和订阅管理页面',upd_changelog_4:'大容量剪贴板历史的性能优化',    upd_release_notes:'查看发行说明',
+    text_detail_title:'文字详情',img_preview_title:'图片预览',
   }
 };
 var _lang = localStorage.getItem('cs_lang') || 'en';
@@ -1742,10 +1748,10 @@ function applyI18n(){
   // ---- Search placeholder ----
   document.querySelectorAll('.search-input').forEach(function(el){el.placeholder=t('search_ph');});
   // ---- Tabs ----
-  var tabK={all:'tab_all',text:'tab_text',images:'tab_images',links:'tab_links',files:'tab_files'};
+  var tabK={all:'tab_all',text:'tab_text',images:'tab_images',links:'tab_links',files:'tab_files','全部':'tab_all','文字':'tab_text','图片':'tab_images','链接':'tab_links','文件':'tab_files'};
   document.querySelectorAll('.tab-btn').forEach(function(el){var k=tabK[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);});
   // ---- List headers ----
-  var headK={content:'head_content',source:'head_source',type:'head_type',time:'head_time',actions:'head_actions'};
+  var headK={content:'head_content',source:'head_source',type:'head_type',time:'head_time',actions:'head_actions','内容':'head_content','来源':'head_source','类型':'head_type','时间':'head_time','操作':'head_actions'};
   document.querySelectorAll('.list-head > div').forEach(function(el){var k=headK[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);});
   // ---- Empty state ----
   document.querySelectorAll('.empty-title').forEach(function(el){el.textContent=t('empty_title');});
@@ -1754,29 +1760,29 @@ function applyI18n(){
 
   // ============ SETTINGS PAGE (comprehensive) ============
   // sv-title
-  document.querySelectorAll('.sv-title').forEach(function(el){if(el.textContent.includes('Settings')||el.textContent.includes('设置'))el.textContent=t('settings_t');else if(el.textContent.includes('Subscription')||el.textContent.includes('订阅'))el.textContent=t('sub_t');});
+  document.querySelectorAll('.sv-title').forEach(function(el){var t=el.textContent.trim();if(t==='Settings'||t==='设置')el.textContent=t('settings_t');else if(t==='Subscription'||t==='订阅')el.textContent=t('sub_t');});
   // sg-header
-  var sgH={'General':'sg_gen','Sync':'sg_sync','Notifications':'sg_notif','Appearance':'sg_appear','Data':'sg_data','Privacy & Security':'sg_privacy','隐私与安全':'sg_privacy','Subscription & Billing':'sg_sub_bill','订阅与账单':'sg_sub_bill','Shortcuts':'sg_shortcuts','快捷键':'sg_shortcuts'};
+  var sgH={'General':'sg_gen','通用':'sg_gen','Sync':'sg_sync','同步':'sg_sync','Notifications':'sg_notif','通知':'sg_notif','Appearance':'sg_appear','外观':'sg_appear','Data':'sg_data','数据':'sg_data','Privacy & Security':'sg_privacy','隐私与安全':'sg_privacy','Subscription & Billing':'sg_sub_bill','订阅与账单':'sg_sub_bill','Shortcuts':'sg_shortcuts','快捷键':'sg_shortcuts'};
   document.querySelectorAll('.sg-header').forEach(function(el){var k=sgH[el.textContent.trim()];if(k)el.textContent=t(k);});
   // sg-name + sg-hint pairs (iterate rows, match by name)
   var sgRowMap={
-    'auto-sync clipboard':{name:'sg_autosync',hint:'sg_autosync_h'},
-    'launch at startup':{name:'sg_startup',hint:'sg_startup_h'},
-    'language':{name:'sg_lang',hint:'sg_lang_h'},
-    'sync interval':{name:'sg_interval',hint:'sg_interval_h'},
-    'max history':{name:'sg_maxhist',hint:'sg_maxhist_h'},
-    'image compression':{name:'sg_imgcomp',hint:'sg_imgcomp_h'},
-    'notification preferences':{name:'sg_notifp',hint:'sg_notifp_h'},
-    'mode':{name:'sg_mode',hint:'sg_mode_h'},
-    'reduce motion':{name:'sg_motion',hint:'sg_motion_h'},
-    'export my data (gdpr)':{name:'sg_export',hint:'sg_export_h'},
-    'check for updates':{name:'sg_update',hint:'sg_update_h'},
-    'two-factor authentication':{name:'sg_2fa',hint:'sg_2fa_h'},
-    'active sessions':{name:'sg_sessions',hint:'sg_sessions_h'},
-    'end-to-end encryption':{name:'sg_e2ee',hint:'sg_e2ee_h'},
-    'current plan':{name:'sg_current_plan',hint:null},
-    'billing history':{name:'sg_billing',hint:'sg_billing_h'},
-    'keyboard shortcuts':{name:'sg_kb_shortcuts',hint:'sg_kb_shortcuts_h'},
+    'auto-sync clipboard':{name:'sg_autosync',hint:'sg_autosync_h'},'自动同步剪贴板':{name:'sg_autosync',hint:'sg_autosync_h'},
+    'launch at startup':{name:'sg_startup',hint:'sg_startup_h'},'开机自启动':{name:'sg_startup',hint:'sg_startup_h'},
+    'language':{name:'sg_lang',hint:'sg_lang_h'},'语言':{name:'sg_lang',hint:'sg_lang_h'},
+    'sync interval':{name:'sg_interval',hint:'sg_interval_h'},'同步间隔':{name:'sg_interval',hint:'sg_interval_h'},
+    'max history':{name:'sg_maxhist',hint:'sg_maxhist_h'},'历史上限':{name:'sg_maxhist',hint:'sg_maxhist_h'},
+    'image compression':{name:'sg_imgcomp',hint:'sg_imgcomp_h'},'图片压缩':{name:'sg_imgcomp',hint:'sg_imgcomp_h'},
+    'notification preferences':{name:'sg_notifp',hint:'sg_notifp_h'},'通知偏好':{name:'sg_notifp',hint:'sg_notifp_h'},
+    'mode':{name:'sg_mode',hint:'sg_mode_h'},'模式':{name:'sg_mode',hint:'sg_mode_h'},
+    'reduce motion':{name:'sg_motion',hint:'sg_motion_h'},'减少动画':{name:'sg_motion',hint:'sg_motion_h'},
+    'export my data (gdpr)':{name:'sg_export',hint:'sg_export_h'},'导出我的数据 (gdpr)':{name:'sg_export',hint:'sg_export_h'},
+    'check for updates':{name:'sg_update',hint:'sg_update_h'},'检查更新':{name:'sg_update',hint:'sg_update_h'},
+    'two-factor authentication':{name:'sg_2fa',hint:'sg_2fa_h'},'两步验证':{name:'sg_2fa',hint:'sg_2fa_h'},
+    'active sessions':{name:'sg_sessions',hint:'sg_sessions_h'},'活跃会话':{name:'sg_sessions',hint:'sg_sessions_h'},
+    'end-to-end encryption':{name:'sg_e2ee',hint:'sg_e2ee_h'},'端到端加密':{name:'sg_e2ee',hint:'sg_e2ee_h'},
+    'current plan':{name:'sg_current_plan',hint:null},'当前套餐':{name:'sg_current_plan',hint:null},
+    'billing history':{name:'sg_billing',hint:'sg_billing_h'},'账单历史':{name:'sg_billing',hint:'sg_billing_h'},
+    'keyboard shortcuts':{name:'sg_kb_shortcuts',hint:'sg_kb_shortcuts_h'},'键盘快捷键':{name:'sg_kb_shortcuts',hint:'sg_kb_shortcuts_h'},
   };
   document.querySelectorAll('.sg-row').forEach(function(row){
     var nameEl=row.querySelector('.sg-name');
@@ -1840,7 +1846,7 @@ function applyI18n(){
   var subHMap={'usage this month':'sub_usage','clips synced':'sub_clips_synced','data transferred':'sub_data_transferred','shared links created':'sub_shared_links','manage':'manage','本月使用量':'sub_usage','已同步剪贴':'sub_clips_synced','数据流量':'sub_data_transferred','已创建共享链接':'sub_shared_links','管理':'sub_manage'};
   document.querySelectorAll('.sg-header, .sg-name').forEach(function(el){var k=subHMap[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);});
   // Subscription labels inside cards
-  var subLabelMap={'current plan':'sg_current_plan','price':'sub_price','renews':'sub_renels','devices':'sub_devices'};
+  var subLabelMap={'current plan':'sg_current_plan','price':'sub_price','renews':'sub_renels','devices':'sub_devices','当前套餐':'sg_current_plan','价格':'sub_price','续费':'sub_renels','设备':'sub_devices'};
   document.querySelectorAll('.dev-card > div > div > div:first-child').forEach(function(el){var k=subLabelMap[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);});
   // Cancel button text
   document.querySelectorAll('.btn-ghost').forEach(function(btn){if(btn.textContent.trim()==='Cancel'||btn.textContent.trim()==='取消')btn.textContent=t('sub_cancel');});
@@ -1864,6 +1870,14 @@ function applyI18n(){
     var k=el.getAttribute('data-i18n-placeholder');
     if(k&&_i18n[_lang]&&_i18n[_lang][k])el.placeholder=t(k);
   });
+  // ============ GENERIC data-i18n-title ATTRIBUTE HANDLER (tooltips) ============
+  document.querySelectorAll('[data-i18n-title]').forEach(function(el){
+    var k=el.getAttribute('data-i18n-title');
+    if(k&&_i18n[_lang]&&_i18n[_lang][k])el.title=t(k);
+  });
+  // Re-render dynamic content (clipboard list uses t() for type/source/time)
+  if(typeof clipboardItems!=='undefined'&&clipboardItems&&clipboardItems.length>0&&typeof renderClipboardItems==='function')renderClipboardItems();
+  if(typeof updateClipCount==='function')updateClipCount();
 }
 
 // ========== STATE ==========
@@ -2028,28 +2042,28 @@ const modalTemplates = {
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-secondary" onclick="closeModal();showToast('New device code sent!','info')">Refresh Code</button></div>`,
 
   updates: () => `
-    <div class="modal-header"><span class="modal-title">Updates</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('upd_title')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
       <div style="display:flex;align-items:center;gap:12px;padding:8px 0;">
         <div style="width:40px;height:40px;border-radius:10px;background:var(--success-bg);display:flex;align-items:center;justify-content:center;"><span class="icon icon-lg" style="color:var(--success)"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></div>
-        <div><div style="font-weight:600;font-size:14.5px;color:var(--text-primary);">ClipSync is up to date</div><div style="font-size:13px;color:var(--text-secondary);margin-top:1px;">Current version <strong>v2.4.1</strong> — You're on the latest release.</div></div>
+        <div><div style="font-weight:600;font-size:14.5px;color:var(--text-primary);">${t('upd_uptodate')}</div><div style="font-size:13px;color:var(--text-secondary);margin-top:1px;">${t('upd_version')} <strong>v2.4.1</strong> — ${t('upd_latest')}</div></div>
       </div>
       <div style="margin-top:16px;padding:12px 14px;border-radius:var(--radius-md);background:var(--bg-hover);font-size:12.5px;color:var(--text-secondary);line-height:1.55;">
-        <strong style="color:var(--text-primary);">What's new in v2.4.1:</strong><br>
-        • Fixed clipboard sync bug in Rust backend service layer<br>
-        • Improved dark mode switching for Linear/Raycast styles<br>
-        • Added Shared Links and Subscription management pages<br>
-        • Performance optimizations for large clip histories
+        <strong style="color:var(--text-primary);">${t('upd_whatsnew')}</strong><br>
+        • ${t('upd_changelog_1')}<br>
+        • ${t('upd_changelog_2')}<br>
+        • ${t('upd_changelog_3')}<br>
+        • ${t('upd_changelog_4')}
       </div>
     </div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button><a href="https://github.com/CarlosShao/ClipSync/releases" target="_blank" class="btn btn-primary" onclick="closeModal()">View Release Notes</a></div>`,
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">${t('pay_cancel')}</button><a href="https://github.com/CarlosShao/ClipSync/releases" target="_blank" class="btn btn-primary" onclick="closeModal()">${t('upd_release_notes')}</a></div>`,
 
   textDetail: () => `
-    <div class="modal-header"><span class="modal-title">Text Detail</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('text_detail_title')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body" id="textDetailBody" style="padding:16px 20px;"></div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>`,
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">${t('pay_cancel')}</button></div>`,
   imagePreview: () => `
-      <div class="modal-header"><span class="modal-title">Image Preview</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+      <div class="modal-header"><span class="modal-title">${t('img_preview_title')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
       <div class="modal-body" style="text-align:center;padding:16px 20px;">
         <div style="width:100%;max-height:60vh;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:16px 20px;margin-bottom:12px;position:relative;overflow:hidden;">
           <img src="${_currentImageDataUrl || ''}" style="max-width:100%;max-height:58vh;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);background:#fff;object-fit:contain;" onerror="this.style.display='none'">
@@ -2314,7 +2328,7 @@ function updateClipCount() {
   if (!countEl) return;
   var visible = document.querySelectorAll('#sub-clipboard .clip-row').length;
   var filtered = document.querySelectorAll('#sub-clipboard .clip-row[style=""]').length;
-  countEl.textContent = clipboardItems.length + ' items' + (_activeTab !== 'all' ? ' (filtered)' : '');
+  countEl.textContent = clipboardItems.length + ' ' + t('items_c') + (_activeTab !== 'all' ? ' (' + t('filtered') + ')' : '');
 }
 var TYPE_ICONS = {
   text: '<svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
