@@ -1109,26 +1109,63 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
 
 /* ===== Image Viewer ===== */
+/* ===== Image Viewer (prototype design) ===== */
 .image-viewer {
-  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-  background: rgba(0,0,0,0.85); z-index: 9998;
-  display: none; flex-direction: column; align-items: center; justify-content: center;
+  position: fixed; inset: 0; z-index: 99999;
+  background: rgba(0,0,0,0.35);
+  display: none; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  animation: ivFadeIn .15s ease;
 }
+@keyframes ivFadeIn { from{opacity:0} to{opacity:1} }
 .image-viewer[style*="display: flex"] { display: flex !important; }
-.iv-toolbar {
-  position: absolute; top: 0; left: 0; right: 0;
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 16px; background: rgba(0,0,0,0.5); color: white; z-index: 1;
+.iv-card {
+  background: #fff; border: 1px solid #e2e8f0;
+  border-radius: 16px; box-shadow: 0 24px 64px rgba(0,0,0,0.15);
+  width: 520px; max-width: 90vw; overflow: hidden;
+  animation: ivSlideIn .2s ease-out;
 }
-.iv-title { font-size: 13px; font-weight: 500; }
-.iv-actions { display: flex; gap: 8px; }
-.iv-btn {
-  padding: 6px 14px; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px;
-  background: rgba(255,255,255,0.1); color: white; cursor: pointer; font-size: 12px;
+@keyframes ivSlideIn { from{opacity:0;transform:scale(.96) translateY(8px)} to{opacity:1;transform:scale(1) translateY(0)} }
+.iv-header {
+  padding: 18px 24px 0; display: flex; align-items: center; justify-content: space-between;
 }
-.iv-btn:hover { background: rgba(255,255,255,0.2); }
-.iv-image-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 50px; }
-.iv-image { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 8px; }
+.iv-title { font-size: 17px; font-weight: 650; color: #0f172a; letter-spacing: -.2px; }
+.iv-close {
+  width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: #94a3b8; transition: all .1s;
+}
+.iv-close:hover { background: #f1f5f9; color: #0f172a; }
+.iv-image-area {
+  background: linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+  display: flex; align-items: center; justify-content: center;
+  padding: 48px 36px; min-height: 240px; margin: 20px 24px; border-radius: 10px;
+  position: relative; overflow: hidden;
+}
+.iv-image-area img {
+  max-width: 100%; max-height: 320px; border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  background: #fff;
+}
+.iv-meta { padding: 0 24px; text-align: left; }
+.iv-filename { font-size: 14px; font-weight: 600; color: #0f172a; margin-bottom: 3px; }
+.iv-info { font-size: 12.5px; color: #64748b; }
+.iv-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 16px 24px; margin-top: 16px; border-top: 1px solid #f1f5f9;
+}
+.iv-btn-ghost {
+  padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all .1s; border: none;
+  background: transparent; color: #64748b;
+}
+.iv-btn-ghost:hover { background: #f1f5f9; color: #334155; }
+.iv-btn-primary {
+  padding: 7px 18px; border-radius: 8px; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all .1s; border: none;
+  background: #6366f1; color: #fff;
+}
+.iv-btn-primary:hover { background: #4f46e5; transform: translateY(-0.5px); }
 
 </style>
 </head>
