@@ -896,15 +896,15 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       if (!isValidPhone(identifier)) {
         return res.status(400).json({ error: 'Invalid phone number format' });
       }
-      cleanIdentifier = sanitizeString(identifier);
+      cleanIdentifier = identifier;  // sanitizeString 用于防XSS，不能用于DB查询
       identifierField = 'phone';
     } else if (emailRegex.test(identifier)) {
       // 邮箱登录
-      cleanIdentifier = sanitizeString(identifier.toLowerCase());
+      cleanIdentifier = identifier.toLowerCase();  // sanitizeString 用于防XSS，不能用于DB查询
       identifierField = 'email';
     } else {
       // 昵称登录（fallback）
-      cleanIdentifier = sanitizeString(identifier);
+      cleanIdentifier = identifier;  // sanitizeString 用于防XSS，不能用于DB查询
       identifierField = 'nickname';
     }
 
