@@ -1838,7 +1838,13 @@ function renderClipboardItems() {
     var type = item.contentType || 'text';
     var typeClass = type === 'image' ? 'img' : type === 'link' ? 'link' : type === 'file' ? 'file' : 'text';
     var typeLabel = type === 'image' ? 'Image' : type === 'link' ? 'Link' : type === 'file' ? 'File' : 'Text';
-    var preview = escapeHtml((item.contentPreview || '').substring(0, 120));
+    var rawPreview = item.contentPreview || '';
+    // For files, show only filename not full path
+    if (typeClass === 'file') {
+      var parts = rawPreview.split(/[\/\\]/);
+      rawPreview = parts[parts.length - 1] || rawPreview;
+    }
+    var preview = escapeHtml(rawPreview.substring(0, 120));
     var row = document.createElement('div');
     row.className = 'clip-row'; row.dataset.type = typeClass; row.dataset.id = item.id;
     var viewIcon = '';
@@ -2305,6 +2311,15 @@ window.batchDelete = async function() {
   showToast('Deleted ' + count + ' items');
   _selectedItems.clear();
   _batchMode = false;
+  // Reset UI: hide batch button, show action icons, remove checkboxes
+  var btn = document.getElementById('batchDeleteBtn');
+  if (btn) btn.style.display = 'none';
+  document.querySelectorAll('.cr-actions').forEach(function(el) { el.style.display = ''; });
+  document.querySelectorAll('.clip-row').forEach(function(row) {
+    row.classList.remove('batch-selected');
+    var cb = row.querySelector('.batch-cb');
+    if (cb) { cb.checked = false; cb.style.display = 'none'; }
+  });
   loadClipboardItems();
 };
 
