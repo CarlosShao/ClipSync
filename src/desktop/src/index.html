@@ -1122,9 +1122,9 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .toggle.on::after { left: 22px; }
 .styled-select { padding: 6px 28px 6px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-size: 13px; background: var(--bg-surface); color: var(--text-primary); appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23999' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; cursor: pointer; }
 .styled-select:focus { border-color: var(--accent); outline: none; }
-.mode-btn { border: none; background: transparent; padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s; color: var(--text-secondary); }
-.mode-btn.active { background: var(--accent); color: white; font-weight: 500; }
-.mode-btn:hover:not(.active) { background: var(--bg-active); }
+.mode-seg { display: inline-flex; background: var(--bg-hover); border-radius: 8px; padding: 2px; border: 1px solid var(--border-default); }
+.mode-btn { border: none; background: transparent; padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 0; }
+.mode-btn.active { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
 .btn-danger { background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; }
 .btn-danger:hover { background: #dc2626; }
 </style>
@@ -1366,7 +1366,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
             <div class="sg-row" onclick="openModal('notifications')"><div class="sg-label"><div class="sg-name">Notification preferences</div><div class="sg-hint">Choose which alerts you want to receive</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Appearance</div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Mode</div><div class="sg-hint">Switch between light and dark mode</div></div><div class="sg-control"><div style="display:flex;gap:2px;background:var(--bg-hover);border-radius:8px;padding:3px;"><button class="mode-btn active" onclick="setMode('light',this)" data-mode="light"><span class="icon icon-sm" style="margin-right:4px;"><svg viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></span>Light</button><button class="mode-btn" onclick="setMode('dark',this)" data-mode="dark"><span class="icon icon-sm" style="margin-right:4px;"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></span>Dark</button></div></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Mode</div><div class="sg-hint">Switch between light and dark mode</div></div><div class="sg-control"><div class="mode-seg"><button class="mode-btn active" onclick="setMode('light',this)" data-mode="light"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:3px;"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>Light</button><button class="mode-btn" onclick="setMode('dark',this)" data-mode="dark"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:3px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/></svg>Dark</button></div></div></div>
             <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name">Theme &amp; Style</div><div class="sg-hint">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Reduce motion</div><div class="sg-hint">Minimize animations throughout the interface</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
           </div>
@@ -1574,25 +1574,25 @@ const modalTemplates = {
     <div class="modal-header"><span class="modal-title">Theme &amp; Style</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
       <div class="theme-grid">
-        <div class="theme-opt" data-style="vercel" onclick="applyStyle('vercel','${currentMode==='linear'||currentMode==='raycast'?currentMode:currentMode}');closeModal();">
+        <div class="theme-opt" data-style="vercel" onclick="applyStyle('vercel',currentMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#FAFAFA 0%,#E5E5E5 100%);color:#111;">Vercel</div><div class="to-name">Vercel ★</div>
         </div>
-        <div class="theme-opt" data-style="clipsync" onclick="applyStyle('clipsync','${currentMode==='linear'||currentMode==='raycast'?currentMode:currentMode}');closeModal();">
+        <div class="theme-opt" data-style="clipsync" onclick="applyStyle('clipsync',currentMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#6366F1 0%,#A78BFA 100%);">ClipSync</div><div class="to-name">ClipSync Fusion</div>
         </div>
-        <div class="theme-opt" data-style="notion" onclick="applyStyle('notion','${currentMode==='linear'||currentMode==='raycast'?currentMode:currentMode}');closeModal();">
+        <div class="theme-opt" data-style="notion" onclick="applyStyle('notion',currentMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#FFFFFF 0%,#EBF4FF 100%);color:#2383E2;border:1px solid #E8E7E3;">Notion</div><div class="to-name">Notion</div>
         </div>
-        <div class="theme-opt" data-style="linear" onclick="applyStyle('linear','dark');closeModal();">
+        <div class="theme-opt" data-style="linear" onclick="applyStyle('linear',currentMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#0A0A0A 0%,#1a162d 100%);">Linear</div><div class="to-name">Linear</div>
         </div>
-        <div class="theme-opt" data-style="apple" onclick="applyStyle('apple','${currentMode==='linear'||currentMode==='raycast'?currentMode:currentMode}');closeModal();">
+        <div class="theme-opt" data-style="apple" onclick="applyStyle('apple',currentMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#F5F5F7 0%,#E5F1FF 100%);color:#007AFF;">Apple</div><div class="to-name">Apple HIG</div>
         </div>
-        <div class="theme-opt" data-style="raycast" onclick="applyStyle('raycast','dark');closeModal();">
+        <div class="theme-opt" data-style="raycast" onclick="applyStyle('raycast',currentMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#07080a 0%,#1b1c1e 100%);">Raycast</div><div class="to-name">Raycast</div>
         </div>
-        <div class="theme-opt" data-style="arc" onclick="applyStyle('arc','${currentMode==='linear'||currentMode==='raycast'?currentMode:currentMode}');closeModal();">
+        <div class="theme-opt" data-style="arc" onclick="applyStyle('arc',currentMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#7C3AED 0%,#EC4899 50%,#F59E0B 100%);">Arc</div><div class="to-name">Arc</div>
         </div>
       </div>
@@ -2011,21 +2011,13 @@ async function handleCopyItem(id) {
         showToast('Image copied!');
       } catch(e) { showToast('Image copy failed: ' + e.message, 'error'); }
     } else if (type === 'file') {
-      // For files: try to copy actual file, fallback to path
+      // Copy file path to clipboard for pasting into Explorer
       var filePath = meta.filePaths ? meta.filePaths[0] : text;
       try {
-        // Try to create a File object from the server URL and copy it
-        var fileUrl = API_BASE + '/api/media/download/' + encodeURIComponent(filePath);
-        var resp = await fetch(fileUrl);
-        var blob = await resp.blob();
-        var fileName = meta.originalName || meta.fileName || 'file';
-        var file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
-        await navigator.clipboard.write([new ClipboardItem({ [file.type]: file })]);
-        showToast('File copied! You can now paste into Explorer.');
-      } catch(e) {
-        // Fallback: copy file path
         await navigator.clipboard.writeText(filePath);
-        showToast('File path copied to clipboard');
+        showToast('File path copied!');
+      } catch(e) {
+        showToast('Copy failed: ' + e.message, 'error');
       }
     } else {
       try { var decoded = decodeURIComponent(escape(atob(text))); text = decoded; } catch(e) {}
@@ -2489,16 +2481,24 @@ function setMode(mode, btn) {
 
 // Fix applyStyle to properly handle mode with all styles
 function applyStyle(s, m) {
+  var darkOnly = ['linear', 'raycast'];
+  // If mode=light but style is dark-only, switch to vercel
+  if (m === 'light' && darkOnly.indexOf(s) >= 0) {
+    s = 'vercel';
+  }
   currentStyle = s; currentMode = m;
   var root = document.documentElement;
   if (!root) return;
   root.setAttribute('data-style', s);
-  // Dark-only styles ignore mode
-  if (s === 'linear' || s === 'raycast') {
-    root.setAttribute('data-mode', 'dark');
-  } else {
-    root.setAttribute('data-mode', m);
-  }
+  root.setAttribute('data-mode', m);
+  // Update mode button UI
+  document.querySelectorAll('.mode-btn').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.mode === m);
+  });
+  // Update theme selector
+  document.querySelectorAll('.theme-opt').forEach(function(opt) {
+    opt.classList.toggle('selected', opt.dataset.style === currentStyle);
+  });
 }
 if (state.token) {
   showPage('app');
