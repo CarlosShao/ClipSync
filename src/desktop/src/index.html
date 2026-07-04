@@ -1099,12 +1099,12 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 /* ===== Batch Select ===== */
 .batch-cb { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
 .clip-row.batch-selected { background: var(--accent-light); }
-.search-wrap { position: relative; display: flex; align-items: center; margin-left: 8px; }
-.search-toggle { background: none; border: none; cursor: pointer; padding: 6px; color: var(--text-secondary); border-radius: var(--radius-sm); transition: all 0.3s ease; }
+.search-wrap { display: flex; align-items: center; margin-left: 8px; overflow: hidden; }
+.search-toggle { background: none; border: none; cursor: pointer; padding: 6px; color: var(--text-secondary); border-radius: var(--radius-sm); transition: all 0.3s ease; flex-shrink: 0; }
 .search-toggle:hover { background: var(--bg-hover); }
-.search-input { width: 0; padding: 0; border: none; background: var(--bg-surface); font-size: 12px; border-radius: var(--radius-sm); transition: width 0.3s ease, padding 0.3s ease, border-color 0.3s ease; overflow: hidden; opacity: 0; position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
-.search-wrap.open .search-input { width: 180px; padding: 6px 12px; border: 1px solid var(--border-default); opacity: 1; right: 32px; }
-.search-wrap.open .search-toggle { opacity: 0; pointer-events: none; }
+.search-input { width: 0; padding: 0; border: none; background: var(--bg-surface); font-size: 12px; border-radius: var(--radius-sm); transition: width 0.3s ease, padding 0.3s ease, border-color 0.3s ease; overflow: hidden; opacity: 0; white-space: nowrap; }
+.search-wrap.open .search-input { width: 180px; padding: 6px 12px; border: 1px solid var(--border-default); opacity: 1; }
+.search-wrap.open .search-toggle { display: none; }
 .settings-view { padding: 24px; max-width: 720px; }
 .sv-title { font-size: 26px; font-weight: 700; color: var(--text-primary); letter-spacing: -.6px; margin-bottom: 24px; }
 .settings-group { margin-bottom: 24px; }
@@ -1122,6 +1122,9 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .toggle.on::after { left: 22px; }
 .styled-select { padding: 6px 28px 6px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-size: 13px; background: var(--bg-surface); color: var(--text-primary); appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23999' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; cursor: pointer; }
 .styled-select:focus { border-color: var(--accent); outline: none; }
+.mode-btn { border: none; background: transparent; padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s; color: var(--text-secondary); }
+.mode-btn.active { background: var(--accent); color: white; font-weight: 500; }
+.mode-btn:hover:not(.active) { background: var(--bg-active); }
 .btn-danger { background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; }
 .btn-danger:hover { background: #dc2626; }
 </style>
@@ -1204,7 +1207,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <button class="btn btn-primary" onclick="showToast('New Clip: Copy something to sync!','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>New Clip</button>
                     <button class="btn btn-ghost" style="margin-left:4px;" onclick="toggleBatchMode()" title="Batch select"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span></button>
                     <button id="batchDeleteBtn" class="btn btn-ghost" style="margin-left:4px;display:none;color:var(--danger);" onclick="batchDelete()"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span><span id="batchCount">0</span></button>
-                    <div class="search-wrap"><button class="search-toggle" onclick="this.parentElement.classList.toggle('open');if(this.parentElement.classList.contains('open'))this.nextElementSibling.focus();"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span></button><input type="text" placeholder="Search clips..." class="search-input" oninput="filterClipboard(this.value)"></div>
+                    <div class="search-wrap" id="searchWrap"><button class="search-toggle" onclick="var w=document.getElementById('searchWrap');w.classList.add('open');w.querySelector('input').focus();"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span></button><input type="text" placeholder="Search clips..." class="search-input" oninput="filterClipboard(this.value)" onblur="if(!this.value){document.getElementById('searchWrap').classList.remove('open');}"></div>
         </header>
         <div class="tab-bar"><button class="tab-btn active" onclick="switchClipTab(this,'all')">All</button><button class="tab-btn" onclick="switchClipTab(this,'text')">Text</button><button class="tab-btn" onclick="switchClipTab(this,'images')">Images</button><button class="tab-btn" onclick="switchClipTab(this,'links')">Links</button><button class="tab-btn" onclick="switchClipTab(this,'files')">Files</button></div>
         <div class="list-head"><div>CONTENT</div><div>SOURCE</div><div>TYPE</div><div>TIME</div><div>ACTIONS</div></div>
@@ -1363,6 +1366,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
             <div class="sg-row" onclick="openModal('notifications')"><div class="sg-label"><div class="sg-name">Notification preferences</div><div class="sg-hint">Choose which alerts you want to receive</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Appearance</div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Mode</div><div class="sg-hint">Switch between light and dark mode</div></div><div class="sg-control"><div style="display:flex;gap:4px;background:var(--bg-hover);border-radius:8px;padding:3px;"><button class="mode-btn active" onclick="setMode('light',this)" data-mode="light">☀️ Light</button><button class="mode-btn" onclick="setMode('dark',this)" data-mode="dark">🌙 Dark</button></div></div></div>
             <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name">Theme &amp; Style</div><div class="sg-hint">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Reduce motion</div><div class="sg-hint">Minimize animations throughout the interface</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
           </div>
@@ -2011,18 +2015,23 @@ async function handleCopyItem(id) {
     var full = await api('GET', '/api/clipboard/' + id);
     var text = full.contentEncrypted || full.contentPreview || '';
     var type = full.contentType || 'text';
-    if (type === 'image' || text.startsWith('data:')) {
-      // Copy image to clipboard as blob
+    var meta = full.metadata || {};
+    if (type === 'image' || (typeof text === 'string' && text.startsWith('data:'))) {
       try {
         var resp = await fetch(text);
         var blob = await resp.blob();
         await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
-        showToast('Image copied to clipboard!');
-      } catch(e) { showToast('Image copy failed (browser restriction): ' + e.message, 'error'); }
+        showToast('Image copied!');
+      } catch(e) { showToast('Image copy failed: ' + e.message, 'error'); }
+    } else if (type === 'file') {
+      // Copy file path to clipboard
+      var filePath = meta.filePaths ? meta.filePaths[0] : text;
+      await navigator.clipboard.writeText(filePath);
+      showToast('File path copied!');
     } else {
       try { var decoded = decodeURIComponent(escape(atob(text))); text = decoded; } catch(e) {}
       await navigator.clipboard.writeText(text);
-      showToast('Copied to clipboard!');
+      showToast('Copied!');
     }
   } catch(e) { showToast('Copy failed: ' + e.message, 'error'); }
 }
@@ -2054,25 +2063,32 @@ async function handleViewItem(id, typeClass) {
       document.querySelector('#modalRoot .modal-body').innerHTML = '<div style="text-align:center;padding:16px 20px;"><div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:16px 20px;margin-bottom:12px;"><img src="' + item.contentEncrypted + '" style="max-width:100%;max-height:58vh;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);background:#fff;object-fit:contain;"></div><div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">' + fileName + '</div><div style="font-size:11.5px;color:var(--text-secondary);">' + info + '</div></div>';
     } catch(e) { showToast('Failed: ' + e.message, 'error'); }
   } else if (typeClass === 'file') {
-    // Download file - don't navigate away
+    // Download file with save dialog
     try {
       var item = await api('GET', '/api/clipboard/' + id);
       var fileName = item.contentPreview || 'file';
       var filePath = item.contentEncrypted || '';
       var downloadUrl = API_BASE + '/api/media/download/' + encodeURIComponent(filePath);
-      // Use fetch + blob + anchor to force download without navigation
       var resp = await fetch(downloadUrl);
       var blob = await resp.blob();
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-      showToast('File downloaded!');
+      // Use showSaveFilePicker if available (system save dialog)
+      if (window.showSaveFilePicker) {
+        var handle = await window.showSaveFilePicker({ suggestedName: fileName });
+        var writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        showToast('File saved!');
+      } else {
+        // Fallback: anchor download
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = fileName; a.style.display = 'none';
+        document.body.appendChild(a); a.click();
+        setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+        showToast('File downloaded!');
+      }
     } catch(e) {
+      if (e.name === 'AbortError') return;
       showToast('File download failed: ' + e.message, 'error');
     }
   } else if (typeClass === 'link') {
@@ -2456,6 +2472,24 @@ document.querySelectorAll('.sidebar-bottom .user-chip').forEach(function(el) {
   el.onclick = function() { switchSub('profile'); };
 });
 
+function setMode(mode, btn) {
+  document.querySelectorAll('.mode-btn').forEach(function(b) { b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  // For dark-only styles (linear, raycast), switch to compatible style when user picks light
+  var darkOnly = ['linear', 'raycast'];
+  if (mode === 'light' && darkOnly.indexOf(currentStyle) >= 0) {
+    currentStyle = 'vercel'; // Switch to light-compatible style
+    document.querySelector('.theme-opt[data-style="vercel"]');
+  }
+  if (mode === 'dark' && darkOnly.indexOf(currentStyle) >= 0) {
+    // Keep current dark style
+  }
+  applyStyle(currentStyle, mode);
+  // Update theme selector if visible
+  document.querySelectorAll('.theme-opt').forEach(function(opt) {
+    opt.classList.toggle('selected', opt.dataset.style === currentStyle);
+  });
+}
 if (state.token) {
   showPage('app');
   updateUserInfo();
