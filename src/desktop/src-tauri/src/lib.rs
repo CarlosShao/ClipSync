@@ -124,6 +124,38 @@ fn set_clipboard_files(paths: Vec<String>) -> Result<(), String> {
     result.map_err(|e| format!("set_file_list failed: {}", e))
 }
 
+#[tauri::command]
+fn save_and_copy_file(base64_data: String, filename: String) -> Result<String, String> {
+    use std::fs;
+    // 1. Decode base64
+    let bytes = base64::decode(&base64_data)
+        .map_err(|e| format!("base64 decode failed: {}", e))?;
+
+    // 2. Save to temp dir
+    let temp_dir = std::env::temp_dir().join("clipsync");
+    fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("create temp dir failed: {}", e))?;
+
+    let safe_name = filename
+        .replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-' && c != '_', "_");
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let temp_file = temp_dir.join(format!("{}_{}", ts, safe_name));
+    fs::write(&temp_file, &bytes)
+        .map_err(|e| format!("write file failed: {}", e))?;
+
+    // 3. Set clipboard with file path (CF_HDROP)
+    let full_path = temp_file
+        .to_str()
+        .ok_or("invalid path")?
+        .to_string();
+    set_clipboard_files(vec![full_path.clone()])?;
+
+    Ok(full_path)
+}
+
 struct RawClipGuard;
 impl Drop for RawClipGuard {
     fn drop(&mut self) { let _ = clipboard_win::raw::close(); }
@@ -821,6 +853,7 @@ pub fn run() {
             set_clipboard_content,
             set_clipboard_files,
             get_clipboard_files,
+            save_and_copy_file,
             check_clipboard_image_info,
             get_clipboard_image,
             convert_bmp_to_png,

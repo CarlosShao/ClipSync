@@ -2011,20 +2011,40 @@ async function handleCopyItem(id) {
         showToast('Image copied!');
       } catch(e) { showToast('Image copy failed: ' + e.message, 'error'); }
     } else if (type === 'file') {
-      // Copy file to system clipboard for pasting into Explorer
-      var filePaths = meta.filePaths || [text];
+      // Download file → save to temp → copy path to clipboard (CF_HDROP)
       try {
-        // Use Tauri IPC to write file paths as CF_HDROP
+        var filePath = text; // contentEncrypted stores the file path/identifier
+        var fileName = meta.fileName || full.contentPreview || 'file';
+        // Extract filename from preview if it looks like a filename
+        if (!meta.fileName && full.contentPreview) {
+          var parts = full.contentPreview.split(/[\/\\]/);
+          fileName = parts[parts.length - 1] || full.contentPreview;
+        }
+        var downloadUrl = API_BASE + '/api/media/download/' + encodeURIComponent(filePath);
+        var resp = await fetch(downloadUrl);
+        if (!resp.ok) throw new Error('Download failed: ' + resp.status);
+        var blob = await resp.blob();
+        // Convert blob to base64 for Tauri IPC
+        var arrayBuffer = await blob.arrayBuffer();
+        var uint8Array = new Uint8Array(arrayBuffer);
+        var binaryStr = '';
+        for (var i = 0; i < uint8Array.length; i++) binaryStr += String.fromCharCode(uint8Array[i]);
+        var b64 = btoa(binaryStr);
+        // Call Tauri command to save temp file + set CF_HDROP clipboard
         if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
-          await window.__TAURI__.core.invoke('set_clipboard_files', { paths: filePaths });
-          showToast('File copied! Paste into Explorer with Ctrl+V');
+          var tempPath = await window.__TAURI__.core.invoke('save_and_copy_file', { base64Data: b64, filename: fileName });
+          showToast('File copied! Paste into Explorer with Ctrl+V', 'success');
         } else {
-          // Fallback: copy path as text
-          await navigator.clipboard.writeText(filePaths[0] || '');
-          showToast('File path copied (paste text only)');
+          // Non-Tauri fallback: can't do CF_HDROP, download via browser
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url; a.download = fileName; a.style.display = 'none';
+          document.body.appendChild(a); a.click();
+          setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+          showToast('File downloaded (browser mode)', 'info');
         }
       } catch(e) {
-        showToast('Copy failed: ' + e.message, 'error');
+        showToast('File copy failed: ' + e.message, 'error');
       }
     } else {
       try { var decoded = decodeURIComponent(escape(atob(text))); text = decoded; } catch(e) {}
