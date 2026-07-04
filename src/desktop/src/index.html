@@ -295,7 +295,7 @@
    RESET & BASE
    ============================================================ */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-size: 14px; }
+html { font-size: 14px; height: 100%; width: 100%; }
 body {
   font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
   background: var(--bg-base);
@@ -304,6 +304,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
   transition: background .25s ease, color .2s ease;
+  height: 100%; width: 100%; overflow: hidden;
 }
 
 /* ============================================================
@@ -329,10 +330,8 @@ body {
    APP SHELL
    ============================================================ */
 .app-shell {
-  display: flex; height: 100vh; max-width: 1280px;
-  margin: 0 auto; border-radius: var(--radius-xl);
+  display: flex; width: 100vw; height: 100vh;
   overflow: hidden;
-  box-shadow: var(--shadow-modal);
   transition: background .25s ease;
 }
 
@@ -930,8 +929,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .page { display: none; }
 .page.active { display: block; }
 
-/* Demo wrapper spacing */
-.demo-wrap { padding: 24px 0 48px; }
+/* Demo wrapper — fills entire window */
+.demo-wrap { width: 100vw; height: 100vh; }
 /* ===== QUICK PASTE OVERLAY ===== */
 #qpOverlay {
   position: fixed; inset: 0; z-index: 10000;
