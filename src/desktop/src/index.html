@@ -1327,13 +1327,13 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="content-scroll profile-view">
           <div class="profile-header">
             <div class="p-avatar-large"><div class="p-avatar-inner">CS</div></div>
-            <div class="p-info"><h2>Carlos</h2><div class="p-meta">Free Plan</div></div>
+            <div class="p-info"><h2>Carlos</h2><div class="p-meta" data-i18n="pf_free">Free Plan</div></div>
           </div>
-          <h3 style="font-size:13px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;">Account</h3>
-          <div class="profile-field"><div class="pf-label">Display Name</div><div class="pf-value">Carlos</div></div>
-          <div class="profile-field"><div class="pf-label">Email</div><div class="pf-value" style="color:var(--text-secondary);">Not set</div></div>
-          <div class="profile-field"><div class="pf-label">Phone</div><div class="pf-value" style="display:flex;align-items:center;gap:8px;"><span class="icon icon-sm" style="color:var(--accent)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>+86 ***</div></div>
-          <div class="profile-field"><div class="pf-label">Plan</div><div class="pf-value" style="display:flex;align-items:center;justify-content:space-between;"><span style="color:var(--text-secondary);">Free Plan</span><button class="btn btn-primary" style="font-size:11px;padding:5px 14px;border-radius:6px;" onclick="showToast(t('upgrade_soon'),'info')" data-i18n="upgrade">Upgrade</button></div></div>
+          <h3 style="font-size:13px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;" data-i18n="acct_s">Account</h3>
+          <div class="profile-field"><div class="pf-label" data-i18n="pf_name">Display Name</div><div class="pf-value">Carlos</div></div>
+          <div class="profile-field"><div class="pf-label" data-i18n="pf_email">Email</div><div class="pf-value" style="color:var(--text-secondary);" data-i18n="pf_noset">Not set</div></div>
+          <div class="profile-field"><div class="pf-label" data-i18n="pf_phone">Phone</div><div class="pf-value" style="display:flex;align-items:center;gap:8px;"><span class="icon icon-sm" style="color:var(--accent)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>+86 ***</div></div>
+          <div class="profile-field"><div class="pf-label" data-i18n="pf_plan">Plan</div><div class="pf-value" style="display:flex;align-items:center;justify-content:space-between;"><span style="color:var(--text-secondary);" data-i18n="pf_free">Free Plan</span><button class="btn btn-primary" style="font-size:11px;padding:5px 14px;border-radius:6px;" onclick="showToast(t('upgrade_soon'),'info')" data-i18n="upgrade">Upgrade</button></div></div>
           <!-- Logout -->
           <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border-default);">
             <button onclick="if(confirm(t('logout_confirm')))logout();" style="width:100%;padding:10px;border:1px solid var(--danger);color:var(--danger);background:transparent;border-radius:8px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span data-i18n="logout">Sign Out</span></button>
@@ -1380,7 +1380,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
             <div class="sg-row"><div class="sg-label"><div class="sg-name">End-to-end encryption</div><div class="sg-hint">Your clips are encrypted before leaving your device</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')" disabled style="opacity:.5;cursor:not-allowed;"></button></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Subscription &amp; Billing</div>
-            <div class="sg-row" onclick="openModal('pricing')"><div class="sg-label"><div class="sg-name">Current plan</div><div class="sg-hint">You are on the <strong>Free</strong> plan</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('pricing')"><div class="sg-label"><div class="sg-name" data-i18n="sg_current_plan">Current plan</div><div class="sg-hint" data-i18n="sg_current_plan_h_free">You are on the <strong>Free</strong> plan</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></span></div></div>
             <div class="sg-row" onclick="openModal('billing')"><div class="sg-label"><div class="sg-name">Billing history</div><div class="sg-hint">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Shortcuts</div>
@@ -1396,7 +1396,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           </div>
           <div class="settings-group"><div class="sg-header">Data</div>
             <div class="sg-row" onclick="openModal('export')"><div class="sg-label"><div class="sg-name">Export my data (GDPR)</div><div class="sg-hint">Download a copy of all your data in standard formats</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-            <div class="sg-row" id="checkUpdateRow"><div class="sg-label"><div class="sg-name">Check for updates</div><div class="sg-hint">Current version v2.4.1 · Last checked today</div></div><div class="sg-control"><button class="btn btn-secondary" style="font-size:11.5px;padding:5px 10px;" onclick="openModal('updates')">Check Now</button></div></div>
+            <div class="sg-row" id="checkUpdateRow"><div class="sg-label"><div class="sg-name" data-i18n="sg_update">Check for updates</div><div class="sg-hint" data-i18n="sg_update_h">Current version v2.4.1 · Last checked today</div></div><div class="sg-control"><button class="btn btn-secondary" style="font-size:11.5px;padding:5px 10px;" onclick="openModal('updates')" data-i18n="btn_check">Check Now</button></div></div>
           </div>
         </div>
       </main>
@@ -1422,30 +1422,30 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       </aside>
       <main class="main-area">
         <div class="content-scroll settings-view">
-          <div class="sv-title">Subscription</div>
+          <div class="sv-title" data-i18n="sub_t">Subscription</div>
           <!-- Current Plan Card -->
           <div class="dev-card" style="margin-bottom:20px;background:var(--gradient-accent);color:var(--text-inverse);border:none;">
             <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px;">
-              <div><div style="font-size:13px;opacity:.75;margin-bottom:4px;">Current Plan</div><div style="font-size:24px;font-weight:700;">Professional</div></div>
-              <span style="background:rgba(255,255,255,.2);padding:4px 12px;border-radius:9999px;font-size:12px;font-weight:500;">Active</span>
+              <div><div style="font-size:13px;opacity:.75;margin-bottom:4px;" data-i18n="sg_current_plan">Current plan</div><div style="font-size:24px;font-weight:700;">Professional</div></div>
+              <span style="background:rgba(255,255,255,.2);padding:4px 12px;border-radius:9999px;font-size:12px;font-weight:500;" data-i18n="sub_active">Active</span>
             </div>
             <div style="display:flex;gap:32px;font-size:13px;opacity:.85;">
-              <div><div style="opacity:.6;">Price</div><div style="font-weight:550;">¥9.9/month</div></div>
-              <div><div style="opacity:.6;">Renews</div><div style="font-weight:550;">July 15, 2026</div></div>
-              <div><div style="opacity:.6;">Devices</div><div style="font-weight:550;">Unlimited</div></div>
+              <div><div style="opacity:.6;" data-i18n="sub_price">Price</div><div style="font-weight:550;">¥9.9/month</div></div>
+              <div><div style="opacity:.6;" data-i18n="sub_renews">Renews</div><div style="font-weight:550;">July 15, 2026</div></div>
+              <div><div style="opacity:.6;" data-i18n="sub_devices">Devices</div><div style="font-weight:550;">Unlimited</div></div>
             </div>
           </div>
           <!-- Usage Stats -->
-          <div class="settings-group"><div class="sg-header">Usage This Month</div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Clips synced</div><div class="sg-hint">Total clipboard items synchronized across devices</div></div><div class="sg-control" style="font-weight:600;font-size:18px;color:var(--accent);">1,284</div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Data transferred</div><div class="sg-hint">Bandwidth used for sync this billing cycle</div></div><div class="sg-control" style="font-weight:600;font-size:18px;color:var(--accent);">2.4 GB</div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Shared links created</div><div class="sg-hint">Number of shareable links generated</div></div><div class="sg-control" style="font-weight:600;font-size:18px;color:var(--accent);">5 / 50</div></div>
+          <div class="settings-group"><div class="sg-header" data-i18n="sub_usage">Usage This Month</div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name" data-i18n="sub_clips_synced">Clips synced</div><div class="sg-hint" data-i18n="sub_clips_synced_h">Total clipboard items synchronized across devices</div></div><div class="sg-control" style="font-weight:600;font-size:18px;color:var(--accent);">1,284</div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name" data-i18n="sub_data_transferred">Data transferred</div><div class="sg-hint" data-i18n="sub_data_transferred_h">Bandwidth used for sync this billing cycle</div></div><div class="sg-control" style="font-weight:600;font-size:18px;color:var(--accent);">2.4 GB</div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name" data-i18n="sub_shared_links">Shared links created</div><div class="sg-hint" data-i18n="sub_shared_links_h">Number of shareable links generated</div></div><div class="sg-control" style="font-weight:600;font-size:18px;color:var(--accent);">5 / 50</div></div>
           </div>
           <!-- Actions -->
-          <div class="settings-group"><div class="sg-header">Manage</div>
-            <div class="sg-row" onclick="openModal('billing')"><div class="sg-label"><div class="sg-name">Billing history</div><div class="sg-hint">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-            <div class="sg-row" onclick="openModal('pricing')"><div class="sg-label"><div class="sg-name">Change plan</div><div class="sg-hint">Upgrade or downgrade your subscription</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Cancel subscription</div><div class="sg-hint">End your subscription at the next billing date</div></div><div class="sg-control"><button class="btn btn-ghost" style="font-size:12px;padding:5px 12px;color:var(--danger);border-color:var(--danger);">Cancel</button></div></div>
+          <div class="settings-group"><div class="sg-header" data-i18n="sub_manage">Manage</div>
+            <div class="sg-row" onclick="openModal('billing')"><div class="sg-label"><div class="sg-name" data-i18n="sg_billing">Billing history</div><div class="sg-hint" data-i18n="sg_billing_h">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('pricing')"><div class="sg-label"><div class="sg-name" data-i18n="sub_change_plan">Change plan</div><div class="sg-hint" data-i18n="sub_change_plan_h">Upgrade or downgrade your subscription</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name" data-i18n="sub_cancel">Cancel subscription</div><div class="sg-hint" data-i18n="sub_cancel_h">End your subscription at the next billing date</div></div><div class="sg-control"><button class="btn btn-ghost" style="font-size:12px;padding:5px 12px;color:var(--danger);border-color:var(--danger);" data-i18n="sub_cancel">Cancel</button></div></div>
           </div>
         </div>
       </main>
@@ -1464,7 +1464,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   <div class="qp-panel">
     <div class="qp-search">
       <span class="icon icon-md" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-      <input type="text" id="qpSearchInput" placeholder="Search clipboard history..." oninput="filterQuickPaste(this.value)">
+      <input type="text" id="qpSearchInput" data-i18n-placeholder="search_ph" placeholder="Search clipboard history..." oninput="filterQuickPaste(this.value)">
       <div class="qp-kbd">⌘K</div>
     </div>
     <div class="qp-list" id="qpList">
@@ -1474,10 +1474,10 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       <div class="qp-item" data-idx="3" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-file"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span></div><div class="qp-txt">design-spec-v2.figma</div><div class="qp-ts">3h</div></div>
     </div>
     <div class="qp-foot">
-      <div class="kbd-pair"><kbd>↑↓</kbd>Navigate</div>
-      <div class="kbd-pair"><kbd>↵</kbd>Paste</div>
-      <div class="kbd-pair"><kbd>ESC</kbd>Close</div>
-      <div style="margin-left:auto;">24 items</div>
+      <div class="kbd-pair"><kbd>↑↓</kbd><span data-i18n="qp_navigate">Navigate</span></div>
+      <div class="kbd-pair"><kbd>↵</kbd><span data-i18n="qp_paste">Paste</span></div>
+      <div class="kbd-pair"><kbd>ESC</kbd><span data-i18n="qp_close">Close</span></div>
+      <div style="margin-left:auto;"><span id="qpItemCount">24</span> <span data-i18n="items_c">items</span></div>
     </div>
   </div>
 </div>
@@ -1591,6 +1591,10 @@ var _i18n = {
     nf_sync_done:'Sync completed',nf_sync_done_h:'When all clips finish syncing',
     nf_security:'Security alerts',nf_security_h:'Suspicious sign-in attempts or security events',
     nf_updates:'Product updates',nf_updates_h:'New features, tips, and product news',
+    // Quick Paste
+    qp_navigate:'Navigate',qp_paste:'Paste',qp_close:'Close',
+    // Export & Device
+    sess_active:'Active',export_title:'Export My Data',export_msg:"We'll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You'll receive a download link via email within 24 hours.",export_request_btn:'Request Export',
   },
   zh: {
     nav_main:'主菜单',nav_account:'账号',nav_clipboard:'剪贴板',nav_devices:'设备',nav_shared_links:'共享链接',
@@ -1693,6 +1697,10 @@ var _i18n = {
     nf_sync_done:'同步完成',nf_sync_done_h:'当所有剪贴内容同步完成时',
     nf_security:'安全提醒',nf_security_h:'可疑登录尝试或安全事件',
     nf_updates:'产品更新',nf_updates_h:'新功能、技巧和产品资讯',
+    // Quick Paste
+    qp_navigate:'导航',qp_paste:'粘贴',qp_close:'关闭',
+    // Export & Device
+    sess_active:'活跃',export_title:'导出我的数据',export_msg:"我们将为您准备一份完整的数据存档，包括剪贴板历史、设备信息和账户设置。<br><br>您将在 24 小时内收到一封包含下载链接的邮件。",export_request_btn:'申请导出',
   }
 };
 var _lang = localStorage.getItem('cs_lang') || 'en';
@@ -1708,7 +1716,17 @@ function applyI18n(){
   // ---- Nav items by data-sub ----
   var navMap={clipboard:'nav_clipboard',devices:'nav_devices','shared-links':'nav_shared_links',profile:'nav_profile',subscription:'nav_subscription',settings:'nav_settings'};
   document.querySelectorAll('.nav-item[data-sub]').forEach(function(el){
-    var k=navMap[el.getAttribute('data-sub')];if(k){var s=el.querySelector('.user-info,.nav-counter');var tNode=s?el.childNodes[el.childNodes.length-1]:null;if(tNode&&tNode.nodeType===3)tNode.textContent=' '+t(k);else{var sp=el.querySelector('span:last-of-type:not(.icon):not(.nav-counter)');if(sp)sp.textContent=t(k);}}
+    var k=navMap[el.getAttribute('data-sub')];
+    if(k){
+      // Find bare text node (e.g. "Clipboard" in <icon>Clipboard<span class=counter>)
+      var found=false;
+      for(var ci=0;ci<el.childNodes.length;ci++){
+        var cn=el.childNodes[ci];
+        if(cn.nodeType===3&&cn.textContent.trim()){cn.textContent=' '+t(k);found=true;break;}
+      }
+      // Fallback: try data-i18n on nested spans
+      if(!found){var sp=el.querySelector('[data-i18n]');if(sp)sp.textContent=t(k);}
+    }
   });
   // ---- Topbar titles ----
   document.querySelectorAll('.topbar-title').forEach(function(el){
@@ -1738,27 +1756,27 @@ function applyI18n(){
   // sv-title
   document.querySelectorAll('.sv-title').forEach(function(el){if(el.textContent.includes('Settings')||el.textContent.includes('设置'))el.textContent=t('settings_t');else if(el.textContent.includes('Subscription')||el.textContent.includes('订阅'))el.textContent=t('sub_t');});
   // sg-header
-  var sgH={general:'sg_gen',sync:'sg_sync',notifications:'sg_notif',appearance:'sg_appear',data:'sg_data','privacy & security':'sg_privacy','隐私与安全':'sg_privacy','subscription & billing':'sg_sub_bill','订阅与账单':'sg_sub_bill',shortcuts:'sg_shortcuts','快捷键':'sg_shortcuts'};
+  var sgH={'General':'sg_gen','Sync':'sg_sync','Notifications':'sg_notif','Appearance':'sg_appear','Data':'sg_data','Privacy & Security':'sg_privacy','隐私与安全':'sg_privacy','Subscription & Billing':'sg_sub_bill','订阅与账单':'sg_sub_bill','Shortcuts':'sg_shortcuts','快捷键':'sg_shortcuts'};
   document.querySelectorAll('.sg-header').forEach(function(el){var k=sgH[el.textContent.trim()];if(k)el.textContent=t(k);});
   // sg-name + sg-hint pairs (iterate rows, match by name)
   var sgRowMap={
-    'auto-sync clipboard':{name:'sg_autosync',hint:'sg_autosync_h'},
-    'launch at startup':{name:'sg_startup',hint:'sg_startup_h'},
-    'language':{name:'sg_lang',hint:'sg_lang_h'},
-    'sync interval':{name:'sg_interval',hint:'sg_interval_h'},
-    'max history':{name:'sg_maxhist',hint:'sg_maxhist_h'},
-    'image compression':{name:'sg_imgcomp',hint:'sg_imgcomp_h'},
-    'notification preferences':{name:'sg_notifp',hint:'sg_notifp_h'},
-    'mode':{name:'sg_mode',hint:'sg_mode_h'},
-    'reduce motion':{name:'sg_motion',hint:'sg_motion_h'},
-    'export my data (gdpr)':{name:'sg_export',hint:'sg_export_h'},
-    'check for updates':{name:'sg_update',hint:'sg_update_h'},
-    'two-factor authentication':{name:'sg_2fa',hint:'sg_2fa_h'},
-    'active sessions':{name:'sg_sessions',hint:'sg_sessions_h'},
-    'end-to-end encryption':{name:'sg_e2ee',hint:'sg_e2ee_h'},
-    'current plan':{name:'sg_current_plan',hint:null},
-    'billing history':{name:'sg_billing',hint:'sg_billing_h'},
-    'keyboard shortcuts':{name:'sg_kb_shortcuts',hint:'sg_kb_shortcuts_h'},
+    'Auto-sync clipboard':{name:'sg_autosync',hint:'sg_autosync_h'},
+    'Launch at startup':{name:'sg_startup',hint:'sg_startup_h'},
+    'Language':{name:'sg_lang',hint:'sg_lang_h'},
+    'Sync interval':{name:'sg_interval',hint:'sg_interval_h'},
+    'Max history':{name:'sg_maxhist',hint:'sg_maxhist_h'},
+    'Image compression':{name:'sg_imgcomp',hint:'sg_imgcomp_h'},
+    'Notification preferences':{name:'sg_notifp',hint:'sg_notifp_h'},
+    'Mode':{name:'sg_mode',hint:'sg_mode_h'},
+    'Reduce motion':{name:'sg_motion',hint:'sg_motion_h'},
+    'Export my data (GDPR)':{name:'sg_export',hint:'sg_export_h'},
+    'Check for updates':{name:'sg_update',hint:'sg_update_h'},
+    'Two-factor authentication':{name:'sg_2fa',hint:'sg_2fa_h'},
+    'Active sessions':{name:'sg_sessions',hint:'sg_sessions_h'},
+    'End-to-end encryption':{name:'sg_e2ee',hint:'sg_e2ee_h'},
+    'Current plan':{name:'sg_current_plan',hint:null},
+    'Billing history':{name:'sg_billing',hint:'sg_billing_h'},
+    'Keyboard shortcuts':{name:'sg_kb_shortcuts',hint:'sg_kb_shortcuts_h'},
   };
   document.querySelectorAll('.sg-row').forEach(function(row){
     var nameEl=row.querySelector('.sg-name');
@@ -1767,9 +1785,9 @@ function applyI18n(){
       var key=sgRowMap[nameEl.textContent.trim().toLowerCase()];
       if(key&&key.name)nameEl.textContent=t(key.name);
       if(hintEl&&key&&key.hint)hintEl.textContent=t(key.hint);
-      // Current plan hint has dynamic content
+      // Current plan hint has dynamic content — use dedicated i18n key
       if(nameEl.textContent.trim()===t('sg_current_plan')&&hintEl&&!key.hint){
-        hintEl.innerHTML='You are on the <strong>Free</strong> plan'.replace('You are on',t('sg_current_plan')).replace('Free',t('pf_free'));
+        hintEl.innerHTML=t('sg_current_plan_h_free').replace('Free','<strong>'+t('pf_free')+'</strong>');
       }
     }
   });
@@ -1800,7 +1818,7 @@ function applyI18n(){
     if(el.textContent==='\u8d26\u53f7\u4fe1\u606f')el.textContent=t('acct_s');
   });
   // Profile fields
-  var pfMap={'DISPLAY NAME':'pf_name','显示名称':'pf_name','EMAIL':'pf_email','邮箱':'pf_email','PHONE':'pf_phone','手机号':'pf_phone','PLAN':'pf_plan','套餐':'pf_plan'};
+  var pfMap={'DISPLAY NAME':'pf_name','Display Name':'pf_name','显示名称':'pf_name','EMAIL':'pf_email','Email':'pf_email','邮箱':'pf_email','PHONE':'pf_phone','Phone':'pf_phone','手机号':'pf_phone','PLAN':'pf_plan','Plan':'pf_plan','套餐':'pf_plan'};
   document.querySelectorAll('.pf-label').forEach(function(el){var k=pfMap[el.textContent.trim()];if(k)el.textContent=t(k);});
   document.querySelectorAll('.pf-value').forEach(function(el){
     var t=el.textContent.trim();
@@ -1840,6 +1858,11 @@ function applyI18n(){
   document.querySelectorAll('[data-i18n]').forEach(function(el){
     var k=el.getAttribute('data-i18n');
     if(k&&_i18n[_lang]&&_i18n[_lang][k])el.textContent=t(k);
+  });
+  // ============ GENERIC data-i18n-placeholder ATTRIBUTE HANDLER ============
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el){
+    var k=el.getAttribute('data-i18n-placeholder');
+    if(k&&_i18n[_lang]&&_i18n[_lang][k])el.placeholder=t(k);
   });
 }
 
@@ -1883,77 +1906,77 @@ function switchSub(sub) {
 // ========== MODAL SYSTEM ==========
 const modalTemplates = {
   sessions: () => `
-    <div class="modal-header"><span class="modal-title">Active Sessions</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('modal_sessions')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
       <ul class="session-list">
-        <li class="session-item"><div class="session-dev-icon"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span></div><div class="session-info"><div class="session-name">MacBook Pro</div><div class="session-detail">San Francisco, CA · Current session</div></div><span class="session-current">Current</span></li>
-        <li class="session-item"><div class="session-dev-icon"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span></div><div class="session-info"><div class="session-name">iPhone 15 Pro</div><div class="session-detail">Beijing, CN · Active 15m ago</div></div><button class="session-kick">Sign out</button></li>
-        <li class="session-item"><div class="session-dev-icon"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span></div><div class="session-info"><div class="session-name">iPad Air</div><div class="session-detail">Shanghai, CN · Active 3h ago</div></div><button class="session-kick">Sign out</button></li>
+        <li class="session-item"><div class="session-dev-icon"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span></div><div class="session-info"><div class="session-name">MacBook Pro</div><div class="session-detail">San Francisco, CA · ${t('sess_current_session')}</div></div><span class="session-current">${t('sess_current')}</span></li>
+        <li class="session-item"><div class="session-dev-icon"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span></div><div class="session-info"><div class="session-name">iPhone 15 Pro</div><div class="session-detail">Beijing, CN · ${t('sess_active')} 15${t('m_ago')}</div></div><button class="session-kick">${t('sess_sign_out_btn')}</button></li>
+        <li class="session-item"><div class="session-dev-icon"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span></div><div class="session-info"><div class="session-name">iPad Air</div><div class="session-detail">Shanghai, CN · ${t('sess_active')} 3${t('h_ago')}</div></div><button class="session-kick">${t('sess_sign_out_btn')}</button></li>
       </ul>
     </div>`,
 
   security: () => `
-    <div class="modal-header"><span class="modal-title">Privacy &amp; Security</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('modal_security')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
-      <div class="sec-toggle-row"><div><div class="sec-label">Two-factor Authentication (2FA)</div><div class="sec-hint">Require a code from your authenticator app when signing in</div></div><button class="toggle" onclick="this.classList.toggle('on')"></button></div>
-      <div class="sec-toggle-row"><div><div class="sec-label">Login notifications</div><div class="sec-hint">Get an email when someone signs in from a new device</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></div>
-      <div class="sec-toggle-row"><div><div class="sec-label">End-to-end Encryption</div><div class="sec-hint">Your clips are encrypted before they leave your device</div></div><button class="toggle on" disabled style="opacity:.5;cursor:not-allowed;"></button></div>
+      <div class="sec-toggle-row"><div><div class="sec-label">${t('sec_2fa')}</div><div class="sec-hint">${t('sec_2fa_h')}</div></div><button class="toggle" onclick="this.classList.toggle('on')"></button></div>
+      <div class="sec-toggle-row"><div><div class="sec-label">${t('sec_login_notif')}</div><div class="sec-hint">${t('sec_login_notif_h')}</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></div>
+      <div class="sec-toggle-row"><div><div class="sec-label">${t('sec_e2ee')}</div><div class="sec-hint">${t('sec_e2ee_h')}</div></div><button class="toggle on" disabled style="opacity:.5;cursor:not-allowed;"></button></div>
     </div>`,
 
   pricing: () => `
-    <div class="modal-header"><span class="modal-title">Choose Your Plan</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('modal_pricing')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
       <div class="pricing-grid">
-        <div class="price-card" onclick="openModal('payment')"><div class="pc-name">Free</div><div class="pc-price">¥0<span>/mo</span></div><div class="pc-feat">3 devices<br>100 clip history<br>Community support</div></div>
-        <div class="price-card popular" onclick="openModal('payment')"><div class="pc-popular-tag">Popular</div><div class="pc-name">Professional</div><div class="pc-price">¥9.9<span>/mo</span></div><div class="pc-feat">Unlimited devices<br>Unlimited history<br>Priority support</div></div>
-        <div class="price-card" onclick="openModal('payment')"><div class="pc-name">Enterprise</div><div class="pc-price">¥29<span>/mo</span></div><div class="pc-feat">Everything in Pro<br>Team management<br>API access</div></div>
+        <div class="price-card" onclick="openModal('payment')"><div class="pc-name">${t('price_free')}</div><div class="pc-price">¥0<span>${t('price_per_mo')}</span></div><div class="pc-feat">${t('feat_3dev')}<br>${t('feat_100hist')}<br>${t('feat_community')}</div></div>
+        <div class="price-card popular" onclick="openModal('payment')"><div class="pc-popular-tag">${t('price_popular')}</div><div class="pc-name">${t('price_pro')}</div><div class="pc-price">¥9.9<span>${t('price_per_mo')}</span></div><div class="pc-feat">${t('feat_unlimited_dev')}<br>${t('feat_unlimited_hist')}<br>${t('feat_priority')}</div></div>
+        <div class="price-card" onclick="openModal('payment')"><div class="pc-name">${t('price_enterprise')}</div><div class="pc-price">¥29<span>${t('price_per_mo')}</span></div><div class="pc-feat">${t('sub_change_plan_h').split(' ')[0]} ${t('feat_priority')}<br>${t('feat_team')}<br>${t('feat_api')}</div></div>
       </div>
     </div>`,
 
   payment: () => `
-    <div class="modal-header"><span class="modal-title">Select Payment Method</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('modal_payment')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
-      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:4px;">Professional Plan</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:4px;">${t('pay_plan_name')}</div>
       <div style="font-size:20px;font-weight:700;margin-bottom:16px;">¥9.9<span style="font-size:13px;font-weight:400;color:var(--text-tertiary);">/month</span></div>
       <div class="pay-options">
         <div class="pay-opt"><div class="pay-icon pay-wechat"><span style="font-size:16px;">微</span></div><div class="pay-name">WeChat Pay 微信支付</div></div>
         <div class="pay-opt"><div class="pay-icon pay-alipay"><span style="font-size:14px;">支</span></div><div class="pay-name">Alipay 支付宝</div></div>
       </div>
     </div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button></div>`,
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">${t('pay_cancel')}</button></div>`,
 
   billing: () => `
-    <div class="modal-header"><span class="modal-title">Billing History</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('modal_billing')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
-      <div class="empty-state"><div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span></div><div class="empty-title">No invoices yet</div><div class="empty-desc">Your billing history will appear here once you make a purchase.</div></div>
+      <div class="empty-state"><div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span></div><div class="empty-title">${t('billing_empty')}</div><div class="empty-desc">${t('billing_empty_desc')}</div></div>
     </div>`,
 
   shortcuts: () => `
-    <div class="modal-header"><span class="modal-title">Keyboard Shortcuts</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('modal_shortcuts')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
       <ul class="shortcut-list">
-        <li class="sk-item"><span class="sk-action">Quick Paste Panel</span><div class="sk-keys"><kbd>⌘</kbd><kbd>K</kbd></div></li>
-        <li class="sk-item"><span class="sk-action">Copy selected clip</span><div class="sk-keys"><kbd>↵</kbd></div></li>
-        <li class="sk-item"><span class="sk-action">Paste as plain text</span><div class="sk-keys"><kbd>⇧</kbd><kbd>↵</kbd></div></li>
-        <li class="sk-item"><span class="sk-action">Delete selected clip</span><div class="sk-keys"><kbd>⌘</kbd><kbd>D</kbd></div></li>
-        <li class="sk-item"><span class="sk-action">Search clips</span><div class="sk-keys"><kbd>⌘</kbd><kbd>F</kbd></div></li>
-        <li class="sk-item"><span class="sk-action">New clip from selection</span><div class="sk-keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>C</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">${t('sk_quick_paste')}</span><div class="sk-keys"><kbd>⌘</kbd><kbd>K</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">${t('sk_copy_clip')}</span><div class="sk-keys"><kbd>↵</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">${t('sk_paste_plain')}</span><div class="sk-keys"><kbd>⇧</kbd><kbd>↵</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">${t('sk_delete_clip')}</span><div class="sk-keys"><kbd>⌘</kbd><kbd>D</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">${t('sk_search')}</span><div class="sk-keys"><kbd>⌘</kbd><kbd>F</kbd></div></li>
+        <li class="sk-item"><span class="sk-action">${t('sk_new_clip')}</span><div class="sk-keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>C</kbd></div></li>
       </ul>
     </div>`,
 
   notifications: () => `
-    <div class="modal-header"><span class="modal-title">Notification Preferences</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('modal_notif')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
       <ul class="notif-list">
-        <li class="nf-item"><div><div class="nf-label">New device connected</div><div class="nf-hint">When a new device joins your sync group</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></li>
-        <li class="nf-item"><div><div class="nf-label">Sync completed</div><div class="nf-hint">When all clips finish syncing</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></li>
-        <li class="nf-item"><div><div class="nf-label">Security alerts</div><div class="nf-hint">Suspicious sign-in attempts or security events</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></li>
-        <li class="nf-item"><div><div class="nf-label">Product updates</div><div class="nf-hint">New features, tips, and product news</div></div><button class="toggle" onclick="this.classList.toggle('on')"></button></li>
+        <li class="nf-item"><div><div class="nf-label">${t('nf_new_device')}</div><div class="nf-hint">${t('nf_new_device_h')}</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></li>
+        <li class="nf-item"><div><div class="nf-label">${t('nf_sync_done')}</div><div class="nf-hint">${t('nf_sync_done_h')}</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></li>
+        <li class="nf-item"><div><div class="nf-label">${t('nf_security')}</div><div class="nf-hint">${t('nf_security_h')}</div></div><button class="toggle on" onclick="this.classList.toggle('on')"></button></li>
+        <li class="nf-item"><div><div class="nf-label">${t('nf_updates')}</div><div class="nf-hint">${t('nf_updates_h')}</div></div><button class="toggle" onclick="this.classList.toggle('on')"></button></li>
       </ul>
     </div>`,
 
   themes: () => `
-    <div class="modal-header"><span class="modal-title">Theme &amp; Style</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('modal_themes')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
       <div class="theme-grid">
         <div class="theme-opt" data-style="vercel" onclick="applyStyle('vercel',userMode);closeModal();">
@@ -1981,14 +2004,14 @@ const modalTemplates = {
     </div>`,
 
   export: () => `
-    <div class="modal-header"><span class="modal-title">Export My Data</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('export_title')||'Export My Data'}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
-      <div class="export-box"><div class="export-icon"><span class="icon icon-xl" style="color:var(--accent)"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></div><div class="export-msg">We'll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You'll receive a download link via email within 24 hours.</div></div>
+      <div class="export-box"><div class="export-icon"><span class="icon icon-xl" style="color:var(--accent)"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></div><div class="export-msg">${t('export_msg')||'We\\'ll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You\\'ll receive a download link via email within 24 hours.'}</div></div>
     </div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-danger" onclick="closeModal()">Request Export</button></div>`,
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">${t('pay_cancel')}</button><button class="btn btn-danger" onclick="closeModal()">${t('export_request_btn')||'Request Export'}</button></div>`,
 
   addDevice: () => `
-    <div class="modal-header"><span class="modal-title">Add a Device</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-header"><span class="modal-title">${t('modal_add_device')}</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body" style="text-align:center;padding:24px 20px;">
       <div style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;">Scan this QR code with the ClipSync mobile app to instantly link this device.</div>
       <div style="width:200px;height:200px;margin:0 auto 20px;background:var(--bg-hover);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;position:relative;border:2px solid var(--border-default);">
