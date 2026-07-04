@@ -830,41 +830,125 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .sec-hint { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
 
 /* ============================================================
-   LOGIN PAGE
+   LOGIN & REGISTER PAGE — Multi-Step Auth System
+   Views: login-phone | login-password | set-password | register
    ============================================================ */
-.login-page { min-height: 100vh; display: flex; }
-.login-left {
+.auth-page { min-height: 100vh; display: flex; }
+.auth-left {
   flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;
   padding: 40px; background: var(--bg-base); transition: background .25s;
+  position: relative; overflow: hidden;
 }
-.login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 36px; }
-.login-brand .logo-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); font-size: 18px; }
-.login-brand .logo-type { font-size: 22px; }
-.login-welcome { font-size: 26px; font-weight: 750; color: var(--text-primary); letter-spacing: -.5px; margin-bottom: 8px; text-align: center; }
-.login-sub { font-size: 14.5px; color: var(--text-tertiary); margin-bottom: 32px; text-align: center; }
-.login-form { width: 100%; max-width: 340px; }
-.lf-field { margin-bottom: 16px; }
-.lf-label { font-size: 12px; font-weight: 550; color: var(--text-secondary); margin-bottom: 6px; display: block; }
-.lf-input {
+.auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
+.auth-brand .logo-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); font-size: 18px; }
+.auth-brand .logo-type { font-size: 22px; font-weight: 700; }
+
+/* ---- Auth View Container (handles slide transitions) ---- */
+.auth-views { width: 100%; max-width: 380px; position: relative; overflow: visible; min-height: 560px; }
+.auth-view {
+  position: absolute; top: 0; left: 0; width: 100%;
+  opacity: 0; transform: translateX(24px); pointer-events: none;
+  transition: opacity .3s ease, transform .3s ease;
+}
+.auth-view.active {
+  opacity: 1; transform: translateX(0); pointer-events: auto !important; position: relative;
+}
+.auth-view.exit-left {
+  opacity: 0; transform: translateX(-24px); pointer-events: none;
+}
+
+/* ---- Welcome Text ---- */
+.auth-welcome { font-size: 24px; font-weight: 750; color: var(--text-primary); letter-spacing: -.4px; margin-bottom: 6px; }
+.auth-sub { font-size: 14px; color: var(--text-tertiary); margin-bottom: 28px; line-height: 1.5; }
+
+/* ---- Auth Method Tabs ---- */
+.auth-tabs { display: flex; background: var(--bg-hover); border-radius: var(--radius-md); padding: 3px; margin-bottom: 24px; }
+.auth-tab {
+  flex: 1; padding: 8px 16px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 500; color: var(--text-tertiary);
+  cursor: pointer; border: none; background: transparent;
+  transition: all .2s ease; font-family: inherit; text-align: center;
+}
+.auth-tab.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-card); font-weight: 600; }
+.auth-tab:hover:not(.active) { color: var(--text-secondary); }
+
+/* ---- Form Fields ---- */
+.auth-form { width: 100%; }
+.af-field { margin-bottom: 16px; }
+.af-label { font-size: 12px; font-weight: 550; color: var(--text-secondary); margin-bottom: 6px; display: block; }
+.af-input-group { display: flex; gap: 8px; }
+.af-input-group .af-input { flex: 1; }
+.af-input {
   width: 100%; padding: 10px 14px; border-radius: var(--radius-md);
-  border: 1px solid var(--border-default); background: var(--bg-surface);
-  font-size: 14px; color: var(--text-primary); font-family: inherit; outline: none; transition: border-color .15s;
+  border: 1.5px solid var(--border-default); background: var(--bg-surface);
+  font-size: 14px; color: var(--text-primary); font-family: inherit; outline: none;
+  transition: border-color .15s, box-shadow .15s; letter-spacing: .2px;
 }
-.lf-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
-.lf-input::placeholder { color: var(--text-tertiary); }
-.lf-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-.lf-remember { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; }
-.lf-forgot { font-size: 12.5px; color: var(--accent); cursor: pointer; font-weight: 500; }
-.lf-submit {
+.af-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
+.af-input::placeholder { color: var(--text-tertiary); }
+.af-input.error { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-bg); }
+
+/* Verification code send button */
+.af-code-btn {
+  padding: 10px 16px; border-radius: var(--radius-md);
+  border: 1.5px solid var(--border-default); background: var(--bg-surface);
+  font-size: 12.5px; font-weight: 550; color: var(--accent); cursor: pointer;
+  white-space: nowrap; font-family: inherit; transition: all .15s; flex-shrink: 0;
+  min-width: 100px; text-align: center;
+}
+.af-code-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-light); }
+.af-code-btn:disabled { color: var(--text-tertiary); cursor: not-allowed; opacity: .6; }
+
+/* Password visibility toggle */
+.af-field-pwd { }
+.af-input-wrapper {
+  position: relative; display: flex; align-items: center;
+}
+.af-input-wrapper .af-input { padding-right: 40px; }
+.af-pwd-toggle {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; color: var(--text-tertiary);
+  padding: 4px; display: flex; align-items: center; transition: color .15s; z-index: 2;
+}
+
+/* Hide browser's native password reveal button (Chrome/Edge) */
+.af-input[type="password"]::-ms-reveal,
+.af-input[type="password"]::-webkit-credentials-auto-fill-button { display: none !important; }
+.af-pwd-toggle:hover { color: var(--text-secondary); }
+
+/* Form row: remember + forgot */
+.af-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+.af-remember { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; user-select: none; }
+.af-remember input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+.af-forgot { font-size: 12.5px; color: var(--accent); cursor: pointer; font-weight: 500; background: none; border: none; font-family: inherit; }
+.af-forgot:hover { text-decoration: underline; }
+
+/* Submit button */
+.af-submit {
   width: 100%; padding: 11px; border-radius: var(--radius-md);
   background: var(--accent); color: var(--text-inverse);
-  font-size: 14px; font-weight: 600; font-family: inherit;
-  border: none; cursor: pointer; transition: all .15s;
+  font-size: 14.5px; font-weight: 600; font-family: inherit;
+  border: none; cursor: pointer; transition: all .18s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
 }
-.lf-submit:hover { filter: brightness(1.05); transform: translateY(-0.5px); }
-.login-divider { display: flex; align-items: center; gap: 14px; margin: 24px 0; color: var(--text-tertiary); font-size: 12px; }
-.login-divider::before, .login-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-default); }
-.login-socials { display: flex; gap: 10px; justify-content: center; }
+.af-submit:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-0.5px); box-shadow: var(--shadow-elevated); }
+.af-submit:active:not(:disabled) { transform: translateY(0); }
+.af-submit:disabled { opacity: .55; cursor: not-allowed; }
+.af-submit .btn-spinner {
+  width: 16px; height: 16px; border: 2px solid transparent;
+  border-top-color: currentColor; border-radius: 50%;
+  animation: af-spin .6s linear infinite; display: none;
+}
+.af-submit.loading .btn-spinner { display: block; }
+.af-submit.loading .btn-text { opacity: 0; }
+@keyframes af-spin { to { transform: rotate(360deg); } }
+
+/* Divider */
+.auth-divider { display: flex; align-items: center; gap: 14px; margin: 22px 0; color: var(--text-tertiary); font-size: 12px; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-default); }
+
+/* Social login buttons */
+.auth-socials { display: flex; gap: 10px; justify-content: center; margin-bottom: 24px; }
 .social-btn {
   width: 42px; height: 42px; border-radius: var(--radius-md);
   border: 1px solid var(--border-default); background: var(--bg-surface);
@@ -872,24 +956,70 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   cursor: pointer; transition: all .12s; color: var(--text-secondary);
 }
 .social-btn:hover { border-color: var(--text-tertiary); background: var(--bg-hover); color: var(--text-primary); }
-.login-footer { margin-top: 28px; font-size: 12.5px; color: var(--text-tertiary); text-align: center; }
-.login-footer a { color: var(--accent); text-decoration: none; font-weight: 500; }
 
-.login-right {
+/* Footer links */
+.auth-footer { font-size: 13px; color: var(--text-tertiary); text-align: center; }
+.auth-footer a { color: var(--accent); text-decoration: none; font-weight: 550; transition: opacity .15s; }
+.auth-footer a:hover { opacity: .75; }
+
+/* ---- Set Password Step (new user init) ---- */
+.sp-steps { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+.sp-step {
+  display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-tertiary);
+}
+.sp-step-num {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--bg-hover);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 650; color: var(--text-tertiary);
+  transition: all .2s;
+}
+.sp-step.active .sp-step-num { background: var(--accent); color: var(--text-inverse); }
+.sp-step.done .sp-step-num { background: var(--success); color: white; }
+.sp-step.active { color: var(--text-primary); font-weight: 550; }
+.sp-step-line { width: 28px; height: 1.5px; background: var(--border-default); border-radius: 1px; }
+.sp-step-line.active { background: var(--accent); }
+
+/* Password strength indicator */
+.pwd-strength { display: flex; gap: 4px; margin-top: 8px; }
+.ps-bar { flex: 1; height: 3px; border-radius: 2px; background: var(--bg-hover); transition: background .2s; }
+.ps-bar.weak { background: var(--danger); }
+.ps-bar.medium { background: var(--warning); }
+.ps-bar.strong { background: var(--success); }
+
+.sp-hint { font-size: 11.5px; color: var(--text-tertiary); margin-top: 8px; line-height: 1.6; }
+.sp-hint span.valid { color: var(--success); }
+.sp-hint span.invalid { color: var(--danger); }
+
+/* ---- Register specific ---- */
+.reg-agree { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 20px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.reg-agree input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; margin-top: 2px; cursor: pointer; flex-shrink: 0; }
+.reg-agree a { color: var(--accent); text-decoration: none; }
+
+/* Back link */
+.auth-back {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 13px; color: var(--text-secondary); cursor: pointer;
+  background: none; border: none; font-family: inherit; padding: 4px 0; margin-bottom: 16px;
+  transition: color .15s;
+}
+.auth-back:hover { color: var(--text-primary); }
+
+/* ---- Right Panel (quote panel) ---- */
+.auth-right {
   width: 400px; background: var(--gradient-accent);
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   padding: 40px; color: white; position: relative; overflow: hidden;
 }
-.lr-pattern {
+.ar-pattern {
   position: absolute; inset: 0; opacity: .06;
   background-image: radial-gradient(circle at 2px 2px, white 1px, transparent 0);
   background-size: 24px 24px;
 }
-.lr-content { position: relative; z-index: 1; text-align: center; }
-.lr-quote { font-size: 22px; font-weight: 600; line-height: 1.5; margin-bottom: 20px; }
-.lr-author { font-size: 13px; opacity: .7; }
+.ar-content { position: relative; z-index: 1; text-align: center; }
+.ar-quote { font-size: 22px; font-weight: 600; line-height: 1.5; margin-bottom: 20px; }
+.ar-author { font-size: 13px; opacity: .7; }
 
-@media (max-width: 900px) { .login-right { display: none; } }
+@media (max-width: 900px) { .auth-right { display: none; } }
 
 /* ============================================================
    CONTROL BAR (outside app shell)
@@ -1107,38 +1237,215 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
 <div class="demo-wrap">
 
-<!-- ============== PAGE: LOGIN ============== -->
+<!-- ============== PAGE: LOGIN / REGISTER ============== -->
 <div class="page active" id="pg-login">
-  <div class="login-page">
-    <div class="login-left">
-      <div class="login-brand">
-        <div class="logo-icon">C</div><span class="logo-type">ClipSync</span>
-      </div>
-      <div class="login-welcome">Welcome back</div>
-      <div class="login-sub">Sign in to sync your clipboard across all devices</div>
-      <div class="login-form">
-        <div class="lf-field"><label class="lf-label">Email or Phone</label><input class="lf-input" type="text" placeholder="carlos@example.com" value="carlos@example.com"></div>
-        <div class="lf-field"><label class="lf-label">Password</label><input class="lf-input" type="password" placeholder="••••••••"></div>
-        <div class="lf-row">
-          <label class="lf-remember"><input type="checkbox" checked> Remember me</label>
-          <span class="lf-forgot" style="cursor:pointer;color:var(--accent);" onclick="showToast('Password reset email sent! Check your inbox.','info')">Forgot password?</span>
+  <div class="auth-page">
+    <!-- Left: Auth Forms -->
+    <div class="auth-left">
+      <div class="auth-views" id="authViews">
+
+        <!-- ===== VIEW 1: Phone + Verification Code Login (Default) ===== -->
+        <div class="auth-view active" id="av-login-phone">
+          <div class="auth-brand">
+            <div class="logo-icon">C</div><span class="logo-type">ClipSync</span>
+          </div>
+          <div class="auth-welcome">欢迎回来</div>
+          <div class="auth-sub">登录以在所有设备间同步剪贴板</div>
+
+          <!-- Auth method switcher -->
+          <div class="auth-tabs">
+            <button class="auth-tab active" data-tab="phone" onclick="switchAuthTab('phone')">手机验证码</button>
+            <button class="auth-tab" data-tab="password" onclick="switchAuthTab('password')">密码登录</button>
+          </div>
+
+          <div class="auth-form">
+            <div class="af-field">
+              <label class="af-label">手机号码</label>
+              <input class="af-input" type="tel" id="lpPhone" placeholder="请输入手机号" maxlength="11" value="13800138000" autocomplete="tel">
+            </div>
+            <div class="af-field">
+              <label class="af-label">验证码</label>
+              <div class="af-input-group">
+                <input class="af-input" type="text" id="lpCode" placeholder="6位验证码" maxlength="6" autocomplete="one-time-code">
+                <button class="af-code-btn" id="lpSendBtn" onclick="sendCode('login')">发送验证码</button>
+              </div>
+            </div>
+            <div class="af-row">
+              <label class="af-remember"><input type="checkbox" checked id="lpRemember"> 记住我</label>
+              <button class="af-forgot" onclick="showToast('验证码已重新发送','info')">没收到？</button>
+            </div>
+            <button class="af-submit" id="lpSubmit" onclick="handlePhoneLogin()">
+              <span class="btn-text">登 录</span><span class="btn-spinner"></span>
+            </button>
+
+            <div class="auth-divider">或使用以下方式登录</div>
+            <div class="auth-socials">
+              <button class="social-btn" title="微信登录"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M8.5 12c.8 0 1.5-.7 1.5-1.5S9.3 9 8.5 9 7 9.7 7 10.5 7.7 12 8.5 12zM15 12c.8 0 1.5-.7 1.5-1.5S15.8 9 15 9s-1.5.7-1.5 1.5.7 1.5 1.5 1.5z"/><path d="M19.5 10.2c0-3.4-3.6-6.2-8-6.2s-8 2.8-8 6.2c0 3.1 2.8 5.7 6.6 6.2.3.1.7.2.8.5l.3 1.2c.1.3.3.5.6.5s.5-.2.6-.5l.3-1.2c.1-.3.5-.4.8-.5C16.7 15.9 19.5 13.3 19.5 10.2z"/></svg></span></button>
+              <button class="social-btn" title="Apple 登录"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></span></button>
+              <button class="social-btn" title="GitHub 登录"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></span></button>
+              <button class="social-btn" title="企业微信"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></span></button>
+            </div>
+          </div>
+          <div class="auth-footer">还没有账号？<a href="javascript:void(0)" onclick="showAuthView('register')">免费注册</a></div>
         </div>
-        <button class="lf-submit" onclick="showPage('app')">Sign In</button>
-        <div class="login-divider">or continue with</div>
-        <div class="login-socials">
-          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg></span></button>
-          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></span></button>
-          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></span></button>
-          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></span></button>
+
+        <!-- ===== VIEW 2: Username/Email + Password Login ===== -->
+        <div class="auth-view" id="av-login-password">
+          <div class="auth-brand">
+            <div class="logo-icon">C</div><span class="logo-type">ClipSync</span>
+          </div>
+          <div class="auth-welcome">欢迎回来</div>
+          <div class="auth-sub">输入账号密码安全登录</div>
+
+          <div class="auth-tabs">
+            <button class="auth-tab" data-tab="phone" onclick="switchAuthTab('phone')">手机验证码</button>
+            <button class="auth-tab active" data-tab="password" onclick="switchAuthTab('password')">密码登录</button>
+          </div>
+
+          <div class="auth-form">
+            <div class="af-field">
+              <label class="af-label">用户名 / 邮箱 / 手机号</label>
+              <input class="af-input" type="text" id="lpuAccount" placeholder="请输入账号" value="carlos@example.com" autocomplete="username">
+            </div>
+            <div class="af-field af-field-pwd">
+              <label class="af-label">密码</label>
+              <div class="af-input-wrapper">
+                <input class="af-input" type="password" id="lpuPwd" placeholder="请输入密码" autocomplete="current-password">
+                <button class="af-pwd-toggle" onclick="togglePwdVisibility('lpuPwd',this)">
+                  <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                </button>
+              </div>
+            </div>
+            <div class="af-row">
+              <label class="af-remember"><input type="checkbox" checked id="lpuRemember"> 记住我</label>
+              <button class="af-forgot" onclick="showToast('密码重置邮件已发送！请查收邮箱。','info')">忘记密码？</button>
+            </div>
+            <button class="af-submit" id="lpuSubmit" onclick="handlePasswordLogin()">
+              <span class="btn-text">登 录</span><span class="btn-spinner"></span>
+            </button>
+          </div>
+          <div class="auth-footer">还没有账号？<a href="javascript:void(0)" onclick="showAuthView('register')">免费注册</a></div>
         </div>
-      </div>
-      <div class="login-footer">Don't have an account? <a href="javascript:void(0)" onclick="showToast('Sign up flow coming soon!','info')" style="color:var(--accent);">Create one free</a></div>
-    </div>
-    <div class="login-right" id="loginRight">
-      <div class="lr-pattern"></div>
-      <div class="lr-content">
-        <div class="lr-quote">"The best way to sync your<br>clipboard across devices."</div>
-        <div class="lr-author">— Carlos Shao, Founder</div>
+
+        <!-- ===== VIEW 3: Set Password (New User Detected) ===== -->
+        <div class="auth-view" id="av-set-password">
+          <button class="auth-back" onclick="showAuthView('login-phone')">
+            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></span> 返回
+          </button>
+          <div class="sp-steps">
+            <div class="sp-step active"><div class="sp-step-num">1</div><span>验证身份</span></div>
+            <div class="sp-step-line active"></div>
+            <div class="sp-step active"><div class="sp-step-num">2</div><span>设置密码</span></div>
+          </div>
+          <div class="auth-welcome" style="font-size:20px;">检测到新账号</div>
+          <div class="auth-sub" style="margin-bottom:24px;">该手机号尚未注册，请先设置密码完成初始化</div>
+
+          <div class="auth-form">
+            <div class="af-field af-field-pwd">
+              <label class="af-label">设置密码</label>
+              <div class="af-input-wrapper">
+                <input class="af-input" type="password" id="spNewPwd" placeholder="至少 8 位，含字母和数字" oninput="checkPwdStrength(this.value)">
+                <button class="af-pwd-toggle" onclick="togglePwdVisibility('spNewPwd',this)">
+                  <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                </button>
+              </div>
+            </div>
+            <div class="pwd-strength" id="pwdStrength">
+              <div class="ps-bar"></div><div class="ps-bar"></div><div class="ps-bar"></div><div class="ps-bar"></div>
+            </div>
+            <div class="sp-hint" id="spHint">
+              <span class="invalid" id="spLen">· 至少 8 个字符</span>
+              <span class="invalid" id="spNum">· 包含数字</span>
+              <span class="invalid" id="spLetter">· 包含字母</span>
+            </div>
+
+            <div class="af-field af-field-pwd" style="margin-top:16px;">
+              <label class="af-label">确认密码</label>
+              <div class="af-input-wrapper">
+                <input class="af-input" type="password" id="spConfirmPwd" placeholder="再次输入密码">
+                <button class="af-pwd-toggle" onclick="togglePwdVisibility('spConfirmPwd',this)">
+                  <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                </button>
+              </div>
+            </div>
+
+            <button class="af-submit" id="spSubmit" onclick="handleSetPassword()" style="margin-top:22px;" disabled>
+              <span class="btn-text">完成注册并登入</span><span class="btn-spinner"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ===== VIEW 4: Register (New Account) ===== -->
+        <div class="auth-view" id="av-register">
+          <button class="auth-back" onclick="showAuthView('login-phone')">
+            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></span> 返回登录
+          </button>
+          <div class="auth-welcome">创建 ClipSync 账号</div>
+          <div class="auth-sub" style="margin-bottom:24px;">免费开始，跨设备同步你的剪贴板</div>
+
+          <div class="auth-form">
+            <div class="af-field">
+              <label class="af-label">手机号码</label>
+              <input class="af-input" type="tel" id="regPhone" placeholder="用于登录和接收通知" maxlength="11">
+            </div>
+            <div class="af-field">
+              <label class="af-label">验证码</label>
+              <div class="af-input-group">
+                <input class="af-input" type="text" id="regCode" placeholder="6位验证码" maxlength="6">
+                <button class="af-code-btn" id="regSendBtn" onclick="sendCode('register')">发送验证码</button>
+              </div>
+            </div>
+            <div class="af-field af-field-pwd">
+              <label class="af-label">设置密码</label>
+              <div class="af-input-wrapper">
+                <input class="af-input" type="password" id="regPwd" placeholder="至少 8 位，含字母和数字" oninput="checkRegPwdStrength(this.value)">
+                <button class="af-pwd-toggle" onclick="togglePwdVisibility('regPwd',this)">
+                  <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                </button>
+              </div>
+            </div>
+            <div class="pwd-strength" id="regPwdStrength" style="display:none;">
+              <div class="ps-bar"></div><div class="ps-bar"></div><div class="ps-bar"></div><div class="ps-bar"></div>
+            </div>
+            <div class="af-field af-field-pwd">
+              <label class="af-label">确认密码</label>
+              <div class="af-input-wrapper">
+                <input class="af-input" type="password" id="regConfirm" placeholder="再次输入密码">
+                <button class="af-pwd-toggle" onclick="togglePwdVisibility('regConfirm',this)">
+                  <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                </button>
+              </div>
+            </div>
+
+            <label class="reg-agree">
+              <input type="checkbox" id="regAgree" checked>
+              我已阅读并同意 <a href="javascript:void(0)" onclick="showToast('服务协议页面开发中','info')">《服务条款》</a> 和
+              <a href="javascript:void(0)" onclick="showToast('隐私政策页面开发中','info')">《隐私政策》</a>
+            </label>
+
+            <button class="af-submit" id="regSubmit" onclick="handleRegister()">
+              <span class="btn-text">注 册</span><span class="btn-spinner"></span>
+            </button>
+          </div>
+
+          <div class="auth-divider" style="margin-top:20px;">或使用以下方式快速注册</div>
+          <div class="auth-socials">
+            <button class="social-btn" title="微信注册"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M8.5 12c.8 0 1.5-.7 1.5-1.5S9.3 9 8.5 9 7 9.7 7 10.5 7.7 12 8.5 12zM15 12c.8 0 1.5-.7 1.5-1.5S15.8 9 15 9s-1.5.7-1.5 1.5.7 1.5 1.5 1.5z"/><path d="M19.5 10.2c0-3.4-3.6-6.2-8-6.2s-8 2.8-8 6.2c0 3.1 2.8 5.7 6.6 6.2.3.1.7.2.8.5l.3 1.2c.1.3.3.5.6.5s.5-.2.6-.5l.3-1.2c.1-.3.5-.4.8-.5C16.7 15.9 19.5 13.3 19.5 10.2z"/></svg></span></button>
+            <button class="social-btn" title="Apple 注册"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></span></button>
+            <button class="social-btn" title="GitHub 注册"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></span></button>
+          </div>
+          <div class="auth-footer" style="margin-top:20px;">已有账号？<a href="javascript:void(0)" onclick="showAuthView('login-phone')">立即登录</a></div>
+        </div>
+
+      </div><!-- /auth-views -->
+    </div><!-- /auth-left -->
+
+    <!-- Right: Quote Panel -->
+    <div class="auth-right" id="authRight">
+      <div class="ar-pattern"></div>
+      <div class="ar-content">
+        <div class="ar-quote">"The best way to sync your<br>clipboard across devices."</div>
+        <div class="ar-author">— Carlos Shao, Founder</div>
       </div>
     </div>
   </div>
@@ -1875,6 +2182,442 @@ document.addEventListener('keydown', e => {
       }
     }
   }
+});
+
+// ============================================================
+// AUTH SYSTEM — Login / Register / Set Password
+// ============================================================
+
+let currentAuthView = 'login-phone'; // track current view
+let codeTimers = { login: 0, register: 0 };
+
+/** Switch between auth views with slide animation */
+function showAuthView(viewId) {
+  const container = document.getElementById('authViews');
+  if (!container) { console.error('[Auth] authViews container not found'); return; }
+
+  const views = container.querySelectorAll('.auth-view');
+  const target = document.getElementById('av-' + viewId);
+  if (!target) { console.error('[Auth] view av-' + viewId + ' not found'); return; }
+
+  // Guard: already on this view
+  if (target.classList.contains('active')) return;
+
+  // Exit current view(s) — remove active immediately, schedule cleanup
+  views.forEach(v => {
+    if (v.classList.contains('active')) {
+      v.classList.remove('active');
+      v.classList.add('exit-left');
+      // Clean up exit animation class after transition completes
+      setTimeout(() => { v.classList.remove('exit-left'); }, 350);
+    }
+    // Also ensure no leftover active state on non-target views
+    if (v !== target && !v.classList.contains('exit-left')) {
+      v.classList.remove('active');
+    }
+  });
+
+  // Enter new view — short delay so exit animation starts first
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      target.classList.add('active');
+      currentAuthView = viewId;
+      // Focus first input of the new view for better UX
+      const firstInput = target.querySelector('.af-input');
+      if (firstInput) firstInput.focus();
+    }, 50);
+  });
+}
+
+/** Switch between phone-code and password login tabs (no page change) */
+function switchAuthTab(tab) {
+  // Update tab buttons
+  document.querySelectorAll('#av-login-phone .auth-tab, #av-login-password .auth-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+
+  // Switch view within login
+  if (tab === 'phone') {
+    showAuthView('login-phone');
+  } else {
+    showAuthView('login-password');
+  }
+}
+
+/** Toggle password field visibility */
+function togglePwdVisibility(inputId, btn) {
+  try {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.innerHTML = '<span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span>';
+    } else {
+      input.type = 'password';
+      btn.innerHTML = '<span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>';
+    }
+  } catch (err) {
+    console.error('[TogglePwd] Error:', err);
+  }
+}
+
+/** Send verification code (simulated countdown) */
+function sendCode(context) {
+  try {
+    const btnId = context === 'login' ? 'lpSendBtn' : 'regSendBtn';
+    const btn = document.getElementById(btnId);
+    if (!btn || btn.disabled) return;
+
+    const phoneInputId = context === 'login' ? 'lpPhone' : 'regPhone';
+    const phoneInput = document.getElementById(phoneInputId);
+    const phone = phoneInput ? phoneInput.value.trim() : '';
+
+    // Basic phone validation
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      shakeElement(phoneInput || btn);
+      showToast('请输入正确的手机号码', 'error');
+      return;
+    }
+
+    // Start countdown
+    let seconds = 60;
+    btn.disabled = true;
+    btn.textContent = seconds + 's 后重发';
+
+    codeTimers[context] = setInterval(() => {
+      seconds--;
+      if (seconds <= 0) {
+        clearInterval(codeTimers[context]);
+        btn.disabled = false;
+        btn.textContent = '发送验证码';
+      } else {
+        btn.textContent = seconds + 's';
+      }
+    }, 1000);
+
+    showToast('验证码已发送至 ' + phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'), 'success');
+
+    // Auto-fill demo code after 1.5s for convenience
+    const codeInputId = context === 'login' ? 'lpCode' : 'regCode';
+    const codeInput = document.getElementById(codeInputId);
+    if (codeInput && !codeInput.value) {
+      setTimeout(() => { codeInput.value = '888888'; }, 1500);
+    }
+  } catch (err) {
+    console.error('[SendCode] Error:', err);
+    showToast('验证码发送失败，请重试', 'error');
+  }
+}
+
+/** Check password strength and update UI indicators */
+function checkPwdStrength(pwd) {
+  const bars = document.querySelectorAll('#pwdStrength .ps-bar');
+  const spLen = document.getElementById('spLen');
+  const spNum = document.getElementById('spNum');
+  const spLetter = document.getElementById('spLetter');
+  const submitBtn = document.getElementById('spSubmit');
+
+  const hasLen = pwd.length >= 8;
+  const hasNum = /\d/.test(pwd);
+  const hasLetter = /[a-zA-Z]/.test(pwd);
+
+  // Update hints
+  if (spLen) spLen.className = hasLen ? 'valid' : 'invalid';
+  if (spNum) spNum.className = hasNum ? 'valid' : 'invalid';
+  if (spLetter) spLetter.className = hasLetter ? 'valid' : 'invalid';
+
+  // Calculate strength level
+  let level = 0;
+  if (hasLen) level++;
+  if (hasNum) level++;
+  if (hasLetter) level++;
+
+  bars.forEach((bar, i) => {
+    bar.className = 'ps-bar';
+    if (i < level) {
+      bar.classList.add(level <= 1 ? 'weak' : level === 2 ? 'medium' : 'strong');
+    }
+  });
+
+  // Enable/disable submit
+  if (submitBtn) {
+    const confirmVal = document.getElementById('spConfirmPwd')?.value || '';
+    submitBtn.disabled = !(hasLen && hasNum && hasLetter && confirmVal === pwd);
+  }
+}
+
+/** Check password strength for register page (compact version) */
+function checkRegPwdStrength(pwd) {
+  const container = document.getElementById('regPwdStrength');
+  if (!container) return;
+
+  // Show/hide the strength bar container
+  container.style.display = pwd.length > 0 ? '' : 'none';
+  if (!pwd) return;
+
+  const bars = container.querySelectorAll('.ps-bar');
+  const hasLen = pwd.length >= 8;
+  const hasNum = /\d/.test(pwd);
+  const hasLetter = /[a-zA-Z]/.test(pwd);
+
+  let level = 0;
+  if (hasLen) level++;
+  if (hasNum) level++;
+  if (hasLetter) level++;
+
+  bars.forEach((bar, i) => {
+    bar.className = 'ps-bar';
+    if (i < level) {
+      bar.classList.add(level <= 1 ? 'weak' : level === 2 ? 'medium' : 'strong');
+    }
+  });
+}
+
+/** Handle phone + verification code login */
+function handlePhoneLogin() {
+  try {
+    const phoneEl = document.getElementById('lpPhone');
+    const codeEl = document.getElementById('lpCode');
+    const submitBtn = document.getElementById('lpSubmit');
+    if (!phoneEl || !codeEl || !submitBtn) { showToast('表单异常', 'error'); return; }
+
+    const phone = phoneEl.value.trim();
+    const code = codeEl.value.trim();
+
+    // Validate
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      shakeElement(phoneEl);
+      showToast('请输入正确的手机号码', 'error'); return;
+    }
+    if (!/^\d{6}$/.test(code)) {
+      shakeElement(codeEl);
+      showToast('请输入6位验证码', 'error'); return;
+    }
+
+    // Show loading
+    submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
+
+    // Simulate API call — detect new vs existing user
+    setTimeout(() => {
+      submitBtn.classList.remove('loading');
+      submitBtn.disabled = false;
+
+      // Demo: treat specific phone numbers as "new users"
+      if (phone === '13800138000' || phone === '10000000000') {
+        showToast('检测到新账号，请完成密码初始化', 'info');
+        showAuthView('set-password');
+        // Pre-set the confirmed password listener
+        const confirmPwd = document.getElementById('spConfirmPwd');
+        if (confirmPwd) {
+          confirmPwd.oninput = () => checkPwdStrength(document.getElementById('spNewPwd').value);
+        }
+      } else {
+        showToast('登录成功！正在跳转…', 'success');
+        setTimeout(() => showPage('app'), 800);
+      }
+    }, 1200);
+  } catch (err) {
+    console.error('[PhoneLogin] Error:', err);
+    showToast('登录异常，请重试', 'error');
+  }
+}
+
+/** Handle username/email + password login */
+function handlePasswordLogin() {
+  try {
+    const accountEl = document.getElementById('lpuAccount');
+    const pwdEl = document.getElementById('lpuPwd');
+    const submitBtn = document.getElementById('lpuSubmit');
+    if (!accountEl || !pwdEl || !submitBtn) { showToast('表单异常', 'error'); return; }
+
+    const account = accountEl.value.trim();
+    const pwd = pwdEl.value;
+
+    if (!account) {
+      shakeElement(accountEl);
+      showToast('请输入账号', 'error'); return;
+    }
+    if (!pwd || pwd.length < 6) {
+      shakeElement(pwdEl);
+      showToast('密码长度不足', 'error'); return;
+    }
+
+    submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
+
+    setTimeout(() => {
+      submitBtn.classList.remove('loading');
+      submitBtn.disabled = false;
+      showToast('登录成功！正在跳转…', 'success');
+      setTimeout(() => showPage('app'), 800);
+    }, 1200);
+  } catch (err) {
+    console.error('[PasswordLogin] Error:', err);
+    showToast('登录异常，请重试', 'error');
+  }
+}
+
+/** Handle new user set-password step */
+function handleSetPassword() {
+  try {
+    const newPwdEl = document.getElementById('spNewPwd');
+    const confirmPwdEl = document.getElementById('spConfirmPwd');
+    const submitBtn = document.getElementById('spSubmit');
+    if (!newPwdEl || !confirmPwdEl || !submitBtn) { showToast('表单异常', 'error'); return; }
+
+    const newPwd = newPwdEl.value;
+    const confirmPwd = confirmPwdEl.value;
+
+    if (newPwd !== confirmPwd) {
+      shakeElement(confirmPwdEl);
+      showToast('两次输入的密码不一致', 'error'); return;
+    }
+
+    submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
+
+    setTimeout(() => {
+      submitBtn.classList.remove('loading');
+      showToast('注册完成！欢迎加入 ClipSync', 'success');
+      setTimeout(() => showPage('app'), 800);
+    }, 1500);
+  } catch (err) {
+    console.error('[SetPassword] Error:', err);
+    showToast('密码设置异常，请重试', 'error');
+  }
+}
+
+/** Handle registration form submission */
+function handleRegister() {
+  try {
+    const phoneEl = document.getElementById('regPhone');
+    const codeEl = document.getElementById('regCode');
+    const pwdEl = document.getElementById('regPwd');
+    const confirmEl = document.getElementById('regConfirm');
+    const agreeEl = document.getElementById('regAgree');
+    const submitBtn = document.getElementById('regSubmit');
+
+    // Defensive: ensure all elements exist
+    if (!phoneEl || !codeEl || !pwdEl || !confirmEl || !agreeEl || !submitBtn) {
+      console.error('[Register] Missing form element', { phone: !!phoneEl, code: !!codeEl, pwd: !!pwdEl, confirm: !!confirmEl, agree: !!agreeEl, btn: !!submitBtn });
+      showToast('表单加载异常，请刷新页面重试', 'error');
+      return;
+    }
+
+    const phone = phoneEl.value.trim();
+    const code = codeEl.value.trim();
+    const pwd = pwdEl.value;
+    const confirm = confirmEl.value;
+    const agree = agreeEl.checked;
+
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      shakeElement(phoneEl);
+      showToast('请输入正确的手机号码', 'error'); return;
+    }
+    if (!/^\d{6}$/.test(code)) {
+      shakeElement(codeEl);
+      showToast('请输入6位验证码', 'error'); return;
+    }
+    if (!pwd || pwd.length < 8) {
+      shakeElement(pwdEl);
+      showToast('密码至少需要8位', 'error'); return;
+    }
+    if (pwd !== confirm) {
+      shakeElement(confirmEl);
+      showToast('两次输入的密码不一致', 'error'); return;
+    }
+    if (!agree) {
+      showToast('请阅读并同意服务条款和隐私政策', 'error'); return;
+    }
+
+    // Prevent double-submit
+    if (submitBtn.disabled) return;
+
+    submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
+
+    setTimeout(() => {
+      submitBtn.classList.remove('loading');
+      submitBtn.disabled = false;
+      showToast('注册成功！欢迎加入 ClipSync 🎉', 'success');
+      setTimeout(() => showPage('app'), 800);
+    }, 1500);
+  } catch (err) {
+    console.error('[Register] Unexpected error:', err);
+    showToast('注册过程出现异常，请重试', 'error');
+  }
+}
+
+/** Shake animation for invalid inputs */
+function shakeElement(el) {
+  if (!el) return;
+  el.classList.add('error');
+  el.style.animation = 'none';
+  el.offsetHeight; // trigger reflow
+  el.style.animation = 'shake .4s ease';
+  setTimeout(() => { el.style.animation = ''; el.classList.remove('error'); }, 500);
+}
+
+// Add shake keyframes dynamically
+const shakeStyle = document.createElement('style');
+shakeStyle.textContent = '@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}';
+document.head.appendChild(shakeStyle);
+
+// Wire up confirm-password validation listeners + keyboard Enter support after DOM ready
+document.addEventListener('DOMContentLoaded', () => {
+  const spConfirm = document.getElementById('spConfirmPwd');
+  if (spConfirm) {
+    spConfirm.addEventListener('input', () => checkPwdStrength(document.getElementById('spNewPwd')?.value || ''));
+  }
+  // Register page confirm matches password
+  const regConfirm = document.getElementById('regConfirm');
+  if (regConfirm) {
+    regConfirm.addEventListener('input', function() {
+      const regPwd = document.getElementById('regPwd');
+      if (this.value && this.value !== regPwd.value) {
+        this.style.borderColor = 'var(--danger)';
+      } else {
+        this.style.borderColor = '';
+      }
+    });
+  }
+
+  // === Keyboard Enter support for all auth forms ===
+  // Map each form container to its submit handler
+  const authSubmitMap = {
+    'av-login-phone': handlePhoneLogin,
+    'av-login-password': handlePasswordLogin,
+    'av-set-password': handleSetPassword,
+    'av-register': handleRegister,
+  };
+
+  Object.entries(authSubmitMap).forEach(([viewId, handler]) => {
+    const viewEl = document.getElementById(viewId);
+    if (!viewEl) return;
+    viewEl.querySelectorAll('.af-input').forEach(input => {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handler();
+        }
+      });
+    });
+  });
+
+  // Also wire phone inputs to auto-send code on Enter (when code field empty)
+  ['lpPhone', 'regPhone'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const context = id === 'lpPhone' ? 'login' : 'register';
+          sendCode(context);
+        }
+      });
+    }
+  });
 });
 
 // Initialize
