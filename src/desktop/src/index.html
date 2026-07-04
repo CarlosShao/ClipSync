@@ -858,41 +858,125 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .sec-hint { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
 
 /* ============================================================
-   LOGIN PAGE
+   LOGIN & REGISTER PAGE — Multi-Step Auth System
+   Views: login-phone | login-password | set-password | register
    ============================================================ */
-.login-page { min-height: 100vh; display: flex; }
-.login-left {
+.auth-page { min-height: 100vh; display: flex; }
+.auth-left {
   flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;
   padding: 40px; background: var(--bg-base); transition: background .25s;
+  position: relative; overflow: hidden;
 }
-.login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 36px; }
-.login-brand .logo-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); font-size: 18px; }
-.login-brand .logo-type { font-size: 22px; }
-.login-welcome { font-size: 26px; font-weight: 750; color: var(--text-primary); letter-spacing: -.5px; margin-bottom: 8px; text-align: center; }
-.login-sub { font-size: 14.5px; color: var(--text-tertiary); margin-bottom: 32px; text-align: center; }
-.login-form { width: 100%; max-width: 340px; }
-.lf-field { margin-bottom: 16px; }
-.lf-label { font-size: 12px; font-weight: 550; color: var(--text-secondary); margin-bottom: 6px; display: block; }
-.lf-input {
+.auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
+.auth-brand .logo-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); font-size: 18px; }
+.auth-brand .logo-type { font-size: 22px; font-weight: 700; }
+
+/* ---- Auth View Container (handles slide transitions) ---- */
+.auth-views { width: 100%; max-width: 380px; position: relative; overflow: visible; min-height: 560px; }
+.auth-view {
+  position: absolute; top: 0; left: 0; width: 100%;
+  opacity: 0; transform: translateX(24px); pointer-events: none;
+  transition: opacity .3s ease, transform .3s ease;
+}
+.auth-view.active {
+  opacity: 1; transform: translateX(0); pointer-events: auto !important; position: relative;
+}
+.auth-view.exit-left {
+  opacity: 0; transform: translateX(-24px); pointer-events: none;
+}
+
+/* ---- Welcome Text ---- */
+.auth-welcome { font-size: 24px; font-weight: 750; color: var(--text-primary); letter-spacing: -.4px; margin-bottom: 6px; }
+.auth-sub { font-size: 14px; color: var(--text-tertiary); margin-bottom: 28px; line-height: 1.5; }
+
+/* ---- Auth Method Tabs ---- */
+.auth-tabs { display: flex; background: var(--bg-hover); border-radius: var(--radius-md); padding: 3px; margin-bottom: 24px; }
+.auth-tab {
+  flex: 1; padding: 8px 16px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 500; color: var(--text-tertiary);
+  cursor: pointer; border: none; background: transparent;
+  transition: all .2s ease; font-family: inherit; text-align: center;
+}
+.auth-tab.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-card); font-weight: 600; }
+.auth-tab:hover:not(.active) { color: var(--text-secondary); }
+
+/* ---- Form Fields ---- */
+.auth-form { width: 100%; }
+.af-field { margin-bottom: 16px; }
+.af-label { font-size: 12px; font-weight: 550; color: var(--text-secondary); margin-bottom: 6px; display: block; }
+.af-input-group { display: flex; gap: 8px; }
+.af-input-group .af-input { flex: 1; }
+.af-input {
   width: 100%; padding: 10px 14px; border-radius: var(--radius-md);
-  border: 1px solid var(--border-default); background: var(--bg-surface);
-  font-size: 14px; color: var(--text-primary); font-family: inherit; outline: none; transition: border-color .15s;
+  border: 1.5px solid var(--border-default); background: var(--bg-surface);
+  font-size: 14px; color: var(--text-primary); font-family: inherit; outline: none;
+  transition: border-color .15s, box-shadow .15s; letter-spacing: .2px;
 }
-.lf-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
-.lf-input::placeholder { color: var(--text-tertiary); }
-.lf-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-.lf-remember { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; }
-.lf-forgot { font-size: 12.5px; color: var(--accent); cursor: pointer; font-weight: 500; }
-.lf-submit {
+.af-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
+.af-input::placeholder { color: var(--text-tertiary); }
+.af-input.error { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-bg); }
+
+/* Verification code send button */
+.af-code-btn {
+  padding: 10px 16px; border-radius: var(--radius-md);
+  border: 1.5px solid var(--border-default); background: var(--bg-surface);
+  font-size: 12.5px; font-weight: 550; color: var(--accent); cursor: pointer;
+  white-space: nowrap; font-family: inherit; transition: all .15s; flex-shrink: 0;
+  min-width: 100px; text-align: center;
+}
+.af-code-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-light); }
+.af-code-btn:disabled { color: var(--text-tertiary); cursor: not-allowed; opacity: .6; }
+
+/* Password visibility toggle */
+.af-field-pwd { }
+.af-input-wrapper {
+  position: relative; display: flex; align-items: center;
+}
+.af-input-wrapper .af-input { padding-right: 40px; }
+.af-pwd-toggle {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; color: var(--text-tertiary);
+  padding: 4px; display: flex; align-items: center; transition: color .15s; z-index: 2;
+}
+
+/* Hide browser's native password reveal button (Chrome/Edge) */
+.af-input[type="password"]::-ms-reveal,
+.af-input[type="password"]::-webkit-credentials-auto-fill-button { display: none !important; }
+.af-pwd-toggle:hover { color: var(--text-secondary); }
+
+/* Form row: remember + forgot */
+.af-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+.af-remember { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; user-select: none; }
+.af-remember input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+.af-forgot { font-size: 12.5px; color: var(--accent); cursor: pointer; font-weight: 500; background: none; border: none; font-family: inherit; }
+.af-forgot:hover { text-decoration: underline; }
+
+/* Submit button */
+.af-submit {
   width: 100%; padding: 11px; border-radius: var(--radius-md);
   background: var(--accent); color: var(--text-inverse);
-  font-size: 14px; font-weight: 600; font-family: inherit;
-  border: none; cursor: pointer; transition: all .15s;
+  font-size: 14.5px; font-weight: 600; font-family: inherit;
+  border: none; cursor: pointer; transition: all .18s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
 }
-.lf-submit:hover { filter: brightness(1.05); transform: translateY(-0.5px); }
-.login-divider { display: flex; align-items: center; gap: 14px; margin: 24px 0; color: var(--text-tertiary); font-size: 12px; }
-.login-divider::before, .login-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-default); }
-.login-socials { display: flex; gap: 10px; justify-content: center; }
+.af-submit:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-0.5px); box-shadow: var(--shadow-elevated); }
+.af-submit:active:not(:disabled) { transform: translateY(0); }
+.af-submit:disabled { opacity: .55; cursor: not-allowed; }
+.af-submit .btn-spinner {
+  width: 16px; height: 16px; border: 2px solid transparent;
+  border-top-color: currentColor; border-radius: 50%;
+  animation: af-spin .6s linear infinite; display: none;
+}
+.af-submit.loading .btn-spinner { display: block; }
+.af-submit.loading .btn-text { opacity: 0; }
+@keyframes af-spin { to { transform: rotate(360deg); } }
+
+/* Divider */
+.auth-divider { display: flex; align-items: center; gap: 14px; margin: 22px 0; color: var(--text-tertiary); font-size: 12px; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-default); }
+
+/* Social login buttons */
+.auth-socials { display: flex; gap: 10px; justify-content: center; margin-bottom: 24px; }
 .social-btn {
   width: 42px; height: 42px; border-radius: var(--radius-md);
   border: 1px solid var(--border-default); background: var(--bg-surface);
@@ -900,24 +984,70 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   cursor: pointer; transition: all .12s; color: var(--text-secondary);
 }
 .social-btn:hover { border-color: var(--text-tertiary); background: var(--bg-hover); color: var(--text-primary); }
-.login-footer { margin-top: 28px; font-size: 12.5px; color: var(--text-tertiary); text-align: center; }
-.login-footer a { color: var(--accent); text-decoration: none; font-weight: 500; }
 
-.login-right {
+/* Footer links */
+.auth-footer { font-size: 13px; color: var(--text-tertiary); text-align: center; }
+.auth-footer a { color: var(--accent); text-decoration: none; font-weight: 550; transition: opacity .15s; }
+.auth-footer a:hover { opacity: .75; }
+
+/* ---- Set Password Step (new user init) ---- */
+.sp-steps { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+.sp-step {
+  display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-tertiary);
+}
+.sp-step-num {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--bg-hover);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 650; color: var(--text-tertiary);
+  transition: all .2s;
+}
+.sp-step.active .sp-step-num { background: var(--accent); color: var(--text-inverse); }
+.sp-step.done .sp-step-num { background: var(--success); color: white; }
+.sp-step.active { color: var(--text-primary); font-weight: 550; }
+.sp-step-line { width: 28px; height: 1.5px; background: var(--border-default); border-radius: 1px; }
+.sp-step-line.active { background: var(--accent); }
+
+/* Password strength indicator */
+.pwd-strength { display: flex; gap: 4px; margin-top: 8px; }
+.ps-bar { flex: 1; height: 3px; border-radius: 2px; background: var(--bg-hover); transition: background .2s; }
+.ps-bar.weak { background: var(--danger); }
+.ps-bar.medium { background: var(--warning); }
+.ps-bar.strong { background: var(--success); }
+
+.sp-hint { font-size: 11.5px; color: var(--text-tertiary); margin-top: 8px; line-height: 1.6; }
+.sp-hint span.valid { color: var(--success); }
+.sp-hint span.invalid { color: var(--danger); }
+
+/* ---- Register specific ---- */
+.reg-agree { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 20px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.reg-agree input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; margin-top: 2px; cursor: pointer; flex-shrink: 0; }
+.reg-agree a { color: var(--accent); text-decoration: none; }
+
+/* Back link */
+.auth-back {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 13px; color: var(--text-secondary); cursor: pointer;
+  background: none; border: none; font-family: inherit; padding: 4px 0; margin-bottom: 16px;
+  transition: color .15s;
+}
+.auth-back:hover { color: var(--text-primary); }
+
+/* ---- Right Panel (quote panel) ---- */
+.auth-right {
   width: 400px; background: var(--gradient-accent);
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   padding: 40px; color: white; position: relative; overflow: hidden;
 }
-.lr-pattern {
+.ar-pattern {
   position: absolute; inset: 0; opacity: .06;
   background-image: radial-gradient(circle at 2px 2px, white 1px, transparent 0);
   background-size: 24px 24px;
 }
-.lr-content { position: relative; z-index: 1; text-align: center; }
-.lr-quote { font-size: 22px; font-weight: 600; line-height: 1.5; margin-bottom: 20px; }
-.lr-author { font-size: 13px; opacity: .7; }
+.ar-content { position: relative; z-index: 1; text-align: center; }
+.ar-quote { font-size: 22px; font-weight: 600; line-height: 1.5; margin-bottom: 20px; }
+.ar-author { font-size: 13px; opacity: .7; }
 
-@media (max-width: 900px) { .login-right { display: none; } }
+@media (max-width: 900px) { .auth-right { display: none; } }
 
 /* ============================================================
    CONTROL BAR (outside app shell)
@@ -1153,39 +1283,214 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 </head>
 <body>
 
-<!-- ============== PAGE: LOGIN ============== -->
+<!-- ============== PAGE: LOGIN / REGISTER ============== -->
 <div class="page active" id="pg-login">
-  <div class="login-page">
-    <div class="login-left">
-      <div class="login-brand">
-        <div class="logo-icon">C</div><span class="logo-type">ClipSync</span>
-      </div>
-      <div class="login-welcome" data-i18n="login_welcome">Welcome back</div>
-      <div class="login-sub" data-i18n="login_subtitle">Sign in to sync your clipboard across all devices</div>
-      <div class="login-form">
-        <div class="lf-field"><label class="lf-label" data-i18n="login_phone">Phone Number</label><input class="lf-input" type="text" placeholder="13800138000" value="13800138000"></div>
-                <div class="lf-field"><label class="lf-label" data-i18n="login_code">Verification Code</label><input class="lf-input" id="loginCode" type="text" placeholder="888888" value="888888"></div>
-                <div style="text-align:right;margin-bottom:12px;"><span style="font-size:12px;color:var(--accent);cursor:pointer;" onclick="sendCode()" data-i18n="login_send_code">Send Code</span></div>
-        <div class="lf-row">
-          <label class="lf-remember"><input type="checkbox" checked> <span data-i18n="login_remember">Remember me</span></label>
-          <span class="lf-forgot" style="cursor:pointer;color:var(--accent);" onclick="showToast(t('toast_pwd_reset'),'info')" data-i18n="login_forgot">Forgot password?</span>
+  <div class="auth-page">
+    <!-- Left: Auth Forms -->
+    <div class="auth-left">
+      <div class="auth-views" id="authViews">
+
+        <!-- ===== VIEW 1: Phone + Verification Code Login (Default) ===== -->
+        <div class="auth-view active" id="av-login-phone">
+          <div class="auth-brand">
+            <div class="logo-icon">C</div><span class="logo-type">ClipSync</span>
+          </div>
+          <div class="auth-welcome" data-i18n="login_welcome">Welcome back</div>
+          <div class="auth-sub" data-i18n="login_subtitle">Sign in to sync your clipboard across all devices</div>
+
+          <!-- Auth method switcher -->
+          <div class="auth-tabs">
+            <button class="auth-tab active" data-tab="phone" onclick="switchAuthTab('phone')" data-i18n="tab_phone_login">Phone Code</button>
+            <button class="auth-tab" data-tab="password" onclick="switchAuthTab('password')" data-i18n="tab_password_login">Password</button>
+          </div>
+
+          <div class="auth-form">
+            <div class="af-field">
+              <label class="af-label" data-i18n="login_phone">Phone Number</label>
+              <input class="af-input" type="tel" id="lpPhone" data-i18n-placeholder="ph_phone_placeholder" maxlength="11" value="13800138000" autocomplete="tel">
+            </div>
+            <div class="af-field">
+              <label class="af-label" data-i18n="login_code">Verification Code</label>
+              <div class="af-input-group">
+                <input class="af-input" type="text" id="lpCode" data-i18n-placeholder="ph_code_placeholder" maxlength="6" autocomplete="one-time-code">
+                <button class="af-code-btn" id="lpSendBtn" onclick="sendCode('login')" data-i18n="login_send_code">Send Code</button>
+              </div>
+            </div>
+            <div class="af-row">
+              <label class="af-remember"><input type="checkbox" checked id="lpRemember"> <span data-i18n="login_remember">Remember me</span></label>
+              <button class="af-forgot" onclick="showToast(t('toast_code_resent'),'info')" data-i18n="login_forgot_code">Didn't receive?</button>
+            </div>
+            <button class="af-submit" id="lpSubmit" onclick="handlePhoneLogin()">
+              <span class="btn-text" data-i18n="login_signin">Sign In</span><span class="btn-spinner"></span>
+            </button>
+
+            <div class="auth-divider" data-i18n="login_or_continue">or continue with</div>
+            <div class="auth-socials">
+              <button class="social-btn" title="WeChat"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M8.5 12c.8 0 1.5-.7 1.5-1.5S9.3 9 8.5 9 7 9.7 7 10.5 7.7 12 8.5 12zM15 12c.8 0 1.5-.7 1.5-1.5S15.8 9 15 9s-1.5.7-1.5 1.5.7 1.5 1.5 1.5z"/><path d="M19.5 10.2c0-3.4-3.6-6.2-8-6.2s-8 2.8-8 6.2c0 3.1 2.8 5.7 6.6 6.2.3.1.7.2.8.5l.3 1.2c.1.3.3.5.6.5s.5-.2.6-.5l.3-1.2c.1-.3.5-.4.8-.5C16.7 15.9 19.5 13.3 19.5 10.2z"/></svg></span></button>
+              <button class="social-btn" title="Apple"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></span></button>
+              <button class="social-btn" title="GitHub"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></span></button>
+              <button class="social-btn" title="WeCom"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></span></button>
+            </div>
+          </div>
+          <div class="auth-footer"><span data-i18n="login_no_account">Don't have an account?</span> <a href="javascript:void(0)" onclick="showAuthView('register')" data-i18n="login_create_free">Create one free</a></div>
         </div>
-        <button class="lf-submit" onclick="doLogin()" data-i18n="login_signin">Sign In</button>
-        <div class="login-divider" data-i18n="login_or_continue">or continue with</div>
-        <div class="login-socials">
-          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg></span></button>
-          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></span></button>
-          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></span></button>
-          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></span></button>
+
+        <!-- ===== VIEW 2: Username/Email + Password Login ===== -->
+        <div class="auth-view" id="av-login-password">
+          <div class="auth-brand">
+            <div class="logo-icon">C</div><span class="logo-type">ClipSync</span>
+          </div>
+          <div class="auth-welcome" data-i18n="login_welcome">Welcome back</div>
+          <div class="auth-sub" data-i18n="login_pwd_subtitle">Enter your account and password to sign in securely</div>
+
+          <div class="auth-tabs">
+            <button class="auth-tab" data-tab="phone" onclick="switchAuthTab('phone')" data-i18n="tab_phone_login">Phone Code</button>
+            <button class="auth-tab active" data-tab="password" onclick="switchAuthTab('password')" data-i18n="tab_password_login">Password</button>
+          </div>
+
+          <div class="auth-form">
+            <div class="af-field">
+              <label class="af-label" data-i18n="login_account">Username / Email / Phone</label>
+              <input class="af-input" type="text" id="lpuAccount" data-i18n-placeholder="ph_account_placeholder" autocomplete="username">
+            </div>
+            <div class="af-field af-field-pwd">
+              <label class="af-label" data-i18n="login_password">Password</label>
+              <div class="af-input-wrapper">
+                <input class="af-input" type="password" id="lpuPwd" data-i18n-placeholder="ph_password_placeholder" autocomplete="current-password">
+                <button class="af-pwd-toggle" onclick="togglePwdVisibility('lpuPwd',this)">
+                  <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                </button>
+              </div>
+            </div>
+            <div class="af-row">
+              <label class="af-remember"><input type="checkbox" checked id="lpuRemember"> <span data-i18n="login_remember">Remember me</span></label>
+              <button class="af-forgot" onclick="showToast(t('toast_pwd_reset'),'info')" data-i18n="login_forgot">Forgot password?</button>
+            </div>
+            <button class="af-submit" id="lpuSubmit" onclick="handlePasswordLogin()">
+              <span class="btn-text" data-i18n="login_signin">Sign In</span><span class="btn-spinner"></span>
+            </button>
+          </div>
+          <div class="auth-footer"><span data-i18n="login_no_account">Don't have an account?</span> <a href="javascript:void(0)" onclick="showAuthView('register')" data-i18n="login_create_free">Create one free</a></div>
         </div>
-      </div>
-      <div class="login-footer"><span data-i18n="login_no_account">Don't have an account?</span> <a href="javascript:void(0)" onclick="showToast(t('toast_signup_soon'),'info')" style="color:var(--accent);" data-i18n="login_create_free">Create one free</a></div>
-    </div>
-    <div class="login-right" id="loginRight">
-      <div class="lr-pattern"></div>
-      <div class="lr-content">
-        <div class="lr-quote">"The best way to sync your<br>clipboard across devices."</div>
-        <div class="lr-author">— Carlos Shao, Founder</div>
+
+        <!-- ===== VIEW 3: Set Password (New User Detected) ===== -->
+        <div class="auth-view" id="av-set-password">
+          <button class="auth-back" onclick="showAuthView('login-phone')">
+            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></span> <span data-i18n="btn_back">Back</span>
+          </button>
+          <div class="sp-steps">
+            <div class="sp-step active"><div class="sp-step-num">1</div><span data-i18n="sp_verify_identity">Verify Identity</span></div>
+            <div class="sp-step-line active"></div>
+            <div class="sp-step active"><div class="sp-step-num">2</div><span data-i18n="sp_set_password">Set Password</span></div>
+          </div>
+          <div class="auth-welcome" style="font-size:20px;" data-i18n="sp_new_account">New Account Detected</div>
+          <div class="auth-sub" style="margin-bottom:24px;" data-i18n="sp_new_account_desc">This phone number is not registered yet. Please set a password to complete initialization.</div>
+
+          <div class="auth-form">
+            <div class="af-field af-field-pwd">
+              <label class="af-label" data-i18n="sp_set_pwd_label">Set Password</label>
+              <div class="af-input-wrapper">
+                <input class="af-input" type="password" id="spNewPwd" data-i18n-placeholder="sp_pwd_hint" oninput="checkPwdStrength(this.value)">
+                <button class="af-pwd-toggle" onclick="togglePwdVisibility('spNewPwd',this)">
+                  <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                </button>
+              </div>
+            </div>
+            <div class="pwd-strength" id="pwdStrength">
+              <div class="ps-bar"></div><div class="ps-bar"></div><div class="ps-bar"></div><div class="ps-bar"></div>
+            </div>
+            <div class="sp-hint" id="spHint">
+              <span class="invalid" id="spLen" data-i18n="sp_rule_length">· At least 8 characters</span>
+              <span class="invalid" id="spNum" data-i18n="sp_rule_number">· Include a number</span>
+              <span class="invalid" id="spLetter" data-i18n="sp_rule_letter">· Include a letter</span>
+            </div>
+
+            <div class="af-field af-field-pwd" style="margin-top:16px;">
+              <label class="af-label" data-i18n="sp_confirm_pwd">Confirm Password</label>
+              <div class="af-input-wrapper">
+                <input class="af-input" type="password" id="spConfirmPwd" data-i18n-placeholder="sp_confirm_hint">
+                <button class="af-pwd-toggle" onclick="togglePwdVisibility('spConfirmPwd',this)">
+                  <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                </button>
+              </div>
+            </div>
+
+            <button class="af-submit" id="spSubmit" onclick="handleSetPassword()" style="margin-top:22px;" disabled>
+              <span class="btn-text" data-i18n="sp_complete_register">Complete Registration & Sign In</span><span class="btn-spinner"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ===== VIEW 4: Register (New Account) ===== -->
+        <div class="auth-view" id="av-register">
+          <button class="auth-back" onclick="showAuthView('login-phone')">
+            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></span> <span data-i18n="btn_back_login">Back to Sign In</span>
+          </button>
+          <div class="auth-welcome" data-i18n="reg_title">Create ClipSync Account</div>
+          <div class="auth-sub" style="margin-bottom:24px;" data-i18n="reg_subtitle">Get started for free — sync your clipboard across devices</div>
+
+          <div class="auth-form">
+            <div class="af-field">
+              <label class="af-label" data-i18n="login_phone">Phone Number</label>
+              <input class="af-input" type="tel" id="regPhone" data-i18n-placeholder="reg_phone_hint" maxlength="11">
+            </div>
+            <div class="af-field">
+              <label class="af-label" data-i18n="login_code">Verification Code</label>
+              <div class="af-input-group">
+                <input class="af-input" type="text" id="regCode" data-i18n-placeholder="ph_code_placeholder" maxlength="6">
+                <button class="af-code-btn" id="regSendBtn" onclick="sendCode('register')" data-i18n="login_send_code">Send Code</button>
+              </div>
+            </div>
+            <div class="af-field af-field-pwd">
+              <label class="af-label" data-i18n="sp_set_pwd_label">Set Password</label>
+              <div class="af-input-wrapper">
+                <input class="af-input" type="password" id="regPwd" data-i18n-placeholder="sp_pwd_hint" oninput="checkRegPwdStrength(this.value)">
+                <button class="af-pwd-toggle" onclick="togglePwdVisibility('regPwd',this)">
+                  <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                </button>
+              </div>
+            </div>
+            <div class="pwd-strength" id="regPwdStrength" style="display:none;">
+              <div class="ps-bar"></div><div class="ps-bar"></div><div class="ps-bar"></div><div class="ps-bar"></div>
+            </div>
+            <div class="af-field af-field-pwd">
+              <label class="af-label" data-i18n="sp_confirm_pwd">Confirm Password</label>
+              <div class="af-input-wrapper">
+                <input class="af-input" type="password" id="regConfirm" data-i18n-placeholder="sp_confirm_hint">
+                <button class="af-pwd-toggle" onclick="togglePwdVisibility('regConfirm',this)">
+                  <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                </button>
+              </div>
+            </div>
+
+            <label class="reg-agree">
+              <input type="checkbox" id="regAgree" checked>
+              <span data-i18n="reg_agree_text">I have read and agree to the </span><a href="javascript:void(0)" onclick="showToast(t('toast_tos_soon'),'info')" data-i18n="reg_tos">Terms of Service</a> <span data-i18n="reg_and">and</span> <a href="javascript:void(0)" onclick="showToast(t('toast_privacy_soon'),'info')" data-i18n="reg_privacy">Privacy Policy</a>
+            </label>
+
+            <button class="af-submit" id="regSubmit" onclick="handleRegister()">
+              <span class="btn-text" data-i18n="reg_submit">Register</span><span class="btn-spinner"></span>
+            </button>
+          </div>
+
+          <div class="auth-divider" style="margin-top:20px;" data-i18n="reg_or_social">or register with</div>
+          <div class="auth-socials">
+            <button class="social-btn" title="WeChat"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M8.5 12c.8 0 1.5-.7 1.5-1.5S9.3 9 8.5 9 7 9.7 7 10.5 7.7 12 8.5 12zM15 12c.8 0 1.5-.7 1.5-1.5S15.8 9 15 9s-1.5.7-1.5 1.5.7 1.5 1.5 1.5z"/><path d="M19.5 10.2c0-3.4-3.6-6.2-8-6.2s-8 2.8-8 6.2c0 3.1 2.8 5.7 6.6 6.2.3.1.7.2.8.5l.3 1.2c.1.3.3.5.6.5s.5-.2.6-.5l.3-1.2c.1-.3.5-.4.8-.5C16.7 15.9 19.5 13.3 19.5 10.2z"/></svg></span></button>
+            <button class="social-btn" title="Apple"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></span></button>
+            <button class="social-btn" title="GitHub"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></span></button>
+          </div>
+          <div class="auth-footer" style="margin-top:20px;"><span data-i18n="reg_has_account">Already have an account?</span> <a href="javascript:void(0)" onclick="showAuthView('login-phone')" data-i18n="reg_sign_in_now">Sign In Now</a></div>
+        </div>
+
+      </div><!-- /auth-views -->
+    </div><!-- /auth-left -->
+
+    <!-- Right: Quote Panel -->
+    <div class="auth-right" id="authRight">
+      <div class="ar-pattern"></div>
+      <div class="ar-content">
+        <div class="ar-quote">"The best way to sync your<br>clipboard across devices."</div>
+        <div class="ar-author">— Carlos Shao, Founder</div>
       </div>
     </div>
   </div>
@@ -1562,6 +1867,37 @@ var _i18n = {
     login_signin:'Sign In',login_or_continue:'or continue with',
     login_no_account:"Don't have an account?",login_create_free:'Create one free',
     toast_pwd_reset:'Password reset email sent! Check your inbox.',toast_signup_soon:'Sign up flow coming soon!',
+    // Auth tabs & multi-view
+    tab_phone_login:'Phone Code',tab_password_login:'Password',
+    login_pwd_subtitle:'Enter your account and password to sign in securely',
+    login_account:'Username / Email / Phone',login_password:'Password',
+    login_forgot_code:"Didn't receive?",
+    ph_phone_placeholder:'Enter phone number',ph_code_placeholder:'6-digit code',
+    ph_account_placeholder:'Enter account',ph_password_placeholder:'Enter password',
+    btn_back:'Back',btn_back_login:'Back to Sign In',
+    // Set Password view
+    sp_verify_identity:'Verify Identity',sp_set_password:'Set Password',
+    sp_new_account:'New Account Detected',sp_new_account_desc:'This phone number is not registered yet. Please set a password to complete initialization.',
+    sp_set_pwd_label:'Set Password',sp_confirm_pwd:'Confirm Password',
+    sp_pwd_hint:'Min 8 chars, letters + numbers',sp_confirm_hint:'Re-enter password',
+    sp_complete_register:'Complete Registration & Sign In',
+    sp_rule_length:'· At least 8 characters',sp_rule_number:'· Include a number',sp_rule_letter:'· Include a letter',
+    sp_new_user_detected:'New user detected, please complete password initialization',
+    sp_pwd_mismatch:"Passwords don't match",sp_set_pwd_fail:'Failed to set password: ',
+    // Register view
+    reg_title:'Create ClipSync Account',reg_subtitle:'Get started for free — sync your clipboard across devices',
+    reg_phone_hint:'Used for login and notifications',reg_or_social:'or register with',
+    reg_has_account:'Already have an account?',reg_sign_in_now:'Sign In Now',
+    reg_agree_text:'I have read and agree to the ',reg_tos:'Terms of Service',reg_and:' and ',reg_privacy:'Privacy Policy',
+    reg_submit:'Register',reg_agree_required:'Please agree to the terms and privacy policy',
+    reg_pwd_min_8:'Password must be at least 8 characters',reg_fail:'Registration failed: ',
+    reg_success_welcome:'Welcome to ClipSync!',
+    // Auth validation
+    auth_need_code:'Please enter 6-digit verification code',auth_need_account:'Please enter account',
+    auth_pwd_too_short:'Password must be at least 6 characters',form_error:'Form error, please refresh',
+    auth_code_sent_to:'Code sent to {phone}',
+    code_resend:'Resend in {s}s',code_countdown:'{s}s',
+    toast_code_resent:'Code resent!',toast_tos_soon:'Terms of Service page coming soon!',toast_privacy_soon:'Privacy Policy page coming soon!',
     // Auth toasts
     auth_need_phone:'Please enter phone number',auth_code_sent:'Verification code sent!',
     auth_failed_op:'Operation failed: ',auth_need_both:'Please enter phone and verification code',
@@ -1672,6 +2008,37 @@ var _i18n = {
     login_signin:'登 录',login_or_continue:'或其他方式登录',
     login_no_account:'还没有账号？',login_create_free:'免费注册',
     toast_pwd_reset:'密码重置邮件已发送！请查收邮箱。',toast_signup_soon:'注册流程即将推出！',
+    // Auth tabs & multi-view
+    tab_phone_login:'手机验证码',tab_password_login:'密码登录',
+    login_pwd_subtitle:'输入账号密码安全登录',
+    login_account:'用户名 / 邮箱 / 手机号',login_password:'密码',
+    login_forgot_code:'没收到？',
+    ph_phone_placeholder:'请输入手机号',ph_code_placeholder:'6位验证码',
+    ph_account_placeholder:'请输入账号',ph_password_placeholder:'请输入密码',
+    btn_back:'返回',btn_back_login:'返回登录',
+    // Set Password view
+    sp_verify_identity:'验证身份',sp_set_password:'设置密码',
+    sp_new_account:'检测到新账号',sp_new_account_desc:'该手机号尚未注册，请先设置密码完成初始化。',
+    sp_set_pwd_label:'设置密码',sp_confirm_pwd:'确认密码',
+    sp_pwd_hint:'至少 8 位，含字母和数字',sp_confirm_hint:'再次输入密码',
+    sp_complete_register:'完成注册并登入',
+    sp_rule_length:'· 至少 8 个字符',sp_rule_number:'· 包含数字',sp_rule_letter:'· 包含字母',
+    sp_new_user_detected:'检测到新账号，请完成密码初始化',
+    sp_pwd_mismatch:'两次输入的密码不一致',sp_set_pwd_fail:'密码设置失败：',
+    // Register view
+    reg_title:'创建 ClipSync 账号',reg_subtitle:'免费开始，跨设备同步你的剪贴板',
+    reg_phone_hint:'用于登录和接收通知',reg_or_social:'或使用以下方式快速注册',
+    reg_has_account:'已有账号？',reg_sign_in_now:'立即登录',
+    reg_agree_text:'我已阅读并同意 ',reg_tos:'《服务条款》',reg_and:' 和 ',reg_privacy:'《隐私政策》',
+    reg_submit:'注 册',reg_agree_required:'请阅读并同意服务条款和隐私政策',
+    reg_pwd_min_8:'密码至少需要 8 位',reg_fail:'注册失败：',
+    reg_success_welcome:'欢迎加入 ClipSync！',
+    // Auth validation
+    auth_need_code:'请输入6位验证码',auth_need_account:'请输入账号',
+    auth_pwd_too_short:'密码长度不足6位',form_error:'表单异常，请刷新页面',
+    auth_code_sent_to:'验证码已发送至 {phone}',
+    code_resend:'{s}s 后重发',code_countdown:'{s}s',
+    toast_code_resent:'验证码已重新发送！',toast_tos_soon:'服务协议页面开发中！',toast_privacy_soon:'隐私政策页面开发中！',
     // Auth toasts
     auth_need_phone:'请输入手机号码',auth_code_sent:'验证码已发送！',
     auth_failed_op:'操作失败：',auth_need_both:'请输入手机号和验证码',
@@ -2277,31 +2644,370 @@ async function api(method, path, body) {
   return data;
 }
 
-async function sendCode() {
-  var phone = (document.querySelector('.lf-input')||{}).value;
-  if (!phone || phone.length < 5) {     showToast(t('auth_need_phone'), 'error'); return; }
-  try { await api('POST', '/api/auth/send-code', { phone }); showToast(t('auth_code_sent')); }
-  catch(e) { showToast(t('auth_failed_op') + e.message, 'error'); }
+/* ============================================================
+   AUTH SYSTEM — Multi-Step Login / Register
+   ============================================================ */
+var currentAuthView = 'login-phone';
+var codeTimers = { login: 0, register: 0 };
+
+function showAuthView(viewId) {
+  var container = document.getElementById('authViews');
+  if (!container) { console.error('[Auth] authViews container not found'); return; }
+  var views = container.querySelectorAll('.auth-view');
+  var target = document.getElementById('av-' + viewId);
+  if (!target) { console.error('[Auth] view av-' + viewId + ' not found'); return; }
+  if (target.classList.contains('active')) return;
+  views.forEach(function(v) {
+    if (v.classList.contains('active')) {
+      v.classList.remove('active');
+      v.classList.add('exit-left');
+      setTimeout(function() { v.classList.remove('exit-left'); }, 350);
+    }
+    if (v !== target && !v.classList.contains('exit-left')) v.classList.remove('active');
+  });
+  requestAnimationFrame(function() {
+    setTimeout(function() {
+      target.classList.add('active');
+      currentAuthView = viewId;
+      var firstInput = target.querySelector('.af-input');
+      if (firstInput) firstInput.focus();
+    }, 50);
+  });
 }
 
-async function doLogin() {
-  var phone = (document.querySelector('.lf-input')||{}).value;
-  var code = (document.getElementById('loginCode')||document.querySelector('.lf-input:last-child')||{}).value;
-  if (!phone || !code) { showToast('Please enter phone and verification code', 'error'); return; }
-  try {
-    var data = await api('POST', '/api/auth/verify-code', { phone, code, accept_tos: true, accept_privacy: true });
-    state.token = data.token; state.user = data.user;
-    localStorage.setItem('cs_token', data.token);
-    localStorage.setItem('cs_user', JSON.stringify(data.user));
-    showPage('app');
-    updateUserInfo();
-    loadClipboardItems();
-    await loadDevices();
-    connectWebSocket();
-    startClipboardPolls();
-    showToast(t('login_success'));
-  } catch(e) { showToast(t('login_failed') + e.message, 'error'); }
+function switchAuthTab(tab) {
+  document.querySelectorAll('#av-login-phone .auth-tab, #av-login-password .auth-tab').forEach(function(t) {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+  showAuthView(tab === 'phone' ? 'login-phone' : 'login-password');
 }
+
+function togglePwdVisibility(inputId, btn) {
+  try {
+    var input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.innerHTML = '<span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span>';
+    } else {
+      input.type = 'password';
+      btn.innerHTML = '<span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>';
+    }
+  } catch(err) { console.error('[TogglePwd] Error:', err); }
+}
+
+async function sendCode(context) {
+  try {
+    var btnId = context === 'login' ? 'lpSendBtn' : 'regSendBtn';
+    var btn = document.getElementById(btnId);
+    if (!btn || btn.disabled) return;
+
+    var phoneInputId = context === 'login' ? 'lpPhone' : 'regPhone';
+    var phoneInput = document.getElementById(phoneInputId);
+    var phone = phoneInput ? phoneInput.value.trim() : '';
+
+    if (!/^1[3-9]\d{9}$/.test(phone)) { shakeElement(phoneInput || btn); showToast(t('auth_need_phone'), 'error'); return; }
+
+    // Call real API
+    await api('POST', '/api/auth/send-code', { phone });
+    showToast(t('auth_code_sent_to').replace('{phone}', phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')), 'success');
+
+    // Start countdown UI
+    var seconds = 60;
+    btn.disabled = true;
+    btn.textContent = t('code_resend').replace('{s}', seconds);
+
+    codeTimers[context] = setInterval(function() {
+      seconds--;
+      if (seconds <= 0) {
+        clearInterval(codeTimers[context]);
+        btn.disabled = false;
+        btn.textContent = t('login_send_code');
+      } else {
+        btn.textContent = t('code_countdown').replace('{s}', seconds);
+      }
+    }, 1000);
+  } catch(err) {
+    console.error('[SendCode] Error:', err);
+    showToast(t('auth_failed_op') + err.message, 'error');
+  }
+}
+
+function checkPwdStrength(pwd) {
+  var bars = document.querySelectorAll('#pwdStrength .ps-bar');
+  var spLen = document.getElementById('spLen');
+  var spNum = document.getElementById('spNum');
+  var spLetter = document.getElementById('spLetter');
+  var submitBtn = document.getElementById('spSubmit');
+
+  var hasLen = pwd.length >= 8;
+  var hasNum = /\d/.test(pwd);
+  var hasLetter = /[a-zA-Z]/.test(pwd);
+
+  if (spLen) spLen.className = hasLen ? 'valid' : 'invalid';
+  if (spNum) spNum.className = hasNum ? 'valid' : 'invalid';
+  if (spLetter) spLetter.className = hasLetter ? 'valid' : 'invalid';
+
+  var level = 0;
+  if (hasLen) level++;
+  if (hasNum) level++;
+  if (hasLetter) level++;
+
+  bars.forEach(function(bar, i) {
+    bar.className = 'ps-bar';
+    if (i < level) bar.classList.add(level <= 1 ? 'weak' : level === 2 ? 'medium' : 'strong');
+  });
+
+  if (submitBtn) {
+    var confirmVal = document.getElementById('spConfirmPwd') ? document.getElementById('spConfirmPwd').value : '';
+    submitBtn.disabled = !(hasLen && hasNum && hasLetter && confirmVal === pwd);
+  }
+}
+
+function checkRegPwdStrength(pwd) {
+  var container = document.getElementById('regPwdStrength');
+  if (!container) return;
+  container.style.display = pwd.length > 0 ? '' : 'none';
+  if (!pwd) return;
+
+  var bars = container.querySelectorAll('.ps-bar');
+  var hasLen = pwd.length >= 8;
+  var hasNum = /\d/.test(pwd);
+  var hasLetter = /[a-zA-Z]/.test(pwd);
+  var level = 0;
+  if (hasLen) level++;
+  if (hasNum) level++;
+  if (hasLetter) level++;
+
+  bars.forEach(function(bar, i) {
+    bar.className = 'ps-bar';
+    if (i < level) bar.classList.add(level <= 1 ? 'weak' : level === 2 ? 'medium' : 'strong');
+  });
+}
+
+async function handlePhoneLogin() {
+  try {
+    var phoneEl = document.getElementById('lpPhone');
+    var codeEl = document.getElementById('lpCode');
+    var submitBtn = document.getElementById('lpSubmit');
+    if (!phoneEl || !codeEl || !submitBtn) { showToast(t('form_error'), 'error'); return; }
+
+    var phone = phoneEl.value.trim();
+    var code = codeEl.value.trim();
+
+    if (!/^1[3-9]\d{9}$/.test(phone)) { shakeElement(phoneEl); showToast(t('auth_need_phone'), 'error'); return; }
+    if (!/^\d{6}$/.test(code)) { shakeElement(codeEl); showToast(t('auth_need_code'), 'error'); return; }
+
+    submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
+
+    try {
+      var data = await api('POST', '/api/auth/verify-code', { phone, code, accept_tos: true, accept_privacy: true });
+      state.token = data.token; state.user = data.user;
+      localStorage.setItem('cs_token', data.token);
+      localStorage.setItem('cs_user', JSON.stringify(data.user));
+      submitBtn.classList.remove('loading');
+      submitBtn.disabled = false;
+      showPage('app');
+      updateUserInfo();
+      loadClipboardItems();
+      loadDevices();
+      connectWebSocket();
+      startClipboardPolls();
+      showToast(t('login_success'));
+    } catch(e) {
+      // Check if error indicates new user (needs password init)
+      if (e.message && (e.message.indexOf('new user') >= 0 || e.message.indexOf('新用户') >= 0 || e.message.indexOf('password') >= 0 || e.message.indexOf('密码') >= 0 || e.status === 404 || e.message.indexOf('404') >= 0)) {
+        submitBtn.classList.remove('loading');
+        submitBtn.disabled = false;
+        showToast(t('sp_new_user_detected'), 'info');
+        showAuthView('set-password');
+        var confirmPwd = document.getElementById('spConfirmPwd');
+        if (confirmPwd) confirmPwd.oninput = function() { checkPwdStrength(document.getElementById('spNewPwd').value); };
+      } else {
+        submitBtn.classList.remove('loading');
+        submitBtn.disabled = false;
+        showToast(t('login_failed') + e.message, 'error');
+      }
+    }
+  } catch(err) {
+    console.error('[PhoneLogin] Error:', err);
+    var sb = document.getElementById('lpSubmit');
+    if (sb) { sb.classList.remove('loading'); sb.disabled = false; }
+    showToast(t('login_failed') + err.message, 'error');
+  }
+}
+
+async function handlePasswordLogin() {
+  try {
+    var accountEl = document.getElementById('lpuAccount');
+    var pwdEl = document.getElementById('lpuPwd');
+    var submitBtn = document.getElementById('lpuSubmit');
+    if (!accountEl || !pwdEl || !submitBtn) { showToast(t('form_error'), 'error'); return; }
+
+    var account = accountEl.value.trim();
+    var pwd = pwdEl.value;
+
+    if (!account) { shakeElement(accountEl); showToast(t('auth_need_account'), 'error'); return; }
+    if (!pwd || pwd.length < 6) { shakeElement(pwdEl); showToast(t('auth_pwd_too_short'), 'error'); return; }
+
+    submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
+
+    try {
+      var data = await api('POST', '/api/auth/login', { account, password: pwd });
+      state.token = data.token; state.user = data.user;
+      localStorage.setItem('cs_token', data.token);
+      localStorage.setItem('cs_user', JSON.stringify(data.user));
+      submitBtn.classList.remove('loading');
+      submitBtn.disabled = false;
+      showPage('app');
+      updateUserInfo();
+      loadClipboardItems();
+      loadDevices();
+      connectWebSocket();
+      startClipboardPolls();
+      showToast(t('login_success'));
+    } catch(e) {
+      submitBtn.classList.remove('loading');
+      submitBtn.disabled = false;
+      showToast(t('login_failed') + e.message, 'error');
+    }
+  } catch(err) {
+    console.error('[PasswordLogin] Error:', err);
+    var sb = document.getElementById('lpuSubmit');
+    if (sb) { sb.classList.remove('loading'); sb.disabled = false; }
+    showToast(t('login_failed') + err.message, 'error');
+  }
+}
+
+async function handleSetPassword() {
+  try {
+    var newPwdEl = document.getElementById('spNewPwd');
+    var confirmPwdEl = document.getElementById('spConfirmPwd');
+    var submitBtn = document.getElementById('spSubmit');
+    if (!newPwdEl || !confirmPwdEl || !submitBtn) { showToast(t('form_error'), 'error'); return; }
+
+    var newPwd = newPwdEl.value;
+    var confirmPwd = confirmPwdEl.value;
+
+    if (newPwd !== confirmPwd) { shakeElement(confirmPwdEl); showToast(t('sp_pwd_mismatch'), 'error'); return; }
+
+    submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
+
+    try {
+      var data = await api('POST', '/api/auth/set-password', { phone: document.getElementById('lpPhone').value, password: newPwd });
+      state.token = data.token; state.user = data.user;
+      localStorage.setItem('cs_token', data.token);
+      localStorage.setItem('cs_user', JSON.stringify(data.user));
+      submitBtn.classList.remove('loading');
+      showToast(t('reg_success_welcome'), 'success');
+      setTimeout(function() { showPage('app'); updateUserInfo(); loadClipboardItems(); loadDevices(); connectWebSocket(); startClipboardPolls(); }, 800);
+    } catch(e) {
+      submitBtn.classList.remove('loading');
+      submitBtn.disabled = false;
+      showToast(t('sp_set_pwd_fail') + e.message, 'error');
+    }
+  } catch(err) {
+    console.error('[SetPassword] Error:', err);
+    var sb = document.getElementById('spSubmit');
+    if (sb) { sb.classList.remove('loading'); sb.disabled = false; }
+    showToast(t('sp_set_pwd_fail') + err.message, 'error');
+  }
+}
+
+async function handleRegister() {
+  try {
+    var phoneEl = document.getElementById('regPhone');
+    var codeEl = document.getElementById('regCode');
+    var pwdEl = document.getElementById('regPwd');
+    var confirmEl = document.getElementById('regConfirm');
+    var agreeEl = document.getElementById('regAgree');
+    var submitBtn = document.getElementById('regSubmit');
+
+    if (!phoneEl || !codeEl || !pwdEl || !confirmEl || !agreeEl || !submitBtn) { showToast(t('form_error'), 'error'); return; }
+
+    var phone = phoneEl.value.trim();
+    var code = codeEl.value.trim();
+    var pwd = pwdEl.value;
+    var confirm = confirmEl.value;
+    var agree = agreeEl.checked;
+
+    if (!/^1[3-9]\d{9}$/.test(phone)) { shakeElement(phoneEl); showToast(t('auth_need_phone'), 'error'); return; }
+    if (!/^\d{6}$/.test(code)) { shakeElement(codeEl); showToast(t('auth_need_code'), 'error'); return; }
+    if (!pwd || pwd.length < 8) { shakeElement(pwdEl); showToast(t('reg_pwd_min_8'), 'error'); return; }
+    if (pwd !== confirm) { shakeElement(confirmEl); showToast(t('sp_pwd_mismatch'), 'error'); return; }
+    if (!agree) { showToast(t('reg_agree_required'), 'error'); return; }
+
+    if (submitBtn.disabled) return;
+
+    submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
+
+    try {
+      var data = await api('POST', '/api/auth/register', { phone, code, password: pwd, accept_tos: true, accept_privacy: true });
+      state.token = data.token; state.user = data.user;
+      localStorage.setItem('cs_token', data.token);
+      localStorage.setItem('cs_user', JSON.stringify(data.user));
+      submitBtn.classList.remove('loading');
+      showToast(t('reg_success_welcome'), 'success');
+      setTimeout(function() { showPage('app'); updateUserInfo(); loadClipboardItems(); loadDevices(); connectWebSocket(); startClipboardPolls(); }, 800);
+    } catch(e) {
+      submitBtn.classList.remove('loading');
+      submitBtn.disabled = false;
+      showToast(t('reg_fail') + e.message, 'error');
+    }
+  } catch(err) {
+    console.error('[Register] Error:', err);
+    var sb = document.getElementById('regSubmit');
+    if (sb) { sb.classList.remove('loading'); sb.disabled = false; }
+    showToast(t('reg_fail') + err.message, 'error');
+  }
+}
+
+function shakeElement(el) {
+  if (!el) return;
+  el.classList.add('error');
+  el.style.animation = 'none';
+  el.offsetHeight;
+  el.style.animation = 'shake .4s ease';
+  setTimeout(function() { el.style.animation = ''; el.classList.remove('error'); }, 500);
+}
+
+// Add shake keyframes dynamically
+var shakeStyle = document.createElement('style');
+shakeStyle.textContent = '@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}';
+document.head.appendChild(shakeStyle);
+
+// Wire up confirm-password validation listeners + keyboard Enter support after DOM ready
+document.addEventListener('DOMContentLoaded', function() {
+  var spConfirm = document.getElementById('spConfirmPwd');
+  if (spConfirm) spConfirm.addEventListener('input', function() { checkPwdStrength(document.getElementById('spNewPwd') ? document.getElementById('spNewPwd').value : ''); });
+
+  var regConfirm = document.getElementById('regConfirm');
+  if (regConfirm) regConfirm.addEventListener('input', function() {
+    var regPwd = document.getElementById('regPwd');
+    if (this.value && this.value !== regPwd.value) this.style.borderColor = 'var(--danger)';
+    else this.style.borderColor = '';
+  });
+
+  // Keyboard Enter support for all auth forms
+  var authSubmitMap = { 'av-login-phone': handlePhoneLogin, 'av-login-password': handlePasswordLogin, 'av-set-password': handleSetPassword, 'av-register': handleRegister };
+  Object.keys(authSubmitMap).forEach(function(viewId) {
+    var viewEl = document.getElementById(viewId);
+    if (!viewEl) return;
+    viewEl.querySelectorAll('.af-input').forEach(function(input) {
+      input.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); authSubmitMap[viewId](); } });
+    });
+  });
+
+  // Phone inputs auto-send code on Enter
+  ['lpPhone', 'regPhone'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); sendCode(id === 'lpPhone' ? 'login' : 'register'); } });
+  });
+});
 
 function logout() {
   state.token = null; state.user = null; state.deviceId = null;
