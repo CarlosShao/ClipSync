@@ -80,6 +80,39 @@ fn update_config(state: tauri::State<AppState>, config: AppConfig) {
     *state.config.lock().unwrap() = config;
 }
 
+/// Copy local files to clipboard (CF_HDROP) — checks if files exist first.
+/// For files that were originally copied on this same machine.
+#[tauri::command]
+fn copy_local_files(paths: Vec<String>) -> Result<String, String> {
+    use std::path::Path;
+    let mut existing = Vec::new();
+    let mut missing = Vec::new();
+    for p in &paths {
+        if Path::new(p).exists() {
+            existing.push(p.clone());
+        } else {
+            missing.push(p.clone());
+        }
+    }
+    if existing.is_empty() {
+        return Err(format!(
+            "Files not found on this device (cross-device): {}",
+            missing.join(", ")
+        ));
+    }
+    set_clipboard_files(existing.clone())?;
+    if missing.is_empty() {
+        Ok(format!("Copied {} file(s)", existing.len()))
+    } else {
+        Ok(format!(
+            "Copied {} file(s), {} missing: {}",
+            existing.len(),
+            missing.len(),
+            missing.join(", ")
+        ))
+    }
+}
+
 #[tauri::command]
 fn get_clipboard_content() -> Result<String, String> {
     use clipboard_win::raw;
@@ -852,6 +885,7 @@ pub fn run() {
             get_clipboard_content,
             set_clipboard_content,
             set_clipboard_files,
+            copy_local_files,
             get_clipboard_files,
             save_and_copy_file,
             check_clipboard_image_info,
