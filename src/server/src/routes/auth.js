@@ -912,25 +912,33 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
     let user = null;
     if (identifierField === 'nickname') {
       // 昵称登录：按 nickname → email → phone 依次查找
+      // 密码登录流程：优先选择已设置密码的用户（同一昵称可能有多个用户）
       const nickResult = await pool.query(
         `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE nickname ILIKE $1`,
         [cleanIdentifier]
       );
-      if (nickResult.rows.length > 0) { user = nickResult.rows[0]; }
-      else {
+      if (nickResult.rows.length > 0) {
+        // 优先取有 password_hash 的用户
+        user = nickResult.rows.find(r => r.password_hash) || nickResult.rows[0];
+      }
+      if (!user) {
         // fallback: 尝试 email（用户可能把邮箱当昵称填了）
         const emailFallback = await pool.query(
           `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE email = $1 OR email_hash = $2`,
           [cleanIdentifier, computeFieldHash(cleanIdentifier)]
         );
-        if (emailFallback.rows.length > 0) { user = emailFallback.rows[0]; }
-        else {
-          // final fallback: 尝试 phone
-          const phoneFallback = await pool.query(
-            `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE phone = $1 OR phone_hash = $2`,
-            [cleanIdentifier, computeFieldHash(cleanIdentifier)]
-          );
-          if (phoneFallback.rows.length > 0) { user = phoneFallback.rows[0]; }
+        if (emailFallback.rows.length > 0) {
+          user = emailFallback.rows.find(r => r.password_hash) || emailFallback.rows[0];
+        }
+      }
+      if (!user) {
+        // final fallback: 尝试 phone
+        const phoneFallback = await pool.query(
+          `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE phone = $1 OR phone_hash = $2`,
+          [cleanIdentifier, computeFieldHash(cleanIdentifier)]
+        );
+        if (phoneFallback.rows.length > 0) {
+          user = phoneFallback.rows.find(r => r.password_hash) || phoneFallback.rows[0];
         }
       }
     } else {
