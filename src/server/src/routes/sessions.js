@@ -69,12 +69,12 @@ router.delete('/:sessionId', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // 撤销会话
+    // 撤销会话（防御深度：再次验证 user_id）
     await pool.query(`
       UPDATE user_sessions
       SET is_active = false, updated_at = NOW()
-      WHERE id = $1
-    `, [sessionId]);
+      WHERE id = $1 AND user_id = $2
+    `, [sessionId, userId]);
 
     logger.info('Session revoked', { userId, sessionId });
 

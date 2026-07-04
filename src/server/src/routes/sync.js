@@ -95,7 +95,7 @@ router.post('/push', apiLimiter, async (req, res) => {
             if (clientTime < serverTime) {
               // Conflict: server version is newer
               const serverData = await client.query(
-                'SELECT * FROM clipboard_items WHERE id = $1', [id]
+                'SELECT * FROM clipboard_items WHERE id = $1 AND user_id = $2', [id, userId]
               );
               results.push({
                 clientId: id,
