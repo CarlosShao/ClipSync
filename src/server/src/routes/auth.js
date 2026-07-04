@@ -898,17 +898,43 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       identifierField = 'nickname';
     }
 
-    // 查询用户
-    const result = await pool.query(
-      `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE ${identifierField} = $1`,
-      [cleanIdentifier]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    // 查询用户（nickname 需要多字段 fallback）
+    let user = null;
+    if (identifierField === 'nickname') {
+      // 昵称登录：按 nickname → email → phone 依次查找
+      const nickResult = await pool.query(
+        `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE nickname ILIKE $1`,
+        [cleanIdentifier]
+      );
+      if (nickResult.rows.length > 0) { user = nickResult.rows[0]; }
+      else {
+        // fallback: 尝试 email（用户可能把邮箱当昵称填了）
+        const emailFallback = await pool.query(
+          `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE email = $1 OR email_hash = $2`,
+          [cleanIdentifier, computeFieldHash(cleanIdentifier)]
+        );
+        if (emailFallback.rows.length > 0) { user = emailFallback.rows[0]; }
+        else {
+          // final fallback: 尝试 phone
+          const phoneFallback = await pool.query(
+            `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE phone = $1 OR phone_hash = $2`,
+            [cleanIdentifier, computeFieldHash(cleanIdentifier)]
+          );
+          if (phoneFallback.rows.length > 0) { user = phoneFallback.rows[0]; }
+        }
+      }
+    } else {
+      // 手机号或邮箱：直接查询
+      const result = await pool.query(
+        `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE ${identifierField} = $1`,
+        [cleanIdentifier]
+      );
+      if (result.rows.length > 0) { user = result.rows[0]; }
     }
 
-    const user = result.rows[0];
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
     if (!user.password_hash) {
       return res.status(401).json({ error: 'Account has no password set. Please log in with a verification code.' });
     }
