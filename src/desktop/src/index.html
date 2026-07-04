@@ -527,19 +527,16 @@ body {
 /* ============================================================
    CLIPBOARD LIST — Table-like rows
    /* ===== CLIP VIEW ===== */
-   .clip-view {
-     display: flex; flex-direction: column; min-height: 100%;
-     padding: 20px;
-   }
+   .clip-view { display: flex; flex-direction: column; min-height: 100%; }
 .list-head {
   display: grid; grid-template-columns: 1fr 110px 76px 84px 84px;
-  gap: 12px; padding: 8px 0;
+  gap: 12px; padding: 8px 20px;
   font-size: 10.5px; font-weight: 600; color: var(--text-tertiary);
   text-transform: uppercase; letter-spacing: .06em;
 }
 .clip-row {
   display: grid; grid-template-columns: 1fr 110px 72px 80px 80px;
-  gap: 12px; align-items: center; padding: 10px 0;
+  gap: 12px; align-items: center; padding: 10px 20px;
   border-radius: var(--radius-sm); cursor: pointer;
   transition: background .1s ease;
 }
@@ -1092,13 +1089,14 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       <div class="login-welcome">Welcome back</div>
       <div class="login-sub">Sign in to sync your clipboard across all devices</div>
       <div class="login-form">
-        <div class="lf-field"><label class="lf-label">Email or Phone</label><input class="lf-input" type="text" placeholder="carlos@example.com" value="carlos@example.com"></div>
-        <div class="lf-field"><label class="lf-label">Password</label><input class="lf-input" type="password" placeholder="••••••••"></div>
+        <div class="lf-field"><label class="lf-label">Phone Number</label><input class="lf-input" type="text" placeholder="13800138000" value="13800138000"></div>
+                <div class="lf-field"><label class="lf-label">Verification Code</label><input class="lf-input" id="loginCode" type="text" placeholder="888888" value="888888"></div>
+                <div style="text-align:right;margin-bottom:12px;"><span style="font-size:12px;color:var(--accent);cursor:pointer;" onclick="sendCode()">Send Code</span></div>
         <div class="lf-row">
           <label class="lf-remember"><input type="checkbox" checked> Remember me</label>
           <span class="lf-forgot" style="cursor:pointer;color:var(--accent);" onclick="showToast('Password reset email sent! Check your inbox.','info')">Forgot password?</span>
         </div>
-        <button class="lf-submit" onclick="showPage('app')">Sign In</button>
+        <button class="lf-submit" onclick="doLogin()">Sign In</button>
         <div class="login-divider">or continue with</div>
         <div class="login-socials">
           <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg></span></button>
@@ -1146,7 +1144,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
             <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription
           </div>
           <div class="nav-item" data-sub="settings" onclick="switchSub('settings')">
-            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings
           </div>
         </nav>
         <div class="sidebar-bottom">
@@ -1194,7 +1192,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-section-label">Account</div>
           <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1223,7 +1221,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-section-label">Account</div>
           <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1296,7 +1294,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-section-label">Account</div>
           <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1464,6 +1462,7 @@ let currentMode = 'light';
 function applyStyle(s, m) {
   currentStyle = s; currentMode = m;
   const root = document.documentElement;
+  if (!root) return;
   root.setAttribute('data-style', s);
 
   // Handle dark-only styles
@@ -1473,22 +1472,9 @@ function applyStyle(s, m) {
     root.setAttribute('data-mode', m);
   }
 
-  // Update control bar buttons
-  document.querySelectorAll('#styleSeg .cb-btn').forEach(b => b.classList.toggle('active', b.dataset.s === s));
-  document.querySelectorAll('#modeSeg .cb-btn').forEach(b => b.classList.toggle('active', b.dataset.m === m));
-
-  // Disable light mode button for dark-only styles
-  const lightBtn = document.querySelector('#modeSeg [data-m="light"]');
-  if (s === 'linear' || s === 'raycast') {
-    lightBtn.style.opacity = '.35';
-    lightBtn.style.pointerEvents = 'none';
-  } else {
-    lightBtn.style.opacity = '';
-    lightBtn.style.pointerEvents = '';
-  }
 }
 
-// Style button events removed (control bar was prototype-only)
+// Control bar references removed (was prototype-only)
 
 // Page navigation
 let lastAppSub = 'clipboard'; // Remember last sub-page within app shell
@@ -1497,9 +1483,7 @@ function showPage(p) {
   document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
   const target = document.getElementById('pg-' + p);
   if (target) target.classList.add('active');
-  document.querySelectorAll('.cb-page-btn').forEach(b => b.classList.toggle('active', b.dataset.p === p));
-
-  // If switching to app shell, restore last sub-page (not always clipboard)
+  // If switching to app shell, restore last sub-page
   if (p === 'app') switchSub(lastAppSub);
 }
 
@@ -1886,10 +1870,9 @@ async function sendCode() {
 }
 
 async function doLogin() {
-  var inputs = document.querySelectorAll('.lf-input');
-  var phone = inputs[0]?.value?.trim();
-  var code = inputs[1]?.value?.trim();
-  if (!phone || !code) { showToast('Please enter credentials', 'error'); return; }
+  var phone = (document.querySelector('.lf-input')||{}).value;
+  var code = (document.getElementById('loginCode')||document.querySelector('.lf-input:last-child')||{}).value;
+  if (!phone || !code) { showToast('Please enter phone and verification code', 'error'); return; }
   try {
     var data = await api('POST', '/api/auth/verify-code', { phone, code, accept_tos: true, accept_privacy: true });
     state.token = data.token; state.user = data.user;
