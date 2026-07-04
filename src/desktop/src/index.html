@@ -419,6 +419,28 @@ body {
 .user-name { font-size: 12.5px; font-weight: 550; color: var(--text-primary); line-height: 1.3; }
 .user-role { font-size: 11px; color: var(--accent); font-weight: 400; font-family: var(--font-mono,monospace); }
 
+/* ---- PROFILE PAGE ---- */
+.profile-view { padding: 28px; max-width: 560px; }
+.profile-header { display: flex; align-items: center; gap: 20px; margin-bottom: 28px; }
+.p-avatar-large {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: var(--gradient-accent); padding: 3px; flex-shrink: 0; cursor: pointer;
+}
+.p-avatar-inner {
+  width: 100%; height: 100%; border-radius: 50%;
+  background: var(--bg-surface); display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 700; color: var(--accent);
+}
+.p-info h2 { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -.3px; margin:0; }
+.p-meta { font-size: 13px; color: var(--text-tertiary); margin-top: 3px; }
+.p-email { font-size: 13px; color: var(--text-secondary); margin-top: 2px; font-family: var(--font-mono,monospace); }
+.profile-field {
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 12px;
+}
+.pf-label { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.pf-value { font-size: 14px; color: var(--text-primary); font-weight: 450; }
+
 /* ---- MAIN AREA ---- */
 .main-area {
   flex: 1; display: flex; flex-direction: column; min-width: 0;
@@ -1302,18 +1324,16 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       </aside>
       <main class="main-area">
         <header class="topbar"><span class="topbar-title">Profile</span></header>
-        <div class="content-scroll" style="padding:20px;">
-          <div style="display:flex;align-items:center;gap:20px;margin-bottom:30px;">
-            <div style="width:80px;height:80px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;color:white;font-size:32px;font-weight:600;">CS</div>
-            <div><div style="font-size:20px;font-weight:600;color:var(--text-primary);">Carlos</div><div style="color:var(--text-secondary);font-size:14px;">Free Plan</div></div>
+        <div class="content-scroll profile-view">
+          <div class="profile-header">
+            <div class="p-avatar-large"><div class="p-avatar-inner">CS</div></div>
+            <div class="p-info"><h2>Carlos</h2><div class="p-meta">Free Plan</div></div>
           </div>
-          <div class="settings-section">
-            <h3 style="font-size:16px;font-weight:600;color:var(--text-primary);margin-bottom:16px;">Account</h3>
-            <div class="setting-row"><span>Display Name</span><span style="color:var(--text-secondary);">Carlos</span></div>
-            <div class="setting-row"><span>Email</span><span style="color:var(--text-secondary);">Not set</span></div>
-            <div class="setting-row"><span>Phone</span><span style="color:var(--text-secondary);">+86 ***</span></div>
-            <div class="setting-row"><span>Plan</span><button class="btn btn-primary" style="font-size:12px;padding:4px 12px;">Upgrade</button></div>
-          </div>
+          <h3 style="font-size:13px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;">Account</h3>
+          <div class="profile-field"><div class="pf-label">Display Name</div><div class="pf-value">Carlos</div></div>
+          <div class="profile-field"><div class="pf-label">Email</div><div class="pf-value" style="color:var(--text-secondary);">Not set</div></div>
+          <div class="profile-field"><div class="pf-label">Phone</div><div class="pf-value" style="display:flex;align-items:center;gap:8px;"><span class="icon icon-sm" style="color:var(--accent)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>+86 ***</div></div>
+          <div class="profile-field"><div class="pf-label">Plan</div><div class="pf-value" style="display:flex;align-items:center;justify-content:space-between;"><span style="color:var(--text-secondary);">Free Plan</span><button class="btn btn-primary" style="font-size:11px;padding:5px 14px;border-radius:6px;" onclick="showToast('Upgrade coming soon!','info')">Upgrade</button></div></div>
         </div>
       </main>
     </div>
@@ -1367,7 +1387,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           </div>
           <div class="settings-group"><div class="sg-header">Appearance</div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Mode</div><div class="sg-hint">Switch between light and dark mode</div></div><div class="sg-control"><div class="mode-seg"><button class="mode-btn active" onclick="setMode('light',this)" data-mode="light"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:3px;"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>Light</button><button class="mode-btn" onclick="setMode('dark',this)" data-mode="dark"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:3px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/></svg>Dark</button></div></div></div>
-            <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name">Theme &amp; Style</div><div class="sg-hint">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name" style="display:inline-flex;align-items:center;gap:6px;">Theme &amp; Style<span class="theme-hint-icon" title="Linear and Raycast are inherently dark themes — they don&#39;t support light mode. Switching mode only affects other themes."><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.5;cursor:help;"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span></div><div class="sg-hint">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Reduce motion</div><div class="sg-hint">Minimize animations throughout the interface</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Data</div>
@@ -2022,7 +2042,7 @@ async function handleCopyItem(id) {
           fileName = parts[parts.length - 1] || full.contentPreview;
         }
         var downloadUrl = API_BASE + '/api/media/download/' + encodeURIComponent(filePath);
-        var resp = await fetch(downloadUrl);
+        var resp = await fetch(downloadUrl, { headers: { 'Authorization': 'Bearer ' + state.token } });
         if (!resp.ok) throw new Error('Download failed: ' + resp.status);
         var blob = await resp.blob();
         // Convert blob to base64 for Tauri IPC
@@ -2088,7 +2108,7 @@ async function handleViewItem(id, typeClass) {
       var fileName = item.contentPreview || 'file';
       var filePath = item.contentEncrypted || '';
       var downloadUrl = API_BASE + '/api/media/download/' + encodeURIComponent(filePath);
-      var resp = await fetch(downloadUrl);
+      var resp = await fetch(downloadUrl, { headers: { 'Authorization': 'Bearer ' + state.token } });
       var blob = await resp.blob();
       // Use showSaveFilePicker if available (system save dialog)
       if (window.showSaveFilePicker) {
