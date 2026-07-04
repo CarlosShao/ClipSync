@@ -527,9 +527,12 @@ body {
    CLIPBOARD LIST — Table-like rows
    /* ===== CLIP VIEW ===== */
    .clip-view {
-     display: flex; flex-direction: column; min-height: 100%;
-     width: 100%;
-   }
+        display: flex; flex-direction: column; min-height: 100%;
+        width: 100%;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .main-area { overflow: hidden; }
    .clip-view > * { min-width: 0; }  /* Prevent grid items from overflowing */
 .list-head {
   display: grid; grid-template-columns: minmax(0,1fr) 110px 72px 80px 80px;
@@ -1096,6 +1099,20 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 /* ===== Batch Select ===== */
 .batch-cb { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
 .clip-row.batch-selected { background: var(--accent-light); }
+.search-wrap { display: flex; align-items: center; gap: 0; margin-left: 8px; }
+.search-toggle { background: none; border: none; cursor: pointer; padding: 4px; color: var(--text-secondary); border-radius: var(--radius-sm); }
+.search-toggle:hover { background: var(--bg-hover); }
+.search-input { width: 0; padding: 0; border: none; background: var(--bg-surface); font-size: 12px; border-radius: var(--radius-sm); transition: width 0.3s ease, padding 0.3s ease; overflow: hidden; opacity: 0; }
+.search-wrap.open .search-input { width: 160px; padding: 6px 12px; border: 1px solid var(--border-default); opacity: 1; }
+.setting-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border-default); }
+.setting-row:last-child { border-bottom: none; }
+.settings-section { margin-bottom: 24px; }
+.toggle { position: relative; display: inline-block; width: 44px; height: 24px; cursor: pointer; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--border-default); border-radius: 12px; transition: 0.3s; }
+.toggle-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
+.toggle input:checked + .toggle-slider { background: var(--accent); }
+.toggle input:checked + .toggle-slider:before { transform: translateX(20px); }
 </style>
 </head>
 <body>
@@ -1171,12 +1188,12 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       </aside>
       <main class="main-area">
         <header class="topbar">
-          <span class="topbar-title">Clipboard</span>
+          <span class="topbar-title">Clipboard</span><span id="clipCount" style="font-size:12px;color:var(--text-secondary);margin-left:10px;font-weight:400;"></span>
           <span class="topbar-spacer"></span>
           <button class="btn btn-primary" onclick="showToast('New Clip: Copy something to sync!','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>New Clip</button>
                     <button class="btn btn-ghost" style="margin-left:4px;" onclick="toggleBatchMode()" title="Batch select"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span></button>
                     <button id="batchDeleteBtn" class="btn btn-ghost" style="margin-left:4px;display:none;color:var(--danger);" onclick="batchDelete()"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span><span id="batchCount">0</span></button>
-                    <div style="position:relative;margin-left:8px;"><input type="text" placeholder="Search..." style="padding:6px 12px;border:1px solid var(--border-default);border-radius:var(--radius-sm);font-size:12px;width:140px;background:var(--bg-surface);" oninput="filterClipboard(this.value)"></div>
+                    <div class="search-wrap"><button class="search-toggle" onclick="this.parentElement.classList.toggle('open');if(this.parentElement.classList.contains('open'))this.nextElementSibling.focus();"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span></button><input type="text" placeholder="Search clips..." class="search-input" oninput="filterClipboard(this.value)"></div>
         </header>
         <div class="tab-bar"><button class="tab-btn active" onclick="switchClipTab(this,'all')">All</button><button class="tab-btn" onclick="switchClipTab(this,'text')">Text</button><button class="tab-btn" onclick="switchClipTab(this,'images')">Images</button><button class="tab-btn" onclick="switchClipTab(this,'links')">Links</button><button class="tab-btn" onclick="switchClipTab(this,'files')">Files</button></div>
         <div class="list-head"><div>CONTENT</div><div>SOURCE</div><div>TYPE</div><div>TIME</div><div>ACTIONS</div></div>
@@ -1207,7 +1224,17 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       </aside>
       <main class="main-area">
         <header class="topbar"><span class="topbar-title">Devices</span></header>
-        <div class="content-scroll"><div style="padding:40px;text-align:center;color:var(--text-secondary);">Device management coming soon</div></div>
+        <div class="content-scroll" style="padding:20px;">
+          <div class="dev-card" style="padding:16px;margin-bottom:12px;border:1px solid var(--border-default);border-radius:var(--radius-md);display:flex;align-items:center;gap:16px;">
+            <div style="width:40px;height:40px;border-radius:10px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;color:var(--accent);"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span></div>
+            <div style="flex:1;"><div style="font-weight:600;color:var(--text-primary);">Desktop</div><div style="font-size:12px;color:var(--text-secondary);">Active now</div></div>
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--success);"></div>
+          </div>
+          <div class="dev-card" style="padding:16px;border:1px solid var(--border-default);border-radius:var(--radius-md);display:flex;align-items:center;gap:16px;">
+            <div style="width:40px;height:40px;border-radius:10px;background:var(--warning-bg);display:flex;align-items:center;justify-content:center;color:var(--warning);"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span></div>
+            <div style="flex:1;"><div style="font-weight:600;color:var(--text-primary);">iPhone</div><div style="font-size:12px;color:var(--text-secondary);">Last seen 1h ago</div></div>
+          </div>
+        </div>
       </main>
     </div>
   </div>
@@ -1231,7 +1258,13 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       </aside>
       <main class="main-area">
         <header class="topbar"><span class="topbar-title">Shared Links</span></header>
-        <div class="content-scroll"><div style="padding:40px;text-align:center;color:var(--text-secondary);">Shared links coming soon</div></div>
+        <div class="content-scroll" style="padding:20px;">
+          <div class="dev-card" style="padding:16px;margin-bottom:12px;border:1px solid var(--border-default);border-radius:var(--radius-md);display:flex;align-items:center;gap:16px;">
+            <div style="width:40px;height:40px;border-radius:10px;background:var(--info-bg);display:flex;align-items:center;justify-content:center;color:var(--info);"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div>
+            <div style="flex:1;"><div style="font-weight:600;color:var(--text-primary);">Project Alpha - Design Specs</div><div style="font-size:12px;color:var(--text-secondary);font-family:monospace;">https://clipsync.io/s/xK9mP2qL</div></div>
+            <div style="text-align:right;"><div style="font-size:12px;color:var(--text-tertiary);">127 views</div><div style="font-size:11px;color:var(--text-tertiary);">Created 2d ago</div></div>
+          </div>
+        </div>
       </main>
     </div>
   </div>
@@ -1255,7 +1288,19 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       </aside>
       <main class="main-area">
         <header class="topbar"><span class="topbar-title">Profile</span></header>
-        <div class="content-scroll"><div style="padding:40px;text-align:center;color:var(--text-secondary);">Profile settings coming soon</div></div>
+        <div class="content-scroll" style="padding:20px;">
+          <div style="display:flex;align-items:center;gap:20px;margin-bottom:30px;">
+            <div style="width:80px;height:80px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;color:white;font-size:32px;font-weight:600;">CS</div>
+            <div><div style="font-size:20px;font-weight:600;color:var(--text-primary);">Carlos</div><div style="color:var(--text-secondary);font-size:14px;">Free Plan</div></div>
+          </div>
+          <div class="settings-section">
+            <h3 style="font-size:16px;font-weight:600;color:var(--text-primary);margin-bottom:16px;">Account</h3>
+            <div class="setting-row"><span>Display Name</span><span style="color:var(--text-secondary);">Carlos</span></div>
+            <div class="setting-row"><span>Email</span><span style="color:var(--text-secondary);">Not set</span></div>
+            <div class="setting-row"><span>Phone</span><span style="color:var(--text-secondary);">+86 ***</span></div>
+            <div class="setting-row"><span>Plan</span><button class="btn btn-primary" style="font-size:12px;padding:4px 12px;">Upgrade</button></div>
+          </div>
+        </div>
       </main>
     </div>
   </div>
@@ -1279,7 +1324,21 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       </aside>
       <main class="main-area">
         <header class="topbar"><span class="topbar-title">Settings</span></header>
-        <div class="content-scroll"><div style="padding:40px;text-align:center;color:var(--text-secondary);">Settings coming soon</div></div>
+        <div class="content-scroll" style="padding:20px;">
+          <div class="settings-section">
+            <h3 style="font-size:16px;font-weight:600;color:var(--text-primary);margin-bottom:16px;">General</h3>
+            <div class="setting-row"><span>Auto-sync clipboard</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+            <div class="setting-row"><span>Launch at startup</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+            <div class="setting-row"><span>Notifications</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+            <div class="setting-row"><span>Language</span><select style="padding:6px 12px;border:1px solid var(--border-default);border-radius:var(--radius-sm);font-size:13px;"><option>English</option><option>中文</option></select></div>
+            <div class="setting-row"><span>Theme</span><select style="padding:6px 12px;border:1px solid var(--border-default);border-radius:var(--radius-sm);font-size:13px;"><option>Light</option><option>Dark</option></select></div>
+          </div>
+          <div class="settings-section">
+            <h3 style="font-size:16px;font-weight:600;color:var(--text-primary);margin-bottom:16px;">About</h3>
+            <div class="setting-row"><span>Version</span><span style="color:var(--text-secondary);">v2.4.1</span></div>
+            <div class="setting-row"><span>License</span><span style="color:var(--text-secondary);">Free Plan</span></div>
+          </div>
+        </div>
       </main>
     </div>
   </div>
@@ -1594,6 +1653,7 @@ function updateThemeSelection() {
 function switchClipTab(btn, type) {
   document.querySelectorAll('.tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  _activeTab = type;
   let visible = 0;
   document.querySelectorAll('.clip-row').forEach(row => {
     if (type === 'all') {
@@ -1821,21 +1881,38 @@ async function loadClipboardItems() {
   } catch(e) { console.error('[Clipboard] load failed:', e.message); }
 }
 
+function updateClipCount() {
+  var countEl = document.getElementById('clipCount');
+  if (!countEl) return;
+  var visible = document.querySelectorAll('#sub-clipboard .clip-row').length;
+  var filtered = document.querySelectorAll('#sub-clipboard .clip-row[style=""]').length;
+  countEl.textContent = clipboardItems.length + ' items' + (_activeTab !== 'all' ? ' (filtered)' : '');
+}
 var TYPE_ICONS = {
   text: '<svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
   img: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
   link: '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>',
   file: '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
 };
+var _activeTab = 'all';
 function renderClipboardItems() {
   var container = document.querySelector('#sub-clipboard .clip-view');
   if (!container) return;
   container.querySelectorAll('.clip-row').forEach(function(r) { r.remove(); });
   var emptyState = document.getElementById('clipEmptyState');
-  if (clipboardItems.length === 0) { if (emptyState) emptyState.classList.add('show'); return; }
+  if (clipboardItems.length === 0) { if (emptyState) emptyState.classList.add('show'); updateClipCount(); return; }
   if (emptyState) emptyState.classList.remove('show');
   clipboardItems.forEach(function(item) {
     var type = item.contentType || 'text';
+    // Fix: if contentPreview starts with [Image] it's actually an image
+    if (type === 'image' || (item.contentPreview && item.contentPreview.indexOf('[Image]') === 0)) {
+      type = 'image';
+    } else if (type === 'link' || (item.contentPreview && /^https?:\/\//.test(item.contentPreview))) {
+      type = 'link';
+    } else if (type === 'file' && (!item.contentPreview || item.contentPreview.indexOf('[') === 0)) {
+      // Check if it's really a file or misclassified
+      if (item.contentPreview && item.contentPreview.indexOf('[Image]') === 0) type = 'image';
+    }
     var typeClass = type === 'image' ? 'img' : type === 'link' ? 'link' : type === 'file' ? 'file' : 'text';
     var typeLabel = type === 'image' ? 'Image' : type === 'link' ? 'Link' : type === 'file' ? 'File' : 'Text';
     var rawPreview = item.contentPreview || '';
@@ -1856,11 +1933,21 @@ function renderClipboardItems() {
       text: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
     };
     viewIcon = ACTION_ICONS[typeClass] || ACTION_ICONS['text'];
-    var devName = item.deviceName || item.metadata?.deviceName || 'Unknown';
+    var meta = item.metadata || {};
+    var devName = item.deviceName || meta.deviceName || meta.originalName || (meta.fileName && !meta.chunkedUpload ? 'Browser' : 'Desktop');
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
     row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><span class="cr-preview">' + preview + '</span></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
     container.appendChild(row);
   });
+  // Re-apply active tab filter
+  if (_activeTab !== 'all') {
+    var typeMap = { 'text': 'text', 'images': 'img', 'links': 'link', 'files': 'file' };
+    var target = typeMap[_activeTab] || 'all';
+    container.querySelectorAll('.clip-row').forEach(function(r) {
+      r.style.display = (r.dataset.type === target) ? '' : 'none';
+    });
+  }
+  updateClipCount();
 }
 
 function formatTime(iso) {
@@ -2171,7 +2258,7 @@ function startTauriClipboardPoll() {
     try {
       // 1) Check for files
       var files = await _invoke('get_clipboard_files');
-      if (Array.isArray(files) && files.length > 0) {
+      if (files && files.length > 0) {
         var fileKey = files.join('|');
         if (_isDuplicateHash('file:' + fileKey)) return;
         if (fileKey !== _lastPolledFiles) {
@@ -2180,7 +2267,7 @@ function startTauriClipboardPoll() {
           await uploadTauriFileClipboard(files);
           _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
         }
-        return;
+        return; // Skip image/text in same cycle
       }
 
       // 2) Check for image
