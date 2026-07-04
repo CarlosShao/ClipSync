@@ -1454,6 +1454,10 @@ const modalTemplates = {
     </div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button><a href="https://github.com/CarlosShao/ClipSync/releases" target="_blank" class="btn btn-primary" onclick="closeModal()">View Release Notes</a></div>`,
 
+  textDetail: () => `
+    <div class="modal-header"><span class="modal-title">Text Detail</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+    <div class="modal-body" id="textDetailBody" style="padding:16px 20px;"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>`,
   imagePreview: () => `
       <div class="modal-header"><span class="modal-title">Image Preview</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
       <div class="modal-body" style="text-align:center;padding:16px 20px;">
@@ -1735,12 +1739,12 @@ function renderClipboardItems() {
     var row = document.createElement('div');
     row.className = 'clip-row'; row.dataset.type = typeClass; row.dataset.id = item.id;
     var viewIcon = '';
-    // Action icons: eye for images, external link for links, download for files, copy for text
+    // Action icons: eye for images, external link for links, download for files, info for text
     var ACTION_ICONS = {
       img: '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
       link: '<svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
       file: '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
-      text: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
+      text: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
     };
     viewIcon = ACTION_ICONS[typeClass] || ACTION_ICONS['text'];
     var devName = item.deviceName || item.metadata?.deviceName || 'Unknown';
@@ -1804,6 +1808,7 @@ async function handleDeleteItem(id) {
 var _currentImageDataUrl = '';
 async function handleViewItem(id, typeClass) {
   if (typeClass === 'img') {
+    // Preview image in modal
     try {
       var item = await api('GET', '/api/clipboard/' + id);
       if (!item || !item.contentEncrypted || !item.contentEncrypted.startsWith('data:')) { showToast('Not an image', 'error'); return; }
@@ -1819,32 +1824,77 @@ async function handleViewItem(id, typeClass) {
       document.querySelector('#modalRoot .modal-body').innerHTML = '<div style="text-align:center;padding:16px 20px;"><div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:16px 20px;margin-bottom:12px;"><img src="' + item.contentEncrypted + '" style="max-width:100%;max-height:58vh;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);background:#fff;object-fit:contain;"></div><div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">' + fileName + '</div><div style="font-size:11.5px;color:var(--text-secondary);">' + info + '</div></div>';
     } catch(e) { showToast('Failed: ' + e.message, 'error'); }
   } else if (typeClass === 'file') {
-    // Download file
-    var item = clipboardItems.find(function(i) { return i.id === id; });
-    if (item) { showToast('File download: ' + (item.contentPreview || 'file'), 'info'); }
+    // Download file with save dialog
+    try {
+      var item = await api('GET', '/api/clipboard/' + id);
+      var content = item.contentEncrypted || '';
+      var fileName = item.contentPreview || 'file';
+      // Try to decode base64 content
+      var binary = atob(content);
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      var blob = new Blob([bytes]);
+      var handle = await window.showSaveFilePicker({ suggestedName: fileName });
+      var writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      showToast('File saved!');
+    } catch(e) {
+      if (e.name === 'AbortError') return;
+      showToast('File download failed: ' + e.message, 'error');
+    }
   } else if (typeClass === 'link') {
-    // Open link in new tab
+    // Open link - use location.href fallback to avoid popup blocker
     var item = clipboardItems.find(function(i) { return i.id === id; });
     if (item && item.contentPreview) {
       var url = item.contentPreview;
       if (!url.startsWith('http')) url = 'https://' + url;
-      window.open(url, '_blank');
+      // Try window.open first, fallback to location
+      var w = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!w || w.closed || typeof w.closed == 'undefined') {
+        // Popup blocked - use location
+        window.location.href = url;
+      }
+    } else {
+      showToast('No URL found', 'error');
     }
   } else {
-    handleCopyItem(id);
+    // Text: show detail modal
+    var item = clipboardItems.find(function(i) { return i.id === id; });
+    if (item) {
+      openModal('textDetail');
+      document.querySelector('#modalRoot .modal-body').innerHTML = '<div style="padding:16px 20px;"><pre style="white-space:pre-wrap;word-break:break-all;font-size:13px;color:var(--text-primary);background:var(--bg-hover);padding:12px;border-radius:8px;max-height:60vh;overflow:auto;">' + escapeHtml(item.contentPreview || '') + '</pre></div>';
+    }
   }
 }
 
-// Global download function for image preview modal
-window.downloadImage = function() {
+// Global download function for image preview modal - uses save file picker
+window.downloadImage = async function() {
   if (!_currentImageDataUrl) return;
-  var a = document.createElement('a');
-  a.href = _currentImageDataUrl;
-  a.download = 'image.png';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  showToast('Image downloaded!');
+  try {
+    // Convert data URL to blob
+    var resp = await fetch(_currentImageDataUrl);
+    var blob = await resp.blob();
+    // Use File System Access API for save dialog
+    var handle = await window.showSaveFilePicker({
+      suggestedName: 'image.png',
+      types: [{ description: 'Image', accept: { 'image/png': ['.png'], 'image/jpeg': ['.jpg'] } }]
+    });
+    var writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    showToast('Image saved!');
+  } catch(e) {
+    if (e.name === 'AbortError') return; // User cancelled
+    // Fallback: direct download
+    var a = document.createElement('a');
+    a.href = _currentImageDataUrl;
+    a.download = 'image.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('Image downloaded!');
+  }
 }
 
 async function loadDevices() {
