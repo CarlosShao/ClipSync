@@ -295,7 +295,7 @@
    RESET & BASE
    ============================================================ */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-size: 14px; height: 100%; width: 100%; overflow: hidden; }
+html { font-size: 14px; }
 body {
   font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
   background: var(--bg-base);
@@ -304,7 +304,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
   transition: background .25s ease, color .2s ease;
-  height: 100vh; width: 100vw; overflow: hidden;
 }
 
 /* ============================================================
@@ -330,9 +329,10 @@ body {
    APP SHELL
    ============================================================ */
 .app-shell {
-  display: flex;
-  width: 100vw; height: 100vh;
+  display: flex; height: 100vh; max-width: 1280px;
+  margin: 0 auto; border-radius: var(--radius-xl);
   overflow: hidden;
+  box-shadow: var(--shadow-modal);
   transition: background .25s ease;
 }
 
@@ -347,7 +347,7 @@ body {
 }
 
 .sidebar-brand {
-  height: 48px; padding: 0 16px;
+  height: 52px; padding: 0 16px;
   display: flex; align-items: center; gap: 10px;
   border-bottom: 1px solid var(--border-default);
   flex-shrink: 0;
@@ -894,7 +894,16 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 /* ============================================================
    CONTROL BAR (outside app shell)
    ============================================================ */
-
+.control-bar {
+  position: sticky; top: 0; z-index: 500;
+  background: rgba(255,255,255,.88); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-default); padding: 10px 24px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  border-radius: 0;
+}
+[data-style*="dark"] .control-bar, [data-style="linear"] .control-bar, [data-style="raycast"] .control-bar {
+  background: rgba(10,10,10,.88);
+}
 .cb-label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
 .cb-seg { display: flex; gap: 3px; background: var(--bg-hover); padding: 3px; border-radius: var(--radius-md); }
 .cb-btn {
@@ -917,10 +926,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .page { display: none; }
 .page.active { display: block; }
 
-/* Demo wrapper — full window for desktop app */
-.demo-wrap {
-  width: 100vw; height: 100vh;
-}
+/* Demo wrapper spacing */
+.demo-wrap { padding: 24px 0 48px; }
 /* ===== QUICK PASTE OVERLAY ===== */
 #qpOverlay {
   position: fixed; inset: 0; z-index: 10000;
@@ -1068,111 +1075,35 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   opacity: 1;
 }
 
-/* ===== Connection Status ===== */
-.conn-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-  border-bottom: 1px solid var(--border-default);
-  margin-bottom: 8px;
-}
-
-.conn-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #999;
-  flex-shrink: 0;
-}
-
-.conn-dot.online {
-  background: #16a34a;
-  box-shadow: 0 0 6px rgba(22, 163, 74, 0.4);
-}
-
-.conn-dot.connecting {
-  background: #f59e0b;
-  animation: pulse 1s infinite;
-}
-
-.conn-dot.offline {
-  background: #999;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-
-/* ===== Image Viewer ===== */
-/* ===== Image Viewer (prototype design) ===== */
-.image-viewer {
-  position: fixed; inset: 0; z-index: 99999;
-  background: rgba(0,0,0,0.35);
-  display: none; align-items: center; justify-content: center;
-  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-  animation: ivFadeIn .15s ease;
-}
-@keyframes ivFadeIn { from{opacity:0} to{opacity:1} }
-.image-viewer[style*="display: flex"] { display: flex !important; }
-.iv-card {
-  background: #fff; border: 1px solid #e2e8f0;
-  border-radius: 16px; box-shadow: 0 24px 64px rgba(0,0,0,0.15);
-  width: 520px; max-width: 90vw; overflow: hidden;
-  animation: ivSlideIn .2s ease-out;
-}
-@keyframes ivSlideIn { from{opacity:0;transform:scale(.96) translateY(8px)} to{opacity:1;transform:scale(1) translateY(0)} }
-.iv-header {
-  padding: 18px 24px 0; display: flex; align-items: center; justify-content: space-between;
-}
-.iv-title { font-size: 17px; font-weight: 650; color: #0f172a; letter-spacing: -.2px; }
-.iv-close {
-  width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent;
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  color: #94a3b8; transition: all .1s;
-}
-.iv-close:hover { background: #f1f5f9; color: #0f172a; }
-.iv-image-area {
-  background: linear-gradient(135deg,#667eea 0%,#764ba2 100%);
-  display: flex; align-items: center; justify-content: center;
-  padding: 48px 36px; min-height: 240px; margin: 20px 24px; border-radius: 10px;
-  position: relative; overflow: hidden;
-}
-.iv-image-area img {
-  max-width: 100%; max-height: 320px; border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-  background: #fff;
-}
-.iv-meta { padding: 0 24px; text-align: left; }
-.iv-filename { font-size: 14px; font-weight: 600; color: #0f172a; margin-bottom: 3px; }
-.iv-info { font-size: 12.5px; color: #64748b; }
-.iv-footer {
-  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
-  padding: 16px 24px; margin-top: 16px; border-top: 1px solid #f1f5f9;
-}
-.iv-btn-ghost {
-  padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500;
-  cursor: pointer; transition: all .1s; border: none;
-  background: transparent; color: #64748b;
-}
-.iv-btn-ghost:hover { background: #f1f5f9; color: #334155; }
-.iv-btn-primary {
-  padding: 7px 18px; border-radius: 8px; font-size: 13px; font-weight: 500;
-  cursor: pointer; transition: all .1s; border: none;
-  background: #6366f1; color: #fff;
-}
-.iv-btn-primary:hover { background: #4f46e5; transform: translateY(-0.5px); }
-
 </style>
 </head>
 <body>
 
 <!-- ============== CONTROL BAR ============== -->
+<div class="control-bar" id="ctrlBar">
+  <span class="cb-label">Style</span>
+  <div class="cb-seg" id="styleSeg">
+    <button class="cb-btn star active" data-s="vercel">Vercel</button>
+    <button class="cb-btn" data-s="clipsync">ClipSync</button>
+    <button class="cb-btn" data-s="notion">Notion</button>
+    <button class="cb-btn" data-s="linear">Linear</button>
+    <button class="cb-btn" data-s="apple">Apple HIG</button>
+    <button class="cb-btn" data-s="raycast">Raycast</button>
+    <button class="cb-btn" data-s="arc">Arc</button>
+  </div>
 
+  <span class="cb-label">Mode</span>
+  <div class="cb-seg" id="modeSeg">
+    <button class="cb-btn active" data-m="light">☀ Light</button>
+    <button class="cb-btn" data-m="dark">◐ Dark</button>
+  </div>
+
+  <div class="cb-navs" id="pageNav">
+    <button class="cb-page-btn active" data-p="login">Login</button>
+    <button class="cb-page-btn" data-p="app">App</button>
+    <button class="cb-page-btn" onclick="showQuickPaste()">Quick Paste</button>
+  </div>
+</div>
 
 <div class="demo-wrap">
 
@@ -1183,18 +1114,25 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       <div class="login-brand">
         <div class="logo-icon">C</div><span class="logo-type">ClipSync</span>
       </div>
-      <div class="login-welcome">登录 ClipSync</div>
-      <div class="login-sub">输入手机号，获取验证码登录/注册</div>
-      <div class="login-form" id="loginStep1">
-        <div class="lf-field"><label class="lf-label">手机号</label><input class="lf-input" type="tel" id="loginPhone" placeholder="138 0000 0000" maxlength="13" style="letter-spacing:1px;"></div>
-        <button class="lf-submit" id="sendCodeBtn" onclick="sendCode()">发送验证码</button>
+      <div class="login-welcome">Welcome back</div>
+      <div class="login-sub">Sign in to sync your clipboard across all devices</div>
+      <div class="login-form">
+        <div class="lf-field"><label class="lf-label">Email or Phone</label><input class="lf-input" type="text" placeholder="carlos@example.com" value="carlos@example.com"></div>
+        <div class="lf-field"><label class="lf-label">Password</label><input class="lf-input" type="password" placeholder="••••••••"></div>
+        <div class="lf-row">
+          <label class="lf-remember"><input type="checkbox" checked> Remember me</label>
+          <span class="lf-forgot" style="cursor:pointer;color:var(--accent);" onclick="showToast('Password reset email sent! Check your inbox.','info')">Forgot password?</span>
+        </div>
+        <button class="lf-submit" onclick="showPage('app')">Sign In</button>
+        <div class="login-divider">or continue with</div>
+        <div class="login-socials">
+          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg></span></button>
+          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></span></button>
+          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></span></button>
+          <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></span></button>
+        </div>
       </div>
-      <div class="login-form" id="loginStep2" style="display:none;margin-top:0;">
-        <div class="lf-field"><label class="lf-label">验证码</label><input class="lf-input" type="text" id="loginCode" placeholder="输入6位验证码" maxlength="6" style="letter-spacing:2px;font-size:16px;text-align:center;"></div>
-        <button class="lf-submit" onclick="doLogin()">登录 / 注册</button>
-        <div style="text-align:center;margin-top:12px;"><a href="javascript:void(0)" onclick="resendCode()" style="color:var(--accent);font-size:12.5px;cursor:pointer;">重新发送验证码</a></div>
-      </div>
-      <div class="login-footer" style="margin-top:18px;">登录即代表同意 <a href="javascript:void(0)" style="color:var(--accent);">服务条款</a> 和 <a href="javascript:void(0)" style="color:var(--accent);">隐私政策</a></div>
+      <div class="login-footer">Don't have an account? <a href="javascript:void(0)" onclick="showToast('Sign up flow coming soon!','info')" style="color:var(--accent);">Create one free</a></div>
     </div>
     <div class="login-right" id="loginRight">
       <div class="lr-pattern"></div>
@@ -1217,30 +1155,26 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
           <div class="nav-item active" data-sub="clipboard" onclick="switchSub('clipboard')">
-            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard<span class="nav-counter">24</span>
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard<span class="nav-counter">24</span>
           </div>
           <div class="nav-item" data-sub="devices" onclick="switchSub('devices')">
             <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices<span class="nav-counter">3</span>
           </div>
           <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')">
-            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span>Shared Links
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span>Shared Links
           </div>
           <div class="nav-section-label">Account</div>
           <div class="nav-item" data-sub="profile" onclick="switchSub('profile')">
-            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile
           </div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')">
             <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription
           </div>
           <div class="nav-item" data-sub="settings" onclick="switchSub('settings')">
-            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings
+            <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings
           </div>
         </nav>
         <div class="sidebar-bottom">
-          <div class="conn-status" id="connStatus">
-            <span class="conn-dot" id="connDot"></span>
-            <span class="conn-text" id="connText">未连接</span>
-          </div>
           <div class="user-chip" onclick="switchSub('profile')">
             <div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div>
             <div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro Plan</div></div>
@@ -1257,8 +1191,13 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="tab-bar"><div class="tab-btn active" onclick="switchClipTab(this,'all')">All</div><div class="tab-btn" onclick="switchClipTab(this,'text')">Text</div><div class="tab-btn" onclick="switchClipTab(this,'images')">Images</div><div class="tab-btn" onclick="switchClipTab(this,'links')">Links</div><div class="tab-btn" onclick="switchClipTab(this,'files')">Files</div></div>
         <div class="content-scroll clip-view">
           <div class="list-head"><div>Content</div><div>Source</div><div>Type</div><div>Time</div><div style="text-align:right;">Actions</div></div>
-          <div class="empty-state show" id="clipEmptyState">
-            <div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span></div>
+          <div class="clip-row" data-type="text"><div class="cr-main"><div class="type-badge tb-text"><span class="icon icon-md"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span></div><span class="cr-preview">Fix the clipboard sync bug in Rust backend service layer</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>MacBook Pro</div><div><span class="cr-tag ct-text">Text</span></div><div class="cr-time">2m ago</div><div class="cr-actions"><button class="act-btn" title="Copy" onclick="showToast('Copied to clipboard!','success')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" title="Open"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Item deleted','info',{text:'Undo',callback:()=>showToast('Restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></div>
+          <div class="clip-row" data-type="images"><div class="cr-main"><div class="type-badge tb-img"><span class="icon icon-md"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span></div><span class="cr-preview">Screenshot_2026-07-03_14_22_05.png</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>iPhone 15 Pro</div><div><span class="cr-tag ct-img">Image</span></div><div class="cr-time">15m ago</div><div class="cr-actions"><button class="act-btn" onclick="openModal('imagePreview')" title="Preview"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening image...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Image deleted','info',{text:'Undo',callback:()=>showToast('Image restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></div>
+          <div class="clip-row" data-type="links"><div class="cr-main"><div class="type-badge tb-link"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div><span class="cr-preview">github.com/CarlosShao/ClipSync/pull/42</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>iPad Air</div><div><span class="cr-tag ct-link">Link</span></div><div class="cr-time">1h ago</div><div class="cr-actions"><button class="act-btn" title="Copy" onclick="showToast('Link copied!','success')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening link...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Link deleted','info',{text:'Undo',callback:()=>showToast('Link restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></div>
+          <div class="clip-row" data-type="files"><div class="cr-main"><div class="type-badge tb-file"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span></div><span class="cr-preview">design-spec-v2.figma</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>MacBook Pro</div><div><span class="cr-tag ct-file">File</span></div><div class="cr-time">3h ago</div><div class="cr-actions"><button class="act-btn" title="Download" onclick="showToast('Downloading file...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening file...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('File deleted','info',{text:'Undo',callback:()=>showToast('File restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></div>
+          <div class="clip-row" data-type="text"><div class="cr-main"><div class="type-badge tb-text"><span class="icon icon-md"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span></div><span class="cr-preview">Meeting notes from today's sprint review session...</span></div><div class="cr-device"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>iPhone 15 Pro</div><div><span class="cr-tag ct-text">Text</span></div><div class="cr-time">5h ago</div><div class="cr-actions"><button class="act-btn" title="Copy" onclick="showToast('Copied to clipboard!','success')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" title="Open" onclick="showToast('Opening notes...','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span></button><button class="act-btn" title="Delete" onclick="showToast('Note deleted','info',{text:'Undo',callback:()=>showToast('Note restored!','success')})"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></div>
+          <div class="empty-state" id="clipEmptyState">
+            <div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span></div>
             <div class="empty-title">No clips yet</div>
             <div class="empty-desc">Clips from all your devices will appear here.<br>Start copying to sync!</div>
           </div>
@@ -1274,13 +1213,13 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
-          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard</div>
           <div class="nav-item active" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices<span class="nav-counter">3</span></div>
-          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span>Shared Links</div>
+          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span>Shared Links</div>
           <div class="nav-section-label">Account</div>
-          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1304,12 +1243,12 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
-          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard</div>
           <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
           <div class="nav-section-label">Account</div>
-          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1319,8 +1258,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
           <!-- General -->
           <div class="settings-group"><div class="sg-header">General</div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">自动同步剪贴板</div><div class="sg-hint">内容变化时自动跨设备同步</div></div><div class="sg-control"><button class="toggle" id="toggleAutoSync" onclick="this.classList.toggle('on');saveSettings()"></button></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">开机自启动</div><div class="sg-hint">登录系统时自动启动 ClipSync</div></div><div class="sg-control"><button class="toggle" id="toggleAutostart" onclick="this.classList.toggle('on');saveSettings()"></button></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Auto-sync clipboard</div><div class="sg-hint">Automatically sync across devices when content changes</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')"></button></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Launch at startup</div><div class="sg-hint">Start ClipSync automatically when you log in</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')"></button></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Language</div><div class="sg-hint">Interface language preference</div></div><div class="sg-control"><select class="styled-select"><option>English</option><option>中文（简体）</option><option>日本語</option></select></div></div>
           </div>
 
@@ -1328,27 +1267,61 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="settings-group"><div class="sg-header">Sync</div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Sync interval</div><div class="sg-hint">How often to check for new clips</div></div><div class="sg-control"><select class="styled-select"><option>Real-time</option><option>Every 5 min</option><option>Every 15 min</option></select></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Max history</div><div class="sg-hint">Number of clips retained in history</div></div><div class="sg-control"><select class="styled-select"><option>100</option><option>500</option><option>1,000</option><option>Unlimited</option></select></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">图片压缩</div><div class="sg-hint">同步前压缩图片大小</div></div><div class="sg-control"><button class="toggle" id="toggleImgCompress" onclick="this.classList.toggle('on');saveSettings()"></button></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">同步间隔</div><div class="sg-hint">检查新剪贴板的频率</div></div><div class="sg-control"><select class="styled-select" id="selectSyncInterval" onchange="saveSettings()"><option value="realtime">实时</option><option value="5min">每5分钟</option><option value="15min">每15分钟</option></select></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">历史上限</div><div class="sg-hint">保留的历史片段数量</div></div><div class="sg-control"><select class="styled-select" id="selectMaxHistory" onchange="saveSettings()"><option value="100">100</option><option value="500">500</option><option value="1000">1000</option><option value="0">无限制</option></select></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Image compression</div><div class="sg-hint">Reduce image size before syncing</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
+          </div>
+
+          <!-- Privacy & Security → opens modal -->
+          <div class="settings-group"><div class="sg-header">Privacy &amp; Security</div>
+            <div class="sg-row" onclick="openModal('security')"><div class="sg-label"><div class="sg-name">Two-factor authentication</div><div class="sg-hint">Add an extra layer of security to your account</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('sessions')"><div class="sg-label"><div class="sg-name">Active sessions</div><div class="sg-hint">Manage devices currently logged into your account</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">End-to-end encryption</div><div class="sg-hint">Your clips are encrypted before leaving your device</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')" disabled style="opacity:.5;cursor:not-allowed;"></button></div></div>
+          </div>
+
+          <!-- Subscription & Billing -->
+          <div class="settings-group"><div class="sg-header">Subscription &amp; Billing</div>
+            <div class="sg-row" onclick="openModal('pricing')"><div class="sg-label"><div class="sg-name">Current plan</div><div class="sg-hint">You are on the <strong>Professional</strong> plan · Renews Jul 15</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('billing')"><div class="sg-label"><div class="sg-name">Billing history</div><div class="sg-hint">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+          </div>
+
+          <!-- Shortcuts -->
+          <div class="settings-group"><div class="sg-header">Shortcuts</div>
+            <div class="sg-row" onclick="openModal('shortcuts')"><div class="sg-label"><div class="sg-name">Keyboard shortcuts</div><div class="sg-hint">Customize global hotkeys for quick actions</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+          </div>
+
+          <!-- Notifications -->
+          <div class="settings-group"><div class="sg-header">Notifications</div>
+            <div class="sg-row" onclick="openModal('notifications')"><div class="sg-label"><div class="sg-name">Notification preferences</div><div class="sg-hint">Choose which alerts you want to receive</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+          </div>
+
+          <!-- Appearance (★ THEME SELECTOR) -->
+          <div class="settings-group"><div class="sg-header">Appearance</div>
+            <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name">Theme &amp; Style</div><div class="sg-hint">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Reduce motion</div><div class="sg-hint">Minimize animations throughout the interface</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
+          </div>
+
+          <!-- Data -->
+          <div class="settings-group"><div class="sg-header">Data</div>
+            <div class="sg-row" onclick="openModal('export')"><div class="sg-label"><div class="sg-name">Export my data (GDPR)</div><div class="sg-hint">Download a copy of all your data in standard formats</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" id="checkUpdateRow"><div class="sg-label"><div class="sg-name">Check for updates</div><div class="sg-hint">Current version v2.4.1 · Last checked today</div></div><div class="sg-control"><button class="btn btn-secondary" style="font-size:11.5px;padding:5px 10px;" onclick="openModal('updates')">Check Now</button></div></div>
+          </div>
         </div>
       </main>
     </div>
   </div>
 
   <!-- ============== PROFILE VIEW ============== -->
-  <div class="page" id="sub-profile" data-onload="loadProfile()">
+  <div class="page" id="sub-profile">
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
-          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard</div>
           <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
           <div class="nav-section-label">Account</div>
-          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
+          <div class="nav-item active"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1378,13 +1351,13 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync</span></div>
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
-          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard</div>
           <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
-          <div class="nav-item active" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span>Shared Links<span class="nav-counter">5</span></div>
+          <div class="nav-item active" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span>Shared Links<span class="nav-counter">5</span></div>
           <div class="nav-section-label">Account</div>
-          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 022.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1397,7 +1370,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
         <div class="content-scroll" style="padding:24px;">
           <div style="display:flex;flex-direction:column;gap:12px;">
             <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
-              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span></div>
+              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">Project Alpha — Design Specs</div>
                 <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/xK9mP2qL</div>
@@ -1405,7 +1378,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
               <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--text-tertiary);">127 views</div><div style="font-size:11.5px;color:var(--text-tertiary);">Created 2d ago</div></div>
             </div>
             <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
-              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span></div>
+              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">Meeting Recording — July Sprint Review</div>
                 <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/nR4wT8vF</div>
@@ -1413,7 +1386,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
               <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--text-tertiary);">84 views</div><div style="font-size:11.5px;color:var(--text-tertiary);">Created 5d ago</div></div>
             </div>
             <div class="dev-card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;">
-              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span></div>
+              <div class="type-badge tb-link" style="flex-shrink:0;"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:550;font-size:14px;color:var(--text-primary);margin-bottom:2px;">API Documentation v2.4</div>
                 <div style="font-size:12.5px;color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">https://clipsync.io/s/qZ3pK7mN</div>
@@ -1427,19 +1400,19 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   </div>
 
   <!-- ============== SUBSCRIPTION VIEW ============== -->
-  <div class="page" id="sub-subscription" data-onload="loadSubscription()">
+  <div class="page" id="sub-subscription">
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-brand"><div class="logo-icon">C</div><span class="logo-type">ClipSync"></span></div>
         <nav class="sidebar-nav">
           <div class="nav-section-label">Main</div>
-          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M 16 4h2a2 2 0 0 1 2 2v 14a2 2 0 01 -2 2 H6a2 2 0 01 -2 -2 V6a2 2 0 0 1 2 -2h2"/></svg></span>Clipboard</div>
+          <div class="nav-item" data-sub="clipboard" onclick="switchSub('clipboard')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span>Clipboard</div>
           <div class="nav-item" data-sub="devices" onclick="switchSub('devices')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Devices</div>
-          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span>Shared Links</div>
+          <div class="nav-item" data-sub="shared-links" onclick="switchSub('shared-links')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span>Shared Links</div>
           <div class="nav-section-label">Account</div>
-          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M 20 21a8 8 0 10 -16 0"/></svg></span>Profile</div>
+          <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
           <div class="nav-item active" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 L0 9 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 022.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 L0 19.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1466,8 +1439,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           </div>
           <!-- Actions -->
           <div class="settings-group"><div class="sg-header">Manage</div>
-            <div class="sg-row" onclick="openModal('billing', loadBilling)"><div class="sg-label"><div class="sg-name">Billing history</div><div class="sg-hint">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
-            <div class="sg-row" onclick="openModal('pricing', loadPlans)"><div class="sg-label"><div class="sg-name">Change plan</div><div class="sg-hint">Upgrade or downgrade your subscription</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('billing')"><div class="sg-label"><div class="sg-name">Billing history</div><div class="sg-hint">View invoices and payment records</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
+            <div class="sg-row" onclick="openModal('pricing')"><div class="sg-label"><div class="sg-name">Change plan</div><div class="sg-hint">Upgrade or downgrade your subscription</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Cancel subscription</div><div class="sg-hint">End your subscription at the next billing date</div></div><div class="sg-control"><button class="btn btn-ghost" style="font-size:12px;padding:5px 12px;color:var(--danger);border-color:var(--danger);">Cancel</button></div></div>
           </div>
         </div>
@@ -1493,8 +1466,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
     <div class="qp-list" id="qpList">
       <div class="qp-item sel" data-idx="0" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-text"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span></div><div class="qp-txt">Fix the clipboard sync bug in the Rust backend service</div><div class="qp-ts">2m</div></div>
       <div class="qp-item" data-idx="1" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-img"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span></div><div class="qp-txt">Screenshot_2026-07-03_14_22_05.png</div><div class="qp-ts">15m</div></div>
-      <div class="qp-item" data-idx="2" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-link"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg></span></div><div class="qp-txt">github.com/CarlosShao/ClipSync/pull/42</div><div class="qp-ts">1h</div></div>
-      <div class="qp-item" data-idx="3" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-file"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M 14 2 H6a2 2 0 00 -2 2v 16a2 2 0 0 0 2 2h 12a2 2 0 0 0 2 -2 V8z"/><polyline points="14 2 14 8 20 8"/></svg></span></div><div class="qp-txt">design-spec-v2.figma</div><div class="qp-ts">3h</div></div>
+      <div class="qp-item" data-idx="2" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-link"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></span></div><div class="qp-txt">github.com/CarlosShao/ClipSync/pull/42</div><div class="qp-ts">1h</div></div>
+      <div class="qp-item" data-idx="3" onclick="selectQpItem(this)"><div class="qp-ti type-badge tb-file"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span></div><div class="qp-txt">design-spec-v2.figma</div><div class="qp-ts">3h</div></div>
     </div>
     <div class="qp-foot">
       <div class="kbd-pair"><kbd>↑↓</kbd>Navigate</div>
@@ -1517,8 +1490,27 @@ function applyStyle(s, m) {
   currentStyle = s; currentMode = m;
   const root = document.documentElement;
   root.setAttribute('data-style', s);
-  if (s === 'linear' || s === 'raycast') { root.removeAttribute('data-mode'); }
-  else { root.setAttribute('data-mode', m); }
+
+  // Handle dark-only styles
+  if (s === 'linear' || s === 'raycast') {
+    root.removeAttribute('data-mode');
+  } else {
+    root.setAttribute('data-mode', m);
+  }
+
+  // Update control bar buttons
+  document.querySelectorAll('#styleSeg .cb-btn').forEach(b => b.classList.toggle('active', b.dataset.s === s));
+  document.querySelectorAll('#modeSeg .cb-btn').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+
+  // Disable light mode button for dark-only styles
+  const lightBtn = document.querySelector('#modeSeg [data-m="light"]');
+  if (s === 'linear' || s === 'raycast') {
+    lightBtn.style.opacity = '.35';
+    lightBtn.style.pointerEvents = 'none';
+  } else {
+    lightBtn.style.opacity = '';
+    lightBtn.style.pointerEvents = '';
+  }
 }
 
 // Style buttons — auto-reset to light when leaving dark-only styles
@@ -1544,6 +1536,9 @@ function showPage(p) {
   document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
   const target = document.getElementById('pg-' + p);
   if (target) target.classList.add('active');
+  document.querySelectorAll('.cb-page-btn').forEach(b => b.classList.toggle('active', b.dataset.p === p));
+
+  // If switching to app shell, restore last sub-page (not always clipboard)
   if (p === 'app') switchSub(lastAppSub);
 }
 document.querySelectorAll('.cb-page-btn').forEach(b => {
@@ -1559,9 +1554,6 @@ function switchSub(sub) {
   document.querySelectorAll('[id^="sub-"]').forEach(el => el.classList.remove('active'));
   const target = document.getElementById('sub-' + sub);
   if (target) target.classList.add('active');
-      // Call onload function if specified
-      const onload = target.dataset.onload;
-      if (onload) { try { eval(onload); } catch (e) { console.warn('onload error:', e); } }
 
   // Update sidebar nav active states — use data-sub attribute (robust, doesn't depend on text content)
   document.querySelectorAll('.sidebar .nav-item').forEach(item => {
@@ -1614,7 +1606,7 @@ const modalTemplates = {
   billing: () => `
     <div class="modal-header"><span class="modal-title">Billing History</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
-      <div class="empty-state"><div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><path d="M 14 2 H6a2 2 0 00 -2 2v 16a2 2 0 0 0 2 2h 12a2 2 0 0 0 2 -2 V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span></div><div class="empty-title">No invoices yet</div><div class="empty-desc">Your billing history will appear here once you make a purchase.</div></div>
+      <div class="empty-state"><div class="empty-icon"><span class="icon icon-xl" style="color:var(--text-tertiary)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span></div><div class="empty-title">No invoices yet</div><div class="empty-desc">Your billing history will appear here once you make a purchase.</div></div>
     </div>`,
 
   shortcuts: () => `
@@ -1672,7 +1664,7 @@ const modalTemplates = {
   export: () => `
     <div class="modal-header"><span class="modal-title">Export My Data</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
-      <div class="export-box"><div class="export-icon"><span class="icon icon-xl" style="color:var(--accent)"><svg viewBox="0 0 24 24"><path d="M 21 15v4a2 2 0 01 -2 2 H5a2 2 0 01 -2 -2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></div><div class="export-msg">We'll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You'll receive a download link via email within 24 hours.</div></div>
+      <div class="export-box"><div class="export-icon"><span class="icon icon-xl" style="color:var(--accent)"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span></div><div class="export-msg">We'll prepare a complete archive of all your data including clipboard history, device info, and account settings.<br><br>You'll receive a download link via email within 24 hours.</div></div>
     </div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-danger" onclick="closeModal()">Request Export</button></div>`,
 
@@ -1724,12 +1716,11 @@ const modalTemplates = {
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="closeModal()">Download</button></div>`,
 };
 
-function openModal(name, onOpen) {
+function openModal(name) {
   const tmpl = modalTemplates[name];
   if (!tmpl) return;
   const root = document.getElementById('modalRoot');
   root.innerHTML = `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${tmpl()}</div></div>`;
-  if (typeof onOpen === 'function') setTimeout(onOpen, 100);
 }
 
 function closeModal() {
@@ -1755,7 +1746,7 @@ function switchClipTab(btn, type) {
       visible++;
     } else {
       const rowType = row.dataset.type;
-      const typeMap = { 'text': 'text', 'images': 'img', 'links': 'link', 'files': 'file' };
+      const typeMap = { 'text': 'text', 'images': 'images', 'links': 'links', 'files': 'files' };
       const show = (rowType === typeMap[type]);
       row.style.display = show ? '' : 'none';
       if (show) visible++;
@@ -1886,1894 +1877,262 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// ===== ClipSync Real Functionality =====
+// Initialize
+applyStyle('vercel', 'light');
+
+
+// ========== CLIPSYNC REAL FUNCTIONALITY ==========
 let deviceReady = false;
+let clipboardItems = [];
+let devices = [];
 let state = {
   token: localStorage.getItem('cs_token'),
-  user: JSON.parse(localStorage.getItem('cs_user')),
+  user: JSON.parse(localStorage.getItem('cs_user') || 'null'),
   deviceId: localStorage.getItem('cs_device_id'),
   items: [],
   ws: null,
   autoSync: true,
 };
 const API_BASE = 'http://localhost:3001';
+let _cachedCsrfToken = null;
+let _csrfFetchTime = 0;
+const CSRF_CACHE_MS = 5000;
 
-// ===== Toast (real) =====
-
-
-// ===== API =====
 async function api(method, path, body) {
   const opts = { method, headers: {} };
   if (state.token) opts.headers['Authorization'] = 'Bearer ' + state.token;
   if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
-  try {
-    const resp = await fetch(API_BASE + path, opts);
-    const text = await resp.text();
-    let data;
-    try { data = JSON.parse(text); } catch { throw new Error('Server returned invalid response (' + resp.status + ')'); }
-    if (!resp.ok) throw new Error(data.error || 'Request failed (' + resp.status + ')');
-    return data;
-  } catch (e) {
-    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.name === 'TypeError') {
-      updateConnStatus('offline');
-      throw new Error('无法连接到服务器，请检查网络或后端服务是否启动');
+  if (state.token && !['GET','HEAD','OPTIONS'].includes(method)) {
+    if (!_cachedCsrfToken || (Date.now() - _csrfFetchTime > CSRF_CACHE_MS)) {
+      try {
+        const r = await fetch(API_BASE + '/api/csrf-token', { headers: { 'Authorization': 'Bearer ' + state.token } });
+        if (r.ok) { const d = await r.json(); _cachedCsrfToken = d.csrfToken; _csrfFetchTime = Date.now(); }
+      } catch(e) {}
     }
-    throw e;
+    if (_cachedCsrfToken) opts.headers['x-csrf-token'] = _cachedCsrfToken;
   }
+  const resp = await fetch(API_BASE + path, opts);
+  const text = await resp.text();
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error('Server error (' + resp.status + ')'); }
+  if (!resp.ok) throw new Error(data.error || 'Request failed (' + resp.status + ')');
+  return data;
 }
 
-// ===== Login =====
 async function sendCode() {
-  const phone = document.getElementById('loginPhone')?.value?.trim();
-  if (!phone || phone.length !== 11) { showToast('请输入11位手机号', 'error'); return; }
-  const btn = document.getElementById('sendCodeBtn');
-  btn.disabled = true;
-  try {
-    await api('POST', '/api/auth/send-code', { phone });
-    showToast('验证码已发送（测试：888888）', 'success');
-    document.getElementById('loginStep1').style.display = 'none';
-    document.getElementById('loginStep2').style.display = '';
-    let sec = 60; btn.textContent = sec + 's';
-    const timer = setInterval(() => {
-      sec--; btn.textContent = sec + 's';
-      if (sec <= 0) { clearInterval(timer); btn.textContent = '发送验证码'; btn.disabled = false; }
-    }, 1000);
-  } catch (e) { showToast('发送失败：' + e.message, 'error'); btn.disabled = false; }
-}
-
-async function resendCode() {
-  const phone = document.getElementById('loginPhone')?.value?.trim();
-  if (!phone) return;
-  try {
-    await api('POST', '/api/auth/send-code', { phone });
-    showToast('验证码已重新发送', 'success');
-    const btn = document.getElementById('sendCodeBtn');
-    let sec = 60; btn.disabled = true; btn.textContent = sec + 's';
-    const timer = setInterval(() => {
-      sec--; btn.textContent = sec + 's';
-      if (sec <= 0) { clearInterval(timer); btn.textContent = '发送验证码'; btn.disabled = false; }
-    }, 1000);
-  } catch (e) { showToast('发送失败：' + e.message, 'error'); }
+  var phone = (document.querySelector('.lf-input')||{}).value;
+  if (!phone || phone.length < 5) { showToast('Please enter phone number', 'error'); return; }
+  try { await api('POST', '/api/auth/send-code', { phone }); showToast('Code sent (test: 888888)'); }
+  catch(e) { showToast('Failed: ' + e.message, 'error'); }
 }
 
 async function doLogin() {
-  console.log('[doLogin] called');
-  const phone = document.getElementById('loginPhone')?.value?.trim();
-  const code = document.getElementById('loginCode')?.value?.trim();
-  if (!phone || !code) { showToast('请输入手机号和验证码', 'error'); return; }
+  var inputs = document.querySelectorAll('.lf-input');
+  var phone = inputs[0]?.value?.trim();
+  var code = inputs[1]?.value?.trim();
+  if (!phone || !code) { showToast('Please enter credentials', 'error'); return; }
   try {
-    const data = await api('POST', '/api/auth/verify-code', { phone, code, accept_tos: true, accept_privacy: true });
+    var data = await api('POST', '/api/auth/verify-code', { phone, code, accept_tos: true, accept_privacy: true });
     state.token = data.token; state.user = data.user;
     localStorage.setItem('cs_token', data.token);
     localStorage.setItem('cs_user', JSON.stringify(data.user));
-    console.log('[doLogin] verify-code OK');
     showPage('app');
     updateUserInfo();
     loadClipboardItems();
-    console.log('[doLogin] calling loadDevices...');
     await loadDevices();
-    console.log('[doLogin] loadDevices done, deviceReady=' + deviceReady + ' deviceId=' + (state.deviceId || 'none'));
     connectWebSocket();
     startClipboardPolls();
-    showToast('登录成功', 'success');
-  } catch (e) { showToast('登录失败：' + e.message, 'error'); }
+    showToast('Login successful');
+  } catch(e) { showToast('Login failed: ' + e.message, 'error'); }
 }
-
-// Global hotkey: Quick Paste (registered once at script load, not inside doLogin)
-document.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'KeyV') {
-    e.preventDefault();
-    toggleQuickPaste();
-  }
-  if (e.key === 'Escape') {
-    const qp = document.getElementById('qpOverlay');
-    if (qp && qp.classList.contains('show')) { hideQuickPaste(); }
-  }
-});
 
 function logout() {
   state.token = null; state.user = null; state.deviceId = null;
   localStorage.removeItem('cs_token'); localStorage.removeItem('cs_user'); localStorage.removeItem('cs_device_id');
-  if (state.ws) { state.ws.close(); state.ws = null; }
+  if (state.ws) { try { state.ws.close(); } catch(e) {} state.ws = null; }
   showPage('login');
 }
 
 function updateUserInfo() {
-  const u = state.user; if (!u) return;
-  const name = u.nickname || u.phone || '?';
-  document.querySelectorAll('.user-name').forEach(el => el.textContent = name);
-  document.querySelectorAll('.user-role').forEach(el => el.textContent = u.plan || 'Free');
-}
-
-// ===== Clipboard =====
-let clipboardItems = [];
-function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
-function formatTime(iso) {
-  if (!iso) return ''; const d = new Date(iso); const now = new Date(); const diff = (now - d) / 1000;
-  if (diff < 60) return '刚刚'; if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
-  if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
-  return d.toLocaleDateString();
+  var u = state.user; if (!u) return;
+  document.querySelectorAll('.user-name').forEach(function(el) { el.textContent = u.nickname || u.phone || '?'; });
+  document.querySelectorAll('.user-role').forEach(function(el) { el.textContent = 'Free'; });
 }
 
 async function loadClipboardItems() {
   try {
-    const data = await api('GET', '/api/clipboard?limit=100');
+    var data = await api('GET', '/api/clipboard?limit=100');
     clipboardItems = data.items || [];
     renderClipboardItems();
-  } catch (e) { showToast('加载剪贴板失败：' + e.message, 'error'); }
+  } catch(e) { console.error('[Clipboard] load failed:', e.message); }
 }
 
 function renderClipboardItems() {
-  const container = document.querySelector('.clip-view');
+  var container = document.querySelector('#sub-clipboard .clip-view');
   if (!container) return;
-  container.querySelectorAll('.clip-row').forEach(r => r.remove());
-  const emptyState = container.querySelector('.empty-state');
+  container.querySelectorAll('.clip-row').forEach(function(r) { r.remove(); });
+  var emptyState = document.getElementById('clipEmptyState');
   if (clipboardItems.length === 0) { if (emptyState) emptyState.classList.add('show'); return; }
   if (emptyState) emptyState.classList.remove('show');
-  const listHead = container.querySelector('.list-head');
-  clipboardItems.forEach(item => {
-    const type = item.contentType || 'text';
-    const typeClass = type === 'image' ? 'img' : type === 'link' ? 'link' : type === 'file' ? 'file' : 'text';
-    const typeLabel = typeClass === 'img' ? '图片' : typeClass === 'link' ? '链接' : typeClass === 'file' ? '文件' : '文本';
-    const tr = document.createElement('div');
-    tr.className = 'clip-row'; tr.dataset.type = typeClass; tr.dataset.id = item.id;
-    tr.style.cursor = 'pointer';
-    // Double insurance: inline onclick + event delegation both call handleClipRowClick
-    tr.setAttribute('onclick', "handleClipRowClick(this)");
-    const typeIcons = {
-      text: '<svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
-      img:  '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
-      link: '<svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l 3 -3 a5 5 0 0 0 -7.07 -7.07 l -1.72 1.71"/><path d="M 14 11a5 5 0 0 0 -7.54 -.54 l -3 3 a5 5 0 0 0 7.07 7.07 l 1.71 -1.71"/></svg>',
-      file: '<svg viewBox="0 0 24 24"><path d="M 14 2 H6 a2 2 0 0 0 -2 2 v 16 a2 2 0 0 0 2 2 h 12 a2 2 0 0 0 2 -2 V8 z"/><polyline points="14 2 14 8 20 8"/></svg>'
-    };
-    const devIcons = {
-      mobile: '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',
-      desktop: '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
-      tablet: '<svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>'
-    };
-    const devType = (item.deviceType || '').toLowerCase();
-    const devIcon = devIcons[devType] || devIcons.desktop;
-    tr.innerHTML = `<div class="cr-main"><div class="type-badge tb-${typeClass}"><span class="icon icon-md">${typeIcons[typeClass] || typeIcons.text}</span></div><span class="cr-preview">${escapeHtml((item.contentPreview || item.content || '').substring(0, 120))}</span></div><div class="cr-device"><span class="icon icon-sm">${devIcon}</span>${escapeHtml(item.deviceName || 'Unknown')}</div><div><span class="cr-tag ct-${typeClass}">${typeLabel}</span></div><div class="cr-time">${formatTime(item.createdAt)}</div><div class="cr-actions"><button class="act-btn" title="${typeClass === 'img' ? '预览图片' : typeClass === 'link' ? '打开链接' : typeClass === 'file' ? '下载文件' : '复制'}" onclick="event.stopPropagation();viewItem('${item.id}','${typeClass}')"><span class="icon icon-sm">${typeClass === 'img' ? '<svg viewBox="0 0 24 24"><path d="M 1 12s4 -8 11 -8 11 8 11 8 -4 8 -11 8 -11 -8 -11 -8z"/><circle cx="12" cy="12" r="3"/></svg>' : typeClass === 'link' ? '<svg viewBox="0 0 24 24"><path d="M 10 13a5 5 0 0 0 7.54 .54 l 3 -3 a5 5 0 0 0 -7.07 -7.07 l -1.72 1.71"/><path d="M 14 11a5 5 0 0 0 -7.54 -.54 l -3 3 a5 5 0 0 0 7.07 7.07 l 1.71 -1.71"/></svg>' : typeClass === 'file' ? '<svg viewBox="0 0 24 24"><path d="M 21 15 v4 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' : '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M 5 15 H4 a2 2 0 0 1 -2 -2 V4 a2 2 0 0 1 2 -2 h9 a2 2 0 0 1 2 2 v1"/></svg>'}</span></button><button class="act-btn" title="复制" onclick="event.stopPropagation();copyItem('${item.id}')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M 5 15 H4 a2 2 0 0 1 -2 -2 V4 a2 2 0 0 1 2 -2 h9 a2 2 0 0 1 2 2 v1"/></svg></span></button><button class="act-btn" title="删除" onclick="event.stopPropagation();deleteItem('${item.id}')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M 19 6v 14 a2 2 0 0 1 -2 2 H7 a2 2 0 0 1 -2 -2 V6 m3 0 V4 a2 2 0 0 1 2 -2 h4 a2 2 0 0 1 2 2 v2"/></svg></span></button></div>`;
-    if (listHead) listHead.after(tr); else container.appendChild(tr);
+  clipboardItems.forEach(function(item) {
+    var type = item.contentType || 'text';
+    var typeClass = type === 'image' ? 'img' : type === 'link' ? 'link' : type === 'file' ? 'file' : 'text';
+    var typeLabel = type === 'image' ? 'Image' : type === 'link' ? 'Link' : type === 'file' ? 'File' : 'Text';
+    var preview = escapeHtml((item.contentPreview || '').substring(0, 120));
+    var row = document.createElement('div');
+    row.className = 'clip-row'; row.dataset.type = typeClass; row.dataset.id = item.id;
+    var viewIcon = '';
+    if (typeClass === 'img') viewIcon = '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    else if (typeClass === 'file') viewIcon = '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+    else if (typeClass === 'link') viewIcon = '<svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+    else viewIcon = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+    row.innerHTML = '<div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md"></span></div><span class="cr-preview">' + preview + '</span></div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
+    container.appendChild(row);
   });
 }
 
-async function copyItem(id) {
-  const item = clipboardItems.find(i => i.id === id);
-  if (!item) return;
-  // Fetch full item to get contentEncrypted
-  try {
-    const full = await api('GET', '/api/clipboard/' + id);
-    const text = full.contentEncrypted || full.contentPreview || item.contentPreview || '';
-    if (text.startsWith('data:')) {
-      showToast('图片内容不支持直接复制文本', 'error'); return;
-    }
-    await copyToClipboard(text);
-    showToast('已复制到剪贴板', 'success');
-  } catch(e) {
-    // Fallback: use what we have
-    const text = item.contentPreview || item.contentEncrypted || '';
-    await copyToClipboard(text.substring(0, 5000));
-  }
+function formatTime(iso) {
+  if (!iso) return ''; var d = new Date(iso); var now = new Date(); var diff = (now - d) / 1000;
+  if (diff < 60) return 'Just now'; if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return d.toLocaleDateString();
 }
 
-// Unified clipboard write with Tauri fallback
-async function copyToClipboard(text) {
+function escapeHtml(str) { var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+async function uploadClipboard(content) {
+  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
+  if (!state.deviceId || !content.trim()) return;
+  var type = /^https?:\/\//.test(content.trim()) ? 'link' : 'text';
   try {
+    await api('POST', '/api/clipboard', {
+      sourceDeviceId: state.deviceId, contentType: type,
+      contentEncrypted: btoa(unescape(encodeURIComponent(content))),
+      contentPreview: content.length > 5000 ? content.substring(0, 5000) + '...' : content,
+      contentSize: content.length,
+    });
+    await loadClipboardItems();
+  } catch(e) { console.error('[Upload] failed:', e.message); }
+}
+
+async function handleCopyItem(id) {
+  try {
+    var full = await api('GET', '/api/clipboard/' + id);
+    var text = full.contentEncrypted || full.contentPreview || '';
+    if (text.startsWith('data:')) { showToast('Cannot copy image as text', 'error'); return; }
+    try { var decoded = decodeURIComponent(escape(atob(text))); text = decoded; } catch(e) {}
     await navigator.clipboard.writeText(text);
-    showToast('已复制', 'success');
-  } catch (e) {
-    // Fallback: Tauri clipboard API
+    showToast('Copied to clipboard!');
+  } catch(e) { showToast('Copy failed: ' + e.message, 'error'); }
+}
+
+async function handleDeleteItem(id) {
+  if (!confirm('Delete this item?')) return;
+  try { await api('DELETE', '/api/clipboard/' + id); showToast('Deleted', 'info'); loadClipboardItems(); }
+  catch(e) { showToast('Delete failed: ' + e.message, 'error'); }
+}
+
+async function handleViewItem(id, typeClass) {
+  if (typeClass === 'img') {
     try {
-      const inv = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-      if (inv) { await inv('write_text', { text: text }); showToast('已复制', 'success'); return; }
-    } catch (e2) { /* ignore tauri fallback error */ }
-    // Last resort: textarea trick
-    try {
-      const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed';ta.style.opacity='0';
-      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
-      document.body.removeChild(ta); showToast('已复制', 'success');
-    } catch (e3) { showToast('复制失败: ' + e.message, 'error'); }
+      var item = await api('GET', '/api/clipboard/' + id);
+      if (!item || !item.contentEncrypted || !item.contentEncrypted.startsWith('data:')) { showToast('Not an image', 'error'); return; }
+      var meta = item.metadata || {};
+      var fileName = meta.fileName || 'Image.png';
+      var mimeType = meta.mimeType || 'image/png';
+      var ext = mimeType.split('/')[1] || 'png';
+      var fileSize = item.contentSize || 0;
+      var sizeStr = fileSize > 1048576 ? (fileSize/1048576).toFixed(1)+' MB' : (fileSize/1024).toFixed(1)+' KB';
+      var info = ext.toUpperCase() + ' - ' + sizeStr;
+      openModal('imagePreview');
+      document.querySelector('#modalRoot .modal-body').innerHTML = '<div style="text-align:center;padding:20px;"><div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:48px 36px;margin-bottom:16px;"><img src="' + item.contentEncrypted + '" style="max-width:100%;max-height:320px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.2);background:#fff;"></div><div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">' + fileName + '</div><div style="font-size:12px;color:var(--text-secondary);">' + info + '</div></div>';
+    } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+  } else if (typeClass === 'file') {
+    showToast('File preview coming soon', 'info');
+  } else if (typeClass === 'link') {
+    var item = clipboardItems.find(function(i) { return i.id === id; });
+    if (item && item.contentPreview) {
+      var url = item.contentPreview;
+      if (!url.startsWith('http')) url = 'https://' + url;
+      window.open(url, '_blank');
+    }
+  } else {
+    handleCopyItem(id);
   }
 }
 
-async function deleteItem(id) {
-  if (!confirm('确认删除？')) return;
-  try { await api('DELETE', '/api/clipboard/' + id); showToast('已删除', 'success'); loadClipboardItems(); }
-  catch (e) { showToast('删除失败：' + e.message, 'error'); }
-}
-
-// ===== Devices =====
-let devices = [];
 async function loadDevices() {
   try {
-    const data = await api('GET', '/api/devices');
-    // Backend returns raw array, not { devices: [...] }
-    let devList = data;
-    if (devList && devList.devices) devList = devList.devices;
-    else if (devList && devList.data) devList = devList.data;
+    var data = await api('GET', '/api/devices');
+    var devList = Array.isArray(data) ? data : (data.devices || data.data || []);
     if (!Array.isArray(devList)) devList = [];
     devices = devList;
-    // Auto-register if no device exists
     if (devices.length === 0 && state.token) {
       try {
-        const reg = await api('POST', '/api/devices', {
-          deviceName: '浏览器桌面 (' + navigator.platform + ')',
+        var reg = await api('POST', '/api/devices', {
+          deviceName: 'Desktop (' + navigator.platform + ')',
           deviceType: 'desktop',
-          platform: navigator.platform,
+          platform: navigator.platform.toLowerCase().includes('win') ? 'windows' : 'browser',
         });
-        if (reg && reg.deviceId) {
-          state.deviceId = reg.deviceId;
-          localStorage.setItem('cs_device_id', reg.deviceId);
-          devices = [{ id: reg.deviceId, name: reg.deviceName || '桌面端', online: true }];
-        }
-      } catch (regErr) {
-        // Use stored deviceId if registration fails
-        state.deviceId = state.deviceId || localStorage.getItem('cs_device_id');
-      }
+        if (reg && reg.id) { state.deviceId = reg.id; localStorage.setItem('cs_device_id', reg.id); }
+      } catch(e) { state.deviceId = state.deviceId || localStorage.getItem('cs_device_id'); }
     } else if (devices.length > 0 && !state.deviceId) {
       state.deviceId = devices[0].id;
       localStorage.setItem('cs_device_id', state.deviceId);
     }
     deviceReady = true;
-    renderDevices();
-  } catch (e) {
-    console.warn('[Devices] load failed:', e.message);
+  } catch(e) {
     state.deviceId = state.deviceId || localStorage.getItem('cs_device_id');
     deviceReady = !!state.deviceId;
   }
 }
-function renderDevices() {
-  const container = document.querySelector('.device-grid');
-  if (!container) return; container.innerHTML = '';
-  const devIcons = {
-    mobile: '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',
-    desktop: '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
-    tablet: '<svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>'
-  };
-  devices.forEach(dev => {
-    const card = document.createElement('div'); card.className = 'dev-card';
-    const iconSvg = devIcons[(dev.type||'').toLowerCase()] || devIcons.desktop;
-    card.innerHTML = `<div class="dev-card-top"><div class="dev-icon"><span class="icon icon-lg">${iconSvg}</span></div><div><div class="dev-name">${escapeHtml(dev.name || '')}</div><div class="dev-status"><span class="status-dot ${dev.online ? 'on' : 'off'}"></span>${dev.online ? '在线' : '离线'}</div></div></div><div class="dev-stats"><div class="stat-cell"><div class="stat-lbl">同步片段</div><div class="stat-val">${dev.clipCount || 0}</div></div><div class="stat-cell"><div class="stat-lbl">状态</div><div class="stat-val ${dev.online ? 'ok' : 'dim'}">${dev.online ? '活跃' : '空闲'}</div></div></div>`;
-    container.appendChild(card);
-  });
-}
 
-// ===== WebSocket Message Handler =====
-function handleWsMessage(msg) {
-  switch (msg.type) {
-    case 'registered':
-      const wasNew = (state.deviceId !== msg.deviceId);
-      state.deviceId = msg.deviceId;
-      localStorage.setItem('cs_device_id', msg.deviceId);
-      if (wasNew) showToast('设备已注册', 'success');
-      break;
-    case 'error':
-      console.error('[WS] error:', msg.message);
-      if (msg.message === 'Device not found') {
-        state.deviceId = null;
-        localStorage.removeItem('cs_device_id');
-        loadDevices().catch(e => console.error('[WS] re-reg failed:', e));
-      }
-      break;
-    case 'clipboard':
-    case 'new_clipboard':
-      if (msg.item) {
-        clipboardItems.unshift(msg.item);
-        if (document.querySelector('.clip-view')) renderClipboardItems();
-        showToast('收到新同步内容', 'info');
-      }
-      break;
-    case 'clipboard_deleted':
-      if (msg.itemId) {
-        clipboardItems = clipboardItems.filter(i => i.id !== msg.itemId);
-      } else if (msg.itemIds) {
-        clipboardItems = clipboardItems.filter(i => !msg.itemIds.includes(i.id));
-      }
-      if (document.querySelector('.clip-view')) renderClipboardItems();
-      break;
-    case 'clipboard_favorite':
-      const favItem = clipboardItems.find(i => i.id === msg.itemId);
-      if (favItem) { favItem.isFavorite = msg.isFavorite; renderClipboardItems(); }
-      break;
-  }
-}
-
-function updateConnStatus(status) {
-  const dot = document.getElementById('connDot');
-  const text = document.getElementById('connText');
-  if (!dot || !text) return;
-  dot.className = 'conn-dot ' + status;
-  const labels = { online: '已连接', offline: '未连接', connecting: '连接中...' };
-  text.textContent = labels[status] || status;
-}
-
-// ===== Upload Local Clipboard =====
-function detectContentType(text) {
-  if (/^https?:\/\//.test(text.trim())) return 'link';
-  if (/[{}\[\]];?|function |const |let |var |=>|import |class /.test(text)) return 'code';
-  return 'text';
-}
-
-async function uploadClipboard(content) {
-  console.log('[UploadClipboard] called, len=' + content.length + ', deviceId=' + (state.deviceId || 'none'));
-  if (!state.deviceId) {
-    state.deviceId = localStorage.getItem('cs_device_id');
-    console.log('[UploadClipboard] restored deviceId from localStorage: ' + state.deviceId);
-  }
-  if (!state.deviceId || !content.trim()) {
-    console.log('[UploadClipboard] SKIP: deviceId=' + state.deviceId + ' content=' + content.length);
-    return;
-  }
-
-  const type = detectContentType(content);
-  console.log('[UploadClipboard] type=' + type + ', posting to /api/clipboard');
-  try {
-    const res = await api('POST', '/api/clipboard', {
-      sourceDeviceId: state.deviceId,
-      contentType: type,
-      contentEncrypted: btoa(unescape(encodeURIComponent(content))),
-      contentPreview: content.length > 5000 ? content.substring(0, 5000) + '...(' + content.length + '字符)' : content,
-      contentSize: content.length,
-    });
-    console.log('[UploadClipboard] API success, response:', JSON.stringify(res).substring(0, 100));
-    await loadClipboardItems();
-    showToast('已同步到服务器', 'success');
-  } catch (e) {
-    console.error('[UploadClipboard] FAILED:', e.message);
-    showToast('同步失败: ' + e.message, 'error');
-  }
-}
-
-// ===== Drag & Drop =====
-function setupDragDrop() {
-  document.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-  });
-  document.addEventListener('drop', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const files = e.dataTransfer?.files;
-    if (files && files.length > 0) {
-      for (const file of files) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          if (file.type.startsWith('image/')) {
-            uploadClipboard(ev.target.result);
-          }
-        };
-        reader.readAsDataURL(file);
-      }
-    }
-  });
-  console.log('[DragDrop] initialized');
-}
-
-// ===== Search =====
-function onSearch(value) {
-  state.searchQuery = value;
-  renderClipboardItems();
-}
-
-function clearSearch() {
-  const inp = document.getElementById('searchInput');
-  if (inp) { inp.value = ''; state.searchQuery = ''; renderClipboardItems(); }
-}
-
-// ===== Toggle Favorite =====
-async function toggleFav(id) {
-  try {
-    await api('PUT', `/api/clipboard/${id}/favorite`);
-    loadClipboardItems();
-  } catch (e) { showToast('操作失败', 'error'); }
-}
-
-// ===== WebSocket (updated) =====
 function connectWebSocket() {
-  if (state.ws) state.ws.close();
-  updateConnStatus('connecting');
-  const wsUrl = API_BASE.replace('http', 'ws') + '/ws?token=' + encodeURIComponent(state.token || '');
-  state.ws = new WebSocket(wsUrl);
-  state.ws.onopen = () => {
-    updateConnStatus('online');
-    if (state.deviceId) {
-      state.ws.send(JSON.stringify({ type: 'register', deviceId: state.deviceId }));
-    }
-  };
-  state.ws.onmessage = (e) => {
-    try { handleWsMessage(JSON.parse(e.data)); }
-    catch {}
-  };
-  state.ws.onclose = () => updateConnStatus('offline');
-  state.ws.onerror = () => updateConnStatus('offline');
-}
-
-// ===== Image Viewer =====
-let _viewingImageUrl = null;
-let _viewingBlobUrl = null;
-
-async function viewImageItem(urlOrId, previewText) {
+  if (state.ws) try { state.ws.close(); } catch(e) {}
   try {
-    let dataUrl = '';
-
-    // If it looks like a URL/data URI, use directly; otherwise treat as ID and fetch
-    if (typeof urlOrId === 'string' && (urlOrId.startsWith('http') || urlOrId.startsWith('data:') || urlOrId.startsWith('/'))) {
-      dataUrl = urlOrId;
-    } else {
-      // Fetch from API by ID
-      const item = await api('GET', '/api/clipboard/' + urlOrId);
-      if (item.contentType !== 'image') { showToast('不是图片', 'error'); return; }
-      dataUrl = (item.contentEncrypted || '').trim();
-      if (!dataUrl || !dataUrl.startsWith('data:')) { showToast('无图片数据', 'error'); return; }
-    }
-
-    // BMP -> PNG conversion via Tauri (if available)
-    if (/image\/(bmp|x-ms-bmp)/i.test(dataUrl.split(',')[0])) {
-      try {
-        const inv = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-        if (inv) {
-          dataUrl = await inv('convert_bmp_to_png', { bmpDataUrl: dataUrl });
-        }
-      } catch(e) { console.error('[ViewImg] BMP convert failed:', e); }
-    }
-
-    const viewer = document.getElementById('image-viewer');
-    const img = document.getElementById('viewer-img');
-    if (!viewer || !img) { showToast(' viewer not found', 'error'); return; }
-
-    img.src = dataUrl;
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = () => reject(new Error('图片加载失败'));
-    });
-
-    viewer.style.display = 'flex';
-    _viewingImageUrl = dataUrl;
-    const titleEl = document.getElementById('ivTitle');
-    if (titleEl) titleEl.textContent = previewText || (typeof urlOrId === 'string' && urlOrId.length < 80 ? urlOrId : '图片预览');
-  } catch(e) {
-    console.error('[ViewImg]', e);
-    showToast('预览失败: ' + e.message, 'error');
-  }
-}
-
-let _lastImageMeta = null;
-
-async function viewImageItemById(id) {
-  try {
-    const item = await api('GET', '/api/clipboard/' + id);
-    if (!item || !item.contentEncrypted || !item.contentEncrypted.startsWith('data:')) {
-      showToast('不是图片或图片数据不可用', 'error'); return;
-    }
-    // Extract metadata
-    const preview = item.contentPreview || '';
-    const meta = item.metadata || {};
-    const fileName = meta.fileName || preview.replace('[图片] ','').split(' (')[0] || 'Image.png';
-    const mimeType = meta.mimeType || (item.contentEncrypted.split(',')[0].match(/:(.*?);/) || ['','image/png'])[1];
-    const ext = mimeType.split('/')[1] || 'png';
-    const fileSize = item.contentSize || 0;
-    const deviceName = item.deviceName || meta.deviceName || '';
-    const fileSizeStr = fileSize > 1024*1024 ? (fileSize/1024/1024).toFixed(1)+' MB' : (fileSize/1024).toFixed(1)+' KB';
-    const dims = meta.dimensions || meta.width ? (meta.width+'×'+meta.height) : '';
-    const info = [ext.toUpperCase(), dims, fileSizeStr, deviceName ? 'From: '+deviceName : ''].filter(Boolean).join(' · ');
-    
-    _lastImageMeta = { dataUrl: item.contentEncrypted, fileName: fileName, info: info };
-    
-    const viewer = document.getElementById('image-viewer');
-    const img = document.getElementById('viewer-img');
-    const fnEl = document.getElementById('ivFilename');
-    const infoEl = document.getElementById('ivInfo');
-    if (!viewer || !img) return;
-    
-    img.src = item.contentEncrypted;
-    img.onload = function() {
-      if (fnEl) fnEl.textContent = fileName;
-      if (infoEl) infoEl.textContent = info;
-      viewer.style.display = 'flex';
+    var wsUrl = API_BASE.replace('http', 'ws') + '/ws?token=' + encodeURIComponent(state.token || '');
+    state.ws = new WebSocket(wsUrl);
+    state.ws.onopen = function() { 
+      document.querySelectorAll('.conn-dot').forEach(function(d) { d.className = 'conn-dot online'; });
+      if (state.deviceId) state.ws.send(JSON.stringify({ type: 'register', deviceId: state.deviceId }));
     };
-    img.onerror = function() { showToast('图片加载失败', 'error'); };
-  } catch(e) {
-    showToast('加载图片失败: ' + e.message, 'error');
-  }
-}
-
-window.downloadImage = function() {
-  if (!_lastImageMeta) return;
-  const a = document.createElement('a');
-  a.href = _lastImageMeta.dataUrl;
-  a.download = _lastImageMeta.fileName;
-  a.click();
-}
-
-function closeImageViewer() {
-  const viewer = document.getElementById('image-viewer');
-  if (viewer) viewer.style.display = 'none';
-  if (_viewingBlobUrl) { URL.revokeObjectURL(_viewingBlobUrl); _viewingBlobUrl = null; }
-  _viewingImageUrl = null;
-  const img = document.getElementById('viewer-img');
-  if (img) img.src = '';
-}
-
-async function copyImageFromViewer() {
-  if (!_viewingImageUrl) return;
-  try {
-    const img = document.getElementById('viewer-img');
-    if (!img || !img.naturalWidth) throw new Error('图片未加载');
-
-    const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-    if (!blob) throw new Error('Canvas 转 Blob 失败');
-
-    await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
-    showToast('图片已复制', 'success');
-    closeImageViewer();
-  } catch(e) {
-    showToast('复制失败: ' + e.message, 'error');
-  }
-}
-
-// ===== File Viewer =====
-async function viewFileItem(id) {
-  try {
-    const item = await api('GET', '/api/clipboard/' + id);
-    const meta = item.metadata || {};
-    const filePaths = meta.filePaths || [];
-
-    if (filePaths.length === 0) {
-      showToast('没有可用的文件路径', 'error');
-      return;
-    }
-
-    // Try to write CF_HDROP via Tauri backend
-    const _invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-    if (_invoke) {
-      try {
-        await _invoke('set_clipboard_files', { paths: filePaths });
-        const label = filePaths.length === 1
-          ? filePaths[0].split(/[/\\]/).pop()
-          : filePaths.length + ' 个文件';
-        showToast('已复制 ' + label + ' 到剪贴板，可粘贴', 'success');
-      } catch(e) {
-        console.error('[viewFileItem] set_clipboard_files failed:', e);
-        showToast('复制失败: ' + e.message, 'error');
-      }
-    } else {
-      showToast('文件: ' + (meta.fileName || filePaths[0].split(/[/\\]/).pop()), 'info');
-    }
-  } catch(e) {
-    showToast('加载失败: ' + e.message, 'error');
-  }
-}
-
-
-// ===== Settings (localStorage) =====
-const SETTINGS_KEY = 'clipsync_settings';
-
-function getLocalSettings() {
-  const raw = localStorage.getItem(SETTINGS_KEY);
-  return raw ? JSON.parse(raw) : { autoSync: true, imgCompress: false, syncInterval: '30s', maxHistory: '1000' };
-}
-
-function setLocalSettings(data) {
-  const current = getLocalSettings();
-  const merged = { ...current, ...data };
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
-  return merged;
-}
-
-function loadSettings() {
-  const data = getLocalSettings();
-  if (data.autoSync !== undefined) {
-    state.autoSync = data.autoSync;
-    const el = document.getElementById('toggleAutoSync');
-    if (el) el.checked = data.autoSync;
-  }
-  if (data.imgCompress !== undefined) {
-    const el = document.getElementById('toggleImgCompress');
-    if (el) el.checked = data.imgCompress;
-  }
-  if (data.syncInterval) {
-    const el = document.getElementById('selectSyncInterval');
-    if (el) el.value = data.syncInterval;
-  }
-  if (data.maxHistory) {
-    const el = document.getElementById('selectMaxHistory');
-    if (el) el.value = data.maxHistory;
-  }
-}
-
-function saveSettings() {
-  const settings = {};
-  const autoSync = document.getElementById('toggleAutoSync');
-  if (autoSync) settings.autoSync = autoSync.checked;
-  const imgCompress = document.getElementById('toggleImgCompress');
-  if (imgCompress) settings.imgCompress = imgCompress.checked;
-  const syncInterval = document.getElementById('selectSyncInterval');
-  if (syncInterval) settings.syncInterval = syncInterval.value;
-  const maxHistory = document.getElementById('selectMaxHistory');
-  if (maxHistory) settings.maxHistory = maxHistory.value;
-
-  setLocalSettings(settings);
-  showToast('设置已保存', 'success');
-}
-
-function toggleTheme() {
-  const root = document.documentElement;
-  const currentMode = root.getAttribute('data-mode') || 'light';
-  const newMode = currentMode === 'light' ? 'dark' : 'light';
-  const currentStyle = root.getAttribute('data-style') || 'vercel';
-  if (currentStyle === 'linear' || currentStyle === 'raycast') {
-    showToast('当前主题不支持浅色模式', 'info');
-    return;
-  }
-  applyStyle(currentStyle, newMode);
-  showToast('已切换到' + (newMode === 'dark' ? '深色' : '浅色') + '模式', 'success');
-}
-
-async function toggleAutostart(enable) {
-  try {
-    if (window.__TAURI__) {
-      const invoke = window.__TAURI__.core?.invoke || window.__TAURI__.invoke;
-      if (invoke) {
-        await invoke('set_autostart', { enable });
-        showToast(enable ? '已开启开机自启动' : '已关闭开机自启动', 'success');
-      }
-    } else {
-      showToast('自启动设置仅支持桌面端', 'info');
-    }
-  } catch (e) {
-    showToast('设置失败: ' + e.message, 'error');
-  }
-}
-
-
-async function copyTextItem(id) {
-  try {
-    const item = await api('GET', '/api/clipboard/' + id);
-    let fullContent = '';
-    if (item.contentEncrypted) {
-      try { fullContent = decodeURIComponent(escape(atob(item.contentEncrypted))); } catch(e) { fullContent = item.contentPreview || ''; }
-    } else {
-      fullContent = item.contentPreview || '';
-    }
-    await copyToClipboard(fullContent);
-    showToast('已复制 (' + fullContent.length + '字符)', 'success');
-  } catch (e) { showToast('复制失败: ' + e.message, 'error'); }
-}
-
-// 查看条目：根据类型调用不同处理函数
-function viewItem(id, type) {
-  if (type === 'img') {
-    viewImageItemById(id);
-  } else if (type === 'link') {
-    const item = clipboardItems.find(i => i.id === id);
-    if (item && item.content) {
-      window.open(item.content.startsWith('http') ? item.content : 'https://' + item.content, '_blank');
-    } else { showToast('无链接地址', 'error'); }
-  } else if (type === 'file') {
-    viewFileItem(id);
-  } else {
-    copyItem(id);
-  }
-}
-
-
-// 加载活跃会话
-async function loadSessions() {
-  const body = document.getElementById('sessions-body');
-  if (!body) return;
-  body.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-tertiary);">加载中...</div>';
-  try {
-    const data = await api('GET', '/api/auth/sessions');
-    const sessions = data.sessions || [];
-    if (sessions.length === 0) {
-      body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary);">暂无活跃会话</div>';
-      return;
-    }
-    body.innerHTML = `<ul class="session-list">
-      ${sessions.map(s => `
-        <li class="session-item">
-          <div class="session-dev-icon"><span class="icon icon-md">${s.deviceType === 'mobile' ? '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>' : s.deviceType === 'tablet' ? '<svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>' : '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'}</span></div>
-          <div class="session-info">
-            <div class="session-name">${escapeHtml(s.deviceName || 'Unknown')}</div>
-            <div class="session-detail">${escapeHtml(s.location || '--')} · ${s.isCurrent ? '当前会话' : (s.lastActive || 'Active')}</div>
-          </div>
-          ${s.isCurrent ? '<span class="session-current">当前</span>' : '<button class="session-kick" onclick="revokeSession(\'' + s.id + '\')">退出</button>'}
-        </li>
-      `).join('')}
-    </ul>`;
-  } catch (e) {
-    body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">加载失败</div>';
-  }
-}
-
-async function revokeSession(sessionId) {
-  if (!confirm('确定要退出此会话吗？')) return;
-  try {
-    await api('DELETE', '/api/auth/sessions/' + sessionId);
-    showToast('已退出会话');
-    loadSessions();
-  } catch (e) {
-    showToast('操作失败：' + e.message);
-  }
-}
-
-
-// 加载用户资料
-async function loadProfile() {
-  if (!state.token) return;
-  try {
-    const data = await api('GET', '/api/users/me');
-    const user = data.user || {};
-    state.currentUser = user;
-    // 更新页面显示
-    const nameEl = document.querySelector('#sub-profile h2');
-    const emailEl = document.querySelector('#sub-profile .p-email');
-    const phoneEl = document.querySelector('#sub-profile .pf-value');
-    if (nameEl) nameEl.textContent = user.name || 'User';
-    if (emailEl) emailEl.textContent = user.email || '--';
-    if (phoneEl && user.phone) phoneEl.innerHTML = '<span class="icon icon-sm" style="color:var(--accent)">📱</span> ' + escapeHtml(user.phone);
-    // 更新侧边栏
-    updateUserInfo();
-  } catch (e) {
-    console.warn('加载用户资料失败:', e.message);
-  }
-}
-
-// 保存用户资料
-async function saveProfile() {
-  const nameInput = document.querySelector('#sub-profile input.styled-input');
-  if (!nameInput) return;
-  try {
-    await api('PUT', '/api/users/me', { name: nameInput.value });
-    showToast('资料已保存', 'success');
-    loadProfile();
-  } catch (e) {
-    showToast('保存失败: ' + e.message);
-  }
-}
-
-// 加载订阅信息
-async function loadSubscription() {
-  if (!state.token) return;
-  try {
-    const data = await api('GET', '/api/subscriptions/current');
-    const sub = data.subscription || {};
-    // 更新页面显示
-    const planName = document.querySelector('#sub-subscription .dev-card div div');
-    if (planName) planName.textContent = sub.planName || 'Free';
-    // 更新使用量
-    if (sub.usage) {
-      const clipsEl = document.querySelector('#sub-subscription .sg-control');
-      if (clipsEl) clipsEl.textContent = (sub.usage.clips || 0).toLocaleString();
-    }
-  } catch (e) {
-    console.warn('加载订阅信息失败:', e.message);
-  }
-}
-
-
-// 加载安全设置
-async function loadSecurity() {
-  const body = document.querySelector('#modalRoot .modal-body');
-  if (!body) return;
-  // 从服务器加载 2FA 状态、登录通知等
-  try {
-    const data = await api('GET', '/api/users/security');
-    const sec = data.security || {};
-    // 更新 toggle 状态
-    const toggles = body.querySelectorAll('.sec-toggle-row .toggle');
-    if (toggles[0]) toggles[0].classList.toggle('on', !!sec.twoFactorEnabled);
-    if (toggles[1]) toggles[1].classList.toggle('on', !!sec.loginNotifications);
-    if (toggles[2]) toggles[2].classList.toggle('on', !!sec.e2eEnabled);
-  } catch (e) {
-    console.warn('加载安全设置失败:', e.message);
-  }
-}
-
-// 保存安全设置
-async function saveSecurity() {
-  const body = document.querySelector('#modalRoot .modal-body');
-  if (!body) return;
-  const toggles = body.querySelectorAll('.sec-toggle-row .toggle');
-  try {
-    await api('PUT', '/api/users/security', {
-      twoFactorEnabled: toggles[0]?.classList.contains('on'),
-      loginNotifications: toggles[1]?.classList.contains('on'),
-    });
-    showToast('安全设置已保存', 'success');
-  } catch (e) {
-    showToast('保存失败: ' + e.message);
-  }
-}
-
-// 加载套餐列表
-async function loadPlans() {
-  const body = document.querySelector('#modalRoot .modal-body');
-  if (!body) return;
-  const grid = body.querySelector('.pricing-grid');
-  if (!grid) return;
-  grid.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-tertiary);">加载中...</div>';
-  try {
-    const data = await api('GET', '/api/subscriptions/plans');
-    const plans = data.plans || [];
-    grid.innerHTML = plans.map((p, idx) => `
-      <div class="price-card ${p.price > 0 && idx === 1 ? 'popular' : ''}" onclick="selectPlan('${p.id}','${p.displayName || p.name}',${p.price || 0})">
-        ${p.price > 0 && idx === 1 ? '<div class="pc-popular-tag">推荐</div>' : ''}
-        <div class="pc-name">${escapeHtml(p.displayName || p.name)}</div>
-        <div class="pc-price">¥${p.price}<span>/mo</span></div>
-        <div class="pc-feat">${p.maxDevices ? p.maxDevices + ' 台设备' : '无限设备'}<br>${p.maxClipboardItems ? p.maxClipboardItems + ' 条记录' : '无限历史'}<br>${p.features?.prioritySupport ? '优先支持' : '社区支持'}</div>
-      </div>
-    `).join('');
-  } catch (e) {
-    grid.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">加载失败</div>';
-  }
-}
-
-// 选择套餐
-window.selectPlan = async function(planId, planName, price) {
-  if (price === 0) {
-    showToast('已是免费版');
-    closeModal();
-    return;
-  }
-  // 显示支付方式选择
-  openModal('payment', '', '', () => {
-    // 设置支付信息
-    const planNameEl = document.querySelector('#modalRoot .modal-body .pc-name');
-    const planPriceEl = document.querySelector('#modalRoot .modal-body .pc-price');
-    if (planNameEl) planNameEl.textContent = planName;
-    if (planPriceEl) planPriceEl.innerHTML = '¥' + price + '<span>/month</span>';
-    // 保存待支付套餐
-    window._pendingPlan = { planId, planName, price };
-  });
-};
-
-// 选择支付方式
-window.selectPaymentMethod = async function(method) {
-  const p = window._pendingPlan;
-  if (!p) return;
-  closeModal();
-  try {
-    showToast('正在处理订阅...');
-    await api('POST', '/api/subscriptions/subscribe', { planId: p.planId, billingCycle: 'monthly' });
-    showToast('✅ 订阅成功: ' + p.planName, 'success');
-    loadSubscription();
-  } catch (e) {
-    showToast('订阅失败: ' + e.message);
-  }
-  window._pendingPlan = null;
-};
-
-// 加载账单历史
-async function loadBilling() {
-  const body = document.querySelector('#modalRoot .modal-body');
-  if (!body) return;
-  const emptyState = body.querySelector('.empty-state');
-  try {
-    const data = await api('GET', '/api/invoices');
-    const bills = data.invoices || [];
-    if (bills.length === 0) {
-      if (emptyState) emptyState.style.display = 'block';
-      return;
-    }
-    // 渲染账单列表
-    body.innerHTML = bills.map(b => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;margin-bottom:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;" onclick="showInvoiceDetail('${b.id}')">
-        <div style="flex:1;">
-          <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">${escapeHtml(b.planName || '未知套餐')}</div>
-          <div style="font-size:12px;color:var(--text-tertiary);">${new Date(b.createdAt).toLocaleDateString('zh-CN')}</div>
-        </div>
-        <div style="font-size:15px;font-weight:700;color:var(--text-primary);">¥${parseFloat(b.amount).toFixed(2)}</div>
-      </div>
-    `).join('');
-  } catch (e) {
-    if (emptyState) emptyState.innerHTML = '<div style="color:var(--danger);">加载失败: ' + e.message + '</div>';
-  }
-}
-
-// 显示发票详情
-window.showInvoiceDetail = async function(invoiceId) {
-  try {
-    const data = await api('GET', '/api/invoices/' + invoiceId);
-    const inv = data.invoice || data;
-    showToast('发票详情: ' + (inv.invoiceNo || invoiceId));
-    // 这里可以打开一个详情弹窗
-  } catch (e) {
-    showToast('加载发票详情失败: ' + e.message);
-  }
-};
-
-// 加载通知偏好
-async function loadNotifPrefs() {
-  const body = document.querySelector('#modalRoot .modal-body');
-  if (!body) return;
-  try {
-    const data = await api('GET', '/api/users/notifications');
-    const prefs = data.preferences || {};
-    const toggles = body.querySelectorAll('.nf-item .toggle');
-    if (toggles[0]) toggles[0].classList.toggle('on', !!prefs.newDevice);
-    if (toggles[1]) toggles[1].classList.toggle('on', !!prefs.syncComplete);
-    if (toggles[2]) toggles[2].classList.toggle('on', !!prefs.securityAlerts);
-    if (toggles[3]) toggles[3].classList.toggle('on', !!prefs.productUpdates);
-  } catch (e) {
-    console.warn('加载通知偏好失败:', e.message);
-  }
-}
-
-// 保存通知偏好
-async function saveNotifPrefs() {
-  const body = document.querySelector('#modalRoot .modal-body');
-  if (!body) return;
-  const toggles = body.querySelectorAll('.nf-item .toggle');
-  try {
-    await api('PUT', '/api/users/notifications', {
-      newDevice: toggles[0]?.classList.contains('on'),
-      syncComplete: toggles[1]?.classList.contains('on'),
-      securityAlerts: toggles[2]?.classList.contains('on'),
-      productUpdates: toggles[3]?.classList.contains('on'),
-    });
-    showToast('通知设置已保存', 'success');
-  } catch (e) {
-    showToast('保存失败: ' + e.message);
-  }
-}
-
-// 检查更新
-async function checkForUpdates() {
-  try {
-    const data = await api('GET', '/api/system/version');
-    const current = '2.4.1'; // 从 somewhere 获取
-    const latest = data.version || current;
-    if (latest > current) {
-      showToast('发现新版本: v' + latest, 'info');
-    } else {
-      showToast('已是最新版本', 'success');
-    }
-  } catch (e) {
-    showToast('检查更新失败: ' + e.message);
-  }
-}
-
-// GDPR 数据导出
-async function requestDataExport() {
-  if (!confirm('确定要导出所有数据吗？导出链接将在24小时内发送到你的邮箱。')) return;
-  try {
-    await api('POST', '/api/users/export');
-    showToast('数据导出请求已提交，请查收邮件', 'success');
-    closeModal();
-  } catch (e) {
-    showToast('导出请求失败: ' + e.message);
-  }
-}
-
-async function attachClipboardListener() {
-      // Guard: prevent multiple attachments
-      if (state._listenerAttached) return;
-      state._listenerAttached = true;
-
-      // Check ALL possible invoke sources:
-      // 1) Tauri 2.x: window.__TAURI__.core.invoke
-      // 2) Tauri 1.x: window.__TAURI__.invoke
-      // 3) CDN import: window.__TAURI_INVOKE__ (for external devUrl)
-      const tauri = window.__TAURI__;
-      let hasInvoke = !!(
-        (tauri && tauri.core && typeof tauri.core.invoke === 'function') ||
-        (tauri && typeof tauri.invoke === 'function') ||
-        window.__TAURI_INVOKE__
-      );
-
-      // If running inside Tauri (__TAURI_INTERNALS__ exists) but invoke isn't ready yet,
-      // the CDN module may still be loading — poll for it up to 3s
-      if (!hasInvoke && window.__TAURI_INTERNALS__) {
-        console.log('[Clipboard] ⏳ Inside Tauri but invoke not ready yet, waiting for CDN module...');
-        for (let i = 0; i < 15 && !hasInvoke; i++) {
-          await new Promise(r => setTimeout(r, 200));
-          hasInvoke = !!(
-            (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') ||
-            (window.__TAURI__ && typeof window.__TAURI__.invoke === 'function') ||
-            window.__TAURI_INVOKE__
-          );
-        }
-        console.log('[Clipboard] After wait:', hasInvoke ? '✅ invoke found!' : '❌ still no invoke');
-      }
-
-      if (hasInvoke) {
-        // ✅ Tauri mode: use invoke-based polling (reliable, no event issues)
-        console.log('[Clipboard] ✅ Tauri detected — using invoke-based polling (500ms)');
-        startTauriClipboardPoll();
-      } else {
-        // ❌ Browser mode: use Clipboard API (limited — cannot detect file copies from Explorer)
-        console.log('[Clipboard] ⚠️ Browser mode — Clipboard API only (no native file detection)');
-        console.log('[Clipboard] → Files copied in Explorer will NOT be auto-detected in browser mode');
-        console.log('[Clipboard] → Use Tauri app window for full file detection');
-        startBrowserClipboardPoll();
-      }
-    }
-
-async function uploadImageClipboard(dataUrl, mimeType, fileSize) {
-      if (!state.deviceId) {
-        state.deviceId = localStorage.getItem('cs_device_id');
-      }
-      if (!state.deviceId || !deviceReady) {
-        console.warn('[UploadImage] SKIPPED: deviceId=', state.deviceId);
-        return;
-      }
-      console.log('[UploadImage] START', { mimeType, size: fileSize, deviceId: state.deviceId.substring(0, 12) });
-      try {
-        await api('POST', '/api/clipboard', {
-          sourceDeviceId: state.deviceId,
-          contentType: 'image',
-          contentEncrypted: dataUrl, // Base64 data URL or raw b64
-          contentPreview: '[图片] ' + mimeType + ' (' + (fileSize / 1024).toFixed(1) + 'KB)',
-          contentSize: fileSize,
-        });
-        console.log('[UploadImage] SUCCESS');
-        loadClipboardItems();
-        showToast('图片已同步');
-      } catch (e) {
-        console.error('[UploadImage] FAILED:', e.message);
-        showToast('图片同步失败：' + e.message);
-      }
-    }
-
-async function uploadFileBlobFromPaste(dataUrl, fileName, mimeType, fileSize) {
-      if (!state.deviceId) {
-        state.deviceId = localStorage.getItem('cs_device_id');
-      }
-      if (!state.deviceId || !deviceReady) {
-        console.warn('[UploadPaste] SKIPPED: no deviceId');
-        return;
-      }
-      const sizeKB = (fileSize / 1024).toFixed(1);
-      console.log('[UploadPaste] START', { fileName, mimeType, size: sizeKB + 'KB' });
-      try {
-        await api('POST', '/api/clipboard', {
-          sourceDeviceId: state.deviceId,
-          contentType: mimeType.startsWith('image/') ? 'image' : 'file',
-          contentEncrypted: dataUrl,
-          contentPreview: (mimeType.startsWith('image/') ? '[图片粘贴] ' : '[文件粘贴] ') + fileName + ' (' + sizeKB + 'KB)',
-          contentSize: fileSize,
-          metadata: { fileName, mimeType, source: 'paste' },
-        });
-        console.log('[UploadPaste] SUCCESS');
-        loadClipboardItems();
-        showToast((mimeType.startsWith('image/') ? '图片' : '文件') + '已同步');
-      } catch (e) {
-        console.error('[UploadPaste] FAILED:', e.message);
-      }
-    }
-
-async function showSubscriptionPlans() {
-      if (!state.token) { showToast('请先登录'); return; }
-      document.getElementById('subscription-modal').style.display = 'flex';
-      const listEl = document.getElementById('plans-list');
-      listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">加载中...</div>';
-      try {
-        const data = await api('GET', '/api/subscriptions/plans');
-        const plans = data.plans || [];
-        if (plans.length === 0) {
-          listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">暂无可用套餐</div>';
-          return;
-        }
-        listEl.innerHTML = plans.map((p, idx) => `
-          <div class="plan-card ${p.price > 0 ? 'plan-featured' : ''}" data-plan-id="${p.id}" data-plan-name="${(p.displayName || p.name || '').replace(/"/g, '&quot;')}" data-plan-price="${p.price || 0}">
-            ${p.price > 0 ? '<div class="plan-badge">推荐</div>' : ''}
-            <div class="plan-name">${_escHtml(p.displayName || p.name)}</div>
-            <div class="plan-price-row">
-              <span class="plan-price">¥${p.price}</span>
-              <span class="plan-period">/${p.billingCycle === 'month' ? '月' : '年'}</span>
-            </div>
-            <div class="plan-specs">
-              <div>📱 ${_fmtUnlimited(p.maxDevices)} 台设备</div>
-              <div>📋 ${_fmtUnlimited(p.maxClipboardItems, '条记录')}</div>
-              <div>💾 ${_fmtUnlimited(p.maxStorageMb, 'MB 存储', true)} </div>
-            </div>
-            <ul class="plan-features">
-              ${Object.entries(p.features || {}).filter(([k,v]) => v === true || typeof v === 'number').map(([k,v]) => {
-                const labels = {ai_classify:'AI智能分类',offline_queue:'离线队列',e2e_encryption:'端到端加密',push_notification:'推送通知',full_text_search:'全文搜索',version_history_days:'版本历史'};
-                return '<li><span style="color:var(--success);font-weight:600;">✓</span> <span>' + (labels[k] || k) + (typeof v === 'number' && v > 0 ? ' (' + v + '天)' : '') + '</span></li>';
-              }).join('')}
-            </ul>
-          </div>
-        `).join('');
-
-        // Event delegation: click on plan card → read data attrs → call selectPlan
-        listEl.querySelectorAll('.plan-card').forEach(card => {
-          card.addEventListener('click', () => selectPlan(
-            card.dataset.planId,
-            card.dataset.planName,
-            Number(card.dataset.planPrice) || 0
-          ));
-        });
-      } catch (e) {
-        listEl.innerHTML = '<div style="text-align:center;padding:40px;color:#e74c3c;">加载失败，请重试</div>';
-      }
-    }
-
-async function showBillingHistory() {
-      if (!state.token) { showToast('请先登录'); return; }
-      document.getElementById('billing-modal').style.display = 'flex';
-      const listEl = document.getElementById('billing-list');
-      listEl.innerHTML = '<div style="text-align:center;padding:32px 20px;color:#999;font-size:14px;">加载中...</div>';
-      try {
-        const data = await api('GET', '/api/invoices');
-        const bills = data.invoices || [];
-        if (bills.length === 0) {
-          listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#999;font-size:14px;">📭 暂无账单记录<br><span style="font-size:12px;color:#bbb;margin-top:4px;display:inline-block;">订阅套餐后这里会显示发票</span></div>';
-        } else {
-          listEl.innerHTML = bills.map(b => {
-            const statusMap = { paid: { label: '已支付', color: '#059669', bg: '#ecfdf5' }, pending: { label: '待支付', color: '#d97706', bg: '#fffbeb' }, cancelled: { label: '已取消', color: '#e74c3c', bg: '#fef2f2' }, issued: { label: '已开票', color: '#6366f1', bg: '#eef2ff' } };
-            const s = statusMap[b.status] || { label: b.status, color: '#666', bg: '#f5f5f5' };
-            return `<div onclick="showInvoiceDetail('${b.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;margin-bottom:8px;border:1px solid #f0f0f0;border-radius:10px;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#f8f9ff'" onmouseout="this.style.background=''">
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:14px;font-weight:600;color:#1a1a2e;margin-bottom:4px;">${escapeHtml(b.planName || '未知套餐')}</div>
-                <div style="font-size:12px;color:#999;">${new Date(b.createdAt).toLocaleDateString('zh-CN')} · ${b.invoiceNo || b.orderNo || ''}</div>
-              </div>
-              <div style="text-align:right;margin-right:12px;">
-                <div style="font-size:15px;font-weight:700;color:#1a1a2e;">¥${parseFloat(b.amount).toFixed(2)}</div>
-              </div>
-              <div style="padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;color:${s.color};background:${s.bg};white-space:nowrap;">${s.label}</div>
-            </div>`;
-          }).join('');
-        }
-      } catch (e) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;font-size:13px;">加载失败：' + (e.message || '未知错误') + '</div>';
-      }
-    }
-
-
-function toggleQuickPaste(forceState) {
-  const qp = document.getElementById('qpOverlay');
-  if (!qp) return;
-  const shouldShow = forceState !== undefined ? forceState : qp.style.display !== 'flex';
-  qp.style.display = shouldShow ? 'flex' : 'none';
-  if (shouldShow) {
-    const input = document.getElementById('qpInput');
-    if (input) { input.value = ''; input.focus(); }
-    renderQPClips();
-  }
-}
-
-
-function selectPlan(planId, planName, price) {
-      if (price === 0) {
-        showToast('已是免费版');
-        closeSubscriptionModal();
-        return;
-      }
-      // 显示支付方式选择弹窗
-      showPaymentMethod(planId, planName, price);
-    }
-
-function closeSubscriptionModal() {
-      document.getElementById('subscription-modal').style.display = 'none';
-    }
-
-function closeBillingModal() {
-      document.getElementById('billing-modal').style.display = 'none';
-    }
-
-function getTypeIcon(type) {
-      const icons = {
-        text: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 7 V4h 16v3"/><path d="M9 20h6"/><path d="M 12 4v 16"/></svg>',
-        link: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M 10 13a5 5 0 0 0 7.54 .54 l3 -3a5 5 0 00 -7.07 -7.07 l-1.72 1.71"/><path d="M 14 11a5 5 0 00 -7.54 -.54 l-3 3a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/></svg>',
-        image: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M 21 15l-5 -5 L5 21"/></svg>',
-        code: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="16,18 22,12 16,6"/><polyline points="8,6 2,12 8,18"/></svg>',
-        file: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M 14 2 H6a2 2 0 00 -2 2v 16a2 2 0 0 0 2 2h 12a2 2 0 0 0 2 -2 V8z"/><polyline points="14,2 14,8 20,8"/></svg>'
-      };
-      return icons[type] || '?';
-    }
-
-function getTypeLabel(type) {
-      return { text: '文本', link: '链接', image: '图片', code: '代码', file: '文件' }[type] || type;
-    }
-
-function getTypeClass(type) {
-      return { text: 'type-text', link: 'type-link', image: 'type-image', code: 'type-code', file: 'type-file' }[type] || 'type-text';
-    }
-
-function getDeviceIcon(type) {
-      const map = { desktop: '&#x1F4BB;', mobile: '&#x1F4F1;', tablet: '&#x1F4FA;' };
-      return map[type] || '&#x1F4BB;';
-    }
-
-function getDeviceClass(type) {
-      return { desktop: 'dev-desktop', mobile: 'dev-mobile', tablet: 'dev-tablet' }[type] || 'dev-desktop';
-    }
-
-function _formatShortcut(s) {
-      if (!s) return '';
-      return s;
-    }
-
-function _renderShortcutBadge(shortcut) {
-      if (!shortcut) return '<span class="sc-badge sc-badge-empty">未设置</span>';
-      var parts = shortcut.split('+');
-      return parts.map(function(p) {
-        return '<kbd class="sc-kbd">' + p + '</kbd>';
-      }).join('<span class="sc-plus">+</span>');
-    }
-
-function _startCapture(defId) {
-      var state = window._shortcutState[defId];
-      state.editing = true;
-      state.captured = '';
-
-      var row = document.getElementById('sc-row-' + defId);
-      row.querySelector('.sc-row-display').style.display = 'none';
-      row.querySelector('.sc-row-capture').style.display = '';
-
-      var input = document.getElementById('sc-input-' + defId);
-      input.value = '';
-      input.focus();
-      input.placeholder = '按下快捷键组合...';
-    }
-
-function _endCapture(defId, save) {
-      var state = window._shortcutState[defId];
-      var row = document.getElementById('sc-row-' + defId);
-
-      if (save && state.captured) {
-        state.currentShortcut = state.captured;
-        row.querySelector('.sc-badge-area').innerHTML = _renderShortcutBadge(state.captured);
-      } else if (!save) {
-        // revert display
-        row.querySelector('.sc-badge-area').innerHTML = _renderShortcutBadge(state.currentShortcut);
-      }
-
-      state.editing = false;
-      state.captured = '';
-      row.querySelector('.sc-row-display').style.display = '';
-      row.querySelector('.sc-row-capture').style.display = 'none';
-      row.querySelector('.sc-capture-error').textContent = '';
-    }
-
-function _onCaptureKeyDown(e, defId) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-
-      var state = window._shortcutState[defId];
-      var input = document.getElementById('sc-input-' + defId);
-      var errEl = document.querySelector('#sc-row-' + defId + ' .sc-capture-error');
-
-      // Esc → cancel
-      if (e.key === 'Escape') { _endCapture(defId, false); return; }
-      // Enter → confirm
-      if (e.key === 'Enter' && state.captured) { _endCapture(defId, true); return; }
-
-      // Build combo from modifier flags + main key
-      var mods = [];
-      if (e.ctrlKey || e.metaKey) mods.push('Ctrl');
-      if (e.shiftKey) mods.push('Shift');
-      if (e.altKey) mods.push('Alt');
-
-      var mainKey = null;
-      if (_keyCodeMap[e.code]) mainKey = _keyCodeMap[e.code];
-
-      // Must have at least 1 modifier + 1 main key
-      if (!mainKey || mods.length === 0) {
-        errEl.textContent = '请按 修饰键(Ctrl/Shift/Alt) + 按键';
-        return;
-      }
-
-      var combo = mods.concat([mainKey]).join('+');
-      state.captured = combo;
-      input.value = combo;
-      errEl.textContent = '';
-
-      // Auto-confirm after short delay (like VS Code)
-      clearTimeout(state._autoConfirmTimer);
-      state._autoConfirmTimer = setTimeout(function() {
-        if (state.editing && state.captured === combo) {
-          _endCapture(defId, true);
-        }
-      }, 800);
-    }
-
-function escapeAttr(t) { return t.replace(/'/g, "\\'").replace(/\n/g, '\\n'); }
-
-async function loadSubscriptionInfo() {
-      if (!state.token) return;
-      try {
-        const data = await api('GET', '/api/subscriptions/current', false); // silent: don't log 500 errors
-        const el = document.getElementById('settings-current-plan');
-        if (el) {
-          if (data && data.plan) {
-            el.textContent = `${data.plan.name} · ¥${data.plan.price}/${data.plan.billingCycle === 'month' ? '月' : '年'}`;
-          } else {
-            el.textContent = '免费版（Free）';
-          }
-        }
-      } catch (e) {
-        const el = document.getElementById('settings-current-plan');
-        if (el) el.textContent = '免费版（Free）';
-      }
-    }
-
-function _fmtUnlimited(val, suffix, isStorage) {
-      if (val === null || val === undefined || val === -1 || val >= 99999) return '不限' + (suffix ? ' ' + suffix : '');
-      return val + (suffix ? ' ' + suffix : '');
-    }
-// ===== Init =====
-if (state.token) {
-  console.log('[Init] restoring session from localStorage');
-  showPage('app');
-  updateUserInfo();
-  loadClipboardItems();
-  (async function() {
-    await loadDevices();
-    connectWebSocket();
-    setupDragDrop();
-    startClipboardPolls();
-  })();
-}
-applyStyle("vercel", "light"); loadSettings();
-
-// Clipboard row click handler — called from both event delegation & inline onclick
-function handleClipRowClick(rowEl) {
-  const id = rowEl.dataset.id;
-  const rawType = rowEl.dataset.type || 'text';
-  const typeMap = { text:'text', images:'img', image:'img', links:'link', link:'link', files:'file', file:'file' };
-  const type = typeMap[rawType] || 'text';
-  console.log('[click] row id=', id, 'type=', type);
-
-  // Try to find item from in-memory array first (no extra API call)
-  const memItem = clipboardItems.find(i => i.id === id);
-
-  if (type === 'img') {
-    if (memItem) { viewImageItem(memItem.imageUrl || memItem.content || '', memItem.contentPreview || ''); }
-    else if (id) { viewImageItem(id, ''); }
-  } else if (type === 'file') {
-    viewFileItem(memItem ? memItem.id : id);
-  } else {
-    // Text: copy directly from memory, don't re-fetch API
-    if (memItem) {
-      const text = memItem.content || memItem.contentPreview || '';
-      copyToClipboard(text);
-    } else if (id) {
-      // Fallback: fetch full content from API
-      copyTextItem(id);
-    } else {
-      // No id at all (shouldn't happen with dynamic rows): copy preview text
-      const preview = rowEl.querySelector('.cr-preview');
-      if (preview) copyToClipboard(preview.textContent);
-    }
-  }
-}
-
-// Event delegation on .clip-view container
-(function attachClipViewListener() {
-  var cv = document.querySelector('.clip-view');
-  if (!cv) { console.warn('[init] .clip-view not found at script time'); return; }
-  cv.addEventListener('click', function(e) {
-    var row = e.target.closest('.clip-row');
-    if (!row || e.target.closest('.cr-actions')) return;
-    handleClipRowClick(row);
-  });
-  console.log('[init] clip-view click listener attached');
-})();
-
-// ===== 剪贴板轮询 (从旧版迁移) =====
-function startTauriClipboardPoll() {
-  if (state._tauriPollStarted) return;
-  state._tauriPollStarted = true;
-  // Stop browser poll if running (it doesn't work in Tauri WebView)
-  state._clipboardPolling = true;
-  console.log('[TauriPoll] ✓ Stopped browser poll, switching to Tauri IPC');
-  let _lastPolledText = '';
-  let _lastPolledFiles = '';
-  let _lastImageSize = -1;
-  let pollCount = 0;
-  let _globalThrottleUntil = 0;
-  const _recentUploadHashes = new Map();
-  const GLOBAL_THROTTLE_MS = 5000;
-  const HASH_TTL_MS = 10000;
-  function _isDuplicateHash(hash) {
-    const now = Date.now();
-    for (const [k, v] of _recentUploadHashes) { if (now - v > HASH_TTL_MS) _recentUploadHashes.delete(k); }
-    if (_recentUploadHashes.has(hash)) return true;
-    _recentUploadHashes.set(hash, now);
-    return false;
-  }
-  console.log('[TauriPoll] ✓ invoke-based polling STARTED (500ms)');
-  async function pollTauri() {
-    pollCount++;
-    if (Date.now() < _globalThrottleUntil) return;
-    const tauri = window.__TAURI__;
-    let _invoke = null;
-    if (tauri && tauri.core && typeof tauri.core.invoke === 'function') _invoke = tauri.core.invoke.bind(tauri.core);
-    else if (tauri && typeof tauri.invoke === 'function') _invoke = tauri.invoke.bind(tauri);
-    else if (window.__TAURI_INVOKE__) _invoke = window.__TAURI_INVOKE__;
-    if (!_invoke) return;
-    if (!state.autoSync) return;
-    if (!deviceReady && !state.deviceId) return;
-    try {
-      const files = await _invoke('get_clipboard_files');
-      if (Array.isArray(files) && files.length > 0) {
-        const fileKey = files.join('|');
-        if (_isDuplicateHash('file:' + fileKey)) return;
-        if (fileKey !== _lastPolledFiles) {
-          _lastPolledFiles = fileKey;
-          console.log('[TauriPoll] 📁 FILE detected:', files.length, 'file(s)');
-          await uploadTauriFileClipboard(files);
-          _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
-          showToast('📁 检测到文件: ' + (files[0].split(/[/\\]/).pop() || 'unknown'));
-        }
-        return;
-      }
-      const imgInfo = await _invoke('check_clipboard_image_info');
-      if (imgInfo && imgInfo.available && imgInfo.size > 0) {
-        if (imgInfo.size === _lastImageSize) return;
-        if (_isDuplicateHash('img:' + imgInfo.size)) return;
-        _lastImageSize = imgInfo.size;
-        console.log('[TauriPoll] 🖼️ IMAGE detected, size:', imgInfo.size);
-        try {
-          const dataUrl = await _invoke('get_clipboard_image');
-          if (dataUrl && dataUrl.startsWith('data:')) {
-            await uploadImageClipboard(dataUrl, 'image/png', imgInfo.size || 0);
-            _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
-          }
-        } catch (imgErr) { console.warn('[TauriPoll] get_clipboard_image failed:', imgErr.message || imgErr); }
-        return;
-      }
-      const text = await _invoke('get_clipboard_content');
-      if (text && text !== _lastPolledText && text !== state.currentClipboard) {
-        if (_isDuplicateHash('text:' + text.substring(0, 200))) return;
-        _lastPolledText = text;
-        console.log('[TauriPoll] 📝 TEXT detected:', text.length, 'chars');
-        uploadClipboard(text);
-        _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
-      }
-      if (_lastPolledFiles && (!files || files.length === 0)) _lastPolledFiles = '';
-    } catch (e) { if (pollCount % 60 === 1) console.warn('[TauriPoll] invoke error:', e.message || e); }
-  }
-  setInterval(pollTauri, 500);
-  pollTauri();
+    state.ws.onmessage = function(e) {
+      try { var msg = JSON.parse(e.data); if (msg.type === 'new_clip' || msg.type === 'clip_updated') loadClipboardItems(); } catch(e) {}
+    };
+    state.ws.onclose = function() { document.querySelectorAll('.conn-dot').forEach(function(d) { d.className = 'conn-dot offline'; }); };
+  } catch(e) {}
 }
 
 function startBrowserClipboardPoll() {
   if (state._clipboardPolling) return;
   state._clipboardPolling = true;
-  let lastText = '';
-  let lastImageHash = '';
-  let lastFileKey = '';
-  console.log('[Clipboard] browser poll started (1s interval)');
-  function imgHash(b64) { return b64 ? b64.substring(0, 100) : ''; }
+  var lastText = '';
   async function pollClipboard() {
     try {
-      if (!state.autoSync || !state.deviceId || !deviceReady) return;
-      // If Tauri poll has started, stop this browser poll immediately
       if (state._tauriPollStarted) { state._clipboardPolling = false; return; }
-      try {
-        const items = await navigator.clipboard.read();
-        if (items && items.length > 0) {
-          for (const item of items) {
-            const imgType = item.types.find(t => t.startsWith('image/'));
-            if (imgType) {
-              const blob = await item.getType(imgType);
-              if (blob.size > 0) {
-                const b64 = await blobToBase64(blob);
-                const hash = imgHash(b64);
-                if (hash !== lastImageHash) {
-                  lastImageHash = hash; lastText = ''; lastFileKey = ''; state.currentClipboard = '';
-                  console.log('[Clipboard] detected NEW image, size=', blob.size);
-                  await uploadImageClipboard(b64, blob.type, blob.size); return;
-                } else {
-                  console.log('[Clipboard] skip duplicate image, checking text...');
-                }
-              }
-              break;
-            }
-            // Files
-            const fileType = item.types.find(t => t === 'Files' || t.startsWith('application/x-file'));
-            if (fileType) {
-              const blob = await item.getType(fileType);
-              const fk = blob.size + '|' + (blob.name || blob.type || '');
-              if (fk !== lastFileKey) {
-                lastFileKey = fk; lastText = ''; lastImageHash = ''; state.currentClipboard = '';
-                uploadFileClipboard(blob, fileType); return;
-              }
-              break;
-            }
-          }
-        }
-      } catch (_) {}
-      const text = await navigator.clipboard.readText();
-      console.log('[Clipboard] text check: len=' + (text ? text.length : 0) + ' lastText=' + (lastText ? lastText.length : 0) + ' curClip=' + (state.currentClipboard ? state.currentClipboard.length : 0));
-      if (text && text !== lastText && text !== state.currentClipboard && !text.startsWith('file://')) {
-        lastText = text; state.currentClipboard = text; lastImageHash = ''; lastFileKey = '';
-        console.log('[Clipboard] detected NEW text, len=' + text.length + ', preview=' + text.substring(0, 50));
-        await uploadClipboard(text);
-      } else if (!text) {
-        console.log('[Clipboard] readText returned empty');
-      }
-    } catch (_) { console.log('[Clipboard] read/readText error (expected in Tauri WebView)'); }
+      if (!state.autoSync || !state.deviceId || !deviceReady) return;
+      var text = await navigator.clipboard.readText();
+      if (text && text !== lastText) { lastText = text; uploadClipboard(text); }
+    } catch(_) {}
   }
   setInterval(pollClipboard, 1000);
   pollClipboard();
 }
 
-// ===== 上传辅助 =====
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function uploadImageClipboard(dataUrl, mimeType, fileSize) {
-  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
-  if (!state.deviceId || !deviceReady) return;
-  try {
-    await api('POST', '/api/clipboard', {
-      sourceDeviceId: state.deviceId,
-      contentType: 'image',
-      contentEncrypted: dataUrl,
-      contentPreview: '[图片] ' + mimeType + ' (' + (fileSize / 1024).toFixed(1) + 'KB)',
-      contentSize: fileSize,
-    });
-    loadClipboardItems();
-  } catch (e) { console.error('[UploadImage] FAILED:', e.message); }
-}
-
-async function uploadFileClipboard(blob, type) {
-  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
-  if (!state.deviceId || !deviceReady) return;
-  const fileName = blob.name || ('clipboard_file_' + Date.now());
-  const fileSize = blob.size;
-  try {
-    const b64 = await blobToBase64(blob);
-    await api('POST', '/api/clipboard', {
-      sourceDeviceId: state.deviceId,
-      contentType: 'file',
-      contentEncrypted: b64,
-      contentPreview: '[文件] ' + (fileName.length > 50 ? fileName.substring(0, 47) + '...' : fileName) + ' (' + (fileSize / 1024).toFixed(1) + 'KB)',
-      contentSize: fileSize,
-    });
-    loadClipboardItems();
-  } catch (e) { console.error('[UploadFile] FAILED:', e.message); }
-}
-
-async function uploadFileUri(uriText) {
-  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
-  if (!state.deviceId || !deviceReady) return;
-  try {
-    const paths = uriText.split('\n').filter(Boolean);
-    const preview = '[文件] ' + paths.map(p => p.split(/[/\\\\]/).pop()).filter(Boolean).join(', ').substring(0, 50);
-    await api('POST', '/api/clipboard', {
-      sourceDeviceId: state.deviceId,
-      contentType: 'file',
-      contentEncrypted: uriText,
-      contentPreview: preview,
-      contentSize: 0,
-    });
-    loadClipboardItems();
-  } catch (e) { console.error('[UploadURI] FAILED:', e.message); }
-}
-
-async function uploadTauriFileClipboard(files) {
-  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
-  if (!state.deviceId || !deviceReady) return;
-  try {
-    const preview = '[文件] ' + files.map(f => f.split(/[/\\\\]/).pop()).filter(Boolean).join(', ').substring(0, 50);
-    await api('POST', '/api/clipboard', {
-      sourceDeviceId: state.deviceId,
-      contentType: 'file',
-      contentEncrypted: JSON.stringify(files),
-      contentPreview: preview,
-      contentSize: 0,
-    });
-    loadClipboardItems();
-  } catch (e) { console.error('[UploadTauriFile] FAILED:', e.message); }
-}
-
-// 启动轮询（在 doLogin 成功后调用）
 function startClipboardPolls() {
-  console.log('[ClipSync] starting clipboard polls... deviceReady=' + deviceReady + ' deviceId=' + (state.deviceId || 'none'));
-  // Try to load Tauri invoke via dynamic import (works in Tauri v2 WebView)
-  var tauri = window.__TAURI__;
-  // Check natively available Tauri API first
-  var _invoke = null;
-  if (tauri && tauri.core && typeof tauri.core.invoke === 'function') {
-    _invoke = tauri.core.invoke.bind(tauri.core);
-  } else if (tauri && typeof tauri.invoke === 'function') {
-    _invoke = tauri.invoke.bind(tauri);
-  }
-  if (_invoke) {
-    console.log('[ClipSync] Tauri native invoke found, starting Tauri poll');
-    window.__TAURI_INVOKE__ = _invoke;
-    startTauriClipboardPoll();
-    return;
-  }
-  // Try dynamic import as fallback (Tauri v2 module API)
-  import('https://esm.sh/@tauri-apps/api@2/core').then(function(mod) {
-    if (mod && mod.invoke) {
-      console.log('[ClipSync] Tauri module loaded via dynamic import');
-      window.__TAURI_INVOKE__ = mod.invoke;
-      startTauriClipboardPoll();
-    }
-  }).catch(function(err) {
-    console.log('[ClipSync] Tauri dynamic import failed:', err.message);
-  });
-  // Start browser poll as immediate fallback
-  console.log('[ClipSync] Starting browser poll as fallback');
   startBrowserClipboardPoll();
-  // Also check native __TAURI__ again after a delay (might load later)
-  setTimeout(function() {
-    var t2 = window.__TAURI__;
-    var inv2 = null;
-    if (t2 && t2.core && typeof t2.core.invoke === 'function') inv2 = t2.core.invoke.bind(t2.core);
-    else if (t2 && typeof t2.invoke === 'function') inv2 = t2.invoke.bind(t2);
-    if (inv2 && !window.__TAURI_INVOKE__) {
-      window.__TAURI_INVOKE__ = inv2;
-      console.log('[ClipSync] Tauri native invoke appeared late, switching to Tauri poll');
-      startTauriClipboardPoll();
-    }
-  }, 3000);
 }
-    // ====== 快捷粘贴面板 (Quick Paste) ======
-    let _qpSearchTimer = null;
-    let _qpIndex = -1;
-    window._quickPasteOpen = false;
 
-    window.showQuickPaste = function() {
-      window._quickPasteOpen = true;
-      const overlay = document.getElementById('qpOverlay');
-      if (overlay) overlay.classList.add('show');
-      loadQuickPasteItems();
-      setTimeout(() => {
-        const inp = document.getElementById('qpSearchInput');
-        if (inp) inp.focus();
-      }, 100);
-    };
-    window.hideQuickPaste = function() {
-      window._quickPasteOpen = false;
-      const overlay = document.getElementById('qpOverlay');
-      if (overlay) overlay.classList.remove('show');
-    };
-    window.toggleQuickPaste = function() {
-      if (window._quickPasteOpen) { hideQuickPaste(); return; }
-      showQuickPaste();
-    };
-    window.loadQuickPasteItems = async function() {
-      const list = document.getElementById('qpList');
-      if (!list) return;
-      list.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
-      try {
-        const data = await api('GET', '/api/clipboard?limit=20');
-        const items = data.items || data.data || [];
-        window._clipboardItems = items;
-        renderQuickPasteItems(items);
-        _qpIndex = -1;
-      } catch (e) {
-        list.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载失败</div>';
-      }
-    };
-    window.renderQuickPasteItems = function(items) {
-      const list = document.getElementById('qpList');
-      if (!list) return;
-      if (!items || items.length === 0) {
-        list.innerHTML = '<div class="qp-empty">暂无剪贴板记录</div>';
-        return;
-      }
-      list.innerHTML = items.map((item, i) => {
-        const type = item.contentType || 'text';
-        const preview = item.contentPreview || item.contentEncrypted || '';
-        const textPreview = preview.length > 80 ? preview.substring(0, 80) + '...' : preview;
-        const icon = type === 'image' ? '🖼️' : type === 'link' ? '🔗' : type === 'file' ? '📁' : '📋';
-        return '<div class="qp-item" data-index="' + i + '" onclick="selectQpItem(this)" onmouseenter="_qpIndex=' + i + '; updateQpSelection();">' +
-          '<span class="qp-item-icon">' + icon + '</span>' +
-          '<span class="qp-item-text">' + escapeHtml(textPreview) + '</span>' +
-        '</div>';
-      }).join('');
-      updateQpSelection();
-    };
-    window.updateQpSelection = function() {
-      document.querySelectorAll('.qp-item').forEach((el, i) => {
-        el.classList.toggle('active', i === _qpIndex);
-      });
-    };
+if (state.token) {
+  showPage('app');
+  updateUserInfo();
+  loadClipboardItems();
+  (async function() { await loadDevices(); connectWebSocket(); startClipboardPolls(); })();
+}
 
-    // ====== 图片悬停预览 ======
-    window._hideImgTimer = null;
-    window.showImgHover = function(itemId) {
-      clearTimeout(window._hideImgTimer);
-      const tip = document.getElementById('img-hover-tip');
-      if (!tip) return;
-      // Try to find the image content
-      const item = window._clipboardItems ? window._clipboardItems.find(i => i.id === itemId) : null;
-      if (!item) { tip.style.display = 'none'; return; }
-      const raw = item.contentEncrypted || '';
-      if (!raw.startsWith('data:image/')) { tip.style.display = 'none'; return; }
-      const img = tip.querySelector('img');
-      if (img) img.src = raw;
-      tip.style.display = 'block';
-    };
-    window.hideImgHover = function() {
-      clearTimeout(window._hideImgTimer);
-      window._hideImgTimer = setTimeout(() => {
-        const tip = document.getElementById('img-hover-tip');
-        if (tip) tip.style.display = 'none';
-      }, 200);
-    };
 
-    // ====== 版本历史 ======
-    window.showVersionHistory = async function(itemId) {
-      document.getElementById('version-modal').style.display = 'flex';
-      const listEl = document.getElementById('version-list');
-      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">加载中...</div>';
-      try {
-        const data = await api('GET', '/api/versions/' + itemId);
-        const versions = data.versions || [];
-        if (versions.length === 0) {
-          listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无历史版本</div>';
-        } else {
-          listEl.innerHTML = versions.map(function(v) {
-            return '<div class="ver-item" data-id="' + itemId + '" data-ver="' + v.id + '" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #f0f0f0;"><div><div style="font-size:13px;font-weight:600;color:#333;">版本 ' + v.versionNumber + '</div><div style="font-size:11px;color:#999;margin-top:2px;">' + new Date(v.createdAt).toLocaleString() + '</div></div><button class="btn btn-secondary restore-ver-btn" style="padding:4px 12px;font-size:12px;">恢复</button></div>';
-          }).join('');
-        }
-      } catch(e) { listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#e74c3c;">加载失败</div>'; }
-    };
-    // Event delegation for version restore buttons
-    document.addEventListener('click', function(ev) {
-      if (ev.target.closest('.restore-ver-btn')) {
-        var item = ev.target.closest('.ver-item');
-        if (item) window.restoreVersion(item.dataset.id, item.dataset.ver);
-      }
-    });
-    window.closeVersionModal = function() { document.getElementById('version-modal').style.display = 'none'; };
-    window.restoreVersion = async function(itemId, versionId) {
-      if (!confirm('确认恢复到此版本？')) return;
-      try {
-        await api('POST', '/api/versions/' + versionId + '/restore');
-        showToast('已恢复到该版本');
-        document.getElementById('version-modal').style.display = 'none';
-        loadClipboardItems();
-      } catch(e) { showToast('恢复失败: ' + (e.message || '未知错误')); }
-    };
-
-    // ====== 收藏/删除 ======
-    window.toggleFavorite = async function(itemId) {
-      try { await api('POST', '/api/clipboard/' + itemId + '/favorite'); showToast('操作成功'); loadClipboardItems(); } catch(e) { showToast('操作失败'); }
-    };
-    window.deleteItem = async function(itemId) {
-      if (!confirm('确认删除？')) return;
-      try { await api('DELETE', '/api/clipboard/' + itemId); showToast('已删除'); loadClipboardItems(); } catch(e) { showToast('删除失败'); }
-    };
-
-    // ====== 右侧面板 ======
-    window._viewingImageUrl = null;
-    window.toggleRightPanel = function() {
-      const panel = document.getElementById('right-panel');
-      if (!panel) return;
-      const isOpen = panel.style.display !== 'none';
-      panel.style.display = isOpen ? 'none' : 'flex';
-      if (!isOpen) loadClipboardItems();
-    };
-
-    // ====== 分类筛选 ======
-    let _activeCategory = 'all';
-    window.toggleCategory = function(cat) {
-      _activeCategory = cat;
-      document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
-      loadClipboardItems();
-    };
-
-    // ====== 分页 ======
-    let _currentPage = 1;
-    let _totalPages = 1;
-    window.renderDots = function() {
-      const dots = document.getElementById('page-dots');
-      if (!dots) return;
-      dots.innerHTML = '';
-      for (let i = 1; i <= _totalPages; i++) {
-        const dot = document.createElement('span');
-        dot.className = 'page-dot' + (i === _currentPage ? ' active' : '');
-        dot.textContent = i;
-        dot.onclick = () => { _currentPage = i; loadClipboardItems(); };
-        dots.appendChild(dot);
-      }
-    };
-    // ====== 首次引导 (Onboarding) ======
-    window.finishOnboarding = function() {
-      localStorage.setItem('cs_onboarding_done', 'true');
-      document.getElementById('onboarding-overlay').style.display = 'none';
-    };
-    window.skipOnboarding = function() {
-      localStorage.setItem('cs_onboarding_done', 'true');
-      document.getElementById('onboarding-overlay').style.display = 'none';
-    };
-
-    // ====== 快捷键设置 ======
-    window._showShortcutSettings = function() {
-      document.getElementById('shortcut-modal').style.display = 'flex';
-    };
-    window.closeShortcutModal = function() {
-      document.getElementById('shortcut-modal').style.display = 'none';
-    };
-    window.saveShortcut = function() {
-      // Read shortcuts from UI and save to localStorage
-      try {
-        const items = document.querySelectorAll('[data-shortcut]');
-        const shortcuts = {};
-        items.forEach(el => { shortcuts[el.dataset.shortcut] = el.value || el.textContent || ''; });
-        localStorage.setItem('cs_shortcuts', JSON.stringify(shortcuts));
-        showToast('快捷键已保存');
-        closeShortcutModal();
-      } catch(e) { showToast('保存失败'); }
-    };
-    window.loadAutostartStatus = async function() {
-      // Check if autostart is supported (Tauri only)
-      if (window.__TAURI__) {
-        try {
-          const enabled = await window.__TAURI__.invoke('is_autostart_enabled');
-          const el = document.getElementById('toggleAutostart');
-          if (el) el.checked = enabled;
-        } catch(e) {}
-      }
-    };
-    window.toggleAutostart = async function(el) {
-      if (window.__TAURI__) {
-        try { await window.__TAURI__.invoke('set_autostart', { enabled: el.checked }); showToast(el.checked ? '已开启开机自启' : '已关闭开机自启'); }
-        catch(e) { showToast('设置失败'); el.checked = !el.checked; }
-      }
-    };
 
 </script>
 
-
-  <!-- Image Viewer Modal (prototype design) -->
-  <div id="image-viewer" class="image-viewer" onclick="if(event.target===this)closeImageViewer()">
-    <div class="iv-card">
-      <div class="iv-header">
-        <span class="iv-title">Image Preview</span>
-        <button class="iv-close" onclick="closeImageViewer()">
-          <svg viewBox="0 0 24 24" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/></svg>
-        </button>
-      </div>
-      <div class="iv-image-area">
-        <img id="viewer-img" src="" alt="Image preview">
-      </div>
-      <div class="iv-meta">
-        <div class="iv-filename" id="ivFilename">Image.png</div>
-        <div class="iv-info" id="ivInfo">Loading...</div>
-      </div>
-      <div class="iv-footer">
-        <button class="iv-btn-ghost" onclick="closeImageViewer()">Close</button>
-        <button class="iv-btn-primary" onclick="downloadImage()">Download</button>
-      </div>
-    </div>
-  </div>
 </body>
 </html>
