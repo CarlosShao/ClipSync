@@ -504,29 +504,34 @@ router.post('/accept-tos', authenticateToken, async (req, res) => {
 // 忘记密码（发送重置邮件）
 router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, phone } = req.body;
 
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
+    // 支持邮箱或手机号
+    let identifier;
+    if (email && email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({ error: 'Invalid email format' });
+      }
+      identifier = sanitizeString(email.trim().toLowerCase());
+    } else if (phone && phone.trim()) {
+      if (!isValidPhone(phone.trim())) {
+        return res.status(400).json({ error: 'Invalid phone number format' });
+      }
+      identifier = sanitizeString(phone.trim());
+    } else {
+      return res.status(400).json({ error: 'Email or phone number is required' });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Invalid email format' });
-    }
-
-    const cleanEmail = sanitizeString(email.toLowerCase());
-
-    // 检查用户是否存在
+    // 检查用户是否存在（防止枚举攻击：即使用户不存在也返回成功）
     const userResult = await pool.query(
-      'SELECT id FROM users WHERE email = $1',
-      [cleanEmail]
+      `SELECT id FROM users WHERE email = $1 OR phone = $1 OR phone_hash = $2`,
+      [identifier, computeFieldHash(identifier)]
     );
 
-    // 即使用户不存在也返回成功（防止邮箱枚举攻击）
     if (userResult.rows.length === 0) {
-      logger.debug(`[Password Reset] Email ${cleanEmail} not found, but returning success`);
-      return res.json({ message: 'If this email is registered, you will receive a password reset email' });
+      logger.debug(`[Password Reset] Identifier ${identifier} not found, but returning success`);
+      return res.json({ message: 'If this account is registered, you will receive a reset code' });
     }
 
     // 生成重置令牌（MVP：使用固定验证码）
@@ -537,49 +542,60 @@ router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
     await pool.query(
       `INSERT INTO verification_codes (phone, code, expires_at)
        VALUES ($1, $2, $3)`,
-      [cleanEmail, resetCode, expiresAt.toISOString()]
+      [identifier, resetCode, expiresAt.toISOString()]
     );
 
     // Only log reset code in development environment
     if (process.env.NODE_ENV !== 'production') {
-      logger.debug(`[MVP] Password reset code for ${cleanEmail}: ${resetCode}`);
+      logger.debug(`[MVP] Password reset code for ${identifier}: ${resetCode}`);
     }
 
-    res.json({ message: 'If this email is registered, you will receive a password reset email (MVP: reset code 888888)' });
+    res.json({ message: 'If this account is registered, you will receive a reset code (MVP: 888888)' });
   } catch (err) {
     logger.error('Forgot password error:', { error: err.message });
     res.status(500).json({ error: 'Failed to send password reset email' });
   }
 });
 
-// 重置密码
+// 重置密码（支持邮箱和手机号）
 router.post('/reset-password', async (req, res) => {
   try {
-    const { email, code, newPassword } = req.body;
+    const { email, phone, code, newPassword } = req.body;
 
     // 验证输入
-    if (!email || !code || !newPassword) {
-      return res.status(400).json({ error: 'Email, verification code, and new password are required' });
+    if (!code || !newPassword) {
+      return res.status(400).json({ error: 'Verification code and new password are required' });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters long' });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Invalid email format' });
-    }
-
-    const cleanEmail = sanitizeString(email.toLowerCase());
     const cleanCode = sanitizeString(code);
+
+    // 确定标识符（邮箱或手机号）
+    let identifier;
+    if (email && email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({ error: 'Invalid email format' });
+      }
+      identifier = sanitizeString(email.trim().toLowerCase());
+    } else if (phone && phone.trim()) {
+      if (!isValidPhone(phone.trim())) {
+        return res.status(400).json({ error: 'Invalid phone number format' });
+      }
+      identifier = sanitizeString(phone.trim());
+    } else {
+      return res.status(400).json({ error: 'Email or phone number is required' });
+    }
 
     // 验证重置码
     const result = await pool.query(
       `SELECT id FROM verification_codes
        WHERE phone = $1 AND code = $2 AND expires_at > NOW()
        ORDER BY created_at DESC LIMIT 1`,
-      [cleanEmail, cleanCode]
+      [identifier, cleanCode]
     );
 
     if (result.rows.length === 0) {
@@ -593,19 +609,34 @@ router.post('/reset-password', async (req, res) => {
     );
 
     // 哈希新密码
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const passwordHash = await bcrypt.hash(newPassword, 12);
 
-    // 更新用户密码
-    const updateResult = await pool.query(
-      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE email = $2 RETURNING id, email',
-      [passwordHash, cleanEmail]
+    // 查找用户（尝试 email → phone → phone_hash）
+    let userResult = await pool.query(
+      'SELECT id FROM users WHERE email = $1 OR phone = $1',
+      [identifier]
     );
-
-    if (updateResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+    if (userResult.rows.length === 0) {
+      const identifierHash = computeFieldHash(identifier);
+      if (identifierHash) {
+        userResult = await pool.query(
+          'SELECT id FROM users WHERE phone_hash = $1 OR email_hash = $1',
+          [identifierHash]
+        );
+      }
     }
 
-    logger.info(`[Password Reset] Password reset successfully for ${cleanEmail}`);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found. Please verify your account first.' });
+    }
+
+    // 更新用户密码
+    await pool.query(
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+      [passwordHash, userResult.rows[0].id]
+    );
+
+    logger.info(`[Password Reset] Password reset successfully for ${identifier}`);
 
     res.json({ message: 'Password reset successfully. Please log in with your new password.' });
   } catch (err) {
@@ -828,39 +859,43 @@ router.post('/set-password', async (req, res) => {
   }
 });
 
-// 密码登录（支持手机号和邮箱）
+// 密码登录（支持手机号、邮箱、昵称）
 router.post('/login', loginFailedLimiter, async (req, res) => {
   try {
-    const { phone, email, password } = req.body;
-    
-    // 验证输入：必须提供手机号或邮箱
+    const { phone, email, account, password } = req.body;
+
+    // 验证输入：必须提供密码
     if (!password) {
       return res.status(400).json({ error: 'Password is required' });
     }
 
-    if (!phone && !email) {
-      return res.status(400).json({ error: 'Phone number or email is required' });
+    // 支持 account 统一字段（前端传 account，后端自动识别）
+    const identifier = (account || phone || email || '').trim();
+    if (!identifier) {
+      return res.status(400).json({ error: 'Phone number, email, or username is required' });
     }
 
-    // 确定登录方式
+    // 自动识别登录方式：手机号 → 邮箱 → 昵称
     let cleanIdentifier;
     let identifierField;
-    
-    if (email) {
-      // 邮箱登录
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        return res.status(400).json({ error: 'Invalid email format' });
-      }
-      cleanIdentifier = sanitizeString(email.toLowerCase());
-      identifierField = 'email';
-    } else {
+    const phoneRegex = /^1[3-9]\d{9}$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (phoneRegex.test(identifier)) {
       // 手机号登录
-      if (!isValidPhone(phone)) {
+      if (!isValidPhone(identifier)) {
         return res.status(400).json({ error: 'Invalid phone number format' });
       }
-      cleanIdentifier = sanitizeString(phone);
+      cleanIdentifier = sanitizeString(identifier);
       identifierField = 'phone';
+    } else if (emailRegex.test(identifier)) {
+      // 邮箱登录
+      cleanIdentifier = sanitizeString(identifier.toLowerCase());
+      identifierField = 'email';
+    } else {
+      // 昵称登录（fallback）
+      cleanIdentifier = sanitizeString(identifier);
+      identifierField = 'nickname';
     }
 
     // 查询用户
