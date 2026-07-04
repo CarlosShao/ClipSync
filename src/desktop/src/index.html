@@ -1454,16 +1454,14 @@ const modalTemplates = {
     </div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button><a href="https://github.com/CarlosShao/ClipSync/releases" target="_blank" class="btn btn-primary" onclick="closeModal()">View Release Notes</a></div>`,
 
-  imagePreview: (src, name) => `
-    <div class="modal-header"><span class="modal-title">Image Preview</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
-    <div class="modal-body" style="text-align:center;padding:16px 20px;">
-      <div style="width:100%;max-height:60vh;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:16px 20px;margin-bottom:12px;position:relative;overflow:hidden;">
-        <img src="${src || ''}" style="max-width:100%;max-height:58vh;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);background:#fff;object-fit:contain;" onerror="this.style.display='none'">
+  imagePreview: () => `
+      <div class="modal-header"><span class="modal-title">Image Preview</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
+      <div class="modal-body" style="text-align:center;padding:16px 20px;">
+        <div style="width:100%;max-height:60vh;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:16px 20px;margin-bottom:12px;position:relative;overflow:hidden;">
+          <img src="${_currentImageDataUrl || ''}" style="max-width:100%;max-height:58vh;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);background:#fff;object-fit:contain;" onerror="this.style.display='none'">
+        </div>
       </div>
-      <div style="font-size:13.5px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">${name || 'Screenshot.png'}</div>
-      <div style="font-size:11.5px;color:var(--text-secondary);">PNG · 1920×1080 · 245 KB · From: iPhone 15 Pro</div>
-    </div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="closeModal()">Download</button></div>`,
+      <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="downloadImage()">Download</button></div>`,`;
 };
 
 function openModal(name) {
@@ -1737,7 +1735,14 @@ function renderClipboardItems() {
     var row = document.createElement('div');
     row.className = 'clip-row'; row.dataset.type = typeClass; row.dataset.id = item.id;
     var viewIcon = '';
-    viewIcon = TYPE_ICONS[typeClass] || TYPE_ICONS['text'];
+    // Action icons: eye for images, external link for links, download for files, copy for text
+    var ACTION_ICONS = {
+      img: '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+      link: '<svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+      file: '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+      text: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
+    };
+    viewIcon = ACTION_ICONS[typeClass] || ACTION_ICONS['text'];
     var devName = item.deviceName || item.metadata?.deviceName || 'Unknown';
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
     row.innerHTML = '<div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><span class="cr-preview">' + preview + '</span></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
@@ -1773,10 +1778,20 @@ async function handleCopyItem(id) {
   try {
     var full = await api('GET', '/api/clipboard/' + id);
     var text = full.contentEncrypted || full.contentPreview || '';
-    if (text.startsWith('data:')) { showToast('Cannot copy image as text', 'error'); return; }
-    try { var decoded = decodeURIComponent(escape(atob(text))); text = decoded; } catch(e) {}
-    await navigator.clipboard.writeText(text);
-    showToast('Copied to clipboard!');
+    var type = full.contentType || 'text';
+    if (type === 'image' || text.startsWith('data:')) {
+      // Copy image to clipboard as blob
+      try {
+        var resp = await fetch(text);
+        var blob = await resp.blob();
+        await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+        showToast('Image copied to clipboard!');
+      } catch(e) { showToast('Image copy failed (browser restriction): ' + e.message, 'error'); }
+    } else {
+      try { var decoded = decodeURIComponent(escape(atob(text))); text = decoded; } catch(e) {}
+      await navigator.clipboard.writeText(text);
+      showToast('Copied to clipboard!');
+    }
   } catch(e) { showToast('Copy failed: ' + e.message, 'error'); }
 }
 
@@ -1786,6 +1801,7 @@ async function handleDeleteItem(id) {
   catch(e) { showToast('Delete failed: ' + e.message, 'error'); }
 }
 
+var _currentImageDataUrl = '';
 async function handleViewItem(id, typeClass) {
   if (typeClass === 'img') {
     try {
@@ -1798,12 +1814,16 @@ async function handleViewItem(id, typeClass) {
       var fileSize = item.contentSize || 0;
       var sizeStr = fileSize > 1048576 ? (fileSize/1048576).toFixed(1)+' MB' : (fileSize/1024).toFixed(1)+' KB';
       var info = ext.toUpperCase() + ' - ' + sizeStr;
+      _currentImageDataUrl = item.contentEncrypted;
       openModal('imagePreview');
       document.querySelector('#modalRoot .modal-body').innerHTML = '<div style="text-align:center;padding:16px 20px;"><div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:16px 20px;margin-bottom:12px;"><img src="' + item.contentEncrypted + '" style="max-width:100%;max-height:58vh;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);background:#fff;object-fit:contain;"></div><div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">' + fileName + '</div><div style="font-size:11.5px;color:var(--text-secondary);">' + info + '</div></div>';
     } catch(e) { showToast('Failed: ' + e.message, 'error'); }
   } else if (typeClass === 'file') {
-    showToast('File preview coming soon', 'info');
+    // Download file
+    var item = clipboardItems.find(function(i) { return i.id === id; });
+    if (item) { showToast('File download: ' + (item.contentPreview || 'file'), 'info'); }
   } else if (typeClass === 'link') {
+    // Open link in new tab
     var item = clipboardItems.find(function(i) { return i.id === id; });
     if (item && item.contentPreview) {
       var url = item.contentPreview;
@@ -1813,6 +1833,18 @@ async function handleViewItem(id, typeClass) {
   } else {
     handleCopyItem(id);
   }
+}
+
+// Global download function for image preview modal
+window.downloadImage = function() {
+  if (!_currentImageDataUrl) return;
+  var a = document.createElement('a');
+  a.href = _currentImageDataUrl;
+  a.download = 'image.png';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showToast('Image downloaded!');
 }
 
 async function loadDevices() {
