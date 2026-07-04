@@ -1464,7 +1464,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 <script>
 // ========== STATE ==========
 let currentStyle = 'vercel';
-let currentMode = 'light';
+let currentMode = 'light';  // effective display mode (may be forced dark for linear/raycast)
+let userMode = 'light';     // user's explicit mode preference (independent of style)
 
 // applyStyle defined later with mode-aware logic
 
@@ -1574,25 +1575,25 @@ const modalTemplates = {
     <div class="modal-header"><span class="modal-title">Theme &amp; Style</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>
     <div class="modal-body">
       <div class="theme-grid">
-        <div class="theme-opt" data-style="vercel" onclick="applyStyle('vercel',currentMode);closeModal();">
+        <div class="theme-opt" data-style="vercel" onclick="applyStyle('vercel',userMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#FAFAFA 0%,#E5E5E5 100%);color:#111;">Vercel</div><div class="to-name">Vercel ★</div>
         </div>
-        <div class="theme-opt" data-style="clipsync" onclick="applyStyle('clipsync',currentMode);closeModal();">
+        <div class="theme-opt" data-style="clipsync" onclick="applyStyle('clipsync',userMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#6366F1 0%,#A78BFA 100%);">ClipSync</div><div class="to-name">ClipSync Fusion</div>
         </div>
-        <div class="theme-opt" data-style="notion" onclick="applyStyle('notion',currentMode);closeModal();">
+        <div class="theme-opt" data-style="notion" onclick="applyStyle('notion',userMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#FFFFFF 0%,#EBF4FF 100%);color:#2383E2;border:1px solid #E8E7E3;">Notion</div><div class="to-name">Notion</div>
         </div>
-        <div class="theme-opt" data-style="linear" onclick="applyStyle('linear',currentMode);closeModal();">
+        <div class="theme-opt" data-style="linear" onclick="applyStyle('linear',userMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#0A0A0A 0%,#1a162d 100%);">Linear</div><div class="to-name">Linear</div>
         </div>
-        <div class="theme-opt" data-style="apple" onclick="applyStyle('apple',currentMode);closeModal();">
+        <div class="theme-opt" data-style="apple" onclick="applyStyle('apple',userMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#F5F5F7 0%,#E5F1FF 100%);color:#007AFF;">Apple</div><div class="to-name">Apple HIG</div>
         </div>
-        <div class="theme-opt" data-style="raycast" onclick="applyStyle('raycast',currentMode);closeModal();">
+        <div class="theme-opt" data-style="raycast" onclick="applyStyle('raycast',userMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#07080a 0%,#1b1c1e 100%);">Raycast</div><div class="to-name">Raycast</div>
         </div>
-        <div class="theme-opt" data-style="arc" onclick="applyStyle('arc',currentMode);closeModal();">
+        <div class="theme-opt" data-style="arc" onclick="applyStyle('arc',userMode);closeModal();">
           <div class="to-preview" style="background:linear-gradient(135deg,#7C3AED 0%,#EC4899 50%,#F59E0B 100%);">Arc</div><div class="to-name">Arc</div>
         </div>
       </div>
@@ -2491,6 +2492,7 @@ document.querySelectorAll('.sidebar-bottom .user-chip').forEach(function(el) {
 });
 
 function setMode(mode, btn) {
+  userMode = mode; // Update user's explicit preference
   document.querySelectorAll('.mode-btn').forEach(function(b) { b.classList.remove('active'); });
   if (btn) btn.classList.add('active');
   // Apply mode to current style - applyStyle handles dark-only logic
@@ -2501,19 +2503,22 @@ function setMode(mode, btn) {
 function applyStyle(s, m) {
   var darkOnly = ['linear', 'raycast'];
   currentStyle = s;
-  // Linear/raycast are ALWAYS dark regardless of mode
+  // Update userMode if a valid mode was passed (from setMode or init)
+  if (m === 'light' || m === 'dark') userMode = m;
+  // Linear/raycast are inherently dark — force effective mode to dark
+  // but DON'T overwrite userMode so switching back works correctly
   if (darkOnly.indexOf(s) >= 0) {
     currentMode = 'dark';
   } else {
-    currentMode = m;
+    currentMode = userMode; // Use user's preference for non-dark-only styles
   }
   var root = document.documentElement;
   if (!root) return;
   root.setAttribute('data-style', s);
   root.setAttribute('data-mode', currentMode);
-  // Update mode button UI (only reflect actual applied mode)
+  // Update mode button UI (reflect user's preferred mode, not forced mode)
   document.querySelectorAll('.mode-btn').forEach(function(b) {
-    b.classList.toggle('active', b.dataset.mode === currentMode);
+    b.classList.toggle('active', b.dataset.mode === userMode);
   });
   // Update theme selector
   document.querySelectorAll('.theme-opt').forEach(function(opt) {
