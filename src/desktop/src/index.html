@@ -2322,16 +2322,52 @@ async function viewImageItem(urlOrId, previewText) {
   }
 }
 
+let _lastImageMeta = null;
+
 async function viewImageItemById(id) {
   try {
     const item = await api('GET', '/api/clipboard/' + id);
     if (!item || !item.contentEncrypted || !item.contentEncrypted.startsWith('data:')) {
       showToast('不是图片或图片数据不可用', 'error'); return;
     }
-    await viewImageItem(item.contentEncrypted, item.contentPreview || '图片预览');
+    // Extract metadata
+    const preview = item.contentPreview || '';
+    const meta = item.metadata || {};
+    const fileName = meta.fileName || preview.replace('[图片] ','').split(' (')[0] || 'Image.png';
+    const mimeType = meta.mimeType || (item.contentEncrypted.split(',')[0].match(/:(.*?);/) || ['','image/png'])[1];
+    const ext = mimeType.split('/')[1] || 'png';
+    const fileSize = item.contentSize || 0;
+    const deviceName = item.deviceName || meta.deviceName || '';
+    const fileSizeStr = fileSize > 1024*1024 ? (fileSize/1024/1024).toFixed(1)+' MB' : (fileSize/1024).toFixed(1)+' KB';
+    const dims = meta.dimensions || meta.width ? (meta.width+'×'+meta.height) : '';
+    const info = [ext.toUpperCase(), dims, fileSizeStr, deviceName ? 'From: '+deviceName : ''].filter(Boolean).join(' · ');
+    
+    _lastImageMeta = { dataUrl: item.contentEncrypted, fileName: fileName, info: info };
+    
+    const viewer = document.getElementById('image-viewer');
+    const img = document.getElementById('viewer-img');
+    const fnEl = document.getElementById('ivFilename');
+    const infoEl = document.getElementById('ivInfo');
+    if (!viewer || !img) return;
+    
+    img.src = item.contentEncrypted;
+    img.onload = function() {
+      if (fnEl) fnEl.textContent = fileName;
+      if (infoEl) infoEl.textContent = info;
+      viewer.style.display = 'flex';
+    };
+    img.onerror = function() { showToast('图片加载失败', 'error'); };
   } catch(e) {
     showToast('加载图片失败: ' + e.message, 'error');
   }
+}
+
+window.downloadImage = function() {
+  if (!_lastImageMeta) return;
+  const a = document.createElement('a');
+  a.href = _lastImageMeta.dataUrl;
+  a.download = _lastImageMeta.fileName;
+  a.click();
 }
 
 function closeImageViewer() {
@@ -3680,17 +3716,26 @@ function startClipboardPolls() {
 </script>
 
 
-  <!-- Image Viewer Overlay -->
-  <div id="image-viewer" class="image-viewer">
-    <div class="iv-toolbar">
-      <span class="iv-title" id="ivTitle"></span>
-      <div class="iv-actions">
-        <button onclick="copyImageFromViewer()">复制</button>
-        <button onclick="closeImageViewer()">关闭</button>
+  <!-- Image Viewer Modal (prototype design) -->
+  <div id="image-viewer" class="image-viewer" onclick="if(event.target===this)closeImageViewer()">
+    <div class="iv-card">
+      <div class="iv-header">
+        <span class="iv-title">Image Preview</span>
+        <button class="iv-close" onclick="closeImageViewer()">
+          <svg viewBox="0 0 24 24" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
       </div>
-    </div>
-    <div class="iv-image-wrap">
-      <img id="viewer-img" style="max-width:90vw;max-height:85vh;object-fit:contain;">
+      <div class="iv-image-area">
+        <img id="viewer-img" src="" alt="Image preview">
+      </div>
+      <div class="iv-meta">
+        <div class="iv-filename" id="ivFilename">Image.png</div>
+        <div class="iv-info" id="ivInfo">Loading...</div>
+      </div>
+      <div class="iv-footer">
+        <button class="iv-btn-ghost" onclick="closeImageViewer()">Close</button>
+        <button class="iv-btn-primary" onclick="downloadImage()">Download</button>
+      </div>
     </div>
   </div>
 </body>
