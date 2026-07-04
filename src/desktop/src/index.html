@@ -3006,9 +3006,8 @@ async function handlePasswordLogin() {
     } else if (isEmail) {
       body.email = account;
     } else {
-      // Nickname or unknown — send as both phone and email (backend will try each)
-      body.phone = account;
-      body.email = account;
+      // Nickname login
+      body.account = account;
     }
 
     submitBtn.classList.add('loading');
