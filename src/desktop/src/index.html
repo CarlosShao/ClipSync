@@ -1760,7 +1760,7 @@ function applyI18n(){
 
   // ============ SETTINGS PAGE (comprehensive) ============
   // sv-title
-  document.querySelectorAll('.sv-title').forEach(function(el){var t=el.textContent.trim();if(t==='Settings'||t==='设置')el.textContent=t('settings_t');else if(t==='Subscription'||t==='订阅')el.textContent=t('sub_t');});
+  document.querySelectorAll('.sv-title').forEach(function(el){var _t=el.textContent.trim();if(_t==='Settings'||_t==='设置')el.textContent=t('settings_t');else if(_t==='Subscription'||_t==='订阅')el.textContent=t('sub_t');});
   // sg-header
   var sgH={'General':'sg_gen','通用':'sg_gen','Sync':'sg_sync','同步':'sg_sync','Notifications':'sg_notif','通知':'sg_notif','Appearance':'sg_appear','外观':'sg_appear','Data':'sg_data','数据':'sg_data','Privacy & Security':'sg_privacy','隐私与安全':'sg_privacy','Subscription & Billing':'sg_sub_bill','订阅与账单':'sg_sub_bill','Shortcuts':'sg_shortcuts','快捷键':'sg_shortcuts'};
   document.querySelectorAll('.sg-header').forEach(function(el){var k=sgH[el.textContent.trim()];if(k)el.textContent=t(k);});
