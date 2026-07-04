@@ -1023,6 +1023,12 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .reg-agree input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; margin-top: 2px; cursor: pointer; flex-shrink: 0; }
 .reg-agree a { color: var(--accent); text-decoration: none; }
 
+/* Form validation */
+.af-required { color: #e74c3c; font-weight: 600; }
+.af-error { font-size: 11.5px; color: #e74c3c; margin-top: 4px; min-height: 16px; display: none; }
+.af-error.show { display: block; }
+.af-input.error { border-color: #e74c3c !important; }
+
 /* Back link */
 .auth-back {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1431,42 +1437,62 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
           <div class="auth-form">
             <div class="af-field">
-              <label class="af-label" data-i18n="login_phone">Phone Number</label>
-              <input class="af-input" type="tel" id="regPhone" data-i18n-placeholder="reg_phone_hint" maxlength="11">
+              <label class="af-label" data-i18n="reg_label_phone">Phone Number <span class="af-required">*</span></label>
+              <input class="af-input" type="tel" id="regPhone" data-i18n-placeholder="reg_phone_hint" maxlength="11" oninput="validateRegField('phone',this.value)" onblur="validateRegField('phone',this.value)">
+              <div class="af-error" id="regErrPhone"></div>
             </div>
             <div class="af-field">
-              <label class="af-label" data-i18n="login_code">Verification Code</label>
+              <label class="af-label" data-i18n="reg_label_nickname">Username</label>
+              <input class="af-input" type="text" id="regNickname" data-i18n-placeholder="reg_nickname_hint" maxlength="30" oninput="validateRegField('nickname',this.value)" onblur="validateRegField('nickname',this.value)">
+              <div class="af-error" id="regErrNickname"></div>
+            </div>
+            <div class="af-field">
+              <label class="af-label" data-i18n="reg_label_email">Email</label>
+              <input class="af-input" type="email" id="regEmail" data-i18n-placeholder="reg_email_hint" maxlength="100" oninput="validateRegField('email',this.value)" onblur="validateRegField('email',this.value)">
+              <div class="af-error" id="regErrEmail"></div>
+            </div>
+            <div class="af-field">
+              <label class="af-label" data-i18n="login_code">Verification Code <span class="af-required">*</span></label>
               <div class="af-input-group">
-                <input class="af-input" type="text" id="regCode" data-i18n-placeholder="ph_code_placeholder" maxlength="6">
+                <input class="af-input" type="text" id="regCode" data-i18n-placeholder="ph_code_placeholder" maxlength="6" oninput="validateRegField('code',this.value)" onblur="validateRegField('code',this.value)">
                 <button class="af-code-btn" id="regSendBtn" onclick="sendCode('register')" data-i18n="login_send_code">Send Code</button>
               </div>
+              <div class="af-error" id="regErrCode"></div>
             </div>
             <div class="af-field af-field-pwd">
-              <label class="af-label" data-i18n="sp_set_pwd_label">Set Password</label>
+              <label class="af-label" data-i18n="sp_set_pwd_label">Set Password <span class="af-required">*</span></label>
               <div class="af-input-wrapper">
-                <input class="af-input" type="password" id="regPwd" data-i18n-placeholder="sp_pwd_hint" oninput="checkRegPwdStrength(this.value)">
+                <input class="af-input" type="password" id="regPwd" data-i18n-placeholder="sp_pwd_hint" oninput="checkRegPwdStrength(this.value);validateRegField('password',this.value)">
                 <button class="af-pwd-toggle" onclick="togglePwdVisibility('regPwd',this)">
                   <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
                 </button>
               </div>
+              <div class="af-error" id="regErrPwd"></div>
             </div>
             <div class="pwd-strength" id="regPwdStrength" style="display:none;">
               <div class="ps-bar"></div><div class="ps-bar"></div><div class="ps-bar"></div><div class="ps-bar"></div>
             </div>
+            <div class="sp-hint" id="regPwdRules" style="display:none;margin-top:4px;">
+              <span class="invalid" id="regLenR"><span data-i18n="sp_rule_length">· At least 8 characters</span></span>
+              <span class="invalid" id="regNumR"><span data-i18n="sp_rule_number">· Include a number</span></span>
+              <span class="invalid" id="regLetterR"><span data-i18n="sp_rule_letter">· Include a letter</span></span>
+            </div>
             <div class="af-field af-field-pwd">
-              <label class="af-label" data-i18n="sp_confirm_pwd">Confirm Password</label>
+              <label class="af-label" data-i18n="sp_confirm_pwd">Confirm Password <span class="af-required">*</span></label>
               <div class="af-input-wrapper">
-                <input class="af-input" type="password" id="regConfirm" data-i18n-placeholder="sp_confirm_hint">
+                <input class="af-input" type="password" id="regConfirm" data-i18n-placeholder="sp_confirm_hint" oninput="validateRegField('confirm',this.value);checkRegConfirm()" onblur="validateRegField('confirm',this.value);checkRegConfirm()">
                 <button class="af-pwd-toggle" onclick="togglePwdVisibility('regConfirm',this)">
                   <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
                 </button>
               </div>
+              <div class="af-error" id="regErrConfirm"></div>
             </div>
 
             <label class="reg-agree">
               <input type="checkbox" id="regAgree" checked>
               <span data-i18n="reg_agree_text">I have read and agree to the </span><a href="javascript:void(0)" onclick="showToast(t('toast_tos_soon'),'info')" data-i18n="reg_tos">Terms of Service</a> <span data-i18n="reg_and">and</span> <a href="javascript:void(0)" onclick="showToast(t('toast_privacy_soon'),'info')" data-i18n="reg_privacy">Privacy Policy</a>
             </label>
+            <div class="af-error" id="regErrAgree" style="margin-top:-16px;"></div>
 
             <button class="af-submit" id="regSubmit" onclick="handleRegister()">
               <span class="btn-text" data-i18n="reg_submit">Register</span><span class="btn-spinner"></span>
@@ -1892,6 +1918,19 @@ var _i18n = {
     reg_submit:'Register',reg_agree_required:'Please agree to the terms and privacy policy',
     reg_pwd_min_8:'Password must be at least 8 characters',reg_fail:'Registration failed: ',
     reg_success_welcome:'Welcome to ClipSync!',
+    // Registration fields & validation (enhanced)
+    reg_label_phone:'Phone Number',reg_label_nickname:'Username',reg_label_email:'Email',
+    reg_nickname_hint:"e.g. Alice, 张三, 2-30 chars",
+    reg_email_hint:'Optional — for account recovery',
+    val_phone_format:'Please enter a valid 11-digit phone number',
+    val_nickname_short:'At least 2 characters required',
+    val_nickname_long:'Up to 30 characters only',
+    val_nickname_invalid:'Only letters, numbers, underscores and Chinese allowed',
+    val_email_invalid:'Invalid email format',
+    val_code_6digit:'Verification code must be 6 digits',
+    err_dup_phone:'This phone number is already registered',
+    err_dup_email:'This email is already in use',
+    auth_code_invalid:'Invalid or expired verification code',
     // Auth validation
     auth_need_code:'Please enter 6-digit verification code',auth_need_account:'Please enter account',
     auth_pwd_too_short:'Password must be at least 6 characters',form_error:'Form error, please refresh',
@@ -2033,6 +2072,19 @@ var _i18n = {
     reg_submit:'注 册',reg_agree_required:'请阅读并同意服务条款和隐私政策',
     reg_pwd_min_8:'密码至少需要 8 位',reg_fail:'注册失败：',
     reg_success_welcome:'欢迎加入 ClipSync！',
+    // Registration fields & validation (enhanced)
+    reg_label_phone:'手机号码',reg_label_nickname:'用户名',reg_label_email:'电子邮箱',
+    reg_nickname_hint:'如：Alice、张三，2-30个字符',
+    reg_email_hint:'选填 — 用于账号找回',
+    val_phone_format:'请输入有效的11位手机号',
+    val_nickname_short:'用户名至少2个字符',
+    val_nickname_long:'用户名最长30个字符',
+    val_nickname_invalid:'仅允许字母、数字、下划线和中文字符',
+    val_email_invalid:'邮箱格式不正确',
+    val_code_6digit:'验证码必须是6位数字',
+    err_dup_phone:'该手机号已被注册',
+    err_dup_email:'该邮箱已被使用',
+    auth_code_invalid:'验证码无效或已过期',
     // Auth validation
     auth_need_code:'请输入6位验证码',auth_need_account:'请输入账号',
     auth_pwd_too_short:'密码长度不足6位',form_error:'表单异常，请刷新页面',
@@ -2766,8 +2818,10 @@ function checkPwdStrength(pwd) {
 
 function checkRegPwdStrength(pwd) {
   var container = document.getElementById('regPwdStrength');
+  var rulesEl = document.getElementById('regPwdRules');
   if (!container) return;
   container.style.display = pwd.length > 0 ? '' : 'none';
+  if (rulesEl) rulesEl.style.display = pwd.length > 0 ? '' : 'none';
   if (!pwd) return;
 
   var bars = container.querySelectorAll('.ps-bar');
@@ -2783,6 +2837,11 @@ function checkRegPwdStrength(pwd) {
     bar.className = 'ps-bar';
     if (i < level) bar.classList.add(level <= 1 ? 'weak' : level === 2 ? 'medium' : 'strong');
   });
+
+  // Update rule indicators
+  if (document.getElementById('regLenR')) document.getElementById('regLenR').className = hasLen ? '' : 'invalid';
+  if (document.getElementById('regNumR')) document.getElementById('regNumR').className = hasNum ? '' : 'invalid';
+  if (document.getElementById('regLetterR')) document.getElementById('regLetterR').className = hasLetter ? '' : 'invalid';
 }
 
 async function handlePhoneLogin() {
@@ -2928,17 +2987,43 @@ async function handleRegister() {
 
     if (!phoneEl || !codeEl || !pwdEl || !confirmEl || !agreeEl || !submitBtn) { showToast(t('form_error'), 'error'); return; }
 
+    // Collect all fields
     var phone = phoneEl.value.trim();
     var code = codeEl.value.trim();
     var pwd = pwdEl.value;
     var confirm = confirmEl.value;
     var agree = agreeEl.checked;
+    var nickname = (document.getElementById('regNickname') || {}).value.trim();
+    var email = (document.getElementById('regEmail') || {}).value.trim();
 
-    if (!/^1[3-9]\d{9}$/.test(phone)) { shakeElement(phoneEl); showToast(t('auth_need_phone'), 'error'); return; }
-    if (!/^\d{6}$/.test(code)) { shakeElement(codeEl); showToast(t('auth_need_code'), 'error'); return; }
-    if (!pwd || pwd.length < 8) { shakeElement(pwdEl); showToast(t('reg_pwd_min_8'), 'error'); return; }
-    if (pwd !== confirm) { shakeElement(confirmEl); showToast(t('sp_pwd_mismatch'), 'error'); return; }
-    if (!agree) { showToast(t('reg_agree_required'), 'error'); return; }
+    // Full validation with field-level errors
+    var hasError = false;
+
+    if (!/^1[3-9]\d{9}$/.test(phone)) { setRegError('phone', t('auth_need_phone')); hasError = true; }
+    else clearRegError('phone');
+
+    if (!/^\d{6}$/.test(code)) { setRegError('code', t('auth_need_code')); hasError = true; }
+    else clearRegError('code');
+
+    if (!pwd || pwd.length < 8) { setRegError('pwd', t('reg_pwd_min_8')); hasError = true; }
+    else clearRegError('pwd');
+
+    if (pwd !== confirm) { setRegError('confirm', t('sp_pwd_mismatch')); hasError = true; }
+    else clearRegError('confirm');
+
+    // Email validation (optional, but must be valid format if provided)
+    if (email) {
+      var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) { setRegError('email', t('val_email_invalid')); hasError = true; }
+      else clearRegError('email');
+    } else {
+      clearRegError('email');
+    }
+
+    if (!agree) { setRegError('agree', t('reg_agree_required')); hasError = true; }
+    else clearRegError('agree');
+
+    if (hasError) return;
 
     if (submitBtn.disabled) return;
 
@@ -2946,7 +3031,14 @@ async function handleRegister() {
     submitBtn.disabled = true;
 
     try {
-      var data = await api('POST', '/api/auth/register', { phone, code, password: pwd, accept_tos: true, accept_privacy: true });
+      var data = await api('POST', '/api/auth/register', {
+        phone, code,
+        password: pwd,
+        nickname: nickname || undefined,
+        email: email || undefined,
+        accept_tos: true,
+        accept_privacy: true
+      });
       state.token = data.token; state.user = data.user;
       localStorage.setItem('cs_token', data.token);
       localStorage.setItem('cs_user', JSON.stringify(data.user));
@@ -2956,7 +3048,17 @@ async function handleRegister() {
     } catch(e) {
       submitBtn.classList.remove('loading');
       submitBtn.disabled = false;
-      showToast(t('reg_fail') + e.message, 'error');
+      // Parse specific error types
+      var msg = e.message || '';
+      if (msg.indexOf('already registered') > -1 || msg.indexOf('already') > -1) {
+        setRegError('phone', t('err_dup_phone'));
+      } else if (msg.indexOf('already in use') > -1) {
+        setRegError('email', t('err_dup_email'));
+      } else if (msg.indexOf('Invalid or expired') > -1) {
+        setRegError('code', t('auth_code_invalid'));
+      } else {
+        showToast(t('reg_fail') + e.message, 'error');
+      }
     }
   } catch(err) {
     console.error('[Register] Error:', err);
@@ -2964,6 +3066,67 @@ async function handleRegister() {
     if (sb) { sb.classList.remove('loading'); sb.disabled = false; }
     showToast(t('reg_fail') + err.message, 'error');
   }
+}
+
+// ===== Registration Field Validation =====
+function validateRegField(field, value) {
+  switch(field) {
+    case 'phone':
+      value = value.trim();
+      if (!value) return clearRegError('phone');
+      if (!/^1[3-9]\d{9}$/.test(value)) return setRegError('phone', t('val_phone_format'));
+      return clearRegError('phone');
+    case 'nickname':
+      value = value.trim();
+      if (!value) return clearRegError('nickname');
+      if (value.length < 2) return setRegError('nickname', t('val_nickname_short'));
+      if (value.length > 30) return setRegError('nickname', t('val_nickname_long'));
+      if (/[^a-zA-Z0-9_\u4e00-\u9fa5]/.test(value)) return setRegError('nickname', t('val_nickname_invalid'));
+      return clearRegError('nickname');
+    case 'email':
+      value = value.trim();
+      if (!value) return clearRegError('email');
+      var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(value)) return setRegError('email', t('val_email_invalid'));
+      return clearRegError('email');
+    case 'code':
+      value = value.trim();
+      if (!value) return clearRegError('code');
+      if (!/^\d{6}$/.test(value)) return setRegError('code', t('val_code_6digit'));
+      return clearRegError('code');
+    case 'password':
+      if (!value) return clearRegError('pwd');
+      if (value.length < 8) return setRegError('pwd', t('reg_pwd_min_8'));
+      return clearRegError('pwd');
+    case 'confirm':
+      var pwd = (document.getElementById('regPwd') || {}).value;
+      if (!value) return clearRegError('confirm');
+      if (value !== pwd) return setRegError('confirm', t('sp_pwd_mismatch'));
+      return clearRegError('confirm');
+  }
+}
+
+function setRegError(field, message) {
+  var el = document.getElementById('regErr' + field.charAt(0).toUpperCase() + field.slice(1));
+  if (el) { el.textContent = message; el.classList.add('show'); }
+  var inputEl = document.getElementById('reg' + field.charAt(0).toUpperCase() + field.slice(1));
+  if (inputEl && inputEl.tagName === 'INPUT') inputEl.classList.add('error');
+  return false;
+}
+
+function clearRegError(field) {
+  var el = document.getElementById('regErr' + field.charAt(0).toUpperCase() + field.slice(1));
+  if (el) { el.textContent = ''; el.classList.remove('show'); }
+  var inputEl = document.getElementById('reg' + field.charAt(0).toUpperCase() + field.slice(1));
+  if (inputEl && inputEl.tagName === 'INPUT') inputEl.classList.remove('error');
+  return true;
+}
+
+function checkRegConfirm() {
+  var pwd = (document.getElementById('regPwd') || {}).value;
+  var conf = (document.getElementById('regConfirm') || {}).value;
+  if (conf && conf !== pwd) setRegError('confirm', t('sp_pwd_mismatch'));
+  else clearRegError('confirm');
 }
 
 function shakeElement(el) {
