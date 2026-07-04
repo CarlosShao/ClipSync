@@ -161,6 +161,10 @@ const migrations = [
   `CREATE INDEX IF NOT EXISTS idx_file_versions_user ON file_versions(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_user_sessions_active ON user_sessions(user_id, is_active) WHERE is_active = TRUE`,
+  // User lookup indexes (O(1) dedup + login)
+  `CREATE INDEX IF NOT EXISTS idx_users_phone_hash ON users(phone_hash) WHERE phone_hash IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_users_email_hash ON users(email_hash) WHERE email_hash IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email IS NOT NULL AND email != ''`,
 ];
 
 // Post-migration: add tsvector column and trigger if not exists

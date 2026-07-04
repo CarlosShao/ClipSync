@@ -614,6 +614,205 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+// ===== 注册（完整流程：验证码 + 密码 + 可选昵称/邮箱）=====
+router.post('/register', sendCodeLimiter, async (req, res) => {
+  try {
+    const { phone, code, nickname, email, password, accept_tos, accept_privacy } = req.body;
+
+    // === 输入验证 ===
+    if (!phone || !code || !password) {
+      return res.status(400).json({ error: 'Phone number, verification code, and password are required' });
+    }
+    if (!isValidPhone(phone)) {
+      return res.status(400).json({ error: 'Invalid phone number format' });
+    }
+    if (!isValidCode(code)) {
+      return res.status(400).json({ error: 'Invalid verification code format' });
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+
+    // 邮箱格式校验（如果提供）
+    let cleanEmail = null;
+    if (email && email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({ error: 'Invalid email format' });
+      }
+      cleanEmail = sanitizeString(email.trim().toLowerCase());
+    }
+
+    // 昵称清理
+    const cleanNickname = (nickname && nickname.trim()) ? sanitizeString(nickname.trim()) : '';
+
+    // ToS / 隐私政策必须同意
+    if (!accept_tos || !accept_privacy) {
+      return res.status(400).json({ error: 'You must accept the Terms of Service and Privacy Policy to register' });
+    }
+
+    const cleanPhone = sanitizeString(phone);
+    const cleanCode = sanitizeString(code);
+
+    // === 查重：手机号是否已注册 ===
+    const existingPhone = await pool.query(
+      'SELECT id FROM users WHERE phone = $1 OR phone_hash = $2',
+      [cleanPhone, computeFieldHash(cleanPhone)]
+    );
+    if (existingPhone.rows.length > 0) {
+      return res.status(409).json({ error: 'This phone number is already registered' });
+    }
+
+    // === 查重：邮箱是否已使用（如果提供了邮箱）===
+    if (cleanEmail) {
+      const existingEmail = await pool.query(
+        "SELECT id FROM users WHERE email = $1 OR email_hash = $2",
+        [cleanEmail, computeFieldHash(cleanEmail)]
+      );
+      if (existingEmail.rows.length > 0) {
+        return res.status(409).json({ error: 'This email is already in use' });
+      }
+    }
+
+    // === 验证验证码 ===
+    const codeResult = await pool.query(
+      `SELECT id FROM verification_codes
+       WHERE phone = $1 AND code = $2 AND expires_at > NOW() AND used = FALSE
+       ORDER BY created_at DESC LIMIT 1`,
+      [cleanPhone, cleanCode]
+    );
+    if (codeResult.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid or expired verification code' });
+    }
+
+    // 标记验证码已用
+    await pool.query('UPDATE verification_codes SET used = TRUE WHERE id = $1', [codeResult.rows[0].id]);
+
+    // === 加密 & 哈希 ===
+    const phoneEncrypted = encryptField(cleanPhone);
+    const phoneHash = computeFieldHash(cleanPhone);
+    const emailEncrypted = cleanEmail ? encryptField(cleanEmail) : null;
+    const emailHash = cleanEmail ? computeFieldHash(cleanEmail) : null;
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    // === 创建用户 ===
+    const userResult = await pool.query(
+      `INSERT INTO users (
+        phone, phone_encrypted, phone_hash,
+        email, email_encrypted, email_hash,
+        nickname, password_hash,
+        tos_accepted_at, privacy_accepted_at,
+        subscription_status, is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW(), 'free', TRUE)
+      RETURNING id, phone, email, nickname, avatar_url`,
+      [
+        cleanPhone, phoneEncrypted, phoneHash,
+        cleanEmail, emailEncrypted, emailHash,
+        cleanNickname || '', passwordHash
+      ]
+    );
+
+    const user = userResult.rows[0];
+
+    // 审计日志
+    await logAuditEvent({
+      userId: user.id,
+      action: AUDIT_ACTIONS.LOGIN, // 注册即视为首次登录
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent') || '',
+      status: 'success',
+      details: { phone: cleanPhone, isNewUser: true },
+    }).catch(() => {});
+
+    // 创建会话 + JWT
+    const { token } = await createSessionAndGenerateToken(user, req);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        phone: decryptField(user.phone_encrypted) || user.phone,
+        email: user.email ? (decryptField(user.email_encrypted) || user.email) : '',
+        nickname: user.nickname,
+        avatarUrl: user.avatar_url,
+      },
+    });
+  } catch (err) {
+    logger.error('Register error:', { error: err.message, stack: err.stack });
+
+    // 处理 UNIQUE constraint violation (竞态条件下的重复注册)
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'This phone number or email is already registered' });
+    }
+    res.status(500).json({ error: 'Registration failed. Please try again later.' });
+  }
+});
+
+// ===== 设置密码（用于通过 verify-code 登录的新用户）=====
+router.post('/set-password', async (req, res) => {
+  try {
+    const { phone, password } = req.body;
+
+    if (!phone || !password) {
+      return res.status(400).json({ error: 'Phone number and password are required' });
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+    if (!isValidPhone(phone)) {
+      return res.status(400).json({ error: 'Invalid phone number format' });
+    }
+
+    const cleanPhone = sanitizeString(phone);
+
+    // 查找用户
+    let userResult = await pool.query(
+      'SELECT id, phone, email, nickname, avatar_url FROM users WHERE phone = $1',
+      [cleanPhone]
+    );
+    if (userResult.rows.length === 0) {
+      const phoneHash = computeFieldHash(cleanPhone);
+      if (phoneHash) {
+        userResult = await pool.query(
+          'SELECT id, phone, email, nickname, avatar_url FROM users WHERE phone_hash = $1',
+          [phoneHash]
+        );
+      }
+    }
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found. Please verify your phone number first.' });
+    }
+
+    const user = userResult.rows[0];
+
+    // 哈希密码并更新
+    const passwordHash = await bcrypt.hash(password, 12);
+    await pool.query(
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+      [passwordHash, user.id]
+    );
+
+    logger.info(`[SetPassword] Password set for user ${user.id}`);
+
+    // 创建会话 + JWT（设置完密码后自动登录）
+    const { token } = await createSessionAndGenerateToken(user, req);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        phone: user.phone,
+        email: user.email || '',
+        nickname: user.nickname,
+        avatarUrl: user.avatar_url,
+      },
+    });
+  } catch (err) {
+    logger.error('Set password error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to set password. Please try again later.' });
+  }
+});
+
 // 密码登录（支持手机号和邮箱）
 router.post('/login', loginFailedLimiter, async (req, res) => {
   try {
