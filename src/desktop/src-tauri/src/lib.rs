@@ -113,6 +113,23 @@ fn copy_local_files(paths: Vec<String>) -> Result<String, String> {
     }
 }
 
+/// Open URL in system default browser
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn()
+            .map_err(|e| format!("failed to open URL: {}", e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        opener::open(&url).map_err(|e| format!("failed to open URL: {}", e))?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn get_clipboard_content() -> Result<String, String> {
     use clipboard_win::raw;
@@ -882,6 +899,7 @@ pub fn run() {
             tray_quit,
             get_config,
             update_config,
+            open_url,
             get_clipboard_content,
             set_clipboard_content,
             set_clipboard_files,
