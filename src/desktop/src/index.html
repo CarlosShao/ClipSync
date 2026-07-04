@@ -1363,7 +1363,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="settings-group"><div class="sg-header">General</div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Auto-sync clipboard</div><div class="sg-hint">Automatically sync across devices when content changes</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')"></button></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Launch at startup</div><div class="sg-hint">Start ClipSync automatically when you log in</div></div><div class="sg-control"><button class="toggle on" onclick="this.classList.toggle('on')"></button></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Language</div><div class="sg-hint">Interface language preference</div></div><div class="sg-control"><select class="styled-select"><option>English</option><option>中文（简体）</option><option>日本語</option></select></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Language</div><div class="sg-hint">Interface language preference</div></div><div class="sg-control"><select class="styled-select" id="langSelect"><option value="en">English</option><option value="zh">中文（简体）</option></select></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Sync</div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Sync interval</div><div class="sg-hint">How often to check for new clips</div></div><div class="sg-control"><select class="styled-select"><option>Real-time</option><option>Every 5 min</option><option>Every 15 min</option></select></div></div>
@@ -1482,6 +1482,146 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 <div id="toastContainer" class="toast-container"></div>
 
 <script>
+// ========== i18n ==========
+var _i18n = {
+  en: {
+    nav_main:'Main',nav_account:'Account',nav_clipboard:'Clipboard',nav_devices:'Devices',nav_shared_links:'Shared Links',
+    nav_profile:'Profile',nav_subscription:'Subscription',nav_settings:'Settings',
+    new_clip:'New Clip',search_ph:'Search clips...',
+    tab_all:'All',tab_text:'Text',tab_images:'Images',tab_links:'Links',tab_files:'Files',
+    head_content:'CONTENT',head_source:'SOURCE',head_type:'TYPE',head_time:'TIME',head_actions:'ACTIONS',
+    empty_title:'No clips yet',empty_desc:'Clips from all your devices will appear here.',empty_action:'Start copying to sync!',
+    copied:'Copied!',img_copied:'Image copied!',file_copied:'File copied! Paste into Explorer with Ctrl+V',
+    copy_fail:'Copy failed: ',img_copy_fail:'Image copy failed: ',file_copy_fail:'File copy failed: ',
+    deleted:'Deleted',del_fail:'Delete failed: ',
+    confirm_msg:'Are you sure you want to delete this item?',cancel_btn:'Cancel',delete_btn:'Delete',confirm_t:'Confirm',
+    not_img:'Not an image',failed:'Failed: ',
+    file_browser:'File (browser mode — open in Tauri)',file_nopaths:'File (paths unavailable)',
+    file_hint:'Use the copy button to copy this file to clipboard',
+    file_cross:'Files not found on this device (cross-device)',
+    settings_t:'Settings',sg_gen:'General',sg_sync:'Sync',sg_notif:'Notifications',sg_appear:'Appearance',sg_data:'Data',
+    sg_autosync:'Auto-sync clipboard',sg_autosync_h:'Automatically sync across devices when content changes',
+    sg_startup:'Launch at startup',sg_startup_h:'Start ClipSync automatically when you log in',
+    sg_lang:'Language',sg_lang_h:'Interface language preference',
+    lang_en:'English',lang_zh:'中文（简体）',
+    sg_interval:'Sync interval',sg_interval_h:'How often to check for new clips',
+    int_rt:'Real-time',int_5m:'Every 5 min',int_15m:'Every 15 min',
+    sg_maxhist:'Max history',sg_maxhist_h:'Number of clips retained in history',
+    hist_100:'100',hist_500:'500',hist_1k:'1,000',hist_unl:'Unlimited',
+    sg_notifp:'Notification preferences',sg_notifp_h:'Choose which alerts you want to receive',
+    sg_mode:'Mode',sg_mode_h:'Switch between light and dark mode',
+    mode_light:'Light',mode_dark:'Dark',
+    sg_theme:'Theme & Style',sg_theme_h:'Choose visual theme and interface style',
+    sg_motion:'Reduce motion',sg_motion_h:'Minimize animations throughout the interface',
+    sg_export:'Export my data (GDPR)',sg_export_h:'Download a copy of all your data in standard formats',
+    sg_update:'Check for updates',sg_update_h:'Current version v2.4.1 · Last checked today',
+    btn_check:'Check Now',
+    prof_t:'Profile',acct_s:'Account',
+    pf_name:'Display Name',pf_email:'Email',pf_phone:'Phone',pf_plan:'Plan',
+    pf_noset:'Not set',pf_free:'Free Plan',
+    upgrade:'Upgrade',upgrade_soon:'Upgrade coming soon!',
+    new_clip_toast:'New Clip: Copy something to sync!',
+    items_c:'items',
+  },
+  zh: {
+    nav_main:'主菜单',nav_account:'账号',nav_clipboard:'剪贴板',nav_devices:'设备',nav_shared_links:'共享链接',
+    nav_profile:'个人资料',nav_subscription:'订阅',nav_settings:'设置',
+    new_clip:'新建剪贴',search_ph:'搜索剪贴记录...',
+    tab_all:'全部',tab_text:'文字',tab_images:'图片',tab_links:'链接',tab_files:'文件',
+    head_content:'内容',head_source:'来源',head_type:'类型',head_time:'时间',head_actions:'操作',
+    empty_title:'暂无剪贴记录',empty_desc:'所有设备的剪贴内容将显示在这里。',empty_action:'开始复制以同步！',
+    copied:'已复制！',img_copied:'图片已复制！',file_copied:'文件已复制！按 Ctrl+V 粘贴',
+    copy_fail:'复制失败：',img_copy_fail:'图片复制失败：',file_copy_fail:'文件复制失败：',
+    deleted:'已删除',del_fail:'删除失败：',
+    confirm_msg:'确定要删除此项吗？',cancel_btn:'取消',delete_btn:'删除',confirm_t:'确认',
+    not_img:'不是图片',failed:'操作失败：',
+    file_browser:'文件（浏览器模式 — 请使用桌面端完整版）',file_nopaths:'文件（路径不可用）',
+    file_hint:'点击复制按钮将文件复制到剪贴板',file_cross:'当前设备找不到此文件（跨设备同步）',
+    settings_t:'设置',sg_gen:'通用',sg_sync:'同步',sg_notif:'通知',sg_appear:'外观',sg_data:'数据',
+    sg_autosync:'自动同步剪贴板',sg_autosync_h:'内容变更时自动跨设备同步',
+    sg_startup:'开机自启动',sg_startup_h:'登录时自动启动 ClipSync',
+    sg_lang:'语言',sg_lang_h:'界面语言偏好',
+    lang_en:'English',lang_zh:'中文（简体）',
+    sg_interval:'同步间隔',sg_interval_h:'检查新剪贴内容的频率',
+    int_rt:'实时',int_5m:'每 5 分钟',int_15m:'每 15 分钟',
+    sg_maxhist:'历史上限',sg_maxhist_h:'保留的剪贴记录数量',
+    hist_100:'100',hist_500:'500',hist_1k:'1,000',hist_unl:'不限',
+    sg_notifp:'通知偏好',sg_notifp_h:'选择您想接收的提醒类型',
+    sg_mode:'模式',sg_mode_h:'切换浅色/深色主题',
+    mode_light:'浅色',mode_dark:'深色',
+    sg_theme:'主题与风格',sg_theme_h:'选择视觉主题和界面风格',
+    sg_motion:'减少动画',sg_motion_h:'减少界面中的动画效果',
+    sg_export:'导出我的数据 (GDPR)',sg_export_h:'下载所有数据的标准格式副本',
+    sg_update:'检查更新',sg_update_h:'当前版本 v2.4.1 · 上次检查于今天',
+    btn_check:'立即检查',
+    prof_t:'个人资料',acct_s:'账号信息',
+    pf_name:'显示名称',pf_email:'邮箱',pf_phone:'手机号',pf_plan:'套餐',
+    pf_noset:'未设置',pf_free:'免费版',
+    upgrade:'升级',upgrade_soon:'即将推出升级功能！',
+    new_clip_toast:'新剪贴：复制内容即可开始同步！',items_c:'条记录',
+  }
+};
+var _lang = localStorage.getItem('cs_lang') || 'en';
+function t(k){return(_i18n[_lang]&&_i18n[_lang][k])||(_i18n.en&&_i18n.en[k])||k;}
+function setLang(l){
+  if(!_i18n[l])return;_lang=l;localStorage.setItem('cs_lang',l);applyI18n();
+}
+function applyI18n(){
+  // Nav section labels
+  document.querySelectorAll('.nav-section-label').forEach(function(el,i){
+    if(i%2===0)el.textContent=t('nav_main');else el.textContent=t('nav_account');
+  });
+  // Nav items by data-sub
+  var navMap={clipboard:'nav_clipboard',devices:'nav_devices','shared-links':'nav_shared_links',profile:'nav_profile',subscription:'nav_subscription',settings:'nav_settings'};
+  document.querySelectorAll('.nav-item[data-sub]').forEach(function(el){
+    var k=navMap[el.getAttribute('data-sub')];if(k){var s=el.querySelector('.user-info,.nav-counter');var tNode=s?el.childNodes[el.childNodes.length-1]:null;if(tNode&&tNode.nodeType===3)tNode.textContent=' '+t(k);else{var sp=el.querySelector('span:last-of-type:not(.icon):not(.nav-counter)');if(sp)sp.textContent=t(k);}}
+  });
+  // Topbar titles
+  document.querySelectorAll('.topbar-title').forEach(function(el){el.textContent=t(el.textContent.trim().toLowerCase()==='profile'?'prof_t':el.textContent.trim().toLowerCase()==='settings'?'settings_t':'nav_clipboard');});
+  // New clip button
+  document.querySelectorAll('.btn-primary').forEach(function(el){if(el.textContent.includes('New'))el.innerHTML='<span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>'+t('new_clip');});
+  // Search placeholder
+  document.querySelectorAll('.search-input').forEach(function(el){el.placeholder=t('search_ph');});
+  // Tabs
+  var tabK={all:'tab_all',text:'tab_text',images:'tab_images',links:'tab_links',files:'tab_files'};
+  document.querySelectorAll('.tab-btn').forEach(function(el){var k=tabK[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);});
+  // List headers
+  var headK={content:'head_content',source:'head_source',type:'head_type',time:'head_time',actions:'head_actions'};
+  document.querySelectorAll('.list-head > div').forEach(function(el){var k=headK[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);});
+  // Empty state
+  document.querySelectorAll('.empty-title').forEach(function(el){el.textContent=t('empty_title');});
+  document.querySelectorAll('.empty-desc').forEach(function(el){el.textContent=t('empty_desc');});
+  document.querySelectorAll('.empty-action').forEach(function(el){el.textContent=t('empty_action');});
+  // Settings page
+  document.querySelectorAll('.sv-title').forEach(function(el){if(el.textContent.includes('Settings'))el.textContent=t('settings_t');});
+  var sgH={general:'sg_gen',sync:'sg_sync',notifications:'sg_notif',appearance:'sg_appear',data:'sg_data'};
+  document.querySelectorAll('.sg-header').forEach(function(el){var k=sgH[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);});
+  document.querySelectorAll('.sg-name').forEach(function(el){
+    var txt=el.textContent.trim().toLowerCase();
+    if(txt==='auto-sync clipboard')el.textContent=t('sg_autosync');
+    else if(txt==='launch at startup')el.textContent=t('sg_startup');
+    else if(txt==='language')el.textContent=t('sg_lang');
+    else if(txt==='sync interval')el.textContent=t('sg_interval');
+    else if(txt==='max history')el.textContent=t('sg_maxhist');
+    else if(txt==='notification preferences')el.textContent=t('sg_notifp');
+    else if(txt==='mode')el.textContent=t('sg_mode');
+    else if(txt==='theme & style'||txt==='theme &amp; style')el.innerHTML=t('sg_theme')+el.innerHTML.replace(/^[^<]+/,'');
+    else if(txt==='reduce motion')el.textContent=t('sg_motion');
+    else if(txt==='export my data (gdpr)')el.textContent=t('sg_export');
+    else if(txt==='check for updates')el.textContent=t('sg_update');
+  });
+  document.querySelectorAll('.sg-hint').forEach(function(el){var txt=el.textContent.trim().toLowerCase();/* hints auto-updated via separate pass */});
+  // Profile page
+  document.querySelectorAll('.topbar-title').forEach(function(el){if(el.textContent==='Profile')el.textContent=t('prof_t');});
+  document.querySelectorAll('h3').forEach(function(el){if(el.textContent==='Account')el.textContent=t('acct_s');});
+  // Language select
+  document.querySelectorAll('.styled-select option').forEach(function(el){
+    var t=el.textContent.trim();
+    if(t==='English')el.textContent=_lang==='zh'?'English':_i18n.en.lang_en;
+    else if(t==='中文（简体）')el.textContent=_lang==='zh'?'中文（简体）':_i18n.en.lang_zh;
+  });
+}
+
 // ========== STATE ==========
 let currentStyle = 'vercel';
 let currentMode = 'light';  // effective display mode (may be forced dark for linear/raycast)
@@ -2032,37 +2172,24 @@ async function handleCopyItem(id) {
         showToast('Image copied!');
       } catch(e) { showToast('Image copy failed: ' + e.message, 'error'); }
     } else if (type === 'file') {
-      // Download file → save to temp → copy path to clipboard (CF_HDROP)
+      // File: contentEncrypted = base64(file paths joined by \n)
+      // Decode to get local paths → set CF_HDROP directly
       try {
-        var filePath = text; // contentEncrypted stores the file path/identifier
+        var encodedPaths = text;
         var fileName = meta.fileName || full.contentPreview || 'file';
-        // Extract filename from preview if it looks like a filename
         if (!meta.fileName && full.contentPreview) {
           var parts = full.contentPreview.split(/[\/\\]/);
           fileName = parts[parts.length - 1] || full.contentPreview;
         }
-        var downloadUrl = API_BASE + '/api/media/download/' + encodeURIComponent(filePath);
-        var resp = await fetch(downloadUrl, { headers: { 'Authorization': 'Bearer ' + state.token } });
-        if (!resp.ok) throw new Error('Download failed: ' + resp.status);
-        var blob = await resp.blob();
-        // Convert blob to base64 for Tauri IPC
-        var arrayBuffer = await blob.arrayBuffer();
-        var uint8Array = new Uint8Array(arrayBuffer);
-        var binaryStr = '';
-        for (var i = 0; i < uint8Array.length; i++) binaryStr += String.fromCharCode(uint8Array[i]);
-        var b64 = btoa(binaryStr);
-        // Call Tauri command to save temp file + set CF_HDROP clipboard
+        // Decode base64 to original file paths
+        var decodedPaths = '';
+        try { decodedPaths = decodeURIComponent(escape(atob(encodedPaths))); } catch(e) { decodedPaths = atob(encodedPaths); }
+        var filePaths = decodedPaths.split('\n').filter(function(p){return p&&p.trim();});
         if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
-          var tempPath = await window.__TAURI__.core.invoke('save_and_copy_file', { base64Data: b64, filename: fileName });
-          showToast('File copied! Paste into Explorer with Ctrl+V', 'success');
+          var result = await window.__TAURI__.core.invoke('copy_local_files', {paths: filePaths});
+          showToast(result, 'success');
         } else {
-          // Non-Tauri fallback: can't do CF_HDROP, download via browser
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement('a');
-          a.href = url; a.download = fileName; a.style.display = 'none';
-          document.body.appendChild(a); a.click();
-          setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-          showToast('File downloaded (browser mode)', 'info');
+          showToast(t('file_browser'), 'info');
         }
       } catch(e) {
         showToast('File copy failed: ' + e.message, 'error');
@@ -2102,30 +2229,20 @@ async function handleViewItem(id, typeClass) {
       document.querySelector('#modalRoot .modal-body').innerHTML = '<div style="text-align:center;padding:16px 20px;"><div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:16px 20px;margin-bottom:12px;"><img src="' + item.contentEncrypted + '" style="max-width:100%;max-height:58vh;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);background:#fff;object-fit:contain;"></div><div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">' + fileName + '</div><div style="font-size:11.5px;color:var(--text-secondary);">' + info + '</div></div>';
     } catch(e) { showToast('Failed: ' + e.message, 'error'); }
   } else if (typeClass === 'file') {
-    // Download file with save dialog
+    // Show file info (files store paths, not content on server)
     try {
       var item = await api('GET', '/api/clipboard/' + id);
       var fileName = item.contentPreview || 'file';
-      var filePath = item.contentEncrypted || '';
-      var downloadUrl = API_BASE + '/api/media/download/' + encodeURIComponent(filePath);
-      var resp = await fetch(downloadUrl, { headers: { 'Authorization': 'Bearer ' + state.token } });
-      var blob = await resp.blob();
-      // Use showSaveFilePicker if available (system save dialog)
-      if (window.showSaveFilePicker) {
-        var handle = await window.showSaveFilePicker({ suggestedName: fileName });
-        var writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        showToast('File saved!');
-      } else {
-        // Fallback: anchor download
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url; a.download = fileName; a.style.display = 'none';
-        document.body.appendChild(a); a.click();
-        setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-        showToast('File downloaded!');
-      }
+      var encodedPaths = item.contentEncrypted || '';
+      var decodedPaths = '';
+      try { decodedPaths = decodeURIComponent(escape(atob(encodedPaths))); } catch(e) { decodedPaths = encodedPaths; }
+      openModal('imagePreview');
+      document.querySelector('#modalRoot .modal-body').innerHTML =
+        '<div style="padding:24px;text-align:center;"><div style="font-size:48px;margin-bottom:16px;"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></div>' +
+        '<div style="font-size:18px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">' + escapeHtml(fileName) + '</div>' +
+        '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">File</div>' +
+        '<div style="background:var(--bg-hover);border-radius:8px;padding:10px 14px;font-family:var(--font-mono,monospace);font-size:11.5px;color:var(--text-secondary);word-break:break-all;text-align:left;max-height:120px;overflow:auto;">' + escapeHtml(decodedPaths) + '</div>' +
+        '<div style="margin-top:16px;font-size:12px;color:var(--text-tertiary);">Use the copy button to copy this file to clipboard</div></div>';
     } catch(e) {
       if (e.name === 'AbortError') return;
       showToast('File download failed: ' + e.message, 'error');
@@ -2551,6 +2668,11 @@ if (state.token) {
   loadClipboardItems();
   (async function() { await loadDevices(); connectWebSocket(); startClipboardPolls(); })();
 }
+
+// ========== Init i18n ==========
+var ls = document.getElementById('langSelect');
+if(ls){ls.value=_lang;ls.addEventListener('change',function(){setLang(this.value);});}
+applyI18n();
 
 
 
