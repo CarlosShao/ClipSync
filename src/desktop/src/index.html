@@ -529,13 +529,13 @@ body {
    /* ===== CLIP VIEW ===== */
    .clip-view { display: flex; flex-direction: column; min-height: 100%; }
 .list-head {
-  display: grid; grid-template-columns: 1fr 110px 76px 84px 84px;
+  display: grid; grid-template-columns: 1fr 110px 72px 80px 80px;
   gap: 12px; padding: 8px 20px;
   font-size: 10.5px; font-weight: 600; color: var(--text-tertiary);
   text-transform: uppercase; letter-spacing: .06em;
 }
 .clip-row {
-  display: grid; grid-template-columns: 1fr 110px 72px 80px 80px;
+  display: grid; grid-template-columns: minmax(200px,1fr) 110px 72px 80px 80px;
   gap: 12px; align-items: center; padding: 10px 20px;
   border-radius: var(--radius-sm); cursor: pointer;
   transition: background .1s ease;
@@ -1075,6 +1075,20 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   opacity: 1;
 }
 
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+  .clip-row { grid-template-columns: 1fr 72px 80px 80px; }
+  .clip-row .cr-device { display: none; }
+  .list-head { grid-template-columns: 1fr 72px 80px 80px; }
+  .list-head > :nth-child(2) { display: none; }
+}
+@media (max-width: 600px) {
+  .clip-row { grid-template-columns: 1fr 80px 80px; }
+  .clip-row .cr-time { display: none; }
+  .list-head { grid-template-columns: 1fr 80px 80px; }
+  .list-head > :nth-child(4) { display: none; }
+}
 </style>
 </head>
 <body>
@@ -1330,7 +1344,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-section-label">Account</div>
           <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 022.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 0 10 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 0 22.83 0 2.83 0 0 10 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -1385,7 +1399,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-section-label">Account</div>
           <div class="nav-item" data-sub="profile" onclick="switchSub('profile')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg></span>Profile</div>
           <div class="nav-item active" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
-          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 L0 9 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 022.83 0 2.83 0 010 2.83l-.06.06A1.65 1.65 0 L0 19.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
+          <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 0 10 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 L0 9 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 0 22.83 0 2.83 0 0 10 2.83l-.06.06A1.65 1.65 0 L0 19.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
         <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div></div>
       </aside>
@@ -2051,12 +2065,63 @@ function startBrowserClipboardPoll() {
   if (state._clipboardPolling) return;
   state._clipboardPolling = true;
   var lastText = '';
+  var lastImageHash = '';
+  function blobToBase64(blob) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onloadend = function() { resolve(reader.result); };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+  function imgHash(b64) { return b64 ? b64.substring(0, 100) : ''; }
+  async function uploadImage(dataUrl, mimeType, size) {
+    if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
+    if (!state.deviceId || !deviceReady) return;
+    try {
+      await api('POST', '/api/clipboard', {
+        sourceDeviceId: state.deviceId, contentType: 'image',
+        contentEncrypted: dataUrl,
+        contentPreview: '[Image] ' + mimeType + ' (' + (size / 1024).toFixed(1) + 'KB)',
+        contentSize: size,
+      });
+      loadClipboardItems();
+    } catch(e) { console.error('[UploadImage] failed:', e.message); }
+  }
   async function pollClipboard() {
     try {
       if (state._tauriPollStarted) { state._clipboardPolling = false; return; }
       if (!state.autoSync || !state.deviceId || !deviceReady) return;
+      // Try clipboard.read() first for images
+      try {
+        var items = await navigator.clipboard.read();
+        if (items && items.length > 0) {
+          for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            var imgType = item.types.find(function(t) { return t.startsWith('image/'); });
+            if (imgType) {
+              var blob = await item.getType(imgType);
+              if (blob.size > 0) {
+                var b64 = await blobToBase64(blob);
+                var hash = imgHash(b64);
+                if (hash !== lastImageHash) {
+                  lastImageHash = hash; lastText = '';
+                  state.currentClipboard = '';
+                  await uploadImage(b64, blob.type, blob.size);
+                }
+              }
+              return;
+            }
+          }
+        }
+      } catch(e) {}
+      // Fallback to readText() for plain text
       var text = await navigator.clipboard.readText();
-      if (text && text !== lastText) { lastText = text; uploadClipboard(text); }
+      if (text && text !== lastText && text !== state.currentClipboard) {
+        lastText = text; state.currentClipboard = text;
+        lastImageHash = '';
+        await uploadClipboard(text);
+      }
     } catch(_) {}
   }
   setInterval(pollClipboard, 1000);
