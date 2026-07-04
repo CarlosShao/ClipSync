@@ -2011,11 +2011,18 @@ async function handleCopyItem(id) {
         showToast('Image copied!');
       } catch(e) { showToast('Image copy failed: ' + e.message, 'error'); }
     } else if (type === 'file') {
-      // Copy file path to clipboard for pasting into Explorer
-      var filePath = meta.filePaths ? meta.filePaths[0] : text;
+      // Copy file to system clipboard for pasting into Explorer
+      var filePaths = meta.filePaths || [text];
       try {
-        await navigator.clipboard.writeText(filePath);
-        showToast('File path copied!');
+        // Use Tauri IPC to write file paths as CF_HDROP
+        if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+          await window.__TAURI__.core.invoke('set_clipboard_files', { paths: filePaths });
+          showToast('File copied! Paste into Explorer with Ctrl+V');
+        } else {
+          // Fallback: copy path as text
+          await navigator.clipboard.writeText(filePaths[0] || '');
+          showToast('File path copied (paste text only)');
+        }
       } catch(e) {
         showToast('Copy failed: ' + e.message, 'error');
       }
@@ -2466,34 +2473,27 @@ document.querySelectorAll('.sidebar-bottom .user-chip').forEach(function(el) {
 function setMode(mode, btn) {
   document.querySelectorAll('.mode-btn').forEach(function(b) { b.classList.remove('active'); });
   if (btn) btn.classList.add('active');
-  var darkOnly = ['linear', 'raycast'];
-  var lightCompatible = ['vercel', 'clipsync', 'notion', 'apple', 'arc'];
-  // When user picks light mode but current style is dark-only, switch to vercel
-  if (mode === 'light' && darkOnly.indexOf(currentStyle) >= 0) {
-    currentStyle = 'vercel';
-  }
+  // Apply mode to current style - applyStyle handles dark-only logic
   applyStyle(currentStyle, mode);
-  // Update theme selector
-  document.querySelectorAll('.theme-opt').forEach(function(opt) {
-    opt.classList.toggle('selected', opt.dataset.style === currentStyle);
-  });
 }
 
 // Fix applyStyle to properly handle mode with all styles
 function applyStyle(s, m) {
   var darkOnly = ['linear', 'raycast'];
-  // If mode=light but style is dark-only, switch to vercel
-  if (m === 'light' && darkOnly.indexOf(s) >= 0) {
-    s = 'vercel';
+  currentStyle = s;
+  // Linear/raycast are ALWAYS dark regardless of mode
+  if (darkOnly.indexOf(s) >= 0) {
+    currentMode = 'dark';
+  } else {
+    currentMode = m;
   }
-  currentStyle = s; currentMode = m;
   var root = document.documentElement;
   if (!root) return;
   root.setAttribute('data-style', s);
-  root.setAttribute('data-mode', m);
-  // Update mode button UI
+  root.setAttribute('data-mode', currentMode);
+  // Update mode button UI (only reflect actual applied mode)
   document.querySelectorAll('.mode-btn').forEach(function(b) {
-    b.classList.toggle('active', b.dataset.mode === m);
+    b.classList.toggle('active', b.dataset.mode === currentMode);
   });
   // Update theme selector
   document.querySelectorAll('.theme-opt').forEach(function(opt) {
