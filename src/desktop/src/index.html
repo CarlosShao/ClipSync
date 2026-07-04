@@ -863,9 +863,9 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
    ============================================================ */
 .auth-page { min-height: 100vh; display: flex; }
 .auth-left {
-  flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;
+  flex: 1; display: flex; flex-direction: column; justify-content: flex-start; align-items: center;
   padding: 40px; background: var(--bg-base); transition: background .25s;
-  position: relative; overflow: hidden;
+  position: relative; overflow-y: auto;
 }
 .auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
 .auth-brand .logo-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); font-size: 18px; }
@@ -873,6 +873,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
 /* ---- Auth View Container (handles slide transitions) ---- */
 .auth-views { width: 100%; max-width: 380px; position: relative; overflow: visible; min-height: 560px; }
+/* Active view expands container height to fit content */
+.auth-view.active { min-height: fit-content; }
 .auth-view {
   position: absolute; top: 0; left: 0; width: 100%;
   opacity: 0; transform: translateX(24px); pointer-events: none;
@@ -1370,7 +1372,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
             </div>
             <div class="af-row">
               <label class="af-remember"><input type="checkbox" checked id="lpuRemember"> <span data-i18n="login_remember">Remember me</span></label>
-              <button class="af-forgot" onclick="showToast(t('toast_pwd_reset'),'info')" data-i18n="login_forgot">Forgot password?</button>
+              <button class="af-forgot" onclick="showForgotPasswordModal()" data-i18n="login_forgot">Forgot password?</button>
             </div>
             <button class="af-submit" id="lpuSubmit" onclick="handlePasswordLogin()">
               <span class="btn-text" data-i18n="login_signin">Sign In</span><span class="btn-spinner"></span>
@@ -1918,6 +1920,13 @@ var _i18n = {
     reg_submit:'Register',reg_agree_required:'Please agree to the terms and privacy policy',
     reg_pwd_min_8:'Password must be at least 8 characters',reg_fail:'Registration failed: ',
     reg_success_welcome:'Welcome to ClipSync!',
+    // Forgot password modal
+    fp_title:'Reset Password',fp_email_label:'Email Address',
+    fp_email_hint:'Enter your registered email',fp_send_code:'Send Reset Code',
+    fp_code_sent:'Reset code sent! Check your email (MVP code: 888888)',
+    fp_reset_btn:'Reset Password',fp_send_fail:'Failed to send reset code: ',
+    fp_reset_success:'Password reset successfully! Please sign in with your new password.',
+    fp_reset_fail:'Password reset failed: ',
     // Registration fields & validation (enhanced)
     reg_label_phone:'Phone Number',reg_label_nickname:'Username',reg_label_email:'Email',
     reg_nickname_hint:"e.g. Alice, 张三, 2-30 chars",
@@ -2072,6 +2081,13 @@ var _i18n = {
     reg_submit:'注 册',reg_agree_required:'请阅读并同意服务条款和隐私政策',
     reg_pwd_min_8:'密码至少需要 8 位',reg_fail:'注册失败：',
     reg_success_welcome:'欢迎加入 ClipSync！',
+    // 忘记密码弹窗
+    fp_title:'重置密码',fp_email_label:'邮箱地址',
+    fp_email_hint:'输入注册时使用的邮箱',fp_send_code:'发送重置码',
+    fp_code_sent:'重置码已发送！请查收邮箱（测试验证码：888888）',
+    fp_reset_btn:'重置密码',fp_send_fail:'发送重置码失败：',
+    fp_reset_success:'密码重置成功！请使用新密码登录。',
+    fp_reset_fail:'密码重置失败：',
     // Registration fields & validation (enhanced)
     reg_label_phone:'手机号码',reg_label_nickname:'用户名',reg_label_email:'电子邮箱',
     reg_nickname_hint:'如：Alice、张三，2-30个字符',
@@ -2748,6 +2764,76 @@ function togglePwdVisibility(inputId, btn) {
   } catch(err) { console.error('[TogglePwd] Error:', err); }
 }
 
+// ===== Forgot Password Modal =====
+var _forgotStep = 1; // 1=enter email, 2=enter code+new password
+function showForgotPasswordModal() {
+  _forgotStep = 1;
+  var root = document.getElementById('modalRoot');
+  root.innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:420px;" id="forgotPwdModal">'
+    + '<div class="modal-header"><span class="modal-title">'+t('fp_title')+'</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div>'
+    + '<div class="modal-body" id="forgotPwdBody">' + _renderForgotStep1() + '</div>'
+    + '</div></div>';
+}
+
+function _renderForgotStep1() {
+  return '<div style="margin-bottom:16px;"><label style="display:block;font-size:13px;font-weight:550;color:var(--text-secondary);margin-bottom:6px;">'+t('fp_email_label')+'</label>'
+    + '<input type="email" id="fpEmail" class="af-input" style="width:100%;" data-i18n-placeholder="fp_email_hint" placeholder="'+t('fp_email_hint')+'"></div>'
+    + '<button class="af-submit" style="width:100%;" id="fpSendBtn" onclick="_handleForgotSend()"><span class="btn-text">'+t('fp_send_code')+'</span><span class="btn-spinner"></span></button>';
+}
+
+function _renderForgotStep2() {
+  return '<div style="margin-bottom:14px;"><label style="display:block;font-size:13px;font-weight:550;color:var(--text-secondary);margin-bottom:6px;">'+t('login_code')+'</label>'
+    + '<input type="text" id="fpCode" class="af-input" style="width:100%;" maxlength="6" data-i18n-placeholder="ph_code_placeholder" placeholder="'+t('ph_code_placeholder')+'"></div>'
+    + '<div style="margin-bottom:14px;"><label style="display:block;font-size:13px;font-weight:550;color:var(--text-secondary);margin-bottom:6px;">'+t('sp_set_pwd_label')+'</label>'
+    + '<input type="password" id="fpNewPwd" class="af-input" style="width:100%;" data-i18n-placeholder="sp_pwd_hint" placeholder="'+t('sp_pwd_hint')+'"></div>'
+    + '<div style="margin-bottom:16px;"><label style="display:block;font-size:13px;font-weight:550;color:var(--text-secondary);margin-bottom:6px;">'+t('sp_confirm_pwd')+'</label>'
+    + '<input type="password" id="fpConfirmPwd" class="af-input" style="width:100%;" data-i18n-placeholder="sp_confirm_hint" placeholder="'+t('sp_confirm_hint')+'"></div>'
+    + '<button class="af-submit" style="width:100%;" id="fpResetBtn" onclick="_handleForgotReset()"><span class="btn-text">'+t('fp_reset_btn')+'</span><span class="btn-spinner"></span></button>';
+}
+
+async function _handleForgotSend() {
+  var emailEl = document.getElementById('fpEmail');
+  var btn = document.getElementById('fpSendBtn');
+  var email = (emailEl||{}).value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { shakeElement(emailEl); showToast(t('val_email_format'), 'error'); return; }
+  btn.classList.add('loading'); btn.disabled = true;
+  try {
+    await api('POST', '/api/auth/forgot-password', { email });
+    btn.classList.remove('loading'); btn.disabled = false;
+    _forgotStep = 2;
+    document.getElementById('forgotPwdBody').innerHTML = _renderForgotStep2();
+    showToast(t('fp_code_sent'), 'success');
+  } catch(e) {
+    btn.classList.remove('loading'); btn.disabled = false;
+    showToast(t('fp_send_fail') + e.message, 'error');
+  }
+}
+
+async function _handleForgotReset() {
+  var codeEl = document.getElementById('fpCode');
+  var newPwdEl = document.getElementById('fpNewPwd');
+  var confirmEl = document.getElementById('fpConfirmPwd');
+  var btn = document.getElementById('fpResetBtn');
+  var email = (document.getElementById('fpEmail')||{}).value.trim();
+  var code = (codeEl||{}).value.trim();
+  var newPwd = (newPwdEl||{}).value;
+  var confirm = (confirmEl||{}).value;
+
+  if (!code || !/^\d{6}$/.test(code)) { shakeElement(codeEl); showToast(t('auth_need_code'), 'error'); return; }
+  if (!newPwd || newPwd.length < 8) { shakeElement(newPwdEl); showToast(t('reg_pwd_min_8'), 'error'); return; }
+  if (newPwd !== confirm) { shakeElement(confirmEl); showToast(t('sp_pwd_mismatch'), 'error'); return; }
+
+  btn.classList.add('loading'); btn.disabled = true;
+  try {
+    await api('POST', '/api/auth/reset-password', { email, code, newPassword: newPwd });
+    closeModal();
+    showToast(t('fp_reset_success'), 'success');
+  } catch(e) {
+    btn.classList.remove('loading'); btn.disabled = false;
+    showToast(t('fp_reset_fail') + e.message, 'error');
+  }
+}
+
 async function sendCode(context) {
   try {
     var btnId = context === 'login' ? 'lpSendBtn' : 'regSendBtn';
@@ -2910,11 +2996,26 @@ async function handlePasswordLogin() {
     if (!account) { shakeElement(accountEl); showToast(t('auth_need_account'), 'error'); return; }
     if (!pwd || pwd.length < 6) { shakeElement(pwdEl); showToast(t('auth_pwd_too_short'), 'error'); return; }
 
+    // Auto-detect identifier type and map to correct API fields
+    var isPhone = /^1[3-9]\d{9}$/.test(account);
+    var isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account);
+
+    var body = { password: pwd };
+    if (isPhone) {
+      body.phone = account;
+    } else if (isEmail) {
+      body.email = account;
+    } else {
+      // Nickname or unknown — send as both phone and email (backend will try each)
+      body.phone = account;
+      body.email = account;
+    }
+
     submitBtn.classList.add('loading');
     submitBtn.disabled = true;
 
     try {
-      var data = await api('POST', '/api/auth/login', { account, password: pwd });
+      var data = await api('POST', '/api/auth/login', body);
       state.token = data.token; state.user = data.user;
       localStorage.setItem('cs_token', data.token);
       localStorage.setItem('cs_user', JSON.stringify(data.user));
