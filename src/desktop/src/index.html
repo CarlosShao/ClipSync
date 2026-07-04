@@ -2126,7 +2126,142 @@ function startBrowserClipboardPoll() {
   pollClipboard();
 }
 
+
+// ===== Tauri Clipboard Polling (files + images + text via invoke) =====
+function startTauriClipboardPoll() {
+  if (state._tauriPollStarted) return;
+  state._tauriPollStarted = true;
+  var _lastPolledText = '';
+  var _lastPolledFiles = '';
+  var _lastImageSize = -1;
+  var pollCount = 0;
+  var _globalThrottleUntil = 0;
+  var _recentUploadHashes = new Map();
+  var GLOBAL_THROTTLE_MS = 5000;
+  var HASH_TTL_MS = 10000;
+
+  function _isDuplicateHash(hash) {
+    var now = Date.now();
+    for (var [k, v] of _recentUploadHashes) { if (now - v > HASH_TTL_MS) _recentUploadHashes.delete(k); }
+    if (_recentUploadHashes.has(hash)) return true;
+    _recentUploadHashes.set(hash, now);
+    return false;
+  }
+
+  console.log('[TauriPoll] invoke-based polling STARTED (500ms)');
+
+  async function pollTauri() {
+    pollCount++;
+    if (Date.now() < _globalThrottleUntil) return;
+    var tauri = window.__TAURI__;
+    var _invoke = null;
+    if (tauri && tauri.core && typeof tauri.core.invoke === 'function') _invoke = tauri.core.invoke.bind(tauri.core);
+    else if (tauri && typeof tauri.invoke === 'function') _invoke = tauri.invoke.bind(tauri);
+    else if (window.__TAURI_INVOKE__) _invoke = window.__TAURI_INVOKE__;
+    if (!_invoke) return;
+    if (!state.autoSync) return;
+    if (!deviceReady && !state.deviceId) return;
+
+    try {
+      // 1) Check for files
+      var files = await _invoke('get_clipboard_files');
+      if (Array.isArray(files) && files.length > 0) {
+        var fileKey = files.join('|');
+        if (_isDuplicateHash('file:' + fileKey)) return;
+        if (fileKey !== _lastPolledFiles) {
+          _lastPolledFiles = fileKey;
+          console.log('[TauriPoll] FILE detected:', files.length, 'file(s)');
+          await uploadTauriFileClipboard(files);
+          _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+        }
+        return;
+      }
+
+      // 2) Check for image
+      var imgInfo = await _invoke('check_clipboard_image_info');
+      if (imgInfo && imgInfo.available && imgInfo.size > 0) {
+        if (imgInfo.size === _lastImageSize) return;
+        var imgHash = 'img:' + imgInfo.size;
+        if (_isDuplicateHash(imgHash)) return;
+        _lastImageSize = imgInfo.size;
+        console.log('[TauriPoll] IMAGE detected, size:', imgInfo.size);
+        try {
+          var dataUrl = await _invoke('get_clipboard_image');
+          if (dataUrl && dataUrl.startsWith('data:')) {
+            await uploadImageClipboard(dataUrl, 'image/png', imgInfo.size || 0);
+            _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+          }
+        } catch (imgErr) {}
+        return;
+      }
+
+      // 3) Check for text
+      var text = await _invoke('get_clipboard_content');
+      if (text && text !== _lastPolledText && text !== state.currentClipboard) {
+        var textHash = 'text:' + text.substring(0, 200);
+        if (_isDuplicateHash(textHash)) return;
+        _lastPolledText = text;
+        console.log('[TauriPoll] TEXT detected:', text.length, 'chars');
+        uploadClipboard(text);
+        _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+      }
+
+      if (_lastPolledFiles && (!files || files.length === 0)) { _lastPolledFiles = ''; }
+    } catch (e) {
+      if (pollCount % 60 === 1) console.warn('[TauriPoll] invoke error:', e.message || e);
+    }
+  }
+
+  setInterval(pollTauri, 500);
+  pollTauri();
+}
+
+// ===== Upload files from Tauri =====
+async function uploadTauriFileClipboard(files) {
+  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
+  if (!state.deviceId || !deviceReady) {
+    if (!state.deviceId && state.token) {
+      try { await loadDevices(); deviceReady = true; if (state.deviceId) return uploadTauriFileClipboard(files); } catch(e) {}
+    }
+    return;
+  }
+  var fileName = files[0].split(/[\/]/).pop() || 'unknown';
+  var preview = files.length === 1 ? fileName : fileName + ' (' + files.length + ' files)';
+  try {
+    await api('POST', '/api/clipboard', {
+      sourceDeviceId: state.deviceId,
+      contentType: 'file',
+      contentEncrypted: btoa(unescape(encodeURIComponent(files.join('\n')))),
+      contentPreview: preview,
+      metadata: { fileName: fileName, filePaths: files },
+    });
+    console.log('[UploadTauriFile] SUCCESS');
+    loadClipboardItems();
+  } catch(e) { console.error('[UploadTauriFile] FAILED:', e.message); }
+}
+
 function startClipboardPolls() {
+  // Try Tauri first (supports files + images + text)
+  var tauri = window.__TAURI__;
+  var _invoke = null;
+  if (tauri && tauri.core && typeof tauri.core.invoke === 'function') _invoke = tauri.core.invoke.bind(tauri.core);
+  else if (tauri && typeof tauri.invoke === 'function') _invoke = tauri.invoke.bind(tauri);
+  if (_invoke) {
+    console.log('[ClipSync] Tauri native invoke found, starting Tauri poll');
+    window.__TAURI_INVOKE__ = _invoke;
+    startTauriClipboardPoll();
+    return;
+  }
+  // Try CDN import
+  try {
+    import('https://esm.sh/@tauri-apps/api@2/core').then(function(m) {
+      if (m && m.invoke) {
+        window.__TAURI_INVOKE__ = m.invoke;
+        startTauriClipboardPoll();
+      }
+    }).catch(function() {});
+  } catch(e) {}
+  // Fallback to browser poll (text + images only, no files)
   startBrowserClipboardPoll();
 }
 
