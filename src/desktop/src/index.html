@@ -1366,7 +1366,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
             <div class="sg-row" onclick="openModal('notifications')"><div class="sg-label"><div class="sg-name">Notification preferences</div><div class="sg-hint">Choose which alerts you want to receive</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Appearance</div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Mode</div><div class="sg-hint">Switch between light and dark mode</div></div><div class="sg-control"><div style="display:flex;gap:4px;background:var(--bg-hover);border-radius:8px;padding:3px;"><button class="mode-btn active" onclick="setMode('light',this)" data-mode="light">☀️ Light</button><button class="mode-btn" onclick="setMode('dark',this)" data-mode="dark">🌙 Dark</button></div></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Mode</div><div class="sg-hint">Switch between light and dark mode</div></div><div class="sg-control"><div style="display:flex;gap:2px;background:var(--bg-hover);border-radius:8px;padding:3px;"><button class="mode-btn active" onclick="setMode('light',this)" data-mode="light"><span class="icon icon-sm" style="margin-right:4px;"><svg viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></span>Light</button><button class="mode-btn" onclick="setMode('dark',this)" data-mode="dark"><span class="icon icon-sm" style="margin-right:4px;"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></span>Dark</button></div></div></div>
             <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name">Theme &amp; Style</div><div class="sg-hint">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Reduce motion</div><div class="sg-hint">Minimize animations throughout the interface</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
           </div>
@@ -1466,20 +1466,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 let currentStyle = 'vercel';
 let currentMode = 'light';
 
-function applyStyle(s, m) {
-  currentStyle = s; currentMode = m;
-  const root = document.documentElement;
-  if (!root) return;
-  root.setAttribute('data-style', s);
-
-  // Handle dark-only styles
-  if (s === 'linear' || s === 'raycast') {
-    root.removeAttribute('data-mode');
-  } else {
-    root.setAttribute('data-mode', m);
-  }
-
-}
+// applyStyle defined later with mode-aware logic
 
 // Control bar references removed (was prototype-only)
 
@@ -2024,10 +2011,22 @@ async function handleCopyItem(id) {
         showToast('Image copied!');
       } catch(e) { showToast('Image copy failed: ' + e.message, 'error'); }
     } else if (type === 'file') {
-      // Copy file path to clipboard
+      // For files: try to copy actual file, fallback to path
       var filePath = meta.filePaths ? meta.filePaths[0] : text;
-      await navigator.clipboard.writeText(filePath);
-      showToast('File path copied!');
+      try {
+        // Try to create a File object from the server URL and copy it
+        var fileUrl = API_BASE + '/api/media/download/' + encodeURIComponent(filePath);
+        var resp = await fetch(fileUrl);
+        var blob = await resp.blob();
+        var fileName = meta.originalName || meta.fileName || 'file';
+        var file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
+        await navigator.clipboard.write([new ClipboardItem({ [file.type]: file })]);
+        showToast('File copied! You can now paste into Explorer.');
+      } catch(e) {
+        // Fallback: copy file path
+        await navigator.clipboard.writeText(filePath);
+        showToast('File path copied to clipboard');
+      }
     } else {
       try { var decoded = decodeURIComponent(escape(atob(text))); text = decoded; } catch(e) {}
       await navigator.clipboard.writeText(text);
@@ -2475,20 +2474,31 @@ document.querySelectorAll('.sidebar-bottom .user-chip').forEach(function(el) {
 function setMode(mode, btn) {
   document.querySelectorAll('.mode-btn').forEach(function(b) { b.classList.remove('active'); });
   if (btn) btn.classList.add('active');
-  // For dark-only styles (linear, raycast), switch to compatible style when user picks light
   var darkOnly = ['linear', 'raycast'];
+  var lightCompatible = ['vercel', 'clipsync', 'notion', 'apple', 'arc'];
+  // When user picks light mode but current style is dark-only, switch to vercel
   if (mode === 'light' && darkOnly.indexOf(currentStyle) >= 0) {
-    currentStyle = 'vercel'; // Switch to light-compatible style
-    document.querySelector('.theme-opt[data-style="vercel"]');
-  }
-  if (mode === 'dark' && darkOnly.indexOf(currentStyle) >= 0) {
-    // Keep current dark style
+    currentStyle = 'vercel';
   }
   applyStyle(currentStyle, mode);
-  // Update theme selector if visible
+  // Update theme selector
   document.querySelectorAll('.theme-opt').forEach(function(opt) {
     opt.classList.toggle('selected', opt.dataset.style === currentStyle);
   });
+}
+
+// Fix applyStyle to properly handle mode with all styles
+function applyStyle(s, m) {
+  currentStyle = s; currentMode = m;
+  var root = document.documentElement;
+  if (!root) return;
+  root.setAttribute('data-style', s);
+  // Dark-only styles ignore mode
+  if (s === 'linear' || s === 'raycast') {
+    root.setAttribute('data-mode', 'dark');
+  } else {
+    root.setAttribute('data-mode', m);
+  }
 }
 if (state.token) {
   showPage('app');
