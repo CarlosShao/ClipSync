@@ -1370,8 +1370,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Language</div><div class="sg-hint">Interface language preference</div></div><div class="sg-control"><select class="styled-select" id="langSelect"><option value="en">English</option><option value="zh">中文（简体）</option></select></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Sync</div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Sync interval</div><div class="sg-hint">How often to check for new clips</div></div><div class="sg-control"><select class="styled-select"><option>Real-time</option><option>Every 5 min</option><option>Every 15 min</option></select></div></div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Max history</div><div class="sg-hint">Number of clips retained in history</div></div><div class="sg-control"><select class="styled-select"><option>100</option><option>500</option><option>1,000</option><option>Unlimited</option></select></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Sync interval</div><div class="sg-hint">How often to check for new clips</div></div><div class="sg-control"><select class="styled-select" data-i18n-options='{"Real-time":"opt_realtime","Every 5 min":"opt_5min","Every 15 min":"opt_15min"}'><option>Real-time</option><option>Every 5 min</option><option>Every 15 min</option></select></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Max history</div><div class="sg-hint">Number of clips retained in history</div></div><div class="sg-control"><select class="styled-select" data-i18n-options='{"Unlimited":"opt_unlimited"}'><option>100</option><option>500</option><option>1,000</option><option>Unlimited</option></select></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Image compression</div><div class="sg-hint">Reduce image size before syncing</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Privacy &amp; Security</div>
@@ -1390,7 +1390,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
             <div class="sg-row" onclick="openModal('notifications')"><div class="sg-label"><div class="sg-name">Notification preferences</div><div class="sg-hint">Choose which alerts you want to receive</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
           </div>
           <div class="settings-group"><div class="sg-header">Appearance</div>
-            <div class="sg-row"><div class="sg-label"><div class="sg-name">Mode</div><div class="sg-hint">Switch between light and dark mode</div></div><div class="sg-control"><div class="mode-seg"><button class="mode-btn active" onclick="setMode('light',this)" data-mode="light"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:3px;"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>Light</button><button class="mode-btn" onclick="setMode('dark',this)" data-mode="dark"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:3px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/></svg>Dark</button></div></div></div>
+            <div class="sg-row"><div class="sg-label"><div class="sg-name">Mode</div><div class="sg-hint">Switch between light and dark mode</div></div><div class="sg-control"><div class="mode-seg"><button class="mode-btn active" onclick="setMode('light',this)" data-mode="light"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:3px;"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="currentColor" stroke-width="1.5" fill="none"/></svg><span data-i18n="mode_light">Light</span></button><button class="mode-btn" onclick="setMode('dark',this)" data-mode="dark"><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:3px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/></svg><span data-i18n="mode_dark">Dark</span></button></div></div></div>
             <div class="sg-row" onclick="openModal('themes')"><div class="sg-label"><div class="sg-name" style="display:inline-flex;align-items:center;gap:6px;">Theme &amp; Style<span class="theme-hint-icon" title="" data-i18n-title="sg_theme_hint"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.5;cursor:help;"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span></div><div class="sg-hint" data-i18n="sg_theme_h">Choose visual theme and interface style</div></div><div class="sg-control"><span class="icon icon-md sg-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span></div></div>
             <div class="sg-row"><div class="sg-label"><div class="sg-name">Reduce motion</div><div class="sg-hint">Minimize animations throughout the interface</div></div><div class="sg-control"><button class="toggle" onclick="this.classList.toggle('on')"></button></div></div>
           </div>
@@ -1515,6 +1515,7 @@ var _i18n = {
     sg_notifp:'Notification preferences',sg_notifp_h:'Choose which alerts you want to receive',
     sg_mode:'Mode',sg_mode_h:'Switch between light and dark mode',
     mode_light:'Light',mode_dark:'Dark',
+    opt_realtime:'Real-time',opt_5min:'Every 5 min',opt_15min:'Every 15 min',opt_unlimited:'Unlimited',
     sg_theme:'Theme & Style',sg_theme_h:'Choose visual theme and interface style',sg_theme_hint:'Linear and Raycast are inherently dark themes — they don\'t support light mode. Switching mode only affects other themes.',
     batch_select:'Batch select',
     sg_motion:'Reduce motion',sg_motion_h:'Minimize animations throughout the interface',
@@ -1625,6 +1626,7 @@ var _i18n = {
     sg_notifp:'通知偏好',sg_notifp_h:'选择您想接收的提醒类型',
     sg_mode:'模式',sg_mode_h:'切换浅色/深色主题',
     mode_light:'浅色',mode_dark:'深色',
+    opt_realtime:'实时',opt_5min:'每 5 分钟',opt_15min:'每 15 分钟',opt_unlimited:'不限制',
     sg_theme:'主题与风格',sg_theme_h:'选择视觉主题和界面风格',sg_theme_hint:'Linear 和 Raycast 是固有暗色系主题，不支持亮色模式。切换模式仅影响其他主题。',
     batch_select:'批量选择',
     sg_motion:'减少动画',sg_motion_h:'减少界面中的动画效果',
@@ -1874,6 +1876,10 @@ function applyI18n(){
   document.querySelectorAll('[data-i18n-title]').forEach(function(el){
     var k=el.getAttribute('data-i18n-title');
     if(k&&_i18n[_lang]&&_i18n[_lang][k])el.title=t(k);
+  });
+  // ============ GENERIC data-i18n-options ATTRIBUTE HANDLER (select dropdowns) ============
+  document.querySelectorAll('[data-i18n-options]').forEach(function(el){
+    try{var map=JSON.parse(el.getAttribute('data-i18n-options'));if(map)el.querySelectorAll('option').forEach(function(opt){var k=map[opt.textContent];if(k&&_i18n[_lang]&&_i18n[_lang][k])opt.textContent=t(k);});}catch(e){}
   });
   // Re-render dynamic content (clipboard list uses t() for type/source/time)
   if(typeof clipboardItems!=='undefined'&&clipboardItems&&clipboardItems.length>0&&typeof renderClipboardItems==='function')renderClipboardItems();
