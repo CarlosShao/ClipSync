@@ -2956,7 +2956,11 @@ async function handleSetPassword() {
     submitBtn.disabled = true;
 
     try {
-      var data = await api('POST', '/api/auth/set-password', { phone: document.getElementById('lpPhone').value, password: newPwd });
+      var data = await api('POST', '/api/auth/set-password', { 
+        phone: document.getElementById('lpPhone').value, 
+        code: document.getElementById('lpCode').value,
+        password: newPwd 
+      });
       state.token = data.token; state.user = data.user;
       localStorage.setItem('cs_token', data.token);
       localStorage.setItem('cs_user', JSON.stringify(data.user));

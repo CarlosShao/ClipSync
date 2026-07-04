@@ -37,6 +37,7 @@ export async function authenticateToken(req, res, next) {
     }
 
     req.user = decoded;
+    req.userId = decoded.userId; // ✅ 关键：所有路由依赖此字段做用户隔离
 
     // 读取sessionId（用于会话管理）
     if (decoded.sessionId) {
@@ -77,6 +78,7 @@ export function optionalAuth(req, res, next) {
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
     req.user = decoded;
+    req.userId = decoded.userId;
   } catch {
     // Token invalid, continue without auth
   }

@@ -748,13 +748,14 @@ router.post('/register', sendCodeLimiter, async (req, res) => {
   }
 });
 
-// ===== 设置密码（用于通过 verify-code 登录的新用户）=====
+// ===== 设置密码（用于通过 verify-code 登录的新用户，需验证码证明所有权）=====
 router.post('/set-password', async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { phone, code, password } = req.body;
 
-    if (!phone || !password) {
-      return res.status(400).json({ error: 'Phone number and password are required' });
+    // 必须提供验证码，防止未授权修改他人密码
+    if (!phone || !code || !password) {
+      return res.status(400).json({ error: 'Phone number, verification code, and password are required' });
     }
     if (typeof password !== 'string' || password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long' });
@@ -764,6 +765,20 @@ router.post('/set-password', async (req, res) => {
     }
 
     const cleanPhone = sanitizeString(phone);
+    const cleanCode = sanitizeString(code);
+
+    // === 验证验证码（证明手机号所有权）===
+    const codeResult = await pool.query(
+      `SELECT id FROM verification_codes
+       WHERE phone = $1 AND code = $2 AND expires_at > NOW() AND used = FALSE
+       ORDER BY created_at DESC LIMIT 1`,
+      [cleanPhone, cleanCode]
+    );
+    if (codeResult.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid or expired verification code. Please request a new one.' });
+    }
+    // 标记验证码已用（一次性使用）
+    await pool.query('UPDATE verification_codes SET used = TRUE WHERE id = $1', [codeResult.rows[0].id]);
 
     // 查找用户
     let userResult = await pool.query(
