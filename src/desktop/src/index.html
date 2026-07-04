@@ -1160,18 +1160,18 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
       <div class="login-brand">
         <div class="logo-icon">C</div><span class="logo-type">ClipSync</span>
       </div>
-      <div class="login-welcome">Welcome back</div>
-      <div class="login-sub">Sign in to sync your clipboard across all devices</div>
+      <div class="login-welcome" data-i18n="login_welcome">Welcome back</div>
+      <div class="login-sub" data-i18n="login_subtitle">Sign in to sync your clipboard across all devices</div>
       <div class="login-form">
-        <div class="lf-field"><label class="lf-label">Phone Number</label><input class="lf-input" type="text" placeholder="13800138000" value="13800138000"></div>
-                <div class="lf-field"><label class="lf-label">Verification Code</label><input class="lf-input" id="loginCode" type="text" placeholder="888888" value="888888"></div>
-                <div style="text-align:right;margin-bottom:12px;"><span style="font-size:12px;color:var(--accent);cursor:pointer;" onclick="sendCode()">Send Code</span></div>
+        <div class="lf-field"><label class="lf-label" data-i18n="login_phone">Phone Number</label><input class="lf-input" type="text" placeholder="13800138000" value="13800138000"></div>
+                <div class="lf-field"><label class="lf-label" data-i18n="login_code">Verification Code</label><input class="lf-input" id="loginCode" type="text" placeholder="888888" value="888888"></div>
+                <div style="text-align:right;margin-bottom:12px;"><span style="font-size:12px;color:var(--accent);cursor:pointer;" onclick="sendCode()" data-i18n="login_send_code">Send Code</span></div>
         <div class="lf-row">
-          <label class="lf-remember"><input type="checkbox" checked> Remember me</label>
-          <span class="lf-forgot" style="cursor:pointer;color:var(--accent);" onclick="showToast('Password reset email sent! Check your inbox.','info')">Forgot password?</span>
+          <label class="lf-remember"><input type="checkbox" checked> <span data-i18n="login_remember">Remember me</span></label>
+          <span class="lf-forgot" style="cursor:pointer;color:var(--accent);" onclick="showToast(t('toast_pwd_reset'),'info')" data-i18n="login_forgot">Forgot password?</span>
         </div>
-        <button class="lf-submit" onclick="doLogin()">Sign In</button>
-        <div class="login-divider">or continue with</div>
+        <button class="lf-submit" onclick="doLogin()" data-i18n="login_signin">Sign In</button>
+        <div class="login-divider" data-i18n="login_or_continue">or continue with</div>
         <div class="login-socials">
           <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg></span></button>
           <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg></span></button>
@@ -1179,7 +1179,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <button class="social-btn"><span class="icon icon-md"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></span></button>
         </div>
       </div>
-      <div class="login-footer">Don't have an account? <a href="javascript:void(0)" onclick="showToast('Sign up flow coming soon!','info')" style="color:var(--accent);">Create one free</a></div>
+      <div class="login-footer"><span data-i18n="login_no_account">Don't have an account?</span> <a href="javascript:void(0)" onclick="showToast(t('toast_signup_soon'),'info')" style="color:var(--accent);" data-i18n="login_create_free">Create one free</a></div>
     </div>
     <div class="login-right" id="loginRight">
       <div class="lr-pattern"></div>
@@ -1220,13 +1220,13 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-item" data-sub="settings" onclick="switchSub('settings')">
             <span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68 V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</div>
         </nav>
-        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+t('logout')+'</a></div></div>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span data-i18n="logout">Sign Out</span></a></div></div>
       </aside>
       <main class="main-area">
         <header class="topbar">
           <span class="topbar-title">Clipboard</span><span id="clipCount" style="font-size:12px;color:var(--text-secondary);margin-left:10px;font-weight:400;"></span>
           <span class="topbar-spacer"></span>
-          <button class="btn btn-primary" onclick="showToast('New Clip: Copy something to sync!','info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>New Clip</button>
+          <button class="btn btn-primary" onclick="showToast(t('new_clip_toast'),'info')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span><span data-i18n="new_clip">New Clip</span></button>
                     <button class="btn btn-ghost" style="margin-left:4px;" onclick="toggleBatchMode()" title="Batch select"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span></button>
                     <button id="batchDeleteBtn" class="btn btn-ghost" style="margin-left:4px;display:none;color:var(--danger);" onclick="batchDelete()"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span><span id="batchCount">0</span></button>
                     <div class="search-wrap" id="searchWrap"><button class="search-toggle" onclick="var w=document.getElementById('searchWrap');w.classList.add('open');w.querySelector('input').focus();"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span></button><input type="text" placeholder="Search clips..." class="search-input" oninput="filterClipboard(this.value)" onblur="if(!this.value){document.getElementById('searchWrap').classList.remove('open');}"></div>
@@ -1256,7 +1256,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
           <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
-        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos</div><div class="user-role">Free</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+t('logout')+'</a></div></div>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos</div><div class="user-role">Free</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span data-i18n="logout">Sign Out</span></a></div></div>
       </aside>
       <main class="main-area">
         <header class="topbar"><span class="topbar-title">Devices</span></header>
@@ -1290,7 +1290,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
           <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
-        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos</div><div class="user-role">Free</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+t('logout')+'</a></div></div>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos</div><div class="user-role">Free</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span data-i18n="logout">Sign Out</span></a></div></div>
       </aside>
       <main class="main-area">
         <header class="topbar"><span class="topbar-title">Shared Links</span></header>
@@ -1320,7 +1320,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
           <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
-        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos</div><div class="user-role">Free</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+t('logout')+'</a></div></div>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos</div><div class="user-role">Free</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span data-i18n="logout">Sign Out</span></a></div></div>
       </aside>
       <main class="main-area">
         <header class="topbar"><span class="topbar-title">Profile</span></header>
@@ -1333,10 +1333,10 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="profile-field"><div class="pf-label">Display Name</div><div class="pf-value">Carlos</div></div>
           <div class="profile-field"><div class="pf-label">Email</div><div class="pf-value" style="color:var(--text-secondary);">Not set</div></div>
           <div class="profile-field"><div class="pf-label">Phone</div><div class="pf-value" style="display:flex;align-items:center;gap:8px;"><span class="icon icon-sm" style="color:var(--accent)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>+86 ***</div></div>
-          <div class="profile-field"><div class="pf-label">Plan</div><div class="pf-value" style="display:flex;align-items:center;justify-content:space-between;"><span style="color:var(--text-secondary);">Free Plan</span><button class="btn btn-primary" style="font-size:11px;padding:5px 14px;border-radius:6px;" onclick="showToast('Upgrade coming soon!','info')">Upgrade</button></div></div>
+          <div class="profile-field"><div class="pf-label">Plan</div><div class="pf-value" style="display:flex;align-items:center;justify-content:space-between;"><span style="color:var(--text-secondary);">Free Plan</span><button class="btn btn-primary" style="font-size:11px;padding:5px 14px;border-radius:6px;" onclick="showToast(t('upgrade_soon'),'info')" data-i18n="upgrade">Upgrade</button></div></div>
           <!-- Logout -->
           <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border-default);">
-            <button onclick="if(confirm(t('logout_confirm')))logout();" style="width:100%;padding:10px;border:1px solid var(--danger);color:var(--danger);background:transparent;border-radius:8px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+t('logout')+'</button>
+            <button onclick="if(confirm(t('logout_confirm')))logout();" style="width:100%;padding:10px;border:1px solid var(--danger);color:var(--danger);background:transparent;border-radius:8px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span data-i18n="logout">Sign Out</span></button>
           </div>
         </div>
       </main>
@@ -1358,7 +1358,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-item" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
           <div class="nav-item active" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Settings</div>
         </nav>
-        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos</div><div class="user-role">Free</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+t('logout')+'</a></div></div>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS</div></div><div class="user-info"><div class="user-name">Carlos</div><div class="user-role">Free</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span data-i18n="logout">Sign Out</span></a></div></div>
       </aside>
       <main class="main-area">
         <header class="topbar"><span class="topbar-title">Settings</span></header>
@@ -1418,7 +1418,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
           <div class="nav-item active" data-sub="subscription" onclick="switchSub('subscription')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Subscription</div>
           <div class="nav-item" data-sub="settings" onclick="switchSub('settings')"><span class="icon ni-icon icon-md"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68 V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</div>
         </nav>
-        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'+t('logout')+'</a></div></div>
+        <div class="sidebar-bottom"><div class="user-chip"><div class="user-avatar-ring"><div class="user-avatar-in">CS"></div></div><div class="user-info"><div class="user-name">Carlos Shao</div><div class="user-role">Pro</div></div></div><div style="padding:6px 16px 10px;"><a href="javascript:if(confirm(t('logout_confirm')))logout();" style="font-size:11.5px;color:var(--text-tertiary);text-decoration:none;display:flex;align-items:center;gap:4px;cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span data-i18n="logout">Sign Out</span></a></div></div>
       </aside>
       <main class="main-area">
         <div class="content-scroll settings-view">
@@ -1553,6 +1553,44 @@ var _i18n = {
     sess_current:'Current',sess_sign_out:'Sign out',
     dev_desktop:'Desktop',dev_browser:'Browser',
     shared_links_t:'Shared Links',
+    // Login page
+    login_welcome:'Welcome back',login_subtitle:'Sign in to sync your clipboard across all devices',
+    login_phone:'Phone Number',login_code:'Verification Code',login_send_code:'Send Code',
+    login_remember:'Remember me',login_forgot:'Forgot password?',
+    login_signin:'Sign In',login_or_continue:'or continue with',
+    login_no_account:"Don't have an account?",login_create_free:'Create one free',
+    toast_pwd_reset:'Password reset email sent! Check your inbox.',toast_signup_soon:'Sign up flow coming soon!',
+    // Auth toasts
+    auth_need_phone:'Please enter phone number',auth_code_sent:'Verification code sent!',
+    auth_failed_op:'Operation failed: ',auth_need_both:'Please enter phone and verification code',
+    // Dynamic toasts
+    img_saved:'Image saved!',img_downloaded:'Image downloaded!',
+    file_dl_fail:'File download failed: ',
+    batch_none:'No items selected',batch_deleted:'Deleted {n} items',
+    confirm_title:'Confirm',btn_cancel_text:'Cancel',btn_delete_text:'Delete',
+    // Modal titles & content
+    modal_billing:'Billing History',modal_payment:'Select Payment Method',
+    modal_notif:'Notification Preferences',modal_shortcuts:'Keyboard Shortcuts',
+    modal_themes:'Theme & Style',modal_add_device:'Add New Device',
+    billing_empty:'No invoices yet',billing_empty_desc:'Your billing history will appear here once you make a purchase.',
+    pay_plan_name:'Professional Plan',pay_cancel:'Cancel',
+    // Pricing
+    price_free:'Free',price_pro:'Professional',price_enterprise:'Enterprise',
+    price_popular:'Popular',price_per_mo:'/mo',
+    feat_3dev:'3 devices',feat_100hist:'100 clip history',feat_community:'Community support',
+    feat_unlimited_dev:'Unlimited devices',feat_unlimited_hist:'Unlimited history',feat_priority:'Priority support',
+    feat_team:'Team management',feat_api:'API access',
+    // Session modal
+    sess_current_session:'Current session',sess_sign_out_btn:'Sign out',
+    // Shortcut actions
+    sk_quick_paste:'Quick Paste Panel',sk_copy_clip:'Copy selected clip',
+    sk_paste_plain:'Paste as plain text',sk_delete_clip:'Delete selected clip',
+    sk_search:'Search clips',sk_new_clip:'New clip from selection',
+    // Notifications
+    nf_new_device:'New device connected',nf_new_device_h:'When a new device joins your sync group',
+    nf_sync_done:'Sync completed',nf_sync_done_h:'When all clips finish syncing',
+    nf_security:'Security alerts',nf_security_h:'Suspicious sign-in attempts or security events',
+    nf_updates:'Product updates',nf_updates_h:'New features, tips, and product news',
   },
   zh: {
     nav_main:'主菜单',nav_account:'账号',nav_clipboard:'剪贴板',nav_devices:'设备',nav_shared_links:'共享链接',
@@ -1617,6 +1655,44 @@ var _i18n = {
     sess_current:'当前设备',sess_sign_out:'退出登录',
     dev_desktop:'桌面端',dev_browser:'浏览器',
     shared_links_t:'共享链接',
+    // Login page
+    login_welcome:'欢迎回来',login_subtitle:'登录以在所有设备间同步剪贴板',
+    login_phone:'手机号码',login_code:'验证码',login_send_code:'发送验证码',
+    login_remember:'记住我',login_forgot:'忘记密码？',
+    login_signin:'登 录',login_or_continue:'或其他方式登录',
+    login_no_account:'还没有账号？',login_create_free:'免费注册',
+    toast_pwd_reset:'密码重置邮件已发送！请查收邮箱。',toast_signup_soon:'注册流程即将推出！',
+    // Auth toasts
+    auth_need_phone:'请输入手机号码',auth_code_sent:'验证码已发送！',
+    auth_failed_op:'操作失败：',auth_need_both:'请输入手机号和验证码',
+    // Dynamic toasts
+    img_saved:'图片已保存！',img_downloaded:'图片已下载！',
+    file_dl_fail:'文件下载失败：',
+    batch_none:'未选择任何项目',batch_deleted:'已删除 {n} 条记录',
+    confirm_title:'确认',btn_cancel_text:'取消',btn_delete_text:'删除',
+    // Modal titles & content
+    modal_billing:'账单历史',modal_payment:'选择支付方式',
+    modal_notif:'通知偏好',modal_shortcuts:'键盘快捷键',
+    modal_themes:'主题与风格',modal_add_device:'添加新设备',
+    billing_empty:'暂无账单',billing_empty_desc:'您的账单历史将在购买后显示在这里。',
+    pay_plan_name:'专业版套餐',pay_cancel:'取消',
+    // Pricing
+    price_free:'免费版',price_pro:'专业版',price_enterprise:'企业版',
+    price_popular:'推荐',price_per_mo:'/月',
+    feat_3dev:'3 台设备',feat_100hist:'100 条剪贴历史',feat_community:'社区支持',
+    feat_unlimited_dev:'不限设备数',feat_unlimited_hist:'不限历史记录',feat_priority:'优先支持',
+    feat_team:'团队管理',feat_api:'API 访问',
+    // Session modal
+    sess_current_session:'当前会话',sess_sign_out_btn:'退出登录',
+    // Shortcut actions
+    sk_quick_paste:'快速粘贴面板',sk_copy_clip:'复制选中项',
+    sk_paste_plain:'纯文本粘贴',sk_delete_clip:'删除选中项',
+    sk_search:'搜索剪贴',sk_new_clip:'从选区新建剪贴',
+    // Notifications
+    nf_new_device:'新设备连接',nf_new_device_h:'当有新设备加入您的同步组时',
+    nf_sync_done:'同步完成',nf_sync_done_h:'当所有剪贴内容同步完成时',
+    nf_security:'安全提醒',nf_security_h:'可疑登录尝试或安全事件',
+    nf_updates:'产品更新',nf_updates_h:'新功能、技巧和产品资讯',
   }
 };
 var _lang = localStorage.getItem('cs_lang') || 'en';
@@ -1758,6 +1834,12 @@ function applyI18n(){
   document.querySelectorAll('#langSelect option').forEach(function(el){
     if(el.value==='en')el.textContent=_i18n.en.lang_en;
     if(el.value==='zh')el.textContent=_i18n.en.lang_zh;
+  });
+
+  // ============ GENERIC data-i18n ATTRIBUTE HANDLER (catch-all) ============
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    var k=el.getAttribute('data-i18n');
+    if(k&&_i18n[_lang]&&_i18n[_lang][k])el.textContent=t(k);
   });
 }
 
@@ -2159,9 +2241,9 @@ async function api(method, path, body) {
 
 async function sendCode() {
   var phone = (document.querySelector('.lf-input')||{}).value;
-  if (!phone || phone.length < 5) { showToast('Please enter phone number', 'error'); return; }
-  try { await api('POST', '/api/auth/send-code', { phone }); showToast('Code sent (test: 888888)'); }
-  catch(e) { showToast('Failed: ' + e.message, 'error'); }
+  if (!phone || phone.length < 5) {     showToast(t('auth_need_phone'), 'error'); return; }
+  try { await api('POST', '/api/auth/send-code', { phone }); showToast(t('auth_code_sent')); }
+  catch(e) { showToast(t('auth_failed_op') + e.message, 'error'); }
 }
 
 async function doLogin() {
@@ -2237,7 +2319,7 @@ function renderClipboardItems() {
       if (item.contentPreview && item.contentPreview.indexOf('[Image]') === 0) type = 'image';
     }
     var typeClass = type === 'image' ? 'img' : type === 'link' ? 'link' : type === 'file' ? 'file' : 'text';
-    var typeLabel = type === 'image' ? 'Image' : type === 'link' ? 'Link' : type === 'file' ? 'File' : 'Text';
+    var typeLabel = type === 'image' ? t('tab_images') : type === 'link' ? t('tab_links') : type === 'file' ? t('tab_files') : t('tab_text');
     var rawPreview = item.contentPreview || '';
     // For files, show only filename not full path
     if (typeClass === 'file') {
@@ -2257,7 +2339,7 @@ function renderClipboardItems() {
     };
     viewIcon = ACTION_ICONS[typeClass] || ACTION_ICONS['text'];
     var meta = item.metadata || {};
-    var devName = item.deviceName || meta.deviceName || meta.originalName || (meta.fileName && !meta.chunkedUpload ? 'Browser' : 'Desktop');
+    var devName = item.deviceName || meta.deviceName || meta.originalName || (meta.fileName && !meta.chunkedUpload ? t('dev_browser') : t('dev_desktop'));
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
     row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><span class="cr-preview">' + preview + '</span></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
     container.appendChild(row);
@@ -2308,8 +2390,8 @@ async function handleCopyItem(id) {
         var resp = await fetch(text);
         var blob = await resp.blob();
         await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
-        showToast('Image copied!');
-      } catch(e) { showToast('Image copy failed: ' + e.message, 'error'); }
+        showToast(t('img_copied'));
+      } catch(e) { showToast(t('img_copy_fail') + e.message, 'error'); }
     } else if (type === 'file') {
       // File: contentEncrypted = base64(file paths joined by \n)
       // Decode to get local paths → set CF_HDROP directly
@@ -2331,22 +2413,22 @@ async function handleCopyItem(id) {
           showToast(t('file_browser'), 'info');
         }
       } catch(e) {
-        showToast('File copy failed: ' + e.message, 'error');
+        showToast(t('file_copy_fail') + e.message, 'error');
       }
     } else {
       try { var decoded = decodeURIComponent(escape(atob(text))); text = decoded; } catch(e) {}
       await navigator.clipboard.writeText(text);
-      showToast('Copied!');
+      showToast(t('copied'));
     }
-  } catch(e) { showToast('Copy failed: ' + e.message, 'error'); }
+  } catch(e) { showToast(t('copy_fail') + e.message, 'error'); }
 }
 
 function showConfirm(message, onOk) {
   var root = document.getElementById('modalRoot');
-  root.innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:400px;"><div class="modal-header"><span class="modal-title">Confirm</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div><div class="modal-body" style="padding:20px;font-size:14px;color:var(--text-secondary);">' + message + '</div><div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-danger" onclick="closeModal();(' + onOk + ')()">Delete</button></div></div></div>';
+  root.innerHTML = '<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:400px;"><div class="modal-header"><span class="modal-title">'+t('confirm_title')+'</span><button class="modal-close" onclick="closeModal()"><span class="icon icon-md"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></button></div><div class="modal-body" style="padding:20px;font-size:14px;color:var(--text-secondary);">' + message + '</div><div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">'+t('btn_cancel_text')+'</button><button class="btn btn-danger" onclick="closeModal();(' + onOk + ')()">'+t('btn_delete_text')+'</button></div></div></div>';
 }
 async function handleDeleteItem(id) {
-  showConfirm('Are you sure you want to delete this item?', 'async function(){try{await api(\'DELETE\',\'/api/clipboard/'+id+'\');showToast(\'Deleted\',\'info\');loadClipboardItems();}catch(e){showToast(\'Delete failed: \'+e.message,\'error\')}}');
+  showConfirm(t('confirm_msg'), 'async function(){try{await api(\'DELETE\',\'/api/clipboard/'+id+'\');showToast(t(\'deleted\'),\'info\');loadClipboardItems();}catch(e){showToast(t(\'del_fail\')+e.message,\'error\')}}');
 }
 
 var _currentImageDataUrl = '';
@@ -2355,7 +2437,7 @@ async function handleViewItem(id, typeClass) {
     // Preview image in modal
     try {
       var item = await api('GET', '/api/clipboard/' + id);
-      if (!item || !item.contentEncrypted || !item.contentEncrypted.startsWith('data:')) { showToast('Not an image', 'error'); return; }
+      if (!item || !item.contentEncrypted || !item.contentEncrypted.startsWith('data:')) { showToast(t('not_img'), 'error'); return; }
       var meta = item.metadata || {};
       var fileName = meta.fileName || 'Image.png';
       var mimeType = meta.mimeType || 'image/png';
@@ -2366,7 +2448,7 @@ async function handleViewItem(id, typeClass) {
       _currentImageDataUrl = item.contentEncrypted;
       openModal('imagePreview');
       document.querySelector('#modalRoot .modal-body').innerHTML = '<div style="text-align:center;padding:16px 20px;"><div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:16px 20px;margin-bottom:12px;"><img src="' + item.contentEncrypted + '" style="max-width:100%;max-height:58vh;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);background:#fff;object-fit:contain;"></div><div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">' + fileName + '</div><div style="font-size:11.5px;color:var(--text-secondary);">' + info + '</div></div>';
-    } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+    } catch(e) { showToast(t('failed') + e.message, 'error'); }
   } else if (typeClass === 'file') {
     // Show file info (files store paths, not content on server)
     try {
@@ -2384,7 +2466,7 @@ async function handleViewItem(id, typeClass) {
         '<div style="margin-top:16px;font-size:12px;color:var(--text-tertiary);">Use the copy button to copy this file to clipboard</div></div>';
     } catch(e) {
       if (e.name === 'AbortError') return;
-      showToast('File download failed: ' + e.message, 'error');
+      showToast(t('file_dl_fail') + e.message, 'error');
     }
   } else if (typeClass === 'link') {
     // Open link in system default browser
@@ -2435,7 +2517,7 @@ window.downloadImage = async function() {
     var writable = await handle.createWritable();
     await writable.write(blob);
     await writable.close();
-    showToast('Image saved!');
+    showToast(t('img_saved'));
   } catch(e) {
     if (e.name === 'AbortError') return; // User cancelled
     // Fallback: direct download
@@ -2445,7 +2527,7 @@ window.downloadImage = async function() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    showToast('Image downloaded!');
+    showToast(t('img_downloaded'));
   }
 }
 
@@ -2734,7 +2816,7 @@ window.batchDelete = async function() {
   for (var id of _selectedItems) {
     try { await api('DELETE', '/api/clipboard/' + id); count++; } catch(e) {}
   }
-  showToast('Deleted ' + count + ' items');
+  showToast(t('batch_deleted').replace('{n}', count));
   _selectedItems.clear();
   _batchMode = false;
   // Reset UI: hide batch button, show action icons, remove checkboxes
