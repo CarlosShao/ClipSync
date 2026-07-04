@@ -1079,34 +1079,6 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 </head>
 <body>
 
-<!-- ============== CONTROL BAR ============== -->
-<div class="control-bar" id="ctrlBar">
-  <span class="cb-label">Style</span>
-  <div class="cb-seg" id="styleSeg">
-    <button class="cb-btn star active" data-s="vercel">Vercel</button>
-    <button class="cb-btn" data-s="clipsync">ClipSync</button>
-    <button class="cb-btn" data-s="notion">Notion</button>
-    <button class="cb-btn" data-s="linear">Linear</button>
-    <button class="cb-btn" data-s="apple">Apple HIG</button>
-    <button class="cb-btn" data-s="raycast">Raycast</button>
-    <button class="cb-btn" data-s="arc">Arc</button>
-  </div>
-
-  <span class="cb-label">Mode</span>
-  <div class="cb-seg" id="modeSeg">
-    <button class="cb-btn active" data-m="light">☀ Light</button>
-    <button class="cb-btn" data-m="dark">◐ Dark</button>
-  </div>
-
-  <div class="cb-navs" id="pageNav">
-    <button class="cb-page-btn active" data-p="login">Login</button>
-    <button class="cb-page-btn" data-p="app">App</button>
-    <button class="cb-page-btn" onclick="showQuickPaste()">Quick Paste</button>
-  </div>
-</div>
-
-<div class="demo-wrap">
-
 <!-- ============== PAGE: LOGIN ============== -->
 <div class="page active" id="pg-login">
   <div class="login-page">
@@ -1513,21 +1485,7 @@ function applyStyle(s, m) {
   }
 }
 
-// Style buttons — auto-reset to light when leaving dark-only styles
-document.querySelectorAll('#styleSeg .cb-btn').forEach(b => {
-  b.addEventListener('click', () => {
-    const newStyle = b.dataset.s;
-    const wasDarkOnly = (currentStyle === 'linear' || currentStyle === 'raycast');
-    const isDarkOnly = (newStyle === 'linear' || newStyle === 'raycast');
-    let targetMode = currentMode;
-    if (wasDarkOnly && !isDarkOnly) targetMode = 'light';
-    applyStyle(newStyle, targetMode);
-  });
-});
-// Mode buttons
-document.querySelectorAll('#modeSeg .cb-btn').forEach(b => {
-  b.addEventListener('click', () => applyStyle(currentStyle, b.dataset.m));
-});
+// Style button events removed (control bar was prototype-only)
 
 // Page navigation
 let lastAppSub = 'clipboard'; // Remember last sub-page within app shell
@@ -1541,9 +1499,7 @@ function showPage(p) {
   // If switching to app shell, restore last sub-page (not always clipboard)
   if (p === 'app') switchSub(lastAppSub);
 }
-document.querySelectorAll('.cb-page-btn').forEach(b => {
-  b.addEventListener('click', () => showPage(b.dataset.p));
-});
+
 
 // Sub-page navigation within app shell
 function switchSub(sub) {
