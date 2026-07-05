@@ -561,18 +561,22 @@ body {
   gap: 12px; padding: 8px 20px;
   font-size: 10.5px; font-weight: 600; color: var(--text-tertiary);
   text-transform: uppercase; letter-spacing: .06em;
+  min-width: 0;
 }
 .list-head.with-cb { grid-template-columns: 28px minmax(0,1fr) 160px 60px 80px 90px; }
 .list-head > .batch-cb { display: none; }
 .list-head.with-cb > .batch-cb { display: flex; align-items: center; }
 /* Column alignment: content/source left, type/time/actions center */
-.list-head > div { text-align: left; }
-.list-head > div:nth-last-child(1), .list-head > div:nth-last-child(2), .list-head > div:nth-last-child(3) { text-align: center; }
+.list-head > div { text-align: left; min-width: 0; overflow: hidden; }
+.list-head > div:nth-last-child(1), .list-head > div:nth-last-child(2), .list-head > div:nth-last-child(3) {
+  text-align: center; display: flex; align-items: center; justify-content: center;
+}
 .clip-row {
   display: grid; grid-template-columns: minmax(0,1fr) 160px 60px 80px 90px;
   gap: 12px; align-items: center; padding: 10px 20px;
   border-radius: var(--radius-sm); cursor: pointer;
   transition: background .1s ease;
+  min-width: 0;
 }
 .clip-row.with-cb { grid-template-columns: 28px minmax(0,1fr) 160px 60px 80px 90px; }
 .clip-row > .batch-cb { display: none; }
