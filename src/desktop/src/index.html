@@ -570,18 +570,18 @@ body {
   border-radius: var(--radius-sm); cursor: pointer;
   transition: background .1s ease;
 }
-.clip-row > *:first-child { display: none; }  /* hide checkbox column by default */
-.clip-row.batch-active > *:first-child { display: table-cell; }  /* show in batch mode */
+.clip-row > *:first-child { visibility: hidden; pointer-events: none; }
+.clip-row.batch-active > *:first-child { visibility: visible; pointer-events: auto; }
 .clip-row:hover { background: var(--bg-hover); }
 
-.cr-main { display: grid; grid-template-columns: 34px 1fr; gap: 11px; align-items: center; align-self: stretch; }
+.cr-main { display: flex; align-items: center; gap: 11px; min-width: 0; overflow: hidden; }
 .type-badge {
   width: 34px; height: 34px; border-radius: var(--radius-md);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; transition: transform .15s ease;
 }
 .clip-row:hover .type-badge { transform: scale(1.06); }
-.cr-main .cr-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cr-main .cr-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--text-primary); font-size: 13px; font-weight: 430; line-height: 1.4; }
 .tb-text { background: var(--accent-bg); color: var(--accent); }
 .tb-img  { background: var(--warning-bg); color: var(--warning); }
 .tb-link { background: var(--info-bg); color: var(--info); }
@@ -3432,7 +3432,7 @@ function renderClipboardItems() {
     var devName = srcDev.name || item.deviceName || meta.deviceName || meta.originalName || (meta.fileName && !meta.chunkedUpload ? t('dev_browser') : t('dev_desktop'));
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
     // Content div: width:100% to fill .cr-main, overflow hidden for ellipsis
-    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><div class="cr-preview">' + preview + '</div></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
+    row.innerHTML = '<input type="checkbox" class="batch-cb" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><div class="cr-preview">' + preview + '</div></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
     container.appendChild(row);
   });
   // Re-apply active tab filter
@@ -3910,16 +3910,14 @@ window.toggleBatchMode = function() {
     var cb = row.querySelector('.batch-cb');
     if (cb) cb.checked = false;
     row.classList.toggle('batch-selected', false);
+    row.classList.toggle('batch-active', _batchMode);
   });
   document.querySelectorAll('.cr-actions').forEach(function(el) {
     el.style.display = _batchMode ? 'none' : '';
   });
-  document.querySelectorAll('.batch-cb').forEach(function(el) {
-    el.style.display = _batchMode ? '' : 'none';
-  });
   /* Reset select-all checkbox */
   var selAll = document.getElementById('selectAllCb');
-  if (selAll) { selAll.checked = false; selAll.indeterminate = false; }
+  if (selAll) { selAll.checked = false; selAll.indeterminate = false; selAll.style.display = _batchMode ? '' : 'none'; }
   var btn = document.getElementById('batchDeleteBtn');
   if (btn) btn.style.display = _batchMode ? '' : 'none';
 };
