@@ -574,13 +574,14 @@ body {
 }
 .clip-row:hover { background: var(--bg-hover); }
 
-.cr-main { display: flex; align-items: center; gap: 11px; min-width: 0; overflow: hidden; }
+.cr-main { display: flex; align-items: center; gap: 11px; min-width: 0; width: 100%; overflow: hidden; }
 .type-badge {
   width: 34px; height: 34px; border-radius: var(--radius-md);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; transition: transform .15s ease;
 }
 .clip-row:hover .type-badge { transform: scale(1.06); }
+.cr-main .cr-preview { flex: 1 1 0; min-width: 0; }
 .tb-text { background: var(--accent-bg); color: var(--accent); }
 .tb-img  { background: var(--warning-bg); color: var(--warning); }
 .tb-link { background: var(--info-bg); color: var(--info); }
