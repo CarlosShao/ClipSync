@@ -557,13 +557,14 @@ body {
       .main-area { overflow: hidden; }
    .clip-view > * { min-width: 0; }  /* Prevent grid items from overflowing */
 .list-head {
-  display: grid; grid-template-columns: minmax(0,1fr) 110px 72px 80px 80px;
+  display: grid; grid-template-columns: 28px minmax(0,1fr) 110px 72px 80px 80px;
   gap: 12px; padding: 8px 20px;
   font-size: 10.5px; font-weight: 600; color: var(--text-tertiary);
   text-transform: uppercase; letter-spacing: .06em;
 }
+.lh-check { display: flex; align-items: center; justify-content: center; }
 .clip-row {
-  display: grid; grid-template-columns: minmax(0,1fr) 110px 72px 80px 80px;
+  display: grid; grid-template-columns: 28px minmax(0,1fr) 110px 72px 80px 80px;
   gap: 12px; align-items: center; padding: 10px 20px;
   border-radius: var(--radius-sm); cursor: pointer;
   transition: background .1s ease;
@@ -1246,16 +1247,16 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
 /* ===== Responsive ===== */
 @media (max-width: 900px) {
-  .clip-row { grid-template-columns: 1fr 72px 80px 80px; }
+  .clip-row { grid-template-columns: 28px 1fr 72px 80px 80px; }
   .clip-row .cr-device { display: none; }
-  .list-head { grid-template-columns: 1fr 72px 80px 80px; }
-  .list-head > :nth-child(2) { display: none; }
+  .list-head { grid-template-columns: 28px 1fr 72px 80px 80px; }
+  .list-head > :nth-child(3) { display: none; }
 }
 @media (max-width: 600px) {
-  .clip-row { grid-template-columns: 1fr 80px 80px; }
+  .clip-row { grid-template-columns: 28px 1fr 80px 80px; }
   .clip-row .cr-time { display: none; }
-  .list-head { grid-template-columns: 1fr 80px 80px; }
-  .list-head > :nth-child(4) { display: none; }
+  .list-head { grid-template-columns: 28px 1fr 80px 80px; }
+  .list-head > :nth-child(5) { display: none; }
 }
 
 /* ===== Batch Select ===== */
@@ -1567,7 +1568,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
                     <div class="search-wrap" id="searchWrap"><button class="search-toggle" onclick="var w=document.getElementById('searchWrap');w.classList.add('open');w.querySelector('input').focus();"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span></button><input type="text" placeholder="Search clips..." class="search-input" oninput="filterClipboard(this.value)" onblur="if(!this.value){document.getElementById('searchWrap').classList.remove('open');}"></div>
         </header>
         <div class="tab-bar"><button class="tab-btn active" onclick="switchClipTab(this,'all')">All</button><button class="tab-btn" onclick="switchClipTab(this,'text')">Text</button><button class="tab-btn" onclick="switchClipTab(this,'images')">Images</button><button class="tab-btn" onclick="switchClipTab(this,'links')">Links</button><button class="tab-btn" onclick="switchClipTab(this,'files')">Files</button></div>
-        <div class="list-head"><div>CONTENT</div><div>SOURCE</div><div>TYPE</div><div>TIME</div><div>ACTIONS</div></div>
+        <div class="list-head"><div class="lh-check"><input type="checkbox" id="selectAllCb" class="batch-cb" style="display:none;" onchange="toggleSelectAll(this)"></div><div>CONTENT</div><div>SOURCE</div><div>TYPE</div><div>TIME</div><div>ACTIONS</div></div>
         <div class="clip-view">
           <div id="clipEmptyState" class="empty-state"><div class="empty-icon"><svg viewBox="0 0 24 24" width="48" height="48" stroke="var(--text-tertiary)" fill="none" stroke-width="1.5"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></div><div class="empty-title">No clips yet</div><div class="empty-desc">Clips from all your devices will appear here.</div><div class="empty-action">Start copying to sync!</div></div>
         </div>
@@ -3874,6 +3875,9 @@ window.toggleBatchMode = function() {
   document.querySelectorAll('.batch-cb').forEach(function(el) {
     el.style.display = _batchMode ? '' : 'none';
   });
+  /* Reset select-all checkbox */
+  var selAll = document.getElementById('selectAllCb');
+  if (selAll) { selAll.checked = false; selAll.indeterminate = false; }
   var btn = document.getElementById('batchDeleteBtn');
   if (btn) btn.style.display = _batchMode ? '' : 'none';
 };
@@ -3883,7 +3887,45 @@ window.toggleBatchItem = function(id, cb) {
   cb.closest('.clip-row').classList.toggle('batch-selected', cb.checked);
   var countEl = document.getElementById('batchCount');
   if (countEl) countEl.textContent = _selectedItems.size;
+  /* Update select-all checkbox state */
+  updateSelectAllState();
 };
+
+/* Select / deselect all visible items */
+window.toggleSelectAll = function(selAllCb) {
+  var visibleRows = document.querySelectorAll('#sub-clipboard .clip-row[style=\"\"], #sub-clipboard .clip-row:not([style])');
+  visibleRows.forEach(function(row) {
+    var cb = row.querySelector('.batch-cb');
+    if (!cb || cb.style.display === 'none') return;
+    cb.checked = selAllCb.checked;
+    row.classList.toggle('batch-selected', selAllCb.checked);
+    if (selAllCb.checked) {
+      _selectedItems.add(row.dataset.id);
+    } else {
+      _selectedItems.delete(row.dataset.id);
+    }
+  });
+  var countEl = document.getElementById('batchCount');
+  if (countEl) countEl.textContent = _selectedItems.size;
+};
+
+/* Sync select-all checkbox to reflect current selection state */
+function updateSelectAllState() {
+  var selAll = document.getElementById('selectAllCb');
+  if (!selAll) return;
+  var visibleCbs = [];
+  document.querySelectorAll('#sub-clipboard .clip-row').forEach(function(row) {
+    if (row.style.display !== 'none') {
+      var cb = row.querySelector('.batch-cb');
+      if (cb && cb.style.display !== 'none') visibleCbs.push(cb);
+    }
+  });
+  if (visibleCbs.length === 0) { selAll.checked = false; selAll.indeterminate = false; return; }
+  var checkedCount = 0;
+  visibleCbs.forEach(function(cb) { if (cb.checked) checkedCount++; });
+  selAll.checked = checkedCount === visibleCbs.length;
+  selAll.indeterminate = checkedCount > 0 && checkedCount < visibleCbs.length;
+}
 
 window.batchDelete = async function() {
   if (_selectedItems.size === 0) { showToast('No items selected', 'error'); return; }
@@ -3904,6 +3946,8 @@ window.batchDelete = async function() {
     var cb = row.querySelector('.batch-cb');
     if (cb) { cb.checked = false; cb.style.display = 'none'; }
   });
+  var selAll = document.getElementById('selectAllCb');
+  if (selAll) { selAll.checked = false; selAll.indeterminate = false; selAll.style.display = 'none'; }
   loadClipboardItems();
 };
 
