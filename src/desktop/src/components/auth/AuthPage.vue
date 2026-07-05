@@ -44,8 +44,10 @@ const setPwdConfirm = ref('')
 const isSettingPwd = ref(false)
 
 // ===== Shared UI state =====
-const showPassword = ref(false)
-const showConfirmPassword = ref(false)
+const showRegPassword = ref(false)
+const showRegConfirm = ref(false)
+const showSetPwdPassword = ref(false)
+const showSetPwdConfirm = ref(false)
 
 onUnmounted(() => {
   if (countdownTimer) clearInterval(countdownTimer)
@@ -59,7 +61,7 @@ function checkPwdStrength(pwd: string): { score: number; label: string } {
   if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) score++
   if (/\d/.test(pwd)) score++
   if (/[^a-zA-Z0-9]/.test(pwd)) score++
-  const labels = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Very Strong']
+  const labels = ['', t('pwd_weak') || 'Weak', t('pwd_fair') || 'Fair', t('pwd_good') || 'Good', t('pwd_strong') || 'Strong', t('pwd_very_strong') || 'Very Strong']
   return { score, label: labels[score] || '' }
 }
 
@@ -107,16 +109,18 @@ async function handleLogin() {
         toast.show(t('auth_need_code'), 'error'); isLoggingIn.value = false; return
       }
       try {
+        console.log('[Auth] Phone login attempt:', phone)
         await configStore.login(phone, authCode.value)
         toast.show(t('login_success'), 'success')
         emit('login-success')
       } catch (e: any) {
         const msg = String(e)
+        console.warn('[Auth] Phone login failed:', msg)
         if (msg.includes('new_user') || msg.includes('密码') || msg.includes('set password')) {
           setPwdPhone.value = phone
           setPwdCode.value = authCode.value
           authView.value = 'set-password'
-            toast.show(t('sp_new_account_desc'), 'info')
+          toast.show(t('sp_new_account_desc'), 'info')
         } else {
           toast.show(t('login_failed') + msg, 'error')
         }
@@ -135,6 +139,7 @@ async function handleLogin() {
       }
     }
   } catch (e: any) {
+    console.warn('[Auth] Login error:', e)
     toast.show(t('login_failed') + String(e), 'error')
   }
   isLoggingIn.value = false
@@ -162,7 +167,7 @@ async function handleRegister() {
       else if (err.includes('email')) toast.show(t('err_dup_email'), 'error')
       else toast.show(t('reg_fail') + err, 'error')
     }
-  } catch (e: any) { toast.show(t('reg_fail') + String(e), 'error') }
+  } catch (e: any) { console.warn('[Auth] Register error:', e); toast.show(t('reg_fail') + String(e), 'error') }
   isRegistering.value = false
 }
 
@@ -189,6 +194,9 @@ async function handleSetPassword() {
 // ===== View switching =====
 function switchAuthView(view: 'login-phone' | 'login-password' | 'register') {
   authView.value = view
+}
+function goBackToLogin() {
+  authView.value = 'login-phone'
 }
 </script>
 
@@ -302,10 +310,10 @@ function switchAuthView(view: 'login-phone' | 'login-password' | 'register') {
               <div class="field-group">
                 <label class="field-label">{{ t('sp_set_pwd_label') }}</label>
                 <div class="pwd-field-wrap">
-                  <input v-model="regPassword" :type="showPassword ? 'text' : 'password'" class="field-input" :placeholder="t('sp_pwd_hint')" style="width:100%;" />
-                  <button class="pwd-toggle" @click="showPassword = !showPassword" type="button">
+                  <input v-model="regPassword" :type="showRegPassword ? 'text' : 'password'" class="field-input" :placeholder="t('sp_pwd_hint')" style="width:100%;" />
+                  <button class="pwd-toggle" @click="showRegPassword = !showRegPassword" type="button">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path v-if="showPassword" d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path v-if="showPassword" d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line v-if="showPassword" x1="1" y1="1" x2="23" y2="23"/>
+                      <path v-if="showRegPassword" d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path v-if="showRegPassword" d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line v-if="showRegPassword" x1="1" y1="1" x2="23" y2="23"/>
                       <template v-else><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></template>
                     </svg>
                   </button>
@@ -324,10 +332,10 @@ function switchAuthView(view: 'login-phone' | 'login-password' | 'register') {
               <div class="field-group">
                 <label class="field-label">{{ t('sp_confirm_pwd') }}</label>
                 <div class="pwd-field-wrap">
-                  <input v-model="regConfirm" :type="showConfirmPassword ? 'text' : 'password'" class="field-input" :placeholder="t('sp_confirm_hint')" style="width:100%;" />
-                  <button class="pwd-toggle" @click="showConfirmPassword = !showConfirmPassword" type="button">
+                  <input v-model="regConfirm" :type="showRegConfirm ? 'text' : 'password'" class="field-input" :placeholder="t('sp_confirm_hint')" style="width:100%;" />
+                  <button class="pwd-toggle" @click="showRegConfirm = !showRegConfirm" type="button">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path v-if="showConfirmPassword" d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path v-if="showConfirmPassword" d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line v-if="showConfirmPassword" x1="1" y1="1" x2="23" y2="23"/>
+                      <path v-if="showRegConfirm" d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path v-if="showRegConfirm" d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line v-if="showRegConfirm" x1="1" y1="1" x2="23" y2="23"/>
                       <template v-else><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></template>
                     </svg>
                   </button>
@@ -342,17 +350,17 @@ function switchAuthView(view: 'login-phone' | 'login-password' | 'register') {
 
           <!-- ===== SET PASSWORD ===== -->
           <div v-else-if="authView === 'set-password'">
-            <button class="btn-text-link mb-4" @click="authView = 'login-phone'">← {{ t('btn_back_login') }}</button>
+            <button class="btn-text-link mb-4" @click="goBackToLogin()">← {{ t('btn_back_login') }}</button>
             <h2 class="auth-heading">{{ t('sp_set_password') }}</h2>
             <p class="auth-subtitle">{{ t('sp_new_account_desc') }}</p>
             <div class="auth-form">
               <div class="field-group">
                 <label class="field-label">{{ t('sp_set_pwd_label') }}</label>
                 <div class="pwd-field-wrap">
-                  <input v-model="setPwdNew" :type="showPassword ? 'text' : 'password'" class="field-input" :placeholder="t('sp_pwd_hint')" style="width:100%;" />
-                  <button class="pwd-toggle" @click="showPassword = !showPassword" type="button">
+                  <input v-model="setPwdNew" :type="showSetPwdPassword ? 'text' : 'password'" class="field-input" :placeholder="t('sp_pwd_hint')" style="width:100%;" />
+                  <button class="pwd-toggle" @click="showSetPwdPassword = !showSetPwdPassword" type="button">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path v-if="showPassword" d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path v-if="showPassword" d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line v-if="showPassword" x1="1" y1="1" x2="23" y2="23"/>
+                      <path v-if="showSetPwdPassword" d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path v-if="showSetPwdPassword" d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line v-if="showSetPwdPassword" x1="1" y1="1" x2="23" y2="23"/>
                       <template v-else><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></template>
                     </svg>
                   </button>
@@ -361,10 +369,10 @@ function switchAuthView(view: 'login-phone' | 'login-password' | 'register') {
               <div class="field-group">
                 <label class="field-label">{{ t('sp_confirm_pwd') }}</label>
                 <div class="pwd-field-wrap">
-                  <input v-model="setPwdConfirm" :type="showConfirmPassword ? 'text' : 'password'" class="field-input" :placeholder="t('sp_confirm_hint')" style="width:100%;" />
-                  <button class="pwd-toggle" @click="showConfirmPassword = !showConfirmPassword" type="button">
+                  <input v-model="setPwdConfirm" :type="showSetPwdConfirm ? 'text' : 'password'" class="field-input" :placeholder="t('sp_confirm_hint')" style="width:100%;" />
+                  <button class="pwd-toggle" @click="showSetPwdConfirm = !showSetPwdConfirm" type="button">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path v-if="showConfirmPassword" d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path v-if="showConfirmPassword" d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line v-if="showConfirmPassword" x1="1" y1="1" x2="23" y2="23"/>
+                      <path v-if="showSetPwdConfirm" d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path v-if="showSetPwdConfirm" d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line v-if="showSetPwdConfirm" x1="1" y1="1" x2="23" y2="23"/>
                       <template v-else><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></template>
                     </svg>
                   </button>
@@ -411,7 +419,7 @@ function switchAuthView(view: 'login-phone' | 'login-password' | 'register') {
 .field-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
 .field-input { height: 38px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); background: var(--bg-base); color: var(--text-primary); font-size: 14px; outline: none; }
 .field-input:focus { border-color: var(--border-focus); }
-.field-row { display: flex; gap: 8px; }
+.field-row { display: flex; gap: 8px; align-items: center; }
 .flex-1 { flex: 1; }
 .auth-footer-links { text-align: center; margin-top: 20px; font-size: 13px; color: var(--text-secondary); }
 .auth-mode-toggle { text-align: center; margin-top: 12px; }
