@@ -81,7 +81,7 @@ const _dicts: Record<Lang, I18nDict> = {
     sess_current:'Current',
     dev_desktop:'Desktop', dev_browser:'Browser',
     shared_links_t:'Shared Links',
-    login_welcome:'Welcome back', login_subtitle:'Sign in to sync your clipboard across all devices',
+    login_welcome:'Welcome back', login_subtitle:'Sign in to sync your clipboard across all devices', login_quote:'The best way to sync your clipboard across devices.',
     login_phone:'Phone Number', login_code:'Verification Code', login_send_code:'Send Code',
     login_remember:'Remember me', login_forgot:'Forgot password?',
     login_signin:'Sign In', login_or_continue:'or continue with',
