@@ -861,13 +861,16 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
    LOGIN & REGISTER PAGE — Multi-Step Auth System
    Views: login-phone | login-password | set-password | register
    ============================================================ */
-.auth-page { height: 100vh; display: flex; overflow: hidden; align-items: flex-start; }
+.auth-page { height: 100vh; display: grid; grid-template-columns: 1fr 400px; overflow: hidden; }
 .auth-left {
-  flex: 1; display: flex; flex-direction: column; justify-content: flex-start; align-items: center;
+  display: flex; flex-direction: column; justify-content: flex-start; align-items: center;
   padding: 40px; background: var(--bg-base); transition: background .25s;
   position: relative;
-  /* overflow-y controlled by JS: only scroll when content > viewport */
-  overflow-y: hidden;
+  /* Grid item doesn't stretch vertically — sizes to content.
+     max-height + overflow-y auto = scroll when content exceeds viewport */
+  min-height: 0;
+  overflow-y: auto;
+  max-height: 100vh;
 }
 .auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
 .auth-brand .logo-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); font-size: 18px; }
@@ -2750,9 +2753,8 @@ function showAuthView(viewId) {
 }
 
 /* Dynamically size auth-views container to fit active view content.
-   Controls .auth-left overflow — only register view needs scrolling.
-   Height measurement via clone is unreliable for flex-stretched parents,
-   so we use view-ID-based scrolling control instead. */
+   Scroll is handled by CSS: .auth-left uses grid layout (no stretch) +
+   max-height: 100vh + overflow-y: auto → scrollbar only when needed. */
 function syncAuthViewsHeight(container, activeView) {
   /* Clone the view to measure its natural content height */
   var clone = activeView.cloneNode(true);
@@ -2761,17 +2763,6 @@ function syncAuthViewsHeight(container, activeView) {
   var h = clone.scrollHeight || clone.offsetHeight;
   container.removeChild(clone);
   if (h > 0) { container.style.height = h + 'px'; }
-
-  /* Control .auth-left scroll based on which view is active.
-     Only the register page has enough fields to exceed viewport height;
-     all other views (login-phone, login-password, set-password) fit comfortably. */
-  var leftPanel = container.closest('.auth-left');
-  if (leftPanel) {
-    /* Map of view IDs that need scrolling */
-    var scrollableViews = ['register'];
-    var needsScroll = scrollableViews.indexOf(currentAuthView) !== -1;
-    leftPanel.style.overflowY = needsScroll ? 'auto' : 'hidden';
-  }
 }
 
 function switchAuthTab(tab) {
