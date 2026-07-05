@@ -861,7 +861,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
    LOGIN & REGISTER PAGE — Multi-Step Auth System
    Views: login-phone | login-password | set-password | register
    ============================================================ */
-.auth-page { min-height: 100vh; display: flex; }
+.auth-page { height: 100vh; display: flex; overflow: hidden; }
 .auth-left {
   flex: 1; display: flex; flex-direction: column; justify-content: flex-start; align-items: center;
   padding: 40px; background: var(--bg-base); transition: background .25s;
@@ -872,9 +872,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 .auth-brand .logo-type { font-size: 22px; font-weight: 700; }
 
 /* ---- Auth View Container (handles slide transitions) ---- */
-.auth-views { width: 100%; max-width: 380px; position: relative; overflow: visible; min-height: 560px; }
-/* Active view expands container height to fit content */
-.auth-view.active { min-height: fit-content; }
+/* Height is dynamically set by showAuthView() to match active view content */
+.auth-views { width: 100%; max-width: 380px; position: relative; transition: height .3s ease; }
 .auth-view {
   position: absolute; top: 0; left: 0; width: 100%;
   opacity: 0; transform: translateX(24px); pointer-events: none;
@@ -2739,10 +2738,25 @@ function showAuthView(viewId) {
     setTimeout(function() {
       target.classList.add('active');
       currentAuthView = viewId;
+      /* Sync container height to active view's natural content height */
+      syncAuthViewsHeight(container, target);
       var firstInput = target.querySelector('.af-input');
       if (firstInput) firstInput.focus();
     }, 50);
   });
+}
+
+/* Dynamically size auth-views container to fit active view content */
+function syncAuthViewsHeight(container, activeView) {
+  /* Temporarily make view visible in flow to measure natural height */
+  var wasRelative = activeView.style.position === 'relative' || activeView.classList.contains('active');
+  /* Clone the view for measurement without affecting layout */
+  var clone = activeView.cloneNode(true);
+  clone.style.cssText = 'position:relative;visibility:hidden;height:auto;opacity:0;pointer-events:none;width:100%;';
+  container.appendChild(clone);
+  var h = clone.scrollHeight || clone.offsetHeight;
+  container.removeChild(clone);
+  if (h > 0) { container.style.height = h + 'px'; }
 }
 
 function switchAuthTab(tab) {
@@ -3281,6 +3295,13 @@ document.addEventListener('DOMContentLoaded', function() {
     var el = document.getElementById(id);
     if (el) el.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); sendCode(id === 'lpPhone' ? 'login' : 'register'); } });
   });
+
+  // Sync auth-views container height for initially active view
+  var initAuthContainer = document.getElementById('authViews');
+  var initActiveView = initAuthContainer ? initAuthContainer.querySelector('.auth-view.active') : null;
+  if (initAuthContainer && initActiveView) {
+    syncAuthViewsHeight(initAuthContainer, initActiveView);
+  }
 });
 
 function logout() {
