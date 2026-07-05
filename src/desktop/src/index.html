@@ -861,16 +861,13 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
    LOGIN & REGISTER PAGE — Multi-Step Auth System
    Views: login-phone | login-password | set-password | register
    ============================================================ */
-.auth-page { height: 100vh; display: grid; grid-template-columns: 1fr 400px; overflow: hidden; }
+.auth-page { height: 100vh; display: grid; grid-template-columns: 1fr 400px; overflow: hidden; align-items: start; }
 .auth-left {
   display: flex; flex-direction: column; justify-content: flex-start; align-items: center;
   padding: 40px; background: var(--bg-base); transition: background .25s;
   position: relative;
-  /* Grid item doesn't stretch vertically — sizes to content.
-     max-height + overflow-y auto = scroll when content exceeds viewport */
-  min-height: 0;
-  overflow-y: auto;
-  max-height: 100vh;
+  /* Default: no scroll, height = content.
+     JS adds max-height + overflow-y only for register view */
 }
 .auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
 .auth-brand .logo-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); font-size: 18px; }
@@ -2753,8 +2750,9 @@ function showAuthView(viewId) {
 }
 
 /* Dynamically size auth-views container to fit active view content.
-   Scroll is handled by CSS: .auth-left uses grid layout (no stretch) +
-   max-height: 100vh + overflow-y: auto → scrollbar only when needed. */
+   Controls .auth-left scrolling per view — only register needs it.
+   CSS grid with align-items:start prevents default stretch,
+   so JS can freely toggle scroll without fighting the layout engine. */
 function syncAuthViewsHeight(container, activeView) {
   /* Clone the view to measure its natural content height */
   var clone = activeView.cloneNode(true);
@@ -2763,6 +2761,22 @@ function syncAuthViewsHeight(container, activeView) {
   var h = clone.scrollHeight || clone.offsetHeight;
   container.removeChild(clone);
   if (h > 0) { container.style.height = h + 'px'; }
+
+  /* Toggle .auth-left scroll based on active view.
+     Grid align-items:start means left panel is NOT stretched by default.
+     Only register has enough fields to exceed viewport. */
+  var leftPanel = container.closest('.auth-left');
+  if (leftPanel) {
+    if (currentAuthView === 'register') {
+      /* Register: cap at viewport, allow scroll */
+      leftPanel.style.maxHeight = '100vh';
+      leftPanel.style.overflowY = 'auto';
+    } else {
+      /* Login/set-password: natural height, no scroll */
+      leftPanel.style.maxHeight = '';
+      leftPanel.style.overflowY = '';
+    }
+  }
 }
 
 function switchAuthTab(tab) {
