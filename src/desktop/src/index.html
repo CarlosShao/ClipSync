@@ -3371,9 +3371,11 @@ async function loadClipboardItems() {
 function updateClipCount() {
   var countEl = document.getElementById('clipCount');
   if (!countEl) return;
-  var visible = document.querySelectorAll('#sub-clipboard .clip-row').length;
-  var filtered = document.querySelectorAll('#sub-clipboard .clip-row[style=""]').length;
-  countEl.textContent = clipboardItems.length + ' ' + t('items_c') + (_activeTab !== 'all' ? ' (' + t('filtered') + ')' : '');
+  var total = clipboardItems.length || 0;
+  countEl.textContent = total + ' ' + t('items_c') + (_activeTab !== 'all' ? ' (' + t('filtered') + ')' : '');
+  // Also update sidebar badge
+  var sidebarBadges = document.querySelectorAll('.nav-item[data-sub="clipboard"] .nav-counter');
+  sidebarBadges.forEach(function(el) { el.textContent = total; });
 }
 var TYPE_ICONS = {
   text: '<svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
@@ -3424,7 +3426,7 @@ function renderClipboardItems() {
     var srcDev = item.sourceDevice || {};
     var devName = srcDev.name || item.deviceName || meta.deviceName || meta.originalName || (meta.fileName && !meta.chunkedUpload ? t('dev_browser') : t('dev_desktop'));
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
-    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><span class="cr-preview">' + (preview || '') + '</span></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
+    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><span class="cr-preview" style="color:var(--text-primary) !important;">' + (preview || '') + '</span></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
     container.appendChild(row);
   });
   // Re-apply active tab filter
@@ -3686,6 +3688,7 @@ function startBrowserClipboardPoll() {
   state._clipboardPolling = true;
   var lastText = '';
   var lastImageHash = '';
+  var _browserFirstPollDone = false;
   async function pollClipboard() {
     try {
       if (state._tauriPollStarted) { state._clipboardPolling = false; return; }
@@ -3702,12 +3705,15 @@ function startBrowserClipboardPoll() {
               if (blob.size > 0) {
                 var b64 = await blobToBase64(blob);
                 var hash = imgHash(b64);
-                if (hash !== lastImageHash) {
+                if (_browserFirstPollDone && hash !== lastImageHash) {
                   lastImageHash = hash; lastText = '';
                   state.currentClipboard = '';
                   await uploadImage(b64, blob.type, blob.size);
+                } else if (!_browserFirstPollDone) {
+                  lastImageHash = hash;
                 }
               }
+              if (!_browserFirstPollDone) _browserFirstPollDone = true;
               return;
             }
           }
@@ -3716,9 +3722,14 @@ function startBrowserClipboardPoll() {
       // Fallback to readText() for plain text
       var text = await navigator.clipboard.readText();
       if (text && text !== lastText && text !== state.currentClipboard) {
-        lastText = text; state.currentClipboard = text;
-        lastImageHash = '';
-        await uploadClipboard(text);
+        if (_browserFirstPollDone) {
+          lastText = text; state.currentClipboard = text;
+          lastImageHash = '';
+          await uploadClipboard(text);
+        } else {
+          lastText = text;
+          _browserFirstPollDone = true;
+        }
       }
     } catch(_) {}
   }
@@ -3739,6 +3750,9 @@ function startTauriClipboardPoll() {
   var _recentUploadHashes = new Map();
   var GLOBAL_THROTTLE_MS = 5000;
   var HASH_TTL_MS = 10000;
+  // Skip uploads on first poll cycle to avoid re-uploading
+  // whatever is already in the system clipboard after page refresh
+  var _firstPollDone = false;
 
   function _isDuplicateHash(hash) {
     var now = Date.now();
@@ -3767,12 +3781,16 @@ function startTauriClipboardPoll() {
       var files = await _invoke('get_clipboard_files');
       if (files && files.length > 0) {
         var fileKey = files.join('|');
-        if (_isDuplicateHash('file:' + fileKey)) return;
-        if (fileKey !== _lastPolledFiles) {
+        if (_firstPollDone) {
+          if (_isDuplicateHash('file:' + fileKey)) return;
+          if (fileKey !== _lastPolledFiles) {
+            _lastPolledFiles = fileKey;
+            console.log('[TauriPoll] FILE detected:', files.length, 'file(s)');
+            await uploadTauriFileClipboard(files);
+            _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+          }
+        } else {
           _lastPolledFiles = fileKey;
-          console.log('[TauriPoll] FILE detected:', files.length, 'file(s)');
-          await uploadTauriFileClipboard(files);
-          _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
         }
         return; // Skip image/text in same cycle
       }
@@ -3780,30 +3798,40 @@ function startTauriClipboardPoll() {
       // 2) Check for image
       var imgInfo = await _invoke('check_clipboard_image_info');
       if (imgInfo && imgInfo.available && imgInfo.size > 0) {
-        if (imgInfo.size === _lastImageSize) return;
-        var imgHash = 'img:' + imgInfo.size;
-        if (_isDuplicateHash(imgHash)) return;
-        _lastImageSize = imgInfo.size;
-        try {
-          var dataUrl = await _invoke('get_clipboard_image');
-          if (dataUrl && dataUrl.startsWith('data:')) {
-            await uploadImage(dataUrl, 'image/png', imgInfo.size || 0);
-            _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
-          }
-        } catch (imgErr) { console.error('[TauriPoll] get_clipboard_image ERROR:', imgErr.message || imgErr); }
+        if (_firstPollDone) {
+          if (imgInfo.size === _lastImageSize) return;
+          var imgHash = 'img:' + imgInfo.size;
+          if (_isDuplicateHash(imgHash)) return;
+          _lastImageSize = imgInfo.size;
+          try {
+            var dataUrl = await _invoke('get_clipboard_image');
+            if (dataUrl && dataUrl.startsWith('data:')) {
+              await uploadImage(dataUrl, 'image/png', imgInfo.size || 0);
+              _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+            }
+          } catch (imgErr) { console.error('[TauriPoll] get_clipboard_image ERROR:', imgErr.message || imgErr); }
+        } else {
+          _lastImageSize = imgInfo.size;
+        }
         return;
       }
 
       // 3) Check for text
       var text = await _invoke('get_clipboard_content');
       if (text && text !== _lastPolledText && text !== state.currentClipboard) {
-        var textHash = 'text:' + text.substring(0, 200);
-        if (_isDuplicateHash(textHash)) return;
-        _lastPolledText = text;
-        console.log('[TauriPoll] TEXT detected:', text.length, 'chars');
-        uploadClipboard(text);
-        _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+        if (_firstPollDone) {
+          var textHash = 'text:' + text.substring(0, 200);
+          if (_isDuplicateHash(textHash)) return;
+          _lastPolledText = text;
+          console.log('[TauriPoll] TEXT detected:', text.length, 'chars');
+          uploadClipboard(text);
+          _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
+        } else {
+          _lastPolledText = text;
+        }
       }
+
+      if (!_firstPollDone) { _firstPollDone = true; }
 
       if (_lastPolledFiles && (!files || files.length === 0)) { _lastPolledFiles = ''; }
     } catch (e) {
