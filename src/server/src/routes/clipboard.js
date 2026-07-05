@@ -460,10 +460,11 @@ router.delete('/', apiLimiter, async (req, res) => {
     }
 
     const result = await pool.query(
-      `DELETE FROM clipboard_items WHERE id = ANY($1) AND user_id = $2 RETURNING id`,
+      `DELETE FROM clipboard_items WHERE id = ANY($1::uuid[]) AND user_id = $2 RETURNING id`,
       [ids, req.userId]
     );
 
+    logger.info('Batch delete', { userId: req.userId, requested: ids.length, deleted: result.rowCount });
     res.json({ message: `${result.rowCount} records deleted`, deletedIds: result.rows.map(r => r.id) });
 
     // Broadcast batch deletion to other devices

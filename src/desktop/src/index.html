@@ -3945,8 +3945,12 @@ window.batchDelete = async function() {
 window.executeBatchDelete = async function() {
   var ids = Array.from(_selectedItems);
   try {
-    await api('DELETE', '/api/clipboard', { ids: ids });
-    showToast(t('batch_deleted').replace('{n}', ids.length));
+    var result = await api('DELETE', '/api/clipboard', { ids: ids });
+    var deletedCount = (result.deletedIds || []).length;
+    showToast(t('batch_deleted').replace('{n}', deletedCount));
+    if (deletedCount < ids.length) {
+      showToast((ids.length - deletedCount) + ' item(s) could not be deleted', 'warning');
+    }
   } catch(e) {
     var msg = e.message || 'Unknown error';
     if (msg.indexOf('Rate limit') >= 0 || msg.indexOf('rate') >= 0) {
@@ -3954,12 +3958,11 @@ window.executeBatchDelete = async function() {
     } else {
       showToast(t('batch_del_fail') + msg, 'error');
     }
-    loadClipboardItems();
+    await loadClipboardItems();
     return;
   }
   _selectedItems.clear();
   _batchMode = false;
-  // Reset UI: hide batch button, show action icons, remove checkboxes
   var btn = document.getElementById('batchDeleteBtn');
   if (btn) btn.style.display = 'none';
   document.querySelectorAll('.cr-actions').forEach(function(el) { el.style.display = ''; });
@@ -3970,7 +3973,7 @@ window.executeBatchDelete = async function() {
   });
   var selAll = document.getElementById('selectAllCb');
   if (selAll) { selAll.checked = false; selAll.indeterminate = false; selAll.style.display = 'none'; }
-  loadClipboardItems();
+  await loadClipboardItems();
 };
 
 // ===== Search =====
