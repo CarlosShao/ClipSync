@@ -1957,6 +1957,7 @@ var _i18n = {
     img_saved:'Image saved!',img_downloaded:'Image downloaded!',
     file_dl_fail:'File download failed: ',
     batch_none:'No items selected',batch_deleted:'Deleted {n} items',
+    confirm_batch_delete:'Delete {n} selected items? This action cannot be undone.',
     confirm_title:'Confirm',btn_cancel_text:'Cancel',btn_delete_text:'Delete',btn_logout_text:'Sign Out',
     // Modal titles & content
     modal_billing:'Billing History',modal_payment:'Select Payment Method',
@@ -3928,8 +3929,15 @@ function updateSelectAllState() {
 }
 
 window.batchDelete = async function() {
-  if (_selectedItems.size === 0) { showToast('No items selected', 'error'); return; }
-  if (!confirm('Delete ' + _selectedItems.size + ' items?')) return;
+  if (_selectedItems.size === 0) { showToast(t('batch_none'), 'error'); return; }
+  showConfirm(
+    t('confirm_batch_delete').replace('{n}', _selectedItems.size),
+    'executeBatchDelete',
+    'btn_delete_text'
+  );
+};
+
+window.executeBatchDelete = async function() {
   var count = 0;
   for (var id of _selectedItems) {
     try { await api('DELETE', '/api/clipboard/' + id); count++; } catch(e) {}
