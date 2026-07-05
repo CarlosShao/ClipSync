@@ -562,6 +562,9 @@ body {
   font-size: 10.5px; font-weight: 600; color: var(--text-tertiary);
   text-transform: uppercase; letter-spacing: .06em;
 }
+.list-head > .lh-check { display: flex; align-items: center; justify-content: center; }
+.clip-row > .batch-cb { display: none; }
+.clip-row > .cr-main { min-width: 0; }
 .lh-check { display: flex; align-items: center; justify-content: center; }
 .clip-row {
   display: grid; grid-template-columns: 28px minmax(0,1fr) 110px 72px 80px 80px;
@@ -586,7 +589,8 @@ body {
 .cr-preview {
   font-size: 13px; color: var(--text-primary); font-weight: 430;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 320px; min-width: 0; line-height: 1.4;
+  min-width: 0; line-height: 1.4;
+  flex: 1; width: auto;
 }
 .cr-device { font-size: 12.5px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; }
 .cr-tag {
@@ -3427,7 +3431,7 @@ function renderClipboardItems() {
     var devName = srcDev.name || item.deviceName || meta.deviceName || meta.originalName || (meta.fileName && !meta.chunkedUpload ? t('dev_browser') : t('dev_desktop'));
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
     // Content div: width:100% to fill .cr-main, overflow hidden for ellipsis
-    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><div id="cv-' + item.id.substring(0,8) + '" style="width:100%;max-width:100%;font-size:13px;color:#1a1a1a;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5;display:block;">' + (preview || '') + '</div></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
+    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><div class="cr-preview">' + preview + '</div></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
     container.appendChild(row);
   });
   // Re-apply active tab filter
