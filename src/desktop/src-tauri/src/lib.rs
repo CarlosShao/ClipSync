@@ -764,6 +764,85 @@ async fn send_verification_code(phone: String) -> Result<serde_json::Value, Stri
     Ok(body)
 }
 
+// ============================================================================
+// 系统标题栏着色（深色模式 → 黑底白字，浅色模式 → 浅灰底深字）
+// ============================================================================
+//
+// Windows 的标题栏由系统绘制，webview CSS 无法控制。
+// 通过 DWM API 强制设置标题栏颜色：
+//   - Win11 22H2+ : DWMWA_CAPTION_COLOR (35) + DWMWA_TEXT_COLOR (36) — 完全自定义
+//   - Win10 1903+ : DWMWA_USE_IMMERSIVE_DARK_MODE (19) — 仅切换系统暗色变体
+// 不支持的 Windows 版本静默失败，标题栏保持系统默认。
+#[cfg(target_os = "windows")]
+fn apply_window_titlebar_color(window: &tauri::WebviewWindow, dark: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
+        DWMWA_USE_IMMERSIVE_DARK_MODE,
+    };
+
+    // Tauri 的 hwnd() 返回 tauri::window::Hwnd，inner is isize
+    let hwnd_raw = match window.hwnd() {
+        Ok(h) => h.0,
+        Err(e) => {
+            eprintln!("[TitleBar] hwnd() failed: {}", e);
+            return;
+        }
+    };
+    let hwnd = hwnd_raw as windows_sys::Win32::Foundation::HWND;
+
+    unsafe {
+        // 1) 主方案：DWMWA_CAPTION_COLOR + DWMWA_TEXT_COLOR（Win11 22H2+）
+        //    颜色格式：COLORREF = 0x00BBGGRR（小端 BGR）
+        let (caption_bgr, text_bgr): (u32, u32) = if dark {
+            (0x000000, 0xFFFFFF) // 黑底 + 白字
+        } else {
+            (0xF3F3F3, 0x1A1A1A) // 浅灰底 + 深字
+        };
+
+        let r1 = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CAPTION_COLOR as u32,
+            &caption_bgr as *const u32 as *const core::ffi::c_void,
+            std::mem::size_of::<u32>() as u32,
+        );
+        if r1 != 0 {
+            eprintln!("[TitleBar] DWMWA_CAPTION_COLOR failed: {} (需要 Win11 22H2+)", r1);
+        }
+
+        let r2 = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TEXT_COLOR as u32,
+            &text_bgr as *const u32 as *const core::ffi::c_void,
+            std::mem::size_of::<u32>() as u32,
+        );
+        if r2 != 0 {
+            eprintln!("[TitleBar] DWMWA_TEXT_COLOR failed: {}", r2);
+        }
+
+        // 2) Fallback：DWMWA_USE_IMMERSIVE_DARK_MODE（Win10 1903+，Win11 也支持）
+        //    对不支持 caption 颜色的版本，至少让标题栏跟随系统暗色
+        let immersive: u32 = if dark { 1 } else { 0 };
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+            &immersive as *const u32 as *const core::ffi::c_void,
+            std::mem::size_of::<u32>() as u32,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_window_titlebar_color(_window: &tauri::WebviewWindow, _dark: bool) {
+    // macOS / Linux 暂不处理；macOS 可后续用 NSWindow.titlebarAppearsTransparent
+}
+
+/// 前端 invoke 入口：切换标题栏暗色/亮色
+#[tauri::command]
+fn set_titlebar_mode(window: tauri::WebviewWindow, is_dark: bool) {
+    apply_window_titlebar_color(&window, is_dark);
+    println!("[TitleBar] set_titlebar_mode is_dark={}", is_dark);
+}
+
 // 设置系统托盘（Tauri 2.x）
 fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     // 加载托盘图标（优先使用应用默认图标）
@@ -918,6 +997,7 @@ pub fn run() {
             register_shortcut,
             unregister_all_shortcuts,
             open_image_viewer,
+            set_titlebar_mode,
         ])
         .setup(|app| {
             // 设置系统托盘
@@ -926,6 +1006,9 @@ pub fn run() {
             // 拦截窗口关闭事件：点 X = 最小化到托盘，不退出进程
             let window = app.get_webview_window("main").expect("main window missing");
             let app_handle = app.handle().clone();
+
+            // 初始化标题栏颜色（默认深色，webview 加载后会通过 invoke 校正）
+            apply_window_titlebar_color(&window, true);
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     // 阻止默认关闭行为，改为隐藏窗口到托盘
