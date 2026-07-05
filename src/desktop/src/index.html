@@ -584,25 +584,17 @@ body {
 .tb-file { background: var(--success-bg); color: var(--success); }
 
 .cr-preview {
-  font-size: 13.5px !important;
-  color: var(--text-primary) !important;
+  font-size: 13.5px;
+  color: var(--text-primary);
   line-height: 1.4;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
   flex: 1;
-  display: inline-block !important;
-  width: 100%;
+  display: block;
   font-weight: 400;
-  opacity: 1 !important;
-  visibility: visible !important;
 }
-
-.cr-main .cr-preview { display: inline-block !important; }
-.cr-main > * { flex-shrink: 0; }
-.cr-main .type-badge { flex-shrink: 0; }
-.cr-main { gap: 12px; }
 .ct-text { background: var(--accent-bg); color: var(--accent); }
 .ct-img  { background: var(--warning-bg); color: var(--warning); }
 .ct-link { background: var(--info-bg); color: var(--info); }
@@ -1255,18 +1247,6 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 }
 
 
-/* ===== Default grid (with batch checkbox column) ===== */
-.clip-row {
-  display: grid !important;
-  grid-template-columns: 28px minmax(0, 1fr) 110px 72px 80px 80px !important;
-  gap: 12px; align-items: center; padding: 10px 20px;
-}
-.list-head {
-  display: grid !important;
-  grid-template-columns: 28px minmax(0, 1fr) 110px 72px 80px 80px !important;
-  gap: 12px; padding: 8px 20px;
-}
-
 /* ===== Responsive ===== */
 @media (max-width: 1000px) {
   .clip-row { grid-template-columns: 28px minmax(0,1fr) 90px 72px 80px 80px; gap: 8px; padding: 10px 14px; }
@@ -1288,10 +1268,6 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 /* ===== Batch Select ===== */
 .batch-cb { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
 .clip-row.batch-selected { background: var(--accent-light); }
-.batch-cb { display: none; }
-.clip-row:not(:has(.batch-cb)) { grid-template-columns: minmax(0,1fr) 110px 72px 80px 80px !important; padding-left: 20px !important; }
-.list-head { padding-left: 20px !important; }
-/* When checkbox is hidden (default), don't reserve 28px column */
 .search-wrap { display: flex; align-items: center; margin-left: 8px; overflow: hidden; }
 .search-toggle { background: none; border: none; cursor: pointer; padding: 6px; color: var(--text-secondary); border-radius: var(--radius-sm); transition: all 0.3s ease; flex-shrink: 0; }
 .search-toggle:hover { background: var(--bg-hover); }
