@@ -1957,7 +1957,8 @@ var _i18n = {
     img_saved:'Image saved!',img_downloaded:'Image downloaded!',
     file_dl_fail:'File download failed: ',
     batch_none:'No items selected',batch_deleted:'Deleted {n} items',
-    confirm_batch_delete:'Delete {n} selected items? This action cannot be undone.',
+    batch_del_fail:'Batch delete failed: ',
+    rate_limit_warn:'Too many requests, please wait and try again.',
     confirm_title:'Confirm',btn_cancel_text:'Cancel',btn_delete_text:'Delete',btn_logout_text:'Sign Out',
     // Modal titles & content
     modal_billing:'Billing History',modal_payment:'Select Payment Method',
@@ -2120,7 +2121,8 @@ var _i18n = {
     img_saved:'图片已保存！',img_downloaded:'图片已下载！',
     file_dl_fail:'文件下载失败：',
     batch_none:'未选择任何项目',batch_deleted:'已删除 {n} 条记录',
-    confirm_batch_delete:'确定删除 {n} 个选中项？此操作不可撤销。',
+    batch_del_fail:'批量删除失败：',
+    rate_limit_warn:'操作过于频繁，请稍后再试。',
     confirm_title:'确认',btn_cancel_text:'取消',btn_delete_text:'删除',btn_logout_text:'登出',
     // Modal titles & content
     modal_billing:'账单历史',modal_payment:'选择支付方式',
@@ -3939,11 +3941,20 @@ window.batchDelete = async function() {
 };
 
 window.executeBatchDelete = async function() {
-  var count = 0;
-  for (var id of _selectedItems) {
-    try { await api('DELETE', '/api/clipboard/' + id); count++; } catch(e) {}
+  var ids = Array.from(_selectedItems);
+  try {
+    await api('DELETE', '/api/clipboard', { ids: ids });
+    showToast(t('batch_deleted').replace('{n}', ids.length));
+  } catch(e) {
+    var msg = e.message || 'Unknown error';
+    if (msg.indexOf('Rate limit') >= 0 || msg.indexOf('rate') >= 0) {
+      showToast(t('rate_limit_warn') || '操作过于频繁，请稍后再试', 'warning');
+    } else {
+      showToast(t('batch_del_fail') + msg, 'error');
+    }
+    loadClipboardItems();
+    return;
   }
-  showToast(t('batch_deleted').replace('{n}', count));
   _selectedItems.clear();
   _batchMode = false;
   // Reset UI: hide batch button, show action icons, remove checkboxes
