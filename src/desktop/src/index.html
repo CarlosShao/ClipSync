@@ -866,15 +866,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
   flex: 1; display: flex; flex-direction: column; justify-content: flex-start; align-items: center;
   padding: 40px; background: var(--bg-base); transition: background .25s;
   position: relative;
-  overflow-y: auto;
-  /* Height follows content; capped at viewport for scrolling */
-  max-height: 100vh;
-}
-.auth-right {
-  width: 400px; height: 100vh;
-  background: var(--gradient-accent);
-  display: flex; flex-direction: column; justify-content: center; align-items: center;
-  padding: 40px; color: white; position: relative; overflow: hidden;
+  /* overflow-y controlled by JS: only scroll when content > viewport */
+  overflow-y: hidden;
 }
 .auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
 .auth-brand .logo-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); font-size: 18px; }
@@ -1050,10 +1043,10 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
 /* ---- Right Panel (quote panel) ---- */
 .auth-right {
-  width: 400px; background: var(--gradient-accent);
+  width: 400px; height: 100vh;
+  background: var(--gradient-accent);
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   padding: 40px; color: white; position: relative; overflow: hidden;
-  align-self: stretch;
 }
 .ar-pattern {
   position: absolute; inset: 0; opacity: .06;
@@ -2756,10 +2749,9 @@ function showAuthView(viewId) {
   });
 }
 
-/* Dynamically size auth-views container to fit active view content */
+/* Dynamically size auth-views container to fit active view content.
+   Also controls .auth-left overflow so scrollbar only appears when needed. */
 function syncAuthViewsHeight(container, activeView) {
-  /* Temporarily make view visible in flow to measure natural height */
-  var wasRelative = activeView.style.position === 'relative' || activeView.classList.contains('active');
   /* Clone the view for measurement without affecting layout */
   var clone = activeView.cloneNode(true);
   clone.style.cssText = 'position:relative;visibility:hidden;height:auto;opacity:0;pointer-events:none;width:100%;';
@@ -2767,6 +2759,21 @@ function syncAuthViewsHeight(container, activeView) {
   var h = clone.scrollHeight || clone.offsetHeight;
   container.removeChild(clone);
   if (h > 0) { container.style.height = h + 'px'; }
+
+  /* Control .auth-left overflow: only scroll when total content > viewport */
+  var leftPanel = container.closest('.auth-left');
+  if (leftPanel) {
+    requestAnimationFrame(function() {
+      var vh = window.innerHeight;
+      /* scrollHeight = total content height (children + padding + margins) */
+      var contentH = leftPanel.scrollHeight;
+      if (contentH > vh) {
+        leftPanel.style.overflowY = 'auto';
+      } else {
+        leftPanel.style.overflowY = 'hidden';
+      }
+    });
+  }
 }
 
 function switchAuthTab(tab) {
@@ -3312,6 +3319,17 @@ document.addEventListener('DOMContentLoaded', function() {
   if (initAuthContainer && initActiveView) {
     syncAuthViewsHeight(initAuthContainer, initActiveView);
   }
+
+  // Re-check scroll on resize (debounced)
+  var _resizeTimer = null;
+  window.addEventListener('resize', function() {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(function() {
+      var c = document.getElementById('authViews');
+      var v = c ? c.querySelector('.auth-view.active') : null;
+      if (c && v) { syncAuthViewsHeight(c, v); }
+    }, 150);
+  });
 });
 
 function logout() {
