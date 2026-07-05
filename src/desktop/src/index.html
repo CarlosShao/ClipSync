@@ -586,7 +586,7 @@ body {
 .cr-preview {
   font-size: 13px; color: var(--text-primary); font-weight: 430;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 320px;
+  max-width: 320px; min-width: 0; line-height: 1.4;
 }
 .cr-device { font-size: 12.5px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; }
 .cr-tag {
@@ -3363,7 +3363,6 @@ function updateUserInfo() {
 async function loadClipboardItems() {
   try {
     var data = await api('GET', '/api/clipboard?limit=100');
-    /* DEBUG */ console.log('[loadClipboardItems] got', data.items ? data.items.length : 0, 'items, first preview:', data.items && data.items[0] ? JSON.stringify(data.items[0].contentPreview) : 'N/A');
     clipboardItems = data.items || [];
     renderClipboardItems();
   } catch(e) { console.error('[Clipboard] load failed:', e.message); }
@@ -3390,7 +3389,6 @@ function renderClipboardItems() {
   var emptyState = document.getElementById('clipEmptyState');
   if (clipboardItems.length === 0) { if (emptyState) emptyState.classList.add('show'); updateClipCount(); return; }
   if (emptyState) emptyState.classList.remove('show');
-  /* DEBUG */ console.log('[Render] total items:', clipboardItems.length, 'first item keys:', clipboardItems[0] ? Object.keys(clipboardItems[0]) : 'N/A', 'first item:', JSON.stringify(clipboardItems[0]).substring(0, 300));
   clipboardItems.forEach(function(item) {
     var type = item.contentType || 'text';
     // Fix: if contentPreview starts with [Image] it's actually an image
@@ -3411,7 +3409,6 @@ function renderClipboardItems() {
       rawPreview = parts[parts.length - 1] || rawPreview;
     }
     var preview = escapeHtml(rawPreview.substring(0, 120));
-    /* DEBUG */ if (clipboardItems.indexOf(item) < 3) console.log('[Render]', item.id, 'type=', typeClass, 'preview=', JSON.stringify(preview), 'rawPreview=', JSON.stringify(rawPreview));
     var row = document.createElement('div');
     row.className = 'clip-row'; row.dataset.type = typeClass; row.dataset.id = item.id;
     var viewIcon = '';
@@ -3427,7 +3424,7 @@ function renderClipboardItems() {
     var srcDev = item.sourceDevice || {};
     var devName = srcDev.name || item.deviceName || meta.deviceName || meta.originalName || (meta.fileName && !meta.chunkedUpload ? t('dev_browser') : t('dev_desktop'));
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
-    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><span class="cr-preview" style="color:red!important;font-size:13px!important;display:inline!important;background:rgba(255,255,0,.15);padding:2px 4px;border-radius:3px;">' + (preview || 'EMPTY') + '</span></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
+    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><span class="cr-preview">' + (preview || '') + '</span></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
     container.appendChild(row);
   });
   // Re-apply active tab filter
@@ -3672,16 +3669,14 @@ function blobToBase64(blob) {
 function imgHash(b64) { return b64 ? b64.substring(0, 100) : ''; }
 window.uploadImage = async function(dataUrl, mimeType, size) {
   if (!state.deviceId) state.deviceId = localStorage.getItem('cs_deviceId') || localStorage.getItem('cs_device_id');
-  if (!state.deviceId || !deviceReady) { console.warn('[UploadImage] ABORT: deviceId=', !!state.deviceId, 'deviceReady=', deviceReady); return; }
+  if (!state.deviceId || !deviceReady) return;
   try {
-    console.log('[UploadImage] POSTing size=', size, 'mimeType=', mimeType);
     await api('POST', '/api/clipboard', {
       sourceDeviceId: state.deviceId, contentType: 'image',
       contentEncrypted: dataUrl,
       contentPreview: '[Image] ' + mimeType + ' (' + (size / 1024).toFixed(1) + 'KB)',
       contentSize: size,
     });
-    console.log('[UploadImage] SUCCESS, loading items...');
     await loadClipboardItems();
   } catch(e) { console.error('[UploadImage] failed:', e.message); }
 };
@@ -3789,10 +3784,8 @@ function startTauriClipboardPoll() {
         var imgHash = 'img:' + imgInfo.size;
         if (_isDuplicateHash(imgHash)) return;
         _lastImageSize = imgInfo.size;
-        console.log('[TauriPoll] IMAGE detected, size:', imgInfo.size);
         try {
           var dataUrl = await _invoke('get_clipboard_image');
-          /* DEBUG */ console.log('[TauriPoll] got image from invoke, length=', dataUrl ? dataUrl.length : 0, 'starts with data:=', dataUrl ? dataUrl.startsWith('data:') : 'N/A');
           if (dataUrl && dataUrl.startsWith('data:')) {
             await uploadImage(dataUrl, 'image/png', imgInfo.size || 0);
             _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
