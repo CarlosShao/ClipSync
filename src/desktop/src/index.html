@@ -1385,7 +1385,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
         <!-- ===== VIEW 3: Set Password (New User Detected) ===== -->
         <div class="auth-view" id="av-set-password">
-          <button class="auth-back" onclick="showAuthView('login-phone')">
+          <button class="auth-back" onclick="showAuthView(lastLoginView)">
             <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></span> <span data-i18n="btn_back">Back</span>
           </button>
           <div class="sp-steps">
@@ -1433,7 +1433,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
         <!-- ===== VIEW 4: Register (New Account) ===== -->
         <div class="auth-view" id="av-register">
-          <button class="auth-back" onclick="showAuthView('login-phone')">
+          <button class="auth-back" onclick="showAuthView(lastLoginView)">
             <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></span> <span data-i18n="btn_back_login">Back to Sign In</span>
           </button>
           <div class="auth-welcome" data-i18n="reg_title">Create ClipSync Account</div>
@@ -2720,6 +2720,7 @@ async function api(method, path, body) {
    AUTH SYSTEM — Multi-Step Login / Register
    ============================================================ */
 var currentAuthView = 'login-phone';
+var lastLoginView = 'login-phone'; /* Remember which login tab user was on */
 var codeTimers = { login: 0, register: 0 };
 
 function showAuthView(viewId) {
@@ -2729,6 +2730,10 @@ function showAuthView(viewId) {
   var target = document.getElementById('av-' + viewId);
   if (!target) { console.error('[Auth] view av-' + viewId + ' not found'); return; }
   if (target.classList.contains('active')) return;
+  /* Remember last login view so "back" button can return to it */
+  if (currentAuthView === 'login-phone' || currentAuthView === 'login-password') {
+    lastLoginView = currentAuthView;
+  }
   views.forEach(function(v) {
     if (v.classList.contains('active')) {
       v.classList.remove('active');
