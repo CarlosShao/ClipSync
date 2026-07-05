@@ -557,21 +557,24 @@ body {
       .main-area { overflow: hidden; }
    .clip-view > * { min-width: 0; }  /* Prevent grid items from overflowing */
 .list-head {
-  display: grid; grid-template-columns: 28px minmax(0,1fr) 110px 72px 80px 80px;
+  display: grid; grid-template-columns: minmax(0,1fr) 110px 72px 80px 80px;
   gap: 12px; padding: 8px 20px;
   font-size: 10.5px; font-weight: 600; color: var(--text-tertiary);
   text-transform: uppercase; letter-spacing: .06em;
 }
-.list-head > .lh-check { display: flex; align-items: center; justify-content: center; }
+.list-head.with-cb { grid-template-columns: 28px minmax(0,1fr) 110px 72px 80px 80px; }
+.list-head > .lh-check { display: none; }
+.list-head.with-cb > .lh-check { display: flex; align-items: center; justify-content: center; }
 .lh-check { display: flex; align-items: center; justify-content: center; }
 .clip-row {
-  display: grid; grid-template-columns: 28px minmax(0,1fr) 110px 72px 80px 80px;
+  display: grid; grid-template-columns: minmax(0,1fr) 110px 72px 80px 80px;
   gap: 12px; align-items: center; padding: 10px 20px;
   border-radius: var(--radius-sm); cursor: pointer;
   transition: background .1s ease;
 }
-.clip-row > *:first-child { visibility: hidden; pointer-events: none; }
-.clip-row.batch-active > *:first-child { visibility: visible; pointer-events: auto; }
+.clip-row.with-cb { grid-template-columns: 28px minmax(0,1fr) 110px 72px 80px 80px; }
+.clip-row > *:first-child { display: none; }
+.clip-row.with-cb > *:first-child { display: flex; align-items: center; }
 .clip-row:hover { background: var(--bg-hover); }
 
 .cr-main { display: flex; align-items: center; gap: 11px; min-width: 0; overflow: hidden; }
@@ -1573,7 +1576,7 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
                     <div class="search-wrap" id="searchWrap"><button class="search-toggle" onclick="var w=document.getElementById('searchWrap');w.classList.add('open');w.querySelector('input').focus();"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span></button><input type="text" placeholder="Search clips..." class="search-input" oninput="filterClipboard(this.value)" onblur="if(!this.value){document.getElementById('searchWrap').classList.remove('open');}"></div>
         </header>
         <div class="tab-bar"><button class="tab-btn active" onclick="switchClipTab(this,'all')">All</button><button class="tab-btn" onclick="switchClipTab(this,'text')">Text</button><button class="tab-btn" onclick="switchClipTab(this,'images')">Images</button><button class="tab-btn" onclick="switchClipTab(this,'links')">Links</button><button class="tab-btn" onclick="switchClipTab(this,'files')">Files</button></div>
-        <div class="list-head"><input type="checkbox" id="selectAllCb" class="batch-cb" style="display:none;" onchange="toggleSelectAll(this)"><div>CONTENT</div><div>SOURCE</div><div>TYPE</div><div>TIME</div><div>ACTIONS</div></div>
+        <div class="list-head"><input type="checkbox" id="selectAllCb" class="batch-cb" onchange="toggleSelectAll(this)"><div>CONTENT</div><div>SOURCE</div><div>TYPE</div><div>TIME</div><div>ACTIONS</div></div>
         <div class="clip-view">
           <div id="clipEmptyState" class="empty-state"><div class="empty-icon"><svg viewBox="0 0 24 24" width="48" height="48" stroke="var(--text-tertiary)" fill="none" stroke-width="1.5"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></div><div class="empty-title">No clips yet</div><div class="empty-desc">Clips from all your devices will appear here.</div><div class="empty-action">Start copying to sync!</div></div>
         </div>
@@ -3910,14 +3913,17 @@ window.toggleBatchMode = function() {
     var cb = row.querySelector('.batch-cb');
     if (cb) cb.checked = false;
     row.classList.toggle('batch-selected', false);
-    row.classList.toggle('batch-active', _batchMode);
+    row.classList.toggle('with-cb', _batchMode);
   });
+  /* Toggle header checkbox column */
+  var listHead = document.querySelector('.list-head');
+  if (listHead) listHead.classList.toggle('with-cb', _batchMode);
   document.querySelectorAll('.cr-actions').forEach(function(el) {
     el.style.display = _batchMode ? 'none' : '';
   });
   /* Reset select-all checkbox */
   var selAll = document.getElementById('selectAllCb');
-  if (selAll) { selAll.checked = false; selAll.indeterminate = false; selAll.style.display = _batchMode ? '' : 'none'; }
+  if (selAll) { selAll.checked = false; selAll.indeterminate = false; }
   var btn = document.getElementById('batchDeleteBtn');
   if (btn) btn.style.display = _batchMode ? '' : 'none';
 };
