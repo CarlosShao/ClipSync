@@ -3363,6 +3363,7 @@ function updateUserInfo() {
 async function loadClipboardItems() {
   try {
     var data = await api('GET', '/api/clipboard?limit=100');
+    /* DEBUG */ console.log('[loadClipboardItems] got', data.items ? data.items.length : 0, 'items, first preview:', data.items && data.items[0] ? JSON.stringify(data.items[0].contentPreview) : 'N/A');
     clipboardItems = data.items || [];
     renderClipboardItems();
   } catch(e) { console.error('[Clipboard] load failed:', e.message); }
@@ -3389,6 +3390,7 @@ function renderClipboardItems() {
   var emptyState = document.getElementById('clipEmptyState');
   if (clipboardItems.length === 0) { if (emptyState) emptyState.classList.add('show'); updateClipCount(); return; }
   if (emptyState) emptyState.classList.remove('show');
+  /* DEBUG */ console.log('[Render] total items:', clipboardItems.length, 'first item keys:', clipboardItems[0] ? Object.keys(clipboardItems[0]) : 'N/A', 'first item:', JSON.stringify(clipboardItems[0]).substring(0, 300));
   clipboardItems.forEach(function(item) {
     var type = item.contentType || 'text';
     // Fix: if contentPreview starts with [Image] it's actually an image
@@ -3409,6 +3411,7 @@ function renderClipboardItems() {
       rawPreview = parts[parts.length - 1] || rawPreview;
     }
     var preview = escapeHtml(rawPreview.substring(0, 120));
+    /* DEBUG */ if (clipboardItems.indexOf(item) < 3) console.log('[Render]', item.id, 'type=', typeClass, 'preview=', JSON.stringify(preview), 'rawPreview=', JSON.stringify(rawPreview));
     var row = document.createElement('div');
     row.className = 'clip-row'; row.dataset.type = typeClass; row.dataset.id = item.id;
     var viewIcon = '';
@@ -3672,15 +3675,17 @@ function startBrowserClipboardPoll() {
   }
   function imgHash(b64) { return b64 ? b64.substring(0, 100) : ''; }
   async function uploadImage(dataUrl, mimeType, size) {
-    if (!state.deviceId) state.deviceId = localStorage.getItem('cs_device_id');
-    if (!state.deviceId || !deviceReady) return;
+    if (!state.deviceId) state.deviceId = localStorage.getItem('cs_deviceId') || localStorage.getItem('cs_device_id');
+    if (!state.deviceId || !deviceReady) { console.warn('[UploadImage] ABORT: deviceId=', !!state.deviceId, 'deviceReady=', deviceReady); return; }
     try {
+      /* DEBUG */ console.log('[UploadImage] POSTing size=', size, 'mimeType=', mimeType, 'dataUrl prefix=', dataUrl ? dataUrl.substring(0, 30) : 'NULL');
       await api('POST', '/api/clipboard', {
         sourceDeviceId: state.deviceId, contentType: 'image',
         contentEncrypted: dataUrl,
         contentPreview: '[Image] ' + mimeType + ' (' + (size / 1024).toFixed(1) + 'KB)',
         contentSize: size,
       });
+      /* DEBUG */ console.log('[UploadImage] SUCCESS, loading items...');
       await loadClipboardItems();
     } catch(e) { console.error('[UploadImage] failed:', e.message); }
   }
@@ -3785,11 +3790,12 @@ function startTauriClipboardPoll() {
         console.log('[TauriPoll] IMAGE detected, size:', imgInfo.size);
         try {
           var dataUrl = await _invoke('get_clipboard_image');
+          /* DEBUG */ console.log('[TauriPoll] got image from invoke, length=', dataUrl ? dataUrl.length : 0, 'starts with data:=', dataUrl ? dataUrl.startsWith('data:') : 'N/A');
           if (dataUrl && dataUrl.startsWith('data:')) {
             await uploadImage(dataUrl, 'image/png', imgInfo.size || 0);
             _globalThrottleUntil = Date.now() + GLOBAL_THROTTLE_MS;
           }
-        } catch (imgErr) {}
+        } catch (imgErr) { console.error('[TauriPoll] get_clipboard_image ERROR:', imgErr.message || imgErr); }
         return;
       }
 
