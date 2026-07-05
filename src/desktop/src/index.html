@@ -4098,7 +4098,10 @@ function applyStyle(s, m) {
     if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
       window.__TAURI__.core.invoke('set_titlebar_mode', { isDark: currentMode === 'dark' });
     }
-  } catch (_) { /* 非桌面端或 invoke 未就绪时静默 */ }
+  } catch (e) {
+    // 仅在桌面端且 invoke 可用时才报错；浏览器预览场景下静默
+    if (window.__TAURI__ && window.__TAURI__.core) console.warn('[TitleBar] invoke failed:', e);
+  }
 }
 if (state.token) {
   showPage('app');

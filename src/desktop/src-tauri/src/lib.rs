@@ -837,7 +837,10 @@ fn apply_window_titlebar_color(_window: &tauri::WebviewWindow, _dark: bool) {
 }
 
 /// 前端 invoke 入口：切换标题栏暗色/亮色
-#[tauri::command]
+///
+/// 注意：Tauri v2 默认不做 camelCase ↔ snake_case 自动转换，必须显式声明。
+/// 前端调用 `invoke('set_titlebar_mode', { isDark: ... })`，这里必须映射到 `is_dark`。
+#[tauri::command(rename_all = "camelCase")]
 fn set_titlebar_mode(window: tauri::WebviewWindow, is_dark: bool) {
     apply_window_titlebar_color(&window, is_dark);
     println!("[TitleBar] set_titlebar_mode is_dark={}", is_dark);
