@@ -3411,6 +3411,8 @@ function renderClipboardItems() {
       rawPreview = parts[parts.length - 1] || rawPreview;
     }
     var preview = escapeHtml(rawPreview.substring(0, 120));
+    // DIAGNOSTIC: log exact preview value for first 3 items
+    if (clipboardItems.indexOf(item) < 3) console.log('[DIAG] item', item.id, 'contentType=', item.contentType, 'contentPreview=', JSON.stringify(item.contentPreview), 'rawPreview=', JSON.stringify(rawPreview), 'preview=', JSON.stringify(preview), 'len=', (preview||'').length);
     var row = document.createElement('div');
     row.className = 'clip-row'; row.dataset.type = typeClass; row.dataset.id = item.id;
     var viewIcon = '';
@@ -3426,7 +3428,9 @@ function renderClipboardItems() {
     var srcDev = item.sourceDevice || {};
     var devName = srcDev.name || item.deviceName || meta.deviceName || meta.originalName || (meta.fileName && !meta.chunkedUpload ? t('dev_browser') : t('dev_desktop'));
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
-    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><span class="cr-preview" style="color:var(--text-primary) !important;">' + (preview || '') + '</span></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
+    // Use a plain DIV with ZERO class dependencies and ALL inline styles
+    // This eliminates ANY possibility of external CSS rules affecting visibility
+    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><div style="display:inline;font-size:13px;color:#d00;font-weight:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px;line-height:1.4;">' + (preview || '[empty]') + '</div></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
     container.appendChild(row);
   });
   // Re-apply active tab filter
@@ -3438,6 +3442,30 @@ function renderClipboardItems() {
     });
   }
   updateClipCount();
+  // POST-RENDER DIAGNOSTIC: inspect first row's content element
+  setTimeout(function() {
+    var firstRow = container.querySelector('.clip-row');
+    if (!firstRow) return;
+    var crMain = firstRow.querySelector('.cr-main');
+    var contentDiv = crMain ? crMain.querySelector('div[style]') : null;
+    console.log('[POST-RENDER DIAG] firstRow HTML length:', firstRow.innerHTML.length);
+    console.log('[POST-RENDER DIAG] crMain children:', crMain ? crMain.children.length : 'N/A');
+    if (contentDiv) {
+      var cs = window.getComputedStyle(contentDiv);
+      console.log('[POST-RENDER DIAG] contentDiv:');
+      console.log('  textContent:', JSON.stringify(contentDiv.textContent));
+      console.log('  textContent.length:', contentDiv.textContent.length);
+      console.log('  offsetWidth:', contentDiv.offsetWidth, 'offsetHeight:', contentDiv.offsetHeight);
+      console.log('  scrollWidth:', contentDiv.scrollWidth, 'clientWidth:', contentDiv.clientWidth);
+      console.log('  display:', cs.display, 'visibility:', cs.visibility, 'opacity:', cs.opacity);
+      console.log('  color:', cs.color, 'fontSize:', cs.fontSize, 'lineHeight:', cs.lineHeight);
+      console.log('  whiteSpace:', cs.whiteSpace, 'overflow:', cs.overflow);
+      console.log('  position:', cs.position, 'zIndex:', cs.zIndex);
+      console.log('  innerHTML:', contentDiv.innerHTML.substring(0, 100));
+    } else {
+      console.log('[POST-RENDER DIAG] NO contentDiv found! crMain innerHTML:', (crMain||{}).innerHTML ? (crMain.innerHTML.substring(0,200)) : 'N/A');
+    }
+  }, 100);
 }
 
 function formatTime(iso) {
