@@ -3426,8 +3426,8 @@ function renderClipboardItems() {
     var srcDev = item.sourceDevice || {};
     var devName = srcDev.name || item.deviceName || meta.deviceName || meta.originalName || (meta.fileName && !meta.chunkedUpload ? t('dev_browser') : t('dev_desktop'));
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
-    // Use flex:1 to fill remaining space in .cr-main flex container
-    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><div style="flex:1;min-width:0;font-size:13px;color:var(--text-primary);font-weight:430;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;">' + (preview || '') + '</div></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
+    // Content div: brutal-force visible — explicit dark color, bg, padding, NO CSS class dependency
+    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><div id="cv-' + item.id.substring(0,8) + '" style="flex:1;min-width:0;font-size:13px;color:#1a1a1a!important;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5;padding:2px 8px;background:rgba(255,240,200,0.35);border-radius:3px;">' + (preview || '\u{1f4a9}') + '</div></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
     container.appendChild(row);
   });
   // Re-apply active tab filter
@@ -3439,6 +3439,19 @@ function renderClipboardItems() {
     });
   }
   updateClipCount();
+  // Quick check: verify first content div is visible
+  setTimeout(function() {
+    var first = container.querySelector('.clip-row');
+    if (!first) return;
+    var cdiv = first.querySelector('div[id^="cv-"]');
+    if (cdiv) {
+      var cs = window.getComputedStyle(cdiv);
+      console.log('[CONTENT-CHECK] id=' + cdiv.id + ' text=' + JSON.stringify(cdiv.textContent) +
+        ' w=' + cdiv.offsetWidth + ' h=' + cdiv.offsetHeight +
+        ' color=' + cs.color + ' display=' + cs.display +
+        ' parentW=' + first.querySelector('.cr-main').offsetWidth);
+    }
+  }, 200);
 }
 
 function formatTime(iso) {
