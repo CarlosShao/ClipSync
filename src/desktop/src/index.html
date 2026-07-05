@@ -563,8 +563,6 @@ body {
   text-transform: uppercase; letter-spacing: .06em;
 }
 .list-head > .lh-check { display: flex; align-items: center; justify-content: center; }
-.clip-row > .batch-cb { display: none; }
-.clip-row > .cr-main { min-width: 0; }
 .lh-check { display: flex; align-items: center; justify-content: center; }
 .clip-row {
   display: grid; grid-template-columns: 28px minmax(0,1fr) 110px 72px 80px 80px;
@@ -572,9 +570,11 @@ body {
   border-radius: var(--radius-sm); cursor: pointer;
   transition: background .1s ease;
 }
+.clip-row > *:first-child { display: none; }  /* hide checkbox column by default */
+.clip-row.batch-active > *:first-child { display: table-cell; }  /* show in batch mode */
 .clip-row:hover { background: var(--bg-hover); }
 
-.cr-main { display: grid; grid-template-columns: 34px 1fr; gap: 11px; align-items: center; min-width: 0; width: 100%; }
+.cr-main { display: grid; grid-template-columns: 34px 1fr; gap: 11px; align-items: center; align-self: stretch; }
 .type-badge {
   width: 34px; height: 34px; border-radius: var(--radius-md);
   display: flex; align-items: center; justify-content: center;
