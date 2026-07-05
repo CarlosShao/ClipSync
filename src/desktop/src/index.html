@@ -546,7 +546,7 @@ body {
 .styled-input::placeholder { color: var(--text-tertiary); }
 
 /* ============================================================
-   CLIPBOARD LIST — Table-like rows
+   CLIPBOARD TABLE — Native HTML table for perfect column alignment
    /* ===== CLIP VIEW ===== */
    .clip-view {
         display: flex; flex-direction: column; min-height: 100%;
@@ -555,55 +555,51 @@ body {
         flex: 1;
       }
       .main-area { overflow: hidden; }
-   .clip-view > * { min-width: 0; }  /* Prevent grid items from overflowing */
-.list-head {
-  display: grid; grid-template-columns: minmax(0,1fr) 160px 60px 80px 90px;
-  gap: 12px; padding: 10px 20px;
+   .clip-view > * { min-width: 0; }
+/* ===== TABLE STYLES ===== */
+.clip-table {
+  width: 100%; border-collapse: collapse; table-layout: fixed;
+}
+.clip-table th, .clip-table td {
+  padding: 10px 8px; text-align: left; vertical-align: middle;
+  font-size: 13px; border-bottom: 1px solid var(--border);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.clip-table thead th {
   font-size: 10.5px; font-weight: 600; color: var(--text-tertiary);
   text-transform: uppercase; letter-spacing: .06em;
-  align-items: center;
+  position: sticky; top: 0; background: var(--bg-primary); z-index: 1;
 }
-.list-head.with-cb { grid-template-columns: 28px minmax(0,1fr) 160px 60px 80px 90px; }
-.list-head > .batch-cb { display: none; }
-.list-head.with-cb > .batch-cb { display: flex; align-items: center; }
-/* Header cells: match data row content alignment */
-.list-head > div { min-width: 0; overflow: hidden; }
-/* SOURCE: offset by icon(16px) + gap(4px) = 20px */
-.list-head > div:nth-child(3) { padding-left: 20px; }
-/* TYPE: offset by badge padding-left(9px) */
-.list-head > div:nth-child(4) { padding-left: 9px; }
-.clip-row {
-  display: grid; grid-template-columns: minmax(0,1fr) 160px 60px 80px 90px;
-  gap: 12px; align-items: center; padding: 10px 20px;
-  border-radius: var(--radius-sm); cursor: pointer;
-  transition: background .1s ease;
-  min-width: 0;
-}
-.clip-row.with-cb { grid-template-columns: 28px minmax(0,1fr) 160px 60px 80px 90px; }
-.clip-row > .batch-cb { display: none; }
-.clip-row.with-cb > .batch-cb { display: block; }
-.clip-row:hover { background: var(--bg-hover); }
-
+/* Column widths via colgroup */
+.clip-table colgroup .col-cb { width: 28px; }
+.clip-table colgroup .col-content { }
+.clip-table colgroup .col-source { width: 180px; }
+.clip-table colgroup .col-type { width: 60px; }
+.clip-table colgroup .col-time { width: 80px; }
+.clip-table colgroup .col-actions { width: 90px; }
+/* Batch checkbox */
+.clip-table .batch-cb { display: none; width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+.clip-table.with-cb .batch-cb { display: block; }
+/* Row styles */
+.clip-table tbody tr { cursor: pointer; transition: background .1s ease; }
+.clip-table tbody tr:hover { background: var(--bg-hover); }
+.clip-table tbody tr.batch-selected { background: var(--accent-bg); }
+/* Content cell */
 .cr-main { display: flex; align-items: center; gap: 11px; min-width: 0; overflow: hidden; }
 .type-badge {
   width: 34px; height: 34px; border-radius: var(--radius-md);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; transition: transform .15s ease;
 }
-.clip-row:hover .type-badge { transform: scale(1.06); }
-.cr-main .cr-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--text-primary); font-size: 13px; font-weight: 430; line-height: 1.4; }
+.clip-table tbody tr:hover .type-badge { transform: scale(1.06); }
+.cr-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--text-primary); font-size: 13px; font-weight: 430; line-height: 1.4; flex: 1; }
 .tb-text { background: var(--accent-bg); color: var(--accent); }
 .tb-img  { background: var(--warning-bg); color: var(--warning); }
 .tb-link { background: var(--info-bg); color: var(--info); }
 .tb-file { background: var(--success-bg); color: var(--success); }
-
-.cr-preview {
-  font-size: 13px; color: var(--text-primary); font-weight: 430;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  min-width: 0; line-height: 1.4;
-  flex: 1; width: auto;
-}
+/* Device cell */
 .cr-device { font-size: 12.5px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; white-space: nowrap; min-width: 0; }
+/* Tag cell */
 .cr-tag {
   font-size: 11px; font-weight: 500; display: inline-flex;
   padding: 2px 9px; border-radius: var(--radius-full);
@@ -612,9 +608,18 @@ body {
 .ct-img  { background: var(--warning-bg); color: var(--warning); }
 .ct-link { background: var(--info-bg); color: var(--info); }
 .ct-file { background: var(--success-bg); color: var(--success); }
+/* Time cell */
 .cr-time { font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono,monospace); }
-.cr-actions { display: flex; gap: 2px; justify-content: flex-end; opacity: 0; transition: opacity .12s ease; }
-.clip-row:hover .cr-actions { opacity: 1; }
+/* Actions cell */
+.cr-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .12s ease; }
+.clip-table tbody tr:hover .cr-actions { opacity: 1; }
+.act-btn {
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-tertiary); cursor: pointer;
+  border: none; background: transparent; transition: all .1s ease;
+}
+.act-btn:hover { background: var(--bg-active); color: var(--text-primary); }
 .act-btn {
   width: 28px; height: 28px; border-radius: var(--radius-sm);
   display: flex; align-items: center; justify-content: center;
@@ -1262,10 +1267,8 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
 
 /* ===== Responsive ===== */
 @media (max-width: 900px) {
-  .clip-row { grid-template-columns: 28px 1fr 72px 80px 80px; }
-  .clip-row .cr-device { display: none; }
-  .list-head { grid-template-columns: 28px 1fr 72px 80px 80px; }
-  .list-head > :nth-child(3) { display: none; }
+  .clip-table colgroup .col-source { display: none; }
+  .clip-table th:nth-child(3), .clip-table td:nth-child(3) { display: none; }
 }
 @media (max-width: 600px) {
   .clip-row { grid-template-columns: 28px 1fr 80px 80px; }
@@ -1583,8 +1586,28 @@ kbd { font-family: var(--font-mono,monospace); font-size: 10px; padding: 1px 5px
                     <div class="search-wrap" id="searchWrap"><button class="search-toggle" onclick="var w=document.getElementById('searchWrap');w.classList.add('open');w.querySelector('input').focus();"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span></button><input type="text" placeholder="Search clips..." class="search-input" oninput="filterClipboard(this.value)" onblur="if(!this.value){document.getElementById('searchWrap').classList.remove('open');}"></div>
         </header>
         <div class="tab-bar"><button class="tab-btn active" onclick="switchClipTab(this,'all')">All</button><button class="tab-btn" onclick="switchClipTab(this,'text')">Text</button><button class="tab-btn" onclick="switchClipTab(this,'images')">Images</button><button class="tab-btn" onclick="switchClipTab(this,'links')">Links</button><button class="tab-btn" onclick="switchClipTab(this,'files')">Files</button></div>
-        <div class="list-head"><input type="checkbox" id="selectAllCb" class="batch-cb" onchange="toggleSelectAll(this)"><div>CONTENT</div><div>SOURCE</div><div>TYPE</div><div>TIME</div><div>ACTIONS</div></div>
         <div class="clip-view">
+          <table class="clip-table" id="clipTable">
+            <colgroup>
+              <col class="col-cb">
+              <col class="col-content">
+              <col class="col-source">
+              <col class="col-type">
+              <col class="col-time">
+              <col class="col-actions">
+            </colgroup>
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="selectAllCb" class="batch-cb" onchange="toggleSelectAll(this)"></th>
+                <th>CONTENT</th>
+                <th>SOURCE</th>
+                <th>TYPE</th>
+                <th>TIME</th>
+                <th>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody id="clipBody"></tbody>
+          </table>
           <div id="clipEmptyState" class="empty-state"><div class="empty-icon"><svg viewBox="0 0 24 24" width="48" height="48" stroke="var(--text-tertiary)" fill="none" stroke-width="1.5"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></div><div class="empty-title">No clips yet</div><div class="empty-desc">Clips from all your devices will appear here.</div><div class="empty-action">Start copying to sync!</div></div>
         </div>
       </main>
@@ -2215,7 +2238,7 @@ function applyI18n(){
   document.querySelectorAll('.tab-btn').forEach(function(el){var k=tabK[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);});
   // ---- List headers ----
   var headK={content:'head_content',source:'head_source',type:'head_type',time:'head_time',actions:'head_actions','内容':'head_content','来源':'head_source','类型':'head_type','时间':'head_time','操作':'head_actions'};
-  document.querySelectorAll('.list-head > div').forEach(function(el){var k=headK[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);});
+  document.querySelectorAll('.clip-table thead th').forEach(function(el){var k=headK[el.textContent.trim().toLowerCase()];if(k)el.textContent=t(k);});
   // ---- Empty state ----
   document.querySelectorAll('.empty-title').forEach(function(el){el.textContent=t('empty_title');});
   document.querySelectorAll('.empty-desc').forEach(function(el){el.textContent=t('empty_desc');});
@@ -3400,36 +3423,30 @@ var TYPE_ICONS = {
 };
 var _activeTab = 'all';
 function renderClipboardItems() {
-  var container = document.querySelector('#sub-clipboard .clip-view');
-  if (!container) return;
-  container.querySelectorAll('.clip-row').forEach(function(r) { r.remove(); });
+  var tbody = document.getElementById('clipBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
   var emptyState = document.getElementById('clipEmptyState');
   if (clipboardItems.length === 0) { if (emptyState) emptyState.classList.add('show'); updateClipCount(); return; }
   if (emptyState) emptyState.classList.remove('show');
   clipboardItems.forEach(function(item) {
     var type = item.contentType || 'text';
-    // Fix: if contentPreview starts with [Image] it's actually an image
     if (type === 'image' || (item.contentPreview && item.contentPreview.indexOf('[Image]') === 0)) {
       type = 'image';
     } else if (type === 'link' || (item.contentPreview && /^https?:\/\//.test(item.contentPreview))) {
       type = 'link';
     } else if (type === 'file' && (!item.contentPreview || item.contentPreview.indexOf('[') === 0)) {
-      // Check if it's really a file or misclassified
       if (item.contentPreview && item.contentPreview.indexOf('[Image]') === 0) type = 'image';
     }
     var typeClass = type === 'image' ? 'img' : type === 'link' ? 'link' : type === 'file' ? 'file' : 'text';
     var typeLabel = type === 'image' ? t('tab_images') : type === 'link' ? t('tab_links') : type === 'file' ? t('tab_files') : t('tab_text');
     var rawPreview = item.contentPreview || '';
-    // For files, show only filename not full path
     if (typeClass === 'file') {
       var parts = rawPreview.split(/[\/\\]/);
       rawPreview = parts[parts.length - 1] || rawPreview;
     }
     var preview = escapeHtml(rawPreview.substring(0, 120));
-    var row = document.createElement('div');
-    row.className = 'clip-row'; row.dataset.type = typeClass; row.dataset.id = item.id;
     var viewIcon = '';
-    // Action icons: eye for images, external link for links, download for files, info for text
     var ACTION_ICONS = {
       img: '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
       link: '<svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
@@ -3443,14 +3460,16 @@ function renderClipboardItems() {
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
     var rawTitle = rawPreview.substring(0, 500);
     var deviceTitle = escapeHtml(devName);
-    row.innerHTML = '<input type="checkbox" class="batch-cb" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><div class="cr-preview" title="' + rawTitle.replace(/"/g, '&quot;') + '">' + preview + '</div></div><div class="cr-device" title="' + deviceTitle + '"><span class="icon icon-sm">' + devIcon + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(devName) + '</span></div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
-    container.appendChild(row);
+    var tr = document.createElement('tr');
+    tr.className = 'clip-row'; tr.dataset.type = typeClass; tr.dataset.id = item.id;
+    tr.innerHTML = '<td><input type="checkbox" class="batch-cb" onchange="toggleBatchItem(\'' + item.id + '\',this)"></td><td><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><div class="cr-preview" title="' + rawTitle.replace(/"/g, '&quot;') + '">' + preview + '</div></div></td><td><div class="cr-device" title="' + deviceTitle + '"><span class="icon icon-sm">' + devIcon + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(devName) + '</span></div></td><td><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></td><td class="cr-time">' + formatTime(item.createdAt) + '</td><td><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div></td>';
+    tbody.appendChild(tr);
   });
   // Re-apply active tab filter
   if (_activeTab !== 'all') {
     var typeMap = { 'text': 'text', 'images': 'img', 'links': 'link', 'files': 'file' };
     var target = typeMap[_activeTab] || 'all';
-    container.querySelectorAll('.clip-row').forEach(function(r) {
+    tbody.querySelectorAll('.clip-row').forEach(function(r) {
       r.style.display = (r.dataset.type === target) ? '' : 'none';
     });
   }
@@ -3921,11 +3940,10 @@ window.toggleBatchMode = function() {
     var cb = row.querySelector('.batch-cb');
     if (cb) cb.checked = false;
     row.classList.toggle('batch-selected', false);
-    row.classList.toggle('with-cb', _batchMode);
   });
-  /* Toggle header checkbox column */
-  var listHead = document.querySelector('.list-head');
-  if (listHead) listHead.classList.toggle('with-cb', _batchMode);
+  /* Toggle table batch mode */
+  var clipTable = document.getElementById('clipTable');
+  if (clipTable) clipTable.classList.toggle('with-cb', _batchMode);
   document.querySelectorAll('.cr-actions').forEach(function(el) {
     el.style.display = _batchMode ? 'none' : '';
   });
