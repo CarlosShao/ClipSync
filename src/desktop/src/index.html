@@ -566,12 +566,8 @@ body {
 .list-head.with-cb { grid-template-columns: 28px minmax(0,1fr) 160px 60px 80px 90px; }
 .list-head > .batch-cb { display: none; }
 .list-head.with-cb > .batch-cb { display: flex; align-items: center; }
-/* Header cells: match data row visual alignment */
+/* Header cells: all left-aligned, no extra padding */
 .list-head > div { min-width: 0; overflow: hidden; }
-/* SOURCE: offset by icon(16px) + gap(4px) = 20px */
-.list-head > div:nth-child(3) { padding-left: 20px; }
-/* TYPE: offset by badge padding-left(9px) */
-.list-head > div:nth-child(4) { padding-left: 9px; }
 .clip-row {
   display: grid; grid-template-columns: minmax(0,1fr) 160px 60px 80px 90px;
   gap: 12px; align-items: center; padding: 10px 20px;
