@@ -2750,9 +2750,11 @@ function showAuthView(viewId) {
 }
 
 /* Dynamically size auth-views container to fit active view content.
-   Also controls .auth-left overflow so scrollbar only appears when needed. */
+   Controls .auth-left overflow — only register view needs scrolling.
+   Height measurement via clone is unreliable for flex-stretched parents,
+   so we use view-ID-based scrolling control instead. */
 function syncAuthViewsHeight(container, activeView) {
-  /* Clone the view for measurement without affecting layout */
+  /* Clone the view to measure its natural content height */
   var clone = activeView.cloneNode(true);
   clone.style.cssText = 'position:relative;visibility:hidden;height:auto;opacity:0;pointer-events:none;width:100%;';
   container.appendChild(clone);
@@ -2760,19 +2762,15 @@ function syncAuthViewsHeight(container, activeView) {
   container.removeChild(clone);
   if (h > 0) { container.style.height = h + 'px'; }
 
-  /* Control .auth-left overflow: only scroll when total content > viewport */
+  /* Control .auth-left scroll based on which view is active.
+     Only the register page has enough fields to exceed viewport height;
+     all other views (login-phone, login-password, set-password) fit comfortably. */
   var leftPanel = container.closest('.auth-left');
   if (leftPanel) {
-    requestAnimationFrame(function() {
-      var vh = window.innerHeight;
-      /* scrollHeight = total content height (children + padding + margins) */
-      var contentH = leftPanel.scrollHeight;
-      if (contentH > vh) {
-        leftPanel.style.overflowY = 'auto';
-      } else {
-        leftPanel.style.overflowY = 'hidden';
-      }
-    });
+    /* Map of view IDs that need scrolling */
+    var scrollableViews = ['register'];
+    var needsScroll = scrollableViews.indexOf(currentAuthView) !== -1;
+    leftPanel.style.overflowY = needsScroll ? 'auto' : 'hidden';
   }
 }
 
