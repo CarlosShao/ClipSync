@@ -3427,7 +3427,7 @@ function renderClipboardItems() {
     var srcDev = item.sourceDevice || {};
     var devName = srcDev.name || item.deviceName || meta.deviceName || meta.originalName || (meta.fileName && !meta.chunkedUpload ? t('dev_browser') : t('dev_desktop'));
     var devIcon = '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
-    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><span class="cr-preview">' + preview + '</span></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
+    row.innerHTML = '<input type="checkbox" class="batch-cb" style="display:none;" onchange="toggleBatchItem(\'' + item.id + '\',this)"><div class="cr-main"><div class="type-badge tb-' + typeClass + '"><span class="icon icon-md">' + TYPE_ICONS[typeClass] + '</span></div><span class="cr-preview" style="color:red!important;font-size:13px!important;display:inline!important;background:rgba(255,255,0,.15);padding:2px 4px;border-radius:3px;">' + (preview || 'EMPTY') + '</span></div><div class="cr-device"><span class="icon icon-sm">' + devIcon + '</span>' + escapeHtml(devName) + '</div><div><span class="cr-tag ct-' + typeClass + '">' + typeLabel + '</span></div><div class="cr-time">' + formatTime(item.createdAt) + '</div><div class="cr-actions"><button class="act-btn" onclick="event.stopPropagation();handleViewItem(\'' + item.id + '\',\'' + typeClass + '\')"><span class="icon icon-sm">' + viewIcon + '</span></button><button class="act-btn" onclick="event.stopPropagation();handleCopyItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button><button class="act-btn" onclick="event.stopPropagation();handleDeleteItem(\'' + item.id + '\')"><span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span></button></div>';
     container.appendChild(row);
   });
   // Re-apply active tab filter
@@ -3660,35 +3660,37 @@ function connectWebSocket() {
   } catch(e) {}
 }
 
+// ===== Global clipboard helpers (shared between browser & Tauri polling) =====
+function blobToBase64(blob) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onloadend = function() { resolve(reader.result); };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+function imgHash(b64) { return b64 ? b64.substring(0, 100) : ''; }
+window.uploadImage = async function(dataUrl, mimeType, size) {
+  if (!state.deviceId) state.deviceId = localStorage.getItem('cs_deviceId') || localStorage.getItem('cs_device_id');
+  if (!state.deviceId || !deviceReady) { console.warn('[UploadImage] ABORT: deviceId=', !!state.deviceId, 'deviceReady=', deviceReady); return; }
+  try {
+    console.log('[UploadImage] POSTing size=', size, 'mimeType=', mimeType);
+    await api('POST', '/api/clipboard', {
+      sourceDeviceId: state.deviceId, contentType: 'image',
+      contentEncrypted: dataUrl,
+      contentPreview: '[Image] ' + mimeType + ' (' + (size / 1024).toFixed(1) + 'KB)',
+      contentSize: size,
+    });
+    console.log('[UploadImage] SUCCESS, loading items...');
+    await loadClipboardItems();
+  } catch(e) { console.error('[UploadImage] failed:', e.message); }
+};
+
 function startBrowserClipboardPoll() {
   if (state._clipboardPolling) return;
   state._clipboardPolling = true;
   var lastText = '';
   var lastImageHash = '';
-  function blobToBase64(blob) {
-    return new Promise(function(resolve, reject) {
-      var reader = new FileReader();
-      reader.onloadend = function() { resolve(reader.result); };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-  function imgHash(b64) { return b64 ? b64.substring(0, 100) : ''; }
-  async function uploadImage(dataUrl, mimeType, size) {
-    if (!state.deviceId) state.deviceId = localStorage.getItem('cs_deviceId') || localStorage.getItem('cs_device_id');
-    if (!state.deviceId || !deviceReady) { console.warn('[UploadImage] ABORT: deviceId=', !!state.deviceId, 'deviceReady=', deviceReady); return; }
-    try {
-      /* DEBUG */ console.log('[UploadImage] POSTing size=', size, 'mimeType=', mimeType, 'dataUrl prefix=', dataUrl ? dataUrl.substring(0, 30) : 'NULL');
-      await api('POST', '/api/clipboard', {
-        sourceDeviceId: state.deviceId, contentType: 'image',
-        contentEncrypted: dataUrl,
-        contentPreview: '[Image] ' + mimeType + ' (' + (size / 1024).toFixed(1) + 'KB)',
-        contentSize: size,
-      });
-      /* DEBUG */ console.log('[UploadImage] SUCCESS, loading items...');
-      await loadClipboardItems();
-    } catch(e) { console.error('[UploadImage] failed:', e.message); }
-  }
   async function pollClipboard() {
     try {
       if (state._tauriPollStarted) { state._clipboardPolling = false; return; }
