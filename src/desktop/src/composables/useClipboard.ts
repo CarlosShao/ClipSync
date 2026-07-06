@@ -128,10 +128,12 @@ async function readAndUpload() {
 
     const text = await tauri.getClipboardContent().catch(() => '')
     if (text && text.trim()) {
-      if (!items.value.some(i => i.type === 'text' && i.content === text)) {
-        const isUrl = /^https?:\/\/\S+$/.test(text.trim())
-        items.value.unshift({ id: `text-${Date.now()}`, type: isUrl ? 'link' : 'text', content: text, source: 'Desktop', timestamp: Date.now() })
-        await uploadToServer(text, isUrl ? 'link' : 'text')
+      const isUrl = /^https?:\/\/\S+$/.test(text.trim())
+      const itemType = isUrl ? 'link' : 'text'
+      // 去重：检查 text 和 link 两种类型
+      if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === text)) {
+        items.value.unshift({ id: `text-${Date.now()}`, type: itemType, content: text, source: 'Desktop', timestamp: Date.now() })
+        await uploadToServer(text, itemType)
       }
       return
     }
@@ -142,10 +144,12 @@ async function readAndUpload() {
         const clipText = await navigator.clipboard.readText().catch(() => '')
         if (clipText && clipText.trim() && clipText !== lastBrowserText) {
           lastBrowserText = clipText
-          if (!items.value.some(i => i.type === 'text' && i.content === clipText)) {
-            const isUrl = /^https?:\/\/\S+$/.test(clipText.trim())
-            items.value.unshift({ id: `browser-${Date.now()}`, type: isUrl ? 'link' : 'text', content: clipText, source: 'Browser', timestamp: Date.now() })
-            await uploadToServer(clipText, isUrl ? 'link' : 'text')
+          const isUrl = /^https?:\/\/\S+$/.test(clipText.trim())
+          const itemType = isUrl ? 'link' : 'text'
+          // 去重：检查 text 和 link 两种类型
+          if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === clipText)) {
+            items.value.unshift({ id: `browser-${Date.now()}`, type: itemType, content: clipText, source: 'Browser', timestamp: Date.now() })
+            await uploadToServer(clipText, itemType)
           }
         }
       } catch { /* clipboard API 权限不足 */ }
