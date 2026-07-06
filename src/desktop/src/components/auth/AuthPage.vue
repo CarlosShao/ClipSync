@@ -211,6 +211,12 @@ function goBackToLogin() {
     <div class="auth-inner">
       <!-- Left: Form -->
       <div class="auth-left">
+        <!-- Theme toggle: top-right corner -->
+        <button class="theme-pill theme-pill-absolute" @click="toggleMode" :title="currentMode === 'dark' ? t('mode_light') : t('mode_dark')">
+          <svg v-if="currentMode === 'dark'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+          <span>{{ currentMode === 'dark' ? t('mode_light') : t('mode_dark') }}</span>
+        </button>
         <div class="auth-card">
 
           <!-- ===== LOGIN: Phone + Password ===== -->
@@ -285,13 +291,6 @@ function goBackToLogin() {
               </button>
               <button class="social-btn" @click="toast.show(t('toast_signup_soon'),'info')" title="GitHub">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-              </button>
-            </div>
-            <div class="auth-theme-toggle">
-              <button class="theme-pill" @click="toggleMode" :title="currentMode === 'dark' ? t('mode_light') : t('mode_dark')">
-                <svg v-if="currentMode === 'dark'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
-                <span>{{ currentMode === 'dark' ? t('mode_light') : t('mode_dark') }}</span>
               </button>
             </div>
           </div>
@@ -419,6 +418,7 @@ function goBackToLogin() {
 
 /* ===== Left column ===== */
 .auth-left {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -727,10 +727,11 @@ function goBackToLogin() {
 }
 
 /* ===== Theme toggle ===== */
-.auth-theme-toggle {
-  display: flex;
-  justify-content: center;
-  margin-top: 20px;
+.theme-pill-absolute {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
 }
 .theme-pill {
   display: inline-flex;
