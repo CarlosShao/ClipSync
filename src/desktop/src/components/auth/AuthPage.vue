@@ -162,7 +162,8 @@ async function handleLogin() {
           configStore.config.user_id = res.data.user?.id || ''
           localStorage.setItem('clipsync-token', res.data.token)
           toast.show(t('login_success'), 'success')
-          emit('login-success')
+          // 直接导航，不依赖 watch（Pinia reactivity 可能不触发）
+          window.location.href = '/app/clipboard'
         } else {
           const msg = res.error || ''
           if (msg.includes('new_user') || msg.includes('密码') || msg.includes('set password') || msg.includes('password')) {
@@ -205,7 +206,7 @@ async function handleLogin() {
           localStorage.setItem('clipsync-token', token)
         }
         toast.show(t('login_success'), 'success')
-        emit('login-success')
+        window.location.href = '/app/clipboard'
       } else {
         toast.show(t('login_failed') + (res.error || ''), 'error')
       }
@@ -653,12 +654,12 @@ function goBackToLogin() {
 
 <style scoped>
 /* ===== Page layout ===== */
-.auth-page { height: 100vh; height: 100dvh; background: var(--bg-base); overflow: hidden; }
-.auth-inner { display: grid; grid-template-columns: 3fr 2fr; height: 100%; }
+.auth-page { min-height: 100vh; min-height: 100dvh; background: var(--bg-base); }
+.auth-inner { display: grid; grid-template-columns: 3fr 2fr; min-height: 100vh; min-height: 100dvh; }
 @media (max-width: 900px) { .auth-inner { grid-template-columns: 1fr; } .auth-right { display: none; } }
 
 /* ===== Left column ===== */
-.auth-left { position: relative; display: flex; align-items: center; justify-content: center; padding: 48px 40px; overflow-y: auto; }
+.auth-left { position: relative; display: flex; align-items: center; justify-content: center; padding: 48px 40px; }
 .auth-card { width: 100%; max-width: 420px; }
 
 /* ===== Auth view transition ===== */
@@ -772,7 +773,7 @@ function goBackToLogin() {
 .sp-step-line.completed { background: var(--success); }
 
 /* ===== Right panel ===== */
-.auth-right { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #0f172a; height: 100%; }
+.auth-right { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #0f172a; min-height: 100vh; min-height: 100dvh; }
 .auth-right-bg { position: absolute; inset: 0; background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); }
 .auth-right-bg::after { content: ''; position: absolute; inset: 0; background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.04) 1px, transparent 0); background-size: 24px 24px; }
 :global(html.dark) .auth-right { background: #1e1b4b; }
