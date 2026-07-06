@@ -659,8 +659,8 @@ function goBackToLogin() {
 @media (max-width: 900px) { .auth-inner { grid-template-columns: 1fr; } .auth-right { display: none; } }
 
 /* ===== Left column ===== */
-.auth-left { position: relative; display: flex; align-items: center; justify-content: center; padding: 48px 40px; }
-.auth-card { width: 100%; max-width: 420px; }
+.auth-left { position: relative; display: flex; justify-content: center; padding: 48px 40px; min-height: 0; overflow-y: auto; height: 100%; }
+.auth-card { width: 100%; max-width: 420px; margin-top: auto; margin-bottom: auto; }
 
 /* ===== Auth view transition ===== */
 .auth-view { animation: authViewIn 0.3s ease; }
