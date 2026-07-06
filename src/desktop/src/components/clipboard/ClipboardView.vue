@@ -91,6 +91,22 @@ function openLink(item: ClipItem) {
   }
 }
 
+function revealFileFolder(item: ClipItem) {
+  try {
+    const paths = JSON.parse(item.content)
+    if (Array.isArray(paths) && paths.length > 0) {
+      // 取第一个路径，在资源管理器中选中显示
+      tauri.revealInFolder(paths[0]).catch(() => {
+        // fallback：打开所在目录
+        const dir = paths[0].replace(/[/\\][^/\\]+$/, '')
+        tauri.openUrl(dir).catch(() => toast.show('无法打开文件夹', 'error'))
+      })
+      return
+    }
+  } catch { /* ignore */ }
+  toast.show('文件路径不可用', 'warning')
+}
+
 function handleSingleDelete(item: ClipItem) {
   showConfirm(t('confirm_delete'), async () => {
     await clip.deleteSingle(item)
@@ -274,7 +290,13 @@ function truncate(str: string, max: number): string {
               <!-- 文件复制 -->
               <button v-else-if="item.type === 'file'" class="btn-icon btn-icon-sm" @click="clip.copyItem(item)" :title="t('copy')">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/>
+                  <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                </svg>
+              </button>
+              <!-- 文件：在文件夹中显示 -->
+              <button v-if="item.type === 'file'" class="btn-icon btn-icon-sm" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
                 </svg>
               </button>
               <button class="btn-icon btn-icon-sm" style="color:var(--danger)" @click="handleSingleDelete(item)" :title="t('delete')">

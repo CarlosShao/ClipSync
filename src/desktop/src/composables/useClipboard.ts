@@ -26,16 +26,17 @@ let lastBrowserText = ''
 const recentUploadHashes = new Map<string, number>()
 const HASH_TTL = 10000
 
-// 来自 ClipSync 内部复制的内容，轮询时跳过，避免重复添加
-const recentCopiedContent = new Set<string>()
-let recentCopiedClearTimer: ReturnType<typeof setTimeout> | null = null
+// 来自 ClipSync 内部复制的内容，用时间戳跳过轮询（不用内容匹配）
+// 原因：Rust set_clipboard_content 用 UTF-8 写 CF_UNICODETEXT 导致中文 round-trip 变 mojibake
+// 内容匹配必然失败，所以改用时间戳：复制后 4 秒内跳过所有轮询
+let skipPollUntil = 0
 
-function markCopied(content: string) {
-  // 记录内容前200字符（避免图片base64太大）
-  recentCopiedContent.add(content.slice(0, 200))
-  // 3秒后自动清除（给轮询足够时间跳过）
-  if (recentCopiedClearTimer) clearTimeout(recentCopiedClearTimer)
-  recentCopiedClearTimer = setTimeout(() => recentCopiedContent.clear(), 3000)
+function skipNextPolls(ms = 4000) {
+  skipPollUntil = Date.now() + ms
+}
+
+function shouldSkipPoll(): boolean {
+  return Date.now() < skipPollUntil
 }
 
 const filteredItems = computed(() => {
@@ -70,7 +71,7 @@ function clearSelection() {
 
 // === 本地内容缓存（后端 contentPreview 为空，需要前端自己存） ===
 const CONTENT_CACHE_KEY = 'clipsync-content-cache'
-const CONTENT_CACHE_MAX = 200 // 最多缓存200条
+const CONTENT_CACHE_MAX = 50 // 最多缓存50条（图片大，减少条目数）
 
 function loadContentCache(): Map<string, string> {
   try {
@@ -91,7 +92,9 @@ function saveContentCache(cache: Map<string, string>) {
 function cacheContent(id: string, content: string) {
   if (!content || !id) return
   const cache = loadContentCache()
-  cache.set(id, content.slice(0, 5000)) // 每条最多缓存5KB
+  // 图片不截断（base64 通常 50KB-200KB），文本截断到 5KB
+  const isImageBase64 = content.startsWith('data:image')
+  cache.set(id, isImageBase64 ? content : content.slice(0, 5000))
   saveContentCache(cache)
 }
 
@@ -109,10 +112,29 @@ async function loadClipboardItems() {
       !serverIds.has(i.id) && i.content && i.content.trim()
     )
     const serverItems = res.data.items.map((i: any) => {
-      // 优先级：本地实时内容 > 本地缓存 > contentPreview
-      const existing = items.value.find(e => e.id === i.id && e.content)
-      const content = existing?.content || getCachedContent(i.id) || i.contentPreview || i.content || ''
-      const preview = existing?.preview || content.slice(0, 200)
+      // 图片特殊处理：contentPreview 是 "[Image N bytes]"，不是真实内容
+      // 列表接口不返回 contentEncrypted，所以图片 content 只能从本地缓存或单条API获取
+      const cached = getCachedContent(i.id)
+      const isImage = (i.contentType || i.type) === 'image'
+      let content: string
+      if (isImage) {
+        content = cached || '' // 无缓存则显示空，下面异步加载
+        // 异步加载：如果图片没有缓存，从单条 API 获取完整内容
+        if (!cached && i.id) {
+          api('GET', `/api/clipboard/${i.id}`).then(fullRes => {
+            if (fullRes.ok && fullRes.data?.contentEncrypted) {
+              cacheContent(i.id, fullRes.data.contentEncrypted)
+              // 更新列表中对应项的 content 和 preview
+              const item = items.value.find(x => x.id === i.id)
+              if (item) { item.content = fullRes.data.contentEncrypted; item.preview = fullRes.data.contentEncrypted }
+            }
+          }).catch(() => {})
+        }
+      } else {
+        const existing = items.value.find(e => e.id === i.id && e.content)
+        content = existing?.content || cached || i.contentPreview || i.content || ''
+      }
+      const preview = isImage ? (cached || '') : (content.slice(0, 200))
       return {
         id: i.id,
         type: (i.contentType || i.type || 'text') as ClipItem['type'],
@@ -184,7 +206,10 @@ async function uploadImageToServer(dataUrl: string) {
   })
   if (res.ok && res.data?.id) {
     const localItem = items.value.find(i => i.id === localId)
-    if (localItem) localItem.id = res.data.id
+    if (localItem) {
+      localItem.id = res.data.id
+      cacheContent(res.data.id, dataUrl)
+    }
   }
 }
 
@@ -206,7 +231,10 @@ async function uploadFileToServer(payload: string) {
   })
   if (res.ok && res.data?.id) {
     const localItem = items.value.find(i => i.id === localId)
-    if (localItem) localItem.id = res.data.id
+    if (localItem) {
+      localItem.id = res.data.id
+      cacheContent(res.data.id, payload)
+    }
   }
 }
 
@@ -218,12 +246,13 @@ function simpleHash(s: string): string {
 
 async function readAndUpload() {
   try {
+    // 如果刚刚从 ClipSync 列表内复制过，跳过本轮轮询（避免乱码重复添加）
+    if (shouldSkipPoll()) return
+
     // 优先尝试 Tauri API
     const files = await tauri.getClipboardFiles().catch(() => [] as string[])
     if (files.length > 0) {
       const payload = JSON.stringify(files)
-      // 跳过来自 ClipSync 内部复制的内容
-      if (recentCopiedContent.has(payload.slice(0, 200))) return
       if (!items.value.some(i => i.type === 'file' && i.content === payload)) {
         await uploadFileToServer(payload)
       }
@@ -235,8 +264,6 @@ async function readAndUpload() {
       if (firstTauriPollDone || !items.value.some(i => i.type === 'image')) {
         const imgData = await tauri.getClipboardImage().catch(() => '')
         if (imgData) {
-          // 跳过来自 ClipSync 内部复制的图片
-          if (recentCopiedContent.has(imgData.slice(0, 200))) { lastImageSize = imgInfo.size; return }
           lastImageSize = imgInfo.size
           await uploadImageToServer(imgData)
         }
@@ -246,8 +273,6 @@ async function readAndUpload() {
 
     const text = await tauri.getClipboardContent().catch(() => '')
     if (text && text.trim()) {
-      // 跳过来自 ClipSync 内部复制的文本
-      if (recentCopiedContent.has(text.slice(0, 200))) return
       const isUrl = /^https?:\/\/\S+$/.test(text.trim())
       const itemType = isUrl ? 'link' : 'text'
       if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === text)) {
@@ -261,8 +286,6 @@ async function readAndUpload() {
       try {
         const clipText = await navigator.clipboard.readText().catch(() => '')
         if (clipText && clipText.trim() && clipText !== lastBrowserText) {
-          // 跳过来自 ClipSync 内部复制的文本
-          if (recentCopiedContent.has(clipText.slice(0, 200))) { lastBrowserText = clipText; return }
           lastBrowserText = clipText
           const isUrl = /^https?:\/\/\S+$/.test(clipText.trim())
           const itemType = isUrl ? 'link' : 'text'
@@ -300,22 +323,48 @@ export function useClipboard() {
 
   async function copyItem(item: ClipItem) {
     try {
+      // 复制后跳过轮询，防止读取到 mojibake 内容后重复添加
+      skipNextPolls(4000)
+
       if (item.type === 'file') {
         try {
           const paths = JSON.parse(item.content)
           if (Array.isArray(paths) && paths.length > 0) {
-            markCopied(paths.join(','))
             await tauri.setClipboardFiles(paths)
             return true
           }
         } catch { /* 解析失败，使用文本复制 */ }
       }
-      if (item.type === 'image' && item.preview) {
-        markCopied(item.preview)
-        await tauri.setClipboardContent(item.preview)
-        return true
+      if (item.type === 'image') {
+        // 图片：优先用本地完整 data URL，否则从服务器获取完整内容
+        let dataUrl = item.content || item.preview || ''
+        if (!dataUrl || dataUrl.startsWith('[Image')) {
+          try {
+            const full = await api('GET', `/api/clipboard/${item.id}`)
+            dataUrl = full.data?.contentEncrypted || full.data?.contentPreview || dataUrl
+          } catch { /* ignore */ }
+        }
+        if (dataUrl && !dataUrl.startsWith('[Image')) {
+          // 更新 lastImageSize 避免下一轮轮询重新走图片检测分支
+          try {
+            const info = await tauri.checkClipboardImageInfo()
+            lastImageSize = info.size
+          } catch {
+            lastImageSize = dataUrl.length
+          }
+          // 优先写入实际图片格式
+          try {
+            const resp = await fetch(dataUrl)
+            const blob = await resp.blob()
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+            return true
+          } catch {
+            await tauri.setClipboardContent(dataUrl)
+            return true
+          }
+        }
+        return false
       }
-      markCopied(item.content)
       await tauri.setClipboardContent(item.content)
       return true
     } catch { return false }
