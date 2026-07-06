@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import * as tauri from '@/lib/tauri'
 import { api } from '@/api/client'
+import { useConfigStore } from '@/stores/configStore'
 
 export interface ClipItem {
   id: string
@@ -135,10 +136,22 @@ async function loadClipboardItems() {
         if (!cached && i.id) {
           api('GET', `/api/clipboard/${i.id}`).then(fullRes => {
             if (fullRes.ok && fullRes.data?.contentEncrypted) {
-              cacheContent(i.id, fullRes.data.contentEncrypted)
+              const raw = fullRes.data.contentEncrypted
+              // 根因修复：media.js 路径存储的是文件名（非 data URL），
+              // 需要通过 /api/media/:id/preview 获取可渲染的图片 URL
+              const isDataUrl = raw.startsWith('data:')
+              let renderSrc: string
+              if (isDataUrl) {
+                renderSrc = raw
+                cacheContent(i.id, raw)
+              } else {
+                // contentEncrypted 是文件名或 ID → 使用 media 预览接口
+                const configStore = useConfigStore()
+                renderSrc = `${configStore.serverUrl}/api/media/${i.id}/preview`
+              }
               // 更新列表中对应项的 content 和 preview
               const item = items.value.find(x => x.id === i.id)
-              if (item) { item.content = fullRes.data.contentEncrypted; item.preview = fullRes.data.contentEncrypted }
+              if (item) { item.content = isDataUrl ? raw : ''; item.preview = renderSrc }
             }
           }).catch(() => {})
         }
@@ -408,11 +421,83 @@ export function useClipboard() {
   function setSearch(q: string) { searchQuery.value = q }
   function toggleBatch() { batchMode.value = !batchMode.value; if (!batchMode.value) clearSelection() }
 
+  /** 从文件选择器上传文件到剪贴板 */
+  async function uploadFileItem(file: File): Promise<void> {
+    // 构建显示内容：文件名 + 大小
+    const sizeStr = file.size < 1024 * 1024
+      ? `${(file.size / 1024).toFixed(1)} KB`
+      : `${(file.size / 1024 / 1024).toFixed(1)} MB`
+    const displayContent = JSON.stringify({ name: file.name, size: sizeStr, type: file.type || 'unknown' })
+
+    // 乐观更新
+    const localId = `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    items.value.unshift({
+      id: localId,
+      type: 'file',
+      content: displayContent,
+      source: 'Desktop',
+      timestamp: Date.now(),
+    })
+
+    let deviceId: string | null = localStorage.getItem('clipsync-device-id')
+    if (!deviceId) {
+      try {
+        const devRes = await api('GET', '/api/devices')
+        const devList = devRes.data?.devices || devRes.data
+        if (devRes.ok && Array.isArray(devList) && devList.length > 0) {
+          deviceId = devList[0].id || devList[0].device_id || null
+          if (deviceId) localStorage.setItem('clipsync-device-id', deviceId)
+        }
+      } catch { /* ignore */ }
+    }
+    if (!deviceId) throw new Error('No device ID')
+
+    // 判断文件类型走不同上传路径
+    if (file.type.startsWith('image/')) {
+      // 图片 → 转 base64 data URL 上传
+      const reader = new FileReader()
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = () => reject(new Error('Failed to read file'))
+        reader.readAsDataURL(file)
+      })
+      const res = await api('POST', '/api/clipboard', {
+        contentType: 'image',
+        content: dataUrl,
+        contentEncrypted: dataUrl,
+        sourceDeviceId: deviceId,
+        mimeType: file.type,
+        size: file.size,
+        contentPreview: `[Image ${file.name}]`,
+      })
+      if (res.ok && res.data?.id) {
+        const item = items.value.find(i => i.id === localId)
+        if (item) { item.id = res.data.id; item.type = 'image'; item.content = dataUrl; item.preview = dataUrl }
+        cacheContent(res.data.id, dataUrl)
+      }
+    } else {
+      // 非图片文件 → JSON 内容上传
+      const res = await api('POST', '/api/clipboard', {
+        contentType: 'file',
+        content: displayContent,
+        contentEncrypted: displayContent,
+        sourceDeviceId: deviceId,
+        mimeType: file.type,
+        size: file.size,
+        contentPreview: `${file.name} (${sizeStr})`,
+      })
+      if (res.ok && res.data?.id) {
+        const item = items.value.find(i => i.id === localId)
+        if (item) { item.id = res.data.id; cacheContent(res.data.id, displayContent) }
+      }
+    }
+  }
+
   return {
     items, filteredItems, searchQuery, activeFilter, batchMode, polling,
     selectedCount, allSelected, startPolling, copyItem,
     toggleSelectAll, clearSelection, batchDelete, deleteSingle, loadClipboardItems,
-    setFilter, setSearch, toggleBatch,
+    setFilter, setSearch, toggleBatch, uploadFileItem,
     refresh: loadClipboardItems,
   }
 }

@@ -54,8 +54,8 @@ const fpConfirmPwd = ref('')
 const fpSending = ref(false)
 
 async function downloadImage() {
-  if (!props.previewItem?.content) return
-  const dataUrl = props.previewItem.content
+  const src = props.previewItem?.preview || props.previewItem?.content
+  if (!src) return
   // 尝试使用 File System Access API（支持选择保存位置）
   if ('showSaveFilePicker' in window) {
     try {
@@ -63,7 +63,7 @@ async function downloadImage() {
         suggestedName: `clipsync-image-${Date.now()}.png`,
         types: [{ description: 'Image', accept: { 'image/png': ['.png'], 'image/jpeg': ['.jpg'] } }],
       })
-      const blob = await (await fetch(dataUrl)).blob()
+      const blob = await (await fetch(src)).blob()
       const writable = await handle.createWritable()
       await writable.write(blob)
       await writable.close()
@@ -75,7 +75,7 @@ async function downloadImage() {
   }
   // Fallback: 直接下载
   const a = document.createElement('a')
-  a.href = dataUrl
+  a.href = src
   a.download = `clipsync-image-${Date.now()}.png`
   a.click()
   toast.show(t('img_saved'), 'success')
@@ -423,7 +423,7 @@ function closePairModals() {
   <ModalDialog :open="previewType === 'image'" :title="t('img_preview_title')" max-width="640px" @close="emit('close-preview')">
     <div v-if="previewItem" style="text-align:center;">
       <div style="width:100%;max-height:400px;overflow:hidden;border-radius:var(--radius-md);background:var(--bg-hover);display:flex;align-items:center;justify-content:center;margin-bottom:12px;">
-        <img :src="previewItem.content" style="max-width:100%;max-height:380px;object-fit:contain;" alt="" />
+        <img :src="previewItem.preview || previewItem.content" style="max-width:100%;max-height:380px;object-fit:contain;" alt="" />
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-secondary);">
         <span>Image</span>

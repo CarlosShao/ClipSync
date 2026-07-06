@@ -39,6 +39,38 @@ const showConfirmModal = ref(false)
 const confirmMessage = ref('')
 let confirmCallback: (() => void) | null = null
 
+// File upload
+const fileInputRef = ref<HTMLInputElement>()
+
+function triggerFileUpload() {
+  fileInputRef.value?.click()
+}
+
+async function handleFileUpload(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (!input.files?.length) return
+  const files = Array.from(input.files)
+  // Reset input so same file can be selected again
+  input.value = ''
+
+  for (const file of files) {
+    if (file.size > 50 * 1024 * 1024) {
+      toast.show(`${file.name}: ${t('file_too_large')}`, 'error')
+      continue
+    }
+    try {
+      await clip.uploadFileItem(file)
+    } catch (err: any) {
+      toast.show(`${file.name}: ${err.message || t('upload_fail')}`, 'error')
+    }
+  }
+
+  if (files.length > 0) {
+    const okCount = files.length - (toast as any).lastErrorCount || 0
+    if (okCount > 0) toast.show(t('upload_success'), 'success')
+  }
+}
+
 onMounted(() => {
   // 确保 batchMode 初始为 false
   batchMode.value = false
@@ -176,6 +208,13 @@ function truncate(str: string, max: number): string {
       </div>
       <div class="toolbar-spacer" />
       <div class="toolbar-right">
+        <button class="btn btn-ghost btn-sm" @click="triggerFileUpload">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span style="margin-left:4px;">{{ t('upload_file') }}</span>
+        </button>
+        <input ref="fileInputRef" type="file" style="display:none" multiple @change="handleFileUpload" />
         <button class="btn btn-ghost btn-sm" @click="toggleQuickPaste">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="2" y="2" width="20" height="20" rx="4"/><path d="M8 12h8M12 8v8"/>

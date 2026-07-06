@@ -11,6 +11,7 @@ const emit = defineEmits<{ 'open-modal': [type: string] }>()
 const langModel = ref(currentLang.value)
 const syncIntervalModel = ref(String(configStore.syncInterval))
 const maxHistoryModel = ref(String(configStore.maxHistory))
+const appVersion = '0.1.0'
 </script>
 
 <template>
@@ -22,11 +23,11 @@ const maxHistoryModel = ref(String(configStore.maxHistory))
       <div class="sg-header">{{ t('sg_gen') }}</div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_autosync') }}</div><div class="sg-hint">{{ t('sg_autosync_h') }}</div></div>
-        <button class="toggle on" @click="(e: any) => e.currentTarget.classList.toggle('on')" />
+        <button :class="['toggle', { on: configStore.autoSync }]" @click="configStore.toggleAutoSync()" />
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_imgcomp') }}</div><div class="sg-hint">{{ t('sg_imgcomp_h') }}</div></div>
-        <button class="toggle" @click="(e: any) => e.currentTarget.classList.toggle('on')" />
+        <button :class="['toggle', { on: configStore.imageCompress }]" @click="configStore.toggleImageCompress()" />
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_startup') }}</div><div class="sg-hint">{{ t('sg_startup_h') }}</div></div>
@@ -38,11 +39,11 @@ const maxHistoryModel = ref(String(configStore.maxHistory))
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_interval') }}</div><div class="sg-hint">{{ t('sg_interval_h') }}</div></div>
-        <select class="styled-select" v-model="syncIntervalModel" @change="configStore.syncInterval = Number(syncIntervalModel)"><option value="0">{{ t('int_rt') }}</option><option value="5">{{ t('int_5m') }}</option><option value="15">{{ t('int_15m') }}</option></select>
+        <select class="styled-select" v-model="syncIntervalModel" @change="configStore.syncInterval = Number(syncIntervalModel); configStore.savePrefs()"><option value="0">{{ t('int_rt') }}</option><option value="5">{{ t('int_5m') }}</option><option value="15">{{ t('int_15m') }}</option></select>
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_maxhist') }}</div><div class="sg-hint">{{ t('sg_maxhist_h') }}</div></div>
-        <select class="styled-select" v-model="maxHistoryModel" @change="configStore.maxHistory = Number(maxHistoryModel)"><option value="100">{{ t('hist_100') }}</option><option value="500">{{ t('hist_500') }}</option><option value="1000">{{ t('hist_1k') }}</option><option value="999999">{{ t('hist_unl') }}</option></select>
+        <select class="styled-select" v-model="maxHistoryModel" @change="configStore.maxHistory = Number(maxHistoryModel); configStore.savePrefs()"><option value="100">{{ t('hist_100') }}</option><option value="500">{{ t('hist_500') }}</option><option value="1000">{{ t('hist_1k') }}</option><option value="999999">{{ t('hist_unl') }}</option></select>
       </div>
     </div>
 
@@ -92,7 +93,7 @@ const maxHistoryModel = ref(String(configStore.maxHistory))
       <div class="sg-header">{{ t('sg_data') }}</div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_motion') }}</div><div class="sg-hint">{{ t('sg_motion_h') }}</div></div>
-        <button class="toggle" @click="(e: any) => e.currentTarget.classList.toggle('on')" />
+        <button :class="['toggle', { on: configStore.reduceMotion }]" @click="configStore.toggleReduceMotion()" />
       </div>
       <div class="sg-row" style="cursor:pointer;" @click="emit('open-modal', 'export')">
         <div class="sg-label"><div class="sg-name">{{ t('sg_export') }}</div><div class="sg-hint">{{ t('sg_export_h') }}</div></div>
@@ -116,7 +117,27 @@ const maxHistoryModel = ref(String(configStore.maxHistory))
       </div>
       </div>
     </div>
-  </div>
+
+    <!-- About / Version -->
+    <div class="settings-group">
+      <div class="sg-header">{{ t('sg_about') }}</div>
+      <div class="about-card">
+        <div class="about-logo">C</div>
+        <div class="about-info">
+          <div class="about-name">{{ t('app_name') }}</div>
+          <div class="about-version">{{ t('app_version').replace('{v}', appVersion) }}</div>
+          <div class="about-desc">{{ t('app_desc') }}</div>
+        </div>
+      </div>
+      <div class="about-links">
+        <a href="https://github.com/CarlosShao/ClipSync" target="_blank" rel="noopener" class="about-link">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          {{ t('app_github') }}
+        </a>
+        <span class="about-link about-link-disabled">{{ t('app_docs') }}</span>
+      </div>
+    </div>
+    </div>
 </template>
 
 <style scoped>
@@ -143,4 +164,16 @@ const maxHistoryModel = ref(String(configStore.maxHistory))
 .btn-outline { background: transparent; border-color: var(--border-default); color: var(--text-secondary); }
 .btn-outline:hover { background: var(--bg-hover); color: var(--text-primary); }
 .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
+
+/* About / Version card */
+.about-card { display: flex; align-items: center; gap: 14px; padding: 16px; background: var(--bg-hover); border-radius: var(--radius-md); margin-bottom: 12px; }
+.about-logo { width: 40px; height: 40px; border-radius: 10px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; flex-shrink: 0; }
+.about-info { flex: 1; min-width: 0; }
+.about-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.about-version { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.about-desc { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+.about-links { display: flex; gap: 16px; }
+.about-link { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--accent); text-decoration: none; cursor: pointer; }
+.about-link:hover { opacity: 0.8; }
+.about-link-disabled { color: var(--text-tertiary); cursor: not-allowed; opacity: 0.5; }
 </style>
