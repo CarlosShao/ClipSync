@@ -98,6 +98,7 @@ export const useConfigStore = defineStore('config', () => {
 
   function logout() {
     localStorage.removeItem('clipsync-token')
+    user.value = { name: '', email: '', phone: '', plan: 'Free' }
     save({ token: null, user_id: null })
   }
 
