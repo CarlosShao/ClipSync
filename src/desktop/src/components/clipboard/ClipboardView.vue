@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
+import * as tauri from '@/lib/tauri'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -71,7 +72,7 @@ function handleBatchDelete() {
 function openLink(item: ClipItem) {
   const url = item.content.trim()
   if (url) {
-    window.open(url, '_blank')
+    tauri.openUrl(url).catch(() => window.open(url, '_blank'))
     toast.show(t('link_opened'), 'success')
   }
 }
