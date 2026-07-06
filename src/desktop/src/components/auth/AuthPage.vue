@@ -346,13 +346,16 @@ function switchAuthView(view: 'login-phone' | 'login-password' | 'register') {
 function goBackToLogin() {
   authView.value = 'login-phone'
 }
+
+// ===== Layout mode: register needs scroll, login/set-password stays centered =====
+const isRegisterView = computed(() => authView.value === 'register')
 </script>
 
 <template>
   <div class="auth-page">
     <div class="auth-inner">
       <!-- Left: Form -->
-      <div class="auth-left">
+      <div :class="['auth-left', { 'auth-left--scrollable': isRegisterView }]">
         <!-- Theme toggle: top-right corner -->
         <button class="theme-pill theme-pill-absolute" @click="toggleMode" :title="currentMode === 'dark' ? t('mode_light') : t('mode_dark')">
           <svg v-if="currentMode === 'dark'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -659,8 +662,30 @@ function goBackToLogin() {
 @media (max-width: 900px) { .auth-inner { grid-template-columns: 1fr; } .auth-right { display: none; } }
 
 /* ===== Left column ===== */
-.auth-left { position: relative; display: flex; justify-content: center; padding: 48px 40px; min-height: 0; overflow-y: auto; height: 100%; }
-.auth-card { width: 100%; max-width: 420px; margin-top: auto; margin-bottom: auto; }
+/* Default mode (login / set-password): centered, no scrollbar */
+.auth-left {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 40px;
+}
+.auth-card { width: 100%; max-width: 420px; }
+
+/* Register mode: content overflows viewport → scrollable from top */
+.auth-left--scrollable {
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  height: 100%;
+  min-height: 0;
+}
+.auth-left--scrollable .auth-card {
+  margin-top: 0;
+  margin-bottom: 48px;
+  padding-top: 8px;
+  padding-bottom: 24px;
+}
 
 /* ===== Auth view transition ===== */
 .auth-view { animation: authViewIn 0.3s ease; }
