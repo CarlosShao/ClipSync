@@ -637,12 +637,12 @@ function goBackToLogin() {
 
 <style scoped>
 /* ===== Page layout ===== */
-.auth-page { min-height: 100vh; min-height: 100dvh; background: var(--bg-base); }
+.auth-page { min-height: 100vh; min-height: 100dvh; background: var(--bg-base); overflow-y: auto; }
 .auth-inner { display: grid; grid-template-columns: 3fr 2fr; min-height: 100vh; min-height: 100dvh; }
 @media (max-width: 900px) { .auth-inner { grid-template-columns: 1fr; } .auth-right { display: none; } }
 
 /* ===== Left column ===== */
-.auth-left { position: relative; display: flex; align-items: center; justify-content: center; padding: 48px 40px; overflow-y: auto; }
+.auth-left { position: relative; display: flex; align-items: center; justify-content: center; padding: 48px 40px; }
 .auth-card { width: 100%; max-width: 420px; }
 
 /* ===== Auth view transition ===== */
