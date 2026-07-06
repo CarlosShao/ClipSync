@@ -180,6 +180,10 @@ const _dicts: Record<Lang, I18nDict> = {
     billing_empty_desc:'Your billing history will appear here once you make a purchase.',
     modal_billing:'Billing History', modal_add_device:'Add New Device',
     auth_failed_op:'Operation failed: ',
+    reg_label_phone:'Phone Number', reg_label_nickname:'Username', reg_label_email:'Email',
+    reg_nickname_hint:'e.g. Alice, 2-30 chars', reg_email_hint:'Optional — for account recovery',
+    reg_pwd_min_8:'Password must be at least 8 characters',
+    auth_need_account:'Please enter your account', auth_pwd_too_short:'Password must be at least 6 characters',
   },
   zh: {
     nav_main:'主菜单', nav_account:'账号', nav_clipboard:'剪贴板', nav_devices:'设备', nav_shared_links:'共享链接',
@@ -336,6 +340,10 @@ const _dicts: Record<Lang, I18nDict> = {
     qp_navigate:'导航', qp_paste:'粘贴', qp_close:'关闭',
     upd_title:'更新', upd_uptodate:'ClipSync 已是最新版本',
     upd_version:'当前版本',
+    reg_label_phone:'手机号', reg_label_nickname:'用户名', reg_label_email:'邮箱',
+    reg_nickname_hint:'如：Alice、张三，2-30个字符', reg_email_hint:'选填 — 用于账号找回',
+    reg_pwd_min_8:'密码至少需要 8 位',
+    auth_need_account:'请输入账号', auth_pwd_too_short:'密码至少需要6位',
   },
 }
 
