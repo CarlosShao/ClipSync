@@ -407,7 +407,7 @@ function goBackToLogin() { authView.value = 'login-phone' }
                   <div class="strength-bar" :class="strengthClass(regPwdStrength.score)" :style="{ width: (regPwdStrength.score * 25) + '%' }"></div>
                   <span class="strength-label">{{ regPwdStrength.label }}</span>
                 </div>
-                <div class="pwd-rules">
+                <div v-if="regPassword.length > 0" class="pwd-rules">
                   <span :class="regPassword.length >= 8 ? 'valid' : 'invalid'">{{ t('sp_rule_length') }}</span>
                   <span :class="/\d/.test(regPassword) ? 'valid' : 'invalid'">{{ t('sp_rule_number') }}</span>
                   <span :class="/[a-zA-Z]/.test(regPassword) ? 'valid' : 'invalid'">{{ t('sp_rule_letter') }}</span>
@@ -473,7 +473,7 @@ function goBackToLogin() { authView.value = 'login-phone' }
                   <div class="strength-bar" :class="strengthClass(setPwdStrength.score)" :style="{ width: (setPwdStrength.score * 25) + '%' }"></div>
                   <span class="strength-label">{{ setPwdStrength.label }}</span>
                 </div>
-                <div class="pwd-rules">
+                <div v-if="setPwdNew.length > 0" class="pwd-rules">
                   <span :class="setPwdNew.length >= 8 ? 'valid' : 'invalid'">{{ t('sp_rule_length') }}</span>
                   <span :class="/\d/.test(setPwdNew) ? 'valid' : 'invalid'">{{ t('sp_rule_number') }}</span>
                   <span :class="/[a-zA-Z]/.test(setPwdNew) ? 'valid' : 'invalid'">{{ t('sp_rule_letter') }}</span>
