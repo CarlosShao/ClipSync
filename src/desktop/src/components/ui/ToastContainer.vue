@@ -14,21 +14,23 @@ const typeStyles: Record<string, { bg: string; border: string; icon: string }> =
 <template>
   <Teleport to="body">
     <div class="toast-container">
-      <div
-        v-for="toast in toasts"
-        :key="toast.id"
-        class="toast-item"
-        :style="{
-          background: typeStyles[toast.type].bg,
-          borderLeft: `3px solid ${typeStyles[toast.type].border}`,
-        }"
-      >
-        <span class="toast-icon" :style="{ color: typeStyles[toast.type].border }">
-          {{ typeStyles[toast.type].icon }}
-        </span>
-        <span class="toast-message">{{ toast.message }}</span>
-        <button class="toast-close" @click="dismiss(toast.id)">✕</button>
-      </div>
+      <TransitionGroup name="toast">
+        <div
+          v-for="toast in toasts"
+          :key="toast.id"
+          class="toast-item"
+          :style="{
+            background: typeStyles[toast.type].bg,
+            borderLeft: `3px solid ${typeStyles[toast.type].border}`,
+          }"
+        >
+          <span class="toast-icon" :style="{ color: typeStyles[toast.type].border }">
+            {{ typeStyles[toast.type].icon }}
+          </span>
+          <span class="toast-message">{{ toast.message }}</span>
+          <button class="toast-close" @click="dismiss(toast.id)">✕</button>
+        </div>
+      </TransitionGroup>
     </div>
   </Teleport>
 </template>
@@ -46,11 +48,15 @@ const typeStyles: Record<string, { bg: string; border: string; icon: string }> =
   font-size: 13px; color: var(--text-primary);
   min-width: 260px; max-width: 400px;
   box-shadow: var(--shadow-elevated);
-  animation: slideIn 0.2s ease;
 }
-@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .toast-icon { font-weight: 700; font-size: 14px; flex-shrink: 0; width: 18px; text-align: center; }
 .toast-message { flex: 1; }
 .toast-close { background: none; border: none; cursor: pointer; opacity: 0.5; color: inherit; font-size: 12px; padding: 2px; }
 .toast-close:hover { opacity: 1; }
+
+/* Transition animations */
+.toast-enter-active { animation: toastIn 0.2s ease; }
+.toast-leave-active { animation: toastOut 0.3s ease; }
+@keyframes toastIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes toastOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(100%); } }
 </style>

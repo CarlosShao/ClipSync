@@ -22,6 +22,7 @@ const polling = ref(false)
 
 let firstTauriPollDone = false
 let lastImageSize = 0
+let lastBrowserText = ''
 const recentUploadHashes = new Map<string, number>()
 const HASH_TTL = 10000
 
@@ -101,6 +102,7 @@ function simpleHash(s: string): string {
 
 async function readAndUpload() {
   try {
+    // 优先尝试 Tauri API
     const files = await tauri.getClipboardFiles().catch(() => [] as string[])
     if (files.length > 0) {
       const payload = JSON.stringify(files)
@@ -131,6 +133,22 @@ async function readAndUpload() {
         items.value.unshift({ id: `text-${Date.now()}`, type: isUrl ? 'link' : 'text', content: text, source: 'Desktop', timestamp: Date.now() })
         await uploadToServer(text, isUrl ? 'link' : 'text')
       }
+      return
+    }
+
+    // Fallback: 浏览器 Clipboard API (非 Tauri 环境)
+    if (typeof navigator !== 'undefined' && navigator.clipboard && !(window as any).__TAURI__) {
+      try {
+        const clipText = await navigator.clipboard.readText().catch(() => '')
+        if (clipText && clipText.trim() && clipText !== lastBrowserText) {
+          lastBrowserText = clipText
+          if (!items.value.some(i => i.type === 'text' && i.content === clipText)) {
+            const isUrl = /^https?:\/\/\S+$/.test(clipText.trim())
+            items.value.unshift({ id: `browser-${Date.now()}`, type: isUrl ? 'link' : 'text', content: clipText, source: 'Browser', timestamp: Date.now() })
+            await uploadToServer(clipText, isUrl ? 'link' : 'text')
+          }
+        }
+      } catch { /* clipboard API 权限不足 */ }
     }
 
     for (const [h, t] of recentUploadHashes) {
