@@ -62,6 +62,7 @@ const fpCodeCountdown = ref(0)
 let fpCountdownTimer: ReturnType<typeof setInterval> | null = null
 const showFpNewPwd = ref(false)
 const showFpConfirm = ref(false)
+const fpPwdStrength = computed(() => checkPwdStrength(fpNewPwd.value))
 
 // ===== Shake animation =====
 function shake(el: HTMLElement | null) {
@@ -163,7 +164,7 @@ async function handleLogin() {
     } else {
       if (!authAccount.value) { toast.show(t('auth_need_account'), 'error'); shakeById('lp-account'); isLoggingIn.value = false; return }
       if (!authPassword.value || authPassword.value.length < 6) { toast.show(t('auth_pwd_too_short'), 'error'); shakeById('lp-pwd'); isLoggingIn.value = false; return }
-      const res = await api('POST', '/api/auth/password-login', { account: authAccount.value, password: authPassword.value })
+      const res = await api('POST', '/api/auth/login', { account: authAccount.value, password: authPassword.value })
       if (res.ok && res.data) {
         configStore.login(authAccount.value, '')
         toast.show(t('login_success'), 'success')
@@ -263,6 +264,41 @@ async function fpReset() {
     else { toast.show(t('auth_code_invalid'), 'error') }
   } catch (e: any) { toast.show(t('auth_failed_op') + String(e), 'error') }
   fpSending.value = false
+}
+
+// ===== Field validation =====
+const fieldErrors = ref<Record<string, string>>({})
+
+function validateNickname(val: string) {
+  if (!val) { fieldErrors.value.nickname = ''; return }
+  if (val.length < 2) { fieldErrors.value.nickname = t('val_nickname_short'); return }
+  if (val.length > 30) { fieldErrors.value.nickname = t('val_nickname_long'); return }
+  if (!/^[\w\u4e00-\u9fa5]+$/.test(val)) { fieldErrors.value.nickname = t('val_nickname_invalid'); return }
+  fieldErrors.value.nickname = ''
+}
+
+function validateEmail(val: string) {
+  if (!val) { fieldErrors.value.email = ''; return }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) { fieldErrors.value.email = t('val_email_invalid'); return }
+  fieldErrors.value.email = ''
+}
+
+function validateRegPhone(val: string) {
+  if (!val) { fieldErrors.value.regPhone = ''; return }
+  if (!PHONE_RE.test(val)) { fieldErrors.value.regPhone = t('val_phone_format'); return }
+  fieldErrors.value.regPhone = ''
+}
+
+function validateRegCode(val: string) {
+  if (!val) { fieldErrors.value.regCode = ''; return }
+  if (val.length !== 6) { fieldErrors.value.regCode = t('val_code_6digit'); return }
+  fieldErrors.value.regCode = ''
+}
+
+function validateRegConfirm(val: string) {
+  if (!val) { fieldErrors.value.regConfirm = ''; return }
+  if (val !== regPassword.value) { fieldErrors.value.regConfirm = t('sp_pwd_mismatch'); return }
+  fieldErrors.value.regConfirm = ''
 }
 
 // ===== View switching =====
@@ -375,24 +411,28 @@ function goBackToLogin() { authView.value = 'login-phone' }
             <div class="auth-form">
               <div class="form-group">
                 <label class="form-label">{{ t('reg_label_phone') }} <span class="required">*</span></label>
-                <input id="reg-phone" v-model="regPhone" type="tel" maxlength="11" class="form-input" :placeholder="t('reg_phone_hint')" />
+                <input id="reg-phone" v-model="regPhone" type="tel" maxlength="11" class="form-input" :class="{ error: fieldErrors.regPhone }" :placeholder="t('reg_phone_hint')" @blur="validateRegPhone(regPhone)" @input="fieldErrors.regPhone = ''" />
+                <div v-if="fieldErrors.regPhone" class="field-error">{{ fieldErrors.regPhone }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('reg_label_nickname') }}</label>
-                <input v-model="regNickname" type="text" maxlength="30" class="form-input" :placeholder="t('reg_nickname_hint')" />
+                <input v-model="regNickname" type="text" maxlength="30" class="form-input" :class="{ error: fieldErrors.nickname }" :placeholder="t('reg_nickname_hint')" @blur="validateNickname(regNickname)" @input="fieldErrors.nickname = ''" />
+                <div v-if="fieldErrors.nickname" class="field-error">{{ fieldErrors.nickname }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('reg_label_email') }}</label>
-                <input v-model="regEmail" type="email" maxlength="100" class="form-input" :placeholder="t('reg_email_hint')" />
+                <input v-model="regEmail" type="email" maxlength="100" class="form-input" :class="{ error: fieldErrors.email }" :placeholder="t('reg_email_hint')" @blur="validateEmail(regEmail)" @input="fieldErrors.email = ''" />
+                <div v-if="fieldErrors.email" class="field-error">{{ fieldErrors.email }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('login_code') }} <span class="required">*</span></label>
                 <div class="form-row">
-                  <input id="reg-code" v-model="regCode" type="text" maxlength="6" class="form-input" :placeholder="t('ph_code_placeholder')" />
+                  <input id="reg-code" v-model="regCode" type="text" maxlength="6" class="form-input" :class="{ error: fieldErrors.regCode }" :placeholder="t('ph_code_placeholder')" @blur="validateRegCode(regCode)" @input="fieldErrors.regCode = ''" />
                   <button class="btn-code" :disabled="isSendingCode || codeCountdown > 0" @click="sendCode">
                     {{ codeCountdown > 0 ? t('code_resend', { s: codeCountdown }) : t('login_send_code') }}
                   </button>
                 </div>
+                <div v-if="fieldErrors.regCode" class="field-error">{{ fieldErrors.regCode }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('sp_set_pwd_label') }} <span class="required">*</span></label>
@@ -416,12 +456,13 @@ function goBackToLogin() { authView.value = 'login-phone' }
               <div class="form-group">
                 <label class="form-label">{{ t('sp_confirm_pwd') }} <span class="required">*</span></label>
                 <div class="pwd-wrap">
-                  <input id="reg-confirm" v-model="regConfirm" :type="showRegConfirm ? 'text' : 'password'" class="form-input" :placeholder="t('sp_confirm_hint')" />
+                  <input id="reg-confirm" v-model="regConfirm" :type="showRegConfirm ? 'text' : 'password'" class="form-input" :class="{ error: fieldErrors.regConfirm }" :placeholder="t('sp_confirm_hint')" @blur="validateRegConfirm(regConfirm)" @input="fieldErrors.regConfirm = ''" />
                   <button class="pwd-toggle" @click="showRegConfirm = !showRegConfirm" type="button">
                     <svg v-if="showRegConfirm" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                     <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
                   </button>
                 </div>
+                <div v-if="fieldErrors.regConfirm" class="field-error">{{ fieldErrors.regConfirm }}</div>
               </div>
               <label class="checkbox-label" style="margin-top:-4px;">
                 <input type="checkbox" v-model="regAgree" /> {{ t('reg_agree_text') }}<a href="javascript:void(0)" class="link-btn" @click="toast.show(t('toast_tos_soon'),'info')">{{ t('reg_tos') }}</a>{{ t('reg_and') }}<a href="javascript:void(0)" class="link-btn" @click="toast.show(t('toast_privacy_soon'),'info')">{{ t('reg_privacy') }}</a>
@@ -539,6 +580,15 @@ function goBackToLogin() { authView.value = 'login-phone' }
                   <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
                 </button>
               </div>
+              <div v-if="fpNewPwd.length > 0" class="pwd-strength">
+                <div class="strength-bar" :class="strengthClass(fpPwdStrength.score)" :style="{ width: (fpPwdStrength.score * 25) + '%' }"></div>
+                <span class="strength-label">{{ fpPwdStrength.label }}</span>
+              </div>
+              <div v-if="fpNewPwd.length > 0" class="pwd-rules">
+                <span :class="fpNewPwd.length >= 8 ? 'valid' : 'invalid'">{{ t('sp_rule_length') }}</span>
+                <span :class="/\d/.test(fpNewPwd) ? 'valid' : 'invalid'">{{ t('sp_rule_number') }}</span>
+                <span :class="/[a-zA-Z]/.test(fpNewPwd) ? 'valid' : 'invalid'">{{ t('sp_rule_letter') }}</span>
+              </div>
             </div>
             <div class="form-group">
               <label class="form-label">{{ t('sp_confirm_pwd') }}</label>
@@ -599,7 +649,7 @@ function goBackToLogin() { authView.value = 'login-phone' }
 
 /* ===== Buttons ===== */
 .btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 42px; padding: 0 20px; border-radius: 10px; font-size: 14px; font-weight: 500; border: none; background: var(--accent); color: var(--text-inverse); cursor: pointer; transition: all 150ms; }
-.btn-primary:hover { opacity: 0.9; }
+.btn-primary:hover { opacity: 0.9; transform: translateY(-0.5px); }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-block { width: 100%; }
 .btn-code { height: 42px; padding: 0 14px; border-radius: 10px; font-size: 13px; font-weight: 500; white-space: nowrap; border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-secondary); cursor: pointer; transition: all 150ms; }
@@ -633,6 +683,11 @@ function goBackToLogin() { authView.value = 'login-phone' }
 .pwd-rules { display: flex; gap: 12px; margin-top: 6px; font-size: 11px; color: var(--text-tertiary); flex-wrap: wrap; }
 .pwd-rules span.valid { color: var(--success); }
 .pwd-rules span.invalid { color: var(--danger); }
+
+/* ===== Field validation errors ===== */
+.field-error { font-size: 11.5px; color: var(--danger); margin-top: 4px; }
+.form-input.error { border-color: var(--danger); }
+.form-input.error:focus { box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1); }
 
 /* ===== Links ===== */
 .auth-switch { text-align: center; margin-top: 20px; font-size: 13px; color: var(--text-secondary); }
