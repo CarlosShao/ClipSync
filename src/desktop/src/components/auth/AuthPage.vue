@@ -180,7 +180,14 @@ async function handleLogin() {
       else loginBody.account = acct
       const res = await api('POST', '/api/auth/login', loginBody)
       if (res.ok && res.data) {
-        configStore.login(authAccount.value, '')
+        // 密码登录直接从 API 响应存储 token
+        const token = res.data.token || res.data.data?.token
+        const userId = res.data.user?.id || res.data.user_id || res.data.data?.user?.id || ''
+        if (token) {
+          configStore.config.token = token
+          configStore.config.user_id = userId
+          localStorage.setItem('clipsync-token', token)
+        }
         toast.show(t('login_success'), 'success')
         emit('login-success')
       } else {

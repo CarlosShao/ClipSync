@@ -46,11 +46,16 @@ export const useConfigStore = defineStore('config', () => {
 
   async function login(phone: string, code: string) {
     const res = await tauri.login(phone, code)
+    if (!res || !res.token) {
+      throw new Error('Login failed: no token returned')
+    }
     config.value.token = res.token
-    config.value.user_id = res.user.id
+    // 兼容两种返回格式: { user: { id } } 或 { user_id }
+    const userId = res.user?.id || (res as any).user_id || ''
+    config.value.user_id = userId
     // Persist token for router guard
-    if (res.token) localStorage.setItem('clipsync-token', res.token)
-    await save({ token: res.token, user_id: res.user.id })
+    localStorage.setItem('clipsync-token', res.token)
+    await save({ token: res.token, user_id: userId })
     // 自动注册当前设备
     try {
       await fetch(`${config.value.server_url || ''}/api/devices`, {
