@@ -59,7 +59,10 @@ function clearSelection() {
 async function loadClipboardItems() {
   const res = await api('GET', '/api/clipboard')
   if (res.ok && Array.isArray(res.data?.items)) {
-    items.value = res.data.items.map((i: any) => ({
+    // 合并服务器数据和本地数据，避免丢失本地项
+    const serverIds = new Set(res.data.items.map((i: any) => i.id))
+    const localOnly = items.value.filter(i => !serverIds.has(i.id) && !i.id.startsWith('text-') && !i.id.startsWith('img-') && !i.id.startsWith('file-') && !i.id.startsWith('browser-'))
+    const serverItems = res.data.items.map((i: any) => ({
       id: i.id || `srv-${Date.now()}`,
       type: i.type || 'text',
       content: i.content || '',
@@ -67,6 +70,7 @@ async function loadClipboardItems() {
       source: i.sourceDevice?.name || i.deviceName || 'Server',
       timestamp: new Date(i.createdAt || Date.now()).getTime(),
     }))
+    items.value = [...localOnly, ...serverItems]
   }
 }
 
@@ -74,8 +78,17 @@ async function uploadToServer(content: string, type: string = 'text') {
   const hash = simpleHash(content)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
   recentUploadHashes.set(hash, Date.now())
-  await api('POST', '/api/clipboard', { content, type, preview: content.slice(0, 200) })
-  await loadClipboardItems()
+  // 获取设备ID（从本地存储或使用默认值）
+  const deviceId = localStorage.getItem('clipsync-device-id') || '00000000-0000-0000-0000-000000000000'
+  const res = await api('POST', '/api/clipboard', {
+    content,
+    contentEncrypted: content, // 简单起见不加密
+    sourceDeviceId: deviceId,
+    type,
+    preview: content.slice(0, 200),
+  })
+  // 只有上传成功才刷新
+  if (res.ok) await loadClipboardItems()
 }
 
 async function uploadImageToServer(dataUrl: string) {
@@ -83,16 +96,32 @@ async function uploadImageToServer(dataUrl: string) {
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
   recentUploadHashes.set(hash, Date.now())
   const base64 = dataUrl.split(',')[1]
-  await api('POST', '/api/clipboard', { type: 'image', content: dataUrl, mimeType: 'image/png', size: base64?.length || 0, preview: dataUrl })
-  await loadClipboardItems()
+  const deviceId = localStorage.getItem('clipsync-device-id') || '00000000-0000-0000-0000-000000000000'
+  const res = await api('POST', '/api/clipboard', {
+    type: 'image',
+    content: dataUrl,
+    contentEncrypted: dataUrl,
+    sourceDeviceId: deviceId,
+    mimeType: 'image/png',
+    size: base64?.length || 0,
+    preview: dataUrl,
+  })
+  if (res.ok) await loadClipboardItems()
 }
 
 async function uploadFileToServer(payload: string) {
   const hash = simpleHash(payload)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
   recentUploadHashes.set(hash, Date.now())
-  await api('POST', '/api/clipboard', { type: 'file', content: payload })
-  await loadClipboardItems()
+  const deviceId = localStorage.getItem('clipsync-device-id') || '00000000-0000-0000-0000-000000000000'
+  const res = await api('POST', '/api/clipboard', {
+    type: 'file',
+    content: payload,
+    contentEncrypted: payload,
+    sourceDeviceId: deviceId,
+    preview: payload.slice(0, 200),
+  })
+  if (res.ok) await loadClipboardItems()
 }
 
 function simpleHash(s: string): string {
