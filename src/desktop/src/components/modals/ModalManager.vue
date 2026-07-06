@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
+import { QrCode } from 'lucide-vue-next'
 import { api } from '@/api/client'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
 
@@ -18,11 +19,16 @@ const emit = defineEmits<{
   'close-forgot-pwd': []
   'close-preview': []
   'confirm-action': []
+  'switch-modal': [type: string]
 }>()
 
 const { t } = useI18n()
 const toast = useToast()
 const { allThemes, setStyle, currentStyle } = useTheme()
+
+// Plan selection state (for pricing → payment flow)
+const selectedPlan = ref<{ id: string; name: string; price: number } | null>(null)
+const paymentSending = ref(false)
 
 // Forgot password state
 const fpStep = ref(1)
@@ -92,6 +98,33 @@ async function handleForgotReset() {
 function toggleClass(e: Event) {
   (e.currentTarget as HTMLElement).classList.toggle('on')
 }
+
+// ===== Plan Selection → Payment Flow =====
+function selectPlan(planId: string, planName: string, price: number) {
+  if (price === 0) { toast.show(t('already_free'), 'info'); return }
+  selectedPlan.value = { id: planId, name: planName, price }
+  emit('switch-modal', 'payment')
+}
+
+async function selectPaymentMethod(method: string) {
+  const p = selectedPlan.value
+  if (!p) return
+  paymentSending.value = true
+  try {
+    toast.show(t('sub_processing'), 'info')
+    const res = await api('POST', '/api/subscriptions/subscribe', { planId: p.id, billingCycle: 'monthly' })
+    if (res.ok) {
+      toast.show(t('sub_success', { n: p.name }), 'success')
+      emit('close-modal')
+    } else {
+      toast.show(t('sub_fail') + (res.error || ''), 'error')
+    }
+  } catch (e: any) {
+    toast.show(t('sub_fail') + String(e), 'error')
+  } finally {
+    paymentSending.value = false
+  }
+}
 </script>
 
 <template>
@@ -138,20 +171,24 @@ function toggleClass(e: Event) {
   <!-- Pricing -->
   <ModalDialog :open="showModalType === 'pricing'" :title="t('modal_pricing')" max-width="560px" @close="emit('close-modal')">
     <div class="pricing-grid">
-      <div class="price-card"><div class="pc-name">{{ t('price_free') }}</div><div class="pc-price">¥0<span class="pc-period">{{ t('price_per_mo') }}</span></div><div class="pc-feats">✓ {{ t('feat_3dev') }}<br />✓ {{ t('feat_100hist') }}<br />✓ {{ t('feat_community') }}</div></div>
-      <div class="price-card popular"><div class="pc-tag">{{ t('price_popular') }}</div><div class="pc-name">{{ t('price_pro') }}</div><div class="pc-price">¥9.9<span class="pc-period">{{ t('price_per_mo') }}</span></div><div class="pc-feats">✓ {{ t('feat_unlimited_dev') }}<br />✓ {{ t('feat_unlimited_hist') }}<br />✓ {{ t('feat_priority') }}</div></div>
-      <div class="price-card"><div class="pc-name">{{ t('price_enterprise') }}</div><div class="pc-price">¥29<span class="pc-period">{{ t('price_per_mo') }}</span></div><div class="pc-feats">✓{{ t('feat_team') }}<br />✓ {{ t('feat_api') }}<br />✓ {{ t('feat_priority') }}</div></div>
+      <div class="price-card" @click="selectPlan('free', t('price_free'), 0)"><div class="pc-name">{{ t('price_free') }}</div><div class="pc-price">¥0<span class="pc-period">{{ t('price_per_mo') }}</span></div><div class="pc-feats">✓ {{ t('feat_3dev') }}<br />✓ {{ t('feat_100hist') }}<br />✓ {{ t('feat_community') }}</div></div>
+      <div class="price-card popular" @click="selectPlan('pro', t('price_pro'), 9.9)"><div class="pc-tag">{{ t('price_popular') }}</div><div class="pc-name">{{ t('price_pro') }}</div><div class="pc-price">¥9.9<span class="pc-period">{{ t('price_per_mo') }}</span></div><div class="pc-feats">✓ {{ t('feat_unlimited_dev') }}<br />✓ {{ t('feat_unlimited_hist') }}<br />✓ {{ t('feat_priority') }}</div></div>
+      <div class="price-card" @click="selectPlan('enterprise', t('price_enterprise'), 29)"><div class="pc-name">{{ t('price_enterprise') }}</div><div class="pc-price">¥29<span class="pc-period">{{ t('price_per_mo') }}</span></div><div class="pc-feats">✓{{ t('feat_team') }}<br />✓ {{ t('feat_api') }}<br />✓ {{ t('feat_priority') }}</div></div>
     </div>
   </ModalDialog>
 
   <!-- Payment Method -->
   <ModalDialog :open="showModalType === 'payment'" :title="t('modal_payment')" max-width="420px" @close="emit('close-modal')">
+    <div v-if="selectedPlan" style="margin-bottom:16px;padding:12px;background:var(--bg-hover);border-radius:var(--radius-sm);">
+      <div style="font-size:13px;font-weight:600;color:var(--text-primary);">{{ selectedPlan.name }}</div>
+      <div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-top:4px;">¥{{ selectedPlan.price }}<span style="font-size:13px;font-weight:400;color:var(--text-tertiary);">{{ t('price_per_mo') }}</span></div>
+    </div>
     <div style="display:flex;flex-direction:column;gap:10px;">
-      <button class="payment-option" @click="toast.show(t('toast_signup_soon'), 'info')">
-        <span style="font-size:20px;">💚</span> <span>WeChat Pay</span>
+      <button class="payment-option" :disabled="paymentSending" @click="selectPaymentMethod('wechat')">
+        <span style="font-size:20px;">💚</span> <span>{{ t('pay_wechat') }}</span>
       </button>
-      <button class="payment-option" @click="toast.show(t('toast_signup_soon'), 'info')">
-        <span style="font-size:20px;">🔵</span> <span>Alipay</span>
+      <button class="payment-option" :disabled="paymentSending" @click="selectPaymentMethod('alipay')">
+        <span style="font-size:20px;">🔵</span> <span>{{ t('pay_alipay') }}</span>
       </button>
     </div>
   </ModalDialog>
@@ -247,11 +284,9 @@ function toggleClass(e: Event) {
   <ModalDialog :open="showModalType === 'add-device'" :title="t('modal_add_device')" max-width="420px" @close="emit('close-modal')">
     <div style="text-align:center;padding:20px 0;">
       <div style="width:120px;height:120px;margin:0 auto 16px;background:var(--bg-hover);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary);">
-          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
-        </svg>
+        <QrCode :size="48" style="color:var(--text-tertiary);" />
       </div>
-      <p style="font-size:13px;color:var(--text-secondary);">Install ClipSync on another device and sign in with the same account to sync.</p>
+      <p style="font-size:13px;color:var(--text-secondary);">{{ t('add_device_desc') }}</p>
     </div>
   </ModalDialog>
 
