@@ -391,7 +391,6 @@ function goBackToLogin() {
       <div class="auth-right">
         <div class="auth-right-bg"></div>
         <div class="auth-right-content">
-          <div class="quote-mark">"</div>
           <p class="quote-text">{{ t('login_quote') || 'The best way to sync your clipboard across devices.' }}</p>
           <p class="quote-author">— Carlos Shao, Founder</p>
         </div>
@@ -776,46 +775,40 @@ function goBackToLogin() {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: var(--accent);
+  /* 固定深色背景，不依赖主题变量，确保深色/浅色模式都清晰可见 */
+  background: #0f172a;
 }
 .auth-right-bg {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 80%, #fff) 100%);
+  /* 深蓝紫渐变，任何模式下都是深色 */
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4c1d95 60%, #6d28d9 100%);
 }
 .auth-right-bg::after {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.12) 1px, transparent 0);
-  background-size: 28px 28px;
-  opacity: 0.6;
+  background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.06) 1px, transparent 0);
+  background-size: 24px 24px;
 }
 .auth-right-content {
   position: relative;
   z-index: 1;
   text-align: center;
-  padding: 40px;
+  padding: 48px 40px;
   color: #fff;
-  max-width: 400px;
-}
-.quote-mark {
-  font-size: 56px;
-  font-weight: 700;
-  line-height: 1;
-  margin-bottom: 12px;
-  opacity: 0.5;
+  max-width: 380px;
 }
 .quote-text {
   font-size: 20px;
   font-weight: 500;
-  line-height: 1.5;
-  margin: 0 0 16px;
-  opacity: 0.95;
+  line-height: 1.6;
+  margin: 0 0 20px;
+  color: rgba(255,255,255,0.92);
 }
 .quote-author {
   font-size: 13px;
-  opacity: 0.7;
+  color: rgba(255,255,255,0.5);
   margin: 0;
 }
 </style>
