@@ -97,6 +97,11 @@ function closePreview() { previewItem.value = null; previewType.value = '' }
 function showConfirm(msg: string, cb: () => void) {
   confirmMessage.value = msg; confirmCallback = cb; showModalType.value = 'confirm'
 }
+function handleLogout() {
+  configStore.logout()
+  ws.disconnect()
+  router.replace('/auth')
+}
 function confirmAction() {
   if (confirmCallback) { confirmCallback(); confirmCallback = null }
   showModalType.value = ''
@@ -113,7 +118,7 @@ function confirmAction() {
       :user-plan="configStore.user.plan"
       @toggle="sidebarOpen = !sidebarOpen"
       @navigate="switchSub"
-      @logout="configStore.logout()"
+      @logout="handleLogout"
     />
 
     <main class="main-content">

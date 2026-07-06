@@ -38,21 +38,26 @@ const accountNavItems = computed(() => [
   <aside :class="['sidebar', { 'sidebar--collapsed': isCollapsed }]">
 
     <!-- ===== Header ===== -->
-    <div class="sb-header">
-      <!-- Expanded: logo + name -->
+    <div class="sb-header" @click="emit('toggle')" :class="{ 'sb-header--clickable': isCollapsed }">
+      <!-- Expanded: logo + name + toggle -->
       <div class="sb-brand" v-show="!isCollapsed">
         <div class="sb-logo">C</div>
         <span class="sb-name">{{ t('app_name') }}</span>
       </div>
-      <!-- Collapsed: logo only, centered -->
+      <!-- Collapsed: centered logo + hint chevron -->
       <div class="sb-logo-wrap" v-show="isCollapsed">
         <div class="sb-logo sb-logo--sm">C</div>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+             class="sb-collapse-hint">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
       </div>
-      <!-- Toggle button (always visible) -->
-      <button class="sb-toggle" @click="emit('toggle')" :title="isCollapsed ? t('nav_expand') : t('nav_collapse')">
+      <!-- Toggle button (expanded only) -->
+      <button v-show="!isCollapsed" class="sb-toggle" @click.stop="emit('toggle')" :title="t('nav_collapse')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-             class="sb-toggle-icon" :class="{ 'sb-toggle-icon--rotated': isCollapsed }">
+             class="sb-toggle-icon">
           <polyline points="15 18 9 12 15 6"/>
         </svg>
       </button>
@@ -181,11 +186,18 @@ const accountNavItems = computed(() => [
   color: var(--text-tertiary); cursor: pointer;
   transition: background 150ms, color 150ms;
 }
-.sidebar--collapsed .sb-toggle { margin-left: 0; position: absolute; right: 4px; }
 .sb-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-.sb-toggle-icon { transition: transform 280ms cubic-bezier(.4, 0, .2, 1); }
-.sb-toggle-icon--rotated { transform: rotate(180deg); }
+/* Collapsed header: entire area is clickable */
+.sb-header--clickable { cursor: pointer; }
+.sb-header--clickable:hover { background: var(--bg-hover); }
+
+/* Small chevron hint next to collapsed logo */
+.sb-logo-wrap { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.sb-collapse-hint { opacity: 0.4; transition: opacity 150ms; }
+.sb-header--clickable:hover .sb-collapse-hint { opacity: 0.7; }
+
+.sb-toggle-icon { }
 
 /* ---- Navigation ---- */
 .sb-nav {
