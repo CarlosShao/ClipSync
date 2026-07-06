@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.clipsync.desktop",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "../src",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
   },
   "app": {
     "windows": [
