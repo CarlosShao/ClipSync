@@ -408,7 +408,7 @@ function goBackToLogin() {
 }
 .auth-inner {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 3fr 2fr;
   min-height: 100vh;
   min-height: 100dvh;
 }
