@@ -34,6 +34,13 @@ export const useConfigStore = defineStore('config', () => {
     } catch { /* defaults */ }
     // 根据构建模式强制设置正确的 server_url
     config.value.server_url = import.meta.env.DEV ? '' : 'http://localhost:3001'
+    // 从 localStorage 恢复 token（Tauri getConfig 可能不包含 token）
+    if (!config.value.token) {
+      const savedToken = localStorage.getItem('clipsync-token')
+      if (savedToken) {
+        config.value.token = savedToken
+      }
+    }
   }
 
   async function save(partial: Partial<AppConfig>) {

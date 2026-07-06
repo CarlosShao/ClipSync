@@ -45,10 +45,11 @@ const filteredItems = computed(() => {
 })
 
 const selectedCount = computed(() => items.value.filter(i => i.selected).length)
+const allSelected = computed(() => filteredItems.value.length > 0 && filteredItems.value.every(i => i.selected))
 
 function toggleSelectAll() {
-  const allSelected = filteredItems.value.every(i => i.selected)
-  filteredItems.value.forEach(i => { i.selected = !allSelected })
+  const shouldSelect = !allSelected.value
+  filteredItems.value.forEach(i => { i.selected = shouldSelect })
 }
 
 function clearSelection() {
@@ -207,7 +208,7 @@ export function useClipboard() {
 
   return {
     items, filteredItems, searchQuery, activeFilter, batchMode, polling,
-    selectedCount, startPolling, copyItem,
+    selectedCount, allSelected, startPolling, copyItem,
     toggleSelectAll, clearSelection, batchDelete, deleteSingle, loadClipboardItems,
     setFilter, setSearch, toggleBatch,
     refresh: loadClipboardItems,
