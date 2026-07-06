@@ -68,6 +68,38 @@ function clearSelection() {
   items.value.forEach(i => { i.selected = false })
 }
 
+// === 本地内容缓存（后端 contentPreview 为空，需要前端自己存） ===
+const CONTENT_CACHE_KEY = 'clipsync-content-cache'
+const CONTENT_CACHE_MAX = 200 // 最多缓存200条
+
+function loadContentCache(): Map<string, string> {
+  try {
+    const raw = localStorage.getItem(CONTENT_CACHE_KEY)
+    return raw ? new Map(JSON.parse(raw)) : new Map()
+  } catch { return new Map() }
+}
+
+function saveContentCache(cache: Map<string, string>) {
+  // 超过上限时删除最早的
+  if (cache.size > CONTENT_CACHE_MAX) {
+    const entries = [...cache.entries()]
+    cache = new Map(entries.slice(entries.length - CONTENT_CACHE_MAX))
+  }
+  localStorage.setItem(CONTENT_CACHE_KEY, JSON.stringify([...cache]))
+}
+
+function cacheContent(id: string, content: string) {
+  if (!content || !id) return
+  const cache = loadContentCache()
+  cache.set(id, content.slice(0, 5000)) // 每条最多缓存5KB
+  saveContentCache(cache)
+}
+
+function getCachedContent(id: string): string {
+  const cache = loadContentCache()
+  return cache.get(id) || ''
+}
+
 async function loadClipboardItems() {
   const res = await api('GET', '/api/clipboard')
   if (res.ok && Array.isArray(res.data?.items)) {
@@ -77,13 +109,15 @@ async function loadClipboardItems() {
       !serverIds.has(i.id) && i.content && i.content.trim()
     )
     const serverItems = res.data.items.map((i: any) => {
-      // 优先用本地已有 content（刚上传的），否则用 contentPreview
+      // 优先级：本地实时内容 > 本地缓存 > contentPreview
       const existing = items.value.find(e => e.id === i.id && e.content)
+      const content = existing?.content || getCachedContent(i.id) || i.contentPreview || i.content || ''
+      const preview = existing?.preview || content.slice(0, 200)
       return {
         id: i.id,
         type: (i.contentType || i.type || 'text') as ClipItem['type'],
-        content: existing?.content || i.contentPreview || i.content || '',
-        preview: existing?.preview || i.contentPreview || '',
+        content,
+        preview,
         source: i.sourceDevice?.name || i.deviceName || 'Server',
         timestamp: new Date(i.createdAt || Date.now()).getTime(),
       }
@@ -116,13 +150,16 @@ async function uploadToServer(content: string, type: ClipItem['type'] = 'text') 
     content,
     contentEncrypted: content,
     sourceDeviceId: deviceId,
-    type,
-    preview: content.slice(0, 200),
+    contentType: type,
+    contentPreview: content.slice(0, 200),
   })
-  // 上传成功后：用服务器返回的 id 替换本地临时 id
+  // 上传成功后：用服务器返回的 id 替换本地临时 id，并缓存内容
   if (res.ok && res.data?.id) {
     const localItem = items.value.find(i => i.id === localId)
-    if (localItem) localItem.id = res.data.id
+    if (localItem) {
+      localItem.id = res.data.id
+      cacheContent(res.data.id, content)
+    }
   }
 }
 
@@ -137,13 +174,13 @@ async function uploadImageToServer(dataUrl: string) {
   const deviceId = localStorage.getItem('clipsync-device-id')
   if (!deviceId) return
   const res = await api('POST', '/api/clipboard', {
-    type: 'image',
+    contentType: 'image',
     content: dataUrl,
     contentEncrypted: dataUrl,
     sourceDeviceId: deviceId,
     mimeType: 'image/png',
     size: base64?.length || 0,
-    preview: dataUrl,
+    contentPreview: `[Image ${base64?.length || 0} bytes]`,
   })
   if (res.ok && res.data?.id) {
     const localItem = items.value.find(i => i.id === localId)
@@ -161,11 +198,11 @@ async function uploadFileToServer(payload: string) {
   const deviceId = localStorage.getItem('clipsync-device-id')
   if (!deviceId) return
   const res = await api('POST', '/api/clipboard', {
-    type: 'file',
+    contentType: 'file',
     content: payload,
     contentEncrypted: payload,
     sourceDeviceId: deviceId,
-    preview: payload.slice(0, 200),
+    contentPreview: payload.slice(0, 200),
   })
   if (res.ok && res.data?.id) {
     const localItem = items.value.find(i => i.id === localId)
@@ -317,3 +354,4 @@ export function useClipboard() {
     refresh: loadClipboardItems,
   }
 }
+
