@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
@@ -22,6 +22,8 @@ const selectedCount = clip.selectedCount
 
 // batchMode 用本地 ref 控制，避免 composable 返回的 ref 在模板中解包问题
 const batchMode = ref(false)
+// allSelected 用本地 computed，同理避免 ref 解包问题
+const allSelected = computed(() => clip.allSelected.value)
 
 // 同步本地 batchMode 和 composable 的 batchMode
 function toggleBatchMode() {
@@ -221,7 +223,7 @@ function truncate(str: string, max: number): string {
         </colgroup>
         <thead>
           <tr>
-            <th v-if="batchMode"><input type="checkbox" class="batch-cb" :checked="!!clip.allSelected" @change="clip.toggleSelectAll()" /></th>
+            <th v-if="batchMode"><input type="checkbox" class="batch-cb" :checked="allSelected" @change="clip.toggleSelectAll()" /></th>
             <th>{{ t('head_content') }}</th>
             <th>{{ t('head_source') }}</th>
             <th>{{ t('head_type') }}</th>
