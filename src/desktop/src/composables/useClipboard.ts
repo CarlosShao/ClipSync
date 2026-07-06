@@ -59,26 +59,35 @@ function clearSelection() {
 async function loadClipboardItems() {
   const res = await api('GET', '/api/clipboard')
   if (res.ok && Array.isArray(res.data?.items)) {
-    // 合并服务器数据和本地数据，避免丢失本地项
     const serverIds = new Set(res.data.items.map((i: any) => i.id))
-    const localOnly = items.value.filter(i => !serverIds.has(i.id) && !i.id.startsWith('text-') && !i.id.startsWith('img-') && !i.id.startsWith('file-') && !i.id.startsWith('browser-'))
-    const serverItems = res.data.items.map((i: any) => ({
-      id: i.id || `srv-${Date.now()}`,
-      type: i.type || 'text',
-      content: i.content || '',
-      preview: i.preview,
-      source: i.sourceDevice?.name || i.deviceName || 'Server',
-      timestamp: new Date(i.createdAt || Date.now()).getTime(),
-    }))
-    items.value = [...localOnly, ...serverItems]
+    // 保留有本地 content 的项（上传后等待服务器同步的）
+    const localWithContent = items.value.filter(i =>
+      !serverIds.has(i.id) && i.content && i.content.trim()
+    )
+    const serverItems = res.data.items.map((i: any) => {
+      // 优先用本地已有 content（刚上传的），否则用 contentPreview
+      const existing = items.value.find(e => e.id === i.id && e.content)
+      return {
+        id: i.id,
+        type: (i.contentType || i.type || 'text') as ClipItem['type'],
+        content: existing?.content || i.contentPreview || i.content || '',
+        preview: existing?.preview || i.contentPreview || '',
+        source: i.sourceDevice?.name || i.deviceName || 'Server',
+        timestamp: new Date(i.createdAt || Date.now()).getTime(),
+      }
+    })
+    items.value = [...localWithContent, ...serverItems]
   }
 }
 
-async function uploadToServer(content: string, type: string = 'text') {
+async function uploadToServer(content: string, type: ClipItem['type'] = 'text') {
   const hash = simpleHash(content)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
   recentUploadHashes.set(hash, Date.now())
-  // 获取设备ID（从服务器获取或使用默认值）
+  // 立即添加到本地列表（乐观更新）
+  const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  items.value.unshift({ id: localId, type, content, source: 'Desktop', timestamp: Date.now() })
+  // 获取设备ID
   let deviceId = localStorage.getItem('clipsync-device-id')
   if (!deviceId) {
     try {
@@ -90,7 +99,7 @@ async function uploadToServer(content: string, type: string = 'text') {
       }
     } catch { /* ignore */ }
   }
-  if (!deviceId) return // 没有有效设备ID，跳过上传
+  if (!deviceId) return
   const res = await api('POST', '/api/clipboard', {
     content,
     contentEncrypted: content,
@@ -98,7 +107,11 @@ async function uploadToServer(content: string, type: string = 'text') {
     type,
     preview: content.slice(0, 200),
   })
-  if (res.ok) await loadClipboardItems()
+  // 上传成功后：用服务器返回的 id 替换本地临时 id
+  if (res.ok && res.data?.id) {
+    const localItem = items.value.find(i => i.id === localId)
+    if (localItem) localItem.id = res.data.id
+  }
 }
 
 async function uploadImageToServer(dataUrl: string) {
@@ -106,7 +119,11 @@ async function uploadImageToServer(dataUrl: string) {
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
   recentUploadHashes.set(hash, Date.now())
   const base64 = dataUrl.split(',')[1]
-  const deviceId = localStorage.getItem('clipsync-device-id') || '00000000-0000-0000-0000-000000000000'
+  // 乐观更新
+  const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  items.value.unshift({ id: localId, type: 'image', content: dataUrl, preview: dataUrl, source: 'Desktop', timestamp: Date.now() })
+  const deviceId = localStorage.getItem('clipsync-device-id')
+  if (!deviceId) return
   const res = await api('POST', '/api/clipboard', {
     type: 'image',
     content: dataUrl,
@@ -116,14 +133,21 @@ async function uploadImageToServer(dataUrl: string) {
     size: base64?.length || 0,
     preview: dataUrl,
   })
-  if (res.ok) await loadClipboardItems()
+  if (res.ok && res.data?.id) {
+    const localItem = items.value.find(i => i.id === localId)
+    if (localItem) localItem.id = res.data.id
+  }
 }
 
 async function uploadFileToServer(payload: string) {
   const hash = simpleHash(payload)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
   recentUploadHashes.set(hash, Date.now())
-  const deviceId = localStorage.getItem('clipsync-device-id') || '00000000-0000-0000-0000-000000000000'
+  // 乐观更新
+  const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  items.value.unshift({ id: localId, type: 'file', content: payload, source: 'Desktop', timestamp: Date.now() })
+  const deviceId = localStorage.getItem('clipsync-device-id')
+  if (!deviceId) return
   const res = await api('POST', '/api/clipboard', {
     type: 'file',
     content: payload,
@@ -131,7 +155,10 @@ async function uploadFileToServer(payload: string) {
     sourceDeviceId: deviceId,
     preview: payload.slice(0, 200),
   })
-  if (res.ok) await loadClipboardItems()
+  if (res.ok && res.data?.id) {
+    const localItem = items.value.find(i => i.id === localId)
+    if (localItem) localItem.id = res.data.id
+  }
 }
 
 function simpleHash(s: string): string {
@@ -245,15 +272,22 @@ export function useClipboard() {
 
   async function batchDelete(): Promise<number> {
     const selected = items.value.filter(i => i.selected)
-    const ids = selected.map(i => i.id).filter(id => !id.startsWith('local-'))
-    if (ids.length > 0) await api('DELETE', '/api/clipboard', { ids })
     const count = selected.length
-    items.value = items.value.filter(i => !i.selected)
+    // 只删服务器上的（过滤掉所有本地临时 id）
+    const serverIds = selected.map(i => i.id).filter(id => !id.startsWith('local-') && !id.startsWith('text-') && !id.startsWith('img-') && !id.startsWith('file-') && !id.startsWith('browser-'))
+    if (serverIds.length > 0) {
+      await api('DELETE', '/api/clipboard', { ids: serverIds }).catch(() => {})
+    }
+    // 乐观删除：从本地列表移除选中项
+    const selectedIds = new Set(selected.map(i => i.id))
+    items.value = items.value.filter(i => !selectedIds.has(i.id))
     return count
   }
 
   async function deleteSingle(item: ClipItem) {
-    if (!item.id.startsWith('local-')) await api('DELETE', `/api/clipboard/${item.id}`)
+    if (!item.id.startsWith('local-') && !item.id.startsWith('text-') && !item.id.startsWith('img-')) {
+      await api('DELETE', `/api/clipboard/${item.id}`).catch(() => {})
+    }
     items.value = items.value.filter(i => i.id !== item.id)
   }
 
