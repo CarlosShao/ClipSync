@@ -150,6 +150,7 @@ const accountNavItems = computed(() => [
   padding: 0 12px;
   gap: 8px;
   border-bottom: 1px solid var(--border-default);
+  position: relative; /* ← 为内部 absolute 定位的 toggle 按钮提供定位参照系 */
 }
 .sidebar--collapsed .sb-header {
   justify-content: center;
