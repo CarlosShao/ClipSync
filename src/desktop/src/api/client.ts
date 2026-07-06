@@ -10,7 +10,10 @@ async function getCsrfToken(): Promise<string | null> {
   const config = useConfigStore()
   if (!config.config.token) return null
   try {
-    const res = await fetch(`${config.serverUrl}/api/csrf-token`, { credentials: 'include' })
+    const res = await fetch(`${config.serverUrl}/api/csrf-token`, {
+      credentials: 'include',
+      headers: { 'Authorization': `Bearer ${config.config.token}` },
+    })
     const data = await res.json()
     csrfToken = data.token || null
     csrfExpiresAt = Date.now() + 4500

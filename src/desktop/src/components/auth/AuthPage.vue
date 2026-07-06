@@ -155,9 +155,25 @@ async function handleLogin() {
         toast.show(t('auth_need_code'), 'error'); shakeById('lp-code'); isLoggingIn.value = false; return
       }
       try {
-        await configStore.login(phone, authCode.value)
-        toast.show(t('login_success'), 'success')
-        emit('login-success')
+        // 直接调用 HTTP API（Tauri login 命令调用了错误的端点 /api/auth/login）
+        const res = await api('POST', '/api/auth/verify-code', { phone, code: authCode.value })
+        if (res.ok && res.data?.token) {
+          configStore.config.token = res.data.token
+          configStore.config.user_id = res.data.user?.id || ''
+          localStorage.setItem('clipsync-token', res.data.token)
+          toast.show(t('login_success'), 'success')
+          emit('login-success')
+        } else {
+          const msg = res.error || ''
+          if (msg.includes('new_user') || msg.includes('密码') || msg.includes('set password') || msg.includes('password')) {
+            setPwdPhone.value = phone
+            setPwdCode.value = authCode.value
+            authView.value = 'set-password'
+            toast.show(t('sp_new_account_desc'), 'info')
+          } else {
+            toast.show(t('login_failed') + msg, 'error')
+          }
+        }
       } catch (e: any) {
         const msg = String(e)
         if (msg.includes('new_user') || msg.includes('密码') || msg.includes('set password')) {
@@ -637,12 +653,12 @@ function goBackToLogin() {
 
 <style scoped>
 /* ===== Page layout ===== */
-.auth-page { min-height: 100vh; min-height: 100dvh; background: var(--bg-base); overflow-y: auto; }
-.auth-inner { display: grid; grid-template-columns: 3fr 2fr; height: 100vh; height: 100dvh; }
+.auth-page { height: 100vh; height: 100dvh; background: var(--bg-base); overflow: hidden; }
+.auth-inner { display: grid; grid-template-columns: 3fr 2fr; height: 100%; }
 @media (max-width: 900px) { .auth-inner { grid-template-columns: 1fr; } .auth-right { display: none; } }
 
 /* ===== Left column ===== */
-.auth-left { position: relative; display: flex; align-items: center; justify-content: center; padding: 48px 40px; }
+.auth-left { position: relative; display: flex; align-items: center; justify-content: center; padding: 48px 40px; overflow-y: auto; }
 .auth-card { width: 100%; max-width: 420px; }
 
 /* ===== Auth view transition ===== */
