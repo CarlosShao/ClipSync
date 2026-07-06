@@ -21,6 +21,8 @@ export const useConfigStore = defineStore('config', () => {
   const syncInterval = ref(0) // 0=realtime
   const maxHistory = ref(500)
   const reduceMotion = ref(false)
+  const autoSync = ref(true)   // 自动同步剪贴板（默认开启）
+  const imageCompress = ref(false) // 图片压缩（默认关闭）
 
   const isLoggedIn = computed(() => !!config.value.token)
   const serverUrl = computed(() => config.value.server_url)
@@ -41,6 +43,15 @@ export const useConfigStore = defineStore('config', () => {
         config.value.token = savedToken
       }
     }
+    // 从 localStorage 恢复用户偏好设置（跨会话持久化）
+    try {
+      const prefs = JSON.parse(localStorage.getItem('clipsync-prefs') || '{}')
+      if (typeof prefs.syncInterval === 'number') syncInterval.value = prefs.syncInterval
+      if (typeof prefs.maxHistory === 'number') maxHistory.value = prefs.maxHistory
+      if (typeof prefs.reduceMotion === 'boolean') reduceMotion.value = prefs.reduceMotion
+      if (typeof prefs.autoSync === 'boolean') autoSync.value = prefs.autoSync
+      if (typeof prefs.imageCompress === 'boolean') imageCompress.value = prefs.imageCompress
+    } catch { /* ignore corrupt data */ }
   }
 
   async function save(partial: Partial<AppConfig>) {
@@ -102,8 +113,44 @@ export const useConfigStore = defineStore('config', () => {
     save({ token: null, user_id: null })
   }
 
+  // 保存用户偏好到 localStorage（跨会话持久化）
+  function savePrefs() {
+    const prefs = {
+      syncInterval: syncInterval.value,
+      maxHistory: maxHistory.value,
+      reduceMotion: reduceMotion.value,
+      autoSync: autoSync.value,
+      imageCompress: imageCompress.value,
+    }
+    localStorage.setItem('clipsync-prefs', JSON.stringify(prefs))
+  }
+
+  function toggleAutoSync(val?: boolean) {
+    autoSync.value = val ?? !autoSync.value
+    savePrefs()
+  }
+
+  function toggleImageCompress(val?: boolean) {
+    imageCompress.value = val ?? !imageCompress.value
+    savePrefs()
+  }
+
+  function toggleReduceMotion() {
+    reduceMotion.value = !reduceMotion.value
+    savePrefs()
+    // 应用减少动画：给 html 添加/移除 class，供 CSS 使用
+    document.documentElement.classList.toggle('reduce-motion', reduceMotion.value)
+  }
+
+  // 初始化时应用 reduceMotion 状态
+  if (typeof window !== 'undefined') {
+    document.documentElement.classList.toggle('reduce-motion', reduceMotion.value)
+  }
+
   return {
     config, user, autostart, syncInterval, maxHistory, reduceMotion,
-    isLoggedIn, serverUrl, load, save, login, completeLogin, registerCurrentDevice, toggleAutostart, logout,
+    autoSync, imageCompress,
+    isLoggedIn, serverUrl, load, save, savePrefs, login, completeLogin, registerCurrentDevice,
+    toggleAutostart, toggleAutoSync, toggleImageCompress, toggleReduceMotion, logout,
   }
 })
