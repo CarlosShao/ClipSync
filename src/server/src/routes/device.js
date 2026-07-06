@@ -1,12 +1,126 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 import pool from '../db/pool.js';
 import { broadcastToUser } from '../ws/server.js';
 import { isValidUUID, isValidDeviceType, isValidPlatform, sanitizeString, validateDeviceName } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
+import { getRedisClient } from '../utils/redis-client.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { createSessionAndGenerateToken } from './auth.js';
+import { decryptField } from '../utils/encryption.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
+
+// 二维码扫码配对：生成一次性配对令牌（本机已登录设备调用）
+// 返回 { token, expiresAt }，token 编码进二维码 clipsync://pair?token=...
+router.post('/pairing/init', apiLimiter, authenticateToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 分钟有效期
+
+    const redis = await getRedisClient();
+    if (!redis) {
+      return res.status(503).json({ error: 'Redis unavailable, cannot create pairing token' });
+    }
+
+    // 存储配对令牌，TTL 300s（与 expiresAt 一致）
+    await redis.setEx(`pairing:${token}`, 300, JSON.stringify({ userId, createdAt: Date.now() }));
+
+    logger.info('[Pairing] init token created', { userId });
+    res.json({ token, expiresAt });
+  } catch (err) {
+    logger.error('Pairing init error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to create pairing token' });
+  }
+});
+
+// 二维码扫码配对：兑换令牌（扫码设备调用，无需登录 → 等价于登录到令牌所属账号）
+// 这是「自动同步不可用时的手动兜底方案」：扫码即把本设备登录到对方账号，从而共享剪贴板
+router.post('/pairing/redeem', apiLimiter, async (req, res) => {
+  try {
+    const { token, deviceName, deviceType, platform, platformVersion } = req.body;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Pairing token is required' });
+    }
+
+    const redis = await getRedisClient();
+    if (!redis) {
+      return res.status(503).json({ error: 'Redis unavailable, cannot redeem pairing token' });
+    }
+
+    const raw = await redis.get(`pairing:${token}`);
+    if (!raw) {
+      return res.status(404).json({ error: 'Invalid or expired pairing token' });
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return res.status(400).json({ error: 'Corrupted pairing token' });
+    }
+    const userId = payload.userId;
+    // 一次性使用：立即删除
+    await redis.del(`pairing:${token}`);
+
+    // 查询令牌所属用户
+    const userResult = await pool.query(
+      `SELECT id, phone, email, nickname, avatar_url, tos_accepted_at, privacy_accepted_at,
+              marketing_consent, phone_encrypted, email_encrypted
+       FROM users WHERE id = $1`,
+      [userId]
+    );
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+    const u = userResult.rows[0];
+
+    const phoneDecrypted = decryptField(u.phone_encrypted) || u.phone;
+    const emailDecrypted = decryptField(u.email_encrypted) || u.email;
+
+    // 复用登录的会话+JWT 生成逻辑，保证 token 结构与 /api/auth/* 完全一致
+    const { token: jwtToken } = await createSessionAndGenerateToken(
+      { id: u.id, phone: u.phone, email: u.email, nickname: u.nickname, avatar_url: u.avatar_url },
+      req
+    );
+
+    // 注册扫码设备到目标账号（使用正确字段名，避免前后端不匹配）
+    const cleanDeviceName = deviceName ? sanitizeString(String(deviceName).trim()) : 'Desktop';
+    const cleanDeviceType = isValidDeviceType(deviceType) ? deviceType : 'desktop';
+    const cleanPlatform = isValidPlatform(platform) ? platform : 'unknown';
+    if (cleanPlatform === 'unknown') {
+      return res.status(400).json({ error: 'Invalid platform. Valid values: windows, macos, linux, ios, android, browser' });
+    }
+    const cleanPlatformVersion = platformVersion ? sanitizeString(String(platformVersion)) : '';
+    await pool.query(
+      `INSERT INTO devices (user_id, device_name, device_type, platform, platform_version, app_version)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userId, cleanDeviceName, cleanDeviceType, cleanPlatform, cleanPlatformVersion, '0.1.0']
+    );
+
+    logger.info('[Pairing] redeem success', { userId, deviceType: cleanDeviceType, platform: cleanPlatform });
+
+    res.json({
+      token: jwtToken,
+      user: {
+        id: u.id,
+        phone: phoneDecrypted,
+        email: emailDecrypted,
+        nickname: u.nickname,
+        avatarUrl: u.avatar_url,
+        tosAcceptedAt: u.tos_accepted_at,
+        privacyAcceptedAt: u.privacy_accepted_at,
+        marketingConsent: u.marketing_consent,
+      },
+    });
+  } catch (err) {
+    logger.error('Pairing redeem error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to redeem pairing token' });
+  }
+});
 
 // 获取用户所有设备
 router.get('/', apiLimiter, async (req, res) => {

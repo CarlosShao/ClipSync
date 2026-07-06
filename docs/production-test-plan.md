@@ -1948,6 +1948,83 @@ curl -X PUT "http://localhost:3001/api/notifications/preferences" \
 
 
 
+## 6.14 二维码扫码配对测试（已实现 · P0 兜底方案）
+
+> 📱 **功能说明**：二维码扫码配对是「自动账户同步不可用时的手动兜底方案」。
+> 任一已登录设备点击「生成配对码」生成一次性二维码（有效期 5 分钟）；另一台设备点击「扫码配对」用摄像头扫描（或手动粘贴配对码），兑换成功后本设备即登录到对方账号并共享剪贴板。
+>
+> **底层原理**：配对令牌（`pairing:{token}`，存于 Redis，TTL 300s）兑换时由后端复用登录的会话+JWT 生成逻辑，返回与 `/api/auth/*` 完全一致的 `{ token, user }`，因此本质是一个「扫码登录」入口。
+
+#### 测试用例 6.14.1：生成配对码
+
+| 步骤 | 操作 | 预期结果 | 通过 |
+|------|------|----------|------|
+| 1 | 设置 → 设备管理 → 点击「生成配对码」 | 弹出二维码 + 明文配对码 + 倒计时 | |
+| 2 | 检查二维码内容 | 形如 `clipsync://pair?token=<64位hex>` | |
+| 3 | 等待 5 分钟 | 倒计时归零，提示「配对码已过期」 | |
+| 4 | 点击「重新生成」 | 旧码失效，生成新码 | |
+
+**API 测试命令**：
+
+```bash
+# 生成配对令牌（需登录）
+curl -X POST http://localhost:3001/api/devices/pairing/init \
+  -H "Authorization: Bearer <TOKEN>"
+
+# 预期返回
+{ "token": "<64hex>", "expiresAt": 1710000000000 }
+```
+
+#### 测试用例 6.14.2：扫码 / 粘贴配对
+
+| 步骤 | 操作 | 预期结果 | 通过 |
+|------|------|----------|------|
+| 1 | 另一设备点击「扫码配对」→ 开启摄像头 | 摄像头预览出现 | |
+| 2 | 扫描 6.14.1 的二维码 | 自动兑换，提示「配对成功」 | |
+| 3 | 检查设备列表 | 两台设备出现在同一账号下，剪贴板互通 | |
+| 4 | 无摄像头时 | 点击「停止」，在输入框粘贴配对码 → 点「配对」同样成功 | |
+| 5 | 使用已过期/伪造令牌 | 返回 404「Invalid or expired pairing token」 | |
+
+**API 测试命令**：
+
+```bash
+# 兑换配对令牌（无需登录，等价于登录到令牌所属账号）
+curl -X POST http://localhost:3001/api/devices/pairing/redeem \
+  -H "Content-Type: application/json" \
+  -d '{"token":"<64hex>","deviceName":"Desktop","deviceType":"desktop","platform":"windows"}'
+
+# 预期返回（与 /api/auth/login 结构一致）
+{
+  "token": "<JWT>",
+  "user": { "id":"...", "phone":"...", "nickname":null, "avatarUrl":null,
+            "tosAcceptedAt":null, "privacyAcceptedAt":null, "marketingConsent":false }
+}
+```
+
+#### 测试用例 6.14.3：异常与边界
+
+| 异常 | 预期处理 |
+|------|----------|
+| 令牌已使用一次 | 第二次兑换返回 404（一次性） |
+| Redis 不可用 | `/pairing/init` 返回 503，`/pairing/redeem` 返回 503 |
+| platform 非法（如 `unknown`） | 返回 400，提示合法 platform 列表 |
+| 摄像头无权限/无设备 | 优雅降级：toast 提示，手动粘贴入口始终可用 |
+
+---
+
+## 6.15 链接分享测试（规划中 · 非 P0，暂不实现）
+
+> 🔗 **功能说明**：链接分享（Shared Links）计划将剪贴板内容生成一个可访问的短链接（`clipsync.io/s/xxx`），发给未安装 ClipSync 的人即可在浏览器查看。
+> **当前状态**：仅前端有 Mock 占位页面，**后端 API 与数据库尚未实现**，属于规划中功能。按优先级决策，**本迭代延后实现（非 P0）**。
+>
+> **待办（非 P0）**：
+> - 后端：短链接生成 / 查询 / 过期回收接口（`POST /api/share`，`GET /api/share/:code`）
+> - 数据库：`shared_links` 表（code, item_id, owner_id, expires_at, max_views）
+> - 前端：DevicesView/剪贴板条目「分享为链接」入口 + 链接管理列表
+> - 安全：链接访问审计、可选密码保护、过期策略
+
+---
+
 ## 7. 异常场景与回滚方案
 
 ### 7.1 后端服务异常

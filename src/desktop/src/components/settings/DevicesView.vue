@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useDevice } from '@/composables/useDevice'
 import { useToast } from '@/composables/useToast'
-import { Monitor, Smartphone, Globe, Trash2 } from 'lucide-vue-next'
+import { Monitor, Smartphone, Globe, Trash2, QrCode } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const device = useDevice()
@@ -34,7 +34,12 @@ async function handleDelete(id: string, name: string) {
   <div class="settings-view">
     <div class="sv-header">
       <h2 class="sv-title">{{ t('nav_devices') }}</h2>
-      <button class="btn-add" @click="emit('open-modal', 'add-device')">+ {{ t('modal_add_device') }}</button>
+      <div class="sv-actions">
+        <button class="btn-add" @click="emit('open-modal', 'pair-generate')">+ {{ t('pair_generate') }}</button>
+        <button class="btn-add btn-add-secondary" @click="emit('open-modal', 'pair-scan')">
+          <QrCode :size="14" /> {{ t('pair_scan') }}
+        </button>
+      </div>
     </div>
     <div class="devices-grid">
       <div v-for="d in deviceList" :key="d.id" class="dev-card">
@@ -65,6 +70,8 @@ async function handleDelete(id: string, name: string) {
 <style scoped>
 .settings-view { padding: 24px; max-width: 720px; overflow-y: auto; flex: 1; }
 .sv-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.sv-actions { display: flex; gap: 8px; }
+.btn-add-secondary { display: inline-flex; align-items: center; gap: 5px; }
 .sv-title { font-size: 22px; font-weight: 700; margin: 0; }
 .btn-add { height: 34px; padding: 0 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 150ms; }
 .btn-add:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent); }

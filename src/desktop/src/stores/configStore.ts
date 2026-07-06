@@ -51,26 +51,40 @@ export const useConfigStore = defineStore('config', () => {
     } catch { /* ignore */ }
   }
 
+  // 注册当前设备到后端（使用正确字段名 deviceName/deviceType/platform，避免前后端不匹配）
+  async function registerCurrentDevice(authToken: string) {
+    const serverUrl = config.value.server_url || ''
+    const platform = /Mac/i.test(navigator.userAgent)
+      ? 'macos'
+      : /Linux/i.test(navigator.userAgent)
+        ? 'linux'
+        : 'windows'
+    try {
+      await fetch(`${serverUrl}/api/devices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ deviceName: 'Desktop', deviceType: 'desktop', platform }),
+      })
+    } catch { /* 设备注册失败不影响登录 */ }
+  }
+
+  // 统一登录收尾：持久化 token + 注册设备。供 login(验证码) 与 二维码配对兑换 复用
+  async function completeLogin(authToken: string, userId: string) {
+    config.value.token = authToken
+    config.value.user_id = userId
+    localStorage.setItem('clipsync-token', authToken)
+    await save({ token: authToken, user_id: userId })
+    await registerCurrentDevice(authToken)
+  }
+
   async function login(phone: string, code: string) {
     const res = await tauri.login(phone, code)
     if (!res || !res.token) {
       throw new Error('Login failed: no token returned')
     }
-    config.value.token = res.token
     // 兼容两种返回格式: { user: { id } } 或 { user_id }
     const userId = res.user?.id || (res as any).user_id || ''
-    config.value.user_id = userId
-    // Persist token for router guard
-    localStorage.setItem('clipsync-token', res.token)
-    await save({ token: res.token, user_id: userId })
-    // 自动注册当前设备
-    try {
-      await fetch(`${config.value.server_url || ''}/api/devices`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${res.token}` },
-        body: JSON.stringify({ name: 'Desktop', type: 'desktop' }),
-      })
-    } catch { /* 设备注册失败不影响登录 */ }
+    await completeLogin(res.token, userId)
   }
 
   async function toggleAutostart(val?: boolean) {
@@ -89,6 +103,6 @@ export const useConfigStore = defineStore('config', () => {
 
   return {
     config, user, autostart, syncInterval, maxHistory, reduceMotion,
-    isLoggedIn, serverUrl, load, save, login, toggleAutostart, logout,
+    isLoggedIn, serverUrl, load, save, login, completeLogin, registerCurrentDevice, toggleAutostart, logout,
   }
 })
