@@ -316,8 +316,24 @@ function validateRegConfirm(val: string) {
 }
 
 // ===== View switching =====
-function switchAuthView(view: 'login-phone' | 'login-password' | 'register') { authView.value = view }
-function goBackToLogin() { authView.value = 'login-phone' }
+const cardRef = ref<HTMLElement>()
+const cardHeight = ref<number | undefined>(undefined)
+
+function switchAuthView(view: 'login-phone' | 'login-password' | 'register') {
+  authView.value = view
+  syncHeight()
+}
+function goBackToLogin() {
+  authView.value = 'login-phone'
+  syncHeight()
+}
+function syncHeight() {
+  nextTick(() => {
+    if (cardRef.value) {
+      cardHeight.value = cardRef.value.scrollHeight
+    }
+  })
+}
 </script>
 
 <template>
@@ -331,7 +347,7 @@ function goBackToLogin() { authView.value = 'login-phone' }
           <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
           <span>{{ currentMode === 'dark' ? t('mode_light') : t('mode_dark') }}</span>
         </button>
-        <div class="auth-card">
+        <div class="auth-card" ref="cardRef" :style="{ minHeight: cardHeight ? cardHeight + 'px' : undefined }">
 
           <!-- ===== LOGIN ===== -->
           <div v-if="authView === 'login-phone' || authView === 'login-password'" class="auth-view">
