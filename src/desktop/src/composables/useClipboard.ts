@@ -2,6 +2,9 @@ import { ref, computed } from 'vue'
 import * as tauri from '@/lib/tauri'
 import { api } from '@/api/client'
 import { useConfigStore } from '@/stores/configStore'
+import { useI18n } from '@/composables/useI18n'
+
+const { t } = useI18n()
 
 export interface ClipItem {
   id: string
@@ -134,22 +137,32 @@ async function loadClipboardItems() {
         content = cached || '' // 无缓存则显示空，下面异步加载
         // 异步加载：如果图片没有缓存，从单条 API 获取完整内容
         if (!cached && i.id) {
-          api('GET', `/api/clipboard/${i.id}`).then(fullRes => {
+          api('GET', `/api/clipboard/${i.id}`).then(async fullRes => {
             if (fullRes.ok && fullRes.data?.contentEncrypted) {
               const raw = fullRes.data.contentEncrypted
-              // 根因修复：media.js 路径存储的是文件名（非 data URL），
-              // 需要通过 /api/media/:id/preview 获取可渲染的图片 URL
               const isDataUrl = raw.startsWith('data:')
               let renderSrc: string
               if (isDataUrl) {
                 renderSrc = raw
                 cacheContent(i.id, raw)
               } else {
-                // contentEncrypted 是文件名或 ID → 使用 media 预览接口
-                const configStore = useConfigStore()
-                renderSrc = `${configStore.serverUrl}/api/media/${i.id}/preview`
+                // contentEncrypted 是文件名（media.js 路径上传）→ 通过带认证的 fetch 获取图片
+                // <img> 标签无法携带 Bearer token，必须用 JS fetch 转 blob URL
+                try {
+                  const configStore = useConfigStore()
+                  const imgRes = await fetch(`${configStore.serverUrl}/api/media/${i.id}/preview`, {
+                    headers: { 'Authorization': `Bearer ${useConfigStore().config.token}` },
+                  })
+                  if (imgRes.ok) {
+                    const blob = await imgRes.blob()
+                    renderSrc = URL.createObjectURL(blob)
+                  } else {
+                    renderSrc = '' // 401/404 → 显示空占位
+                  }
+                } catch {
+                  renderSrc = ''
+                }
               }
-              // 更新列表中对应项的 content 和 preview
               const item = items.value.find(x => x.id === i.id)
               if (item) { item.content = isDataUrl ? raw : ''; item.preview = renderSrc }
             }
@@ -423,7 +436,24 @@ export function useClipboard() {
 
   /** 从文件选择器上传文件到剪贴板 */
   async function uploadFileItem(file: File): Promise<void> {
-    // 构建显示内容：文件名 + 大小
+    // 按套餐分级限制上传大小（docs/production-roadmap.md 规格）
+    // Free: 1MB, Pro: 20MB, Enterprise: 100MB
+    const configStore = useConfigStore()
+    const planLimits: Record<string, number> = {
+      'Free': 1, 'free': 1, '免费版': 1,
+      'Pro': 20, 'pro': 20, '专业版': 20,
+      'Enterprise': 100, 'enterprise': 100, '企业版': 100,
+    }
+    const userPlan = configStore.user.plan || 'Free'
+    const maxMb = planLimits[userPlan] || 1 // 默认免费版 1MB
+    const maxBytes = maxMb * 1024 * 1024
+
+    if (file.size > maxBytes) {
+      const sizeStr = file.size < 1024 * 1024
+        ? `${(file.size / 1024).toFixed(0)} KB`
+        : `${(file.size / 1024 / 1024).toFixed(1)} MB`
+      throw new Error(`${t('file_exceeds_plan', { size: sizeStr, limit: `${maxMb}MB`, plan: userPlan })}`)
+    }
     const sizeStr = file.size < 1024 * 1024
       ? `${(file.size / 1024).toFixed(1)} KB`
       : `${(file.size / 1024 / 1024).toFixed(1)} MB`

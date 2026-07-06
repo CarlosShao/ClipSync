@@ -4,6 +4,7 @@ import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import * as tauri from '@/lib/tauri'
+import { useConfigStore } from '@/stores/configStore'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -14,6 +15,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const toast = useToast()
 const clip = useClipboard()
+const configStore = useConfigStore()
 // 本地变量帮助 TS 正确推断类型（模板中 Vue 会自动解包 ref）
 const filteredItems = clip.filteredItems
 const allItems = clip.items
@@ -54,8 +56,16 @@ async function handleFileUpload(e: Event) {
   input.value = ''
 
   for (const file of files) {
-    if (file.size > 50 * 1024 * 1024) {
-      toast.show(`${file.name}: ${t('file_too_large')}`, 'error')
+    // Size limit is enforced server-side by uploadFileItem, but do a client-side pre-check
+    const planMaxBytes = (() => {
+      const plan = configStore.user.plan || 'Free'
+      if (plan === 'Pro' || plan === 'pro' || plan === '专业版') return 20 * 1024 * 1024
+      if (plan === 'Enterprise' || plan === 'enterprise' || plan === '企业版') return 100 * 1024 * 1024
+      return 1 * 1024 * 1024 // Free default: 1MB
+    })()
+    if (file.size > planMaxBytes) {
+      const maxMb = Math.round(planMaxBytes / 1024 / 1024)
+      toast.show(`${file.name}: ${t('file_exceeds_plan', { size: file.size < 1024*1024 ? `${(file.size/1024).toFixed(0)}KB` : `${(file.size/1024/1024).toFixed(1)}MB`, limit: `${maxMb}MB`, plan: '' })}`, 'error')
       continue
     }
     try {
@@ -182,11 +192,14 @@ function getTypeLabel(type: string): string {
 function formatContent(item: ClipItem): string {
   if (item.type === 'file') {
     try {
-      const paths = JSON.parse(item.content)
-      if (Array.isArray(paths) && paths.length > 0) {
-        // 提取文件名
-        const names = paths.map((p: string) => p.split(/[/\\]/).pop() || p)
-        return names.join(', ')
+      const parsed = JSON.parse(item.content)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // 旧格式：路径数组 → 提取文件名
+        return parsed.map((p: string) => p.split(/[/\\]/).pop() || p).join(', ')
+      }
+      if (parsed && typeof parsed === 'object' && parsed.name) {
+        // 新上传格式：{name, size, type} → 显示文件名
+        return String(parsed.name)
       }
     } catch { /* 解析失败，显示原始内容 */ }
   }

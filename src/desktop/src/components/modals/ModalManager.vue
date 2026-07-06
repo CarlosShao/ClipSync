@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, reactive } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
@@ -35,6 +35,7 @@ watch(() => props.showModalType, (type) => {
     if (expireTimer) { clearInterval(expireTimer); expireTimer = undefined }
     stopScan()
   }
+  if (type === 'sessions') loadSessions()
 })
 
 const { t } = useI18n()
@@ -110,8 +111,82 @@ async function handleForgotReset() {
   fpSending.value = false
 }
 
+// ===== Shortcut Customization =====
+const DEFAULT_SHORTCUTS = {
+  'quickPaste': ['Ctrl', 'Shift', 'V'],
+  'copyClip': ['Enter'],
+  'search': ['Ctrl', 'F'],
+}
+const STORAGE_KEY = 'clipsync-custom-shortcuts'
+type ShortcutId = keyof typeof DEFAULT_SHORTCUTS
+let savedShortcuts: Record<string, string[]> = {}
+try { savedShortcuts = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') } catch { /* ignore */ }
+const customShortcuts = reactive<Record<string, string[]>>({ ...DEFAULT_SHORTCUTS, ...savedShortcuts })
+const recordingId = ref<string | null>(null)
+
+const shortcutList = [
+  { id: 'quickPaste' as ShortcutId, label: 'sk_quick_paste' },
+  { id: 'copyClip' as ShortcutId, label: 'sk_copy_clip' },
+  { id: 'search' as ShortcutId, label: 'sk_search' },
+]
+
+function getKeys(id: string): string[] { return customShortcuts[id] || [] }
+
+function startRecord(id: string) {
+  recordingId.value = id
+  // Auto-focus the recorder element on next tick
+}
+
+function stopRecord() {
+  if (recordingId.value) {
+    recordingId.value = null
+  }
+}
+
+function onKeyDown(e: KeyboardEvent) {
+  if (!recordingId.value) return
+  e.preventDefault()
+  e.stopPropagation()
+
+  // Build key list: modifier keys + main key (ignore modifiers alone)
+  const keys: string[] = []
+  if (e.ctrlKey || e.metaKey) keys.push(e.metaKey ? 'Cmd' : 'Ctrl')
+  if (e.altKey) keys.push('Alt')
+  if (e.shiftKey) keys.push('Shift')
+  const mainKey = e.key.length === 1 ? e.key.toUpperCase() : e.key
+  if (mainKey && !['Control','Alt','Shift','Meta'].includes(mainKey)) {
+    keys.push(mainKey)
+  }
+
+  if (keys.length < 2) return // Need at least a modifier + key
+
+  // Save new shortcut
+  const id = recordingId.value!
+  customShortcuts[id] = keys
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...savedShortcuts, [id]: keys }))
+  } catch {}
+  recordingId.value = null
+}
+
 function toggleClass(e: Event) {
   (e.currentTarget as HTMLElement).classList.toggle('on')
+}
+
+async function handleExportRequest() {
+  try {
+    const res = await api('POST', '/api/user/export-request')
+    if (res.ok) {
+      toast.show(t('export_requested', { email: res.data?.email || '' }), 'success')
+      emit('close-modal')
+    } else {
+      toast.show(res.error || t('export_fail'), 'error')
+    }
+  } catch (e: any) {
+    // API 不存在时提示用户功能开发中
+    toast.show(t('toast_signup_soon'), 'info')
+    emit('close-modal')
+  }
 }
 
 // ===== Plan Selection → Payment Flow =====
@@ -287,6 +362,56 @@ function closePairModals() {
   stopScan()
   emit('close-modal')
 }
+
+// ===== Sessions (real API) =====
+const sessionItems = ref<any[]>([])
+const loadingSessions = ref(false)
+const revokingId = ref<string | null>(null)
+
+async function loadSessions() {
+  if (props.showModalType !== 'sessions') return
+  loadingSessions.value = true
+  try {
+    const res = await api('GET', '/api/sessions')
+    if (res.ok && Array.isArray(res.data?.sessions)) {
+      // Mark current session
+      const currentDeviceId = localStorage.getItem('clipsync-device-id')
+      sessionItems.value = (res.data.sessions as any[]).map((s: any) => ({
+        ...s,
+        isCurrent: s.device_id === currentDeviceId || s.is_current || s.current,
+      }))
+    } else {
+      sessionItems.value = []
+    }
+  } catch {
+    sessionItems.value = [] // API not available → show empty
+  }
+  loadingSessions.value = false
+}
+
+function formatSessionTime(ts: string | number): string {
+  const diff = Date.now() - new Date(ts).getTime()
+  if (diff < 60000) return t('just_now')
+  if (diff < 3600000) return Math.floor(diff / 60000) + t('m_ago')
+  if (diff < 86400000) return Math.floor(diff / 3600000) + t('h_ago')
+  return Math.floor(diff / 86400000) + t('d_ago')
+}
+
+async function revokeSession(sessionId: string) {
+  revokingId.value = sessionId
+  try {
+    const res = await api('DELETE', `/api/sessions/${sessionId}`)
+    if (res.ok) {
+      toast.show(t('sess_revoked'), 'success')
+      sessionItems.value = sessionItems.value.filter(s => s.id !== sessionId)
+    } else {
+      toast.show(res.error || 'Failed to revoke session', 'error')
+    }
+  } catch (e: any) {
+    toast.show(t('sess_revoke_fail') + String(e), 'error')
+  }
+  revokingId.value = null
+}
 </script>
 
 <template>
@@ -305,19 +430,38 @@ function closePairModals() {
   </ModalDialog>
 
   <!-- Shortcuts -->
-  <ModalDialog :open="showModalType === 'shortcuts'" :title="t('modal_shortcuts')" max-width="400px" @close="emit('close-modal')">
+  <ModalDialog :open="showModalType === 'shortcuts'" :title="t('modal_shortcuts')" max-width="440px" @close="emit('close-modal')">
     <div class="shortcut-list">
-      <div class="sk-item"><span>{{ t('sk_quick_paste') }}</span><div class="sk-keys"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd></div></div>
-      <div class="sk-item"><span>{{ t('sk_copy_clip') }}</span><div class="sk-keys"><kbd>↵</kbd></div></div>
-      <div class="sk-item"><span>{{ t('sk_search') }}</span><div class="sk-keys"><kbd>Ctrl</kbd>+<kbd>F</kbd></div></div>
+      <div v-for="sk in shortcutList" :key="sk.id" class="sk-item" :class="{ 'sk-recording': recordingId === sk.id }">
+        <span>{{ t(sk.label) }}</span>
+        <div v-if="recordingId !== sk.id" class="sk-keys" @click="startRecord(sk.id)">
+          <kbd v-for="k in getKeys(sk.id)" :key="k">{{ k }}</kbd>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px;opacity:.4;cursor:pointer;"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </div>
+        <div v-else class="sk-recorder" tabindex="0" @blur="stopRecord" @keydown="onKeyDown">
+          {{ t('sk_press_keys') }}...
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:12px;padding:8px 10px;background:var(--bg-hover);border-radius:var(--radius-sm);font-size:11px;color:var(--text-tertiary);line-height:1.6;">
+      {{ t('sk_hint') }}
     </div>
   </ModalDialog>
 
   <!-- Sessions -->
-  <ModalDialog :open="showModalType === 'sessions'" :title="t('modal_sessions')" max-width="480px" @close="emit('close-modal')">
-    <div class="session-list">
-      <div class="session-item"><div class="session-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div><div class="session-info"><div class="session-name">MacBook Pro</div><div class="session-detail">Current session</div></div><span class="session-badge">{{ t('sess_current') }}</span></div>
-      <div class="session-item"><div class="session-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div><div class="session-info"><div class="session-name">iPhone 15 Pro</div><div class="session-detail">Active 15m ago</div></div><button class="btn btn-ghost btn-sm" style="color:var(--danger)">{{ t('sess_sign_out_btn') }}</button></div>
+  <ModalDialog :open="showModalType === 'sessions'" :title="t('modal_sessions')" max-width="480px" @close="emit('close-modal'); loadSessions()">
+    <div v-if="loadingSessions" style="text-align:center;padding:24px;color:var(--text-tertiary);">{{ t('sess_loading') }}</div>
+    <div v-else-if="sessionItems.length === 0" style="text-align:center;padding:24px;color:var(--text-tertiary);">{{ t('sess_empty') }}</div>
+    <div v-else class="session-list">
+      <div v-for="s in sessionItems" :key="s.id" class="session-item">
+        <div class="session-icon">
+          <svg v-if="s.isCurrent" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+        </div>
+        <div class="session-info"><div class="session-name">{{ s.deviceName || s.device_type || 'Unknown Device' }}</div><div class="session-detail">{{ s.isCurrent ? t('sess_current') : formatSessionTime(s.last_active || s.created_at) }}</div></div>
+        <span v-if="s.isCurrent" class="session-badge">{{ t('sess_current') }}</span>
+        <button v-else class="btn btn-ghost btn-sm" style="color:var(--danger)" :disabled="revokingId === s.id" @click="revokeSession(s.id)">{{ revokingId === s.id ? '...' : t('sess_sign_out_btn') }}</button>
+      </div>
     </div>
   </ModalDialog>
 
@@ -401,7 +545,7 @@ function closePairModals() {
     <div style="text-align:center;padding:8px 0;">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--accent);margin-bottom:12px;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       <p style="font-size:13px;color:var(--text-secondary);line-height:1.7;" v-html="t('export_msg')" />
-      <button class="btn btn-primary btn-full" style="margin-top:16px;">{{ t('export_request_btn') }}</button>
+      <button class="btn btn-primary btn-full" style="margin-top:16px;" @click="handleExportRequest">{{ t('export_request_btn') }}</button>
     </div>
   </ModalDialog>
 
@@ -529,9 +673,12 @@ function closePairModals() {
 .theme-opt.active .theme-name { color: var(--accent); font-weight: 500; }
 
 .shortcut-list { display: flex; flex-direction: column; gap: 8px; }
-.sk-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
+.sk-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
 .sk-item:last-child { border-bottom: none; }
-.sk-keys kbd { font-size: 11px; background: var(--bg-hover); border: 1px solid var(--border-default); border-radius: 3px; padding: 2px 6px; font-family: monospace; }
+.sk-item.sk-recording { background: var(--accent-light); border-radius: var(--radius-sm); padding: 10px 12px; }
+.sk-keys kbd { font-size: 11px; background: var(--bg-hover); border: 1px solid var(--border-default); border-radius: 3px; padding: 2px 6px; font-family: monospace; cursor: pointer; transition: all .15s; }
+.sk-keys kbd:hover { border-color: var(--accent); color: var(--accent); }
+.sk-recorder { padding: 6px 14px; border-radius: var(--radius-sm); border: 2px dashed var(--accent); font-size: 13px; font-weight: 500; color: var(--accent); outline: none; min-width: 120px; text-align: center; animation: pulse-border 1.5s infinite; }
 
 .session-list { display: flex; flex-direction: column; gap: 8px; }
 .session-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
