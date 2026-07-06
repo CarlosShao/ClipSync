@@ -44,5 +44,4 @@ export const openImageViewer = (imageDataUrl: string, title: string) =>
 // ===== File Explorer =====
 // 在资源管理器中选中并显示文件/文件夹
 export const revealInFolder = (path: string) =>
-  // Windows explorer /select 会自动选中并显示该文件
-  invoke('open_url', { url: `explorer.exe /select,"${path}"` })
+  invoke('revealInFolder', { path })

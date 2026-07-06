@@ -122,7 +122,25 @@ fn read_clipboard_raw() -> ClipContent {
         let mut buf = Vec::<u8>::new();
         match raw::get_string(&mut buf) {
             Ok(count) if count > 0 => {
-                return ClipContent::Text(String::from_utf8_lossy(&buf).to_string());
+                // CF_UNICODETEXT is UTF-16LE; raw::get_string returns raw bytes
+                // Try UTF-8 first (for backward compat), then UTF-16LE fallback
+                let text = match String::from_utf8(buf.clone()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        // Parse as UTF-16LE (CF_UNICODETEXT format)
+                        let mut utf16_bytes = &buf[..];
+                        // Ensure even length for u16 pairs
+                        if utf16_bytes.len() % 2 != 0 {
+                            utf16_bytes = &utf16_bytes[..utf16_bytes.len() - 1];
+                        }
+                        let utf16_chars: Vec<u16> = utf16_bytes
+                            .chunks_exact(2)
+                            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                            .collect();
+                        String::from_utf16_lossy(&utf16_chars)
+                    }
+                };
+                return ClipContent::Text(text);
             }
             Ok(_) => {}
             Err(e) => eprintln!("[ClipMon] get_string err: {}", e),

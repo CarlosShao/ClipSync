@@ -287,12 +287,6 @@ function truncate(str: string, max: number): string {
                   <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
                 </svg>
               </button>
-              <!-- 文件复制 -->
-              <button v-else-if="item.type === 'file'" class="btn-icon btn-icon-sm" @click="clip.copyItem(item)" :title="t('copy')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-                </svg>
-              </button>
               <!-- 文件：在文件夹中显示 -->
               <button v-if="item.type === 'file'" class="btn-icon btn-icon-sm" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
