@@ -3,15 +3,29 @@ import { ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useTheme, currentMode } from '@/composables/useTheme'
 import { useConfigStore } from '@/stores/configStore'
+import { useToast } from '@/composables/useToast'
 
 const { t, currentLang, setLang } = useI18n()
 const { setMode } = useTheme()
 const configStore = useConfigStore()
+const toast = useToast()
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
 const langModel = ref(currentLang.value)
 const syncIntervalModel = ref(String(configStore.syncInterval))
 const maxHistoryModel = ref(String(configStore.maxHistory))
 const appVersion = '0.1.0'
+
+function onMaxHistoryChange() {
+  const val = Number(maxHistoryModel.value)
+  if (val === 999999 && configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise') {
+    toast.show(t('hist_unl_locked'), 'warning')
+    maxHistoryModel.value = String(configStore.maxHistory || 500)
+    return
+  }
+  configStore.maxHistory = val
+  configStore.savePrefs()
+}
+
 </script>
 
 <template>
@@ -43,7 +57,12 @@ const appVersion = '0.1.0'
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_maxhist') }}</div><div class="sg-hint">{{ t('sg_maxhist_h') }}</div></div>
-        <select class="styled-select" v-model="maxHistoryModel" @change="configStore.maxHistory = Number(maxHistoryModel); configStore.savePrefs()"><option value="100">{{ t('hist_100') }}</option><option value="500">{{ t('hist_500') }}</option><option value="1000">{{ t('hist_1k') }}</option><option value="999999">{{ t('hist_unl') }}</option></select>
+        <select class="styled-select" v-model="maxHistoryModel" @change="onMaxHistoryChange">
+          <option value="100">{{ t('hist_100') }}</option>
+          <option value="500">{{ t('hist_500') }}</option>
+          <option value="1000">{{ t('hist_1k') }}</option>
+          <option value="999999" :disabled="configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise'">{{ t('hist_unl') }}{{ configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise' ? ` (${t('upgrade_required')})` : '' }}</option>
+        </select>
       </div>
     </div>
 
@@ -119,8 +138,7 @@ const appVersion = '0.1.0'
     </div>
 
     <!-- About / Version -->
-    <div class="settings-group">
-      <div class="sg-header">{{ t('sg_about') }}</div>
+    <div class="about-section">
       <div class="about-card">
         <div class="about-logo">C</div>
         <div class="about-info">
@@ -165,15 +183,16 @@ const appVersion = '0.1.0'
 .btn-outline:hover { background: var(--bg-hover); color: var(--text-primary); }
 .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
 
-/* About / Version card */
-.about-card { display: flex; align-items: center; gap: 14px; padding: 16px; background: var(--bg-hover); border-radius: var(--radius-md); margin-bottom: 12px; }
-.about-logo { width: 40px; height: 40px; border-radius: 10px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; flex-shrink: 0; }
+/* About / Version section */
+.about-section { margin-top: 8px; padding: 20px; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-hover) 100%); }
+.about-card { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.about-logo { width: 48px; height: 48px; border-radius: 14px; background: linear-gradient(135deg, #6366F1 0%, #A78BFA 100%); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; flex-shrink: 0; box-shadow: 0 4px 12px rgba(99,102,241,.25); }
 .about-info { flex: 1; min-width: 0; }
-.about-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
-.about-version { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-.about-desc { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
-.about-links { display: flex; gap: 16px; }
-.about-link { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--accent); text-decoration: none; cursor: pointer; }
-.about-link:hover { opacity: 0.8; }
-.about-link-disabled { color: var(--text-tertiary); cursor: not-allowed; opacity: 0.5; }
+.about-name { font-size: 17px; font-weight: 700; color: var(--text-primary); }
+.about-version { font-size: 13px; color: var(--accent); font-weight: 500; margin-top: 2px; }
+.about-desc { font-size: 12px; color: var(--text-tertiary); margin-top: 3px; line-height: 1.5; }
+.about-links { display: flex; gap: 20px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.about-link { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--accent); text-decoration: none; cursor: pointer; transition: opacity .15s; font-weight: 500; }
+.about-link:hover { opacity: .75; text-decoration: underline; }
+.about-link-disabled { color: var(--text-tertiary); cursor: not-allowed; opacity: .45; font-size: 13px; }
 </style>
