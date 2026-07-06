@@ -46,6 +46,7 @@ async function downloadImage() {
       const writable = await handle.createWritable()
       await writable.write(blob)
       await writable.close()
+      toast.show(t('img_saved'), 'success')
       return
     } catch (e: any) {
       if (e.name === 'AbortError') return // 用户取消
@@ -56,6 +57,7 @@ async function downloadImage() {
   a.href = dataUrl
   a.download = `clipsync-image-${Date.now()}.png`
   a.click()
+  toast.show(t('img_saved'), 'success')
 }
 
 function handleCloseForgot() {
@@ -221,12 +223,17 @@ function toggleClass(e: Event) {
   <!-- Image Preview -->
   <ModalDialog :open="previewType === 'image'" :title="t('img_preview_title')" max-width="640px" @close="emit('close-preview')">
     <div v-if="previewItem" style="text-align:center;">
-      <div style="width:100%;max-height:400px;overflow:hidden;border-radius:var(--radius-md);background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;align-items:center;justify-content:center;margin-bottom:12px;">
+      <div style="width:100%;max-height:400px;overflow:hidden;border-radius:var(--radius-md);background:var(--bg-hover);display:flex;align-items:center;justify-content:center;margin-bottom:12px;">
         <img :src="previewItem.content" style="max-width:100%;max-height:380px;object-fit:contain;" alt="" />
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-secondary);">
         <span>Image</span>
-        <button class="btn btn-sm btn-ghost" @click="downloadImage">{{ t('img_downloaded') }}</button>
+        <button class="btn btn-sm btn-primary" @click="downloadImage">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          {{ t('img_saved') }}
+        </button>
       </div>
     </div>
   </ModalDialog>

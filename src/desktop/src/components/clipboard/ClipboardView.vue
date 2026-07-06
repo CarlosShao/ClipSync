@@ -6,7 +6,6 @@ import { useToast } from '@/composables/useToast'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
-  'toggle-theme': []
   'preview-image': [item: ClipItem]
   'preview-text': [item: ClipItem]
 }>()
@@ -68,6 +67,14 @@ function handleBatchDelete() {
   })
 }
 
+function openLink(item: ClipItem) {
+  const url = item.content.trim()
+  if (url) {
+    window.open(url, '_blank')
+    toast.show(t('link_opened'), 'success')
+  }
+}
+
 function handleSingleDelete(item: ClipItem) {
   showConfirm(t('confirm_delete'), async () => {
     await clip.deleteSingle(item)
@@ -108,6 +115,19 @@ function getTypeLabel(type: string): string {
   return map[type] || type.toUpperCase()
 }
 
+function formatContent(item: ClipItem): string {
+  if (item.type === 'file') {
+    try {
+      const paths = JSON.parse(item.content)
+      if (Array.isArray(paths) && paths.length > 0) {
+        // 提取文件名
+        const names = paths.map((p: string) => p.split(/[/\\]/).pop() || p)
+        return names.join(', ')
+      }
+    } catch { /* 解析失败，显示原始内容 */ }
+  }
+  return truncate(item.content, 80)
+}
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max) + '...' : str
 }
@@ -124,9 +144,6 @@ function truncate(str: string, max: number): string {
       </div>
       <div class="toolbar-spacer" />
       <div class="toolbar-right">
-        <button class="btn btn-ghost btn-sm" @click="emit('toggle-theme')" :title="t('mode_dark')">
-          🌙
-        </button>
         <button class="btn btn-ghost btn-sm" @click="toggleQuickPaste">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="2" y="2" width="20" height="20" rx="4"/><path d="M8 12h8M12 8v8"/>
@@ -190,7 +207,7 @@ function truncate(str: string, max: number): string {
         </colgroup>
         <thead>
           <tr>
-            <th v-if="clip.batchMode"><input type="checkbox" class="batch-cb" @change="clip.toggleSelectAll()" /></th>
+            <th v-if="clip.batchMode"><input type="checkbox" class="batch-cb" :checked="!!clip.allSelected" @change="clip.toggleSelectAll()" /></th>
             <th>{{ t('head_content') }}</th>
             <th>{{ t('head_source') }}</th>
             <th>{{ t('head_type') }}</th>
@@ -208,7 +225,7 @@ function truncate(str: string, max: number): string {
                 <span v-if="item.type === 'image'" class="cell-img-preview">
                   <img :src="item.preview || item.content" alt="" class="cell-thumb" />
                 </span>
-                <span v-else class="cell-text">{{ truncate(item.content, 80) }}</span>
+                <span v-else class="cell-text">{{ formatContent(item) }}</span>
               </div>
             </td>
             <td class="cell-source">{{ item.source || 'Desktop' }}</td>
@@ -220,14 +237,28 @@ function truncate(str: string, max: number): string {
                   <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
                 </svg>
               </button>
+              <!-- 图片预览 -->
               <button v-if="item.type === 'image'" class="btn-icon btn-icon-sm" @click="emit('preview-image', item)" :title="t('preview')">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
                 </svg>
               </button>
-              <button v-else class="btn-icon btn-icon-sm" @click="emit('preview-text', item)" :title="t('preview')">
+              <!-- 链接打开 -->
+              <button v-else-if="item.type === 'link'" class="btn-icon btn-icon-sm" @click="openLink(item)" :title="t('link_opened')">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </button>
+              <!-- 文字详情 -->
+              <button v-else-if="item.type === 'text'" class="btn-icon btn-icon-sm" @click="emit('preview-text', item)" :title="t('preview')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+              </button>
+              <!-- 文件复制 -->
+              <button v-else-if="item.type === 'file'" class="btn-icon btn-icon-sm" @click="clip.copyItem(item)" :title="t('copy')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/>
                 </svg>
               </button>
               <button class="btn-icon btn-icon-sm" style="color:var(--danger)" @click="handleSingleDelete(item)" :title="t('delete')">
