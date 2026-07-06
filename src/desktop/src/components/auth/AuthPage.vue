@@ -775,21 +775,31 @@ function goBackToLogin() {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  /* 固定深色背景，不依赖主题变量，确保深色/浅色模式都清晰可见 */
+  /* 浅色模式：深色/黑色背景 */
   background: #0f172a;
 }
 .auth-right-bg {
   position: absolute;
   inset: 0;
-  /* 深蓝紫渐变，任何模式下都是深色 */
-  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4c1d95 60%, #6d28d9 100%);
+  /* 浅色模式：深蓝到黑色渐变 */
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
 }
 .auth-right-bg::after {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.06) 1px, transparent 0);
+  background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.04) 1px, transparent 0);
   background-size: 24px 24px;
+}
+/* 暗色模式：紫色渐变 */
+:global(html.dark) .auth-right {
+  background: #1e1b4b;
+}
+:global(html.dark) .auth-right-bg {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4c1d95 60%, #6d28d9 100%);
+}
+:global(html.dark) .auth-right-bg::after {
+  background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.06) 1px, transparent 0);
 }
 .auth-right-content {
   position: relative;
