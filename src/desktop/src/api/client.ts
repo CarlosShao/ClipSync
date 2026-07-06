@@ -42,7 +42,7 @@ export async function api<T = any>(
     const res = await fetch(`${config.serverUrl}${path}`, {
       method, headers, body: body ? JSON.stringify(body) : undefined, credentials: 'include',
     })
-    if (res.status === 429) return { ok: false, status: 429, error: 'rate_limit_warn' }
+    if (res.status === 429) return { ok: false, status: 429, error: 'Too many requests, please wait and try again.' }
 
     const text = await res.text()
     let json: any
