@@ -108,7 +108,7 @@ const emit = defineEmits<{
 <style scoped>
 /* ===== SIDEBAR ===== */
 .sidebar { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-sidebar); border-right: 1px solid var(--border-default); }
-.sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px; height: 52px; border-bottom: 1px solid var(--border-default); }
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; height: 48px; border-bottom: 1px solid var(--border-default); }
 .sidebar-brand { display: flex; align-items: center; gap: 8px; }
 .sidebar-logo { width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--accent-bg); color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
 .sidebar-name { font-weight: 700; font-size: 14px; }

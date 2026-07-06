@@ -3,7 +3,7 @@ import { ref, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
-import { QrCode } from 'lucide-vue-next'
+import { QrCode, MessageCircle, Landmark } from 'lucide-vue-next'
 import { api } from '@/api/client'
 import { useConfigStore } from '@/stores/configStore'
 import { useDevice } from '@/composables/useDevice'
@@ -347,10 +347,10 @@ function closePairModals() {
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="payment-option" :disabled="paymentSending" @click="selectPaymentMethod('wechat')">
-        <span style="font-size:20px;">💚</span> <span>{{ t('pay_wechat') }}</span>
+        <MessageCircle class="pay-icon pay-icon--wechat" /> <span>{{ t('pay_wechat') }}</span>
       </button>
       <button class="payment-option" :disabled="paymentSending" @click="selectPaymentMethod('alipay')">
-        <span style="font-size:20px;">🔵</span> <span>{{ t('pay_alipay') }}</span>
+        <Landmark class="pay-icon pay-icon--alipay" /> <span>{{ t('pay_alipay') }}</span>
       </button>
     </div>
   </ModalDialog>
@@ -551,6 +551,9 @@ function closePairModals() {
 .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .payment-option { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); cursor: pointer; font-size: 14px; color: var(--text-primary); transition: all 150ms; }
 .payment-option:hover { border-color: var(--accent); background: var(--bg-hover); }
+.pay-icon { width: 22px; height: 22px; flex-shrink: 0; }
+.pay-icon--wechat { color: #07C160; }
+.pay-icon--alipay { color: #1677FF; }
 .btn { display: inline-flex; align-items: center; justify-content: center; height: 38px; padding: 0 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; }
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-danger:hover { opacity: 0.9; }
