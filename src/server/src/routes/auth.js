@@ -28,8 +28,8 @@ function computeFieldHash(value) {
 
 const router = Router();
 
-// 辅助函数：创建会话并生成JWT
-async function createSessionAndGenerateToken(user, req) {
+// 辅助函数：创建会话并生成JWT（导出供 device.js 配对兑换复用，保证 token 结构一致）
+export async function createSessionAndGenerateToken(user, req) {
   // 创建会话记录
   const sessionId = uuidv4();
   const deviceName = req.body.deviceName || 'Unknown Device';

@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
 import { QrCode } from 'lucide-vue-next'
 import { api } from '@/api/client'
+import { useConfigStore } from '@/stores/configStore'
+import { useDevice } from '@/composables/useDevice'
+import { initPairing, redeemPairing } from '@/api/device'
+import QRCode from 'qrcode'
+import jsQR from 'jsqr'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
 
 const props = defineProps<{
@@ -21,6 +26,16 @@ const emit = defineEmits<{
   'confirm-action': []
   'switch-modal': [type: string]
 }>()
+
+// 打开「生成配对码」弹窗时自动创建二维码；离开配对类弹窗时清理计时器与摄像头
+watch(() => props.showModalType, (type) => {
+  if (type === 'pair-generate') {
+    generatePairing()
+  } else if (type !== 'pair-scan') {
+    if (expireTimer) { clearInterval(expireTimer); expireTimer = undefined }
+    stopScan()
+  }
+})
 
 const { t } = useI18n()
 const toast = useToast()
@@ -124,6 +139,153 @@ async function selectPaymentMethod(method: string) {
   } finally {
     paymentSending.value = false
   }
+}
+
+// ===== 二维码扫码配对（手动同步兜底方案）=====
+const configStore = useConfigStore()
+const device = useDevice()
+
+// --- 生成配对码（本机已登录设备）---
+const pairingToken = ref('')
+const pairingQr = ref('')
+const pairingRemaining = ref(0)
+let expireTimer: number | undefined
+
+function detectPlatform(): string {
+  if (/Mac/i.test(navigator.userAgent)) return 'macos'
+  if (/Linux/i.test(navigator.userAgent)) return 'linux'
+  return 'windows'
+}
+
+async function generatePairing() {
+  try {
+    const res = await initPairing()
+    if (res.ok && res.data) {
+      pairingToken.value = res.data.token
+      pairingRemaining.value = Math.max(0, Math.ceil((res.data.expiresAt - Date.now()) / 1000))
+      pairingQr.value = await (QRCode as any).toDataURL(`clipsync://pair?token=${res.data.token}`, { width: 220, margin: 1 })
+      if (expireTimer) clearInterval(expireTimer)
+      expireTimer = window.setInterval(() => {
+        pairingRemaining.value -= 1
+        if (pairingRemaining.value <= 0 && expireTimer) {
+          clearInterval(expireTimer)
+          expireTimer = undefined
+          pairingQr.value = ''
+        }
+      }, 1000)
+    } else {
+      toast.show(res.error || t('pair_generate_fail'), 'error')
+    }
+  } catch (e: any) {
+    toast.show(t('pair_generate_fail') + String(e), 'error')
+  }
+}
+
+function copyPairingToken() {
+  if (!pairingToken.value) return
+  navigator.clipboard.writeText(pairingToken.value)
+    .then(() => toast.show(t('pair_copy_done'), 'success'))
+    .catch(() => toast.show(t('pair_copy_fail'), 'error'))
+}
+
+// --- 扫描/兑换配对码（扫码设备）---
+const videoEl = ref<HTMLVideoElement | null>(null)
+const scanning = ref(false)
+const manualToken = ref('')
+const redeemSending = ref(false)
+let mediaStream: MediaStream | null = null
+let rafId = 0
+
+function stopScan() {
+  scanning.value = false
+  if (rafId) cancelAnimationFrame(rafId)
+  rafId = 0
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(tr => tr.stop())
+    mediaStream = null
+  }
+  if (videoEl.value) videoEl.value.srcObject = null
+}
+
+async function startScan() {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    if (videoEl.value) {
+      videoEl.value.srcObject = mediaStream
+      await videoEl.value.play()
+    }
+    scanning.value = true
+    scanLoop()
+  } catch (e: any) {
+    // 摄像头不可用（无摄像头/未授权/WebView 限制）时优雅降级到手动输入
+    toast.show(t('pair_camera_fail') + (e?.message ? `: ${e.message}` : ''), 'error')
+  }
+}
+
+function scanLoop() {
+  if (!scanning.value || !videoEl.value) return
+  const video = videoEl.value
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const result = (jsQR as any)(img.data, img.width, img.height)
+      if (result?.data) {
+        stopScan()
+        handlePairingToken(result.data)
+        return
+      }
+    }
+  }
+  rafId = requestAnimationFrame(scanLoop)
+}
+
+function parseToken(raw: string): string {
+  const trimmed = raw.trim()
+  if (trimmed.includes('token=')) {
+    return trimmed.split('token=')[1].split(/[&\s]/)[0]
+  }
+  return trimmed
+}
+
+async function handlePairingToken(raw: string) {
+  const token = parseToken(raw)
+  if (!token) {
+    toast.show(t('pair_token_required'), 'error')
+    return
+  }
+  redeemSending.value = true
+  try {
+    const res = await redeemPairing({
+      token,
+      deviceName: 'Desktop',
+      deviceType: 'desktop',
+      platform: detectPlatform(),
+    })
+    if (res.ok && res.data?.token) {
+      await configStore.completeLogin(res.data.token, res.data.user.id)
+      await device.loadDevices()
+      toast.show(t('pair_redeem_success'), 'success')
+      stopScan()
+      emit('close-modal')
+    } else {
+      toast.show(t('pair_redeem_fail') + (res.error || ''), 'error')
+    }
+  } catch (e: any) {
+    toast.show(t('pair_redeem_fail') + String(e), 'error')
+  } finally {
+    redeemSending.value = false
+  }
+}
+
+function closePairModals() {
+  if (expireTimer) { clearInterval(expireTimer); expireTimer = undefined }
+  stopScan()
+  emit('close-modal')
 }
 </script>
 
@@ -287,6 +449,55 @@ async function selectPaymentMethod(method: string) {
         <QrCode :size="48" style="color:var(--text-tertiary);" />
       </div>
       <p style="font-size:13px;color:var(--text-secondary);">{{ t('add_device_desc') }}</p>
+    </div>
+  </ModalDialog>
+
+  <!-- QR Pairing: Generate (本机已登录设备) -->
+  <ModalDialog :open="showModalType === 'pair-generate'" :title="t('pair_generate')" max-width="420px" @close="closePairModals">
+    <div style="text-align:center;padding:12px 0;">
+      <div v-if="pairingQr" style="width:220px;height:220px;margin:0 auto 16px;background:#fff;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:8px;">
+        <img :src="pairingQr" style="width:100%;height:100%;object-fit:contain;" alt="pairing qr" />
+      </div>
+      <div v-else style="color:var(--text-tertiary);padding:48px 0;">{{ t('pair_generating') }}</div>
+
+      <p style="font-size:12px;color:var(--text-secondary);word-break:break-all;background:var(--bg-hover);padding:8px 10px;border-radius:var(--radius-sm);min-height:32px;">{{ pairingToken }}</p>
+
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
+        <button class="btn btn-primary btn-sm" @click="copyPairingToken" :disabled="!pairingToken">{{ t('pair_copy') }}</button>
+        <button class="btn btn-ghost btn-sm" @click="generatePairing">{{ t('pair_regenerate') }}</button>
+      </div>
+
+      <p style="font-size:12px;color:var(--text-tertiary);margin-top:10px;">
+        <template v-if="pairingRemaining > 0">{{ t('pair_expire', { s: pairingRemaining }) }}</template>
+        <template v-else>{{ t('pair_expired') }}</template>
+      </p>
+      <p style="font-size:12px;color:var(--text-secondary);margin-top:6px;">{{ t('pair_generate_desc') }}</p>
+    </div>
+  </ModalDialog>
+
+  <!-- QR Pairing: Scan (扫码设备) -->
+  <ModalDialog :open="showModalType === 'pair-scan'" :title="t('pair_scan')" max-width="460px" @close="closePairModals">
+    <div style="padding:8px 0;">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">{{ t('pair_scan_desc') }}</p>
+
+      <div style="position:relative;width:100%;max-width:300px;margin:0 auto;border-radius:var(--radius-md);overflow:hidden;background:#000;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;">
+        <video ref="videoEl" playsinline style="width:100%;height:100%;object-fit:cover;" :style="{ display: scanning ? 'block' : 'none' }"></video>
+        <div v-if="!scanning" style="color:#888;font-size:13px;text-align:center;padding:20px;">{{ t('pair_camera_hint') }}</div>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
+        <button v-if="!scanning" class="btn btn-primary btn-sm" @click="startScan">{{ t('pair_scan_start') }}</button>
+        <button v-else class="btn btn-ghost btn-sm" @click="stopScan">{{ t('pair_scan_stop') }}</button>
+      </div>
+
+      <div style="margin-top:16px;border-top:1px solid var(--border-subtle);padding-top:12px;">
+        <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px;">{{ t('pair_enter_code') }}</p>
+        <div style="display:flex;gap:8px;">
+          <input v-model="manualToken" :placeholder="t('pair_token_placeholder')" style="flex:1;height:32px;padding:0 10px;border-radius:var(--radius-sm);border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text-primary);font-size:13px;outline:none;" />
+          <button class="btn btn-primary btn-sm" :disabled="redeemSending" @click="handlePairingToken(manualToken)">{{ t('pair_pair_btn') }}</button>
+        </div>
+        <p style="font-size:11px;color:var(--text-tertiary);margin-top:8px;">{{ t('pair_scan_hint') }}</p>
+      </div>
     </div>
   </ModalDialog>
 
