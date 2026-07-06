@@ -116,14 +116,6 @@ function confirmAction() {
       @logout="configStore.logout()"
     />
 
-    <div v-if="!sidebarOpen" class="sidebar-collapsed">
-      <button class="btn-icon" @click="sidebarOpen = true">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="9" y1="18" x2="15" y2="12" /><line x1="15" y1="12" x2="9" y2="6" />
-        </svg>
-      </button>
-    </div>
-
     <main class="main-content">
       <ClipboardView
         v-if="currentSub === 'clipboard'"
@@ -160,7 +152,6 @@ function confirmAction() {
 
 <style scoped>
 .app-shell { display: flex; height: 100vh; height: 100dvh; overflow: hidden; background: var(--bg-base); }
-.sidebar-collapsed { width: 40px; flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 14px; border-right: 1px solid var(--border-default); background: var(--bg-sidebar); }
 .main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-sm); background: transparent; border: none; color: var(--text-secondary); cursor: pointer; }
 .btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); }

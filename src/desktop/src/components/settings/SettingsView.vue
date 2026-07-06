@@ -15,6 +15,7 @@ const maxHistoryModel = ref(String(configStore.maxHistory))
 
 <template>
   <div class="settings-view">
+    <div class="settings-content">
     <h2 class="sv-title">{{ t('settings_t') }}</h2>
 
     <div class="settings-group">
@@ -113,12 +114,14 @@ const maxHistoryModel = ref(String(configStore.maxHistory))
         <div class="sg-label"><div class="sg-name">{{ t('sg_billing') }}</div><div class="sg-hint">{{ t('sg_billing_h') }}</div></div>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sg-arrow"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.settings-view { padding: 24px; max-width: 720px; overflow-y: auto; flex: 1; }
+.settings-view { overflow-y: auto; flex: 1; max-width: 100%; }
+.settings-content { padding: 24px; max-width: 720px; }
 .sv-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
 .settings-group { margin-bottom: 24px; }
 .sg-header { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); margin-bottom: 8px; }

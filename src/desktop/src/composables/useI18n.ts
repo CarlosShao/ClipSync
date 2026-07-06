@@ -8,6 +8,7 @@ const _dicts: Record<Lang, I18nDict> = {
   en: {
     nav_main:'Main', nav_account:'Account', nav_clipboard:'Clipboard', nav_devices:'Devices', nav_shared_links:'Shared Links',
     nav_profile:'Profile', nav_subscription:'Subscription', nav_settings:'Settings',
+    app_name:'ClipSync', nav_collapse:'Collapse sidebar', nav_expand:'Expand sidebar',
     new_clip:'New Clip', search_ph:'Search clips...',
     tab_all:'All', tab_text:'Text', tab_images:'Images', tab_links:'Links', tab_files:'Files',
     head_content:'CONTENT', head_source:'SOURCE', head_type:'TYPE', head_time:'TIME', head_actions:'ACTIONS',
@@ -209,6 +210,7 @@ const _dicts: Record<Lang, I18nDict> = {
   zh: {
     nav_main:'主菜单', nav_account:'账号', nav_clipboard:'剪贴板', nav_devices:'设备', nav_shared_links:'共享链接',
     nav_profile:'个人资料', nav_subscription:'订阅', nav_settings:'设置',
+    app_name:'ClipSync', nav_collapse:'收起侧边栏', nav_expand:'展开侧边栏',
     new_clip:'新建剪贴', search_ph:'搜索剪贴记录...',
     tab_all:'全部', tab_text:'文字', tab_images:'图片', tab_links:'链接', tab_files:'文件',
     head_content:'内容', head_source:'来源', head_type:'类型', head_time:'时间', head_actions:'操作',
