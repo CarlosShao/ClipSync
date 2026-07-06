@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 
 const { t } = useI18n()
 
-defineProps<{
+const props = defineProps<{
   sidebarOpen: boolean
   currentSub: string
   itemsCount: number
@@ -16,25 +17,28 @@ const emit = defineEmits<{
   navigate: [sub: string]
   logout: []
 }>()
+
+const isCollapsed = computed(() => !props.sidebarOpen)
 </script>
 
 <template>
-  <!-- Expanded Sidebar -->
-  <aside v-show="sidebarOpen" class="sidebar">
+  <!-- Single sidebar: smooth width transition between expanded(220px) and collapsed(40px) -->
+  <aside :class="['sidebar', { 'sidebar--collapsed': !sidebarOpen }]">
     <div class="sidebar-header">
       <div class="sidebar-brand">
         <div class="sidebar-logo">C</div>
-        <span class="sidebar-name">ClipSync</span>
+        <span class="sidebar-name" v-show="!isCollapsed">{{ t('app_name') }}</span>
       </div>
-      <button class="btn-icon" @click="emit('toggle')" :title="t('nav_main')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <button class="btn-icon" @click="emit('toggle')" :title="isCollapsed ? t('nav_expand') : t('nav_collapse')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             :style="{ transform: isCollapsed ? 'rotate(180deg)' : '' }" style="transition: transform 250ms ease">
           <line x1="15" y1="18" x2="9" y2="12" /><line x1="9" y1="12" x2="15" y2="6" />
         </svg>
       </button>
     </div>
 
-    <div class="sidebar-section-label">{{ t('nav_main') }}</div>
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" v-show="!isCollapsed">
+      <div class="sidebar-section-label">{{ t('nav_main') }}</div>
       <button :class="['nav-item', { active: currentSub === 'clipboard' }]" @click="emit('navigate', 'clipboard')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>
@@ -56,8 +60,8 @@ const emit = defineEmits<{
       </button>
     </nav>
 
-    <div class="sidebar-section-label">{{ t('nav_account') }}</div>
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" v-show="!isCollapsed">
+      <div class="sidebar-section-label">{{ t('nav_account') }}</div>
       <button :class="['nav-item', { active: currentSub === 'profile' }]" @click="emit('navigate', 'profile')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/>
@@ -78,7 +82,7 @@ const emit = defineEmits<{
       </button>
     </nav>
 
-    <div class="sidebar-footer">
+    <div class="sidebar-footer" v-show="!isCollapsed">
       <div class="user-chip">
         <div class="user-avatar-ring"><div class="user-avatar-in">{{ userName ? userName.slice(0, 2) : 'CS' }}</div></div>
         <div class="user-info">
@@ -94,38 +98,41 @@ const emit = defineEmits<{
       </button>
     </div>
   </aside>
-
-  <!-- Collapsed Sidebar -->
-  <div v-if="!sidebarOpen" class="sidebar-collapsed">
-    <button class="btn-icon" @click="emit('toggle')">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="9" y1="18" x2="15" y2="12" /><line x1="15" y1="12" x2="9" y2="6" />
-      </svg>
-    </button>
-  </div>
 </template>
 
 <style scoped>
-/* ===== SIDEBAR ===== */
-.sidebar { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-sidebar); border-right: 1px solid var(--border-default); }
-.sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; height: 48px; border-bottom: 1px solid var(--border-default); }
-.sidebar-brand { display: flex; align-items: center; gap: 8px; }
-.sidebar-logo { width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--accent-bg); color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+/* ===== SIDEBAR (single element, smooth width transition) ===== */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-default);
+  overflow: hidden;
+  transition: width 250ms ease, padding 250ms ease;
+}
+.sidebar--collapsed { width: 40px; }
+
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; height: 48px; border-bottom: 1px solid var(--border-default); flex-shrink: 0; }
+.sidebar--collapsed .sidebar-header { justify-content: center; padding-left: 0; padding-right: 0; }
+.sidebar-brand { display: flex; align-items: center; gap: 8px; white-space: nowrap; opacity: 1; transition: opacity 200ms ease; }
+.sidebar--collapsed .sidebar-brand { opacity: 0; pointer-events: none; }
+.sidebar-logo { width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--accent-bg); color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; flex-shrink: 0; }
 .sidebar-name { font-weight: 700; font-size: 14px; }
-.sidebar-section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); padding: 16px 14px 6px; }
-.sidebar-nav { padding: 4px 8px; display: flex; flex-direction: column; gap: 1px; }
-.nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm); font-size: 13px; color: var(--text-secondary); background: none; border: none; cursor: pointer; text-align: left; width: 100%; }
+.sidebar-section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); padding: 16px 14px 6px; white-space: nowrap; }
+.sidebar-nav { padding: 4px 8px; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm); font-size: 13px; color: var(--text-secondary); background: none; border: none; cursor: pointer; text-align: left; width: 100%; white-space: nowrap; }
 .nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 .nav-item.active { background: var(--accent-light); color: var(--accent); font-weight: 500; }
 .nav-counter { margin-left: auto; font-size: 11px; color: var(--text-tertiary); background: var(--bg-hover); padding: 1px 6px; border-radius: 8px; }
-.sidebar-footer { margin-top: auto; padding: 12px 14px; border-top: 1px solid var(--border-default); }
+.sidebar-footer { margin-top: auto; padding: 12px 14px; border-top: 1px solid var(--border-default); overflow: hidden; }
 .user-chip { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .user-avatar-ring { width: 30px; height: 30px; border-radius: 50%; background: var(--gradient-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .user-avatar-in { width: 26px; height: 26px; border-radius: 50%; background: var(--bg-sidebar); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
-.user-info { flex: 1; }
+.user-info { flex: 1; min-width: 0; }
 .user-name { font-size: 13px; font-weight: 500; line-height: 1.3; }
 .user-role { font-size: 11px; color: var(--text-tertiary); }
 .logout-btn { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--text-tertiary); padding: 4px 0; }
 .logout-btn:hover { color: var(--danger); }
-.sidebar-collapsed { width: 40px; flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 14px; border-right: 1px solid var(--border-default); background: var(--bg-sidebar); }
 </style>
