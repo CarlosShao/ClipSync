@@ -654,8 +654,8 @@ function goBackToLogin() {
 
 <style scoped>
 /* ===== Page layout ===== */
-.auth-page { min-height: 100vh; min-height: 100dvh; background: var(--bg-base); }
-.auth-inner { display: grid; grid-template-columns: 3fr 2fr; min-height: 100vh; min-height: 100dvh; }
+.auth-page { height: 100vh; height: 100dvh; background: var(--bg-base); overflow: hidden; }
+.auth-inner { display: grid; grid-template-columns: 3fr 2fr; height: 100%; }
 @media (max-width: 900px) { .auth-inner { grid-template-columns: 1fr; } .auth-right { display: none; } }
 
 /* ===== Left column ===== */
@@ -773,7 +773,7 @@ function goBackToLogin() {
 .sp-step-line.completed { background: var(--success); }
 
 /* ===== Right panel ===== */
-.auth-right { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #0f172a; min-height: 100vh; min-height: 100dvh; }
+.auth-right { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #0f172a; height: 100%; }
 .auth-right-bg { position: absolute; inset: 0; background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); }
 .auth-right-bg::after { content: ''; position: absolute; inset: 0; background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.04) 1px, transparent 0); background-size: 24px 24px; }
 :global(html.dark) .auth-right { background: #1e1b4b; }

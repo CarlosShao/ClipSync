@@ -61,9 +61,10 @@ function cancelConfirm() {
 // ===== Clipboard Operations =====
 function handleBatchDelete() {
   if (clip.selectedCount.value === 0) { toast.show(t('batch_none'), 'warning'); return }
-  showConfirm(t('confirm_batch_delete', { n: clip.selectedCount.value }), async () => {
+  const count = clip.selectedCount.value
+  showConfirm(t('confirm_batch_delete', { n: count }), async () => {
     await clip.batchDelete()
-    toast.show(t('batch_deleted', { n: clip.selectedCount.value }), 'success')
+    toast.show(t('batch_deleted', { n: count }), 'success')
   })
 }
 
@@ -188,8 +189,8 @@ function truncate(str: string, max: number): string {
       <div class="confirm-modal">
         <p class="confirm-msg">{{ confirmMessage }}</p>
         <div class="confirm-actions">
-          <button class="btn btn-ghost btn-sm" @click="cancelConfirm">{{ t('cancel') }}</button>
-          <button class="btn btn-primary btn-sm" @click="confirmAction">{{ t('confirm') }}</button>
+          <button class="btn btn-ghost btn-sm" @click="cancelConfirm">{{ t('cancel_btn') }}</button>
+          <button class="btn btn-primary btn-sm" @click="confirmAction">{{ t('confirm_t') }}</button>
         </div>
       </div>
     </div>
