@@ -441,7 +441,7 @@ function goBackToLogin() {
   height: 36px;
   border-radius: 10px;
   background: var(--accent);
-  color: #fff;
+  color: var(--text-inverse);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -566,7 +566,7 @@ function goBackToLogin() {
   font-weight: 500;
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--text-inverse);
   cursor: pointer;
   transition: all 150ms;
 }
@@ -594,8 +594,8 @@ function goBackToLogin() {
   display: inline-block;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(255,255,255,0.3);
-  border-top-color: #fff;
+  border: 2px solid var(--accent-light);
+  border-top-color: var(--text-inverse);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
