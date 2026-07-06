@@ -20,6 +20,16 @@ const allItems = clip.items
 const activeFilter = clip.activeFilter
 const selectedCount = clip.selectedCount
 
+// batchMode 用本地 ref 控制，避免 composable 返回的 ref 在模板中解包问题
+const batchMode = ref(false)
+
+// 同步本地 batchMode 和 composable 的 batchMode
+function toggleBatchMode() {
+  batchMode.value = !batchMode.value
+  clip.toggleBatch()
+  if (!batchMode.value) clip.clearSelection()
+}
+
 const searchOpen = ref(false)
 const searchInput = ref('')
 const showQuickPaste = ref(false)
@@ -28,9 +38,8 @@ const confirmMessage = ref('')
 let confirmCallback: (() => void) | null = null
 
 onMounted(() => {
-  // 重置 batchMode（模块级 ref 在 HMR 时可能保留旧状态）
-  clip.batchMode.value = false
-  clip.clearSelection()
+  // 确保 batchMode 初始为 false
+  batchMode.value = false
   document.addEventListener('keydown', handleGlobalKeydown)
 })
 
@@ -175,12 +184,12 @@ function truncate(str: string, max: number): string {
         <input v-else v-model="searchInput" type="text" :placeholder="t('search_ph')" class="search-input"
           @blur="handleSearchBlur" @input="clip.setSearch(searchInput)" />
       </div>
-      <button :class="['btn-icon', { active: clip.batchMode }]" @click="clip.toggleBatch" :title="t('batch_select')">
+      <button :class="['btn-icon', { active: batchMode }]" @click="toggleBatchMode" :title="t('batch_select')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
         </svg>
       </button>
-      <button v-if="clip.batchMode && selectedCount > 0" class="btn-icon" style="color:var(--danger)" @click="handleBatchDelete">
+      <button v-if="batchMode && selectedCount > 0" class="btn-icon" style="color:var(--danger)" @click="handleBatchDelete">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
         </svg>
@@ -203,7 +212,7 @@ function truncate(str: string, max: number): string {
     <div class="clipboard-view">
       <table v-if="filteredItems.length > 0" class="clip-table">
         <colgroup>
-          <col v-if="clip.batchMode" class="col-cb" />
+          <col v-if="batchMode" class="col-cb" />
           <col class="col-content" />
           <col class="col-source" />
           <col class="col-type" />
@@ -212,7 +221,7 @@ function truncate(str: string, max: number): string {
         </colgroup>
         <thead>
           <tr>
-            <th v-if="clip.batchMode"><input type="checkbox" class="batch-cb" :checked="!!clip.allSelected" @change="clip.toggleSelectAll()" /></th>
+            <th v-if="batchMode"><input type="checkbox" class="batch-cb" :checked="!!clip.allSelected" @change="clip.toggleSelectAll()" /></th>
             <th>{{ t('head_content') }}</th>
             <th>{{ t('head_source') }}</th>
             <th>{{ t('head_type') }}</th>
@@ -222,9 +231,9 @@ function truncate(str: string, max: number): string {
         </thead>
         <tbody>
           <tr v-for="item in filteredItems" :key="item.id"
-            :class="{ 'batch-selected': item.selected, 'with-cb': clip.batchMode }"
+            :class="{ 'batch-selected': item.selected, 'with-cb': batchMode }"
             @dblclick="clip.copyItem(item)">
-            <td v-if="clip.batchMode"><input type="checkbox" class="batch-cb" v-model="item.selected" /></td>
+            <td v-if="batchMode"><input type="checkbox" class="batch-cb" v-model="item.selected" /></td>
             <td class="cell-content" :title="item.content">
               <div class="cell-content-inner">
                 <span v-if="item.type === 'image'" class="cell-img-preview">
