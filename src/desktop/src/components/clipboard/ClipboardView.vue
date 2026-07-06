@@ -28,6 +28,9 @@ const confirmMessage = ref('')
 let confirmCallback: (() => void) | null = null
 
 onMounted(() => {
+  // 重置 batchMode（模块级 ref 在 HMR 时可能保留旧状态）
+  clip.batchMode.value = false
+  clip.clearSelection()
   document.addEventListener('keydown', handleGlobalKeydown)
 })
 
@@ -342,10 +345,9 @@ function truncate(str: string, max: number): string {
 .type-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-tertiary); background: var(--bg-hover); padding: 2px 6px; border-radius: 4px; transition: transform 0.15s; }
 .type-badge:hover { transform: scale(1.06); }
 .cell-time { color: var(--text-tertiary); font-size: 12px; }
-.cell-actions { display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity 0.12s ease; }
-tr:hover .cell-actions { opacity: 1; }
-.btn-icon-sm { width: 26px; height: 26px; }
-.btn-icon-sm:hover { background: var(--bg-hover); border-radius: var(--radius-sm); }
+.cell-actions { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.btn-icon-sm { width: 26px; height: 26px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; opacity: 0.4; transition: all 0.12s ease; }
+.btn-icon-sm:hover { opacity: 1; background: var(--bg-hover); color: var(--text-primary); }
 
 /* ===== EMPTY STATE ===== */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; text-align: center; }
