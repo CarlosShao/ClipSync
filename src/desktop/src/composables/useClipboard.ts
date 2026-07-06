@@ -83,8 +83,9 @@ async function uploadToServer(content: string, type: string = 'text') {
   if (!deviceId) {
     try {
       const devRes = await api('GET', '/api/devices')
-      if (devRes.ok && Array.isArray(devRes.data) && devRes.data.length > 0) {
-        deviceId = devRes.data[0].id
+      const devList = devRes.data?.devices || devRes.data
+      if (devRes.ok && Array.isArray(devList) && devList.length > 0) {
+        deviceId = devList[0].id || devList[0].device_id
         localStorage.setItem('clipsync-device-id', deviceId!)
       }
     } catch { /* ignore */ }
