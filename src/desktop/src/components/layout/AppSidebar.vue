@@ -60,8 +60,8 @@ const accountNavItems = computed(() => [
 
     <!-- ===== Main Navigation ===== -->
     <nav class="sb-nav">
+      <div v-if="!isCollapsed" class="sb-sect-label">{{ t('nav_main') }}</div>
       <template v-for="item in mainNavItems" :key="item.key">
-        <div v-if="!isCollapsed" class="sb-sect-label">{{ t('nav_main') }}</div>
         <button
           :class="['sb-item', { active: currentSub === item.key }]"
           :title="isCollapsed ? item.label : undefined"
