@@ -51,15 +51,15 @@ function cleanupMemoryStore(store, windowMs) {
  * - 使用流水线保证原子性
  * - 精确控制速率
  */
-async function checkRateLimitRedis(key, windowMs, max) {
+async function checkRateLimitRedis(key, windowMs, max, storeName = 'api') {
   const client = await getSharedRedisClient();
   if (!client) {
     // Redis 不可用，降级到内存模式（不允许放行！）
     logger.warn('[RateLimiter] Redis unavailable, falling back to memory mode for key:', { key });
-    return checkRateLimitMemory(key, windowMs, max);
+    return checkRateLimitMemory(key, windowMs, max, storeName);
   }
-  
-  const redisKey = `ratelimit:${key}`;
+
+  const redisKey = `ratelimit:${storeName}:${key}`;
   const now = Date.now();
   const windowStart = now - windowMs;
   const member = `${now}:${Math.random().toString(36).substr(1, 6)}`;
@@ -93,41 +93,45 @@ async function checkRateLimitRedis(key, windowMs, max) {
   } catch (err) {
     logger.error('[RateLimiter] Redis operation failed:', { error: err.message });
     // Redis 操作失败，降级到内存模式
-    return checkRateLimitMemory(key, windowMs, max);
+    return checkRateLimitMemory(key, windowMs, max, storeName);
   }
 }
 
 /**
  * 内存滑动窗口限流（降级方案）
  * 使用 Map<key, number[]> 存储时间戳列表
+ * @param {string} storeName - 对应 memoryStores 的 key，实现各 limiter 独立计数
  */
-function checkRateLimitMemory(key, windowMs, max) {
+function checkRateLimitMemory(key, windowMs, max, storeName = 'api') {
   const now = Date.now();
   const windowStart = now - windowMs;
-  
+
+  // 使用独立的 store，避免 strictLimiter/uploadLimiter 与 apiLimiter 互相污染
+  const store = memoryStores[storeName] || memoryStores.api;
+
   // 获取或创建时间戳列表
-  let timestamps = memoryStores.api.get(key) || [];
+  let timestamps = store.get(key) || [];
   
   // 移除窗口外的时间戳
   timestamps = timestamps.filter(ts => ts > windowStart);
   
   // 检查是否超限
   if (timestamps.length >= max) {
-    memoryStores.api.set(key, timestamps);
+    store.set(key, timestamps);
     return {
       allowed: false,
       count: timestamps.length,
       resetTime: timestamps[0] + windowMs, // 最早的时间戳 + 窗口大小
     };
   }
-  
+
   // 添加当前请求
   timestamps.push(now);
-  memoryStores.api.set(key, timestamps);
-  
+  store.set(key, timestamps);
+
   // 定期清理（避免内存泄漏）
   if (Math.random() < 0.01) { // 1% 概率触发清理
-    cleanupMemoryStore(memoryStores.api, windowMs);
+    cleanupMemoryStore(store, windowMs);
   }
   
   return {
@@ -163,9 +167,9 @@ function createRateLimiter(options) {
     let result;
     
     if (useRedis) {
-      result = await checkRateLimitRedis(key, windowMs, max);
+      result = await checkRateLimitRedis(key, windowMs, max, storeName);
     } else {
-      result = checkRateLimitMemory(key, windowMs, max);
+      result = checkRateLimitMemory(key, windowMs, max, storeName);
     }
     
     // 设置响应头
