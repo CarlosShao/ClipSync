@@ -12,10 +12,11 @@ import { decryptField } from '../utils/encryption.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
+const pairingRouter = Router();
 
 // 二维码扫码配对：生成一次性配对令牌（本机已登录设备调用）
 // 返回 { token, expiresAt }，token 编码进二维码 clipsync://pair?token=...
-router.post('/pairing/init', apiLimiter, authenticateToken, async (req, res) => {
+pairingRouter.post('/pairing/init', apiLimiter, authenticateToken, async (req, res) => {
   try {
     const userId = req.userId;
     const token = crypto.randomBytes(32).toString('hex');
@@ -39,7 +40,7 @@ router.post('/pairing/init', apiLimiter, authenticateToken, async (req, res) => 
 
 // 二维码扫码配对：兑换令牌（扫码设备调用，无需登录 → 等价于登录到令牌所属账号）
 // 这是「自动同步不可用时的手动兜底方案」：扫码即把本设备登录到对方账号，从而共享剪贴板
-router.post('/pairing/redeem', apiLimiter, async (req, res) => {
+pairingRouter.post('/pairing/redeem', apiLimiter, async (req, res) => {
   try {
     const { token, deviceName, deviceType, platform, platformVersion } = req.body;
     if (!token || typeof token !== 'string') {
@@ -290,3 +291,4 @@ router.delete('/:deviceId', apiLimiter, async (req, res) => {
 });
 
 export default router;
+export { pairingRouter };

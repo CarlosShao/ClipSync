@@ -18,7 +18,7 @@ import authVerifyRoutes from './routes/auth-verify.js';
 import authPasswordRoutes from './routes/auth-password.js';
 import authProfileRoutes from './routes/auth-profile.js';
 import authSessionRoutes from './routes/auth-session.js';
-import deviceRoutes from './routes/device.js';
+import deviceRoutes, { pairingRouter } from './routes/device.js';
 import clipboardRoutes from './routes/clipboard.js';
 import mediaRoutes from './routes/media.js';
 import syncRoutes from './routes/sync.js';
@@ -323,6 +323,10 @@ app.use('/api/auth', authVerifyRoutes);
 app.use('/api/auth', authPasswordRoutes);
 app.use('/api/auth', authProfileRoutes);
 app.use('/api/auth', authSessionRoutes);
+// 二维码扫码配对：init 需登录(Bearer)，redeem 匿名(扫码设备无 token) → 独立挂载，不挂全局 authenticateToken/csrf
+// 必须注册在下方认证版 /api/devices 之前，否则匿名 redeem 会被全局 authenticateToken 拦截返回 401
+app.use('/api/devices', apiLimiter, pairingRouter);
+
 app.use('/api/devices', apiLimiter, authenticateToken, csrfProtection, subscriptionCheck, checkDeviceLimit, (req, res, next) => {
   req.userId = req.user.userId;
   next();
