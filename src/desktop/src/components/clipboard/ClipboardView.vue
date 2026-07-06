@@ -360,6 +360,7 @@ function truncate(str: string, max: number): string {
 .col-time { width: 90px; }
 .col-actions { width: 100px; }
 .clip-table th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-tertiary); padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface); position: sticky; top: 0; z-index: 1; }
+.clip-table thead tr th:last-child { text-align: center; }
 .clip-table td { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); }
 .clip-table tr:hover td { background: var(--bg-hover); }
 .clip-table tr.batch-selected td { background: var(--accent-light); }

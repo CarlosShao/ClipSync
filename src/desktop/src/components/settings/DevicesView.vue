@@ -3,12 +3,21 @@ import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useDevice } from '@/composables/useDevice'
 import { useToast } from '@/composables/useToast'
+import { Monitor, Smartphone, Globe, Trash2 } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const device = useDevice()
 const toast = useToast()
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
 const deviceList = computed(() => device.devices.value)
+
+function getDeviceIcon(type: string) {
+  switch (type) {
+    case 'mobile': return Smartphone
+    case 'browser': return Globe
+    default: return Monitor
+  }
+}
 
 async function handleDelete(id: string, name: string) {
   if (!confirm(t('confirm_msg') + ` (${name})`)) return
@@ -31,30 +40,24 @@ async function handleDelete(id: string, name: string) {
       <div v-for="d in deviceList" :key="d.id" class="dev-card">
         <div class="dev-card-header">
           <div class="dev-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect v-if="d.type==='desktop'" x="2" y="3" width="20" height="14" rx="2"/><line v-if="d.type==='desktop'" x1="8" y1="21" x2="16" y2="21"/><line v-if="d.type==='desktop'" x1="12" y1="17" x2="12" y2="21"/>
-              <rect v-if="d.type==='mobile'" x="5" y="2" width="14" height="20" rx="2"/><line v-if="d.type==='mobile'" x1="12" y1="18" x2="12.01" y2="18"/>
-              <rect v-if="d.type==='browser'" x="2" y="2" width="20" height="20" rx="2"/><line v-if="d.type==='browser'" x1="2" y1="6" x2="22" y2="6"/>
-            </svg>
+            <component :is="getDeviceIcon(d.type)" :size="22" />
           </div>
           <div class="dev-actions">
             <div class="dev-status-dot" :class="{ on: d.online }" />
             <button class="dev-delete" @click="handleDelete(d.id, d.name)" :title="t('delete_btn')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-              </svg>
+              <Trash2 :size="14" />
             </button>
           </div>
         </div>
         <div class="dev-card-body">
           <div class="dev-name">{{ d.name }}</div>
-          <div class="dev-detail">{{ d.location || t('dev_desktop') }} · {{ d.online ? 'Online' : 'Offline' }}</div>
+          <div class="dev-detail">{{ d.location || t('dev_desktop') }} · {{ d.online ? t('dev_online') : t('dev_offline') }}</div>
         </div>
       </div>
     </div>
     <div v-if="deviceList.length === 0" class="empty-state">
-      <div class="empty-icon">📱</div>
-      <div class="empty-text">{{ t('nav_devices') }} — No devices connected.</div>
+      <div class="empty-icon"><Smartphone :size="32" /></div>
+      <div class="empty-text">{{ t('nav_devices') }} — {{ t('dev_empty') }}</div>
     </div>
   </div>
 </template>
@@ -73,11 +76,11 @@ async function handleDelete(id: string, name: string) {
 .dev-actions { display: flex; align-items: center; gap: 8px; }
 .dev-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-tertiary); }
 .dev-status-dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
-.dev-delete { background: none; border: none; cursor: pointer; color: var(--text-tertiary); padding: 4px; border-radius: 4px; transition: all 150ms; }
+.dev-delete { background: none; border: none; cursor: pointer; color: var(--text-tertiary); padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 150ms; }
 .dev-delete:hover { color: var(--danger); background: var(--danger-bg); }
 .dev-name { font-size: 14px; font-weight: 500; margin-bottom: 2px; }
 .dev-detail { font-size: 12px; color: var(--text-tertiary); }
 .empty-state { text-align: center; padding: 40px 0; }
-.empty-icon { font-size: 32px; margin-bottom: 8px; }
+.empty-icon { color: var(--text-tertiary); margin-bottom: 8px; display: flex; justify-content: center; }
 .empty-text { font-size: 13px; color: var(--text-secondary); }
 </style>

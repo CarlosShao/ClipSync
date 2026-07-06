@@ -152,6 +152,7 @@ function confirmAction() {
     @close-forgot-pwd="showForgotPwd = false"
     @close-preview="closePreview"
     @confirm-action="confirmAction"
+    @switch-modal="openModal"
   />
 
   <ToastContainer />
