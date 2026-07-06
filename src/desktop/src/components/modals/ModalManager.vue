@@ -6,7 +6,7 @@ import { useTheme } from '@/composables/useTheme'
 import { api } from '@/api/client'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
 
-defineProps<{
+const props = defineProps<{
   showModalType: string
   showForgotPwd?: boolean
   previewItem?: any
@@ -31,6 +31,32 @@ const fpCode = ref('')
 const fpNewPwd = ref('')
 const fpConfirmPwd = ref('')
 const fpSending = ref(false)
+
+async function downloadImage() {
+  if (!props.previewItem?.content) return
+  const dataUrl = props.previewItem.content
+  // 尝试使用 File System Access API（支持选择保存位置）
+  if ('showSaveFilePicker' in window) {
+    try {
+      const handle = await (window as any).showSaveFilePicker({
+        suggestedName: `clipsync-image-${Date.now()}.png`,
+        types: [{ description: 'Image', accept: { 'image/png': ['.png'], 'image/jpeg': ['.jpg'] } }],
+      })
+      const blob = await (await fetch(dataUrl)).blob()
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      return
+    } catch (e: any) {
+      if (e.name === 'AbortError') return // 用户取消
+    }
+  }
+  // Fallback: 直接下载
+  const a = document.createElement('a')
+  a.href = dataUrl
+  a.download = `clipsync-image-${Date.now()}.png`
+  a.click()
+}
 
 function handleCloseForgot() {
   fpStep.value = 1; fpEmail.value = ''; fpCode.value = ''; fpNewPwd.value = ''; fpConfirmPwd.value = ''
@@ -116,6 +142,26 @@ function toggleClass(e: Event) {
     </div>
   </ModalDialog>
 
+  <!-- Payment Method -->
+  <ModalDialog :open="showModalType === 'payment'" :title="t('modal_payment')" max-width="420px" @close="emit('close-modal')">
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <button class="payment-option" @click="toast.show(t('toast_signup_soon'), 'info')">
+        <span style="font-size:20px;">💚</span> <span>WeChat Pay</span>
+      </button>
+      <button class="payment-option" @click="toast.show(t('toast_signup_soon'), 'info')">
+        <span style="font-size:20px;">🔵</span> <span>Alipay</span>
+      </button>
+    </div>
+  </ModalDialog>
+
+  <!-- Cancel Subscription -->
+  <ModalDialog :open="showModalType === 'cancel-subscription'" :title="t('sub_cancel')" max-width="420px" @close="emit('close-modal')">
+    <div style="text-align:center;padding:20px 0;">
+      <p style="font-size:14px;color:var(--text-secondary);margin-bottom:20px;">{{ t('sub_cancel_h') }}</p>
+      <button class="btn btn-danger btn-full" @click="toast.show(t('toast_signup_soon'), 'info')">{{ t('sub_cancel') }}</button>
+    </div>
+  </ModalDialog>
+
   <!-- Billing -->
   <ModalDialog :open="showModalType === 'billing'" :title="t('modal_billing')" max-width="480px" @close="emit('close-modal')">
     <div style="text-align:center;padding:40px 20px;">
@@ -180,7 +226,7 @@ function toggleClass(e: Event) {
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-secondary);">
         <span>Image</span>
-        <button class="btn btn-sm btn-ghost" @click="$emit('close-preview')">{{ t('img_downloaded') }}</button>
+        <button class="btn btn-sm btn-ghost" @click="downloadImage">{{ t('img_downloaded') }}</button>
       </div>
     </div>
   </ModalDialog>
@@ -188,6 +234,18 @@ function toggleClass(e: Event) {
   <!-- Text Detail -->
   <ModalDialog :open="previewType === 'text'" :title="t('text_detail_title')" max-width="640px" @close="emit('close-preview')">
     <div v-if="previewItem" style="font-size:13px;line-height:1.7;background:var(--bg-hover);padding:16px;border-radius:var(--radius-md);white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;color:var(--text-primary);">{{ previewItem.content }}</div>
+  </ModalDialog>
+
+  <!-- Add Device -->
+  <ModalDialog :open="showModalType === 'add-device'" :title="t('modal_add_device')" max-width="420px" @close="emit('close-modal')">
+    <div style="text-align:center;padding:20px 0;">
+      <div style="width:120px;height:120px;margin:0 auto 16px;background:var(--bg-hover);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary);">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+        </svg>
+      </div>
+      <p style="font-size:13px;color:var(--text-secondary);">Install ClipSync on another device and sign in with the same account to sync.</p>
+    </div>
   </ModalDialog>
 
   <!-- Confirm -->
@@ -238,6 +296,12 @@ function toggleClass(e: Event) {
 .sec-hint { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
 .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.payment-option { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); cursor: pointer; font-size: 14px; color: var(--text-primary); transition: all 150ms; }
+.payment-option:hover { border-color: var(--accent); background: var(--bg-hover); }
+.btn { display: inline-flex; align-items: center; justify-content: center; height: 38px; padding: 0 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { opacity: 0.9; }
+.btn-full { width: 100%; }
 .price-card { padding: 20px; border: 1px solid var(--border-default); border-radius: var(--radius-md); cursor: pointer; position: relative; }
 .price-card:hover { border-color: var(--accent); }
 .price-card.popular { border-color: var(--accent); background: var(--accent-light); }

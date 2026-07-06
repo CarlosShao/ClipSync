@@ -134,7 +134,7 @@ function confirmAction() {
       />
       <SettingsView v-else-if="currentSub === 'settings'" @open-modal="openModal" />
       <ProfileView v-else-if="currentSub === 'profile'" />
-      <DevicesView v-else-if="currentSub === 'devices'" />
+      <DevicesView v-else-if="currentSub === 'devices'" @open-modal="openModal" />
       <SharedLinksView v-else-if="currentSub === 'shared-links'" />
       <SubscriptionView v-else-if="currentSub === 'subscription'" @open-modal="openModal" />
     </main>

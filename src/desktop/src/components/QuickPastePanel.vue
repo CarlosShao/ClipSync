@@ -71,6 +71,7 @@ function truncate(str: string, max: number): string {
           </div>
         </div>
         <div class="qp-footer">
+          <span class="qp-count">{{ filteredItems.length }} {{ t('items_c') }}</span>
           <span class="kbd-pair"><kbd>↑↓</kbd> {{ t('qp_navigate') }}</span>
           <span class="kbd-pair"><kbd>↵</kbd> {{ t('qp_paste') }}</span>
           <span class="kbd-pair"><kbd>ESC</kbd> {{ t('qp_close') }}</span>
@@ -96,6 +97,7 @@ function truncate(str: string, max: number): string {
 .qp-time { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
 .qp-empty { padding: 24px; text-align: center; }
 .qp-footer { display: flex; align-items: center; gap: 14px; padding: 8px 16px; border-top: 1px solid var(--border-default); font-size: 11px; color: var(--text-tertiary); }
+.qp-count { margin-right: auto; font-weight: 500; color: var(--text-secondary); }
 .kbd-pair { display: flex; align-items: center; gap: 4px; }
 .qp-footer kbd { font-size: 10px; background: var(--bg-hover); border: 1px solid var(--border-default); border-radius: 3px; padding: 1px 4px; font-family: monospace; }
 </style>

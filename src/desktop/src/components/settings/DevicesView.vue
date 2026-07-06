@@ -7,6 +7,7 @@ import { useToast } from '@/composables/useToast'
 const { t } = useI18n()
 const device = useDevice()
 const toast = useToast()
+const emit = defineEmits<{ 'open-modal': [type: string] }>()
 const deviceList = computed(() => device.devices.value)
 
 async function handleDelete(id: string, name: string) {
@@ -24,7 +25,7 @@ async function handleDelete(id: string, name: string) {
   <div class="settings-view">
     <div class="sv-header">
       <h2 class="sv-title">{{ t('nav_devices') }}</h2>
-      <button class="btn-add" @click="toast.show(t('toast_signup_soon'), 'info')">+ {{ t('modal_add_device') }}</button>
+      <button class="btn-add" @click="emit('open-modal', 'add-device')">+ {{ t('modal_add_device') }}</button>
     </div>
     <div class="devices-grid">
       <div v-for="d in deviceList" :key="d.id" class="dev-card">
