@@ -78,16 +78,25 @@ async function uploadToServer(content: string, type: string = 'text') {
   const hash = simpleHash(content)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
   recentUploadHashes.set(hash, Date.now())
-  // 获取设备ID（从本地存储或使用默认值）
-  const deviceId = localStorage.getItem('clipsync-device-id') || '00000000-0000-0000-0000-000000000000'
+  // 获取设备ID（从服务器获取或使用默认值）
+  let deviceId = localStorage.getItem('clipsync-device-id')
+  if (!deviceId) {
+    try {
+      const devRes = await api('GET', '/api/devices')
+      if (devRes.ok && Array.isArray(devRes.data) && devRes.data.length > 0) {
+        deviceId = devRes.data[0].id
+        localStorage.setItem('clipsync-device-id', deviceId!)
+      }
+    } catch { /* ignore */ }
+  }
+  if (!deviceId) return // 没有有效设备ID，跳过上传
   const res = await api('POST', '/api/clipboard', {
     content,
-    contentEncrypted: content, // 简单起见不加密
+    contentEncrypted: content,
     sourceDeviceId: deviceId,
     type,
     preview: content.slice(0, 200),
   })
-  // 只有上传成功才刷新
   if (res.ok) await loadClipboardItems()
 }
 
@@ -212,6 +221,22 @@ export function useClipboard() {
 
   async function copyItem(item: ClipItem) {
     try {
+      if (item.type === 'file') {
+        // 文件类型：解析路径并使用 Tauri 文件复制
+        try {
+          const paths = JSON.parse(item.content)
+          if (Array.isArray(paths) && paths.length > 0) {
+            await tauri.setClipboardFiles(paths)
+            return true
+          }
+        } catch { /* 解析失败，使用文本复制 */ }
+      }
+      if (item.type === 'image' && item.preview) {
+        // 图片类型：使用图片复制
+        await tauri.setClipboardContent(item.preview)
+        return true
+      }
+      // 文本/链接类型：直接复制内容
       await tauri.setClipboardContent(item.content)
       return true
     } catch { return false }
