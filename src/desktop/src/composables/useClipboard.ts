@@ -26,6 +26,18 @@ let lastBrowserText = ''
 const recentUploadHashes = new Map<string, number>()
 const HASH_TTL = 10000
 
+// 来自 ClipSync 内部复制的内容，轮询时跳过，避免重复添加
+const recentCopiedContent = new Set<string>()
+let recentCopiedClearTimer: ReturnType<typeof setTimeout> | null = null
+
+function markCopied(content: string) {
+  // 记录内容前200字符（避免图片base64太大）
+  recentCopiedContent.add(content.slice(0, 200))
+  // 3秒后自动清除（给轮询足够时间跳过）
+  if (recentCopiedClearTimer) clearTimeout(recentCopiedClearTimer)
+  recentCopiedClearTimer = setTimeout(() => recentCopiedContent.clear(), 3000)
+}
+
 const filteredItems = computed(() => {
   let result = items.value
   if (activeFilter.value !== 'all') {
@@ -173,8 +185,9 @@ async function readAndUpload() {
     const files = await tauri.getClipboardFiles().catch(() => [] as string[])
     if (files.length > 0) {
       const payload = JSON.stringify(files)
+      // 跳过来自 ClipSync 内部复制的内容
+      if (recentCopiedContent.has(payload.slice(0, 200))) return
       if (!items.value.some(i => i.type === 'file' && i.content === payload)) {
-        items.value.unshift({ id: `file-${Date.now()}`, type: 'file', content: payload, source: 'Desktop', timestamp: Date.now() })
         await uploadFileToServer(payload)
       }
       return
@@ -185,8 +198,9 @@ async function readAndUpload() {
       if (firstTauriPollDone || !items.value.some(i => i.type === 'image')) {
         const imgData = await tauri.getClipboardImage().catch(() => '')
         if (imgData) {
+          // 跳过来自 ClipSync 内部复制的图片
+          if (recentCopiedContent.has(imgData.slice(0, 200))) { lastImageSize = imgInfo.size; return }
           lastImageSize = imgInfo.size
-          items.value.unshift({ id: `img-${Date.now()}`, type: 'image', content: imgData, preview: imgData, source: 'Desktop', timestamp: Date.now() })
           await uploadImageToServer(imgData)
         }
       }
@@ -195,11 +209,11 @@ async function readAndUpload() {
 
     const text = await tauri.getClipboardContent().catch(() => '')
     if (text && text.trim()) {
+      // 跳过来自 ClipSync 内部复制的文本
+      if (recentCopiedContent.has(text.slice(0, 200))) return
       const isUrl = /^https?:\/\/\S+$/.test(text.trim())
       const itemType = isUrl ? 'link' : 'text'
-      // 去重：检查 text 和 link 两种类型
       if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === text)) {
-        items.value.unshift({ id: `text-${Date.now()}`, type: itemType, content: text, source: 'Desktop', timestamp: Date.now() })
         await uploadToServer(text, itemType)
       }
       return
@@ -210,12 +224,12 @@ async function readAndUpload() {
       try {
         const clipText = await navigator.clipboard.readText().catch(() => '')
         if (clipText && clipText.trim() && clipText !== lastBrowserText) {
+          // 跳过来自 ClipSync 内部复制的文本
+          if (recentCopiedContent.has(clipText.slice(0, 200))) { lastBrowserText = clipText; return }
           lastBrowserText = clipText
           const isUrl = /^https?:\/\/\S+$/.test(clipText.trim())
           const itemType = isUrl ? 'link' : 'text'
-          // 去重：检查 text 和 link 两种类型
           if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === clipText)) {
-            items.value.unshift({ id: `browser-${Date.now()}`, type: itemType, content: clipText, source: 'Browser', timestamp: Date.now() })
             await uploadToServer(clipText, itemType)
           }
         }
@@ -250,21 +264,21 @@ export function useClipboard() {
   async function copyItem(item: ClipItem) {
     try {
       if (item.type === 'file') {
-        // 文件类型：解析路径并使用 Tauri 文件复制
         try {
           const paths = JSON.parse(item.content)
           if (Array.isArray(paths) && paths.length > 0) {
+            markCopied(paths.join(','))
             await tauri.setClipboardFiles(paths)
             return true
           }
         } catch { /* 解析失败，使用文本复制 */ }
       }
       if (item.type === 'image' && item.preview) {
-        // 图片类型：使用图片复制
+        markCopied(item.preview)
         await tauri.setClipboardContent(item.preview)
         return true
       }
-      // 文本/链接类型：直接复制内容
+      markCopied(item.content)
       await tauri.setClipboardContent(item.content)
       return true
     } catch { return false }
