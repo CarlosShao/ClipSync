@@ -26,17 +26,29 @@ let lastBrowserText = ''
 const recentUploadHashes = new Map<string, number>()
 const HASH_TTL = 10000
 
-// 来自 ClipSync 内部复制的内容，用时间戳跳过轮询（不用内容匹配）
-// 原因：Rust set_clipboard_content 用 UTF-8 写 CF_UNICODETEXT 导致中文 round-trip 变 mojibake
-// 内容匹配必然失败，所以改用时间戳：复制后 4 秒内跳过所有轮询
+// === ClipSync 内部复制去重（双重策略） ===
+// 策略1: 时间戳跳过（防止复制后立即被轮询捡到）
+// 策略2: ID 追踪（用户建议：复制时记录 DB ID，加载/上传时检查）
 let skipPollUntil = 0
+// 记录从 ClipSync UI 复制的条目 ID（不依赖内容一致性）
+const recentlyCopiedIds = new Set<string>()
+let copiedIdsCleanupTimer: ReturnType<typeof setTimeout> | null = null
 
-function skipNextPolls(ms = 4000) {
+function skipNextPolls(ms = 6000) {
   skipPollUntil = Date.now() + ms
 }
 
-function shouldSkipPoll(): boolean {
-  return Date.now() < skipPollUntil
+// 用户建议的 ID 去重：复制时记录该条的 ID
+function markIdCopied(id: string) {
+  recentlyCopiedIds.add(id)
+  // 8 秒后清除（覆盖轮询间隔 + 网络延迟）
+  if (copiedIdsCleanupTimer) clearTimeout(copiedIdsCleanupTimer)
+  copiedIdsCleanupTimer = setTimeout(() => recentlyCopiedIds.clear(), 8000)
+}
+
+// 检查某个 ID 是否是刚从 ClipSync 内部复制的
+function wasRecentlyCopied(id: string): boolean {
+  return recentlyCopiedIds.has(id)
 }
 
 const filteredItems = computed(() => {
@@ -246,8 +258,8 @@ function simpleHash(s: string): string {
 
 async function readAndUpload() {
   try {
-    // 如果刚刚从 ClipSync 列表内复制过，跳过本轮轮询（避免乱码重复添加）
-    if (shouldSkipPoll()) return
+    // 策略1: 时间戳跳过（复制后 6 秒内不处理）
+    if (Date.now() < skipPollUntil) return
 
     // 优先尝试 Tauri API
     const files = await tauri.getClipboardFiles().catch(() => [] as string[])
@@ -323,8 +335,9 @@ export function useClipboard() {
 
   async function copyItem(item: ClipItem) {
     try {
-      // 复制后跳过轮询，防止读取到 mojibake 内容后重复添加
-      skipNextPolls(4000)
+      // 双重去重：时间戳跳过 + ID 标记
+      skipNextPolls(6000)
+      markIdCopied(item.id)
 
       if (item.type === 'file') {
         try {

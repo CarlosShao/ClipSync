@@ -130,6 +130,22 @@ fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command(rename_all = "camelCase")]
+fn reveal_in_folder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .args(["/select", &path])
+            .spawn()
+            .map_err(|e| format!("failed to open explorer: {}", e))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        opener::reveal(&path).map_err(|e| format!("failed to reveal: {}", e))
+    }
+}
+
 #[tauri::command]
 fn get_clipboard_content() -> Result<String, String> {
     use clipboard_win::raw;
@@ -158,7 +174,12 @@ fn get_clipboard_content() -> Result<String, String> {
 fn set_clipboard_content(content: String) -> Result<(), String> {
     use clipboard_win::raw;
     raw::open().map_err(|e| format!("open: {}", e))?;
-    let result = raw::set(13, content.as_bytes());
+    // CF_UNICODETEXT (format 13) 要求 UTF-16LE 编码，不能直接用 .as_bytes() (UTF-8)
+    let utf16_bytes: Vec<u8> = content
+        .encode_utf16()
+        .flat_map(|c| c.to_le_bytes())
+        .collect();
+    let result = raw::set(13, &utf16_bytes);
     let _ = raw::close();
     result.map_err(|e| format!("write: {}", e))
 }
@@ -982,6 +1003,7 @@ pub fn run() {
             get_config,
             update_config,
             open_url,
+            reveal_in_folder,
             get_clipboard_content,
             set_clipboard_content,
             set_clipboard_files,
