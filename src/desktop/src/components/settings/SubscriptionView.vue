@@ -26,6 +26,7 @@ const emit = defineEmits<{ 'open-modal': [type: string] }>()
         <li>✓ {{ t('feat_community') }}</li>
       </ul>
       <button class="btn btn-primary btn-full" @click="emit('open-modal', 'pricing')">{{ t('sub_change_plan') }}</button>
+      <button class="btn btn-ghost btn-full" style="margin-top:8px;color:var(--danger);" @click="emit('open-modal', 'cancel-subscription')">{{ t('sub_cancel') }}</button>
     </div>
   </div>
 </template>
@@ -49,5 +50,7 @@ const emit = defineEmits<{ 'open-modal': [type: string] }>()
 .btn { display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 14px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; white-space: nowrap; }
 .btn-primary { background: var(--accent); color: var(--text-inverse); }
 .btn-primary:hover { background: var(--accent-hover); }
+.btn-ghost { background: transparent; border-color: var(--border-default); color: var(--text-secondary); }
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); }
 .btn-full { width: 100%; }
 </style>

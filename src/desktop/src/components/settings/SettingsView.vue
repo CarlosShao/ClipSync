@@ -9,6 +9,8 @@ const { setMode } = useTheme()
 const configStore = useConfigStore()
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
 const langModel = ref(currentLang.value)
+const syncIntervalModel = ref(String(configStore.syncInterval))
+const maxHistoryModel = ref(String(configStore.maxHistory))
 </script>
 
 <template>
@@ -35,7 +37,11 @@ const langModel = ref(currentLang.value)
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_interval') }}</div><div class="sg-hint">{{ t('sg_interval_h') }}</div></div>
-        <select class="styled-select"><option value="0">{{ t('int_rt') }}</option><option value="5">{{ t('int_5m') }}</option><option value="15">{{ t('int_15m') }}</option></select>
+        <select class="styled-select" v-model="syncIntervalModel" @change="configStore.syncInterval = Number(syncIntervalModel)"><option value="0">{{ t('int_rt') }}</option><option value="5">{{ t('int_5m') }}</option><option value="15">{{ t('int_15m') }}</option></select>
+      </div>
+      <div class="sg-row">
+        <div class="sg-label"><div class="sg-name">{{ t('sg_maxhist') }}</div><div class="sg-hint">{{ t('sg_maxhist_h') }}</div></div>
+        <select class="styled-select" v-model="maxHistoryModel" @change="configStore.maxHistory = Number(maxHistoryModel)"><option value="100">{{ t('hist_100') }}</option><option value="500">{{ t('hist_500') }}</option><option value="1000">{{ t('hist_1k') }}</option><option value="999999">{{ t('hist_unl') }}</option></select>
       </div>
     </div>
 

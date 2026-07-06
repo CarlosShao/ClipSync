@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
@@ -23,6 +23,7 @@ const authCode = ref('')
 const authAccount = ref('')
 const authPassword = ref('')
 const showLoginPassword = ref(false)
+const rememberMe = ref(true)
 const isSendingCode = ref(false)
 const isLoggingIn = ref(false)
 const codeCountdown = ref(0)
@@ -76,6 +77,13 @@ function shakeById(id: string) {
 
 // ===== Phone validation =====
 const PHONE_RE = /^1[3-9]\d{9}$/
+
+// 记住密码持久化
+onMounted(() => {
+  const saved = localStorage.getItem('clipsync-remember-me')
+  if (saved !== null) rememberMe.value = saved === 'true'
+})
+watch(rememberMe, (val) => localStorage.setItem('clipsync-remember-me', String(val)))
 
 onUnmounted(() => {
   if (countdownTimer) clearInterval(countdownTimer)
@@ -164,7 +172,13 @@ async function handleLogin() {
     } else {
       if (!authAccount.value) { toast.show(t('auth_need_account'), 'error'); shakeById('lp-account'); isLoggingIn.value = false; return }
       if (!authPassword.value || authPassword.value.length < 6) { toast.show(t('auth_pwd_too_short'), 'error'); shakeById('lp-pwd'); isLoggingIn.value = false; return }
-      const res = await api('POST', '/api/auth/login', { account: authAccount.value, password: authPassword.value })
+      // 自动识别账号类型
+      const acct = authAccount.value.trim()
+      let loginBody: any = { password: authPassword.value }
+      if (/^1[3-9]\d{9}$/.test(acct)) loginBody.phone = acct
+      else if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(acct)) loginBody.email = acct
+      else loginBody.account = acct
+      const res = await api('POST', '/api/auth/login', loginBody)
       if (res.ok && res.data) {
         configStore.login(authAccount.value, '')
         toast.show(t('login_success'), 'success')
@@ -320,7 +334,7 @@ function goBackToLogin() { authView.value = 'login-phone' }
         <div class="auth-card">
 
           <!-- ===== LOGIN ===== -->
-          <div v-if="authView === 'login-phone' || authView === 'login-password'">
+          <div v-if="authView === 'login-phone' || authView === 'login-password'" class="auth-view">
             <div class="auth-brand">
               <div class="auth-logo">C</div>
               <span class="auth-brand-name">ClipSync</span>
@@ -349,7 +363,7 @@ function goBackToLogin() { authView.value = 'login-phone' }
                 </div>
               </div>
               <div class="form-options">
-                <label class="checkbox-label"><input type="checkbox" checked /> {{ t('login_remember') }}</label>
+                <label class="checkbox-label"><input type="checkbox" v-model="rememberMe" /> {{ t('login_remember') }}</label>
                 <button class="link-btn" @click="toast.show(t('toast_code_resent'),'info')">{{ t('login_forgot_code') }}</button>
               </div>
               <button class="btn-primary btn-block" :disabled="isLoggingIn" @click="handleLogin">
@@ -374,7 +388,7 @@ function goBackToLogin() { authView.value = 'login-phone' }
                 </div>
               </div>
               <div class="form-options">
-                <label class="checkbox-label"><input type="checkbox" checked /> {{ t('login_remember') }}</label>
+                <label class="checkbox-label"><input type="checkbox" v-model="rememberMe" /> {{ t('login_remember') }}</label>
                 <button class="link-btn" @click="openForgot">{{ t('login_forgot') }}</button>
               </div>
               <button class="btn-primary btn-block" :disabled="isLoggingIn" @click="handleLogin">
@@ -404,7 +418,7 @@ function goBackToLogin() { authView.value = 'login-phone' }
           </div>
 
           <!-- ===== REGISTER ===== -->
-          <div v-else-if="authView === 'register'">
+          <div v-else-if="authView === 'register'" class="auth-view">
             <button class="back-btn" @click="switchAuthView('login-phone')">← {{ t('btn_back_login') }}</button>
             <h1 class="auth-heading">{{ t('reg_title') }}</h1>
             <p class="auth-subtitle">{{ t('reg_subtitle') }}</p>
@@ -490,7 +504,7 @@ function goBackToLogin() { authView.value = 'login-phone' }
           </div>
 
           <!-- ===== SET PASSWORD ===== -->
-          <div v-else-if="authView === 'set-password'">
+          <div v-else-if="authView === 'set-password'" class="auth-view">
             <button class="back-btn" @click="goBackToLogin()">← {{ t('btn_back_login') }}</button>
             <!-- Step indicator -->
             <div class="sp-steps">
@@ -619,6 +633,13 @@ function goBackToLogin() { authView.value = 'login-phone' }
 /* ===== Left column ===== */
 .auth-left { position: relative; display: flex; align-items: center; justify-content: center; padding: 48px 40px; overflow-y: auto; }
 .auth-card { width: 100%; max-width: 420px; }
+
+/* ===== Auth view transition ===== */
+.auth-view { animation: authViewIn 0.3s ease; }
+@keyframes authViewIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 /* ===== Brand ===== */
 .auth-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }

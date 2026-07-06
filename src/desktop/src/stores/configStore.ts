@@ -51,6 +51,14 @@ export const useConfigStore = defineStore('config', () => {
     // Persist token for router guard
     if (res.token) localStorage.setItem('clipsync-token', res.token)
     await save({ token: res.token, user_id: res.user.id })
+    // 自动注册当前设备
+    try {
+      await fetch(`${config.value.server_url || ''}/api/devices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${res.token}` },
+        body: JSON.stringify({ name: 'Desktop', type: 'desktop' }),
+      })
+    } catch { /* 设备注册失败不影响登录 */ }
   }
 
   async function toggleAutostart(val?: boolean) {
