@@ -302,7 +302,7 @@ function truncate(str: string, max: number): string {
         <thead>
           <tr>
             <th v-if="batchMode">
-              <Checkbox :checked="allSelected" @update:checked="() => clip.toggleSelectAll()" />
+              <Checkbox :model-value="allSelected" @update:model-value="() => clip.toggleSelectAll()" />
             </th>
             <th>{{ t('head_content') }}</th>
             <th>{{ t('head_source') }}</th>
@@ -316,7 +316,7 @@ function truncate(str: string, max: number): string {
             :class="{ 'batch-selected': item.selected, 'with-cb': batchMode }"
             @dblclick="clip.copyItem(item)">
             <td v-if="batchMode">
-              <Checkbox :checked="item.selected" @update:checked="(v: boolean) => (item.selected = v)" />
+              <Checkbox :model-value="item.selected" @update:model-value="(v: boolean | string) => (item.selected = v === true)" />
             </td>
             <td class="cell-content" :title="item.content">
               <div class="cell-content-inner">
