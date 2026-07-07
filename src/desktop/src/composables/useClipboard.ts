@@ -420,18 +420,28 @@ export function useClipboard() {
     // 只删服务器上的（过滤掉所有本地临时 id）
     const serverIds = selected.map(i => i.id).filter(id => !id.startsWith('local-') && !id.startsWith('text-') && !id.startsWith('img-') && !id.startsWith('file-') && !id.startsWith('browser-'))
     if (serverIds.length > 0) {
-      await api('DELETE', '/api/clipboard', { ids: serverIds }).catch(() => {})
+      const res = await api('DELETE', '/api/clipboard', { ids: serverIds })
+      if (!res.ok) {
+        console.error('[Clipboard] batchDelete server error:', res.status, res.error)
+        throw new Error(res.error || `删除失败 (HTTP ${res.status})`)
+      }
     }
-    // 乐观删除：从本地列表移除选中项
+    // 仅在服务端确认成功后才从本地列表移除选中项
     const selectedIds = new Set(selected.map(i => i.id))
     items.value = items.value.filter(i => !selectedIds.has(i.id))
     return count
   }
 
   async function deleteSingle(item: ClipItem) {
-    if (!item.id.startsWith('local-') && !item.id.startsWith('text-') && !item.id.startsWith('img-')) {
-      await api('DELETE', `/api/clipboard/${item.id}`).catch(() => {})
+    const isLocal = item.id.startsWith('local-') || item.id.startsWith('text-') || item.id.startsWith('img-')
+    if (!isLocal) {
+      const res = await api('DELETE', `/api/clipboard/${item.id}`)
+      if (!res.ok) {
+        console.error('[Clipboard] deleteSingle server error:', res.status, res.error)
+        throw new Error(res.error || `删除失败 (HTTP ${res.status})`)
+      }
     }
+    // 仅在服务端确认成功（或是本地临时项）后才从本地列表移除
     items.value = items.value.filter(i => i.id !== item.id)
   }
 
