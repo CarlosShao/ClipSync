@@ -179,17 +179,26 @@ function toggleClass(e: Event) {
 
 async function handleExportRequest() {
   try {
-    const res = await api('POST', '/api/user/export-request')
+    const res = await api('GET', '/api/auth/export-data')
     if (res.ok) {
-      toast.show(t('export_requested', { email: res.data?.email || '' }), 'success')
+      // 后端返回 JSON 文件下载，触发浏览器下载
+      const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `clipsync-export-${new Date().toISOString().slice(0,10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.show(t('export_requested', { email: '' }), 'success')
       emit('close-modal')
     } else {
       toast.show(res.error || t('export_fail'), 'error')
     }
   } catch (e: any) {
-    // API 不存在时提示用户功能开发中
-    toast.show(t('toast_signup_soon'), 'info')
-    emit('close-modal')
+    console.warn('Export failed:', e)
+    toast.show(t('export_fail'), 'error')
   }
 }
 
@@ -672,6 +681,7 @@ async function revokeSession(sessionId: string) {
 .sk-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
 .sk-item:last-child { border-bottom: none; }
 .sk-item.sk-recording { background: var(--accent-light); border-radius: var(--radius-sm); padding: 10px 12px; }
+.sk-keys { display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; flex-shrink: 0; }
 .sk-keys kbd { font-size: 11px; background: var(--bg-hover); border: 1px solid var(--border-default); border-radius: 3px; padding: 2px 6px; font-family: monospace; cursor: pointer; transition: all .15s; }
 .sk-keys kbd:hover { border-color: var(--accent); color: var(--accent); }
 .sk-recorder { padding: 6px 14px; border-radius: var(--radius-sm); border: 2px dashed var(--accent); font-size: 13px; font-weight: 500; color: var(--accent); outline: none; min-width: 120px; text-align: center; animation: pulse-border 1.5s infinite; }

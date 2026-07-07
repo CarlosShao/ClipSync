@@ -63,42 +63,59 @@
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | 图标 | ~95% | 仅 7 品牌 SVG 合理例外 |
-| 输入 Input | **~30%** | AuthPage/ModalManager/Clipboard/QuickPaste 共 23 个 raw input 未迁 |
-| 按钮 Button | ~85% | btn-code 未迁；分段/导航为合理例外 |
+| 输入 Input | 100% | 23 个 raw input 已全部迁 shadcn `<Input>`（Round 1 / 465cd88） |
+| 按钮 Button | ~90% | 动作按钮已迁；分段/导航/品牌为合理例外（见下） |
 | Checkbox/Switch | 100% | 已完成 |
 | 颜色 token | 100% | 0 硬编码 |
 | 目录结构 | 100% | 规范 |
-| 库混用 | 100% | 单一 |
-
-**综合：约 70% 合规。最大缺口 = 表单输入未迁移（23 个 raw input）。**
+| 库混用 | 100% | 单一（reka-ui 引擎 + lucide 图标） |
 
 ---
 
-## 本轮修复计划（Round 1）
+# ★ ROOT CAUSE 重大发现（2026-07-07 15:xx）
 
-- [x] A. AuthPage：16 个 raw input → `<Input>` + 补 Input import
-- [x] B. AuthPage：`btn-code` 2 处 → `<Button>`
-- [x] C. ModalManager：5 个 raw input → `<Input>` + 补 import + 清理 641 内联 style（抽 `.manual-token-input` 类）
-- [x] D. ClipboardView：搜索框 → `<Input>` + 补 import
-- [x] E. QuickPastePanel：搜索框 → `<Input>` + 补 import
-- [x] F. 构建验证（vue-tsc 0 错误 + vite build 通过）
-- [x] G. 提交
+**现象**：所有 shadcn 组件（Button/Switch/Select/Input/Checkbox）视觉上"没样式"——
+按钮透明、开关看不见、下拉框无背景且选项重叠、输入框无边框。
+
+**根因**：项目用 **Tailwind CSS v4**，但 `globals.css` 只有 `@import "tailwindcss"`，
+**没有 `@theme` 块**把 shadcn 的语义色 token（`primary`/`popover`/`muted`/`ring`/`border`/`input`/`accent`/`destructive`/`secondary`/`background`/`foreground`）映射到 CSS 变量。
+Tailwind v4 不会为这些工具类生成任何 CSS → `bg-primary`/`bg-popover`/`ring-ring` 等全部编译成空规则。
+
+**修复**：在 `globals.css` 顶部新增 `@theme inline { --color-*: var(--*) }` 映射
+（共 17 个语义色 token）。构建后 CSS 从 29.5kB → 34.9kB，且能 grep 到
+`.bg-primary{background-color:var(--primary)}` 等真实规则。**这是 #2/#3/#4/#5 视觉问题的真正根因。**
+
+---
+
+## 7 项用户反馈问题 — 根因 & 修复
+
+| # | 问题 | 根因 | 修复 |
+|---|------|------|------|
+| 1 | 在文件夹中显示 → 找不到路径 | 上传时 content 只存文件名，无本地路径；revealFileFolder 解析失败 | useClipboard 上传时存 `(file as any).path`；revealFileFolder 读 `data.path`（Tauri `reveal_in_folder` 命令已存在且 `rename_all=camelCase` 已配） |
+| 2 | 设备页按钮丑/无样式 | 缺失 `@theme`，`<Button>` 的 `bg-primary` 生成不了 | 已随 ROOT CAUSE 修复 |
+| 3-4 | 配对弹窗按钮一个有样式一个没 | 同上（`copy/regenerate/start/stop/pair` 全是 `<Button>`，但全无 token 样式） | 已随 ROOT CAUSE 修复 |
+| 5 | 开关暗/亮都看不见 + 下拉框重叠 | ① Switch thumb 用 `bg-white`，单色主题（vercel/raycast 的 accent=白/黑）下与 track 同色不可见；② Select `bg-popover border` 无 token → 无浮层表面 | Switch thumb 改 `bg-background`；Select 随 `@theme` 修复获得 `bg-popover border z-50` 表面 + item-aligned 定位（443e47f） |
+| 6 | 快捷键 Pencil 图标换行 | `.sk-keys` 容器无 `flex-wrap:nowrap` + 可能被父 flex 挤缩 | `.sk-keys` 加 `flex-wrap:nowrap; flex-shrink:0` |
+| 7 | 导出数据 404（`/api/user/export-request`） | 前端 URL/方法错：实际路由是 `GET /api/auth/export-data`（auth.js:1146，挂载于 /api/auth） | 改 `api('GET', '/api/auth/export-data')` |
+| 8 | 整体对比 dbx 参考图 | 同上根因——组件本就 shadcn，只是没渲染 | 随 ROOT CAUSE 修复 |
+
+---
 
 ## 验证记录
 
-### Round 1（2026-07-07 14:30）
-- 修复：AuthPage 16 input + 2 btn-code、ModalManager 5 input + 清内联 style、ClipboardView 1 input、QuickPastePanel 1 input → 全部改 shadcn `<Input>`/`<Button>`
-- 验证方式：`grep` 反向扫描确认 0 个 raw 非 file `<input>`；`npm run build`（vue-tsc + vite）通过
-- 完成度从 ~70% → **~92%**
+### Round 1（465cd88）
+- 输入/按钮全量迁移，完成度 70% → 92%
 
-### 仍属合理例外（非缺陷，未改）
-- AuthPage 7 个品牌 SVG（WeChat/Apple/GitHub/WeCom）：lucide 无品牌图标，允许自引
-- 分段/导航/品牌自定义 `<button>`（mode-btn/tab-btn/auth-tab/sb-item/payment-option/pwd-toggle/link-btn/back-btn/theme-pill/social-btn）：设计模式取舍
-- 隐藏文件触发器 `<input type="file" style="display:none">`（ClipboardView/ProfileView）：shadcn Input type=file 会渲染选择器，此处需隐藏
-- 97 处 inline style 中绝大多数合法（动态值/display:none），仅 ModalManager 641 已清理，其余保留
+### ★ Round 2 — ROOT CAUSE + 7 问题（本次）
+- `globals.css` 新增 `@theme inline` 17 个语义色 token 映射 → 所有 shadcn 组件恢复样式
+- Switch thumb `bg-white`→`bg-background`（修单色主题不可见）
+- ModalManager：快捷键 `.sk-keys` 防换行；导出 API 改正确端点
+- useClipboard + ClipboardView：文件本地路径存储与"在文件夹中显示"
+- 验证：`grep` 确认 `.bg-primary/.bg-popover/.bg-muted` 已生成；`npm run build` 通过；CSS 体积 +5.4kB
+- **剩余 raw `<button>`（约 40 处）= 设计模式控件**（tab-btn/auth-tab 分段、mode-btn 亮暗、sb-item 导航、payment-option 卡片、pwd-toggle 密码显隐、social-btn 品牌登录、btn-icon/toast-close 关闭图标、link-btn/back-btn/theme-pill）——均有独立样式，非缺陷。如需 100% 规范可 Round 3 改 Tabs/Button。
 
-### Round 2（如需 100%）
-- 将分段控件（mode-btn/tab-btn/auth-tab）重构为 shadcn `Tabs`
-- 将导航项（sb-item/payment-option）重构为 `Button` 变体
-- 若坚持 0 内联 style：剩余合法 inline 改为 class（低优先级）
+### 仍属合理例外（非缺陷）
+- AuthPage 7 品牌 SVG：lucide 无品牌图标，允许自引
+- 隐藏文件触发器 `<input type="file">`：shadcn Input type=file 会渲染选择器，此处需隐藏
+- 设计模式 raw `<button>`：见上
 

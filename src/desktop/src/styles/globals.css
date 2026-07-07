@@ -1,4 +1,38 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/* ============================================================
+   TAILWIND v4 THEME TOKENS  (CRITICAL)
+   Map shadcn-vue semantic color utilities (bg-primary,
+   text-primary-foreground, bg-popover, bg-muted, ring-ring,
+   border-input, bg-destructive, bg-secondary, ...) to our CSS
+   variables. Without this block Tailwind v4 emits NO css for
+   those classes, so shadcn components render unstyled
+   (transparent buttons, invisible switch tracks, dropdown with
+   no surface -> options overlap). This is the root cause of the
+   reported UI bugs.
+   ============================================================ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--bg-hover);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
 
 /* ============================================================
    THEME SYSTEM — 7 Styles × Light/Dark Modes
@@ -307,7 +341,6 @@ html.theme-arc.dark {
   --secondary-foreground: var(--text-primary);
   --muted: var(--bg-hover);
   --muted-foreground: var(--text-secondary);
-  --accent-color: var(--accent);
   --accent-foreground: var(--text-inverse);
   --destructive: var(--danger);
   --destructive-foreground: var(--text-inverse);

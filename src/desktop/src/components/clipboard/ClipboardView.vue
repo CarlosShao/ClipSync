@@ -142,14 +142,27 @@ function openLink(item: ClipItem) {
 
 function revealFileFolder(item: ClipItem) {
   try {
-    const paths = JSON.parse(item.content)
-    if (Array.isArray(paths) && paths.length > 0) {
-      // 取第一个路径，在资源管理器中选中显示
-      tauri.revealInFolder(paths[0]).catch(() => {
+    const data = JSON.parse(item.content)
+    // 新格式：{ name, size, type, path } — 使用 path 字段
+    if (data.path && typeof data.path === 'string' && data.path.length > 0) {
+      tauri.revealInFolder(data.path).catch(() => {
         // fallback：打开所在目录
-        const dir = paths[0].replace(/[/\\][^/\\]+$/, '')
+        const dir = data.path.replace(/[/\\][^/\\]+$/, '')
         tauri.openUrl(dir).catch(() => toast.show('无法打开文件夹', 'error'))
       })
+      return
+    }
+    // 旧格式/兼容：路径数组
+    if (Array.isArray(data) && data.length > 0) {
+      tauri.revealInFolder(data[0]).catch(() => {
+        const dir = data[0].replace(/[/\\][^/\\]+$/, '')
+        tauri.openUrl(dir).catch(() => toast.show('无法打开文件夹', 'error'))
+      })
+      return
+    }
+    // 从其他设备同步的文件，本地无路径
+    if (data.name) {
+      toast.show(`"${data.name}" 来自其他设备，无法在本地打开`, 'info')
       return
     }
   } catch { /* ignore */ }
