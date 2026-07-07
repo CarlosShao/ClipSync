@@ -12,6 +12,9 @@ import {
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
+import {
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
+} from '@/components/ui/table'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -127,8 +130,12 @@ function handleBatchDelete() {
   if (clip.selectedCount.value === 0) { toast.show(t('batch_none'), 'warning'); return }
   const count = clip.selectedCount.value
   showConfirm(t('confirm_batch_delete', { n: count }), async () => {
-    await clip.batchDelete()
-    toast.show(t('batch_deleted', { n: count }), 'success')
+    try {
+      await clip.batchDelete()
+      toast.show(t('batch_deleted', { n: count }), 'success')
+    } catch (err: any) {
+      toast.show(err.message || t('del_fail'), 'error')
+    }
   })
 }
 
@@ -171,8 +178,12 @@ function revealFileFolder(item: ClipItem) {
 
 function handleSingleDelete(item: ClipItem) {
   showConfirm(t('confirm_delete'), async () => {
-    await clip.deleteSingle(item)
-    toast.show(t('deleted'), 'success')
+    try {
+      await clip.deleteSingle(item)
+      toast.show(t('deleted'), 'success')
+    } catch (err: any) {
+      toast.show(err.message || t('del_fail'), 'error')
+    }
   })
 }
 
@@ -288,74 +299,67 @@ function truncate(str: string, max: number): string {
       </div>
     </div>
 
-    <!-- Clipboard Table -->
+    <!-- Clipboard Table (shadcn-vue Table) -->
     <div class="clipboard-view">
-      <table v-if="filteredItems.length > 0" class="clip-table">
-        <colgroup>
-          <col v-if="batchMode" class="col-cb" />
-          <col class="col-content" />
-          <col class="col-source" />
-          <col class="col-type" />
-          <col class="col-time" />
-          <col class="col-actions" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th v-if="batchMode">
+      <Table v-if="filteredItems.length > 0" class="clip-table">
+        <TableHeader>
+          <TableRow>
+            <TableHead v-if="batchMode" class="w-12">
               <Checkbox :model-value="allSelected" @update:model-value="() => clip.toggleSelectAll()" />
-            </th>
-            <th>{{ t('head_content') }}</th>
-            <th>{{ t('head_source') }}</th>
-            <th>{{ t('head_type') }}</th>
-            <th>{{ t('head_time') }}</th>
-            <th>{{ t('head_actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in filteredItems" :key="item.id"
-            :class="{ 'batch-selected': item.selected, 'with-cb': batchMode }"
-            @dblclick="clip.copyItem(item)">
-            <td v-if="batchMode">
+            </TableHead>
+            <TableHead>{{ t('head_content') }}</TableHead>
+            <TableHead class="w-[160px]">{{ t('head_source') }}</TableHead>
+            <TableHead class="w-[64px]">{{ t('head_type') }}</TableHead>
+            <TableHead class="w-[90px]">{{ t('head_time') }}</TableHead>
+            <TableHead class="w-[120px] text-right">{{ t('head_actions') }}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow
+            v-for="item in filteredItems"
+            :key="item.id"
+            :class="{ 'batch-selected': item.selected }"
+            @dblclick="clip.copyItem(item)"
+          >
+            <TableCell v-if="batchMode">
               <Checkbox :model-value="item.selected" @update:model-value="(v: boolean | string) => (item.selected = v === true)" />
-            </td>
-            <td class="cell-content" :title="item.content">
+            </TableCell>
+            <TableCell class="cell-content" :title="item.content">
               <div class="cell-content-inner">
                 <span v-if="item.type === 'image'" class="cell-img-preview">
                   <img :src="item.preview || item.content" alt="" class="cell-thumb" />
                 </span>
                 <span v-else class="cell-text">{{ formatContent(item) }}</span>
               </div>
-            </td>
-            <td class="cell-source">{{ item.source || 'Desktop' }}</td>
-            <td class="cell-type"><span class="type-badge">{{ getTypeLabel(item.type) }}</span></td>
-            <td class="cell-time">{{ timeAgo(item.timestamp) }}</td>
-            <td class="cell-actions">
-              <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click="clip.copyItem(item)" :title="t('copy')">
-                <Copy :size="14" />
-              </Button>
-              <!-- 图片预览 -->
-              <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-image', item)" :title="t('preview')">
-                <ImageIcon :size="14" />
-              </Button>
-              <!-- 链接打开 -->
-              <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="openLink(item)" :title="t('link_opened')">
-                <ExternalLink :size="14" />
-              </Button>
-              <!-- 文字详情 -->
-              <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-text', item)" :title="t('preview')">
-                <FileText :size="14" />
-              </Button>
-              <!-- 文件：在文件夹中显示 -->
-              <Button v-if="item.type === 'file'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
-                <Folder :size="14" />
-              </Button>
-              <Button variant="ghost" size="icon-sm" class="btn-action-hide" style="color:var(--danger)" @click="handleSingleDelete(item)" :title="t('delete')">
-                <Trash2 :size="14" />
-              </Button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </TableCell>
+            <TableCell class="cell-source">{{ item.source || 'Desktop' }}</TableCell>
+            <TableCell><span class="type-badge">{{ getTypeLabel(item.type) }}</span></TableCell>
+            <TableCell class="cell-time">{{ timeAgo(item.timestamp) }}</TableCell>
+            <TableCell>
+              <div class="cell-actions">
+                <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click="clip.copyItem(item)" :title="t('copy')">
+                  <Copy :size="14" />
+                </Button>
+                <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-image', item)" :title="t('preview')">
+                  <ImageIcon :size="14" />
+                </Button>
+                <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="openLink(item)" :title="t('link_opened')">
+                  <ExternalLink :size="14" />
+                </Button>
+                <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-text', item)" :title="t('preview')">
+                  <FileText :size="14" />
+                </Button>
+                <Button v-if="item.type === 'file'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
+                  <Folder :size="14" />
+                </Button>
+                <Button variant="ghost" size="icon-sm" class="btn-action-hide" style="color:var(--danger)" @click="handleSingleDelete(item)" :title="t('delete')">
+                  <Trash2 :size="14" />
+                </Button>
+              </div>
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
 
       <!-- Empty State -->
       <div v-else class="empty-state">
@@ -387,7 +391,7 @@ function truncate(str: string, max: number): string {
 .toolbar-right { display: flex; align-items: center; gap: 4px; }
 
 /* ===== TAB BAR ===== */
-.tab-bar { display: flex; align-items: center; gap: 4px; padding: 4px 14px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-base); flex-shrink: 0; }
+.tab-bar { display: flex; align-items: center; gap: 2px; padding: 6px 14px 0; flex-shrink: 0; }
 .tab-spacer { flex: 1; }
 .search-wrap { display: flex; align-items: center; gap: 4px; }
 .search-input {
@@ -398,21 +402,11 @@ function truncate(str: string, max: number): string {
 } 
 .search-input:focus { border-color: var(--border-focus); }
 
-/* ===== CLIPBOARD TABLE ===== */
+/* ===== CLIPBOARD TABLE (shadcn-vue Table) ===== */
 .clipboard-view { flex: 1; overflow-y: auto; }
-.clip-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-.clip-table col { padding: 0; }
-.col-cb { width: 36px; }
-.col-content { width: auto; }
-.col-source { width: 160px; }
-.col-type { width: 64px; }
-.col-time { width: 90px; }
-.col-actions { width: 120px; }
-.clip-table th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-tertiary); padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface); position: sticky; top: 0; z-index: 1; }
-.clip-table thead tr th:last-child { text-align: center; }
-.clip-table td { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); }
-.clip-table tr:hover td { background: var(--bg-hover); }
-.clip-table tr.batch-selected td { background: var(--accent-light); }
+/* Override default shadcn table styles for our layout needs */
+.clip-table :where(th, td) { padding: 10px 14px; }
+.clip-table .batch-selected { background: var(--accent-light) !important; }
 .cell-content { overflow: hidden; }
 .cell-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .cell-img-preview { display: flex; align-items: center; gap: 8px; }
@@ -423,7 +417,7 @@ function truncate(str: string, max: number): string {
 .cell-time { color: var(--text-tertiary); font-size: 12px; }
 .cell-actions { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
 .cell-actions .btn-action-hide { opacity: 0; transition: opacity 0.15s; }
-.clip-table tr:hover .cell-actions .btn-action-hide { opacity: 1; }
+.clip-table tbody tr:hover .cell-actions .btn-action-hide { opacity: 1; }
 
 /* ===== EMPTY STATE ===== */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; text-align: center; }

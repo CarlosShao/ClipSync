@@ -36,11 +36,11 @@ async function handleDelete(id: string, name: string) {
     <div class="sv-header">
       <h2 class="sv-title">{{ t('nav_devices') }}</h2>
       <div class="sv-actions">
-        <Button variant="outline" size="default" @click="emit('open-modal', 'pair-generate')">
-          <Plus :size="14" /> {{ t('pair_generate') }}
+        <Button variant="outline" size="lg" class="px-6 py-2.5" @click="emit('open-modal', 'pair-generate')">
+          <Plus :size="15" /> {{ t('pair_generate') }}
         </Button>
-        <Button variant="outline" size="default" @click="emit('open-modal', 'pair-scan')">
-          <QrCode :size="14" /> {{ t('pair_scan') }}
+        <Button variant="outline" size="lg" class="px-6 py-2.5" @click="emit('open-modal', 'pair-scan')">
+          <QrCode :size="15" /> {{ t('pair_scan') }}
         </Button>
       </div>
     </div>
