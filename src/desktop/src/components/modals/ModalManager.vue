@@ -15,7 +15,7 @@ import ModalDialog from '@/components/ui/ModalDialog.vue'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
-import { Pencil, Monitor, Smartphone, FileText, CircleCheck, Download } from 'lucide-vue-next'
+import { Pencil, Monitor, Smartphone, FileText, CircleCheck, Download, ZoomIn, ZoomOut } from 'lucide-vue-next'
 
 const props = defineProps<{
   showModalType: string
@@ -85,6 +85,30 @@ async function downloadImage() {
   a.download = `clipsync-image-${Date.now()}.png`
   a.click()
   toast.show(t('img_saved'), 'success')
+}
+
+// ===== Image Preview Zoom =====
+const imgZoom = ref(1)
+const IMG_ZOOM_MIN = 0.5
+const IMG_ZOOM_MAX = 4
+const IMG_ZOOM_STEP = 0.3
+
+function resetImgZoom() { imgZoom.value = 1 }
+function zoomIn() {
+  const next = Math.min(IMG_ZOOM_MAX, imgZoom.value + IMG_ZOOM_STEP)
+  if (Math.abs(next - imgZoom.value) > 0.01) imgZoom.value = next
+}
+function zoomOut() {
+  const next = Math.max(IMG_ZOOM_MIN, imgZoom.value - IMG_ZOOM_STEP)
+  if (Math.abs(next - imgZoom.value) > 0.01) imgZoom.value = next
+}
+function onImgWheel(e: WheelEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+  // deltaY: positive = scroll down (zoom out), negative = scroll up (zoom in)
+  const delta = e.deltaY < 0 ? IMG_ZOOM_STEP : -IMG_ZOOM_STEP
+  const next = Math.max(IMG_ZOOM_MIN, Math.min(IMG_ZOOM_MAX, imgZoom.value + delta))
+  if (Math.abs(next - imgZoom.value) > 0.01) imgZoom.value = next
 }
 
 function handleCloseForgot() {
@@ -207,8 +231,26 @@ async function handleExportRequest() {
   try {
     const res = await api('GET', '/api/auth/export-data')
     if (res.ok) {
-      // 后端返回 JSON 文件下载，触发浏览器下载
-      const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' })
+      const jsonStr = JSON.stringify(res.data, null, 2)
+      // 使用 File System Access API 让用户选择保存位置
+      if ('showSaveFilePicker' in window) {
+        try {
+          const handle = await (window as any).showSaveFilePicker({
+            suggestedName: `clipsync-export-${new Date().toISOString().slice(0,10)}.json`,
+            types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+          })
+          const writable = await handle.createWritable()
+          await writable.write(jsonStr)
+          await writable.close()
+          toast.show(t('export_requested', { email: '' }), 'success')
+          emit('close-modal')
+          return
+        } catch (e: any) {
+          if (e.name === 'AbortError') return // 用户取消
+        }
+      }
+      // Fallback: 触发浏览器下载（Tauri webview 中会走系统默认下载目录）
+      const blob = new Blob([jsonStr], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -616,13 +658,31 @@ async function revokeSession(sessionId: string) {
   </ModalDialog>
 
   <!-- Image Preview -->
-  <ModalDialog :open="previewType === 'image'" :title="t('img_preview_title')" max-width="640px" @close="emit('close-preview')">
-    <div v-if="previewItem" style="text-align:center;">
-      <div style="width:100%;max-height:400px;overflow:hidden;border-radius:var(--radius-md);background:var(--bg-hover);display:flex;align-items:center;justify-content:center;margin-bottom:16px;">
-        <img :src="previewItem.preview || previewItem.content" style="max-width:100%;max-height:380px;object-fit:contain;" alt="" />
+  <ModalDialog :open="previewType === 'image'" :title="t('img_preview_title')" max-width="640px" @close="emit('close-preview'); resetImgZoom()">
+    <div v-if="previewItem" class="img-preview-wrap">
+      <div
+        class="img-preview-viewport"
+        @wheel.prevent.stop="onImgWheel"
+        style="overflow:hidden;border-radius:var(--radius-md);background:var(--bg-hover);display:flex;align-items:center;justify-content:center;max-height:420px;cursor:zoom-in;"
+      >
+        <img
+          :src="previewItem.preview || previewItem.content"
+          :style="{ transform: `scale(${imgZoom})`, transition: 'transform 0.15s ease', maxWidth: '100%', maxHeight: '380px', objectFit: 'contain' }"
+          alt=""
+        />
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-secondary);">
-        <span>Image</span>
+      <div class="img-preview-bar">
+        <span class="img-preview-label">Image</span>
+        <div class="img-preview-zoom">
+          <Button variant="outline" size="icon-sm" @click="zoomOut" :disabled="imgZoom <= IMG_ZOOM_MIN" title="缩小">
+            <ZoomOut :size="15" />
+          </Button>
+          <span class="img-zoom-level">{{ Math.round(imgZoom * 100) }}%</span>
+          <Button variant="outline" size="icon-sm" @click="zoomIn" :disabled="imgZoom >= IMG_ZOOM_MAX" title="放大">
+            <ZoomIn :size="15" />
+          </Button>
+          <Button v-if="imgZoom !== 1" variant="ghost" size="sm" class="ml-1" @click="resetImgZoom" title="重置">1:1</Button>
+        </div>
         <Button variant="outline" size="sm" @click="downloadImage" class="modal-action-btn">
           <Download :size="15" />
           <span>{{ t('img_download') }}</span>
@@ -759,4 +819,12 @@ async function revokeSession(sessionId: string) {
 
 .field-input { width:100%; height: 38px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); background: var(--bg-base); color: var(--text-primary); font-size: 14px; outline: none; font-family: inherit; box-sizing:border-box; }
 .manual-token-input { flex:1; height:32px; padding:0 10px; border-radius:var(--radius-sm); border:1px solid var(--border-default); background:var(--bg-surface); color:var(--text-primary); font-size:13px; outline:none; box-sizing:border-box; }
+
+/* Image Preview Zoom */
+.img-preview-wrap { display:flex; flex-direction:column; gap:12px; }
+.img-preview-viewport { position:relative; }
+.img-preview-bar { display:flex; align-items:center; gap:12px; font-size:12px; color:var(--text-secondary); }
+.img-preview-label { font-weight:500; color:var(--text-secondary); }
+.img-preview-zoom { display:inline-flex; align-items:center; gap:6px; margin-left:auto; }
+.img-zoom-level { min-width:40px; text-align:center; font-size:11px; font-weight:600; color:var(--text-tertiary); font-variant-numeric:tabular-nums; }
 </style>
