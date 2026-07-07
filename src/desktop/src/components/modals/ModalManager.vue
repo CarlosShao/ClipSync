@@ -11,6 +11,9 @@ import { initPairing, redeemPairing } from '@/api/device'
 import QRCode from 'qrcode'
 import jsQR from 'jsqr'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
+import Button from '@/components/ui/button/Button.vue'
+import Switch from '@/components/ui/switch/Switch.vue'
+import { Pencil, Monitor, Smartphone, FileText, CircleCheck, Download } from 'lucide-vue-next'
 
 const props = defineProps<{
   showModalType: string
@@ -436,7 +439,7 @@ async function revokeSession(sessionId: string) {
         <span>{{ t(sk.label) }}</span>
         <div v-if="recordingId !== sk.id" class="sk-keys" @click="startRecord(sk.id)">
           <kbd v-for="k in getKeys(sk.id)" :key="k">{{ k }}</kbd>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px;opacity:.4;cursor:pointer;"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          <Pencil :size="12" style="margin-left:4px;opacity:.4;cursor:pointer;" />
         </div>
         <div v-else class="sk-recorder" tabindex="0" @blur="stopRecord" @keydown="onKeyDown">
           {{ t('sk_press_keys') }}...
@@ -455,12 +458,12 @@ async function revokeSession(sessionId: string) {
     <div v-else class="session-list">
       <div v-for="s in sessionItems" :key="s.id" class="session-item">
         <div class="session-icon">
-          <svg v-if="s.isCurrent" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          <Monitor v-if="s.isCurrent" :size="20" />
+          <Smartphone v-else :size="20" />
         </div>
         <div class="session-info"><div class="session-name">{{ s.deviceName || s.device_type || 'Unknown Device' }}</div><div class="session-detail">{{ s.isCurrent ? t('sess_current') : formatSessionTime(s.last_active || s.created_at) }}</div></div>
         <span v-if="s.isCurrent" class="session-badge">{{ t('sess_current') }}</span>
-        <button v-else class="btn btn-ghost btn-sm" style="color:var(--danger)" :disabled="revokingId === s.id" @click="revokeSession(s.id)">{{ revokingId === s.id ? '...' : t('sess_sign_out_btn') }}</button>
+        <Button v-else variant="ghost" size="sm" style="color:var(--danger)" :disabled="revokingId === s.id" @click="revokeSession(s.id)">{{ revokingId === s.id ? '...' : t('sess_sign_out_btn') }}</Button>
       </div>
     </div>
   </ModalDialog>
@@ -468,9 +471,9 @@ async function revokeSession(sessionId: string) {
   <!-- Security -->
   <ModalDialog :open="showModalType === 'security'" :title="t('modal_security')" max-width="480px" @close="emit('close-modal')">
     <div class="sec-list">
-      <div class="sec-item"><div><div class="sec-label">{{ t('sec_2fa') }}</div><div class="sec-hint">{{ t('sec_2fa_h') }}</div></div><button class="toggle" @click="toggleClass" /></div>
-      <div class="sec-item"><div><div class="sec-label">{{ t('sec_login_notif') }}</div><div class="sec-hint">{{ t('sec_login_notif_h') }}</div></div><button class="toggle on" @click="toggleClass" /></div>
-      <div class="sec-item"><div><div class="sec-label">{{ t('sec_e2ee') }}</div><div class="sec-hint">{{ t('sec_e2ee_h') }}</div></div><button class="toggle on" disabled style="opacity:.5;cursor:not-allowed;" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('sec_2fa') }}</div><div class="sec-hint">{{ t('sec_2fa_h') }}</div></div><Switch :checked="false" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('sec_login_notif') }}</div><div class="sec-hint">{{ t('sec_login_notif_h') }}</div></div><Switch :checked="true" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('sec_e2ee') }}</div><div class="sec-hint">{{ t('sec_e2ee_h') }}</div></div><Switch :checked="true" disabled /></div>
     </div>
   </ModalDialog>
 
@@ -503,14 +506,14 @@ async function revokeSession(sessionId: string) {
   <ModalDialog :open="showModalType === 'cancel-subscription'" :title="t('sub_cancel')" max-width="420px" @close="emit('close-modal')">
     <div style="text-align:center;padding:20px 0;">
       <p style="font-size:14px;color:var(--text-secondary);margin-bottom:20px;">{{ t('sub_cancel_h') }}</p>
-      <button class="btn btn-danger btn-full" @click="toast.show(t('toast_signup_soon'), 'info')">{{ t('sub_cancel') }}</button>
+      <Button variant="destructive" class="w-full" @click="toast.show(t('toast_signup_soon'), 'info')">{{ t('sub_cancel') }}</Button>
     </div>
   </ModalDialog>
 
   <!-- Billing -->
   <ModalDialog :open="showModalType === 'billing'" :title="t('modal_billing')" max-width="480px" @close="emit('close-modal')">
     <div style="text-align:center;padding:40px 20px;">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary);margin-bottom:12px;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+      <FileText :size="48" style="color:var(--text-tertiary);margin-bottom:12px;" />
       <h3 style="font-size:15px;font-weight:600;margin-bottom:4px;">{{ t('billing_empty') }}</h3>
       <p style="font-size:13px;color:var(--text-secondary);">{{ t('billing_empty_desc') }}</p>
     </div>
@@ -521,7 +524,7 @@ async function revokeSession(sessionId: string) {
     <div class="sec-list">
       <div v-for="n in [{k:'nf_new_device',h:'nf_new_device_h'},{k:'nf_sync_done',h:'nf_sync_done_h'},{k:'nf_security',h:'nf_security_h'},{k:'nf_updates',h:'nf_updates_h'}]" :key="n.k" class="sec-item">
         <div><div class="sec-label">{{ t(n.k) }}</div><div class="sec-hint">{{ t(n.h) }}</div></div>
-        <button class="toggle on" @click="toggleClass" />
+        <Switch :checked="true" />
       </div>
     </div>
   </ModalDialog>
@@ -529,7 +532,7 @@ async function revokeSession(sessionId: string) {
   <!-- Updates -->
   <ModalDialog :open="showModalType === 'updates'" :title="t('upd_title')" max-width="420px" @close="emit('close-modal')">
     <div style="text-align:center;padding:16px 0;">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="1.5" style="margin-bottom:12px;"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <CircleCheck :size="48" style="color:var(--success);margin-bottom:12px;" />
       <h3 style="font-size:16px;font-weight:600;margin-bottom:4px;">{{ t('upd_uptodate') }}</h3>
       <p style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">{{ t('upd_version') }}: v2.4.1</p>
       <p style="font-size:13px;color:var(--text-tertiary);">{{ t('upd_latest') }}</p>
@@ -543,9 +546,9 @@ async function revokeSession(sessionId: string) {
   <!-- Export -->
   <ModalDialog :open="showModalType === 'export'" :title="t('export_title')" max-width="460px" @close="emit('close-modal')">
     <div style="text-align:center;padding:8px 0;">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--accent);margin-bottom:12px;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <Download :size="48" style="color:var(--accent);margin-bottom:12px;" />
       <p style="font-size:13px;color:var(--text-secondary);line-height:1.7;" v-html="t('export_msg')" />
-      <button class="btn btn-primary btn-full" style="margin-top:16px;" @click="handleExportRequest">{{ t('export_request_btn') }}</button>
+      <Button class="w-full" style="margin-top:16px;" @click="handleExportRequest">{{ t('export_request_btn') }}</Button>
     </div>
   </ModalDialog>
 
@@ -553,13 +556,13 @@ async function revokeSession(sessionId: string) {
   <ModalDialog :open="!!showForgotPwd" :title="t('fp_title')" max-width="420px" @close="handleCloseForgot">
     <div v-if="fpStep === 1">
       <div style="margin-bottom:12px;"><label class="field-label">{{ t('fp_email_label') }}</label><input v-model="fpEmail" type="email" class="field-input" :placeholder="t('fp_email_hint')" style="width:100%;" /></div>
-      <button class="btn btn-primary btn-full" :disabled="fpSending" @click="handleForgotSend"><span v-if="fpSending" class="btn-spinner" /><span>{{ t('fp_send_code') }}</span></button>
+      <Button class="w-full" :disabled="fpSending" @click="handleForgotSend"><span v-if="fpSending" class="btn-spinner" /><span>{{ t('fp_send_code') }}</span></Button>
     </div>
     <div v-else>
       <div style="margin-bottom:12px;"><label class="field-label">{{ t('login_code') }}</label><input v-model="fpCode" type="text" maxlength="6" class="field-input" :placeholder="t('ph_code_placeholder')" style="width:100%;" /></div>
       <div style="margin-bottom:12px;"><label class="field-label">{{ t('sp_set_pwd_label') }}</label><input v-model="fpNewPwd" type="password" class="field-input" :placeholder="t('sp_pwd_hint')" style="width:100%;" /></div>
       <div style="margin-bottom:16px;"><label class="field-label">{{ t('sp_confirm_pwd') }}</label><input v-model="fpConfirmPwd" type="password" class="field-input" :placeholder="t('sp_confirm_hint')" style="width:100%;" /></div>
-      <button class="btn btn-primary btn-full" :disabled="fpSending" @click="handleForgotReset"><span v-if="fpSending" class="btn-spinner" /><span>{{ t('fp_reset_btn') }}</span></button>
+      <Button class="w-full" :disabled="fpSending" @click="handleForgotReset"><span v-if="fpSending" class="btn-spinner" /><span>{{ t('fp_reset_btn') }}</span></Button>
     </div>
   </ModalDialog>
 
@@ -571,12 +574,10 @@ async function revokeSession(sessionId: string) {
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-secondary);">
         <span>Image</span>
-        <button class="btn btn-sm btn-primary" @click="downloadImage">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
+        <Button size="sm" @click="downloadImage">
+          <Download :size="14" style="margin-right:4px;" />
           {{ t('img_download') }}
-        </button>
+        </Button>
       </div>
     </div>
   </ModalDialog>
@@ -607,8 +608,8 @@ async function revokeSession(sessionId: string) {
       <p style="font-size:12px;color:var(--text-secondary);word-break:break-all;background:var(--bg-hover);padding:8px 10px;border-radius:var(--radius-sm);min-height:32px;">{{ pairingToken }}</p>
 
       <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
-        <button class="btn btn-primary btn-sm" @click="copyPairingToken" :disabled="!pairingToken">{{ t('pair_copy') }}</button>
-        <button class="btn btn-ghost btn-sm" @click="generatePairing">{{ t('pair_regenerate') }}</button>
+        <Button size="sm" @click="copyPairingToken" :disabled="!pairingToken">{{ t('pair_copy') }}</Button>
+        <Button variant="ghost" size="sm" @click="generatePairing">{{ t('pair_regenerate') }}</Button>
       </div>
 
       <p style="font-size:12px;color:var(--text-tertiary);margin-top:10px;">
@@ -630,15 +631,15 @@ async function revokeSession(sessionId: string) {
       </div>
 
       <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
-        <button v-if="!scanning" class="btn btn-primary btn-sm" @click="startScan">{{ t('pair_scan_start') }}</button>
-        <button v-else class="btn btn-ghost btn-sm" @click="stopScan">{{ t('pair_scan_stop') }}</button>
+        <Button v-if="!scanning" size="sm" @click="startScan">{{ t('pair_scan_start') }}</Button>
+        <Button v-else variant="ghost" size="sm" @click="stopScan">{{ t('pair_scan_stop') }}</Button>
       </div>
 
       <div style="margin-top:16px;border-top:1px solid var(--border-subtle);padding-top:12px;">
         <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px;">{{ t('pair_enter_code') }}</p>
         <div style="display:flex;gap:8px;">
           <input v-model="manualToken" :placeholder="t('pair_token_placeholder')" style="flex:1;height:32px;padding:0 10px;border-radius:var(--radius-sm);border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text-primary);font-size:13px;outline:none;" />
-          <button class="btn btn-primary btn-sm" :disabled="redeemSending" @click="handlePairingToken(manualToken)">{{ t('pair_pair_btn') }}</button>
+          <Button size="sm" :disabled="redeemSending" @click="handlePairingToken(manualToken)">{{ t('pair_pair_btn') }}</Button>
         </div>
         <p style="font-size:11px;color:var(--text-tertiary);margin-top:8px;">{{ t('pair_scan_hint') }}</p>
       </div>
@@ -649,20 +650,14 @@ async function revokeSession(sessionId: string) {
   <ModalDialog :open="showModalType === 'confirm'" :title="t('confirm_title')" max-width="380px" @close="emit('close-modal')">
     <p style="font-size:14px;line-height:1.6;">{{ confirmMessage }}</p>
     <template #footer>
-      <button class="btn btn-ghost" @click="emit('close-modal')">{{ t('btn_cancel_text') }}</button>
-      <button class="btn btn-primary" @click="emit('confirm-action')" style="background:var(--danger);color:#fff;">{{ t('confirm_t') }}</button>
+      <Button variant="ghost" @click="emit('close-modal')">{{ t('btn_cancel_text') }}</Button>
+      <Button @click="emit('confirm-action')" style="background:var(--danger);color:#fff;">{{ t('confirm_t') }}</Button>
     </template>
   </ModalDialog>
 </template>
 
 <style scoped>
 /* Override button style for inline btns */
-.btn { display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); font-weight: 500; cursor: pointer; border: 1px solid transparent; white-space: nowrap; font-family: inherit; }
-.btn-primary { background: var(--accent); color: var(--text-inverse); }
-.btn-ghost { background: transparent; color: var(--text-secondary); border: none; }
-.btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); }
-.btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
-.btn-full { width: 100%; }
 .btn-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -701,10 +696,6 @@ async function revokeSession(sessionId: string) {
 .pay-icon { width: 22px; height: 22px; flex-shrink: 0; }
 .pay-icon--wechat { color: #07C160; }
 .pay-icon--alipay { color: #1677FF; }
-.btn { display: inline-flex; align-items: center; justify-content: center; height: 38px; padding: 0 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; }
-.btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { opacity: 0.9; }
-.btn-full { width: 100%; }
 .price-card { padding: 20px; border: 1px solid var(--border-default); border-radius: var(--radius-md); cursor: pointer; position: relative; }
 .price-card:hover { border-color: var(--accent); }
 .price-card.popular { border-color: var(--accent); background: var(--accent-light); }
@@ -714,10 +705,5 @@ async function revokeSession(sessionId: string) {
 .pc-period { font-size: 12px; font-weight: 400; color: var(--text-tertiary); }
 .pc-feats { font-size: 12px; color: var(--text-secondary); line-height: 1.8; }
 
-.toggle { position: relative; display: inline-block; width: 40px; height: 22px; cursor: pointer; border-radius: 11px; background: var(--border-default); border: none; padding: 0; flex-shrink: 0; transition: background 0.2s; }
-.toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: white; transition: left 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
-.toggle.on { background: var(--accent); }
-.toggle.on::after { left: 20px; }
-.field-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; display:block; }
 .field-input { height: 38px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); background: var(--bg-base); color: var(--text-primary); font-size: 14px; outline: none; font-family: inherit; box-sizing:border-box; }
 </style>

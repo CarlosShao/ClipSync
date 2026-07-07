@@ -1,8 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { Camera, Pencil, Lock } from 'lucide-vue-next'
 import { useI18n } from '@/composables/useI18n'
 import { useConfigStore } from '@/stores/configStore'
 import { useToast } from '@/composables/useToast'
+import Button from '@/components/ui/button/Button.vue'
+import Input from '@/components/ui/input/Input.vue'
+import Avatar from '@/components/ui/avatar/Avatar.vue'
+import AvatarImageComp from '@/components/ui/avatar/AvatarImage.vue'
+import AvatarFallbackComp from '@/components/ui/avatar/AvatarFallback.vue'
+import Label from '@/components/ui/label/Label.vue'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -28,7 +35,6 @@ async function saveDisplayName() {
     editingName.value = false
     toast.show(t('profile_saved'), 'success')
   } else {
-    // API 失败时本地保存（兜底）
     configStore.user.name = trimmed
     editingName.value = false
     localStorage.setItem('clipsync-display-name', trimmed)
@@ -56,7 +62,6 @@ async function saveEmail() {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   if (!emailRegex.test(trimmed)) { toast.show(t('val_email_invalid'), 'error'); return }
 
-  // Email update via profile API (if supported) or local fallback
   try {
     const res = await fetch(`${configStore.serverUrl}/api/auth/profile`, {
       method: 'PUT',
@@ -71,7 +76,6 @@ async function saveEmail() {
       editingEmail.value = false
       toast.show(t('profile_saved'), 'success')
     } else {
-      // API may not support email update yet — save locally as fallback
       configStore.user.email = trimmed
       editingEmail.value = false
       toast.show(t('profile_saved'), 'success')
@@ -109,15 +113,12 @@ async function handleAvatarUpload(e: Event) {
     return
   }
 
-  // Convert to base64 data URL for storage + upload
   const reader = new FileReader()
   reader.onload = async () => {
     const dataUrl = reader.result as string
-    // Save locally immediately (optimistic)
     avatarUrl.value = dataUrl
     localStorage.setItem('clipsync-avatar', dataUrl)
 
-    // Try to upload to server
     const ok = await configStore.updateUserProfile({ avatarUrl: dataUrl })
     if (!ok) {
       console.warn('[Profile] Avatar upload failed, using local-only')
@@ -126,7 +127,7 @@ async function handleAvatarUpload(e: Event) {
     }
   }
   reader.readAsDataURL(file)
-  input.value = '' // reset so same file can be re-selected
+  input.value = ''
 }
 </script>
 
@@ -134,12 +135,14 @@ async function handleAvatarUpload(e: Event) {
   <div class="settings-view">
     <h2 class="sv-title">{{ t('prof_t') }}</h2>
     <div class="profile-card">
-      <!-- Avatar section -->
-      <div class="profile-avatar-wrap" @click="triggerAvatarUpload" :title="t('avatar_change') || '点击更换头像'">
-        <img v-if="avatarUrl" :src="avatarUrl" class="profile-avatar-img" alt="Avatar" />
-        <div v-else class="profile-avatar">{{ configStore.user.name?.slice(0, 2) || 'CS' }}</div>
+      <!-- Avatar section — shadcn Avatar -->
+      <div class="avatar-wrap" @click="triggerAvatarUpload" :title="t('avatar_change') || '点击更换头像'">
+        <Avatar class="avatar-shadcn">
+          <AvatarImageComp v-if="avatarUrl" :src="avatarUrl" alt="Avatar" />
+          <AvatarFallbackComp>{{ configStore.user.name?.slice(0, 2) || 'CS' }}</AvatarFallbackComp>
+        </Avatar>
         <div class="avatar-overlay">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <Camera :size="16" />
         </div>
         <input ref="avatarInputRef" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload" />
       </div>
@@ -147,49 +150,49 @@ async function handleAvatarUpload(e: Event) {
       <div class="profile-details">
         <!-- Display Name / Username -->
         <div class="sg-row">
-          <div class="sg-label"><div class="sg-name" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;">{{ t('pf_name') }}</div></div>
+          <Label class="sg-label">{{ t('pf_name') }}</Label>
           <div v-if="!editingName" class="sg-control sg-control--clickable" @click="startEditName">
             {{ configStore.user.name || t('pf_noset') }}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px;opacity:.5;vertical-align:middle;"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <Pencil :size="12" style="margin-left:4px;opacity:.5;" />
           </div>
           <div v-else class="sg-edit-group">
-            <input v-model="nameInput" class="sg-input" :placeholder="t('pf_name')" maxlength="30" @keyup.enter="saveDisplayName" />
-            <button class="btn btn-sm btn-primary" @click="saveDisplayName" style="margin-left:6px;">{{ t('save_btn') }}</button>
-            <button class="btn btn-sm btn-ghost" @click="cancelEdit">{{ t('cancel_btn') }}</button>
+            <Input v-model="nameInput" :placeholder="t('pf_name')" maxlength="30" class="sg-input-shadcn" @keyup.enter="saveDisplayName" />
+            <Button size="sm" @click="saveDisplayName">{{ t('save_btn') }}</Button>
+            <Button size="sm" variant="ghost" @click="cancelEdit">{{ t('cancel_btn') }}</Button>
           </div>
         </div>
 
         <!-- Phone (read-only, from login) -->
         <div class="sg-row">
-          <div class="sg-label"><div class="sg-name" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;">{{ t('pf_phone') }}</div></div>
+          <Label class="sg-label">{{ t('pf_phone') }}</Label>
           <div class="sg-control">{{ configStore.user.phone || t('pf_noset') }}</div>
         </div>
 
         <!-- Email -->
         <div class="sg-row">
-          <div class="sg-label"><div class="sg-name" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;">EMAIL</div></div>
+          <Label class="sg-label">EMAIL</Label>
           <div v-if="!editingEmail" class="sg-control sg-control--clickable" @click="startEditEmail">
             {{ configStore.user.email || t('pf_noset') }}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px;opacity:.5;vertical-align:middle;"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <Pencil :size="12" style="margin-left:4px;opacity:.5;" />
           </div>
           <div v-else class="sg-edit-group">
-            <input v-model="emailInput" type="email" class="sg-input" placeholder="email@example.com" maxlength="100" @keyup.enter="saveEmail" />
-            <button class="btn btn-sm btn-primary" @click="saveEmail" style="margin-left:6px;">{{ t('save_btn') }}</button>
-            <button class="btn btn-sm btn-ghost" @click="cancelEditEmail">{{ t('cancel_btn') }}</button>
+            <Input v-model="emailInput" type="email" placeholder="email@example.com" maxlength="100" class="sg-input-shadcn" @keyup.enter="saveEmail" />
+            <Button size="sm" @click="saveEmail">{{ t('save_btn') }}</Button>
+            <Button size="sm" variant="ghost" @click="cancelEditEmail">{{ t('cancel_btn') }}</Button>
           </div>
         </div>
 
         <!-- Plan -->
         <div class="sg-row">
-          <div class="sg-label"><div class="sg-name" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;">{{ t('pf_plan') }}</div></div>
+          <Label class="sg-label">{{ t('pf_plan') }}</Label>
           <div class="sg-control">{{ t(configStore.user.plan === 'Pro' ? 'role_pro' : 'pf_free') }}</div>
         </div>
       </div>
     </div>
 
-    <!-- Password change hint (links to Settings > Privacy) -->
+    <!-- Password change hint -->
     <div class="profile-hint">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      <Lock :size="14" style="flex-shrink:0;" />
       <span>{{ t('pwd_change_hint') || '修改密码请前往 设置 → 隐私和安全 → 修改密码' }}</span>
     </div>
   </div>
@@ -200,8 +203,8 @@ async function handleAvatarUpload(e: Event) {
 .sv-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
 .profile-card { display: flex; gap: 24px; padding: 24px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-lg); }
 
-/* Avatar */
-.profile-avatar-wrap {
+/* Avatar — wraps shadcn Avatar with hover overlay */
+.avatar-wrap {
   position: relative;
   width: 80px;
   height: 80px;
@@ -211,26 +214,13 @@ async function handleAvatarUpload(e: Event) {
   overflow: hidden;
   transition: transform .15s, box-shadow .15s;
 }
-.profile-avatar-wrap:hover {
+.avatar-wrap:hover {
   transform: scale(1.04);
   box-shadow: 0 0 0 3px var(--accent-light);
 }
-.profile-avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.profile-avatar {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--text-inverse);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  font-weight: 700;
+.avatar-shadcn {
+  width: 80px !important;
+  height: 80px !important;
 }
 .avatar-overlay {
   position: absolute;
@@ -243,20 +233,18 @@ async function handleAvatarUpload(e: Event) {
   opacity: 0;
   transition: opacity .15s;
 }
-.profile-avatar-wrap:hover .avatar-overlay { opacity: 1; }
+.avatar-wrap:hover .avatar-overlay { opacity: 1; }
 
 /* Details */
 .profile-details { flex: 1; }
 .sg-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: var(--radius-md); }
 .sg-row:hover { background: var(--bg-hover); }
-.sg-label { flex: 1; }
-.sg-name { font-size: 14px; font-weight: 500; }
-.sg-control { font-size: 13px; color: var(--text-secondary); }
-.sg-control--clickable { cursor: pointer; display: flex; align-items: center; transition: color .15s; }
+.sg-label { flex: 1; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; font-weight: 500; color: var(--text-secondary); }
+.sg-control { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; }
+.sg-control--clickable { cursor: pointer; transition: color .15s; }
 .sg-control--clickable:hover { color: var(--accent); }
-.sg-edit-group { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.sg-input { height: 28px; padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); background: var(--bg-base); color: var(--text-primary); font-size: 13px; outline: none; width: 160px; }
-.sg-input:focus { border-color: var(--accent); }
+.sg-edit-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.sg-input-shadcn { width: 160px; height: 28px; }
 
 /* Hint */
 .profile-hint {

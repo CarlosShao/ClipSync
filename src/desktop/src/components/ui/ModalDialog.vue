@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
+import { X } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const props = withDefaults(defineProps<{
@@ -22,9 +23,7 @@ function onBackdropClick(e: MouseEvent) {
         <div v-if="title" class="modal-header">
           <span class="modal-title-text">{{ title }}</span>
           <button class="btn-icon" @click="emit('close')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
+            <X :size="16" />
           </button>
         </div>
         <div class="modal-body">

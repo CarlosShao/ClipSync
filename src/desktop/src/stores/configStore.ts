@@ -143,8 +143,8 @@ export const useConfigStore = defineStore('config', () => {
     savePrefs()
   }
 
-  function toggleReduceMotion() {
-    reduceMotion.value = !reduceMotion.value
+  function toggleReduceMotion(val?: boolean) {
+    reduceMotion.value = val ?? !reduceMotion.value
     savePrefs()
     // 应用减少动画：给 html 添加/移除 class，供 CSS 使用
     document.documentElement.classList.toggle('reduce-motion', reduceMotion.value)

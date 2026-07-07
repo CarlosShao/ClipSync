@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import {
+  ChevronLeft, ChevronRight, Clipboard, Monitor, Link,
+  User, Star, Settings, LogOut,
+} from 'lucide-vue-next'
+import Button from '@/components/ui/button/Button.vue'
 import { useI18n } from '@/composables/useI18n'
 
 const { t } = useI18n()
@@ -47,20 +52,12 @@ const accountNavItems = computed(() => [
       <!-- Collapsed: centered logo + hint chevron -->
       <div class="sb-logo-wrap" v-show="isCollapsed">
         <div class="sb-logo sb-logo--sm">C</div>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-             class="sb-collapse-hint">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
+        <ChevronRight :size="10" stroke-width="2.5" class="sb-collapse-hint" />
       </div>
       <!-- Toggle button (expanded only) -->
-      <button v-show="!isCollapsed" class="sb-toggle" @click.stop="emit('toggle')" :title="t('nav_collapse')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-             class="sb-toggle-icon">
-          <polyline points="15 18 9 12 15 6"/>
-        </svg>
-      </button>
+      <Button v-show="!isCollapsed" variant="ghost" size="icon" class="sb-toggle" @click.stop="emit('toggle')" :title="t('nav_collapse')">
+        <ChevronLeft :size="14" stroke-width="2.5" />
+      </Button>
     </div>
 
     <!-- ===== Main Navigation ===== -->
@@ -72,12 +69,9 @@ const accountNavItems = computed(() => [
           :title="isCollapsed ? item.label : undefined"
           @click="emit('navigate', item.key)"
         >
-          <!-- Clipboard icon -->
-          <svg v-if="item.key === 'clipboard'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg>
-          <!-- Devices/Monitor icon -->
-          <svg v-else-if="item.key === 'devices'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          <!-- Links icon -->
-          <svg v-else-if="item.key === 'shared-links'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+          <Clipboard v-if="item.key === 'clipboard'" :size="20" :stroke-width="1.8" />
+          <Monitor v-else-if="item.key === 'devices'" :size="20" :stroke-width="1.8" />
+          <Link v-else-if="item.key === 'shared-links'" :size="20" :stroke-width="1.8" />
           <span v-show="!isCollapsed" class="sb-label">{{ item.label }}</span>
           <span v-if="item.badge && !isCollapsed" class="sb-badge">{{ item.badge }}</span>
         </button>
@@ -93,12 +87,9 @@ const accountNavItems = computed(() => [
           :title="isCollapsed ? item.label : undefined"
           @click="emit('navigate', item.key)"
         >
-          <!-- User icon -->
-          <svg v-if="item.key === 'profile'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/></svg>
-          <!-- Star icon -->
-          <svg v-else-if="item.key === 'subscription'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          <!-- Settings/Gear icon -->
-          <svg v-else-if="item.key === 'settings'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          <User v-if="item.key === 'profile'" :size="20" :stroke-width="1.8" />
+          <Star v-else-if="item.key === 'subscription'" :size="20" :stroke-width="1.8" />
+          <Settings v-else-if="item.key === 'settings'" :size="20" :stroke-width="1.8" />
           <span v-show="!isCollapsed" class="sb-label">{{ item.label }}</span>
         </button>
       </template>
@@ -113,10 +104,10 @@ const accountNavItems = computed(() => [
           <div class="user-role">{{ t(userPlan === 'Pro' ? 'role_pro' : 'role_free') }}</div>
         </div>
       </div>
-      <button class="logout-btn" @click="emit('logout')">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <Button variant="ghost" class="logout-btn" @click="emit('logout')">
+        <LogOut :size="13" />
         <span>{{ t('logout') }}</span>
-      </button>
+      </Button>
     </div>
 
     <!-- Footer avatar dot (collapsed only) -->
@@ -142,7 +133,7 @@ const accountNavItems = computed(() => [
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-default);
   overflow: hidden;
-  transition: width 280ms cubic-bezier(.4, 0, .2, 1);
+  transition: width 280ms cubic-bezier(.4, 0 .2, 1);
 }
 .sidebar--collapsed { width: 56px; }
 
@@ -155,7 +146,7 @@ const accountNavItems = computed(() => [
   padding: 0 12px;
   gap: 8px;
   border-bottom: 1px solid var(--border-default);
-  position: relative; /* ← 为内部 absolute 定位的 toggle 按钮提供定位参照系 */
+  position: relative;
 }
 .sidebar--collapsed .sb-header {
   justify-content: center;
@@ -177,16 +168,16 @@ const accountNavItems = computed(() => [
 
 .sb-name { font-weight: 700; font-size: 14px; white-space: nowrap; }
 
+/* Toggle button — override shadcn ghost defaults to match sidebar */
 .sb-toggle {
   margin-left: auto;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  color: var(--text-tertiary);
   border-radius: var(--radius-sm);
-  background: transparent; border: none;
-  color: var(--text-tertiary); cursor: pointer;
-  transition: background 150ms, color 150ms;
 }
-.sb-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
+.sb-toggle:hover { background: var(--bg-hover) !important; color: var(--text-primary); }
 
 /* Collapsed header: entire area is clickable */
 .sb-header--clickable { cursor: pointer; }
@@ -196,8 +187,6 @@ const accountNavItems = computed(() => [
 .sb-logo-wrap { display: flex; align-items: center; justify-content: center; gap: 4px; }
 .sb-collapse-hint { opacity: 0.4; transition: opacity 150ms; }
 .sb-header--clickable:hover .sb-collapse-hint { opacity: 0.7; }
-
-.sb-toggle-icon { }
 
 /* ---- Navigation ---- */
 .sb-nav {
@@ -274,13 +263,14 @@ const accountNavItems = computed(() => [
 .user-name { font-size: 13px; font-weight: 500; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-role { font-size: 11px; color: var(--text-tertiary); }
 
+/* Logout button — override shadcn ghost for sidebar footer style */
 .logout-btn {
   display: flex; align-items: center; gap: 4px;
   font-size: 11.5px; color: var(--text-tertiary);
-  padding: 4px 0; cursor: pointer;
-  background: none; border: none;
+  padding: 4px 0;
+  height: auto !important;
 }
-.logout-btn:hover { color: var(--danger); }
+.logout-btn:hover { color: var(--danger); background: transparent !important; }
 
 /* ---- Footer dot (collapsed) ---- */
 .sb-footer-dot {

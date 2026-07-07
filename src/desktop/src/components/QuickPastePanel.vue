@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
+import { Search } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{ open: boolean }>(), { open: false })
 const emit = defineEmits<{ close: [] }>()
@@ -52,9 +53,7 @@ function truncate(str: string, max: number): string {
     <div v-if="open" class="qp-overlay" @click.self="emit('close')" @keydown="handleKeydown">
       <div class="qp-panel">
         <div class="qp-search">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-tertiary)">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
+          <Search :size="16" style="color:var(--text-tertiary)" />
           <input v-model="qpSearch" type="text" ref="qpInput" :placeholder="t('search_ph')" autofocus class="qp-search-input" />
           <kbd class="qp-kbd">ESC</kbd>
         </div>

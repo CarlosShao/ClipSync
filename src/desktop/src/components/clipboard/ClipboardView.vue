@@ -5,6 +5,12 @@ import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import * as tauri from '@/lib/tauri'
 import { useConfigStore } from '@/stores/configStore'
+import {
+  Upload, Plus, Search, SquareCheck, Trash2, Copy, Image as ImageIcon,
+  ExternalLink, FileText, Folder, ClipboardList,
+} from 'lucide-vue-next'
+import Button from '@/components/ui/button/Button.vue'
+import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -221,19 +227,15 @@ function truncate(str: string, max: number): string {
       </div>
       <div class="toolbar-spacer" />
       <div class="toolbar-right">
-        <button class="btn btn-ghost btn-sm" @click="triggerFileUpload">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
+        <Button variant="ghost" size="sm" @click="triggerFileUpload">
+          <Upload :size="14" />
           <span style="margin-left:4px;">{{ t('upload_file') }}</span>
-        </button>
+        </Button>
         <input ref="fileInputRef" type="file" style="display:none" multiple @change="handleFileUpload" />
-        <button class="btn btn-ghost btn-sm" @click="toggleQuickPaste">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="2" width="20" height="20" rx="4"/><path d="M8 12h8M12 8v8"/>
-          </svg>
+        <Button variant="ghost" size="sm" @click="toggleQuickPaste">
+          <Plus :size="14" />
           <span style="margin-left:4px;">{{ t('new_clip') }}</span>
-        </button>
+        </Button>
       </div>
     </div>
 
@@ -246,25 +248,19 @@ function truncate(str: string, max: number): string {
       <button :class="['tab-btn', { active: activeFilter === 'files' }]" @click="clip.setFilter('files')">{{ t('tab_files') }}</button>
       <div class="tab-spacer" />
       <div class="search-wrap" :class="{ open: searchOpen }">
-        <button v-if="!searchOpen" class="btn-icon" @click="searchOpen = true">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-        </button>
+        <Button v-if="!searchOpen" variant="ghost" size="icon" class="btn-icon" @click="searchOpen = true">
+          <Search :size="14" />
+        </Button>
         <input v-else v-model="searchInput" type="text" :placeholder="t('search_ph')" class="search-input"
           @blur="handleSearchBlur" @input="clip.setSearch(searchInput)" />
       </div>
-      <button :class="['btn-icon', { active: batchMode }]" @click="toggleBatchMode" :title="t('batch_select')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
-        </svg>
-      </button>
-      <button v-if="batchMode && selectedCount > 0" class="btn-icon" style="color:var(--danger)" @click="handleBatchDelete">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-        </svg>
+      <Button :class="['btn-icon', { active: batchMode }]" variant="ghost" size="icon" @click="toggleBatchMode" :title="t('batch_select')">
+        <SquareCheck :size="14" />
+      </Button>
+      <Button v-if="batchMode && selectedCount > 0" variant="ghost" size="icon" class="btn-icon text-destructive" style="color:var(--danger)" @click="handleBatchDelete">
+        <Trash2 :size="14" />
         <span style="margin-left:2px;font-size:11px;">{{ selectedCount }}</span>
-      </button>
+      </Button>
     </div>
 
     <!-- Confirm Modal -->
@@ -272,8 +268,8 @@ function truncate(str: string, max: number): string {
       <div class="confirm-modal">
         <p class="confirm-msg">{{ confirmMessage }}</p>
         <div class="confirm-actions">
-          <button class="btn btn-ghost btn-sm" @click="cancelConfirm">{{ t('cancel_btn') }}</button>
-          <button class="btn btn-primary btn-sm" @click="confirmAction">{{ t('confirm_t') }}</button>
+          <Button variant="ghost" size="sm" @click="cancelConfirm">{{ t('cancel_btn') }}</Button>
+          <Button size="sm" @click="confirmAction">{{ t('confirm_t') }}</Button>
         </div>
       </div>
     </div>
@@ -291,7 +287,9 @@ function truncate(str: string, max: number): string {
         </colgroup>
         <thead>
           <tr>
-            <th v-if="batchMode"><input type="checkbox" class="batch-cb" :checked="allSelected" @change="clip.toggleSelectAll()" /></th>
+            <th v-if="batchMode">
+              <Checkbox :checked="allSelected" @update:checked="() => clip.toggleSelectAll()" />
+            </th>
             <th>{{ t('head_content') }}</th>
             <th>{{ t('head_source') }}</th>
             <th>{{ t('head_type') }}</th>
@@ -303,7 +301,9 @@ function truncate(str: string, max: number): string {
           <tr v-for="item in filteredItems" :key="item.id"
             :class="{ 'batch-selected': item.selected, 'with-cb': batchMode }"
             @dblclick="clip.copyItem(item)">
-            <td v-if="batchMode"><input type="checkbox" class="batch-cb" v-model="item.selected" /></td>
+            <td v-if="batchMode">
+              <Checkbox :checked="item.selected" @update:checked="(v: boolean) => (item.selected = v)" />
+            </td>
             <td class="cell-content" :title="item.content">
               <div class="cell-content-inner">
                 <span v-if="item.type === 'image'" class="cell-img-preview">
@@ -316,40 +316,28 @@ function truncate(str: string, max: number): string {
             <td class="cell-type"><span class="type-badge">{{ getTypeLabel(item.type) }}</span></td>
             <td class="cell-time">{{ timeAgo(item.timestamp) }}</td>
             <td class="cell-actions">
-              <button class="btn-icon btn-icon-sm" @click="clip.copyItem(item)" :title="t('copy')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-                </svg>
-              </button>
+              <Button variant="ghost" size="icon-sm" @click="clip.copyItem(item)" :title="t('copy')">
+                <Copy :size="14" />
+              </Button>
               <!-- 图片预览 -->
-              <button v-if="item.type === 'image'" class="btn-icon btn-icon-sm" @click="emit('preview-image', item)" :title="t('preview')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
-                </svg>
-              </button>
+              <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" @click="emit('preview-image', item)" :title="t('preview')">
+                <ImageIcon :size="14" />
+              </Button>
               <!-- 链接打开 -->
-              <button v-else-if="item.type === 'link'" class="btn-icon btn-icon-sm" @click="openLink(item)" :title="t('link_opened')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-                </svg>
-              </button>
+              <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" @click="openLink(item)" :title="t('link_opened')">
+                <ExternalLink :size="14" />
+              </Button>
               <!-- 文字详情 -->
-              <button v-else-if="item.type === 'text'" class="btn-icon btn-icon-sm" @click="emit('preview-text', item)" :title="t('preview')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-                </svg>
-              </button>
+              <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" @click="emit('preview-text', item)" :title="t('preview')">
+                <FileText :size="14" />
+              </Button>
               <!-- 文件：在文件夹中显示 -->
-              <button v-if="item.type === 'file'" class="btn-icon btn-icon-sm" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
-                </svg>
-              </button>
-              <button class="btn-icon btn-icon-sm" style="color:var(--danger)" @click="handleSingleDelete(item)" :title="t('delete')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                </svg>
-              </button>
+              <Button v-if="item.type === 'file'" variant="ghost" size="icon-sm" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
+                <Folder :size="14" />
+              </Button>
+              <Button variant="ghost" size="icon-sm" style="color:var(--danger)" @click="handleSingleDelete(item)" :title="t('delete')">
+                <Trash2 :size="14" />
+              </Button>
             </td>
           </tr>
         </tbody>
@@ -358,9 +346,7 @@ function truncate(str: string, max: number): string {
       <!-- Empty State -->
       <div v-else class="empty-state">
         <div class="empty-icon-wrap">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary)">
-            <rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>
-          </svg>
+          <ClipboardList :size="48" style="color:var(--text-tertiary)" />
         </div>
         <h3 class="empty-title">{{ t('empty_title') }}</h3>
         <p class="empty-desc">{{ t('empty_desc') }}</p>
@@ -416,7 +402,6 @@ function truncate(str: string, max: number): string {
 .clip-table td { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); }
 .clip-table tr:hover td { background: var(--bg-hover); }
 .clip-table tr.batch-selected td { background: var(--accent-light); }
-.batch-cb { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 .cell-content { overflow: hidden; }
 .cell-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .cell-img-preview { display: flex; align-items: center; gap: 8px; }
@@ -426,8 +411,6 @@ function truncate(str: string, max: number): string {
 .type-badge:hover { transform: scale(1.06); }
 .cell-time { color: var(--text-tertiary); font-size: 12px; }
 .cell-actions { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
-.btn-icon-sm { width: 26px; height: 26px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; opacity: 0.4; transition: all 0.12s ease; }
-.btn-icon-sm:hover { opacity: 1; background: var(--bg-hover); color: var(--text-primary); }
 
 /* ===== EMPTY STATE ===== */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; text-align: center; }
@@ -450,14 +433,7 @@ function truncate(str: string, max: number): string {
 .confirm-msg { font-size: 14px; margin-bottom: 20px; color: var(--text-primary); }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
-/* ===== BUTTONS ===== */
-.btn { display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 14px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all 150ms; white-space: nowrap; }
-.btn-primary { background: var(--accent); color: var(--text-inverse); }
-.btn-primary:hover { background: var(--accent-hover); }
-.btn-ghost { background: transparent; color: var(--text-secondary); border: none; }
-.btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); }
-.btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
-.btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-sm); background: transparent; border: none; color: var(--text-secondary); cursor: pointer; }
-.btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); }
+/* Icon-only toolbar buttons (shadcn Button size=icon) */
+.btn-icon { color: var(--text-secondary); }
 .btn-icon.active { color: var(--accent); background: var(--accent-light); }
 </style>

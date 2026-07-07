@@ -6,6 +6,9 @@ import { useToast } from '@/composables/useToast'
 import { useTheme, currentMode } from '@/composables/useTheme'
 import { api } from '@/api/client'
 import * as tauri from '@/lib/tauri'
+import { Eye, EyeOff, Sun, Moon } from 'lucide-vue-next'
+import Button from '@/components/ui/button/Button.vue'
+import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 
 defineOptions({ name: 'AuthPage' })
 const emit = defineEmits<{ (e: 'login-success'): void }>()
@@ -358,8 +361,8 @@ const isRegisterView = computed(() => authView.value === 'register')
       <div :class="['auth-left', { 'auth-left--scrollable': isRegisterView }]">
         <!-- Theme toggle: top-right corner -->
         <button class="theme-pill theme-pill-absolute" @click="toggleMode" :title="currentMode === 'dark' ? t('mode_light') : t('mode_dark')">
-          <svg v-if="currentMode === 'dark'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-          <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+          <Moon v-if="currentMode === 'dark'" :size="14" />
+          <Sun v-else :size="14" />
           <span>{{ currentMode === 'dark' ? t('mode_light') : t('mode_dark') }}</span>
         </button>
         <div class="auth-card">
@@ -394,12 +397,12 @@ const isRegisterView = computed(() => authView.value === 'register')
                 </div>
               </div>
               <div class="form-options">
-                <label class="checkbox-label"><input type="checkbox" v-model="rememberMe" /> {{ t('login_remember') }}</label>
+                <label class="checkbox-label"><Checkbox :checked="rememberMe" @update:checked="(v: boolean) => (rememberMe = v)" /> {{ t('login_remember') }}</label>
                 <button class="link-btn" @click="toast.show(t('toast_code_resent'),'info')">{{ t('login_forgot_code') }}</button>
               </div>
-              <button class="btn-primary btn-block" :disabled="isLoggingIn" @click="handleLogin">
+              <Button class="w-full" :disabled="isLoggingIn" @click="handleLogin">
                 <span v-if="isLoggingIn" class="spinner" /> {{ t('login_signin') }}
-              </button>
+              </Button>
             </div>
 
             <!-- Password Login -->
@@ -413,18 +416,18 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <div class="pwd-wrap">
                   <input id="lp-pwd" v-model="authPassword" :type="showLoginPassword ? 'text' : 'password'" class="form-input" :placeholder="t('ph_password_placeholder')" @keydown.enter="handleLogin" />
                   <button class="pwd-toggle" @click="showLoginPassword = !showLoginPassword" type="button">
-                    <svg v-if="showLoginPassword" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <EyeOff v-if="showLoginPassword" :size="16" />
+                    <Eye v-else :size="16" />
                   </button>
                 </div>
               </div>
               <div class="form-options">
-                <label class="checkbox-label"><input type="checkbox" v-model="rememberMe" /> {{ t('login_remember') }}</label>
+                <label class="checkbox-label"><Checkbox :checked="rememberMe" @update:checked="(v: boolean) => (rememberMe = v)" /> {{ t('login_remember') }}</label>
                 <button class="link-btn" @click="openForgot">{{ t('login_forgot') }}</button>
               </div>
-              <button class="btn-primary btn-block" :disabled="isLoggingIn" @click="handleLogin">
+              <Button class="w-full" :disabled="isLoggingIn" @click="handleLogin">
                 <span v-if="isLoggingIn" class="spinner" /> {{ t('login_signin') }}
-              </button>
+              </Button>
             </div>
 
             <div class="auth-switch">
@@ -484,8 +487,8 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <div class="pwd-wrap">
                   <input id="reg-pwd" v-model="regPassword" :type="showRegPassword ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
                   <button class="pwd-toggle" @click="showRegPassword = !showRegPassword" type="button">
-                    <svg v-if="showRegPassword" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <EyeOff v-if="showRegPassword" :size="16" />
+                    <Eye v-else :size="16" />
                   </button>
                 </div>
                 <div v-if="regPassword.length > 0" class="pwd-strength">
@@ -503,18 +506,18 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <div class="pwd-wrap">
                   <input id="reg-confirm" v-model="regConfirm" :type="showRegConfirm ? 'text' : 'password'" class="form-input" :class="{ error: fieldErrors.regConfirm }" :placeholder="t('sp_confirm_hint')" @blur="validateRegConfirm(regConfirm)" @input="fieldErrors.regConfirm = ''" />
                   <button class="pwd-toggle" @click="showRegConfirm = !showRegConfirm" type="button">
-                    <svg v-if="showRegConfirm" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <EyeOff v-if="showRegConfirm" :size="16" />
+                    <Eye v-else :size="16" />
                   </button>
                 </div>
                 <div v-if="fieldErrors.regConfirm" class="field-error">{{ fieldErrors.regConfirm }}</div>
               </div>
               <label class="checkbox-label" style="margin-top:-4px;">
-                <input type="checkbox" v-model="regAgree" /> {{ t('reg_agree_text') }}<a href="javascript:void(0)" class="link-btn" @click="toast.show(t('toast_tos_soon'),'info')">{{ t('reg_tos') }}</a>{{ t('reg_and') }}<a href="javascript:void(0)" class="link-btn" @click="toast.show(t('toast_privacy_soon'),'info')">{{ t('reg_privacy') }}</a>
+                <Checkbox :checked="regAgree" @update:checked="(v: boolean) => (regAgree = v)" /> {{ t('reg_agree_text') }}<a href="javascript:void(0)" class="link-btn" @click="toast.show(t('toast_tos_soon'),'info')">{{ t('reg_tos') }}</a>{{ t('reg_and') }}<a href="javascript:void(0)" class="link-btn" @click="toast.show(t('toast_privacy_soon'),'info')">{{ t('reg_privacy') }}</a>
               </label>
-              <button class="btn-primary btn-block" :disabled="isRegistering" @click="handleRegister">
+              <Button class="w-full" :disabled="isRegistering" @click="handleRegister">
                 <span v-if="isRegistering" class="spinner" /> {{ t('reg_submit') }}
-              </button>
+              </Button>
             </div>
             <div class="auth-divider"><span>{{ t('reg_or_social') }}</span></div>
             <div class="auth-social">
@@ -551,8 +554,8 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <div class="pwd-wrap">
                   <input id="sp-pwd" v-model="setPwdNew" :type="showSetPwdPassword ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
                   <button class="pwd-toggle" @click="showSetPwdPassword = !showSetPwdPassword" type="button">
-                    <svg v-if="showSetPwdPassword" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <EyeOff v-if="showSetPwdPassword" :size="16" />
+                    <Eye v-else :size="16" />
                   </button>
                 </div>
                 <div v-if="setPwdNew.length > 0" class="pwd-strength">
@@ -570,14 +573,14 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <div class="pwd-wrap">
                   <input id="sp-confirm" v-model="setPwdConfirm" :type="showSetPwdConfirm ? 'text' : 'password'" class="form-input" :placeholder="t('sp_confirm_hint')" />
                   <button class="pwd-toggle" @click="showSetPwdConfirm = !showSetPwdConfirm" type="button">
-                    <svg v-if="showSetPwdConfirm" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <EyeOff v-if="showSetPwdConfirm" :size="16" />
+                    <Eye v-else :size="16" />
                   </button>
                 </div>
               </div>
-              <button class="btn-primary btn-block" :disabled="isSettingPwd || !setPwdValid" @click="handleSetPassword">
+              <Button class="w-full" :disabled="isSettingPwd || !setPwdValid" @click="handleSetPassword">
                 <span v-if="isSettingPwd" class="spinner" /> {{ t('sp_complete_register') }}
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -606,9 +609,9 @@ const isRegisterView = computed(() => authView.value === 'register')
               <label class="form-label">{{ t('fp_email_label') }}</label>
               <input v-model="fpEmail" type="email" class="form-input" :placeholder="t('fp_email_hint')" @keydown.enter="fpSendCode" />
             </div>
-            <button class="btn-primary btn-block" :disabled="fpCodeSending" @click="fpSendCode">
+            <Button class="w-full" :disabled="fpCodeSending" @click="fpSendCode">
               <span v-if="fpCodeSending" class="spinner" /> {{ t('fp_send_code') }}
-            </button>
+            </Button>
           </div>
           <!-- Step 2: Reset -->
           <div v-else class="modal-form">
@@ -621,8 +624,8 @@ const isRegisterView = computed(() => authView.value === 'register')
               <div class="pwd-wrap">
                 <input v-model="fpNewPwd" :type="showFpNewPwd ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
                 <button class="pwd-toggle" @click="showFpNewPwd = !showFpNewPwd" type="button">
-                  <svg v-if="showFpNewPwd" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                  <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <EyeOff v-if="showFpNewPwd" :size="16" />
+                  <Eye v-else :size="16" />
                 </button>
               </div>
               <div v-if="fpNewPwd.length > 0" class="pwd-strength">
@@ -640,14 +643,14 @@ const isRegisterView = computed(() => authView.value === 'register')
               <div class="pwd-wrap">
                 <input v-model="fpConfirmPwd" :type="showFpConfirm ? 'text' : 'password'" class="form-input" :placeholder="t('sp_confirm_hint')" />
                 <button class="pwd-toggle" @click="showFpConfirm = !showFpConfirm" type="button">
-                  <svg v-if="showFpConfirm" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                  <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <EyeOff v-if="showFpConfirm" :size="16" />
+                  <Eye v-else :size="16" />
                 </button>
               </div>
             </div>
-            <button class="btn-primary btn-block" :disabled="fpSending" @click="fpReset">
+            <Button class="w-full" :disabled="fpSending" @click="fpReset">
               <span v-if="fpSending" class="spinner" /> {{ t('fp_reset_btn') }}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

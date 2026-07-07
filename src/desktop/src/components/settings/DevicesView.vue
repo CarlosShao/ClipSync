@@ -4,6 +4,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useDevice } from '@/composables/useDevice'
 import { useToast } from '@/composables/useToast'
 import { Monitor, Smartphone, Globe, Trash2, QrCode } from 'lucide-vue-next'
+import Button from '@/components/ui/button/Button.vue'
 
 const { t } = useI18n()
 const device = useDevice()
@@ -35,10 +36,10 @@ async function handleDelete(id: string, name: string) {
     <div class="sv-header">
       <h2 class="sv-title">{{ t('nav_devices') }}</h2>
       <div class="sv-actions">
-        <button class="btn-add" @click="emit('open-modal', 'pair-generate')">+ {{ t('pair_generate') }}</button>
-        <button class="btn-add btn-add-secondary" @click="emit('open-modal', 'pair-scan')">
+        <Button @click="emit('open-modal', 'pair-generate')">+ {{ t('pair_generate') }}</Button>
+        <Button variant="outline" @click="emit('open-modal', 'pair-scan')">
           <QrCode :size="14" /> {{ t('pair_scan') }}
-        </button>
+        </Button>
       </div>
     </div>
     <div class="devices-grid">
@@ -49,9 +50,9 @@ async function handleDelete(id: string, name: string) {
           </div>
           <div class="dev-actions">
             <div class="dev-status-dot" :class="{ on: d.online }" />
-            <button class="dev-delete" @click="handleDelete(d.id, d.name)" :title="t('delete_btn')">
+            <Button variant="ghost" size="icon" class="text-destructive" @click="handleDelete(d.id, d.name)" :title="t('delete_btn')">
               <Trash2 :size="14" />
-            </button>
+            </Button>
           </div>
         </div>
         <div class="dev-card-body">
