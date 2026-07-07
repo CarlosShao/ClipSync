@@ -105,7 +105,7 @@ function resetPwdForm() {
         <div class="sg-label"><div class="sg-name">{{ t('sg_lang') }}</div><div class="sg-hint">{{ t('sg_lang_h') }}</div></div>
         <Select v-model="langModel">
           <SelectTrigger class="sg-select"><SelectValue :placeholder="t('sg_lang')" /></SelectTrigger>
-          <SelectContent>
+          <SelectContent :side-offset="4">
             <SelectItem value="zh">{{ t('lang_zh') }}</SelectItem>
             <SelectItem value="en">{{ t('lang_en') }}</SelectItem>
           </SelectContent>
@@ -115,7 +115,7 @@ function resetPwdForm() {
         <div class="sg-label"><div class="sg-name">{{ t('sg_interval') }}</div><div class="sg-hint">{{ t('sg_interval_h') }}</div></div>
         <Select v-model="syncIntervalModel">
           <SelectTrigger class="sg-select"><SelectValue :placeholder="t('sg_interval')" /></SelectTrigger>
-          <SelectContent>
+          <SelectContent :side-offset="4">
             <SelectItem value="0">{{ t('int_rt') }}</SelectItem>
             <SelectItem value="5">{{ t('int_5m') }}</SelectItem>
             <SelectItem value="15">{{ t('int_15m') }}</SelectItem>
@@ -126,7 +126,7 @@ function resetPwdForm() {
         <div class="sg-label"><div class="sg-name">{{ t('sg_maxhist') }}</div><div class="sg-hint">{{ t('sg_maxhist_h') }}</div></div>
         <Select v-model="maxHistoryModel">
           <SelectTrigger class="sg-select"><SelectValue :placeholder="t('sg_maxhist')" /></SelectTrigger>
-          <SelectContent>
+          <SelectContent :side-offset="4">
             <SelectItem value="100">{{ t('hist_100') }}</SelectItem>
             <SelectItem value="500">{{ t('hist_500') }}</SelectItem>
             <SelectItem value="1000">{{ t('hist_1k') }}</SelectItem>
