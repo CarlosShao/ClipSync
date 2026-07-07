@@ -457,7 +457,9 @@ export function useClipboard() {
     const sizeStr = file.size < 1024 * 1024
       ? `${(file.size / 1024).toFixed(1)} KB`
       : `${(file.size / 1024 / 1024).toFixed(1)} MB`
-    const displayContent = JSON.stringify({ name: file.name, size: sizeStr, type: file.type || 'unknown' })
+    // Tauri 的 File 对象包含 .path 属性（本地完整路径）
+    const filePath = (file as any).path || ''
+    const displayContent = JSON.stringify({ name: file.name, size: sizeStr, type: file.type || 'unknown', path: filePath })
 
     // 乐观更新
     const localId = `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
