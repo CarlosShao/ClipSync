@@ -255,11 +255,11 @@ function truncate(str: string, max: number): string {
 
     <!-- Tab bar -->
     <div class="tab-bar">
-      <button :class="['tab-btn', { active: activeFilter === 'all' }]" @click="clip.setFilter('all')">{{ t('tab_all') }}</button>
-      <button :class="['tab-btn', { active: activeFilter === 'text' }]" @click="clip.setFilter('text')">{{ t('tab_text') }}</button>
-      <button :class="['tab-btn', { active: activeFilter === 'images' }]" @click="clip.setFilter('images')">{{ t('tab_images') }}</button>
-      <button :class="['tab-btn', { active: activeFilter === 'links' }]" @click="clip.setFilter('links')">{{ t('tab_links') }}</button>
-      <button :class="['tab-btn', { active: activeFilter === 'files' }]" @click="clip.setFilter('files')">{{ t('tab_files') }}</button>
+      <Button :variant="activeFilter === 'all' ? 'default' : 'ghost'" size="sm" @click="clip.setFilter('all')">{{ t('tab_all') }}</Button>
+      <Button :variant="activeFilter === 'text' ? 'default' : 'ghost'" size="sm" @click="clip.setFilter('text')">{{ t('tab_text') }}</Button>
+      <Button :variant="activeFilter === 'images' ? 'default' : 'ghost'" size="sm" @click="clip.setFilter('images')">{{ t('tab_images') }}</Button>
+      <Button :variant="activeFilter === 'links' ? 'default' : 'ghost'" size="sm" @click="clip.setFilter('links')">{{ t('tab_links') }}</Button>
+      <Button :variant="activeFilter === 'files' ? 'default' : 'ghost'" size="sm" @click="clip.setFilter('files')">{{ t('tab_files') }}</Button>
       <div class="tab-spacer" />
       <div class="search-wrap" :class="{ open: searchOpen }">
         <Button v-if="!searchOpen" variant="ghost" size="icon" class="btn-icon" @click="searchOpen = true">
@@ -349,7 +349,7 @@ function truncate(str: string, max: number): string {
               <Button v-if="item.type === 'file'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
                 <Folder :size="14" />
               </Button>
-              <Button variant="ghost" size="icon-sm" style="color:var(--danger)" @click="handleSingleDelete(item)" :title="t('delete')">
+              <Button variant="ghost" size="icon-sm" class="btn-action-hide" style="color:var(--danger)" @click="handleSingleDelete(item)" :title="t('delete')">
                 <Trash2 :size="14" />
               </Button>
             </td>
@@ -387,10 +387,7 @@ function truncate(str: string, max: number): string {
 .toolbar-right { display: flex; align-items: center; gap: 4px; }
 
 /* ===== TAB BAR ===== */
-.tab-bar { display: flex; align-items: center; gap: 2px; padding: 4px 14px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-base); flex-shrink: 0; }
-.tab-btn { padding: 4px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; border: none; background: transparent; color: var(--text-tertiary); cursor: pointer; }
-.tab-btn:hover { color: var(--text-secondary); background: var(--bg-hover); }
-.tab-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-card); }
+.tab-bar { display: flex; align-items: center; gap: 4px; padding: 4px 14px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-base); flex-shrink: 0; }
 .tab-spacer { flex: 1; }
 .search-wrap { display: flex; align-items: center; gap: 4px; }
 .search-input {
@@ -427,7 +424,6 @@ function truncate(str: string, max: number): string {
 .cell-actions { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
 .cell-actions .btn-action-hide { opacity: 0; transition: opacity 0.15s; }
 .clip-table tr:hover .cell-actions .btn-action-hide { opacity: 1; }
-.cell-actions > :last-child { opacity: 1; } /* delete button always visible */
 
 /* ===== EMPTY STATE ===== */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; text-align: center; }

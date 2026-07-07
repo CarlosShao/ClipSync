@@ -18,7 +18,10 @@ defineOptions({
 const props = withDefaults(
   defineProps<SelectContentProps & { class?: HTMLAttributes["class"] }>(),
   {
-    position: "item-aligned",
+    // shadcn-vue 官方默认就是 popper：用 floating-ui 整体定位内容框，
+    // 选项正常 flex 流式排列。item-aligned 会对每个 item 单独绝对定位，
+    // 在 Tauri webview 里测量失败就会全堆在触发框顶部 → 重叠+文字贴边。
+    position: "popper",
   },
 )
 const emits = defineEmits<SelectContentEmits>()
@@ -32,10 +35,16 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
   <SelectPortal>
     <SelectContent
       v-bind="{ ...forwarded, ...$attrs }"
-      :class="cn('z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95', props.class)"
+      :class="cn(
+        'relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+        position === 'popper'
+          && 'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
+        position === 'popper' && 'w-[var(--reka-select-trigger-width)] min-w-[8rem]',
+        props.class,
+      )"
     >
       <SelectScrollUpButton />
-      <SelectViewport class="p-1">
+      <SelectViewport :class="cn('p-1', position === 'popper' && 'h-[var(--reka-select-trigger-height)] w-full min-w-[var(--reka-select-trigger-width)]')">
         <slot />
       </SelectViewport>
       <SelectScrollDownButton />

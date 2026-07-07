@@ -145,8 +145,8 @@ function resetPwdForm() {
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_mode') }}</div><div class="sg-hint">{{ t('sg_mode_h') }}</div></div>
         <div class="mode-seg">
-          <button :class="['mode-btn', { active: currentMode === 'light' }]" @click="setMode('light')">{{ t('mode_light') }}</button>
-          <button :class="['mode-btn', { active: currentMode === 'dark' }]" @click="setMode('dark')">{{ t('mode_dark') }}</button>
+          <Button :variant="currentMode === 'light' ? 'default' : 'ghost'" size="sm" @click="setMode('light')">{{ t('mode_light') }}</Button>
+          <Button :variant="currentMode === 'dark' ? 'default' : 'ghost'" size="sm" @click="setMode('dark')">{{ t('mode_dark') }}</Button>
         </div>
       </div>
       <div class="sg-row">
@@ -283,9 +283,7 @@ function resetPwdForm() {
 .pwd-success { color: #22c55e; font-size: 12px; margin-top: 6px; }
 
 .sg-select { width: 160px; }
-.mode-seg { display: inline-flex; background: var(--bg-hover); border-radius: 8px; padding: 2px; border: 1px solid var(--border-default); }
-.mode-btn { border: none; background: transparent; padding: 3px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; color: var(--text-secondary); }
-.mode-btn.active { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.mode-seg { display: inline-flex; gap: 6px; }
 
 /* About / Version section */
 .about-section { margin-top: 8px; padding: 20px; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-hover) 100%); }

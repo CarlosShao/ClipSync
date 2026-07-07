@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import * as tauri from '@/lib/tauri'
-import { api } from '@/api/client'
+import { api, apiBlob } from '@/api/client'
 import { useConfigStore } from '@/stores/configStore'
 import { useI18n } from '@/composables/useI18n'
 
@@ -145,24 +145,22 @@ async function loadClipboardItems() {
               if (isDataUrl) {
                 renderSrc = raw
                 cacheContent(i.id, raw)
-              } else {
-                // contentEncrypted 是文件名（media.js 路径上传）→ 通过带认证的 fetch 获取图片
-                // <img> 标签无法携带 Bearer token，必须用 JS fetch 转 blob URL
-                try {
-                  const configStore = useConfigStore()
-                  const imgRes = await fetch(`${configStore.serverUrl}/api/media/${i.id}/preview`, {
-                    headers: { 'Authorization': `Bearer ${useConfigStore().config.token}` },
-                  })
-                  if (imgRes.ok) {
-                    const blob = await imgRes.blob()
-                    renderSrc = URL.createObjectURL(blob)
-                  } else {
-                    renderSrc = '' // 401/404 → 显示空占位
+                } else {
+                  // contentEncrypted 是文件名（media.js 路径上传）→ 通过带认证的 fetch 获取图片
+                  // <img> 标签无法携带 Bearer token，必须用 JS fetch 转 blob URL
+                  // 注意：必须用 apiBlob（带 CSRF），否则 /api/media 的 csrfProtection 会拒掉请求 → 图片 404
+                  try {
+                    const imgRes = await apiBlob('GET', `/api/media/${i.id}/preview`)
+                    if (imgRes && imgRes.ok) {
+                      const blob = await imgRes.blob()
+                      renderSrc = URL.createObjectURL(blob)
+                    } else {
+                      renderSrc = '' // 401/404 → 显示空占位
+                    }
+                  } catch {
+                    renderSrc = ''
                   }
-                } catch {
-                  renderSrc = ''
                 }
-              }
               const item = items.value.find(x => x.id === i.id)
               if (item) { item.content = isDataUrl ? raw : ''; item.preview = renderSrc }
             }
@@ -193,7 +191,7 @@ async function uploadToServer(content: string, type: ClipItem['type'] = 'text') 
   recentUploadHashes.set(hash, Date.now())
   // 立即添加到本地列表（乐观更新）
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-  items.value.unshift({ id: localId, type, content, source: 'Desktop', timestamp: Date.now() })
+  items.value.unshift({ id: localId, type, content, source: 'Desktop', timestamp: Date.now(), selected: false })
   // 获取设备ID
   let deviceId = localStorage.getItem('clipsync-device-id')
   if (!deviceId) {
