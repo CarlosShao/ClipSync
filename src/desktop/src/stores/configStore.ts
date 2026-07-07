@@ -79,13 +79,15 @@ export const useConfigStore = defineStore('config', () => {
     } catch { /* 设备注册失败不影响登录 */ }
   }
 
-  // 统一登录收尾：持久化 token + 注册设备。供 login(验证码) 与 二维码配对兑换 复用
+  // 统一登录收尾：持久化 token + 注册设备 + 拉取用户资料。供 login(验证码) 与 二维码配对兑换 复用
   async function completeLogin(authToken: string, userId: string) {
     config.value.token = authToken
     config.value.user_id = userId
     localStorage.setItem('clipsync-token', authToken)
     await save({ token: authToken, user_id: userId })
     await registerCurrentDevice(authToken)
+    // 登录成功后立即拉取用户资料（phone/email/nickname/avatarUrl）
+    await fetchUserProfile()
   }
 
   async function login(phone: string, code: string) {
@@ -147,10 +149,76 @@ export const useConfigStore = defineStore('config', () => {
     document.documentElement.classList.toggle('reduce-motion', reduceMotion.value)
   }
 
+  // 拉取用户资料并填充 user state（phone/email/nickname/avatarUrl/plan）
+  async function fetchUserProfile() {
+    try {
+      const serverUrl = config.value.server_url || ''
+      const token = config.value.token
+      if (!token) return
+      const res = await fetch(`${serverUrl}/api/auth/me`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data) {
+        user.value.name = data.nickname || user.value.name
+        user.value.email = data.email || user.value.email
+        user.value.phone = data.phone || user.value.phone
+        // avatarUrl 存到 localStorage 供 ProfileView 使用
+        if (data.avatarUrl) localStorage.setItem('clipsync-avatar', data.avatarUrl)
+      }
+    } catch { /* 静默失败，user 保持默认值 */ }
+  }
+
+  // 更新用户资料（昵称/头像）→ 同步调 API + 本地 state
+  async function updateUserProfile(partial: { displayName?: string; avatarUrl?: string }) {
+    const serverUrl = config.value.server_url || ''
+    const token = config.value.token
+    if (!token) return false
+    try {
+      const body: Record<string, any> = {}
+      if (partial.displayName !== undefined) body.nickname = partial.displayName
+      if (partial.avatarUrl !== undefined) body.avatarUrl = partial.avatarUrl
+      const res = await fetch(`${serverUrl}/api/auth/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        if (partial.displayName !== undefined) user.value.name = partial.displayName
+        if (partial.avatarUrl !== undefined) {
+          localStorage.setItem('clipsync-avatar', partial.avatarUrl)
+        }
+        return true
+      }
+      return false
+    } catch { return false }
+  }
+
+  // 修改密码（已登录状态，需要旧密码 + 新密码）
+  async function changePassword(oldPassword: string, newPassword: string): Promise<{ ok: boolean; error?: string }> {
+    const serverUrl = config.value.server_url || ''
+    const token = config.value.token
+    if (!token) return { ok: false, error: 'Not logged in' }
+    try {
+      const res = await fetch(`${serverUrl}/api/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ oldPassword, newPassword }),
+      })
+      const data = await res.json()
+      if (res.ok) return { ok: true }
+      return { ok: false, error: data.error || `HTTP ${res.status}` }
+    } catch (e: any) {
+      return { ok: false, error: e.message || 'Network error' }
+    }
+  }
+
   return {
     config, user, autostart, syncInterval, maxHistory, reduceMotion,
     autoSync, imageCompress,
     isLoggedIn, serverUrl, load, save, savePrefs, login, completeLogin, registerCurrentDevice,
+    fetchUserProfile, updateUserProfile, changePassword,
     toggleAutostart, toggleAutoSync, toggleImageCompress, toggleReduceMotion, logout,
   }
 })

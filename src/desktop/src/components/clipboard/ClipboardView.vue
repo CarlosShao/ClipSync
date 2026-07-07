@@ -59,9 +59,9 @@ async function handleFileUpload(e: Event) {
     // Size limit is enforced server-side by uploadFileItem, but do a client-side pre-check
     const planMaxBytes = (() => {
       const plan = configStore.user.plan || 'Free'
-      if (plan === 'Pro' || plan === 'pro' || plan === '专业版') return 20 * 1024 * 1024
-      if (plan === 'Enterprise' || plan === 'enterprise' || plan === '企业版') return 100 * 1024 * 1024
-      return 1 * 1024 * 1024 // Free default: 1MB
+      if (plan === 'Pro' || plan === 'pro' || plan === '专业版') return 256 * 1024 * 1024
+      if (plan === 'Enterprise' || plan === 'enterprise' || plan === '企业版') return 1024 * 1024 * 1024
+      return 128 * 1024 * 1024 // Free default: 128MB
     })()
     if (file.size > planMaxBytes) {
       const maxMb = Math.round(planMaxBytes / 1024 / 1024)

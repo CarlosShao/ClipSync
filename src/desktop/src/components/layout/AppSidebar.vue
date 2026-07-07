@@ -106,7 +106,7 @@ const accountNavItems = computed(() => [
 
     <!-- ===== Footer (expanded only: user + logout) ===== -->
     <div class="sb-footer" v-show="!isCollapsed">
-      <div class="user-chip">
+      <div class="user-chip" @click="emit('navigate', 'profile')" :title="t('nav_profile') || 'View Profile'">
         <div class="user-avatar-ring"><div class="user-avatar-in">{{ userName ? userName.slice(0, 2) : 'CS' }}</div></div>
         <div class="user-info">
           <div class="user-name">{{ userName || 'User' }}</div>
@@ -120,7 +120,7 @@ const accountNavItems = computed(() => [
     </div>
 
     <!-- Footer avatar dot (collapsed only) -->
-    <div class="sb-footer-dot" v-show="isCollapsed" :title="userName || 'User'">
+    <div class="sb-footer-dot" v-show="isCollapsed" :title="userName || 'User'" @click="emit('navigate', 'profile')" style="cursor:pointer;border-radius:var(--radius-md);transition:background .12s;">
       <div class="user-avatar-ring user-avatar-ring--sm"><div class="user-avatar-in user-avatar-in--sm">{{ userName ? userName.slice(0, 1) : 'C' }}</div></div>
     </div>
   </aside>
@@ -264,7 +264,8 @@ const accountNavItems = computed(() => [
   border-top: 1px solid var(--border-default);
 }
 
-.user-chip { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.user-chip { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer; border-radius: var(--radius-md); transition: background .12s; padding: 4px; }
+.user-chip:hover { background: var(--bg-hover); }
 .user-avatar-ring { width: 32px; height: 32px; border-radius: 50%; background: var(--gradient-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .user-avatar-ring--sm { width: 28px; height: 28px; }
 .user-avatar-in { width: 28px; height: 28px; border-radius: 50%; background: var(--bg-sidebar); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }

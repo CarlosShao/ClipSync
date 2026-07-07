@@ -15,6 +15,15 @@ const syncIntervalModel = ref(String(configStore.syncInterval))
 const maxHistoryModel = ref(String(configStore.maxHistory))
 const appVersion = '0.1.0'
 
+// Password change form state
+const showPwdChange = ref(false)
+const pwdOld = ref('')
+const pwdNew = ref('')
+const pwdConfirm = ref('')
+const pwdChanging = ref(false)
+const pwdError = ref('')
+const pwdSuccess = ref('')
+
 function onMaxHistoryChange() {
   const val = Number(maxHistoryModel.value)
   if (val === 999999 && configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise') {
@@ -24,6 +33,33 @@ function onMaxHistoryChange() {
   }
   configStore.maxHistory = val
   configStore.savePrefs()
+}
+
+async function handleChangePassword() {
+  pwdError.value = ''
+  pwdSuccess.value = ''
+  if (!pwdOld.value) { pwdError.value = t('pwd_old_required') || '请输入当前密码'; return }
+  if (!pwdNew.value) { pwdError.value = t('pwd_new_required') || '请输入新密码'; return }
+  if (pwdNew.value.length < 8) { pwdError.value = t('pwd_min_length') || '新密码至少8位'; return }
+  if (pwdNew.value !== pwdConfirm.value) { pwdError.value = t('pwd_mismatch') || '两次输入的新密码不一致'; return }
+
+  pwdChanging.value = true
+  const result = await configStore.changePassword(pwdOld.value, pwdNew.value)
+  pwdChanging.value = false
+
+  if (result.ok) {
+    pwdSuccess.value = t('pwd_changed_ok') || '密码修改成功'
+    resetPwdForm()
+    showPwdChange.value = false
+  } else {
+    pwdError.value = result.error || (t('pwd_change_fail') || '密码修改失败')
+  }
+}
+
+function resetPwdForm() {
+  pwdOld.value = ''
+  pwdNew.value = ''
+  pwdConfirm.value = ''
 }
 
 </script>
@@ -106,6 +142,32 @@ function onMaxHistoryChange() {
         <div class="sg-label"><div class="sg-name">{{ t('sg_notifp') }}</div><div class="sg-hint">{{ t('sg_notifp_h') }}</div></div>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sg-arrow"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
+      <!-- Change Password -->
+      <div class="sg-row" style="cursor:pointer;" @click="showPwdChange = !showPwdChange">
+        <div class="sg-label"><div class="sg-name">{{ t('sg_chpwd') || '修改密码' }}</div><div class="sg-hint">{{ t('sg_chpwd_h') || '输入旧密码和新密码以修改登录密码' }}</div></div>
+        <svg :class="['sg-arrow', { 'sg-arrow--rotated': showPwdChange }]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <!-- Password change form (inline expand) -->
+      <div v-if="showPwdChange" class="pwd-change-form">
+        <div class="pwd-field">
+          <label>{{ t('pwd_old') || '当前密码' }}</label>
+          <input v-model="pwdOld" type="password" class="sg-input sg-input--block" :placeholder="t('pwd_old_ph') || '输入当前密码'" />
+        </div>
+        <div class="pwd-field">
+          <label>{{ t('pwd_new') || '新密码' }}</label>
+          <input v-model="pwdNew" type="password" class="sg-input sg-input--block" :placeholder="t('pwd_new_ph') || '至少8位字符'" minlength="8" />
+        </div>
+        <div class="pwd-field">
+          <label>{{ t('pwd_confirm') || '确认新密码' }}</label>
+          <input v-model="pwdConfirm" type="password" class="sg-input sg-input--block" :placeholder="t('pwd_confirm_ph') || '再次输入新密码'" @keyup.enter="handleChangePassword" />
+        </div>
+        <div class="pwd-actions">
+          <button class="btn btn-sm btn-primary" @click="handleChangePassword" :disabled="pwdChanging">{{ pwdChanging ? (t('saving') || '修改中...') : (t('sg_chpwd_btn') || '确认修改') }}</button>
+          <button class="btn btn-sm btn-ghost" @click="showPwdChange = false; resetPwdForm()">{{ t('cancel_btn') }}</button>
+        </div>
+        <div v-if="pwdError" class="pwd-error">{{ pwdError }}</div>
+        <div v-if="pwdSuccess" class="pwd-success">{{ pwdSuccess }}</div>
+      </div>
     </div>
 
     <div class="settings-group">
@@ -169,7 +231,23 @@ function onMaxHistoryChange() {
 .sg-label { flex: 1; min-width: 0; }
 .sg-name { font-size: 14px; font-weight: 500; }
 .sg-hint { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
-.sg-arrow { color: var(--text-tertiary); opacity: .5; flex-shrink: 0; }
+.sg-arrow--rotated { transform: rotate(180deg); }
+
+/* Password change inline form */
+.pwd-change-form {
+  margin: 4px 0 8px;
+  padding: 14px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+.pwd-field { margin-bottom: 10px; }
+.pwd-field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px; }
+.pwd-field input[type="password"] { height: 32px; padding: 0 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-primary); font-size: 13px; outline: none; width: 100%; box-sizing: border-box; }
+.pwd-field input[type="password"]:focus { border-color: var(--accent); }
+.pwd-actions { display: flex; gap: 6px; margin-top: 8px; }
+.pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
+.pwd-success { color: #22c55e; font-size: 12px; margin-top: 6px; }
 .toggle { position: relative; display: inline-block; width: 40px; height: 22px; cursor: pointer; border-radius: 11px; background: var(--border-default); border: none; padding: 0; flex-shrink: 0; transition: background 0.2s; }
 .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: white; transition: left 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
 .toggle.on { background: var(--accent); }
