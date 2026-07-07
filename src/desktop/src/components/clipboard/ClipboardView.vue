@@ -10,6 +10,7 @@ import {
   ExternalLink, FileText, Folder, ClipboardList,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
+import Input from '@/components/ui/input/Input.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 
 const emit = defineEmits<{
@@ -251,7 +252,7 @@ function truncate(str: string, max: number): string {
         <Button v-if="!searchOpen" variant="ghost" size="icon" class="btn-icon" @click="searchOpen = true">
           <Search :size="14" />
         </Button>
-        <input v-else v-model="searchInput" type="text" :placeholder="t('search_ph')" class="search-input"
+        <Input v-else v-model="searchInput" type="text" :placeholder="t('search_ph')" class="search-input"
           @blur="handleSearchBlur" @input="clip.setSearch(searchInput)" />
       </div>
       <Button :class="['btn-icon', { active: batchMode }]" variant="ghost" size="icon" @click="toggleBatchMode" :title="t('batch_select')">
