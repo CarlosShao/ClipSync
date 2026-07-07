@@ -52,6 +52,12 @@ export const useConfigStore = defineStore('config', () => {
       if (typeof prefs.autoSync === 'boolean') autoSync.value = prefs.autoSync
       if (typeof prefs.imageCompress === 'boolean') imageCompress.value = prefs.imageCompress
     } catch { /* ignore corrupt data */ }
+
+    // 有 token 时立即从后端拉取用户资料（name/email/phone/plan/avatar）
+    // 否则重开 app 后所有 profile 字段永远显示 "Not set"
+    if (config.value.token) {
+      await fetchUserProfile()
+    }
   }
 
   async function save(partial: Partial<AppConfig>) {
@@ -164,6 +170,7 @@ export const useConfigStore = defineStore('config', () => {
         user.value.name = data.nickname || user.value.name
         user.value.email = data.email || user.value.email
         user.value.phone = data.phone || user.value.phone
+        user.value.plan = data.plan || user.value.plan
         // avatarUrl 存到 localStorage 供 ProfileView 使用
         if (data.avatarUrl) localStorage.setItem('clipsync-avatar', data.avatarUrl)
       }
