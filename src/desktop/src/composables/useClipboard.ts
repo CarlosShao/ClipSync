@@ -436,16 +436,16 @@ export function useClipboard() {
 
   /** 从文件选择器上传文件到剪贴板 */
   async function uploadFileItem(file: File): Promise<void> {
-    // 按套餐分级限制上传大小（docs/production-roadmap.md 规格）
-    // Free: 1MB, Pro: 20MB, Enterprise: 100MB
+    // 按套餐分级限制上传大小（2026-07-07 调整）
+    // Free: 128MB, Pro: 256MB, Enterprise: 1GB
     const configStore = useConfigStore()
     const planLimits: Record<string, number> = {
-      'Free': 1, 'free': 1, '免费版': 1,
-      'Pro': 20, 'pro': 20, '专业版': 20,
-      'Enterprise': 100, 'enterprise': 100, '企业版': 100,
+      'Free': 128, 'free': 128, '免费版': 128,
+      'Pro': 256, 'pro': 256, '专业版': 256,
+      'Enterprise': 1024, 'enterprise': 1024, '企业版': 1024,
     }
     const userPlan = configStore.user.plan || 'Free'
-    const maxMb = planLimits[userPlan] || 1 // 默认免费版 1MB
+    const maxMb = planLimits[userPlan] || 128 // 默认免费版 128MB
     const maxBytes = maxMb * 1024 * 1024
 
     if (file.size > maxBytes) {

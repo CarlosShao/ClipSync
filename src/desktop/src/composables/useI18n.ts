@@ -166,6 +166,20 @@ const _dicts: Record<Lang, I18nDict> = {
     val_nickname_long:'Up to 30 characters only',
     val_nickname_invalid:'Only letters, numbers, underscores and Chinese allowed',
     val_email_invalid:'Invalid email format',
+    val_email_required:'Email is required',
+    // Password change
+    sg_chpwd:'Change Password', sg_chpwd_h:'Enter current password and new password to update login password',
+    sg_chpwd_btn:'Confirm Change', pwd_old:'Current Password', pwd_old_ph:'Enter current password',
+    pwd_new:'New Password', pwd_new_ph:'At least 8 characters', pwd_confirm:'Confirm New Password',
+    pwd_confirm_ph:'Re-enter new password', pwd_old_required:'Please enter current password',
+    pwd_new_required:'Please enter new password', pwd_min_length:'New password must be at least 8 characters',
+    pwd_mismatch:'The two new passwords do not match', pwd_change_fail:'Failed to change password',
+    pwd_changed_ok:'Password changed successfully', saving:'Saving...',
+    // Avatar
+    avatar_change:'Click to change avatar', avatar_img_only:'Please select an image file',
+    avatar_too_big:'Image cannot exceed 5MB', avatar_saved:'Avatar updated',
+    // Profile hint
+    pwd_change_hint:'To change password, go to Settings → Privacy & Security → Change Password',
     val_code_6digit:'Verification code must be 6 digits',
     err_dup_phone:'This phone number is already registered',
     err_dup_email:'This email is already in use',
@@ -303,6 +317,20 @@ const _dicts: Record<Lang, I18nDict> = {
     val_nickname_long:'最多30个字符',
     val_nickname_invalid:'只允许字母、数字、下划线和中文',
     val_email_invalid:'邮箱格式不正确',
+    val_email_required:'请输入邮箱地址',
+    // Password change
+    sg_chpwd:'修改密码', sg_chpwd_h:'输入旧密码和新密码以更新登录密码',
+    sg_chpwd_btn:'确认修改', pwd_old:'当前密码', pwd_old_ph:'输入当前密码',
+    pwd_new:'新密码', pwd_new_ph:'至少8位字符', pwd_confirm:'确认新密码',
+    pwd_confirm_ph:'再次输入新密码', pwd_old_required:'请输入当前密码',
+    pwd_new_required:'请输入新密码', pwd_min_length:'新密码至少8位',
+    pwd_mismatch:'两次输入的新密码不一致', pwd_change_fail:'密码修改失败',
+    pwd_changed_ok:'密码修改成功', saving:'保存中...',
+    // Avatar
+    avatar_change:'点击更换头像', avatar_img_only:'请选择图片文件',
+    avatar_too_big:'图片不能超过 5MB', avatar_saved:'头像已更新',
+    // Profile hint
+    pwd_change_hint:'修改密码请前往 设置 → 隐私和安全 → 修改密码',
     val_code_6digit:'验证码必须是6位数字',
     err_dup_phone:'此手机号已被注册',
     err_dup_email:'此邮箱已被使用',

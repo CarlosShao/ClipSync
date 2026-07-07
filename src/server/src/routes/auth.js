@@ -994,7 +994,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
 
     const result = await pool.query(
-      'SELECT id, phone, nickname, avatar_url FROM users WHERE id = $1',
+      'SELECT id, phone, email, nickname, avatar_url FROM users WHERE id = $1',
       [userId]
     );
 
@@ -1006,6 +1006,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     res.json({
       id: user.id,
       phone: user.phone,
+      email: user.email,
       nickname: user.nickname,
       avatarUrl: user.avatar_url,
     });
@@ -1442,6 +1443,56 @@ router.put('/consent', authenticateToken, async (req, res) => {
   } catch (err) {
     logger.error('Update consent error:', { error: err.message });
     res.status(500).json({ error: 'Failed to update consent preferences' });
+  }
+});
+
+// 修改密码（已登录状态，需要旧密码验证）
+router.post('/change-password', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { oldPassword, newPassword } = req.body;
+
+    // 验证输入
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ error: 'Old password and new password are required' });
+    }
+    if (typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters long' });
+    }
+
+    // 查询当前用户密码
+    const userResult = await pool.query(
+      'SELECT id, password_hash FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = userResult.rows[0];
+
+    // 如果账户有旧密码，必须验证
+    if (user.password_hash) {
+      const valid = await bcrypt.compare(oldPassword, user.password_hash);
+      if (!valid) {
+        return res.status(401).json({ error: 'Current password is incorrect' });
+      }
+    }
+
+    // 哈希新密码并更新
+    const newPasswordHash = await bcrypt.hash(newPassword, 12);
+    await pool.query(
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+      [newPasswordHash, userId]
+    );
+
+    logger.info(`[ChangePassword] Password changed successfully for user ${userId}`);
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (err) {
+    logger.error('Change password error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to change password' });
   }
 });
 
