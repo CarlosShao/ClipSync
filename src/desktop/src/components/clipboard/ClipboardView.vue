@@ -218,13 +218,37 @@ function formatContent(item: ClipItem): string {
   if (item.type === 'file') {
     try {
       const parsed = JSON.parse(item.content)
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((p: string) => p.split(/[/\\]/).pop() || p).join(', ')
-      }
-      if (parsed && typeof parsed === 'object' && parsed.name) {
+      // 新格式（uploadFileItem）: { name, size, type, path }
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.name) {
         return String(parsed.name)
       }
-    } catch { /* 解析失败，显示原始内容 */ }
+      // 旧格式/剪贴板监控（readAndUpload）: 路径数组 ["D:\\path\\to\\file"]
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((p: any): string => {
+          if (typeof p !== 'string') return String(p)
+          // 从完整路径中提取文件名
+          return p.split(/[/\\]/).pop() || p
+        }).join(', ')
+      }
+    } catch {
+      /* JSON 解析失败，走下面的兜底提取 */
+    }
+    // 兜底：用正则从原始内容中提取文件名
+    // 匹配 "...\filename.ext" 或 [..."\path\to\filename.ext"...]
+    const raw = item.content.trim()
+    // 尝试匹配 JSON 数组中的路径元素
+    const pathMatches = raw.match(/"([^"]*(?:[\\/][^"/\\]+))"/g)
+    if (pathMatches && pathMatches.length > 0) {
+      return pathMatches.map(m => {
+        // 去掉首尾引号后取最后一部分
+        const inner = m.slice(1, -1)
+        return inner.split(/[/\\]/).pop() || inner
+      }).join(', ')
+    }
+    // 最后兜底：如果内容看起来像路径，直接取文件名部分
+    if (raw.includes('\\') || raw.includes('/')) {
+      return raw.split(/[/\\]/).pop() || truncate(raw, 60)
+    }
   }
   return truncate(item.content, 120)
 }
