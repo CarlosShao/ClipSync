@@ -15,6 +15,8 @@ const props = defineProps<{
   itemsCount: number
   userName: string
   userPlan: string
+  userEmail?: string
+  userAvatarUrl?: string
 }>()
 
 const emit = defineEmits<{
@@ -98,9 +100,14 @@ const accountNavItems = computed(() => [
     <!-- ===== Footer (expanded only: user + logout) ===== -->
     <div class="sb-footer" v-show="!isCollapsed">
       <div class="user-chip" @click="emit('navigate', 'profile')" :title="t('nav_profile') || 'View Profile'">
-        <div class="user-avatar-ring"><div class="user-avatar-in">{{ userName ? userName.slice(0, 2) : 'CS' }}</div></div>
+        <!-- 实际头像图片（优先），fallback 到首字母 -->
+        <div class="user-avatar-ring">
+          <img v-if="userAvatarUrl" :src="userAvatarUrl" alt="" class="user-avatar-img" />
+          <div v-else class="user-avatar-in">{{ userName ? userName.slice(0, 2) : 'CS' }}</div>
+        </div>
         <div class="user-info">
           <div class="user-name">{{ userName || 'User' }}</div>
+          <div v-if="userEmail" class="user-email">{{ userEmail }}</div>
           <div class="user-role">{{ t(userPlan === 'Pro' ? 'role_pro' : 'role_free') }}</div>
         </div>
       </div>
@@ -287,9 +294,11 @@ const accountNavItems = computed(() => [
 .user-avatar-ring { width: 34px; height: 34px; border-radius: 50%; background: var(--gradient-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 .user-avatar-ring--sm { width: 28px; height: 28px; }
 .user-avatar-in { width: 30px; height: 30px; border-radius: 50%; background: var(--bg-sidebar); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+.user-avatar-img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
 .user-avatar-in--sm { width: 24px; height: 24px; font-size: 10px; }
 .user-info { flex: 1; min-width: 0; }
 .user-name { font-size: 13px; font-weight: 500; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-email { font-size: 11px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-role { font-size: 11px; color: var(--text-tertiary); }
 
 /* Logout button — override shadcn ghost for sidebar footer style */

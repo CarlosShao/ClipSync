@@ -215,39 +215,44 @@ function getTypeLabel(type: string): string {
 }
 
 function formatContent(item: ClipItem): string {
-  if (item.type === 'file') {
+  // 文件类型检测：显式 type === 'file' 或内容以 JSON 数组（路径）开头
+  const isFileContent = item.type === 'file' ||
+    (item.content && item.content.trimStart().startsWith('[') && item.content.includes('\\'))
+
+  if (isFileContent) {
     try {
       const parsed = JSON.parse(item.content)
       // 新格式（uploadFileItem）: { name, size, type, path }
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.name) {
         return String(parsed.name)
       }
-      // 旧格式/剪贴板监控（readAndUpload）: 路径数组 ["D:\\path\\to\\file"]
+      // 剪贴板监控（readAndUpload）或旧格式: 路径数组 ["D:\\path\\to\\file"]
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed.map((p: any): string => {
           if (typeof p !== 'string') return String(p)
           // 从完整路径中提取文件名
-          return p.split(/[/\\]/).pop() || p
+          const filename = p.split(/[/\\]/).pop()
+          return filename || p
         }).join(', ')
       }
     } catch {
       /* JSON 解析失败，走下面的兜底提取 */
     }
-    // 兜底：用正则从原始内容中提取文件名
-    // 匹配 "...\filename.ext" 或 [..."\path\to\filename.ext"...]
+    // 兜底：用正则从原始内容中提取所有文件名
     const raw = item.content.trim()
-    // 尝试匹配 JSON 数组中的路径元素
-    const pathMatches = raw.match(/"([^"]*(?:[\\/][^"/\\]+))"/g)
+    // 匹配 JSON 数组中的路径元素: "C:\path\to\file.ext"
+    const pathMatches = raw.match(/"([^"]*(?:[\\/][^"/\\]+\.[^"/\\]+))"/g)
     if (pathMatches && pathMatches.length > 0) {
       return pathMatches.map(m => {
-        // 去掉首尾引号后取最后一部分
         const inner = m.slice(1, -1)
         return inner.split(/[/\\]/).pop() || inner
       }).join(', ')
     }
-    // 最后兜底：如果内容看起来像路径，直接取文件名部分
+    // 最后兜底：内容含路径分隔符，直接取最后一段
     if (raw.includes('\\') || raw.includes('/')) {
-      return raw.split(/[/\\]/).pop() || truncate(raw, 60)
+      // 先去掉 JSON 外壳 [] 和引号
+      const stripped = raw.replace(/^\[/, '').replace(/\]$/, '').replace(/^"|"$/g, '')
+      return stripped.split(/[/\\]/).pop() || truncate(raw, 60)
     }
   }
   return truncate(item.content, 120)
