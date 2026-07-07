@@ -4,24 +4,19 @@ import { useI18n } from '@/composables/useI18n'
 import { useTheme, currentMode } from '@/composables/useTheme'
 import { useConfigStore } from '@/stores/configStore'
 import { useToast } from '@/composables/useToast'
-import { ChevronRight, ChevronDown, Github } from 'lucide-vue-next'
+import { ChevronRight, ChevronDown, Github, Sun, Moon, Monitor } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import CustomSelect from '@/components/ui/select/CustomSelect.vue'
+import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
 
 const { t, currentLang, setLang } = useI18n()
 const { setMode } = useTheme()
 const configStore = useConfigStore()
 const toast = useToast()
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
-const langModel = ref(currentLang.value)
+const langModel = ref<string>(currentLang.value as string)
 const syncIntervalModel = ref(String(configStore.syncInterval))
 const maxHistoryModel = ref(String(configStore.maxHistory))
 const appVersion = '0.1.0'
@@ -47,7 +42,7 @@ function onMaxHistoryChange() {
 }
 
 // reka Select emits update:modelValue; re-sync side effects
-watch(langModel, (v) => setLang(v))
+watch(langModel, (v) => setLang(v as 'zh' | 'en'))
 watch(syncIntervalModel, (v) => {
   configStore.syncInterval = Number(v)
   configStore.savePrefs()
@@ -103,36 +98,36 @@ function resetPwdForm() {
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_lang') }}</div><div class="sg-hint">{{ t('sg_lang_h') }}</div></div>
-        <Select v-model="langModel">
-          <SelectTrigger class="sg-select"><SelectValue :placeholder="t('sg_lang')" /></SelectTrigger>
-          <SelectContent :side-offset="4">
-            <SelectItem value="zh">{{ t('lang_zh') }}</SelectItem>
-            <SelectItem value="en">{{ t('lang_en') }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <CustomSelect v-model="langModel">
+          {{ langModel === 'zh' ? t('lang_zh') : t('lang_en') }}
+          <template #options>
+            <CustomSelectOption value="zh" :selected="langModel === 'zh'" @select="(v: string) => { langModel = v; setLang(v as 'zh' | 'en') }">{{ t('lang_zh') }}</CustomSelectOption>
+            <CustomSelectOption value="en" :selected="langModel === 'en'" @select="(v: string) => { langModel = v; setLang(v as 'zh' | 'en') }">{{ t('lang_en') }}</CustomSelectOption>
+          </template>
+        </CustomSelect>
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_interval') }}</div><div class="sg-hint">{{ t('sg_interval_h') }}</div></div>
-        <Select v-model="syncIntervalModel">
-          <SelectTrigger class="sg-select"><SelectValue :placeholder="t('sg_interval')" /></SelectTrigger>
-          <SelectContent :side-offset="4">
-            <SelectItem value="0">{{ t('int_rt') }}</SelectItem>
-            <SelectItem value="5">{{ t('int_5m') }}</SelectItem>
-            <SelectItem value="15">{{ t('int_15m') }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <CustomSelect v-model="syncIntervalModel">
+          {{ syncIntervalModel === '0' ? t('int_rt') : syncIntervalModel === '5' ? t('int_5m') : t('int_15m') }}
+          <template #options>
+            <CustomSelectOption value="0" :selected="syncIntervalModel === '0'" @select="(v) => syncIntervalModel = v">{{ t('int_rt') }}</CustomSelectOption>
+            <CustomSelectOption value="5" :selected="syncIntervalModel === '5'" @select="(v) => syncIntervalModel = v">{{ t('int_5m') }}</CustomSelectOption>
+            <CustomSelectOption value="15" :selected="syncIntervalModel === '15'" @select="(v) => syncIntervalModel = v">{{ t('int_15m') }}</CustomSelectOption>
+          </template>
+        </CustomSelect>
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_maxhist') }}</div><div class="sg-hint">{{ t('sg_maxhist_h') }}</div></div>
-        <Select v-model="maxHistoryModel">
-          <SelectTrigger class="sg-select"><SelectValue :placeholder="t('sg_maxhist')" /></SelectTrigger>
-          <SelectContent :side-offset="4">
-            <SelectItem value="100">{{ t('hist_100') }}</SelectItem>
-            <SelectItem value="500">{{ t('hist_500') }}</SelectItem>
-            <SelectItem value="1000">{{ t('hist_1k') }}</SelectItem>
-            <SelectItem value="999999" :disabled="configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise'">{{ t('hist_unl') }}{{ configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise' ? ` (${t('upgrade_required')})` : '' }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <CustomSelect v-model="maxHistoryModel">
+          {{ maxHistoryModel === '100' ? t('hist_100') : maxHistoryModel === '500' ? t('hist_500') : maxHistoryModel === '1000' ? t('hist_1k') : t('hist_unl') }}
+          <template #options>
+            <CustomSelectOption value="100" :selected="maxHistoryModel === '100'" @select="(v) => maxHistoryModel = v">{{ t('hist_100') }}</CustomSelectOption>
+            <CustomSelectOption value="500" :selected="maxHistoryModel === '500'" @select="(v) => maxHistoryModel = v">{{ t('hist_500') }}</CustomSelectOption>
+            <CustomSelectOption value="1000" :selected="maxHistoryModel === '1000'" @select="(v) => maxHistoryModel = v">{{ t('hist_1k') }}</CustomSelectOption>
+            <CustomSelectOption value="999999" :selected="maxHistoryModel === '999999'" :disabled="configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise'" @select="(v) => maxHistoryModel = v">{{ t('hist_unl') }}{{ configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise' ? ` (${t('upgrade_required')})` : '' }}</CustomSelectOption>
+          </template>
+        </CustomSelect>
       </div>
     </div>
 
@@ -145,8 +140,14 @@ function resetPwdForm() {
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_mode') }}</div><div class="sg-hint">{{ t('sg_mode_h') }}</div></div>
         <div class="mode-seg">
-          <Button :variant="currentMode === 'light' ? 'default' : 'ghost'" size="sm" @click="setMode('light')">{{ t('mode_light') }}</Button>
-          <Button :variant="currentMode === 'dark' ? 'default' : 'ghost'" size="sm" @click="setMode('dark')">{{ t('mode_dark') }}</Button>
+          <button class="mode-seg-btn" :class="{ active: currentMode === 'light' }" @click="setMode('light')">
+            <Sun :size="14" />
+            <span>{{ t('mode_light') }}</span>
+          </button>
+          <button class="mode-seg-btn" :class="{ active: currentMode === 'dark' }" @click="setMode('dark')">
+            <Moon :size="14" />
+            <span>{{ t('mode_dark') }}</span>
+          </button>
         </div>
       </div>
       <div class="sg-row">
@@ -196,8 +197,8 @@ function resetPwdForm() {
           <Input v-model="pwdConfirm" type="password" class="sg-input--block" :placeholder="t('pwd_confirm_ph') || '再次输入新密码'" @keyup.enter="handleChangePassword" />
         </div>
         <div class="pwd-actions">
-          <Button size="sm" @click="handleChangePassword" :disabled="pwdChanging">{{ pwdChanging ? (t('saving') || '修改中...') : (t('sg_chpwd_btn') || '确认修改') }}</Button>
-          <Button size="sm" variant="ghost" @click="showPwdChange = false; resetPwdForm()">{{ t('cancel_btn') }}</Button>
+          <Button size="default" @click="handleChangePassword" :disabled="pwdChanging">{{ pwdChanging ? (t('saving') || '修改中...') : (t('sg_chpwd_btn') || '确认修改') }}</Button>
+          <Button size="default" variant="outline" @click="showPwdChange = false; resetPwdForm()">{{ t('cancel_btn') }}</Button>
         </div>
         <div v-if="pwdError" class="pwd-error">{{ pwdError }}</div>
         <div v-if="pwdSuccess" class="pwd-success">{{ pwdSuccess }}</div>
@@ -278,12 +279,23 @@ function resetPwdForm() {
 }
 .pwd-field { margin-bottom: 10px; }
 .pwd-field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px; }
-.pwd-actions { display: flex; gap: 6px; margin-top: 8px; }
+.pwd-actions { display: flex; gap: 10px; margin-top: 12px; }
 .pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
 .pwd-success { color: #22c55e; font-size: 12px; margin-top: 6px; }
 
 .sg-select { width: 160px; }
-.mode-seg { display: inline-flex; gap: 6px; }
+.mode-seg { display: inline-flex; gap: 0; border: 1px solid var(--border-default); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-hover); }
+.mode-seg-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border: none; background: transparent;
+  font-size: 13px; font-weight: 500; color: var(--text-secondary);
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
+}
+.mode-seg-btn:hover:not(.active) { color: var(--text-primary); background: var(--bg-active); }
+.mode-seg-btn.active {
+  background: var(--bg-surface); color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
 
 /* About / Version section */
 .about-section { margin-top: 8px; padding: 20px; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-hover) 100%); }

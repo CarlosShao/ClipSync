@@ -36,11 +36,13 @@ async function handleDelete(id: string, name: string) {
     <div class="sv-header">
       <h2 class="sv-title">{{ t('nav_devices') }}</h2>
       <div class="sv-actions">
-        <Button variant="outline" size="lg" class="px-6 py-2.5" @click="emit('open-modal', 'pair-generate')">
-          <Plus :size="15" /> {{ t('pair_generate') }}
+        <Button variant="outline" size="default" @click="emit('open-modal', 'pair-generate')" class="device-action-btn">
+          <Plus :size="16" />
+          <span>{{ t('pair_generate') }}</span>
         </Button>
-        <Button variant="outline" size="lg" class="px-6 py-2.5" @click="emit('open-modal', 'pair-scan')">
-          <QrCode :size="15" /> {{ t('pair_scan') }}
+        <Button variant="outline" size="default" @click="emit('open-modal', 'pair-scan')" class="device-action-btn">
+          <QrCode :size="16" />
+          <span>{{ t('pair_scan') }}</span>
         </Button>
       </div>
     </div>
@@ -73,9 +75,9 @@ async function handleDelete(id: string, name: string) {
 <style scoped>
 .settings-view { padding: 24px; max-width: 720px; overflow-y: auto; flex: 1; }
 .sv-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-.sv-actions { display: flex; gap: 8px; }
-.btn-add-secondary { display: inline-flex; align-items: center; gap: 5px; }
-.sv-title { font-size: 22px; font-weight: 700; margin: 0; }
+.sv-actions { display: flex; gap: 12px; }
+.device-action-btn { gap: 8px !important; padding: 0 20px !important; }
+.sv-title { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
 .devices-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .dev-card { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 16px; transition: all 0.15s; }
 .dev-card:hover { border-color: var(--accent); box-shadow: var(--shadow-elevated); transform: translateY(-1px); }

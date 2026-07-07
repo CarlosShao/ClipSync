@@ -122,8 +122,8 @@ app.use((req, res, next) => {
 // ============================================
 // Body Parser with size limits
 // ============================================
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ extended: false, limit: '5mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
 // Disable X-Powered-By
 app.disable('x-powered-by');

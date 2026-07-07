@@ -48,7 +48,7 @@ function onBackdropClick(e: MouseEvent) {
 .modal-panel {
   width: 90vw; background: var(--bg-surface);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-modal);
   animation: slideUp 0.15s ease;
   max-height: 85vh; overflow: hidden;
@@ -57,20 +57,20 @@ function onBackdropClick(e: MouseEvent) {
 @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px; border-bottom: 1px solid var(--border-default);
+  padding: 18px 24px; border-bottom: 1px solid var(--border-default);
   flex-shrink: 0;
 }
-.modal-title-text { font-size: 15px; font-weight: 600; }
-.modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.modal-title-text { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.modal-body { padding: 24px; overflow-y: auto; flex: 1; }
 .modal-footer {
-  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
-  padding: 12px 20px; border-top: 1px solid var(--border-default); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  padding: 14px 24px; border-top: 1px solid var(--border-default); flex-shrink: 0;
 }
 .btn-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  width: 32px; height: 32px; border-radius: var(--radius-md);
   background: transparent; border: none; color: var(--text-secondary);
-  cursor: pointer;
+  cursor: pointer; transition: all 0.15s;
 }
 .btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); }
 </style>

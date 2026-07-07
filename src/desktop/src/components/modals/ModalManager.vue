@@ -8,6 +8,7 @@ import { api } from '@/api/client'
 import { useConfigStore } from '@/stores/configStore'
 import { useDevice } from '@/composables/useDevice'
 import { initPairing, redeemPairing } from '@/api/device'
+import * as tauri from '@/lib/tauri'
 import QRCode from 'qrcode'
 import jsQR from 'jsqr'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
@@ -143,9 +144,10 @@ function startRecord(id: string) {
   // Double nextTick + type guard: ModalDialog may have enter animation,
   // v-else branch might not be mounted on first tick; ref may resolve
   // to non-DOM object in Tauri webview edge cases.
+  // Note: ref inside v-for becomes an array in Vue 3, so we need to handle both cases.
   nextTick(() => {
     nextTick(() => {
-      const el = recorderEl.value
+      const el = Array.isArray(recorderEl.value) ? recorderEl.value[0] : recorderEl.value
       if (el && typeof el.focus === 'function') {
         el.focus()
       }
@@ -170,11 +172,14 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.altKey) keys.push('Alt')
   if (e.shiftKey) keys.push('Shift')
   const mainKey = e.key.length === 1 ? e.key.toUpperCase() : e.key
-  if (mainKey && !['Control','Alt','Shift','Meta'].includes(mainKey)) {
-    keys.push(mainKey)
-  }
+  // 主键必须是非修饰键（如 M、A、1、F5 等）；Control/Alt/Shift/Meta 只是修饰键
+  const isMain = mainKey && !['Control','Alt','Shift','Meta'].includes(mainKey)
+  if (isMain) keys.push(mainKey)
 
-  if (keys.length < 2) return // Need at least a modifier + key
+  // 必须同时有「修饰键 + 非修饰主键」才算完整快捷键。
+  // 之前只要 keys.length>=2 就保存，导致 Ctrl+Shift（只有修饰键）被当成完成、
+  // 去注册时 Tauri 因缺主键解析失败报红。现在要求 isMain 才保存。
+  if (!isMain || keys.length < 2) return
 
   // Save new shortcut
   const id = recordingId.value!
@@ -183,6 +188,15 @@ function onKeyDown(e: KeyboardEvent) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...savedShortcuts, [id]: keys }))
   } catch {}
   recordingId.value = null
+
+  // Re-register shortcuts with Tauri global shortcut plugin
+  const shortcutStr = keys.join('+')
+  tauri.unregisterAllShortcuts().catch(() => {})
+  tauri.registerShortcut(shortcutStr).then(() => {
+    toast.show(`Shortcut updated: ${shortcutStr}`, 'success')
+  }).catch((err: any) => {
+    toast.show(`Failed to register shortcut: ${err}`, 'error')
+  })
 }
 
 function toggleClass(e: Event) {
@@ -604,14 +618,14 @@ async function revokeSession(sessionId: string) {
   <!-- Image Preview -->
   <ModalDialog :open="previewType === 'image'" :title="t('img_preview_title')" max-width="640px" @close="emit('close-preview')">
     <div v-if="previewItem" style="text-align:center;">
-      <div style="width:100%;max-height:400px;overflow:hidden;border-radius:var(--radius-md);background:var(--bg-hover);display:flex;align-items:center;justify-content:center;margin-bottom:12px;">
+      <div style="width:100%;max-height:400px;overflow:hidden;border-radius:var(--radius-md);background:var(--bg-hover);display:flex;align-items:center;justify-content:center;margin-bottom:16px;">
         <img :src="previewItem.preview || previewItem.content" style="max-width:100%;max-height:380px;object-fit:contain;" alt="" />
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-secondary);">
         <span>Image</span>
-        <Button size="sm" @click="downloadImage">
-          <Download :size="14" style="margin-right:4px;" />
-          {{ t('img_download') }}
+        <Button variant="outline" size="sm" @click="downloadImage" class="modal-action-btn">
+          <Download :size="15" />
+          <span>{{ t('img_download') }}</span>
         </Button>
       </div>
     </div>
@@ -642,9 +656,9 @@ async function revokeSession(sessionId: string) {
 
       <p style="font-size:12px;color:var(--text-secondary);word-break:break-all;background:var(--bg-hover);padding:8px 10px;border-radius:var(--radius-sm);min-height:32px;">{{ pairingToken }}</p>
 
-      <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
-        <Button variant="outline" size="sm" @click="copyPairingToken" :disabled="!pairingToken">{{ t('pair_copy') }}</Button>
-        <Button variant="outline" size="sm" @click="generatePairing">{{ t('pair_regenerate') }}</Button>
+      <div style="display:flex;gap:12px;justify-content:center;margin-top:16px;">
+        <Button variant="outline" size="sm" @click="copyPairingToken" :disabled="!pairingToken" class="modal-action-btn">{{ t('pair_copy') }}</Button>
+        <Button variant="outline" size="sm" @click="generatePairing" class="modal-action-btn">{{ t('pair_regenerate') }}</Button>
       </div>
 
       <p style="font-size:12px;color:var(--text-tertiary);margin-top:10px;">
@@ -665,18 +679,18 @@ async function revokeSession(sessionId: string) {
         <div v-if="!scanning" style="color:#888;font-size:13px;text-align:center;padding:20px;">{{ t('pair_camera_hint') }}</div>
       </div>
 
-      <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
-        <Button v-if="!scanning" size="sm" @click="startScan">{{ t('pair_scan_start') }}</Button>
-        <Button v-else variant="ghost" size="sm" @click="stopScan">{{ t('pair_scan_stop') }}</Button>
+      <div style="display:flex;gap:12px;justify-content:center;margin-top:14px;">
+        <Button v-if="!scanning" size="sm" @click="startScan" class="modal-action-btn">{{ t('pair_scan_start') }}</Button>
+        <Button v-else variant="ghost" size="sm" @click="stopScan" class="modal-action-btn">{{ t('pair_scan_stop') }}</Button>
       </div>
 
-      <div style="margin-top:16px;border-top:1px solid var(--border-subtle);padding-top:12px;">
-        <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px;">{{ t('pair_enter_code') }}</p>
-        <div style="display:flex;gap:8px;">
+      <div style="margin-top:20px;border-top:1px solid var(--border-subtle);padding-top:14px;">
+        <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:8px;">{{ t('pair_enter_code') }}</p>
+        <div style="display:flex;gap:10px;">
           <Input v-model="manualToken" class="manual-token-input" :placeholder="t('pair_token_placeholder')" />
-          <Button size="sm" :disabled="redeemSending" @click="handlePairingToken(manualToken)">{{ t('pair_pair_btn') }}</Button>
+          <Button size="sm" :disabled="redeemSending" @click="handlePairingToken(manualToken)" class="modal-action-btn">{{ t('pair_pair_btn') }}</Button>
         </div>
-        <p style="font-size:11px;color:var(--text-tertiary);margin-top:8px;">{{ t('pair_scan_hint') }}</p>
+        <p style="font-size:11px;color:var(--text-tertiary);margin-top:10px;">{{ t('pair_scan_hint') }}</p>
       </div>
     </div>
   </ModalDialog>
@@ -685,8 +699,8 @@ async function revokeSession(sessionId: string) {
   <ModalDialog :open="showModalType === 'confirm'" :title="t('confirm_title')" max-width="380px" @close="emit('close-modal')">
     <p style="font-size:14px;line-height:1.6;">{{ confirmMessage }}</p>
     <template #footer>
-      <Button variant="ghost" @click="emit('close-modal')">{{ t('btn_cancel_text') }}</Button>
-      <Button @click="emit('confirm-action')" style="background:var(--danger);color:#fff;">{{ t('confirm_t') }}</Button>
+      <Button variant="outline" @click="emit('close-modal')">{{ t('btn_cancel_text') }}</Button>
+      <Button variant="destructive" @click="emit('confirm-action')">{{ t('confirm_t') }}</Button>
     </template>
   </ModalDialog>
 </template>
@@ -695,6 +709,8 @@ async function revokeSession(sessionId: string) {
 /* Override button style for inline btns */
 .btn-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.modal-action-btn { padding: 0 20px !important; gap: 6px !important; }
 
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
 .theme-opt { cursor: pointer; text-align: center; }
