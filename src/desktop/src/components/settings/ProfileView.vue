@@ -58,7 +58,7 @@ async function saveEmail() {
 
   // Email update via profile API (if supported) or local fallback
   try {
-    const res = await fetch(`${configStore.serverUrl}/api/user/profile`, {
+    const res = await fetch(`${configStore.serverUrl}/api/auth/profile`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

@@ -994,7 +994,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
 
     const result = await pool.query(
-      'SELECT id, phone, email, nickname, avatar_url FROM users WHERE id = $1',
+      'SELECT id, phone, email, nickname, avatar_url, subscription_status FROM users WHERE id = $1',
       [userId]
     );
 
@@ -1009,6 +1009,7 @@ router.get('/me', authenticateToken, async (req, res) => {
       email: user.email,
       nickname: user.nickname,
       avatarUrl: user.avatar_url,
+      plan: user.subscription_status || 'Free',
     });
   } catch (err) {
     logger.error('Get profile error:', { error: err.message });
@@ -1020,7 +1021,7 @@ router.get('/me', authenticateToken, async (req, res) => {
 router.put('/profile', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { nickname, avatarUrl } = req.body;
+    const { nickname, avatarUrl, email } = req.body;
 
     // 验证昵称
     if (nickname !== undefined) {
@@ -1033,14 +1034,23 @@ router.put('/profile', authenticateToken, async (req, res) => {
       }
     }
 
+    // 验证邮箱格式（如果提供）
+    if (email !== undefined && email !== null && email !== '') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({ error: 'Invalid email format' });
+      }
+    }
+
     const result = await pool.query(
       `UPDATE users SET
         nickname = COALESCE($1, nickname),
-        avatar_url = COALESCE($2, avatar_url),
+        email = COALESCE($2, email),
+        avatar_url = COALESCE($3, avatar_url),
         updated_at = NOW()
-       WHERE id = $3
-       RETURNING id, phone, nickname, avatar_url`,
-      [nickname ? sanitizeString(nickname.trim()) : null, avatarUrl, userId]
+       WHERE id = $4
+       RETURNING id, phone, email, nickname, avatar_url`,
+      [nickname ? sanitizeString(nickname.trim()) : null, email?.trim() || null, avatarUrl, userId]
     );
 
     if (result.rows.length === 0) {
@@ -1051,6 +1061,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
     res.json({
       id: user.id,
       phone: user.phone,
+      email: user.email,
       nickname: user.nickname,
       avatarUrl: user.avatar_url,
     });
