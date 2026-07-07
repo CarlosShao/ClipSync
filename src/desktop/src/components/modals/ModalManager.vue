@@ -139,9 +139,17 @@ function getKeys(id: string): string[] { return customShortcuts[id] || [] }
 
 function startRecord(id: string) {
   recordingId.value = id
-  // Auto-focus the recorder element so keydown events are captured
+  // Auto-focus the recorder element so keydown events are captured.
+  // Double nextTick + type guard: ModalDialog may have enter animation,
+  // v-else branch might not be mounted on first tick; ref may resolve
+  // to non-DOM object in Tauri webview edge cases.
   nextTick(() => {
-    recorderEl.value?.focus()
+    nextTick(() => {
+      const el = recorderEl.value
+      if (el && typeof el.focus === 'function') {
+        el.focus()
+      }
+    })
   })
 }
 

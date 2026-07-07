@@ -78,7 +78,13 @@ const allSelected = computed(() => filteredItems.value.length > 0 && filteredIte
 
 function toggleSelectAll() {
   const shouldSelect = !allSelected.value
-  filteredItems.value.forEach(i => { i.selected = shouldSelect })
+  // 不可变更新：替换整个 items 数组中 filteredItems 对应项的引用，
+  // 确保 Vue 3 检测到变化并触发所有依赖它的 computed/子组件重渲染。
+  // （直接修改 i.selected 属性在边界情况下可能不触发 Checkbox 重渲染）
+  const selectedIds = new Set(filteredItems.value.map(i => i.id))
+  items.value = items.value.map(item =>
+    selectedIds.has(item.id) ? { ...item, selected: shouldSelect } : item
+  )
 }
 
 function clearSelection() {
