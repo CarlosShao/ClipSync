@@ -282,9 +282,9 @@ router.post('/', apiLimiter, checkClipboardLimit, async (req, res) => {
       return res.status(400).json({ error: 'Invalid sourceDeviceId format' });
     }
 
-    // 验证内容大小（最大10MB）
-    if (typeof contentEncrypted === 'string' && contentEncrypted.length > 10 * 1024 * 1024) {
-      return res.status(400).json({ error: 'Content too large, maximum size is 10MB' });
+    // 验证内容大小（最大50MB）
+    if (typeof contentEncrypted === 'string' && contentEncrypted.length > 50 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Content too large, maximum size is 50MB' });
     }
 
     // Detect content type from preview or declared type

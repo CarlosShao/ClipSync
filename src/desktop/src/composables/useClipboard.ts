@@ -34,6 +34,8 @@ const HASH_TTL = 10000
 // 策略1: 时间戳跳过（防止复制后立即被轮询捡到）
 // 策略2: ID 追踪（用户建议：复制时记录 DB ID，加载/上传时检查）
 let skipPollUntil = 0
+// 初始加载后跳过轮询，防止系统剪贴板内容被重新上传
+let initialLoadDone = false
 // 记录从 ClipSync UI 复制的条目 ID（不依赖内容一致性）
 const recentlyCopiedIds = new Set<string>()
 let copiedIdsCleanupTimer: ReturnType<typeof setTimeout> | null = null
@@ -103,21 +105,37 @@ function loadContentCache(): Map<string, string> {
 }
 
 function saveContentCache(cache: Map<string, string>) {
-  // 超过上限时删除最早的
+  // 超过上限时删除最大的条目（图片最大，优先淘汰），保留较小的
   if (cache.size > CONTENT_CACHE_MAX) {
-    const entries = [...cache.entries()]
-    cache = new Map(entries.slice(entries.length - CONTENT_CACHE_MAX))
+    const entries = [...cache.entries()].sort((a, b) => a[1].length - b[1].length) // 小的在前
+    cache = new Map(entries.slice(0, CONTENT_CACHE_MAX))
   }
-  localStorage.setItem(CONTENT_CACHE_KEY, JSON.stringify([...cache]))
+  try {
+    localStorage.setItem(CONTENT_CACHE_KEY, JSON.stringify([...cache]))
+  } catch (e: any) {
+    // localStorage 配额超限（图片 data URL 很大，50 条易超 ~5MB 配额）。
+    // 绝不能抛异常——否则会跳过调用方设置预览图的代码，导致图片永远显示破图。
+    // 策略：淘汰最大的半数条目后重试；仍失败则静默放弃（图片改为走服务端重新拉取）。
+    const quota = e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014)
+    if (quota && cache.size > 1) {
+      const entries = [...cache.entries()].sort((a, b) => a[1].length - b[1].length)
+      const reduced = entries.slice(0, Math.max(1, Math.ceil(cache.size / 2)))
+      try {
+        localStorage.setItem(CONTENT_CACHE_KEY, JSON.stringify(reduced))
+      } catch { /* 彻底放弃，不影响图片显示 */ }
+    }
+  }
 }
 
 function cacheContent(id: string, content: string) {
   if (!content || !id) return
-  const cache = loadContentCache()
-  // 图片不截断（base64 通常 50KB-200KB），文本截断到 5KB
-  const isImageBase64 = content.startsWith('data:image')
-  cache.set(id, isImageBase64 ? content : content.slice(0, 5000))
-  saveContentCache(cache)
+  try {
+    const cache = loadContentCache()
+    // 图片不截断（base64 通常 50KB-200KB），文本截断到 5KB
+    const isImageBase64 = content.startsWith('data:image')
+    cache.set(id, isImageBase64 ? content : content.slice(0, 5000))
+    saveContentCache(cache)
+  } catch { /* 绝不允许缓存异常影响图片渲染 */ }
 }
 
 function getCachedContent(id: string): string {
@@ -134,44 +152,12 @@ async function loadClipboardItems() {
       !serverIds.has(i.id) && i.content && i.content.trim()
     )
     const serverItems = res.data.items.map((i: any) => {
-      // 图片特殊处理：contentPreview 是 "[Image N bytes]"，不是真实内容
-      // 列表接口不返回 contentEncrypted，所以图片 content 只能从本地缓存或单条API获取
       const cached = getCachedContent(i.id)
       const isImage = (i.contentType || i.type) === 'image'
       let content: string
       if (isImage) {
-        content = cached || '' // 无缓存则显示空，下面异步加载
-        // 异步加载：如果图片没有缓存，从单条 API 获取完整内容
-        if (!cached && i.id) {
-          api('GET', `/api/clipboard/${i.id}`).then(async fullRes => {
-            if (fullRes.ok && fullRes.data?.contentEncrypted) {
-              const raw = fullRes.data.contentEncrypted
-              const isDataUrl = raw.startsWith('data:')
-              let renderSrc: string
-              if (isDataUrl) {
-                renderSrc = raw
-                cacheContent(i.id, raw)
-                } else {
-                  // contentEncrypted 是文件名（media.js 路径上传）→ 通过带认证的 fetch 获取图片
-                  // <img> 标签无法携带 Bearer token，必须用 JS fetch 转 blob URL
-                  // 注意：必须用 apiBlob（带 CSRF），否则 /api/media 的 csrfProtection 会拒掉请求 → 图片 404
-                  try {
-                    const imgRes = await apiBlob('GET', `/api/media/${i.id}/preview`)
-                    if (imgRes && imgRes.ok) {
-                      const blob = await imgRes.blob()
-                      renderSrc = URL.createObjectURL(blob)
-                    } else {
-                      renderSrc = '' // 401/404 → 显示空占位
-                    }
-                  } catch {
-                    renderSrc = ''
-                  }
-                }
-              const item = items.value.find(x => x.id === i.id)
-              if (item) { item.content = isDataUrl ? raw : ''; item.preview = renderSrc }
-            }
-          }).catch(() => {})
-        }
+        content = cached || ''
+        // 图片异步加载：不在这里触发，统一放到下面的队列
       } else {
         const existing = items.value.find(e => e.id === i.id && e.content)
         content = existing?.content || cached || i.contentPreview || i.content || ''
@@ -181,13 +167,75 @@ async function loadClipboardItems() {
         id: i.id,
         type: (i.contentType || i.type || 'text') as ClipItem['type'],
         content,
-        preview,
+        // 未缓存图片：preview 留空（异步队列会从服务端拉取并填充），
+        // 不要用 'loading' 字符串当 src，否则会显示破图。
+        preview: preview || (isImage ? '' : ''),
         source: i.sourceDevice?.name || i.deviceName || 'Server',
         timestamp: new Date(i.createdAt || Date.now()).getTime(),
         selected: false,
       }
     })
     items.value = [...localWithContent, ...serverItems]
+
+    // 队列化加载图片：每批 3 张，间隔 200ms，避免并发过高被限流
+    const imageQueue = serverItems.filter((i: ClipItem) => i.type === 'image' && !getCachedContent(i.id) && i.id)
+    loadImagesFromQueue(imageQueue)
+  }
+}
+
+// 图片异步加载队列（防并发 + 防竞态）
+let imageLoadVersion = 0
+async function loadImagesFromQueue(queue: ClipItem[]) {
+  const version = ++imageLoadVersion  // 每次新加载递增，旧回调自动失效
+  const BATCH = 3
+  const DELAY = 200
+  for (let idx = 0; idx < queue.length; idx += BATCH) {
+    // 版本检查：如果又有新的 loadClipboardItems 调用，放弃旧队列
+    if (version !== imageLoadVersion) return
+    const batch = queue.slice(idx, idx + BATCH)
+    await Promise.all(batch.map(async (item) => {
+      try {
+        const fullRes = await api('GET', `/api/clipboard/${item.id}`)
+        if (version !== imageLoadVersion) return  // 竞态检查
+        if (fullRes.ok && fullRes.data?.contentEncrypted) {
+          const raw = fullRes.data.contentEncrypted
+          const isDataUrl = raw.startsWith('data:')
+          let renderSrc: string
+          if (isDataUrl) {
+            renderSrc = raw
+          } else {
+            try {
+              const imgRes = await apiBlob('GET', `/api/media/${item.id}/preview`)
+              if (imgRes && imgRes.ok) {
+                const blob = await imgRes.blob()
+                renderSrc = URL.createObjectURL(blob)
+              } else {
+                renderSrc = ''
+              }
+            } catch {
+              renderSrc = ''
+            }
+          }
+          // 先更新预览图/内容——这是用户能看到图片的关键步骤，
+          // 绝不能因为后面的缓存写入失败而被跳过（之前 quota 异常就跳过了这一步）。
+          const current = items.value.find(x => x.id === item.id)
+          if (current) {
+            current.content = isDataUrl ? raw : ''
+            current.preview = renderSrc
+          }
+          // 缓存放到最后，且 cacheContent 内部已 try/catch，绝不会回滚上面的显示。
+          if (isDataUrl) cacheContent(item.id, raw)
+        } else {
+          console.warn(`[Clipboard] Failed to load image ${item.id}:`, fullRes.status, fullRes.error)
+        }
+      } catch (e) {
+        console.warn(`[Clipboard] Image fetch error ${item.id}:`, e)
+      }
+    }))
+    if (version !== imageLoadVersion) return
+    if (idx + BATCH < queue.length) {
+      await new Promise(r => setTimeout(r, DELAY))
+    }
   }
 }
 
@@ -291,6 +339,8 @@ async function readAndUpload() {
   try {
     // 策略1: 时间戳跳过（复制后 6 秒内不处理）
     if (Date.now() < skipPollUntil) return
+    // 初始加载后跳过一轮轮询，防止系统剪贴板内容被重新上传
+    if (!initialLoadDone) { initialLoadDone = true; return }
 
     // 优先尝试 Tauri API
     const files = await tauri.getClipboardFiles().catch(() => [] as string[])
@@ -350,6 +400,7 @@ async function readAndUpload() {
 export function useClipboard() {
   function startPolling(interval = 1500) {
     polling.value = true
+    initialLoadDone = false
     loadClipboardItems()
 
     const id = setInterval(() => {
@@ -429,6 +480,8 @@ export function useClipboard() {
     // 仅在服务端确认成功后才从本地列表移除选中项
     const selectedIds = new Set(selected.map(i => i.id))
     items.value = items.value.filter(i => !selectedIds.has(i.id))
+    // 批量删除后跳过轮询，防止系统剪贴板内容被重新上传
+    skipNextPolls(10000)
     return count
   }
 
@@ -443,6 +496,8 @@ export function useClipboard() {
     }
     // 仅在服务端确认成功（或是本地临时项）后才从本地列表移除
     items.value = items.value.filter(i => i.id !== item.id)
+    // 删除后跳过轮询，防止系统剪贴板内容被重新上传
+    skipNextPolls(10000)
   }
 
   function setFilter(f: typeof activeFilter.value) { activeFilter.value = f }

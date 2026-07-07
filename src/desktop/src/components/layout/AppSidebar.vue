@@ -192,29 +192,33 @@ const accountNavItems = computed(() => [
 .sb-nav {
   display: flex;
   flex-direction: column;
-  padding: 8px 8px;
-  gap: 2px;
+  padding: 10px 10px 6px;
+  gap: 3px;
 }
 .sidebar--collapsed .sb-nav { padding: 8px 0; align-items: center; }
 
-.sb-nav--account { margin-top: 8px; }
+.sb-nav--account {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
 
 .sb-sect-label {
   font-size: 11px; font-weight: 600; text-transform: uppercase;
   letter-spacing: .05em; color: var(--text-tertiary);
-  padding: 10px 10px 4px; white-space: nowrap;
+  padding: 6px 10px 8px; white-space: nowrap;
 }
 
 /* ---- Nav Item ---- */
 .sb-item {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px;
+  padding: 9px 12px;
   border-radius: var(--radius-md);
   font-size: 13px; font-weight: 500;
   color: var(--text-secondary);
   background: none; border: none; cursor: pointer;
   text-align: left; width: 100%; white-space: nowrap;
-  transition: background 120ms, color 120ms;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
   position: relative;
 }
 .sidebar--collapsed .sb-item {
@@ -224,9 +228,29 @@ const accountNavItems = computed(() => [
   border-radius: var(--radius-md);
 }
 
+/* Muted icon color for inactive items — icon stays secondary until hover/active */
+.sb-item :deep(svg) { color: var(--text-tertiary); transition: color .15s ease; }
+.sb-item:hover :deep(svg) { color: var(--text-primary); }
+.sb-item.active :deep(svg) { color: var(--accent); }
+
+/* Hover: clear background */
 .sb-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* Active: visible pill background + left accent indicator (shadcn-style) */
 .sb-item.active {
-  background: var(--accent-light); color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+  /* Subtle shadow to lift from surface like shadcn docs */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+/* Left 2px accent bar on active item (expanded) */
+.sb-item.active::after {
+  content: '';
+  position: absolute;
+  left: 4px; top: 9px; bottom: 9px;
+  width: 2.5px; border-radius: 9999px;
+  background: var(--accent);
 }
 /* Collapsed active indicator: left accent bar */
 .sidebar--collapsed .sb-item.active::before {
@@ -249,15 +273,20 @@ const accountNavItems = computed(() => [
 /* ---- Footer (expanded) ---- */
 .sb-footer {
   margin-top: auto;
-  padding: 12px 12px;
+  padding: 10px 12px 12px;
   border-top: 1px solid var(--border-default);
 }
 
-.user-chip { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer; border-radius: var(--radius-md); transition: background .12s; padding: 4px; }
+.user-chip { 
+  display: flex; align-items: center; gap: 8px; 
+  cursor: pointer; border-radius: var(--radius-md); 
+  transition: background .15s ease; 
+  padding: 6px 4px; margin-bottom: 4px;
+}
 .user-chip:hover { background: var(--bg-hover); }
-.user-avatar-ring { width: 32px; height: 32px; border-radius: 50%; background: var(--gradient-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.user-avatar-ring { width: 34px; height: 34px; border-radius: 50%; background: var(--gradient-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 .user-avatar-ring--sm { width: 28px; height: 28px; }
-.user-avatar-in { width: 28px; height: 28px; border-radius: 50%; background: var(--bg-sidebar); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+.user-avatar-in { width: 30px; height: 30px; border-radius: 50%; background: var(--bg-sidebar); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
 .user-avatar-in--sm { width: 24px; height: 24px; font-size: 10px; }
 .user-info { flex: 1; min-width: 0; }
 .user-name { font-size: 13px; font-weight: 500; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -265,12 +294,14 @@ const accountNavItems = computed(() => [
 
 /* Logout button — override shadcn ghost for sidebar footer style */
 .logout-btn {
-  display: flex; align-items: center; gap: 4px;
-  font-size: 11.5px; color: var(--text-tertiary);
-  padding: 4px 0;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-tertiary);
+  padding: 6px 8px;
   height: auto !important;
+  border-radius: var(--radius-md);
+  transition: color .15s ease, background .15s ease;
 }
-.logout-btn:hover { color: var(--danger); background: transparent !important; }
+.logout-btn:hover { color: var(--danger); background: var(--danger-bg) !important; }
 
 /* ---- Footer dot (collapsed) ---- */
 .sb-footer-dot {

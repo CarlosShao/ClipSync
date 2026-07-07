@@ -6,11 +6,13 @@ import * as tauri from '@/lib/tauri'
 const isDev = import.meta.env.DEV
 
 export const useConfigStore = defineStore('config', () => {
+  // 同步从 localStorage 恢复 token，避免 HomeView onMounted 先于 App onMounted 导致 api() 无 token → 401
+  const savedToken = typeof localStorage !== 'undefined' ? localStorage.getItem('clipsync-token') : null
   const config = ref<AppConfig>({
     // 开发环境：相对路径，走 Vite proxy (/api → http://localhost:3001)
     // 生产环境（Tauri）：显式指向 Docker 后端
     server_url: isDev ? '' : 'http://localhost:3001',
-    token: null,
+    token: savedToken || null,
     device_id: null,
     user_id: null,
     quick_paste_shortcut: 'Ctrl+Shift+V',
