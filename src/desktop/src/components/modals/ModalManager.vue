@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, reactive } from 'vue'
+import { ref, watch, reactive, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
@@ -127,6 +127,7 @@ let savedShortcuts: Record<string, string[]> = {}
 try { savedShortcuts = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') } catch { /* ignore */ }
 const customShortcuts = reactive<Record<string, string[]>>({ ...DEFAULT_SHORTCUTS, ...savedShortcuts })
 const recordingId = ref<string | null>(null)
+const recorderEl = ref<HTMLElement | null>(null)
 
 const shortcutList = [
   { id: 'quickPaste' as ShortcutId, label: 'sk_quick_paste' },
@@ -138,7 +139,10 @@ function getKeys(id: string): string[] { return customShortcuts[id] || [] }
 
 function startRecord(id: string) {
   recordingId.value = id
-  // Auto-focus the recorder element on next tick
+  // Auto-focus the recorder element so keydown events are captured
+  nextTick(() => {
+    recorderEl.value?.focus()
+  })
 }
 
 function stopRecord() {
@@ -451,7 +455,7 @@ async function revokeSession(sessionId: string) {
           <kbd v-for="k in getKeys(sk.id)" :key="k">{{ k }}</kbd>
           <Pencil :size="12" style="margin-left:4px;opacity:.4;cursor:pointer;" />
         </div>
-        <div v-else class="sk-recorder" tabindex="0" @blur="stopRecord" @keydown="onKeyDown">
+        <div v-else ref="recorderEl" class="sk-recorder" tabindex="0" @blur="stopRecord" @keydown="onKeyDown">
           {{ t('sk_press_keys') }}...
         </div>
       </div>
@@ -554,11 +558,24 @@ async function revokeSession(sessionId: string) {
   </ModalDialog>
 
   <!-- Export -->
-  <ModalDialog :open="showModalType === 'export'" :title="t('export_title')" max-width="460px" @close="emit('close-modal')">
-    <div style="text-align:center;padding:8px 0;">
-      <Download :size="48" style="color:var(--accent);margin-bottom:12px;" />
-      <p style="font-size:13px;color:var(--text-secondary);line-height:1.7;" v-html="t('export_msg')" />
-      <Button class="w-full" style="margin-top:16px;" @click="handleExportRequest">{{ t('export_request_btn') }}</Button>
+  <ModalDialog :open="showModalType === 'export'" :title="t('export_title')" max-width="480px" @close="emit('close-modal')">
+    <div style="display:flex;flex-direction:column;gap:16px;padding:4px 0;">
+      <div style="display:flex;gap:16px;align-items:flex-start;">
+        <div style="width:48px;height:48px;border-radius:12px;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <Download :size="24" style="color:var(--accent);" />
+        </div>
+        <div>
+          <p style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">JSON 格式数据包</p>
+          <p style="font-size:12px;color:var(--text-secondary);line-height:1.6;">{{ t('export_msg') }}</p>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;font-size:11px;color:var(--text-tertiary);">
+        <span>✓ 剪贴板记录</span><span>✓ 设备信息</span><span>✓ 账户资料</span>
+      </div>
+      <Button class="w-full" style="margin-top:4px;" @click="handleExportRequest">
+        <Download :size="14" style="margin-right:6px;" />
+        {{ t('export_request_btn') }}
+      </Button>
     </div>
   </ModalDialog>
 
@@ -618,8 +635,8 @@ async function revokeSession(sessionId: string) {
       <p style="font-size:12px;color:var(--text-secondary);word-break:break-all;background:var(--bg-hover);padding:8px 10px;border-radius:var(--radius-sm);min-height:32px;">{{ pairingToken }}</p>
 
       <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
-        <Button size="sm" @click="copyPairingToken" :disabled="!pairingToken">{{ t('pair_copy') }}</Button>
-        <Button variant="ghost" size="sm" @click="generatePairing">{{ t('pair_regenerate') }}</Button>
+        <Button variant="outline" size="sm" @click="copyPairingToken" :disabled="!pairingToken">{{ t('pair_copy') }}</Button>
+        <Button variant="outline" size="sm" @click="generatePairing">{{ t('pair_regenerate') }}</Button>
       </div>
 
       <p style="font-size:12px;color:var(--text-tertiary);margin-top:10px;">

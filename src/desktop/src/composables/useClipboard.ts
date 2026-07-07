@@ -180,6 +180,7 @@ async function loadClipboardItems() {
         preview,
         source: i.sourceDevice?.name || i.deviceName || 'Server',
         timestamp: new Date(i.createdAt || Date.now()).getTime(),
+        selected: false,
       }
     })
     items.value = [...localWithContent, ...serverItems]
@@ -230,7 +231,7 @@ async function uploadImageToServer(dataUrl: string) {
   const base64 = dataUrl.split(',')[1]
   // 乐观更新
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-  items.value.unshift({ id: localId, type: 'image', content: dataUrl, preview: dataUrl, source: 'Desktop', timestamp: Date.now() })
+  items.value.unshift({ id: localId, type: 'image', content: dataUrl, preview: dataUrl, source: 'Desktop', timestamp: Date.now(), selected: false })
   const deviceId = localStorage.getItem('clipsync-device-id')
   if (!deviceId) return
   const res = await api('POST', '/api/clipboard', {
@@ -257,7 +258,7 @@ async function uploadFileToServer(payload: string) {
   recentUploadHashes.set(hash, Date.now())
   // 乐观更新
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-  items.value.unshift({ id: localId, type: 'file', content: payload, source: 'Desktop', timestamp: Date.now() })
+  items.value.unshift({ id: localId, type: 'file', content: payload, source: 'Desktop', timestamp: Date.now(), selected: false })
   const deviceId = localStorage.getItem('clipsync-device-id')
   if (!deviceId) return
   const res = await api('POST', '/api/clipboard', {

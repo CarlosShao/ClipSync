@@ -162,7 +162,7 @@ function revealFileFolder(item: ClipItem) {
     }
     // 从其他设备同步的文件，本地无路径
     if (data.name) {
-      toast.show(`"${data.name}" 来自其他设备，无法在本地打开`, 'info')
+      toast.show(`"${data.name}" ${t('file_remote_no_path')}`, 'info')
       return
     }
   } catch { /* ignore */ }
@@ -330,23 +330,23 @@ function truncate(str: string, max: number): string {
             <td class="cell-type"><span class="type-badge">{{ getTypeLabel(item.type) }}</span></td>
             <td class="cell-time">{{ timeAgo(item.timestamp) }}</td>
             <td class="cell-actions">
-              <Button variant="ghost" size="icon-sm" @click="clip.copyItem(item)" :title="t('copy')">
+              <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click="clip.copyItem(item)" :title="t('copy')">
                 <Copy :size="14" />
               </Button>
               <!-- 图片预览 -->
-              <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" @click="emit('preview-image', item)" :title="t('preview')">
+              <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-image', item)" :title="t('preview')">
                 <ImageIcon :size="14" />
               </Button>
               <!-- 链接打开 -->
-              <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" @click="openLink(item)" :title="t('link_opened')">
+              <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="openLink(item)" :title="t('link_opened')">
                 <ExternalLink :size="14" />
               </Button>
               <!-- 文字详情 -->
-              <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" @click="emit('preview-text', item)" :title="t('preview')">
+              <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-text', item)" :title="t('preview')">
                 <FileText :size="14" />
               </Button>
               <!-- 文件：在文件夹中显示 -->
-              <Button v-if="item.type === 'file'" variant="ghost" size="icon-sm" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
+              <Button v-if="item.type === 'file'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
                 <Folder :size="14" />
               </Button>
               <Button variant="ghost" size="icon-sm" style="color:var(--danger)" @click="handleSingleDelete(item)" :title="t('delete')">
@@ -410,7 +410,7 @@ function truncate(str: string, max: number): string {
 .col-source { width: 160px; }
 .col-type { width: 64px; }
 .col-time { width: 90px; }
-.col-actions { width: 100px; }
+.col-actions { width: 120px; }
 .clip-table th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-tertiary); padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface); position: sticky; top: 0; z-index: 1; }
 .clip-table thead tr th:last-child { text-align: center; }
 .clip-table td { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); }
@@ -425,6 +425,9 @@ function truncate(str: string, max: number): string {
 .type-badge:hover { transform: scale(1.06); }
 .cell-time { color: var(--text-tertiary); font-size: 12px; }
 .cell-actions { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.cell-actions .btn-action-hide { opacity: 0; transition: opacity 0.15s; }
+.clip-table tr:hover .cell-actions .btn-action-hide { opacity: 1; }
+.cell-actions > :last-child { opacity: 1; } /* delete button always visible */
 
 /* ===== EMPTY STATE ===== */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; text-align: center; }
