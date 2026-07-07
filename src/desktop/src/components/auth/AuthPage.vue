@@ -6,7 +6,7 @@ import { useToast } from '@/composables/useToast'
 import { useTheme, currentMode } from '@/composables/useTheme'
 import { api } from '@/api/client'
 import * as tauri from '@/lib/tauri'
-import { Eye, EyeOff, Sun, Moon } from 'lucide-vue-next'
+import { Eye, EyeOff, Sun, Moon, ArrowLeft, X } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
@@ -361,11 +361,11 @@ const isRegisterView = computed(() => authView.value === 'register')
       <!-- Left: Form -->
       <div :class="['auth-left', { 'auth-left--scrollable': isRegisterView }]">
         <!-- Theme toggle: top-right corner -->
-        <button class="theme-pill theme-pill-absolute" @click="toggleMode" :title="currentMode === 'dark' ? t('mode_light') : t('mode_dark')">
+        <Button variant="ghost" size="sm" class="theme-pill theme-pill-absolute" @click="toggleMode" :title="currentMode === 'dark' ? t('mode_light') : t('mode_dark')">
           <Moon v-if="currentMode === 'dark'" :size="14" />
           <Sun v-else :size="14" />
           <span>{{ currentMode === 'dark' ? t('mode_light') : t('mode_dark') }}</span>
-        </button>
+        </Button>
         <div class="auth-card">
 
           <!-- ===== LOGIN ===== -->
@@ -378,8 +378,8 @@ const isRegisterView = computed(() => authView.value === 'register')
             <p class="auth-subtitle">{{ authTab === 'password' ? t('login_pwd_subtitle') : t('login_subtitle') }}</p>
 
             <div class="auth-tabs">
-              <button :class="['auth-tab', { active: authTab === 'phone' }]" @click="authTab = 'phone'">{{ t('tab_phone_login') }}</button>
-              <button :class="['auth-tab', { active: authTab === 'password' }]" @click="authTab = 'password'">{{ t('tab_password_login') }}</button>
+              <Button :variant="authTab === 'phone' ? 'default' : 'ghost'" size="sm" class="auth-tab" @click="authTab = 'phone'">{{ t('tab_phone_login') }}</Button>
+              <Button :variant="authTab === 'password' ? 'default' : 'ghost'" size="sm" class="auth-tab" @click="authTab = 'password'">{{ t('tab_password_login') }}</Button>
             </div>
 
             <!-- Phone Code Login -->
@@ -399,7 +399,7 @@ const isRegisterView = computed(() => authView.value === 'register')
               </div>
               <div class="form-options">
                 <label class="checkbox-label"><Checkbox :checked="rememberMe" @update:checked="(v: boolean) => (rememberMe = v)" /> {{ t('login_remember') }}</label>
-                <button class="link-btn" @click="toast.show(t('toast_code_resent'),'info')">{{ t('login_forgot_code') }}</button>
+                <Button variant="link" size="sm" class="link-btn" @click="toast.show(t('toast_code_resent'),'info')">{{ t('login_forgot_code') }}</Button>
               </div>
               <Button class="w-full" :disabled="isLoggingIn" @click="handleLogin">
                 <span v-if="isLoggingIn" class="spinner" /> {{ t('login_signin') }}
@@ -416,15 +416,15 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <label class="form-label">{{ t('login_password') }}</label>
                 <div class="pwd-wrap">
                   <Input id="lp-pwd" v-model="authPassword" :type="showLoginPassword ? 'text' : 'password'" class="form-input" :placeholder="t('ph_password_placeholder')" @keydown.enter="handleLogin" />
-                  <button class="pwd-toggle" @click="showLoginPassword = !showLoginPassword" type="button">
+                  <Button variant="ghost" size="icon" class="pwd-toggle" @click="showLoginPassword = !showLoginPassword" type="button">
                     <EyeOff v-if="showLoginPassword" :size="16" />
                     <Eye v-else :size="16" />
-                  </button>
+                  </Button>
                 </div>
               </div>
               <div class="form-options">
                 <label class="checkbox-label"><Checkbox :checked="rememberMe" @update:checked="(v: boolean) => (rememberMe = v)" /> {{ t('login_remember') }}</label>
-                <button class="link-btn" @click="openForgot">{{ t('login_forgot') }}</button>
+                <Button variant="link" size="sm" class="link-btn" @click="openForgot">{{ t('login_forgot') }}</Button>
               </div>
               <Button class="w-full" :disabled="isLoggingIn" @click="handleLogin">
                 <span v-if="isLoggingIn" class="spinner" /> {{ t('login_signin') }}
@@ -433,7 +433,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 
             <div class="auth-switch">
               {{ t('login_no_account') }}
-              <button class="link-btn" @click="switchAuthView('register')">{{ t('login_create_free') }}</button>
+              <Button variant="link" size="sm" class="link-btn" @click="switchAuthView('register')">{{ t('login_create_free') }}</Button>
             </div>
             <div class="auth-divider"><span>{{ t('login_or_continue') }}</span></div>
             <div class="auth-social">
@@ -454,7 +454,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 
           <!-- ===== REGISTER ===== -->
           <div v-else-if="authView === 'register'" class="auth-view">
-            <button class="back-btn" @click="switchAuthView('login-phone')">← {{ t('btn_back_login') }}</button>
+            <Button variant="ghost" size="sm" class="back-btn" @click="switchAuthView('login-phone')"><ArrowLeft :size="14" /> {{ t('btn_back_login') }}</Button>
             <h1 class="auth-heading">{{ t('reg_title') }}</h1>
             <p class="auth-subtitle">{{ t('reg_subtitle') }}</p>
             <div class="auth-form">
@@ -487,10 +487,10 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <label class="form-label">{{ t('sp_set_pwd_label') }} <span class="required">*</span></label>
                 <div class="pwd-wrap">
                   <Input id="reg-pwd" v-model="regPassword" :type="showRegPassword ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
-                  <button class="pwd-toggle" @click="showRegPassword = !showRegPassword" type="button">
+                  <Button variant="ghost" size="icon" class="pwd-toggle" @click="showRegPassword = !showRegPassword" type="button">
                     <EyeOff v-if="showRegPassword" :size="16" />
                     <Eye v-else :size="16" />
-                  </button>
+                  </Button>
                 </div>
                 <div v-if="regPassword.length > 0" class="pwd-strength">
                   <div class="strength-bar" :class="strengthClass(regPwdStrength.score)" :style="{ width: (regPwdStrength.score * 25) + '%' }"></div>
@@ -506,15 +506,15 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <label class="form-label">{{ t('sp_confirm_pwd') }} <span class="required">*</span></label>
                 <div class="pwd-wrap">
                   <Input id="reg-confirm" v-model="regConfirm" :type="showRegConfirm ? 'text' : 'password'" class="form-input" :class="{ error: fieldErrors.regConfirm }" :placeholder="t('sp_confirm_hint')" @blur="validateRegConfirm(regConfirm)" @input="fieldErrors.regConfirm = ''" />
-                  <button class="pwd-toggle" @click="showRegConfirm = !showRegConfirm" type="button">
+                  <Button variant="ghost" size="icon" class="pwd-toggle" @click="showRegConfirm = !showRegConfirm" type="button">
                     <EyeOff v-if="showRegConfirm" :size="16" />
                     <Eye v-else :size="16" />
-                  </button>
+                  </Button>
                 </div>
                 <div v-if="fieldErrors.regConfirm" class="field-error">{{ fieldErrors.regConfirm }}</div>
               </div>
               <label class="checkbox-label" style="margin-top:-4px;">
-                <Checkbox :checked="regAgree" @update:checked="(v: boolean) => (regAgree = v)" /> {{ t('reg_agree_text') }}<a href="javascript:void(0)" class="link-btn" @click="toast.show(t('toast_tos_soon'),'info')">{{ t('reg_tos') }}</a>{{ t('reg_and') }}<a href="javascript:void(0)" class="link-btn" @click="toast.show(t('toast_privacy_soon'),'info')">{{ t('reg_privacy') }}</a>
+                <Checkbox :checked="regAgree" @update:checked="(v: boolean) => (regAgree = v)" /> {{ t('reg_agree_text') }}<Button variant="link" size="sm" class="link-btn link-inline" @click="toast.show(t('toast_tos_soon'),'info')">{{ t('reg_tos') }}</Button>{{ t('reg_and') }}<Button variant="link" size="sm" class="link-btn link-inline" @click="toast.show(t('toast_privacy_soon'),'info')">{{ t('reg_privacy') }}</Button>
               </label>
               <Button class="w-full" :disabled="isRegistering" @click="handleRegister">
                 <span v-if="isRegistering" class="spinner" /> {{ t('reg_submit') }}
@@ -534,13 +534,13 @@ const isRegisterView = computed(() => authView.value === 'register')
             </div>
             <div class="auth-switch">
               {{ t('reg_has_account') }}
-              <button class="link-btn" @click="switchAuthView('login-phone')">{{ t('reg_sign_in_now') }}</button>
+              <Button variant="link" size="sm" class="link-btn" @click="switchAuthView('login-phone')">{{ t('reg_sign_in_now') }}</Button>
             </div>
           </div>
 
           <!-- ===== SET PASSWORD ===== -->
           <div v-else-if="authView === 'set-password'" class="auth-view">
-            <button class="back-btn" @click="goBackToLogin()">← {{ t('btn_back_login') }}</button>
+            <Button variant="ghost" size="sm" class="back-btn" @click="goBackToLogin()"><ArrowLeft :size="14" /> {{ t('btn_back_login') }}</Button>
             <!-- Step indicator -->
             <div class="sp-steps">
               <div class="sp-step completed"><div class="sp-step-num">✓</div><span>{{ t('sp_verify_identity') }}</span></div>
@@ -554,10 +554,10 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <label class="form-label">{{ t('sp_set_pwd_label') }}</label>
                 <div class="pwd-wrap">
                   <Input id="sp-pwd" v-model="setPwdNew" :type="showSetPwdPassword ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
-                  <button class="pwd-toggle" @click="showSetPwdPassword = !showSetPwdPassword" type="button">
+                  <Button variant="ghost" size="icon" class="pwd-toggle" @click="showSetPwdPassword = !showSetPwdPassword" type="button">
                     <EyeOff v-if="showSetPwdPassword" :size="16" />
                     <Eye v-else :size="16" />
-                  </button>
+                  </Button>
                 </div>
                 <div v-if="setPwdNew.length > 0" class="pwd-strength">
                   <div class="strength-bar" :class="strengthClass(setPwdStrength.score)" :style="{ width: (setPwdStrength.score * 25) + '%' }"></div>
@@ -573,10 +573,10 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <label class="form-label">{{ t('sp_confirm_pwd') }}</label>
                 <div class="pwd-wrap">
                   <Input id="sp-confirm" v-model="setPwdConfirm" :type="showSetPwdConfirm ? 'text' : 'password'" class="form-input" :placeholder="t('sp_confirm_hint')" />
-                  <button class="pwd-toggle" @click="showSetPwdConfirm = !showSetPwdConfirm" type="button">
+                  <Button variant="ghost" size="icon" class="pwd-toggle" @click="showSetPwdConfirm = !showSetPwdConfirm" type="button">
                     <EyeOff v-if="showSetPwdConfirm" :size="16" />
                     <Eye v-else :size="16" />
-                  </button>
+                  </Button>
                 </div>
               </div>
               <Button class="w-full" :disabled="isSettingPwd || !setPwdValid" @click="handleSetPassword">
@@ -602,7 +602,7 @@ const isRegisterView = computed(() => authView.value === 'register')
     <Teleport to="body">
       <div v-if="showForgotModal" class="modal-overlay" @click.self="closeForgot">
         <div class="modal-box">
-          <button class="modal-close" @click="closeForgot">&times;</button>
+          <Button variant="ghost" size="icon" class="modal-close" @click="closeForgot"><X :size="18" /></Button>
           <h2 class="modal-title">{{ t('fp_title') }}</h2>
           <!-- Step 1: Email -->
           <div v-if="fpStep === 'email'" class="modal-form">
@@ -624,10 +624,10 @@ const isRegisterView = computed(() => authView.value === 'register')
               <label class="form-label">{{ t('sp_set_pwd_label') }}</label>
               <div class="pwd-wrap">
                 <Input v-model="fpNewPwd" :type="showFpNewPwd ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
-                <button class="pwd-toggle" @click="showFpNewPwd = !showFpNewPwd" type="button">
+                <Button variant="ghost" size="icon" class="pwd-toggle" @click="showFpNewPwd = !showFpNewPwd" type="button">
                   <EyeOff v-if="showFpNewPwd" :size="16" />
                   <Eye v-else :size="16" />
-                </button>
+                </Button>
               </div>
               <div v-if="fpNewPwd.length > 0" class="pwd-strength">
                 <div class="strength-bar" :class="strengthClass(fpPwdStrength.score)" :style="{ width: (fpPwdStrength.score * 25) + '%' }"></div>
@@ -643,10 +643,10 @@ const isRegisterView = computed(() => authView.value === 'register')
               <label class="form-label">{{ t('sp_confirm_pwd') }}</label>
               <div class="pwd-wrap">
                 <Input v-model="fpConfirmPwd" :type="showFpConfirm ? 'text' : 'password'" class="form-input" :placeholder="t('sp_confirm_hint')" />
-                <button class="pwd-toggle" @click="showFpConfirm = !showFpConfirm" type="button">
+                <Button variant="ghost" size="icon" class="pwd-toggle" @click="showFpConfirm = !showFpConfirm" type="button">
                   <EyeOff v-if="showFpConfirm" :size="16" />
                   <Eye v-else :size="16" />
-                </button>
+                </Button>
               </div>
             </div>
             <Button class="w-full" :disabled="fpSending" @click="fpReset">
@@ -709,8 +709,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 
 /* ===== Tabs ===== */
 .auth-tabs { display: flex; gap: 4px; padding: 4px; background: var(--bg-hover); border-radius: 10px; margin-bottom: 24px; }
-.auth-tab { flex: 1; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; border: none; background: transparent; color: var(--text-tertiary); cursor: pointer; transition: all 150ms; }
-.auth-tab.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.auth-tab { flex: 1; border-radius: 8px; font-size: 13px; font-weight: 500; }
 
 /* ===== Form ===== */
 .auth-form { display: flex; flex-direction: column; gap: 16px; }
@@ -723,13 +722,9 @@ const isRegisterView = computed(() => authView.value === 'register')
 .form-row .form-input { flex: 1; }
 .form-options { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
 .checkbox-label { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); cursor: pointer; font-size: 13px; }
-.checkbox-label input[type="checkbox"] { accent-color: var(--accent); }
 
 /* ===== Buttons ===== */
-.btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 42px; padding: 0 20px; border-radius: 10px; font-size: 14px; font-weight: 500; border: none; background: var(--accent); color: var(--text-inverse); cursor: pointer; transition: all 150ms; }
-.btn-primary:hover { opacity: 0.9; transform: translateY(-0.5px); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-block { width: 100%; }
+/* .btn-primary / .btn-block removed — replaced by shadcn <Button> */
 .btn-code { height: 42px; padding: 0 14px; border-radius: 10px; font-size: 13px; font-weight: 500; white-space: nowrap; border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-secondary); cursor: pointer; transition: all 150ms; }
 .btn-code:hover { background: var(--bg-hover); color: var(--text-primary); }
 .btn-code:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -769,8 +764,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 
 /* ===== Links ===== */
 .auth-switch { text-align: center; margin-top: 20px; font-size: 13px; color: var(--text-secondary); }
-.link-btn { background: none; border: none; color: var(--accent); font-size: 13px; cursor: pointer; padding: 0; }
-.link-btn:hover { text-decoration: underline; }
+/* .link-btn base removed — now rendered via <Button variant="link"> */
 
 /* ===== Divider ===== */
 .auth-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 16px; font-size: 12px; color: var(--text-tertiary); }
@@ -788,8 +782,9 @@ const isRegisterView = computed(() => authView.value === 'register')
 .theme-pill:hover { background: var(--bg-hover); border-color: var(--accent); color: var(--accent); }
 
 /* ===== Back button ===== */
-.back-btn { background: none; border: none; color: var(--text-secondary); font-size: 13px; cursor: pointer; padding: 0; margin-bottom: 16px; display: inline-flex; align-items: center; gap: 4px; }
+.back-btn { margin-bottom: 16px; display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); }
 .back-btn:hover { color: var(--text-primary); }
+.link-inline { height: auto; padding: 0; vertical-align: baseline; }
 
 /* ===== Set Password Steps ===== */
 .sp-steps { display: flex; align-items: center; gap: 0; margin-bottom: 24px; }
@@ -815,7 +810,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 /* ===== Forgot Password Modal ===== */
 .modal-overlay { position: fixed; inset: 0; background: var(--bg-modal-overlay); display: flex; align-items: center; justify-content: center; z-index: 1000; }
 .modal-box { position: relative; background: var(--bg-surface); border-radius: var(--radius-lg); padding: 32px; width: 100%; max-width: 400px; box-shadow: var(--shadow-modal); }
-.modal-close { position: absolute; top: 12px; right: 16px; background: none; border: none; font-size: 20px; color: var(--text-tertiary); cursor: pointer; }
+.modal-close { position: absolute; top: 12px; right: 16px; background: none; border: none; color: var(--text-tertiary); cursor: pointer; }
 .modal-close:hover { color: var(--text-primary); }
 .modal-title { font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0 0 24px; }
 .modal-form { display: flex; flex-direction: column; gap: 16px; }

@@ -507,12 +507,12 @@ async function revokeSession(sessionId: string) {
       <div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-top:4px;">¥{{ selectedPlan.price }}<span style="font-size:13px;font-weight:400;color:var(--text-tertiary);">{{ t('price_per_mo') }}</span></div>
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;">
-      <button class="payment-option" :disabled="paymentSending" @click="selectPaymentMethod('wechat')">
+      <Button variant="outline" class="w-full justify-start payment-option" :disabled="paymentSending" @click="selectPaymentMethod('wechat')">
         <MessageCircle class="pay-icon pay-icon--wechat" /> <span>{{ t('pay_wechat') }}</span>
-      </button>
-      <button class="payment-option" :disabled="paymentSending" @click="selectPaymentMethod('alipay')">
+      </Button>
+      <Button variant="outline" class="w-full justify-start payment-option" :disabled="paymentSending" @click="selectPaymentMethod('alipay')">
         <Landmark class="pay-icon pay-icon--alipay" /> <span>{{ t('pay_alipay') }}</span>
-      </button>
+      </Button>
     </div>
   </ModalDialog>
 
