@@ -87,13 +87,22 @@ async function downloadImage() {
   toast.show(t('img_saved'), 'success')
 }
 
-// ===== Image Preview Zoom =====
+// ===== Image Preview Zoom + Pan =====
 const imgZoom = ref(1)
+const imgPanX = ref(0)
+const imgPanY = ref(0)
 const IMG_ZOOM_MIN = 0.5
 const IMG_ZOOM_MAX = 4
 const IMG_ZOOM_STEP = 0.3
 
-function resetImgZoom() { imgZoom.value = 1 }
+// Drag state for panning when zoomed in
+let isImgDragging = false
+let imgDragStartX = 0
+let imgDragStartY = 0
+let imgPanStartX = 0
+let imgPanStartY = 0
+
+function resetImgZoom() { imgZoom.value = 1; imgPanX.value = 0; imgPanY.value = 0 }
 function zoomIn() {
   const next = Math.min(IMG_ZOOM_MAX, imgZoom.value + IMG_ZOOM_STEP)
   if (Math.abs(next - imgZoom.value) > 0.01) imgZoom.value = next
@@ -101,14 +110,35 @@ function zoomIn() {
 function zoomOut() {
   const next = Math.max(IMG_ZOOM_MIN, imgZoom.value - IMG_ZOOM_STEP)
   if (Math.abs(next - imgZoom.value) > 0.01) imgZoom.value = next
+  // Zoom out to 1x also resets pan
+  if (imgZoom.value <= 1) { imgPanX.value = 0; imgPanY.value = 0 }
 }
 function onImgWheel(e: WheelEvent) {
   e.preventDefault()
   e.stopPropagation()
-  // deltaY: positive = scroll down (zoom out), negative = scroll up (zoom in)
   const delta = e.deltaY < 0 ? IMG_ZOOM_STEP : -IMG_ZOOM_STEP
   const next = Math.max(IMG_ZOOM_MIN, Math.min(IMG_ZOOM_MAX, imgZoom.value + delta))
   if (Math.abs(next - imgZoom.value) > 0.01) imgZoom.value = next
+}
+function onImgPointerDown(e: PointerEvent) {
+  // Only enable drag when zoomed in beyond 100%
+  if (imgZoom.value <= 1) return
+  isImgDragging = true
+  imgDragStartX = e.clientX
+  imgDragStartY = e.clientY
+  imgPanStartX = imgPanX.value
+  imgPanStartY = imgPanY.value
+  ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+}
+function onImgPointerMove(e: PointerEvent) {
+  if (!isImgDragging) return
+  const dx = e.clientX - imgDragStartX
+  const dy = e.clientY - imgDragStartY
+  imgPanX.value = imgPanStartX + dx
+  imgPanY.value = imgPanStartY + dy
+}
+function onImgPointerUp() {
+  isImgDragging = false
 }
 
 function handleCloseForgot() {
@@ -663,12 +693,18 @@ async function revokeSession(sessionId: string) {
       <div
         class="img-preview-viewport"
         @wheel.prevent.stop="onImgWheel"
-        style="overflow:hidden;border-radius:var(--radius-md);background:var(--bg-hover);display:flex;align-items:center;justify-content:center;max-height:420px;cursor:zoom-in;"
+        @pointerdown="onImgPointerDown"
+        @pointermove="onImgPointerMove"
+        @pointerup="onImgPointerUp"
+        @pointercancel="onImgPointerUp"
+        style="overflow:hidden;border-radius:var(--radius-md);background:var(--bg-hover);display:flex;align-items:center;justify-content:center;max-height:420px;cursor:grab;"
+        :style="{ cursor: isImgDragging ? 'grabbing' : (imgZoom > 1 ? 'grab' : 'zoom-in') }"
       >
         <img
           :src="previewItem.preview || previewItem.content"
-          :style="{ transform: `scale(${imgZoom})`, transition: 'transform 0.15s ease', maxWidth: '100%', maxHeight: '380px', objectFit: 'contain' }"
+          :style="{ transform: `translate(${imgPanX}px, ${imgPanY}px) scale(${imgZoom})`, transition: isImgDragging ? 'none' : 'transform 0.15s ease', maxWidth: '100%', maxHeight: '380px', objectFit: 'contain', pointerEvents: 'none' }"
           alt=""
+          draggable="false"
         />
       </div>
       <div class="img-preview-bar">

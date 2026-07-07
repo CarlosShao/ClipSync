@@ -34,6 +34,9 @@ const sidebarOpen = ref(true)
 const currentSub = ref('clipboard')  // will be synced with route
 const showQuickPaste = ref(false)
 
+// Avatar URL from localStorage (set by profile save / login)
+const userAvatarUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('clipsync-avatar') || undefined : undefined
+
 // Sync route param to currentSub
 if (route.params.sub) currentSub.value = route.params.sub as string
 
@@ -116,6 +119,8 @@ function confirmAction() {
       :items-count="clip.items.value.length"
       :user-name="configStore.user.name"
       :user-plan="configStore.user.plan"
+      :user-email="configStore.user.email"
+      :user-avatar-url="userAvatarUrl"
       @toggle="sidebarOpen = !sidebarOpen"
       @navigate="switchSub"
       @logout="handleLogout"

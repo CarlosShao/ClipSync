@@ -197,8 +197,8 @@ function resetPwdForm() {
           <Input v-model="pwdConfirm" type="password" class="sg-input--block" :placeholder="t('pwd_confirm_ph') || '再次输入新密码'" @keyup.enter="handleChangePassword" />
         </div>
         <div class="pwd-actions">
-          <Button class="px-7 py-3" @click="handleChangePassword" :disabled="pwdChanging">{{ pwdChanging ? (t('saving') || '修改中...') : (t('sg_chpwd_btn') || '确认修改') }}</Button>
-          <Button variant="outline" class="px-7 py-3" @click="showPwdChange = false; resetPwdForm()">{{ t('cancel_btn') }}</Button>
+          <Button style="padding: 10px 28px;" @click="handleChangePassword" :disabled="pwdChanging">{{ pwdChanging ? (t('saving') || '修改中...') : (t('sg_chpwd_btn') || '确认修改') }}</Button>
+          <Button variant="outline" style="padding: 10px 28px;" @click="showPwdChange = false; resetPwdForm()">{{ t('cancel_btn') }}</Button>
         </div>
         <div v-if="pwdError" class="pwd-error">{{ pwdError }}</div>
         <div v-if="pwdSuccess" class="pwd-success">{{ pwdSuccess }}</div>
@@ -217,7 +217,7 @@ function resetPwdForm() {
       </div>
       <div class="sg-row" style="cursor:pointer;" @click="emit('open-modal', 'updates')">
         <div class="sg-label"><div class="sg-name">{{ t('sg_update') }}</div><div class="sg-hint">{{ t('sg_update_h') }}</div></div>
-        <Button variant="outline" class="px-6 py-2.5" @click.stop="emit('open-modal', 'updates')">{{ t('btn_check') }}</Button>
+        <Button variant="outline" style="padding: 8px 24px;" @click.stop="emit('open-modal', 'updates')">{{ t('btn_check') }}</Button>
       </div>
     </div>
 
