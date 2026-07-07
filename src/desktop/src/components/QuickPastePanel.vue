@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
 import { Search } from 'lucide-vue-next'
+import Input from '@/components/ui/input/Input.vue'
 
 const props = withDefaults(defineProps<{ open: boolean }>(), { open: false })
 const emit = defineEmits<{ close: [] }>()
@@ -54,7 +55,7 @@ function truncate(str: string, max: number): string {
       <div class="qp-panel">
         <div class="qp-search">
           <Search :size="16" style="color:var(--text-tertiary)" />
-          <input v-model="qpSearch" type="text" ref="qpInput" :placeholder="t('search_ph')" autofocus class="qp-search-input" />
+          <Input v-model="qpSearch" type="text" ref="qpInput" :placeholder="t('search_ph')" autofocus class="qp-search-input" />
           <kbd class="qp-kbd">ESC</kbd>
         </div>
         <div class="qp-list">

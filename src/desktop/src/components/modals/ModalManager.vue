@@ -12,6 +12,7 @@ import QRCode from 'qrcode'
 import jsQR from 'jsqr'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
 import Button from '@/components/ui/button/Button.vue'
+import Input from '@/components/ui/input/Input.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
 import { Pencil, Monitor, Smartphone, FileText, CircleCheck, Download } from 'lucide-vue-next'
 
@@ -555,13 +556,13 @@ async function revokeSession(sessionId: string) {
   <!-- Forgot Password -->
   <ModalDialog :open="!!showForgotPwd" :title="t('fp_title')" max-width="420px" @close="handleCloseForgot">
     <div v-if="fpStep === 1">
-      <div style="margin-bottom:12px;"><label class="field-label">{{ t('fp_email_label') }}</label><input v-model="fpEmail" type="email" class="field-input" :placeholder="t('fp_email_hint')" style="width:100%;" /></div>
+      <div style="margin-bottom:12px;"><label class="field-label">{{ t('fp_email_label') }}</label><Input v-model="fpEmail" type="email" class="field-input" :placeholder="t('fp_email_hint')" /></div>
       <Button class="w-full" :disabled="fpSending" @click="handleForgotSend"><span v-if="fpSending" class="btn-spinner" /><span>{{ t('fp_send_code') }}</span></Button>
     </div>
     <div v-else>
-      <div style="margin-bottom:12px;"><label class="field-label">{{ t('login_code') }}</label><input v-model="fpCode" type="text" maxlength="6" class="field-input" :placeholder="t('ph_code_placeholder')" style="width:100%;" /></div>
-      <div style="margin-bottom:12px;"><label class="field-label">{{ t('sp_set_pwd_label') }}</label><input v-model="fpNewPwd" type="password" class="field-input" :placeholder="t('sp_pwd_hint')" style="width:100%;" /></div>
-      <div style="margin-bottom:16px;"><label class="field-label">{{ t('sp_confirm_pwd') }}</label><input v-model="fpConfirmPwd" type="password" class="field-input" :placeholder="t('sp_confirm_hint')" style="width:100%;" /></div>
+      <div style="margin-bottom:12px;"><label class="field-label">{{ t('login_code') }}</label><Input v-model="fpCode" type="text" maxlength="6" class="field-input" :placeholder="t('ph_code_placeholder')" /></div>
+      <div style="margin-bottom:12px;"><label class="field-label">{{ t('sp_set_pwd_label') }}</label><Input v-model="fpNewPwd" type="password" class="field-input" :placeholder="t('sp_pwd_hint')" /></div>
+      <div style="margin-bottom:16px;"><label class="field-label">{{ t('sp_confirm_pwd') }}</label><Input v-model="fpConfirmPwd" type="password" class="field-input" :placeholder="t('sp_confirm_hint')" /></div>
       <Button class="w-full" :disabled="fpSending" @click="handleForgotReset"><span v-if="fpSending" class="btn-spinner" /><span>{{ t('fp_reset_btn') }}</span></Button>
     </div>
   </ModalDialog>
@@ -638,7 +639,7 @@ async function revokeSession(sessionId: string) {
       <div style="margin-top:16px;border-top:1px solid var(--border-subtle);padding-top:12px;">
         <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px;">{{ t('pair_enter_code') }}</p>
         <div style="display:flex;gap:8px;">
-          <input v-model="manualToken" :placeholder="t('pair_token_placeholder')" style="flex:1;height:32px;padding:0 10px;border-radius:var(--radius-sm);border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text-primary);font-size:13px;outline:none;" />
+          <Input v-model="manualToken" class="manual-token-input" :placeholder="t('pair_token_placeholder')" />
           <Button size="sm" :disabled="redeemSending" @click="handlePairingToken(manualToken)">{{ t('pair_pair_btn') }}</Button>
         </div>
         <p style="font-size:11px;color:var(--text-tertiary);margin-top:8px;">{{ t('pair_scan_hint') }}</p>
@@ -705,5 +706,6 @@ async function revokeSession(sessionId: string) {
 .pc-period { font-size: 12px; font-weight: 400; color: var(--text-tertiary); }
 .pc-feats { font-size: 12px; color: var(--text-secondary); line-height: 1.8; }
 
-.field-input { height: 38px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); background: var(--bg-base); color: var(--text-primary); font-size: 14px; outline: none; font-family: inherit; box-sizing:border-box; }
+.field-input { width:100%; height: 38px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); background: var(--bg-base); color: var(--text-primary); font-size: 14px; outline: none; font-family: inherit; box-sizing:border-box; }
+.manual-token-input { flex:1; height:32px; padding:0 10px; border-radius:var(--radius-sm); border:1px solid var(--border-default); background:var(--bg-surface); color:var(--text-primary); font-size:13px; outline:none; box-sizing:border-box; }
 </style>

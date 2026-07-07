@@ -8,6 +8,7 @@ import { api } from '@/api/client'
 import * as tauri from '@/lib/tauri'
 import { Eye, EyeOff, Sun, Moon } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
+import Input from '@/components/ui/input/Input.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 
 defineOptions({ name: 'AuthPage' })
@@ -385,15 +386,15 @@ const isRegisterView = computed(() => authView.value === 'register')
             <div v-if="authTab === 'phone'" class="auth-form">
               <div class="form-group">
                 <label class="form-label">{{ t('login_phone') }}</label>
-                <input id="lp-phone" v-model="authPhone" type="tel" maxlength="11" class="form-input" :placeholder="t('ph_phone_placeholder')" />
+                <Input id="lp-phone" v-model="authPhone" type="tel" maxlength="11" class="form-input" :placeholder="t('ph_phone_placeholder')" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('login_code') }}</label>
                 <div class="form-row">
-                  <input id="lp-code" v-model="authCode" type="text" maxlength="6" class="form-input" :placeholder="t('ph_code_placeholder')" />
-                  <button id="send-code-btn" class="btn-code" :disabled="isSendingCode || codeCountdown > 0" @click="sendCode">
+                  <Input id="lp-code" v-model="authCode" type="text" maxlength="6" class="form-input" :placeholder="t('ph_code_placeholder')" />
+                  <Button id="send-code-btn" variant="outline" size="sm" class="btn-code" :disabled="isSendingCode || codeCountdown > 0" @click="sendCode">
                     {{ codeCountdown > 0 ? t('code_resend', { s: codeCountdown }) : t('login_send_code') }}
-                  </button>
+                  </Button>
                 </div>
               </div>
               <div class="form-options">
@@ -409,12 +410,12 @@ const isRegisterView = computed(() => authView.value === 'register')
             <div v-else class="auth-form">
               <div class="form-group">
                 <label class="form-label">{{ t('login_account') }}</label>
-                <input id="lp-account" v-model="authAccount" type="text" class="form-input" :placeholder="t('ph_account_placeholder')" @keydown.enter="handleLogin" />
+                <Input id="lp-account" v-model="authAccount" type="text" class="form-input" :placeholder="t('ph_account_placeholder')" @keydown.enter="handleLogin" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('login_password') }}</label>
                 <div class="pwd-wrap">
-                  <input id="lp-pwd" v-model="authPassword" :type="showLoginPassword ? 'text' : 'password'" class="form-input" :placeholder="t('ph_password_placeholder')" @keydown.enter="handleLogin" />
+                  <Input id="lp-pwd" v-model="authPassword" :type="showLoginPassword ? 'text' : 'password'" class="form-input" :placeholder="t('ph_password_placeholder')" @keydown.enter="handleLogin" />
                   <button class="pwd-toggle" @click="showLoginPassword = !showLoginPassword" type="button">
                     <EyeOff v-if="showLoginPassword" :size="16" />
                     <Eye v-else :size="16" />
@@ -459,33 +460,33 @@ const isRegisterView = computed(() => authView.value === 'register')
             <div class="auth-form">
               <div class="form-group">
                 <label class="form-label">{{ t('reg_label_phone') }} <span class="required">*</span></label>
-                <input id="reg-phone" v-model="regPhone" type="tel" maxlength="11" class="form-input" :class="{ error: fieldErrors.regPhone }" :placeholder="t('reg_phone_hint')" @blur="validateRegPhone(regPhone)" @input="fieldErrors.regPhone = ''" />
+                <Input id="reg-phone" v-model="regPhone" type="tel" maxlength="11" class="form-input" :class="{ error: fieldErrors.regPhone }" :placeholder="t('reg_phone_hint')" @blur="validateRegPhone(regPhone)" @input="fieldErrors.regPhone = ''" />
                 <div v-if="fieldErrors.regPhone" class="field-error">{{ fieldErrors.regPhone }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('reg_label_nickname') }}</label>
-                <input v-model="regNickname" type="text" maxlength="30" class="form-input" :class="{ error: fieldErrors.nickname }" :placeholder="t('reg_nickname_hint')" @blur="validateNickname(regNickname)" @input="fieldErrors.nickname = ''" />
+                <Input v-model="regNickname" type="text" maxlength="30" class="form-input" :class="{ error: fieldErrors.nickname }" :placeholder="t('reg_nickname_hint')" @blur="validateNickname(regNickname)" @input="fieldErrors.nickname = ''" />
                 <div v-if="fieldErrors.nickname" class="field-error">{{ fieldErrors.nickname }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('reg_label_email') }}</label>
-                <input v-model="regEmail" type="email" maxlength="100" class="form-input" :class="{ error: fieldErrors.email }" :placeholder="t('reg_email_hint')" @blur="validateEmail(regEmail)" @input="fieldErrors.email = ''" />
+                <Input v-model="regEmail" type="email" maxlength="100" class="form-input" :class="{ error: fieldErrors.email }" :placeholder="t('reg_email_hint')" @blur="validateEmail(regEmail)" @input="fieldErrors.email = ''" />
                 <div v-if="fieldErrors.email" class="field-error">{{ fieldErrors.email }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('login_code') }} <span class="required">*</span></label>
                 <div class="form-row">
-                  <input id="reg-code" v-model="regCode" type="text" maxlength="6" class="form-input" :class="{ error: fieldErrors.regCode }" :placeholder="t('ph_code_placeholder')" @blur="validateRegCode(regCode)" @input="fieldErrors.regCode = ''" />
-                  <button class="btn-code" :disabled="isSendingCode || codeCountdown > 0" @click="sendCode">
+                  <Input id="reg-code" v-model="regCode" type="text" maxlength="6" class="form-input" :class="{ error: fieldErrors.regCode }" :placeholder="t('ph_code_placeholder')" @blur="validateRegCode(regCode)" @input="fieldErrors.regCode = ''" />
+                  <Button class="btn-code" variant="outline" size="sm" :disabled="isSendingCode || codeCountdown > 0" @click="sendCode">
                     {{ codeCountdown > 0 ? t('code_resend', { s: codeCountdown }) : t('login_send_code') }}
-                  </button>
+                  </Button>
                 </div>
                 <div v-if="fieldErrors.regCode" class="field-error">{{ fieldErrors.regCode }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('sp_set_pwd_label') }} <span class="required">*</span></label>
                 <div class="pwd-wrap">
-                  <input id="reg-pwd" v-model="regPassword" :type="showRegPassword ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
+                  <Input id="reg-pwd" v-model="regPassword" :type="showRegPassword ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
                   <button class="pwd-toggle" @click="showRegPassword = !showRegPassword" type="button">
                     <EyeOff v-if="showRegPassword" :size="16" />
                     <Eye v-else :size="16" />
@@ -504,7 +505,7 @@ const isRegisterView = computed(() => authView.value === 'register')
               <div class="form-group">
                 <label class="form-label">{{ t('sp_confirm_pwd') }} <span class="required">*</span></label>
                 <div class="pwd-wrap">
-                  <input id="reg-confirm" v-model="regConfirm" :type="showRegConfirm ? 'text' : 'password'" class="form-input" :class="{ error: fieldErrors.regConfirm }" :placeholder="t('sp_confirm_hint')" @blur="validateRegConfirm(regConfirm)" @input="fieldErrors.regConfirm = ''" />
+                  <Input id="reg-confirm" v-model="regConfirm" :type="showRegConfirm ? 'text' : 'password'" class="form-input" :class="{ error: fieldErrors.regConfirm }" :placeholder="t('sp_confirm_hint')" @blur="validateRegConfirm(regConfirm)" @input="fieldErrors.regConfirm = ''" />
                   <button class="pwd-toggle" @click="showRegConfirm = !showRegConfirm" type="button">
                     <EyeOff v-if="showRegConfirm" :size="16" />
                     <Eye v-else :size="16" />
@@ -552,7 +553,7 @@ const isRegisterView = computed(() => authView.value === 'register')
               <div class="form-group">
                 <label class="form-label">{{ t('sp_set_pwd_label') }}</label>
                 <div class="pwd-wrap">
-                  <input id="sp-pwd" v-model="setPwdNew" :type="showSetPwdPassword ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
+                  <Input id="sp-pwd" v-model="setPwdNew" :type="showSetPwdPassword ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
                   <button class="pwd-toggle" @click="showSetPwdPassword = !showSetPwdPassword" type="button">
                     <EyeOff v-if="showSetPwdPassword" :size="16" />
                     <Eye v-else :size="16" />
@@ -571,7 +572,7 @@ const isRegisterView = computed(() => authView.value === 'register')
               <div class="form-group">
                 <label class="form-label">{{ t('sp_confirm_pwd') }}</label>
                 <div class="pwd-wrap">
-                  <input id="sp-confirm" v-model="setPwdConfirm" :type="showSetPwdConfirm ? 'text' : 'password'" class="form-input" :placeholder="t('sp_confirm_hint')" />
+                  <Input id="sp-confirm" v-model="setPwdConfirm" :type="showSetPwdConfirm ? 'text' : 'password'" class="form-input" :placeholder="t('sp_confirm_hint')" />
                   <button class="pwd-toggle" @click="showSetPwdConfirm = !showSetPwdConfirm" type="button">
                     <EyeOff v-if="showSetPwdConfirm" :size="16" />
                     <Eye v-else :size="16" />
@@ -607,7 +608,7 @@ const isRegisterView = computed(() => authView.value === 'register')
           <div v-if="fpStep === 'email'" class="modal-form">
             <div class="form-group">
               <label class="form-label">{{ t('fp_email_label') }}</label>
-              <input v-model="fpEmail" type="email" class="form-input" :placeholder="t('fp_email_hint')" @keydown.enter="fpSendCode" />
+              <Input v-model="fpEmail" type="email" class="form-input" :placeholder="t('fp_email_hint')" @keydown.enter="fpSendCode" />
             </div>
             <Button class="w-full" :disabled="fpCodeSending" @click="fpSendCode">
               <span v-if="fpCodeSending" class="spinner" /> {{ t('fp_send_code') }}
@@ -617,12 +618,12 @@ const isRegisterView = computed(() => authView.value === 'register')
           <div v-else class="modal-form">
             <div class="form-group">
               <label class="form-label">{{ t('login_code') }}</label>
-              <input v-model="fpCode" type="text" maxlength="6" class="form-input" :placeholder="t('ph_code_placeholder')" />
+              <Input v-model="fpCode" type="text" maxlength="6" class="form-input" :placeholder="t('ph_code_placeholder')" />
             </div>
             <div class="form-group">
               <label class="form-label">{{ t('sp_set_pwd_label') }}</label>
               <div class="pwd-wrap">
-                <input v-model="fpNewPwd" :type="showFpNewPwd ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
+                <Input v-model="fpNewPwd" :type="showFpNewPwd ? 'text' : 'password'" class="form-input" :placeholder="t('sp_pwd_hint')" />
                 <button class="pwd-toggle" @click="showFpNewPwd = !showFpNewPwd" type="button">
                   <EyeOff v-if="showFpNewPwd" :size="16" />
                   <Eye v-else :size="16" />
@@ -641,7 +642,7 @@ const isRegisterView = computed(() => authView.value === 'register')
             <div class="form-group">
               <label class="form-label">{{ t('sp_confirm_pwd') }}</label>
               <div class="pwd-wrap">
-                <input v-model="fpConfirmPwd" :type="showFpConfirm ? 'text' : 'password'" class="form-input" :placeholder="t('sp_confirm_hint')" />
+                <Input v-model="fpConfirmPwd" :type="showFpConfirm ? 'text' : 'password'" class="form-input" :placeholder="t('sp_confirm_hint')" />
                 <button class="pwd-toggle" @click="showFpConfirm = !showFpConfirm" type="button">
                   <EyeOff v-if="showFpConfirm" :size="16" />
                   <Eye v-else :size="16" />
