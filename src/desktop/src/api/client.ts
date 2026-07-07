@@ -75,3 +75,27 @@ export async function api<T = any>(
   // 重试耗尽
   return { ok: false, status: 429, error: 'Too many requests after retries, please wait and try again.' }
 }
+
+/**
+ * 二进制响应请求（图片/文件预览）。与 api() 共用同一套鉴权与 CSRF 头，
+ * 但返回原始 Response 以便调用方取 blob。
+ * 关键：/api/media 等路由挂了 csrfProtection，裸 fetch 只带 Bearer 会被拒 → 图片 404。
+ */
+export async function apiBlob(
+  method: string,
+  path: string,
+): Promise<Response | null> {
+  const config = useConfigStore()
+  const headers: Record<string, string> = {}
+  const token = config.config.token
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const csrf = await getCsrfToken()
+  if (csrf) headers['X-CSRF-Token'] = csrf
+  try {
+    return await fetch(`${config.serverUrl}${path}`, {
+      method, headers, credentials: 'include',
+    })
+  } catch {
+    return null
+  }
+}
