@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from '@/composables/useI18n'
+import Button from '@/components/ui/button/Button.vue'
 const { t } = useI18n()
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
 </script>
@@ -25,8 +26,8 @@ const emit = defineEmits<{ 'open-modal': [type: string] }>()
         <li>✓ {{ t('feat_100hist') }}</li>
         <li>✓ {{ t('feat_community') }}</li>
       </ul>
-      <button class="btn btn-primary btn-full" @click="emit('open-modal', 'pricing')">{{ t('sub_change_plan') }}</button>
-      <button class="btn btn-ghost btn-full" style="margin-top:8px;color:var(--danger);" @click="emit('open-modal', 'cancel-subscription')">{{ t('sub_cancel') }}</button>
+      <Button class="w-full" @click="emit('open-modal', 'pricing')">{{ t('sub_change_plan') }}</Button>
+      <Button variant="outline" class="w-full" style="margin-top:8px;color:var(--danger);" @click="emit('open-modal', 'cancel-subscription')">{{ t('sub_cancel') }}</Button>
     </div>
   </div>
 </template>

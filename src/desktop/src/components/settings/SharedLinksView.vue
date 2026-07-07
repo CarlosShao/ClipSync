@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
+import { Link, Copy } from 'lucide-vue-next'
+import Button from '@/components/ui/button/Button.vue'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -32,10 +34,7 @@ function copyLink(url: string) {
     <div class="links-list">
       <div v-for="link in links" :key="link.id" class="link-card">
         <div class="link-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
-          </svg>
+          <Link :size="20" />
         </div>
         <div class="link-info">
           <div class="link-title">{{ link.title }}</div>
@@ -45,11 +44,9 @@ function copyLink(url: string) {
           <div class="link-views">{{ link.views }} views</div>
           <div class="link-date">Created {{ link.createdAt }}</div>
         </div>
-        <button class="link-copy" @click="copyLink(link.url)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-          </svg>
-        </button>
+        <Button variant="ghost" size="icon-sm" class="link-copy" @click="copyLink(link.url)">
+          <Copy :size="14" />
+        </Button>
       </div>
     </div>
     <div v-if="links.length === 0" class="empty-state">
