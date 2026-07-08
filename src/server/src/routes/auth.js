@@ -11,6 +11,7 @@ import { encryptField, decryptField } from '../utils/encryption.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+import { sendNotification, detectAndNotifyNewLogin } from '../ws/server.js';
 import crypto from 'crypto';
 
 // 哈希盐（固定值，用于 phone_hash / email_hash 计算）
@@ -271,6 +272,12 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     const user = userResult.rows[0];
 
     // 创建会话并生成JWT
+    await detectAndNotifyNewLogin(user.id, {
+      deviceName: req.body.deviceName,
+      platform: req.body.platform,
+      ip: req.ip || req.connection.remoteAddress,
+    });
+
     const { token } = await createSessionAndGenerateToken(user, req);
 
     // ========= P1-4: 审计日志（登录成功）=========
@@ -429,6 +436,12 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
     }
 
     const user = userResult.rows[0];
+
+    await detectAndNotifyNewLogin(user.id, {
+      deviceName: req.body.deviceName,
+      platform: req.body.platform,
+      ip: req.ip || req.connection.remoteAddress,
+    });
 
     // 创建会话并生成JWT
     const { token } = await createSessionAndGenerateToken(user, req);
@@ -851,6 +864,12 @@ router.post('/set-password', async (req, res) => {
     logger.info(`[SetPassword] Password set for user ${user.id}`);
 
     // 创建会话 + JWT（设置完密码后自动登录）
+    await detectAndNotifyNewLogin(user.id, {
+      deviceName: req.body.deviceName,
+      platform: req.body.platform,
+      ip: req.ip || req.connection.remoteAddress,
+    });
+
     const { token } = await createSessionAndGenerateToken(user, req);
 
     res.json({
@@ -964,6 +983,12 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
 
     // 清除登录失败记录
     clearLoginFailed(cleanIdentifier);
+
+    await detectAndNotifyNewLogin(user.id, {
+      deviceName: req.body.deviceName,
+      platform: req.body.platform,
+      ip: req.ip || req.connection.remoteAddress,
+    });
 
     // 创建会话并生成JWT
     const { token } = await createSessionAndGenerateToken(user, req);

@@ -3,6 +3,7 @@ import pool from '../db/pool.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+import { sendNotification } from '../ws/server.js';
 
 const router = Router();
 
@@ -134,7 +135,7 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
     }
     
     const plan = planResult.rows[0];
-    const price = billingCycle === 'yearly' ? plan.price * 10 : plan.price; // 年付优惠2个月
+    const price = billingCycle === 'yearly' ? (plan.price_yearly || plan.price_monthly * 10) : plan.price_monthly;
     
     // 检查是否已有活跃订阅
     const existingSubscription = await pool.query(
@@ -160,7 +161,7 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
         userId,
         orderNo,
         price,
-        plan.currency,
+        'CNY', // currency default (subscription_plans has no currency column)
         'mock', // 暂时使用mock支付
         'pending',
         JSON.stringify({ planId, billingCycle, action: 'upgrade' })
@@ -192,14 +193,37 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
       );
       
       logger.info(`User ${userId} subscribed to plan ${plan.name}`);
-      
+
+      // 推送订阅变更 + 高级功能解锁通知
+      try {
+        await sendNotification(userId, {
+          notificationType: 'subscription_changed',
+          title: 'Subscription updated',
+          body: `Your plan was changed to ${plan.name}.`,
+          data: { planId, planName: plan.name, billingCycle },
+        });
+        if (plan.name.toLowerCase() !== 'free') {
+          await sendNotification(userId, {
+            notificationType: 'product_update',
+            title: 'Premium features unlocked',
+            body: `New premium features are now available on your ${plan.name} plan.`,
+            data: { planName: plan.name },
+          });
+        }
+      } catch (notifErr) {
+        logger.error('[Subscription] 订阅变更通知失败（已忽略）:', { error: notifErr?.message, userId });
+      }
+
       // 审计日志：记录订阅创建
-      await logAuditEvent(userId, AUDIT_ACTIONS.SUBSCRIPTION_CREATE, 'subscription', newSubscriptionResult.rows[0].id, {
-        planId,
-        planName: plan.name,
-        billingCycle,
-        price,
-      }, req);
+      await logAuditEvent({
+        userId,
+        action: AUDIT_ACTIONS.SUBSCRIPTION_CREATE,
+        resourceType: 'subscription',
+        resourceId: newSubscriptionResult.rows[0].id,
+        details: { planId, planName: plan.name, billingCycle, price },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      });
 
       return res.json({
         message: 'Subscription successful',
@@ -235,15 +259,31 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
       );
       
       logger.info(`User ${userId} started new subscription to plan ${plan.name}, trial: ${isTrial}`);
-      
+
+      // 推送订阅开始通知
+      try {
+        await sendNotification(userId, {
+          notificationType: 'subscription_started',
+          title: isTrial ? 'Trial started' : 'Subscription activated',
+          body: isTrial
+            ? `Your ${plan.name} trial is active for 7 days.`
+            : `You're now subscribed to the ${plan.name} plan.`,
+          data: { planId, planName: plan.name, isTrial },
+        });
+      } catch (notifErr) {
+        logger.error('[Subscription] 订阅开始通知失败（已忽略）:', { error: notifErr?.message, userId });
+      }
+
       // 审计日志：记录新订阅
-      await logAuditEvent(userId, AUDIT_ACTIONS.SUBSCRIPTION_CREATE, 'subscription', subscriptionResult.rows[0].id, {
-        planId,
-        planName: plan.name,
-        billingCycle,
-        price,
-        isTrial,
-      }, req);
+      await logAuditEvent({
+        userId,
+        action: AUDIT_ACTIONS.SUBSCRIPTION_CREATE,
+        resourceType: 'subscription',
+        resourceId: subscriptionResult.rows[0].id,
+        details: { planId, planName: plan.name, billingCycle, price, isTrial },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      });
 
       return res.json({
         message: isTrial ? 'Trial period started, auto-renewal in 7 days' : 'Subscription successful',
@@ -285,11 +325,29 @@ router.post('/cancel', authenticateToken, async (req, res) => {
     );
     
     logger.info(`User ${userId} cancelled subscription ${subscription.id}, will end at period end`);
-    
+
+    // 推送订阅取消通知
+    try {
+      await sendNotification(userId, {
+        notificationType: 'subscription_cancelled',
+        title: 'Subscription cancelled',
+        body: `Your subscription will end on ${new Date(subscription.current_period_end).toLocaleDateString()}.`,
+        data: { currentPeriodEnd: subscription.current_period_end },
+      });
+    } catch (notifErr) {
+      logger.error('[Subscription] 订阅取消通知失败（已忽略）:', { error: notifErr?.message, userId });
+    }
+
     // 审计日志：记录订阅取消
-    await logAuditEvent(userId, AUDIT_ACTIONS.SUBSCRIPTION_CANCEL, 'subscription', subscription.id, {
-      currentPeriodEnd: subscription.current_period_end,
-    }, req);
+    await logAuditEvent({
+      userId,
+      action: AUDIT_ACTIONS.SUBSCRIPTION_CANCEL,
+      resourceType: 'subscription',
+      resourceId: subscription.id,
+      details: { currentPeriodEnd: subscription.current_period_end },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
 
     res.json({
       message: 'Subscription marked for cancellation, effective at the end of the current billing period',
@@ -328,11 +386,29 @@ router.post('/resume', authenticateToken, async (req, res) => {
     );
     
     logger.info(`User ${userId} resumed subscription ${subscription.id}`);
-    
+
+    // 推送订阅恢复通知
+    try {
+      await sendNotification(userId, {
+        notificationType: 'subscription_resumed',
+        title: 'Subscription resumed',
+        body: 'Your subscription will continue renewing as before.',
+        data: {},
+      });
+    } catch (notifErr) {
+      logger.error('[Subscription] 订阅恢复通知失败（已忽略）:', { error: notifErr?.message, userId });
+    }
+
     // 审计日志：记录订阅恢复
-    await logAuditEvent(userId, AUDIT_ACTIONS.SUBSCRIPTION_RESUME, 'subscription', subscription.id, {
-      currentPeriodEnd: subscription.current_period_end,
-    }, req);
+    await logAuditEvent({
+      userId,
+      action: AUDIT_ACTIONS.SUBSCRIPTION_RESUME,
+      resourceType: 'subscription',
+      resourceId: subscription.id,
+      details: { currentPeriodEnd: subscription.current_period_end },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
 
     res.json({
       message: 'Subscription restored',

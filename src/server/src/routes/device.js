@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import pool from '../db/pool.js';
-import { broadcastToUser } from '../ws/server.js';
+import { broadcastToUser, sendNotification } from '../ws/server.js';
 import { isValidUUID, isValidDeviceType, isValidPlatform, sanitizeString, validateDeviceName } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
 import { getRedisClient } from '../utils/redis-client.js';
@@ -103,6 +103,18 @@ pairingRouter.post('/pairing/redeem', apiLimiter, async (req, res) => {
     );
 
     logger.info('[Pairing] redeem success', { userId, deviceType: cleanDeviceType, platform: cleanPlatform });
+
+    // 新设备接入同步组 → 推送「设备上线」通知
+    try {
+      await sendNotification(userId, {
+        notificationType: 'device_online',
+        title: 'New device connected',
+        body: `${cleanDeviceName} (${cleanPlatform}) joined your sync group.`,
+        data: { deviceName: cleanDeviceName, platform: cleanPlatform },
+      });
+    } catch (notifErr) {
+      logger.error('[Pairing] 设备上线通知失败（已忽略）:', { error: notifErr?.message, userId });
+    }
 
     res.json({
       token: jwtToken,
