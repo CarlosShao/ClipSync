@@ -18,6 +18,7 @@ import ProfileView from '@/components/settings/ProfileView.vue'
 import DevicesView from '@/components/settings/DevicesView.vue'
 import SharedLinksView from '@/components/settings/SharedLinksView.vue'
 import SubscriptionView from '@/components/settings/SubscriptionView.vue'
+import NotificationsView from '@/components/settings/NotificationsView.vue'
 import ModalManager from '@/components/modals/ModalManager.vue'
 import ToastContainer from '@/components/ui/ToastContainer.vue'
 
@@ -138,6 +139,7 @@ function confirmAction() {
       <ProfileView v-else-if="currentSub === 'profile'" />
       <DevicesView v-else-if="currentSub === 'devices'" @open-modal="openModal" />
       <SharedLinksView v-else-if="currentSub === 'shared-links'" />
+      <NotificationsView v-else-if="currentSub === 'notifications'" />
       <SubscriptionView v-else-if="currentSub === 'subscription'" @open-modal="openModal" />
     </main>
   </div>

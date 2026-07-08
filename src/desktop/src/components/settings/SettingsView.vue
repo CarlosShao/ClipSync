@@ -277,8 +277,9 @@ function resetPwdForm() {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
-.pwd-field { margin-bottom: 14px; padding-left: 4px; }
-.pwd-field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; padding-left: 4px; }
+.pwd-field { margin-bottom: 14px; }
+.pwd-field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; padding-left: 2px; }
+.sg-input--block { width: 100%; padding-left: 16px !important; }
 .pwd-actions { display: flex; gap: 10px; margin-top: 12px; }
 .pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
 .pwd-success { color: #22c55e; font-size: 12px; margin-top: 6px; }
