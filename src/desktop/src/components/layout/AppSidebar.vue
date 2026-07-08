@@ -355,7 +355,7 @@ const accountNavItems = computed(() => [
   margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 600; line-height: 1;
-  color: #fff; background: var(--danger); border-radius: 9999px;
+  color: var(--text-inverse); background: var(--danger); border-radius: 9999px;
 }
 
 /* Transition for user menu fade */
