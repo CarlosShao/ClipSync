@@ -261,6 +261,49 @@ function stopRecord() {
   }
 }
 
+// Special key display-name mapping (e.code / e.key → human-readable label)
+const SPECIAL_KEY_MAP: Record<string, string> = {
+  // Whitespace / navigation
+  'Space': 'Space', ' ': 'Space',
+  'Enter': 'Enter', 'Tab': 'Tab', 'Backspace': 'Backspace', 'Delete': 'Delete',
+  'Insert': 'Insert',
+  // Function keys
+  'F1': 'F1', 'F2': 'F2', 'F3': 'F3', 'F4': 'F4', 'F5': 'F5', 'F6': 'F6',
+  'F7': 'F7', 'F8': 'F8', 'F9': 'F9', 'F10': 'F10', 'F11': 'F11', 'F12': 'F12',
+  // Symbols (need explicit mapping because .toUpperCase() mangles some)
+  ';': ';', '=': '=', ',': ',', '-': '-', '.': '.', '/': '/', '`': '`',
+  '[': '[', '\\\\': '\\\\', ']': ']', '"': '"',
+  // Arrow keys (useful for in-app shortcuts)
+  'ArrowUp': '↑', 'ArrowDown': '↓', 'ArrowLeft': '←', 'ArrowRight': '→',
+  'Home': 'Home', 'End': 'End', 'PageUp': 'PageUp', 'PageDown': 'PageDown',
+  // Numpad
+  'NumLock': 'NumLock', 'ScrollLock': 'ScrollLock', 'Pause': 'Pause',
+  'CapsLock': 'CapsLock',
+}
+
+function getDisplayKey(raw: string): string {
+  return SPECIAL_KEY_MAP[raw] || raw
+}
+
+function resolveMainKey(e: KeyboardEvent): string | null {
+  // Try e.code first (more stable across keyboard layouts), fall back to e.key
+  const code = e.code.replace(/^(Key|Digit|Numpad)/, '') // 'KeyA' → 'A', 'Digit3' → '3'
+  const rawKey = e.key
+
+  // Single printable character
+  if (rawKey.length === 1) return rawKey.toUpperCase()
+
+  // Known special key — use the mapped display name
+  const mapped = SPECIAL_KEY_MAP[rawKey] || SPECIAL_KEY_MAP[code]
+  if (mapped) return mapped
+
+  // Modifier-only press — ignore
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(rawKey)) return null
+
+  // Fallback: use raw e.key (covers edge cases)
+  return rawKey || null
+}
+
 function onKeyDown(e: KeyboardEvent) {
   if (!recordingId.value) return
   e.preventDefault()
@@ -271,15 +314,18 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.ctrlKey || e.metaKey) keys.push(e.metaKey ? 'Cmd' : 'Ctrl')
   if (e.altKey) keys.push('Alt')
   if (e.shiftKey) keys.push('Shift')
-  const mainKey = e.key.length === 1 ? e.key.toUpperCase() : e.key
-  // 主键必须是非修饰键（如 M、A、1、F5 等）；Control/Alt/Shift/Meta 只是修饰键
-  const isMain = mainKey && !['Control','Alt','Shift','Meta'].includes(mainKey)
-  if (isMain) keys.push(mainKey)
 
-  // 必须同时有「修饰键 + 非修饰主键」才算完整快捷键。
-  // 之前只要 keys.length>=2 就保存，导致 Ctrl+Shift（只有修饰键）被当成完成、
-  // 去注册时 Tauri 因缺主键解析失败报红。现在要求 isMain 才保存。
-  if (!isMain || keys.length < 2) return
+  const mainKey = resolveMainKey(e)
+
+  // Must have a non-modifier main key + at least one modifier (for global shortcuts,
+  // single keys like Enter/Delete are OK for in-app shortcuts)
+  if (!mainKey) return
+
+  keys.push(mainKey)
+
+  // Global shortcuts require at least one modifier; in-app allow bare keys
+  const isGlobal = GLOBAL_IDS.includes(recordingId.value!)
+  if (isGlobal && keys.length < 2) return
 
   // Save new shortcut
   const id = recordingId.value!
@@ -290,7 +336,6 @@ function onKeyDown(e: KeyboardEvent) {
   } catch {}
   recordingId.value = null
 
-  const isGlobal = GLOBAL_IDS.includes(id)
   if (isGlobal) {
     // Global shortcuts: re-register ALL global ones with Tauri.
     const globalMap: Record<string, string> = {}
