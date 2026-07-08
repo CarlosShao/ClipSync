@@ -70,7 +70,7 @@ function timeAgo(ts: number): string {
   const diff = Date.now() - ts
   if (diff < 60000) return t('just_now')
   if (diff < 3600000) return Math.floor(diff / 60000) + t('m_ago')
-  if (diff < 86400000) return Math.floor(diff / 3600000) + t('h_ago')
+  if (diff < 86400000) return Math.floor(diff / 3600000) + t('d_ago')
   return Math.floor(diff / 86400000) + t('d_ago')
 }
 function truncate(str: string, max: number): string {
@@ -79,23 +79,22 @@ function truncate(str: string, max: number): string {
 </script>
 
 <template>
-  <div class="qp">
-    <!-- Search bar — draggable, ZERO background -->
-    <div class="qp-bar" data-tauri-drag-region>
-      <div :class="['qp-bi', { open: expanded }]">
-        <Search :size="13" class="qp-ico" />
-        <input
-          v-model="qpSearch"
-          type="text"
-          :placeholder="t('search_ph')"
-          class="qp-in"
-          @focus="expanded = true"
-        />
-        <span class="qp-esc">ESC</span>
-      </div>
+  <!-- ROOT = the card itself. Fills entire Tauri window. Zero gap. -->
+  <div class="qp" data-tauri-drag-region>
+    <!-- Search row — draggable -->
+    <div :class="['qp-bar', { open: expanded }]">
+      <Search :size="13" class="qp-ico" />
+      <input
+        v-model="qpSearch"
+        type="text"
+        :placeholder="t('search_ph')"
+        class="qp-in"
+        @focus="expanded = true"
+      />
+      <span class="qp-esc">ESC</span>
     </div>
 
-    <!-- Results — slides DOWN, ZERO background -->
+    <!-- Results drawer — slides down from under search bar -->
     <Transition name="dr">
       <div v-show="expanded" class="qp-drp">
         <div class="qp-lst">
@@ -123,31 +122,38 @@ function truncate(str: string, max: number): string {
 </template>
 
 <style scoped>
-/* ── Container: column, centered, INVISIBLE ── */
+/* ── ROOT = THE CARD. Fills 100% of Tauri window. No wrapper gap. ── */
 .qp {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  width: min(440px, 90vw);
+  width: 100vw;
+  height: 100vh;
+  /* The card surface */
+  background: var(--bg-surface);
+  color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  animation: qp-f .12s ease-out;
+  overflow: hidden;
+  animation: qp-in .15s ease-out;
 }
-@keyframes qp-f {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
+@keyframes qp-in {
+  from { opacity: 0; transform: scale(.97); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
-/* ── Search bar: no background, no border, text floats on desktop ── */
-.qp-bar { width: 100%; }
-.qp-bi {
+/* ── Search bar row ── */
+.qp-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  /* NO background — transparent */
   cursor: grab;
   -webkit-user-select: none;
   user-select: none;
+  /* When expanded: flatten bottom corners to merge with results below */
+  border-radius: 12px 12px 0 0;
+}
+.qp-bar.open {
+  border-radius: 0; /* fully flat when drawer open */
 }
 
 .qp-ico { color: var(--text-tertiary); flex-shrink: 0; pointer-events: none; }
@@ -161,95 +167,96 @@ function truncate(str: string, max: number): string {
   color: var(--text-primary);
   min-width: 0;
   cursor: text;
-  /* text-shadow for readability on ANY wallpaper */
-  text-shadow: 0 1px 3px rgba(0,0,0,.45), 0 1px 1px rgba(0,0,0,.3);
 }
-.qp-in::placeholder {
-  color: var(--text-tertiary);
-  text-shadow: 0 1px 2px rgba(0,0,0,.35);
-}
+.qp-in::placeholder { color: var(--text-tertiary); }
 
 .qp-esc {
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-tertiary);
-  /* Minimal pill — barely visible */
+  color: var(--text-muted, var(--text-tertiary));
+  background: var(--bg-hover);
+  border-radius: 3px;
   padding: 1px 5px;
   font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
   flex-shrink: 0;
   pointer-events: none;
-  text-shadow: 0 1px 2px rgba(0,0,0,.3);
 }
 
-/* ── Results drawer: NO background, just text ── */
+/* ── Results drawer ── */
 .qp-drp {
-  width: 100%;
-  /* NO background */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Same bg as root → seamless merge */
+  overflow: hidden;
 }
 
 /* Vue Transition */
-.dr-enter-active { transition: all .2s cubic-bezier(.16,1,.3,1); overflow: hidden; }
-.dr-leave-active { transition: all .14s ease-in; overflow: hidden; }
+.dr-enter-active { transition: all .2s cubic-bezier(.16,1,.3,1); }
+.dr-leave-active { transition: all .14s ease-in; }
 .dr-enter-from { opacity: 0; max-height: 0; }
-.dr-enter-to   { opacity: 1; max-height: 340px; }
-.dr-leave-from { opacity: 1; max-height: 340px; }
+.dr-enter-to   { opacity: 1; max-height: 500px; }
+.dr-leave-from { opacity: 1; max-height: 500px; }
 .dr-leave-to   { opacity: 0; max-height: 0; }
 
-/* List */
-.qp-lst { max-height: 270px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; }
+/* Scrollable list */
+.qp-lst {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
 .qp-lst::-webkit-scrollbar { width: 3px; }
 .qp-lst::-webkit-scrollbar-track { background: transparent; }
-.qp-lst::-webkit-scrollbar-thumb { background: rgba(128,128,128,.25); border-radius: 2px; }
+.qp-lst::-webkit-scrollbar-thumb { background: var(--border-subtle, rgba(128,128,128,.25)); border-radius: 2px; }
 
-/* Row — hover = left accent line only, NO background fill */
+/* Row */
 .qp-it {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 14px;
+  padding: 7px 16px;
   cursor: pointer;
-  border-left: 2px solid transparent;
-  transition: border-color .1s;
+  transition: background .08s;
+  border-left: 3px solid transparent;
 }
-.qp-it:hover { border-left-color: var(--accent); }
-.qp-it.on   { border-left-color: var(--accent); }
+.qp-it:hover { background: var(--bg-hover); }
+.qp-it.on   { background: var(--bg-selected, var(--bg-hover)); border-left-color: var(--accent); }
 
-/* All text needs shadow for desktop readability */
-.qp-em {
-  flex-shrink: 0; font-size: 12px; width: 18px; text-align: center;
-  text-shadow: 0 1px 2px rgba(0,0,0,.4);
-}
-.qp-tx {
-  flex: 1; font-size: 12px; color: var(--text-primary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
-  text-shadow: 0 1px 2px rgba(0,0,0,.4);
-}
-.qp-ag { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
-.qp-no { padding: 20px; text-align: center; font-size: 13px; color: var(--text-tertiary); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.qp-em { flex-shrink: 0; font-size: 12px; width: 18px; text-align: center; }
+.qp-tx { flex: 1; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.qp-ag { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.qp-no { padding: 20px; text-align: center; font-size: 13px; color: var(--text-tertiary); }
 
-/* Footer */
+/* Footer inside drawer */
 .qp-ft {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 5px 14px 6px;
+  padding: 6px 16px 7px;
   font-size: 10px;
   color: var(--text-tertiary);
-  text-shadow: 0 1px 2px rgba(0,0,0,.3);
+  border-top: 1px solid var(--border-subtle, rgba(128,128,128,.12));
+  flex-shrink: 0;
 }
 .qp-ft span:first-child { margin-right: auto; font-weight: 600; color: var(--text-secondary); }
 .qp-ft kbd {
   font-size: 9px;
+  background: var(--bg-hover);
   border-radius: 3px;
   padding: 0 3px;
+  line-height: 1.5;
   font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
   color: var(--text-secondary);
-  text-shadow: 0 1px 1px rgba(0,0,0,.25);
 }
 
-/* body/html must stay transparent in QP mode */
+/* In QP mode: body matches card bg so no frame-gap is visible */
 :global(html.qp-mode),
 :global(html.qp-mode body) {
-  background: transparent !important;
+  background: var(--bg-surface) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
 }
 </style>
