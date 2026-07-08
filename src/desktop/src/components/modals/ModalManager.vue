@@ -902,4 +902,10 @@ async function revokeSession(sessionId: string) {
 .img-preview-label { font-weight:500; color:var(--text-secondary); }
 .img-preview-zoom { display:inline-flex; align-items:center; gap:6px; margin-left:auto; }
 .img-zoom-level { min-width:40px; text-align:center; font-size:11px; font-weight:600; color:var(--text-tertiary); font-variant-numeric:tabular-nums; }
+
+/* Shortcut recorder pulse animation */
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--accent); opacity: 1; }
+  50% { border-color: var(--text-tertiary); opacity: 0.6; }
+}
 </style>
