@@ -15,16 +15,12 @@ const expanded = ref(false)
 let stopPolling: (() => void) | null = null
 onMounted(() => {
   stopPolling = clip.startPolling(2000)
-  nextTick(() => {
-    focusSearch()
-  })
+  nextTick(() => focusSearch())
 })
-onUnmounted(() => {
-  if (stopPolling) stopPolling()
-})
+onUnmounted(() => { if (stopPolling) stopPolling() })
 
 function focusSearch() {
-  const el = document.querySelector('.qp-search-input') as HTMLInputElement | null
+  const el = document.querySelector('.qp-in') as HTMLInputElement | null
   el?.focus()
   el?.select()
 }
@@ -34,9 +30,7 @@ function focusSearch() {
   qpSearch.value = ''
   qpSelectedIndex.value = 0
   expanded.value = false
-  nextTick(() => {
-    focusSearch()
-  })
+  nextTick(() => focusSearch())
 }
 
 const filteredItems = computed(() => {
@@ -51,11 +45,9 @@ const filteredItems = computed(() => {
 async function selectItem(item: any) {
   await collapseAndClose(() => clip.copyItem(item))
 }
-
 async function closePopup() {
   await collapseAndClose(() => {})
 }
-
 async function collapseAndClose(action: () => void) {
   expanded.value = false
   action()
@@ -65,29 +57,14 @@ async function collapseAndClose(action: () => void) {
 
 function handleKeydown(e: KeyboardEvent) {
   const list = filteredItems.value
-  if (e.key === 'ArrowDown') {
-    e.preventDefault()
-    qpSelectedIndex.value = Math.min(qpSelectedIndex.value + 1, list.length - 1)
-  }
-  else if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    qpSelectedIndex.value = Math.max(qpSelectedIndex.value - 1, 0)
-  }
-  else if (e.key === 'Enter' && list[qpSelectedIndex.value]) {
-    e.preventDefault()
-    selectItem(list[qpSelectedIndex.value])
-  }
-  else if (e.key === 'Escape') {
-    e.preventDefault()
-    closePopup()
-  }
+  if (e.key === 'ArrowDown') { e.preventDefault(); qpSelectedIndex.value = Math.min(qpSelectedIndex.value + 1, list.length - 1) }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); qpSelectedIndex.value = Math.max(qpSelectedIndex.value - 1, 0) }
+  else if (e.key === 'Enter' && list[qpSelectedIndex.value]) { e.preventDefault(); selectItem(list[qpSelectedIndex.value]) }
+  else if (e.key === 'Escape') { e.preventDefault(); closePopup() }
 }
 
 onMounted(() => document.addEventListener('keydown', handleKeydown))
-onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeydown)
-  delete (window as any).__qpActivate
-})
+onUnmounted(() => { document.removeEventListener('keydown', handleKeydown); delete (window as any).__qpActivate })
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts
@@ -103,40 +80,42 @@ function truncate(str: string, max: number): string {
 
 <template>
   <div class="qp">
-    <!-- Search row — draggable -->
-    <div class="qp-search" data-tauri-drag-region @mousedown.stop>
-      <Search :size="14" class="qp-icon" />
-      <input
-        v-model="qpSearch"
-        type="text"
-        :placeholder="t('search_ph')"
-        class="qp-input"
-        @focus="expanded = true"
-      />
-      <span class="qp-esc">ESC</span>
+    <!-- Search bar — draggable, no border, no shadow -->
+    <div class="qp-bar" data-tauri-drag-region>
+      <div :class="['qp-bar-inner', { open: expanded }]">
+        <Search :size="13" class="qp-ico" />
+        <input
+          v-model="qpSearch"
+          type="text"
+          :placeholder="t('search_ph')"
+          class="qp-in"
+          @focus="expanded = true"
+        />
+        <span class="qp-esc">ESC</span>
+      </div>
     </div>
 
-    <!-- Results — no frame, just slides down -->
-    <Transition name="drop">
-      <div v-show="expanded" class="qp-results">
-        <div class="qp-list">
+    <!-- Results slide DOWN from under the search bar -->
+    <Transition name="dr">
+      <div v-show="expanded" class="qp-drop">
+        <div class="qp-lst">
           <div
             v-for="(item, idx) in filteredItems"
             :key="item.id"
-            :class="['qp-row', { sel: idx === qpSelectedIndex }]"
+            :class="['qp-it', { on: idx === qpSelectedIndex }]"
             @click="selectItem(item)"
             @mouseenter="qpSelectedIndex = idx"
           >
-            <span class="qp-ty">{{ item.type === 'image' ? '\u{1F5BC}' : item.type === 'file' ? '\u{1F4C4}' : '\u{1F4CB}' }}</span>
-            <span class="qp-txt">{{ truncate(item.content, 60) }}</span>
-            <span class="qp-tm">{{ timeAgo(item.timestamp) }}</span>
+            <span class="qp-em">{{ item.type === 'image' ? '\u{1F5BC}' : item.type === 'file' ? '\u{1F4C4}' : '\u{1F4CB}' }}</span>
+            <span class="qp-tx">{{ truncate(item.content, 60) }}</span>
+            <span class="qp-ag">{{ timeAgo(item.timestamp) }}</span>
           </div>
-          <div v-if="filteredItems.length === 0" class="qp-empty">{{ t('empty_title') }}</div>
+          <div v-if="filteredItems.length === 0" class="qp-no">{{ t('empty_title') }}</div>
         </div>
-        <div class="qp-foot">
+        <div class="qp-ft">
           <span>{{ filteredItems.length }} {{ t('items_c') }}</span>
-          <span><kbd>\u2191\u2193</kbd> {{ t('qp_navigate') }}</span>
-          <span><kbd>↵</kbd> {{ t('qp_paste') }}</span>
+          <span><kbd>&#x2191;&#x2193;</kbd> {{ t('qp_navigate') }}</span>
+          <span><kbd>&#23ce;</kbd> {{ t('qp_paste') }}</span>
         </div>
       </div>
     </Transition>
@@ -144,62 +123,60 @@ function truncate(str: string, max: number): string {
 </template>
 
 <style scoped>
-/* ── Stage: fully transparent ── */
+/* ── Container: COLUMN layout, centered, fully transparent ── */
 .qp {
-  width: 100vw;
-  height: 100vh;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 8vh;
-  background: transparent;
+  flex-direction: column;       /* ← FIX: was default row, pushed results to the RIGHT */
+  align-items: center;
+  width: min(440px, 90vw);
+  /* No background, no border, no shadow — the .qp itself is invisible */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  animation: qp-in .12s ease-out;
+  animation: qp-fade .1s ease-out;
 }
-@keyframes qp-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
+@keyframes qp-fade {
+  from { opacity: 0; transform: translateY(-4px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ── Search bar: flat, no shadow, no card feel ── */
-.qp-search {
+/* ── Search bar ── */
+.qp-bar {
+  width: 100%;
+}
+.qp-bar-inner {
   display: flex;
   align-items: center;
-  gap: 9px;
-  width: 420px;
-  max-width: 90vw;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 9px 14px;
+  /* Same bg as results so they merge seamlessly when expanded */
   background: var(--bg-surface);
-  border-radius: 8px;
-  /* NO box-shadow — that's what created the "frame" */
-  cursor: default;
+  border-radius: 10px;
+  cursor: grab;
   -webkit-user-select: none;
   user-select: none;
 }
-/* When expanded: flatten top corners to merge with results below */
-.qp-search.expanded-style {
-  border-radius: 8px 8px 0 0;
+/* When drawer is open: flatten bottom corners so results merge cleanly */
+.qp-bar-inner.open {
+  border-radius: 10px 10px 0 0;
 }
 
-.qp-icon { color: var(--text-tertiary); flex-shrink: 0; pointer-events: none; }
+.qp-ico { color: var(--text-tertiary); flex-shrink: 0; pointer-events: none; }
 
-.qp-input {
+.qp-in {
   flex: 1;
   border: none;
   outline: none;
   background: transparent;
-  font-size: 13.5px;
-  font-family: inherit;
+  font-size: 13px;
   color: var(--text-primary);
   min-width: 0;
   cursor: text;
 }
-.qp-input::placeholder { color: var(--text-tertiary); }
+.qp-in::placeholder { color: var(--text-tertiary); }
 
 .qp-esc {
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-tertiary);
+  color: var(--text-muted, var(--text-tertiary));
   background: var(--bg-hover);
   border-radius: 3px;
   padding: 1px 5px;
@@ -208,75 +185,66 @@ function truncate(str: string, max: number): string {
   pointer-events: none;
 }
 
-/* ── Results: flat panel, NO shadow, NO outer border ── */
-.qp-results {
-  width: 420px;
-  max-width: 90vw;
+/* ── Drawer (results) — stacks UNDER search bar ── */
+.qp-drop {
+  width: 100%;
   background: var(--bg-surface);
-  border-radius: 0 0 8px 8px;
+  border-radius: 0 0 10px 10px;
   overflow: hidden;
-  /* NO box-shadow — zero container feeling */
 }
 
-/* Vue Transition */
-.drop-enter-active { transition: all .18s cubic-bezier(.16,1,.3,1); overflow: hidden; }
-.drop-leave-active { transition: all .14s ease-in; overflow: hidden; }
-.drop-enter-from { opacity: 0; max-height: 0; transform: translateY(-6px); }
-.drop-enter-to   { opacity: 1; max-height: 340px; transform: translateY(0); }
-.drop-leave-from { opacity: 1; max-height: 340px; }
-.drop-leave-to   { opacity: 0; max-height: 0; transform: translateY(-6px); }
+/* Vue Transition: slide down + fade in */
+.dr-enter-active { transition: all .2s cubic-bezier(.16, 1, .3, 1); overflow: hidden; }
+.dr-leave-active { transition: all .15s ease-in; overflow: hidden; }
+.dr-enter-from { opacity: 0; max-height: 0; }
+.dr-enter-to   { opacity: 1; max-height: 340px; }
+.dr-leave-from { opacity: 1; max-height: 340px; }
+.dr-leave-to   { opacity: 0; max-height: 0; }
 
-/* List */
-.qp-list { max-height: 276px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; }
-.qp-list::-webkit-scrollbar { width: 3px; }
-.qp-list::-webkit-scrollbar-track { background: transparent; }
-.qp-list::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 2px; }
+/* Scrollable list */
+.qp-lst { max-height: 270px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.qp-lst::-webkit-scrollbar { width: 3px; }
+.qp-lst::-webkit-scrollbar-track { background: transparent; }
+.qp-lst::-webkit-scrollbar-thumb { background: var(--border-subtle, rgba(128,128,128,.2)); border-radius: 2px; }
 
-/* Rows */
-.qp-row {
+/* Row */
+.qp-it {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   padding: 7px 14px;
   cursor: pointer;
-  border-left: 2px solid transparent;
-  transition: background .06s;
+  transition: background .08s;
 }
-.qp-row:hover { background: var(--bg-hover); }
-.qp-row.sel { background: var(--bg-selected); border-left-color: var(--accent); }
+.qp-it:hover { background: var(--bg-hover); }
+.qp-it.on   { background: var(--bg-selected, var(--bg-hover)); }
 
-.qp-ty { flex-shrink: 0; font-size: 13px; width: 18px; text-align: center; }
-.qp-txt { flex: 1; font-size: 12.5px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.qp-tm { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.qp-empty { padding: 20px; text-align: center; font-size: 13px; color: var(--text-tertiary); }
+.qp-em { flex-shrink: 0; font-size: 12px; width: 18px; text-align: center; }
+.qp-tx { flex: 1; font-size: 12px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.qp-ag { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; }
+.qp-no { padding: 20px; text-align: center; font-size: 13px; color: var(--text-tertiary); }
 
-/* Footer inside results */
-.qp-foot {
+/* Footer inside drawer */
+.qp-ft {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   padding: 5px 14px 6px;
   font-size: 10px;
   color: var(--text-tertiary);
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border-subtle, rgba(128,128,128,.12));
 }
-.qp-foot span:first-child { margin-right: auto; font-weight: 600; color: var(--text-secondary); }
-.qp-foot kbd {
+.qp-ft span:first-child { margin-right: auto; font-weight: 600; color: var(--text-secondary); }
+.qp-ft kbd {
   font-size: 9px;
   background: var(--bg-hover);
   border-radius: 3px;
   padding: 0 3px;
-  line-height: 1.5;
   font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
   color: var(--text-secondary);
 }
 
-/* ═══════════════════════════════════════════════
-   CRITICAL FIX — The "frame" the user saw for 4 rounds
-   was globals.css → body { background: var(--bg-base) }
-   which paints the entire Tauri window as a solid rectangle.
-   This :global rule overrides it when in QP mode.
-   ═══════════════════════════════════════════════ */
+/* ── CRITICAL: body must be transparent in QP mode ── */
 :global(html.qp-mode),
 :global(html.qp-mode body) {
   background: transparent !important;
