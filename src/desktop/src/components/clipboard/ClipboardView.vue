@@ -532,10 +532,10 @@ function extractDomain(url: string): string {
 
 /* ===== TOOLBAR ===== */
 .toolbar { display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 24px; background: var(--bg-surface); flex-shrink: 0; }
-.toolbar-left { display: flex; align-items: center; gap: 10px; }
+.toolbar-left { display: flex; align-items: center; gap: 8px; }
 .toolbar-title { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
 .toolbar-spacer { flex: 1; }
-.toolbar-right { display: flex; align-items: center; gap: 10px; }
+.toolbar-right { display: flex; align-items: center; gap: 8px; }
 /* Ensure toolbar buttons have comfortable padding like the reference */
 .toolbar-right :deep(button) { padding-left: 18px !important; padding-right: 18px !important; }
 
@@ -557,7 +557,7 @@ function extractDomain(url: string): string {
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
-  padding: 5px 16px;
+  padding: 4px 16px;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
@@ -567,7 +567,7 @@ function extractDomain(url: string): string {
 .segment-btn.active {
   background: var(--bg-surface);
   color: var(--text-primary);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
   font-weight: 600;
 }
 
@@ -609,7 +609,7 @@ function extractDomain(url: string): string {
 
 /* Cell styles */
 .cell-content { overflow: hidden; max-width: 0; }
-.cell-content-inner { display: flex; align-items: center; gap: 10px; }
+.cell-content-inner { display: flex; align-items: center; gap: 8px; }
 
 /* 普通文本 */
 .cell-text {

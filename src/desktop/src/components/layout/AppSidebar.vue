@@ -286,7 +286,7 @@ const accountNavItems = computed(() => [
   color: var(--accent);
   font-weight: 600;
   /* Subtle shadow to lift from surface like shadcn docs */
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  box-shadow: var(--shadow-card);
 }
 /* Left 2px accent bar on active item (expanded) */
 .sb-item.active::after {
@@ -363,7 +363,7 @@ const accountNavItems = computed(() => [
 .user-menu-fade-leave-active { animation: menuFadeOut 0.1s ease-in; }
 @keyframes menuFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes menuFadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(4px); } }
-.user-avatar-ring { width: 34px; height: 34px; border-radius: 50%; background: var(--gradient-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.user-avatar-ring { width: 34px; height: 34px; border-radius: 50%; background: var(--gradient-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: var(--shadow-card); }
 .user-avatar-ring--sm { width: 28px; height: 28px; }
 .user-avatar-in { width: 30px; height: 30px; border-radius: 50%; background: var(--bg-sidebar); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
 .user-avatar-img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
