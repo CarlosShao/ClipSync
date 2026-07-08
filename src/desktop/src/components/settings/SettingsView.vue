@@ -28,7 +28,6 @@ const pwdNew = ref('')
 const pwdConfirm = ref('')
 const pwdChanging = ref(false)
 const pwdError = ref('')
-const pwdSuccess = ref('')
 
 function onMaxHistoryChange() {
   const val = Number(maxHistoryModel.value)
@@ -51,7 +50,6 @@ watch(maxHistoryModel, () => onMaxHistoryChange())
 
 async function handleChangePassword() {
   pwdError.value = ''
-  pwdSuccess.value = ''
   if (!pwdOld.value) { pwdError.value = t('pwd_old_required') || '请输入当前密码'; return }
   if (!pwdNew.value) { pwdError.value = t('pwd_new_required') || '请输入新密码'; return }
   if (pwdNew.value.length < 8) { pwdError.value = t('pwd_min_length') || '新密码至少8位'; return }
@@ -62,7 +60,7 @@ async function handleChangePassword() {
   pwdChanging.value = false
 
   if (result.ok) {
-    pwdSuccess.value = t('pwd_changed_ok') || '密码修改成功'
+    toast.show(t('pwd_changed_ok') || '密码修改成功', 'success')
     resetPwdForm()
     showPwdChange.value = false
   } else {
@@ -201,7 +199,6 @@ function resetPwdForm() {
           <Button variant="outline" class="pwd-btn" @click="showPwdChange = false; resetPwdForm()">{{ t('cancel_btn') }}</Button>
         </div>
         <div v-if="pwdError" class="pwd-error">{{ pwdError }}</div>
-        <div v-if="pwdSuccess" class="pwd-success">{{ pwdSuccess }}</div>
       </div>
     </div>
 
@@ -280,10 +277,9 @@ function resetPwdForm() {
 .pwd-field { margin-bottom: 14px; padding-left: 4px; }
 .pwd-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; padding-left: 4px; }
 .sg-input--block { width: 100%; padding-left: 16px !important; }
-.pwd-actions { display: flex; gap: 10px; margin-top: 12px; }
+.pwd-actions { display: flex; gap: 10px; margin-top: 12px; padding-left: 4px; }
 .pwd-btn { padding: 10px 28px; }
 .pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
-.pwd-success { color: var(--success); font-size: 12px; margin-top: 6px; }
 
 .sg-select { width: 160px; }
 .mode-seg { display: inline-flex; gap: 0; border: 1px solid var(--border-default); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-hover); }
