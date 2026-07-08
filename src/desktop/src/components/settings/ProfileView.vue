@@ -157,8 +157,8 @@ async function handleAvatarUpload(e: Event) {
           </div>
           <div v-else class="sg-edit-group">
             <Input v-model="nameInput" :placeholder="t('pf_name')" maxlength="30" class="sg-input-shadcn" @keyup.enter="saveDisplayName" />
-            <Button size="sm" @click="saveDisplayName">{{ t('save_btn') }}</Button>
-            <Button size="sm" variant="ghost" @click="cancelEdit">{{ t('cancel_btn') }}</Button>
+            <Button variant="outline" size="sm" class="sg-save-btn" @click="saveDisplayName">{{ t('save_btn') }}</Button>
+            <Button variant="ghost" size="sm" class="sg-cancel-btn" @click="cancelEdit">{{ t('cancel_btn') }}</Button>
           </div>
         </div>
 
@@ -177,8 +177,8 @@ async function handleAvatarUpload(e: Event) {
           </div>
           <div v-else class="sg-edit-group">
             <Input v-model="emailInput" type="email" placeholder="email@example.com" maxlength="100" class="sg-input-shadcn" @keyup.enter="saveEmail" />
-            <Button size="sm" @click="saveEmail">{{ t('save_btn') }}</Button>
-            <Button size="sm" variant="ghost" @click="cancelEditEmail">{{ t('cancel_btn') }}</Button>
+            <Button variant="outline" size="sm" class="sg-save-btn" @click="saveEmail">{{ t('save_btn') }}</Button>
+            <Button variant="ghost" size="sm" class="sg-cancel-btn" @click="cancelEditEmail">{{ t('cancel_btn') }}</Button>
           </div>
         </div>
 
@@ -244,7 +244,9 @@ async function handleAvatarUpload(e: Event) {
 .sg-control--clickable { cursor: pointer; transition: color .15s; }
 .sg-control--clickable:hover { color: var(--accent); }
 .sg-edit-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.sg-input-shadcn { width: 160px; height: 28px; }
+.sg-input-shadcn { width: 160px; height: 32px; padding-left: 12px !important; padding-right: 12px !important; }
+.sg-save-btn { padding-left: 14px !important; padding-right: 14px !important; }
+.sg-cancel-btn { padding-left: 10px !important; padding-right: 10px !important; }
 
 /* Hint */
 .profile-hint {
