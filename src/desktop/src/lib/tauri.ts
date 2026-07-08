@@ -33,6 +33,11 @@ export const isAutostartEnabled = () => invoke<boolean>('is_autostart_enabled')
 // ===== Shortcuts =====
 export const registerShortcut = (shortcut: string) => invoke('register_shortcut', { shortcut })
 export const unregisterAllShortcuts = () => invoke('unregister_all_shortcuts')
+// Re-register all global shortcuts from a map: { quickPaste, toggleWindow }
+export const setGlobalShortcuts = (shortcuts: Record<string, string>) =>
+  invoke('set_global_shortcuts', { shortcuts })
+// Toggle main window visibility (show/hide to tray)
+export const toggleWindow = () => invoke('toggle_window')
 
 // ===== UI =====
 export const setTitlebarMode = (isDark: boolean) => invoke('set_titlebar_mode', { isDark })

@@ -38,6 +38,31 @@ const allSelected = computed(() => clip.allSelected.value)
 
 const searchInput = ref('')
 const showQuickPaste = ref(false)
+// Keyboard-focused row index for in-app shortcuts (copyClip / deleteClip / arrow nav)
+const focusedIndex = ref(0)
+
+// Read user's saved in-app shortcuts from localStorage (falls back to defaults)
+function savedAppKeys(id: string): string[] | undefined {
+  try {
+    const saved = JSON.parse(localStorage.getItem('clipsync-custom-shortcuts') || '{}')
+    const ks = saved[id]
+    return Array.isArray(ks) && ks.length ? ks : undefined
+  } catch { return undefined }
+}
+
+// Match a KeyboardEvent against a saved shortcut (last element = main key, rest = modifiers)
+function matchShortcut(saved: string[] | undefined, e: KeyboardEvent): boolean {
+  if (!saved || !saved.length) return false
+  const mainKey = saved[saved.length - 1]
+  const needCtrl = saved.includes('Ctrl')
+  const needAlt = saved.includes('Alt')
+  const needShift = saved.includes('Shift')
+  const pressedMain = e.key.length === 1 ? e.key.toUpperCase() : e.key
+  return pressedMain.toLowerCase() === mainKey.toLowerCase()
+    && (needCtrl === (e.ctrlKey || e.metaKey))
+    && needAlt === e.altKey
+    && needShift === e.shiftKey
+}
 
 // Filter options for segmented control
 const filterOptions = [
@@ -195,6 +220,53 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
     toggleQuickPaste()
+    return
+  }
+  // Ctrl+F or Cmd+F: focus search box (in-app shortcut, honors customization)
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    const def = savedAppKeys('search') || ['Ctrl', 'F']
+    if (matchShortcut(def, e)) {
+      e.preventDefault()
+      const el = document.querySelector('.search-field input') as HTMLInputElement | null
+      el?.focus()
+      el?.select()
+    }
+    return
+  }
+
+  // Row navigation + copy/delete: only when clipboard table is active and not typing in a field
+  const target = e.target as HTMLElement | null
+  const typing = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+  if (typing || showQuickPaste.value || showConfirmModal.value) return
+
+  const list = clip.filteredItems.value
+  if (!list.length) return
+  if (focusedIndex.value >= list.length) focusedIndex.value = list.length - 1
+
+  // Arrow navigation
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    focusedIndex.value = (focusedIndex.value + 1) % list.length
+    return
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    focusedIndex.value = (focusedIndex.value - 1 + list.length) % list.length
+    return
+  }
+  // Copy selected (Enter) — honors customization
+  if (matchShortcut(savedAppKeys('copyClip') || ['Enter'], e)) {
+    e.preventDefault()
+    const item = list[focusedIndex.value]
+    if (item) clip.copyItem(item)
+    return
+  }
+  // Delete selected (Delete) — honors customization
+  if (matchShortcut(savedAppKeys('deleteClip') || ['Delete'], e)) {
+    e.preventDefault()
+    const item = list[focusedIndex.value]
+    if (item) handleSingleDelete(item)
+    return
   }
 }
 
@@ -364,9 +436,12 @@ function extractDomain(url: string): string {
         </TableHeader>
         <TableBody>
           <TableRow
-            v-for="item in filteredItems"
+            v-for="(item, idx) in filteredItems"
             :key="item.id"
             :data-state="item.selected ? 'selected' : undefined"
+            :class="{ focused: idx === focusedIndex }"
+            @mouseenter="focusedIndex = idx"
+            @click="focusedIndex = idx"
             @dblclick="clip.copyItem(item)"
           >
             <TableCell class="w-12">
@@ -526,6 +601,9 @@ function extractDomain(url: string): string {
 }
 .clipboard-view :deep(tbody tr) { border-bottom: 1px solid var(--border-subtle); transition: background .12s ease; }
 .clipboard-view :deep(tbody tr:hover) { background: var(--bg-hover); }
+/* Keyboard-focused row (arrow nav / copyClip / deleteClip in-app shortcuts) */
+.clipboard-view :deep(tbody tr.focused) { background: var(--accent-light); box-shadow: inset 2px 0 0 var(--accent); }
+.clipboard-view :deep(tbody tr.focused:hover) { background: var(--accent-light); }
 .clipboard-view :deep(tbody tr:last-child) { border-bottom-color: transparent; }
 .clipboard-view :deep(tbody td) { padding: 8px 16px; vertical-align: middle; }
 
