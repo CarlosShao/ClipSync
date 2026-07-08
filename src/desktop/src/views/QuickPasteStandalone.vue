@@ -80,9 +80,9 @@ function truncate(str: string, max: number): string {
 
 <template>
   <div class="qp">
-    <!-- Search bar — draggable, no border, no shadow -->
+    <!-- Search bar — draggable, ZERO background -->
     <div class="qp-bar" data-tauri-drag-region>
-      <div :class="['qp-bar-inner', { open: expanded }]">
+      <div :class="['qp-bi', { open: expanded }]">
         <Search :size="13" class="qp-ico" />
         <input
           v-model="qpSearch"
@@ -95,9 +95,9 @@ function truncate(str: string, max: number): string {
       </div>
     </div>
 
-    <!-- Results slide DOWN from under the search bar -->
+    <!-- Results — slides DOWN, ZERO background -->
     <Transition name="dr">
-      <div v-show="expanded" class="qp-drop">
+      <div v-show="expanded" class="qp-drp">
         <div class="qp-lst">
           <div
             v-for="(item, idx) in filteredItems"
@@ -123,40 +123,31 @@ function truncate(str: string, max: number): string {
 </template>
 
 <style scoped>
-/* ── Container: COLUMN layout, centered, fully transparent ── */
+/* ── Container: column, centered, INVISIBLE ── */
 .qp {
   display: flex;
-  flex-direction: column;       /* ← FIX: was default row, pushed results to the RIGHT */
+  flex-direction: column;
   align-items: center;
   width: min(440px, 90vw);
-  /* No background, no border, no shadow — the .qp itself is invisible */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  animation: qp-fade .1s ease-out;
+  animation: qp-f .12s ease-out;
 }
-@keyframes qp-fade {
-  from { opacity: 0; transform: translateY(-4px) scale(.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+@keyframes qp-f {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Search bar ── */
-.qp-bar {
-  width: 100%;
-}
-.qp-bar-inner {
+/* ── Search bar: no background, no border, text floats on desktop ── */
+.qp-bar { width: 100%; }
+.qp-bi {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 14px;
-  /* Semi-transparent — blends into desktop, no hard "card" edges */
-  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
-  border-radius: 10px;
+  padding: 10px 16px;
+  /* NO background — transparent */
   cursor: grab;
   -webkit-user-select: none;
   user-select: none;
-}
-/* When drawer is open: flatten bottom corners so results merge cleanly */
-.qp-bar-inner.open {
-  border-radius: 10px 10px 0 0;
 }
 
 .qp-ico { color: var(--text-tertiary); flex-shrink: 0; pointer-events: none; }
@@ -170,61 +161,73 @@ function truncate(str: string, max: number): string {
   color: var(--text-primary);
   min-width: 0;
   cursor: text;
+  /* text-shadow for readability on ANY wallpaper */
+  text-shadow: 0 1px 3px rgba(0,0,0,.45), 0 1px 1px rgba(0,0,0,.3);
 }
-.qp-in::placeholder { color: var(--text-tertiary); }
+.qp-in::placeholder {
+  color: var(--text-tertiary);
+  text-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
 
 .qp-esc {
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-muted, var(--text-tertiary));
-  background: color-mix(in srgb, var(--bg-hover) 70%, transparent);
-  border-radius: 3px;
+  color: var(--text-tertiary);
+  /* Minimal pill — barely visible */
   padding: 1px 5px;
   font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
   flex-shrink: 0;
   pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0,0,0,.3);
 }
 
-/* ── Drawer (results) — stacks UNDER search bar ── */
-.qp-drop {
+/* ── Results drawer: NO background, just text ── */
+.qp-drp {
   width: 100%;
-  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
-  border-radius: 0 0 10px 10px;
-  overflow: hidden;
+  /* NO background */
 }
 
-/* Vue Transition: slide down + fade in */
-.dr-enter-active { transition: all .2s cubic-bezier(.16, 1, .3, 1); overflow: hidden; }
-.dr-leave-active { transition: all .15s ease-in; overflow: hidden; }
+/* Vue Transition */
+.dr-enter-active { transition: all .2s cubic-bezier(.16,1,.3,1); overflow: hidden; }
+.dr-leave-active { transition: all .14s ease-in; overflow: hidden; }
 .dr-enter-from { opacity: 0; max-height: 0; }
 .dr-enter-to   { opacity: 1; max-height: 340px; }
 .dr-leave-from { opacity: 1; max-height: 340px; }
 .dr-leave-to   { opacity: 0; max-height: 0; }
 
-/* Scrollable list */
+/* List */
 .qp-lst { max-height: 270px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; }
 .qp-lst::-webkit-scrollbar { width: 3px; }
 .qp-lst::-webkit-scrollbar-track { background: transparent; }
-.qp-lst::-webkit-scrollbar-thumb { background: var(--border-subtle, rgba(128,128,128,.2)); border-radius: 2px; }
+.qp-lst::-webkit-scrollbar-thumb { background: rgba(128,128,128,.25); border-radius: 2px; }
 
-/* Row */
+/* Row — hover = left accent line only, NO background fill */
 .qp-it {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 7px 14px;
   cursor: pointer;
-  transition: background .08s;
+  border-left: 2px solid transparent;
+  transition: border-color .1s;
 }
-.qp-it:hover { background: color-mix(in srgb, var(--bg-hover) 70%, transparent); }
-.qp-it.on   { background: color-mix(in srgb, var(--bg-selected, var(--bg-hover)) 80%, transparent); }
+.qp-it:hover { border-left-color: var(--accent); }
+.qp-it.on   { border-left-color: var(--accent); }
 
-.qp-em { flex-shrink: 0; font-size: 12px; width: 18px; text-align: center; }
-.qp-tx { flex: 1; font-size: 12px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.qp-ag { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; }
-.qp-no { padding: 20px; text-align: center; font-size: 13px; color: var(--text-tertiary); }
+/* All text needs shadow for desktop readability */
+.qp-em {
+  flex-shrink: 0; font-size: 12px; width: 18px; text-align: center;
+  text-shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+.qp-tx {
+  flex: 1; font-size: 12px; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  text-shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+.qp-ag { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.qp-no { padding: 20px; text-align: center; font-size: 13px; color: var(--text-tertiary); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
 
-/* Footer inside drawer */
+/* Footer */
 .qp-ft {
   display: flex;
   align-items: center;
@@ -232,19 +235,19 @@ function truncate(str: string, max: number): string {
   padding: 5px 14px 6px;
   font-size: 10px;
   color: var(--text-tertiary);
-  border-top: 1px solid color-mix(in srgb, var(--border-subtle, rgba(128,128,128,.3)) 50%, transparent);
+  text-shadow: 0 1px 2px rgba(0,0,0,.3);
 }
 .qp-ft span:first-child { margin-right: auto; font-weight: 600; color: var(--text-secondary); }
 .qp-ft kbd {
   font-size: 9px;
-  background: color-mix(in srgb, var(--bg-hover) 70%, transparent);
   border-radius: 3px;
   padding: 0 3px;
   font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
   color: var(--text-secondary);
+  text-shadow: 0 1px 1px rgba(0,0,0,.25);
 }
 
-/* ── CRITICAL: body must be transparent in QP mode ── */
+/* body/html must stay transparent in QP mode */
 :global(html.qp-mode),
 :global(html.qp-mode body) {
   background: transparent !important;
