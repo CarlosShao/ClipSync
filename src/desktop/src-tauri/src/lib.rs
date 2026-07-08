@@ -1103,7 +1103,7 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
         tauri::WebviewUrl::App("index.html?mode=qp".into()),
     )
     .title("ClipSync - Quick Paste")
-    .inner_size(560.0, 400.0)
+    .inner_size(440.0, 420.0)
     .decorations(false)
     .transparent(true)
     .always_on_top(true)
