@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
-import * as tauriLib from '@/lib/tauri'
+import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { Search } from 'lucide-vue-next'
 
@@ -14,10 +14,10 @@ const qpSelectedIndex = ref(0)
 const expanded = ref(false)
 
 // ── Window dimensions ──
-const COLLAPSED_W = 640
-const COLLAPSED_H = 56
-const EXPANDED_W = 640
-const EXPANDED_H = 460
+const COLLAPSED_W = 660
+const COLLAPSED_H = 58
+const EXPANDED_W = 660
+const EXPANDED_H = 470
 
 let stopPolling: (() => void) | null = null
 
@@ -42,28 +42,32 @@ function focusSearch() {
   nextTick(() => focusSearch())
 }
 
-// ── Expand: resize window + show drawer ──
+// ── Expand: resize window FIRST, then reveal drawer ──
 async function expandDrawer() {
   if (expanded.value) return
-  expanded.value = true
+  let resized = false
 
   // Method 1: Tauri JS API
   try {
     const win = getCurrentWindow()
     await win.setSize(new LogicalSize(EXPANDED_W, EXPANDED_H))
-    console.log('[QP] expanded via JS API')
-    return
+    resized = true
   } catch (e) {
     console.warn('[QP] JS API resize failed:', e)
   }
 
-  // Method 2: Fallback via Rust invoke (bypasses any JS API limitation)
-  try {
-    await tauriLib.invoke('resize_qp_window', { width: EXPANDED_W, height: EXPANDED_H })
-    console.log('[QP] expanded via invoke fallback')
-  } catch (e2) {
-    console.error('[QP] ALL resize methods failed:', e2)
+  // Method 2: Fallback via Rust invoke
+  if (!resized) {
+    try {
+      await invoke('resize_qp_window', { width: EXPANDED_W, height: EXPANDED_H })
+      resized = true
+    } catch (e2) {
+      console.error('[QP] ALL resize methods failed:', e2)
+    }
   }
+
+  // Reveal drawer AFTER window resize so it isn't clipped by the collapsed window
+  expanded.value = true
 }
 
 async function collapseAndClose(action: () => void = () => {}) {
@@ -132,7 +136,7 @@ function truncate(str: string, max: number): string {
   <!-- ROOT = card surface -->
   <div class="qp">
     <!-- Search bar — drag handle (explicit mousedown handler) -->
-    <div class="qp-bar" @mousedown="onBarMousedown">
+    <div class="qp-bar" :style="{ height: COLLAPSED_H + 'px' }" @mousedown="onBarMousedown">
       <Search :size="14" class="qp-ico" />
       <input
         v-model="qpSearch"
@@ -194,7 +198,6 @@ function truncate(str: string, max: number): string {
   cursor: grab;
   border-radius: 12px 12px 0 0;
   flex-shrink: 0;
-  height: COLLAPSED_H;
   box-sizing: border-box;
   -webkit-user-select: none;
   user-select: none;
