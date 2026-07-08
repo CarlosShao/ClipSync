@@ -1110,6 +1110,18 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
 
+    // Position: centered horizontally, upper-center vertically (≈ 1/3 from top).
+    // Calculated against EXPANDED size so the final card lands at upper-center.
+    let (qp_x, qp_y) = if let Some(Some(monitor)) = std::result::Result::ok(app.primary_monitor()) {
+        let sz = monitor.size();
+        let pos = monitor.position();
+        let x = pos.x as f64 + (sz.width as f64 - 660.0) / 2.0;
+        let y = pos.y as f64 + (sz.height as f64 - 470.0) / 3.5;
+        (x, y)
+    } else {
+        (0.0, 0.0)
+    };
+
     // Always create a fresh floating popup — ?mode=qp tells App.vue to render QuickPasteStandalone
     match tauri::WebviewWindowBuilder::new(
         app,
@@ -1117,20 +1129,17 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
         tauri::WebviewUrl::App("index.html?mode=qp".into()),
     )
     .title("ClipSync - Quick Paste")
-    // Start COLLAPSED: only search bar visible (640x56 = search bar size).
-    // Window expands via JS setCurrentWindow().setSize() or Rust invoke when input gains focus.
-    // NOTE: resizable(true) is REQUIRED for programmatic setSize() to work.
-    .inner_size(640.0, 56.0)
+    .inner_size(660.0, 58.0)
     .decorations(false)
     .always_on_top(true)
-    .resizable(true)  // must be true for JS setSize() / Rust set_size() to work
+    .resizable(true)
     .skip_taskbar(true)
     .build()
     {
         Ok(_) => {
-            eprintln!("[QuickPaste] Floating window created (collapsed 560x48)");
-            // Show and focus the newly created window
+            eprintln!("[QuickPaste] Floating window created (centered upper)");
             if let Some(w) = app.get_webview_window("quick-paste") {
+                let _ = w.set_position(tauri::LogicalPosition::new(qp_x, qp_y));
                 let _ = w.show();
                 let _ = w.set_focus();
             }
