@@ -700,7 +700,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 
 /* ===== Brand ===== */
 .auth-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }
-.auth-logo { width: 36px; height: 36px; border-radius: 10px; background: var(--accent); color: var(--text-inverse); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; }
+.auth-logo { width: 36px; height: 36px; border-radius: var(--radius-md); background: var(--accent); color: var(--text-inverse); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; }
 .auth-brand-name { font-size: 17px; font-weight: 700; color: var(--text-primary); }
 
 /* ===== Heading ===== */
@@ -708,15 +708,15 @@ const isRegisterView = computed(() => authView.value === 'register')
 .auth-subtitle { font-size: 14px; color: var(--text-secondary); margin: 0 0 28px; line-height: 1.5; }
 
 /* ===== Tabs ===== */
-.auth-tabs { display: flex; gap: 4px; padding: 4px; background: var(--bg-hover); border-radius: 10px; margin-bottom: 24px; }
-.auth-tab { flex: 1; border-radius: 8px; font-size: 13px; font-weight: 500; }
+.auth-tabs { display: flex; gap: 4px; padding: 4px; background: var(--bg-hover); border-radius: var(--radius-md); margin-bottom: 24px; }
+.auth-tab { flex: 1; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; }
 
 /* ===== Form ===== */
 .auth-form { display: flex; flex-direction: column; gap: 16px; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
 .required { color: var(--danger); font-weight: 600; }
-.form-input { height: 42px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border-default); background: var(--bg-base); color: var(--text-primary); font-size: 14px; outline: none; transition: border-color 150ms; width: 100%; box-sizing: border-box; }
+.form-input { height: 42px; padding: 0 14px; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--bg-base); color: var(--text-primary); font-size: 14px; outline: none; transition: border-color 150ms; width: 100%; box-sizing: border-box; }
 .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
 .form-row { display: flex; gap: 10px; }
 .form-row .form-input { flex: 1; }
@@ -725,7 +725,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 
 /* ===== Buttons ===== */
 /* .btn-primary / .btn-block removed — replaced by shadcn <Button> */
-.btn-code { height: 42px; padding: 0 14px; border-radius: 10px; font-size: 13px; font-weight: 500; white-space: nowrap; border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-secondary); cursor: pointer; transition: all 150ms; }
+.btn-code { height: 42px; padding: 0 14px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; white-space: nowrap; border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-secondary); cursor: pointer; transition: all 150ms; }
 .btn-code:hover { background: var(--bg-hover); color: var(--text-primary); }
 .btn-code:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -740,7 +740,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 /* ===== Password field ===== */
 .pwd-wrap { position: relative; }
 .pwd-wrap .form-input { padding-right: 42px; }
-.pwd-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-tertiary); display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; transition: all 150ms; }
+.pwd-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-tertiary); display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: var(--radius-sm); transition: all 150ms; }
 .pwd-toggle:hover { background: var(--bg-hover); color: var(--text-secondary); }
 
 /* ===== Password strength ===== */
@@ -773,7 +773,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 
 /* ===== Social buttons ===== */
 .auth-social { display: flex; justify-content: center; gap: 12px; }
-.social-btn { width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--border-default); background: var(--bg-surface); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-secondary); transition: all 150ms; }
+.social-btn { width: 42px; height: 42px; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--bg-surface); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-secondary); transition: all 150ms; }
 .social-btn:hover { background: var(--bg-hover); border-color: var(--accent); color: var(--accent); }
 
 /* ===== Theme toggle ===== */
