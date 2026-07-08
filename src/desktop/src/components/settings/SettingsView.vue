@@ -282,7 +282,7 @@ function resetPwdForm() {
 .sg-input--block { width: 100%; padding-left: 16px !important; }
 .pwd-actions { display: flex; gap: 10px; margin-top: 12px; }
 .pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
-.pwd-success { color: #22c55e; font-size: 12px; margin-top: 6px; }
+.pwd-success { color: var(--success); font-size: 12px; margin-top: 6px; }
 
 .sg-select { width: 160px; }
 .mode-seg { display: inline-flex; gap: 0; border: 1px solid var(--border-default); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-hover); }
