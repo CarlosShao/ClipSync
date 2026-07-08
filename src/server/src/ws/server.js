@@ -410,6 +410,36 @@ export async function sendNotification(userId, notification) {
   });
 }
 
+/**
+ * 登录时检测是否为「新设备 / 新登录地点」登录；若是则推送 security_alert。
+ * 必须在 createSessionAndGenerateToken 之前调用（此时本次会话尚未入库，历史会话数不含本次）。
+ * @param {string} userId
+ * @param {{ deviceName?: string, platform?: string, ip?: string }} ctx
+ */
+export async function detectAndNotifyNewLogin(userId, ctx = {}) {
+  const deviceName = (ctx.deviceName || 'Unknown Device').toString();
+  const platform = (ctx.platform || 'unknown').toString();
+  const ip = ctx.ip || '';
+  try {
+    const prior = await pool.query('SELECT COUNT(*)::bigint AS cnt FROM user_sessions WHERE user_id = $1', [userId]);
+    const priorCount = Number(prior.rows[0]?.cnt || 0);
+    if (priorCount === 0) return; // 首次登录（新注册）不报警
+    const seen = await pool.query(
+      'SELECT 1 FROM user_sessions WHERE user_id = $1 AND device_name = $2 AND platform = $3 LIMIT 1',
+      [userId, deviceName, platform]
+    );
+    if (seen.rows.length > 0) return; // 已知设备，不报警
+    await sendNotification(userId, {
+      notificationType: 'security_alert',
+      title: 'New login detected',
+      body: `A new device (${deviceName} · ${platform})${ip ? ` from ${ip}` : ''} just signed in to your account.`,
+      data: { deviceName, platform, ip },
+    });
+  } catch (err) {
+    logger.error('[WS] 新登录安全警报检测失败（已忽略）:', { error: err?.message, userId });
+  }
+}
+
 // Get online device count for a user
 export function getOnlineDeviceCount(userId) {
   const userDevices = connections.get(userId);
