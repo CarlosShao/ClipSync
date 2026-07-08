@@ -185,7 +185,7 @@ async function handleAvatarUpload(e: Event) {
         <!-- Plan -->
         <div class="sg-row">
           <Label class="sg-label">{{ t('pf_plan') }}</Label>
-          <div class="sg-control">{{ t(configStore.user.plan === 'Pro' ? 'role_pro' : 'pf_free') }}</div>
+          <div class="sg-control">{{ t('role_' + (configStore.user.plan || 'Free').toLowerCase()) }}</div>
         </div>
       </div>
     </div>

@@ -1019,7 +1019,13 @@ router.get('/me', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
 
     const result = await pool.query(
-      'SELECT id, phone, email, nickname, avatar_url, subscription_status FROM users WHERE id = $1',
+      `SELECT u.id, u.phone, u.email, u.nickname, u.avatar_url,
+              COALESCE(sp.name, 'Free') AS plan_name
+       FROM users u
+       LEFT JOIN user_subscriptions us ON u.id = us.user_id AND us.status = 'active'
+         AND (us.current_period_end IS NULL OR us.current_period_end > NOW())
+       LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
+       WHERE u.id = $1`,
       [userId]
     );
 
@@ -1034,7 +1040,7 @@ router.get('/me', authenticateToken, async (req, res) => {
       email: user.email,
       nickname: user.nickname,
       avatarUrl: user.avatar_url,
-      plan: user.subscription_status || 'Free',
+      plan: user.plan_name,
     });
   } catch (err) {
     logger.error('Get profile error:', { error: err.message });
