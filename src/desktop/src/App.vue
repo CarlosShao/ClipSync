@@ -21,6 +21,11 @@ onMounted(async () => {
   await configStore.load()
   // Sync titlebar color on mount
   try { tauri.setTitlebarMode(currentMode.value === 'dark') } catch {}
+  // QP standalone mode: strip body/html background so the transparent
+  // Tauri window doesn't show as a colored rectangle (the "frame" bug)
+  if (isQuickPasteStandalone.value) {
+    document.documentElement.classList.add('qp-mode')
+  }
 })
 </script>
 
