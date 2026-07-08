@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import {
   PanelLeftClose, PanelLeftOpen, Clipboard, Monitor, Link,
   User, Star, Settings, LogOut,
@@ -26,6 +27,20 @@ const emit = defineEmits<{
 }>()
 
 const isCollapsed = computed(() => !props.sidebarOpen)
+const showUserMenu = ref(false)
+
+function toggleUserMenu() {
+  showUserMenu.value = !showUserMenu.value
+}
+function closeUserMenu() {
+  showUserMenu.value = false
+}
+// Template ref for the footer container (used for click-outside detection)
+let footerEl: HTMLElement | null = null
+function setFooterRef(el: HTMLElement | null) {
+  footerEl = el
+  if (el) onClickOutside(el, () => { showUserMenu.value = false })
+}
 
 // Navigation items — single source of truth for both expanded and collapsed views
 const mainNavItems = computed(() => [
@@ -97,10 +112,15 @@ const accountNavItems = computed(() => [
       </template>
     </nav>
 
-    <!-- ===== Footer (expanded only: user + logout) ===== -->
-    <div class="sb-footer" v-show="!isCollapsed">
-      <div class="user-chip" @click="emit('navigate', 'profile')" :title="t('nav_profile') || 'View Profile'">
-        <!-- 实际头像图片（优先），fallback 到首字母 -->
+    <!-- ===== Footer (expanded only: user chip + popover menu) ===== -->
+    <div :ref="setFooterRef as any" class="sb-footer" v-show="!isCollapsed">
+      <!-- User chip — click toggles menu -->
+      <div
+        class="user-chip"
+        :class="{ 'user-chip--active': showUserMenu }"
+        @click.stop="toggleUserMenu"
+        :title="t('nav_profile') || 'View Profile'"
+      >
         <div class="user-avatar-ring">
           <img v-if="userAvatarUrl" :src="userAvatarUrl" alt="" class="user-avatar-img" />
           <div v-else class="user-avatar-in">{{ userName ? userName.slice(0, 2) : 'CS' }}</div>
@@ -111,10 +131,20 @@ const accountNavItems = computed(() => [
           <div class="user-role">{{ t(userPlan === 'Pro' ? 'role_pro' : 'role_free') }}</div>
         </div>
       </div>
-      <Button variant="ghost" class="logout-btn" @click="emit('logout')">
-        <LogOut :size="13" />
-        <span>{{ t('logout') }}</span>
-      </Button>
+      <!-- Popover menu (profile + logout) -->
+      <Transition name="user-menu-fade">
+        <div v-if="showUserMenu" class="user-menu">
+          <button class="user-menu-item" @click="emit('navigate', 'profile'); closeUserMenu()">
+            <User :size="14" />
+            <span>{{ t('nav_profile') || '个人资料' }}</span>
+          </button>
+          <div class="user-menu-divider" />
+          <button class="user-menu-item user-menu-item--danger" @click="emit('logout'); closeUserMenu()">
+            <LogOut :size="14" />
+            <span>{{ t('logout') }}</span>
+          </button>
+        </div>
+      </Transition>
     </div>
 
     <!-- Footer avatar dot (collapsed only) -->
@@ -284,13 +314,41 @@ const accountNavItems = computed(() => [
   border-top: 1px solid var(--border-default);
 }
 
-.user-chip { 
-  display: flex; align-items: center; gap: 8px; 
-  cursor: pointer; border-radius: var(--radius-md); 
-  transition: background .15s ease; 
-  padding: 6px 4px; margin-bottom: 4px;
+.user-chip {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; border-radius: var(--radius-md);
+  transition: background .15s ease;
+  padding: 6px 4px; margin-bottom: 0; position: relative;
 }
 .user-chip:hover { background: var(--bg-hover); }
+.user-chip--active { background: var(--bg-hover); }
+
+/* User popover menu — appears above the chip */
+.user-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 12px; right: 12px;
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-modal);
+  padding: 4px; z-index: 50; overflow: hidden;
+}
+.user-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 10px;
+  border: none; border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 13px; color: var(--text-primary);
+  cursor: pointer; transition: background .12s ease;
+  text-align: left;
+}
+.user-menu-item:hover { background: var(--bg-hover); }
+.user-menu-item--danger { color: var(--danger); }
+.user-menu-item--danger:hover { background: var(--danger-bg); }
+.user-menu-divider { height: 1px; background: var(--border-subtle); margin: 2px 6px; }
+
+/* Transition for user menu fade */
+.user-menu-fade-enter-active { animation: menuFadeIn 0.12s ease-out; }
+.user-menu-fade-leave-active { animation: menuFadeOut 0.1s ease-in; }
+@keyframes menuFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes menuFadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(4px); } }
 .user-avatar-ring { width: 34px; height: 34px; border-radius: 50%; background: var(--gradient-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 .user-avatar-ring--sm { width: 28px; height: 28px; }
 .user-avatar-in { width: 30px; height: 30px; border-radius: 50%; background: var(--bg-sidebar); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
@@ -300,17 +358,6 @@ const accountNavItems = computed(() => [
 .user-name { font-size: 13px; font-weight: 500; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-email { font-size: 11px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-role { font-size: 11px; color: var(--text-tertiary); }
-
-/* Logout button — override shadcn ghost for sidebar footer style */
-.logout-btn {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 12px; color: var(--text-tertiary);
-  padding: 6px 8px;
-  height: auto !important;
-  border-radius: var(--radius-md);
-  transition: color .15s ease, background .15s ease;
-}
-.logout-btn:hover { color: var(--danger); background: var(--danger-bg) !important; }
 
 /* ---- Footer dot (collapsed) ---- */
 .sb-footer-dot {

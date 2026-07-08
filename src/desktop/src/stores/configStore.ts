@@ -53,6 +53,7 @@ export const useConfigStore = defineStore('config', () => {
       if (typeof prefs.reduceMotion === 'boolean') reduceMotion.value = prefs.reduceMotion
       if (typeof prefs.autoSync === 'boolean') autoSync.value = prefs.autoSync
       if (typeof prefs.imageCompress === 'boolean') imageCompress.value = prefs.imageCompress
+      if (typeof prefs.autostart === 'boolean') autostart.value = prefs.autostart
     } catch { /* ignore corrupt data */ }
 
     // 有 token 时立即从后端拉取用户资料（name/email/phone/plan/avatar）
@@ -68,23 +69,6 @@ export const useConfigStore = defineStore('config', () => {
       await tauri.updateConfig(updated)
       config.value = updated
     } catch { /* ignore */ }
-  }
-
-  // 注册当前设备到后端（使用正确字段名 deviceName/deviceType/platform，避免前后端不匹配）
-  async function registerCurrentDevice(authToken: string) {
-    const serverUrl = config.value.server_url || ''
-    const platform = /Mac/i.test(navigator.userAgent)
-      ? 'macos'
-      : /Linux/i.test(navigator.userAgent)
-        ? 'linux'
-        : 'windows'
-    try {
-      await fetch(`${serverUrl}/api/devices`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-        body: JSON.stringify({ deviceName: 'Desktop', deviceType: 'desktop', platform }),
-      })
-    } catch { /* 设备注册失败不影响登录 */ }
   }
 
   // 统一登录收尾：持久化 token + 注册设备 + 拉取用户资料。供 login(验证码) 与 二维码配对兑换 复用
@@ -108,15 +92,6 @@ export const useConfigStore = defineStore('config', () => {
     await completeLogin(res.token, userId)
   }
 
-  async function toggleAutostart(val?: boolean) {
-    const next = val ?? !autostart.value
-    try {
-      if (next) await tauri.enableAutostart()
-      else await tauri.disableAutostart()
-      autostart.value = next
-    } catch { /* ignore */ }
-  }
-
   function logout() {
     localStorage.removeItem('clipsync-token')
     user.value = { name: '', email: '', phone: '', plan: 'Free' }
@@ -131,8 +106,26 @@ export const useConfigStore = defineStore('config', () => {
       reduceMotion: reduceMotion.value,
       autoSync: autoSync.value,
       imageCompress: imageCompress.value,
+      autostart: autostart.value,
     }
     localStorage.setItem('clipsync-prefs', JSON.stringify(prefs))
+  }
+
+  // 注册当前设备到后端（使用正确字段名 deviceName/deviceType/platform，避免前后端不匹配）
+  async function registerCurrentDevice(authToken: string) {
+    const serverUrl = config.value.server_url || ''
+    const platform = /Mac/i.test(navigator.userAgent)
+      ? 'macos'
+      : /Linux/i.test(navigator.userAgent)
+        ? 'linux'
+        : 'windows'
+    try {
+      await fetch(`${serverUrl}/api/devices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ deviceName: 'Desktop', deviceType: 'desktop', platform }),
+      })
+    } catch { /* 设备注册失败不影响登录 */ }
   }
 
   function toggleAutoSync(val?: boolean) {
@@ -152,7 +145,17 @@ export const useConfigStore = defineStore('config', () => {
     document.documentElement.classList.toggle('reduce-motion', reduceMotion.value)
   }
 
-  // 初始化时应用 reduceMotion 状态
+  async function toggleAutostart(val?: boolean) {
+    const next = val ?? !autostart.value
+    try {
+      if (next) await tauri.enableAutostart()
+      else await tauri.disableAutostart()
+      autostart.value = next
+    } catch { /* ignore Tauri API failure, still persist preference */ }
+    savePrefs()
+  }
+
+  // 初始化时应用 reduceMotion 状态（在 load() 恢复 prefs 之后会再次执行）
   if (typeof window !== 'undefined') {
     document.documentElement.classList.toggle('reduce-motion', reduceMotion.value)
   }
