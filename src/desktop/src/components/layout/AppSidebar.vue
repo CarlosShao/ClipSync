@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
-  ChevronLeft, ChevronRight, Clipboard, Monitor, Link,
+  PanelLeftClose, PanelLeftOpen, Clipboard, Monitor, Link,
   User, Star, Settings, LogOut,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
@@ -51,14 +51,14 @@ const accountNavItems = computed(() => [
         <div class="sb-logo">C</div>
         <span class="sb-name">{{ t('app_name') }}</span>
       </div>
-      <!-- Collapsed: centered logo + hint chevron -->
+      <!-- Collapsed: centered logo + expand hint -->
       <div class="sb-logo-wrap" v-show="isCollapsed">
         <div class="sb-logo sb-logo--sm">C</div>
-        <ChevronRight :size="10" stroke-width="2.5" class="sb-collapse-hint" />
+        <PanelLeftOpen :size="14" stroke-width="2" class="sb-collapse-hint" />
       </div>
-      <!-- Toggle button (expanded only) -->
+      <!-- Toggle button (expanded only) — shadcn standard: PanelLeftClose -->
       <Button v-show="!isCollapsed" variant="ghost" size="icon" class="sb-toggle" @click.stop="emit('toggle')" :title="t('nav_collapse')">
-        <ChevronLeft :size="14" stroke-width="2.5" />
+        <PanelLeftClose :size="16" stroke-width="2" />
       </Button>
     </div>
 
