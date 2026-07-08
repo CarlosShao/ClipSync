@@ -595,7 +595,7 @@ function extractDomain(url: string): string {
 .clipboard-view :deep(table) { border-collapse: separate; border-spacing: 0; width: 100%; }
 .clipboard-view :deep(thead tr) { border-bottom: 1px solid var(--border-default); }
 .clipboard-view :deep(thead th) {
-  padding: 10px 16px; text-align: left; font-weight: 500; font-size: 12px;
+  padding: 10px 16px; text-align: center; font-weight: 500; font-size: 12px;
   color: var(--text-tertiary); background: var(--bg-surface);
   position: sticky; top: 0; z-index: 1;
 }
