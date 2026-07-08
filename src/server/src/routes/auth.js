@@ -55,6 +55,88 @@ export async function createSessionAndGenerateToken(user, req) {
   return { token, sessionId };
 }
 
+/**
+ * 身份合并：登录成功后，检查是否存在同一人的重复账号（相同 email 或 nickname），
+ * 将重复账号的剪贴板数据合并到当前 canonical 用户，并标记旧账号为已合并。
+ *
+ * 场景：用户先用手机号注册（user A），后又用邮箱注册（user B），
+ * 导致同一个物理 person 拥有多个 users.id，剪贴板数据分散。
+ *
+ * @param {string} canonicalUserId - 当前认证成功的用户 ID
+ * @param {object} canonicalUser - 当前用户的完整行（含 phone/email/nickname）
+ * @returns {{mergedCount: number, movedClips: number}} 合并统计
+ */
+async function mergeDuplicateAccounts(canonicalUserId, canonicalUser) {
+  const duplicates = [];
+  const canonicalEmail = (canonicalUser.email || '').toLowerCase().trim();
+  const canonicalNickname = (canonicalUser.nickname || '').trim();
+
+  // 查找 email 相同但 id 不同的其他账号
+  if (canonicalEmail && canonicalEmail !== '') {
+    const dupByEmail = await pool.query(
+      `SELECT id, phone, email, nickname FROM users WHERE email ILIKE $1 AND id != $2 AND merged_into IS NULL`,
+      [canonicalEmail, canonicalUserId]
+    );
+    duplicates.push(...dupByEmail.rows);
+  }
+
+  // 查找 nickname 相同但 id 不同的其他账号（忽略空昵称）
+  if (canonicalNickname && canonicalNickname !== '') {
+    const dupByNick = await pool.query(
+      `SELECT id, phone, email, nickname FROM users WHERE nickname ILIKE $1 AND id != $2 AND merged_into IS NULL`,
+      [canonicalNickname, canonicalUserId]
+    );
+    for (const row of dupByNick.rows) {
+      // 避免重复（email 已匹配到的不再加）
+      if (!duplicates.some(d => d.id === row.id)) {
+        duplicates.push(row);
+      }
+    }
+  }
+
+  if (duplicates.length === 0) return { mergedCount: 0, movedClips: 0 };
+
+  let totalMovedClips = 0;
+  for (const dup of duplicates) {
+    // 1. 迁移剪贴板数据到 canonical 用户
+    const moveResult = await pool.query(
+      `UPDATE clipboard_items SET user_id = $1 WHERE user_id = $2`,
+      [canonicalUserId, dup.id]
+    );
+    totalMovedClips += parseInt(moveResult.rowCount, 10) || 0;
+
+    // 2. 迁移订阅信息（如果 canonical 没有订阅，dup 有）
+    if (dup.id) {
+      const subResult = await pool.query(
+        `SELECT id FROM user_subscriptions WHERE user_id = $1 AND status = 'active'`,
+        [dup.id]
+      );
+      if (subResult.rows.length > 0) {
+        const hasCanonicalSub = await pool.query(
+          `SELECT id FROM user_subscriptions WHERE user_id = $1 AND status = 'active'`,
+          [canonicalUserId]
+        );
+        if (hasCanonicalSub.rows.length === 0) {
+          await pool.query(
+            `UPDATE user_subscriptions SET user_id = $1 WHERE user_id = $2`,
+            [canonicalUserId, dup.id]
+          );
+        }
+      }
+    }
+
+    // 3. 标记旧账号为已合并（保留记录但不影响查询）
+    await pool.query(
+      `UPDATE users SET merged_into = $1, phone = CASE WHEN phone IS NOT NULL THEN phone || '_merged' ELSE NULL END, email = NULL, nickname = nickname || '_merged' WHERE id = $2`,
+      [canonicalUserId, dup.id]
+    );
+
+    logger.info(`[IdentityMerge] Merged duplicate user ${dup.id} → ${canonicalUserId} (${totalMovedClips} clips moved)`);
+  }
+
+  return { mergedCount: duplicates.length, movedClips: totalMovedClips };
+}
+
 // 发送验证码（手机：MVP 固定 888888）
 router.post('/send-code', sendCodeLimiter, async (req, res) => {
   try {
@@ -271,6 +353,11 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
 
     const user = userResult.rows[0];
 
+    // 身份合并：手机号注册/登录时，检查是否有同 email/nickname 的重复账号需合并
+    await mergeDuplicateAccounts(user.id, user).catch((err) => {
+      logger.error('[IdentityMerge] verify-code failed:', { error: err.message });
+    });
+
     // 创建会话并生成JWT
     await detectAndNotifyNewLogin(user.id, {
       deviceName: req.body.deviceName,
@@ -396,6 +483,23 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
       [result.rows[0].id]
     );
 
+    // ===== 查找或创建用户（身份关联：先按 email/email_hash 查已有账号）=====
+    let userResult = await pool.query(
+      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted FROM users WHERE email = $1',
+      [cleanEmail]
+    );
+
+    // 若明文未命中，尝试 email_hash (O(1))
+    if (userResult.rows.length === 0) {
+      const emailHash = computeFieldHash(cleanEmail);
+      if (emailHash) {
+        userResult = await pool.query(
+          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted FROM users WHERE email_hash = $1',
+          [emailHash]
+        );
+      }
+    }
+
     // Check if new registration (ToS acceptance required)
     const isNewUser = userResult.rows.length === 0;
     const { accept_tos, accept_privacy, marketing_consent, birth_date } = req.body;
@@ -417,25 +521,30 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
         }
 
         if (age < 13) {
-          return res.status(403).json({ error: 'Users under 13 are not permitted to use this service per COPPA regulations' });
+          return res.status(403).json({ error: 'Users under 13 are permitted to use this service per COPPA regulations' });
         }
       }
     }
 
     if (userResult.rows.length === 0) {
-      // 加密邮箱
+      // 新用户：创建邮箱-only 账号（phone 允许为 NULL）
       const emailEncrypted = encryptField(cleanEmail);
-      const emailHash = computeFieldHash(cleanEmail);
-      
+      const emailHash2 = computeFieldHash(cleanEmail);
+
       userResult = await pool.query(
         `INSERT INTO users (email, email_encrypted, email_hash, tos_accepted_at, privacy_accepted_at, marketing_consent, birth_date, age_verified)
          VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6)
          RETURNING id, phone, email, nickname, avatar_url`,
-        [cleanEmail, emailEncrypted, emailHash, marketing_consent || false, birth_date || null, birth_date ? true : false]
+        [cleanEmail, emailEncrypted, emailHash2, marketing_consent || false, birth_date || null, birth_date ? true : false]
       );
     }
 
     const user = userResult.rows[0];
+
+    // 身份合并：邮箱注册/登录时，检查是否有同 email/nickname 的重复账号需合并
+    await mergeDuplicateAccounts(user.id, user).catch((err) => {
+      logger.error('[IdentityMerge] verify-email-code failed:', { error: err.message });
+    });
 
     await detectAndNotifyNewLogin(user.id, {
       deviceName: req.body.deviceName,
@@ -980,6 +1089,12 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
     if (!valid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+
+    // 身份合并：检查并合并同一人的重复账号（同一 email/nickname 的其他 user 行）
+    const mergeResult = await mergeDuplicateAccounts(user.id, user).catch((err) => {
+      logger.error('[IdentityMerge] Failed:', { error: err.message });
+      return { mergedCount: 0, movedClips: 0 };
+    });
 
     // 清除登录失败记录
     clearLoginFailed(cleanIdentifier);
