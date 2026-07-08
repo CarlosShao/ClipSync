@@ -41,6 +41,8 @@ pub struct AppState {
     pub is_monitoring: Arc<Mutex<bool>>,
     /// Last time QuickPaste was toggled (for debouncing key-repeat)
     pub last_qp_toggle: Arc<Mutex<Instant>>,
+    /// Last time ToggleWindow was toggled (for debouncing key-repeat)
+    pub last_tw_toggle: Arc<Mutex<Instant>>,
 }
 
 // 系统托盘菜单命令
@@ -1065,34 +1067,33 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Create (or show existing) the QuickPaste floating popup window.
-/// This is a small always-on-top window that shows only the paste panel,
-/// independent of the main ClipSync window.
-///
-/// IMPORTANT: We do NOT use initialization_script here because Tauri v2's webview
-/// may overwrite injected content when the target URL finishes loading.
-/// Instead, we create a clean window (loading normal index.html), then inject
-/// the standalone flag via .eval() AFTER creation. App.vue detects this flag
-/// reactively (polling in onMounted with 50ms retry).
+/// Create (or toggle) the QuickPaste floating popup window.
+/// Uses URL parameter ?mode=qp so App.vue detects standalone mode SYNCHRONOUSLY
+/// (no race condition with Vue mount — window.location.search is available immediately).
 fn ensure_quick_paste_window(app: &tauri::AppHandle) {
-    // If window already exists, just show/focus it
+    // If window already exists, toggle visibility
     if let Some(qp_win) = app.get_webview_window("quick-paste") {
-        let _ = qp_win.unminimize();
-        let _ = qp_win.show();
-        let _ = qp_win.set_focus();
-        let _ = qp_win.eval("if(window.__qpActivate)window.__qpActivate()");
+        let visible = qp_win.is_visible().unwrap_or(false);
+        if visible {
+            let _ = qp_win.eval("document.body.style.background='transparent';document.body.innerHTML=''");
+            let _ = qp_win.hide();
+        } else {
+            let _ = qp_win.unminimize();
+            let _ = qp_win.show();
+            let _ = qp_win.set_focus();
+            let _ = qp_win.eval("if(window.__qpActivate)window.__qpActivate()");
+        }
         return;
     }
 
-    // Create new floating popup window — loads same index.html as main window
+    // Create new floating popup — ?mode=qp tells App.vue to render QuickPasteStandalone
     match tauri::WebviewWindowBuilder::new(
         app,
         "quick-paste",
-        tauri::WebviewUrl::App("index.html".into()),
+        tauri::WebviewUrl::App("index.html?mode=qp".into()),
     )
     .title("ClipSync - Quick Paste")
-    .inner_size(580.0, 420.0)
-    .min_inner_size(400.0, 300.0)
+    .inner_size(560.0, 400.0)
     .decorations(false)
     .transparent(true)
     .always_on_top(true)
@@ -1100,18 +1101,11 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
     .skip_taskbar(true)
     .build()
     {
-        Ok(qp_win) => {
-            eprintln!("[QuickPaste] Floating window created successfully");
-            // Inject the standalone flag AFTER the window is created and starts loading.
-            // App.vue will detect this flag via polling in onMounted().
-            // Also trigger activation to refresh clipboard data.
-            let _ = qp_win.eval(
-                "window.__QP_STANDALONE__=true;setTimeout(function(){if(window.__qpActivate)window.__qpActivate()},200)"
-            );
-            let _ = qp_win.show();
-            let _ = qp_win.set_focus();
+        Ok(_) => {
+            eprintln!("[QuickPaste] Floating window created (?mode=qp)");
+            // show() is called by the QP shortcut handler after creation
         }
-        Err(e) => eprintln!("[QuickPaste] Failed to create floating window: {}", e),
+        Err(e) => eprintln!("[QuickPaste] Failed: {}", e),
     }
 }
 
@@ -1123,6 +1117,7 @@ pub fn run() {
         config: Arc::new(Mutex::new(AppConfig::default())),
         is_monitoring: Arc::new(Mutex::new(false)),
         last_qp_toggle: Arc::new(Mutex::new(Instant::now() - std::time::Duration::from_secs(10))),
+        last_tw_toggle: Arc::new(Mutex::new(Instant::now() - std::time::Duration::from_secs(10))),
     };
 
     tauri::Builder::default()
@@ -1236,6 +1231,11 @@ pub fn run() {
                                     }
                                 } else {
                                     ensure_quick_paste_window(&app);
+                                    // Window was just created — show + focus it
+                                    if let Some(qp) = app.get_webview_window("quick-paste") {
+                                        let _ = qp.show();
+                                        let _ = qp.set_focus();
+                                    }
                                 }
                             }) {
                                 Ok(()) => {
@@ -1257,11 +1257,22 @@ pub fn run() {
                     match candidate.parse::<Shortcut>() {
                         Ok(sc) => {
                             match handle.global_shortcut().on_shortcut(sc, |app, _shortcut, _event| {
+                                // Debounce: ignore OS key-repeat within 300ms
+                                {
+                                    let should_fire = if let Some(s) = app.try_state::<AppState>() {
+                                        let mut last = s.last_tw_toggle.lock().unwrap();
+                                        if last.elapsed() < std::time::Duration::from_millis(300) {
+                                            eprintln!("[GlobalShortcut:tw] DEBOUNCED ({}ms ago)", last.elapsed().as_millis());
+                                            false
+                                        } else { *last = Instant::now(); true }
+                                    } else { true };
+                                    if !should_fire { return; }
+                                }
+
                                 eprintln!("[GlobalShortcut:tw] Triggered → toggle main window");
                                 if let Some(window) = app.get_webview_window("main") {
                                     let minimized = window.is_minimized().unwrap_or(false);
                                     let focused = window.is_focused().unwrap_or(false);
-                                    eprintln!("[GlobalShortcut:tw] main: minimized={} focused={}", minimized, focused);
                                     if minimized || !focused {
                                         let _ = window.unminimize();
                                         let _ = window.show();

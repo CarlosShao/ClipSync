@@ -223,7 +223,13 @@ const GLOBAL_IDS = ['quickPaste', 'toggleWindow']
 const STORAGE_KEY = 'clipsync-custom-shortcuts'
 type ShortcutId = keyof typeof DEFAULT_SHORTCUTS
 let savedShortcuts: Record<string, string[]> = {}
-try { savedShortcuts = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') } catch { /* ignore */ }
+try {
+  const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
+  // Sanitize each stored key array to clean up any corrupt entries
+  for (const [k, v] of Object.entries(raw)) {
+    if (Array.isArray(v)) { savedShortcuts[k] = sanitizeKeys(v) }
+  }
+} catch { /* ignore */ }
 const customShortcuts = reactive<Record<string, string[]>>({ ...DEFAULT_SHORTCUTS, ...savedShortcuts })
 const recordingId = ref<string | null>(null)
 const recorderEl = ref<HTMLElement | null>(null)
@@ -285,7 +291,27 @@ function getDisplayKey(raw: string): string {
   return SPECIAL_KEY_MAP[raw] || raw
 }
 
+// Display safety: if a key looks like garbage (non-printable, too long, etc.),
+// fall back to a placeholder rather than rendering junk.
+function safeDisplayKey(k: string): string {
+  if (!k || k.length > 12) return '�'  // suspiciously long → replacement char
+  // Check for non-printable/control characters (allow space and common symbols)
+  if (/[\x00-\x1F\x7F]/.test(k) && k !== ' ' && !SPECIAL_KEY_MAP[k]) return '�'
+  return k
+}
+
 function resolveMainKey(e: KeyboardEvent): string | null {
+  // ── Special-case high-surface-area keys FIRST (before general logic) ──
+  // These keys are commonly used in shortcuts but have unreliable e.key/e.code
+  // across OS / keyboard layout / WebView2 versions.
+  const spaceLike: Record<string, string> = {
+    'Space': 'Space', ' ': 'Space',
+    'space': 'Space',
+    // WebView2 on Windows sometimes reports Space with these codes
+    'Spacebar': 'Space',
+  }
+  if (spaceLike[e.key] || spaceLike[e.code]) return 'Space'
+
   // Try e.code first (more stable across keyboard layouts), fall back to e.key
   const code = e.code.replace(/^(Key|Digit|Numpad)/, '') // 'KeyA' → 'A', 'Digit3' → '3'
   const rawKey = e.key
@@ -302,6 +328,13 @@ function resolveMainKey(e: KeyboardEvent): string | null {
 
   // Fallback: use raw e.key (covers edge cases)
   return rawKey || null
+}
+
+// Sanitize a saved shortcut array — remove empty/non-string entries
+function sanitizeKeys(keys: string[]): string[] {
+  return keys
+    .filter(k => k && typeof k === 'string' && k.trim().length > 0)
+    .map(k => k.trim())
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -327,12 +360,13 @@ function onKeyDown(e: KeyboardEvent) {
   const isGlobal = GLOBAL_IDS.includes(recordingId.value!)
   if (isGlobal && keys.length < 2) return
 
-  // Save new shortcut
+  // Save new shortcut (sanitize to prevent garbage characters)
   const id = recordingId.value!
-  customShortcuts[id] = keys
-  const shortcutStr = keys.join('+')
+  const cleanKeys = sanitizeKeys(keys)
+  customShortcuts[id] = cleanKeys
+  const shortcutStr = cleanKeys.join('+')
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...savedShortcuts, [id]: keys }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...savedShortcuts, [id]: cleanKeys }))
   } catch {}
   recordingId.value = null
 
@@ -647,7 +681,7 @@ async function revokeSession(sessionId: string) {
       <div v-for="sk in shortcutList" :key="sk.id" class="sk-item" :class="{ 'sk-recording': recordingId === sk.id }">
         <span class="sk-label-wrap">{{ t(sk.label) }}<span v-if="sk.global" class="sk-global-tag">{{ t('sk_global') }}</span></span>
         <div v-if="recordingId !== sk.id" class="sk-keys" @click="startRecord(sk.id)">
-          <kbd v-for="k in getKeys(sk.id)" :key="k">{{ k }}</kbd>
+          <kbd v-for="k in getKeys(sk.id)" :key="k">{{ safeDisplayKey(k) }}</kbd>
           <Pencil :size="12" style="margin-left:4px;opacity:.4;cursor:pointer;" />
         </div>
         <div v-else ref="recorderEl" class="sk-recorder" tabindex="0" @blur="stopRecord" @keydown="onKeyDown">
