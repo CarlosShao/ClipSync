@@ -210,11 +210,16 @@ async function handleForgotReset() {
 }
 
 // ===== Shortcut Customization =====
+// global = registered with Tauri (works when app unfocused/minimized)
+// app    = in-app key (only when main window focused), handled by local listeners
 const DEFAULT_SHORTCUTS = {
   'quickPaste': ['Ctrl', 'Shift', 'V'],
+  'toggleWindow': ['Ctrl', 'Alt', 'Space'],
   'copyClip': ['Enter'],
+  'deleteClip': ['Delete'],
   'search': ['Ctrl', 'F'],
 }
+const GLOBAL_IDS = ['quickPaste', 'toggleWindow']
 const STORAGE_KEY = 'clipsync-custom-shortcuts'
 type ShortcutId = keyof typeof DEFAULT_SHORTCUTS
 let savedShortcuts: Record<string, string[]> = {}
@@ -224,9 +229,11 @@ const recordingId = ref<string | null>(null)
 const recorderEl = ref<HTMLElement | null>(null)
 
 const shortcutList = [
-  { id: 'quickPaste' as ShortcutId, label: 'sk_quick_paste' },
-  { id: 'copyClip' as ShortcutId, label: 'sk_copy_clip' },
-  { id: 'search' as ShortcutId, label: 'sk_search' },
+  { id: 'quickPaste' as ShortcutId, label: 'sk_quick_paste', global: true },
+  { id: 'toggleWindow' as ShortcutId, label: 'sk_toggle_window', global: true },
+  { id: 'copyClip' as ShortcutId, label: 'sk_copy_clip', global: false },
+  { id: 'deleteClip' as ShortcutId, label: 'sk_delete_clip', global: false },
+  { id: 'search' as ShortcutId, label: 'sk_search', global: false },
 ]
 
 function getKeys(id: string): string[] { return customShortcuts[id] || [] }
@@ -277,19 +284,29 @@ function onKeyDown(e: KeyboardEvent) {
   // Save new shortcut
   const id = recordingId.value!
   customShortcuts[id] = keys
+  const shortcutStr = keys.join('+')
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...savedShortcuts, [id]: keys }))
   } catch {}
   recordingId.value = null
 
-  // Re-register shortcuts with Tauri global shortcut plugin
-  const shortcutStr = keys.join('+')
-  tauri.unregisterAllShortcuts().catch(() => {})
-  tauri.registerShortcut(shortcutStr).then(() => {
+  const isGlobal = GLOBAL_IDS.includes(id)
+  if (isGlobal) {
+    // Global shortcuts: re-register ALL global ones with Tauri.
+    const globalMap: Record<string, string> = {}
+    for (const gid of GLOBAL_IDS) {
+      const ks = customShortcuts[gid]
+      if (ks && ks.length) globalMap[gid] = ks.join('+')
+    }
+    tauri.setGlobalShortcuts(globalMap).then(() => {
+      toast.show(`Shortcut updated: ${shortcutStr}`, 'success')
+    }).catch((err: any) => {
+      toast.show(`Failed to register shortcut: ${err}`, 'error')
+    })
+  } else {
+    // In-app shortcut: persisted only, handled by local key listeners.
     toast.show(`Shortcut updated: ${shortcutStr}`, 'success')
-  }).catch((err: any) => {
-    toast.show(`Failed to register shortcut: ${err}`, 'error')
-  })
+  }
 }
 
 function toggleClass(e: Event) {
@@ -583,7 +600,7 @@ async function revokeSession(sessionId: string) {
   <ModalDialog :open="showModalType === 'shortcuts'" :title="t('modal_shortcuts')" max-width="440px" @close="emit('close-modal')">
     <div class="shortcut-list">
       <div v-for="sk in shortcutList" :key="sk.id" class="sk-item" :class="{ 'sk-recording': recordingId === sk.id }">
-        <span>{{ t(sk.label) }}</span>
+        <span class="sk-label-wrap">{{ t(sk.label) }}<span v-if="sk.global" class="sk-global-tag">{{ t('sk_global') }}</span></span>
         <div v-if="recordingId !== sk.id" class="sk-keys" @click="startRecord(sk.id)">
           <kbd v-for="k in getKeys(sk.id)" :key="k">{{ k }}</kbd>
           <Pencil :size="12" style="margin-left:4px;opacity:.4;cursor:pointer;" />
@@ -857,6 +874,8 @@ async function revokeSession(sessionId: string) {
 .sk-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
 .sk-item:last-child { border-bottom: none; }
 .sk-item.sk-recording { background: var(--accent-light); border-radius: var(--radius-sm); padding: 10px 12px; }
+.sk-label-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.sk-global-tag { font-size: 9px; font-weight: 600; line-height: 1; padding: 2px 5px; border-radius: 9999px; background: var(--accent-light); color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
 .sk-keys { display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; flex-shrink: 0; }
 .sk-keys kbd { font-size: 11px; background: var(--bg-hover); border: 1px solid var(--border-default); border-radius: 3px; padding: 2px 6px; font-family: monospace; cursor: pointer; transition: all .15s; }
 .sk-keys kbd:hover { border-color: var(--accent); color: var(--accent); }

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::{Listener, Manager};
 use tauri::menu::{Menu, MenuItem};
@@ -18,6 +19,7 @@ pub struct AppConfig {
     pub device_id: Option<String>,
     pub user_id: Option<String>,
     pub quick_paste_shortcut: Option<String>,
+    pub toggle_window_shortcut: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -28,6 +30,7 @@ impl Default for AppConfig {
             device_id: None,
             user_id: None,
             quick_paste_shortcut: Some("Ctrl+Shift+V".to_string()),
+            toggle_window_shortcut: Some("Ctrl+Alt+Space".to_string()),
         }
     }
 }
@@ -734,6 +737,92 @@ fn unregister_all_shortcuts(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Toggle main window visibility: show+focus if hidden/minimized/backgrounded, hide if focused.
+#[tauri::command]
+fn toggle_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let minimized = window.is_minimized().unwrap_or(false);
+        let focused = window.is_focused().unwrap_or(false);
+        if minimized || !focused {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        } else {
+            let _ = window.hide();
+        }
+    }
+}
+
+/// Try to register a shortcut from a priority list of candidates.
+/// Returns true if at least one candidate registered successfully.
+fn register_with_fallback(app: &tauri::AppHandle, candidates: &[&str], label: &str) -> bool {
+    #[cfg(not(mobile))]
+    {
+        for (i, candidate) in candidates.iter().enumerate() {
+            let shortcut: Shortcut = match candidate.parse() {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("[Shortcut] Failed to parse '{}': {}", candidate, e);
+                    continue;
+                }
+            };
+            match app.global_shortcut().register(shortcut) {
+                Ok(()) => {
+                    println!("[Shortcut] '{}' registered: {}", label, candidate);
+                    if i > 0 {
+                        println!("[Shortcut] '{}' used fallback (primary was occupied)", label);
+                    }
+                    return true;
+                }
+                Err(e) => {
+                    if i == 0 {
+                        eprintln!("[Shortcut] '{}' primary '{}' failed: {}, trying fallback...", label, candidate, e);
+                    } else {
+                        eprintln!("[Shortcut] '{}' fallback '{}' also failed: {}", label, candidate, e);
+                    }
+                }
+            }
+        }
+        false
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (app, candidates, label);
+        false
+    }
+}
+
+/// Re-register all global shortcuts from the frontend-supplied map.
+/// Map keys: "quickPaste", "toggleWindow". Also persists them into AppConfig.
+#[tauri::command]
+fn set_global_shortcuts(app: tauri::AppHandle, shortcuts: HashMap<String, String>) -> Result<(), String> {
+    #[cfg(not(mobile))]
+    {
+        let handle = app.clone();
+        handle.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
+
+        if let Some(qp) = shortcuts.get("quickPaste") {
+            let cands: Vec<&str> = if qp.to_lowercase().contains("shift+v") {
+                vec![qp.as_str(), "Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
+            } else {
+                vec![qp.as_str(), "Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
+            };
+            register_with_fallback(&handle, &cands, "quick paste");
+        }
+        if let Some(tw) = shortcuts.get("toggleWindow") {
+            let cands: Vec<&str> = vec![tw.as_str(), "Ctrl+Alt+S", "Super+Alt+Space", "Ctrl+Alt+Enter"];
+            register_with_fallback(&handle, &cands, "toggle window");
+        }
+
+        if let Some(state) = app.try_state::<AppState>() {
+            let mut cfg = state.config.lock().unwrap();
+            cfg.quick_paste_shortcut = shortcuts.get("quickPaste").cloned();
+            cfg.toggle_window_shortcut = shortcuts.get("toggleWindow").cloned();
+        }
+    }
+    Ok(())
+}
+
 /// Open image preview in a new Tauri window.
 #[tauri::command]
 async fn open_image_viewer(app: tauri::AppHandle, image_data_url: String, title: String) -> Result<(), String> {
@@ -993,15 +1082,29 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, _event| {
+                .with_handler(|app, shortcut, _event| {
                     if let Some(window) = app.get_webview_window("main") {
                         // Restore + focus the window (works even when minimized/hidden)
                         let _ = window.unminimize();
                         let _ = window.show();
                         let _ = window.set_focus();
-                        // Toggle the quick-paste panel via the HomeView-exposed function.
-                        // Guarded so a stale build without the exposure fails silently.
-                        if let Err(e) = window.eval("if (window.__toggleQuickPaste) window.__toggleQuickPaste()") {
+                        // Dispatch based on which registered shortcut was pressed.
+                        let pressed = shortcut.to_string().to_lowercase();
+                        let (qp, tw) = {
+                            if let Some(state) = app.try_state::<AppState>() {
+                                let cfg = state.config.lock().unwrap();
+                                (
+                                    cfg.quick_paste_shortcut.clone().unwrap_or_default().to_lowercase(),
+                                    cfg.toggle_window_shortcut.clone().unwrap_or_default().to_lowercase(),
+                                )
+                            } else { (String::new(), String::new()) }
+                        };
+                        let js = if !tw.is_empty() && pressed == tw {
+                            "if (window.__toggleWindow) window.__toggleWindow();"
+                        } else {
+                            "if (window.__toggleQuickPaste) window.__toggleQuickPaste();"
+                        };
+                        if let Err(e) = window.eval(js) {
                             eprintln!("[GlobalShortcut] eval failed: {}", e);
                         }
                     }
@@ -1037,6 +1140,8 @@ pub fn run() {
             is_autostart_enabled,
             register_shortcut,
             unregister_all_shortcuts,
+            set_global_shortcuts,
+            toggle_window,
             open_image_viewer,
             set_titlebar_mode,
         ])
@@ -1061,66 +1166,40 @@ pub fn run() {
                 }
             });
 
-            // 注册全局快捷键（快速粘贴面板）
+            // 注册全局快捷键（快速粘贴面板 + 显隐主窗口）
             // 如果主快捷键被占用，自动尝试备选键位
             #[cfg(not(mobile))]
             {
                 let handle = app.handle().clone();
                 let cfg = app.state::<AppState>().config.lock().unwrap().clone();
-                let primary = cfg.quick_paste_shortcut
-                    .unwrap_or_else(|| "Ctrl+Shift+V".to_string());
-                let primary_normalized = primary.replace("CmdOrCtrl", "Ctrl");
 
                 // 先卸载所有已有快捷键
                 let _ = handle.global_shortcut().unregister_all();
 
-                // 快捷键通过 Builder.with_handler 统一处理（见上方插件注册）。
-                // 这里只负责注册候选键位，不再单独 listen 事件。
+                let qp = cfg.quick_paste_shortcut
+                    .unwrap_or_else(|| "Ctrl+Shift+V".to_string());
+                let tw = cfg.toggle_window_shortcut
+                    .unwrap_or_else(|| "Ctrl+Alt+Space".to_string());
 
-                // 快捷键候选列表（按优先级，Tauri v2 格式）
-                let candidates: Vec<&str> = {
-                    if primary_normalized.contains("Shift+V") {
-                        vec![&primary_normalized, "Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
-                    } else {
-                        vec![&primary_normalized, "Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
-                    }
+                // 每个全局快捷键：主键 + 备选键位
+                let qp_candidates = if qp.to_lowercase().contains("shift+v") {
+                    vec![qp.as_str(), "Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
+                } else {
+                    vec![qp.as_str(), "Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
                 };
+                let tw_candidates = vec![tw.as_str(), "Ctrl+Alt+S", "Super+Alt+Space", "Ctrl+Alt+Enter"];
 
-                let mut registered = false;
-                for (i, candidate) in candidates.iter().enumerate() {
-                    let shortcut: Shortcut = match candidate.parse() {
-                        Ok(s) => s,
-                        Err(e) => {
-                            eprintln!("[Setup] Failed to parse '{}': {}", candidate, e);
-                            continue;
-                        }
-                    };
-
-                    // 注册快捷键（handler 通过上面的 app.listen 统一处理）
-                    let reg_result = handle.global_shortcut().register(shortcut);
-
-                    match reg_result {
-                        Ok(()) => {
-                            println!("[Setup] Global shortcut registered: {}", candidate);
-                            if i > 0 {
-                                println!("[Setup] Used fallback shortcut (primary was occupied)");
-                            }
-                            registered = true;
-                            break;
-                        }
-                        Err(e) => {
-                            if i == 0 {
-                                eprintln!("[Setup] Primary shortcut '{}' failed: {}, trying fallback...", candidate, e);
-                            } else {
-                                eprintln!("[Setup] Fallback '{}' also failed: {}", candidate, e);
-                            }
-                        }
-                    }
+                let mut any_ok = false;
+                if register_with_fallback(&handle, &qp_candidates, "quick paste") {
+                    any_ok = true;
+                }
+                if register_with_fallback(&handle, &tw_candidates, "toggle window") {
+                    any_ok = true;
                 }
 
-                if !registered {
-                    eprintln!("[Setup] ALL shortcut candidates FAILED! Quick paste via hotkey will NOT work.");
-                    eprintln!("[Setup]   You can still open quick paste panel from the tray menu or main UI.");
+                if !any_ok {
+                    eprintln!("[Setup] ALL global shortcut candidates FAILED!");
+                    eprintln!("[Setup]   You can still open quick paste / toggle window from the tray menu or main UI.");
                 }
             }
 

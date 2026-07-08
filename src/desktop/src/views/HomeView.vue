@@ -69,6 +69,19 @@ onMounted(async () => {
   // Expose the quick-paste toggle for the Rust global-shortcut handler to call via eval.
   // This is the SINGLE source of truth — the visible panel is bound to HomeView's showQuickPaste.
   ;(window as any).__toggleQuickPaste = () => { showQuickPaste.value = !showQuickPaste.value }
+  ;(window as any).__toggleWindow = () => { tauri.toggleWindow() }
+
+  // Re-apply user's saved global shortcuts (Rust hardcodes defaults at startup,
+  // so without this the user's customization is lost after a restart).
+  try {
+    const saved = JSON.parse(localStorage.getItem('clipsync-custom-shortcuts') || '{}')
+    const globalMap: Record<string, string> = {}
+    for (const gid of ['quickPaste', 'toggleWindow']) {
+      const ks = saved[gid]
+      if (Array.isArray(ks) && ks.length) globalMap[gid] = ks.join('+')
+    }
+    if (Object.keys(globalMap).length) tauri.setGlobalShortcuts(globalMap).catch(() => {})
+  } catch { /* ignore */ }
 
   document.addEventListener('keydown', handleGlobalKeydown)
   try { tauri.setTitlebarMode(currentMode.value === 'dark') } catch {}
@@ -77,6 +90,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (stopPolling) stopPolling()
   delete (window as any).__toggleQuickPaste
+  delete (window as any).__toggleWindow
   document.removeEventListener('keydown', handleGlobalKeydown)
 })
 
