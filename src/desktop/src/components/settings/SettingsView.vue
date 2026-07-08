@@ -184,21 +184,21 @@ function resetPwdForm() {
       </div>
       <!-- Password change form (inline expand) -->
       <div v-if="showPwdChange" class="pwd-change-form" style="padding: 20px 24px;">
-        <div class="pwd-field" style="padding-left: 4px;">
-          <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;padding-left:4px;">{{ t('pwd_old') || '当前密码' }}</label>
+        <div class="pwd-field">
+          <label class="pwd-label">{{ t('pwd_old') || '当前密码' }}</label>
           <Input v-model="pwdOld" type="password" class="sg-input--block" :placeholder="t('pwd_old_ph') || '输入当前密码'" />
         </div>
-        <div class="pwd-field" style="padding-left: 4px;">
-          <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;padding-left:4px;">{{ t('pwd_new') || '新密码' }}</label>
+        <div class="pwd-field">
+          <label class="pwd-label">{{ t('pwd_new') || '新密码' }}</label>
           <Input v-model="pwdNew" type="password" class="sg-input--block" :placeholder="t('pwd_new_ph') || '至少8位字符'" minlength="8" />
         </div>
-        <div class="pwd-field" style="padding-left: 4px;">
-          <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;padding-left:4px;">{{ t('pwd_confirm') || '确认新密码' }}</label>
+        <div class="pwd-field">
+          <label class="pwd-label">{{ t('pwd_confirm') || '确认新密码' }}</label>
           <Input v-model="pwdConfirm" type="password" class="sg-input--block" :placeholder="t('pwd_confirm_ph') || '再次输入新密码'" @keyup.enter="handleChangePassword" />
         </div>
         <div class="pwd-actions">
-          <Button style="padding: 10px 28px;" @click="handleChangePassword" :disabled="pwdChanging">{{ pwdChanging ? (t('saving') || '修改中...') : (t('sg_chpwd_btn') || '确认修改') }}</Button>
-          <Button variant="outline" style="padding: 10px 28px;" @click="showPwdChange = false; resetPwdForm()">{{ t('cancel_btn') }}</Button>
+          <Button class="pwd-btn" @click="handleChangePassword" :disabled="pwdChanging">{{ pwdChanging ? (t('saving') || '修改中...') : (t('sg_chpwd_btn') || '确认修改') }}</Button>
+          <Button variant="outline" class="pwd-btn" @click="showPwdChange = false; resetPwdForm()">{{ t('cancel_btn') }}</Button>
         </div>
         <div v-if="pwdError" class="pwd-error">{{ pwdError }}</div>
         <div v-if="pwdSuccess" class="pwd-success">{{ pwdSuccess }}</div>
@@ -277,10 +277,11 @@ function resetPwdForm() {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
-.pwd-field { margin-bottom: 14px; }
-.pwd-field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; padding-left: 2px; }
+.pwd-field { margin-bottom: 14px; padding-left: 4px; }
+.pwd-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; padding-left: 4px; }
 .sg-input--block { width: 100%; padding-left: 16px !important; }
 .pwd-actions { display: flex; gap: 10px; margin-top: 12px; }
+.pwd-btn { padding: 10px 28px; }
 .pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
 .pwd-success { color: var(--success); font-size: 12px; margin-top: 6px; }
 
