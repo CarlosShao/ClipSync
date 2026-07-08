@@ -339,6 +339,7 @@ router.post('/', apiLimiter, checkClipboardLimit, async (req, res) => {
 
     // Send notification for new sync
     sendNotification(req.userId, {
+      notificationType: 'sync_complete',
       title: 'New content synced',
       body: `${detectedType.toUpperCase()} content from ${deviceCheck.rows[0]?.device_name || 'Unknown device'}`,
       data: { itemId: item.id, contentType: detectedType },

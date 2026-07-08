@@ -4,6 +4,7 @@ import pool from '../db/pool.js';
 import config from '../config.js';
 import { logger } from '../utils/logger.js';
 import { getRedisClient } from '../middleware/rateLimiter.js';
+import { createNotification } from '../services/notificationService.js';
 import {
   initWsRedisPubSub,
   publishToUser,
@@ -369,10 +370,30 @@ export function broadcastToUser(userId, message) {
 }
 
 // Send notification to all devices of a user
-export function sendNotification(userId, notification) {
+// 同时持久化到 notification_history（此前只推 WS 不落库，导致 GET /history 永远为空）
+export async function sendNotification(userId, notification) {
+  const notificationType = notification.notificationType || 'sync_complete';
+
+  // 1) 落库（UPSERT 风格：createNotification 已处理写入）
+  let persistedId = null;
+  try {
+    const saved = await createNotification({
+      userId,
+      notificationType,
+      title: notification.title,
+      content: notification.body,
+      metadata: notification.data || {},
+    });
+    persistedId = saved?.id ?? null;
+  } catch (err) {
+    logger.error('[WS] 通知落库失败（仍继续推送）:', { error: err?.message, userId });
+  }
+
+  // 2) 推送 WS（携带真实 id + type，供前端映射分类与去重）
   const message = {
     type: 'notification',
-    id: `notif_${Date.now()}`,
+    id: persistedId != null ? String(persistedId) : `notif_${Date.now()}`,
+    notificationType,
     title: notification.title,
     body: notification.body,
     data: notification.data || {},
@@ -383,6 +404,7 @@ export function sendNotification(userId, notification) {
 
   logger.info('Notification sent', {
     userId,
+    notificationType,
     title: notification.title,
     onlineDevices: getOnlineDeviceCount(userId),
   });

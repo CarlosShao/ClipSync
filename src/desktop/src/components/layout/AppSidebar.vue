@@ -7,8 +7,10 @@ import {
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useI18n } from '@/composables/useI18n'
+import { useNotifications } from '@/composables/useNotifications'
 
 const { t } = useI18n()
+const { unreadCount } = useNotifications()
 
 const props = defineProps<{
   sidebarOpen: boolean
@@ -141,6 +143,7 @@ const accountNavItems = computed(() => [
           <button class="user-menu-item" @click="emit('navigate', 'notifications'); closeUserMenu()">
             <Bell :size="14" />
             <span>{{ t('nav_notifications') || '通知' }}</span>
+            <span v-if="unreadCount > 0" class="user-menu-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
           </button>
           <div class="user-menu-divider" />
           <button class="user-menu-item user-menu-item--danger" @click="emit('logout'); closeUserMenu()">
@@ -348,6 +351,12 @@ const accountNavItems = computed(() => [
 .user-menu-item--danger { color: var(--danger); }
 .user-menu-item--danger:hover { background: var(--danger-bg); }
 .user-menu-divider { height: 1px; background: var(--border-subtle); margin: 2px 6px; }
+.user-menu-badge {
+  margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; line-height: 1;
+  color: #fff; background: var(--danger); border-radius: 9999px;
+}
 
 /* Transition for user menu fade */
 .user-menu-fade-enter-active { animation: menuFadeIn 0.12s ease-out; }
