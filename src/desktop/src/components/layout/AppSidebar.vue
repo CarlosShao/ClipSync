@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
   PanelLeftClose, PanelLeftOpen, Clipboard, Monitor, Link,
-  User, Star, Settings, LogOut,
+  User, Star, Settings, LogOut, Bell,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useI18n } from '@/composables/useI18n'
@@ -137,6 +137,10 @@ const accountNavItems = computed(() => [
           <button class="user-menu-item" @click="emit('navigate', 'profile'); closeUserMenu()">
             <User :size="14" />
             <span>{{ t('nav_profile') || '个人资料' }}</span>
+          </button>
+          <button class="user-menu-item" @click="emit('navigate', 'notifications'); closeUserMenu()">
+            <Bell :size="14" />
+            <span>{{ t('nav_notifications') || '通知' }}</span>
           </button>
           <div class="user-menu-divider" />
           <button class="user-menu-item user-menu-item--danger" @click="emit('logout'); closeUserMenu()">

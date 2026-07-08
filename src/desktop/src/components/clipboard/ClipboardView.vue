@@ -456,7 +456,7 @@ function extractDomain(url: string): string {
 }
 
 /* ===== TOOLBAR ===== */
-.toolbar { display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 24px; border-bottom: 1px solid var(--border-default); background: var(--bg-surface); flex-shrink: 0; }
+.toolbar { display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 24px; background: var(--bg-surface); flex-shrink: 0; }
 .toolbar-left { display: flex; align-items: center; gap: 10px; }
 .toolbar-title { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
 .toolbar-spacer { flex: 1; }
