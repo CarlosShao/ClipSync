@@ -1081,6 +1081,20 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Resize the QuickPaste window (called from JS when input gains focus).
+/// Fallback if JS setCurrentWindow().setSize() fails.
+#[tauri::command(rename_all = "camelCase")]
+async fn resize_qp_window(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("quick-paste") {
+        win.set_size(tauri::LogicalSize::new(width, height))
+            .map_err(|e| format!("set_size failed: {}", e))?;
+        eprintln!("[QP] Rust resized to {}x{}", width, height);
+        Ok(())
+    } else {
+        Err("quick-paste window not found".into())
+    }
+}
+
 /// Create (or recreate) the QuickPaste floating popup window.
 /// Uses URL parameter ?mode=qp so App.vue detects standalone mode SYNCHRONOUSLY
 /// (no race condition with Vue mount — window.location.search is available immediately).
@@ -1103,12 +1117,13 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
         tauri::WebviewUrl::App("index.html?mode=qp".into()),
     )
     .title("ClipSync - Quick Paste")
-    // Start COLLAPSED: only search bar visible (no results area = no "outer frame").
-    // Window expands to full size via JS setCurrentWindow().setSize() when input gains focus.
-    .inner_size(560.0, 48.0)
+    // Start COLLAPSED: only search bar visible (640x56 = search bar size).
+    // Window expands via JS setCurrentWindow().setSize() or Rust invoke when input gains focus.
+    // NOTE: resizable(true) is REQUIRED for programmatic setSize() to work.
+    .inner_size(640.0, 56.0)
     .decorations(false)
     .always_on_top(true)
-    .resizable(false)
+    .resizable(true)  // must be true for JS setSize() / Rust set_size() to work
     .skip_taskbar(true)
     .build()
     {
@@ -1171,6 +1186,7 @@ pub fn run() {
             toggle_window,
             open_image_viewer,
             set_titlebar_mode,
+            resize_qp_window,
         ])
         .setup(|app| {
             // 设置系统托盘

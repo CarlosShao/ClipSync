@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
-import * as tauri from '@/lib/tauri'
+import * as tauriLib from '@/lib/tauri'
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { Search } from 'lucide-vue-next'
 
@@ -14,19 +14,17 @@ const qpSelectedIndex = ref(0)
 const expanded = ref(false)
 
 // ── Window dimensions ──
-const COLLAPSED_W = 560
-const COLLAPSED_H = 48   // just the search bar
-const EXPANDED_W = 560
-const EXPANDED_H = 430   // full card with ~10 items
+const COLLAPSED_W = 640
+const COLLAPSED_H = 56
+const EXPANDED_W = 640
+const EXPANDED_H = 460
 
 let stopPolling: (() => void) | null = null
 
 onMounted(async () => {
   stopPolling = clip.startPolling(2000)
-  // Start collapsed — window created at search-bar size by Rust
-  // Auto-focus input after a tick (window must be ready)
   await nextTick()
-  setTimeout(() => focusSearch(), 50)
+  setTimeout(() => focusSearch(), 80)
 })
 onUnmounted(() => { if (stopPolling) stopPolling() })
 
@@ -44,26 +42,52 @@ function focusSearch() {
   nextTick(() => focusSearch())
 }
 
-// ── Window resize + drawer animation on focus/blur ──
+// ── Expand: resize window + show drawer ──
 async function expandDrawer() {
   if (expanded.value) return
   expanded.value = true
-  // Resize Tauri window to full size (instant OS-level, content animates via Transition)
+
+  // Method 1: Tauri JS API
   try {
-    await getCurrentWindow().setSize(new LogicalSize(EXPANDED_W, EXPANDED_H))
-  } catch (e) { console.warn('[QP] resize failed:', e) }
+    const win = getCurrentWindow()
+    await win.setSize(new LogicalSize(EXPANDED_W, EXPANDED_H))
+    console.log('[QP] expanded via JS API')
+    return
+  } catch (e) {
+    console.warn('[QP] JS API resize failed:', e)
+  }
+
+  // Method 2: Fallback via Rust invoke (bypasses any JS API limitation)
+  try {
+    await tauriLib.invoke('resize_qp_window', { width: EXPANDED_W, height: EXPANDED_H })
+    console.log('[QP] expanded via invoke fallback')
+  } catch (e2) {
+    console.error('[QP] ALL resize methods failed:', e2)
+  }
 }
 
 async function collapseAndClose(action: () => void = () => {}) {
   expanded.value = false
   action()
-  // Wait for slide-up animation to finish (matches .dr-leave-active duration)
-  await new Promise(r => setTimeout(r, 180))
+  await new Promise(r => setTimeout(r, 200))
   window.close()
 }
 
 // ── Input focus triggers expansion ──
 function onFocus() { expandDrawer() }
+
+// ── Drag: explicit startDragging() on bar mousedown ──
+async function onBarMousedown(e: MouseEvent) {
+  // Only initiate drag if clicking the bar itself (not the input)
+  const target = e.target as HTMLElement
+  if (target.closest('.qp-in')) return // let input handle normally
+
+  try {
+    await getCurrentWindow().startDragging()
+  } catch (err) {
+    console.warn('[QP] startDragging failed:', err)
+  }
+}
 
 const filteredItems = computed(() => {
   let result = clip.items.value
@@ -105,11 +129,11 @@ function truncate(str: string, max: number): string {
 </script>
 
 <template>
-  <!-- ROOT = card surface, fills entire Tauri window -->
+  <!-- ROOT = card surface -->
   <div class="qp">
-    <!-- Search bar — ALSO the drag handle for the entire window -->
-    <div class="qp-bar" data-tauri-drag-region>
-      <Search :size="13" class="qp-ico" />
+    <!-- Search bar — drag handle (explicit mousedown handler) -->
+    <div class="qp-bar" @mousedown="onBarMousedown">
+      <Search :size="14" class="qp-ico" />
       <input
         v-model="qpSearch"
         type="text"
@@ -120,7 +144,7 @@ function truncate(str: string, max: number): string {
       <span class="qp-esc">ESC</span>
     </div>
 
-    <!-- Results drawer — slides down when input gains focus -->
+    <!-- Results drawer — slides down on focus -->
     <Transition name="dr">
       <div v-show="expanded" class="qp-drp">
         <div class="qp-lst">
@@ -148,7 +172,7 @@ function truncate(str: string, max: number): string {
 </template>
 
 <style scoped>
-/* ── Root: fills Tauri window completely ── */
+/* ── Root: fills entire Tauri window ── */
 .qp {
   display: flex;
   flex-direction: column;
@@ -161,56 +185,50 @@ function truncate(str: string, max: number): string {
   border-radius: 12px;
 }
 
-/* ── Search bar = drag handle ── */
-/* data-tauri-drag-region is set directly on this element.
-   The input inside gets pointer-events:auto so typing works,
-   but clicking anywhere else on the bar (padding, icon, ESC area)
-   initiates window drag. */
+/* ── Search bar / drag handle ── */
 .qp-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
+  gap: 10px;
+  padding: 12px 18px;
   cursor: grab;
-  -webkit-user-select: none;
-  user-select: none;
-  /* Rounded top corners always; bottom flattens when drawer opens */
   border-radius: 12px 12px 0 0;
   flex-shrink: 0;
-  height: COLLAPSED_H; /* matches Rust initial window height */
+  height: COLLAPSED_H;
   box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
 }
+.qp-bar:active { cursor: grabbing; }
 
 .qp-ico { color: var(--text-tertiary); flex-shrink: 0; pointer-events: none; }
 
-/* Input must reclaim mouse events for typing */
 .qp-in {
   flex: 1;
   border: none;
   outline: none;
   background: transparent;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-primary);
   min-width: 0;
   cursor: text;
-  /* Re-enable pointer events so click-to-focus works inside drag region */
   pointer-events: auto;
 }
 .qp-in::placeholder { color: var(--text-tertiary); }
 
 .qp-esc {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted, var(--text-tertiary));
   background: var(--bg-hover);
-  border-radius: 3px;
-  padding: 1px 5px;
+  border-radius: 4px;
+  padding: 2px 6px;
   font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
   flex-shrink: 0;
   pointer-events: none;
 }
 
-/* ── Results drawer ── */
+/* ── Drawer (results) ── */
 .qp-drp {
   display: flex;
   flex-direction: column;
@@ -219,37 +237,37 @@ function truncate(str: string, max: number): string {
   border-radius: 0 0 12px 12px;
 }
 
-/* Vue Transition: drawer slides down + fades in */
+/* Vue Transition: slide-down drawer animation */
 .dr-enter-active {
-  transition: all .25s cubic-bezier(.16, 1, .3, 1);
+  transition: all .28s cubic-bezier(.16, 1, .3, 1);
   overflow: hidden;
 }
 .dr-leave-active {
-  transition: all .18s ease-in;
+  transition: all .2s ease-in;
   overflow: hidden;
 }
 .dr-enter-from {
   opacity: 0;
   max-height: 0;
-  transform: translateY(-8px);
+  transform: translateY(-10px);
 }
 .dr-enter-to {
   opacity: 1;
-  max-height: 400px;
+  max-height: 420px;
   transform: translateY(0);
 }
 .dr-leave-from {
   opacity: 1;
-  max-height: 400px;
+  max-height: 420px;
   transform: translateY(0);
 }
 .dr-leave-to {
   opacity: 0;
   max-height: 0;
-  transform: translateY(-8px);
+  transform: translateY(-10px);
 }
 
-/* Scrollable list area */
+/* Scrollable list */
 .qp-lst {
   flex: 1;
   overflow-y: auto;
@@ -265,7 +283,7 @@ function truncate(str: string, max: number): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 16px;
+  padding: 8px 18px;
   cursor: pointer;
   transition: background .08s;
   border-left: 3px solid transparent;
@@ -273,34 +291,34 @@ function truncate(str: string, max: number): string {
 .qp-it:hover { background: var(--bg-hover); }
 .qp-it.on   { background: var(--bg-selected, var(--bg-hover)); border-left-color: var(--accent); }
 
-.qp-em { flex-shrink: 0; font-size: 12px; width: 18px; text-align: center; }
-.qp-tx { flex: 1; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.qp-ag { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.qp-no { padding: 20px; text-align: center; font-size: 13px; color: var(--text-tertiary); }
+.qp-em { flex-shrink: 0; font-size: 13px; width: 20px; text-align: center; }
+.qp-tx { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.qp-ag { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.qp-no { padding: 24px; text-align: center; font-size: 13px; color: var(--text-tertiary); }
 
 /* Footer */
 .qp-ft {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 16px 7px;
-  font-size: 10px;
+  gap: 14px;
+  padding: 7px 18px 8px;
+  font-size: 11px;
   color: var(--text-tertiary);
   border-top: 1px solid var(--border-subtle, rgba(128,128,128,.12));
   flex-shrink: 0;
 }
 .qp-ft span:first-child { margin-right: auto; font-weight: 600; color: var(--text-secondary); }
 .qp-ft kbd {
-  font-size: 9px;
+  font-size: 10px;
   background: var(--bg-hover);
-  border-radius: 3px;
-  padding: 0 3px;
-  line-height: 1.5;
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 1.6;
   font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
   color: var(--text-secondary);
 }
 
-/* QP mode: body/html bg matches card — no visible frame gap */
+/* QP mode: body/html bg matches card */
 :global(html.qp-mode),
 :global(html.qp-mode body) {
   background: var(--bg-surface) !important;
