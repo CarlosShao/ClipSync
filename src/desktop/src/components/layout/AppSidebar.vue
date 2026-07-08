@@ -130,7 +130,7 @@ const accountNavItems = computed(() => [
         <div class="user-info">
           <div class="user-name">{{ userName || 'User' }}</div>
           <div v-if="userEmail" class="user-email">{{ userEmail }}</div>
-          <div class="user-role">{{ t(userPlan === 'Pro' ? 'role_pro' : 'role_free') }}</div>
+          <div class="user-role">{{ t('role_' + (userPlan || 'Free').toLowerCase()) }}</div>
         </div>
       </div>
       <!-- Popover menu (profile + logout) -->
