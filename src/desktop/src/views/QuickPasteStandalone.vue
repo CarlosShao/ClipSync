@@ -74,7 +74,8 @@ async function collapseAndClose(action: () => void = () => {}) {
   expanded.value = false
   action()
   await new Promise(r => setTimeout(r, 200))
-  window.close()
+  // Use Tauri API — native window.close() crashes the webview in Tauri v2
+  try { await getCurrentWindow().close() } catch {}
 }
 
 // ── Input focus triggers expansion ──
