@@ -986,12 +986,26 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
                     eprintln!("[Tray] -> show window");
                 }
                 "quick_paste" => {
-                    if let Some(window) = ensure_window_visible(&app) {
-                        match window.eval("window.toggleQuickPaste()") {
-                            Ok(_) => eprintln!("[Tray] -> toggleQuickPaste"),
-                            Err(e) => eprintln!("[Tray] eval error: {}", e),
+                    // Use the dedicated quick-paste floating popup
+                    ensure_window_visible(&app); // make sure main is running for data
+                    if let Some(qp_win) = app.get_webview_window("quick-paste") {
+                        let visible = qp_win.is_visible().unwrap_or(false);
+                        if visible { let _ = qp_win.hide(); }
+                        else {
+                            let _ = qp_win.unminimize();
+                            let _ = qp_win.show();
+                            let _ = qp_win.set_focus();
+                            let _ = qp_win.eval("if(window.__qpActivate) window.__qpActivate()");
+                        }
+                    } else {
+                        ensure_quick_paste_window(&app);
+                        if let Some(qp_win) = app.get_webview_window("quick-paste") {
+                            let _ = qp_win.show();
+                            let _ = qp_win.set_focus();
+                            let _ = qp_win.eval("if(window.__qpActivate) window.__qpActivate()");
                         }
                     }
+                    eprintln!("[Tray] -> toggle QuickPaste popup");
                 }
                 "settings" => {
                     if let Some(window) = ensure_window_visible(&app) {
@@ -1069,6 +1083,44 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Create (or re-create) the QuickPaste floating popup window.
+/// This is a small always-on-top window that shows only the paste panel,
+/// independent of the main ClipSync window.
+fn ensure_quick_paste_window(app: &tauri::AppHandle) {
+    // Don't recreate if already exists
+    if app.get_webview_window("quick-paste").is_some() {
+        return;
+    }
+
+    let html = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100vw;height:100vh;overflow:hidden;background:transparent;display:flex;align-items:flex-start;justify-content:center;padding-top:6vh}
+</style></head><body>
+<script>window.__QP_STANDALONE__=true;</script>
+<div id="app"></div><script type="module" src="/src/desktop/src/main.js"></script>
+</body></html>"#;
+
+    match tauri::WebviewWindowBuilder::new(
+        app,
+        "quick-paste",
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("ClipSync - Quick Paste")
+    .inner_size(580.0, 420.0)
+    .min_inner_size(400.0, 300.0)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .resizable(false)
+    .skip_taskbar(true)
+    .initialization_script(&format!("document.open();document.write({:?});document.close();", html))
+    .build()
+    {
+        Ok(_) => eprintln!("[QuickPaste] Floating window created"),
+        Err(e) => eprintln!("[QuickPaste] Failed to create floating window: {}", e),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
@@ -1083,29 +1135,54 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, _event| {
-                    if let Some(window) = app.get_webview_window("main") {
-                        // Restore + focus the window (works even when minimized/hidden)
-                        let _ = window.unminimize();
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                        // Dispatch based on which registered shortcut was pressed.
-                        let pressed = shortcut.to_string().to_lowercase();
-                        let (qp, tw) = {
-                            if let Some(state) = app.try_state::<AppState>() {
-                                let cfg = state.config.lock().unwrap();
-                                (
-                                    cfg.quick_paste_shortcut.clone().unwrap_or_default().to_lowercase(),
-                                    cfg.toggle_window_shortcut.clone().unwrap_or_default().to_lowercase(),
-                                )
-                            } else { (String::new(), String::new()) }
-                        };
-                        let js = if !tw.is_empty() && pressed == tw {
-                            "if (window.__toggleWindow) window.__toggleWindow();"
+                    let pressed = shortcut.to_string().to_lowercase();
+                    let (qp_shortcut, tw_shortcut) = {
+                        if let Some(state) = app.try_state::<AppState>() {
+                            let cfg = state.config.lock().unwrap();
+                            (
+                                cfg.quick_paste_shortcut.clone().unwrap_or_default().to_lowercase(),
+                                cfg.toggle_window_shortcut.clone().unwrap_or_default().to_lowercase(),
+                            )
+                        } else { (String::new(), String::new()) }
+                    };
+
+                    // --- Toggle Window (pure Rust — no JS round-trip) ---
+                    if !tw_shortcut.is_empty() && pressed == tw_shortcut {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let minimized = window.is_minimized().unwrap_or(false);
+                            let focused = window.is_focused().unwrap_or(false);
+                            if minimized || !focused {
+                                let _ = window.unminimize();
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            } else {
+                                let _ = window.hide();
+                            }
+                        }
+                        return;
+                    }
+
+                    // --- Quick Paste (independent floating popup window) ---
+                    // Show/hide a dedicated "quick-paste" sub-window; do NOT touch the main window.
+                    if let Some(qp_win) = app.get_webview_window("quick-paste") {
+                        let visible = qp_win.is_visible().unwrap_or(false);
+                        if visible {
+                            let _ = qp_win.hide();
                         } else {
-                            "if (window.__toggleQuickPaste) window.__toggleQuickPaste();"
-                        };
-                        if let Err(e) = window.eval(js) {
-                            eprintln!("[GlobalShortcut] eval failed: {}", e);
+                            let _ = qp_win.unminimize();
+                            let _ = qp_win.show();
+                            let _ = qp_win.set_focus();
+                            // Tell the frontend to refresh clipboard data & focus search
+                            let _ = qp_win.eval("if(window.__qpActivate) window.__qpActivate()");
+                        }
+                    } else {
+                        // Window doesn't exist yet — try to create it lazily
+                        ensure_quick_paste_window(&app);
+                        // Retry once after creation
+                        if let Some(qp_win) = app.get_webview_window("quick-paste") {
+                            let _ = qp_win.show();
+                            let _ = qp_win.set_focus();
+                            let _ = qp_win.eval("if(window.__qpActivate) window.__qpActivate()");
                         }
                     }
                 })
