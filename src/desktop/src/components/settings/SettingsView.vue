@@ -298,7 +298,7 @@ function resetPwdForm() {
 .mode-seg-btn:hover:not(.active) { color: var(--text-primary); background: var(--bg-active); }
 .mode-seg-btn.active {
   background: var(--bg-surface); color: var(--text-primary);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
 }
 
 /* About / Version section */
