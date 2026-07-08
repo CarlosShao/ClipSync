@@ -50,17 +50,12 @@ const filteredItems = computed(() => {
 
 function selectItem(item: any) {
   clip.copyItem(item)
-  // Clear content immediately to prevent Windows ghost outline, then close
-  document.body.style.background = 'transparent'
-  document.body.innerHTML = ''
-  setTimeout(() => { window.close() }, 10)
+  // Close window directly — Rust will handle clean destruction (no need to clear DOM)
+  window.close()
 }
 
 function closePopup() {
-  // Clear content immediately to prevent Windows ghost outline
-  document.body.style.background = 'transparent'
-  document.body.innerHTML = ''
-  setTimeout(() => { window.close() }, 10)
+  window.close()
 }
 
 function handleKeydown(e: KeyboardEvent) {

@@ -784,6 +784,10 @@ fn set_global_shortcuts(app: tauri::AppHandle, shortcuts: HashMap<String, String
                             if last.elapsed() < std::time::Duration::from_millis(300) { return; }
                             *last = Instant::now();
                         }
+                        // Always destroy + recreate (reusing stale Vue DOM causes empty outline)
+                        if let Some(existing) = app_h.get_webview_window("quick-paste") {
+                            let _ = existing.close();
+                        }
                         ensure_quick_paste_window(app_h);
                     }) {
                         Ok(()) => { println!("[setGS] ✅ quickPaste='{}'{}", candidate, if i > 0 { " (fb)" } else { "" }); break; }
@@ -799,7 +803,17 @@ fn set_global_shortcuts(app: tauri::AppHandle, shortcuts: HashMap<String, String
             for (i, candidate) in cands.iter().enumerate() {
                 if let Ok(sc) = candidate.parse::<Shortcut>() {
                     match handle.global_shortcut().on_shortcut(sc, |app_h, _shortcut, _event| {
-                        eprintln!("[setGS:tw] toggle main window");
+                        // Debounce: ignore OS key-repeat AND potential key-up events (500ms covers long holds)
+                        let should_fire = if let Some(s) = app_h.try_state::<AppState>() {
+                            let mut last = s.last_tw_toggle.lock().unwrap();
+                            if last.elapsed() < std::time::Duration::from_millis(500) {
+                                eprintln!("[setGS:tw] DEBOUNCED ({}ms ago)", last.elapsed().as_millis());
+                                false
+                            } else { *last = Instant::now(); true }
+                        } else { true };
+                        if !should_fire { return; }
+
+                        eprintln!("[setGS:tw] Triggered → toggle main window");
                         if let Some(w) = app_h.get_webview_window("main") {
                             let min = w.is_minimized().unwrap_or(false);
                             let foc = w.is_focused().unwrap_or(false);
@@ -1067,26 +1081,22 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Create (or toggle) the QuickPaste floating popup window.
+/// Create (or recreate) the QuickPaste floating popup window.
 /// Uses URL parameter ?mode=qp so App.vue detects standalone mode SYNCHRONOUSLY
 /// (no race condition with Vue mount — window.location.search is available immediately).
+///
+/// Lifecycle strategy: DESTROY on hide, RECREATE on next show.
+/// Rationale: clearing innerHTML to prevent ghost outline destroys Vue's virtual DOM,
+/// making re-show produce an empty window. Destroying + recreating is 100% reliable.
 fn ensure_quick_paste_window(app: &tauri::AppHandle) {
-    // If window already exists, toggle visibility
+    // If window already exists, destroy it completely (don't reuse — avoids stale Vue state)
     if let Some(qp_win) = app.get_webview_window("quick-paste") {
-        let visible = qp_win.is_visible().unwrap_or(false);
-        if visible {
-            let _ = qp_win.eval("document.body.style.background='transparent';document.body.innerHTML=''");
-            let _ = qp_win.hide();
-        } else {
-            let _ = qp_win.unminimize();
-            let _ = qp_win.show();
-            let _ = qp_win.set_focus();
-            let _ = qp_win.eval("if(window.__qpActivate)window.__qpActivate()");
-        }
-        return;
+        let _ = qp_win.close();
+        // Small yield to let OS clean up the window handle
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 
-    // Create new floating popup — ?mode=qp tells App.vue to render QuickPasteStandalone
+    // Always create a fresh floating popup — ?mode=qp tells App.vue to render QuickPasteStandalone
     match tauri::WebviewWindowBuilder::new(
         app,
         "quick-paste",
@@ -1101,10 +1111,7 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
     .skip_taskbar(true)
     .build()
     {
-        Ok(_) => {
-            eprintln!("[QuickPaste] Floating window created (?mode=qp)");
-            // show() is called by the QP shortcut handler after creation
-        }
+        Ok(_) => eprintln!("[QuickPaste] Floating window created (?mode=qp)"),
         Err(e) => eprintln!("[QuickPaste] Failed: {}", e),
     }
 }
@@ -1216,27 +1223,12 @@ pub fn run() {
                                     if !should_fire { return; }
                                 }
 
-                                eprintln!("[GlobalShortcut:qp] Triggered → toggle QuickPaste popup");
-                                if let Some(qp_win) = app.get_webview_window("quick-paste") {
-                                    let visible = qp_win.is_visible().unwrap_or(false);
-                                    if visible {
-                                        // Clear content before hiding to prevent Windows ghost outline
-                                        let _ = qp_win.eval("document.body.style.background='transparent';document.body.innerHTML=''");
-                                        let _ = qp_win.hide();
-                                    } else {
-                                        let _ = qp_win.unminimize();
-                                        let _ = qp_win.show();
-                                        let _ = qp_win.set_focus();
-                                        let _ = qp_win.eval("if(window.__qpActivate)window.__qpActivate()");
-                                    }
-                                } else {
-                                    ensure_quick_paste_window(&app);
-                                    // Window was just created — show + focus it
-                                    if let Some(qp) = app.get_webview_window("quick-paste") {
-                                        let _ = qp.show();
-                                        let _ = qp.set_focus();
-                                    }
+                                eprintln!("[GlobalShortcut:qp] Triggered → recreate QuickPaste popup");
+                                // Always destroy + recreate (reusing a hidden window with stale Vue DOM causes empty outline)
+                                if let Some(existing) = app.get_webview_window("quick-paste") {
+                                    let _ = existing.close();
                                 }
+                                ensure_quick_paste_window(&app);
                             }) {
                                 Ok(()) => {
                                     println!("[Setup] ✅ quick_paste registered: {}{}", candidate, if i > 0 { " (fallback)" } else { "" });
@@ -1257,11 +1249,11 @@ pub fn run() {
                     match candidate.parse::<Shortcut>() {
                         Ok(sc) => {
                             match handle.global_shortcut().on_shortcut(sc, |app, _shortcut, _event| {
-                                // Debounce: ignore OS key-repeat within 300ms
+                                // Debounce: ignore OS key-repeat AND potential key-up events (500ms covers long holds)
                                 {
                                     let should_fire = if let Some(s) = app.try_state::<AppState>() {
                                         let mut last = s.last_tw_toggle.lock().unwrap();
-                                        if last.elapsed() < std::time::Duration::from_millis(300) {
+                                        if last.elapsed() < std::time::Duration::from_millis(500) {
                                             eprintln!("[GlobalShortcut:tw] DEBOUNCED ({}ms ago)", last.elapsed().as_millis());
                                             false
                                         } else { *last = Instant::now(); true }
