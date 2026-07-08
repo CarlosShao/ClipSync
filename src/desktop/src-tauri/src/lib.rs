@@ -1105,7 +1105,6 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
     .title("ClipSync - Quick Paste")
     .inner_size(440.0, 420.0)
     .decorations(false)
-    .transparent(true)
     .always_on_top(true)
     .resizable(false)
     .skip_taskbar(true)
