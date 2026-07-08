@@ -1,80 +1,39 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
+import { useNotifications, type NotifCategory } from '@/composables/useNotifications'
 import { Bell, Gift, Download, Smartphone, ShieldAlert, CheckCheck } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
 
 const { t } = useI18n()
+const { notifications, unreadCount, loadHistory, markRead, markAllRead } = useNotifications()
 
-type NotifCategory = 'subscription' | 'update' | 'device' | 'security'
-interface Notif {
-  id: string
-  category: NotifCategory
-  titleKey: string
-  bodyKey: string
-  time: number
-  read: boolean
-}
+type CatKey = NotifCategory
+const activeFilter = computed<{ value: string; labelKey: string }[]>(() => [
+  { value: 'all', labelKey: 'notif_filter_all' },
+  { value: 'unread', labelKey: 'notif_filter_unread' },
+  { value: 'subscription', labelKey: 'notif_filter_sub' },
+  { value: 'update', labelKey: 'notif_filter_update' },
+  { value: 'device', labelKey: 'notif_filter_device' },
+  { value: 'security', labelKey: 'notif_filter_security' },
+])
+import { ref } from 'vue'
+const currentFilter = ref<string>('all')
 
-const STORE_KEY = 'clipsync-notifications'
-
-// Seed sample notifications (forward-looking: product will surface real ones
-// — subscription / update / device-connected / security — from the backend later)
-const seed: Notif[] = [
-  { id: 'n1', category: 'subscription', titleKey: 'notif_welcome_t', bodyKey: 'notif_welcome_b', time: Date.now() - 1000 * 60 * 30, read: false },
-  { id: 'n2', category: 'update',       titleKey: 'notif_v241_t',    bodyKey: 'notif_v241_b',    time: Date.now() - 1000 * 60 * 60 * 5,  read: false },
-  { id: 'n3', category: 'device',       titleKey: 'notif_device_t',   bodyKey: 'notif_device_b',  time: Date.now() - 1000 * 60 * 60 * 26, read: false },
-  { id: 'n4', category: 'security',     titleKey: 'notif_login_t',    bodyKey: 'notif_login_b',    time: Date.now() - 1000 * 60 * 60 * 50, read: true },
-  { id: 'n5', category: 'subscription', titleKey: 'notif_renew_t',    bodyKey: 'notif_renew_b',    time: Date.now() - 1000 * 60 * 60 * 72, read: true },
-  { id: 'n6', category: 'security',     titleKey: 'notif_security_t', bodyKey: 'notif_security_b', time: Date.now() - 1000 * 60 * 60 * 100, read: true },
-]
-
-function load(): Notif[] {
-  try {
-    const raw = localStorage.getItem(STORE_KEY)
-    if (raw) return JSON.parse(raw) as Notif[]
-  } catch { /* ignore */ }
-  return seed.map((n) => ({ ...n }))
-}
-
-const notifications = ref<Notif[]>(load())
-const activeFilter = ref<'all' | 'unread' | NotifCategory>('all')
-
-watch(notifications, (v) => {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(v)) } catch { /* ignore */ }
-}, { deep: true })
-
-const unreadCount = computed(() => notifications.value.filter((n) => !n.read).length)
+onMounted(() => { loadHistory() })
 
 const filtered = computed(() => {
-  if (activeFilter.value === 'all') return notifications.value
-  if (activeFilter.value === 'unread') return notifications.value.filter((n) => !n.read)
-  return notifications.value.filter((n) => n.category === activeFilter.value)
+  if (currentFilter.value === 'all') return notifications.value
+  if (currentFilter.value === 'unread') return notifications.value.filter((n) => !n.read)
+  return notifications.value.filter((n) => n.category === currentFilter.value)
 })
 
-const catMeta: Record<NotifCategory, { icon: any; color: string; labelKey: string }> = {
+const catMeta: Record<CatKey, { icon: any; color: string; labelKey: string }> = {
   subscription: { icon: Gift,        color: 'var(--accent)',  labelKey: 'notif_cat_subscription' },
   update:       { icon: Download,    color: 'var(--info)',    labelKey: 'notif_cat_update' },
   device:       { icon: Smartphone,  color: 'var(--success)', labelKey: 'notif_cat_device' },
   security:     { icon: ShieldAlert, color: 'var(--danger)',  labelKey: 'notif_cat_security' },
-}
-
-const filters = [
-  { value: 'all',          labelKey: 'notif_filter_all' },
-  { value: 'unread',       labelKey: 'notif_filter_unread' },
-  { value: 'subscription', labelKey: 'notif_filter_sub' },
-  { value: 'update',       labelKey: 'notif_filter_update' },
-  { value: 'device',       labelKey: 'notif_filter_device' },
-  { value: 'security',     labelKey: 'notif_filter_security' },
-] as const
-
-function markRead(id: string) {
-  const n = notifications.value.find((x) => x.id === id)
-  if (n) n.read = true
-}
-function markAllRead() {
-  notifications.value.forEach((n) => (n.read = true))
 }
 
 function timeAgo(ts: number): string {
@@ -105,11 +64,11 @@ function timeAgo(ts: number): string {
     <!-- Filter segmented control -->
     <div class="notif-filters">
       <button
-        v-for="f in filters"
+        v-for="f in activeFilter"
         :key="f.value"
         class="notif-filter-btn"
-        :class="{ active: activeFilter === f.value }"
-        @click="activeFilter = f.value"
+        :class="{ active: currentFilter === f.value }"
+        @click="currentFilter = f.value"
       >{{ t(f.labelKey) }}</button>
     </div>
 
@@ -134,8 +93,8 @@ function timeAgo(ts: number): string {
               <span class="notif-cat">{{ t(catMeta[n.category].labelKey) }}</span>
               <span class="notif-time">{{ timeAgo(n.time) }}</span>
             </div>
-            <div class="notif-item-title">{{ t(n.titleKey) }}</div>
-            <div class="notif-item-desc">{{ t(n.bodyKey) }}</div>
+            <div class="notif-item-title">{{ n.title }}</div>
+            <div class="notif-item-desc">{{ n.body }}</div>
           </div>
           <div v-if="!n.read" class="notif-dot" />
         </div>

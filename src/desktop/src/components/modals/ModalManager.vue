@@ -8,6 +8,7 @@ import { api } from '@/api/client'
 import { useConfigStore } from '@/stores/configStore'
 import { useDevice } from '@/composables/useDevice'
 import { initPairing, redeemPairing } from '@/api/device'
+import { useNotifications } from '@/composables/useNotifications'
 import * as tauri from '@/lib/tauri'
 import QRCode from 'qrcode'
 import jsQR from 'jsqr'
@@ -41,11 +42,13 @@ watch(() => props.showModalType, (type) => {
     stopScan()
   }
   if (type === 'sessions') loadSessions()
+  if (type === 'notifications') loadPreferencesInto(secNotif)
 })
 
 const { t } = useI18n()
 const toast = useToast()
 const { allThemes, setStyle, currentStyle } = useTheme()
+const { savePreference, loadPreferencesInto, PREF_TYPE_BY_KEY } = useNotifications()
 
 // Plan selection state (for pricing → payment flow)
 const selectedPlan = ref<{ id: string; name: string; price: number } | null>(null)
@@ -87,6 +90,10 @@ function loadSecNotif(): SecNotifPrefs {
 function saveSecNotif(partial: Partial<SecNotifPrefs>) {
   Object.assign(secNotif, partial)
   localStorage.setItem(SEC_NOTIF_KEY, JSON.stringify({ ...secNotif }))
+  // 通知类开关同步到后端（其余安全开关如 2FA 仅本地）
+  Object.keys(partial).forEach((key) => {
+    if (key in PREF_TYPE_BY_KEY) savePreference(key, (partial as any)[key])
+  })
 }
 // Initialize from localStorage immediately (before any render)
 const secNotif = reactive(loadSecNotif())

@@ -7,6 +7,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useClipboard } from '@/composables/useClipboard'
 import { useDevice } from '@/composables/useDevice'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { useNotifications } from '@/composables/useNotifications'
 import * as tauri from '@/lib/tauri'
 import { listen } from '@tauri-apps/api/event'
 
@@ -27,6 +28,7 @@ const { t } = useI18n()
 const clip = useClipboard()
 const device = useDevice()
 const ws = useWebSocket()
+const notif = useNotifications()
 const { toggleMode } = useTheme()
 const route = useRoute()
 const router = useRouter()
@@ -56,10 +58,14 @@ onMounted(async () => {
   stopPolling = clip.startPolling(1500)
   device.loadDevices()
   ws.connect()
-  // WebSocket 新剪贴通知 → 刷新列表
+  notif.loadHistory()
+  // WebSocket 新剪贴通知 → 刷新列表；通知推送 → 实时插入收件箱
   ws.onMessage((data) => {
     if (data?.type === 'new_clip' || data?.action === 'sync' || data?.event === 'clipboard_update') {
       clip.refresh()
+    }
+    if (data?.type === 'notification') {
+      notif.pushRealtime(data)
     }
   })
 
