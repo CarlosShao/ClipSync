@@ -147,8 +147,8 @@ function truncate(str: string, max: number): string {
   align-items: center;
   gap: 8px;
   padding: 9px 14px;
-  /* Same bg as results so they merge seamlessly when expanded */
-  background: var(--bg-surface);
+  /* Semi-transparent — blends into desktop, no hard "card" edges */
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
   border-radius: 10px;
   cursor: grab;
   -webkit-user-select: none;
@@ -177,7 +177,7 @@ function truncate(str: string, max: number): string {
   font-size: 10px;
   font-weight: 600;
   color: var(--text-muted, var(--text-tertiary));
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--bg-hover) 70%, transparent);
   border-radius: 3px;
   padding: 1px 5px;
   font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
@@ -188,7 +188,7 @@ function truncate(str: string, max: number): string {
 /* ── Drawer (results) — stacks UNDER search bar ── */
 .qp-drop {
   width: 100%;
-  background: var(--bg-surface);
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
   border-radius: 0 0 10px 10px;
   overflow: hidden;
 }
@@ -216,8 +216,8 @@ function truncate(str: string, max: number): string {
   cursor: pointer;
   transition: background .08s;
 }
-.qp-it:hover { background: var(--bg-hover); }
-.qp-it.on   { background: var(--bg-selected, var(--bg-hover)); }
+.qp-it:hover { background: color-mix(in srgb, var(--bg-hover) 70%, transparent); }
+.qp-it.on   { background: color-mix(in srgb, var(--bg-selected, var(--bg-hover)) 80%, transparent); }
 
 .qp-em { flex-shrink: 0; font-size: 12px; width: 18px; text-align: center; }
 .qp-tx { flex: 1; font-size: 12px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -232,12 +232,12 @@ function truncate(str: string, max: number): string {
   padding: 5px 14px 6px;
   font-size: 10px;
   color: var(--text-tertiary);
-  border-top: 1px solid var(--border-subtle, rgba(128,128,128,.12));
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle, rgba(128,128,128,.3)) 50%, transparent);
 }
 .qp-ft span:first-child { margin-right: auto; font-weight: 600; color: var(--text-secondary); }
 .qp-ft kbd {
   font-size: 9px;
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--bg-hover) 70%, transparent);
   border-radius: 3px;
   padding: 0 3px;
   font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
