@@ -309,6 +309,7 @@ const accountNavItems = computed(() => [
 
 /* ---- Footer (expanded) ---- */
 .sb-footer {
+  position: relative;
   margin-top: auto;
   padding: 10px 12px 12px;
   border-top: 1px solid var(--border-default);

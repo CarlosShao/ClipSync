@@ -611,9 +611,9 @@ async function revokeSession(sessionId: string) {
   <!-- Security -->
   <ModalDialog :open="showModalType === 'security'" :title="t('modal_security')" max-width="480px" @close="emit('close-modal')">
     <div class="sec-list">
-      <div class="sec-item"><div><div class="sec-label">{{ t('sec_2fa') }}</div><div class="sec-hint">{{ t('sec_2fa_h') }}</div></div><Switch :checked="secNotif.twoFA" @update:checked="(v: boolean) => saveSecNotif({ twoFA: v })" /></div>
-      <div class="sec-item"><div><div class="sec-label">{{ t('sec_login_notif') }}</div><div class="sec-hint">{{ t('sec_login_notif_h') }}</div></div><Switch :checked="secNotif.loginNotification" @update:checked="(v: boolean) => saveSecNotif({ loginNotification: v })" /></div>
-      <div class="sec-item"><div><div class="sec-label">{{ t('sec_e2ee') }}</div><div class="sec-hint">{{ t('sec_e2ee_h') }}</div></div><Switch :checked="true" disabled /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('sec_2fa') }}</div><div class="sec-hint">{{ t('sec_2fa_h') }}</div></div><Switch :model-value="secNotif.twoFA" @update:model-value="(v: boolean) => saveSecNotif({ twoFA: v })" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('sec_login_notif') }}</div><div class="sec-hint">{{ t('sec_login_notif_h') }}</div></div><Switch :model-value="secNotif.loginNotification" @update:model-value="(v: boolean) => saveSecNotif({ loginNotification: v })" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('sec_e2ee') }}</div><div class="sec-hint">{{ t('sec_e2ee_h') }}</div></div><Switch :model-value="true" disabled /></div>
     </div>
   </ModalDialog>
 
@@ -662,10 +662,10 @@ async function revokeSession(sessionId: string) {
   <!-- Notifications -->
   <ModalDialog :open="showModalType === 'notifications'" :title="t('modal_notif')" max-width="480px" @close="emit('close-modal')">
     <div class="sec-list">
-      <div class="sec-item"><div><div class="sec-label">{{ t('nf_new_device') }}</div><div class="sec-hint">{{ t('nf_new_device_h') }}</div></div><Switch :checked="secNotif.nfNewDevice" @update:checked="(v: boolean) => saveSecNotif({ nfNewDevice: v })" /></div>
-      <div class="sec-item"><div><div class="sec-label">{{ t('nf_sync_done') }}</div><div class="sec-hint">{{ t('nf_sync_done_h') }}</div></div><Switch :checked="secNotif.nfSyncDone" @update:checked="(v: boolean) => saveSecNotif({ nfSyncDone: v })" /></div>
-      <div class="sec-item"><div><div class="sec-label">{{ t('nf_security') }}</div><div class="sec-hint">{{ t('nf_security_h') }}</div></div><Switch :checked="secNotif.nfSecurity" @update:checked="(v: boolean) => saveSecNotif({ nfSecurity: v })" /></div>
-      <div class="sec-item"><div><div class="sec-label">{{ t('nf_updates') }}</div><div class="sec-hint">{{ t('nf_updates_h') }}</div></div><Switch :checked="secNotif.nfUpdates" @update:checked="(v: boolean) => saveSecNotif({ nfUpdates: v })" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('nf_new_device') }}</div><div class="sec-hint">{{ t('nf_new_device_h') }}</div></div><Switch :model-value="secNotif.nfNewDevice" @update:model-value="(v: boolean) => saveSecNotif({ nfNewDevice: v })" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('nf_sync_done') }}</div><div class="sec-hint">{{ t('nf_sync_done_h') }}</div></div><Switch :model-value="secNotif.nfSyncDone" @update:model-value="(v: boolean) => saveSecNotif({ nfSyncDone: v })" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('nf_security') }}</div><div class="sec-hint">{{ t('nf_security_h') }}</div></div><Switch :model-value="secNotif.nfSecurity" @update:model-value="(v: boolean) => saveSecNotif({ nfSecurity: v })" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('nf_updates') }}</div><div class="sec-hint">{{ t('nf_updates_h') }}</div></div><Switch :model-value="secNotif.nfUpdates" @update:model-value="(v: boolean) => saveSecNotif({ nfUpdates: v })" /></div>
     </div>
   </ModalDialog>
 
