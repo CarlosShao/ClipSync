@@ -389,6 +389,8 @@ function extractDomain(url: string): string {
                     <span class="cell-link-domain">{{ extractDomain(item.content) }}</span>
                   </span>
                 </span>
+                <!-- 文件类型（必须在 code/url 检测之前，否则 JSON 路径数组会被误判为 code） -->
+                <span v-else-if="item.type === 'file'" class="cell-text">{{ formatContent(item) }}</span>
                 <!-- 代码样式 -->
                 <span v-else-if="detectContentType(item.content) === 'code'" class="cell-code-preview">
                   <code>{{ item.content }}</code>
