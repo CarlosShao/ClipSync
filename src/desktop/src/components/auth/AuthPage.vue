@@ -398,7 +398,7 @@ const isRegisterView = computed(() => authView.value === 'register')
                 </div>
               </div>
               <div class="form-options">
-                <label class="checkbox-label"><Checkbox :checked="rememberMe" @update:checked="(v: boolean) => (rememberMe = v)" /> {{ t('login_remember') }}</label>
+                <label class="checkbox-label"><Checkbox v-model="rememberMe" /> {{ t('login_remember') }}</label>
                 <Button variant="link" size="sm" class="link-btn" @click="toast.show(t('toast_code_resent'),'info')">{{ t('login_forgot_code') }}</Button>
               </div>
               <Button class="w-full" :disabled="isLoggingIn" @click="handleLogin">
@@ -423,7 +423,7 @@ const isRegisterView = computed(() => authView.value === 'register')
                 </div>
               </div>
               <div class="form-options">
-                <label class="checkbox-label"><Checkbox :checked="rememberMe" @update:checked="(v: boolean) => (rememberMe = v)" /> {{ t('login_remember') }}</label>
+                <label class="checkbox-label"><Checkbox v-model="rememberMe" /> {{ t('login_remember') }}</label>
                 <Button variant="link" size="sm" class="link-btn" @click="openForgot">{{ t('login_forgot') }}</Button>
               </div>
               <Button class="w-full" :disabled="isLoggingIn" @click="handleLogin">
@@ -514,7 +514,7 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <div v-if="fieldErrors.regConfirm" class="field-error">{{ fieldErrors.regConfirm }}</div>
               </div>
               <label class="checkbox-label" style="margin-top:-4px;">
-                <Checkbox :checked="regAgree" @update:checked="(v: boolean) => (regAgree = v)" /> {{ t('reg_agree_text') }}<Button variant="link" size="sm" class="link-btn link-inline" @click="toast.show(t('toast_tos_soon'),'info')">{{ t('reg_tos') }}</Button>{{ t('reg_and') }}<Button variant="link" size="sm" class="link-btn link-inline" @click="toast.show(t('toast_privacy_soon'),'info')">{{ t('reg_privacy') }}</Button>
+                <Checkbox v-model="regAgree" /> {{ t('reg_agree_text') }}<Button variant="link" size="sm" class="link-btn link-inline" @click="toast.show(t('toast_tos_soon'),'info')">{{ t('reg_tos') }}</Button>{{ t('reg_and') }}<Button variant="link" size="sm" class="link-btn link-inline" @click="toast.show(t('toast_privacy_soon'),'info')">{{ t('reg_privacy') }}</Button>
               </label>
               <Button class="w-full" :disabled="isRegistering" @click="handleRegister">
                 <span v-if="isRegistering" class="spinner" /> {{ t('reg_submit') }}

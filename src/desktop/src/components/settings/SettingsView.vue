@@ -86,15 +86,15 @@ function resetPwdForm() {
       <div class="sg-header">{{ t('sg_gen') }}</div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_autosync') }}</div><div class="sg-hint">{{ t('sg_autosync_h') }}</div></div>
-        <Switch :checked="configStore.autoSync" @update:checked="(v: boolean) => configStore.toggleAutoSync(v)" />
+        <Switch :model-value="configStore.autoSync" @update:model-value="(v: boolean) => configStore.toggleAutoSync(v)" />
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_imgcomp') }}</div><div class="sg-hint">{{ t('sg_imgcomp_h') }}</div></div>
-        <Switch :checked="configStore.imageCompress" @update:checked="(v: boolean) => configStore.toggleImageCompress(v)" />
+        <Switch :model-value="configStore.imageCompress" @update:model-value="(v: boolean) => configStore.toggleImageCompress(v)" />
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_startup') }}</div><div class="sg-hint">{{ t('sg_startup_h') }}</div></div>
-        <Switch :checked="configStore.autostart" @update:checked="(v: boolean) => configStore.toggleAutostart(v)" />
+        <Switch :model-value="configStore.autostart" @update:model-value="(v: boolean) => configStore.toggleAutostart(v)" />
       </div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_lang') }}</div><div class="sg-hint">{{ t('sg_lang_h') }}</div></div>
@@ -183,17 +183,17 @@ function resetPwdForm() {
         <ChevronDown :class="['sg-arrow', { 'sg-arrow--rotated': showPwdChange }]" />
       </div>
       <!-- Password change form (inline expand) -->
-      <div v-if="showPwdChange" class="pwd-change-form">
-        <div class="pwd-field">
-          <label>{{ t('pwd_old') || '当前密码' }}</label>
+      <div v-if="showPwdChange" class="pwd-change-form" style="padding: 20px 24px;">
+        <div class="pwd-field" style="padding-left: 4px;">
+          <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;padding-left:4px;">{{ t('pwd_old') || '当前密码' }}</label>
           <Input v-model="pwdOld" type="password" class="sg-input--block" :placeholder="t('pwd_old_ph') || '输入当前密码'" />
         </div>
-        <div class="pwd-field">
-          <label>{{ t('pwd_new') || '新密码' }}</label>
+        <div class="pwd-field" style="padding-left: 4px;">
+          <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;padding-left:4px;">{{ t('pwd_new') || '新密码' }}</label>
           <Input v-model="pwdNew" type="password" class="sg-input--block" :placeholder="t('pwd_new_ph') || '至少8位字符'" minlength="8" />
         </div>
-        <div class="pwd-field">
-          <label>{{ t('pwd_confirm') || '确认新密码' }}</label>
+        <div class="pwd-field" style="padding-left: 4px;">
+          <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;padding-left:4px;">{{ t('pwd_confirm') || '确认新密码' }}</label>
           <Input v-model="pwdConfirm" type="password" class="sg-input--block" :placeholder="t('pwd_confirm_ph') || '再次输入新密码'" @keyup.enter="handleChangePassword" />
         </div>
         <div class="pwd-actions">
@@ -209,7 +209,7 @@ function resetPwdForm() {
       <div class="sg-header">{{ t('sg_data') }}</div>
       <div class="sg-row">
         <div class="sg-label"><div class="sg-name">{{ t('sg_motion') }}</div><div class="sg-hint">{{ t('sg_motion_h') }}</div></div>
-        <Switch :checked="configStore.reduceMotion" @update:checked="(v: boolean) => configStore.toggleReduceMotion(v)" />
+        <Switch :model-value="configStore.reduceMotion" @update:model-value="(v: boolean) => configStore.toggleReduceMotion(v)" />
       </div>
       <div class="sg-row" style="cursor:pointer;" @click="emit('open-modal', 'export')">
         <div class="sg-label"><div class="sg-name">{{ t('sg_export') }}</div><div class="sg-hint">{{ t('sg_export_h') }}</div></div>
@@ -272,13 +272,13 @@ function resetPwdForm() {
 /* Password change inline form */
 .pwd-change-form {
   margin: 4px 0 8px;
-  padding: 18px 20px;
+  padding: 20px 24px !important;
   background: var(--bg-hover);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
-.pwd-field { margin-bottom: 14px; }
-.pwd-field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; padding-left: 2px; }
+.pwd-field { margin-bottom: 14px; padding-left: 4px; }
+.pwd-field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; padding-left: 4px; }
 .pwd-actions { display: flex; gap: 10px; margin-top: 12px; }
 .pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
 .pwd-success { color: #22c55e; font-size: 12px; margin-top: 6px; }
