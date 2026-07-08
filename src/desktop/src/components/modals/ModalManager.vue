@@ -59,6 +59,38 @@ const fpNewPwd = ref('')
 const fpConfirmPwd = ref('')
 const fpSending = ref(false)
 
+// ===== Security & Notification Preferences (persisted to localStorage) =====
+const SEC_NOTIF_KEY = 'clipsync-sec-notif'
+interface SecNotifPrefs {
+  twoFA: boolean
+  loginNotification: boolean
+  nfNewDevice: boolean
+  nfSyncDone: boolean
+  nfSecurity: boolean
+  nfUpdates: boolean
+}
+const defaultSecNotif: SecNotifPrefs = {
+  twoFA: false,
+  loginNotification: true,
+  nfNewDevice: true,
+  nfSyncDone: true,
+  nfSecurity: true,
+  nfUpdates: true,
+}
+function loadSecNotif(): SecNotifPrefs {
+  try {
+    const raw = localStorage.getItem(SEC_NOTIF_KEY)
+    if (raw) return { ...defaultSecNotif, ...JSON.parse(raw) }
+  } catch { /* ignore */ }
+  return { ...defaultSecNotif }
+}
+function saveSecNotif(partial: Partial<SecNotifPrefs>) {
+  Object.assign(secNotif, partial)
+  localStorage.setItem(SEC_NOTIF_KEY, JSON.stringify({ ...secNotif }))
+}
+// Initialize from localStorage immediately (before any render)
+const secNotif = reactive(loadSecNotif())
+
 async function downloadImage() {
   const src = props.previewItem?.preview || props.previewItem?.content
   if (!src) return
@@ -579,8 +611,8 @@ async function revokeSession(sessionId: string) {
   <!-- Security -->
   <ModalDialog :open="showModalType === 'security'" :title="t('modal_security')" max-width="480px" @close="emit('close-modal')">
     <div class="sec-list">
-      <div class="sec-item"><div><div class="sec-label">{{ t('sec_2fa') }}</div><div class="sec-hint">{{ t('sec_2fa_h') }}</div></div><Switch :checked="false" /></div>
-      <div class="sec-item"><div><div class="sec-label">{{ t('sec_login_notif') }}</div><div class="sec-hint">{{ t('sec_login_notif_h') }}</div></div><Switch :checked="true" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('sec_2fa') }}</div><div class="sec-hint">{{ t('sec_2fa_h') }}</div></div><Switch :checked="secNotif.twoFA" @update:checked="(v: boolean) => saveSecNotif({ twoFA: v })" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('sec_login_notif') }}</div><div class="sec-hint">{{ t('sec_login_notif_h') }}</div></div><Switch :checked="secNotif.loginNotification" @update:checked="(v: boolean) => saveSecNotif({ loginNotification: v })" /></div>
       <div class="sec-item"><div><div class="sec-label">{{ t('sec_e2ee') }}</div><div class="sec-hint">{{ t('sec_e2ee_h') }}</div></div><Switch :checked="true" disabled /></div>
     </div>
   </ModalDialog>
@@ -630,10 +662,10 @@ async function revokeSession(sessionId: string) {
   <!-- Notifications -->
   <ModalDialog :open="showModalType === 'notifications'" :title="t('modal_notif')" max-width="480px" @close="emit('close-modal')">
     <div class="sec-list">
-      <div v-for="n in [{k:'nf_new_device',h:'nf_new_device_h'},{k:'nf_sync_done',h:'nf_sync_done_h'},{k:'nf_security',h:'nf_security_h'},{k:'nf_updates',h:'nf_updates_h'}]" :key="n.k" class="sec-item">
-        <div><div class="sec-label">{{ t(n.k) }}</div><div class="sec-hint">{{ t(n.h) }}</div></div>
-        <Switch :checked="true" />
-      </div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('nf_new_device') }}</div><div class="sec-hint">{{ t('nf_new_device_h') }}</div></div><Switch :checked="secNotif.nfNewDevice" @update:checked="(v: boolean) => saveSecNotif({ nfNewDevice: v })" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('nf_sync_done') }}</div><div class="sec-hint">{{ t('nf_sync_done_h') }}</div></div><Switch :checked="secNotif.nfSyncDone" @update:checked="(v: boolean) => saveSecNotif({ nfSyncDone: v })" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('nf_security') }}</div><div class="sec-hint">{{ t('nf_security_h') }}</div></div><Switch :checked="secNotif.nfSecurity" @update:checked="(v: boolean) => saveSecNotif({ nfSecurity: v })" /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('nf_updates') }}</div><div class="sec-hint">{{ t('nf_updates_h') }}</div></div><Switch :checked="secNotif.nfUpdates" @update:checked="(v: boolean) => saveSecNotif({ nfUpdates: v })" /></div>
     </div>
   </ModalDialog>
 

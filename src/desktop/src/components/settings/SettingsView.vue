@@ -272,13 +272,13 @@ function resetPwdForm() {
 /* Password change inline form */
 .pwd-change-form {
   margin: 4px 0 8px;
-  padding: 14px;
+  padding: 18px 20px;
   background: var(--bg-hover);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
-.pwd-field { margin-bottom: 10px; }
-.pwd-field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px; }
+.pwd-field { margin-bottom: 14px; }
+.pwd-field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; padding-left: 2px; }
 .pwd-actions { display: flex; gap: 10px; margin-top: 12px; }
 .pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
 .pwd-success { color: #22c55e; font-size: 12px; margin-top: 6px; }
