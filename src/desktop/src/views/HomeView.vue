@@ -108,6 +108,7 @@ function showConfirm(msg: string, cb: () => void) {
   confirmMessage.value = msg; confirmCallback = cb; showModalType.value = 'confirm'
 }
 function handleLogout() {
+  notif.reset()
   configStore.logout()
   ws.disconnect()
   router.replace('/auth')

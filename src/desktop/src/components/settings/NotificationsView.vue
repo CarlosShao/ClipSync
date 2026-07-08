@@ -136,7 +136,7 @@ function timeAgo(ts: number): string {
 }
 .notif-title-wrap { display: flex; align-items: center; gap: 10px; }
 .notif-title { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
-.notif-unread-badge { font-size: 11px; font-weight: 600; }
+.notif-unread-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; }
 
 /* Filter segmented control (matches clipboard filter-row style) */
 .notif-filters {
