@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tauri::{Listener, Manager};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -38,6 +39,8 @@ impl Default for AppConfig {
 pub struct AppState {
     pub config: Arc<Mutex<AppConfig>>,
     pub is_monitoring: Arc<Mutex<bool>>,
+    /// Last time QuickPaste was toggled (for debouncing key-repeat)
+    pub last_qp_toggle: Arc<Mutex<Instant>>,
 }
 
 // 系统托盘菜单命令
@@ -753,47 +756,9 @@ fn toggle_window(app: tauri::AppHandle) {
     }
 }
 
-/// Try to register a shortcut from a priority list of candidates.
-/// Returns true if at least one candidate registered successfully.
-fn register_with_fallback(app: &tauri::AppHandle, candidates: &[&str], label: &str) -> bool {
-    #[cfg(not(mobile))]
-    {
-        for (i, candidate) in candidates.iter().enumerate() {
-            let shortcut: Shortcut = match candidate.parse() {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("[Shortcut] Failed to parse '{}': {}", candidate, e);
-                    continue;
-                }
-            };
-            match app.global_shortcut().register(shortcut) {
-                Ok(()) => {
-                    println!("[Shortcut] '{}' registered: {}", label, candidate);
-                    if i > 0 {
-                        println!("[Shortcut] '{}' used fallback (primary was occupied)", label);
-                    }
-                    return true;
-                }
-                Err(e) => {
-                    if i == 0 {
-                        eprintln!("[Shortcut] '{}' primary '{}' failed: {}, trying fallback...", label, candidate, e);
-                    } else {
-                        eprintln!("[Shortcut] '{}' fallback '{}' also failed: {}", label, candidate, e);
-                    }
-                }
-            }
-        }
-        false
-    }
-    #[cfg(mobile)]
-    {
-        let _ = (app, candidates, label);
-        false
-    }
-}
-
 /// Re-register all global shortcuts from the frontend-supplied map.
 /// Map keys: "quickPaste", "toggleWindow". Also persists them into AppConfig.
+/// Uses on_shortcut() per-shortcut handlers (no string comparison needed).
 #[tauri::command]
 fn set_global_shortcuts(app: tauri::AppHandle, shortcuts: HashMap<String, String>) -> Result<(), String> {
     #[cfg(not(mobile))]
@@ -801,19 +766,53 @@ fn set_global_shortcuts(app: tauri::AppHandle, shortcuts: HashMap<String, String
         let handle = app.clone();
         handle.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
 
+        // ── QuickPaste ──
         if let Some(qp) = shortcuts.get("quickPaste") {
             let cands: Vec<&str> = if qp.to_lowercase().contains("shift+v") {
                 vec![qp.as_str(), "Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
             } else {
                 vec![qp.as_str(), "Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
             };
-            register_with_fallback(&handle, &cands, "quick paste");
-        }
-        if let Some(tw) = shortcuts.get("toggleWindow") {
-            let cands: Vec<&str> = vec![tw.as_str(), "Ctrl+Alt+S", "Super+Alt+Space", "Ctrl+Alt+Enter"];
-            register_with_fallback(&handle, &cands, "toggle window");
+            for (i, candidate) in cands.iter().enumerate() {
+                if let Ok(sc) = candidate.parse::<Shortcut>() {
+                    match handle.global_shortcut().on_shortcut(sc, |app_h, _shortcut, _event| {
+                        // Debounce key-repeat
+                        if let Some(s) = app_h.try_state::<AppState>() {
+                            let mut last = s.last_qp_toggle.lock().unwrap();
+                            if last.elapsed() < std::time::Duration::from_millis(300) { return; }
+                            *last = Instant::now();
+                        }
+                        ensure_quick_paste_window(app_h);
+                    }) {
+                        Ok(()) => { println!("[setGS] ✅ quickPaste='{}'{}", candidate, if i > 0 { " (fb)" } else { "" }); break; }
+                        Err(e) => { if i == 0 { eprintln!("[setGS] QP primary failed: {}", e); } }
+                    }
+                }
+            }
         }
 
+        // ── Toggle Window ──
+        if let Some(tw) = shortcuts.get("toggleWindow") {
+            let cands: Vec<&str> = vec![tw.as_str(), "Ctrl+Alt+S", "Super+Alt+Space", "Ctrl+Alt+Enter"];
+            for (i, candidate) in cands.iter().enumerate() {
+                if let Ok(sc) = candidate.parse::<Shortcut>() {
+                    match handle.global_shortcut().on_shortcut(sc, |app_h, _shortcut, _event| {
+                        eprintln!("[setGS:tw] toggle main window");
+                        if let Some(w) = app_h.get_webview_window("main") {
+                            let min = w.is_minimized().unwrap_or(false);
+                            let foc = w.is_focused().unwrap_or(false);
+                            if min || !foc { let _ = w.unminimize(); let _ = w.show(); let _ = w.set_focus(); }
+                            else { let _ = w.hide(); }
+                        }
+                    }) {
+                        Ok(()) => { println!("[setGS] ✅ toggleWindow='{}'{}", candidate, if i > 0 { " (fb)" } else { "" }); break; }
+                        Err(e) => { if i == 0 { eprintln!("[setGS] TW primary failed: {}", e); } }
+                    }
+                }
+            }
+        }
+
+        // Persist to config
         if let Some(state) = app.try_state::<AppState>() {
             let mut cfg = state.config.lock().unwrap();
             cfg.quick_paste_shortcut = shortcuts.get("quickPaste").cloned();
@@ -987,24 +986,7 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
                 }
                 "quick_paste" => {
                     // Use the dedicated quick-paste floating popup
-                    ensure_window_visible(&app); // make sure main is running for data
-                    if let Some(qp_win) = app.get_webview_window("quick-paste") {
-                        let visible = qp_win.is_visible().unwrap_or(false);
-                        if visible { let _ = qp_win.hide(); }
-                        else {
-                            let _ = qp_win.unminimize();
-                            let _ = qp_win.show();
-                            let _ = qp_win.set_focus();
-                            let _ = qp_win.eval("if(window.__qpActivate) window.__qpActivate()");
-                        }
-                    } else {
-                        ensure_quick_paste_window(&app);
-                        if let Some(qp_win) = app.get_webview_window("quick-paste") {
-                            let _ = qp_win.show();
-                            let _ = qp_win.set_focus();
-                            let _ = qp_win.eval("if(window.__qpActivate) window.__qpActivate()");
-                        }
-                    }
+                    ensure_quick_paste_window(&app);
                     eprintln!("[Tray] -> toggle QuickPaste popup");
                 }
                 "settings" => {
@@ -1083,23 +1065,26 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Create (or re-create) the QuickPaste floating popup window.
+/// Create (or show existing) the QuickPaste floating popup window.
 /// This is a small always-on-top window that shows only the paste panel,
 /// independent of the main ClipSync window.
+///
+/// IMPORTANT: We do NOT use initialization_script here because Tauri v2's webview
+/// may overwrite injected content when the target URL finishes loading.
+/// Instead, we create a clean window (loading normal index.html), then inject
+/// the standalone flag via .eval() AFTER creation. App.vue detects this flag
+/// reactively (polling in onMounted with 50ms retry).
 fn ensure_quick_paste_window(app: &tauri::AppHandle) {
-    // Don't recreate if already exists
-    if app.get_webview_window("quick-paste").is_some() {
+    // If window already exists, just show/focus it
+    if let Some(qp_win) = app.get_webview_window("quick-paste") {
+        let _ = qp_win.unminimize();
+        let _ = qp_win.show();
+        let _ = qp_win.set_focus();
+        let _ = qp_win.eval("if(window.__qpActivate)window.__qpActivate()");
         return;
     }
 
-    let html = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100vw;height:100vh;overflow:hidden;background:transparent;display:flex;align-items:flex-start;justify-content:center;padding-top:6vh}
-</style></head><body>
-<script>window.__QP_STANDALONE__=true;</script>
-<div id="app"></div><script type="module" src="/src/desktop/src/main.js"></script>
-</body></html>"#;
-
+    // Create new floating popup window — loads same index.html as main window
     match tauri::WebviewWindowBuilder::new(
         app,
         "quick-paste",
@@ -1113,10 +1098,19 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:transparent;displa
     .always_on_top(true)
     .resizable(false)
     .skip_taskbar(true)
-    .initialization_script(&format!("document.open();document.write({:?});document.close();", html))
     .build()
     {
-        Ok(_) => eprintln!("[QuickPaste] Floating window created"),
+        Ok(qp_win) => {
+            eprintln!("[QuickPaste] Floating window created successfully");
+            // Inject the standalone flag AFTER the window is created and starts loading.
+            // App.vue will detect this flag via polling in onMounted().
+            // Also trigger activation to refresh clipboard data.
+            let _ = qp_win.eval(
+                "window.__QP_STANDALONE__=true;setTimeout(function(){if(window.__qpActivate)window.__qpActivate()},200)"
+            );
+            let _ = qp_win.show();
+            let _ = qp_win.set_focus();
+        }
         Err(e) => eprintln!("[QuickPaste] Failed to create floating window: {}", e),
     }
 }
@@ -1128,66 +1122,12 @@ pub fn run() {
     let state = AppState {
         config: Arc::new(Mutex::new(AppConfig::default())),
         is_monitoring: Arc::new(Mutex::new(false)),
+        last_qp_toggle: Arc::new(Mutex::new(Instant::now() - std::time::Duration::from_secs(10))),
     };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, shortcut, _event| {
-                    let pressed = shortcut.to_string().to_lowercase();
-                    let (qp_shortcut, tw_shortcut) = {
-                        if let Some(state) = app.try_state::<AppState>() {
-                            let cfg = state.config.lock().unwrap();
-                            (
-                                cfg.quick_paste_shortcut.clone().unwrap_or_default().to_lowercase(),
-                                cfg.toggle_window_shortcut.clone().unwrap_or_default().to_lowercase(),
-                            )
-                        } else { (String::new(), String::new()) }
-                    };
-
-                    // --- Toggle Window (pure Rust — no JS round-trip) ---
-                    if !tw_shortcut.is_empty() && pressed == tw_shortcut {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let minimized = window.is_minimized().unwrap_or(false);
-                            let focused = window.is_focused().unwrap_or(false);
-                            if minimized || !focused {
-                                let _ = window.unminimize();
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            } else {
-                                let _ = window.hide();
-                            }
-                        }
-                        return;
-                    }
-
-                    // --- Quick Paste (independent floating popup window) ---
-                    // Show/hide a dedicated "quick-paste" sub-window; do NOT touch the main window.
-                    if let Some(qp_win) = app.get_webview_window("quick-paste") {
-                        let visible = qp_win.is_visible().unwrap_or(false);
-                        if visible {
-                            let _ = qp_win.hide();
-                        } else {
-                            let _ = qp_win.unminimize();
-                            let _ = qp_win.show();
-                            let _ = qp_win.set_focus();
-                            // Tell the frontend to refresh clipboard data & focus search
-                            let _ = qp_win.eval("if(window.__qpActivate) window.__qpActivate()");
-                        }
-                    } else {
-                        // Window doesn't exist yet — try to create it lazily
-                        ensure_quick_paste_window(&app);
-                        // Retry once after creation
-                        if let Some(qp_win) = app.get_webview_window("quick-paste") {
-                            let _ = qp_win.show();
-                            let _ = qp_win.set_focus();
-                            let _ = qp_win.eval("if(window.__qpActivate) window.__qpActivate()");
-                        }
-                    }
-                })
-                .build(),
-        )
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1244,7 +1184,8 @@ pub fn run() {
             });
 
             // 注册全局快捷键（快速粘贴面板 + 显隐主窗口）
-            // 如果主快捷键被占用，自动尝试备选键位
+            // 使用 on_shortcut() 为每个快捷键注册独立闭包，彻底避免字符串比较问题。
+            // 如果主快捷键被占用，自动尝试备选键位。
             #[cfg(not(mobile))]
             {
                 let handle = app.handle().clone();
@@ -1253,30 +1194,82 @@ pub fn run() {
                 // 先卸载所有已有快捷键
                 let _ = handle.global_shortcut().unregister_all();
 
-                let qp = cfg.quick_paste_shortcut
+                let qp_str = cfg.quick_paste_shortcut
                     .unwrap_or_else(|| "Ctrl+Shift+V".to_string());
-                let tw = cfg.toggle_window_shortcut
+                let tw_str = cfg.toggle_window_shortcut
                     .unwrap_or_else(|| "Ctrl+Alt+Space".to_string());
 
-                // 每个全局快捷键：主键 + 备选键位
-                let qp_candidates = if qp.to_lowercase().contains("shift+v") {
-                    vec![qp.as_str(), "Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
+                eprintln!("[Setup] Registering global shortcuts: qp='{}' tw='{}'", qp_str, tw_str);
+
+                // ── QuickPaste: show/hide independent floating popup ──
+                let qp_candidates: Vec<&str> = if qp_str.to_lowercase().contains("shift+v") {
+                    vec![&qp_str, "Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
                 } else {
-                    vec![qp.as_str(), "Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
+                    vec![&qp_str, "Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
                 };
-                let tw_candidates = vec![tw.as_str(), "Ctrl+Alt+S", "Super+Alt+Space", "Ctrl+Alt+Enter"];
+                for (i, candidate) in qp_candidates.iter().enumerate() {
+                    match candidate.parse::<Shortcut>() {
+                        Ok(sc) => {
+                            match handle.global_shortcut().on_shortcut(sc, |app, _shortcut, _event| {
+                                // Debounce: ignore OS key-repeat within 300ms
+                                {
+                                    let should_fire = if let Some(s) = app.try_state::<AppState>() {
+                                        let mut last = s.last_qp_toggle.lock().unwrap();
+                                        if last.elapsed() < std::time::Duration::from_millis(300) { false }
+                                        else { *last = Instant::now(); true }
+                                    } else { false };
+                                    if !should_fire { return; }
+                                }
 
-                let mut any_ok = false;
-                if register_with_fallback(&handle, &qp_candidates, "quick paste") {
-                    any_ok = true;
-                }
-                if register_with_fallback(&handle, &tw_candidates, "toggle window") {
-                    any_ok = true;
+                                eprintln!("[GlobalShortcut:qp] Triggered → toggle QuickPaste popup");
+                                ensure_quick_paste_window(app);
+                            }) {
+                                Ok(()) => {
+                                    println!("[Setup] ✅ quick_paste registered: {}{}", candidate, if i > 0 { " (fallback)" } else { "" });
+                                    break;
+                                }
+                                Err(e) => {
+                                    eprintln!("[Setup] quick_paste '{}' failed: {}", candidate, e);
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("[Setup] Failed to parse '{}': {}", candidate, e),
+                    }
                 }
 
-                if !any_ok {
-                    eprintln!("[Setup] ALL global shortcut candidates FAILED!");
-                    eprintln!("[Setup]   You can still open quick paste / toggle window from the tray menu or main UI.");
+                // ── Toggle Window: show/hide main window (pure Rust) ──
+                let tw_candidates: Vec<&str> = vec![&tw_str, "Ctrl+Alt+S", "Super+Alt+Space", "Ctrl+Alt+Enter"];
+                for (i, candidate) in tw_candidates.iter().enumerate() {
+                    match candidate.parse::<Shortcut>() {
+                        Ok(sc) => {
+                            match handle.global_shortcut().on_shortcut(sc, |app, _shortcut, _event| {
+                                eprintln!("[GlobalShortcut:tw] Triggered → toggle main window");
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let minimized = window.is_minimized().unwrap_or(false);
+                                    let focused = window.is_focused().unwrap_or(false);
+                                    eprintln!("[GlobalShortcut:tw] main: minimized={} focused={}", minimized, focused);
+                                    if minimized || !focused {
+                                        let _ = window.unminimize();
+                                        let _ = window.show();
+                                        let _ = window.set_focus();
+                                    } else {
+                                        let _ = window.hide();
+                                    }
+                                } else {
+                                    eprintln!("[GlobalShortcut:tw] ERROR: main window not found!");
+                                }
+                            }) {
+                                Ok(()) => {
+                                    println!("[Setup] ✅ toggle_window registered: {}{}", candidate, if i > 0 { " (fallback)" } else { "" });
+                                    break;
+                                }
+                                Err(e) => {
+                                    eprintln!("[Setup] toggle_window '{}' failed: {}", candidate, e);
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("[Setup] Failed to parse '{}': {}", candidate, e),
+                    }
                 }
             }
 
