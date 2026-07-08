@@ -42,18 +42,15 @@ function mapRow(row: NotificationHistoryRow): Notif {
 
 // ===== 模块级单例状态（跨组件共享，WS 实时推送可全局更新）=====
 const notifications = ref<Notif[]>([])
-const loaded = ref(false)
 const loading = ref(false)
 
-async function loadHistory(force = false) {
+async function loadHistory() {
   if (loading.value) return
-  if (loaded.value && !force) return
   loading.value = true
   try {
     const res = await getNotificationHistory(100, 0)
     if (res.ok && Array.isArray(res.data)) {
       notifications.value = res.data.map(mapRow)
-      loaded.value = true
     } else {
       // 请求失败（未登录/离线/服务端未起）：保留现有数据，不覆盖
       console.warn('[Notifications] 加载历史失败:', res.error)
@@ -63,6 +60,12 @@ async function loadHistory(force = false) {
   } finally {
     loading.value = false
   }
+}
+
+/** 用户登出 / 切换账号时清空通知列表，防止旧数据残留 */
+function reset() {
+  notifications.value = []
+  loading.value = false
 }
 
 async function markRead(id: string) {
@@ -144,7 +147,6 @@ export function useNotifications() {
   return {
     notifications,
     unreadCount,
-    loaded,
     loading,
     loadHistory,
     markRead,
@@ -152,6 +154,7 @@ export function useNotifications() {
     pushRealtime,
     loadPreferencesInto,
     savePreference,
+    reset,
     PREF_TYPE_BY_KEY,
     KEY_BY_PREF_TYPE,
   }
