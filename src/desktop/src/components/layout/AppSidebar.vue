@@ -288,8 +288,8 @@ const accountNavItems = computed(() => [
   /* Subtle shadow to lift from surface like shadcn docs */
   box-shadow: var(--shadow-card);
 }
-/* Left 2px accent bar on active item (expanded) */
-.sb-item.active::after {
+/* Left 2px accent bar on active item (expanded only) */
+.sidebar:not(.sidebar--collapsed) .sb-item.active::after {
   content: '';
   position: absolute;
   left: 4px; top: 9px; bottom: 9px;

@@ -72,7 +72,7 @@ function timeAgo(ts: number): string {
           {{ unreadCount }} {{ t('notif_unread').replace('{n}', '').trim() }}
         </Badge>
       </div>
-      <Button v-if="unreadCount > 0" variant="outline" size="sm" @click="markAllRead">
+      <Button v-if="unreadCount > 0" variant="outline" size="sm" class="mark-all-btn" @click="markAllRead">
         <CheckCheck :size="14" />
         <span>{{ t('notif_mark_all') }}</span>
       </Button>
@@ -152,7 +152,7 @@ function timeAgo(ts: number): string {
 .notif-filter-btn:hover { color: var(--text-primary); background: var(--bg-active); }
 .notif-filter-btn.active {
   background: var(--bg-surface); color: var(--text-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); font-weight: 600;
+  box-shadow: var(--shadow-card); font-weight: 600;
 }
 
 /* List */
@@ -201,4 +201,7 @@ function timeAgo(ts: number): string {
 }
 .notif-empty-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--text-primary); }
 .notif-empty-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+/* Mark-all-read button: extra horizontal padding for CJK text */
+.mark-all-btn { padding-left: 18px !important; padding-right: 18px !important; }
 </style>
