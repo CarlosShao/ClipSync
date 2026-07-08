@@ -2,12 +2,23 @@
 import { computed, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useNotifications, type NotifCategory } from '@/composables/useNotifications'
+import { useToast } from '@/composables/useToast'
 import { Bell, Gift, Download, Smartphone, ShieldAlert, CheckCheck } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
 
 const { t } = useI18n()
-const { notifications, unreadCount, loadHistory, markRead, markAllRead } = useNotifications()
+const toast = useToast()
+const { notifications, unreadCount, loadHistory, markRead: rawMarkRead, markAllRead } = useNotifications()
+
+async function markRead(id: string) {
+  try {
+    await rawMarkRead(id)
+  } catch (e: any) {
+    console.warn('[Notifications] markRead error:', e?.message || e)
+    toast.show(t('notif_mark_error') || 'Failed to mark as read', 'error')
+  }
+}
 
 type CatKey = NotifCategory
 const activeFilter = computed<{ value: string; labelKey: string }[]>(() => [
@@ -29,15 +40,21 @@ const filtered = computed(() => {
   return notifications.value.filter((n) => n.category === currentFilter.value)
 })
 
-const catMeta: Record<CatKey, { icon: any; color: string; labelKey: string }> = {
+const catMeta: Record<string, { icon: any; color: string; labelKey: string }> = {
   subscription: { icon: Gift,        color: 'var(--accent)',  labelKey: 'notif_cat_subscription' },
   update:       { icon: Download,    color: 'var(--info)',    labelKey: 'notif_cat_update' },
   device:       { icon: Smartphone,  color: 'var(--success)', labelKey: 'notif_cat_device' },
   security:     { icon: ShieldAlert, color: 'var(--danger)',  labelKey: 'notif_cat_security' },
 }
 
+function catOf(n: { category: string }) {
+  return catMeta[n.category] || catMeta.update
+}
+
 function timeAgo(ts: number): string {
+  if (!ts || isNaN(ts)) return ''
   const diff = Date.now() - ts
+  if (diff < 0) return t('just_now')
   if (diff < 60000) return t('just_now')
   if (diff < 3600000) return Math.floor(diff / 60000) + t('m_ago')
   if (diff < 86400000) return Math.floor(diff / 3600000) + t('h_ago')
@@ -84,13 +101,13 @@ function timeAgo(ts: number): string {
         >
           <div
             class="notif-icon"
-            :style="{ color: catMeta[n.category].color, background: catMeta[n.category].color + '1f' }"
+            :style="{ color: catOf(n).color, background: catOf(n).color + '1f' }"
           >
-            <component :is="catMeta[n.category].icon" :size="18" />
+            <component :is="catOf(n).icon" :size="18" />
           </div>
           <div class="notif-body">
             <div class="notif-item-head">
-              <span class="notif-cat">{{ t(catMeta[n.category].labelKey) }}</span>
+              <span class="notif-cat">{{ t(catOf(n).labelKey) }}</span>
               <span class="notif-time">{{ timeAgo(n.time) }}</span>
             </div>
             <div class="notif-item-title">{{ n.title }}</div>
