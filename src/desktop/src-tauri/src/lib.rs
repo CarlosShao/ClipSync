@@ -1103,14 +1103,23 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
         tauri::WebviewUrl::App("index.html?mode=qp".into()),
     )
     .title("ClipSync - Quick Paste")
-    .inner_size(440.0, 420.0)
+    // Start COLLAPSED: only search bar visible (no results area = no "outer frame").
+    // Window expands to full size via JS setCurrentWindow().setSize() when input gains focus.
+    .inner_size(560.0, 48.0)
     .decorations(false)
     .always_on_top(true)
     .resizable(false)
     .skip_taskbar(true)
     .build()
     {
-        Ok(_) => eprintln!("[QuickPaste] Floating window created (?mode=qp)"),
+        Ok(_) => {
+            eprintln!("[QuickPaste] Floating window created (collapsed 560x48)");
+            // Show and focus the newly created window
+            if let Some(w) = app.get_webview_window("quick-paste") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }
         Err(e) => eprintln!("[QuickPaste] Failed: {}", e),
     }
 }
