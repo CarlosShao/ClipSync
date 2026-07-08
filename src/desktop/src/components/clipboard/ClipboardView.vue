@@ -93,13 +93,10 @@ async function handleFileUpload(e: Event) {
 
 onMounted(() => {
   document.addEventListener('keydown', handleGlobalKeydown)
-  // Expose toggleQuickPaste to window for Tauri global shortcut eval
-  ;(window as any).toggleQuickPaste = toggleQuickPaste
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleGlobalKeydown)
-  delete (window as any).toggleQuickPaste
 })
 
 // ===== Quick Paste =====

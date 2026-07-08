@@ -64,7 +64,13 @@ async function handleChangePassword() {
     resetPwdForm()
     showPwdChange.value = false
   } else {
-    pwdError.value = result.error || (t('pwd_change_fail') || '密码修改失败')
+    // Map backend English errors to localized messages
+    const err = result.error || ''
+    if (err.includes('Current password is incorrect')) {
+      pwdError.value = t('pwd_old_incorrect') || '当前密码不正确'
+    } else {
+      pwdError.value = err || (t('pwd_change_fail') || '密码修改失败')
+    }
   }
 }
 
