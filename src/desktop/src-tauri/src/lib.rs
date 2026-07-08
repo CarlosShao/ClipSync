@@ -991,7 +991,23 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, _event| {
+                    if let Some(window) = app.get_webview_window("main") {
+                        // Restore + focus the window (works even when minimized/hidden)
+                        let _ = window.unminimize();
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        // Toggle the quick-paste panel via the HomeView-exposed function.
+                        // Guarded so a stale build without the exposure fails silently.
+                        if let Err(e) = window.eval("if (window.__toggleQuickPaste) window.__toggleQuickPaste()") {
+                            eprintln!("[GlobalShortcut] eval failed: {}", e);
+                        }
+                    }
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1058,23 +1074,8 @@ pub fn run() {
                 // 先卸载所有已有快捷键
                 let _ = handle.global_shortcut().unregister_all();
 
-                // Tauri v2: 通过事件系统监听全局快捷键
-                let handle_evt = handle.clone();
-                app.listen("global-shortcut", move |_event| {
-                    eprintln!("[GlobalShortcut] Global shortcut pressed!");
-                    if let Some(window) = handle_evt.get_webview_window("main") {
-                        // Must unminimize first — show() alone doesn't restore minimized windows
-                        let _ = window.unminimize();
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                        match window.eval("window.toggleQuickPaste()") {
-                            Ok(_) => eprintln!("[GlobalShortcut] toggleQuickPaste() called"),
-                            Err(e) => eprintln!("[GlobalShortcut] eval failed: {}", e),
-                        }
-                    } else {
-                        eprintln!("[GlobalShortcut] Main window not found!");
-                    }
-                });
+                // 快捷键通过 Builder.with_handler 统一处理（见上方插件注册）。
+                // 这里只负责注册候选键位，不再单独 listen 事件。
 
                 // 快捷键候选列表（按优先级，Tauri v2 格式）
                 let candidates: Vec<&str> = {

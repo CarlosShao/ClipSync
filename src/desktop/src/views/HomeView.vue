@@ -9,8 +9,6 @@ import { useDevice } from '@/composables/useDevice'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useNotifications } from '@/composables/useNotifications'
 import * as tauri from '@/lib/tauri'
-import { listen } from '@tauri-apps/api/event'
-
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ClipboardView from '@/components/clipboard/ClipboardView.vue'
 import QuickPastePanel from '@/components/QuickPastePanel.vue'
@@ -52,7 +50,6 @@ const confirmMessage = ref('')
 let confirmCallback: (() => void) | null = null
 
 let stopPolling: (() => void) | null = null
-let stopShortcutListener: (() => void) | null = null
 
 onMounted(async () => {
   stopPolling = clip.startPolling(1500)
@@ -69,7 +66,9 @@ onMounted(async () => {
     }
   })
 
-  stopShortcutListener = await listen('global-shortcut', () => { showQuickPaste.value = !showQuickPaste.value })
+  // Expose the quick-paste toggle for the Rust global-shortcut handler to call via eval.
+  // This is the SINGLE source of truth — the visible panel is bound to HomeView's showQuickPaste.
+  ;(window as any).__toggleQuickPaste = () => { showQuickPaste.value = !showQuickPaste.value }
 
   document.addEventListener('keydown', handleGlobalKeydown)
   try { tauri.setTitlebarMode(currentMode.value === 'dark') } catch {}
@@ -77,7 +76,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (stopPolling) stopPolling()
-  if (stopShortcutListener) stopShortcutListener()
+  delete (window as any).__toggleQuickPaste
   document.removeEventListener('keydown', handleGlobalKeydown)
 })
 

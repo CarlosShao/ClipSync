@@ -185,6 +185,7 @@ const _dicts: Record<Lang, I18nDict> = {
     pwd_confirm_ph:'Re-enter new password', pwd_old_required:'Please enter current password',
     pwd_new_required:'Please enter new password', pwd_min_length:'New password must be at least 8 characters',
     pwd_mismatch:'The two new passwords do not match', pwd_change_fail:'Failed to change password',
+    pwd_old_incorrect:'Current password is incorrect',
     pwd_changed_ok:'Password changed successfully', saving:'Saving...',
     // Avatar
     avatar_change:'Click to change avatar', avatar_img_only:'Please select an image file',
@@ -337,6 +338,7 @@ const _dicts: Record<Lang, I18nDict> = {
     pwd_confirm_ph:'再次输入新密码', pwd_old_required:'请输入当前密码',
     pwd_new_required:'请输入新密码', pwd_min_length:'新密码至少8位',
     pwd_mismatch:'两次输入的新密码不一致', pwd_change_fail:'密码修改失败',
+    pwd_old_incorrect:'当前密码不正确',
     pwd_changed_ok:'密码修改成功', saving:'保存中...',
     // Avatar
     avatar_change:'点击更换头像', avatar_img_only:'请选择图片文件',
