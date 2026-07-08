@@ -1222,7 +1222,21 @@ pub fn run() {
                                 }
 
                                 eprintln!("[GlobalShortcut:qp] Triggered → toggle QuickPaste popup");
-                                ensure_quick_paste_window(app);
+                                if let Some(qp_win) = app.get_webview_window("quick-paste") {
+                                    let visible = qp_win.is_visible().unwrap_or(false);
+                                    if visible {
+                                        // Clear content before hiding to prevent Windows ghost outline
+                                        let _ = qp_win.eval("document.body.style.background='transparent';document.body.innerHTML=''");
+                                        let _ = qp_win.hide();
+                                    } else {
+                                        let _ = qp_win.unminimize();
+                                        let _ = qp_win.show();
+                                        let _ = qp_win.set_focus();
+                                        let _ = qp_win.eval("if(window.__qpActivate)window.__qpActivate()");
+                                    }
+                                } else {
+                                    ensure_quick_paste_window(&app);
+                                }
                             }) {
                                 Ok(()) => {
                                     println!("[Setup] ✅ quick_paste registered: {}{}", candidate, if i > 0 { " (fallback)" } else { "" });
