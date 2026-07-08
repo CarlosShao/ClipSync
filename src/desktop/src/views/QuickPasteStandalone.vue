@@ -270,4 +270,15 @@ function truncate(str: string, max: number): string {
   font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
   color: var(--text-secondary);
 }
+
+/* ═══════════════════════════════════════════════
+   CRITICAL FIX — The "frame" the user saw for 4 rounds
+   was globals.css → body { background: var(--bg-base) }
+   which paints the entire Tauri window as a solid rectangle.
+   This :global rule overrides it when in QP mode.
+   ═══════════════════════════════════════════════ */
+:global(html.qp-mode),
+:global(html.qp-mode body) {
+  background: transparent !important;
+}
 </style>
