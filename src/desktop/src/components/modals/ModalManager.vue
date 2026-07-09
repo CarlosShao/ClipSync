@@ -682,22 +682,22 @@ async function revokeSession(sessionId: string) {
         <span class="sk-label-wrap">{{ t(sk.label) }}<span v-if="sk.global" class="sk-global-tag">{{ t('sk_global') }}</span></span>
         <div v-if="recordingId !== sk.id" class="sk-keys" @click="startRecord(sk.id)">
           <kbd v-for="k in getKeys(sk.id)" :key="k">{{ safeDisplayKey(k) }}</kbd>
-          <Pencil :size="12" style="margin-left:4px;opacity:.4;cursor:pointer;" />
+          <Pencil :size="12" class="sk-edit-ico" />
         </div>
         <div v-else ref="recorderEl" class="sk-recorder" tabindex="0" @blur="stopRecord" @keydown="onKeyDown">
           {{ t('sk_press_keys') }}...
         </div>
       </div>
     </div>
-    <div style="margin-top:12px;padding:8px 10px;background:var(--bg-hover);border-radius:var(--radius-sm);font-size:11px;color:var(--text-tertiary);line-height:1.6;">
+    <div class="sk-hint">
       {{ t('sk_hint') }}
     </div>
   </ModalDialog>
 
   <!-- Sessions -->
   <ModalDialog :open="showModalType === 'sessions'" :title="t('modal_sessions')" max-width="480px" @close="emit('close-modal'); loadSessions()">
-    <div v-if="loadingSessions" style="text-align:center;padding:24px;color:var(--text-tertiary);">{{ t('sess_loading') }}</div>
-    <div v-else-if="sessionItems.length === 0" style="text-align:center;padding:24px;color:var(--text-tertiary);">{{ t('sess_empty') }}</div>
+    <div v-if="loadingSessions" class="modal-state">{{ t('sess_loading') }}</div>
+    <div v-else-if="sessionItems.length === 0" class="modal-state">{{ t('sess_empty') }}</div>
     <div v-else class="session-list">
       <div v-for="s in sessionItems" :key="s.id" class="session-item">
         <div class="session-icon">
@@ -706,7 +706,7 @@ async function revokeSession(sessionId: string) {
         </div>
         <div class="session-info"><div class="session-name">{{ s.deviceName || s.device_type || 'Unknown Device' }}</div><div class="session-detail">{{ s.isCurrent ? t('sess_current') : formatSessionTime(s.last_active || s.created_at) }}</div></div>
         <span v-if="s.isCurrent" class="session-badge">{{ t('sess_current') }}</span>
-        <Button v-else variant="ghost" size="sm" style="color:var(--danger)" :disabled="revokingId === s.id" @click="revokeSession(s.id)">{{ revokingId === s.id ? '...' : t('sess_sign_out_btn') }}</Button>
+        <Button v-else variant="ghost" size="sm" class="session-revoke-btn" :disabled="revokingId === s.id" @click="revokeSession(s.id)">{{ revokingId === s.id ? '...' : t('sess_sign_out_btn') }}</Button>
       </div>
     </div>
   </ModalDialog>
@@ -731,11 +731,11 @@ async function revokeSession(sessionId: string) {
 
   <!-- Payment Method -->
   <ModalDialog :open="showModalType === 'payment'" :title="t('modal_payment')" max-width="420px" @close="emit('close-modal')">
-    <div v-if="selectedPlan" style="margin-bottom:16px;padding:12px;background:var(--bg-hover);border-radius:var(--radius-sm);">
-      <div style="font-size:13px;font-weight:600;color:var(--text-primary);">{{ selectedPlan.name }}</div>
-      <div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-top:4px;">¥{{ selectedPlan.price }}<span style="font-size:13px;font-weight:400;color:var(--text-tertiary);">{{ t('price_per_mo') }}</span></div>
+    <div v-if="selectedPlan" class="pay-summary">
+      <div class="pay-summary-name">{{ selectedPlan.name }}</div>
+      <div class="pay-summary-price">¥{{ selectedPlan.price }}<span class="pay-summary-period">{{ t('price_per_mo') }}</span></div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:10px;">
+    <div class="pay-methods">
       <Button variant="outline" class="w-full justify-start payment-option" :disabled="paymentSending" @click="selectPaymentMethod('wechat')">
         <MessageCircle class="pay-icon pay-icon--wechat" /> <span>{{ t('pay_wechat') }}</span>
       </Button>
@@ -747,18 +747,18 @@ async function revokeSession(sessionId: string) {
 
   <!-- Cancel Subscription -->
   <ModalDialog :open="showModalType === 'cancel-subscription'" :title="t('sub_cancel')" max-width="420px" @close="emit('close-modal')">
-    <div style="text-align:center;padding:20px 0;">
-      <p style="font-size:14px;color:var(--text-secondary);margin-bottom:20px;">{{ t('sub_cancel_h') }}</p>
+    <div class="modal-center-pad20">
+      <p class="cancel-text">{{ t('sub_cancel_h') }}</p>
       <Button variant="destructive" class="w-full" @click="toast.show(t('toast_signup_soon'), 'info')">{{ t('sub_cancel') }}</Button>
     </div>
   </ModalDialog>
 
   <!-- Billing -->
   <ModalDialog :open="showModalType === 'billing'" :title="t('modal_billing')" max-width="480px" @close="emit('close-modal')">
-    <div style="text-align:center;padding:40px 20px;">
-      <FileText :size="48" style="color:var(--text-tertiary);margin-bottom:12px;" />
-      <h3 style="font-size:15px;font-weight:600;margin-bottom:4px;">{{ t('billing_empty') }}</h3>
-      <p style="font-size:13px;color:var(--text-secondary);">{{ t('billing_empty_desc') }}</p>
+    <div class="billing-empty-box">
+      <FileText :size="48" class="billing-ico" />
+      <h3 class="billing-title">{{ t('billing_empty') }}</h3>
+      <p class="modal-desc">{{ t('billing_empty_desc') }}</p>
     </div>
   </ModalDialog>
 
@@ -774,13 +774,13 @@ async function revokeSession(sessionId: string) {
 
   <!-- Updates -->
   <ModalDialog :open="showModalType === 'updates'" :title="t('upd_title')" max-width="420px" @close="emit('close-modal')">
-    <div style="text-align:center;padding:16px 0;">
-      <CircleCheck :size="48" style="color:var(--success);margin-bottom:12px;" />
-      <h3 style="font-size:16px;font-weight:600;margin-bottom:4px;">{{ t('upd_uptodate') }}</h3>
-      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">{{ t('upd_version') }}: v2.4.1</p>
-      <p style="font-size:13px;color:var(--text-tertiary);">{{ t('upd_latest') }}</p>
-      <div style="margin-top:16px;text-align:left;font-size:12px;color:var(--text-secondary);line-height:1.8;padding:12px;background:var(--bg-hover);border-radius:var(--radius-sm);">
-        <div style="font-weight:600;margin-bottom:4px;">{{ t('upd_whatsnew') }}</div>
+    <div class="upd-box">
+      <CircleCheck :size="48" class="upd-ico" />
+      <h3 class="upd-title">{{ t('upd_uptodate') }}</h3>
+      <p class="upd-version">{{ t('upd_version') }}: v2.4.1</p>
+      <p class="upd-latest">{{ t('upd_latest') }}</p>
+      <div class="upd-changelog">
+        <div class="upd-changelog-h">{{ t('upd_whatsnew') }}</div>
         <div>• {{ t('upd_changelog_1') }}</div><div>• {{ t('upd_changelog_2') }}</div><div>• {{ t('upd_changelog_3') }}</div><div>• {{ t('upd_changelog_4') }}</div>
       </div>
     </div>
@@ -788,21 +788,21 @@ async function revokeSession(sessionId: string) {
 
   <!-- Export -->
   <ModalDialog :open="showModalType === 'export'" :title="t('export_title')" max-width="480px" @close="emit('close-modal')">
-    <div style="display:flex;flex-direction:column;gap:16px;padding:4px 0;">
-      <div style="display:flex;gap:16px;align-items:flex-start;">
-        <div style="width:48px;height:48px;border-radius:12px;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-          <Download :size="24" style="color:var(--accent);" />
+    <div class="export-box">
+      <div class="export-row">
+        <div class="export-ico-box">
+          <Download :size="24" class="export-ico" />
         </div>
         <div>
-          <p style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">JSON 格式数据包</p>
-          <p style="font-size:12px;color:var(--text-secondary);line-height:1.6;">{{ t('export_msg') }}</p>
+          <p class="export-title">JSON 格式数据包</p>
+          <p class="export-desc">{{ t('export_msg') }}</p>
         </div>
       </div>
-      <div style="display:flex;gap:8px;font-size:11px;color:var(--text-tertiary);">
+      <div class="export-feats">
         <span>✓ 剪贴板记录</span><span>✓ 设备信息</span><span>✓ 账户资料</span>
       </div>
-      <Button class="w-full" style="margin-top:4px;" @click="handleExportRequest">
-        <Download :size="14" style="margin-right:6px;" />
+      <Button class="w-full export-request-btn" @click="handleExportRequest">
+        <Download :size="14" class="btn-ico-left" />
         {{ t('export_request_btn') }}
       </Button>
     </div>
@@ -811,13 +811,13 @@ async function revokeSession(sessionId: string) {
   <!-- Forgot Password -->
   <ModalDialog :open="!!showForgotPwd" :title="t('fp_title')" max-width="420px" @close="handleCloseForgot">
     <div v-if="fpStep === 1">
-      <div style="margin-bottom:12px;"><label class="field-label">{{ t('fp_email_label') }}</label><Input v-model="fpEmail" type="email" class="field-input" :placeholder="t('fp_email_hint')" /></div>
+      <div class="fp-field"><label class="field-label">{{ t('fp_email_label') }}</label><Input v-model="fpEmail" type="email" class="field-input" :placeholder="t('fp_email_hint')" /></div>
       <Button class="w-full" :disabled="fpSending" @click="handleForgotSend"><span v-if="fpSending" class="btn-spinner" /><span>{{ t('fp_send_code') }}</span></Button>
     </div>
     <div v-else>
-      <div style="margin-bottom:12px;"><label class="field-label">{{ t('login_code') }}</label><Input v-model="fpCode" type="text" maxlength="6" class="field-input" :placeholder="t('ph_code_placeholder')" /></div>
-      <div style="margin-bottom:12px;"><label class="field-label">{{ t('sp_set_pwd_label') }}</label><Input v-model="fpNewPwd" type="password" class="field-input" :placeholder="t('sp_pwd_hint')" /></div>
-      <div style="margin-bottom:16px;"><label class="field-label">{{ t('sp_confirm_pwd') }}</label><Input v-model="fpConfirmPwd" type="password" class="field-input" :placeholder="t('sp_confirm_hint')" /></div>
+      <div class="fp-field"><label class="field-label">{{ t('login_code') }}</label><Input v-model="fpCode" type="text" maxlength="6" class="field-input" :placeholder="t('ph_code_placeholder')" /></div>
+      <div class="fp-field"><label class="field-label">{{ t('sp_set_pwd_label') }}</label><Input v-model="fpNewPwd" type="password" class="field-input" :placeholder="t('sp_pwd_hint')" /></div>
+      <div class="fp-field fp-field--last"><label class="field-label">{{ t('sp_confirm_pwd') }}</label><Input v-model="fpConfirmPwd" type="password" class="field-input" :placeholder="t('sp_confirm_hint')" /></div>
       <Button class="w-full" :disabled="fpSending" @click="handleForgotReset"><span v-if="fpSending" class="btn-spinner" /><span>{{ t('fp_reset_btn') }}</span></Button>
     </div>
   </ModalDialog>
@@ -832,7 +832,6 @@ async function revokeSession(sessionId: string) {
         @pointermove="onImgPointerMove"
         @pointerup="onImgPointerUp"
         @pointercancel="onImgPointerUp"
-        style="overflow:hidden;border-radius:var(--radius-md);background:var(--bg-hover);display:flex;align-items:center;justify-content:center;max-height:420px;cursor:grab;"
         :style="{ cursor: isImgDragging ? 'grabbing' : (imgZoom > 1 ? 'grab' : 'zoom-in') }"
       >
         <img
@@ -864,71 +863,71 @@ async function revokeSession(sessionId: string) {
 
   <!-- Text Detail -->
   <ModalDialog :open="previewType === 'text'" :title="t('text_detail_title')" max-width="640px" @close="emit('close-preview')">
-    <div v-if="previewItem" style="font-size:13px;line-height:1.7;background:var(--bg-hover);padding:16px;border-radius:var(--radius-md);white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;color:var(--text-primary);">{{ previewItem.content }}</div>
+    <div v-if="previewItem" class="text-preview-content">{{ previewItem.content }}</div>
   </ModalDialog>
 
   <!-- Add Device -->
   <ModalDialog :open="showModalType === 'add-device'" :title="t('modal_add_device')" max-width="420px" @close="emit('close-modal')">
-    <div style="text-align:center;padding:20px 0;">
-      <div style="width:120px;height:120px;margin:0 auto 16px;background:var(--bg-hover);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;">
-        <QrCode :size="48" style="color:var(--text-tertiary);" />
+    <div class="modal-center-pad20">
+      <div class="add-device-qr">
+        <QrCode :size="48" class="add-device-ico" />
       </div>
-      <p style="font-size:13px;color:var(--text-secondary);">{{ t('add_device_desc') }}</p>
+      <p class="modal-desc">{{ t('add_device_desc') }}</p>
     </div>
   </ModalDialog>
 
   <!-- QR Pairing: Generate (本机已登录设备) -->
   <ModalDialog :open="showModalType === 'pair-generate'" :title="t('pair_generate')" max-width="420px" @close="closePairModals">
-    <div style="text-align:center;padding:12px 0;">
-      <div v-if="pairingQr" style="width:220px;height:220px;margin:0 auto 16px;background:#fff;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;padding:8px;">
-        <img :src="pairingQr" style="width:100%;height:100%;object-fit:contain;" alt="pairing qr" />
+    <div class="pair-gen-box">
+      <div v-if="pairingQr" class="pair-qr-box">
+        <img :src="pairingQr" class="pair-qr-img" alt="pairing qr" />
       </div>
-      <div v-else style="color:var(--text-tertiary);padding:48px 0;">{{ t('pair_generating') }}</div>
+      <div v-else class="pair-generating">{{ t('pair_generating') }}</div>
 
-      <p style="font-size:12px;color:var(--text-secondary);word-break:break-all;background:var(--bg-hover);padding:8px 10px;border-radius:var(--radius-sm);min-height:32px;">{{ pairingToken }}</p>
+      <p class="pair-token-box">{{ pairingToken }}</p>
 
-      <div style="display:flex;gap:12px;justify-content:center;margin-top:16px;">
+      <div class="pair-btn-row">
         <Button variant="outline" size="sm" @click="copyPairingToken" :disabled="!pairingToken" class="modal-action-btn">{{ t('pair_copy') }}</Button>
         <Button variant="outline" size="sm" @click="generatePairing" class="modal-action-btn">{{ t('pair_regenerate') }}</Button>
       </div>
 
-      <p style="font-size:12px;color:var(--text-tertiary);margin-top:10px;">
+      <p class="pair-expire-text">
         <template v-if="pairingRemaining > 0">{{ t('pair_expire', { s: pairingRemaining }) }}</template>
         <template v-else>{{ t('pair_expired') }}</template>
       </p>
-      <p style="font-size:12px;color:var(--text-secondary);margin-top:6px;">{{ t('pair_generate_desc') }}</p>
+      <p class="pair-gen-desc">{{ t('pair_generate_desc') }}</p>
     </div>
   </ModalDialog>
 
   <!-- QR Pairing: Scan (扫码设备) -->
   <ModalDialog :open="showModalType === 'pair-scan'" :title="t('pair_scan')" max-width="460px" @close="closePairModals">
-    <div style="padding:8px 0;">
-      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">{{ t('pair_scan_desc') }}</p>
+    <div class="pair-scan-box">
+      <p class="pair-scan-desc">{{ t('pair_scan_desc') }}</p>
 
-      <div style="position:relative;width:100%;max-width:300px;margin:0 auto;border-radius:var(--radius-md);overflow:hidden;background:#000;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;">
-        <video ref="videoEl" playsinline style="width:100%;height:100%;object-fit:cover;" :style="{ display: scanning ? 'block' : 'none' }"></video>
-        <div v-if="!scanning" style="color:#888;font-size:13px;text-align:center;padding:20px;">{{ t('pair_camera_hint') }}</div>
+      <div class="pair-video-box">
+        <video ref="videoEl" playsinline class="pair-video" :style="{ display: scanning ? 'block' : 'none' }"></video>
+        <div v-if="!scanning" class="pair-camera-hint">{{ t('pair_camera_hint') }}</div>
       </div>
 
-      <div style="display:flex;gap:12px;justify-content:center;margin-top:14px;">
+      <div class="pair-scan-btn-row">
         <Button v-if="!scanning" size="sm" @click="startScan" class="modal-action-btn">{{ t('pair_scan_start') }}</Button>
         <Button v-else variant="ghost" size="sm" @click="stopScan" class="modal-action-btn">{{ t('pair_scan_stop') }}</Button>
       </div>
 
-      <div style="margin-top:20px;border-top:1px solid var(--border-subtle);padding-top:14px;">
-        <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:8px;">{{ t('pair_enter_code') }}</p>
-        <div style="display:flex;gap:10px;">
+      <div class="pair-manual-sec">
+        <p class="pair-manual-label">{{ t('pair_enter_code') }}</p>
+        <div class="pair-manual-row">
           <Input v-model="manualToken" class="manual-token-input" :placeholder="t('pair_token_placeholder')" />
           <Button size="sm" :disabled="redeemSending" @click="handlePairingToken(manualToken)" class="modal-action-btn">{{ t('pair_pair_btn') }}</Button>
         </div>
-        <p style="font-size:11px;color:var(--text-tertiary);margin-top:10px;">{{ t('pair_scan_hint') }}</p>
+        <p class="pair-scan-hint">{{ t('pair_scan_hint') }}</p>
       </div>
     </div>
   </ModalDialog>
 
   <!-- Confirm -->
   <ModalDialog :open="showModalType === 'confirm'" :title="t('confirm_title')" max-width="380px" @close="emit('close-modal')">
-    <p style="font-size:14px;line-height:1.6;">{{ confirmMessage }}</p>
+    <p class="confirm-body">{{ confirmMessage }}</p>
     <template #footer>
       <Button variant="outline" @click="emit('close-modal')">{{ t('btn_cancel_text') }}</Button>
       <Button variant="destructive" @click="emit('confirm-action')">{{ t('confirm_t') }}</Button>
@@ -995,7 +994,7 @@ async function revokeSession(sessionId: string) {
 
 /* Image Preview Zoom */
 .img-preview-wrap { display:flex; flex-direction:column; gap:12px; }
-.img-preview-viewport { position:relative; }
+.img-preview-viewport { position:relative; overflow:hidden; border-radius:var(--radius-md); background:var(--bg-hover); display:flex; align-items:center; justify-content:center; max-height:420px; cursor:grab; }
 .img-preview-bar { display:flex; align-items:center; gap:12px; font-size:12px; color:var(--text-secondary); }
 .img-preview-label { font-weight:500; color:var(--text-secondary); }
 .img-preview-zoom { display:inline-flex; align-items:center; gap:6px; margin-left:auto; }
@@ -1006,4 +1005,91 @@ async function revokeSession(sessionId: string) {
   0%, 100% { border-color: var(--accent); opacity: 1; }
   50% { border-color: var(--text-tertiary); opacity: 0.6; }
 }
+
+/* ============================================================
+   Batch 4: extracted inline styles → classes (maintainability)
+   ============================================================ */
+
+/* Shortcuts */
+.sk-edit-ico { margin-left:4px; opacity:.4; cursor:pointer; }
+.sk-hint { margin-top:12px; padding:8px 10px; background:var(--bg-hover); border-radius:var(--radius-sm); font-size:11px; color:var(--text-tertiary); line-height:1.6; }
+
+/* Sessions */
+.session-revoke-btn { color: var(--danger); }
+
+/* Payment */
+.pay-summary { margin-bottom:16px; padding:12px; background:var(--bg-hover); border-radius:var(--radius-sm); }
+.pay-summary-name { font-size:13px; font-weight:600; color:var(--text-primary); }
+.pay-summary-price { font-size:20px; font-weight:700; color:var(--text-primary); margin-top:4px; }
+.pay-summary-period { font-size:13px; font-weight:400; color:var(--text-tertiary); }
+.pay-methods { display:flex; flex-direction:column; gap:10px; }
+
+/* Generic modal text helpers */
+.modal-state { text-align:center; padding:24px; color:var(--text-tertiary); }
+.modal-center-pad20 { text-align:center; padding:20px 0; }
+.modal-desc { font-size:13px; color:var(--text-secondary); }
+
+/* Cancel subscription */
+.cancel-text { font-size:14px; color:var(--text-secondary); margin-bottom:20px; }
+
+/* Billing */
+.billing-empty-box { text-align:center; padding:40px 20px; }
+.billing-ico { color: var(--text-tertiary); margin-bottom:12px; }
+.billing-title { font-size:15px; font-weight:600; margin-bottom:4px; }
+
+/* Updates */
+.upd-box { text-align:center; padding:16px 0; }
+.upd-ico { color: var(--success); margin-bottom:12px; }
+.upd-title { font-size:16px; font-weight:600; margin-bottom:4px; }
+.upd-version { font-size:13px; color:var(--text-secondary); margin-bottom:8px; }
+.upd-latest { font-size:13px; color:var(--text-tertiary); }
+.upd-changelog { margin-top:16px; text-align:left; font-size:12px; color:var(--text-secondary); line-height:1.8; padding:12px; background:var(--bg-hover); border-radius:var(--radius-sm); }
+.upd-changelog-h { font-weight:600; margin-bottom:4px; }
+
+/* Export */
+.export-box { display:flex; flex-direction:column; gap:16px; padding:4px 0; }
+.export-row { display:flex; gap:16px; align-items:flex-start; }
+.export-ico-box { width:48px; height:48px; border-radius:12px; background:var(--bg-hover); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.export-ico { color: var(--accent); }
+.export-title { font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:4px; }
+.export-desc { font-size:12px; color:var(--text-secondary); line-height:1.6; }
+.export-feats { display:flex; gap:8px; font-size:11px; color:var(--text-tertiary); }
+.export-request-btn { margin-top:4px; }
+.btn-ico-left { margin-right:6px; }
+
+/* Forgot password */
+.fp-field { margin-bottom:12px; }
+.fp-field.fp-field--last { margin-bottom:16px; }
+
+/* Image / Text preview */
+.text-preview-content { font-size:13px; line-height:1.7; background:var(--bg-hover); padding:16px; border-radius:var(--radius-md); white-space:pre-wrap; word-break:break-word; max-height:400px; overflow-y:auto; color:var(--text-primary); }
+
+/* Add device */
+.add-device-qr { width:120px; height:120px; margin:0 auto 16px; background:var(--bg-hover); border-radius:var(--radius-md); display:flex; align-items:center; justify-content:center; }
+.add-device-ico { color: var(--text-tertiary); }
+
+/* Pairing: generate */
+.pair-gen-box { text-align:center; padding:12px 0; }
+.pair-qr-box { width:220px; height:220px; margin:0 auto 16px; background:#fff; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:center; padding:8px; }
+.pair-qr-img { width:100%; height:100%; object-fit:contain; }
+.pair-generating { color:var(--text-tertiary); padding:48px 0; }
+.pair-token-box { font-size:12px; color:var(--text-secondary); word-break:break-all; background:var(--bg-hover); padding:8px 10px; border-radius:var(--radius-sm); min-height:32px; }
+.pair-btn-row { display:flex; gap:12px; justify-content:center; margin-top:16px; }
+.pair-expire-text { font-size:12px; color:var(--text-tertiary); margin-top:10px; }
+.pair-gen-desc { font-size:12px; color:var(--text-secondary); margin-top:6px; }
+
+/* Pairing: scan */
+.pair-scan-box { padding:8px 0; }
+.pair-scan-desc { font-size:13px; color:var(--text-secondary); margin-bottom:12px; }
+.pair-video-box { position:relative; width:100%; max-width:300px; margin:0 auto; border-radius:var(--radius-md); overflow:hidden; background:#000; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; }
+.pair-video { width:100%; height:100%; object-fit:cover; }
+.pair-camera-hint { color:#888; font-size:13px; text-align:center; padding:20px; }
+.pair-scan-btn-row { display:flex; gap:12px; justify-content:center; margin-top:14px; }
+.pair-manual-sec { margin-top:20px; border-top:1px solid var(--border-subtle); padding-top:14px; }
+.pair-manual-label { font-size:12px; color:var(--text-tertiary); margin-bottom:8px; }
+.pair-manual-row { display:flex; gap:10px; }
+.pair-scan-hint { font-size:11px; color:var(--text-tertiary); margin-top:10px; }
+
+/* Confirm */
+.confirm-body { font-size:14px; line-height:1.6; }
 </style>
