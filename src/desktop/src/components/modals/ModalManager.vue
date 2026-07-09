@@ -1034,12 +1034,12 @@ async function revokeSession(sessionId: string) {
 
 /* Billing */
 .billing-empty-box { text-align:center; padding:40px 20px; }
-.billing-ico { color: var(--text-tertiary); margin-bottom:12px; }
+.billing-ico { display: block; margin: 0 auto 12px; color: var(--text-tertiary); }
 .billing-title { font-size:15px; font-weight:600; margin-bottom:4px; }
 
 /* Updates */
 .upd-box { text-align:center; padding:16px 0; }
-.upd-ico { color: var(--success); margin-bottom:12px; }
+.upd-ico { display: block; margin: 0 auto 12px; color: var(--success); }
 .upd-title { font-size:16px; font-weight:600; margin-bottom:4px; }
 .upd-version { font-size:13px; color:var(--text-secondary); margin-bottom:8px; }
 .upd-latest { font-size:13px; color:var(--text-tertiary); }
