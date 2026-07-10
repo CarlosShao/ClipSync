@@ -298,6 +298,13 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         <h2 class="fav-title">收藏</h2>
         <Badge variant="outline" class="fav-count">{{ favoriteCount }}</Badge>
       </div>
+      <div class="fav-header-right">
+        <!-- View toggle: back in header -->
+        <div class="fav-view-toggle">
+          <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
+          <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
+        </div>
+      </div>
     </div>
 
     <!-- Search row -->
@@ -329,11 +336,6 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
             <Star :size="14" fill="currentColor" /><span>取消收藏</span>
           </Button>
         </template>
-        <!-- View toggle -->
-        <div class="fav-view-toggle">
-          <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
-          <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
-        </div>
       </div>
     </div>
 
@@ -345,9 +347,9 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         <span class="fav-col-count">{{ col.item_count }}</span>
         <button class="fav-col-del" @click.stop="handleDeleteCollection(col.id)" title="删除">×</button>
       </button>
-      <!-- New collection: system button style -->
+      <!-- New collection -->
       <template v-if="!showNewCollectionInput">
-        <Button variant="outline" size="sm" class="fav-col-add-btn" @click="showNewCollectionInput = true">
+        <Button variant="outline" size="sm" @click="showNewCollectionInput = true">
           <Plus :size="12" /> 新建收藏夹
         </Button>
       </template>
@@ -355,8 +357,8 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         <div class="fav-col-new">
           <input v-model="newCollectionName" class="fav-col-name-input" placeholder="收藏夹名称" maxlength="100"
             @keydown.enter="handleCreateCollection" @keydown.esc="showNewCollectionInput = false" />
-          <Button size="sm" @click="handleCreateCollection">创建</Button>
-          <Button variant="ghost" size="sm" @click="showNewCollectionInput = false"><X :size="14" /></Button>
+          <Button variant="default" size="sm" @click="handleCreateCollection">创建</Button>
+          <Button variant="outline" size="sm" @click="showNewCollectionInput = false">取消</Button>
         </div>
       </template>
     </div>
@@ -498,8 +500,9 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-page { display: flex; flex-direction: column; height: 100%; }
 
 /* Header */
-.fav-header { display: flex; align-items: center; height: 56px; padding: 0 24px; background: var(--bg-surface); flex-shrink: 0; border-bottom: 1px solid var(--border-default); }
+.fav-header { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 24px; background: var(--bg-surface); flex-shrink: 0; border-bottom: 1px solid var(--border-default); }
 .fav-header-left { display: flex; align-items: center; gap: 10px; }
+.fav-header-right { display: flex; align-items: center; gap: 6px; }
 .fav-header-icon { color: var(--warning); }
 .fav-title { font-weight: 600; font-size: 16px; }
 .fav-count { padding: 2px 10px !important; }
@@ -545,7 +548,8 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-col-count { font-size: 10px; color: var(--text-tertiary); margin-left: 2px; }
 .fav-col-del { display: none; border: none; background: none; color: var(--text-tertiary); cursor: pointer; padding: 0 2px; font-size: 14px; }
 .fav-col-tab:hover .fav-col-del { display: inline; }
-.fav-col-new { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.fav-col-new { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.fav-col-new :deep(button) { min-width: 0; white-space: nowrap; }
 .fav-col-name-input { height: 32px; padding: 0 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; background: var(--bg-surface); color: var(--text-primary); outline: none; width: 140px; }
 
 /* Content */
