@@ -25,6 +25,13 @@ async function subscriptionCheck(req, res, next) {
 
     const user = userResult.rows[0];
 
+    logger.info('[SubscriptionCheck] User:', {
+      userId,
+      subscriptionStatus: user.subscription_status,
+      currentSubscriptionId: user.current_subscription_id,
+      isAdmin: user.is_admin
+    });
+
     // 管理员：直接赋予无限额度
     if (user.is_admin) {
       req.user.subscriptionStatus = 'admin';

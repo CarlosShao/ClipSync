@@ -5,6 +5,7 @@ use std::time::Instant;
 use tauri::{Listener, Manager};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
+use std::thread;
 
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_autostart::MacosLauncher;
@@ -203,6 +204,41 @@ fn set_clipboard_files(paths: Vec<String>) -> Result<(), String> {
     result.map_err(|e| format!("set_file_list failed: {}", e))
 }
 
+/// Read a file's content as UTF-8 text. Used for previewing clipboard-copied files.
+/// Returns the file content string, or an error if the file can't be read.
+#[tauri::command]
+fn read_file_content(path: String) -> Result<String, String> {
+    use std::fs;
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    // Safety limit: 5MB for text preview
+    let metadata = fs::metadata(p).map_err(|e| format!("Cannot read file metadata: {}", e))?;
+    if metadata.len() > 5 * 1024 * 1024 {
+        return Err(format!("File too large for preview: {} bytes", metadata.len()));
+    }
+    fs::read_to_string(p).map_err(|e| format!("Cannot read file: {}", e))
+}
+
+/// Read a binary file and return its content as base64. Used for image file preview.
+#[tauri::command]
+fn read_file_content_base64(path: String) -> Result<String, String> {
+    use std::fs;
+    use base64::Engine;
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    // Safety limit: 10MB for image preview
+    let metadata = fs::metadata(p).map_err(|e| format!("Cannot read file metadata: {}", e))?;
+    if metadata.len() > 10 * 1024 * 1024 {
+        return Err(format!("File too large for preview: {} bytes", metadata.len()));
+    }
+    let bytes = fs::read(p).map_err(|e| format!("Cannot read file: {}", e))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+
 #[tauri::command]
 fn save_and_copy_file(base64_data: String, filename: String) -> Result<String, String> {
     use std::fs;
@@ -269,6 +305,8 @@ fn get_clipboard_files() -> Vec<String> {
 #[tauri::command]
 fn check_clipboard_image_info() -> serde_json::Value {
     use clipboard_win::raw;
+    // Safety limit: skip images larger than 50MB raw (prevents OOM on huge screenshots)
+    const MAX_RAW_BYTES: usize = 50 * 1024 * 1024;
     match raw::open() {
         Ok(()) => {
             let has_image = raw::is_format_avail(2) || raw::is_format_avail(8); // CF_BITMAP or CF_DIB
@@ -280,7 +318,12 @@ fn check_clipboard_image_info() -> serde_json::Value {
                         let mut data = Vec::<u8>::new();
                         let size = raw::get_bitmap(&mut data).unwrap_or(0);
                         let _ = raw::close();
-                        serde_json::json!({ "available": true, "size": size })
+                        if size > MAX_RAW_BYTES {
+                            eprintln!("[check_clipboard_image_info] Image too large: {} bytes, skipping", size);
+                            serde_json::json!({ "available": false, "size": size, "reason": "too_large" })
+                        } else {
+                            serde_json::json!({ "available": true, "size": size })
+                        }
                     }
                     Err(_) => serde_json::json!({ "available": true, "size": 0 }),
                 }
@@ -446,8 +489,8 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
         if let Ok(stats) = try_pixel_extraction(dib, w, h, top_down, header_size as usize, row_stride, bytes_per_pixel, standard_fn) {
             let pct = stats.non_blank as f64 / stats.total.max(1) as f64 * 100.0;
             eprintln!("[dib_to_png] STANDARD offset={} ORDER={} → {:.1}%", header_size, standard_name, pct);
-            if stats.total > 0 && pct > 30.0 {
-                eprintln!("[dib_to_png] ACCEPTED standard: offset={} order={}", header_size, standard_name);
+            if stats.total > 0 && pct > 5.0 {
+                eprintln!("[dib_to_png] ACCEPTED standard: offset={} order={} ({:.1}%)", header_size, standard_name, pct);
                 return encode_rgba_to_png_data_url(&stats.rgba, w, h);
             }
         }
@@ -545,11 +588,11 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
         }
     }
 
-    // Accept best result if >30% non-blank
+    // Accept best result if >5% non-blank (lowered from 30% — photos with large bright/dark areas were falsely rejected)
     if let Some((_order_name, pix_off, stats)) = best_result {
         let pct = stats.non_blank as f64 / stats.total.max(1) as f64 * 100.0;
-        if pct > 30.0 {
-            eprintln!("[dib_to_png] ACCEPTED fallback: offset={} order={:.1}%", pix_off, pct);
+        if pct > 5.0 {
+            eprintln!("[dib_to_png] ACCEPTED fallback: offset={} ({:.1}%)", pix_off, pct);
             return encode_rgba_to_png_data_url(&stats.rgba, w, h);
         }
     }
@@ -758,6 +801,36 @@ fn toggle_window(app: tauri::AppHandle) {
     }
 }
 
+/// Start the native clipboard monitor thread (event-driven, replaces JS polling).
+/// Idempotent: calling while already monitoring is a no-op.
+#[tauri::command]
+fn start_clipboard_monitor(state: tauri::State<AppState>, app: tauri::AppHandle) {
+    let mut is_monitoring = state.is_monitoring.lock().unwrap();
+    if *is_monitoring {
+        eprintln!("[Monitor] Already running, skipping");
+        return;
+    }
+    *is_monitoring = true;
+    eprintln!("[Monitor] Starting native clipboard monitor thread...");
+
+    let handle = app.clone();
+    thread::spawn(move || {
+        clipboard_monitor::start_monitor(handle);
+    });
+}
+
+/// Stop the native clipboard monitor thread (sets flag; the loop will exit on next cycle).
+#[tauri::command]
+fn stop_clipboard_monitor(state: tauri::State<AppState>) {
+    let mut is_monitoring = state.is_monitoring.lock().unwrap();
+    if !*is_monitoring {
+        eprintln!("[Monitor] Already stopped, skipping");
+        return;
+    }
+    *is_monitoring = false;
+    eprintln!("[Monitor] Stopping native clipboard monitor (will exit on next cycle)");
+}
+
 /// Re-register all global shortcuts from the frontend-supplied map.
 /// Map keys: "quickPaste", "toggleWindow". Also persists them into AppConfig.
 /// Uses on_shortcut() per-shortcut handlers (no string comparison needed).
@@ -846,17 +919,63 @@ async fn open_image_viewer(app: tauri::AppHandle, image_data_url: String, title:
     let html = format!(
         r#"<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 *{{margin:0;padding:0;box-sizing:border-box}}
-html,body{{width:100vw;height:100vh;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;font-family:-apple-system,sans-serif}}
-img{{max-width:96vw;max-height:88vh;object-fit:contain;border-radius:4px}}
-.bar{{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:10px;padding:10px 18px;background:rgba(255,255,255,0.08);border-radius:10px}}
-button{{padding:8px 16px;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:500}}
-.btn-copy{{background:#6366f1;color:#fff}}.btn-copy:hover{{background:#5558e3}}.btn-close{{background:rgba(255,255,255,0.12);color:#ccc;border:1px solid rgba(255,255,255,0.15)}}.btn-close:hover{{background:rgba(255,255,255,0.2);color:#fff}}svg{{width:14px;height:14px;vertical-align:-3px;margin-right:4px}}</style></head>
+html,body{{width:100vw;height:100vh;overflow:hidden;background:#0a0a0a;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#ccc}}
+#img-wrap{{transition:transform .2s ease;transform-origin:center center}}
+img{{max-width:96vw;max-height:88vh;object-fit:contain;border-radius:4px;transition:transform .2s ease}}
+.bar{{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:6px;padding:8px 14px;background:rgba(255,255,255,0.08);border-radius:10px;backdrop-filter:blur(8px)}}
+button{{padding:7px 14px;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;transition:background .15s}}
+.btn-primary{{background:#6366f1;color:#fff}}.btn-primary:hover{{background:#5558e3}}
+.btn-ghost{{background:rgba(255,255,255,0.08);color:#aaa;border:1px solid rgba(255,255,255,0.1)}}.btn-ghost:hover{{background:rgba(255,255,255,0.15);color:#fff}}
+.info{{position:fixed;top:16px;right:16px;background:rgba(0,0,0,0.7);padding:10px 14px;border-radius:8px;font-size:11px;line-height:1.6;display:none;backdrop-filter:blur(8px);max-width:200px}}
+.info.show{{display:block}}
+.zoom-label{{position:fixed;top:16px;left:16px;background:rgba(0,0,0,0.6);padding:4px 10px;border-radius:6px;font-size:11px;display:none}}
+.zoom-label.show{{display:block}}
+</style></head>
 <body>
-<img id="iv-img" src="{}" alt="preview" />
+<div id="img-wrap"><img id="iv-img" src="{}" alt="preview" /></div>
+<div class="zoom-label" id="zoomLabel">100%</div>
+<div class="info" id="infoPanel"></div>
 <div class="bar">
-  <button class="btn-copy" id="copyBtn" onclick="doCopy()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> 复制图片</button>
-  <button class="btn-close" onclick="window.close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>关闭</button>
-</div><script>function doCopy(){{var i=document.getElementById("iv-img"),c=document.createElement("canvas");c.width=i.naturalWidth;c.height=i.naturalHeight;c.getContext("2d").drawImage(i,0,0);c.toBlob(function(b){{navigator.clipboard.write([new ClipboardItem({{"image/png":b}})]).then(function(){{document.getElementById("copyBtn").innerHTML="✅ 已复制";setTimeout(function(){{document.getElementById("copyBtn").innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> 复制图ǔ7'}},1500)}},function(e){{alert('复制失败:'+e)}}}},'image/png')}}<\/script></body></html>"#,
+  <button class="btn-ghost" onclick="doZoom(-0.25)" title="zoom out">-</button>
+  <button class="btn-ghost" onclick="doZoom(0)" title="reset" style="min-width:48px" id="zoomBtn">100%</button>
+  <button class="btn-ghost" onclick="doZoom(0.25)" title="zoom in">+</button>
+  <button class="btn-ghost" onclick="doRotate(-90)" title="rotate left">&#x21B6;</button>
+  <button class="btn-ghost" onclick="doRotate(90)" title="rotate right">&#x21B7;</button>
+  <button class="btn-ghost" onclick="toggleInfo()" title="info">i</button>
+  <button class="btn-primary" id="copyBtn" onclick="doCopy()">Copy</button>
+  <button class="btn-ghost" onclick="window.close()">Close</button>
+</div>
+<script>
+var zoom=1,rot=0,img=document.getElementById("iv-img");
+function applyTransform(){{
+  document.getElementById("img-wrap").style.transform="scale("+zoom+") rotate("+rot+"deg)";
+  var l=document.getElementById("zoomLabel"),b=document.getElementById("zoomBtn"),pct=Math.round(zoom*100)+"%";
+  b.textContent=pct;
+  if(zoom!==1||rot!==0){{l.textContent=pct;l.classList.add("show")}}else l.classList.remove("show")
+}}
+function doZoom(d){{if(d===0)zoom=1;else zoom=Math.max(0.25,Math.min(4,zoom+d));applyTransform()}}
+function doRotate(d){{rot=(rot+d)%360;applyTransform()}}
+img.addEventListener("wheel",function(e){{e.preventDefault();doZoom(e.deltaY<0?0.1:-0.1)}});
+function toggleInfo(){{
+  var p=document.getElementById("infoPanel");
+  if(p.classList.contains("show")){{p.classList.remove("show");return}}
+  var w=img.naturalWidth,h=img.naturalHeight,sizeStr="";
+  try{{var bytes=atob(img.src.split(",")[1]).length;sizeStr=(bytes>1048576?(bytes/1048576).toFixed(1)+" MB":(bytes/1024).toFixed(0)+" KB")}}catch{{}}
+  p.innerHTML="<b>"+({{}}||"image").replace(/</g,"&lt;")+"</b><br>"+w+" x "+h+(sizeStr?"<br>"+sizeStr:"")+(zoom!==1?"<br>Zoom: "+Math.round(zoom*100)+"%":"");
+  p.classList.add("show")
+}}
+function doCopy(){{
+  var c=document.createElement("canvas");
+  c.width=img.naturalWidth;c.height=img.naturalHeight;
+  c.getContext("2d").drawImage(img,0,0);
+  c.toBlob(function(b){{
+    navigator.clipboard.write([new ClipboardItem({{"image/png":b}})]).then(function(){{
+      document.getElementById("copyBtn").textContent="Copied!";
+      setTimeout(function(){{document.getElementById("copyBtn").textContent="Copy"}},1500)
+    }},function(e){{alert("Copy failed: "+e)}})
+  }},"image/png")
+}}
+</script></body></html>"#,
         escaped_url
     );
 
@@ -979,6 +1098,7 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
 
     let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
     let quick_paste_item = MenuItem::with_id(app, "quick_paste", "快速粘贴", true, None::<&str>)?;
+    let toggle_theme_item = MenuItem::with_id(app, "toggle_theme", "切换深色/浅色", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
     let check_update_item = MenuItem::with_id(app, "check_update", "检查更新", true, None::<&str>)?;
     let hide_item = MenuItem::with_id(app, "hide", "隐藏到托盘", true, None::<&str>)?;
@@ -988,7 +1108,7 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     let sync_status_item = MenuItem::with_id(app, "sync_status", "● 已同步", false, None::<&str>)?;
 
     let menu = Menu::new(app)?;
-    menu.append_items(&[&show_item, &quick_paste_item, &settings_item, &check_update_item, &sync_status_item, &hide_item, &quit_item])?;
+    menu.append_items(&[&show_item, &quick_paste_item, &toggle_theme_item, &settings_item, &check_update_item, &sync_status_item, &hide_item, &quit_item])?;
 
     let mut builder = TrayIconBuilder::new()
         .menu(&menu)
@@ -1004,6 +1124,13 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
                     // Use the dedicated quick-paste floating popup
                     ensure_quick_paste_window(&app);
                     eprintln!("[Tray] -> toggle QuickPaste popup");
+                }
+                "toggle_theme" => {
+                    if let Some(window) = ensure_window_visible(&app) {
+                        // 调用前端 useTheme().toggleMode()
+                        let _ = window.eval("if(window.__toggleTheme) window.__toggleTheme()");
+                        eprintln!("[Tray] -> toggle theme");
+                    }
                 }
                 "settings" => {
                     if let Some(window) = ensure_window_visible(&app) {
@@ -1110,8 +1237,8 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
 
-    // Position: centered horizontally, upper-center vertically (≈ 1/3 from top).
-    // Calculated against EXPANDED size so the final card lands at upper-center.
+    // Position: centered horizontally, upper-center vertically.
+    // Use collapsed height (58px) for initial position to avoid flickering.
     let (qp_x, qp_y) = if let Some(Some(monitor)) = std::result::Result::ok(app.primary_monitor()) {
         let sz = monitor.size();
         let pos = monitor.position();
@@ -1130,6 +1257,7 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
     )
     .title("ClipSync - Quick Paste")
     .inner_size(660.0, 58.0)
+    .position(qp_x, qp_y)
     .decorations(false)
     .always_on_top(true)
     .resizable(true)
@@ -1137,9 +1265,8 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
     .build()
     {
         Ok(_) => {
-            eprintln!("[QuickPaste] Floating window created (centered upper)");
+            eprintln!("[QuickPaste] Floating window created at ({}, {})", qp_x, qp_y);
             if let Some(w) = app.get_webview_window("quick-paste") {
-                let _ = w.set_position(tauri::LogicalPosition::new(qp_x, qp_y));
                 let _ = w.show();
                 let _ = w.set_focus();
             }
@@ -1177,6 +1304,8 @@ pub fn run() {
             get_clipboard_content,
             set_clipboard_content,
             set_clipboard_files,
+            read_file_content,
+            read_file_content_base64,
             copy_local_files,
             get_clipboard_files,
             save_and_copy_file,
@@ -1196,6 +1325,8 @@ pub fn run() {
             open_image_viewer,
             set_titlebar_mode,
             resize_qp_window,
+            start_clipboard_monitor,
+            stop_clipboard_monitor,
         ])
         .setup(|app| {
             // 设置系统托盘
@@ -1323,8 +1454,17 @@ pub fn run() {
                 }
             }
 
-            // 剪贴板监控：由前端 invoke 轮询驱动
-            eprintln!("[Setup] Clipboard monitoring will be driven by frontend polling (invoke)");
+            // 剪贴板监控：原生 Rust 线程轮询，通过 Tauri 事件推送到前端
+            {
+                let monitor_state = app.state::<AppState>();
+                let mut is_monitoring = monitor_state.is_monitoring.lock().unwrap();
+                *is_monitoring = true;
+                let handle = app.handle().clone();
+                thread::spawn(move || {
+                    clipboard_monitor::start_monitor(handle);
+                });
+                eprintln!("[Setup] Native clipboard monitor started (event-driven)");
+            }
 
             Ok(())
         })

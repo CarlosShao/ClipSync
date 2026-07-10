@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, watch, reactive, nextTick } from 'vue'
+import { ref, computed, watch, reactive, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
 import { QrCode, MessageCircle, Landmark } from 'lucide-vue-next'
-import { api } from '@/api/client'
+import Badge from '@/components/ui/badge/Badge.vue'
+import { api, apiBlob } from '@/api/client'
 import { useConfigStore } from '@/stores/configStore'
 import { useDevice } from '@/composables/useDevice'
 import { initPairing, redeemPairing } from '@/api/device'
@@ -16,7 +17,114 @@ import ModalDialog from '@/components/ui/ModalDialog.vue'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
-import { Pencil, Monitor, Smartphone, FileText, CircleCheck, Download, ZoomIn, ZoomOut } from 'lucide-vue-next'
+import { Pencil, Monitor, Smartphone, FileText, CircleCheck, Download, ZoomIn, ZoomOut, RotateCcw, RotateCw } from 'lucide-vue-next'
+import { marked } from 'marked'
+import hljs from 'highlight.js'
+import mammoth from 'mammoth'
+import * as pdfjsLib from 'pdfjs-dist'
+
+// Set PDF.js worker source
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href
+
+// Configure marked
+marked.setOptions({
+  gfm: true,
+  breaks: false,
+})
+
+/** Render markdown to HTML with heading anchors for TOC */
+function renderMarkdown(text: string): string {
+  if (!text) return ''
+  try {
+    // Custom renderer: add id to headings for TOC anchor links
+    const renderer = new marked.Renderer()
+    renderer.heading = function({ text, depth }: { text: string; depth: number }) {
+      const raw = String(text).replace(/<[^>]+>/g, '')
+      const id = raw.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '')
+      return `<h${depth} id="${id}">${text}</h${depth}>`
+    }
+    return marked.parse(text, { renderer }) as string
+  } catch (e) {
+    console.error('[Preview] marked.parse error:', e)
+    return text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+  }
+}
+
+/** Detect file type from filename extension */
+function detectFileType(filename: string): 'markdown' | 'code' | 'text' | 'docx' | 'pdf' | 'image' | 'unsupported' {
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  if (['md', 'markdown', 'mdx'].includes(ext)) return 'markdown'
+  if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'cs',
+       'html', 'css', 'scss', 'less', 'json', 'yaml', 'yml', 'xml', 'toml',
+       'sql', 'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd', 'rb', 'php', 'swift',
+       'kt', 'scala', 'r', 'lua', 'vim', 'dockerfile', 'makefile', 'ini', 'env',
+       'vue', 'svelte'].includes(ext)) return 'code'
+  if (['txt', 'log', 'csv', 'tsv', 'cfg', 'conf', 'properties'].includes(ext)) return 'text'
+  if (['docx'].includes(ext)) return 'docx'
+  if (['pdf'].includes(ext)) return 'pdf'
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'tiff'].includes(ext)) return 'image'
+  return 'unsupported'
+}
+
+/** Get language name for highlight.js from file extension */
+function getLangFromExt(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  const map: Record<string, string> = {
+    js: 'javascript', ts: 'typescript', jsx: 'javascript', tsx: 'typescript',
+    py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
+    c: 'c', cpp: 'cpp', h: 'c', cs: 'csharp',
+    html: 'html', css: 'css', scss: 'scss', less: 'less',
+    json: 'json', yaml: 'yaml', yml: 'yaml', xml: 'xml', toml: 'ini',
+    sql: 'sql', sh: 'bash', bash: 'bash', zsh: 'bash',
+    php: 'php', swift: 'swift', kt: 'kotlin', scala: 'scala',
+    r: 'r', lua: 'lua', vue: 'html', svelte: 'html',
+    dockerfile: 'dockerfile', makefile: 'makefile',
+    ini: 'ini', env: 'bash', bat: 'batch', cmd: 'batch', ps1: 'powershell',
+  }
+  return map[ext] || ext
+}
+
+/** Auto-detect language from content (fallback when no filename) */
+function detectLangFromContent(content: string): string {
+  const trimmed = content.trim()
+  if (/^\s*[{[]/.test(trimmed) && /"\w+"/.test(trimmed)) return 'json'
+  if (/^\s*<\?xml/.test(trimmed)) return 'xml'
+  if (/^\s*<!DOCTYPE|<html/i.test(trimmed)) return 'html'
+  if (/^\s*import\s/.test(trimmed) || /^\s*from\s+\w+\s+import/.test(trimmed)) return 'python'
+  if (/^\s*(const|let|var|function|class|export|import)\s/.test(trimmed)) return 'javascript'
+  if (/^\s*(def|class|import|from)\s/.test(trimmed)) return 'python'
+  if (/^\s*(public|private|protected)\s/.test(trimmed)) return 'java'
+  if (/^\s*#include/.test(trimmed)) return 'c'
+  if (/^\s*(fn|let|mut|use|pub)\s/.test(trimmed)) return 'rust'
+  if (/^\s*(func|package|import)\s/.test(trimmed)) return 'go'
+  return 'plaintext'
+}
+
+/** Extract headings from markdown for TOC — skips code blocks */
+interface TocItem { id: string; text: string; depth: number }
+function extractToc(markdown: string): TocItem[] {
+  const items: TocItem[] = []
+  const lines = markdown.split('\n')
+  let inCodeBlock = false
+  for (const line of lines) {
+    // Track fenced code blocks (``` or ~~~)
+    if (/^```/.test(line) || /^~~~/.test(line)) {
+      inCodeBlock = !inCodeBlock
+      continue
+    }
+    if (inCodeBlock) continue
+    // Skip indented lines (likely code)
+    if (/^\s{4,}/.test(line)) continue
+    const match = line.match(/^(#{1,6})\s+(.+)$/)
+    if (match) {
+      const depth = match[1].length
+      const text = match[2].replace(/[*_`]/g, '')
+      const id = text.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '')
+      items.push({ id, text, depth })
+    }
+  }
+  return items
+}
 
 const props = defineProps<{
   showModalType: string
@@ -24,6 +132,7 @@ const props = defineProps<{
   previewItem?: any
   previewType?: string
   confirmMessage?: string
+  versionItemId?: string
 }>()
 const emit = defineEmits<{
   'close-modal': []
@@ -42,8 +151,19 @@ watch(() => props.showModalType, (type) => {
     stopScan()
   }
   if (type === 'sessions') loadSessions()
+  if (type === 'billing') loadInvoices()
   if (type === 'notifications') loadPreferencesInto(secNotif)
 })
+
+// Load file content when preview item changes
+watch(() => props.previewItem, (item) => {
+  if (!item) return
+  if (props.previewType === 'file') {
+    loadFileContent(item)
+  } else if (props.previewType === 'text') {
+    setTextContent(item)
+  }
+}, { immediate: true })
 
 const { t } = useI18n()
 const toast = useToast()
@@ -53,6 +173,11 @@ const { savePreference, loadPreferencesInto, PREF_TYPE_BY_KEY } = useNotificatio
 // Plan selection state (for pricing → payment flow)
 const selectedPlan = ref<{ id: string; name: string; price: number } | null>(null)
 const paymentSending = ref(false)
+const paymentResult = ref<{ success: boolean; message: string } | null>(null)
+
+// Invoice list
+const invoices = ref<any[]>([])
+const loadingInvoices = ref(false)
 
 // Forgot password state
 const fpStep = ref(1)
@@ -126,10 +251,11 @@ async function downloadImage() {
   toast.show(t('img_saved'), 'success')
 }
 
-// ===== Image Preview Zoom + Pan =====
+// ===== Image Preview Zoom + Pan + Rotate =====
 const imgZoom = ref(1)
 const imgPanX = ref(0)
 const imgPanY = ref(0)
+const imgRotate = ref(0)
 const IMG_ZOOM_MIN = 0.5
 const IMG_ZOOM_MAX = 4
 const IMG_ZOOM_STEP = 0.3
@@ -141,7 +267,9 @@ let imgDragStartY = 0
 let imgPanStartX = 0
 let imgPanStartY = 0
 
-function resetImgZoom() { imgZoom.value = 1; imgPanX.value = 0; imgPanY.value = 0 }
+function resetImgZoom() { imgZoom.value = 1; imgPanX.value = 0; imgPanY.value = 0; imgRotate.value = 0 }
+function rotateLeft() { imgRotate.value = (imgRotate.value - 90) % 360 }
+function rotateRight() { imgRotate.value = (imgRotate.value + 90) % 360 }
 function zoomIn() {
   const next = Math.min(IMG_ZOOM_MAX, imgZoom.value + IMG_ZOOM_STEP)
   if (Math.abs(next - imgZoom.value) > 0.01) imgZoom.value = next
@@ -178,6 +306,287 @@ function onImgPointerMove(e: PointerEvent) {
 }
 function onImgPointerUp() {
   isImgDragging = false
+}
+
+/** Scroll to a heading in the markdown preview */
+function scrollToHeading(id: string) {
+  nextTick(() => {
+    const el = document.getElementById(id)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+// ===== Document Preview =====
+const DOC_PREVIEW_MAX_LINES = 500 // Show first 500 lines for large files
+
+function detectDocType(content: string, filename?: string): string {
+  // Always prioritize filename extension if available
+  if (filename) {
+    const ext = filename.split('.').pop()?.toLowerCase() || ''
+    if (['md', 'markdown', 'mdx'].includes(ext)) return 'Markdown'
+    if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'cs',
+         'html', 'css', 'scss', 'less', 'json', 'yaml', 'yml', 'xml', 'toml',
+         'sql', 'sh', 'bash', 'rb', 'php', 'swift', 'kt', 'scala', 'r', 'lua',
+         'vue', 'svelte', 'dockerfile', 'makefile', 'ini', 'env'].includes(ext)) return 'Code'
+    if (['txt', 'log', 'csv', 'tsv', 'cfg', 'conf', 'properties'].includes(ext)) return 'Text'
+    // Known but unsupported extensions (docx, pdf, image handled separately)
+    if (['doc', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar', '7z', 'apk', 'exe', 'msi', 'dmg', 'iso'].includes(ext)) return 'Unsupported'
+  }
+  // Fallback: content-based detection (only when no filename or unknown extension)
+  if (!content) return 'Text'
+  const trimmed = content.trim()
+  if (/^#{1,6}\s/.test(trimmed) || /\*\*.*\*\*/.test(trimmed) || /^\s*[-*+]\s/.test(trimmed) || /^\s*\d+\.\s/.test(trimmed) || /```/.test(trimmed)) return 'Markdown'
+  if (/\b(function|const|let|var|class|import|export|return|if|for|while|async|await)\s/.test(trimmed) ||
+      /[{}\[\]];?\s*$/.test(trimmed) || /^\s*(def |class |import |from |public |private )/.test(trimmed) ||
+      /=>\s*[{(]/.test(trimmed) || /^\s*<\/?[a-z][\w-]*(?:\s[^>]*)?\/?>/i.test(trimmed)) return 'Code'
+  return 'Text'
+}
+
+function isCodeContent(content: string, filename?: string): boolean {
+  return detectDocType(content, filename) === 'Code'
+}
+
+const previewContentLines = computed(() => {
+  if (!previewContent.value) return []
+  const lines = previewContent.value.split('\n')
+  return lines.slice(0, DOC_PREVIEW_MAX_LINES)
+})
+
+const isTruncated = computed(() => {
+  return (previewContent.value?.split('\n').length || 0) > DOC_PREVIEW_MAX_LINES
+})
+
+function formatDocSize(chars: number): string {
+  if (chars < 1024) return `${chars} chars`
+  return `${(chars / 1024).toFixed(1)} KB`
+}
+
+// ===== File content loading for file-type items =====
+const fileContentLoading = ref(false)
+const previewContent = ref('')
+const previewFileName = ref('')
+const previewToc = ref<TocItem[]>([])
+const previewImageDataUrl = ref('') // for image file preview
+
+/** Load file content from server for file-type preview */
+async function loadFileContent(item: any) {
+  if (!item?.id) return
+  // Parse filename from content — could be JSON metadata or plain filename
+  try {
+    const meta = JSON.parse(item.content)
+    previewFileName.value = meta.name || item.content.slice(0, 50)
+  } catch {
+    // item.content is a plain filename string (e.g. "SKILL.md")
+    previewFileName.value = item.content || 'Untitled'
+  }
+
+  const fileType = detectFileType(previewFileName.value)
+  const docType = detectDocType('', previewFileName.value)
+
+  // Reset state
+  previewContent.value = ''
+  previewToc.value = []
+  docxHtml.value = ''
+  pdfPages.value = []
+  previewImageDataUrl.value = ''
+  // Reset image zoom/rotate for file image preview
+  imgZoom.value = 1; imgRotate.value = 0; imgPanX.value = 0; imgPanY.value = 0
+
+  // For unsupported types (except image/docx/pdf handled below), show message immediately
+  if (docType === 'Unsupported' && fileType !== 'docx' && fileType !== 'pdf' && fileType !== 'image') {
+    return
+  }
+
+  fileContentLoading.value = true
+  try {
+    if (fileType === 'image') {
+      // Image files: read via Tauri as base64, convert to data URL
+      try {
+        // Get file path from API contentEncrypted (path array or direct path)
+        const res = await api('GET', `/api/clipboard/${item.id}`)
+        let filePath = ''
+        if (res.ok && res.data?.contentEncrypted) {
+          try {
+            const parsed = JSON.parse(res.data.contentEncrypted)
+            if (Array.isArray(parsed) && parsed[0]) filePath = parsed[0]
+          } catch {
+            if (res.data.contentEncrypted.includes('\\') || res.data.contentEncrypted.includes('/')) {
+              filePath = res.data.contentEncrypted
+            }
+          }
+        }
+        if (filePath) {
+          const { invoke } = await import('@tauri-apps/api/core')
+          const base64: string = await invoke('read_file_content_base64', { path: filePath })
+          if (base64) {
+            const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
+            const mimeMap: Record<string, string> = { png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', webp:'image/webp', bmp:'image/bmp', svg:'image/svg+xml', ico:'image/x-icon', tiff:'image/tiff' }
+            previewImageDataUrl.value = `data:${mimeMap[ext] || 'image/png'};base64,${base64}`
+          }
+        }
+      } catch (e) {
+        console.error('[Preview] Image file load error:', e)
+      }
+    } else if (fileType === 'docx' || fileType === 'pdf') {
+      // Binary files: try download endpoint first, fallback to Tauri for path-based content
+      let loaded = false
+      // Check if content_encrypted is a file path (clipboard monitor uploads)
+      const apiRes = await api('GET', `/api/clipboard/${item.id}`)
+      let filePath = ''
+      if (apiRes.ok && apiRes.data?.contentEncrypted) {
+        try {
+          const parsed = JSON.parse(apiRes.data.contentEncrypted)
+          if (Array.isArray(parsed) && parsed[0]) filePath = parsed[0]
+        } catch {
+          if (apiRes.data.contentEncrypted.includes('\\') || apiRes.data.contentEncrypted.includes('/')) {
+            filePath = apiRes.data.contentEncrypted
+          }
+        }
+      }
+      // If it's a local file path, read via Tauri
+      if (filePath) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          const base64: string = await invoke('read_file_content_base64', { path: filePath })
+          if (base64) {
+            const arrayBuffer = Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer
+            if (fileType === 'docx') await renderDocx(arrayBuffer)
+            else if (fileType === 'pdf') await renderPdf(arrayBuffer)
+            loaded = true
+          }
+        } catch { /* fallback to download endpoint */ }
+      }
+      // Fallback: download from server
+      if (!loaded) {
+        const blobRes = await apiBlob('GET', `/api/media/${item.id}/download`)
+        if (blobRes && blobRes.ok) {
+          const arrayBuffer = await blobRes.arrayBuffer()
+          if (fileType === 'docx') await renderDocx(arrayBuffer)
+          else if (fileType === 'pdf') await renderPdf(arrayBuffer)
+        } else {
+          previewContent.value = '[Unable to load file]'
+        }
+      }
+    } else {
+      // Text-based files: fetch from clipboard endpoint
+      const res = await api('GET', `/api/clipboard/${item.id}`)
+      if (res.ok && res.data?.contentEncrypted) {
+        let content = res.data.contentEncrypted
+        // If content is a file path array (old uploads), read actual file via Tauri
+        try {
+          const parsed = JSON.parse(content)
+          if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string' && parsed[0].includes('\\')) {
+            // Path array — try reading actual file content
+            try {
+              const fileContent = await tauri.readFileContent(parsed[0])
+              if (fileContent) content = fileContent
+            } catch { /* file not readable */ }
+          }
+        } catch { /* not JSON, use as-is */ }
+        previewContent.value = content
+        if (docType === 'Markdown') {
+          previewToc.value = extractToc(content)
+        }
+      } else {
+        previewContent.value = '[Unable to load file content]'
+      }
+    }
+  } catch {
+    previewContent.value = '[Failed to load file content]'
+  }
+  fileContentLoading.value = false
+}
+
+/** Set content directly for text-type items (already have content) */
+function setTextContent(item: any) {
+  previewContent.value = item?.content || ''
+  previewFileName.value = ''
+  previewToc.value = []
+  const docType = detectDocType(previewContent.value)
+  if (docType === 'Markdown') {
+    previewToc.value = extractToc(previewContent.value)
+  }
+}
+
+/** Render code with highlight.js */
+function renderCode(content: string, filename?: string): string {
+  const lang = filename ? getLangFromExt(filename) : detectLangFromContent(content)
+  try {
+    if (lang && lang !== 'plaintext' && hljs.getLanguage(lang)) {
+      return hljs.highlight(content, { language: lang }).value
+    }
+    return hljs.highlightAuto(content).value
+  } catch {
+    return content.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+}
+
+// ===== Word (.docx) rendering =====
+const docxHtml = ref('')
+const docxLoading = ref(false)
+
+async function renderDocx(arrayBuffer: ArrayBuffer) {
+  docxLoading.value = true
+  try {
+    const result = await mammoth.convertToHtml({ arrayBuffer })
+    docxHtml.value = result.value || '<p style="color:var(--text-tertiary)">Document is empty</p>'
+    if (result.messages.length > 0) {
+      console.warn('[Preview] mammoth messages:', result.messages)
+    }
+  } catch (e) {
+    console.error('[Preview] mammoth error:', e)
+    docxHtml.value = '<p style="color:var(--danger)">Failed to render Word document</p>'
+  }
+  docxLoading.value = false
+}
+
+// ===== PDF rendering =====
+const pdfPages = ref<{ num: number; dataUrl: string }[]>([])
+const pdfLoading = ref(false)
+const pdfTotalPages = ref(0)
+
+async function renderPdf(arrayBuffer: ArrayBuffer) {
+  pdfLoading.value = true
+  pdfPages.value = []
+  try {
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    pdfTotalPages.value = pdf.numPages
+    const maxPages = Math.min(pdf.numPages, 20) // Render first 20 pages max
+    for (let i = 1; i <= maxPages; i++) {
+      const page = await pdf.getPage(i)
+      const scale = 1.5
+      const viewport = page.getViewport({ scale })
+      const canvas = document.createElement('canvas')
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+      const ctx = canvas.getContext('2d')!
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise
+      pdfPages.value.push({ num: i, dataUrl: canvas.toDataURL('image/png') })
+    }
+  } catch (e) {
+    console.error('[Preview] PDF render error:', e)
+  }
+  pdfLoading.value = false
+}
+
+/** Convert base64 data URL or ArrayBuffer to ArrayBuffer for docx/pdf */
+async function contentToArrayBuffer(content: string): Promise<ArrayBuffer | null> {
+  // If content is a base64 data URL
+  if (content.startsWith('data:')) {
+    const resp = await fetch(content)
+    return await resp.arrayBuffer()
+  }
+  // If content is base64 string
+  if (/^[A-Za-z0-9+/]/.test(content) && content.length % 4 === 0) {
+    try {
+      const binary = atob(content)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      return bytes.buffer
+    } catch { /* not base64 */ }
+  }
+  // If content is raw text, encode as UTF-8
+  return new TextEncoder().encode(content).buffer
 }
 
 function handleCloseForgot() {
@@ -447,19 +856,32 @@ async function selectPaymentMethod(method: string) {
   if (!p) return
   paymentSending.value = true
   try {
-    toast.show(t('sub_processing'), 'info')
     const res = await api('POST', '/api/subscriptions/subscribe', { planId: p.id, billingCycle: 'monthly' })
     if (res.ok) {
-      toast.show(t('sub_success', { n: p.name }), 'success')
-      emit('close-modal')
+      paymentResult.value = { success: true, message: t('sub_success', { n: p.name }) }
+      emit('switch-modal', 'payment-result')
     } else {
-      toast.show(t('sub_fail') + (res.error || ''), 'error')
+      paymentResult.value = { success: false, message: res.error || t('sub_fail') }
+      emit('switch-modal', 'payment-result')
     }
   } catch (e: any) {
-    toast.show(t('sub_fail') + String(e), 'error')
+    paymentResult.value = { success: false, message: String(e) }
+    emit('switch-modal', 'payment-result')
   } finally {
     paymentSending.value = false
   }
+}
+
+// Load invoices from server
+async function loadInvoices() {
+  loadingInvoices.value = true
+  try {
+    const res = await api('GET', '/api/invoices')
+    if (res.ok && Array.isArray(res.data?.invoices)) {
+      invoices.value = res.data.invoices
+    }
+  } catch { /* ignore */ }
+  loadingInvoices.value = false
 }
 
 // ===== 二维码扫码配对（手动同步兜底方案）=====
@@ -658,6 +1080,74 @@ async function revokeSession(sessionId: string) {
   }
   revokingId.value = null
 }
+
+// ===== Version History =====
+const versionItems = ref<any[]>([])
+const loadingVersions = ref(false)
+const restoringId = ref<string | null>(null)
+const latestVersionNum = ref(0)
+
+async function loadVersions(clipboardItemId: string) {
+  loadingVersions.value = true
+  versionItems.value = []
+  try {
+    const res = await api('GET', `/api/versions/${clipboardItemId}`)
+    if (res.ok && Array.isArray(res.data?.versions)) {
+      versionItems.value = res.data.versions
+      latestVersionNum.value = res.data.versions[0]?.versionNumber || 0
+    }
+  } catch { /* ignore */ }
+  loadingVersions.value = false
+}
+
+async function restoreVersion(versionId: string) {
+  restoringId.value = versionId
+  try {
+    const res = await api('POST', `/api/versions/restore/${versionId}`)
+    if (res.ok) {
+      toast.show(t('ver_restored'), 'success')
+      // Reload to reflect the new version
+      if (props.versionItemId) await loadVersions(props.versionItemId)
+    } else {
+      toast.show(res.error || 'Failed to restore', 'error')
+    }
+  } catch (e: any) {
+    toast.show(String(e), 'error')
+  }
+  restoringId.value = null
+}
+
+function formatVersionTime(ts: string): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const now = Date.now()
+  const diff = now - d.getTime()
+  if (diff < 60000) return t('just_now')
+  if (diff < 3600000) return Math.floor(diff / 60000) + t('m_ago')
+  if (diff < 86400000) return Math.floor(diff / 3600000) + t('h_ago')
+  return d.toLocaleDateString()
+}
+
+// ===== Feedback =====
+const fbForm = reactive({ type: 'bug', description: '', contact: '' })
+const fbSending = ref(false)
+const fbSent = ref(false)
+const fbTypes = [
+  { value: 'bug', label: 'Bug' },
+  { value: 'feature', label: t('fb_type_feature') },
+  { value: 'improvement', label: t('fb_type_improvement') },
+  { value: 'other', label: t('fb_type_other') },
+]
+async function handleFeedbackSubmit() {
+  if (!fbForm.description.trim()) return
+  fbSending.value = true
+  try {
+    // TODO: POST /api/feedback — requires backend endpoint + email notification service
+    // For now, show a message that the feature is not yet connected
+    toast.show(t('fb_not_available') || 'Feedback service not yet connected. Please email us directly.', 'info')
+    emit('close-modal')
+  } finally { fbSending.value = false }
+}
 </script>
 
 <template>
@@ -716,7 +1206,7 @@ async function revokeSession(sessionId: string) {
     <div class="sec-list">
       <div class="sec-item"><div><div class="sec-label">{{ t('sec_2fa') }}</div><div class="sec-hint">{{ t('sec_2fa_h') }}</div></div><Switch :model-value="secNotif.twoFA" @update:model-value="(v: boolean) => saveSecNotif({ twoFA: v })" /></div>
       <div class="sec-item"><div><div class="sec-label">{{ t('sec_login_notif') }}</div><div class="sec-hint">{{ t('sec_login_notif_h') }}</div></div><Switch :model-value="secNotif.loginNotification" @update:model-value="(v: boolean) => saveSecNotif({ loginNotification: v })" /></div>
-      <div class="sec-item"><div><div class="sec-label">{{ t('sec_e2ee') }}</div><div class="sec-hint">{{ t('sec_e2ee_h') }}</div></div><Switch :model-value="true" disabled /></div>
+      <div class="sec-item"><div><div class="sec-label">{{ t('sec_e2ee') }}</div><div class="sec-hint">{{ t('sec_e2ee_pending') }}</div></div><Switch :model-value="false" disabled /></div>
     </div>
   </ModalDialog>
 
@@ -745,6 +1235,18 @@ async function revokeSession(sessionId: string) {
     </div>
   </ModalDialog>
 
+  <!-- Payment Result -->
+  <ModalDialog :open="showModalType === 'payment-result'" :title="paymentResult?.success ? t('sub_result_success') : t('sub_result_fail')" max-width="400px" @close="emit('close-modal')">
+    <div v-if="paymentResult" class="pay-result">
+      <div class="pay-result-icon" :class="paymentResult.success ? 'success' : 'fail'">
+        <CircleCheck v-if="paymentResult.success" :size="48" />
+        <span v-else style="font-size:48px">!</span>
+      </div>
+      <p class="pay-result-msg">{{ paymentResult.message }}</p>
+      <Button class="w-full" @click="emit('close-modal')">{{ t('confirm_t') }}</Button>
+    </div>
+  </ModalDialog>
+
   <!-- Cancel Subscription -->
   <ModalDialog :open="showModalType === 'cancel-subscription'" :title="t('sub_cancel')" max-width="420px" @close="emit('close-modal')">
     <div class="modal-center-pad20">
@@ -753,12 +1255,27 @@ async function revokeSession(sessionId: string) {
     </div>
   </ModalDialog>
 
-  <!-- Billing -->
+  <!-- Billing / Invoices -->
   <ModalDialog :open="showModalType === 'billing'" :title="t('modal_billing')" max-width="480px" @close="emit('close-modal')">
-    <div class="billing-empty-box">
+    <div v-if="loadingInvoices" class="modal-state">{{ t('ver_loading') }}</div>
+    <div v-else-if="invoices.length === 0" class="billing-empty-box">
       <FileText :size="48" class="billing-ico" />
       <h3 class="billing-title">{{ t('billing_empty') }}</h3>
       <p class="modal-desc">{{ t('billing_empty_desc') }}</p>
+    </div>
+    <div v-else class="invoice-list">
+      <div v-for="inv in invoices" :key="inv.id" class="invoice-item">
+        <div class="invoice-info">
+          <div class="invoice-no">{{ inv.invoice_no || inv.id }}</div>
+          <div class="invoice-date">{{ inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '' }}</div>
+        </div>
+        <div class="invoice-right">
+          <span class="invoice-amount">¥{{ inv.amount || 0 }}</span>
+          <Button variant="ghost" size="sm" @click="toast.show(t('fb_not_available'), 'info')">
+            <Download :size="14" />
+          </Button>
+        </div>
+      </div>
     </div>
   </ModalDialog>
 
@@ -783,6 +1300,31 @@ async function revokeSession(sessionId: string) {
         <div class="upd-changelog-h">{{ t('upd_whatsnew') }}</div>
         <div>• {{ t('upd_changelog_1') }}</div><div>• {{ t('upd_changelog_2') }}</div><div>• {{ t('upd_changelog_3') }}</div><div>• {{ t('upd_changelog_4') }}</div>
       </div>
+    </div>
+  </ModalDialog>
+
+  <!-- Feedback -->
+  <ModalDialog :open="showModalType === 'feedback'" :title="t('fb_title')" max-width="480px" @close="emit('close-modal')">
+    <div class="fb-form">
+      <div class="fb-field">
+        <label class="fb-label">{{ t('fb_type') }}</label>
+        <div class="fb-type-row">
+          <button v-for="ft in fbTypes" :key="ft.value" class="fb-type-btn" :class="{ active: fbForm.type === ft.value }" @click="fbForm.type = ft.value">{{ ft.label }}</button>
+        </div>
+      </div>
+      <div class="fb-field">
+        <label class="fb-label">{{ t('fb_desc') }}</label>
+        <textarea v-model="fbForm.description" class="fb-textarea" rows="4" :placeholder="t('fb_desc_ph')" maxlength="1000"></textarea>
+        <div class="fb-char-count">{{ fbForm.description.length }}/1000</div>
+      </div>
+      <div class="fb-field">
+        <label class="fb-label">{{ t('fb_contact') }} <span class="fb-optional">({{ t('fb_optional') }})</span></label>
+        <Input v-model="fbForm.contact" type="text" class="fb-input" :placeholder="t('fb_contact_ph')" />
+      </div>
+      <Button class="w-full" :disabled="!fbForm.description.trim() || fbSending" @click="handleFeedbackSubmit">
+        {{ fbSending ? '...' : t('fb_submit') }}
+      </Button>
+      <div v-if="fbSent" class="fb-success">{{ t('fb_sent') }}</div>
     </div>
   </ModalDialog>
 
@@ -836,7 +1378,7 @@ async function revokeSession(sessionId: string) {
       >
         <img
           :src="previewItem.preview || previewItem.content"
-          :style="{ transform: `translate(${imgPanX}px, ${imgPanY}px) scale(${imgZoom})`, transition: isImgDragging ? 'none' : 'transform 0.15s ease', maxWidth: '100%', maxHeight: '380px', objectFit: 'contain', pointerEvents: 'none' }"
+          :style="{ transform: `translate(${imgPanX}px, ${imgPanY}px) scale(${imgZoom}) rotate(${imgRotate}deg)`, transition: isImgDragging ? 'none' : 'transform 0.15s ease', maxWidth: '100%', maxHeight: '380px', objectFit: 'contain', pointerEvents: 'none' }"
           alt=""
           draggable="false"
         />
@@ -851,7 +1393,14 @@ async function revokeSession(sessionId: string) {
           <Button variant="outline" size="icon-sm" @click="zoomIn" :disabled="imgZoom >= IMG_ZOOM_MAX" title="放大">
             <ZoomIn :size="15" />
           </Button>
-          <Button v-if="imgZoom !== 1" variant="ghost" size="sm" class="ml-1" @click="resetImgZoom" title="重置">1:1</Button>
+          <Button v-if="imgZoom !== 1 || imgRotate !== 0" variant="ghost" size="sm" class="ml-1" @click="resetImgZoom" title="重置">1:1</Button>
+          <span class="img-preview-sep" />
+          <Button variant="outline" size="icon-sm" @click="rotateLeft" title="左旋90度">
+            <RotateCcw :size="15" />
+          </Button>
+          <Button variant="outline" size="icon-sm" @click="rotateRight" title="右旋90度">
+            <RotateCw :size="15" />
+          </Button>
         </div>
         <Button variant="outline" size="sm" @click="downloadImage" class="modal-action-btn">
           <Download :size="15" />
@@ -861,9 +1410,97 @@ async function revokeSession(sessionId: string) {
     </div>
   </ModalDialog>
 
-  <!-- Text Detail -->
-  <ModalDialog :open="previewType === 'text'" :title="t('text_detail_title')" max-width="640px" @close="emit('close-preview')">
-    <div v-if="previewItem" class="text-preview-content">{{ previewItem.content }}</div>
+  <!-- Text / Document / File Detail -->
+  <ModalDialog :open="previewType === 'text' || previewType === 'file'" :title="previewType === 'file' ? t('file_preview_title') : t('text_detail_title')" max-width="900px" @close="emit('close-preview')">
+    <div v-if="previewItem" class="doc-preview-wrap">
+      <!-- Content type indicator -->
+      <div class="doc-type-bar">
+        <Badge variant="outline" class="doc-type-badge">{{ detectDocType(previewContent, previewFileName) }}</Badge>
+        <span class="doc-size">{{ formatDocSize(previewContent.length) }}</span>
+      </div>
+
+      <!-- Loading state for file content -->
+      <div v-if="fileContentLoading" class="doc-loading">
+        <div class="doc-loading-spinner" />
+        <span>Loading file content...</span>
+      </div>
+
+      <!-- Image file preview (with zoom/rotate controls like image preview modal) -->
+      <div v-else-if="detectFileType(previewFileName) === 'image' && previewImageDataUrl" class="doc-image-file-preview">
+        <div class="img-zoom-toolbar">
+          <Button variant="ghost" size="icon-sm" @click="zoomOut" :disabled="imgZoom <= IMG_ZOOM_MIN" title="缩小">
+            <ZoomOut :size="15" />
+          </Button>
+          <span class="img-zoom-label">{{ Math.round(imgZoom * 100) }}%</span>
+          <Button variant="ghost" size="icon-sm" @click="zoomIn" :disabled="imgZoom >= IMG_ZOOM_MAX" title="放大">
+            <ZoomIn :size="15" />
+          </Button>
+          <span class="img-preview-sep" />
+          <Button variant="ghost" size="icon-sm" @click="rotateLeft" title="左旋90度">
+            <RotateCcw :size="15" />
+          </Button>
+          <Button variant="ghost" size="icon-sm" @click="rotateRight" title="右旋90度">
+            <RotateCw :size="15" />
+          </Button>
+          <Button v-if="imgZoom !== 1 || imgRotate !== 0" variant="ghost" size="sm" class="ml-1" @click="resetImgZoom" title="重置">1:1</Button>
+        </div>
+        <div class="img-zoom-area"
+          @wheel.prevent="onImgWheel"
+          @pointerdown="onImgPointerDown"
+          @pointermove="onImgPointerMove"
+          @pointerup="onImgPointerUp">
+          <img :src="previewImageDataUrl" :alt="previewFileName"
+            class="doc-image-file-img"
+            :style="{ transform: `scale(${imgZoom}) rotate(${imgRotate}deg) translate(${imgPanX}px, ${imgPanY}px)` }" />
+        </div>
+      </div>
+
+      <!-- Word (.docx) rendering -->
+      <div v-else-if="detectFileType(previewFileName) === 'docx' && docxHtml" class="doc-preview docx-preview markdown-body" v-html="docxHtml"></div>
+
+      <!-- PDF rendering -->
+      <div v-else-if="detectFileType(previewFileName) === 'pdf' && pdfPages.length > 0" class="doc-pdf-wrap">
+        <div v-if="pdfTotalPages > 20" class="doc-pdf-info">Showing 20 of {{ pdfTotalPages }} pages</div>
+        <div v-for="page in pdfPages" :key="page.num" class="doc-pdf-page">
+          <img :src="page.dataUrl" :alt="'Page ' + page.num" class="doc-pdf-img" />
+          <span class="doc-pdf-num">{{ page.num }}</span>
+        </div>
+      </div>
+
+      <!-- Unsupported file type -->
+      <div v-else-if="detectDocType(previewContent, previewFileName) === 'Unsupported' && detectFileType(previewFileName) !== 'docx' && detectFileType(previewFileName) !== 'pdf' && detectFileType(previewFileName) !== 'image'" class="doc-unsupported">
+        <FileText :size="32" style="color:var(--text-tertiary);margin-bottom:8px" />
+        <p>Preview not available for this file type</p>
+      </div>
+
+      <!-- Markdown rendering with TOC -->
+      <div v-else-if="detectDocType(previewContent, previewFileName) === 'Markdown'" class="doc-markdown-layout">
+        <!-- TOC sidebar -->
+        <nav v-if="previewToc.length > 0" class="doc-toc">
+          <div class="doc-toc-title">Table of Contents</div>
+          <a v-for="item in previewToc" :key="item.id" :href="'#' + item.id" class="doc-toc-item"
+             :class="'doc-toc-depth-' + item.depth"
+             @click.prevent="scrollToHeading(item.id)">
+            {{ item.text }}
+          </a>
+        </nav>
+        <!-- Markdown content -->
+        <div class="doc-preview markdown-body doc-markdown-content" v-html="renderMarkdown(previewContent)"></div>
+      </div>
+
+      <!-- Code with line numbers + syntax highlighting -->
+      <div v-else-if="isCodeContent(previewContent, previewFileName)" class="doc-preview code-preview">
+        <div class="code-lines">
+          <span v-for="(_, i) in previewContentLines" :key="i" class="line-num">{{ i + 1 }}</span>
+        </div>
+        <pre class="code-content"><code v-html="renderCode(previewContent, previewFileName)"></code></pre>
+      </div>
+
+      <!-- Plain text -->
+      <div v-else class="doc-preview text-preview">{{ previewContentLines.join('\n') }}</div>
+
+      <div v-if="isTruncated" class="doc-truncated">{{ t('doc_truncated') }}</div>
+    </div>
   </ModalDialog>
 
   <!-- Add Device -->
@@ -933,6 +1570,37 @@ async function revokeSession(sessionId: string) {
       <Button variant="destructive" @click="emit('confirm-action')">{{ t('confirm_t') }}</Button>
     </template>
   </ModalDialog>
+
+  <!-- Version History -->
+  <ModalDialog :open="showModalType === 'versions'" :title="t('modal_versions')" max-width="520px" @close="emit('close-modal')">
+    <div v-if="loadingVersions" class="modal-state">{{ t('ver_loading') }}</div>
+    <div v-else-if="versionItems.length === 0" class="modal-state">{{ t('ver_empty') }}</div>
+    <div v-else class="version-list">
+      <div v-for="(v, vi) in versionItems" :key="v.id" class="version-item">
+        <div class="version-head" @click="v._expanded = !v._expanded" style="cursor:pointer">
+          <span class="version-num">v{{ v.versionNumber }}</span>
+          <span class="version-time">{{ formatVersionTime(v.createdAt) }}</span>
+        </div>
+        <!-- Collapsed: short preview -->
+        <div v-if="!v._expanded" class="version-preview">{{ v.contentPreview || '(empty)' }}</div>
+        <!-- Expanded: full content for diff comparison -->
+        <div v-else class="version-full">
+          <div class="version-full-label">{{ t('ver_current_content') }}</div>
+          <pre class="version-code">{{ v.contentPreview || '(empty)' }}</pre>
+          <div v-if="vi < versionItems.length - 1" class="version-diff-hint">
+            {{ t('ver_diff_hint') }}: v{{ v.versionNumber }} → v{{ versionItems[vi + 1].versionNumber }}
+          </div>
+        </div>
+        <div class="version-foot">
+          <span class="version-device">{{ v.sourceDevice?.name || '' }}</span>
+          <Button v-if="v.versionNumber !== latestVersionNum" variant="ghost" size="sm" class="version-restore-btn" :disabled="restoringId === v.id" @click="restoreVersion(v.id)">
+            {{ restoringId === v.id ? '...' : t('ver_restore') }}
+          </Button>
+          <span v-else class="version-current">{{ t('ver_current') }}</span>
+        </div>
+      </div>
+    </div>
+  </ModalDialog>
 </template>
 
 <style scoped>
@@ -999,6 +1667,7 @@ async function revokeSession(sessionId: string) {
 .img-preview-label { font-weight:500; color:var(--text-secondary); }
 .img-preview-zoom { display:inline-flex; align-items:center; gap:6px; margin-left:auto; }
 .img-zoom-level { min-width:40px; text-align:center; font-size:11px; font-weight:600; color:var(--text-tertiary); font-variant-numeric:tabular-nums; }
+.img-preview-sep { width:1px; height:16px; background:var(--border-default); margin:0 4px; }
 
 /* Shortcut recorder pulse animation */
 @keyframes pulse-border {
@@ -1092,4 +1761,164 @@ async function revokeSession(sessionId: string) {
 
 /* Confirm */
 .confirm-body { font-size:14px; line-height:1.6; }
+
+/* Version History */
+.version-list { display:flex; flex-direction:column; gap:8px; max-height:360px; overflow-y:auto; }
+.version-item { padding:12px; border-radius:var(--radius-md); background:var(--bg-hover); border:1px solid var(--border-subtle); }
+.version-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.version-num { font-size:13px; font-weight:600; color:var(--accent); }
+.version-time { font-size:11px; color:var(--text-tertiary); }
+.version-preview { font-size:13px; color:var(--text-secondary); line-height:1.5; max-height:3em; overflow:hidden; text-overflow:ellipsis; word-break:break-all; }
+.version-full { margin-top:6px; }
+.version-full-label { font-size:11px; color:var(--text-tertiary); margin-bottom:4px; }
+.version-code { font-size:12px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:8px; white-space:pre-wrap; word-break:break-all; max-height:120px; overflow-y:auto; font-family:'SF Mono',monospace; color:var(--text-secondary); margin:0; }
+.version-diff-hint { font-size:11px; color:var(--accent); margin-top:6px; }
+.version-foot { display:flex; align-items:center; justify-content:space-between; margin-top:8px; }
+.version-device { font-size:11px; color:var(--text-tertiary); }
+.version-restore-btn { font-size:12px; color:var(--accent); }
+.version-current { font-size:11px; color:var(--text-tertiary); font-weight:500; }
+
+/* Payment Result */
+.pay-result { text-align:center; padding:16px 0; }
+.pay-result-icon { margin-bottom:16px; }
+.pay-result-icon.success { color:var(--success); }
+.pay-result-icon.fail { color:var(--danger); }
+.pay-result-msg { font-size:14px; color:var(--text-secondary); margin-bottom:20px; line-height:1.5; }
+
+/* Invoice List */
+.invoice-list { display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto; }
+.invoice-item { display:flex; align-items:center; justify-content:space-between; padding:12px; border-radius:var(--radius-md); background:var(--bg-hover); border:1px solid var(--border-subtle); }
+.invoice-info { display:flex; flex-direction:column; gap:2px; }
+.invoice-no { font-size:13px; font-weight:500; color:var(--text-primary); }
+.invoice-date { font-size:11px; color:var(--text-tertiary); }
+.invoice-right { display:flex; align-items:center; gap:8px; }
+.invoice-amount { font-size:14px; font-weight:600; color:var(--text-primary); }
+
+/* Document Preview */
+/* Document Preview — base */
+.doc-preview-wrap { display:flex; flex-direction:column; gap:10px; }
+.doc-type-bar { display:flex; align-items:center; justify-content:space-between; }
+.doc-type-badge { font-size:11px; font-weight:600; padding: 2px 10px; }
+.doc-size { font-size:11px; color:var(--text-tertiary); }
+.doc-preview { background:var(--bg-hover); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; max-height:500px; overflow-y:auto; font-size:13px; line-height:1.7; }
+.text-preview { white-space:pre-wrap; word-break:break-word; color:var(--text-primary); }
+
+/* Loading state */
+.doc-loading { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:40px; color:var(--text-tertiary); font-size:13px; }
+.doc-loading-spinner { width:24px; height:24px; border:2px solid var(--border-default); border-top-color:var(--accent); border-radius:50%; animation:spin .6s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Unsupported file type */
+.doc-unsupported { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px; color:var(--text-tertiary); font-size:13px; }
+
+/* Code with line numbers */
+.code-preview { display:flex; gap:0; padding:0; overflow:auto; max-height:500px; }
+.code-lines { display:flex; flex-direction:column; padding:14px 0 14px 12px; border-right:1px solid var(--border-subtle); user-select:none; flex-shrink:0; }
+.line-num { font-size:11px; color:var(--text-tertiary); line-height:1.65; text-align:right; min-width:32px; padding-right:8px; }
+.code-content { margin:0; padding:14px; font-family:'SF Mono','Monaco','Consolas',monospace; font-size:12px; line-height:1.65; color:var(--text-primary); white-space:pre; overflow-x:auto; flex:1; }
+.doc-truncated { font-size:11px; color:var(--text-tertiary); text-align:center; padding:8px 0; border-top:1px solid var(--border-subtle); }
+
+/* Markdown + TOC layout */
+.doc-markdown-layout { display:flex; gap:0; border:1px solid var(--border-subtle); border-radius:var(--radius-md); overflow:hidden; max-height:500px; }
+.doc-toc { width:200px; min-width:160px; flex-shrink:0; border-right:1px solid var(--border-subtle); background:var(--bg-surface); padding:12px 0; overflow-y:auto; }
+.doc-toc-title { font-size:11px; font-weight:600; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:.04em; padding:0 14px 8px; }
+.doc-toc-item { display:block; font-size:12px; color:var(--text-secondary); text-decoration:none; padding:3px 14px; cursor:pointer; transition:color .15s, background .15s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.5; }
+.doc-toc-item:hover { color:var(--accent); background:var(--bg-hover); }
+.doc-toc-depth-1 { font-weight:600; padding-left:14px; }
+.doc-toc-depth-2 { padding-left:24px; }
+.doc-toc-depth-3 { padding-left:34px; font-size:11px; }
+.doc-toc-depth-4,.doc-toc-depth-5,.doc-toc-depth-6 { padding-left:44px; font-size:11px; color:var(--text-tertiary); }
+.doc-markdown-content { flex:1; overflow-y:auto; border:none; border-radius:0; max-height:500px; }
+
+/* Image file preview with zoom/rotate */
+.doc-image-file-preview { display:flex; flex-direction:column; border:1px solid var(--border-subtle); border-radius:var(--radius-md); overflow:hidden; }
+.doc-image-file-preview .img-zoom-toolbar { display:flex; align-items:center; gap:4px; padding:6px 12px; border-bottom:1px solid var(--border-subtle); background:var(--bg-surface); flex-shrink:0; }
+.doc-image-file-preview .img-zoom-label { font-size:12px; color:var(--text-secondary); min-width:40px; text-align:center; }
+.doc-image-file-preview .img-preview-sep { width:1px; height:16px; background:var(--border-default); margin:0 4px; }
+.doc-image-file-preview .img-zoom-area { position:relative; overflow:auto; cursor:grab; display:flex; align-items:center; justify-content:center; min-height:300px; max-height:500px; background:var(--bg-hover); }
+.doc-image-file-preview .img-zoom-area:active { cursor:grabbing; }
+.doc-image-file-img { max-width:100%; transform-origin:center center; transition:transform 0.1s ease; user-select:none; }
+
+/* Word (.docx) preview */
+.docx-preview { max-height:500px; overflow-y:auto; }
+.docx-preview table { border-collapse:collapse; width:100%; margin:8px 0; }
+.docx-preview th,.docx-preview td { border:1px solid var(--border-default); padding:4px 8px; text-align:left; font-size:12px; }
+.docx-preview th { background:var(--bg-hover); font-weight:600; }
+.docx-preview p { margin:4px 0; }
+.docx-preview ul,.docx-preview ol { padding-left:20px; margin:4px 0; }
+
+/* PDF preview */
+.doc-pdf-wrap { display:flex; flex-direction:column; gap:8px; align-items:center; max-height:500px; overflow-y:auto; padding:8px 0; }
+.doc-pdf-info { font-size:11px; color:var(--text-tertiary); text-align:center; padding:4px 0; }
+.doc-pdf-page { position:relative; display:inline-block; }
+.doc-pdf-img { max-width:100%; border:1px solid var(--border-subtle); border-radius:var(--radius-sm); }
+.doc-pdf-num { position:absolute; bottom:4px; right:8px; font-size:10px; color:var(--text-tertiary); background:var(--bg-surface); padding:1px 6px; border-radius:8px; }
+
+/* Feedback */
+.fb-form { display:flex; flex-direction:column; gap:16px; }
+.fb-field { display:flex; flex-direction:column; gap:6px; }
+.fb-label { font-size:13px; font-weight:500; color:var(--text-primary); }
+.fb-optional { font-size:11px; color:var(--text-tertiary); font-weight:400; }
+.fb-type-row { display:flex; gap:8px; }
+.fb-type-btn { font-size:12px; padding:6px 14px; border-radius:var(--radius-md); border:1px solid var(--border-default); background:var(--bg-surface); color:var(--text-secondary); cursor:pointer; transition:all .15s; }
+.fb-type-btn:hover { border-color:var(--accent); color:var(--text-primary); }
+.fb-type-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.fb-textarea { width:100%; padding:10px; border:1px solid var(--border-default); border-radius:var(--radius-md); font-size:13px; resize:vertical; background:var(--bg-surface); color:var(--text-primary); font-family:inherit; }
+.fb-textarea:focus { outline:none; border-color:var(--border-focus); box-shadow:0 0 0 3px var(--accent-light); }
+.fb-char-count { font-size:11px; color:var(--text-tertiary); text-align:right; }
+.fb-input { width:100%; padding-left:12px !important; }
+.fb-success { font-size:13px; color:var(--success); text-align:center; margin-top:8px; }
+</style>
+
+<!-- Non-scoped styles: needed for v-html rendered content (markdown-body) -->
+<style>
+.markdown-body { color:var(--text-primary); font-size:14px; line-height:1.7; word-wrap:break-word; }
+.markdown-body > :first-child { margin-top:0 !important; }
+.markdown-body > :last-child { margin-bottom:0 !important; }
+.markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6 { margin:24px 0 16px; font-weight:600; line-height:1.35; scroll-margin-top:8px; }
+.markdown-body h1 { font-size:26px; padding-bottom:8px; border-bottom:1px solid var(--border-subtle); }
+.markdown-body h2 { font-size:22px; padding-bottom:6px; border-bottom:1px solid var(--border-subtle); }
+.markdown-body h3 { font-size:18px; }
+.markdown-body h4 { font-size:16px; }
+.markdown-body h5 { font-size:14px; }
+.markdown-body h6 { font-size:14px; color:var(--text-secondary); }
+.markdown-body p { margin:12px 0; }
+.markdown-body a { color:var(--accent); text-decoration:none; }
+.markdown-body a:hover { text-decoration:underline; }
+.markdown-body strong { font-weight:600; }
+.markdown-body em { font-style:italic; }
+.markdown-body del { text-decoration:line-through; color:var(--text-tertiary); }
+.markdown-body code { background:rgba(175,184,193,0.15); padding:2px 7px; border-radius:6px; font-family:'SF Mono','Monaco','Consolas','Liberation Mono',monospace; font-size:85%; }
+.markdown-body pre { background:var(--bg-hover); border:1px solid var(--border-subtle); border-radius:8px; padding:16px; overflow-x:auto; margin:16px 0; line-height:1.5; }
+.markdown-body pre code { background:none; padding:0; border-radius:0; font-size:12.5px; font-family:'SF Mono','Monaco','Consolas','Liberation Mono',monospace; color:var(--text-primary); white-space:pre; }
+.markdown-body ul,.markdown-body ol { padding-left:2em; margin:12px 0; }
+.markdown-body li { margin:4px 0; line-height:1.7; }
+.markdown-body li + li { margin-top:4px; }
+.markdown-body ul ul,.markdown-body ul ol,.markdown-body ol ul,.markdown-body ol ol { margin:4px 0; }
+.markdown-body input[type="checkbox"] { margin-right:6px; vertical-align:middle; }
+.markdown-body blockquote { margin:16px 0; padding:8px 16px; border-left:4px solid var(--accent); color:var(--text-secondary); background:transparent; }
+.markdown-body blockquote > :first-child { margin-top:0; }
+.markdown-body blockquote > :last-child { margin-bottom:0; }
+.markdown-body table { border-collapse:collapse; border-spacing:0; margin:16px 0; width:100%; display:block; overflow:auto; }
+.markdown-body table th,.markdown-body table td { padding:8px 16px; border:1px solid var(--border-default); font-size:13px; }
+.markdown-body table th { font-weight:600; background:var(--bg-hover); }
+.markdown-body table tr:nth-child(2n) { background:var(--bg-hover); }
+.markdown-body table tr { background:var(--bg-surface); }
+.markdown-body hr { border:none; border-top:2px solid var(--border-subtle); margin:24px 0; height:0; overflow:hidden; }
+.markdown-body img { max-width:100%; border-radius:6px; }
+.markdown-body details { margin:12px 0; padding:8px 12px; border:1px solid var(--border-subtle); border-radius:6px; }
+.markdown-body details summary { cursor:pointer; font-weight:600; padding:4px 0; }
+.markdown-body details[open] summary { margin-bottom:8px; }
+.markdown-body .hljs { background:transparent; color:var(--text-primary); }
+.markdown-body .hljs-keyword { color:#cf222e; }
+.markdown-body .hljs-string { color:#0a3069; }
+.markdown-body .hljs-comment { color:var(--text-tertiary); font-style:italic; }
+.markdown-body .hljs-number { color:#0550ae; }
+.markdown-body .hljs-function { color:#8250df; }
+.markdown-body .hljs-title { color:#8250df; }
+.markdown-body .hljs-built_in { color:#e36209; }
+.markdown-body .hljs-type { color:#953800; }
+.markdown-body .hljs-attr { color:#0550ae; }
+.markdown-body .hljs-meta { color:#6e7781; }
+.markdown-body .hljs-literal { color:#0550ae; }
 </style>

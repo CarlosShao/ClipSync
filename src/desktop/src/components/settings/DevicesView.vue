@@ -11,6 +11,7 @@ const device = useDevice()
 const toast = useToast()
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
 const deviceList = computed(() => device.devices.value)
+const isLoading = computed(() => device.loading.value)
 
 function getDeviceIcon(type: string) {
   switch (type) {
@@ -47,6 +48,20 @@ async function handleDelete(id: string, name: string) {
       </div>
     </div>
     <div class="devices-grid">
+      <!-- Skeleton Loading -->
+      <template v-if="isLoading && deviceList.length === 0">
+        <div v-for="n in 3" :key="'sk-'+n" class="dev-card dev-card-skeleton">
+          <div class="dev-card-header">
+            <div class="sk sk-icon" />
+            <div class="sk sk-dot" />
+          </div>
+          <div class="dev-card-body">
+            <div class="sk sk-name" />
+            <div class="sk sk-detail" />
+          </div>
+        </div>
+      </template>
+      <!-- Real Cards -->
       <div v-for="d in deviceList" :key="d.id" class="dev-card">
         <div class="dev-card-header">
           <div class="dev-icon">
@@ -65,9 +80,10 @@ async function handleDelete(id: string, name: string) {
         </div>
       </div>
     </div>
-    <div v-if="deviceList.length === 0" class="empty-state">
+    <div v-if="deviceList.length === 0 && !isLoading" class="empty-state">
       <div class="empty-icon"><Smartphone :size="32" /></div>
-      <div class="empty-text">{{ t('nav_devices') }} — {{ t('dev_empty') }}</div>
+      <div class="empty-title">{{ t('dev_empty') }}</div>
+      <div class="empty-desc">{{ t('dev_empty_hint') }}</div>
     </div>
   </div>
 </template>
@@ -91,6 +107,20 @@ async function handleDelete(id: string, name: string) {
 .dev-name { font-size: 14px; font-weight: 500; margin-bottom: 2px; }
 .dev-detail { font-size: 12px; color: var(--text-tertiary); }
 .empty-state { text-align: center; padding: 40px 0; }
-.empty-icon { color: var(--text-tertiary); margin-bottom: 8px; display: flex; justify-content: center; }
-.empty-text { font-size: 13px; color: var(--text-secondary); }
+.empty-icon { color: var(--text-tertiary); margin-bottom: 12px; display: flex; justify-content: center; }
+.empty-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+.empty-desc { font-size: 13px; color: var(--text-secondary); }
+
+/* Skeleton Loading */
+.dev-card-skeleton { pointer-events: none; }
+.dev-card-skeleton .dev-card-header { justify-content: space-between; }
+.sk { border-radius: var(--radius-sm); background: var(--bg-hover); animation: sk-pulse 1.5s ease-in-out infinite; }
+.sk-icon { width: 40px; height: 40px; border-radius: var(--radius-sm); }
+.sk-dot { width: 8px; height: 8px; border-radius: 50%; }
+.sk-name { width: 100px; height: 14px; margin-bottom: 6px; }
+.sk-detail { width: 140px; height: 12px; }
+@keyframes sk-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
 </style>

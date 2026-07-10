@@ -218,6 +218,10 @@ function resetPwdForm() {
         <div class="sg-label"><div class="sg-name">{{ t('sg_export') }}</div><div class="sg-hint">{{ t('sg_export_h') }}</div></div>
         <ChevronRight class="sg-arrow" />
       </div>
+      <div class="sg-row" style="cursor:pointer;" @click="emit('open-modal', 'feedback')">
+        <div class="sg-label"><div class="sg-name">{{ t('fb_title') }}</div><div class="sg-hint">{{ t('fb_type_feature') }} / {{ t('fb_type_improvement') }}</div></div>
+        <ChevronRight class="sg-arrow" />
+      </div>
       <div class="sg-row" style="cursor:pointer;" @click="emit('open-modal', 'updates')">
         <div class="sg-label"><div class="sg-name">{{ t('sg_update') }}</div><div class="sg-hint">{{ t('sg_update_h') }}</div></div>
         <Button variant="outline" style="padding: 8px 24px;" @click.stop="emit('open-modal', 'updates')">{{ t('btn_check') }}</Button>
@@ -232,6 +236,10 @@ function resetPwdForm() {
       </div>
       <div class="sg-row" style="cursor:pointer;" @click="emit('open-modal', 'billing')">
         <div class="sg-label"><div class="sg-name">{{ t('sg_billing') }}</div><div class="sg-hint">{{ t('sg_billing_h') }}</div></div>
+        <ChevronRight class="sg-arrow" />
+      </div>
+      <div class="sg-row" style="cursor:pointer;" @click="toast.show(t('fb_not_available'), 'info')">
+        <div class="sg-label"><div class="sg-name">{{ t('sg_invoices') }}</div><div class="sg-hint">{{ t('sg_invoices_h') }}</div></div>
         <ChevronRight class="sg-arrow" />
       </div>
       </div>

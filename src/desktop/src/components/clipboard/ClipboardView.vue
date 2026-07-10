@@ -7,7 +7,7 @@ import * as tauri from '@/lib/tauri'
 import { useConfigStore } from '@/stores/configStore'
 import {
   Upload, Plus, Search, Trash2, Copy, Image as ImageIcon,
-  ExternalLink, FileText, Folder, ClipboardList,
+  ExternalLink, FileText, Folder, ClipboardList, Star,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -21,17 +21,20 @@ const emit = defineEmits<{
   'toggle-quick-paste': []
   'preview-image': [item: ClipItem]
   'preview-text': [item: ClipItem]
+  'preview-file': [item: ClipItem]
+  'version-history': [item: ClipItem]
 }>()
 
 const { t } = useI18n()
 const toast = useToast()
 const clip = useClipboard()
 const configStore = useConfigStore()
-// 本地变量帮助 TS 正确推断类型（模板中 Vue 会自动解包 ref）
-const filteredItems = clip.filteredItems
-const allItems = clip.items
-const activeFilter = clip.activeFilter
-const selectedCount = clip.selectedCount
+// 用 computed 包裹 ref，确保 Vue 3 模板正确追踪响应式依赖
+const filteredItems = computed(() => clip.filteredItems.value)
+const allItems = computed(() => clip.items.value)
+const activeFilter = computed(() => clip.activeFilter.value)
+const selectedCount = computed(() => clip.selectedCount.value)
+const isLoading = computed(() => clip.loading.value)
 
 // allSelected 用本地 computed，同理避免 ref 解包问题
 const allSelected = computed(() => clip.allSelected.value)
@@ -67,6 +70,7 @@ function matchShortcut(saved: string[] | undefined, e: KeyboardEvent): boolean {
 // Filter options for segmented control
 const filterOptions = [
   { value: 'all', label: t('tab_all') },
+  { value: 'favorites', label: t('tab_favorites') },
   { value: 'text', label: t('tab_text') },
   { value: 'images', label: t('tab_images') },
   { value: 'links', label: t('tab_links') },
@@ -170,29 +174,44 @@ function openLink(item: ClipItem) {
   }
 }
 
-function revealFileFolder(item: ClipItem) {
+/** Check if a file item is a local file (has a local path to reveal/copy).
+ *  Shows copy/reveal buttons only for files that exist on the local disk. */
+function hasLocalPath(item: ClipItem): boolean {
+  try {
+    const parsed = JSON.parse(item.content)
+    // 路径数组：["D:\\path\\to\\file"] → 本地文件
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') return true
+    // 元数据带 paths 字段：{"name":"file.md","paths":["D:\\..."]} → 本地文件（clipboard monitor 上传）
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.paths) && parsed.paths.length > 0) return true
+    return false
+  } catch { return false }
+}
+
+async function revealFileFolder(item: ClipItem) {
   try {
     const data = JSON.parse(item.content)
-    // 新格式：{ name, size, type, path } — 使用 path 字段
+    // paths 字段：{"name":"file.md","paths":["D:\\..."]} → clipboard monitor 上传
+    if (data.paths && Array.isArray(data.paths) && data.paths[0]) {
+      tauri.revealInFolder(data.paths[0]).catch(() => {
+        const dir = data.paths[0].replace(/[/\\][^/\\]+$/, '')
+        tauri.openUrl(dir).catch(() => toast.show('无法打开文件夹', 'error'))
+      })
+      return
+    }
+    // path 字段：{"name":"...","path":"D:\\..."}
     if (data.path && typeof data.path === 'string' && data.path.length > 0) {
       tauri.revealInFolder(data.path).catch(() => {
-        // fallback：打开所在目录
         const dir = data.path.replace(/[/\\][^/\\]+$/, '')
         tauri.openUrl(dir).catch(() => toast.show('无法打开文件夹', 'error'))
       })
       return
     }
-    // 旧格式/兼容：路径数组
+    // 路径数组：["D:\\path\\to\\file"]
     if (Array.isArray(data) && data.length > 0) {
       tauri.revealInFolder(data[0]).catch(() => {
         const dir = data[0].replace(/[/\\][^/\\]+$/, '')
         tauri.openUrl(dir).catch(() => toast.show('无法打开文件夹', 'error'))
       })
-      return
-    }
-    // 从其他设备同步的文件，本地无路径
-    if (data.name) {
-      toast.show(`"${data.name}" ${t('file_remote_no_path')}`, 'info')
       return
     }
   } catch { /* ignore */ }
@@ -287,46 +306,47 @@ function getTypeLabel(type: string): string {
 }
 
 function formatContent(item: ClipItem): string {
-  // 文件类型检测：显式 type === 'file' 或内容以 JSON 数组（路径）开头
-  const isFileContent = item.type === 'file' ||
-    (item.content && item.content.trimStart().startsWith('[') && item.content.includes('\\'))
-
-  if (isFileContent) {
+  // 文件类型：始终尝试显示文件名
+  if (item.type === 'file') {
     try {
       const parsed = JSON.parse(item.content)
-      // 新格式（uploadFileItem）: { name, size, type, path }
+      // { name, size, type } 格式
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.name) {
         return String(parsed.name)
       }
-      // 剪贴板监控（readAndUpload）或旧格式: 路径数组 ["D:\\path\\to\\file"]
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((p: any): string => {
-          if (typeof p !== 'string') return String(p)
-          // 从完整路径中提取文件名
-          const filename = p.split(/[/\\]/).pop()
-          return filename || p
-        }).join(', ')
+      // { name, paths } 格式
+      if (parsed && typeof parsed === 'object' && parsed.paths && Array.isArray(parsed.paths) && parsed.paths[0]) {
+        return parsed.paths[0].split(/[/\\]/).pop() || parsed.paths[0]
       }
-    } catch {
-      /* JSON 解析失败，走下面的兜底提取 */
-    }
-    // 兜底：用正则从原始内容中提取所有文件名
+      // 路径数组格式 ["D:\\path\\file"]
+      if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+        return parsed[0].split(/[/\\]/).pop() || parsed[0]
+      }
+    } catch { /* not JSON */ }
+
+    // 内容可能是文件路径数组字符串（旧格式）
     const raw = item.content.trim()
-    // 匹配 JSON 数组中的路径元素: "C:\path\to\file.ext"
-    const pathMatches = raw.match(/"([^"]*(?:[\\/][^"/\\]+\.[^"/\\]+))"/g)
-    if (pathMatches && pathMatches.length > 0) {
-      return pathMatches.map(m => {
-        const inner = m.slice(1, -1)
-        return inner.split(/[/\\]/).pop() || inner
-      }).join(', ')
+    if (raw.startsWith('["') && raw.includes('\\')) {
+      try {
+        const paths = JSON.parse(raw)
+        if (Array.isArray(paths) && paths[0]) return paths[0].split(/[/\\]/).pop() || paths[0]
+      } catch { /* ignore */ }
     }
-    // 最后兜底：内容含路径分隔符，直接取最后一段
+
+    // 内容是文件路径（含反斜杠）
     if (raw.includes('\\') || raw.includes('/')) {
-      // 先去掉 JSON 外壳 [] 和引号
-      const stripped = raw.replace(/^\[/, '').replace(/\]$/, '').replace(/^"|"$/g, '')
-      return stripped.split(/[/\\]/).pop() || truncate(raw, 60)
+      const segments = raw.split(/[/\\]/)
+      const last = segments[segments.length - 1]
+      if (last && last.includes('.')) return last
     }
+
+    // 内容太长（可能是文件内容而非文件名），截断显示
+    if (raw.length > 100) return truncate(raw, 80)
+
+    return raw || 'Unknown file'
   }
+
+  // 非文件类型
   return truncate(item.content, 120)
 }
 function truncate(str: string, max: number): string {
@@ -399,7 +419,7 @@ function extractDomain(url: string): string {
       <div class="tab-spacer" />
       <div class="search-field">
         <Search :size="14" class="search-field-icon" />
-        <Input v-model="searchInput" type="text" :placeholder="t('search_ph')" class="search-input" @input="clip.setSearch(searchInput)" />
+        <Input v-model="searchInput" type="text" :placeholder="t('search_ph')" class="search-input" :aria-label="t('search_ph')" @input="clip.setSearch(searchInput)" />
       </div>
       <Button v-if="selectedCount > 0" variant="ghost" size="icon-sm" class="batch-del-btn" @click="handleBatchDelete" :title="t('batch_select')">
         <Trash2 :size="15" />
@@ -419,9 +439,21 @@ function extractDomain(url: string): string {
     </div>
 
     <!-- Clipboard Table (shadcn-vue Data Table style) -->
-    <div class="clipboard-view">
-      <div v-if="filteredItems.length > 0" class="table-wrapper">
-        <Table>
+    <div class="clipboard-view" role="region" :aria-label="t('nav_clipboard')">
+      <!-- Skeleton Loading -->
+      <div v-if="isLoading && filteredItems.length === 0" class="skeleton-wrap" :aria-label="t('ver_loading')" role="status">
+        <div v-for="n in 6" :key="n" class="skeleton-row">
+          <div class="sk sk-checkbox" />
+          <div class="sk sk-content" />
+          <div class="sk sk-source" />
+          <div class="sk sk-badge" />
+          <div class="sk sk-time" />
+          <div class="sk sk-actions" />
+        </div>
+      </div>
+
+      <div v-else-if="filteredItems.length > 0" class="table-wrapper">
+        <Table role="table" :aria-label="t('nav_clipboard')">
         <TableHeader>
           <TableRow>
             <TableHead class="w-12">
@@ -465,7 +497,12 @@ function extractDomain(url: string): string {
                   </span>
                 </span>
                 <!-- 文件类型（必须在 code/url 检测之前，否则 JSON 路径数组会被误判为 code） -->
-                <span v-else-if="item.type === 'file'" class="cell-text">{{ formatContent(item) }}</span>
+                <span v-else-if="item.type === 'file'" class="cell-text">
+                  <span v-if="item.id.startsWith('local-') || item.id.startsWith('file-')" class="syncing-label">
+                    <span class="syncing-dot" /> {{ formatContent(item) }}
+                  </span>
+                  <span v-else>{{ formatContent(item) }}</span>
+                </span>
                 <!-- 代码样式 -->
                 <span v-else-if="detectContentType(item.content) === 'code'" class="cell-code-preview">
                   <code>{{ item.content }}</code>
@@ -484,7 +521,7 @@ function extractDomain(url: string): string {
             <TableCell class="cell-time">{{ timeAgo(item.timestamp) }}</TableCell>
             <TableCell>
               <div class="cell-actions">
-                <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click="clip.copyItem(item)" :title="t('copy')">
+                <Button v-if="item.type !== 'file' || hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="clip.copyItem(item)" :title="t('copy')">
                   <Copy :size="14" />
                 </Button>
                 <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-image', item)" :title="t('preview')">
@@ -496,8 +533,14 @@ function extractDomain(url: string): string {
                 <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-text', item)" :title="t('preview')">
                   <FileText :size="14" />
                 </Button>
-                <Button v-if="item.type === 'file'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
+                <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-file', item)" :title="t('preview')">
+                  <FileText :size="14" />
+                </Button>
+                <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
                   <Folder :size="14" />
+                </Button>
+                <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click="clip.toggleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
+                  <Star :size="14" :fill="item.isFavorite ? 'currentColor' : 'none'" />
                 </Button>
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide danger" @click="handleSingleDelete(item)" :title="t('delete')">
                   <Trash2 :size="14" />
@@ -516,6 +559,20 @@ function extractDomain(url: string): string {
         </div>
         <h3 class="empty-title">{{ t('empty_title') }}</h3>
         <p class="empty-desc">{{ t('empty_desc') }}</p>
+        <div class="empty-hints">
+          <div class="empty-hint">
+            <Copy :size="14" class="empty-hint-icon" />
+            <span>{{ t('empty_hint_copy') }}</span>
+          </div>
+          <div class="empty-hint">
+            <svg class="empty-hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8"/></svg>
+            <span>{{ t('empty_hint_shortcut') }}</span>
+          </div>
+          <div class="empty-hint">
+            <Upload :size="14" class="empty-hint-icon" />
+            <span>{{ t('empty_hint_upload') }}</span>
+          </div>
+        </div>
         <p class="empty-action">{{ t('empty_action') }}</p>
       </div>
     </div>
@@ -603,7 +660,7 @@ function extractDomain(url: string): string {
 .clipboard-view :deep(tbody tr) { border-bottom: 1px solid var(--border-subtle); transition: background .12s ease; }
 .clipboard-view :deep(tbody tr:hover) { background: var(--bg-hover); }
 /* Keyboard-focused row (arrow nav / copyClip / deleteClip in-app shortcuts) */
-.clipboard-view :deep(tbody tr.focused) { background: var(--accent-light); box-shadow: inset 2px 0 0 var(--accent); }
+.clipboard-view :deep(tbody tr.focused) { background: var(--accent-light); box-shadow: inset 3px 0 0 var(--accent); }
 .clipboard-view :deep(tbody tr.focused:hover) { background: var(--accent-light); }
 .clipboard-view :deep(tbody tr:last-child) { border-bottom-color: transparent; }
 .clipboard-view :deep(tbody td) { padding: 8px 16px; vertical-align: middle; }
@@ -611,6 +668,14 @@ function extractDomain(url: string): string {
 /* Cell styles */
 .cell-content { overflow: hidden; max-width: 0; }
 .cell-content-inner { display: flex; align-items: center; gap: 8px; }
+
+/* Syncing indicator */
+.syncing-label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.syncing-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--warning);
+  animation: syncPulse 1.2s ease-in-out infinite; flex-shrink: 0;
+}
+@keyframes syncPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 /* 普通文本 */
 .cell-text {
@@ -675,13 +740,32 @@ function extractDomain(url: string): string {
 .cell-actions .btn-action-hide:hover { background: var(--bg-active); color: var(--text-primary); }
 .cell-actions .btn-action-hide.danger { color: var(--danger); }
 .cell-actions .btn-action-hide.danger:hover { background: var(--danger-bg); }
+.cell-actions .btn-action-hide.favorited { color: var(--warning); }
 
 /* ===== EMPTY STATE ===== */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; text-align: center; }
 .empty-icon-wrap { width: 64px; height: 64px; border-radius: 16px; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
 .empty-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
 .empty-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
-.empty-action { font-size: 13px; color: var(--accent); margin-top: 12px; font-weight: 500; }
+.empty-hints { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.empty-hint { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+.empty-hint-icon { flex-shrink: 0; color: var(--text-tertiary); }
+.empty-action { font-size: 13px; color: var(--accent); margin-top: 16px; font-weight: 500; }
+
+/* ===== SKELETON LOADING ===== */
+.skeleton-wrap { padding: 0; }
+.skeleton-row { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); }
+.sk { border-radius: var(--radius-sm); background: var(--bg-hover); animation: skeleton-pulse 1.5s ease-in-out infinite; }
+.sk-checkbox { width: 18px; height: 18px; flex-shrink: 0; border-radius: 4px; }
+.sk-content { flex: 1; height: 20px; max-width: 40%; }
+.sk-source { width: 80px; height: 14px; flex-shrink: 0; }
+.sk-badge { width: 52px; height: 22px; flex-shrink: 0; border-radius: 9999px; }
+.sk-time { width: 48px; height: 14px; flex-shrink: 0; }
+.sk-actions { width: 100px; height: 14px; flex-shrink: 0; }
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
 
 /* ===== CONFIRM MODAL ===== */
 .confirm-modal-overlay {
