@@ -293,8 +293,8 @@ router.post('/', apiLimiter, checkClipboardLimit, async (req, res) => {
       return res.status(400).json({ error: 'Invalid contentType. Valid values: text, image, file, link, code' });
     }
 
-    // 清理预览内容
-    const cleanPreview = contentPreview ? sanitizeString(contentPreview).substring(0, 1000) : '';
+    // 清理预览内容 — 只做截断，不做 HTML 转义（contentPreview 用于前端展示，非 HTML 执行）
+    const cleanPreview = contentPreview ? String(contentPreview).substring(0, 1000) : '';
 
     // Verify device belongs to user
     const deviceCheck = await pool.query(
@@ -304,6 +304,31 @@ router.post('/', apiLimiter, checkClipboardLimit, async (req, res) => {
 
     if (deviceCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Device not found' });
+    }
+
+    // 后端兜底去重：同用户、同文件路径，5 分钟内重复创建 → 返回已有记录
+    if (detectedType === 'file' && metadata && metadata.paths && metadata.paths.length > 0) {
+      const dupCheck = await pool.query(
+        `SELECT id, created_at FROM clipboard_items
+         WHERE user_id = $1 AND content_type = 'file'
+           AND metadata->'paths' @> $2::jsonb
+           AND created_at > NOW() - INTERVAL '5 minutes'
+         LIMIT 1`,
+        [req.userId, JSON.stringify([metadata.paths[0]])]
+      );
+      if (dupCheck.rows.length > 0) {
+        const existing = dupCheck.rows[0];
+        return res.status(200).json({
+          id: existing.id,
+          contentType: 'file',
+          contentPreview: cleanPreview,
+          contentSize: contentSize || 0,
+          isFavorite: false,
+          expiresAt: null,
+          createdAt: existing.created_at,
+          duplicate: true,
+        });
+      }
     }
 
     const result = await pool.query(
