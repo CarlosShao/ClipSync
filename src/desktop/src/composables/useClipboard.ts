@@ -19,6 +19,7 @@ export interface ClipItem {
   timestamp: number
   selected?: boolean
   isFavorite?: boolean
+  favoritedAt?: number
 }
 
 // === SINGLETON STATE - module-level refs shared across all callers ===
@@ -224,7 +225,6 @@ const filteredItems = computed(() => {
   let result = items.value
   if (activeFilter.value !== 'all') {
     result = result.filter(i => {
-      if (activeFilter.value === 'favorites') return (i as any).isFavorite
       if (activeFilter.value === 'text') return i.type === 'text'
       if (activeFilter.value === 'images') return i.type === 'image'
       if (activeFilter.value === 'links') return i.type === 'link'
@@ -392,6 +392,7 @@ async function loadClipboardItems() {
         timestamp: new Date(i.createdAt || Date.now()).getTime(),
         selected: false,
         isFavorite: !!i.isFavorite,
+        favoritedAt: i.favoritedAt ? new Date(i.favoritedAt).getTime() : undefined,
       }
     })
     items.value = [...localWithContent, ...serverItems]
@@ -933,11 +934,14 @@ export function useClipboard() {
   async function toggleFavorite(item: ClipItem) {
     // 乐观更新
     const prev = (item as any).isFavorite
+    const prevFavAt = (item as any).favoritedAt
     ;(item as any).isFavorite = !prev
+    ;(item as any).favoritedAt = !prev ? Date.now() : undefined
     const res = await api('PUT', `/api/clipboard/${item.id}/favorite`)
     if (!res.ok) {
       // 回滚
       ;(item as any).isFavorite = prev
+      ;(item as any).favoritedAt = prevFavAt
       console.warn('[Clipboard] toggleFavorite failed:', res.error)
     }
   }

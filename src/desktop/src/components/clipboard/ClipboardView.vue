@@ -7,7 +7,7 @@ import * as tauri from '@/lib/tauri'
 import { useConfigStore } from '@/stores/configStore'
 import {
   Upload, Plus, Search, Trash2, Copy, Image as ImageIcon,
-  ExternalLink, FileText, Folder, ClipboardList, Star,
+  ExternalLink, FileText, Folder, ClipboardList, Star, FolderPlus,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -16,6 +16,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table'
 import Badge from '@/components/ui/badge/Badge.vue'
+import { getFavoriteCollections, addCollectionItem } from '@/api/client'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -44,6 +45,25 @@ const showQuickPaste = ref(false)
 // Keyboard-focused row index for in-app shortcuts (copyClip / deleteClip / arrow nav)
 const focusedIndex = ref(0)
 
+// Collections (for "add to collection" dropdown)
+const collections = ref<any[]>([])
+const addToColItemId = ref<string | null>(null)
+
+async function loadCollections() {
+  const data = await getFavoriteCollections()
+  if (data) collections.value = data.collections
+}
+onMounted(() => { loadCollections() })
+
+function toggleAddToCol(itemId: string) {
+  addToColItemId.value = addToColItemId.value === itemId ? null : itemId
+}
+async function addToCollection(colId: string, itemId: string) {
+  const ok = await addCollectionItem(colId, itemId)
+  if (ok) toast.success('已加入收藏夹')
+  addToColItemId.value = null
+}
+
 // Read user's saved in-app shortcuts from localStorage (falls back to defaults)
 function savedAppKeys(id: string): string[] | undefined {
   try {
@@ -70,7 +90,6 @@ function matchShortcut(saved: string[] | undefined, e: KeyboardEvent): boolean {
 // Filter options for segmented control
 const filterOptions = [
   { value: 'all', label: t('tab_all') },
-  { value: 'favorites', label: t('tab_favorites') },
   { value: 'text', label: t('tab_text') },
   { value: 'images', label: t('tab_images') },
   { value: 'links', label: t('tab_links') },
@@ -542,6 +561,16 @@ function extractDomain(url: string): string {
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click="clip.toggleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
                   <Star :size="14" :fill="item.isFavorite ? 'currentColor' : 'none'" />
                 </Button>
+                <div v-if="collections.length > 0" class="add-col-wrap">
+                  <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹">
+                    <FolderPlus :size="14" />
+                  </Button>
+                  <div v-if="addToColItemId === item.id" class="add-col-dropdown">
+                    <button v-for="col in collections" :key="col.id" class="add-col-option" @click="addToCollection(col.id, item.id)">
+                      {{ col.icon }} {{ col.name }}
+                    </button>
+                  </div>
+                </div>
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide danger" @click="handleSingleDelete(item)" :title="t('delete')">
                   <Trash2 :size="14" />
                 </Button>
@@ -791,4 +820,19 @@ function extractDomain(url: string): string {
 /* Icon-only toolbar buttons */
 .btn-icon { color: var(--text-secondary); }
 .btn-icon.active { color: var(--accent); background: var(--accent-light); }
+
+/* Add to collection dropdown */
+.add-col-wrap { position: relative; display: inline-flex; }
+.add-col-dropdown {
+  position: absolute; top: 100%; right: 0; margin-top: 4px;
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-modal);
+  padding: 4px; z-index: 50; min-width: 160px;
+}
+.add-col-option {
+  display: block; width: 100%; padding: 6px 10px; border: none; background: none;
+  text-align: left; font-size: 12px; color: var(--text-primary); cursor: pointer;
+  border-radius: var(--radius-sm); white-space: nowrap;
+}
+.add-col-option:hover { background: var(--bg-hover); }
 </style>

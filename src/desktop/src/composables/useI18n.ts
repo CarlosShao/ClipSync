@@ -6,7 +6,7 @@ type I18nDict = Record<string, string>
 const _lang = ref<Lang>('zh')
 const _dicts: Record<Lang, I18nDict> = {
   en: {
-    nav_main:'Main', nav_account:'Account', nav_clipboard:'Clipboard', nav_devices:'Devices', nav_shared_links:'Shared Links',
+    nav_main:'Main', nav_account:'Account', nav_clipboard:'Clipboard', nav_favorites:'Favorites', nav_devices:'Devices', nav_shared_links:'Shared Links',
     nav_profile:'Profile', nav_subscription:'Subscription', nav_settings:'Settings',
     app_name:'ClipSync', nav_collapse:'Collapse sidebar', nav_expand:'Expand sidebar',
     new_clip:'New Clip', search_ph:'Search clips...',
@@ -291,7 +291,7 @@ const _dicts: Record<Lang, I18nDict> = {
     auth_need_account:'Please enter your account', auth_pwd_too_short:'Password must be at least 6 characters',
   },
   zh: {
-    nav_main:'主菜单', nav_account:'账号', nav_clipboard:'剪贴板', nav_devices:'设备', nav_shared_links:'共享链接',
+    nav_main:'主菜单', nav_account:'账号', nav_clipboard:'剪贴板', nav_favorites:'收藏', nav_devices:'设备', nav_shared_links:'共享链接',
     nav_profile:'个人资料', nav_subscription:'订阅', nav_settings:'设置',
     app_name:'ClipSync', nav_collapse:'收起侧边栏', nav_expand:'展开侧边栏',
     new_clip:'新建剪贴', search_ph:'搜索剪贴记录...',
