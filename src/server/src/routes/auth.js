@@ -7,6 +7,7 @@ import config from '../config.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { isValidPhone, isValidCode, sanitizeString } from '../validation/validator.js';
 import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter, getRedisClient, createRateLimiter } from '../middleware/rateLimiter.js';
+import { blacklistJti, parseDurationToSeconds } from '../utils/redis-client.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 import { logger } from '../utils/logger.js';
@@ -1442,11 +1443,16 @@ router.put('/deactivate', authenticateToken, async (req, res) => {
       [userId, reason || 'User-initiated deactivation']
     );
 
-    // 撤销所有活跃会话
-    await pool.query(
-      'UPDATE user_sessions SET is_active = FALSE, revoked_at = NOW() WHERE user_id = $1 AND is_active = TRUE',
+    // 撤销所有活跃会话，并将每个被吊销会话的 jti 写入黑名单，立即使其 JWT 失效
+    const revoked = await pool.query(
+      `UPDATE user_sessions SET is_active = FALSE, revoked_at = NOW()
+       WHERE user_id = $1 AND is_active = TRUE RETURNING id`,
       [userId]
     );
+    const ttl = parseDurationToSeconds(config.jwt.expiresIn);
+    for (const row of revoked.rows) {
+      await blacklistJti(row.id, ttl);
+    }
 
     logger.info(`[Account] User ${userId} deactivated. Reason: ${reason || 'User-initiated deactivation'}`);
     

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import pool from '../db/pool.js';
 import { authenticateToken } from '../middleware/auth.js';
 import logger from '../utils/logger.js';
+import config from '../config.js';
+import { blacklistJti, parseDurationToSeconds } from '../utils/redis-client.js';
 
 const router = Router();
 
@@ -72,9 +74,13 @@ router.delete('/:sessionId', authenticateToken, async (req, res) => {
     // 撤销会话（防御深度：再次验证 user_id）
     await pool.query(`
       UPDATE user_sessions
-      SET is_active = false, updated_at = NOW()
+      SET is_active = false, updated_at = NOW(), revoked_at = NOW()
       WHERE id = $1 AND user_id = $2
     `, [sessionId, userId]);
+
+    // 将 jti 写入 Redis 黑名单，立即使该会话的 JWT 失效（与 DB is_active 双重保险）
+    const ttl = parseDurationToSeconds(config.jwt.expiresIn);
+    await blacklistJti(sessionId, ttl);
 
     logger.info('Session revoked', { userId, sessionId });
 
@@ -100,11 +106,18 @@ router.delete('/', authenticateToken, async (req, res) => {
     // 撤销所有会话（除了当前会话）
     const result = await pool.query(`
       UPDATE user_sessions
-      SET is_active = false, updated_at = NOW()
+      SET is_active = false, updated_at = NOW(), revoked_at = NOW()
       WHERE user_id = $1
         AND is_active = true
         AND id != $2
+      RETURNING id
     `, [userId, currentSessionId || null]);
+
+    // 将每个被吊销会话的 jti 写入黑名单，立即使其 JWT 失效
+    const ttl = parseDurationToSeconds(config.jwt.expiresIn);
+    for (const row of result.rows) {
+      await blacklistJti(row.id, ttl);
+    }
 
     logger.info('All sessions revoked', { userId, excludedSessionId: currentSessionId });
 

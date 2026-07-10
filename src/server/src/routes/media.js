@@ -9,6 +9,7 @@ import pool from '../db/pool.js';
 import { broadcastToUser } from '../ws/server.js';
 import { isValidUUID } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
+import { createIdempotencyMiddleware } from '../middleware/idempotency.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 
@@ -17,14 +18,20 @@ const __dirname = path.dirname(__filename);
 
 const router = Router();
 
+// 幂等中间件（requireHeader：仅当客户端携带 Idempotency-Key 时才生效，防止上传网络重试产生重复文件）
+const idempotencyMiddleware = createIdempotencyMiddleware({ requireHeader: true });
+
 // Ensure upload directories exist
 const UPLOAD_BASE = path.join(__dirname, '../../uploads');
 const IMAGE_DIR = path.join(UPLOAD_BASE, 'images');
 const FILE_DIR = path.join(UPLOAD_BASE, 'files');
+// 临时目录：multer 先把上传文件落盘到这里，处理完再移走/删除（P2 修复：避免 1GB 文件缓冲在内存导致 OOM）
+const TMP_DIR = path.join(UPLOAD_BASE, 'tmp');
 
 async function ensureDirs() {
   await fs.mkdir(IMAGE_DIR, { recursive: true });
   await fs.mkdir(FILE_DIR, { recursive: true });
+  await fs.mkdir(TMP_DIR, { recursive: true });
   await fs.mkdir(path.join(IMAGE_DIR, 'thumbnails'), { recursive: true });
 }
 ensureDirs().catch(err => logger.error('Failed to create upload dirs', { error: err.message }));
@@ -51,8 +58,11 @@ const SAFE_FILE_EXTENSIONS = new Set([
   '.html', '.css', '.sh', '.sql',
 ]);
 
-// Multer storage config for images
-const imageStorage = multer.memoryStorage();
+// Multer storage config for images —— 使用 diskStorage 直接落盘，避免把文件缓冲进内存（P2 修复 OOM）
+const imageStorage = multer.diskStorage({
+  destination: TMP_DIR,
+  filename: (req, file, cb) => cb(null, `${uuidv4()}.img.tmp`),
+});
 const imageUpload = multer({
   storage: imageStorage,
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
@@ -66,7 +76,11 @@ const imageUpload = multer({
 });
 
 // Multer storage config for files (plan-based size limit applied in route handler)
-const fileStorage = multer.memoryStorage();
+// diskStorage：1GB 文件直接写临时盘，处理完 rename 到正式目录，内存零拷贝（P2 修复 OOM）
+const fileStorage = multer.diskStorage({
+  destination: TMP_DIR,
+  filename: (req, file, cb) => cb(null, `${uuidv4()}.file.tmp`),
+});
 const fileUpload = multer({
   storage: fileStorage,
   limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB max (Enterprise limit), actual limit checked in handler
@@ -83,9 +97,9 @@ const fileUpload = multer({
 });
 
 // Generate thumbnail for images
-async function generateThumbnail(buffer, filename) {
+async function generateThumbnail(input, filename) {
   const thumbPath = path.join(IMAGE_DIR, 'thumbnails', `thumb_${filename}`);
-  await sharp(buffer)
+  await sharp(input)
     .resize(150, 150, { fit: 'cover' })
     .jpeg({ quality: 80 })
     .toFile(thumbPath);
@@ -93,16 +107,19 @@ async function generateThumbnail(buffer, filename) {
 }
 
 // Compress image (optimize for storage)
-async function compressImage(buffer, mimetype) {
-  let pipeline = sharp(buffer).rotate(); // Auto-rotate based on EXIF
+// input 可为 Buffer 或磁盘上的文件路径（P2：从临时文件直接读，避免双份内存缓冲）
+async function compressImage(input, mimetype) {
+  // GIF 不压缩以保留动图；返回原始字节（路径则读盘）
+  if (mimetype === 'image/gif') {
+    return typeof input === 'string' ? await fs.readFile(input) : input;
+  }
+
+  let pipeline = sharp(input).rotate(); // Auto-rotate based on EXIF
 
   if (mimetype === 'image/png') {
     pipeline = pipeline.png({ compressionLevel: 9, adaptiveFiltering: true });
   } else if (mimetype === 'image/webp') {
     pipeline = pipeline.webp({ quality: 85, effort: 6 });
-  } else if (mimetype === 'image/gif') {
-    // Don't compress GIF to preserve animation
-    return buffer;
   } else {
     // JPEG and others
     pipeline = pipeline.jpeg({ quality: 85, progressive: true });
@@ -112,7 +129,8 @@ async function compressImage(buffer, mimetype) {
 }
 
 // POST /api/media/image - Upload an image
-router.post('/image', apiLimiter, imageUpload.single('image'), async (req, res) => {
+router.post('/image', apiLimiter, idempotencyMiddleware, imageUpload.single('image'), async (req, res) => {
+  const tmpPath = req.file?.path;
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Please select an image to upload' });
@@ -133,8 +151,8 @@ router.post('/image', apiLimiter, imageUpload.single('image'), async (req, res) 
       return res.status(404).json({ error: 'Device not found' });
     }
 
-    // Compress image
-    const compressed = await compressImage(req.file.buffer, req.file.mimetype);
+    // Compress image（从临时文件直接读取，避免双份内存缓冲）
+    const compressed = await compressImage(req.file.path, req.file.mimetype);
     const ext = req.file.mimetype === 'image/png' ? '.png' :
                 req.file.mimetype === 'image/webp' ? '.webp' :
                 req.file.mimetype === 'image/gif' ? '.gif' : '.jpg';
@@ -239,11 +257,15 @@ router.post('/image', apiLimiter, imageUpload.single('image'), async (req, res) 
   } catch (err) {
     logger.error('Upload image error', { error: err.message });
     res.status(500).json({ error: 'Image upload failed' });
+  } finally {
+    // 清理 multer 临时文件，避免磁盘堆积（P2）
+    if (tmpPath) await fs.unlink(tmpPath).catch(() => {});
   }
 });
 
 // POST /api/media/file - Upload a file
-router.post('/file', apiLimiter, fileUpload.single('file'), async (req, res) => {
+router.post('/file', apiLimiter, idempotencyMiddleware, fileUpload.single('file'), async (req, res) => {
+  const tmpPath = req.file?.path;
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Please select a file to upload' });
@@ -264,11 +286,11 @@ router.post('/file', apiLimiter, fileUpload.single('file'), async (req, res) => 
       return res.status(404).json({ error: 'Device not found' });
     }
 
-    // Save file
+    // Save file：将临时文件原子 rename 到正式目录（不拷贝进内存，P2 修复 OOM）
     const ext = path.extname(req.file.originalname).toLowerCase();
     const filename = `${uuidv4()}${ext}`;
     const filePath = path.join(FILE_DIR, filename);
-    await fs.writeFile(filePath, req.file.buffer);
+    await fs.rename(req.file.path, filePath);
 
     // Save to database
     const result = await pool.query(
@@ -345,6 +367,9 @@ router.post('/file', apiLimiter, fileUpload.single('file'), async (req, res) => 
   } catch (err) {
     logger.error('Upload file error', { error: err.message });
     res.status(500).json({ error: 'File upload failed' });
+  } finally {
+    // rename 成功则 temp 已不存在（ENOENT 被忽略）；失败则清理残留临时文件
+    if (tmpPath) await fs.unlink(tmpPath).catch(() => {});
   }
 });
 

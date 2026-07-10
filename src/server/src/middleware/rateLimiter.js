@@ -204,6 +204,8 @@ export const apiLimiter = process.env.NODE_ENV === 'test'
       max: 100,             // 100次
       message: 'API rate limit exceeded, please try again later',
       keyGenerator: (req) => {
+        // 已登录请求按用户限流（C5 修复）；匿名请求回退到 IP（兼容配对/匿名路由）
+        if (req.userId) return `user:${req.userId}`;
         return req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
                req.ip ||
                req.connection?.remoteAddress;

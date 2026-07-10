@@ -217,6 +217,69 @@ export async function deleteProcessedRequest(key) {
   await client.del(redisKey);
 }
 
+// ============================================
+// Token 黑名单（会话吊销 / 注销 / 账户停用）
+// Key: bl:{jti}  (jti === sessionId)
+// Value: '1'
+// TTL: token 剩余有效期，避免 key 无限堆积
+// 注意：Redis 不可用时所有方法降级返回（false），由 DB 层
+// user_sessions.is_active 兜底（H2 修复：不能因 Redis 抖动让全站 403）
+// ============================================
+
+/**
+ * 解析时长字符串为秒数（用于黑名单 TTL / token 有效期）
+ * 支持：数字(秒) / "60s" / "30m" / "24h" / "7d"；非法返回 0
+ */
+export function parseDurationToSeconds(input) {
+  if (typeof input === 'number') return input;
+  if (typeof input !== 'string') return 0;
+  const m = input.trim().match(/^(\d+)\s*([smhd])?$/i);
+  if (!m) return 0;
+  const n = parseInt(m[1], 10);
+  const unit = (m[2] || 's').toLowerCase();
+  const mult = { s: 1, m: 60, h: 3600, d: 86400 }[unit];
+  return n * mult;
+}
+
+/**
+ * 将 jti 加入黑名单（会话吊销 / 注销 / 停用时立即使 token 失效）
+ * @param {string} jti
+ * @param {number} ttlSeconds - 应等于 token 剩余有效期（或完整有效期）
+ * @returns {Promise<boolean>} 是否成功写入
+ */
+export async function blacklistJti(jti, ttlSeconds) {
+  if (!jti) return false;
+  const ttl = Math.floor(ttlSeconds);
+  if (!Number.isFinite(ttl) || ttl <= 0) return false;
+  try {
+    const client = await getRedisClient();
+    if (!client) return false;
+    await client.setEx(`bl:${jti}`, ttl, '1');
+    return true;
+  } catch (err) {
+    logger.error('[redis] blacklistJti failed:', { error: err.message, jti });
+    return false;
+  }
+}
+
+/**
+ * 查询 jti 是否已被黑名单（吊销）
+ * @param {string} jti
+ * @returns {Promise<boolean>} true=已吊销
+ */
+export async function isJtiBlacklisted(jti) {
+  if (!jti) return false;
+  try {
+    const client = await getRedisClient();
+    if (!client) return false; // Redis 不可用 → 降级为“未吊销”，由 DB session 活性兜底
+    const val = await client.get(`bl:${jti}`);
+    return val !== null;
+  } catch (err) {
+    logger.error('[redis] isJtiBlacklisted failed (degraded):', { error: err.message, jti });
+    return false; // Redis 抖动时降级，避免全站 403（H2 修复）
+  }
+}
+
 export default {
   getRedisClient,
   closeRedisClient,
@@ -233,4 +296,7 @@ export default {
   storeProcessedRequest,
   getProcessedRequest,
   deleteProcessedRequest,
+  blacklistJti,
+  isJtiBlacklisted,
+  parseDurationToSeconds,
 };
