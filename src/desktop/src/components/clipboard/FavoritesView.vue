@@ -298,15 +298,17 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         <h2 class="fav-title">收藏</h2>
         <Badge variant="outline" class="fav-count">{{ favoriteCount }}</Badge>
       </div>
-      <div class="fav-header-right">
-        <div class="fav-view-toggle">
-          <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
-          <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
-        </div>
+    </div>
+
+    <!-- Search row -->
+    <div class="fav-search-row">
+      <div class="fav-search">
+        <Search :size="14" class="fav-search-icon" />
+        <input v-model="searchInput" class="fav-search-input" placeholder="搜索收藏..." />
       </div>
     </div>
 
-    <!-- Tag filter + Sort/Batch/Search row -->
+    <!-- Tags + Actions row -->
     <div class="fav-toolbar">
       <div class="fav-toolbar-left">
         <button v-if="allTags.length > 0" :class="['fav-tag-pill', { active: !activeTagFilter }]" @click="activeTagFilter = null">全部</button>
@@ -315,17 +317,22 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         </button>
       </div>
       <div class="fav-toolbar-right">
-        <Button variant="ghost" size="sm" @click="toggleSort"><ArrowUpDown :size="14" /><span>{{ sortLabel() }}</span></Button>
-        <Button v-if="favoriteItems.length > 0" variant="ghost" size="sm" :class="{ 'fav-active': batchMode }" @click="toggleBatchMode">
+        <Button variant="ghost" size="sm" class="fav-action-btn" @click="toggleSort">
+          <ArrowUpDown :size="14" /><span>{{ sortLabel() }}</span>
+        </Button>
+        <Button v-if="favoriteItems.length > 0" variant="ghost" size="sm" class="fav-action-btn" :class="{ 'fav-active': batchMode }" @click="toggleBatchMode">
           <CheckSquare v-if="batchMode" :size="14" /><Square v-else :size="14" /><span>{{ batchMode ? '退出' : '批量' }}</span>
         </Button>
         <template v-if="batchMode && selectedCount > 0">
           <span class="fav-batch-count">已选 {{ selectedCount }}</span>
-          <Button variant="ghost" size="sm" class="fav-unfav-btn" @click="batchUnfavorite"><Star :size="14" fill="currentColor" /><span>取消</span></Button>
+          <Button variant="ghost" size="sm" class="fav-action-btn fav-unfav-btn" @click="batchUnfavorite">
+            <Star :size="14" fill="currentColor" /><span>取消收藏</span>
+          </Button>
         </template>
-        <div class="fav-search">
-          <Search :size="14" class="fav-search-icon" />
-          <input v-model="searchInput" class="fav-search-input" placeholder="搜索收藏..." />
+        <!-- View toggle -->
+        <div class="fav-view-toggle">
+          <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
+          <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
         </div>
       </div>
     </div>
@@ -491,45 +498,48 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-page { display: flex; flex-direction: column; height: 100%; }
 
 /* Header */
-.fav-header { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 24px; background: var(--bg-surface); flex-shrink: 0; border-bottom: 1px solid var(--border-default); }
+.fav-header { display: flex; align-items: center; height: 56px; padding: 0 24px; background: var(--bg-surface); flex-shrink: 0; border-bottom: 1px solid var(--border-default); }
 .fav-header-left { display: flex; align-items: center; gap: 10px; }
 .fav-header-icon { color: var(--warning); }
 .fav-title { font-weight: 600; font-size: 16px; }
 .fav-count { padding: 2px 10px !important; }
-.fav-header-right { display: flex; align-items: center; gap: 6px; }
 
-.fav-view-toggle { display: inline-flex; background: var(--bg-hover); border-radius: var(--radius-md); padding: 2px; gap: 2px; }
-.fav-view-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); cursor: pointer; transition: all 0.15s; }
-.fav-view-btn:hover { color: var(--text-primary); }
-.fav-view-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-card); }
+/* Search row */
+.fav-search-row { display: flex; align-items: center; padding: 10px 24px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
+.fav-search { position: relative; display: inline-flex; align-items: center; flex: 1; max-width: 400px; }
+.fav-search-icon { position: absolute; left: 10px; color: var(--text-tertiary); pointer-events: none; }
+.fav-search-input { width: 100%; height: 34px; padding: 0 12px 0 32px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 13px; background: var(--bg-surface); color: var(--text-primary); outline: none; transition: border-color 0.15s; }
+.fav-search-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
 
-/* Toolbar: tags on left, sort/batch/search on right */
+/* Toolbar: tags left, actions right */
 .fav-toolbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 24px; border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0; gap: 12px;
 }
 .fav-toolbar-left { display: flex; align-items: center; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; }
-.fav-toolbar-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.fav-toolbar-right { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 
+/* All action buttons: consistent padding */
+.fav-action-btn { padding: 0 14px !important; height: 32px !important; }
 .fav-active { color: var(--accent) !important; }
-.fav-batch-count { font-size: 12px; color: var(--text-tertiary); }
+.fav-batch-count { font-size: 12px; color: var(--text-tertiary); padding: 0 6px; }
 .fav-unfav-btn { color: var(--warning) !important; }
+
+/* View toggle */
+.fav-view-toggle { display: inline-flex; background: var(--bg-hover); border-radius: var(--radius-md); padding: 2px; gap: 2px; margin-left: 4px; }
+.fav-view-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); cursor: pointer; transition: all 0.15s; }
+.fav-view-btn:hover { color: var(--text-primary); }
+.fav-view-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-card); }
 
 /* Tag pills */
 .fav-tag-pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 9999px; border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 12px; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0; }
 .fav-tag-pill:hover { border-color: var(--border-focus); color: var(--text-primary); }
 .fav-tag-pill.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
 
-/* Search */
-.fav-search { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
-.fav-search-icon { position: absolute; left: 10px; color: var(--text-tertiary); pointer-events: none; }
-.fav-search-input { width: 160px; height: 32px; padding: 0 10px 0 30px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; background: var(--bg-surface); color: var(--text-primary); outline: none; transition: border-color 0.15s; }
-.fav-search-input:focus { border-color: var(--border-focus); }
-
 /* Collection bar */
-.fav-collection-bar { display: flex; align-items: center; gap: 6px; padding: 8px 24px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; overflow-x: auto; }
-.fav-col-tab { display: inline-flex; align-items: center; gap: 4px; padding: 5px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 12px; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0; }
+.fav-collection-bar { display: flex; align-items: center; gap: 8px; padding: 10px 24px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; overflow-x: auto; }
+.fav-col-tab { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 12px; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0; }
 .fav-col-tab:hover { border-color: var(--border-focus); }
 .fav-col-tab.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); font-weight: 500; }
 .fav-col-count { font-size: 10px; color: var(--text-tertiary); margin-left: 2px; }
@@ -546,6 +556,7 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-empty-icon { color: var(--text-tertiary); opacity: 0.3; }
 .fav-empty-title { font-weight: 600; font-size: 16px; color: var(--text-secondary); }
 .fav-empty-desc { font-size: 13px; color: var(--text-tertiary); text-align: center; max-width: 300px; }
+.fav-empty :deep(button) { padding: 0 20px !important; height: 36px !important; }
 
 /* Groups */
 .fav-groups { display: flex; flex-direction: column; gap: 20px; }
@@ -590,12 +601,7 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-card-link-domain { font-size: 10px; color: var(--text-tertiary); }
 .fav-card-file { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-secondary); }
 .fav-card-file span { font-size: 11px; text-align: center; word-break: break-all; }
-/* Tags on card: top-left corner, over preview area */
-.fav-card-tags {
-  position: absolute; top: 6px; left: 6px; z-index: 2;
-  display: flex; align-items: center; gap: 3px; flex-wrap: wrap;
-  max-width: calc(100% - 12px);
-}
+.fav-card-tags { position: absolute; top: 6px; left: 6px; z-index: 2; display: flex; align-items: center; gap: 3px; flex-wrap: wrap; max-width: calc(100% - 12px); }
 .fav-card-meta { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-top: 1px solid var(--border-subtle); }
 .fav-card-source { font-size: 11px; color: var(--text-tertiary); max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fav-card-time { font-size: 11px; color: var(--text-tertiary); }
@@ -604,12 +610,7 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 
 /* Tags */
 .fav-tag-badge { font-size: 10px !important; padding: 2px 8px !important; }
-.fav-tag-add-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; border: 1px dashed var(--border-default);
-  border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary);
-  cursor: pointer; transition: all 0.12s; flex-shrink: 0;
-}
+.fav-tag-add-btn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px dashed var(--border-default); border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); cursor: pointer; transition: all 0.12s; flex-shrink: 0; }
 .fav-tag-add-btn:hover { border-color: var(--accent); color: var(--accent); }
 .fav-tag-edit { display: flex; align-items: center; gap: 4px; }
 .fav-tag-input { width: 120px; height: 26px; padding: 0 6px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-size: 11px; background: var(--bg-surface); color: var(--text-primary); outline: none; }
