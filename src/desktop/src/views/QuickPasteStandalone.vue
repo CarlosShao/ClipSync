@@ -35,14 +35,15 @@ const COLLAPSED_H = 58
 const EXPANDED_W = 660
 const EXPANDED_H = 470
 
-let stopPolling: (() => void) | null = null
-
 onMounted(async () => {
-  stopPolling = clip.startPolling(2000)
+  // QP 窗口只作为"查看/粘贴"面板，绝不启动剪贴板监控捕获。
+  // 捕获由主窗口（独立 webview 上下文）独占：Rust 的 clipboard-changed 是全局广播，
+  // 若 QP 也 startPolling，两个 webview 各自入队上传 → 文本/链接/图片无条件重复。
+  // 这里仅从服务端拉取历史供展示与粘贴，自身复制条目时由 copyItem 的跳过窗口去重。
+  clip.refresh()
   await nextTick()
   setTimeout(() => focusSearch(), 80)
 })
-onUnmounted(() => { if (stopPolling) stopPolling() })
 
 function focusSearch() {
   const el = document.querySelector('.qp-in') as HTMLInputElement | null

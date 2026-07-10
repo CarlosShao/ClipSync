@@ -4,6 +4,8 @@ import type { AppConfig, ClipboardImageInfo } from '@/types'
 // ===== Config =====
 export const getConfig = () => invoke<AppConfig>('get_config')
 export const updateConfig = (config: AppConfig) => invoke('update_config', { config })
+// 清除认证状态（退出登录时调用，与 updateConfig 分离以免保存设置误删会话）
+export const clearAuth = () => invoke('clear_auth')
 
 // ===== Clipboard =====
 export const getClipboardContent = () => invoke<string>('get_clipboard_content')

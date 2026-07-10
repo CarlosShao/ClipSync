@@ -95,7 +95,13 @@ export const useConfigStore = defineStore('config', () => {
   function logout() {
     localStorage.removeItem('clipsync-token')
     user.value = { name: '', email: '', phone: '', plan: 'Free' }
-    save({ token: null, user_id: null })
+    config.value.token = null
+    config.value.user_id = null
+    config.value.device_id = null
+    // 清除 Rust 端持久化的认证态（clear_auth 命令只清 token/device_id/user_id，
+    // 不会动 server_url/快捷键）。不再用 save({token:null})，避免 update_config
+    // 整体覆盖语义误伤其它字段。
+    tauri.clearAuth().catch(() => {})
   }
 
   // 保存用户偏好到 localStorage（跨会话持久化）

@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -17,8 +19,22 @@ fn has_windows(app: &AppHandle) -> bool {
 ///
 /// The frontend listens for `clipboard-changed` events and handles upload logic,
 /// replacing the previous 1500ms JS polling approach with event-driven architecture.
-pub fn start_monitor(app_handle: AppHandle) {
+/// `stop_flag` is shared with the `stop_clipboard_monitor` command. When set to
+/// `true`, the loop breaks on its next iteration and the thread exits. A `MonitorGuard`
+/// resets the flag to `false` on thread exit (including on panic), so the monitor can
+/// always be restarted — previously the flag was never read and the thread could never
+/// be stopped or restarted after a panic.
+pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
     eprintln!("[ClipMon] Starting clipboard monitor...");
+
+    struct MonitorGuard(Arc<AtomicBool>);
+    impl Drop for MonitorGuard {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Relaxed);
+            eprintln!("[ClipMon] Monitor thread exited, stop flag reset to false.");
+        }
+    }
+    let _guard = MonitorGuard(stop_flag.clone());
 
     let mut last_text = String::new();
     let mut last_file_paths: Vec<String> = Vec::new();
@@ -30,6 +46,13 @@ pub fn start_monitor(app_handle: AppHandle) {
     let mut cycle: u64 = 0;
 
     loop {
+        // Honor stop request: the `stop_clipboard_monitor` command (or a panic-exit
+        // guard) sets this flag; break so the thread can terminate cleanly.
+        if stop_flag.load(Ordering::Relaxed) {
+            eprintln!("[ClipMon] Stop requested, exiting monitor loop.");
+            break;
+        }
+
         // Check if any frontend windows are alive. If not (e.g. during Vite
         // hot-reload), skip clipboard polling to avoid stale callback warnings.
         let windows_alive = has_windows(&app_handle);
