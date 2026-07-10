@@ -1,5 +1,7 @@
 use log::{error, info};
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
@@ -45,9 +47,14 @@ impl SyncClient {
         let encrypted = crypto::encrypt(content.as_bytes(), &self.encryption_key)?;
 
         let client = reqwest::Client::new();
+        // C3 修复：幂等键由密文派生（确定性），同一内容重试复用同一把键，服务端据此去重
+        let mut hasher = DefaultHasher::new();
+        encrypted.hash(&mut hasher);
+        let idem_key = format!("rust-{:x}", hasher.finish());
         let resp = client
             .post(format!("{}/api/clipboard", self.server_url))
             .bearer_auth(&self.token)
+            .header("Idempotency-Key", idem_key)
             .json(&serde_json::json!({
                 "sourceDeviceId": self.device_id,
                 "contentType": content_type,

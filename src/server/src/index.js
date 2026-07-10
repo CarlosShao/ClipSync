@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import { createServer } from 'http';
+import cluster from 'cluster';
+import { cpus } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Redis from 'redis';
@@ -123,8 +125,8 @@ app.use((req, res, next) => {
 // ============================================
 // Body Parser with size limits
 // ============================================
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+app.use(express.json({ limit: config.jsonBodyLimit }));
+app.use(express.urlencoded({ extended: false, limit: config.jsonBodyLimit }));
 
 // Disable X-Powered-By
 app.disable('x-powered-by');
@@ -328,29 +330,29 @@ app.use('/api/auth', authSessionRoutes);
 // 必须注册在下方认证版 /api/devices 之前，否则匿名 redeem 会被全局 authenticateToken 拦截返回 401
 app.use('/api/devices', apiLimiter, pairingRouter);
 
-app.use('/api/devices', apiLimiter, authenticateToken, csrfProtection, subscriptionCheck, checkDeviceLimit, (req, res, next) => {
+app.use('/api/devices', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, checkDeviceLimit, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, deviceRoutes);
-app.use('/api/clipboard', apiLimiter, authenticateToken, csrfProtection, subscriptionCheck, (req, res, next) => {
+app.use('/api/clipboard', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, clipboardRoutes);
-app.use('/api/media', apiLimiter, authenticateToken, csrfProtection, subscriptionCheck, (req, res, next) => {
+app.use('/api/media', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, mediaRoutes);
-app.use('/api/sync', apiLimiter, authenticateToken, csrfProtection, subscriptionCheck, (req, res, next) => {
+app.use('/api/sync', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, syncRoutes);
 
-app.use('/api/upload', apiLimiter, authenticateToken, csrfProtection, subscriptionCheck, (req, res, next) => {
+app.use('/api/upload', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, chunkedUploadRoutes);
 
-app.use('/api/versions', apiLimiter, authenticateToken, csrfProtection, subscriptionCheck, (req, res, next) => {
+app.use('/api/versions', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, versionRoutes);
@@ -412,8 +414,29 @@ app.use((err, req, res, next) => {
 // Setup WebSocket & Start Server (skip in test environment)
 // ============================================
 let wss = null;
-if (process.env.NODE_ENV !== 'test') {
-  wss = setupWebSocket(server);
+
+// P4 修复：多进程集群，充分利用多核（默认关闭，CLUSTER_WORKERS=1 或不设置）。
+// CLUSTER_WORKERS=auto → 按 CPU 核心数 fork；= N → 固定 N 个 worker。
+const clusterWorkersEnv = process.env.CLUSTER_WORKERS;
+const CLUSTER_WORKERS = clusterWorkersEnv === 'auto' ? 'auto' : (parseInt(clusterWorkersEnv, 10) || 1);
+const isClusteredPrimary = cluster.isPrimary && CLUSTER_WORKERS !== 1;
+
+if (isClusteredPrimary) {
+  const n = CLUSTER_WORKERS === 'auto' ? cpus().length : CLUSTER_WORKERS;
+  // 每个 worker 的 DB 连接池上限 = 总上限 / worker 数，避免 N 个 worker 总连接数超过 PG max_connections
+  const totalPool = parseInt(process.env.DB_POOL_MAX, 10) || 50;
+  process.env.DB_POOL_MAX = String(Math.max(5, Math.floor(totalPool / n)));
+  logger.info(`[cluster] Primary forking ${n} workers (per-worker DB_POOL_MAX=${process.env.DB_POOL_MAX})`);
+  for (let i = 0; i < n; i++) cluster.fork();
+  cluster.on('exit', (worker, code, signal) => {
+    logger.warn(`[cluster] worker ${worker.process.pid} exited (${signal || code}), restarting`);
+    cluster.fork();
+  });
+}
+
+if (!isClusteredPrimary) {
+  if (process.env.NODE_ENV !== 'test') {
+    wss = setupWebSocket(server);
 
   server.listen(config.port, config.host, () => {
     logger.info('ClipSync Server started', {
@@ -443,12 +466,20 @@ if (process.env.NODE_ENV !== 'test') {
     }
   });
 }
+}
 
 // ============================================
 // Graceful Shutdown（增强版）
 // ============================================
 async function gracefulShutdown(signal) {
   logger.info(`${signal} received. Shutting down gracefully...`);
+
+  // 集群模式：主进程先终止所有 worker（P4），worker 各自执行优雅退出
+  if (cluster.isPrimary) {
+    for (const id in cluster.workers) {
+      try { cluster.workers[id].kill('SIGTERM'); } catch { /* ignore */ }
+    }
+  }
 
   // 1. 停止接受新连接
   server.close(() => {
@@ -463,9 +494,13 @@ async function gracefulShutdown(signal) {
   }
 
   // 3. 关闭 WebSocket 服务器
-  wss.close(() => {
-    logger.info('WebSocket server closed');
-  });
+  if (wss) {
+    wss.close(() => {
+      logger.info('WebSocket server closed');
+    });
+  } else {
+    logger.info('WebSocket server not started in this process (master/cluster primary)');
+  }
 
   // 4. 关闭数据库连接池
   try {

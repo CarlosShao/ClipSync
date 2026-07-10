@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import config from '../config.js';
-import { getRedisClient } from '../utils/redis-client.js';
+import { isJtiBlacklisted } from '../utils/redis-client.js';
 import { pool } from '../db/pool.js';
 
 export async function authenticateToken(req, res, next) {
@@ -25,14 +25,12 @@ export async function authenticateToken(req, res, next) {
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
 
-    // ✅ 新增：检查 JWT 黑名单（注销后 token 立即失效）
+    // ✅ 会话吊销 / 注销后立即失效：检查 JWT 黑名单（bl:{jti}）
+    // Redis 不可用时降级为“未吊销”，由下方 DB 层 user_sessions.is_active 兜底（H2 修复）
     if (decoded.jti) {
-      const redis = await getRedisClient();
-      if (redis) {
-        const blacklisted = await redis.get(`bl:${decoded.jti}`);
-        if (blacklisted) {
-          return res.status(401).json({ error: 'Token revoked' });
-        }
+      const blacklisted = await isJtiBlacklisted(decoded.jti);
+      if (blacklisted) {
+        return res.status(401).json({ error: 'Token revoked' });
       }
     }
 
@@ -44,18 +42,30 @@ export async function authenticateToken(req, res, next) {
       req.user.sessionId = decoded.sessionId;
     }
 
-    // ✅ Red Team 修复 P0-1: 检查账户是否已停用
+    // ✅ 账户活性 + 会话活性 双重校验（C1 修复：吊销会话须立即使 token 失效）
+    // 即便 Redis 黑名单因抖动未命中，只要 user_sessions.is_active=false 就拒绝
     try {
       const userCheck = await pool.query(
-        'SELECT is_active FROM users WHERE id = $1',
-        [decoded.userId]
+        `SELECT u.is_active AS user_active, s.is_active AS session_active
+         FROM users u
+         LEFT JOIN user_sessions s ON s.id = $2
+         WHERE u.id = $1`,
+        [decoded.userId, decoded.jti || null]
       );
-      if (userCheck.rows.length === 0 || !userCheck.rows[0].is_active) {
+      if (userCheck.rows.length === 0) {
+        return res.status(401).json({ error: 'Account not found' });
+      }
+      const row = userCheck.rows[0];
+      if (!row.user_active) {
         return res.status(401).json({ error: 'Account deactivated' });
       }
+      // token 绑定了已吊销的会话 → 立即拒绝（不依赖 Redis 黑名单）
+      if (decoded.jti && row.session_active === false) {
+        return res.status(401).json({ error: 'Session revoked' });
+      }
     } catch (err) {
-      // 数据库查询失败，记录日志但允许请求继续（避免误杀）
-      console.warn('[auth] is_active check failed:', err.message);
+      // DB 查询失败：记录告警，但放行（避免误杀正常请求）
+      console.warn('[auth] user/session active check failed:', err.message);
     }
 
     next();

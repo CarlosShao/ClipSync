@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import pool from '../db/pool.js';
 import config from '../config.js';
 import { logger } from '../utils/logger.js';
-import { getRedisClient } from '../middleware/rateLimiter.js';
+import { getRedisClient, checkWsConnectionLimit, removeWsConnection } from '../middleware/rateLimiter.js';
 import { createNotification } from '../services/notificationService.js';
 import {
   initWsRedisPubSub,
@@ -24,6 +24,27 @@ const UNREGISTERED_TIMEOUT = 10000; // 10秒
 // WebSocket消息速率限制
 const WS_RATE_LIMIT = 50; // 每秒最多50条消息
 const WS_RATE_WINDOW = 1000; // 1秒窗口
+
+// 单连接发送缓冲上限（P5 背压）：超过则丢弃该消息，避免慢客户端导致服务端内存无限增长
+const WS_MAX_BUFFERED = 1024 * 1024; // 1MB
+
+// 带背压保护的发送：慢客户端（bufferedAmount 过高）直接丢弃，保护服务端内存
+function safeSend(ws, payload) {
+  if (ws.readyState !== 1) return false; // 仅 OPEN 状态
+  if (typeof ws.bufferedAmount === 'number' && ws.bufferedAmount > WS_MAX_BUFFERED) {
+    logger.warn('[WebSocket] backpressure: dropping message, bufferedAmount too high', {
+      bufferedAmount: ws.bufferedAmount,
+    });
+    return false;
+  }
+  try {
+    ws.send(payload);
+    return true;
+  } catch (err) {
+    logger.error('[WebSocket] send error:', { error: err.message });
+    return false;
+  }
+}
 
 export function setupWebSocket(server) {
   // 幂等性检查：同一个 server 只创建一次 WebSocket 服务
@@ -212,6 +233,14 @@ export function setupWebSocket(server) {
               return;
             }
 
+            // 连接数限制（H6 修复：此前 checkWsConnectionLimit 定义但未调用，限制形同虚设）
+            if (!checkWsConnectionLimit(userId, deviceId)) {
+              logger.warn('[WebSocket] connection limit exceeded', { userId, deviceId });
+              ws.send(JSON.stringify({ type: 'error', message: 'Connection limit exceeded (max 5 per user)' }));
+              ws.close(4007, 'Connection limit exceeded');
+              return;
+            }
+
             // Store connection
             if (!connections.has(userId)) {
               connections.set(userId, new Map());
@@ -251,8 +280,8 @@ export function setupWebSocket(server) {
             const userDevices = connections.get(userId);
             if (userDevices) {
               for (const [otherDeviceId, otherWs] of userDevices) {
-                if (otherDeviceId !== deviceId && otherWs.readyState === 1) {
-                  otherWs.send(JSON.stringify(clipboardMessage));
+                if (otherDeviceId !== deviceId) {
+                  safeSend(otherWs, JSON.stringify(clipboardMessage));
                 }
               }
             }
@@ -289,6 +318,9 @@ export function setupWebSocket(server) {
       clearTimeout(unregisteredTimeout);
 
       if (deviceId) {
+        // Remove from connection-limit tracker (H6 修复)
+        removeWsConnection(userId, deviceId);
+
         // Remove from connections
         const userDevices = connections.get(userId);
         if (userDevices) {
@@ -355,9 +387,7 @@ export function broadcastToUser(userId, message) {
   const userDevices = connections.get(userId);
   if (userDevices) {
     for (const [deviceId, ws] of userDevices) {
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify(message));
-      }
+      safeSend(ws, JSON.stringify(message));
     }
   }
 

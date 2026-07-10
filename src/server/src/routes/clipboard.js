@@ -1,13 +1,25 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import pool from '../db/pool.js';
 import { broadcastToUser, sendNotification } from '../ws/server.js';
 import { isValidUUID, isValidContentType, validatePagination, validateSearch, sanitizeString } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
 import { checkClipboardLimit } from '../middleware/subscriptionCheck.js';
+import { createIdempotencyMiddleware } from '../middleware/idempotency.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 
 const router = Router();
+
+// 幂等中间件（requireHeader：仅当客户端携带 Idempotency-Key 时才生效，防止网络重试产生重复写入）
+const idempotencyMiddleware = createIdempotencyMiddleware({ requireHeader: true });
+
+// 将字符串映射为一对 31 位正整数，用于 pg_advisory_xact_lock（跨实例共享的会话级锁，
+// 保证“去重查询 → 插入”在并发下原子，且不永久阻断 5 分钟后的重新复制）
+function advisoryLockKey(str) {
+  const h = crypto.createHash('md5').update(str).digest();
+  return [h.readUInt32BE(0) & 0x7fffffff, h.readUInt32BE(4) & 0x7fffffff];
+}
 
 // Content type detection helper (rule-based for MVP)
 function detectContentType(content, declaredType) {
@@ -268,7 +280,19 @@ router.get('/:id', apiLimiter, async (req, res) => {
 });
 
 // POST /api/clipboard - Create a new clipboard item
-router.post('/', apiLimiter, checkClipboardLimit, async (req, res) => {
+// C2+C4 修复：去重（所有类型）+ 事务原子（插入/同步状态/审计 在一个事务内）
+router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (req, res) => {
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (err) {
+    logger.error('Create clipboard item: failed to acquire DB client', { error: err.message });
+    return res.status(500).json({ error: 'Failed to create clipboard item' });
+  }
+  let item = null;
+  let deviceName = 'Unknown device';
+  let srcDeviceId = null;
+  let shouldBroadcast = false;
   try {
     const { sourceDeviceId, contentType, contentEncrypted, contentPreview, contentSize, metadata, expiresAt } = req.body;
 
@@ -282,9 +306,9 @@ router.post('/', apiLimiter, checkClipboardLimit, async (req, res) => {
       return res.status(400).json({ error: 'Invalid sourceDeviceId format' });
     }
 
-    // 验证内容大小（最大50MB）
-    if (typeof contentEncrypted === 'string' && contentEncrypted.length > 50 * 1024 * 1024) {
-      return res.status(400).json({ error: 'Content too large, maximum size is 50MB' });
+    // 验证内容大小（最大10MB，与 express.json body 上限保持一致，P1 修复）
+    if (typeof contentEncrypted === 'string' && contentEncrypted.length > 10 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Content too large, maximum size is 10MB' });
     }
 
     // Detect content type from preview or declared type
@@ -296,19 +320,35 @@ router.post('/', apiLimiter, checkClipboardLimit, async (req, res) => {
     // 清理预览内容 — 只做截断，不做 HTML 转义（contentPreview 用于前端展示，非 HTML 执行）
     const cleanPreview = contentPreview ? String(contentPreview).substring(0, 1000) : '';
 
+    // 非文件类型按密文哈希去重；文件类型用路径去重（content_hash 留空）
+    const isFile = detectedType === 'file';
+    const contentHash = isFile ? null : crypto.createHash('sha256').update(contentEncrypted).digest('hex');
+    srcDeviceId = sourceDeviceId;
+
     // Verify device belongs to user
-    const deviceCheck = await pool.query(
+    const deviceCheck = await client.query(
       'SELECT id, device_name FROM devices WHERE id = $1 AND user_id = $2',
       [sourceDeviceId, req.userId]
     );
-
     if (deviceCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Device not found' });
     }
+    deviceName = deviceCheck.rows[0]?.device_name || 'Unknown device';
 
-    // 后端兜底去重：同用户、同文件路径，5 分钟内重复创建 → 返回已有记录
-    if (detectedType === 'file' && metadata && metadata.paths && metadata.paths.length > 0) {
-      const dupCheck = await pool.query(
+    // 开启事务（C4：保证 去重检查 → 插入 → 同步状态 → 审计 原子）
+    await client.query('BEGIN');
+
+    // 去重：用 pg_advisory_xact_lock 串行化同 key 的并发插入（跨实例共享，避免竞态产生重复）
+    // 5 分钟窗口由应用层判断，避免永久阻断“重新复制相同内容”（唯一索引做不到这点）
+    let existing = null;
+    const dedupKey = isFile
+      ? `${req.userId}:file:${metadata?.paths?.[0] || ''}`
+      : `${req.userId}:${contentHash}`;
+    const [lock1, lock2] = advisoryLockKey(dedupKey);
+    await client.query('SELECT pg_advisory_xact_lock($1, $2)', [lock1, lock2]);
+
+    if (isFile && metadata && metadata.paths && metadata.paths.length > 0) {
+      const dup = await client.query(
         `SELECT id, created_at FROM clipboard_items
          WHERE user_id = $1 AND content_type = 'file'
            AND metadata->'paths' @> $2::jsonb
@@ -316,32 +356,43 @@ router.post('/', apiLimiter, checkClipboardLimit, async (req, res) => {
          LIMIT 1`,
         [req.userId, JSON.stringify([metadata.paths[0]])]
       );
-      if (dupCheck.rows.length > 0) {
-        const existing = dupCheck.rows[0];
-        return res.status(200).json({
-          id: existing.id,
-          contentType: 'file',
-          contentPreview: cleanPreview,
-          contentSize: contentSize || 0,
-          isFavorite: false,
-          expiresAt: null,
-          createdAt: existing.created_at,
-          duplicate: true,
-        });
-      }
+      if (dup.rows.length > 0) existing = dup.rows[0];
+    } else if (contentHash) {
+      const dup = await client.query(
+        `SELECT id, created_at FROM clipboard_items
+         WHERE user_id = $1 AND content_type <> 'file' AND content_hash = $2
+           AND created_at > NOW() - INTERVAL '5 minutes'
+         LIMIT 1`,
+        [req.userId, contentHash]
+      );
+      if (dup.rows.length > 0) existing = dup.rows[0];
     }
 
-    const result = await pool.query(
-      `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    if (existing) {
+      await client.query('COMMIT');
+      return res.status(200).json({
+        id: existing.id,
+        contentType: isFile ? 'file' : detectedType,
+        contentPreview: cleanPreview,
+        contentSize: contentSize || 0,
+        isFavorite: false,
+        expiresAt: null,
+        createdAt: existing.created_at,
+        duplicate: true,
+      });
+    }
+
+    const result = await client.query(
+      `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata, content_hash, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, content_type, content_preview, content_size, is_favorite, expires_at, created_at`,
-      [req.userId, sourceDeviceId, detectedType, contentEncrypted, cleanPreview, contentSize || 0, JSON.stringify(metadata || {}), expiresAt || null]
+      [req.userId, sourceDeviceId, detectedType, contentEncrypted, cleanPreview, contentSize || 0, JSON.stringify(metadata || {}), contentHash, expiresAt || null]
     );
 
-    const item = result.rows[0];
+    item = result.rows[0];
 
     // Update device sync state
-    await pool.query(
+    await client.query(
       `INSERT INTO device_sync_state (device_id, last_synced_item_id, last_sync_at)
        VALUES ($1, $2, NOW())
        ON CONFLICT (device_id) DO UPDATE
@@ -349,47 +400,53 @@ router.post('/', apiLimiter, checkClipboardLimit, async (req, res) => {
       [sourceDeviceId, item.id]
     );
 
-    // Broadcast new clipboard item to other devices of the same user
-    broadcastToUser(req.userId, {
-      type: 'new_clipboard',
-      item: {
-        id: item.id,
-        contentType: item.content_type,
-        contentPreview: item.content_preview,
-        contentSize: item.content_size,
-        createdAt: item.created_at,
-        sourceDeviceId,
-      },
-    });
-
-    // Send notification for new sync
-    sendNotification(req.userId, {
-      notificationType: 'sync_complete',
-      title: 'New content synced',
-      body: `${detectedType.toUpperCase()} content from ${deviceCheck.rows[0]?.device_name || 'Unknown device'}`,
-      data: { itemId: item.id, contentType: detectedType },
-    });
-
-    // 审计日志：记录剪贴板创建
+    // 审计日志：记录剪贴板创建（在事务内，保证一致性）
     await logAuditEvent(req.userId, AUDIT_ACTIONS.CLIPBOARD_CREATE, 'clipboard', item.id, {
       contentType: detectedType,
       sourceDeviceId,
       contentSize,
     }, req);
 
-    res.status(201).json({
+    await client.query('COMMIT');
+    shouldBroadcast = true;
+  } catch (err) {
+    // 回滚，避免脏数据（C4）
+    try { await client.query('ROLLBACK'); } catch (e) { /* ignore */ }
+    logger.error('Create clipboard item error:', { error: err.message });
+    return res.status(500).json({ error: 'Failed to create clipboard item' });
+  } finally {
+    client.release();
+  }
+
+  // 提交后的副作用：广播 + 通知（不在事务内，避免外部调用拖慢/失败导致回滚）
+  broadcastToUser(req.userId, {
+    type: 'new_clipboard',
+    item: {
       id: item.id,
       contentType: item.content_type,
       contentPreview: item.content_preview,
       contentSize: item.content_size,
-      isFavorite: item.is_favorite,
-      expiresAt: item.expires_at,
       createdAt: item.created_at,
-    });
-  } catch (err) {
-    logger.error('Create clipboard item error:', { error: err.message });
-    res.status(500).json({ error: 'Failed to create clipboard item' });
-  }
+      sourceDeviceId: srcDeviceId,
+    },
+  });
+
+  sendNotification(req.userId, {
+    notificationType: 'sync_complete',
+    title: 'New content synced',
+    body: `${item.content_type.toUpperCase()} content from ${deviceName}`,
+    data: { itemId: item.id, contentType: item.content_type },
+  });
+
+  res.status(201).json({
+    id: item.id,
+    contentType: item.content_type,
+    contentPreview: item.content_preview,
+    contentSize: item.content_size,
+    isFavorite: item.is_favorite,
+    expiresAt: item.expires_at,
+    createdAt: item.created_at,
+  });
 });
 
 // PUT /api/clipboard/:id/favorite - Toggle favorite

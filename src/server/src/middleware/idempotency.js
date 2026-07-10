@@ -124,9 +124,17 @@ function generateIdempotencyKey(req) {
 export function createIdempotencyMiddleware(options = {}) {
   const ttl = options.ttl || IDEMPOTENCY_TTL;
   const sendCachedResponse = options.sendCachedResponse !== false;
+  // requireHeader：仅当客户端显式携带 Idempotency-Key 时才启用。
+  // 避免对“body 签名相同”的合法请求（如用户主动重新复制同一内容、不同文件同大小）误判为重复。
+  const requireHeader = options.requireHeader === true;
 
   return async (req, res, next) => {
     try {
+      // requireHeader 模式下无 header 直接放行，不做任何幂等处理
+      if (requireHeader && !req.headers['idempotency-key']) {
+        return next();
+      }
+
       const key = generateIdempotencyKey(req);
 
       // 检查是否已处理过
@@ -153,24 +161,23 @@ export function createIdempotencyMiddleware(options = {}) {
         }
       }
 
-      // 拦截响应，缓存结果
+      // 拦截响应，缓存结果（仅缓存成功响应 2xx，避免把 4xx/5xx 误当成“已处理”导致重试永远拿到错误）
       const originalSend = res.send;
       res.send = function(body) {
-        // 缓存响应到存储
-        const record = {
-          response: {
-            status: res.statusCode,
-            headers: res.getHeaders(),
-            body: body,
-          },
-          timestamp: Date.now(),
-        };
-        saveProcessed(key, record).catch((err) =>
-          logger.error('Idempotency: Failed to cache response', err)
-        );
-
-        logger.info('Idempotency: Caching response', { key });
-
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          const record = {
+            response: {
+              status: res.statusCode,
+              headers: res.getHeaders(),
+              body: body,
+            },
+            timestamp: Date.now(),
+          };
+          saveProcessed(key, record).catch((err) =>
+            logger.error('Idempotency: Failed to cache response', err)
+          );
+          logger.info('Idempotency: Caching response', { key });
+        }
         // 调用原始的 send 方法
         return originalSend.call(this, body);
       };

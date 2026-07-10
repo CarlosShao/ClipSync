@@ -101,4 +101,10 @@ if (nodeEnv === 'production') {
   }
 }
 
+// 默认 JSON / urlencoded body 解析上限（P1 修复：原 50mb 单请求可吃光内存）
+// 文件上传走 multer（diskStorage），不经由 express.json，故不受此限制。
+if (!config.jsonBodyLimit) {
+  config.jsonBodyLimit = process.env.JSON_BODY_LIMIT || '10mb';
+}
+
 export default config;

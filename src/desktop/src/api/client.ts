@@ -4,6 +4,20 @@ import { useConfigStore } from '@/stores/configStore'
 let csrfToken: string | null = null
 let csrfExpiresAt = 0
 
+// 生成幂等键（C3 修复）：写请求携带 Idempotency-Key，网络重试复用同一把键，
+// 服务端据此去重，避免重复创建剪贴板条目/上传重复文件。
+function genIdempotencyKey(): string {
+  try {
+    return crypto.randomUUID()
+  } catch {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0
+      const v = c === 'x' ? r : (r & 0x3) | 0x8
+      return v.toString(16)
+    })
+  }
+}
+
 async function getCsrfToken(): Promise<string | null> {
   if (csrfToken && Date.now() < csrfExpiresAt) return csrfToken
   // 未登录时跳过 CSRF（登录/注册/忘记密码不需要）
@@ -40,6 +54,9 @@ export async function api<T = any>(
   if (token) headers['Authorization'] = `Bearer ${token}`
   const csrf = await getCsrfToken()
   if (csrf) headers['X-CSRF-Token'] = csrf
+  // 写请求附加幂等键，并在重试中复用同一把键（C3）
+  const idemKey = genIdempotencyKey()
+  if (method === 'POST' || method === 'PUT') headers['Idempotency-Key'] = idemKey
 
   // 429 指数退避重试： capped delay to avoid 30s+ waits
   const MAX_RETRIES = 2
@@ -90,24 +107,47 @@ export async function apiForm<T = any>(
   formData: FormData,
 ): Promise<ApiResponse<T>> {
   const config = useConfigStore()
-  const headers: Record<string, string> = {}
-  // 注意：不设置 Content-Type，让浏览器自动设置 multipart boundary
-  const token = config.config.token
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  const csrf = await getCsrfToken()
-  if (csrf) headers['X-CSRF-Token'] = csrf
-  try {
-    const res = await fetch(`${config.serverUrl}${path}`, {
-      method: 'POST', headers, body: formData, credentials: 'include',
-    })
-    const text = await res.text()
-    let json: any
-    try { json = JSON.parse(text) } catch { json = { message: text } }
-    if (!res.ok) return { ok: false, status: res.status, error: json?.error || json?.message || `HTTP ${res.status}`, data: json }
-    return { ok: true, status: res.status, data: json }
-  } catch (e: any) {
-    return { ok: false, status: 0, error: String(e.message || e) }
+  const idemKey = genIdempotencyKey()
+  const MAX_RETRIES = 2
+  const BASE_DELAYS = [1000, 2000]
+  const MAX_RETRY_DELAY = 5000
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const headers: Record<string, string> = {}
+    // 注意：不设置 Content-Type，让浏览器自动设置 multipart boundary
+    const token = config.config.token
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const csrf = await getCsrfToken()
+    if (csrf) headers['X-CSRF-Token'] = csrf
+    // 写请求幂等键：重试复用同一把键，服务端据此去重（C3）
+    headers['Idempotency-Key'] = idemKey
+    try {
+      const res = await fetch(`${config.serverUrl}${path}`, {
+        method: 'POST', headers, body: formData, credentials: 'include',
+      })
+      const text = await res.text()
+      let json: any
+      try { json = JSON.parse(text) } catch { json = { message: text } }
+      // 429 退避重试（复用同一幂等键）
+      if (res.status === 429 && attempt < MAX_RETRIES) {
+        const retryAfter = res.headers.get('Retry-After')
+        const delay = Math.min(retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAYS[attempt], MAX_RETRY_DELAY)
+        console.warn(`[API] 429 on ${path} (attempt ${attempt + 1}/${MAX_RETRIES}), retrying after ${delay}ms`)
+        await new Promise(r => setTimeout(r, delay))
+        continue
+      }
+      if (!res.ok) return { ok: false, status: res.status, error: json?.error || json?.message || `HTTP ${res.status}`, data: json }
+      return { ok: true, status: res.status, data: json }
+    } catch (e: any) {
+      // 网络层错误才重试；否则直接返回失败
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, BASE_DELAYS[attempt]))
+        continue
+      }
+      return { ok: false, status: 0, error: String(e.message || e) }
+    }
   }
+  return { ok: false, status: 429, error: 'Upload failed after retries, please try again.' }
 }
 
 export async function apiBlob(
