@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use tauri::{Listener, Manager};
 use tauri::menu::{Menu, MenuItem};
@@ -39,7 +40,7 @@ impl Default for AppConfig {
 
 pub struct AppState {
     pub config: Arc<Mutex<AppConfig>>,
-    pub is_monitoring: Arc<Mutex<bool>>,
+    pub is_monitoring: Arc<AtomicBool>,
     /// Last time QuickPaste was toggled (for debouncing key-repeat)
     pub last_qp_toggle: Arc<Mutex<Instant>>,
     /// Last time ToggleWindow was toggled (for debouncing key-repeat)
@@ -86,7 +87,26 @@ fn get_config(state: tauri::State<AppState>) -> AppConfig {
 
 #[tauri::command]
 fn update_config(state: tauri::State<AppState>, config: AppConfig) {
-    *state.config.lock().unwrap() = config;
+    // 字段级合并：只更新用户可设置的字段（server_url / 快捷键），
+    // **永远保留**认证与身份字段 token/device_id/user_id。
+    // 之前是整体覆盖 `*config = config`，若前端设置快照漏带 token，
+    // 一次"保存快捷键"就会把登录态抹成 None → 用户被静默登出。
+    // 清除登录态请走专用命令 clear_auth（前端 logout 调用）。
+    let mut cfg = state.config.lock().unwrap();
+    cfg.server_url = config.server_url;
+    cfg.quick_paste_shortcut = config.quick_paste_shortcut;
+    cfg.toggle_window_shortcut = config.toggle_window_shortcut;
+}
+
+/// 清除认证/身份状态（前端 logout 调用）。与 update_config 分离，
+/// 确保"保存设置"绝不会误删活动会话。
+#[tauri::command]
+fn clear_auth(state: tauri::State<AppState>) {
+    let mut cfg = state.config.lock().unwrap();
+    cfg.token = None;
+    cfg.device_id = None;
+    cfg.user_id = None;
+    eprintln!("[Auth] Cleared token/device_id/user_id on logout");
 }
 
 /// Copy local files to clipboard (CF_HDROP) — checks if files exist first.
@@ -805,30 +825,29 @@ fn toggle_window(app: tauri::AppHandle) {
 /// Idempotent: calling while already monitoring is a no-op.
 #[tauri::command]
 fn start_clipboard_monitor(state: tauri::State<AppState>, app: tauri::AppHandle) {
-    let mut is_monitoring = state.is_monitoring.lock().unwrap();
-    if *is_monitoring {
+    if state.is_monitoring.load(Ordering::Relaxed) {
         eprintln!("[Monitor] Already running, skipping");
         return;
     }
-    *is_monitoring = true;
+    state.is_monitoring.store(true, Ordering::Relaxed);
     eprintln!("[Monitor] Starting native clipboard monitor thread...");
 
     let handle = app.clone();
+    let stop = state.is_monitoring.clone();
     thread::spawn(move || {
-        clipboard_monitor::start_monitor(handle);
+        clipboard_monitor::start_monitor(handle, stop);
     });
 }
 
 /// Stop the native clipboard monitor thread (sets flag; the loop will exit on next cycle).
 #[tauri::command]
 fn stop_clipboard_monitor(state: tauri::State<AppState>) {
-    let mut is_monitoring = state.is_monitoring.lock().unwrap();
-    if !*is_monitoring {
+    if !state.is_monitoring.load(Ordering::Relaxed) {
         eprintln!("[Monitor] Already stopped, skipping");
         return;
     }
-    *is_monitoring = false;
-    eprintln!("[Monitor] Stopping native clipboard monitor (will exit on next cycle)");
+    state.is_monitoring.store(false, Ordering::Relaxed);
+    eprintln!("[Monitor] Stopping native clipboard monitor (thread will exit on next cycle)");
 }
 
 /// Re-register all global shortcuts from the frontend-supplied map.
@@ -1281,7 +1300,7 @@ pub fn run() {
 
     let state = AppState {
         config: Arc::new(Mutex::new(AppConfig::default())),
-        is_monitoring: Arc::new(Mutex::new(false)),
+        is_monitoring: Arc::new(AtomicBool::new(false)),
         last_qp_toggle: Arc::new(Mutex::new(Instant::now() - std::time::Duration::from_secs(10))),
         last_tw_toggle: Arc::new(Mutex::new(Instant::now() - std::time::Duration::from_secs(10))),
     };
@@ -1299,6 +1318,7 @@ pub fn run() {
             tray_quit,
             get_config,
             update_config,
+            clear_auth,
             open_url,
             reveal_in_folder,
             get_clipboard_content,
@@ -1457,11 +1477,11 @@ pub fn run() {
             // 剪贴板监控：原生 Rust 线程轮询，通过 Tauri 事件推送到前端
             {
                 let monitor_state = app.state::<AppState>();
-                let mut is_monitoring = monitor_state.is_monitoring.lock().unwrap();
-                *is_monitoring = true;
+                monitor_state.is_monitoring.store(true, Ordering::Relaxed);
                 let handle = app.handle().clone();
+                let stop = monitor_state.is_monitoring.clone();
                 thread::spawn(move || {
-                    clipboard_monitor::start_monitor(handle);
+                    clipboard_monitor::start_monitor(handle, stop);
                 });
                 eprintln!("[Setup] Native clipboard monitor started (event-driven)");
             }

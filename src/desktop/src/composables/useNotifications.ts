@@ -44,13 +44,26 @@ function mapRow(row: NotificationHistoryRow): Notif {
 const notifications = ref<Notif[]>([])
 const loading = ref(false)
 
+// 加载历史期间的实时推送缓冲：loadHistory 异步请求在途时到达的 WS 推送，
+// 若直接插入会被 loadHistory 的整表重写覆盖丢失。先缓存，加载完成后合并去重。
+let pendingRealtime: Notif[] = []
+
 async function loadHistory() {
   if (loading.value) return
   loading.value = true
+  pendingRealtime = []
   try {
     const res = await getNotificationHistory(100, 0)
     if (res.ok && Array.isArray(res.data)) {
-      notifications.value = res.data.map(mapRow)
+      const history = res.data.map(mapRow)
+      // 合并加载期间缓冲的实时推送（按 id 去重），防止丢失
+      const seen = new Set(history.map((h) => h.id))
+      const buffered = pendingRealtime.filter((n) => {
+        if (seen.has(n.id)) return false
+        seen.add(n.id)
+        return true
+      })
+      notifications.value = [...buffered, ...history]
     } else {
       // 请求失败（未登录/离线/服务端未起）：保留现有数据，不覆盖
       console.warn('[Notifications] 加载历史失败:', res.error)
@@ -95,7 +108,6 @@ async function markAllRead() {
 function pushRealtime(payload: any) {
   if (!payload || payload.type !== 'notification') return
   const id = payload.id != null ? String(payload.id) : `rt_${Date.now()}`
-  if (notifications.value.some((x) => x.id === id)) return
   const n: Notif = {
     id,
     category: typeToCategory(payload.notificationType),
@@ -104,6 +116,12 @@ function pushRealtime(payload: any) {
     time: payload.timestamp ? new Date(payload.timestamp).getTime() : Date.now(),
     read: false,
   }
+  // 历史加载在途：先缓冲，待 loadHistory 合并，避免被整表重写覆盖
+  if (loading.value) {
+    if (!pendingRealtime.some((x) => x.id === id)) pendingRealtime.push(n)
+    return
+  }
+  if (notifications.value.some((x) => x.id === id)) return
   notifications.value = [n, ...notifications.value]
 }
 
