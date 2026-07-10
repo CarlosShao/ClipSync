@@ -37,6 +37,7 @@ import subscriptionRoutes from './routes/subscriptions.js';
 import paymentRoutes from './routes/payments.js';
 import invoiceRoutes from './routes/invoices.js';
 import surveyRoutes from './routes/surveys.js';
+import favoritesRoutes from './routes/favorites.js';
 import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
 import metricsRoutes from './routes/metrics.js';
@@ -374,6 +375,12 @@ app.use('/api/payments', apiLimiter, authenticateToken, csrfProtection, paymentR
 // 发票管理路由
 app.use('/api/invoices', apiLimiter, authenticateToken, csrfProtection, invoiceRoutes);
 app.use('/api/surveys', apiLimiter, authenticateToken, surveyRoutes);
+
+// 收藏夹管理路由
+app.use('/api/favorites', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, favoritesRoutes);
 
 // ============================================
 // 404 Handler

@@ -107,7 +107,7 @@ router.get('/', apiLimiter, async (req, res) => {
     // Get items
     const itemsResult = await pool.query(
       `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
-              ci.metadata, ci.is_favorite, ci.expires_at, ci.created_at,
+              ci.metadata, ci.is_favorite, ci.favorited_at, ci.expires_at, ci.created_at,
               d.device_name, d.platform
        FROM clipboard_items ci
        LEFT JOIN devices d ON ci.source_device_id = d.id
@@ -125,6 +125,7 @@ router.get('/', apiLimiter, async (req, res) => {
         contentSize: item.content_size,
         metadata: item.metadata,
         isFavorite: item.is_favorite,
+        favoritedAt: item.favorited_at,
         expiresAt: item.expires_at,
         createdAt: item.created_at,
         sourceDevice: {
@@ -461,9 +462,10 @@ router.put('/:id/favorite', apiLimiter, async (req, res) => {
 
     const result = await pool.query(
       `UPDATE clipboard_items
-       SET is_favorite = NOT is_favorite
+       SET is_favorite = NOT is_favorite,
+           favorited_at = CASE WHEN NOT is_favorite THEN NOW() ELSE NULL END
        WHERE id = $1 AND user_id = $2
-       RETURNING id, is_favorite`,
+       RETURNING id, is_favorite, favorited_at`,
       [id, req.userId]
     );
 
@@ -471,7 +473,11 @@ router.put('/:id/favorite', apiLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Clipboard item not found' });
     }
 
-    res.json({ id: result.rows[0].id, isFavorite: result.rows[0].is_favorite });
+    res.json({
+      id: result.rows[0].id,
+      isFavorite: result.rows[0].is_favorite,
+      favoritedAt: result.rows[0].favorited_at,
+    });
 
     // Broadcast favorite change to other devices
     broadcastToUser(req.userId, {

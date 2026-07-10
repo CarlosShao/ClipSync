@@ -168,3 +168,52 @@ export async function apiBlob(
     return null
   }
 }
+
+// ============================================
+// Favorites API
+// ============================================
+
+export async function getFavoriteCollections(): Promise<{ collections: any[] } | null> {
+  const res = await api('GET', '/api/favorites/collections')
+  return res.ok ? res.data : null
+}
+
+export async function createFavoriteCollection(name: string, icon?: string): Promise<{ collection: any } | null> {
+  const res = await api('POST', '/api/favorites/collections', { name, icon })
+  return res.ok ? res.data : null
+}
+
+export async function updateFavoriteCollection(id: string, data: { name?: string; icon?: string; sortOrder?: number }): Promise<{ collection: any } | null> {
+  const res = await api('PUT', `/api/favorites/collections/${id}`, data)
+  return res.ok ? res.data : null
+}
+
+export async function deleteFavoriteCollection(id: string): Promise<boolean> {
+  const res = await api('DELETE', `/api/favorites/collections/${id}`)
+  return res.ok
+}
+
+export async function addCollectionItem(collectionId: string, itemId: string): Promise<boolean> {
+  const res = await api('POST', `/api/favorites/collections/${collectionId}/items`, { itemId })
+  return res.ok
+}
+
+export async function removeCollectionItem(collectionId: string, itemId: string): Promise<boolean> {
+  const res = await api('DELETE', `/api/favorites/collections/${collectionId}/items/${itemId}`)
+  return res.ok
+}
+
+export async function getCollectionItems(collectionId: string): Promise<{ items: any[] } | null> {
+  const res = await api('GET', `/api/favorites/collections/${collectionId}/items`)
+  return res.ok ? res.data : null
+}
+
+export async function setItemTags(itemId: string, tags: string[]): Promise<{ tags: string[] } | null> {
+  const res = await api('PUT', `/api/favorites/${itemId}/tags`, { tags })
+  return res.ok ? res.data : null
+}
+
+export async function getAllFavoriteTags(): Promise<string[]> {
+  const res = await api('GET', '/api/favorites/tags')
+  return res.ok ? (res.data?.tags || []) : []
+}

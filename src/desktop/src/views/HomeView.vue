@@ -12,6 +12,7 @@ import * as tauri from '@/lib/tauri'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ClipboardView from '@/components/clipboard/ClipboardView.vue'
+import FavoritesView from '@/components/clipboard/FavoritesView.vue'
 import QuickPastePanel from '@/components/QuickPastePanel.vue'
 import SettingsView from '@/components/settings/SettingsView.vue'
 import ProfileView from '@/components/settings/ProfileView.vue'
@@ -234,6 +235,12 @@ function confirmAction() {
         v-if="currentSub === 'clipboard'"
         @toggle-quick-paste="showQuickPaste = !showQuickPaste"
         @toggle-theme="toggleMode"
+        @preview-image="onPreviewImage"
+        @preview-text="onPreviewText"
+        @preview-file="onPreviewFile"
+      />
+      <FavoritesView
+        v-else-if="currentSub === 'favorites'"
         @preview-image="onPreviewImage"
         @preview-text="onPreviewText"
         @preview-file="onPreviewFile"

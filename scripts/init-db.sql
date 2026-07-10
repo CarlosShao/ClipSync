@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS clipboard_items (
     diff_version INTEGER DEFAULT 1,
     metadata JSONB,
     is_favorite BOOLEAN DEFAULT FALSE,
+    favorited_at TIMESTAMP,
     expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
@@ -46,6 +47,27 @@ CREATE TABLE IF NOT EXISTS clipboard_items (
 CREATE INDEX IF NOT EXISTS idx_clipboard_user ON clipboard_items(user_id);
 CREATE INDEX IF NOT EXISTS idx_clipboard_created ON clipboard_items(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_clipboard_diff ON clipboard_items(id) WHERE content_diff IS NOT NULL;
+
+-- 收藏夹/集合表
+CREATE TABLE IF NOT EXISTS favorite_collections (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    icon VARCHAR(10) DEFAULT '📁',
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_favcol_user ON favorite_collections(user_id);
+
+-- 收藏夹与剪贴板项的关联表（多对多）
+CREATE TABLE IF NOT EXISTS favorite_collection_items (
+    collection_id UUID NOT NULL REFERENCES favorite_collections(id) ON DELETE CASCADE,
+    item_id UUID NOT NULL REFERENCES clipboard_items(id) ON DELETE CASCADE,
+    sort_order INTEGER DEFAULT 0,
+    added_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (collection_id, item_id)
+);
 
 -- 设备同步状态表
 CREATE TABLE IF NOT EXISTS device_sync_state (
