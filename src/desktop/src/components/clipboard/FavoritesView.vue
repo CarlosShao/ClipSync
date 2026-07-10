@@ -7,7 +7,7 @@ import { useToast } from '@/composables/useToast'
 import {
   Star, Search, Copy, Image as ImageIcon, LayoutGrid, List,
   ExternalLink, FileText, Folder, ArrowUpDown, CheckSquare, Square,
-  Plus, X, Tag, ClipboardList, FolderPlus, Check,
+  Plus, X, Tag, ClipboardList, FolderPlus,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -298,9 +298,15 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         <h2 class="fav-title">收藏</h2>
         <Badge variant="outline" class="fav-count">{{ favoriteCount }}</Badge>
       </div>
+      <div class="fav-header-right">
+        <div class="fav-view-toggle">
+          <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
+          <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
+        </div>
+      </div>
     </div>
 
-    <!-- Toolbar: tags + two-row controls (row1 search; row2 RTL: view toggle, batch, sort) -->
+    <!-- Tag filter + Sort/Batch/Search row -->
     <div class="fav-toolbar">
       <div class="fav-toolbar-left">
         <button v-if="allTags.length > 0" :class="['fav-tag-pill', { active: !activeTagFilter }]" @click="activeTagFilter = null">全部</button>
@@ -309,25 +315,17 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         </button>
       </div>
       <div class="fav-toolbar-right">
-        <div class="fav-toolbar-row fav-toolbar-row-search">
-          <div class="fav-search">
-            <Search :size="14" class="fav-search-icon" />
-            <input v-model="searchInput" class="fav-search-input" placeholder="搜索收藏..." />
-          </div>
-        </div>
-        <div class="fav-toolbar-row fav-toolbar-row-actions">
-          <Button variant="ghost" size="sm" @click="toggleSort"><ArrowUpDown :size="14" /><span>{{ sortLabel() }}</span></Button>
-          <Button v-if="favoriteItems.length > 0" variant="ghost" size="sm" :class="{ 'fav-active': batchMode }" @click="toggleBatchMode">
-            <CheckSquare v-if="batchMode" :size="14" /><Square v-else :size="14" /><span>{{ batchMode ? '退出' : '批量' }}</span>
-          </Button>
-          <template v-if="batchMode && selectedCount > 0">
-            <span class="fav-batch-count">已选 {{ selectedCount }}</span>
-            <Button variant="ghost" size="sm" class="fav-unfav-btn" @click="batchUnfavorite"><Star :size="14" fill="currentColor" /><span>取消</span></Button>
-          </template>
-          <div class="fav-view-toggle">
-            <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
-            <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
-          </div>
+        <Button variant="ghost" size="sm" @click="toggleSort"><ArrowUpDown :size="14" /><span>{{ sortLabel() }}</span></Button>
+        <Button v-if="favoriteItems.length > 0" variant="ghost" size="sm" :class="{ 'fav-active': batchMode }" @click="toggleBatchMode">
+          <CheckSquare v-if="batchMode" :size="14" /><Square v-else :size="14" /><span>{{ batchMode ? '退出' : '批量' }}</span>
+        </Button>
+        <template v-if="batchMode && selectedCount > 0">
+          <span class="fav-batch-count">已选 {{ selectedCount }}</span>
+          <Button variant="ghost" size="sm" class="fav-unfav-btn" @click="batchUnfavorite"><Star :size="14" fill="currentColor" /><span>取消</span></Button>
+        </template>
+        <div class="fav-search">
+          <Search :size="14" class="fav-search-icon" />
+          <input v-model="searchInput" class="fav-search-input" placeholder="搜索收藏..." />
         </div>
       </div>
     </div>
@@ -340,18 +338,18 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         <span class="fav-col-count">{{ col.item_count }}</span>
         <button class="fav-col-del" @click.stop="handleDeleteCollection(col.id)" title="删除">×</button>
       </button>
-      <!-- New collection: system button style with proper padding -->
+      <!-- New collection: system button style -->
       <template v-if="!showNewCollectionInput">
-        <Button variant="outline" size="sm" class="fav-col-add-btn px-5" @click="showNewCollectionInput = true">
-          <Plus :size="14" /> 新建收藏夹
+        <Button variant="outline" size="sm" class="fav-col-add-btn" @click="showNewCollectionInput = true">
+          <Plus :size="12" /> 新建收藏夹
         </Button>
       </template>
       <template v-else>
         <div class="fav-col-new">
           <input v-model="newCollectionName" class="fav-col-name-input" placeholder="收藏夹名称" maxlength="100"
             @keydown.enter="handleCreateCollection" @keydown.esc="showNewCollectionInput = false" />
-          <Button size="sm" class="px-5" @click="handleCreateCollection">创建</Button>
-          <Button variant="outline" size="sm" class="px-5" @click="showNewCollectionInput = false">取消</Button>
+          <Button size="sm" @click="handleCreateCollection">创建</Button>
+          <Button variant="ghost" size="sm" @click="showNewCollectionInput = false"><X :size="14" /></Button>
         </div>
       </template>
     </div>
@@ -363,7 +361,7 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         <div class="fav-empty-icon"><Star :size="48" :stroke-width="1.2" /></div>
         <h3 class="fav-empty-title">还没有收藏</h3>
         <p class="fav-empty-desc">在剪贴板中点击星标按钮，将重要内容添加到收藏</p>
-        <Button class="px-6 py-2.5" @click="goToClipboard"><ClipboardList :size="16" /> 去剪贴板看看</Button>
+        <Button @click="goToClipboard"><ClipboardList :size="14" /> 去剪贴板看看</Button>
       </div>
       <div v-else-if="favoriteItems.length === 0 && searchInput" class="fav-empty">
         <div class="fav-empty-icon"><Search :size="48" :stroke-width="1.2" /></div>
@@ -390,12 +388,12 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
             <div class="fav-list-tags">
               <template v-if="editingTagsItemId !== item.id">
                 <Badge v-for="tag in getTags(item)" :key="tag" variant="outline" class="fav-tag-badge">{{ tag }}</Badge>
-                <Button variant="outline" size="icon-sm" class="fav-tag-add-btn" @click="startEditTags(item)" title="编辑标签"><Tag :size="12" /></Button>
+                <button class="fav-tag-add-btn" @click="startEditTags(item)" title="编辑标签"><Tag :size="10" /></button>
               </template>
               <div v-else class="fav-tag-edit" @click.stop>
                 <input v-model="tagInputValue" class="fav-tag-input" placeholder="标签1, 标签2" @keydown.enter="saveTags(item)" @keydown.esc="cancelEditTags" />
-                <Button variant="default" size="icon-sm" class="fav-tag-save" @click="saveTags(item)"><Check :size="14" /></Button>
-                <Button variant="ghost" size="icon-sm" class="fav-tag-cancel" @click="cancelEditTags"><X :size="14" /></Button>
+                <button class="fav-tag-save" @click="saveTags(item)">✓</button>
+                <button class="fav-tag-cancel" @click="cancelEditTags"><X :size="12" /></button>
               </div>
             </div>
             <div v-if="!batchMode" class="fav-list-actions">
@@ -408,9 +406,9 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
               <div v-if="collections.length > 0" class="fav-add-col-wrap">
                 <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
                 <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                  <Button v-for="col in collections" :key="col.id" variant="ghost" size="sm" class="fav-add-col-option justify-start" @click="addToCollection(col.id, item.id)">
+                  <button v-for="col in collections" :key="col.id" class="fav-add-col-option" @click="addToCollection(col.id, item.id)">
                     {{ col.icon }} {{ col.name }}
-                  </Button>
+                  </button>
                 </div>
               </div>
               <Button variant="ghost" size="icon-sm" class="fav-unfav-btn" @click="handleUnfavorite(item)"><Star :size="14" fill="currentColor" /></Button>
@@ -451,12 +449,12 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
               <div class="fav-card-tags">
                 <template v-if="editingTagsItemId !== item.id">
                   <Badge v-for="tag in getTags(item)" :key="tag" variant="outline" class="fav-tag-badge">{{ tag }}</Badge>
-                  <Button variant="outline" size="icon-sm" class="fav-tag-add-btn" @click.stop="startEditTags(item)" title="编辑标签"><Tag :size="12" /></Button>
+                  <button class="fav-tag-add-btn" @click.stop="startEditTags(item)"><Tag :size="10" /></button>
                 </template>
                 <div v-else class="fav-tag-edit" @click.stop>
                   <input v-model="tagInputValue" class="fav-tag-input" placeholder="标签1, 标签2" @keydown.enter="saveTags(item)" @keydown.esc="cancelEditTags" />
-                  <Button variant="default" size="icon-sm" class="fav-tag-save" @click="saveTags(item)"><Check :size="14" /></Button>
-                  <Button variant="ghost" size="icon-sm" class="fav-tag-cancel" @click="cancelEditTags"><X :size="14" /></Button>
+                  <button class="fav-tag-save" @click="saveTags(item)">✓</button>
+                  <button class="fav-tag-cancel" @click="cancelEditTags"><X :size="12" /></button>
                 </div>
               </div>
               <div class="fav-card-meta">
@@ -474,9 +472,9 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
                 <div v-if="collections.length > 0" class="fav-add-col-wrap">
                   <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
                   <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                    <Button v-for="col in collections" :key="col.id" variant="ghost" size="sm" class="fav-add-col-option justify-start" @click="addToCollection(col.id, item.id)">
+                    <button v-for="col in collections" :key="col.id" class="fav-add-col-option" @click="addToCollection(col.id, item.id)">
                       {{ col.icon }} {{ col.name }}
-                    </Button>
+                    </button>
                   </div>
                 </div>
                 <Button variant="ghost" size="icon-sm" class="fav-unfav-btn" @click.stop="handleUnfavorite(item)"><Star :size="14" fill="currentColor" /></Button>
@@ -498,23 +496,21 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-header-icon { color: var(--warning); }
 .fav-title { font-weight: 600; font-size: 16px; }
 .fav-count { padding: 2px 10px !important; }
+.fav-header-right { display: flex; align-items: center; gap: 6px; }
 
 .fav-view-toggle { display: inline-flex; background: var(--bg-hover); border-radius: var(--radius-md); padding: 2px; gap: 2px; }
-.fav-view-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-tertiary); cursor: pointer; transition: all 0.15s; }
-.fav-view-btn:hover { border-color: var(--border-focus); color: var(--text-primary); }
-.fav-view-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-card); border-color: var(--accent); }
+.fav-view-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); cursor: pointer; transition: all 0.15s; }
+.fav-view-btn:hover { color: var(--text-primary); }
+.fav-view-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-card); }
 
-/* Toolbar: tags on left, two-row controls on right (row1 search; row2 RTL: view, batch, sort) */
+/* Toolbar: tags on left, sort/batch/search on right */
 .fav-toolbar {
-  display: flex; align-items: flex-start; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between;
   padding: 8px 24px; border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0; gap: 12px;
 }
-.fav-toolbar-left { display: flex; align-items: center; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; padding-top: 4px; }
-.fav-toolbar-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
-.fav-toolbar-row { display: flex; align-items: center; gap: 6px; }
-.fav-toolbar-row-search { width: 100%; justify-content: flex-end; }
-.fav-toolbar-row-actions { justify-content: flex-end; }
+.fav-toolbar-left { display: flex; align-items: center; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; }
+.fav-toolbar-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 .fav-active { color: var(--accent) !important; }
 .fav-batch-count { font-size: 12px; color: var(--text-tertiary); }
@@ -537,9 +533,8 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-col-tab:hover { border-color: var(--border-focus); }
 .fav-col-tab.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); font-weight: 500; }
 .fav-col-count { font-size: 10px; color: var(--text-tertiary); margin-left: 2px; }
-.fav-col-del { display: none; align-items: center; justify-content: center; width: 22px; height: 22px; border: none; border-radius: var(--radius-sm); background: none; color: var(--text-tertiary); cursor: pointer; padding: 0; font-size: 14px; line-height: 1; }
-.fav-col-tab:hover .fav-col-del { display: inline-flex; }
-.fav-col-del:hover { background: var(--bg-hover); color: var(--danger); }
+.fav-col-del { display: none; border: none; background: none; color: var(--text-tertiary); cursor: pointer; padding: 0 2px; font-size: 14px; }
+.fav-col-tab:hover .fav-col-del { display: inline; }
 .fav-col-new { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .fav-col-name-input { height: 32px; padding: 0 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; background: var(--bg-surface); color: var(--text-primary); outline: none; width: 140px; }
 
@@ -610,20 +605,20 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 /* Tags */
 .fav-tag-badge { font-size: 10px !important; padding: 2px 8px !important; }
 .fav-tag-add-btn {
-  width: 22px !important; height: 22px !important;
-  padding: 0 !important; border-style: dashed !important;
-  color: var(--text-tertiary) !important;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border: 1px dashed var(--border-default);
+  border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary);
+  cursor: pointer; transition: all 0.12s; flex-shrink: 0;
 }
-.fav-tag-add-btn:hover { border-color: var(--accent) !important; color: var(--accent) !important; }
+.fav-tag-add-btn:hover { border-color: var(--accent); color: var(--accent); }
 .fav-tag-edit { display: flex; align-items: center; gap: 4px; }
 .fav-tag-input { width: 120px; height: 26px; padding: 0 6px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-size: 11px; background: var(--bg-surface); color: var(--text-primary); outline: none; }
-.fav-tag-save { padding: 0 !important; background: var(--success) !important; color: white !important; border-color: var(--success) !important; }
-.fav-tag-save:hover { filter: brightness(1.05); }
-.fav-tag-cancel { padding: 0 !important; color: var(--text-tertiary) !important; }
+.fav-tag-save { border: none; background: var(--success); color: white; border-radius: var(--radius-sm); width: 22px; height: 22px; cursor: pointer; font-size: 11px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.fav-tag-cancel { border: none; background: none; color: var(--text-tertiary); cursor: pointer; padding: 2px; display: inline-flex; align-items: center; justify-content: center; }
 
 /* Add to collection dropdown */
 .fav-add-col-wrap { position: relative; display: inline-flex; }
-.fav-add-col-dropdown { position: absolute; top: 100%; right: 0; margin-top: 4px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-modal); padding: 4px; z-index: 50; min-width: 160px; display: flex; flex-direction: column; gap: 2px; }
-.fav-add-col-option { width: 100%; height: auto !important; padding: 6px 10px !important; justify-content: flex-start; font-size: 12px; }
+.fav-add-col-dropdown { position: absolute; top: 100%; right: 0; margin-top: 4px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-modal); padding: 4px; z-index: 50; min-width: 160px; }
+.fav-add-col-option { display: block; width: 100%; padding: 6px 10px; border: none; background: none; text-align: left; font-size: 12px; color: var(--text-primary); cursor: pointer; border-radius: var(--radius-sm); white-space: nowrap; }
 .fav-add-col-option:hover { background: var(--bg-hover); }
 </style>
