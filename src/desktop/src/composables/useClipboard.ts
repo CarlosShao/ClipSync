@@ -42,7 +42,19 @@ const HASH_TTL = 30000 // 30s dedup window — clipboard monitor fires every 700
 let skipPollUntil = 0
 // 初始加载后跳过轮询，防止系统剪贴板内容被重新上传
 let initialLoadDone = false
-let isProcessingEvent = false // Lock to prevent parallel processing of clipboard events
+
+// === 剪贴板事件上传队列（并发控制核心）===
+// 问题：Rust monitor 每 700ms 轮询并立即 emit 事件；之前用 isProcessingEvent 布尔锁直接
+// 丢弃并发事件，导致用户快速连续复制多个文件时只有一个能上传。
+// 方案：所有事件/轮询检测到的内容先捕获并入队，队列串行消费，确保每个文件/图片/文本
+// 都按序上传，互不抢占。
+interface ClipboardTask {
+  type: 'file' | 'image' | 'text'
+  payload: any
+}
+
+const clipboardQueue: ClipboardTask[] = []
+let isProcessingQueue = false
 
 // 记录从 ClipSync UI 复制出去的内容：文件路径 或 文本/链接内容
 const copiedFilePaths = new Map<string, number>()
@@ -128,6 +140,84 @@ function isClipboardChangeFromInternalCopy(payload: any, contentType?: string): 
     }
   }
   return false
+}
+
+// === 剪贴板上传队列（并发控制核心）===
+// 用真正的队列取代原来的 isProcessingEvent 丢弃策略，确保快速连续复制时每个文件/文本/图片
+// 都能串行上传，而不是被并发锁直接丢弃。
+
+function enqueueClipboardTask(task: ClipboardTask) {
+  if (task.type === 'file') {
+    const paths = task.payload as string[]
+    const normalized = JSON.stringify(paths.map(normalizePath))
+    if (clipboardQueue.some(t => t.type === 'file' && JSON.stringify((t.payload as string[]).map(normalizePath)) === normalized)) {
+      console.log('[Clipboard] queue: skip duplicate file task', paths)
+      return
+    }
+  } else if (task.type === 'text') {
+    const text = task.payload as string
+    if (clipboardQueue.some(t => t.type === 'text' && t.payload === text)) {
+      console.log('[Clipboard] queue: skip duplicate text task')
+      return
+    }
+  } else if (task.type === 'image') {
+    const size = task.payload?.size as number
+    if (clipboardQueue.some(t => t.type === 'image' && t.payload?.size === size)) {
+      console.log('[Clipboard] queue: skip duplicate image task')
+      return
+    }
+  }
+  clipboardQueue.push(task)
+  console.log('[Clipboard] queue: task enqueued', task.type, 'length:', clipboardQueue.length)
+  processClipboardQueue().catch(e => console.warn('[Clipboard] processClipboardQueue error:', e))
+}
+
+async function processClipboardQueue() {
+  if (isProcessingQueue) return
+  isProcessingQueue = true
+  try {
+    while (clipboardQueue.length > 0) {
+      const task = clipboardQueue.shift()
+      if (!task) continue
+      console.log('[Clipboard] queue: processing task', task.type, 'remaining:', clipboardQueue.length)
+      try {
+        if (task.type === 'file') {
+          const paths = task.payload as string[]
+          const payload = JSON.stringify(paths)
+          const payloadHash = simpleHash(payload)
+          const alreadyUploading = recentUploadHashes.has(payloadHash) &&
+            Date.now() - (recentUploadHashes.get(payloadHash) || 0) < HASH_TTL
+          if (!alreadyUploading && !items.value.some(i => i.type === 'file' && i.content === payload)) {
+            await uploadFileToServer(payload)
+          } else {
+            console.log('[Clipboard] queue: skip file already uploading or exists', paths)
+          }
+        } else if (task.type === 'text') {
+          const text = task.payload as string
+          const isUrl = /^https?:\/\/\S+$/.test(text.trim())
+          const itemType = isUrl ? 'link' : 'text'
+          if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === text)) {
+            await uploadToServer(text, itemType)
+          } else {
+            console.log('[Clipboard] queue: skip text already exists')
+          }
+        } else if (task.type === 'image') {
+          const { dataUrl } = task.payload as { dataUrl: string; size: number }
+          if (dataUrl) {
+            await uploadImageToServer(dataUrl)
+          }
+        }
+      } catch (e) {
+        console.warn('[Clipboard] queue: task error', task.type, e)
+      }
+    }
+  } finally {
+    isProcessingQueue = false
+    // 处理期间可能有新任务入队，触发再消费
+    if (clipboardQueue.length > 0) {
+      processClipboardQueue().catch(e => console.warn('[Clipboard] processClipboardQueue restart error:', e))
+    }
+  }
 }
 
 const filteredItems = computed(() => {
@@ -449,8 +539,6 @@ async function uploadImageToServer(dataUrl: string) {
   const hash = dataUrl.slice(0, 200)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
   recentUploadHashes.set(hash, Date.now())
-  // Skip clipboard polling to prevent duplicate events from the monitor
-  skipNextPolls(15000)
   // Resize large images (>1080p) before upload to save bandwidth
   const resized = await resizeImageIfNeeded(dataUrl)
   const base64 = resized.split(',')[1]
@@ -480,12 +568,11 @@ async function uploadImageToServer(dataUrl: string) {
 
 async function uploadFileToServer(payload: string) {
   const hash = simpleHash(payload)
-  if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
+  if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) {
+    console.log('[Clipboard] uploadFileToServer: skip duplicate hash', hash)
+    return
+  }
   recentUploadHashes.set(hash, Date.now())
-
-  // Skip clipboard polling for 8s to prevent duplicate events from the monitor
-  // (monitor fires every 700ms while file is in clipboard)
-  skipNextPolls(15000)
 
   // Parse file paths from payload
   let filePaths: string[] = []
@@ -564,9 +651,8 @@ async function apiOrEnqueue(method: string, path: string, body: any, offlineType
 
 async function readAndUpload() {
   try {
-    // 策略1: 时间戳跳过（复制后 6 秒内不处理）
+    // 策略1: 时间戳跳过（复制后 3 秒内不处理，由 copyItem 设置）
     if (Date.now() < skipPollUntil) return
-    if (isProcessingEvent) return // Prevent parallel processing with event handler
     // 初始加载后跳过一轮轮询，防止系统剪贴板内容被重新上传
     if (!initialLoadDone) { initialLoadDone = true; return }
 
@@ -576,14 +662,7 @@ async function readAndUpload() {
       console.log('[Clipboard] poll detected files:', files)
       // 精确匹配：如果这是刚从 ClipSync 内部复制出去的文件路径，直接跳过
       if (isClipboardChangeFromInternalCopy({ filePaths: files }, 'file')) return
-      const payload = JSON.stringify(files)
-      const payloadHash = simpleHash(payload)
-      // Check both item content AND recent upload hashes to prevent duplicates
-      const alreadyUploading = recentUploadHashes.has(payloadHash) &&
-        Date.now() - (recentUploadHashes.get(payloadHash) || 0) < HASH_TTL
-      if (!alreadyUploading && !items.value.some(i => i.type === 'file' && i.content === payload)) {
-        await uploadFileToServer(payload)
-      }
+      enqueueClipboardTask({ type: 'file', payload: files })
       return
     }
 
@@ -593,7 +672,7 @@ async function readAndUpload() {
         const imgData = await tauri.getClipboardImage().catch(() => '')
         if (imgData) {
           lastImageSize = imgInfo.size
-          await uploadImageToServer(imgData)
+          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size: imgInfo.size } })
         }
       }
       return
@@ -603,11 +682,7 @@ async function readAndUpload() {
     if (text && text.trim()) {
       // 精确匹配：如果这是刚从 ClipSync 内部复制出去的文本，直接跳过
       if (isClipboardChangeFromInternalCopy({ content: text }, undefined)) return
-      const isUrl = /^https?:\/\/\S+$/.test(text.trim())
-      const itemType = isUrl ? 'link' : 'text'
-      if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === text)) {
-        await uploadToServer(text, itemType)
-      }
+      enqueueClipboardTask({ type: 'text', payload: text })
       return
     }
 
@@ -617,11 +692,7 @@ async function readAndUpload() {
         const clipText = await navigator.clipboard.readText().catch(() => '')
         if (clipText && clipText.trim() && clipText !== lastBrowserText) {
           lastBrowserText = clipText
-          const isUrl = /^https?:\/\/\S+$/.test(clipText.trim())
-          const itemType = isUrl ? 'link' : 'text'
-          if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === clipText)) {
-            await uploadToServer(clipText, itemType)
-          }
+          enqueueClipboardTask({ type: 'text', payload: clipText })
         }
       } catch { /* clipboard API 权限不足 */ }
     }
@@ -641,34 +712,23 @@ export function useClipboard() {
   async function handleClipboardEvent(payload: any) {
     try {
       if (Date.now() < skipPollUntil) return
-      if (isProcessingEvent) return // Prevent parallel processing
-      isProcessingEvent = true
 
       const contentType = payload?.contentType as string | undefined
 
       if (contentType === 'file') {
         // File event from Rust: content is preview text, filePaths is the array
         const filePaths = payload?.filePaths as string[] | undefined
-        console.log('[Clipboard] file event:', filePaths)
         if (filePaths && filePaths.length > 0) {
           // If this file path was just copied from ClipSync UI, skip it
           if (isClipboardChangeFromInternalCopy(payload, 'file')) return
 
-          const filePayload = JSON.stringify(filePaths)
-          const payloadHash = simpleHash(filePayload)
-          // Check both item content AND recent upload hashes to prevent duplicates
-          const alreadyUploading = recentUploadHashes.has(payloadHash) &&
-            Date.now() - (recentUploadHashes.get(payloadHash) || 0) < HASH_TTL
-          if (!alreadyUploading && !items.value.some(i => i.type === 'file' && i.content === filePayload)) {
-            await uploadFileToServer(filePayload)
-          }
+          console.log('[Clipboard] enqueue file event:', filePaths)
+          enqueueClipboardTask({ type: 'file', payload: filePaths })
         }
       } else if (contentType === 'image') {
         // Image event from Rust: lightweight size-only notification.
-        // If any file/text was recently copied by the user, skip this event
-        // (image copy currently not tracked precisely, but copy action sets skipPollUntil)
+        // Fetch actual image data immediately, then enqueue for serialized upload.
         if (Date.now() < skipPollUntil) return
-        // Fetch actual image data via Tauri command (heavy, but only on real change).
         const size = payload?.size as number | undefined
         if (size && size !== lastImageSize) {
           lastImageSize = size
@@ -677,28 +737,22 @@ export function useClipboard() {
             return ''
           })
           if (imgData) {
-            await uploadImageToServer(imgData)
+            enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size } })
           } else {
             console.warn('[Clipboard] Image conversion returned empty — DIB-to-PNG may have failed')
           }
         }
       } else if (!contentType) {
         // Text event from Rust: content is the clipboard text
-        // If this text was just copied from ClipSync UI, skip it
-        if (isClipboardChangeFromInternalCopy(payload, undefined)) return
         const text = payload?.content as string | undefined
         if (text && text.trim()) {
-          const isUrl = /^https?:\/\/\S+$/.test(text.trim())
-          const itemType = isUrl ? 'link' : 'text'
-          if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === text)) {
-            await uploadToServer(text, itemType)
-          }
+          // If this text was just copied from ClipSync UI, skip it
+          if (isClipboardChangeFromInternalCopy(payload, undefined)) return
+          enqueueClipboardTask({ type: 'text', payload: text })
         }
       }
     } catch (e) {
       console.warn('[Clipboard] Event handler error:', e)
-    } finally {
-      isProcessingEvent = false
     }
   }
 
@@ -749,7 +803,8 @@ export function useClipboard() {
     // --- Primary: event-driven via Rust clipboard monitor ---
     // The Rust thread polls clipboard every 700ms and emits `clipboard-changed`
     // events for text/files/images. This replaces the old 1500ms JS polling.
-    // IMPORTANT: must await to prevent parallel processing of events (causes duplicates)
+    // Events are captured and pushed to a serial queue instead of uploading inline,
+    // so rapid consecutive copies are processed one-by-one rather than dropped.
     listen<any>('clipboard-changed', async (event) => {
       await handleClipboardEvent(event.payload)
     }).then(unlisten => {
@@ -776,7 +831,8 @@ export function useClipboard() {
   async function copyItem(item: ClipItem) {
     try {
       // 精确内容去重：复制时记录会写入剪贴板的实际内容/路径，monitor 检测到相同内容时跳过
-      skipNextPolls(15000)
+      // 窗口只开 3s：足够 monitor 下一次轮询跳过自身复制，同时不会误杀紧接着的外部复制。
+      skipNextPolls(3000)
       markContentCopiedFromClipSync(item)
 
       if (item.type === 'file') {
