@@ -65,17 +65,19 @@ const imageUpload = multer({
   },
 });
 
-// Multer storage config for files
+// Multer storage config for files (plan-based size limit applied in route handler)
 const fileStorage = multer.memoryStorage();
 const fileUpload = multer({
   storage: fileStorage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB max (Enterprise limit), actual limit checked in handler
   fileFilter: (req, file, cb) => {
+    // Block script types for security
     const ext = path.extname(file.originalname).toLowerCase();
-    if (SAFE_FILE_EXTENSIONS.has(ext) || FILE_TYPES.includes(file.mimetype)) {
-      cb(null, true);
+    const blocked = ['.bat', '.cmd', '.ps1', '.vbs', '.wsf', '.sh', '.bash', '.php', '.asp', '.aspx', '.jsp'];
+    if (blocked.includes(ext)) {
+      cb(new Error('Script files are not allowed'));
     } else {
-      cb(new Error(`Unsupported file type: ${file.mimetype}`));
+      cb(null, true);
     }
   },
 });

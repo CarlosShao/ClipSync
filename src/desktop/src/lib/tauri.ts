@@ -10,12 +10,14 @@ export const getClipboardContent = () => invoke<string>('get_clipboard_content')
 export const setClipboardContent = (content: string) => invoke('set_clipboard_content', { content })
 export const getClipboardFiles = () => invoke<string[]>('get_clipboard_files')
 export const setClipboardFiles = (paths: string[]) => invoke('set_clipboard_files', { paths })
+export const readFileContent = (path: string) => invoke<string>('read_file_content', { path })
 export const copyLocalFiles = (paths: string[]) => invoke<string>('copy_local_files', { paths })
 export const saveAndCopyFile = (base64Data: string, filename: string) =>
   invoke<string>('save_and_copy_file', { base64Data, filename })
 export const checkClipboardImageInfo = () => invoke<ClipboardImageInfo>('check_clipboard_image_info')
 export const getClipboardImage = () => invoke<string>('get_clipboard_image')
 export const convertBmpToPng = (bmpDataUrl: string) => invoke<string>('convert_bmp_to_png', { bmpDataUrl })
+
 
 // ===== Auth =====
 export const login = (phone: string, code: string) => invoke<{ token: string; user: { id: string } }>('login', { phone, code })

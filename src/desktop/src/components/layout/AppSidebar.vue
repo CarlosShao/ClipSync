@@ -59,7 +59,7 @@ const accountNavItems = computed(() => [
 </script>
 
 <template>
-  <aside :class="['sidebar', { 'sidebar--collapsed': isCollapsed }]">
+  <aside :class="['sidebar', { 'sidebar--collapsed': isCollapsed }]" role="navigation" :aria-label="t('app_name')">
 
     <!-- ===== Header ===== -->
     <div class="sb-header" @click="emit('toggle')" :class="{ 'sb-header--clickable': isCollapsed }">
@@ -80,12 +80,13 @@ const accountNavItems = computed(() => [
     </div>
 
     <!-- ===== Main Navigation ===== -->
-    <nav class="sb-nav">
+    <nav class="sb-nav" :aria-label="t('nav_main')">
       <div v-if="!isCollapsed" class="sb-sect-label">{{ t('nav_main') }}</div>
       <template v-for="item in mainNavItems" :key="item.key">
         <button
           :class="['sb-item', { active: currentSub === item.key }]"
           :title="isCollapsed ? item.label : undefined"
+          :aria-current="currentSub === item.key ? 'page' : undefined"
           @click="emit('navigate', item.key)"
         >
           <Clipboard v-if="item.key === 'clipboard'" :size="20" :stroke-width="1.8" />

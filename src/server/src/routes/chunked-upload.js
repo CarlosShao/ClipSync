@@ -10,6 +10,7 @@ import { apiLimiter } from '../middleware/rateLimiter.js';
 import { logger } from '../utils/logger.js';
 import { storeUploadSession, getUploadSession, deleteUploadSession } from '../utils/redis-client.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+import { writeChunk, readChunk, mergeChunks, deleteChunks, getFilePath } from '../utils/storage.js';
 
 // 允许的文件 MIME类型（安全白名单）
 const ALLOWED_MIME_TYPES = new Set([
@@ -138,9 +139,9 @@ async function removeUploadSession(uploadId) {
 
 // 内存存储分片（暂时保留，后续迁移到Redis）  
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB per chunk  
+  limits: { fileSize: 12 * 1024 * 1024 } // 12MB per chunk (10MB data + headroom)
 });
 
 /**
@@ -149,44 +150,64 @@ const upload = multer({
  */
 router.post('/init', authenticateToken, apiLimiter, async (req, res) => {
   try {
-    const { filename, fileSize, mimeType, totalChunks } = req.body;
-    
+    const { filename, fileSize: rawFileSize, mimeType, totalChunks } = req.body;
+    const fileSize = Number(rawFileSize);
+
     if (!filename || !fileSize || !mimeType || !totalChunks) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
-    
-    // ========== P1-3: 文件类型验证（基础病毒扫描）==========
-    // 检查 MIME 类型是否在白名单中
-    if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-      logger.warn('File upload rejected: Invalid MIME type', { 
-        userId: req.userId, 
-        filename, 
-        mimeType 
-      });
-      return res.status(400).json({ 
-        error: 'File type not allowed',
-        allowedTypes: Array.from(ALLOWED_MIME_TYPES)
-      });
-    }
-    
-    // 检查文件扩展名是否危险
+
+    // ========== 安全验证 ==========
+    // 禁止可远程执行的脚本类型（防止服务器被利用）
+    const BLOCKED_SCRIPT_EXTENSIONS = new Set([
+      '.bat', '.cmd', '.ps1', '.vbs', '.wsf',  // Windows 脚本
+      '.sh', '.bash', '.zsh', '.fish',          // Shell 脚本
+      '.php', '.phtml', '.php3', '.php4', '.php5', '.phps',  // PHP
+      '.asp', '.aspx', '.jsp', '.jspx',         // 服务端脚本
+      '.htaccess', '.htpasswd',                  // 服务器配置
+    ]);
     const fileExt = path.extname(filename).toLowerCase();
-    if (DANGEROUS_EXTENSIONS.has(fileExt)) {
-      logger.warn('File upload rejected: Dangerous file extension', { 
-        userId: req.userId, 
-        filename, 
-        extension: fileExt 
+    if (BLOCKED_SCRIPT_EXTENSIONS.has(fileExt)) {
+      logger.warn('File upload rejected: Script type blocked', {
+        userId: req.userId, filename, extension: fileExt
       });
-      return res.status(400).json({ 
-        error: 'File type not allowed',
-        reason: 'Potentially dangerous file type'
+      return res.status(400).json({
+        error: 'Script files are not allowed for security reasons',
+        blocked: fileExt
       });
     }
-    
-    // 检查文件大小（防止磁盘耗尽攻击）
-    const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+
+    // ========== 文件大小验证（直接查数据库，不依赖中间件缓存）==========
+    let maxMb = 128; // 默认 Free 128MB
+    try {
+      const userRes = await pool.query(
+        `SELECT u.is_admin, us.plan_id, sp.max_file_size_mb
+         FROM users u
+         LEFT JOIN user_subscriptions us ON u.id = us.user_id AND us.status = 'active'
+         LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
+         WHERE u.id = $1`,
+        [req.userId]
+      );
+      if (userRes.rows.length > 0) {
+        const row = userRes.rows[0];
+        if (row.is_admin) {
+          maxMb = 1024; // Admin = 1GB
+        } else if (row.max_file_size_mb) {
+          maxMb = row.max_file_size_mb;
+        }
+      }
+    } catch (e) {
+      logger.warn('[Upload/init] Failed to fetch plan, using default:', { error: e.message });
+    }
+
+    const MAX_FILE_SIZE = maxMb * 1024 * 1024;
+    logger.info('[Upload/init] Validation:', {
+      filename, fileSize, mimeType, totalChunks,
+      maxMb, MAX_FILE_SIZE, userId: req.userId
+    });
     if (fileSize > MAX_FILE_SIZE) {
-      return res.status(400).json({ 
+      logger.warn('[Upload/init] File too large:', { fileSize, MAX_FILE_SIZE });
+      return res.status(400).json({
         error: 'File too large',
         maxSize: MAX_FILE_SIZE,
         receivedSize: fileSize
@@ -258,9 +279,8 @@ router.post('/chunk/:uploadId/:chunkIndex', authenticateToken, apiLimiter, uploa
       return res.status(400).json({ error: 'No chunk data found' });
     }
     
-    // 保存分片到临时目录  
-    const chunkPath = path.join(CHUNK_DIR, uploadId, `chunk_${chunkIndexNum}`);
-    await fs.writeFile(chunkPath, req.file.buffer);
+    // 保存分片（通过存储服务）
+    await writeChunk(uploadId, chunkIndexNum, req.file.buffer);
     
     // 记录已上传的分片（使用数组，避免重复）  
     if (!session.uploadedChunks.includes(chunkIndexNum)) {
@@ -363,27 +383,9 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
       });
     }
     
-    // 合并分片  
+    // 合并分片（通过存储服务）
     const finalFilename = `${uuidv4()}${path.extname(session.filename)}`;
-    const finalPath = path.join(UPLOAD_DIR, finalFilename);
-    
-    // 创建写入流  
-    const writeStream = await fs.open(finalPath, 'w');
-    const fileHandle = writeStream;
-    
-    try {
-      for (let i = 0; i < session.totalChunks; i++) {
-        const chunkPath = path.join(CHUNK_DIR, uploadId, `chunk_${i}`);
-        const chunkData = await fs.readFile(chunkPath);
-        await fileHandle.write(chunkData);
-      }
-    } finally {
-      await fileHandle.close();
-    }
-    
-    // 清理分片文件
-    const chunkDir = path.join(CHUNK_DIR, uploadId);
-    await fs.rm(chunkDir, { recursive: true, force: true });
+    const finalPath = await mergeChunks(uploadId, session.totalChunks, session.filename, path.extname(session.filename));
 
     // Resolve source_device_id (must be valid UUID, FK → devices.id)
     let sourceDeviceId = (req.body && req.body.deviceId) || session.metadata?.deviceId || '';
@@ -470,9 +472,8 @@ router.delete('/cancel/:uploadId', authenticateToken, apiLimiter, async (req, re
       return res.status(403).json({ error: 'Unauthorized access to this upload session' });
     }
     
-    // 清理分片文件  
-    const chunkDir = path.join(CHUNK_DIR, uploadId);
-    await fs.rm(chunkDir, { recursive: true, force: true }).catch(() => {});
+    // 清理分片文件（通过存储服务）
+    await deleteChunks(uploadId).catch(() => {});
     
     // 清理会话  
     await removeUploadSession(uploadId);

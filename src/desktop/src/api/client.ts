@@ -41,9 +41,10 @@ export async function api<T = any>(
   const csrf = await getCsrfToken()
   if (csrf) headers['X-CSRF-Token'] = csrf
 
-  // 429 指数退避重试： honoring server Retry-After header
-  const MAX_RETRIES = 3
-  const BASE_DELAYS = [1000, 2000, 4000] // ms
+  // 429 指数退避重试： capped delay to avoid 30s+ waits
+  const MAX_RETRIES = 2
+  const BASE_DELAYS = [1000, 2000] // ms
+  const MAX_RETRY_DELAY = 5000 // cap at 5 seconds
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -52,9 +53,9 @@ export async function api<T = any>(
       })
 
       if (res.status === 429 && attempt < MAX_RETRIES) {
-        // 优先使用服务端 Retry-After 头
         const retryAfter = res.headers.get('Retry-After')
-        const delay = retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAYS[attempt]
+        const serverDelay = retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAYS[attempt]
+        const delay = Math.min(serverDelay, MAX_RETRY_DELAY)
         console.warn(`[API] 429 on ${method} ${path} (attempt ${attempt + 1}/${MAX_RETRIES}), retrying after ${delay}ms`)
         await new Promise(r => setTimeout(r, delay))
         continue
@@ -81,6 +82,34 @@ export async function api<T = any>(
  * 但返回原始 Response 以便调用方取 blob。
  * 关键：/api/media 等路由挂了 csrfProtection，裸 fetch 只带 Bearer 会被拒 → 图片 404。
  */
+/**
+ * FormData 上传请求（multipart/form-data）。Content-Type 由浏览器自动设置（含 boundary）。
+ */
+export async function apiForm<T = any>(
+  path: string,
+  formData: FormData,
+): Promise<ApiResponse<T>> {
+  const config = useConfigStore()
+  const headers: Record<string, string> = {}
+  // 注意：不设置 Content-Type，让浏览器自动设置 multipart boundary
+  const token = config.config.token
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const csrf = await getCsrfToken()
+  if (csrf) headers['X-CSRF-Token'] = csrf
+  try {
+    const res = await fetch(`${config.serverUrl}${path}`, {
+      method: 'POST', headers, body: formData, credentials: 'include',
+    })
+    const text = await res.text()
+    let json: any
+    try { json = JSON.parse(text) } catch { json = { message: text } }
+    if (!res.ok) return { ok: false, status: res.status, error: json?.error || json?.message || `HTTP ${res.status}`, data: json }
+    return { ok: true, status: res.status, data: json }
+  } catch (e: any) {
+    return { ok: false, status: 0, error: String(e.message || e) }
+  }
+}
+
 export async function apiBlob(
   method: string,
   path: string,

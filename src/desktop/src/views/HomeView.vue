@@ -9,6 +9,7 @@ import { useDevice } from '@/composables/useDevice'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useNotifications } from '@/composables/useNotifications'
 import * as tauri from '@/lib/tauri'
+import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ClipboardView from '@/components/clipboard/ClipboardView.vue'
 import QuickPastePanel from '@/components/QuickPastePanel.vue'
@@ -19,7 +20,12 @@ import SharedLinksView from '@/components/settings/SharedLinksView.vue'
 import SubscriptionView from '@/components/settings/SubscriptionView.vue'
 import NotificationsView from '@/components/settings/NotificationsView.vue'
 import ModalManager from '@/components/modals/ModalManager.vue'
+import DocumentDrawer from '@/components/DocumentDrawer.vue'
 import ToastContainer from '@/components/ui/ToastContainer.vue'
+import OnboardingView from '@/components/OnboardingView.vue'
+import CoachMarks from '@/components/CoachMarks.vue'
+import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
+import { perfFirstDataLoad } from '@/utils/perfMonitor'
 
 const configStore = useConfigStore()
 const { t } = useI18n()
@@ -46,23 +52,55 @@ const showModalType = ref('')
 const showForgotPwd = ref(false)
 const previewItem = ref<any>(null)
 const previewType = ref('')
+const showDrawer = ref(false)
+const drawerItem = ref<any>(null)
 const confirmMessage = ref('')
 let confirmCallback: (() => void) | null = null
+const showOnboarding = ref(!localStorage.getItem('clipsync-onboarded'))
+const showCoachMarks = ref(false)
 
 let stopPolling: (() => void) | null = null
+let nativeNotifPermission = false
+
+/** Send a native OS notification (system tray balloon). Silently skips if permission denied. */
+function notifyNative(title: string, body: string) {
+  if (!nativeNotifPermission) return
+  try { sendNotification({ title, body }) } catch { /* plugin not available */ }
+}
 
 onMounted(async () => {
+  // Request native notification permission once
+  try {
+    if (await isPermissionGranted()) {
+      nativeNotifPermission = true
+    } else {
+      nativeNotifPermission = (await requestPermission()) === 'granted'
+    }
+  } catch { /* plugin not available in dev mode */ }
+
   stopPolling = clip.startPolling(1500)
   device.loadDevices()
   ws.connect()
   notif.loadHistory()
-  // WebSocket 新剪贴通知 → 刷新列表；通知推送 → 实时插入收件箱
+  // WebSocket 新剪贴通知 → 刷新列表 + 弹系统通知；通知推送 → 实时插入收件箱
   ws.onMessage((data) => {
     if (data?.type === 'new_clip' || data?.action === 'sync' || data?.event === 'clipboard_update') {
       clip.refresh()
+      perfFirstDataLoad()
+      // Native notification: show what was synced (skip if window is focused)
+      const source = data.clip?.sourceDevice?.name || data.source || ''
+      const preview = data.clip?.contentPreview || data.clip?.content || ''
+      const label = source ? `${source}` : t('app_name')
+      const text = preview ? String(preview).slice(0, 80) : t('empty_action')
+      // Only notify when main window is not focused (avoid redundant alerts)
+      try { notifyNative(label, text) } catch { /* ignore */ }
     }
     if (data?.type === 'notification') {
       notif.pushRealtime(data)
+      // Also push native notification for server-initiated alerts
+      const title = data.title || t('app_name')
+      const body = data.body || ''
+      if (body) notifyNative(title, body)
     }
   })
 
@@ -70,6 +108,7 @@ onMounted(async () => {
   // This is the SINGLE source of truth — the visible panel is bound to HomeView's showQuickPaste.
   ;(window as any).__toggleQuickPaste = () => { showQuickPaste.value = !showQuickPaste.value }
   ;(window as any).__toggleWindow = () => { tauri.toggleWindow() }
+  ;(window as any).__toggleTheme = () => { toggleMode() }
 
   // Re-apply user's saved global shortcuts (Rust hardcodes defaults at startup,
   // so without this the user's customization is lost after a restart).
@@ -91,6 +130,7 @@ onUnmounted(() => {
   if (stopPolling) stopPolling()
   delete (window as any).__toggleQuickPaste
   delete (window as any).__toggleWindow
+  delete (window as any).__toggleTheme
   document.removeEventListener('keydown', handleGlobalKeydown)
 })
 
@@ -115,7 +155,49 @@ function closeModal() { showModalType.value = '' }
 
 function onPreviewImage(item: any) { previewItem.value = item; previewType.value = 'image' }
 function onPreviewText(item: any) { previewItem.value = item; previewType.value = 'text' }
+function onPreviewFile(item: any) {
+  // Document types open in drawer, others in modal
+  const docExtensions = ['md', 'markdown', 'mdx', 'txt', 'log', 'json', 'yaml', 'yml', 'xml', 'toml',
+    'js', 'ts', 'jsx', 'tsx', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'cs',
+    'html', 'css', 'scss', 'less', 'sql', 'sh', 'bash', 'rb', 'php',
+    'doc', 'docx', 'xls', 'xlsx', 'xlsm', 'pptx', 'pdf', 'csv', 'tsv',
+    'ini', 'env', 'vue', 'svelte', 'dockerfile', 'makefile']
+  let ext = ''
+  try {
+    const meta = JSON.parse(item.content)
+    if (meta.name) {
+      ext = meta.name.split('.').pop()?.toLowerCase() || ''
+    } else if (Array.isArray(meta) && meta[0]) {
+      // Path array format: ["D:\\path\\to\\file.pptx"]
+      ext = meta[0].split(/[/\\]/).pop()?.split('.').pop()?.toLowerCase() || ''
+    } else if (meta.paths && Array.isArray(meta.paths) && meta.paths[0]) {
+      ext = meta.paths[0].split(/[/\\]/).pop()?.split('.').pop()?.toLowerCase() || ''
+    }
+  } catch {
+    // Plain filename or path string
+    const raw = (item.content || '').split(/[/\\]/).pop() || item.content || ''
+    ext = raw.split('.').pop()?.toLowerCase() || ''
+  }
+  if (docExtensions.includes(ext)) {
+    drawerItem.value = item; showDrawer.value = true
+  } else {
+    previewItem.value = item; previewType.value = 'file'
+  }
+}
 function closePreview() { previewItem.value = null; previewType.value = '' }
+function closeDrawer() { showDrawer.value = false; drawerItem.value = null }
+
+function onOnboardingComplete() {
+  showOnboarding.value = false
+  // Show coach marks after onboarding completes
+  if (!localStorage.getItem('clipsync-coach-done')) {
+    showCoachMarks.value = true
+  }
+}
+
+function onCoachMarksComplete() {
+  showCoachMarks.value = false
+}
 
 function showConfirm(msg: string, cb: () => void) {
   confirmMessage.value = msg; confirmCallback = cb; showModalType.value = 'confirm'
@@ -154,6 +236,7 @@ function confirmAction() {
         @toggle-theme="toggleMode"
         @preview-image="onPreviewImage"
         @preview-text="onPreviewText"
+        @preview-file="onPreviewFile"
       />
       <SettingsView v-else-if="currentSub === 'settings'" @open-modal="openModal" />
       <ProfileView v-else-if="currentSub === 'profile'" />
@@ -179,7 +262,16 @@ function confirmAction() {
     @switch-modal="openModal"
   />
 
+  <DocumentDrawer :open="showDrawer" :item="drawerItem" @close="closeDrawer" />
+
   <ToastContainer />
+
+  <!-- First-run experience -->
+  <OnboardingView v-if="showOnboarding" @complete="onOnboardingComplete" />
+  <CoachMarks v-if="showCoachMarks && !showOnboarding" @complete="onCoachMarksComplete" />
+
+  <!-- Satisfaction Survey (shows after 7 days, once per 30 days) -->
+  <SatisfactionSurvey />
 </template>
 
 <style scoped>

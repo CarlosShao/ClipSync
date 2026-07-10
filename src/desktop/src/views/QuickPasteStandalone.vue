@@ -4,7 +4,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
-import { Search } from 'lucide-vue-next'
+import { Search, Image as ImageIcon, FileText, ClipboardList, Pin, Link, Filter } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const clip = useClipboard()
@@ -12,6 +12,22 @@ const clip = useClipboard()
 const qpSearch = ref('')
 const qpSelectedIndex = ref(0)
 const expanded = ref(false)
+const qpTypeFilter = ref<'all' | 'text' | 'image' | 'file' | 'link'>('all')
+
+// Pinned items (stored in localStorage)
+const PINNED_KEY = 'clipsync-qp-pinned'
+const pinnedIds = ref<Set<string>>(new Set(JSON.parse(localStorage.getItem(PINNED_KEY) || '[]')))
+
+function togglePin(id: string) {
+  if (pinnedIds.value.has(id)) {
+    pinnedIds.value.delete(id)
+  } else {
+    pinnedIds.value.add(id)
+  }
+  localStorage.setItem(PINNED_KEY, JSON.stringify([...pinnedIds.value]))
+}
+
+function isPinned(id: string) { return pinnedIds.value.has(id) }
 
 // ── Window dimensions ──
 const COLLAPSED_W = 660
@@ -96,11 +112,23 @@ async function onBarMousedown(e: MouseEvent) {
 
 const filteredItems = computed(() => {
   let result = clip.items.value
+  // Type filter
+  if (qpTypeFilter.value !== 'all') {
+    result = result.filter(i => i.type === qpTypeFilter.value)
+  }
+  // Search filter
   if (qpSearch.value.trim()) {
     const q = qpSearch.value.toLowerCase()
-    result = result.filter(i => i.content.toLowerCase().includes(q))
+    result = result.filter(i => i.content.toLowerCase().includes(q) || (i.source || '').toLowerCase().includes(q))
   }
-  return result.slice(0, 10)
+  // Pinned items first, then by timestamp
+  result.sort((a, b) => {
+    const aPin = pinnedIds.value.has(a.id) ? 1 : 0
+    const bPin = pinnedIds.value.has(b.id) ? 1 : 0
+    if (aPin !== bPin) return bPin - aPin
+    return b.timestamp - a.timestamp
+  })
+  return result.slice(0, 12)
 })
 
 async function selectItem(item: any) {
@@ -152,6 +180,10 @@ function truncate(str: string, max: number): string {
     <!-- Results drawer — slides down on focus -->
     <Transition name="dr">
       <div v-show="expanded" class="qp-drp">
+        <!-- Type filter bar -->
+        <div class="qp-filters">
+          <button v-for="f in [{v:'all',l:'全部'},{v:'text',l:'文本'},{v:'image',l:'图片'},{v:'file',l:'文件'},{v:'link',l:'链接'}]" :key="f.v" class="qp-filter-btn" :class="{active: qpTypeFilter===f.v}" @click="qpTypeFilter=f.v as any">{{ f.l }}</button>
+        </div>
         <div class="qp-lst">
           <div
             v-for="(item, idx) in filteredItems"
@@ -160,16 +192,23 @@ function truncate(str: string, max: number): string {
             @click="selectItem(item)"
             @mouseenter="qpSelectedIndex = idx"
           >
-            <span class="qp-em">{{ item.type === 'image' ? '\u{1F5BC}' : item.type === 'file' ? '\u{1F4C4}' : '\u{1F4CB}' }}</span>
+            <img v-if="item.type === 'image' && (item.preview || item.content).startsWith('data:')" :src="item.preview || item.content" class="qp-thumb" alt="" />
+            <span v-else class="qp-em">
+              <ImageIcon v-if="item.type === 'image'" :size="14" />
+              <FileText v-else-if="item.type === 'file'" :size="14" />
+              <Link v-else-if="item.type === 'link'" :size="14" />
+              <ClipboardList v-else :size="14" />
+            </span>
             <span class="qp-tx">{{ truncate(item.content, 60) }}</span>
+            <Pin :size="12" class="qp-pin" :class="{pinned: isPinned(item.id)}" @click.stop="togglePin(item.id)" />
             <span class="qp-ag">{{ timeAgo(item.timestamp) }}</span>
           </div>
           <div v-if="filteredItems.length === 0" class="qp-no">{{ t('empty_title') }}</div>
         </div>
         <div class="qp-ft">
           <span>{{ filteredItems.length }} {{ t('items_c') }}</span>
-          <span><kbd>&#x2191;&#x2193;</kbd> {{ t('qp_navigate') }}</span>
-          <span><kbd>&#23ce;</kbd> {{ t('qp_paste') }}</span>
+          <span><kbd>&uarr;&darr;</kbd> {{ t('qp_navigate') }}</span>
+          <span><kbd>&crarr;</kbd> {{ t('qp_paste') }}</span>
         </div>
       </div>
     </Transition>
@@ -271,6 +310,19 @@ function truncate(str: string, max: number): string {
   transform: translateY(-10px);
 }
 
+/* Type filter bar */
+.qp-filters {
+  display: flex; gap: 4px; padding: 6px 14px;
+  border-bottom: 1px solid var(--border-subtle, rgba(128,128,128,.12));
+}
+.qp-filter-btn {
+  font-size: 11px; padding: 3px 10px; border-radius: 10px;
+  border: none; background: transparent; color: var(--text-tertiary);
+  cursor: pointer; transition: all .15s;
+}
+.qp-filter-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.qp-filter-btn.active { color: var(--accent); background: var(--accent-light, rgba(99,102,241,.1)); font-weight: 600; }
+
 /* Scrollable list */
 .qp-lst {
   flex: 1;
@@ -295,8 +347,13 @@ function truncate(str: string, max: number): string {
 .qp-it:hover { background: var(--bg-hover); }
 .qp-it.on   { background: var(--bg-selected, var(--bg-hover)); border-left-color: var(--accent); }
 
-.qp-em { flex-shrink: 0; font-size: 13px; width: 20px; text-align: center; }
+.qp-em { flex-shrink: 0; width: 20px; display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
+.qp-thumb { flex-shrink: 0; width: 28px; height: 28px; border-radius: 4px; object-fit: cover; border: 1px solid var(--border-subtle, rgba(128,128,128,.15)); }
 .qp-tx { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.qp-pin { flex-shrink: 0; color: var(--text-tertiary); cursor: pointer; opacity: 0; transition: opacity .15s; }
+.qp-it:hover .qp-pin { opacity: 0.5; }
+.qp-pin:hover { opacity: 1 !important; color: var(--accent); }
+.qp-pin.pinned { opacity: 1; color: var(--accent); }
 .qp-ag { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .qp-no { padding: 24px; text-align: center; font-size: 13px; color: var(--text-tertiary); }
 
