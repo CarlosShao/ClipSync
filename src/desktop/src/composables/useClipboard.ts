@@ -47,7 +47,17 @@ let isProcessingEvent = false // Lock to prevent parallel processing of clipboar
 // 记录从 ClipSync UI 复制出去的内容：文件路径 或 文本/链接内容
 const copiedFilePaths = new Map<string, number>()
 const copiedTexts = new Map<string, number>()
+const copiedItems = new Map<string, { type: string; content: string; timestamp: number }>()
 const COPIED_CONTENT_TTL = 15000
+
+function normalizePath(p: string): string {
+  return p.toLowerCase().replace(/\\/g, '/')
+}
+
+function extractFilenameFromPreview(preview: string): string {
+  const match = preview.match(/\[文件\]\s+(.+?)\s*(?:\(|$)/)
+  return match ? match[1].trim() : preview.trim()
+}
 
 function skipNextPolls(ms = 6000) {
   skipPollUntil = Date.now() + ms
@@ -61,17 +71,21 @@ function cleanupCopiedContent() {
   for (const [k, t] of copiedTexts) {
     if (now - t > COPIED_CONTENT_TTL) copiedTexts.delete(k)
   }
+  for (const [k, t] of copiedItems) {
+    if (now - t.timestamp > COPIED_CONTENT_TTL) copiedItems.delete(k)
+  }
 }
 
 // 复制时记录该条目对应的真实剪贴板内容，用于 monitor 去重
 function markContentCopiedFromClipSync(item: ClipItem) {
   const now = Date.now()
+  copiedItems.set(item.id, { type: item.type, content: item.content, timestamp: now })
   if (item.type === 'file') {
     try {
       const parsed = JSON.parse(item.content)
       const paths = Array.isArray(parsed) ? parsed : parsed?.paths
       if (Array.isArray(paths)) {
-        paths.forEach((p: string) => copiedFilePaths.set(p, now))
+        paths.forEach((p: string) => copiedFilePaths.set(normalizePath(p), now))
       }
     } catch { /* ignore */ }
   } else if (item.type === 'text' || item.type === 'link') {
@@ -85,11 +99,33 @@ function isClipboardChangeFromInternalCopy(payload: any, contentType?: string): 
   cleanupCopiedContent()
   if (contentType === 'file') {
     const paths = payload?.filePaths as string[] | undefined
-    return paths?.some(p => copiedFilePaths.has(p)) || false
+    if (paths?.some(p => copiedFilePaths.has(normalizePath(p)))) {
+      console.log('[Clipboard] skip file upload: path matches internal copy', paths)
+      return true
+    }
+    // Fallback: 路径未精确匹配（大小写/规范化差异），用文件名兜底
+    const preview = payload?.content as string | undefined
+    if (preview) {
+      const filename = extractFilenameFromPreview(preview)
+      for (const [id, info] of copiedItems) {
+        if (info.type !== 'file') continue
+        try {
+          const parsed = JSON.parse(info.content)
+          const name = parsed?.name || (Array.isArray(parsed) ? parsed[0]?.split(/[/\\]/).pop() : '')
+          if (name && filename && (filename === name || filename.includes(name))) {
+            console.log('[Clipboard] skip file upload: filename matches internal copy', filename)
+            return true
+          }
+        } catch { /* ignore */ }
+      }
+    }
   }
   if (!contentType) {
     const text = payload?.content as string | undefined
-    return text ? copiedTexts.has(text) : false
+    if (text ? copiedTexts.has(text) : false) {
+      console.log('[Clipboard] skip text upload: content matches internal copy')
+      return true
+    }
   }
   return false
 }
@@ -489,10 +525,16 @@ async function uploadFileToServer(payload: string) {
   if (res.ok && res.data?.id) {
     const localItem = items.value.find(i => i.id === localId)
     if (localItem) {
-      localItem.id = res.data.id
-      // Update content to include paths field (for hasLocalPath detection)
-      localItem.content = JSON.stringify({ name: fileName, paths: filePaths })
-      cacheContent(res.data.id, fileContent)
+      if (res.data.duplicate) {
+        // 后端判定为重复条目：直接移除本地乐观项，避免 UI 出现两条同名记录
+        console.log('[Clipboard] server reported duplicate, removing optimistic local item')
+        items.value = items.value.filter(i => i.id !== localId)
+      } else {
+        localItem.id = res.data.id
+        // Update content to include paths field (for hasLocalPath detection)
+        localItem.content = JSON.stringify({ name: fileName, paths: filePaths })
+        cacheContent(res.data.id, fileContent)
+      }
     }
   }
 }
@@ -531,6 +573,7 @@ async function readAndUpload() {
     // 优先尝试 Tauri API
     const files = await tauri.getClipboardFiles().catch(() => [] as string[])
     if (files.length > 0) {
+      console.log('[Clipboard] poll detected files:', files)
       // 精确匹配：如果这是刚从 ClipSync 内部复制出去的文件路径，直接跳过
       if (isClipboardChangeFromInternalCopy({ filePaths: files }, 'file')) return
       const payload = JSON.stringify(files)
@@ -606,6 +649,7 @@ export function useClipboard() {
       if (contentType === 'file') {
         // File event from Rust: content is preview text, filePaths is the array
         const filePaths = payload?.filePaths as string[] | undefined
+        console.log('[Clipboard] file event:', filePaths)
         if (filePaths && filePaths.length > 0) {
           // If this file path was just copied from ClipSync UI, skip it
           if (isClipboardChangeFromInternalCopy(payload, 'file')) return
@@ -732,7 +776,7 @@ export function useClipboard() {
   async function copyItem(item: ClipItem) {
     try {
       // 精确内容去重：复制时记录会写入剪贴板的实际内容/路径，monitor 检测到相同内容时跳过
-      skipNextPolls(6000)
+      skipNextPolls(15000)
       markContentCopiedFromClipSync(item)
 
       if (item.type === 'file') {
@@ -789,7 +833,10 @@ export function useClipboard() {
       }
       await tauri.setClipboardContent(item.content)
       return true
-    } catch { return false }
+    } catch (e: any) {
+      console.warn('[Clipboard] copyItem failed:', e?.message || e)
+      return false
+    }
   }
 
   async function batchDelete(): Promise<number> {
