@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
@@ -31,7 +30,6 @@ const { t } = useI18n()
 const toast = useToast()
 const clip = useClipboard()
 const configStore = useConfigStore()
-const router = useRouter()
 // 用 computed 包裹 ref，确保 Vue 3 模板正确追踪响应式依赖
 const filteredItems = computed(() => clip.filteredItems.value)
 const allItems = computed(() => clip.items.value)
@@ -76,13 +74,7 @@ function handleFavorite(item: ClipItem) {
     if (collections.value.length > 0) {
       addToColItemId.value = item.id
     } else {
-      // No collections yet → ask if user wants to create one
-      const wantCreate = window.confirm('还没有收藏夹，是否创建一个？')
-      if (wantCreate) {
-        router.push('/app/favorites')
-      } else {
-        toast.show('已收藏，可在「收藏」页面查看', 'info')
-      }
+      toast.show('已收藏，可在「收藏」页面创建收藏夹分类管理', 'info')
     }
   }
 }
