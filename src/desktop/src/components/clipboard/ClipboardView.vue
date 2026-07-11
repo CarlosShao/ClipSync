@@ -25,7 +25,6 @@ const emit = defineEmits<{
   'preview-text': [item: ClipItem]
   'preview-file': [item: ClipItem]
   'version-history': [item: ClipItem]
-  'show-confirm': [msg: string, cb: () => void]
 }>()
 
 const { t } = useI18n()
@@ -77,10 +76,10 @@ function handleFavorite(item: ClipItem) {
     if (collections.value.length > 0) {
       addToColItemId.value = item.id
     } else {
-      // No collections → confirm dialog: create one or just favorite
-      emit('show-confirm', '还没有收藏夹，是否现在创建一个？', () => {
-        router.push('/app/favorites')
-      })
+      // No collections → local confirm dialog
+      confirmMessage.value = '还没有收藏夹，是否现在创建一个？'
+      confirmCallback = () => { router.push('/app/favorites') }
+      showConfirmModal.value = true
     }
   }
 }
