@@ -786,29 +786,27 @@ export function useClipboard() {
           enqueueClipboardTask({ type: 'file', payload: filePaths })
         }
       } else if (contentType === 'image') {
-        // Image event from Rust. The monitor snapshots the PNG dataUrl AT DETECTION TIME
-        // and ships it in payload.dataUrl. Use it directly — do NOT re-read the live
-        // clipboard: rapid successive screenshots would all resolve to the last clipboard
-        // image and only the last one would sync. Fall back to getClipboardImage() only
-        // for older monitor builds that don't snapshot.
+        // Image event from Rust. The monitor captured the PNG AT DETECTION TIME (before
+        // any later screenshot overwrote the clipboard) and cached it by content hash.
+        // The event carries only {size, hash}; we pull the multi-MB bytes via the
+        // get_captured_image command (robust channel) rather than over the event bus.
         if (Date.now() < skipPollUntil) return
         const size = (payload?.size as number | undefined) ?? 0
-        const captured = (payload?.dataUrl as string | undefined) || ''
-        console.log('[Clipboard] event: image received, size=', size, 'hasData=', !!captured)
-        let imgData = captured
-        if (!imgData) {
-          imgData = await tauri.getClipboardImage().catch((e: any) => {
-            console.error('[Clipboard] getClipboardImage failed:', e)
-            return ''
-          })
+        const hash = (payload?.hash as string | undefined) || ''
+        console.log('[Clipboard] event: image captured, size=', size, 'hash=', hash)
+        if (!hash) {
+          console.warn('[Clipboard] image event missing hash — cannot fetch bytes')
+          return
         }
+        const imgData = await tauri.getCapturedImage(hash).catch((e: any) => {
+          console.error('[Clipboard] getCapturedImage failed:', e)
+          return ''
+        })
         if (imgData) {
           // Dedup by the FULL PNG content hash (simpleHash over the entire dataUrl).
-          // We deliberately do NOT use the Rust `eventHash` here: the monitor's PNG hash
-          // (FNV-1a over bytes) is a different hash family than the JS simpleHash used by
-          // the 10s fallback poll (readAndUpload), so mixing them would let the fallback
-          // re-enqueue an already-synced image. One consistent hash across both paths is
-          // what guarantees consecutive different screenshots all sync and none is re-uploaded.
+          // One consistent hash across both the event path and the 10s fallback poll
+          // (readAndUpload) guarantees consecutive different screenshots all sync and
+          // none is re-uploaded.
           const dedupHash = simpleHash(imgData)
           if (dedupHash !== lastImageHash) {
             lastImageSize = size
@@ -818,7 +816,7 @@ export function useClipboard() {
             console.log('[Clipboard] event: hash matches last image, skipping duplicate')
           }
         } else {
-          console.warn('[Clipboard] Image data empty — capture failed')
+          console.warn('[Clipboard] captured image not found for hash', hash, '— cache may have been cleared')
         }
       } else if (!contentType) {
         // Text event from Rust: content is the clipboard text
