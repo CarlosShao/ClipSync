@@ -752,29 +752,35 @@ export function useClipboard() {
           enqueueClipboardTask({ type: 'file', payload: filePaths })
         }
       } else if (contentType === 'image') {
-        // Image event from Rust. Fetch actual PNG data immediately and dedupe by the
-        // PNG content hash, NOT the Rust raw-DIB hash. Some clipboard sources (WeChat
-        // screenshots, certain GPU drivers) produce raw DIB bytes that collide or
-        // include unstable padding, causing the Rust monitor to drop subsequent
-        // screenshots. The final PNG bytes are authoritative: different screenshots
-        // always produce different PNG output.
+        // Image event from Rust. The monitor snapshots the PNG dataUrl AT DETECTION TIME
+        // and ships it in payload.dataUrl. Use it directly — do NOT re-read the live
+        // clipboard: rapid successive screenshots would all resolve to the last clipboard
+        // image and only the last one would sync. Fall back to getClipboardImage() only
+        // for older monitor builds that don't snapshot.
         if (Date.now() < skipPollUntil) return
         const size = (payload?.size as number | undefined) ?? 0
-        const imgData = await tauri.getClipboardImage().catch((e: any) => {
-          console.error('[Clipboard] getClipboardImage failed:', e)
-          return ''
-        })
+        const eventHash = payload?.hash as string | undefined
+        const captured = (payload?.dataUrl as string | undefined) || ''
+        let imgData = captured
+        if (!imgData) {
+          imgData = await tauri.getClipboardImage().catch((e: any) => {
+            console.error('[Clipboard] getClipboardImage failed:', e)
+            return ''
+          })
+        }
         if (imgData) {
-          const pngHash = simpleHash(imgData)
-          if (pngHash !== lastImageHash) {
+          // Prefer the Rust FNV content hash from the event; fall back to a full-string
+          // hash of the PNG so different screenshots always dedupe as different.
+          const dedupHash = eventHash || simpleHash(imgData)
+          if (dedupHash !== lastImageHash) {
             lastImageSize = size
-            lastImageHash = pngHash
-            enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: pngHash } })
+            lastImageHash = dedupHash
+            enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: dedupHash } })
           } else {
-            console.log('[Clipboard] event: PNG hash matches last image, skipping duplicate')
+            console.log('[Clipboard] event: hash matches last image, skipping duplicate')
           }
         } else {
-          console.warn('[Clipboard] Image conversion returned empty — DIB-to-PNG may have failed')
+          console.warn('[Clipboard] Image data empty — capture failed')
         }
       } else if (!contentType) {
         // Text event from Rust: content is the clipboard text

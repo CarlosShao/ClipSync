@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::capture_clipboard_image;
+
 /// Check if any webview windows exist. Used to avoid emitting events
 /// when the frontend is not connected (e.g. during Vite hot-reload), which
 /// would trigger stale callback ID warnings from Tauri's JS bridge.
@@ -152,13 +154,20 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                 let changed = hash != last_image_hash;
                 let stale = last_change_time.elapsed() >= Duration::from_secs(5);
                 if changed || stale {
-                    eprintln!("[ClipMon] IMAGE: {} bytes (changed={}, stale={})", size, changed, stale);
+                    // Snapshot the actual PNG bytes NOW (at detection time) and ship them
+                    // in the event. The frontend must NOT re-read the live clipboard, because
+                    // rapid successive screenshots would all resolve to the LAST clipboard
+                    // image and only the last one would sync. Capturing here makes each
+                    // screenshot independent and also saves a Tauri IPC round-trip.
+                    let data_url = capture_clipboard_image().map(|(url, _)| url).unwrap_or_default();
+                    eprintln!("[ClipMon] IMAGE: {} bytes (changed={}, stale={}, captured={})", size, changed, stale, data_url.len());
                     let _ = app_handle.emit(
                         "clipboard-changed",
                         serde_json::json!({
                             "contentType": "image",
                             "size": size,
                             "hash": hash.to_string(),
+                            "dataUrl": data_url,
                             "timestamp": chrono::Utc::now().to_rfc3339(),
                         }),
                     );

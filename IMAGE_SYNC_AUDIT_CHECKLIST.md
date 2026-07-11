@@ -73,3 +73,16 @@
 - 修复：3/3（本轮改 Rust + 前端）
 - 验证：type-check 通过 + 逻辑推演通过（E2E 待用户 rebuild 实测）
 
+---
+
+## 七次排查：速度 4s + 连续截图只同步最后一张（15:43，anti-shortcut）
+- 用户实测 29c181e+dff51ea 后：能同步，但（1）重启服务+刚登录后首张截图**约 4 秒**才同步；（2）连续截 3 张**只有最后一张**同步。
+- **根因 A（并发 3→1，确定，代码实证）**：前端 `handleClipboardEvent` 收到事件后**异步** `await tauri.getClipboardImage()` 读"当前"剪贴板。3 张在 ~300ms 内连发时，前两张的 IPC+DIB→PNG 读取还没 resolve，剪贴板早被第 3 张覆盖 → 前两张读到的都是第 3 张 → 只同步最后一张。剪贴板只存一张图，事后异步重读必竞态。
+- **根因 B（速度 4s，确定方向，代码实证）**：`api/client.ts` 每次写请求 `await getCsrfToken()`；未缓存时先 `GET /api/csrf-token` 再发真实请求（client.ts:21-36，注释 line 33 自写"之前 4.5s"）。刚登录/服务重启时这是一次**冷网络往返**，叠加服务冷启动首请求 ≈ 4s。且登录用 `window.location.href` **整页跳转**会重置模块缓存，单纯在 AuthPage 预热无效。
+- **修复（待 cargo check + vue-tsc）**：
+  - **A**：Rust `lib.rs` 抽出 `pub fn capture_clipboard_image() -> Option<(String dataUrl, u64 hash)>`（读+编码+哈希），`get_clipboard_image` 命令改为包装它；`clipboard_monitor.rs` 在**检测时**调用它把 PNG dataUrl 直接塞进 `clipboard-changed` 事件。**同步**检测→捕获（无 await 间隔），每张截图在检测瞬间被快照，互不干扰。前端 `handleClipboardEvent` 改用 `payload.dataUrl`（缺失才回退 getClipboardImage）→ 消除竞态 + 省一次 IPC 往返（更快）。
+  - **B**：CSRF token **持久化到 localStorage**（`clipsync-csrf`，5min 过期），模块加载即读热缓存；新增 `prefetchCsrf()` 在登录设置 token 后调用并持久化。跨整页跳转/重启保持热 → 首张截图不再多付冷往返。
+- **验证项**：cargo check（lib.rs 新增 pub fn + monitor 调用）、vue-tsc（useClipboard.ts/client.ts/AuthPage.vue）。
+- **预期**：连续 3 张全部同步；首张截图延迟 ≈ 仅服务冷 POST（app 启动的其他接口已预热服务）+ 0 额外 CSRF 往返，应回到 <1s（热态 <500ms）。
+- **残留**：若仍 >1s 且非首请求，则瓶颈在服务冷启动本身（后端），需另查服务启动耗时。
+

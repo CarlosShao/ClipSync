@@ -406,20 +406,26 @@ fn check_clipboard_image_info() -> serde_json::Value {
 /// Read image from Windows clipboard (CF_DIB / CF_BITMAP)
 /// Returns base64 PNG data URL. Uses image crate for reliable BMP decoding,
 /// with manual DIB parser as fallback for non-standard formats.
-#[tauri::command]
-fn get_clipboard_image() -> Result<String, String> {
+/// Read the current clipboard image, convert it to a PNG data URL, and return
+/// `(data_url, content_hash)`. Returns `None` if there is no image or conversion fails.
+///
+/// Shared by the `get_clipboard_image` Tauri command AND the clipboard monitor.
+/// The monitor calls it at DETECTION time so the image bytes are snapshotted
+/// immediately, instead of letting the frontend re-read a clipboard that may already
+/// hold a newer screenshot. Without this, taking several screenshots in quick
+/// succession drops all but the last one (the frontend reads the live clipboard long
+/// after detection, by which point it holds the newest image).
+pub fn capture_clipboard_image() -> Option<(String, u64)> {
     use clipboard_win::raw;
     use base64::Engine;
 
-    raw::open().map_err(|e| format!("open clipboard: {}", e))?;
+    if raw::open().is_err() {
+        return None;
+    }
 
-    // Collect raw image bytes from the clipboard.
-    // PRIORITY: CF_DIB / CF_BITMAP (8/2) first. This is what WeChat, Snipping Tool and
-    // most Windows apps put on the clipboard, and get_bitmap() reads it reliably — this
-    // was the pre-favorites behaviour that worked. ONLY fall back to CF_DIBV5 (17) or PNG
-    // when the standard DIB is NOT available (browsers / some tools place images as
-    // DIBV5 or PNG only). Prioritizing 17 first risked mis-reading WeChat's DIBV5 and
-    // returning empty → image never synced.
+    // PRIORITY: CF_DIB / CF_BITMAP (8/2) first — what WeChat, Snipping Tool and most
+    // Windows apps put on the clipboard; get_bitmap() reads it reliably. Fall back to
+    // CF_DIBV5 (17) or PNG only when the standard DIB is unavailable.
     let mut dib: Vec<u8> = Vec::new();
     let mut src = "";
     if raw::is_format_avail(8) || raw::is_format_avail(2) {
@@ -439,7 +445,7 @@ fn get_clipboard_image() -> Result<String, String> {
             }
         }
     }
-    // PNG clipboard format (e.g. copied from browsers) — bytes are already PNG, wrap directly.
+    // PNG clipboard format (e.g. copied from browsers) — bytes are already PNG.
     if dib.is_empty() {
         if let Some(png_fmt) = raw::register_format("PNG") {
             let fmt = png_fmt.get();
@@ -451,8 +457,8 @@ fn get_clipboard_image() -> Result<String, String> {
                         if raw::get(fmt, &mut png).unwrap_or(0) > 0 {
                             let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
                             let _ = raw::close();
-                            eprintln!("[get_clipboard_image] source=PNG-clipboard, {} bytes", png.len());
-                            return Ok(format!("data:image/png;base64,{}", b64));
+                            eprintln!("[capture_clipboard_image] source=PNG-clipboard, {} bytes", png.len());
+                            return Some((format!("data:image/png;base64,{}", b64), fnv64(&png)));
                         }
                     }
                 }
@@ -463,10 +469,10 @@ fn get_clipboard_image() -> Result<String, String> {
     let _ = raw::close();
 
     if dib.is_empty() || dib.len() < 40 {
-        return Ok(String::new());
+        return None;
     }
 
-    eprintln!("[get_clipboard_image] source={} raw {} bytes, starts with {:02x?}, has_BM={}",
+    eprintln!("[capture_clipboard_image] source={} raw {} bytes, starts with {:02x?}, has_BM={}",
         src, dib.len(), dib.iter().take(4).collect::<Vec<_>>(),
         dib.len() > 2 && &dib[0..2] == b"BM");
 
@@ -476,18 +482,26 @@ fn get_clipboard_image() -> Result<String, String> {
             Ok(img) => {
                 let rgba = img.to_rgba8();
                 let (w, h) = rgba.dimensions();
-                eprintln!("[get_clipboard_image] image crate OK: {}x{}", w, h);
-                return encode_rgba_to_png_data_url(&rgba, w, h);
+                eprintln!("[capture_clipboard_image] image crate OK: {}x{}", w, h);
+                return encode_rgba_to_png_data_url(&rgba, w, h).ok().map(|url| (url, fnv64(&dib)));
             }
             Err(e) => {
-                eprintln!("[get_clipboard_image] image crate failed: {}, trying manual parser", e);
+                eprintln!("[capture_clipboard_image] image crate failed: {}, trying manual parser", e);
             }
         }
     }
 
     // === Try 2: Manual DIB parsing (fallback for non-standard formats) ===
     let actual_dib = if &dib[0..2] == b"BM" && dib.len() > 14 { &dib[14..] } else { &dib };
-    dib_to_png_data_url(actual_dib).map_err(|e| format!("get_clipboard_image: {}", e))
+    dib_to_png_data_url(actual_dib)
+        .map(|url| (url, fnv64(&dib)))
+        .map_err(|e| { eprintln!("[capture_clipboard_image] failed: {}", e); e })
+        .ok()
+}
+
+#[tauri::command]
+fn get_clipboard_image() -> Result<String, String> {
+    Ok(capture_clipboard_image().map(|(url, _hash)| url).unwrap_or_default())
 }
 
 /// Convert a BMP data URL (from database or clipboard) to PNG data URL.
