@@ -20,6 +20,8 @@ export type ThemeMode = 'light' | 'dark'
 export interface ClipboardImageInfo {
   available: boolean
   size: number
+  /** Content hash (FNV-1a, string form of u64) — used to dedup images by content, not byte length */
+  hash?: string
 }
 
 export type AuthView =
