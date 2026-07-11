@@ -7,7 +7,7 @@ import { useToast } from '@/composables/useToast'
 import {
   Star, Search, Copy, Image as ImageIcon, LayoutGrid, List,
   ExternalLink, FileText, Folder, ArrowUpDown, CheckSquare, Square,
-  Plus, X, Tag, ClipboardList, FolderPlus, ChevronRight,
+  Plus, X, Check, Tag, ClipboardList, FolderPlus, ChevronRight,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -361,8 +361,8 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         <div class="fav-col-new">
           <input v-model="newCollectionName" class="fav-col-name-input" placeholder="收藏夹名称" maxlength="100"
             @keydown.enter="handleCreateCollection" @keydown.esc="showNewCollectionInput = false" />
-          <button class="fav-col-confirm-btn" @click="handleCreateCollection">✅ 确认</button>
-          <button class="fav-col-cancel-btn" @click="showNewCollectionInput = false">❌ 取消</button>
+          <button class="fav-col-icon-btn fav-col-confirm" @click="handleCreateCollection" title="确认"><Check :size="14" /></button>
+          <button class="fav-col-icon-btn fav-col-cancel" @click="showNewCollectionInput = false" title="取消"><X :size="14" /></button>
         </div>
       </template>
     </div>
@@ -568,23 +568,16 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 }
 .fav-col-new-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
 
-/* Confirm / Cancel buttons */
-.fav-col-confirm-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 6px 14px; border-radius: var(--radius-md);
-  border: none; background: var(--success); color: white;
-  font-size: 12px; font-weight: 500; cursor: pointer;
-  transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
+/* Confirm / Cancel icon buttons */
+.fav-col-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  border: none; cursor: pointer; transition: all 0.15s; flex-shrink: 0;
 }
-.fav-col-confirm-btn:hover { opacity: 0.9; }
-.fav-col-cancel-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 6px 14px; border-radius: var(--radius-md);
-  border: 1px solid var(--border-default); background: var(--bg-surface);
-  font-size: 12px; color: var(--text-secondary); cursor: pointer;
-  transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
-}
-.fav-col-cancel-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.fav-col-confirm { background: var(--success); color: white; }
+.fav-col-confirm:hover { opacity: 0.85; }
+.fav-col-cancel { background: var(--bg-hover); color: var(--text-tertiary); }
+.fav-col-cancel:hover { background: var(--danger-bg); color: var(--danger); }
 
 /* Content */
 .fav-content { flex: 1; overflow-y: auto; padding: 16px 24px; }
