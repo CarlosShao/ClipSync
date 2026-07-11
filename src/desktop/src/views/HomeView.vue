@@ -203,9 +203,6 @@ function onCoachMarksComplete() {
 function showConfirm(msg: string, cb: () => void) {
   confirmMessage.value = msg; confirmCallback = cb; showModalType.value = 'confirm'
 }
-function onShowConfirm(msg: string, cb: () => void) {
-  showConfirm(msg, cb)
-}
 function handleLogout() {
   notif.reset()
   configStore.logout()
@@ -241,7 +238,6 @@ function confirmAction() {
         @preview-image="onPreviewImage"
         @preview-text="onPreviewText"
         @preview-file="onPreviewFile"
-        @show-confirm="onShowConfirm"
       />
       <FavoritesView
         v-else-if="currentSub === 'favorites'"
