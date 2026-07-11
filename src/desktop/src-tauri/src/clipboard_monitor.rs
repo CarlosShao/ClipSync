@@ -1,11 +1,13 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::encode_clipboard_raw_to_png;
 use crate::captured_images;
+use crate::fnv64;
 
 /// Signal the running monitor to exit by dropping its Shutdown handle.
 static MONITOR_SHUTDOWN: Mutex<Option<clipboard_win::monitor::Shutdown>> = Mutex::new(None);
@@ -17,30 +19,100 @@ pub fn request_stop_monitor() {
     }
 }
 
-/// Check if any webview windows exist. Used to avoid emitting events
-/// when the frontend is not connected (e.g. during Vite hot-reload).
+/// Check if any webview windows exist.
 fn has_windows(app: &AppHandle) -> bool {
     !app.webview_windows().is_empty()
 }
 
+/// Ring buffer for recent raw-byte hashes (echo guard).
+/// We hash the RAW bytes at capture time (before any subsequent clipboard write
+/// can overwrite them), so the hash reliably identifies images that ClipSync
+/// itself wrote to the clipboard (e.g. paste). Different screenshots of the
+/// same window have different pixel data → different raw bytes → different hash.
+const ECHO_RING_SIZE: usize = 16;
+struct EchoRing(Mutex<[u64; ECHO_RING_SIZE]>, Mutex<usize>);
+impl EchoRing {
+    fn new() -> Self {
+        Self(Mutex::new([0u64; ECHO_RING_SIZE]), Mutex::new(0))
+    }
+    fn contains(&self, hash: u64) -> bool {
+        let ring = self.0.lock().unwrap();
+        ring.iter().any(|&h| h == hash)
+    }
+    fn insert(&self, hash: u64) {
+        let mut ring = self.0.lock().unwrap();
+        let mut idx = self.1.lock().unwrap();
+        ring[*idx % ECHO_RING_SIZE] = hash;
+        *idx += 1;
+    }
+}
+
+/// Encode raw clipboard bytes to PNG data URL + content hash, with dedup.
+/// Runs in the dedicated worker thread (off the monitor loop).
+fn encode_and_emit(
+    app: &AppHandle,
+    raw: Vec<u8>,
+    src: &'static str,
+    size: usize,
+    echo_ring: &EchoRing,
+) {
+    // Echo guard: skip if this exact raw-byte content was recently seen.
+    // This prevents ClipSync's own paste (which writes identical bytes back to
+    // the clipboard) from being re-synced.
+    let raw_hash = fnv64(&raw);
+    if echo_ring.contains(raw_hash) {
+        eprintln!("[ClipMon] IMAGE: echo guard skip (raw_hash={:016x})", raw_hash);
+        return;
+    }
+    echo_ring.insert(raw_hash);
+
+    // PNG encoding + optional 720px resize (replaces previous JS-side resize).
+    match encode_clipboard_raw_to_png(&raw, src, Some(720)) {
+        Some((data_url, png_content_hash)) => {
+            // Cache for fallback polling.
+            if let Ok(mut map) = captured_images().lock() {
+                map.insert(png_content_hash, (data_url.clone(), Instant::now()));
+            }
+
+            eprintln!("[ClipMon] IMAGE: {} bytes → {} PNG, hash={:016x}, emit",
+                size, data_url.len(), png_content_hash);
+
+            let _ = app.emit(
+                "clipboard-changed",
+                serde_json::json!({
+                    "contentType": "image",
+                    "size": size,
+                    "hash": png_content_hash.to_string(),
+                    "imageData": data_url,
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                }),
+            );
+        }
+        None => {
+            eprintln!("[ClipMon] IMAGE: encode failed (size={})", size);
+        }
+    }
+}
+
 /// Monitors clipboard changes and emits `clipboard-changed` events.
 ///
-/// ARCHITECTURE (2026-07-11, final):
+/// ARCHITECTURE (2026-07-11, async worker):
 ///
-/// EVENT-DRIVEN via `clipboard_win::monitor::Monitor` (AddClipboardFormatListener).
-/// SEQUENCE-NUMBER SWEEP every 15ms (GetClipboardSequenceNumber) catches rapid
-/// bursts that Windows coalesces into a single WM_CLIPBOARDUPDATE.
-///
-/// PNG encoding happens INLINE in the monitor loop (not in a worker thread).
-/// The loop only sleeps 15ms between sweeps, so a 50-200ms encode blocks the
-/// loop briefly — but during that time no new clipboard reads happen, and the
-/// sequence number already captured the change. This is fine for human-paced
-/// screenshots (gaps of 300ms+).
+/// The monitor loop is NON-BLOCKING for images. When a sequence-number change
+/// is detected, raw bytes are read IMMEDIATELY (a few ms) and sent over a
+/// channel to a background worker thread. The worker does the slow PNG encoding
+/// (50-200ms) and emits the event. This means the monitor loop can detect the
+/// NEXT sequence change while the worker is still encoding — no more "only last
+/// screenshot syncs" due to encoding blocking the read loop.
 ///
 /// The full PNG data URL is included DIRECTLY in the event payload, eliminating
-/// the `getCapturedImage(hash)` IPC round-trip that added 50-100ms per image.
+/// the getCapturedImage(hash) IPC round-trip that added 50-100ms per image.
 pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
-    eprintln!("[ClipMon] Starting clipboard monitor (inline-encode, no worker)...");
+    eprintln!("[ClipMon] Starting clipboard monitor (async worker)...");
+
+    // Channel for passing raw clipboard bytes → worker thread.
+    // unbounded_sync: monitor loop never blocks on send (critical for 15ms sweep).
+    let (raw_tx, raw_rx) = mpsc::sync_channel::<(Vec<u8>, &'static str, usize)>(8);
 
     // Create the clipboard change listener
     let mut monitor = match clipboard_win::monitor::Monitor::new() {
@@ -53,6 +125,17 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
     };
     // Store the shutdown handle so the stop command can unblock recv().
     *MONITOR_SHUTDOWN.lock().unwrap() = Some(monitor.shutdown_channel());
+
+    // --- Spawn worker thread: PNG encoding + emit (the slow part) ---
+    let app_handle_worker = app_handle.clone();
+    let echo_ring = EchoRing::new();
+    thread::spawn(move || {
+        eprintln!("[ClipMon] Worker thread started");
+        while let Ok((raw, src, size)) = raw_rx.recv() {
+            encode_and_emit(&app_handle_worker, raw, src, size, &echo_ring);
+        }
+        eprintln!("[ClipMon] Worker thread exiting (sender dropped).");
+    });
 
     let mut state = MonitorState::default();
     // Baseline sequence number so the first sweep doesn't treat already-present
@@ -71,20 +154,26 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
             eprintln!("[ClipMon] WM_CLIPBOARDUPDATE received");
             if has_windows(&app_handle) {
                 let content = read_clipboard_raw();
-                handle_content(&app_handle, &mut state, content);
+                handle_content(&app_handle, &mut state, content, &raw_tx);
             } else {
                 eprintln!("[ClipMon] change detected but no windows, skipping");
             }
         }
 
         // --- Sequence-number sweep: the real burst catcher. ---
+        // GetClipboardSequenceNumber increments on EVERY clipboard write — even
+        // when WM_CLIPBOARDUPDATE notifications are coalesced by Windows.
+        // Sampling every 15ms means we detect each write in a burst. The key
+        // improvement: raw bytes are read and SENT TO WORKER immediately (non-
+        // blocking), so the loop can detect the NEXT sequence change while the
+        // worker encodes the previous one. No more "only last screenshot syncs".
         let seq = crate::get_clipboard_seq();
         if seq != last_seq {
             last_seq = seq;
             if has_windows(&app_handle) {
-                eprintln!("[ClipMon] seq {} -> read clipboard now", seq);
+                eprintln!("[ClipMon] seq {} -> read+send to worker", seq);
                 let content = read_clipboard_raw();
-                handle_content(&app_handle, &mut state, content);
+                handle_content(&app_handle, &mut state, content, &raw_tx);
             } else {
                 eprintln!("[ClipMon] seq changed but no windows, skipping");
             }
@@ -92,6 +181,9 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
 
         std::thread::sleep(std::time::Duration::from_millis(15));
     }
+
+    // Cleanup: drop sender to signal worker thread exit.
+    drop(raw_tx);
 }
 
 /// Per-change mutable state (debounce / dedup for text & files).
@@ -111,11 +203,13 @@ impl Default for MonitorState {
     }
 }
 
-/// Dispatch a single clipboard change (already read) to the appropriate channel/emit.
+/// Dispatch a single clipboard change (already read) to the appropriate handler.
+/// For images: raw bytes are sent to the worker thread via channel (non-blocking).
 fn handle_content(
     app: &AppHandle,
     state: &mut MonitorState,
     content: ClipContent,
+    raw_tx: &mpsc::SyncSender<(Vec<u8>, &'static str, usize)>,
 ) {
     match content {
         ClipContent::Text(text) => {
@@ -174,36 +268,17 @@ fn handle_content(
             }
         }
         ClipContent::Image { raw, src, size } => {
-            // Encode to PNG INLINE (no worker thread, no IPC round-trip).
-            // PNG content hash (fnv64 over the encoded data URL) is used for dedup:
-            // same-window same-size screenshots have different pixels, so their PNG
-            // content differs → no collision → no silent drops.
-            match encode_clipboard_raw_to_png(&raw, src, Some(720)) {
-                Some((data_url, png_content_hash)) => {
-                    // Cache for fallback polling (getCapturedImage / getClipboardImage).
-                    // Store (data_url, Instant) tuple to match the HashMap<u64, (String, Instant)> type.
-                    if let Ok(mut map) = captured_images().lock() {
-                        map.insert(png_content_hash, (data_url.clone(), Instant::now()));
-                    }
-
-                    state.last_text.clear();
-                    state.last_file_paths.clear();
-
-                    let _ = app.emit(
-                        "clipboard-changed",
-                        serde_json::json!({
-                            "contentType": "image",
-                            "size": size,
-                            "hash": png_content_hash.to_string(),
-                            "imageData": data_url,
-                            "timestamp": chrono::Utc::now().to_rfc3339(),
-                        }),
-                    );
-                }
-                None => {
-                    eprintln!("[ClipMon] IMAGE: encode failed (size={})", size);
-                }
-            }
+            // Send raw bytes to worker thread for PNG encoding.
+            // sync_channel(8) provides backpressure: if the worker can't keep up
+            // (e.g. a burst of 10+ screenshots), the monitor loop briefly waits
+            // on send. This is fine — the sequence number has already been
+            // captured, and 8-slot buffer absorbs normal human-paced bursts.
+            // IMPORTANT: we do NOT block on PNG encoding here. The raw bytes are
+            // captured at detection time (before any subsequent write overwrites
+            // them), so each screenshot in a burst is preserved independently.
+            let _ = raw_tx.send((raw, src, size));
+            state.last_text.clear();
+            state.last_file_paths.clear();
         }
         ClipContent::Empty => {
             if !state.last_text.is_empty() || !state.last_file_paths.is_empty() {

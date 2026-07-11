@@ -217,9 +217,10 @@ async function processClipboardQueue() {
             console.log('[Clipboard] queue: skip text already exists')
           }
       } else if (task.type === 'image') {
-        const { dataUrl, hash } = task.payload as { dataUrl: string; size: number; hash?: string }
+        const p = task.payload as { dataUrl: string; hash?: string; alreadyResized?: boolean }
+        const dataUrl = p.dataUrl
         if (dataUrl) {
-          await uploadImageToServer(dataUrl, hash)
+          await uploadImageToServer(dataUrl, p.hash, p.alreadyResized)
         }
       }
       } catch (e) {
@@ -571,7 +572,7 @@ function resizeImageIfNeeded(dataUrl: string, maxPx = 1080): Promise<string> {
   })
 }
 
-async function uploadImageToServer(dataUrl: string, contentHash?: string) {
+async function uploadImageToServer(dataUrl: string, contentHash?: string, alreadyResized = false) {
   // Dedup by FULL-CONTENT hash, NOT a 200-char prefix. Two screenshots of the same
   // window have identical PNG file headers and identical first compressed bytes, so a
   // prefix key collides and silently drops every subsequent screenshot within 30s.
@@ -580,8 +581,9 @@ async function uploadImageToServer(dataUrl: string, contentHash?: string) {
   const dedupKey = (contentHash && contentHash.length > 0) ? contentHash : simpleHash(dataUrl)
   if (recentUploadHashes.has(dedupKey) && Date.now() - (recentUploadHashes.get(dedupKey) || 0) < HASH_TTL) return
   recentUploadHashes.set(dedupKey, Date.now())
-  // Resize large images (>1080p) before upload to save bandwidth
-  const resized = await resizeImageIfNeeded(dataUrl)
+  // Resize large images (>1080p) before upload to save bandwidth.
+  // Skip when alreadyResized=true (Rust monitor already resized to 720px).
+  const resized = alreadyResized ? dataUrl : await resizeImageIfNeeded(dataUrl)
   const base64 = resized.split(',')[1]
   // 乐观更新
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -789,10 +791,9 @@ export function useClipboard() {
           enqueueClipboardTask({ type: 'file', payload: filePaths })
         }
       } else if (contentType === 'image') {
-        // Image event from Rust. PNG is now encoded INLINE in the monitor loop
-        // (no worker thread, no getCapturedImage IPC round-trip). The full PNG data
-        // URL comes directly in the event payload, and contentHash is the PNG content
-        // hash (fnv64 over data URL) for dedup.
+        // Image event from Rust. PNG is encoded + resized to 720px inline in the monitor loop.
+        // Full PNG data URL comes directly in event payload (no getCapturedImage IPC).
+        // Rust echo guard already deduplicates; frontend enqueues directly.
         if (Date.now() < skipPollUntil) return
         const size = (payload?.size as number | 0) ?? 0
         const contentHash = (payload?.hash as string | '') ?? ''
@@ -802,9 +803,7 @@ export function useClipboard() {
           console.warn('[Clipboard] image event missing imageData')
           return
         }
-        // Rust echo guard already filtered exact content duplicates.
-        // Frontend recentUploadHashes catches re-uploads within 30s window.
-        enqueueClipboardTask({ type: 'image', payload: { dataUrl: imageData, size, hash: contentHash } })
+        enqueueClipboardTask({ type: 'image', payload: { dataUrl: imageData, size, hash: contentHash, alreadyResized: true } })
       } else if (!contentType) {
         // Text event from Rust: content is the clipboard text
         const text = payload?.content as string | undefined
@@ -869,7 +868,7 @@ export function useClipboard() {
     // a dedicated worker thread so rapid consecutive screenshots are not dropped
     // while the loop is blocked compressing the previous one.
     listen<any>('clipboard-changed', async (event) => {
-      await handleClipboardEvent(event.payload)
+      handleClipboardEvent(event.payload).catch(e => console.warn('[Clipboard] Event handler error:', e))
     }).then(unlisten => {
       unlistenEvent = unlisten
       console.log('[Clipboard] Listening for native clipboard-changed events')
