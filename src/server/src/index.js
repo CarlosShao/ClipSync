@@ -528,7 +528,7 @@ async function gracefulShutdown(signal) {
 
   // 6. 关闭 WebSocket Redis Pub/Sub
   try {
-    const { closeWsRedisPubSub } = await import('./ws/ws-redis-pubsub.js');
+    const { closeWsRedisPubSub } = await import('./utils/ws-redis-pubsub.js');
     await closeWsRedisPubSub();
     logger.info('WebSocket Redis Pub/Sub closed');
   } catch (err) {
