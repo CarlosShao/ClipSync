@@ -329,14 +329,36 @@ fn check_clipboard_image_info() -> serde_json::Value {
     const MAX_RAW_BYTES: usize = 50 * 1024 * 1024;
     match raw::open() {
         Ok(()) => {
-            let has_image = raw::is_format_avail(2) || raw::is_format_avail(8); // CF_BITMAP or CF_DIB
+            // CF_DIBV5 (17) and PNG formats are common from browsers / snipping tools.
+            let png_avail = raw::register_format("PNG")
+                .map(|f| raw::is_format_avail(f.get()))
+                .unwrap_or(false);
+            let has_image = raw::is_format_avail(2)
+                || raw::is_format_avail(8)
+                || raw::is_format_avail(17)
+                || png_avail;
             let _ = raw::close();
             if has_image {
                 // Re-open to get size (cheaper than reading + encoding full data)
                 match raw::open() {
                     Ok(()) => {
-                        let mut data = Vec::<u8>::new();
-                        let size = raw::get_bitmap(&mut data).unwrap_or(0);
+                        // Prefer CF_DIBV5 (17) for size, then CF_DIB/CF_BITMAP, then PNG.
+                        let mut size: usize = 0;
+                        if raw::is_format_avail(17) {
+                            size = raw::size(17).map(|s| s.get()).unwrap_or(0);
+                        }
+                        if size == 0 && (raw::is_format_avail(8) || raw::is_format_avail(2)) {
+                            let mut data = Vec::<u8>::new();
+                            size = raw::get_bitmap(&mut data).unwrap_or(0);
+                        }
+                        if size == 0 {
+                            if let Some(png_fmt) = raw::register_format("PNG") {
+                                let fmt = png_fmt.get();
+                                if raw::is_format_avail(fmt) {
+                                    size = raw::size(fmt).map(|s| s.get()).unwrap_or(0);
+                                }
+                            }
+                        }
                         let _ = raw::close();
                         if size > MAX_RAW_BYTES {
                             eprintln!("[check_clipboard_image_info] Image too large: {} bytes, skipping", size);
@@ -361,23 +383,52 @@ fn check_clipboard_image_info() -> serde_json::Value {
 #[tauri::command]
 fn get_clipboard_image() -> Result<String, String> {
     use clipboard_win::raw;
+    use base64::Engine;
 
     raw::open().map_err(|e| format!("open clipboard: {}", e))?;
 
-    if !raw::is_format_avail(2) && !raw::is_format_avail(8) {
-        let _ = raw::close();
-        return Ok(String::new());
+    // Collect raw image bytes: prefer CF_DIBV5 (17), else CF_DIB/CF_BITMAP (8/2), then PNG.
+    // Chrome / Snipping Tool / many apps place images as CF_DIBV5 or PNG; the old
+    // code only read CF_DIB/CF_BITMAP, so those images returned empty and never synced.
+    let mut dib: Vec<u8> = Vec::new();
+    if raw::is_format_avail(17) {
+        if let Some(sz) = raw::size(17) {
+            let n = sz.get();
+            if n > 0 {
+                let mut buf = vec![0u8; n];
+                if raw::get(17, &mut buf).unwrap_or(0) > 0 {
+                    dib = buf;
+                }
+            }
+        }
+    }
+    if dib.is_empty() && (raw::is_format_avail(8) || raw::is_format_avail(2)) {
+        let _ = raw::get_bitmap(&mut dib);
     }
 
-    let mut dib = Vec::<u8>::new();
-    let n = raw::get_bitmap(&mut dib).map_err(|e| {
-        let _ = raw::close();
-        format!("read bitmap: {}", e)
-    })?;
+    // PNG clipboard format (e.g. copied from browsers) — bytes are already PNG, wrap directly.
+    if dib.is_empty() {
+        if let Some(png_fmt) = raw::register_format("PNG") {
+            let fmt = png_fmt.get();
+            if raw::is_format_avail(fmt) {
+                if let Some(sz) = raw::size(fmt) {
+                    let n = sz.get();
+                    if n > 0 {
+                        let mut png = vec![0u8; n];
+                        if raw::get(fmt, &mut png).unwrap_or(0) > 0 {
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+                            let _ = raw::close();
+                            return Ok(format!("data:image/png;base64,{}", b64));
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     let _ = raw::close();
 
-    if n == 0 || dib.len() < 40 {
+    if dib.is_empty() || dib.len() < 40 {
         return Ok(String::new());
     }
 

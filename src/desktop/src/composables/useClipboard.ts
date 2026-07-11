@@ -162,8 +162,8 @@ function enqueueClipboardTask(task: ClipboardTask) {
       return
     }
   } else if (task.type === 'image') {
-    const size = task.payload?.size as number
-    if (clipboardQueue.some(t => t.type === 'image' && t.payload?.size === size)) {
+    const dataUrl = (task.payload as { dataUrl?: string })?.dataUrl
+    if (dataUrl && clipboardQueue.some(t => t.type === 'image' && (t.payload as { dataUrl?: string })?.dataUrl === dataUrl)) {
       console.log('[Clipboard] queue: skip duplicate image task')
       return
     }
@@ -550,7 +550,6 @@ async function uploadImageToServer(dataUrl: string) {
   if (!deviceId) return
   const uploadPayload = {
     contentType: 'image',
-    content: resized,
     contentEncrypted: resized,
     sourceDeviceId: deviceId,
     mimeType: 'image/png',
