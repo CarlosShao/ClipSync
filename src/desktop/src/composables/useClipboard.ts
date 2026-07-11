@@ -32,6 +32,8 @@ const loading = ref(false)
 
 let firstTauriPollDone = false
 let lastImageSize = 0
+// 图片按内容哈希去重（与 Rust monitor 的 hash 一致），避免同尺寸不同图被判为重复
+let lastImageHash = ''
 let lastBrowserText = ''
 const recentUploadHashes = new Map<string, number>()
 const HASH_TTL = 30000 // 30s dedup window — clipboard monitor fires every 700ms, need wide window
@@ -666,12 +668,13 @@ async function readAndUpload() {
       return
     }
 
-    const imgInfo = await tauri.checkClipboardImageInfo().catch(() => ({ available: false, size: 0 }))
-    if (imgInfo.available && imgInfo.size !== lastImageSize) {
+    const imgInfo = await tauri.checkClipboardImageInfo().catch(() => ({ available: false, size: 0, hash: '' }))
+    if (imgInfo.available && imgInfo.hash && imgInfo.hash !== lastImageHash) {
       if (firstTauriPollDone || !items.value.some(i => i.type === 'image')) {
         const imgData = await tauri.getClipboardImage().catch(() => '')
         if (imgData) {
           lastImageSize = imgInfo.size
+          lastImageHash = imgInfo.hash
           enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size: imgInfo.size } })
         }
       }
@@ -726,21 +729,23 @@ export function useClipboard() {
           enqueueClipboardTask({ type: 'file', payload: filePaths })
         }
       } else if (contentType === 'image') {
-        // Image event from Rust: lightweight size-only notification.
-        // Fetch actual image data immediately, then enqueue for serialized upload.
+        // Image event from Rust: carries a content hash. Fetch actual image data
+        // immediately, then enqueue for serialized upload. No size-based gate — the
+        // Rust monitor already dedups by content hash, so a same-size different
+        // screenshot (e.g. two captures of the same window) must still come through.
         if (Date.now() < skipPollUntil) return
-        const size = payload?.size as number | undefined
-        if (size && size !== lastImageSize) {
-          const imgData = await tauri.getClipboardImage().catch((e: any) => {
-            console.error('[Clipboard] getClipboardImage failed:', e)
-            return ''
-          })
-          if (imgData) {
-            lastImageSize = size
-            enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size } })
-          } else {
-            console.warn('[Clipboard] Image conversion returned empty — DIB-to-PNG may have failed')
-          }
+        const size = (payload?.size as number | undefined) ?? 0
+        const hash = payload?.hash as string | undefined
+        const imgData = await tauri.getClipboardImage().catch((e: any) => {
+          console.error('[Clipboard] getClipboardImage failed:', e)
+          return ''
+        })
+        if (imgData) {
+          lastImageSize = size
+          lastImageHash = hash ?? ''
+          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size } })
+        } else {
+          console.warn('[Clipboard] Image conversion returned empty — DIB-to-PNG may have failed')
         }
       } else if (!contentType) {
         // Text event from Rust: content is the clipboard text
@@ -867,23 +872,21 @@ export function useClipboard() {
           } catch { /* ignore */ }
         }
         if (dataUrl && !dataUrl.startsWith('[Image')) {
-          // 更新 lastImageSize 避免下一轮轮询重新走图片检测分支
-          try {
-            const info = await tauri.checkClipboardImageInfo()
-            lastImageSize = info.size
-          } catch {
-            lastImageSize = dataUrl.length
-          }
           // 优先写入实际图片格式
           try {
             const resp = await fetch(dataUrl)
             const blob = await resp.blob()
             await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
-            return true
           } catch {
             await tauri.setClipboardContent(dataUrl)
-            return true
           }
+          // 写入后记录当前剪贴板图片的哈希，避免兜底轮询把它当作新截图重新上传
+          try {
+            const info = await tauri.checkClipboardImageInfo()
+            lastImageSize = info.size
+            lastImageHash = info.hash || ''
+          } catch { /* ignore */ }
+          return true
         }
         return false
       }
@@ -911,7 +914,7 @@ export function useClipboard() {
     const selectedIds = new Set(selected.map(i => i.id))
     items.value = items.value.filter(i => !selectedIds.has(i.id))
     // 批量删除后跳过轮询，防止系统剪贴板内容被重新上传
-    skipNextPolls(10000)
+    skipNextPolls(3000)
     return count
   }
 
@@ -927,7 +930,7 @@ export function useClipboard() {
     // 仅在服务端确认成功（或是本地临时项）后才从本地列表移除
     items.value = items.value.filter(i => i.id !== item.id)
     // 删除后跳过轮询，防止系统剪贴板内容被重新上传
-    skipNextPolls(10000)
+    skipNextPolls(3000)
   }
 
   async function toggleFavorite(item: ClipItem) {

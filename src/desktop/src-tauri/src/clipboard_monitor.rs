@@ -39,6 +39,7 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
     let mut last_text = String::new();
     let mut last_file_paths: Vec<String> = Vec::new();
     let mut last_image_size: usize = 0;
+    let mut last_image_hash: u64 = 0;
     let mut last_change_time = Instant::now();
     let debounce_duration = Duration::from_millis(500);
     let poll_interval = Duration::from_millis(700);
@@ -128,19 +129,22 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                     last_file_paths.clear();
                 }
             }
-            ClipContent::Image { size } => {
-                // Lightweight detection: compare size only (no PNG conversion here).
-                // The frontend will call get_clipboard_image() to fetch actual data.
-                if size > 0 && size != last_image_size {
-                    eprintln!("[ClipMon] IMAGE: {} bytes", size);
+            ClipContent::Image { size, hash } => {
+                // Dedup by CONTENT hash, not byte length. Two screenshots of the same
+                // window/dimensions have identical DIB byte length but different pixels;
+                // a size-only check would silently drop the second screenshot.
+                if hash != last_image_hash {
+                    eprintln!("[ClipMon] IMAGE: {} bytes (content changed)", size);
                     let _ = app_handle.emit(
                         "clipboard-changed",
                         serde_json::json!({
                             "contentType": "image",
                             "size": size,
+                            "hash": hash.to_string(),
                             "timestamp": chrono::Utc::now().to_rfc3339(),
                         }),
                     );
+                    last_image_hash = hash;
                     last_image_size = size;
                     // Clear text/file state when an image appears
                     last_text.clear();
@@ -160,7 +164,7 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
 enum ClipContent {
     Text(String),
     Files(Vec<String>),
-    Image { size: usize },
+    Image { size: usize, hash: u64 },
     Empty,
     Error(String),
 }
@@ -197,14 +201,20 @@ fn read_clipboard_raw() -> ClipContent {
     if raw::is_format_avail(8) || raw::is_format_avail(2) {
         let mut data = Vec::<u8>::new();
         match raw::get_bitmap(&mut data) {
-            Ok(size) if size > 0 => return ClipContent::Image { size },
+            Ok(size) if size > 0 => return ClipContent::Image { size, hash: fnv64(&data) },
             Ok(_) => {}
             Err(e) => eprintln!("[ClipMon] get_bitmap err: {}", e),
         }
     }
     if raw::is_format_avail(17) {
         if let Some(sz) = raw::size(17) {
-            return ClipContent::Image { size: sz.get() };
+            let n = sz.get();
+            if n > 0 {
+                let mut buf = vec![0u8; n];
+                if raw::get(17, &mut buf).unwrap_or(0) > 0 {
+                    return ClipContent::Image { size: buf.len(), hash: fnv64(&buf) };
+                }
+            }
         }
     }
     // PNG clipboard format (e.g. copied from browsers)
@@ -212,7 +222,13 @@ fn read_clipboard_raw() -> ClipContent {
         let fmt = png_fmt.get();
         if raw::is_format_avail(fmt) {
             if let Some(sz) = raw::size(fmt) {
-                return ClipContent::Image { size: sz.get() };
+                let n = sz.get();
+                if n > 0 {
+                    let mut png = vec![0u8; n];
+                    if raw::get(fmt, &mut png).unwrap_or(0) > 0 {
+                        return ClipContent::Image { size: png.len(), hash: fnv64(&png) };
+                    }
+                }
             }
         }
     }
@@ -251,4 +267,17 @@ impl Drop for ClipGuard {
     fn drop(&mut self) {
         let _ = clipboard_win::raw::close();
     }
+}
+
+/// Fast non-crypto hash (FNV-1a 64-bit) over clipboard bytes.
+/// Used to dedup images by CONTENT, not by byte length — two screenshots of the
+/// same window/dimensions have identical DIB byte length but different pixels, so a
+/// size-based check silently drops the second one.
+fn fnv64(data: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }

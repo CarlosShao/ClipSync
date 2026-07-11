@@ -320,8 +320,18 @@ fn get_clipboard_files() -> Vec<String> {
     files
 }
 
-/// Lightweight check: is there an image on the clipboard? Returns size only (no data read, no base64).
-/// Call this every 500ms instead of get_clipboard_image to avoid CPU-heavy base64 encoding.
+/// Fast non-crypto hash (FNV-1a 64-bit) over clipboard bytes.
+fn fnv64(data: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+/// Lightweight check: is there an image on the clipboard? Returns size + content hash
+/// (no base64). Call this on the fallback poll to dedup by CONTENT, not byte length.
 #[tauri::command]
 fn check_clipboard_image_info() -> serde_json::Value {
     use clipboard_win::raw;
@@ -329,7 +339,6 @@ fn check_clipboard_image_info() -> serde_json::Value {
     const MAX_RAW_BYTES: usize = 50 * 1024 * 1024;
     match raw::open() {
         Ok(()) => {
-            // CF_DIBV5 (17) and PNG formats are common from browsers / snipping tools.
             let png_avail = raw::register_format("PNG")
                 .map(|f| raw::is_format_avail(f.get()))
                 .unwrap_or(false);
@@ -339,32 +348,49 @@ fn check_clipboard_image_info() -> serde_json::Value {
                 || png_avail;
             let _ = raw::close();
             if has_image {
-                // Re-open to get size (cheaper than reading + encoding full data)
                 match raw::open() {
                     Ok(()) => {
-                        // Prefer CF_DIBV5 (17) for size, then CF_DIB/CF_BITMAP, then PNG.
-                        let mut size: usize = 0;
-                        if raw::is_format_avail(17) {
-                            size = raw::size(17).map(|s| s.get()).unwrap_or(0);
-                        }
-                        if size == 0 && (raw::is_format_avail(8) || raw::is_format_avail(2)) {
+                        // Read the actual bytes (prefer standard DIB, then DIBV5, then PNG)
+                        // so we can hash by CONTENT. Two same-sized screenshots must not collide.
+                        let mut bytes: Vec<u8> = Vec::new();
+                        if raw::is_format_avail(8) || raw::is_format_avail(2) {
                             let mut data = Vec::<u8>::new();
-                            size = raw::get_bitmap(&mut data).unwrap_or(0);
-                        }
-                        if size == 0 {
-                            if let Some(png_fmt) = raw::register_format("PNG") {
-                                let fmt = png_fmt.get();
-                                if raw::is_format_avail(fmt) {
-                                    size = raw::size(fmt).map(|s| s.get()).unwrap_or(0);
+                            let _ = raw::get_bitmap(&mut data);
+                            bytes = data;
+                        } else if raw::is_format_avail(17) {
+                            if let Some(sz) = raw::size(17) {
+                                let n = sz.get();
+                                if n > 0 && n <= MAX_RAW_BYTES {
+                                    let mut buf = vec![0u8; n];
+                                    if raw::get(17, &mut buf).unwrap_or(0) > 0 {
+                                        bytes = buf;
+                                    }
+                                }
+                            }
+                        } else if let Some(png_fmt) = raw::register_format("PNG") {
+                            let fmt = png_fmt.get();
+                            if raw::is_format_avail(fmt) {
+                                if let Some(sz) = raw::size(fmt) {
+                                    let n = sz.get();
+                                    if n > 0 && n <= MAX_RAW_BYTES {
+                                        let mut png = vec![0u8; n];
+                                        if raw::get(fmt, &mut png).unwrap_or(0) > 0 {
+                                            bytes = png;
+                                        }
+                                    }
                                 }
                             }
                         }
                         let _ = raw::close();
-                        if size > MAX_RAW_BYTES {
+                        let size = bytes.len();
+                        if size == 0 {
+                            serde_json::json!({ "available": false, "size": 0 })
+                        } else if size > MAX_RAW_BYTES {
                             eprintln!("[check_clipboard_image_info] Image too large: {} bytes, skipping", size);
                             serde_json::json!({ "available": false, "size": size, "reason": "too_large" })
                         } else {
-                            serde_json::json!({ "available": true, "size": size })
+                            let hash = fnv64(&bytes);
+                            serde_json::json!({ "available": true, "size": size, "hash": hash.to_string() })
                         }
                     }
                     Err(_) => serde_json::json!({ "available": true, "size": 0 }),
