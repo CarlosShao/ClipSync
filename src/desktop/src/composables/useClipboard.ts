@@ -577,12 +577,11 @@ function resizeImageIfNeeded(dataUrl: string, maxPx = 1080): Promise<string> {
 }
 
 async function uploadImageToServer(dataUrl: string, contentHash?: string, alreadyResized = false) {
-  // Dedup by FULL-CONTENT hash, NOT a 200-char prefix. Two screenshots of the same
-  // window have identical PNG file headers and identical first compressed bytes, so a
-  // prefix key collides and silently drops every subsequent screenshot within 30s.
-  // Prefer the Rust FNV content hash (passed through from the clipboard monitor);
-  // fall back to a full string hash when it is unavailable.
-  const dedupKey = (contentHash && contentHash.length > 0) ? contentHash : simpleHash(dataUrl)
+  // Dedup by actual dataUrl content (simpleHash), NOT by Rust's png_content_hash.
+  // Using Rust's hash as dedup key caused silent drops: if two screenshots happened
+  // to produce the same fnv64 (or if the hash wasn't updated between enqueue and
+  // upload), the second image was never uploaded.
+  const dedupKey = simpleHash(dataUrl)
   if (recentUploadHashes.has(dedupKey) && Date.now() - (recentUploadHashes.get(dedupKey) || 0) < HASH_TTL) return
   recentUploadHashes.set(dedupKey, Date.now())
   // Resize large images (>1080p) before upload to save bandwidth.
@@ -813,14 +812,9 @@ export function useClipboard() {
             return ''
           })
           if (imgData) {
-            const dedupHash = simpleHash(imgData)
-            if (dedupHash !== lastImageHash) {
-              lastImageSize = size
-              lastImageHash = dedupHash
-              enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: dedupHash, alreadyResized: false } })
-            } else {
-              console.log('[Clipboard] event: hash matches last image, skipping duplicate')
-            }
+            // No frontend dedup here — Rust echo guard + server dedup handle it.
+            // Frontend lastImageHash simpleHash collision caused silent drops.
+            enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: contentHash, alreadyResized: false } })
           } else {
             console.warn('[Clipboard] captured image not found for hash', contentHash, '— cache may have been cleared')
           }
