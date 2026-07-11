@@ -189,14 +189,11 @@ fn read_clipboard_raw() -> ClipContent {
         }
     }
 
-    // Priority 2: Images. Detect CF_DIBV5 (17), CF_DIB (8) / CF_BITMAP (2), and PNG.
-    // Chrome / Snipping Tool / many apps place images as CF_DIBV5 or PNG, which the
-    // legacy CF_DIB/CF_BITMAP-only check missed → image never detected → no sync.
-    if raw::is_format_avail(17) {
-        if let Some(sz) = raw::size(17) {
-            return ClipContent::Image { size: sz.get() };
-        }
-    }
+    // Priority 2: Images.
+    // Standard DIB (CF_DIB 8 / CF_BITMAP 2) first — what WeChat, Snipping Tool and most
+    // Windows apps put on the clipboard, read reliably via get_bitmap().
+    // Fall back to CF_DIBV5 (17) and PNG only when the standard DIB is unavailable
+    // (browsers / some tools place images as DIBV5 or PNG only).
     if raw::is_format_avail(8) || raw::is_format_avail(2) {
         let mut data = Vec::<u8>::new();
         match raw::get_bitmap(&mut data) {
@@ -205,14 +202,19 @@ fn read_clipboard_raw() -> ClipContent {
             Err(e) => eprintln!("[ClipMon] get_bitmap err: {}", e),
         }
     }
+    if raw::is_format_avail(17) {
+        if let Some(sz) = raw::size(17) {
+            return ClipContent::Image { size: sz.get() };
+        }
+    }
     // PNG clipboard format (e.g. copied from browsers)
     if let Some(png_fmt) = raw::register_format("PNG") {
         let fmt = png_fmt.get();
-            if raw::is_format_avail(fmt) {
-                if let Some(sz) = raw::size(fmt) {
-                    return ClipContent::Image { size: sz.get() };
-                }
+        if raw::is_format_avail(fmt) {
+            if let Some(sz) = raw::size(fmt) {
+                return ClipContent::Image { size: sz.get() };
             }
+        }
     }
 
     // Priority 3: Text (CF_UNICODETEXT, format 13)
