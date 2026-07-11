@@ -115,8 +115,8 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
     let mut state = MonitorState::default();
 
     loop {
-        // Honor stop request (also set by the stop command before dropping Shutdown).
-        if stop_flag.load(Ordering::Relaxed) {
+        // stop_flag = is_monitoring: true = running, false = should stop.
+        if !stop_flag.load(Ordering::Relaxed) {
             eprintln!("[ClipMon] Stop requested, exiting monitor loop.");
             break;
         }
