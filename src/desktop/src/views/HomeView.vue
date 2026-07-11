@@ -85,7 +85,7 @@ onMounted(async () => {
   notif.loadHistory()
   // WebSocket 新剪贴通知 → 刷新列表 + 弹系统通知；通知推送 → 实时插入收件箱
   ws.onMessage((data) => {
-    if (data?.type === 'new_clip' || data?.action === 'sync' || data?.event === 'clipboard_update') {
+    if (data?.type === 'new_clipboard' || data?.type === 'new_clip' || data?.action === 'sync' || data?.event === 'clipboard_update') {
       clip.refresh()
       perfFirstDataLoad()
       // Native notification: show what was synced (skip if window is focused)
