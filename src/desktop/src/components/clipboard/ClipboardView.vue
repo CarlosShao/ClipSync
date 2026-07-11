@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
@@ -24,12 +25,14 @@ const emit = defineEmits<{
   'preview-text': [item: ClipItem]
   'preview-file': [item: ClipItem]
   'version-history': [item: ClipItem]
+  'show-confirm': [msg: string, cb: () => void]
 }>()
 
 const { t } = useI18n()
 const toast = useToast()
 const clip = useClipboard()
 const configStore = useConfigStore()
+const router = useRouter()
 // 用 computed 包裹 ref，确保 Vue 3 模板正确追踪响应式依赖
 const filteredItems = computed(() => clip.filteredItems.value)
 const allItems = computed(() => clip.items.value)
@@ -74,7 +77,10 @@ function handleFavorite(item: ClipItem) {
     if (collections.value.length > 0) {
       addToColItemId.value = item.id
     } else {
-      toast.show('已收藏，可在「收藏」页面创建收藏夹分类管理', 'info')
+      // No collections → confirm dialog: create one or just favorite
+      emit('show-confirm', '还没有收藏夹，是否现在创建一个？', () => {
+        router.push('/app/favorites')
+      })
     }
   }
 }
