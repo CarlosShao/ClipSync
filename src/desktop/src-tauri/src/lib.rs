@@ -415,9 +415,11 @@ fn check_clipboard_image_info() -> serde_json::Value {
 /// hold a newer screenshot. Without this, taking several screenshots in quick
 /// succession drops all but the last one (the frontend reads the live clipboard long
 /// after detection, by which point it holds the newest image).
-pub fn capture_clipboard_image() -> Option<(String, u64)> {
+/// Read the raw image bytes from the clipboard without encoding.
+/// Returns `(raw_bytes, source_label)`. The source label tells the encoder
+/// whether the bytes are already PNG or need BMP/DIB conversion.
+pub fn read_clipboard_image_raw() -> Option<(Vec<u8>, &'static str)> {
     use clipboard_win::raw;
-    use base64::Engine;
 
     if raw::open().is_err() {
         return None;
@@ -455,10 +457,9 @@ pub fn capture_clipboard_image() -> Option<(String, u64)> {
                     if n > 0 {
                         let mut png = vec![0u8; n];
                         if raw::get(fmt, &mut png).unwrap_or(0) > 0 {
-                            let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
                             let _ = raw::close();
-                            eprintln!("[capture_clipboard_image] source=PNG-clipboard, {} bytes", png.len());
-                            return Some((format!("data:image/png;base64,{}", b64), fnv64(&png)));
+                            eprintln!("[read_clipboard_image_raw] source=PNG-clipboard, {} bytes", png.len());
+                            return Some((png, "PNG-clipboard"));
                         }
                     }
                 }
@@ -468,35 +469,61 @@ pub fn capture_clipboard_image() -> Option<(String, u64)> {
 
     let _ = raw::close();
 
-    if dib.is_empty() || dib.len() < 40 {
+    if dib.is_empty() {
         return None;
     }
 
-    eprintln!("[capture_clipboard_image] source={} raw {} bytes, starts with {:02x?}, has_BM={}",
+    eprintln!("[read_clipboard_image_raw] source={} raw {} bytes, starts with {:02x?}, has_BM={}",
         src, dib.len(), dib.iter().take(4).collect::<Vec<_>>(),
         dib.len() > 2 && &dib[0..2] == b"BM");
 
+    Some((dib, src))
+}
+
+/// Encode raw clipboard bytes (DIB/BMP/PNG) into a PNG data URL + hash.
+pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str) -> Option<(String, u64)> {
+    use base64::Engine;
+
+    if raw.is_empty() {
+        return None;
+    }
+
+    // PNG clipboard format — bytes are already PNG.
+    if src == "PNG-clipboard" {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(raw);
+        return Some((format!("data:image/png;base64,{}", b64), fnv64(raw)));
+    }
+
+    if raw.len() < 40 {
+        return None;
+    }
+
     // === Try 1: image crate BMP decoder (most reliable for standard BMP) ===
-    if dib.len() > 14 && &dib[0..2] == b"BM" {
-        match image::load_from_memory(&dib) {
+    if raw.len() > 14 && &raw[0..2] == b"BM" {
+        match image::load_from_memory(raw) {
             Ok(img) => {
                 let rgba = img.to_rgba8();
                 let (w, h) = rgba.dimensions();
-                eprintln!("[capture_clipboard_image] image crate OK: {}x{}", w, h);
-                return encode_rgba_to_png_data_url(&rgba, w, h).ok().map(|url| (url, fnv64(&dib)));
+                eprintln!("[encode_clipboard_raw_to_png] image crate OK: {}x{}", w, h);
+                return encode_rgba_to_png_data_url(&rgba, w, h).ok().map(|url| (url, fnv64(raw)));
             }
             Err(e) => {
-                eprintln!("[capture_clipboard_image] image crate failed: {}, trying manual parser", e);
+                eprintln!("[encode_clipboard_raw_to_png] image crate failed: {}, trying manual parser", e);
             }
         }
     }
 
     // === Try 2: Manual DIB parsing (fallback for non-standard formats) ===
-    let actual_dib = if &dib[0..2] == b"BM" && dib.len() > 14 { &dib[14..] } else { &dib };
+    let actual_dib = if &raw[0..2] == b"BM" && raw.len() > 14 { &raw[14..] } else { raw };
     dib_to_png_data_url(actual_dib)
-        .map(|url| (url, fnv64(&dib)))
-        .map_err(|e| { eprintln!("[capture_clipboard_image] failed: {}", e); e })
+        .map(|url| (url, fnv64(raw)))
+        .map_err(|e| { eprintln!("[encode_clipboard_raw_to_png] failed: {}", e); e })
         .ok()
+}
+
+pub fn capture_clipboard_image() -> Option<(String, u64)> {
+    let (raw, src) = read_clipboard_image_raw()?;
+    encode_clipboard_raw_to_png(&raw, src)
 }
 
 #[tauri::command]

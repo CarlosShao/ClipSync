@@ -29,6 +29,14 @@ const activeFilter = ref<'all' | 'text' | 'images' | 'links' | 'files' | 'favori
 const batchMode = ref(false)
 const polling = ref(false)
 const loading = ref(false)
+// 分页状态 — 解决"删除后刷新总是固定 50 条"的感知问题。
+// 后端是硬删（已验证），但前端每次只拉 page1(limit50)，删除可见项后旧条目滚入 page1，
+// 让人以为删除没生效。改为：展示服务器总数 + "加载更多"按钮拉取后续分页。
+const currentPage = ref(1)
+const pageSize = ref(50)
+const totalItems = ref(0)
+const loadingMore = ref(false)
+const hasMore = computed(() => totalItems.value > 0 && items.value.length < totalItems.value)
 
 let lastImageSize = 0
 // 图片按 PNG content hash 去重（不是 Rust raw-DIB hash），避免某些剪贴板源
@@ -36,7 +44,7 @@ let lastImageSize = 0
 let lastImageHash = ''
 let lastBrowserText = ''
 const recentUploadHashes = new Map<string, number>()
-const HASH_TTL = 30000 // 30s dedup window — clipboard monitor fires every 700ms, need wide window
+const HASH_TTL = 30000 // 30s dedup window — covers monitor event + fallback poll + any retries
 
 // === ClipSync 内部复制去重（精确内容匹配） ===
 // 用户铁律：从 ClipSync UI 复制任何条目，都不应再次产生重复记录。
@@ -321,12 +329,16 @@ function getCachedContent(id: string): string {
   return entry.v
 }
 
-async function loadClipboardItems() {
-  loading.value = true
+async function loadClipboardItems(opts?: { page?: number; append?: boolean }) {
+  const page = opts?.page ?? 1
+  const append = opts?.append ?? false
+  if (!append) currentPage.value = page
+  if (append) loadingMore.value = true; else loading.value = true
   try {
-  const res = await api('GET', '/api/clipboard')
-  console.log('[Clipboard] loadClipboardItems:', res.ok, 'items:', res.data?.items?.length)
+  const res = await api('GET', `/api/clipboard?page=${page}&limit=${pageSize.value}`)
+  console.log('[Clipboard] loadClipboardItems:', res.ok, 'items:', res.data?.items?.length, 'page:', page, 'total:', res.data?.pagination?.total)
   if (res.ok && Array.isArray(res.data?.items)) {
+    totalItems.value = res.data?.pagination?.total ?? res.data.items.length
     const serverIds = new Set(res.data.items.map((i: any) => i.id))
     // Build set of server content previews for dedup
     const serverContentPreviews = new Set(res.data.items.map((i: any) => (i.contentPreview || '').slice(0, 100)))
@@ -398,7 +410,17 @@ async function loadClipboardItems() {
         favoritedAt: i.favoritedAt ? new Date(i.favoritedAt).getTime() : undefined,
       }
     })
-    items.value = [...localWithContent, ...serverItems]
+    if (append) {
+      // 追加模式（加载更多）：把本页服务端条目中本地还没有的追加进去，避免重复。
+      const existingIds = new Set(items.value.map(i => i.id))
+      const merged = items.value.slice()
+      for (const s of serverItems) {
+        if (!existingIds.has(s.id)) merged.push(s)
+      }
+      items.value = merged
+    } else {
+      items.value = [...localWithContent, ...serverItems]
+    }
     console.log('[Clipboard] items set to', items.value.length, 'filteredItems:', filteredItems.value.length)
 
     // 队列化加载图片：每批 3 张，间隔 200ms，避免并发过高被限流
@@ -408,8 +430,15 @@ async function loadClipboardItems() {
     console.warn('[Clipboard] loadClipboardItems failed:', res.status, res.error)
   }
   } finally {
-    loading.value = false
+    if (append) loadingMore.value = false; else loading.value = false
   }
+}
+
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  const next = currentPage.value + 1
+  await loadClipboardItems({ page: next, append: true })
+  currentPage.value = next
 }
 
 // 图片异步加载队列（防并发 + 防竞态 + 429 保护）
@@ -666,9 +695,14 @@ async function readAndUpload() {
       // 第一次轮询：只记录当前剪贴板状态，不上传，避免启动时把当前已有内容重新上传。
       initialLoadDone = true
       const imgInfo = await tauri.checkClipboardImageInfo().catch(() => ({ available: false, size: 0, hash: '' }))
-      if (imgInfo.available && imgInfo.hash) {
-        lastImageHash = imgInfo.hash
-        lastImageSize = imgInfo.size
+      if (imgInfo.available) {
+        // 用 PNG 内容哈希（与事件/兜底轮询同一套算法）作为启动基线，避免不同哈希族导致
+        // 启动时的剪贴板图片被误判为新图而重传。
+        const initData = await tauri.getClipboardImage().catch(() => '')
+        if (initData) {
+          lastImageHash = simpleHash(initData)
+          lastImageSize = imgInfo.size
+        }
       }
       return
     }
@@ -759,7 +793,6 @@ export function useClipboard() {
         // for older monitor builds that don't snapshot.
         if (Date.now() < skipPollUntil) return
         const size = (payload?.size as number | undefined) ?? 0
-        const eventHash = payload?.hash as string | undefined
         const captured = (payload?.dataUrl as string | undefined) || ''
         let imgData = captured
         if (!imgData) {
@@ -769,9 +802,13 @@ export function useClipboard() {
           })
         }
         if (imgData) {
-          // Prefer the Rust FNV content hash from the event; fall back to a full-string
-          // hash of the PNG so different screenshots always dedupe as different.
-          const dedupHash = eventHash || simpleHash(imgData)
+          // Dedup by the FULL PNG content hash (simpleHash over the entire dataUrl).
+          // We deliberately do NOT use the Rust `eventHash` here: the monitor's PNG hash
+          // (FNV-1a over bytes) is a different hash family than the JS simpleHash used by
+          // the 10s fallback poll (readAndUpload), so mixing them would let the fallback
+          // re-enqueue an already-synced image. One consistent hash across both paths is
+          // what guarantees consecutive different screenshots all sync and none is re-uploaded.
+          const dedupHash = simpleHash(imgData)
           if (dedupHash !== lastImageHash) {
             lastImageSize = size
             lastImageHash = dedupHash
@@ -841,10 +878,10 @@ export function useClipboard() {
     resumePendingUploads()
 
     // --- Primary: event-driven via Rust clipboard monitor ---
-    // The Rust thread polls clipboard every 700ms and emits `clipboard-changed`
-    // events for text/files/images. This replaces the old 1500ms JS polling.
-    // Events are captured and pushed to a serial queue instead of uploading inline,
-    // so rapid consecutive copies are processed one-by-one rather than dropped.
+    // The Rust thread polls the clipboard sequence number every 100ms and reads
+    // bytes only when the OS reports a genuine change. Image PNG encoding runs in
+    // a dedicated worker thread so rapid consecutive screenshots are not dropped
+    // while the loop is blocked compressing the previous one.
     listen<any>('clipboard-changed', async (event) => {
       await handleClipboardEvent(event.payload)
     }).then(unlisten => {
@@ -938,8 +975,9 @@ export function useClipboard() {
     const count = selected.length
     // 只删服务器上的（过滤掉所有本地临时 id）
     const serverIds = selected.map(i => i.id).filter(id => !id.startsWith('local-') && !id.startsWith('text-') && !id.startsWith('img-') && !id.startsWith('file-') && !id.startsWith('browser-'))
+    let res: any = { ok: true, status: 200 }
     if (serverIds.length > 0) {
-      const res = await apiOrEnqueue('DELETE', '/api/clipboard', { ids: serverIds }, 'delete', { ids: serverIds })
+      res = await apiOrEnqueue('DELETE', '/api/clipboard', { ids: serverIds }, 'delete', { ids: serverIds })
       if (!res.ok && res.status !== 0) {
         console.error('[Clipboard] batchDelete server error:', res.status, res.error)
         throw new Error(res.error || `删除失败 (HTTP ${res.status})`)
@@ -948,6 +986,11 @@ export function useClipboard() {
     // 仅在服务端确认成功后才从本地列表移除选中项
     const selectedIds = new Set(selected.map(i => i.id))
     items.value = items.value.filter(i => !selectedIds.has(i.id))
+    // 同步本地总数（后端是硬删）。不减会导致 hasMore/remaining 计算偏差，
+    // 出现"加载更多"按钮卡在末尾删不掉项的情况。
+    if (serverIds.length > 0 && (res.ok || res.status === 0)) {
+      totalItems.value = Math.max(0, totalItems.value - serverIds.length)
+    }
     // 批量删除后跳过轮询，防止系统剪贴板内容被重新上传
     skipNextPolls(3000)
     return count
@@ -955,8 +998,9 @@ export function useClipboard() {
 
   async function deleteSingle(item: ClipItem) {
     const isLocal = item.id.startsWith('local-') || item.id.startsWith('text-') || item.id.startsWith('img-')
+    let res: any = { ok: true, status: 200 }
     if (!isLocal) {
-      const res = await apiOrEnqueue('DELETE', `/api/clipboard/${item.id}`, undefined, 'delete', { id: item.id })
+      res = await apiOrEnqueue('DELETE', `/api/clipboard/${item.id}`, undefined, 'delete', { id: item.id })
       if (!res.ok && res.status !== 0) {
         console.error('[Clipboard] deleteSingle server error:', res.status, res.error)
         throw new Error(res.error || `删除失败 (HTTP ${res.status})`)
@@ -964,6 +1008,10 @@ export function useClipboard() {
     }
     // 仅在服务端确认成功（或是本地临时项）后才从本地列表移除
     items.value = items.value.filter(i => i.id !== item.id)
+    // 同步本地总数（后端是硬删），保持 hasMore/remaining 计算正确
+    if (!isLocal && res && (res.ok || res.status === 0)) {
+      totalItems.value = Math.max(0, totalItems.value - 1)
+    }
     // 删除后跳过轮询，防止系统剪贴板内容被重新上传
     skipNextPolls(3000)
   }
@@ -1124,6 +1172,7 @@ export function useClipboard() {
   return {
     items, filteredItems, searchQuery, activeFilter, batchMode, polling, loading,
     offlineQueueSize,
+    totalItems, hasMore, loadingMore, loadMore, currentPage, pageSize,
     selectedCount, allSelected, startPolling, copyItem,
     toggleSelectAll, clearSelection, batchDelete, deleteSingle, toggleFavorite,
     loadClipboardItems, setFilter, setSearch, toggleBatch, uploadFileItem,

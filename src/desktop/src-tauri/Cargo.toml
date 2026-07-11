@@ -40,7 +40,8 @@ log = "0.4"
 env_logger = "0.11"
 png = "0.17"
 
-# Windows 专用：调用 DWM API 给系统标题栏着色
+# Windows 专用：调用 DWM API 给系统标题栏着色。
+# GetClipboardSequenceNumber 通过直接 extern "system" 导入 user32，不经过 windows-sys。
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
