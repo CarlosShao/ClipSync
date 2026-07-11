@@ -42,7 +42,12 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
     let mut last_image_hash: u64 = 0;
     let mut last_change_time = Instant::now();
     let debounce_duration = Duration::from_millis(500);
-    let poll_interval = Duration::from_millis(700);
+    // CAUTION: poll_interval is the clipboard DETECTION latency floor. A screenshot taken
+    // right after a poll is only detected on the NEXT poll, so worst-case detection delay
+    // == poll_interval. The original design used 100ms ("for responsiveness"); bumping it to
+    // 700ms (commit a091236) made sync feel 1-2s slow. Keep this responsive (<=150ms) unless
+    // there is a measured CPU reason not to. 100ms == 10 polls/sec, negligible CPU.
+    let poll_interval = Duration::from_millis(100);
     let idle_interval = Duration::from_secs(5); // longer sleep when no windows
     let mut cycle: u64 = 0;
 
