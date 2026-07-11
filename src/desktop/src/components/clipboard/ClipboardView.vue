@@ -64,20 +64,35 @@ async function addToCollection(colId: string, itemId: string) {
   addToColItemId.value = null
 }
 
-// Star button: favorite + show collection picker
+// Star button: favorite + show collection picker (optional)
 function handleFavorite(item: ClipItem) {
   if (item.isFavorite) {
     // Already favorited → unfavorite
     clip.toggleFavorite(item)
     addToColItemId.value = null
   } else {
-    // Not favorited → favorite first, then show collection picker
+    // Not favorited → favorite + show dropdown as suggestion
     clip.toggleFavorite(item)
     if (collections.value.length > 0) {
       addToColItemId.value = item.id
+    } else {
+      toast.success('已收藏')
     }
   }
 }
+
+// Click outside to close dropdown (item stays favorited in default area)
+function handleDocClick(e: MouseEvent) {
+  if (addToColItemId.value) {
+    const target = e.target as HTMLElement
+    if (!target.closest('.add-col-wrap')) {
+      addToColItemId.value = null
+      toast.info('已收藏到默认区域')
+    }
+  }
+}
+onMounted(() => document.addEventListener('click', handleDocClick))
+onUnmounted(() => document.removeEventListener('click', handleDocClick))
 
 // Read user's saved in-app shortcuts from localStorage (falls back to defaults)
 function savedAppKeys(id: string): string[] | undefined {
