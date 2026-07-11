@@ -387,25 +387,32 @@ fn get_clipboard_image() -> Result<String, String> {
 
     raw::open().map_err(|e| format!("open clipboard: {}", e))?;
 
-    // Collect raw image bytes: prefer CF_DIBV5 (17), else CF_DIB/CF_BITMAP (8/2), then PNG.
-    // Chrome / Snipping Tool / many apps place images as CF_DIBV5 or PNG; the old
-    // code only read CF_DIB/CF_BITMAP, so those images returned empty and never synced.
+    // Collect raw image bytes from the clipboard.
+    // PRIORITY: CF_DIB / CF_BITMAP (8/2) first. This is what WeChat, Snipping Tool and
+    // most Windows apps put on the clipboard, and get_bitmap() reads it reliably — this
+    // was the pre-favorites behaviour that worked. ONLY fall back to CF_DIBV5 (17) or PNG
+    // when the standard DIB is NOT available (browsers / some tools place images as
+    // DIBV5 or PNG only). Prioritizing 17 first risked mis-reading WeChat's DIBV5 and
+    // returning empty → image never synced.
     let mut dib: Vec<u8> = Vec::new();
-    if raw::is_format_avail(17) {
+    let mut src = "";
+    if raw::is_format_avail(8) || raw::is_format_avail(2) {
+        if raw::get_bitmap(&mut dib).unwrap_or(0) > 0 {
+            src = "CF_DIB/CF_BITMAP";
+        }
+    }
+    if dib.is_empty() && raw::is_format_avail(17) {
         if let Some(sz) = raw::size(17) {
             let n = sz.get();
             if n > 0 {
                 let mut buf = vec![0u8; n];
                 if raw::get(17, &mut buf).unwrap_or(0) > 0 {
                     dib = buf;
+                    src = "CF_DIBV5";
                 }
             }
         }
     }
-    if dib.is_empty() && (raw::is_format_avail(8) || raw::is_format_avail(2)) {
-        let _ = raw::get_bitmap(&mut dib);
-    }
-
     // PNG clipboard format (e.g. copied from browsers) — bytes are already PNG, wrap directly.
     if dib.is_empty() {
         if let Some(png_fmt) = raw::register_format("PNG") {
@@ -418,6 +425,7 @@ fn get_clipboard_image() -> Result<String, String> {
                         if raw::get(fmt, &mut png).unwrap_or(0) > 0 {
                             let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
                             let _ = raw::close();
+                            eprintln!("[get_clipboard_image] source=PNG-clipboard, {} bytes", png.len());
                             return Ok(format!("data:image/png;base64,{}", b64));
                         }
                     }
@@ -432,8 +440,8 @@ fn get_clipboard_image() -> Result<String, String> {
         return Ok(String::new());
     }
 
-    eprintln!("[get_clipboard_image] raw {} bytes, starts with {:02x?}, has_BM={}",
-        dib.len(), dib.iter().take(4).collect::<Vec<_>>(),
+    eprintln!("[get_clipboard_image] source={} raw {} bytes, starts with {:02x?}, has_BM={}",
+        src, dib.len(), dib.iter().take(4).collect::<Vec<_>>(),
         dib.len() > 2 && &dib[0..2] == b"BM");
 
     // === Try 1: image crate BMP decoder (most reliable for standard BMP) ===

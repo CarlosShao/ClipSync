@@ -731,12 +731,12 @@ export function useClipboard() {
         if (Date.now() < skipPollUntil) return
         const size = payload?.size as number | undefined
         if (size && size !== lastImageSize) {
-          lastImageSize = size
           const imgData = await tauri.getClipboardImage().catch((e: any) => {
             console.error('[Clipboard] getClipboardImage failed:', e)
             return ''
           })
           if (imgData) {
+            lastImageSize = size
             enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size } })
           } else {
             console.warn('[Clipboard] Image conversion returned empty — DIB-to-PNG may have failed')
