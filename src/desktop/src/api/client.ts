@@ -1,8 +1,25 @@
 import { ref } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
 
+const CSRF_STORAGE_KEY = 'clipsync-csrf'
 let csrfToken: string | null = null
 let csrfExpiresAt = 0
+
+// 持久化 CSRF token 到 localStorage，跨整页跳转 / 应用重启保持热状态。
+// 否则每次登录后 window.location.href 整页跳转会重置模块缓存，首张截图必须
+// 多付一次 GET /api/csrf-token 冷往返（叠加服务冷启动 ≈ 4s，见 client.ts 旧注释"之前 4.5s"）。
+function loadCsrfFromStorage() {
+  try {
+    const raw = localStorage.getItem(CSRF_STORAGE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as { token: string; exp: number }
+    if (parsed.token && Date.now() < parsed.exp) {
+      csrfToken = parsed.token
+      csrfExpiresAt = parsed.exp
+    }
+  } catch { /* ignore */ }
+}
+loadCsrfFromStorage()
 
 // 生成幂等键（C3 修复）：写请求携带 Idempotency-Key，网络重试复用同一把键，
 // 服务端据此去重，避免重复创建剪贴板条目/上传重复文件。
@@ -31,8 +48,16 @@ async function getCsrfToken(): Promise<string | null> {
     const data = await res.json()
     csrfToken = data.token || null
     csrfExpiresAt = Date.now() + 300_000 // 缓存 5 分钟，减少 ~50% 的请求量（之前 4.5s）
+    if (csrfToken) {
+      try { localStorage.setItem(CSRF_STORAGE_KEY, JSON.stringify({ token: csrfToken, exp: csrfExpiresAt })) } catch { /* ignore */ }
+    }
     return csrfToken
   } catch { return null }
+}
+
+/** Warm up the CSRF token after login so the first clipboard sync doesn't pay a cold round-trip. */
+export async function prefetchCsrf(): Promise<void> {
+  await getCsrfToken()
 }
 
 export interface ApiResponse<T = any> {

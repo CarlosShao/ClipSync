@@ -4,7 +4,7 @@ import { useConfigStore } from '@/stores/configStore'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import { useTheme, currentMode } from '@/composables/useTheme'
-import { api } from '@/api/client'
+import { api, prefetchCsrf } from '@/api/client'
 import * as tauri from '@/lib/tauri'
 import { Eye, EyeOff, Sun, Moon, ArrowLeft, X } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
@@ -165,6 +165,7 @@ async function handleLogin() {
           configStore.config.token = res.data.token
           configStore.config.user_id = res.data.user?.id || ''
           localStorage.setItem('clipsync-token', res.data.token)
+          await prefetchCsrf()
           toast.show(t('login_success'), 'success')
           // 直接导航，不依赖 watch（Pinia reactivity 可能不触发）
           window.location.href = '/app/clipboard'
@@ -209,6 +210,7 @@ async function handleLogin() {
           configStore.config.user_id = userId
           localStorage.setItem('clipsync-token', token)
         }
+        await prefetchCsrf()
         toast.show(t('login_success'), 'success')
         window.location.href = '/app/clipboard'
       } else {
