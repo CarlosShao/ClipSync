@@ -220,7 +220,11 @@ async function processClipboardQueue() {
         const p = task.payload as { dataUrl: string; hash?: string; alreadyResized?: boolean }
         const dataUrl = p.dataUrl
         if (dataUrl) {
-          await uploadImageToServer(dataUrl, p.hash, p.alreadyResized)
+          // 图片并行上传（不 await），4 张截图同时发起请求，不互相阻塞。
+          // 乐观更新已在入队时完成，UI 即时显示；上传结果只影响服务端 ID 绑定。
+          uploadImageToServer(dataUrl, p.hash, p.alreadyResized).catch(e =>
+            console.warn('[Clipboard] queue: image upload error', e)
+          )
         }
       }
       } catch (e) {
