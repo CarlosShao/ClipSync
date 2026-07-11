@@ -79,6 +79,7 @@ function handleFavorite(item: ClipItem) {
       // No collections → local confirm dialog
       confirmMessage.value = '还没有收藏夹，是否现在创建一个？'
       confirmCallback = () => { router.push('/app/favorites') }
+      confirmBtnVariant.value = 'default'
       showConfirmModal.value = true
     }
   }
@@ -131,6 +132,7 @@ const filterOptions = [
 const showConfirmModal = ref(false)
 const confirmMessage = ref('')
 let confirmCallback: (() => void) | null = null
+const confirmBtnVariant = ref<'default' | 'destructive'>('destructive')
 
 // File upload
 const fileInputRef = ref<HTMLInputElement>()
@@ -485,7 +487,7 @@ function extractDomain(url: string): string {
         <p class="confirm-msg">{{ confirmMessage }}</p>
         <div class="confirm-actions">
           <Button variant="outline" size="default" @click="cancelConfirm" class="confirm-btn-cancel">{{ t('cancel_btn') }}</Button>
-          <Button variant="destructive" size="default" @click="confirmAction" class="confirm-btn-delete">{{ t('confirm_t') }}</Button>
+          <Button :variant="confirmBtnVariant" size="default" @click="confirmAction" class="confirm-btn-delete">{{ t('confirm_t') }}</Button>
         </div>
       </div>
     </div>
