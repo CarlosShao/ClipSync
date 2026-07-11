@@ -207,7 +207,7 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>, server_c
     let mut last_seq: u32 = crate::get_clipboard_seq();
 
     loop {
-        if stop_flag.load(Ordering::Relaxed) {
+        if !stop_flag.load(Ordering::Relaxed) {
             eprintln!("[ClipMon] Stop requested, exiting monitor loop.");
             break;
         }
