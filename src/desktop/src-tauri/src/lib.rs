@@ -481,7 +481,7 @@ pub fn read_clipboard_image_raw() -> Option<(Vec<u8>, &'static str)> {
 }
 
 /// Encode raw clipboard bytes (DIB/BMP/PNG) into a PNG data URL + hash.
-pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str) -> Option<(String, u64)> {
+pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str, max_dim: Option<u32>) -> Option<(String, u64)> {
     use base64::Engine;
 
     if raw.is_empty() {
@@ -491,7 +491,11 @@ pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str) -> Option<(String, u64
     // PNG clipboard format — bytes are already PNG.
     if src == "PNG-clipboard" {
         let b64 = base64::engine::general_purpose::STANDARD.encode(raw);
-        return Some((format!("data:image/png;base64,{}", b64), fnv64(raw)));
+        let data_url = format!("data:image/png;base64,{}", b64);
+        // Optionally resize PNG (for screenshots: 720px longest side = fast encode + small upload)
+        let final_url = if let Some(max) = max_dim { resize_png_data_url(&data_url, max).unwrap_or(data_url) } else { data_url };
+        let content_hash = fnv64(final_url.as_bytes());
+        return Some((final_url, content_hash));
     }
 
     if raw.len() < 40 {
@@ -505,7 +509,10 @@ pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str) -> Option<(String, u64
                 let rgba = img.to_rgba8();
                 let (w, h) = rgba.dimensions();
                 eprintln!("[encode_clipboard_raw_to_png] image crate OK: {}x{}", w, h);
-                return encode_rgba_to_png_data_url(&rgba, w, h).ok().map(|url| (url, fnv64(raw)));
+                let url = encode_rgba_to_png_data_url(&rgba, w, h).ok()?;
+                let final_url = if let Some(max) = max_dim { resize_png_data_url(&url, max).unwrap_or(url) } else { url };
+                let content_hash = fnv64(final_url.as_bytes());
+                return Some((final_url, content_hash));
             }
             Err(e) => {
                 eprintln!("[encode_clipboard_raw_to_png] image crate failed: {}, trying manual parser", e);
@@ -515,15 +522,38 @@ pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str) -> Option<(String, u64
 
     // === Try 2: Manual DIB parsing (fallback for non-standard formats) ===
     let actual_dib = if &raw[0..2] == b"BM" && raw.len() > 14 { &raw[14..] } else { raw };
-    dib_to_png_data_url(actual_dib)
-        .map(|url| (url, fnv64(raw)))
+    let url = dib_to_png_data_url(actual_dib)
         .map_err(|e| { eprintln!("[encode_clipboard_raw_to_png] failed: {}", e); e })
-        .ok()
+        .ok()?;
+    let final_url = if let Some(max) = max_dim { resize_png_data_url(&url, max).unwrap_or(url) } else { url };
+    let content_hash = fnv64(final_url.as_bytes());
+    Some((final_url, content_hash))
+}
+
+/// Resize a PNG data URL to max_dim longest side using the image crate.
+/// This is used before encoding so the uploaded PNG is small (fast upload) without
+/// needing JS-side resize.
+fn resize_png_data_url(data_url: &str, max_dim: u32) -> Option<String> {
+    use base64::Engine;
+
+    let b64_part = data_url.strip_prefix("data:image/png;base64,")?;
+    let raw = base64::engine::general_purpose::STANDARD.decode(b64_part).ok()?;
+    let img = image::load_from_memory(&raw).ok()?.to_rgba8();
+    let (w, h) = img.dimensions();
+    let longest = w.max(h);
+    if longest <= max_dim {
+        return None; // already small enough
+    }
+    let scale = max_dim as f32 / longest as f32;
+    let nw = (w as f32 * scale).round() as u32;
+    let nh = (h as f32 * scale).round() as u32;
+    let resized = image::imageops::resize(&img, nw, nh, image::imageops::Lanczos3);
+    encode_rgba_to_png_data_url(&resized, nw, nh).ok()
 }
 
 pub fn capture_clipboard_image() -> Option<(String, u64)> {
     let (raw, src) = read_clipboard_image_raw()?;
-    encode_clipboard_raw_to_png(&raw, src)
+    encode_clipboard_raw_to_png(&raw, src, Some(720))
 }
 
 /// Cache of recently captured clipboard images, keyed by their PNG content hash
