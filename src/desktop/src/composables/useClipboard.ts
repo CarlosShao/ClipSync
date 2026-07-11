@@ -164,8 +164,9 @@ function enqueueClipboardTask(task: ClipboardTask) {
       return
     }
   } else if (task.type === 'image') {
-    const dataUrl = (task.payload as { dataUrl?: string })?.dataUrl
-    if (dataUrl && clipboardQueue.some(t => t.type === 'image' && (t.payload as { dataUrl?: string })?.dataUrl === dataUrl)) {
+    const p = task.payload as { dataUrl?: string; hash?: string }
+    const key = p.hash || p.dataUrl
+    if (key && clipboardQueue.some(t => t.type === 'image' && ((t.payload as { dataUrl?: string; hash?: string }).hash || (t.payload as { dataUrl?: string }).dataUrl) === key)) {
       console.log('[Clipboard] queue: skip duplicate image task')
       return
     }
@@ -204,12 +205,12 @@ async function processClipboardQueue() {
           } else {
             console.log('[Clipboard] queue: skip text already exists')
           }
-        } else if (task.type === 'image') {
-          const { dataUrl } = task.payload as { dataUrl: string; size: number }
-          if (dataUrl) {
-            await uploadImageToServer(dataUrl)
-          }
+      } else if (task.type === 'image') {
+        const { dataUrl, hash } = task.payload as { dataUrl: string; size: number; hash?: string }
+        if (dataUrl) {
+          await uploadImageToServer(dataUrl, hash)
         }
+      }
       } catch (e) {
         console.warn('[Clipboard] queue: task error', task.type, e)
       }
@@ -538,10 +539,15 @@ function resizeImageIfNeeded(dataUrl: string, maxPx = 1080): Promise<string> {
   })
 }
 
-async function uploadImageToServer(dataUrl: string) {
-  const hash = dataUrl.slice(0, 200)
-  if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
-  recentUploadHashes.set(hash, Date.now())
+async function uploadImageToServer(dataUrl: string, contentHash?: string) {
+  // Dedup by FULL-CONTENT hash, NOT a 200-char prefix. Two screenshots of the same
+  // window have identical PNG file headers and identical first compressed bytes, so a
+  // prefix key collides and silently drops every subsequent screenshot within 30s.
+  // Prefer the Rust FNV content hash (passed through from the clipboard monitor);
+  // fall back to a full string hash when it is unavailable.
+  const dedupKey = (contentHash && contentHash.length > 0) ? contentHash : simpleHash(dataUrl)
+  if (recentUploadHashes.has(dedupKey) && Date.now() - (recentUploadHashes.get(dedupKey) || 0) < HASH_TTL) return
+  recentUploadHashes.set(dedupKey, Date.now())
   // Resize large images (>1080p) before upload to save bandwidth
   const resized = await resizeImageIfNeeded(dataUrl)
   const base64 = resized.split(',')[1]
@@ -675,7 +681,7 @@ async function readAndUpload() {
         if (imgData) {
           lastImageSize = imgInfo.size
           lastImageHash = imgInfo.hash
-          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size: imgInfo.size } })
+          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size: imgInfo.size, hash: imgInfo.hash } })
         }
       }
       return
@@ -743,7 +749,7 @@ export function useClipboard() {
         if (imgData) {
           lastImageSize = size
           lastImageHash = hash ?? ''
-          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size } })
+          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: hash ?? '' } })
         } else {
           console.warn('[Clipboard] Image conversion returned empty — DIB-to-PNG may have failed')
         }
