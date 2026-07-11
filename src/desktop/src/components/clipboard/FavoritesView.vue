@@ -353,16 +353,16 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
       </button>
       <!-- New collection -->
       <template v-if="!showNewCollectionInput">
-        <Button variant="outline" size="sm" @click="showNewCollectionInput = true">
+        <button class="fav-col-new-btn" @click="showNewCollectionInput = true">
           <Plus :size="12" /> 新建收藏夹
-        </Button>
+        </button>
       </template>
       <template v-else>
         <div class="fav-col-new">
           <input v-model="newCollectionName" class="fav-col-name-input" placeholder="收藏夹名称" maxlength="100"
             @keydown.enter="handleCreateCollection" @keydown.esc="showNewCollectionInput = false" />
-          <Button variant="default" size="sm" @click="handleCreateCollection">创建</Button>
-          <Button variant="outline" size="sm" @click="showNewCollectionInput = false">取消</Button>
+          <button class="fav-col-confirm-btn" @click="handleCreateCollection">✅ 确认</button>
+          <button class="fav-col-cancel-btn" @click="showNewCollectionInput = false">❌ 取消</button>
         </div>
       </template>
     </div>
@@ -556,8 +556,35 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-col-del { display: none; border: none; background: none; color: var(--text-tertiary); cursor: pointer; padding: 0 2px; font-size: 14px; }
 .fav-col-tab:hover .fav-col-del { display: inline; }
 .fav-col-new { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.fav-col-new :deep(button) { min-width: 0; white-space: nowrap; }
 .fav-col-name-input { height: 32px; padding: 0 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; background: var(--bg-surface); color: var(--text-primary); outline: none; width: 140px; }
+
+/* New collection button */
+.fav-col-new-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: var(--radius-md);
+  border: 1px dashed var(--border-default); background: var(--bg-surface);
+  font-size: 12px; color: var(--text-secondary); cursor: pointer;
+  transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
+}
+.fav-col-new-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+
+/* Confirm / Cancel buttons */
+.fav-col-confirm-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 14px; border-radius: var(--radius-md);
+  border: none; background: var(--success); color: white;
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
+}
+.fav-col-confirm-btn:hover { opacity: 0.9; }
+.fav-col-cancel-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 14px; border-radius: var(--radius-md);
+  border: 1px solid var(--border-default); background: var(--bg-surface);
+  font-size: 12px; color: var(--text-secondary); cursor: pointer;
+  transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
+}
+.fav-col-cancel-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 /* Content */
 .fav-content { flex: 1; overflow-y: auto; padding: 16px 24px; }
