@@ -794,6 +794,7 @@ export function useClipboard() {
         if (Date.now() < skipPollUntil) return
         const size = (payload?.size as number | undefined) ?? 0
         const captured = (payload?.dataUrl as string | undefined) || ''
+        console.log('[Clipboard] event: image received, size=', size, 'hasData=', !!captured)
         let imgData = captured
         if (!imgData) {
           imgData = await tauri.getClipboardImage().catch((e: any) => {
