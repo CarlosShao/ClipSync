@@ -38,6 +38,20 @@ const allItems = computed(() => clip.items.value)
 const activeFilter = computed(() => clip.activeFilter.value)
 const selectedCount = computed(() => clip.selectedCount.value)
 const isLoading = computed(() => clip.loading.value)
+// 分页：后端硬删正确，但前端之前只拉 page1(50)，删除后旧条目滚入 page1 让人以为删除没生效。
+// 现在暴露总数 + 是否还有更多 + 加载更多，让删除语义清晰可见。
+const totalItems = computed(() => clip.totalItems.value)
+const hasMore = computed(() => clip.hasMore.value)
+const loadingMore = computed(() => clip.loadingMore.value)
+const remaining = computed(() => Math.max(0, totalItems.value - filteredItems.value.length))
+
+// 滚动到底部自动加载更多（无限滚动）
+function onClipboardScroll(e: Event) {
+  const el = e.target as HTMLElement
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) {
+    clip.loadMore()
+  }
+}
 
 // allSelected 用本地 computed，同理避免 ref 解包问题
 const allSelected = computed(() => clip.allSelected.value)
@@ -443,7 +457,7 @@ function extractDomain(url: string): string {
     <div class="toolbar">
       <div class="toolbar-left">
         <span class="toolbar-title">{{ t('nav_clipboard') }}</span>
-        <Badge variant="secondary" class="count-badge">{{ filteredItems.length }} {{ t('items_c') }}</Badge>
+        <Badge variant="secondary" class="count-badge">{{ filteredItems.length }} / {{ totalItems }} {{ t('items_c') }}</Badge>
       </div>
       <div class="toolbar-spacer" />
       <div class="toolbar-right">
@@ -493,7 +507,7 @@ function extractDomain(url: string): string {
     </div>
 
     <!-- Clipboard Table (shadcn-vue Data Table style) -->
-    <div class="clipboard-view" role="region" :aria-label="t('nav_clipboard')">
+    <div class="clipboard-view" role="region" :aria-label="t('nav_clipboard')" @scroll="onClipboardScroll">
       <!-- Skeleton Loading -->
       <div v-if="isLoading && filteredItems.length === 0" class="skeleton-wrap" :aria-label="t('ver_loading')" role="status">
         <div v-for="n in 6" :key="n" class="skeleton-row">
@@ -613,6 +627,15 @@ function extractDomain(url: string): string {
           </TableRow>
         </TableBody>
         </Table>
+
+        <!-- 加载更多（分页）：后端硬删正确，但历史可能超过 50 条；暴露总数+加载更多，
+             删除后旧条目滚入 page1 的"看起来没删"问题便一目了然。 -->
+        <div v-if="hasMore" class="load-more-wrap">
+          <Button variant="outline" size="sm" :disabled="loadingMore" @click="clip.loadMore()">
+            <span v-if="loadingMore">{{ t('loading_more') }}</span>
+            <span v-else>{{ t('load_more') }}（{{ remaining }}）</span>
+          </Button>
+        </div>
       </div>
 
       <!-- Empty State -->
@@ -712,6 +735,10 @@ function extractDomain(url: string): string {
 /* ===== CLIPBOARD TABLE ===== */
 .clipboard-view { flex: 1; overflow-y: auto; padding: 0; }
 .table-wrapper { border: none; border-radius: 0; overflow: visible; }
+
+/* 加载更多（分页） */
+.load-more-wrap { display: flex; justify-content: center; padding: 16px 0 28px; }
+.load-more-wrap :deep(button) { padding-left: 22px !important; padding-right: 22px !important; }
 
 .clipboard-view :deep(table) { border-collapse: separate; border-spacing: 0; width: 100%; }
 .clipboard-view :deep(thead tr) { border-bottom: 1px solid var(--border-default); }

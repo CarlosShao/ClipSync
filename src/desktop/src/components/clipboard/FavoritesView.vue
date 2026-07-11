@@ -188,8 +188,8 @@ function hasLocalPath(item: ClipItem): boolean {
   if (item.type !== 'file') return false
   try { const m = JSON.parse(item.content); return !!(m.paths && m.paths.length) } catch { return false }
 }
-async function copyItem(item: ClipItem) { await clip.copyItem(item); toast.success(t('copied')) }
-function handleUnfavorite(item: ClipItem) { clip.toggleFavorite(item); selectedIds.value.delete(item.id); toast.info(t('unfavorite')) }
+async function copyItem(item: ClipItem) { await clip.copyItem(item); toast.show(t('copied'), 'success') }
+function handleUnfavorite(item: ClipItem) { clip.toggleFavorite(item); selectedIds.value.delete(item.id); toast.show(t('unfavorite'), 'info') }
 function toggleSort() {
   if (sortBy.value === 'time') sortBy.value = 'type'
   else { sortBy.value = 'time'; sortAsc.value = !sortAsc.value }
@@ -213,7 +213,7 @@ function toggleSelect(id: string) { selectedIds.value.has(id) ? selectedIds.valu
 function batchUnfavorite() {
   const items = clip.items.value.filter(i => selectedIds.value.has(i.id))
   for (const item of items) clip.toggleFavorite(item)
-  toast.info(`已取消 ${selectedIds.value.size} 项收藏`)
+  toast.show(`已取消 ${selectedIds.value.size} 项收藏`, 'info')
   selectedIds.value.clear(); batchMode.value = false
 }
 
@@ -224,9 +224,9 @@ async function handleCreateCollection() {
   if (data?.collection) {
     collections.value.push(data.collection)
     newCollectionName.value = ''; newCollectionIcon.value = '📁'; showNewCollectionInput.value = false
-    toast.success('收藏夹已创建')
+    toast.show('收藏夹已创建', 'success')
   } else {
-    toast.error('创建失败')
+    toast.show('创建失败', 'error')
   }
 }
 async function handleDeleteCollection(id: string) {
@@ -243,7 +243,7 @@ function toggleAddToCol(itemId: string) {
 }
 async function addToCollection(colId: string, itemId: string) {
   const ok = await addCollectionItem(colId, itemId)
-  if (ok) toast.success('已加入收藏夹')
+  if (ok) toast.show('已加入收藏夹', 'success')
   addToColItemId.value = null
 }
 
@@ -258,7 +258,7 @@ async function saveTags(item: ClipItem) {
   await setItemTags(item.id, tags)
   const target = clip.items.value.find(i => i.id === item.id)
   if (target) { const meta = parseMetadata(target); meta.tags = tags; (target as any).metadata = meta }
-  editingTagsItemId.value = null; loadTags(); toast.success('标签已保存')
+  editingTagsItemId.value = null; loadTags(); toast.show('标签已保存', 'success')
 }
 function cancelEditTags() { editingTagsItemId.value = null; tagInputValue.value = '' }
 
