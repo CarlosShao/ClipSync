@@ -795,19 +795,38 @@ export function useClipboard() {
           enqueueClipboardTask({ type: 'file', payload: filePaths })
         }
       } else if (contentType === 'image') {
-        // Image event from Rust. PNG is encoded + resized to 720px inline in the monitor loop.
-        // Full PNG data URL comes directly in event payload (no getCapturedImage IPC).
-        // Rust echo guard already deduplicates; frontend enqueues directly.
+        // Image event from Rust.
+        // Fast path (new Rust): imageData is embedded directly in the event payload.
+        // Slow path (old Rust / fallback): pull bytes via getCapturedImage(hash) IPC.
         if (Date.now() < skipPollUntil) return
         const size = (payload?.size as number | 0) ?? 0
         const contentHash = (payload?.hash as string | '') ?? ''
         const imageData = (payload?.imageData as string | '') ?? ''
-        console.log('[Clipboard] event: image captured, size=', size, 'hash=', contentHash)
-        if (!imageData) {
-          console.warn('[Clipboard] image event missing imageData')
-          return
+        console.log('[Clipboard] event: image captured, size=', size, 'hash=', contentHash, 'hasImageData=', !!imageData)
+        if (imageData) {
+          // Fast path: data URL already in event, enqueue directly.
+          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imageData, size, hash: contentHash, alreadyResized: true } })
+        } else if (contentHash) {
+          // Slow path: pull bytes via IPC (old Rust without imageData).
+          const imgData = await tauri.getCapturedImage(contentHash).catch((e: any) => {
+            console.error('[Clipboard] getCapturedImage failed:', e)
+            return ''
+          })
+          if (imgData) {
+            const dedupHash = simpleHash(imgData)
+            if (dedupHash !== lastImageHash) {
+              lastImageSize = size
+              lastImageHash = dedupHash
+              enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: dedupHash, alreadyResized: false } })
+            } else {
+              console.log('[Clipboard] event: hash matches last image, skipping duplicate')
+            }
+          } else {
+            console.warn('[Clipboard] captured image not found for hash', contentHash, '— cache may have been cleared')
+          }
+        } else {
+          console.warn('[Clipboard] image event missing both imageData and hash')
         }
-        enqueueClipboardTask({ type: 'image', payload: { dataUrl: imageData, size, hash: contentHash, alreadyResized: true } })
       } else if (!contentType) {
         // Text event from Rust: content is the clipboard text
         const text = payload?.content as string | undefined
