@@ -38,13 +38,6 @@ const totalItems = ref(0)
 const loadingMore = ref(false)
 const hasMore = computed(() => totalItems.value > 0 && items.value.length < totalItems.value)
 
-// === 诊断计数器（排查截图丢失用）===
-let eventTotal = 0    // 总共收到 clipboard-changed 事件
-let eventImage = 0    // 其中图片事件
-let eventDropped = 0  // 被去重/过滤丢弃的
-let uploadSuccess = 0 // 上传成功
-let uploadFailed = 0  // 上传失败
-
 let lastImageSize = 0
 // 图片按 PNG content hash 去重（不是 Rust raw-DIB hash），避免某些剪贴板源
 // （WeChat 截图、部分 GPU 驱动）的 raw bytes 碰撞导致后续截图被静默丢弃。
@@ -170,25 +163,19 @@ function enqueueClipboardTask(task: ClipboardTask) {
     const normalized = JSON.stringify(paths.map(normalizePath))
     if (clipboardQueue.some(t => t.type === 'file' && JSON.stringify((t.payload as string[]).map(normalizePath)) === normalized)) {
       console.log('[Clipboard] queue: skip duplicate file task', paths)
-      eventDropped++
       return
     }
   } else if (task.type === 'text') {
     const text = task.payload as string
     if (clipboardQueue.some(t => t.type === 'text' && t.payload === text)) {
       console.log('[Clipboard] queue: skip duplicate text task')
-      eventDropped++
       return
     }
   } else if (task.type === 'image') {
-    const p = task.payload as { dataUrl: string; hash?: string; alreadyResized?: boolean }
-    const dataUrl = p.dataUrl
-    // Dedup by full dataUrl content (not just hash) so consecutive different screenshots
-    // — which have different pixel data → different PNG → different dataUrl — are never
-    // silently dropped as "duplicates".
-    if (dataUrl && clipboardQueue.some(t => t.type === 'image' && (t.payload as { dataUrl?: string }).dataUrl === dataUrl)) {
-      console.log('[Clipboard] queue: skip duplicate image task (same dataUrl)')
-      eventDropped++
+    const p = task.payload as { dataUrl?: string; hash?: string }
+    const key = p.hash || p.dataUrl
+    if (key && clipboardQueue.some(t => t.type === 'image' && ((t.payload as { dataUrl?: string; hash?: string }).hash || (t.payload as { dataUrl?: string }).dataUrl) === key)) {
+      console.log('[Clipboard] queue: skip duplicate image task')
       return
     }
   }
@@ -227,14 +214,9 @@ async function processClipboardQueue() {
             console.log('[Clipboard] queue: skip text already exists')
           }
       } else if (task.type === 'image') {
-        const p = task.payload as { dataUrl: string; hash?: string; alreadyResized?: boolean }
-        const dataUrl = p.dataUrl
+        const { dataUrl, hash } = task.payload as { dataUrl: string; size: number; hash?: string }
         if (dataUrl) {
-          // 图片并行上传（不 await），4 张截图同时发起请求，不互相阻塞。
-          // 乐观更新已在入队时完成，UI 即时显示；上传结果只影响服务端 ID 绑定。
-          uploadImageToServer(dataUrl, p.hash, p.alreadyResized).catch(e =>
-            console.warn('[Clipboard] queue: image upload error', e)
-          )
+          await uploadImageToServer(dataUrl, hash)
         }
       }
       } catch (e) {
@@ -586,17 +568,17 @@ function resizeImageIfNeeded(dataUrl: string, maxPx = 1080): Promise<string> {
   })
 }
 
-async function uploadImageToServer(dataUrl: string, contentHash?: string, alreadyResized = false) {
-  // Dedup by actual dataUrl content (simpleHash), NOT by Rust's png_content_hash.
-  // Using Rust's hash as dedup key caused silent drops: if two screenshots happened
-  // to produce the same fnv64 (or if the hash wasn't updated between enqueue and
-  // upload), the second image was never uploaded.
-  const dedupKey = simpleHash(dataUrl)
+async function uploadImageToServer(dataUrl: string, contentHash?: string) {
+  // Dedup by FULL-CONTENT hash, NOT a 200-char prefix. Two screenshots of the same
+  // window have identical PNG file headers and identical first compressed bytes, so a
+  // prefix key collides and silently drops every subsequent screenshot within 30s.
+  // Prefer the Rust FNV content hash (passed through from the clipboard monitor);
+  // fall back to a full string hash when it is unavailable.
+  const dedupKey = (contentHash && contentHash.length > 0) ? contentHash : simpleHash(dataUrl)
   if (recentUploadHashes.has(dedupKey) && Date.now() - (recentUploadHashes.get(dedupKey) || 0) < HASH_TTL) return
   recentUploadHashes.set(dedupKey, Date.now())
-  // Resize large images (>1080p) before upload to save bandwidth.
-  // Skip when alreadyResized=true (Rust monitor already resized to 720px).
-  const resized = alreadyResized ? dataUrl : await resizeImageIfNeeded(dataUrl)
+  // Resize large images (>1080p) before upload to save bandwidth
+  const resized = await resizeImageIfNeeded(dataUrl)
   const base64 = resized.split(',')[1]
   // 乐观更新
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -613,15 +595,11 @@ async function uploadImageToServer(dataUrl: string, contentHash?: string, alread
   }
   const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
   if (res.ok && res.data?.id) {
-    uploadSuccess++
     const localItem = items.value.find(i => i.id === localId)
     if (localItem) {
       localItem.id = res.data.id
       cacheContent(res.data.id, dataUrl)
     }
-  } else {
-    uploadFailed++
-    console.warn('[Clipboard] upload image failed:', res.status, res.error)
   }
 }
 
@@ -793,7 +771,6 @@ export function useClipboard() {
 
   async function handleClipboardEvent(payload: any) {
     try {
-      eventTotal++
       if (Date.now() < skipPollUntil) return
 
       const contentType = payload?.contentType as string | undefined
@@ -809,34 +786,39 @@ export function useClipboard() {
           enqueueClipboardTask({ type: 'file', payload: filePaths })
         }
       } else if (contentType === 'image') {
-        // Image event from Rust.
-        // Fast path (new Rust): imageData is embedded directly in the event payload.
-        // Slow path (old Rust / fallback): pull bytes via getCapturedImage(hash) IPC.
+        // Image event from Rust. The monitor snapshots the PNG dataUrl AT DETECTION TIME
+        // and ships it in payload.dataUrl. Use it directly — do NOT re-read the live
+        // clipboard: rapid successive screenshots would all resolve to the last clipboard
+        // image and only the last one would sync. Fall back to getClipboardImage() only
+        // for older monitor builds that don't snapshot.
         if (Date.now() < skipPollUntil) return
-        const size = (payload?.size as number | 0) ?? 0
-        const contentHash = (payload?.hash as string | '') ?? ''
-        const imageData = (payload?.imageData as string | '') ?? ''
-        console.log('[Clipboard] event: image captured, size=', size, 'hash=', contentHash, 'hasImageData=', !!imageData)
-        if (imageData) {
-          eventImage++
-          // Fast path: data URL already in event, enqueue directly.
-          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imageData, size, hash: contentHash, alreadyResized: true } })
-        } else if (contentHash) {
-          eventImage++
-          // Slow path: pull bytes via IPC (old Rust without imageData).
-          const imgData = await tauri.getCapturedImage(contentHash).catch((e: any) => {
-            console.error('[Clipboard] getCapturedImage failed:', e)
+        const size = (payload?.size as number | undefined) ?? 0
+        const captured = (payload?.dataUrl as string | undefined) || ''
+        console.log('[Clipboard] event: image received, size=', size, 'hasData=', !!captured)
+        let imgData = captured
+        if (!imgData) {
+          imgData = await tauri.getClipboardImage().catch((e: any) => {
+            console.error('[Clipboard] getClipboardImage failed:', e)
             return ''
           })
-          if (imgData) {
-            // No frontend dedup here — Rust echo guard + server dedup handle it.
-            // Frontend lastImageHash simpleHash collision caused silent drops.
-            enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: contentHash, alreadyResized: false } })
+        }
+        if (imgData) {
+          // Dedup by the FULL PNG content hash (simpleHash over the entire dataUrl).
+          // We deliberately do NOT use the Rust `eventHash` here: the monitor's PNG hash
+          // (FNV-1a over bytes) is a different hash family than the JS simpleHash used by
+          // the 10s fallback poll (readAndUpload), so mixing them would let the fallback
+          // re-enqueue an already-synced image. One consistent hash across both paths is
+          // what guarantees consecutive different screenshots all sync and none is re-uploaded.
+          const dedupHash = simpleHash(imgData)
+          if (dedupHash !== lastImageHash) {
+            lastImageSize = size
+            lastImageHash = dedupHash
+            enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: dedupHash } })
           } else {
-            console.warn('[Clipboard] captured image not found for hash', contentHash, '— cache may have been cleared')
+            console.log('[Clipboard] event: hash matches last image, skipping duplicate')
           }
         } else {
-          console.warn('[Clipboard] image event missing both imageData and hash')
+          console.warn('[Clipboard] Image data empty — capture failed')
         }
       } else if (!contentType) {
         // Text event from Rust: content is the clipboard text
@@ -902,7 +884,7 @@ export function useClipboard() {
     // a dedicated worker thread so rapid consecutive screenshots are not dropped
     // while the loop is blocked compressing the previous one.
     listen<any>('clipboard-changed', async (event) => {
-      handleClipboardEvent(event.payload).catch(e => console.warn('[Clipboard] Event handler error:', e))
+      await handleClipboardEvent(event.payload)
     }).then(unlisten => {
       unlistenEvent = unlisten
       console.log('[Clipboard] Listening for native clipboard-changed events')
@@ -971,10 +953,11 @@ export function useClipboard() {
           } catch {
             await tauri.setClipboardContent(dataUrl)
           }
-          // 写入后记录当前剪贴板图片的哈希（用 simpleHash 与兜底轮询保持一致），
-          // 避免兜底轮询把它当作新截图重新上传。
+          // 写入后记录当前剪贴板图片的哈希，避免兜底轮询把它当作新截图重新上传
           try {
-            lastImageHash = simpleHash(dataUrl)
+            const info = await tauri.checkClipboardImageInfo()
+            lastImageSize = info.size
+            lastImageHash = info.hash || ''
           } catch { /* ignore */ }
           return true
         }
@@ -1186,15 +1169,6 @@ export function useClipboard() {
   }
 
   const offlineQueueSize = computed(() => getQueueSize())
-
-  // === 诊断：每3秒输出一次事件/上传计数 ===
-  const debugInfo = {
-    get events() { return { total: eventTotal, image: eventImage, dropped: eventDropped } },
-    get uploads() { return { success: uploadSuccess, failed: uploadFailed } },
-  }
-  setInterval(() => {
-    console.log('[Clipboard DIAG]', JSON.stringify(debugInfo))
-  }, 3000)
 
   return {
     items, filteredItems, searchQuery, activeFilter, batchMode, polling, loading,

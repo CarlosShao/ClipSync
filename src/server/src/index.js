@@ -22,7 +22,6 @@ import authProfileRoutes from './routes/auth-profile.js';
 import authSessionRoutes from './routes/auth-session.js';
 import deviceRoutes, { pairingRouter } from './routes/device.js';
 import clipboardRoutes from './routes/clipboard.js';
-import { Router } from 'express';
 import mediaRoutes from './routes/media.js';
 import syncRoutes from './routes/sync.js';
 import { startCleanupScheduler } from './db/cleanup.js';
@@ -336,46 +335,9 @@ app.use('/api/devices', authenticateToken, apiLimiter, csrfProtection, subscript
   req.userId = req.user.userId;
   next();
 }, deviceRoutes);
-// Rust 桌面端直传剪贴板（设备 ID 认证，绕过 Tauri 事件系统）
-// 必须放在 /api/clipboard 之前，否则 Express 前缀匹配会先命中 /api/clipboard
-app.use('/api/clipboard/direct', apiLimiter, (req, res, next) => {
-  const deviceId = req.headers['x-device-id'];
-  if (!deviceId) {
-    return res.status(401).json({ error: 'X-Device-ID header required' });
-  }
-  pool.query('SELECT user_id FROM devices WHERE id = $1', [deviceId])
-    .then(result => {
-      if (result.rows.length === 0) return res.status(404).json({ error: 'Device not found' });
-      req.userId = result.rows[0].user_id;
-      next();
-    })
-    .catch(() => res.status(500).json({ error: 'Database error' }));
-}, clipboardRoutes);
-
 app.use('/api/clipboard', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
-}, clipboardRoutes);
-
-// Rust 桌面端直传剪贴板（设备 ID 认证，绕过 Tauri 事件系统）
-app.use('/api/clipboard/direct', apiLimiter, (req, res, next) => {
-  const deviceId = req.headers['x-device-id'];
-  if (!deviceId) {
-    return res.status(401).json({ error: 'X-Device-ID header required' });
-  }
-  // 通过设备 ID 查找用户
-  pool.query('SELECT user_id FROM devices WHERE id = $1', [deviceId])
-    .then(result => {
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Device not found' });
-      }
-      req.userId = result.rows[0].user_id;
-      req.deviceId = deviceId;
-      next();
-    })
-    .catch(err => {
-      res.status(500).json({ error: 'Database error' });
-    });
 }, clipboardRoutes);
 app.use('/api/media', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;

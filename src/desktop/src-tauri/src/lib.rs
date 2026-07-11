@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tauri::{Listener, Manager};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -481,7 +481,7 @@ pub fn read_clipboard_image_raw() -> Option<(Vec<u8>, &'static str)> {
 }
 
 /// Encode raw clipboard bytes (DIB/BMP/PNG) into a PNG data URL + hash.
-pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str, max_dim: Option<u32>) -> Option<(String, u64)> {
+pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str) -> Option<(String, u64)> {
     use base64::Engine;
 
     if raw.is_empty() {
@@ -491,11 +491,7 @@ pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str, max_dim: Option<u32>) 
     // PNG clipboard format — bytes are already PNG.
     if src == "PNG-clipboard" {
         let b64 = base64::engine::general_purpose::STANDARD.encode(raw);
-        let data_url = format!("data:image/png;base64,{}", b64);
-        // Optionally resize PNG (for screenshots: 720px longest side = fast encode + small upload)
-        let final_url = if let Some(max) = max_dim { resize_png_data_url(&data_url, max).unwrap_or(data_url) } else { data_url };
-        let content_hash = fnv64(final_url.as_bytes());
-        return Some((final_url, content_hash));
+        return Some((format!("data:image/png;base64,{}", b64), fnv64(raw)));
     }
 
     if raw.len() < 40 {
@@ -509,10 +505,7 @@ pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str, max_dim: Option<u32>) 
                 let rgba = img.to_rgba8();
                 let (w, h) = rgba.dimensions();
                 eprintln!("[encode_clipboard_raw_to_png] image crate OK: {}x{}", w, h);
-                let url = encode_rgba_to_png_data_url(&rgba, w, h).ok()?;
-                let final_url = if let Some(max) = max_dim { resize_png_data_url(&url, max).unwrap_or(url) } else { url };
-                let content_hash = fnv64(final_url.as_bytes());
-                return Some((final_url, content_hash));
+                return encode_rgba_to_png_data_url(&rgba, w, h).ok().map(|url| (url, fnv64(raw)));
             }
             Err(e) => {
                 eprintln!("[encode_clipboard_raw_to_png] image crate failed: {}, trying manual parser", e);
@@ -522,93 +515,15 @@ pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str, max_dim: Option<u32>) 
 
     // === Try 2: Manual DIB parsing (fallback for non-standard formats) ===
     let actual_dib = if &raw[0..2] == b"BM" && raw.len() > 14 { &raw[14..] } else { raw };
-    let url = dib_to_png_data_url(actual_dib)
+    dib_to_png_data_url(actual_dib)
+        .map(|url| (url, fnv64(raw)))
         .map_err(|e| { eprintln!("[encode_clipboard_raw_to_png] failed: {}", e); e })
-        .ok()?;
-    let final_url = if let Some(max) = max_dim { resize_png_data_url(&url, max).unwrap_or(url) } else { url };
-    let content_hash = fnv64(final_url.as_bytes());
-    Some((final_url, content_hash))
-}
-
-/// Resize a PNG data URL to max_dim longest side using the image crate.
-/// This is used before encoding so the uploaded PNG is small (fast upload) without
-/// needing JS-side resize.
-fn resize_png_data_url(data_url: &str, max_dim: u32) -> Option<String> {
-    use base64::Engine;
-
-    let b64_part = data_url.strip_prefix("data:image/png;base64,")?;
-    let raw = base64::engine::general_purpose::STANDARD.decode(b64_part).ok()?;
-    let img = image::load_from_memory(&raw).ok()?.to_rgba8();
-    let (w, h) = img.dimensions();
-    let longest = w.max(h);
-    if longest <= max_dim {
-        return None; // already small enough
-    }
-    let scale = max_dim as f32 / longest as f32;
-    let nw = (w as f32 * scale).round() as u32;
-    let nh = (h as f32 * scale).round() as u32;
-    let resized = image::imageops::resize(&img, nw, nh, image::imageops::Lanczos3);
-    encode_rgba_to_png_data_url(&resized, nw, nh).ok()
+        .ok()
 }
 
 pub fn capture_clipboard_image() -> Option<(String, u64)> {
     let (raw, src) = read_clipboard_image_raw()?;
-    encode_clipboard_raw_to_png(&raw, src, Some(720))
-}
-
-/// Cache of recently captured clipboard images, keyed by their PNG content hash
-/// (FNV-1a 64-bit over the encoded data URL). The clipboard monitor inserts here
-/// the moment it reads a screenshot; the frontend then pulls the bytes via the
-/// `get_captured_image` command using the hash carried in the `clipboard-changed`
-/// event.
-///
-/// WHY this design: shipping the full multi-MB PNG `dataUrl` through a Tauri event
-/// is fragile — large event payloads can fail to deliver (which is why the
-/// event-only rewrite regressed from "last syncs" to "zero sync"). The event now
-/// carries only the tiny hash + size; the bytes travel over the normal command
-/// channel (already proven to work via `get_clipboard_image`).
-pub fn captured_images() -> &'static Mutex<HashMap<u64, (String, Instant)>> {
-    static INSTANCE: OnceLock<Mutex<HashMap<u64, (String, Instant)>>> = OnceLock::new();
-    INSTANCE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-// Windows clipboard sequence number. Increments on EVERY clipboard write — even
-// when `WM_CLIPBOARDUPDATE` notifications are coalesced by the OS (Windows sets a
-// per-window "pending" flag and won't post a second notification until the first
-// is pumped). Polling this rapidly is the ONLY reliable way to detect every write
-// in a burst: `AddClipboardFormatListener` cannot. Sampling faster than the gap
-// between captures means we read each image during its window, before the next
-// write overwrites it.
-#[cfg(windows)]
-extern "system" {
-    fn GetClipboardSequenceNumber() -> u32;
-}
-
-fn get_clipboard_seq() -> u32 {
-    #[cfg(windows)]
-    unsafe {
-        GetClipboardSequenceNumber()
-    }
-    #[cfg(not(windows))]
-    0
-}
-
-/// Fetch a captured image's PNG data URL by its content hash.
-#[tauri::command]
-fn get_captured_image(hash: String) -> String {
-    let key: u64 = match hash.parse() {
-        Ok(k) => k,
-        Err(_) => return String::new(),
-    };
-    if let Ok(mut map) = captured_images().lock() {
-        // Evict entries older than 60s to bound memory.
-        let now = Instant::now();
-        map.retain(|_, (_, t)| now.duration_since(*t) < Duration::from_secs(60));
-        if let Some((url, _)) = map.get(&key) {
-            return url.clone();
-        }
-    }
-    String::new()
+    encode_clipboard_raw_to_png(&raw, src)
 }
 
 #[tauri::command]
@@ -1045,19 +960,8 @@ fn start_clipboard_monitor(state: tauri::State<AppState>, app: tauri::AppHandle)
 
     let handle = app.clone();
     let stop = state.is_monitoring.clone();
-    
-    // Build server config from app state (for direct HTTP POST bypass)
-    let config = state.config.lock().unwrap().clone();
-    let server_config = if !config.server_url.is_empty() {
-        if let Some(ref device_id) = config.device_id {
-            if !device_id.is_empty() {
-                Some(clipboard_monitor::ServerConfig { server_url: config.server_url.clone(), device_id: device_id.clone() })
-            } else { None }
-        } else { None }
-    } else { None };
-    
     thread::spawn(move || {
-        clipboard_monitor::start_monitor(handle, stop, server_config);
+        clipboard_monitor::start_monitor(handle, stop);
     });
 }
 
@@ -1556,7 +1460,6 @@ pub fn run() {
             save_and_copy_file,
             check_clipboard_image_info,
             get_clipboard_image,
-            get_captured_image,
             convert_bmp_to_png,
             check_for_updates,
             login,
@@ -1706,26 +1609,8 @@ pub fn run() {
                 monitor_state.is_monitoring.store(true, Ordering::Relaxed);
                 let handle = app.handle().clone();
                 let stop = monitor_state.is_monitoring.clone();
-
-                let config = monitor_state.config.lock().unwrap().clone();
-                let server_config = if !config.server_url.is_empty() {
-                    if let Some(ref device_id) = config.device_id {
-                        if !device_id.is_empty() {
-                            Some(clipboard_monitor::ServerConfig { server_url: config.server_url.clone(), device_id: device_id.clone() })
-                        } else { None }
-                    } else { None }
-                } else { None };
-
-
-
-
-
-
-
-
-
                 thread::spawn(move || {
-                    clipboard_monitor::start_monitor(handle, stop, server_config);
+                    clipboard_monitor::start_monitor(handle, stop);
                 });
                 eprintln!("[Setup] Native clipboard monitor started (event-driven)");
             }
