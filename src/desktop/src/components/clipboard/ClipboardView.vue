@@ -60,23 +60,21 @@ function toggleAddToCol(itemId: string) {
 }
 async function addToCollection(colId: string, itemId: string) {
   const ok = await addCollectionItem(colId, itemId)
-  if (ok) toast.success('已加入收藏夹')
+  if (ok) toast.show('已加入收藏夹', 'success')
   addToColItemId.value = null
 }
 
 // Star button: favorite + show collection picker (optional)
 function handleFavorite(item: ClipItem) {
   if (item.isFavorite) {
-    // Already favorited → unfavorite
     clip.toggleFavorite(item)
     addToColItemId.value = null
   } else {
-    // Not favorited → favorite + show dropdown as suggestion
     clip.toggleFavorite(item)
     if (collections.value.length > 0) {
       addToColItemId.value = item.id
     } else {
-      toast.success('已收藏')
+      toast.show('已收藏', 'success')
     }
   }
 }
@@ -87,7 +85,7 @@ function handleDocClick(e: MouseEvent) {
     const target = e.target as HTMLElement
     if (!target.closest('.add-col-wrap')) {
       addToColItemId.value = null
-      toast.info('已收藏到默认区域')
+      toast.show('已收藏到默认区域', 'info')
     }
   }
 }
