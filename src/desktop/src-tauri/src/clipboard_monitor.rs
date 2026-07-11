@@ -125,16 +125,29 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                     );
                     last_file_paths = paths;
                     last_text.clear();
+                    last_image_hash = 0;
+                    last_image_size = 0;
+                    last_change_time = Instant::now();
                 } else if paths.is_empty() && !last_file_paths.is_empty() {
                     last_file_paths.clear();
+                    last_change_time = Instant::now();
                 }
             }
             ClipContent::Image { size, hash } => {
                 // Dedup by CONTENT hash, not byte length. Two screenshots of the same
                 // window/dimensions have identical DIB byte length but different pixels;
                 // a size-only check would silently drop the second screenshot.
-                if hash != last_image_hash {
-                    eprintln!("[ClipMon] IMAGE: {} bytes (content changed)", size);
+                //
+                // SAFETY: get_bitmap() returns raw DDB/DIB bytes. In rare cases (WeChat
+                // screenshots, some GPU drivers) the raw bytes can be unstable or include
+                // padding that makes two genuinely different screenshots collide. We add a
+                // 5-second forced-refresh window: if the raw hash matches but more than 5s
+                // have passed since the last image emit, we emit again and let the frontend
+                // dedupe by the actual PNG content hash.
+                let changed = hash != last_image_hash;
+                let stale = last_change_time.elapsed() >= Duration::from_secs(5);
+                if changed || stale {
+                    eprintln!("[ClipMon] IMAGE: {} bytes (changed={}, stale={})", size, changed, stale);
                     let _ = app_handle.emit(
                         "clipboard-changed",
                         serde_json::json!({
@@ -146,12 +159,27 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                     );
                     last_image_hash = hash;
                     last_image_size = size;
+                    last_change_time = Instant::now();
                     // Clear text/file state when an image appears
                     last_text.clear();
                     last_file_paths.clear();
                 }
             }
-            ClipContent::Empty => {}
+            ClipContent::Empty => {
+                // IMPORTANT: Reset image state when the clipboard becomes empty.
+                // Clipboard tools (WeChat screenshot, Snipping Tool) sometimes momentarily
+                // clear the clipboard or place a transient text entry between captures.
+                // If we do not reset last_image_hash here, the next screenshot with the
+                // same raw DIB hash/size will be treated as a duplicate and silently
+                // dropped, which matches the user's symptom of "only one screenshot syncs".
+                if last_image_hash != 0 || !last_text.is_empty() || !last_file_paths.is_empty() {
+                    last_image_hash = 0;
+                    last_image_size = 0;
+                    last_text.clear();
+                    last_file_paths.clear();
+                    last_change_time = Instant::now();
+                }
+            }
             ClipContent::Error(e) => {
                 if cycle % 60 == 1 {
                     eprintln!("[ClipMon] ERR: {}", e);

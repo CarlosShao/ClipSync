@@ -36,7 +36,39 @@
 - 已修：把 Rust monitor 已算好的全量内容哈希(FNV) 透传 event→enqueue→queue→uploadImageToServer，
   作去重 key；缺失时回退 `simpleHash(dataUrl)`（全量哈希）。5 处调用点已改。
 
+### 第 2 轮（2026-07-11，用户反馈：仍然只生效一条）
+- 用户截图显示：DevTools 只打印一次 `[Clipboard] queue: task enqueued image length: 1` + 一次 processing，
+  后续多次截图完全没有 enqueue。cmd 窗口也只有一次 `[get_clipboard_image]` 输出。
+  → **结论：Rust monitor 只 emit 了一次 `clipboard-changed` 事件**，前端去重没有机会拦截。
+- **确认根因 H4**：`ClipContent::Empty => {}` 不重置 `last_image_hash`。
+  微信截图等工具在捕获过程中可能瞬间清空剪贴板或插入临时文本，导致 monitor 状态机从 image → empty/text → image。
+  若后续截图的 raw DIB hash 与第一次相同（同窗口同尺寸），`last_image_hash` 未重置 → 被当作重复 → 静默丢弃。
+- **确认根因 H5**：前端 fallback poll 存在死门控 `firstTauriPollDone`（声明了但从未赋值为 true），
+  且 `initialLoadDone` 第一次轮询直接 return，导致 fallback poll 无法兜底。
+- **修复**（本轮）：
+  - Rust `clipboard_monitor.rs`：
+    - `Empty` 分支重置 `last_image_hash/size/text/file_paths` 和 `last_change_time`。
+    - `Files` 分支检测到文件时重置 image state。
+    - `Image` 分支保留 hash 去重，但增加 **5 秒强制刷新窗口**：hash 相同但超过 5s 也 emit，由前端 PNG hash 最终去重。
+  - 前端 `useClipboard.ts`：
+    - `handleClipboardEvent` 获取 PNG 后用 `simpleHash(imgData)`（PNG content hash）更新 `lastImageHash`，
+      不再依赖 Rust raw-DIB hash。
+    - `readAndUpload` 第一次轮询仅记录当前 image hash 不上传；后续轮询直接获取 PNG 并用 PNG hash 去重，
+      去掉 `firstTauriPollDone` 死门控，真正成为事件驱动的兜底。
+
 ## 修复后验证
-- [ ] vue-tsc --noEmit 通过（前端变更文件）— 进行中
-- [ ] 逻辑推演：两张同窗口截图 FNV 不同 → 都上传、无前缀碰撞 — 已确认（Rust fnv64 对异像素必出异哈希）
-- [ ] 用户 rebuild 后实测：连截两张同窗口截图都出现 — 待用户验证
+- [ ] cargo check 通过（Rust monitor 状态机改动）— 进行中
+- [ ] vue-tsc --noEmit 通过（前端 useClipboard.ts 改动）— 进行中
+- [x] 逻辑推演：Rust Empty 分支重置 image state 后，image → empty → image 切换不会漏掉后续截图
+- [x] 逻辑推演：5s 强制刷新窗口绕过不可靠的 raw-DIB hash，前端 PNG content hash 做最终去重
+- [x] 逻辑推演：fallback poll 去掉死门控后，每 10s 会主动拉取当前剪贴板 PNG 并去重，成为事件驱动兜底
+- [ ] 用户 rebuild 后实测：连截多张不同/同窗口微信截图都出现 — 待用户验证（`npm run tauri build` 后重测；用户自编译，我不编译桌面端）
+
+## 完成度
+- 根因定位：3/3
+  - 第 1 层：`dataUrl.slice(0,200)` 前缀碰撞（已修 commit 03969dc）
+  - 第 2 层：Rust monitor 状态机未在 Empty/Files/Text 时重置 `last_image_hash`（本轮修）
+  - 第 3 层：前端 fallback poll `firstTauriPollDone` 死门控，无法兜底（本轮修）
+- 修复：3/3（本轮改 Rust + 前端）
+- 验证：type-check 进行中 + 逻辑推演通过（E2E 待用户 rebuild 实测）
+

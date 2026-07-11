@@ -30,9 +30,9 @@ const batchMode = ref(false)
 const polling = ref(false)
 const loading = ref(false)
 
-let firstTauriPollDone = false
 let lastImageSize = 0
-// 图片按内容哈希去重（与 Rust monitor 的 hash 一致），避免同尺寸不同图被判为重复
+// 图片按 PNG content hash 去重（不是 Rust raw-DIB hash），避免某些剪贴板源
+// （WeChat 截图、部分 GPU 驱动）的 raw bytes 碰撞导致后续截图被静默丢弃。
 let lastImageHash = ''
 let lastBrowserText = ''
 const recentUploadHashes = new Map<string, number>()
@@ -661,8 +661,17 @@ async function readAndUpload() {
   try {
     // 策略1: 时间戳跳过（复制后 3 秒内不处理，由 copyItem 设置）
     if (Date.now() < skipPollUntil) return
-    // 初始加载后跳过一轮轮询，防止系统剪贴板内容被重新上传
-    if (!initialLoadDone) { initialLoadDone = true; return }
+
+    if (!initialLoadDone) {
+      // 第一次轮询：只记录当前剪贴板状态，不上传，避免启动时把当前已有内容重新上传。
+      initialLoadDone = true
+      const imgInfo = await tauri.checkClipboardImageInfo().catch(() => ({ available: false, size: 0, hash: '' }))
+      if (imgInfo.available && imgInfo.hash) {
+        lastImageHash = imgInfo.hash
+        lastImageSize = imgInfo.size
+      }
+      return
+    }
 
     // 优先尝试 Tauri API
     const files = await tauri.getClipboardFiles().catch(() => [] as string[])
@@ -674,14 +683,22 @@ async function readAndUpload() {
       return
     }
 
+    // Fallback 兜底轮询：事件驱动可能丢事件或 Rust raw-hash 误判，所以每隔 10s
+    // 直接拉取当前剪贴板 PNG 并用自己的 PNG content hash 去重。
     const imgInfo = await tauri.checkClipboardImageInfo().catch(() => ({ available: false, size: 0, hash: '' }))
-    if (imgInfo.available && imgInfo.hash && imgInfo.hash !== lastImageHash) {
-      if (firstTauriPollDone || !items.value.some(i => i.type === 'image')) {
-        const imgData = await tauri.getClipboardImage().catch(() => '')
-        if (imgData) {
+    if (imgInfo.available) {
+      const imgData = await tauri.getClipboardImage().catch((e: any) => {
+        console.warn('[Clipboard] fallback poll getClipboardImage failed:', e)
+        return ''
+      })
+      if (imgData) {
+        const pngHash = simpleHash(imgData)
+        if (pngHash !== lastImageHash) {
           lastImageSize = imgInfo.size
-          lastImageHash = imgInfo.hash
-          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size: imgInfo.size, hash: imgInfo.hash } })
+          lastImageHash = pngHash
+          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size: imgInfo.size, hash: pngHash } })
+        } else {
+          console.log('[Clipboard] fallback poll: PNG hash matches last image, skipping')
         }
       }
       return
@@ -735,21 +752,27 @@ export function useClipboard() {
           enqueueClipboardTask({ type: 'file', payload: filePaths })
         }
       } else if (contentType === 'image') {
-        // Image event from Rust: carries a content hash. Fetch actual image data
-        // immediately, then enqueue for serialized upload. No size-based gate — the
-        // Rust monitor already dedups by content hash, so a same-size different
-        // screenshot (e.g. two captures of the same window) must still come through.
+        // Image event from Rust. Fetch actual PNG data immediately and dedupe by the
+        // PNG content hash, NOT the Rust raw-DIB hash. Some clipboard sources (WeChat
+        // screenshots, certain GPU drivers) produce raw DIB bytes that collide or
+        // include unstable padding, causing the Rust monitor to drop subsequent
+        // screenshots. The final PNG bytes are authoritative: different screenshots
+        // always produce different PNG output.
         if (Date.now() < skipPollUntil) return
         const size = (payload?.size as number | undefined) ?? 0
-        const hash = payload?.hash as string | undefined
         const imgData = await tauri.getClipboardImage().catch((e: any) => {
           console.error('[Clipboard] getClipboardImage failed:', e)
           return ''
         })
         if (imgData) {
-          lastImageSize = size
-          lastImageHash = hash ?? ''
-          enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: hash ?? '' } })
+          const pngHash = simpleHash(imgData)
+          if (pngHash !== lastImageHash) {
+            lastImageSize = size
+            lastImageHash = pngHash
+            enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: pngHash } })
+          } else {
+            console.log('[Clipboard] event: PNG hash matches last image, skipping duplicate')
+          }
         } else {
           console.warn('[Clipboard] Image conversion returned empty — DIB-to-PNG may have failed')
         }
