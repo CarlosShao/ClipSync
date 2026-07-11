@@ -18,6 +18,10 @@ export const saveAndCopyFile = (base64Data: string, filename: string) =>
   invoke<string>('save_and_copy_file', { base64Data, filename })
 export const checkClipboardImageInfo = () => invoke<ClipboardImageInfo>('check_clipboard_image_info')
 export const getClipboardImage = () => invoke<string>('get_clipboard_image')
+// Pull a freshly captured clipboard image by its content hash. The monitor emits a
+// small `clipboard-changed` event carrying only the hash + size; the multi-MB PNG
+// bytes are fetched here (proven command channel) instead of over the event bus.
+export const getCapturedImage = (hash: string) => invoke<string>('get_captured_image', { hash })
 export const convertBmpToPng = (bmpDataUrl: string) => invoke<string>('convert_bmp_to_png', { bmpDataUrl })
 
 

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::{Listener, Manager};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -524,6 +524,61 @@ pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str) -> Option<(String, u64
 pub fn capture_clipboard_image() -> Option<(String, u64)> {
     let (raw, src) = read_clipboard_image_raw()?;
     encode_clipboard_raw_to_png(&raw, src)
+}
+
+/// Cache of recently captured clipboard images, keyed by their PNG content hash
+/// (FNV-1a 64-bit over the encoded data URL). The clipboard monitor inserts here
+/// the moment it reads a screenshot; the frontend then pulls the bytes via the
+/// `get_captured_image` command using the hash carried in the `clipboard-changed`
+/// event.
+///
+/// WHY this design: shipping the full multi-MB PNG `dataUrl` through a Tauri event
+/// is fragile — large event payloads can fail to deliver (which is why the
+/// event-only rewrite regressed from "last syncs" to "zero sync"). The event now
+/// carries only the tiny hash + size; the bytes travel over the normal command
+/// channel (already proven to work via `get_clipboard_image`).
+pub fn captured_images() -> &'static Mutex<HashMap<u64, (String, Instant)>> {
+    static INSTANCE: OnceLock<Mutex<HashMap<u64, (String, Instant)>>> = OnceLock::new();
+    INSTANCE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// Windows clipboard sequence number. Increments on EVERY clipboard write — even
+// when `WM_CLIPBOARDUPDATE` notifications are coalesced by the OS (Windows sets a
+// per-window "pending" flag and won't post a second notification until the first
+// is pumped). Polling this rapidly is the ONLY reliable way to detect every write
+// in a burst: `AddClipboardFormatListener` cannot. Sampling faster than the gap
+// between captures means we read each image during its window, before the next
+// write overwrites it.
+#[cfg(windows)]
+extern "system" {
+    fn GetClipboardSequenceNumber() -> u32;
+}
+
+fn get_clipboard_seq() -> u32 {
+    #[cfg(windows)]
+    unsafe {
+        GetClipboardSequenceNumber()
+    }
+    #[cfg(not(windows))]
+    0
+}
+
+/// Fetch a captured image's PNG data URL by its content hash.
+#[tauri::command]
+fn get_captured_image(hash: String) -> String {
+    let key: u64 = match hash.parse() {
+        Ok(k) => k,
+        Err(_) => return String::new(),
+    };
+    if let Ok(mut map) = captured_images().lock() {
+        // Evict entries older than 60s to bound memory.
+        let now = Instant::now();
+        map.retain(|_, (_, t)| now.duration_since(*t) < Duration::from_secs(60));
+        if let Some((url, _)) = map.get(&key) {
+            return url.clone();
+        }
+    }
+    String::new()
 }
 
 #[tauri::command]
@@ -1460,6 +1515,7 @@ pub fn run() {
             save_and_copy_file,
             check_clipboard_image_info,
             get_clipboard_image,
+            get_captured_image,
             convert_bmp_to_png,
             check_for_updates,
             login,

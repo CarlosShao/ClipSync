@@ -82,30 +82,38 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
     std::thread::spawn(move || {
         let mut last_image_png_hash: u64 = 0;
         while let Ok((raw, src, size)) = image_rx.recv() {
-            if let Some((data_url, _raw_hash)) = encode_clipboard_raw_to_png(&raw, src) {
-                // ECHO guard uses the PNG *content* hash (fnv64 over the encoded data URL),
-                // NOT the raw DIB hash. Consecutive screenshots of the same window have
-                // colliding RAW DIB bytes (the original bug), so a raw-hash guard silently
-                // dropped the middle shots. The PNG content hash only collides for genuinely
-                // identical images — exactly what we want to dedupe (e.g. ClipSync's own paste
-                // writing the same bytes back to the clipboard). Using it guarantees every
-                // distinct screenshot in a burst syncs.
-                let png_content_hash = fnv64(data_url.as_bytes());
-                if png_content_hash != last_image_png_hash {
-                    last_image_png_hash = png_content_hash;
-                    eprintln!("[ClipMon] IMAGE: {} bytes, png_hash={:016x}, emit", size, png_content_hash);
-                    let _ = app_handle_worker.emit(
-                        "clipboard-changed",
-                        serde_json::json!({
-                            "contentType": "image",
-                            "size": size,
-                            "hash": png_content_hash.to_string(),
-                            "dataUrl": data_url,
-                            "timestamp": chrono::Utc::now().to_rfc3339(),
-                        }),
-                    );
-                } else {
-                    eprintln!("[ClipMon] IMAGE: echo png_content_hash={:016x}, skip", png_content_hash);
+            match encode_clipboard_raw_to_png(&raw, src) {
+                Some((data_url, _raw_hash)) => {
+                    // ECHO guard uses the PNG *content* hash (fnv64 over the encoded data
+                    // URL), NOT the raw DIB hash. Consecutive screenshots of the same window
+                    // have colliding RAW DIB bytes, so a raw-hash guard silently dropped the
+                    // middle shots. The PNG content hash only collides for genuinely identical
+                    // images (e.g. ClipSync's own paste writing the same bytes back). Using it
+                    // guarantees every distinct screenshot in a burst syncs.
+                    let png_content_hash = fnv64(data_url.as_bytes());
+                    if png_content_hash != last_image_png_hash {
+                        last_image_png_hash = png_content_hash;
+                        // Cache the bytes by content hash; frontend pulls them via
+                        // get_captured_image (avoids shipping multi-MB payloads over events).
+                        if let Ok(mut map) = crate::captured_images().lock() {
+                            map.insert(png_content_hash, (data_url.clone(), std::time::Instant::now()));
+                        }
+                        eprintln!("[ClipMon] IMAGE: {} bytes, png_hash={:016x}, emit", size, png_content_hash);
+                        let _ = app_handle_worker.emit(
+                            "clipboard-changed",
+                            serde_json::json!({
+                                "contentType": "image",
+                                "size": size,
+                                "hash": png_content_hash.to_string(),
+                                "timestamp": chrono::Utc::now().to_rfc3339(),
+                            }),
+                        );
+                    } else {
+                        eprintln!("[ClipMon] IMAGE: echo png_content_hash={:016x}, skip", png_content_hash);
+                    }
+                }
+                None => {
+                    eprintln!("[ClipMon] IMAGE: encode failed (size={})", size);
                 }
             }
         }
@@ -113,40 +121,53 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
     });
 
     let mut state = MonitorState::default();
+    // Baseline sequence number so the first sweep doesn't treat the already-present
+    // clipboard content as a brand-new change.
+    let mut last_seq: u32 = crate::get_clipboard_seq();
 
     loop {
-        // Honor stop request (also set by the stop command before dropping Shutdown).
+        // Honor stop request (set by the stop command before dropping Shutdown).
         if stop_flag.load(Ordering::Relaxed) {
             eprintln!("[ClipMon] Stop requested, exiting monitor loop.");
             break;
         }
 
-        match monitor.recv() {
-            Ok(true) => {
-                // A real clipboard change happened. Read it NOW, before any subsequent
-                // write's message is processed — this is what prevents burst loss.
-                let windows_alive = has_windows(&app_handle);
-                if windows_alive {
-                    eprintln!("[ClipMon] change detected (windows alive)");
-                    let content = read_clipboard_raw();
-                    handle_content(&app_handle, &image_tx, &mut state, content);
-                } else {
-                    // No frontend connected (e.g. Vite hot-reload). Skip processing to avoid
-                    // stale Tauri callback warnings. The change is simply not captured — it
-                    // cannot be displayed anyway, and the next change after the UI returns
-                    // will be captured normally.
-                    eprintln!("[ClipMon] change detected but no windows, skipping");
-                }
-            }
-            Ok(false) => {
-                eprintln!("[ClipMon] Shutdown requested via monitor channel, exiting.");
-                break;
-            }
-            Err(e) => {
-                eprintln!("[ClipMon] monitor.recv error: {:?} — exiting monitor thread", e);
-                break;
+        // --- Event-driven: drain any queued WM_CLIPBOARDUPDATE messages. ---
+        // AddClipboardFormatListener posts ONE message per "pending" window flag, so a
+        // fast burst of writes collapses into a single notification. Draining the queue
+        // here still only yields that one coalesced message — which is exactly why we
+        // ALSO run the sequence-number sweep below (the OS bumps the sequence number on
+        // EVERY write, coalesced or not).
+        while let Ok(true) = monitor.try_recv() {
+            eprintln!("[ClipMon] WM_CLIPBOARDUPDATE received");
+            if has_windows(&app_handle) {
+                let content = read_clipboard_raw();
+                handle_content(&app_handle, &image_tx, &mut state, content);
+            } else {
+                eprintln!("[ClipMon] change detected but no windows, skipping");
             }
         }
+
+        // --- Sequence-number sweep: the real burst catcher. ---
+        // GetClipboardSequenceNumber increments on EVERY clipboard write. We sample it
+        // every 15ms; if it changed, the clipboard currently holds a NEW image that we
+        // must read NOW (before the next write overwrites it). For human-paced captures
+        // (gaps of hundreds of ms) this catches every screenshot in its gap. This is the
+        // only reliable way to capture a burst — WM_CLIPBOARDUPDATE alone cannot, because
+        // Windows coalesces those notifications.
+        let seq = crate::get_clipboard_seq();
+        if seq != last_seq {
+            last_seq = seq;
+            if has_windows(&app_handle) {
+                eprintln!("[ClipMon] seq {} -> read clipboard now", seq);
+                let content = read_clipboard_raw();
+                handle_content(&app_handle, &image_tx, &mut state, content);
+            } else {
+                eprintln!("[ClipMon] seq changed but no windows, skipping");
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(15));
     }
 }
 
