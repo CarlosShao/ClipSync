@@ -97,6 +97,9 @@ services:
 
       # 日志配置
       LOG_LEVEL: ${LOG_LEVEL:-debug}
+
+      # 临时关闭限流（测试图片同步时使用，测试完删除）
+      DISABLE_RATE_LIMIT: "true"
     ports:
       - "${API_PORT:-3001}:3001"
     volumes:

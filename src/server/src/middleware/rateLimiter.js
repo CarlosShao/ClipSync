@@ -158,6 +158,11 @@ function createRateLimiter(options) {
   const memoryStore = memoryStores[storeName];
   
   return async (req, res, next) => {
+    // 临时开关：测试时可通过 DISABLE_RATE_LIMIT=true 关闭限流
+    if (process.env.DISABLE_RATE_LIMIT === 'true') {
+      return next();
+    }
+
     // 测试环境跳过
     if (process.env.NODE_ENV === 'test' && storeName === 'api') {
       return next();
