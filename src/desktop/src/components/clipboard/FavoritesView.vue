@@ -233,7 +233,7 @@ async function handleDeleteCollection(id: string) {
   await deleteFavoriteCollection(id)
   collections.value = collections.value.filter(c => c.id !== id)
   if (activeCollectionId.value === id) activeCollectionId.value = null
-  toast.info('收藏夹已删除')
+  toast.show('收藏夹已删除', 'info')
 }
 function selectCollection(id: string | null) { activeCollectionId.value = id }
 
