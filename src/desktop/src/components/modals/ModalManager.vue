@@ -1567,7 +1567,7 @@ async function handleFeedbackSubmit() {
     <p class="confirm-body">{{ confirmMessage }}</p>
     <template #footer>
       <Button variant="outline" @click="emit('close-modal')">{{ t('btn_cancel_text') }}</Button>
-      <Button variant="destructive" @click="emit('confirm-action')">{{ t('confirm_t') }}</Button>
+      <Button variant="default" @click="emit('confirm-action')">{{ t('confirm_t') }}</Button>
     </template>
   </ModalDialog>
 
