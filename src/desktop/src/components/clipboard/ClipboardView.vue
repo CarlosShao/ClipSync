@@ -64,6 +64,21 @@ async function addToCollection(colId: string, itemId: string) {
   addToColItemId.value = null
 }
 
+// Star button: favorite + show collection picker
+function handleFavorite(item: ClipItem) {
+  if (item.isFavorite) {
+    // Already favorited → unfavorite
+    clip.toggleFavorite(item)
+    addToColItemId.value = null
+  } else {
+    // Not favorited → favorite first, then show collection picker
+    clip.toggleFavorite(item)
+    if (collections.value.length > 0) {
+      addToColItemId.value = item.id
+    }
+  }
+}
+
 // Read user's saved in-app shortcuts from localStorage (falls back to defaults)
 function savedAppKeys(id: string): string[] | undefined {
   try {
@@ -558,14 +573,13 @@ function extractDomain(url: string): string {
                 <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
                   <Folder :size="14" />
                 </Button>
-                <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click="clip.toggleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
-                  <Star :size="14" :fill="item.isFavorite ? 'currentColor' : 'none'" />
-                </Button>
-                <div v-if="collections.length > 0" class="add-col-wrap">
-                  <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹">
-                    <FolderPlus :size="14" />
+                <!-- Star: click to favorite + pick collection -->
+                <div class="add-col-wrap">
+                  <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click.stop="handleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
+                    <Star :size="14" :fill="item.isFavorite ? 'currentColor' : 'none'" />
                   </Button>
-                  <div v-if="addToColItemId === item.id" class="add-col-dropdown">
+                  <div v-if="addToColItemId === item.id && !item.isFavorite" class="add-col-dropdown">
+                    <div class="add-col-dropdown-title">收藏到</div>
                     <button v-for="col in collections" :key="col.id" class="add-col-option" @click="addToCollection(col.id, item.id)">
                       {{ col.icon }} {{ col.name }}
                     </button>
@@ -835,4 +849,8 @@ function extractDomain(url: string): string {
   border-radius: var(--radius-sm); white-space: nowrap;
 }
 .add-col-option:hover { background: var(--bg-hover); }
+.add-col-dropdown-title {
+  padding: 4px 10px 2px; font-size: 11px; color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-subtle); margin-bottom: 2px;
+}
 </style>
