@@ -291,7 +291,7 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 
 <template>
   <div class="fav-page">
-    <!-- Header -->
+    <!-- Header: title + search -->
     <div class="fav-header">
       <div class="fav-header-left">
         <Star :size="20" :stroke-width="2" class="fav-header-icon" />
@@ -299,19 +299,10 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
         <Badge variant="outline" class="fav-count">{{ favoriteCount }}</Badge>
       </div>
       <div class="fav-header-right">
-        <!-- View toggle: back in header -->
-        <div class="fav-view-toggle">
-          <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
-          <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
+        <div class="fav-search">
+          <Search :size="14" class="fav-search-icon" />
+          <input v-model="searchInput" class="fav-search-input" placeholder="搜索收藏..." />
         </div>
-      </div>
-    </div>
-
-    <!-- Search row -->
-    <div class="fav-search-row">
-      <div class="fav-search">
-        <Search :size="14" class="fav-search-icon" />
-        <input v-model="searchInput" class="fav-search-input" placeholder="搜索收藏..." />
       </div>
     </div>
 
@@ -336,6 +327,11 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
             <Star :size="14" fill="currentColor" /><span>取消收藏</span>
           </Button>
         </template>
+        <!-- View toggle: after batch -->
+        <div class="fav-view-toggle">
+          <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
+          <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
+        </div>
       </div>
     </div>
 
@@ -507,11 +503,10 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-title { font-weight: 600; font-size: 16px; }
 .fav-count { padding: 2px 10px !important; }
 
-/* Search row */
-.fav-search-row { display: flex; align-items: center; padding: 10px 24px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
-.fav-search { position: relative; display: inline-flex; align-items: center; flex: 1; max-width: 400px; }
+/* Search (in header right) */
+.fav-search { position: relative; display: inline-flex; align-items: center; }
 .fav-search-icon { position: absolute; left: 10px; color: var(--text-tertiary); pointer-events: none; }
-.fav-search-input { width: 100%; height: 34px; padding: 0 12px 0 32px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 13px; background: var(--bg-surface); color: var(--text-primary); outline: none; transition: border-color 0.15s; }
+.fav-search-input { width: 200px; height: 34px; padding: 0 12px 0 32px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 13px; background: var(--bg-surface); color: var(--text-primary); outline: none; transition: border-color 0.15s; }
 .fav-search-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
 
 /* Toolbar: tags left, actions right */
