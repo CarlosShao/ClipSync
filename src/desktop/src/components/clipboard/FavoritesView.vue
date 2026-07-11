@@ -7,7 +7,7 @@ import { useToast } from '@/composables/useToast'
 import {
   Star, Search, Copy, Image as ImageIcon, LayoutGrid, List,
   ExternalLink, FileText, Folder, ArrowUpDown, CheckSquare, Square,
-  Plus, X, Tag, ClipboardList, FolderPlus,
+  Plus, X, Tag, ClipboardList, FolderPlus, ChevronRight,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -35,6 +35,14 @@ const sortAsc = ref(false)
 const batchMode = ref(false)
 const selectedIds = ref<Set<string>>(new Set())
 const viewMode = ref<'grid' | 'list'>('grid')
+const collapsedGroups = ref<Set<string>>(new Set())
+
+function toggleGroup(key: string) {
+  if (collapsedGroups.value.has(key)) collapsedGroups.value.delete(key)
+  else collapsedGroups.value.add(key)
+  // Force reactivity
+  collapsedGroups.value = new Set(collapsedGroups.value)
+}
 
 // Collections
 const collections = ref<any[]>([])
@@ -377,11 +385,13 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
       <!-- LIST VIEW (grouped) -->
       <div v-else-if="viewMode === 'list'" class="fav-groups">
         <div v-for="gk in sortedGroupKeys" :key="gk" class="fav-group">
-          <div class="fav-group-header">
+          <div class="fav-group-header" @click="toggleGroup(gk)" style="cursor:pointer">
+            <ChevronRight :size="14" class="fav-group-chevron" :class="{ 'fav-group-chevron--open': !collapsedGroups.has(gk) }" />
             <Badge variant="outline" class="fav-group-badge" :data-type="gk"><span class="type-dot" />{{ groupLabels[gk] }}</Badge>
             <span class="fav-group-count">{{ groupedItems[gk].length }} 项</span>
             <div class="fav-group-line" />
           </div>
+          <template v-if="!collapsedGroups.has(gk)">
           <div v-for="item in groupedItems[gk]" :key="item.id" class="fav-list-item"
             :draggable="!batchMode" @dragstart="onDragStart($event, item)" @dragover="onDragOver" @drop="onDrop($event, item)" @dragend="onDragEnd">
             <div v-if="batchMode" class="fav-list-check"><Checkbox :model-value="selectedIds.has(item.id)" @update:model-value="() => toggleSelect(item.id)" /></div>
@@ -419,18 +429,20 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
               <Button variant="ghost" size="icon-sm" class="fav-unfav-btn" @click="handleUnfavorite(item)"><Star :size="14" fill="currentColor" /></Button>
             </div>
           </div>
+          </template>
         </div>
       </div>
 
       <!-- GRID VIEW (grouped) -->
       <div v-else class="fav-groups">
         <div v-for="gk in sortedGroupKeys" :key="gk" class="fav-group">
-          <div class="fav-group-header">
+          <div class="fav-group-header" @click="toggleGroup(gk)" style="cursor:pointer">
+            <ChevronRight :size="14" class="fav-group-chevron" :class="{ 'fav-group-chevron--open': !collapsedGroups.has(gk) }" />
             <Badge variant="outline" class="fav-group-badge" :data-type="gk"><span class="type-dot" />{{ groupLabels[gk] }}</Badge>
             <span class="fav-group-count">{{ groupedItems[gk].length }} 项</span>
             <div class="fav-group-line" />
           </div>
-          <div class="fav-grid">
+          <div v-if="!collapsedGroups.has(gk)" class="fav-grid">
             <div v-for="item in groupedItems[gk]" :key="item.id" class="fav-card"
               :class="{ 'fav-card--selected': selectedIds.has(item.id) }"
               :draggable="!batchMode"
@@ -559,7 +571,9 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 
 /* Groups */
 .fav-groups { display: flex; flex-direction: column; gap: 20px; }
-.fav-group-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.fav-group-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; user-select: none; }
+.fav-group-chevron { color: var(--text-tertiary); transition: transform 0.2s ease; flex-shrink: 0; }
+.fav-group-chevron--open { transform: rotate(90deg); }
 .fav-group-badge { font-size: 12px !important; padding: 2px 8px !important; }
 .fav-group-badge .type-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
 .fav-group-badge[data-type="text"] .type-dot { background: var(--info); }
