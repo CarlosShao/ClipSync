@@ -9,6 +9,13 @@ use crate::encode_clipboard_raw_to_png;
 use crate::captured_images;
 use crate::fnv64;
 
+/// Server configuration for direct HTTP posting (bypasses Tauri event system).
+#[derive(Clone, Debug)]
+pub struct ServerConfig {
+    pub server_url: String,
+    pub device_id: String,
+}
+
 /// Signal the running monitor to exit by dropping its Shutdown handle.
 static MONITOR_SHUTDOWN: Mutex<Option<clipboard_win::monitor::Shutdown>> = Mutex::new(None);
 
@@ -25,10 +32,6 @@ fn has_windows(app: &AppHandle) -> bool {
 }
 
 /// Ring buffer for recent raw-byte hashes (echo guard).
-/// We hash the RAW bytes at capture time (before any subsequent clipboard write
-/// can overwrite them), so the hash reliably identifies images that ClipSync
-/// itself wrote to the clipboard (e.g. paste). Different screenshots of the
-/// same window have different pixel data → different raw bytes → different hash.
 const ECHO_RING_SIZE: usize = 16;
 struct EchoRing(Mutex<[u64; ECHO_RING_SIZE]>, Mutex<usize>);
 impl EchoRing {
@@ -47,6 +50,60 @@ impl EchoRing {
     }
 }
 
+/// POST clipboard image directly to the server via HTTP.
+/// This bypasses Tauri's unreliable event system entirely.
+/// The server broadcasts the new item via WebSocket to all online devices.
+async fn post_clipboard_to_server(server_url: &str, device_id: &str, data_url: &str, raw_size: usize) {
+
+    let url = format!("{}/api/clipboard/direct", server_url);
+    let base64 = match data_url.strip_prefix("data:image/png;base64,") {
+        Some(b) => b,
+        None => {
+            eprintln!("[ClipMon] HTTP POST: unexpected data URL format");
+            return;
+        }
+    };
+
+    let payload = serde_json::json!({
+        "sourceDeviceId": device_id,
+        "contentType": "image",
+        "contentEncrypted": data_url,
+        "contentPreview": format!("[Image {} bytes]", base64.len()),
+        "contentSize": base64.len(),
+        "metadata": { "source": "rust-monitor", "rawSize": raw_size },
+    });
+
+    match reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => {
+            match client.post(&url)
+                .header("Content-Type", "application/json")
+                .header("X-Device-ID", device_id)
+                .json(&payload)
+                .send()
+                .await
+            {
+                Ok(resp) => { let status = resp.status();
+                    if status.is_success() {
+                        eprintln!("[ClipMon] HTTP POST: success ({})", status);
+                    } else {
+                        let body = resp.text().await.unwrap_or_default();
+                        eprintln!("[ClipMon] HTTP POST: failed {} - {}", status, body);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[ClipMon] HTTP POST: error - {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[ClipMon] HTTP POST: client build error - {}", e);
+        }
+    }
+}
+
 /// Encode raw clipboard bytes to PNG data URL + content hash, with dedup.
 /// Runs in the dedicated worker thread (off the monitor loop).
 fn encode_and_emit(
@@ -55,10 +112,9 @@ fn encode_and_emit(
     src: &'static str,
     size: usize,
     echo_ring: &EchoRing,
+    server_config: Option<&ServerConfig>,
 ) {
     // Echo guard: skip if this exact raw-byte content was recently seen.
-    // This prevents ClipSync's own paste (which writes identical bytes back to
-    // the clipboard) from being re-synced.
     let raw_hash = fnv64(&raw);
     if echo_ring.contains(raw_hash) {
         eprintln!("[ClipMon] IMAGE: echo guard skip (raw_hash={:016x})", raw_hash);
@@ -66,7 +122,7 @@ fn encode_and_emit(
     }
     echo_ring.insert(raw_hash);
 
-    // PNG encoding + optional 720px resize (replaces previous JS-side resize).
+    // PNG encoding + optional 720px resize.
     match encode_clipboard_raw_to_png(&raw, src, Some(720)) {
         Some((data_url, png_content_hash)) => {
             // Cache for fallback polling.
@@ -74,19 +130,31 @@ fn encode_and_emit(
                 map.insert(png_content_hash, (data_url.clone(), Instant::now()));
             }
 
-            eprintln!("[ClipMon] IMAGE: {} bytes → {} PNG, hash={:016x}, emit",
+            eprintln!("[ClipMon] IMAGE: {} bytes -> {} PNG, hash={:016x}",
                 size, data_url.len(), png_content_hash);
 
-            let _ = app.emit(
-                "clipboard-changed",
-                serde_json::json!({
-                    "contentType": "image",
-                    "size": size,
-                    "hash": png_content_hash.to_string(),
-                    "imageData": data_url,
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
-                }),
-            );
+            // Primary path: POST directly to server (bypasses Tauri event system).
+            if let Some(cfg) = server_config {
+                let server_url = cfg.server_url.clone();
+                let device_id = cfg.device_id.clone();
+                let payload = data_url.clone();
+                tauri::async_runtime::spawn(async move {
+                    post_clipboard_to_server(&server_url, &device_id, &payload, size).await;
+                });
+            }
+
+            // Secondary path: also emit via Tauri event (fallback, may not work in Tauri 2.x).
+            let app_clone = app.clone();
+            let event_payload = serde_json::json!({
+                "contentType": "image",
+                "size": size,
+                "hash": png_content_hash.to_string(),
+                "imageData": data_url,
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            });
+            tauri::async_runtime::spawn(async move {
+                let _ = app_clone.emit("clipboard-changed", event_payload);
+            });
         }
         None => {
             eprintln!("[ClipMon] IMAGE: encode failed (size={})", size);
@@ -96,22 +164,20 @@ fn encode_and_emit(
 
 /// Monitors clipboard changes and emits `clipboard-changed` events.
 ///
-/// ARCHITECTURE (2026-07-11, async worker):
+/// ARCHITECTURE (2026-07-11, direct HTTP):
 ///
-/// The monitor loop is NON-BLOCKING for images. When a sequence-number change
-/// is detected, raw bytes are read IMMEDIATELY (a few ms) and sent over a
-/// channel to a background worker thread. The worker does the slow PNG encoding
-/// (50-200ms) and emits the event. This means the monitor loop can detect the
-/// NEXT sequence change while the worker is still encoding — no more "only last
-/// screenshot syncs" due to encoding blocking the read loop.
+/// The monitor loop detects clipboard changes via AddClipboardFormatListener +
+/// GetClipboardSequenceNumber sweep. Raw bytes are read immediately and sent to
+/// a background worker thread for PNG encoding. After encoding, the worker
+/// POSTs directly to the server via HTTP (bypasses Tauri event system entirely).
+/// The server then broadcasts via WebSocket to all online devices.
 ///
-/// The full PNG data URL is included DIRECTLY in the event payload, eliminating
-/// the getCapturedImage(hash) IPC round-trip that added 50-100ms per image.
-pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
-    eprintln!("[ClipMon] Starting clipboard monitor (async worker)...");
+/// Tauri's `app.emit()` is unreliable from background threads in Tauri 2.x,
+/// so we use direct HTTP + WebSocket for 100% reliable delivery.
+pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>, server_config: Option<ServerConfig>) {
+    eprintln!("[ClipMon] Starting clipboard monitor (direct HTTP)...");
 
-    // Channel for passing raw clipboard bytes → worker thread.
-    // unbounded_sync: monitor loop never blocks on send (critical for 15ms sweep).
+    // Channel for passing raw clipboard bytes -> worker thread.
     let (raw_tx, raw_rx) = mpsc::sync_channel::<(Vec<u8>, &'static str, usize)>(8);
 
     // Create the clipboard change listener
@@ -123,33 +189,30 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
             return;
         }
     };
-    // Store the shutdown handle so the stop command can unblock recv().
     *MONITOR_SHUTDOWN.lock().unwrap() = Some(monitor.shutdown_channel());
 
-    // --- Spawn worker thread: PNG encoding + emit (the slow part) ---
+    // --- Spawn worker thread: PNG encoding + HTTP POST ---
     let app_handle_worker = app_handle.clone();
     let echo_ring = EchoRing::new();
+    let server_cfg = server_config.clone();
     thread::spawn(move || {
         eprintln!("[ClipMon] Worker thread started");
         while let Ok((raw, src, size)) = raw_rx.recv() {
-            encode_and_emit(&app_handle_worker, raw, src, size, &echo_ring);
+            encode_and_emit(&app_handle_worker, raw, src, size, &echo_ring, server_cfg.as_ref());
         }
         eprintln!("[ClipMon] Worker thread exiting (sender dropped).");
     });
 
     let mut state = MonitorState::default();
-    // Baseline sequence number so the first sweep doesn't treat already-present
-    // clipboard content as a brand-new change.
     let mut last_seq: u32 = crate::get_clipboard_seq();
 
     loop {
-        // Honor stop request
         if stop_flag.load(Ordering::Relaxed) {
             eprintln!("[ClipMon] Stop requested, exiting monitor loop.");
             break;
         }
 
-        // --- Event-driven: drain any queued WM_CLIPBOARDUPDATE messages. ---
+        // Event-driven: drain WM_CLIPBOARDUPDATE messages
         while let Ok(true) = monitor.try_recv() {
             eprintln!("[ClipMon] WM_CLIPBOARDUPDATE received");
             if has_windows(&app_handle) {
@@ -160,13 +223,7 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
             }
         }
 
-        // --- Sequence-number sweep: the real burst catcher. ---
-        // GetClipboardSequenceNumber increments on EVERY clipboard write — even
-        // when WM_CLIPBOARDUPDATE notifications are coalesced by Windows.
-        // Sampling every 15ms means we detect each write in a burst. The key
-        // improvement: raw bytes are read and SENT TO WORKER immediately (non-
-        // blocking), so the loop can detect the NEXT sequence change while the
-        // worker encodes the previous one. No more "only last screenshot syncs".
+        // Sequence-number sweep: the real burst catcher
         let seq = crate::get_clipboard_seq();
         if seq != last_seq {
             last_seq = seq;
@@ -179,10 +236,9 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
             }
         }
 
-        std::thread::sleep(std::time::Duration::from_millis(15));
+        std::thread::sleep(Duration::from_millis(15));
     }
 
-    // Cleanup: drop sender to signal worker thread exit.
     drop(raw_tx);
 }
 
@@ -204,7 +260,6 @@ impl Default for MonitorState {
 }
 
 /// Dispatch a single clipboard change (already read) to the appropriate handler.
-/// For images: raw bytes are sent to the worker thread via channel (non-blocking).
 fn handle_content(
     app: &AppHandle,
     state: &mut MonitorState,
@@ -268,15 +323,9 @@ fn handle_content(
             }
         }
         ClipContent::Image { raw, src, size } => {
-            // Send raw bytes to worker thread for PNG encoding.
-            // sync_channel(8) provides backpressure: if the worker can't keep up
-            // (e.g. a burst of 10+ screenshots), the monitor loop briefly waits
-            // on send. This is fine — the sequence number has already been
-            // captured, and 8-slot buffer absorbs normal human-paced bursts.
-            // IMPORTANT: we do NOT block on PNG encoding here. The raw bytes are
-            // captured at detection time (before any subsequent write overwrites
-            // them), so each screenshot in a burst is preserved independently.
-            let _ = raw_tx.send((raw, src, size));
+            if let Err(e) = raw_tx.send((raw, src, size)) {
+                eprintln!("[ClipMon] IMAGE: failed to send to worker: {}", e);
+            }
             state.last_text.clear();
             state.last_file_paths.clear();
         }
@@ -296,9 +345,6 @@ fn handle_content(
 enum ClipContent {
     Text(String),
     Files(Vec<String>),
-    /// `raw` holds the exact clipboard bytes at detection time; `src` tells the
-    /// encoder whether they are PNG already or DIB/BMP that need conversion.
-    /// `size` is the raw byte count.
     Image { raw: Vec<u8>, src: &'static str, size: usize },
     Empty,
     Error(String),
@@ -318,7 +364,6 @@ fn read_clipboard_raw() -> ClipContent {
         return ClipContent::Empty;
     }
 
-    // Priority 1: Files (CF_HDROP, format 15)
     if raw::is_format_avail(15) {
         let mut files: Vec<String> = Vec::new();
         match raw::get_file_list(&mut files) {
@@ -328,11 +373,6 @@ fn read_clipboard_raw() -> ClipContent {
         }
     }
 
-    // Priority 2: Images.
-    // Standard DIB (CF_DIB 8 / CF_BITMAP 2) first — what WeChat, Snipping Tool and most
-    // Windows apps put on the clipboard, read reliably via get_bitmap().
-    // Fall back to CF_DIBV5 (17) and PNG only when the standard DIB is unavailable
-    // (browsers / some tools place images as DIBV5 or PNG only).
     if raw::is_format_avail(8) || raw::is_format_avail(2) {
         let mut data = Vec::<u8>::new();
         match raw::get_bitmap(&mut data) {
@@ -360,7 +400,6 @@ fn read_clipboard_raw() -> ClipContent {
             }
         }
     }
-    // PNG clipboard format (e.g. copied from browsers)
     if let Some(png_fmt) = raw::register_format("PNG") {
         let fmt = png_fmt.get();
         if raw::is_format_avail(fmt) {
@@ -380,7 +419,6 @@ fn read_clipboard_raw() -> ClipContent {
         }
     }
 
-    // Priority 3: Text (CF_UNICODETEXT, format 13)
     if raw::is_format_avail(13) {
         let mut buf = Vec::<u8>::new();
         match raw::get_string(&mut buf) {

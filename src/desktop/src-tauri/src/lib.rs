@@ -1045,8 +1045,19 @@ fn start_clipboard_monitor(state: tauri::State<AppState>, app: tauri::AppHandle)
 
     let handle = app.clone();
     let stop = state.is_monitoring.clone();
+    
+    // Build server config from app state (for direct HTTP POST bypass)
+    let config = state.config.lock().unwrap().clone();
+    let server_config = if !config.server_url.is_empty() {
+        if let Some(ref device_id) = config.device_id {
+            if !device_id.is_empty() {
+                Some(clipboard_monitor::ServerConfig { server_url: config.server_url.clone(), device_id: device_id.clone() })
+            } else { None }
+        } else { None }
+    } else { None };
+    
     thread::spawn(move || {
-        clipboard_monitor::start_monitor(handle, stop);
+        clipboard_monitor::start_monitor(handle, stop, server_config);
     });
 }
 
@@ -1695,8 +1706,26 @@ pub fn run() {
                 monitor_state.is_monitoring.store(true, Ordering::Relaxed);
                 let handle = app.handle().clone();
                 let stop = monitor_state.is_monitoring.clone();
+
+                let config = monitor_state.config.lock().unwrap().clone();
+                let server_config = if !config.server_url.is_empty() {
+                    if let Some(ref device_id) = config.device_id {
+                        if !device_id.is_empty() {
+                            Some(clipboard_monitor::ServerConfig { server_url: config.server_url.clone(), device_id: device_id.clone() })
+                        } else { None }
+                    } else { None }
+                } else { None };
+
+
+
+
+
+
+
+
+
                 thread::spawn(move || {
-                    clipboard_monitor::start_monitor(handle, stop);
+                    clipboard_monitor::start_monitor(handle, stop, server_config);
                 });
                 eprintln!("[Setup] Native clipboard monitor started (event-driven)");
             }
