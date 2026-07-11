@@ -578,7 +578,7 @@ function extractDomain(url: string): string {
                   <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click.stop="handleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
                     <Star :size="14" :fill="item.isFavorite ? 'currentColor' : 'none'" />
                   </Button>
-                  <div v-if="addToColItemId === item.id && !item.isFavorite" class="add-col-dropdown">
+                  <div v-if="addToColItemId === item.id" class="add-col-dropdown">
                     <div class="add-col-dropdown-title">收藏到</div>
                     <button v-for="col in collections" :key="col.id" class="add-col-option" @click="addToCollection(col.id, item.id)">
                       {{ col.icon }} {{ col.name }}
