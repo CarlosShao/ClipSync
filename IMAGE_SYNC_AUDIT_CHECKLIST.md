@@ -16,12 +16,13 @@
 - [ ] H3 前端事件 handler `skipPollUntil` 门控是否误杀第二张事件（copyItem 才设，图片上传不设 → 应不杀）
 
 ### 同步慢（延迟瓶颈）
-- [ ] S1 后端 POST /api/clipboard 对图片是否有重处理（缩略图/重编码/对象存储上传）阻塞
-- [ ] S2 Rust `get_clipboard_image` DIB→image crate 解码→PNG 重编码→base64 是否必要/可优化
+- [x] S0(确认根因) monitor `poll_interval` 被 `a091236` 从基线 **100ms** 误改为 **700ms** → 截图捕获延迟地板从≤100ms 涨到≤700ms → 叠转换+上传≈1-2s。已 `git log -S` 定位提交，`git show 753fdde` 证实基线 100ms 且注释 "for responsiveness"。恢复 100ms（commit 待定）。
+- [ ] S1 后端 POST /api/clipboard 对图片是否有重处理（缩略图/重编码/对象存储上传）阻塞 — 已排除：直接存 base64，无重处理
+- [ ] S2 Rust `get_clipboard_image` DIB→image crate 解码→PNG 重编码→base64 是否必要/可优化 — 已读 lib.rs 409-491，与基线一致，无新增成本（转换本身 10-50ms，非瓶颈）
 - [ ] S3 前端 `resizeImageIfNeeded` 对 <1080px 截图是否跳过（应跳过）
-- [ ] S4 favorites(3690a2f) 是否改了后端图片处理导致变慢
-- [ ] S5 monitor 每 700ms 对驻留图片 `get_bitmap`+FNV 是否浪费（仅驻留时，影响小）
-- [ ] S6 `recentUploadHashes` TTL 30000 + 前缀碰撞是否也拖慢首张（不应，仅判重）
+- [ ] S4 favorites(3690a2f) 是否改了后端图片处理导致变慢 — 已排除（仅改 favorited_at）
+- [ ] S5 monitor 每 700ms 对驻留图片 `get_bitmap`+FNV 是否浪费（仅驻留时，影响小）— 与延迟无关，poll 频率已修正
+- [ ] S6 `recentUploadHashes` TTL 仅判重，不影响首张延迟 — 已排除
 
 ## 验证记录
 
@@ -57,8 +58,8 @@
       去掉 `firstTauriPollDone` 死门控，真正成为事件驱动的兜底。
 
 ## 修复后验证
-- [ ] cargo check 通过（Rust monitor 状态机改动）— 进行中
-- [ ] vue-tsc --noEmit 通过（前端 useClipboard.ts 改动）— 进行中
+- [x] cargo check 通过（Rust monitor 状态机改动）— 仅既有 warnings，0 新增错误
+- [x] vue-tsc --noEmit 通过（前端 useClipboard.ts 改动）— useClipboard.ts 0 新增错误（剩余 7 个为 FavoritesView.vue 既有 useToast 错误）
 - [x] 逻辑推演：Rust Empty 分支重置 image state 后，image → empty → image 切换不会漏掉后续截图
 - [x] 逻辑推演：5s 强制刷新窗口绕过不可靠的 raw-DIB hash，前端 PNG content hash 做最终去重
 - [x] 逻辑推演：fallback poll 去掉死门控后，每 10s 会主动拉取当前剪贴板 PNG 并去重，成为事件驱动兜底
@@ -67,8 +68,8 @@
 ## 完成度
 - 根因定位：3/3
   - 第 1 层：`dataUrl.slice(0,200)` 前缀碰撞（已修 commit 03969dc）
-  - 第 2 层：Rust monitor 状态机未在 Empty/Files/Text 时重置 `last_image_hash`（本轮修）
-  - 第 3 层：前端 fallback poll `firstTauriPollDone` 死门控，无法兜底（本轮修）
+  - 第 2 层：Rust monitor 状态机未在 Empty/Files/Text 时重置 `last_image_hash`（本轮修 commit 29c181e）
+  - 第 3 层：前端 fallback poll `firstTauriPollDone` 死门控，无法兜底（本轮修 commit 29c181e）
 - 修复：3/3（本轮改 Rust + 前端）
-- 验证：type-check 进行中 + 逻辑推演通过（E2E 待用户 rebuild 实测）
+- 验证：type-check 通过 + 逻辑推演通过（E2E 待用户 rebuild 实测）
 
