@@ -965,7 +965,9 @@ fn start_clipboard_monitor(state: tauri::State<AppState>, app: tauri::AppHandle)
     });
 }
 
-/// Stop the native clipboard monitor thread (sets flag; the loop will exit on next cycle).
+/// Stop the native clipboard monitor thread. Sets the flag AND drops the
+/// Monitor's Shutdown handle so the blocking `recv()` unblocks immediately
+/// (otherwise the monitor thread would wait forever for the next clipboard message).
 #[tauri::command]
 fn stop_clipboard_monitor(state: tauri::State<AppState>) {
     if !state.is_monitoring.load(Ordering::Relaxed) {
@@ -973,7 +975,8 @@ fn stop_clipboard_monitor(state: tauri::State<AppState>) {
         return;
     }
     state.is_monitoring.store(false, Ordering::Relaxed);
-    eprintln!("[Monitor] Stopping native clipboard monitor (thread will exit on next cycle)");
+    clipboard_monitor::request_stop_monitor();
+    eprintln!("[Monitor] Stopping native clipboard monitor (Shutdown signal sent)");
 }
 
 /// Re-register all global shortcuts from the frontend-supplied map.
