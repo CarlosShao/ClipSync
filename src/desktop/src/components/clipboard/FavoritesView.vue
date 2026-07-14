@@ -77,6 +77,46 @@ const collections = useCollections()
 const showNewCollectionInput = ref(false)
 const newCollectionName = ref('')
 const newCollectionIcon = ref('folder')
+const newCollectionInputRef = ref<HTMLInputElement | null>(null)
+const isCreatingCollection = ref(false)
+
+function showNewCollectionInputAtTop() {
+  showNewCollectionInput.value = true
+  newCollectionName.value = ''
+  newCollectionIcon.value = 'folder'
+  nextTick(() => {
+    newCollectionInputRef.value?.focus()
+  })
+}
+
+async function confirmNewCollection() {
+  if (isCreatingCollection.value) return
+  if (!newCollectionName.value.trim()) {
+    cancelNewCollection()
+    return
+  }
+  isCreatingCollection.value = true
+  try {
+    await handleCreateCollection()
+  } finally {
+    isCreatingCollection.value = false
+  }
+}
+
+function cancelNewCollection() {
+  showNewCollectionInput.value = false
+  newCollectionName.value = ''
+  isCreatingCollection.value = false
+}
+
+function onNewCollectionBlur() {
+  if (!showNewCollectionInput.value) return
+  if (newCollectionName.value.trim()) {
+    confirmNewCollection()
+  } else {
+    cancelNewCollection()
+  }
+}
 
 // Collection icon map: string name → lucide component
 const COLLECTION_ICON_MAP: Record<string, any> = {
@@ -608,7 +648,7 @@ function cancelEditTags() {
           <span class="fav-col-panel-title">{{ t('nav_favorites') }}</span>
           <Badge variant="outline" class="fav-count">{{ favoriteCount }}</Badge>
         </div>
-        <Button variant="ghost" size="icon-sm" class="fav-col-header-new-btn" @click="showNewCollectionInput = true" :title="t('fav_new_col')">
+        <Button variant="ghost" size="icon-sm" class="fav-col-header-new-btn" @click="showNewCollectionInputAtTop" :title="t('fav_new_col')">
           <Plus :size="14" />
         </Button>
       </div>
@@ -624,9 +664,47 @@ function cancelEditTags() {
       </div>
       <!-- Tree nodes (flat visible list from composable) -->
       <div class="fav-tree-list">
+        <!-- Inline new collection row -->
+        <div v-if="showNewCollectionInput" class="fav-tree-node fav-tree-node--new">
+          <span class="fav-tree-drag-handle" style="opacity:0.3;cursor:default">
+            <GripVertical :size="12" />
+          </span>
+          <span class="fav-tree-expand" style="opacity:0"></span>
+          <span class="fav-tree-icon">
+            <component :is="COLLECTION_ICON_MAP[newCollectionIcon] || Folder" :size="14" />
+          </span>
+          <input
+            ref="newCollectionInputRef"
+            v-model="newCollectionName"
+            class="fav-tree-rename-input"
+            :placeholder="t('fav_new_col_placeholder')"
+            maxlength="100"
+            @keydown.enter="confirmNewCollection"
+            @keydown.esc="cancelNewCollection"
+            @blur="onNewCollectionBlur"
+          />
+        </div>
+
+        <!-- Root drop zone -->
+        <div
+          class="fav-tree-drop-zone"
+          :class="{ active: collections.dropTargetId.value === null && collections.dropPosition.value === 'before' }"
+          @dragover.prevent="collections.onDragOverRoot($event)"
+          @dragleave="collections.onDragLeaveRoot()"
+          @drop.prevent="collections.onDropRoot()"
+        >
+          <span class="fav-tree-drop-line" /> 拖到此处成为根收藏夹
+        </div>
+
+        <!-- Tree nodes -->
         <div v-for="node in collections.visibleNodes.value" :key="node.id" class="fav-tree-node"
           :style="{ paddingLeft: (node.depth - 1) * 18 + 'px' }"
-          :class="{ 'fav-tree-node--drag-over': collections.dragOverNodeId.value === node.id && collections.dragNodeId.value !== node.id }"
+          :class="{
+            'fav-tree-node--drag-over-inside': collections.dropTargetId.value === node.id && collections.dropPosition.value === 'inside',
+            'fav-tree-node--drag-over-before': collections.dropTargetId.value === node.id && collections.dropPosition.value === 'before',
+            'fav-tree-node--drag-over-after': collections.dropTargetId.value === node.id && collections.dropPosition.value === 'after',
+            'fav-tree-node--dragging': collections.dragNodeId.value === node.id,
+          }"
           draggable="true"
           @dragstart="collections.onDragStart(node.id, $event)"
           @dragend="collections.onDragEnd()"
@@ -658,13 +736,17 @@ function cancelEditTags() {
             </div>
           </div>
         </div>
-      </div>
-      <!-- New collection input -->
-      <div class="fav-tree-new fav-col-new" v-if="showNewCollectionInput">
-        <input v-model="newCollectionName" class="fav-col-name-input" :placeholder="t('fav_new_col_placeholder')" maxlength="100"
-          @keydown.enter="handleCreateCollection" @keydown.esc="showNewCollectionInput = false" />
-        <button class="fav-col-icon-btn fav-col-confirm" @click="handleCreateCollection" title="确认"><Check :size="14" /></button>
-        <button class="fav-col-icon-btn fav-col-cancel" @click="showNewCollectionInput = false" title="取消"><X :size="14" /></button>
+
+        <!-- Bottom drop zone -->
+        <div
+          class="fav-tree-drop-zone fav-tree-drop-zone--bottom"
+          :class="{ active: collections.dropTargetId.value === null && collections.dropPosition.value === 'after' }"
+          @dragover.prevent="collections.onDragOverBottom($event)"
+          @dragleave="collections.onDragLeaveBottom()"
+          @drop.prevent="collections.onDropBottom()"
+        >
+          <span class="fav-tree-drop-line" /> 拖到此处成为根收藏夹
+        </div>
       </div>
       <!-- Resize handle -->
       <div class="fav-col-resize-handle" @mousedown.prevent="onResizeStart"></div>
@@ -1320,7 +1402,6 @@ function cancelEditTags() {
 .fav-tree-node { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--radius-sm); cursor: grab; transition: all 0.12s; user-select: none; position: relative; border: 1px solid transparent; }
 .fav-tree-node:hover { background: var(--bg-hover); }
 .fav-tree-node:active { cursor: grabbing; }
-.fav-tree-node--drag-over { background: var(--accent-bg) !important; border-color: var(--accent) !important; }
 .fav-tree-drag-handle {
   display: inline-flex; align-items: center; justify-content: center;
   width: 14px; height: 20px; flex-shrink: 0;
@@ -1357,8 +1438,34 @@ function cancelEditTags() {
 .fav-tree-flyout-item:hover { background: var(--bg-hover); }
 .fav-tree-flyout-count { font-size: 10px; color: var(--text-tertiary); margin-left: auto; }
 
-/* Drag-over highlight */
-.fav-tree-node--drag-over { background: var(--accent-bg) !important; border: 1px dashed var(--accent); }
+/* Drag-over highlight states */
+.fav-tree-node--dragging { opacity: 0.5; }
+.fav-tree-node--drag-over-inside { background: var(--accent-bg) !important; border: 1px dashed var(--accent) !important; }
+.fav-tree-node--drag-over-before { border-top: 2px solid var(--accent) !important; }
+.fav-tree-node--drag-over-after { border-bottom: 2px solid var(--accent) !important; }
+
+/* Inline new collection row */
+.fav-tree-node--new { background: var(--bg-hover); cursor: default; }
+.fav-tree-node--new .fav-tree-rename-input { flex: 1; min-width: 0; height: 24px; }
+
+/* Drop zones (root / bottom) */
+.fav-tree-drop-zone {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; font-size: 11px; color: var(--text-tertiary);
+  opacity: 0; transition: opacity 0.12s, background 0.12s;
+  user-select: none; min-height: 20px; pointer-events: auto;
+}
+.fav-tree-drop-zone.active {
+  opacity: 1;
+  background: var(--accent-bg); color: var(--accent);
+  border-radius: var(--radius-sm);
+}
+.fav-tree-drop-zone--bottom { margin-top: 2px; }
+.fav-tree-drop-line {
+  flex: 1; height: 2px; border-radius: 1px;
+  background: transparent; transition: background 0.12s;
+}
+.fav-tree-drop-zone.active .fav-tree-drop-line { background: var(--accent); }
 
 /* Inline rename input */
 .fav-tree-rename-input { height: 24px; padding: 0 6px; border: 1px solid var(--accent); border-radius: var(--radius-sm); font-size: 12px; background: var(--bg-surface); color: var(--text-primary); outline: none; flex: 1; min-width: 60px; }

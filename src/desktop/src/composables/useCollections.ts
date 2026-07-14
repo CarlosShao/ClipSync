@@ -2,7 +2,7 @@ import { ref, computed, nextTick } from 'vue'
 import {
   getFavoriteCollections, createFavoriteCollection, deleteFavoriteCollection,
   moveCollection as apiMoveCollection, getCollectionItems, updateFavoriteCollection,
-  migrateHierarchy,
+  migrateHierarchy, reorderCollections,
 } from '@/api/client'
 import { useSonner } from '@/composables/useSonner'
 
@@ -15,6 +15,7 @@ export interface CollectionNode {
   children: CollectionNode[]
   expanded: boolean
   item_count: number
+  sort_order: number
 }
 
 // Build tree from flat list sorted by ltree path
@@ -40,6 +41,7 @@ function buildTree(flat: any[]): CollectionNode[] {
       children: [],
       expanded: false,
       item_count: row.item_count || 0,
+      sort_order: row.sort_order ?? 0,
     }
     nodes.set(row.id, node)
   }
@@ -64,7 +66,7 @@ function buildTree(flat: any[]): CollectionNode[] {
   }
 
   function sortChildren(n: CollectionNode) {
-    n.children.sort((a, b) => a.path.localeCompare(b.path))
+    n.children.sort((a, b) => (a.sort_order - b.sort_order) || a.path.localeCompare(b.path))
     n.children.forEach(sortChildren)
   }
   roots.forEach(sortChildren)
@@ -101,6 +103,8 @@ export function useCollections() {
   // Drag state
   const dragNodeId = ref<string | null>(null)
   const dragOverNodeId = ref<string | null>(null)
+  const dropTargetId = ref<string | null>(null)
+  const dropPosition = ref<'before' | 'after' | 'inside' | null>(null)
 
   // Inline rename state
   const renamingNodeId = ref<string | null>(null)
@@ -170,6 +174,20 @@ export function useCollections() {
     if (!target) return false
     // If target path starts with source path, target is a descendant
     return target.path.startsWith(source.path + '.')
+  }
+
+  // Get parent id of a node by path
+  function getParentId(node: CollectionNode): string | null {
+    const parts = node.path.split('.')
+    if (parts.length <= 1) return null
+    const parentPath = parts.slice(0, -1).join('.')
+    const parent = findNodeByPath(tree.value, parentPath)
+    return parent?.id || null
+  }
+
+  // Get all sibling node IDs under a given parent (null = root)
+  function getSiblings(parentId: string | null): CollectionNode[] {
+    return (tree.value || []).filter(n => getParentId(n) === parentId)
   }
 
   // Auto-expand path when selecting a node deep in the tree
@@ -249,7 +267,9 @@ export function useCollections() {
   async function createCollection(name: string, icon: string, parentId?: string) {
     const data = await createFavoriteCollection(name, icon, parentId)
     if (data?.collection) {
-      flatCollections.value = [...flatCollections.value, data.collection]
+      // 后端已将现有收藏夹 sort_order +1，前端同步偏移以保持本地顺序一致
+      flatCollections.value = flatCollections.value.map(c => ({ ...c, sort_order: (c.sort_order || 0) + 1 }))
+      flatCollections.value = [data.collection, ...flatCollections.value]
       if (parentId) {
         const parent = findNodeById(tree.value, parentId)
         if (parent) {
@@ -400,10 +420,24 @@ export function useCollections() {
     }
   }
 
+  function computeDropPosition(event: DragEvent): 'before' | 'after' | 'inside' {
+    const target = event.currentTarget as HTMLElement | null
+    if (!target) return 'inside'
+    const rect = target.getBoundingClientRect()
+    const y = event.clientY - rect.top
+    const height = rect.height || 1
+    if (y < height * 0.25) return 'before'
+    if (y > height * 0.75) return 'after'
+    return 'inside'
+  }
+
   function onDragOver(targetId: string | null, event: DragEvent) {
     const draggedId = dragNodeId.value
     if (!draggedId || draggedId === targetId) return
     if (targetId && isDescendantOf(draggedId, targetId)) return
+    event.preventDefault()
+    dropTargetId.value = targetId
+    dropPosition.value = computeDropPosition(event)
     dragOverNodeId.value = targetId
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = 'move'
@@ -412,25 +446,169 @@ export function useCollections() {
 
   function onDragLeave() {
     dragOverNodeId.value = null
+    // Only clear drop state if not hovering the root/bottom zones; those have their own handlers
+    if (dropTargetId.value !== null) {
+      dropTargetId.value = null
+      dropPosition.value = null
+    }
+  }
+
+  // Reassign sequential sort_order within a parent, placing draggedId at targetIndex
+  async function setOrderAtIndex(draggedId: string, parentId: string | null, targetIndex: number) {
+    const siblings = getSiblings(parentId)
+    const draggedIdx = siblings.findIndex(n => n.id === draggedId)
+    const insertIndex = Math.max(0, Math.min(targetIndex, siblings.length))
+    const ordered = [...siblings]
+    if (draggedIdx >= 0) {
+      const [moved] = ordered.splice(draggedIdx, 1)
+      ordered.splice(Math.min(insertIndex, ordered.length), 0, moved)
+    } else if (ordered.length === 0) {
+      // nothing to reorder
+    } else {
+      // dragged node not in siblings yet (should not happen after move)
+      const targetPos = Math.min(insertIndex, ordered.length)
+      ordered.splice(targetPos, 0, findNodeById(tree.value, draggedId)!)
+    }
+
+    const orders = ordered.map((n, i) => ({ id: n.id, sortOrder: i }))
+
+    // Optimistically update local state
+    flatCollections.value = flatCollections.value.map(c => {
+      const o = orders.find(o => o.id === c.id)
+      if (o) return { ...c, sort_order: o.sortOrder }
+      return c
+    })
+
+    try {
+      await reorderCollections(orders)
+    } catch (e: any) {
+      console.warn('[collections] reorder failed:', e)
+      toast.show(e.message || '排序收藏夹失败', 'error')
+      await loadCollections()
+    }
+  }
+
+  async function reorderCollection(draggedId: string, targetId: string | null, position: 'before' | 'after' | 'inside' | null) {
+    const targetNode = targetId ? findNodeById(tree.value, targetId) : null
+    const draggedNode = findNodeById(tree.value, draggedId)
+    if (!draggedNode) return
+
+    let targetParentId: string | null = null
+    let targetIndex = 0
+
+    if (position === 'inside') {
+      // Move into target as first child
+      targetParentId = targetId
+      const children = targetNode ? targetNode.children : []
+      targetIndex = children.length
+    } else if (targetId && targetNode) {
+      // Move to target's parent as sibling
+      targetParentId = getParentId(targetNode)
+      const siblings = getSiblings(targetParentId)
+      const idx = siblings.findIndex(n => n.id === targetId)
+      if (position === 'before') {
+        targetIndex = Math.max(0, idx)
+      } else {
+        targetIndex = idx + 1
+      }
+    } else {
+      // Root zone
+      targetParentId = null
+      const siblings = getSiblings(null)
+      targetIndex = position === 'after' ? siblings.length : 0
+    }
+
+    const currentParentId = getParentId(draggedNode)
+    if (currentParentId !== targetParentId) {
+      // Path must change; move API handles backend path + local state
+      await moveCollection(draggedId, targetParentId)
+    }
+
+    // Now reorder within the target parent
+    await setOrderAtIndex(draggedId, targetParentId, targetIndex)
   }
 
   async function onDrop(targetId: string | null) {
     const draggedId = dragNodeId.value
+    const position = dropPosition.value
     dragOverNodeId.value = null
+    dropTargetId.value = null
+    dropPosition.value = null
     if (!draggedId || draggedId === targetId) {
       dragNodeId.value = null
       return
     }
-    // targetId === null means "move to root"
     if (targetId && isDescendantOf(draggedId, targetId)) {
       dragNodeId.value = null
       return
     }
     try {
-      await moveCollection(draggedId, targetId)
+      await reorderCollection(draggedId, targetId, position)
     } catch (e: any) {
-      console.warn('[collections] drop move failed:', e)
+      console.warn('[collections] drop failed:', e)
       toast.show(e.message || '移动收藏夹失败', 'error')
+    } finally {
+      dragNodeId.value = null
+    }
+  }
+
+  // Root / top-of-list drop zone
+  function onDragOverRoot(event: DragEvent) {
+    const draggedId = dragNodeId.value
+    if (!draggedId) return
+    event.preventDefault()
+    dropTargetId.value = null
+    dropPosition.value = 'before'
+    dragOverNodeId.value = null
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  }
+  function onDragLeaveRoot() {
+    if (dropTargetId.value === null && dropPosition.value === 'before') {
+      dropPosition.value = null
+    }
+  }
+  async function onDropRoot() {
+    const draggedId = dragNodeId.value
+    dragOverNodeId.value = null
+    dropTargetId.value = null
+    dropPosition.value = null
+    if (!draggedId) return
+    try {
+      await reorderCollection(draggedId, null, 'before')
+    } catch (e: any) {
+      console.warn('[collections] drop root failed:', e)
+      toast.show(e.message || '移动到根目录失败', 'error')
+    } finally {
+      dragNodeId.value = null
+    }
+  }
+
+  // Bottom-of-list drop zone (move to root at last position)
+  function onDragOverBottom(event: DragEvent) {
+    const draggedId = dragNodeId.value
+    if (!draggedId) return
+    event.preventDefault()
+    dropTargetId.value = null
+    dropPosition.value = 'after'
+    dragOverNodeId.value = null
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  }
+  function onDragLeaveBottom() {
+    if (dropTargetId.value === null && dropPosition.value === 'after') {
+      dropPosition.value = null
+    }
+  }
+  async function onDropBottom() {
+    const draggedId = dragNodeId.value
+    dragOverNodeId.value = null
+    dropTargetId.value = null
+    dropPosition.value = null
+    if (!draggedId) return
+    try {
+      await reorderCollection(draggedId, null, 'after')
+    } catch (e: any) {
+      console.warn('[collections] drop bottom failed:', e)
+      toast.show(e.message || '移动到根目录失败', 'error')
     } finally {
       dragNodeId.value = null
     }
@@ -439,6 +617,8 @@ export function useCollections() {
   function onDragEnd() {
     dragNodeId.value = null
     dragOverNodeId.value = null
+    dropTargetId.value = null
+    dropPosition.value = null
   }
 
   return {
@@ -480,10 +660,18 @@ export function useCollections() {
     // Drag
     dragNodeId,
     dragOverNodeId,
+    dropTargetId,
+    dropPosition,
     onDragStart,
     onDragOver,
     onDragLeave,
     onDrop,
     onDragEnd,
+    onDragOverRoot,
+    onDragLeaveRoot,
+    onDropRoot,
+    onDragOverBottom,
+    onDragLeaveBottom,
+    onDropBottom,
   }
 }
