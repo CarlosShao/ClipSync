@@ -22,7 +22,7 @@ router.get('/collections', apiLimiter, async (req, res) => {
        LEFT JOIN clipboard_items ci ON fci.item_id = ci.id AND ci.user_id = $1
        WHERE fc.user_id = $1
        GROUP BY fc.id, fc.path, fc.sort_order, fc.created_at
-       ORDER BY fc.path`,
+       ORDER BY fc.sort_order ASC, fc.path ASC`,
       [req.userId]
     );
 
@@ -71,11 +71,17 @@ router.post('/collections', apiLimiter, async (req, res) => {
       path = 'root.' + newId;
     }
 
+    // 新收藏夹默认排在最前：将现有收藏夹 sort_order 整体 +1
+    await pool.query(
+      'UPDATE favorite_collections SET sort_order = sort_order + 1 WHERE user_id = $1',
+      [req.userId]
+    );
+
     const result = await pool.query(
       `INSERT INTO favorite_collections (user_id, name, icon, sort_order, path)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, name, icon, sort_order, path, created_at`,
-      [req.userId, cleanName, cleanIcon, maxOrder.rows[0].next_order, path]
+      [req.userId, cleanName, cleanIcon, 0, path]
     );
 
     res.status(201).json({ collection: result.rows[0] });
@@ -229,6 +235,49 @@ router.put('/collections/:id/move', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('Move collection error:', { error: err.message });
     res.status(500).json({ error: 'Failed to move collection' });
+  }
+});
+
+// PUT /api/favorites/collections/reorder - 批量更新收藏夹排序
+router.put('/collections/reorder', apiLimiter, async (req, res) => {
+  try {
+    const { orders } = req.body;
+    if (!Array.isArray(orders) || orders.length === 0) {
+      return res.status(400).json({ error: 'orders array is required' });
+    }
+
+    // 验证所有 ID 是否属于当前用户
+    const ids = orders.map(o => o.id).filter(Boolean);
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'No valid ids provided' });
+    }
+    const idCheck = await pool.query(
+      'SELECT id FROM favorite_collections WHERE id = ANY($1::uuid[]) AND user_id = $2',
+      [ids, req.userId]
+    );
+    if (idCheck.rows.length !== ids.length) {
+      return res.status(403).json({ error: 'Some collections do not belong to current user' });
+    }
+
+    await pool.query('BEGIN');
+    try {
+      for (const o of orders) {
+        if (!o.id || typeof o.sortOrder !== 'number') continue;
+        await pool.query(
+          'UPDATE favorite_collections SET sort_order = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+          [o.sortOrder, o.id, req.userId]
+        );
+      }
+      await pool.query('COMMIT');
+    } catch (e) {
+      await pool.query('ROLLBACK');
+      throw e;
+    }
+
+    res.json({ message: 'Reorder applied' });
+  } catch (err) {
+    logger.error('Reorder collections error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to reorder collections' });
   }
 });
 

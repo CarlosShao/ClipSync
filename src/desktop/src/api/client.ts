@@ -203,8 +203,16 @@ export async function getFavoriteCollections(): Promise<{ collections: any[] } |
   return res.ok ? res.data : null
 }
 
-export async function createFavoriteCollection(name: string, icon?: string): Promise<{ collection: any } | null> {
-  const res = await api('POST', '/api/favorites/collections', { name, icon })
+/** Run ltree hierarchy migration on the database (idempotent). */
+export async function migrateHierarchy(): Promise<boolean> {
+  const res = await api('POST', '/api/favorites/migrate-hierarchy')
+  return res.ok
+}
+
+export async function createFavoriteCollection(name: string, icon?: string, parentId?: string): Promise<{ collection: any } | null> {
+  const body: any = { name, icon }
+  if (parentId) body.parentId = parentId
+  const res = await api('POST', '/api/favorites/collections', body)
   return res.ok ? res.data : null
 }
 
@@ -215,6 +223,16 @@ export async function updateFavoriteCollection(id: string, data: { name?: string
 
 export async function deleteFavoriteCollection(id: string): Promise<boolean> {
   const res = await api('DELETE', `/api/favorites/collections/${id}`)
+  return res.ok
+}
+
+export async function moveCollection(id: string, parentId: string | null): Promise<{ collection: any } | null> {
+  const res = await api('PUT', `/api/favorites/collections/${id}/move`, { parentId })
+  return res.ok ? res.data : null
+}
+
+export async function reorderCollections(orders: { id: string; sortOrder: number }[]): Promise<boolean> {
+  const res = await api('PUT', '/api/favorites/collections/reorder', { orders })
   return res.ok
 }
 
@@ -233,12 +251,56 @@ export async function getCollectionItems(collectionId: string): Promise<{ items:
   return res.ok ? res.data : null
 }
 
-export async function setItemTags(itemId: string, tags: string[]): Promise<{ tags: string[] } | null> {
-  const res = await api('PUT', `/api/favorites/${itemId}/tags`, { tags })
+export async function setItemTags(itemId: string, tags: string[], tagColors?: Record<string, string>): Promise<{ tags: string[]; tagColors: Record<string, string> } | null> {
+  const body: any = { tags }
+  if (tagColors) body.tagColors = tagColors
+  const res = await api('PUT', `/api/favorites/${itemId}/tags`, body)
   return res.ok ? res.data : null
 }
 
-export async function getAllFavoriteTags(): Promise<string[]> {
+export async function deleteTag(tagName: string): Promise<boolean> {
+  const res = await api('DELETE', `/api/favorites/tags/${encodeURIComponent(tagName)}`)
+  return res.ok
+}
+
+export interface FavoriteTag {
+  name: string
+  color: string | null
+}
+export async function getAllFavoriteTags(): Promise<FavoriteTag[]> {
   const res = await api('GET', '/api/favorites/tags')
   return res.ok ? (res.data?.tags || []) : []
+}
+
+/** Toggle manual sensitive flag on a clipboard item */
+export async function toggleSensitive(itemId: string, sensitive: boolean): Promise<{ id: string; sensitive: boolean } | null> {
+  const res = await api('PUT', `/api/clipboard/${itemId}/sensitive`, { sensitive })
+  return res.ok ? res.data : null
+}
+
+/** Send PIN reset verification code (phone) */
+export async function sendPinResetCode(phone: string): Promise<boolean> {
+  const res = await api('POST', '/api/auth/send-reset-pin-code', { phone })
+  return res.ok
+}
+
+/** Send PIN reset verification code (email) */
+export async function sendPinResetEmailCode(email: string): Promise<boolean> {
+  const res = await api('POST', '/api/auth/send-reset-pin-email-code', { email })
+  return res.ok
+}
+
+/** Verify code and reset PIN (backend validates identity, frontend stores new PIN) */
+export async function resetPinViaCode(phoneOrEmail: string, code: string, method: 'phone' | 'email'): Promise<boolean> {
+  const body: any = { code }
+  if (method === 'phone') body.phone = phoneOrEmail
+  else body.email = phoneOrEmail
+  const res = await api('POST', '/api/auth/reset-pin', body)
+  return res.ok
+}
+
+/** Get clipboard item content only (lightweight, for preview) */
+export async function getClipboardItemContent(id: string): Promise<string | null> {
+  const res = await api<{ contentEncrypted: string }>('GET', `/api/clipboard/${id}/content`)
+  return res.ok ? (res.data?.contentEncrypted || null) : null
 }
