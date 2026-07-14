@@ -1,32 +1,43 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted, nextTick, h, Teleport } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
-import { useToast } from '@/composables/useToast'
+import { useSonner } from '@/composables/useSonner'
+import { useConfigStore } from '@/stores/configStore'
+import { usePrivacy } from '@/composables/usePrivacy'
 import {
-  Star, Search, Copy, Image as ImageIcon, LayoutGrid, List,
-  ExternalLink, FileText, Folder, ArrowUpDown, CheckSquare, Square,
-  Plus, X, Check, Tag, ClipboardList, FolderPlus, ChevronRight,
+  Star, Search, Copy, Image as ImageIcon, LayoutGrid, List, GripVertical,
+  ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
+  ArrowUpDown, CheckSquare, Square,
+  Plus, X, Check, Tag, ClipboardList, ChevronRight, Lock,
+  Bookmark, Archive, Trash2, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette, Pencil, Edit,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 import {
-  getFavoriteCollections, createFavoriteCollection, deleteFavoriteCollection,
-  addCollectionItem, removeCollectionItem, setItemTags, getAllFavoriteTags,
+  createFavoriteCollection, deleteFavoriteCollection,
+  addCollectionItem, removeCollectionItem, setItemTags, getAllFavoriteTags, deleteTag,
+  getCollectionItems, type FavoriteTag,
 } from '@/api/client'
+import { useCollections, type CollectionNode } from '@/composables/useCollections'
 
 const emit = defineEmits<{
   'preview-image': [item: ClipItem]
   'preview-text': [item: ClipItem]
   'preview-file': [item: ClipItem]
+  'show-pin-dialog': []
+  'show-pin-setup': []
+  'toggle-sensitive': [item: ClipItem]
 }>()
 
 const { t } = useI18n()
-const toast = useToast()
+const toast = useSonner()
 const clip = useClipboard()
 const router = useRouter()
+const route = useRoute()
+const configStore = useConfigStore()
 
 // --- State ---
 const searchInput = ref('')
@@ -37,6 +48,21 @@ const selectedIds = ref<Set<string>>(new Set())
 const viewMode = ref<'grid' | 'list'>('grid')
 const collapsedGroups = ref<Set<string>>(new Set())
 
+// Pick collection mode (navigated from ClipboardView favorite popover)
+const pickItemId = ref<string | null>(null)
+watch(() => route.query.pickCollection, (val) => {
+  if (val === 'true' && route.query.itemId) {
+    pickItemId.value = route.query.itemId as string
+  }
+})
+function clearPickMode() {
+  pickItemId.value = null
+  const q = { ...route.query }
+  delete q.pickCollection
+  delete q.itemId
+  router.replace({ query: q })
+}
+
 function toggleGroup(key: string) {
   if (collapsedGroups.value.has(key)) collapsedGroups.value.delete(key)
   else collapsedGroups.value.add(key)
@@ -44,38 +70,177 @@ function toggleGroup(key: string) {
   collapsedGroups.value = new Set(collapsedGroups.value)
 }
 
-// Collections
-const collections = ref<any[]>([])
-const activeCollectionId = ref<string | null>(null)
+// Collections — useCollections composable manages tree state
+const collections = useCollections()
+
+// New collection input state
 const showNewCollectionInput = ref(false)
 const newCollectionName = ref('')
-const newCollectionIcon = ref('📁')
+const newCollectionIcon = ref('folder')
+
+// Collection icon map: string name → lucide component
+const COLLECTION_ICON_MAP: Record<string, any> = {
+  folder: Folder,
+  'folder-open': FolderOpen,
+  folderPlus: FolderPlus,
+  folderX: FolderX,
+  folderSearch: FolderSearch,
+  folderInput: FolderInput,
+  folderOutput: FolderOutput,
+  folderSync: FolderSync,
+  star: Star,
+  bookmark: Bookmark,
+  archive: Archive,
+  trash: Trash2,
+  heart: Heart,
+  zap: Zap,
+  shield: Shield,
+  globe: Globe,
+  code: Code2,
+  image: ImageIcon,
+  fileText: FileText,
+  music: Music,
+  video: Video,
+  settings: Settings,
+  palette: Palette,
+}
+
+function renderCollectionIcon(iconName: string, size = 14) {
+  const comp = COLLECTION_ICON_MAP[iconName] || Folder
+  return h(comp, { size })
+}
+
+// Tag color system
+const TAG_PRESET_COLORS = [
+  '#6366F1', '#EC4899', '#F59E0B', '#10B981', '#3B82F6',
+  '#8B5CF6', '#EF4444', '#06B6D4', '#F97316', '#14B8A6',
+]
+const TAG_AUTO_COLORS = [
+  '#6366F1', '#EC4899', '#F59E0B', '#10B981', '#3B82F6',
+  '#8B5CF6', '#EF4444', '#06B6D4', '#F97316', '#14B8A6',
+]
+function getTagAutoColor(tag: string): string {
+  let hash = 0
+  for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash)
+  return TAG_AUTO_COLORS[Math.abs(hash) % TAG_AUTO_COLORS.length]
+}
+// Tag color lookup: custom color (from tagColorMap) → auto-assigned fallback
+function getTagDisplayColor(tag: string): string {
+  return tagColorMap.value[tag] || getTagAutoColor(tag)
+}
+function tagColorStyle(tag: string): string {
+  const c = getTagDisplayColor(tag)
+  return `--tag-c: ${c}; --tag-c-bg: ${c}25; --tag-c-border: ${c}60;`
+}
 
 // Tags
-const allTags = ref<string[]>([])
+const allTags = ref<FavoriteTag[]>([])
+const _tagColorMap = ref<Record<string, string>>({})
+const tagColorMap = computed(() => _tagColorMap.value)
+
+// 当 allTags 从服务器加载后，同步到 _tagColorMap
+watch(allTags, (tags) => {
+  for (const t of tags) {
+    if (t.color) _tagColorMap.value[t.name] = t.color
+  }
+}, { immediate: true })
 const activeTagFilter = ref<string | null>(null)
 const editingTagsItemId = ref<string | null>(null)
 const tagInputValue = ref('')
+const editingTagColor = ref<string>('')
+const colorPickerTag = ref<string>('')
+const colorPickerColor = ref<string>('')
+const colorPickerPos = ref({ top: '0px', left: '0px' })
+
+// Debounce helper
+function debounce<T extends (...args: any[]) => any>(fn: T, ms: number): T {
+  let timer: any
+  return ((...args: any[]) => {
+    clearTimeout(timer)
+    timer = setTimeout(() => fn(...args), ms)
+  }) as T
+}
+const debouncedLoadTags = debounce(() => loadTags(), 300)
 
 // Add to collection dropdown
 const addToColItemId = ref<string | null>(null)
+
+// Privacy: usePrivacy composable
+const privacy = usePrivacy()
+function isItemSensitive(item: ClipItem): boolean {
+  return privacy.isItemSensitive(item)
+}
+function showPeek(itemId: string) {
+  if (privacy.startPeek(itemId)) {
+  } else {
+    if (!privacy.pinSet.value) {
+      emit('show-pin-setup') // no PIN → prompt user to set one first
+    } else {
+      emit('show-pin-dialog') // PIN set but not verified → ask for PIN
+    }
+  }
+}
+
+async function onCopyItem(item: ClipItem) {
+  if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
+    emit('show-pin-dialog')
+    return
+  }
+  await clip.copyItem(item)
+  privacy.scheduleClipboardClear()
+  toast.show(t('copied'), 'success')
+}
 
 // Drag & drop (local reorder only within favorites)
 const dragItemId = ref<string | null>(null)
 const localOrder = ref<string[]>([]) // local reorder state
 
 // --- Load ---
-async function loadCollections() {
-  const data = await getFavoriteCollections()
-  if (data) collections.value = data.collections
-}
 async function loadTags() {
   allTags.value = await getAllFavoriteTags()
 }
-onMounted(() => { loadCollections(); loadTags() })
-watch(() => clip.items.value.filter(i => (i as any).isFavorite).length, () => {
-  loadCollections(); loadTags()
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  collections.loadCollections()
+  loadTags()
+  clip.loadClipboardItems({ favorite: true })
 })
+
+// Auto-show new collection input when navigated from "no collections" dialog
+watch(() => route.query.create, (val) => {
+  if (val === 'true') {
+    showNewCollectionInput.value = true
+  }
+})
+
+// --- Sidebar resize ---
+const sidebarWidth = ref(220)
+const isResizing = ref(false)
+const MIN_SIDEBAR = 150
+const MAX_SIDEBAR = 400
+
+function onResizeStart(event: MouseEvent) {
+  isResizing.value = true
+  const startX = event.clientX
+  const startWidth = sidebarWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+
+  function onMouseMove(e: MouseEvent) {
+    const delta = e.clientX - startX
+    const newWidth = Math.max(MIN_SIDEBAR, Math.min(MAX_SIDEBAR, startWidth + delta))
+    sidebarWidth.value = newWidth
+  }
+  function onMouseUp() {
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+    isResizing.value = false
+  }
+  document.addEventListener('mousemove', onMouseMove)
+  document.addEventListener('mouseup', onMouseUp)
+}
 
 // --- Data ---
 const favoriteItems = computed(() => {
@@ -120,6 +285,20 @@ const favoriteItems = computed(() => {
     const typeOrder: Record<string, number> = { text: 0, code: 1, link: 2, image: 3, file: 4 }
     return (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99)
   })
+
+  // Collection filter: if a collection node is active, only show items in that collection
+  if (collections.activeNodeId.value) {
+    if (collections.collectionsLoaded.value.has(collections.activeNodeId.value)) {
+      const colItemIds = collections.collectionItemsMap.value.get(collections.activeNodeId.value)
+      if (colItemIds && colItemIds.size > 0) {
+        items = items.filter(i => colItemIds.has(i.id))
+      } else {
+        items = []
+      }
+    } else {
+      items = []
+    }
+  }
   return items
 })
 
@@ -213,29 +392,46 @@ function toggleSelect(id: string) { selectedIds.value.has(id) ? selectedIds.valu
 function batchUnfavorite() {
   const items = clip.items.value.filter(i => selectedIds.value.has(i.id))
   for (const item of items) clip.toggleFavorite(item)
-  toast.show(`已取消 ${selectedIds.value.size} 项收藏`, 'info')
+  toast.show(t('fav_unfav_count', {n: selectedIds.value.size}), 'info')
   selectedIds.value.clear(); batchMode.value = false
 }
 
 // --- Collections ---
+const pickAndCreate = ref(false)
+
 async function handleCreateCollection() {
   if (!newCollectionName.value.trim()) return
-  const data = await createFavoriteCollection(newCollectionName.value.trim(), newCollectionIcon.value)
+  const subMatch = collections.ctxMenuNodeId.value?.match(/^___new_sub___(.+)$/)
+  const parentId = subMatch ? subMatch[1] : undefined
+  const data = await collections.createCollection(newCollectionName.value.trim(), newCollectionIcon.value, parentId)
   if (data?.collection) {
-    collections.value.push(data.collection)
-    newCollectionName.value = ''; newCollectionIcon.value = '📁'; showNewCollectionInput.value = false
-    toast.show('收藏夹已创建', 'success')
+    newCollectionName.value = ''; newCollectionIcon.value = 'folder'; showNewCollectionInput.value = false
+    toast.show(t('fav_create_ok'), 'success')
+    // If in pick mode, auto-move the item to the newly created collection
+    if (pickAndCreate.value && pickItemId.value) {
+      pickAndCreate.value = false
+      await addCollectionItem(data.collection.id, pickItemId.value)
+      toast.show(t('fav_moved'), 'success')
+      clearPickMode()
+    }
   } else {
-    toast.show('创建失败', 'error')
+    toast.show(t('fav_create_fail'), 'error')
   }
 }
-async function handleDeleteCollection(id: string) {
-  await deleteFavoriteCollection(id)
-  collections.value = collections.value.filter(c => c.id !== id)
-  if (activeCollectionId.value === id) activeCollectionId.value = null
-  toast.show('收藏夹已删除', 'info')
+async function pickAndMove(colId: string) {
+  if (!pickItemId.value) return
+  const ok = await addCollectionItem(colId, pickItemId.value)
+  if (ok) toast.show(t('fav_moved'), 'success')
+  clearPickMode()
 }
-function selectCollection(id: string | null) { activeCollectionId.value = id }
+async function handleDeleteCollection(id: string) {
+  await collections.deleteCollection(id)
+  toast.show(t('fav_deleted'), 'info')
+}
+async function selectCollection(id: string | null) {
+  collections.selectNode(id)
+  activeTagFilter.value = null
+}
 
 // Add item to collection
 function toggleAddToCol(itemId: string) {
@@ -243,7 +439,7 @@ function toggleAddToCol(itemId: string) {
 }
 async function addToCollection(colId: string, itemId: string) {
   const ok = await addCollectionItem(colId, itemId)
-  if (ok) toast.show('已加入收藏夹', 'success')
+  if (ok) toast.show(t('fav_added'), 'success')
   addToColItemId.value = null
 }
 
@@ -254,13 +450,109 @@ async function startEditTags(item: ClipItem) {
   await nextTick()
 }
 async function saveTags(item: ClipItem) {
+  await saveItemTags(item)
+  editingTagsItemId.value = null
+  toast.show(t('tag_saved'), 'success')
+}
+async function saveItemTags(item: ClipItem) {
   const tags = tagInputValue.value.split(/[,，]/).map(t => t.trim()).filter(Boolean)
-  await setItemTags(item.id, tags)
+  const tagColors: Record<string, string> = { ..._tagColorMap.value }
+  if (editingTagColor.value) {
+    for (const tag of tags) {
+      if (!tagColors[tag]) tagColors[tag] = editingTagColor.value
+    }
+  }
+  const result = await setItemTags(item.id, tags, tagColors)
+  if (result?.tagColors) {
+    for (const [k, v] of Object.entries(result.tagColors)) {
+      if (v) _tagColorMap.value[k] = v
+    }
+  }
   const target = clip.items.value.find(i => i.id === item.id)
   if (target) { const meta = parseMetadata(target); meta.tags = tags; (target as any).metadata = meta }
-  editingTagsItemId.value = null; loadTags(); toast.show('标签已保存', 'success')
+  editingTagColor.value = ''
+  if (!result) toast.show('保存标签失败，请稍后重试', 'error')
 }
-function cancelEditTags() { editingTagsItemId.value = null; tagInputValue.value = '' }
+
+// 标签颜色编辑器
+function openTagColorPicker(tag: string, event?: MouseEvent) {
+  if (editingTagsItemId.value === null) return
+  colorPickerTag.value = tag
+  colorPickerColor.value = getTagDisplayColor(tag)
+  // 计算弹出位置（基于点击位置）
+  if (event) {
+    const x = event.clientX
+    const y = event.clientY
+    colorPickerPos.value = {
+      top: `${y + 8}px`,
+      left: `${Math.min(x - 110, window.innerWidth - 240)}px`,
+    }
+  } else {
+    colorPickerPos.value = { top: '50%', left: '50%' }
+  }
+}
+async function saveTagColor() {
+  if (!colorPickerTag.value) return
+  _tagColorMap.value[colorPickerTag.value] = colorPickerColor.value
+  const item = clip.items.value.find(i => getTags(i).includes(colorPickerTag.value))
+  if (item) {
+    const tags = getTags(item)
+    const tagColors: Record<string, string> = { ..._tagColorMap.value }
+    const result = await setItemTags(item.id, tags, tagColors)
+    if (!result) toast.show('保存失败，请稍后重试', 'error')
+  }
+  colorPickerTag.value = ''
+  toast.show('标签颜色已更新', 'success')
+}
+function cancelTagColor() {
+  colorPickerTag.value = ''
+}
+function removeTagColor(tag: string) {
+  delete _tagColorMap.value[tag]
+  const item = clip.items.value.find(i => getTags(i).includes(tag))
+  if (item) {
+    const tags = getTags(item)
+    const tagColors: Record<string, string> = { ..._tagColorMap.value }
+    setItemTags(item.id, tags, tagColors).then(() => loadTags())
+  }
+}
+
+// Click an existing tag suggestion → open color editor or toggle it
+function onTagSuggestionClick(tag: string, event?: MouseEvent) {
+  if (editingTagsItemId.value === null) return
+  const currentTags = getTags(clip.items.value.find(i => i.id === editingTagsItemId.value)!)
+  if (currentTags.includes(tag)) {
+    openTagColorPicker(tag, event)
+  } else {
+    toggleTagSuggestion(tag)
+  }
+}
+
+// Click an existing tag suggestion → toggle it on/off, auto-save, and close edit mode
+async function toggleTagSuggestion(tag: string) {
+  if (editingTagsItemId.value === null) return
+  const current = tagInputValue.value.split(/[,，]/).map(t => t.trim()).filter(Boolean)
+  const idx = current.indexOf(tag)
+  if (idx >= 0) current.splice(idx, 1) // remove
+  else current.push(tag) // add
+  tagInputValue.value = current.join(', ')
+  const item = clip.items.value.find(i => i.id === editingTagsItemId.value)
+  if (item) {
+    await saveItemTags(item) // save to server + update local metadata
+    editingTagsItemId.value = null // close edit mode — tag appears on card directly
+  }
+}
+
+async function removeTag(tagName: string) {
+  const ok = await deleteTag(tagName)
+  if (ok) {
+    if (activeTagFilter.value === tagName) activeTagFilter.value = null
+    loadTags()
+    toast.show(t('tag_deleted'), 'success')
+  } else {
+    toast.show(t('tag_delete_fail'), 'error')
+  }
+}
 
 // --- Drag & Drop (local reorder only) ---
 function onDragStart(e: DragEvent, item: ClipItem) {
@@ -294,83 +586,141 @@ function handleClickOutside(e: Event) {
     if (!target.closest('.fav-add-col-wrap')) addToColItemId.value = null
   }
 }
-onMounted(() => document.addEventListener('click', handleClickOutside))
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  collections.loadCollections().catch((e: any) => {
+    toast.show(e.message || '加载收藏夹失败，请检查后端服务', 'error')
+  })
+})
+
+function cancelEditTags() {
+  editingTagsItemId.value = null
+  tagInputValue.value = ''
+}
 </script>
 
 <template>
   <div class="fav-page">
-    <!-- Header: title + search -->
-    <div class="fav-header">
-      <div class="fav-header-left">
-        <Star :size="20" :stroke-width="2" class="fav-header-icon" />
-        <h2 class="fav-title">收藏</h2>
-        <Badge variant="outline" class="fav-count">{{ favoriteCount }}</Badge>
-      </div>
-      <div class="fav-header-right">
-        <div class="fav-search">
-          <Search :size="14" class="fav-search-icon" />
-          <input v-model="searchInput" class="fav-search-input" placeholder="搜索收藏..." />
+    <!-- Left: Collection tree panel -->
+    <div class="fav-col-panel" :style="{ width: sidebarWidth + 'px' }">
+      <div class="fav-col-panel-header">
+        <div class="fav-col-panel-title-wrap">
+          <span class="fav-col-panel-title">{{ t('nav_favorites') }}</span>
+          <Badge variant="outline" class="fav-count">{{ favoriteCount }}</Badge>
         </div>
-      </div>
-    </div>
-
-    <!-- Tags + Actions row -->
-    <div class="fav-toolbar">
-      <div class="fav-toolbar-left">
-        <button v-if="allTags.length > 0" :class="['fav-tag-pill', { active: !activeTagFilter }]" @click="activeTagFilter = null">全部</button>
-        <button v-for="tag in allTags" :key="tag" :class="['fav-tag-pill', { active: activeTagFilter === tag }]" @click="activeTagFilter = activeTagFilter === tag ? null : tag">
-          <Tag :size="10" />{{ tag }}
-        </button>
-      </div>
-      <div class="fav-toolbar-right">
-        <Button variant="ghost" size="sm" class="fav-action-btn" @click="toggleSort">
-          <ArrowUpDown :size="14" /><span>{{ sortLabel() }}</span>
+        <Button variant="ghost" size="icon-sm" class="fav-col-header-new-btn" @click="showNewCollectionInput = true" :title="t('fav_new_col')">
+          <Plus :size="14" />
         </Button>
-        <Button v-if="favoriteItems.length > 0" variant="ghost" size="sm" class="fav-action-btn" :class="{ 'fav-active': batchMode }" @click="toggleBatchMode">
-          <CheckSquare v-if="batchMode" :size="14" /><Square v-else :size="14" /><span>{{ batchMode ? '退出' : '批量' }}</span>
-        </Button>
-        <template v-if="batchMode && selectedCount > 0">
-          <span class="fav-batch-count">已选 {{ selectedCount }}</span>
-          <Button variant="ghost" size="sm" class="fav-action-btn fav-unfav-btn" @click="batchUnfavorite">
-            <Star :size="14" fill="currentColor" /><span>取消收藏</span>
-          </Button>
+      </div>
+      <!-- Breadcrumb -->
+      <div class="fav-tree-breadcrumb" v-if="collections.breadcrumb && collections.breadcrumb.value.length > 0">
+        <button class="fav-tree-breadcrumb-item" @click="collections.selectNode(null)">{{ t('fav_all') }}</button>
+        <template v-for="(crumb, idx) in collections.breadcrumb.value" :key="crumb.id">
+          <span class="fav-tree-breadcrumb-sep">/</span>
+          <button class="fav-tree-breadcrumb-item" :class="{ active: idx === collections.breadcrumb.value.length - 1 }" @click="collections.selectNode(crumb.id)">
+            {{ crumb.name }}
+          </button>
         </template>
-        <!-- View toggle: after batch -->
-        <div class="fav-view-toggle">
-          <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
-          <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
+      </div>
+      <!-- Tree nodes (flat visible list from composable) -->
+      <div class="fav-tree-list">
+        <div v-for="node in collections.visibleNodes.value" :key="node.id" class="fav-tree-node"
+          :style="{ paddingLeft: (node.depth - 1) * 18 + 'px' }"
+          :class="{ 'fav-tree-node--drag-over': collections.dragOverNodeId.value === node.id && collections.dragNodeId.value !== node.id }"
+          draggable="true"
+          @dragstart="collections.onDragStart(node.id, $event)"
+          @dragend="collections.onDragEnd()"
+          @dragover.prevent="collections.onDragOver(node.id, $event)"
+          @dragleave="collections.onDragLeave()"
+          @drop.prevent="collections.onDrop(node.id)"
+          @contextmenu.prevent="collections.openCtxMenu(node.id, $event)"
+          @mouseenter="collections.openFlyout(node.id)"
+          @mouseleave="collections.closeFlyout">
+          <span class="fav-tree-drag-handle" title="拖拽移动">
+            <GripVertical :size="12" />
+          </span>
+          <span class="fav-tree-expand" v-if="(node.children || []).length > 0" @click.stop="collections.toggleExpand(node.path)">
+            <ChevronRight :size="14" :class="{ 'fav-tree-expand--open': collections.expandedPaths.value.has(node.path) }" />
+          </span>
+          <span class="fav-tree-icon" :class="{ active: collections.activeNodeId.value === node.id }">
+            <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
+          </span>
+          <span class="fav-tree-name" :class="{ active: collections.activeNodeId.value === node.id }" @click.stop="collections.selectNode(node.id)" @dblclick.stop="collections.ctxRename()">
+            {{ node.name }}
+          </span>
+          <span class="fav-tree-count">{{ node.item_count }}</span>
+          <button class="fav-tree-del" @click.stop="collections.deleteCollection(node.id)" title="删除">×</button>
+          <!-- Flyout: show direct children on hover -->
+          <div v-if="collections.flyoutNodeId.value === node.id && (node.children || []).length > 0" class="fav-tree-flyout" @mouseenter="collections.closeFlyout" @mouseleave="collections.closeFlyout">
+            <div v-for="child in (node.children || [])" :key="child.id" class="fav-tree-flyout-item" @click="collections.selectNode(child.id)">
+              <component :is="COLLECTION_ICON_MAP[child.icon] || Folder" :size="12" /> {{ child.name }}
+              <span class="fav-tree-flyout-count">{{ child.item_count }}</span>
+            </div>
+          </div>
         </div>
       </div>
+      <!-- New collection input -->
+      <div class="fav-tree-new fav-col-new" v-if="showNewCollectionInput">
+        <input v-model="newCollectionName" class="fav-col-name-input" :placeholder="t('fav_new_col_placeholder')" maxlength="100"
+          @keydown.enter="handleCreateCollection" @keydown.esc="showNewCollectionInput = false" />
+        <button class="fav-col-icon-btn fav-col-confirm" @click="handleCreateCollection" title="确认"><Check :size="14" /></button>
+        <button class="fav-col-icon-btn fav-col-cancel" @click="showNewCollectionInput = false" title="取消"><X :size="14" /></button>
+      </div>
+      <!-- Resize handle -->
+      <div class="fav-col-resize-handle" @mousedown.prevent="onResizeStart"></div>
     </div>
 
-    <!-- Collection tabs -->
-    <div class="fav-collection-bar">
-      <button :class="['fav-col-tab', { active: !activeCollectionId }]" @click="selectCollection(null)">全部收藏</button>
-      <button v-for="col in collections" :key="col.id" :class="['fav-col-tab', { active: activeCollectionId === col.id }]" @click="selectCollection(col.id)">
-        {{ col.icon }} {{ col.name }}
-        <span class="fav-col-count">{{ col.item_count }}</span>
-        <button class="fav-col-del" @click.stop="handleDeleteCollection(col.id)" title="删除">×</button>
-      </button>
-      <!-- New collection -->
-      <template v-if="!showNewCollectionInput">
-        <button class="fav-col-new-btn" @click="showNewCollectionInput = true">
-          <Plus :size="12" /> 新建收藏夹
-        </button>
-      </template>
-      <template v-else>
-        <div class="fav-col-new">
-          <input v-model="newCollectionName" class="fav-col-name-input" placeholder="收藏夹名称" maxlength="100"
-            @keydown.enter="handleCreateCollection" @keydown.esc="showNewCollectionInput = false" />
-          <button class="fav-col-icon-btn fav-col-confirm" @click="handleCreateCollection" title="确认"><Check :size="14" /></button>
-          <button class="fav-col-icon-btn fav-col-cancel" @click="showNewCollectionInput = false" title="取消"><X :size="14" /></button>
+    <!-- Right: Main content area -->
+    <div class="fav-main">
+      <!-- Header: search + actions (title/count moved to collection panel) -->
+      <div class="fav-header">
+        <div class="fav-header-right">
+          <div class="fav-search">
+            <Search :size="14" class="fav-search-icon" />
+            <input v-model="searchInput" class="fav-search-input" :placeholder="t('search_ph')" />
+          </div>
+          <Button variant="ghost" size="sm" class="fav-action-btn" @click="toggleSort">
+            <ArrowUpDown :size="14" /><span>{{ sortLabel() }}</span>
+          </Button>
+          <Button v-if="favoriteItems.length > 0" variant="ghost" size="sm" class="fav-action-btn" :class="{ 'fav-active': batchMode }" @click="toggleBatchMode">
+            <CheckSquare v-if="batchMode" :size="14" /><Square v-else :size="14" /><span>{{ batchMode ? '退出' : '批量' }}</span>
+          </Button>
+          <template v-if="batchMode && selectedCount > 0">
+            <span class="fav-batch-count">已选 {{ selectedCount }}</span>
+            <Button variant="ghost" size="sm" class="fav-action-btn fav-unfav-btn" @click="batchUnfavorite">
+              <Star :size="14" fill="currentColor" /><span>{{ t('unfavorite') }}</span>
+            </Button>
+          </template>
+          <div class="fav-view-toggle">
+            <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
+            <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
+          </div>
         </div>
-      </template>
-    </div>
+      </div>
 
-    <!-- Content -->
-    <div class="fav-content">
+      <!-- Row 2: Tag filters -->
+      <div class="fav-tag-bar" v-if="allTags.length > 0">
+        <span class="fav-tag-label">标签:</span>
+        <button :class="['fav-tag-pill', { active: !activeTagFilter }]" @click="activeTagFilter = null">全部</button>
+        <button v-for="tag in allTags" :key="tag.name" :class="['fav-tag-pill', { active: activeTagFilter === tag.name }]" @click="activeTagFilter = activeTagFilter === tag.name ? null : tag.name">
+          {{ tag.name }}
+          <button class="fav-tag-del" @click.stop="removeTag(tag.name)" title="删除此标签">×</button>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="fav-content">
+      <!-- Skeleton loading -->
+      <div v-if="collections.loading.value || clip.loading.value" class="fav-skeleton">
+        <div v-if="viewMode === 'grid'" class="fav-skeleton-grid">
+          <div v-for="i in 8" :key="i" class="fav-skeleton-card" />
+        </div>
+        <div v-else class="fav-skeleton-list">
+          <div v-for="i in 5" :key="i" class="fav-skeleton-row" />
+        </div>
+      </div>
       <!-- Empty -->
-      <div v-if="favoriteItems.length === 0 && !searchInput" class="fav-empty">
+      <div v-else-if="favoriteItems.length === 0 && !searchInput" class="fav-empty">
         <div class="fav-empty-icon"><Star :size="48" :stroke-width="1.2" /></div>
         <h3 class="fav-empty-title">还没有收藏</h3>
         <p class="fav-empty-desc">在剪贴板中点击星标按钮，将重要内容添加到收藏</p>
@@ -393,36 +743,96 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
           </div>
           <template v-if="!collapsedGroups.has(gk)">
           <div v-for="item in groupedItems[gk]" :key="item.id" class="fav-list-item"
+            :class="{ 'fav-item--editing-tags': editingTagsItemId === item.id }"
             :draggable="!batchMode" @dragstart="onDragStart($event, item)" @dragover="onDragOver" @drop="onDrop($event, item)" @dragend="onDragEnd">
             <div v-if="batchMode" class="fav-list-check"><Checkbox :model-value="selectedIds.has(item.id)" @update:model-value="() => toggleSelect(item.id)" /></div>
             <div class="fav-list-content">
-              <div class="fav-list-title">{{ formatContent(item) }}</div>
+              <div v-if="isItemSensitive(item) && privacy.peekItemId.value !== item.id" class="fav-mask-wrap">
+                <div class="fav-masked-text">{{ t('content_masked') }}</div>
+                <button class="fav-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button>
+              </div>
+              <div v-else class="fav-list-title">{{ formatContent(item) }}</div>
               <div class="fav-list-meta"><span>{{ item.source || 'Desktop' }}</span><span>·</span><span>{{ timeAgo((item as any).favoritedAt || item.timestamp) }}</span></div>
-            </div>
-            <!-- Tags -->
-            <div class="fav-list-tags">
-              <template v-if="editingTagsItemId !== item.id">
-                <Badge v-for="tag in getTags(item)" :key="tag" variant="outline" class="fav-tag-badge">{{ tag }}</Badge>
-                <button class="fav-tag-add-btn" @click="startEditTags(item)" title="编辑标签"><Tag :size="10" /></button>
-              </template>
-              <div v-else class="fav-tag-edit" @click.stop>
-                <input v-model="tagInputValue" class="fav-tag-input" placeholder="标签1, 标签2" @keydown.enter="saveTags(item)" @keydown.esc="cancelEditTags" />
-                <button class="fav-tag-save" @click="saveTags(item)">✓</button>
-                <button class="fav-tag-cancel" @click="cancelEditTags"><X :size="12" /></button>
+              <!-- Tags inside content so they flow naturally -->
+              <div class="fav-list-tags-inner">
+                <template v-if="editingTagsItemId !== item.id">
+                  <Badge v-for="tag in getTags(item)" :key="tag" class="fav-tag-badge" :style="tagColorStyle(tag)">{{ tag }}</Badge>
+                  <button class="fav-tag-add-btn" @click="startEditTags(item)" title="编辑标签"><Tag :size="12" /></button>
+                </template>
+                <div v-else class="fav-tag-edit" @click.stop>
+                  <input v-model="tagInputValue" class="fav-tag-input" :placeholder="t('tag_placeholder')" @keydown.enter="saveTags(item)" @keydown.esc="cancelEditTags" />
+                  <button class="fav-tag-save" @click="saveTags(item)" title="保存"><Check :size="14" /></button>
+                  <button class="fav-tag-cancel" @click="cancelEditTags" title="取消"><X :size="14" /></button>
+                  <div v-if="allTags.length > 0" class="fav-tag-suggestions">
+                    <button v-for="suggestTag in allTags" :key="suggestTag.name"
+                      :class="['fav-tag-suggest', { 'fav-tag-suggest--active': getTags(item).includes(suggestTag.name) }]"
+                      :style="tagColorStyle(suggestTag.name)"
+                      @click="onTagSuggestionClick(suggestTag.name, $event)" :title="t('tag_reuse_hint')">
+                      <Check v-if="getTags(item).includes(suggestTag.name)" :size="10" class="fav-tag-suggest-check" />
+                      <span>{{ suggestTag.name }}</span>
+                    </button>
+                  </div>
+                  <!-- 新建标签颜色选择（始终显示） -->
+                  <div class="fav-color-picker-row" @click.stop>
+                    <span class="fav-color-picker-row-label">颜色:</span>
+                    <button v-for="c in TAG_PRESET_COLORS" :key="c"
+                      :class="['fav-color-swatch-sm', { active: editingTagColor === c }]"
+                      :style="{ background: c }"
+                      @click="editingTagColor = editingTagColor === c ? '' : c" />
+                    <div class="fav-color-swatch-sm fav-color-swatch-sm--custom" title="自定义颜色" @click.stop>
+                      <Palette :size="10" />
+                      <input type="color" v-model="editingTagColor" class="fav-color-custom-input" />
+                    </div>
+                    <button v-if="editingTagColor" class="fav-color-clear" @click="editingTagColor = ''">清除</button>
+                  </div>
+                  <!-- 标签颜色编辑器（点击已应用标签时弹出） -->
+                  <Teleport to="body">
+                    <div v-if="colorPickerTag && editingTagsItemId === item.id">
+                      <div class="fav-color-backdrop" @click="cancelTagColor"></div>
+                      <div class="fav-color-picker" :style="{ top: colorPickerPos.top, left: colorPickerPos.left }" @click.stop>
+                    <div class="fav-color-picker-header">
+                      <span class="fav-color-picker-label">编辑标签颜色</span>
+                      <button class="fav-color-picker-close" @click="cancelTagColor"><X :size="12" /></button>
+                    </div>
+                    <div class="fav-color-picker-name">
+                      <span class="fav-color-picker-tag-name">{{ colorPickerTag }}</span>
+                    </div>
+                    <div class="fav-color-picker-swatches">
+                      <button v-for="c in TAG_PRESET_COLORS" :key="c"
+                        :class="['fav-color-swatch', { active: colorPickerColor === c }]"
+                        :style="{ background: c }"
+                        @click="colorPickerColor = c" />
+                      <div class="fav-color-swatch fav-color-swatch--custom" title="自定义颜色">
+                        <Palette :size="12" />
+                        <input type="color" v-model="colorPickerColor" class="fav-color-custom-input" />
+                      </div>
+                    </div>
+                    <div class="fav-color-picker-actions">
+                      <button class="fav-color-remove" @click="removeTagColor(colorPickerTag)">移除颜色</button>
+                      <button class="fav-color-save" @click="saveTagColor()">保存</button>
+                    </div>
+                  </div>
+                    </div>
+                  </Teleport>
+                </div>
               </div>
             </div>
             <div v-if="!batchMode" class="fav-list-actions">
-              <Button variant="ghost" size="icon-sm" @click="copyItem(item)" :title="t('copy')"><Copy :size="14" /></Button>
+              <Button variant="ghost" size="icon-sm" @click="onCopyItem(item)" :title="t('copy')"><Copy :size="14" /></Button>
               <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" @click="emit('preview-image', item)"><ImageIcon :size="14" /></Button>
               <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" @click="openLink(item)"><ExternalLink :size="14" /></Button>
               <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" @click="emit('preview-text', item)"><FileText :size="14" /></Button>
               <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" @click="emit('preview-file', item)"><FileText :size="14" /></Button>
+              <!-- Manual sensitive lock/unlock -->
+              <Button variant="ghost" size="icon-sm" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click="emit('toggle-sensitive', item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
+                <Lock :size="14" />
+              </Button>
               <!-- Add to collection dropdown -->
-              <div v-if="collections.length > 0" class="fav-add-col-wrap">
+              <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                 <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
                 <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                  <button v-for="col in collections" :key="col.id" class="fav-add-col-option" @click="addToCollection(col.id, item.id)">
-                    {{ col.icon }} {{ col.name }}
+                  <button v-for="col in collections.flatCollections.value" :key="col.id" class="fav-add-col-option" @click="addToCollection(col.id, item.id)">
+                    <component :is="COLLECTION_ICON_MAP[col.icon] || Folder" :size="14" /> {{ col.name }}
                   </button>
                 </div>
               </div>
@@ -444,7 +854,7 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
           </div>
           <div v-if="!collapsedGroups.has(gk)" class="fav-grid">
             <div v-for="item in groupedItems[gk]" :key="item.id" class="fav-card"
-              :class="{ 'fav-card--selected': selectedIds.has(item.id) }"
+              :class="{ 'fav-card--selected': selectedIds.has(item.id), 'fav-item--editing-tags': editingTagsItemId === item.id }"
               :draggable="!batchMode"
               @click="batchMode ? toggleSelect(item.id) : undefined"
               @dragstart="onDragStart($event, item)" @dragover="onDragOver" @drop="onDrop($event, item)" @dragend="onDragEnd">
@@ -455,23 +865,92 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
                   <div v-else class="fav-card-placeholder"><ImageIcon :size="24" /></div>
                 </template>
                 <template v-else-if="item.type === 'link' || detectContentType(item.content) === 'url'">
-                  <div class="fav-card-text fav-card-link"><ExternalLink :size="14" class="fav-card-link-icon" /><span class="fav-card-link-url">{{ item.content }}</span><span class="fav-card-link-domain">{{ extractDomain(item.content) }}</span></div>
+                  <div v-if="isItemSensitive(item) && privacy.peekItemId.value !== item.id" class="fav-mask-wrap fav-mask-wrap--card">
+                    <div class="fav-masked-text">{{ t('content_masked') }}</div>
+                    <button class="fav-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button>
+                  </div>
+                  <div v-else class="fav-card-text fav-card-link"><ExternalLink :size="14" class="fav-card-link-icon" /><span class="fav-card-link-url">{{ item.content }}</span><span class="fav-card-link-domain">{{ extractDomain(item.content) }}</span></div>
                 </template>
                 <template v-else-if="item.type === 'file'">
-                  <div class="fav-card-text fav-card-file"><FileText :size="20" /><span>{{ formatContent(item) }}</span></div>
+                  <div v-if="isItemSensitive(item) && privacy.peekItemId.value !== item.id" class="fav-mask-wrap fav-mask-wrap--card">
+                    <div class="fav-masked-text">{{ t('content_masked') }}</div>
+                    <button class="fav-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button>
+                  </div>
+                  <div v-else class="fav-card-text fav-card-file"><FileText :size="20" /><span>{{ formatContent(item) }}</span></div>
                 </template>
-                <template v-else><div class="fav-card-text">{{ formatContent(item) }}</div></template>
+                <template v-else>
+                  <div v-if="isItemSensitive(item) && privacy.peekItemId.value !== item.id" class="fav-mask-wrap fav-mask-wrap--card">
+                    <div class="fav-masked-text">{{ t('content_masked') }}</div>
+                    <button class="fav-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button>
+                  </div>
+                  <div v-else class="fav-card-text">{{ formatContent(item) }}</div>
+                </template>
+                <!-- Lock button: bottom-left of card preview for card view -->
+                <Button variant="ghost" size="icon-sm" class="fav-card-lock-btn" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click.stop="emit('toggle-sensitive', item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
+                  <Lock :size="14" />
+                </Button>
               </div>
               <!-- Tags on card -->
               <div class="fav-card-tags">
                 <template v-if="editingTagsItemId !== item.id">
-                  <Badge v-for="tag in getTags(item)" :key="tag" variant="outline" class="fav-tag-badge">{{ tag }}</Badge>
-                  <button class="fav-tag-add-btn" @click.stop="startEditTags(item)"><Tag :size="10" /></button>
+                  <Badge v-for="tag in getTags(item)" :key="tag" class="fav-tag-badge" :style="tagColorStyle(tag)">{{ tag }}</Badge>
+                  <button class="fav-tag-add-btn" @click.stop="startEditTags(item)" title="编辑标签"><Tag :size="12" /></button>
                 </template>
                 <div v-else class="fav-tag-edit" @click.stop>
-                  <input v-model="tagInputValue" class="fav-tag-input" placeholder="标签1, 标签2" @keydown.enter="saveTags(item)" @keydown.esc="cancelEditTags" />
-                  <button class="fav-tag-save" @click="saveTags(item)">✓</button>
-                  <button class="fav-tag-cancel" @click="cancelEditTags"><X :size="12" /></button>
+                  <input v-model="tagInputValue" class="fav-tag-input" :placeholder="t('tag_placeholder')" @keydown.enter="saveTags(item)" @keydown.esc="cancelEditTags" />
+                  <button class="fav-tag-save" @click="saveTags(item)" title="保存"><Check :size="14" /></button>
+                  <button class="fav-tag-cancel" @click="cancelEditTags" title="取消"><X :size="14" /></button>
+                  <div v-if="allTags.length > 0" class="fav-tag-suggestions">
+                    <button v-for="suggestTag in allTags" :key="suggestTag.name"
+                      :class="['fav-tag-suggest', { 'fav-tag-suggest--active': getTags(item).includes(suggestTag.name) }]"
+                      :style="tagColorStyle(suggestTag.name)"
+                      @click="onTagSuggestionClick(suggestTag.name, $event)" :title="t('tag_reuse_hint')">
+                      <Check v-if="getTags(item).includes(suggestTag.name)" :size="10" class="fav-tag-suggest-check" />
+                      <span>{{ suggestTag.name }}</span>
+                    </button>
+                  </div>
+                  <!-- 新建标签颜色选择（始终显示） -->
+                  <div class="fav-color-picker-row" @click.stop>
+                    <span class="fav-color-picker-row-label">颜色:</span>
+                    <button v-for="c in TAG_PRESET_COLORS" :key="c"
+                      :class="['fav-color-swatch-sm', { active: editingTagColor === c }]"
+                      :style="{ background: c }"
+                      @click="editingTagColor = editingTagColor === c ? '' : c" />
+                    <div class="fav-color-swatch-sm fav-color-swatch-sm--custom" title="自定义颜色" @click.stop>
+                      <Palette :size="10" />
+                      <input type="color" v-model="editingTagColor" class="fav-color-custom-input" />
+                    </div>
+                    <button v-if="editingTagColor" class="fav-color-clear" @click="editingTagColor = ''">清除</button>
+                  </div>
+                  <!-- 标签颜色编辑器（点击已应用标签时弹出） -->
+                  <Teleport to="body">
+                    <div v-if="colorPickerTag && editingTagsItemId === item.id">
+                      <div class="fav-color-backdrop" @click="cancelTagColor"></div>
+                      <div class="fav-color-picker" :style="{ top: colorPickerPos.top, left: colorPickerPos.left }" @click.stop>
+                    <div class="fav-color-picker-header">
+                      <span class="fav-color-picker-label">编辑标签颜色</span>
+                      <button class="fav-color-picker-close" @click="cancelTagColor"><X :size="12" /></button>
+                    </div>
+                    <div class="fav-color-picker-name">
+                      <span class="fav-color-picker-tag-name">{{ colorPickerTag }}</span>
+                    </div>
+                    <div class="fav-color-picker-swatches">
+                      <button v-for="c in TAG_PRESET_COLORS" :key="c"
+                        :class="['fav-color-swatch', { active: colorPickerColor === c }]"
+                        :style="{ background: c }"
+                        @click="colorPickerColor = c" />
+                      <div class="fav-color-swatch fav-color-swatch--custom" title="自定义颜色">
+                        <Palette :size="12" />
+                        <input type="color" v-model="colorPickerColor" class="fav-color-custom-input" />
+                      </div>
+                    </div>
+                    <div class="fav-color-picker-actions">
+                      <button class="fav-color-remove" @click="removeTagColor(colorPickerTag)">移除颜色</button>
+                      <button class="fav-color-save" @click="saveTagColor()">保存</button>
+                    </div>
+                  </div>
+                    </div>
+                  </Teleport>
                 </div>
               </div>
               <div class="fav-card-meta">
@@ -479,18 +958,18 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
                 <span class="fav-card-time">{{ timeAgo((item as any).favoritedAt || item.timestamp) }}</span>
               </div>
               <div v-if="!batchMode" class="fav-card-actions">
-                <Button variant="ghost" size="icon-sm" @click.stop="copyItem(item)" :title="t('copy')"><Copy :size="14" /></Button>
+                <Button variant="ghost" size="icon-sm" @click.stop="onCopyItem(item)" :title="t('copy')"><Copy :size="14" /></Button>
                 <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" @click.stop="emit('preview-image', item)"><ImageIcon :size="14" /></Button>
                 <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" @click.stop="openLink(item)"><ExternalLink :size="14" /></Button>
                 <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" @click.stop="emit('preview-text', item)"><FileText :size="14" /></Button>
                 <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" @click.stop="emit('preview-file', item)"><FileText :size="14" /></Button>
                 <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" @click.stop="revealFileFolder(item)" title="在文件夹中显示"><Folder :size="14" /></Button>
                 <!-- Add to collection -->
-                <div v-if="collections.length > 0" class="fav-add-col-wrap">
+                <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                   <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
                   <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                    <button v-for="col in collections" :key="col.id" class="fav-add-col-option" @click="addToCollection(col.id, item.id)">
-                      {{ col.icon }} {{ col.name }}
+                    <button v-for="col in collections.flatCollections.value" :key="col.id" class="fav-add-col-option" @click="addToCollection(col.id, item.id)">
+                      <component :is="COLLECTION_ICON_MAP[col.icon] || Folder" :size="14" /> {{ col.name }}
                     </button>
                   </div>
                 </div>
@@ -502,71 +981,173 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
       </div>
     </div>
   </div>
+</div>
+
+  <!-- Context menu for collection tree nodes -->
+  <Teleport to="body">
+    <div v-if="collections.ctxMenuVisible.value" class="fav-ctx-backdrop" @click="collections.closeCtxMenu()"></div>
+    <div v-if="collections.ctxMenuVisible.value" class="fav-ctx-menu" :style="{ top: collections.ctxMenuPos.value.top + 'px', left: collections.ctxMenuPos.value.left + 'px' }">
+      <button class="fav-ctx-item" @click="collections.ctxRename()"><Edit :size="14" /> {{ t('fav_ctx_rename') }}</button>
+      <button class="fav-ctx-item" @click="collections.ctxNewSubCollection()"><FolderPlus :size="14" /> {{ t('fav_ctx_new_sub') }}</button>
+      <button class="fav-ctx-item" @click="collections.ctxMoveToRoot()"><FolderInput :size="14" /> {{ t('fav_ctx_move_root') }}</button>
+      <div class="fav-ctx-sep"></div>
+      <button class="fav-ctx-item fav-ctx-item--danger" @click="collections.ctxDelete()"><Trash2 :size="14" /> {{ t('fav_ctx_delete') }}</button>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
-.fav-page { display: flex; flex-direction: column; height: 100%; }
+/* ===== Layout: sidebar (collections) + main content ===== */
+.fav-page { display: flex; height: 100%; }
+
+/* Collection panel (left sidebar) */
+.fav-col-panel {
+  flex-shrink: 0; display: flex; flex-direction: column;
+  border-right: 1px solid var(--border-default); background: var(--bg-surface);
+  position: relative;
+}
+.fav-col-resize-handle {
+  position: absolute; right: -3px; top: 0; bottom: 0; width: 7px;
+  cursor: col-resize; z-index: 10;
+}
+.fav-col-resize-handle:hover { background: rgba(128,128,128,0.15); }
+.fav-col-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px 6px; flex-shrink: 0;
+}
+.fav-col-panel-title-wrap { display: flex; align-items: center; gap: 8px; }
+.fav-col-panel-title { font-weight: 600; font-size: 13px; color: var(--text-primary); }
+
+.fav-col-header-new-btn {
+  width: 24px !important; height: 24px !important; padding: 0 !important;
+  color: var(--text-tertiary); border-radius: var(--radius-sm);
+}
+.fav-col-header-new-btn:hover { background: var(--bg-hover); color: var(--accent); }
+
+/* Tree list: scrollable, takes remaining height */
+.fav-tree-list { flex: 1; overflow-y: auto; min-height: 0; padding: 0 4px; }
+.fav-tree-new { flex-shrink: 0; padding: 4px 8px; margin-top: 4px; }
+
+/* Main content area (right) */
+.fav-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
 /* Header */
-.fav-header { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 24px; background: var(--bg-surface); flex-shrink: 0; border-bottom: 1px solid var(--border-default); }
+.fav-header { display: flex; align-items: center; justify-content: flex-end; height: 52px; padding: 0 20px; background: var(--bg-surface); flex-shrink: 0; border-bottom: 1px solid var(--border-default); }
 .fav-header-left { display: flex; align-items: center; gap: 10px; }
 .fav-header-right { display: flex; align-items: center; gap: 6px; }
-.fav-header-icon { color: var(--warning); }
-.fav-title { font-weight: 600; font-size: 16px; }
+.fav-title { font-weight: 600; font-size: 15px; }
 .fav-count { padding: 2px 10px !important; }
 
-/* Search (in header right) */
+/* Search */
 .fav-search { position: relative; display: inline-flex; align-items: center; }
 .fav-search-icon { position: absolute; left: 10px; color: var(--text-tertiary); pointer-events: none; }
-.fav-search-input { width: 200px; height: 34px; padding: 0 12px 0 32px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 13px; background: var(--bg-surface); color: var(--text-primary); outline: none; transition: border-color 0.15s; }
+.fav-search-input { width: 180px; height: 32px; padding: 0 12px 0 32px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 13px; background: var(--bg-surface); color: var(--text-primary); outline: none; transition: border-color 0.15s; }
 .fav-search-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
 
-/* Toolbar: tags left, actions right */
-.fav-toolbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 24px; border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0; gap: 12px;
-}
-.fav-toolbar-left { display: flex; align-items: center; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; }
-.fav-toolbar-right { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-
-/* All action buttons: consistent padding */
-.fav-action-btn { padding: 0 14px !important; height: 32px !important; }
+/* Action buttons */
+.fav-action-btn { padding: 0 8px !important; height: 28px !important; }
 .fav-active { color: var(--accent) !important; }
 .fav-batch-count { font-size: 12px; color: var(--text-tertiary); padding: 0 6px; }
 .fav-unfav-btn { color: var(--warning) !important; }
-
-/* View toggle */
-.fav-view-toggle { display: inline-flex; background: var(--bg-hover); border-radius: var(--radius-md); padding: 2px; gap: 2px; margin-left: 4px; }
-.fav-view-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); cursor: pointer; transition: all 0.15s; }
+.fav-view-toggle { display: inline-flex; background: var(--bg-hover); border-radius: var(--radius-sm); padding: 2px; gap: 2px; margin-left: 4px; }
+.fav-view-btn { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); cursor: pointer; transition: all 0.15s; }
 .fav-view-btn:hover { color: var(--text-primary); }
 .fav-view-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-card); }
 
+/* Row 2: Tag filter bar */
+.fav-tag-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 20px; border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0; flex-wrap: wrap;
+}
+.fav-tag-label { font-size: 12px; color: var(--text-tertiary); flex-shrink: 0; margin-right: 4px; }
+
 /* Tag pills */
-.fav-tag-pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 9999px; border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 12px; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0; }
-.fav-tag-pill:hover { border-color: var(--border-focus); color: var(--text-primary); }
-.fav-tag-pill.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
-
-/* Collection bar */
-.fav-collection-bar { display: flex; align-items: center; gap: 8px; padding: 10px 24px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; overflow-x: auto; }
-.fav-col-tab { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 12px; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0; }
-.fav-col-tab:hover { border-color: var(--border-focus); }
-.fav-col-tab.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); font-weight: 500; }
-.fav-col-count { font-size: 10px; color: var(--text-tertiary); margin-left: 2px; }
-.fav-col-del { display: none; border: none; background: none; color: var(--text-tertiary); cursor: pointer; padding: 0 2px; font-size: 14px; }
-.fav-col-tab:hover .fav-col-del { display: inline; }
-.fav-col-new { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.fav-col-name-input { height: 32px; padding: 0 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; background: var(--bg-surface); color: var(--text-primary); outline: none; width: 140px; }
-
-/* New collection button */
-.fav-col-new-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border-radius: var(--radius-md);
-  border: 1px dashed var(--border-default); background: var(--bg-surface);
-  font-size: 12px; color: var(--text-secondary); cursor: pointer;
+.fav-tag-pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 10px; border-radius: 9999px;
+  border: 1px solid var(--border-default); background: var(--bg-surface);
+  font-size: 11px; color: var(--text-secondary); cursor: pointer;
   transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
 }
-.fav-col-new-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.fav-tag-pill:hover { border-color: var(--border-focus); color: var(--text-primary); }
+.fav-tag-pill.active { background: var(--tag-c-bg, var(--accent-bg)); border-color: var(--tag-c, var(--accent)); color: var(--tag-c, var(--accent)); }
+.fav-tag-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border: none; background: none;
+  color: var(--text-tertiary); cursor: pointer; padding: 0;
+  font-size: 12px; line-height: 1; border-radius: 50%;
+  transition: all 0.12s;
+}
+.fav-tag-pill:hover .fav-tag-del { color: var(--text-primary); }
+.fav-tag-del:hover { background: var(--danger-bg); color: var(--danger) !important; }
+
+/* Privacy: sensitive content mask */
+.fav-mask-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px; height: 100%; }
+.fav-mask-wrap--card { position: absolute; inset: 0; background: var(--bg-hover); border-radius: var(--radius-sm); }
+.fav-masked-text { font-size: 12px; color: var(--text-tertiary); text-align: center; line-height: 1.4; }
+.fav-peek-btn { padding: 3px 10px; border-radius: 9999px; border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 11px; color: var(--accent); cursor: pointer; transition: all 0.12s; white-space: nowrap; }
+.fav-peek-btn:hover { background: var(--accent-bg); border-color: var(--accent); }
+
+/* Grid view card adjustments for mask */
+.fav-card-preview { position: relative; }
+
+/* Tag suggestion chips (shown during inline tag editing) */
+.fav-tag-suggestions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.fav-tag-suggest {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 8px; border-radius: 9999px;
+  border: 1px solid var(--tag-c-border, var(--border-default));
+  background: var(--tag-c-bg, var(--bg-hover));
+  font-size: 10px; color: var(--tag-c, var(--text-secondary));
+  cursor: pointer; transition: all 0.12s; white-space: nowrap;
+  font-weight: 500;
+}
+.fav-tag-suggest:hover { filter: brightness(1.2); }
+.fav-tag-suggest--active {
+  font-weight: 600;
+  animation: tagBlink 1.6s ease-in-out infinite;
+}
+.fav-tag-suggest-check { color: var(--tag-c, var(--accent)); display: inline-flex; align-items: center; }
+
+/* Tag color picker */
+/* Tag color picker (teleported to body) — backdrop */
+.fav-color-backdrop { position: fixed; inset: 0; z-index: 9998; background: transparent; }
+/* Tag color picker (teleported to body) — popup */
+.fav-color-picker { position: fixed; z-index: 9999; width: 220px; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: 0 8px 32px rgba(0,0,0,0.35); }
+.fav-color-picker-header { display: flex; align-items: center; justify-content: space-between; }
+.fav-color-picker-label { font-size: 11px; font-weight: 600; color: var(--text-primary); }
+.fav-color-picker-close { border: none; background: none; color: var(--text-tertiary); cursor: pointer; padding: 2px; display: inline-flex; border-radius: var(--radius-sm); }
+.fav-color-picker-close:hover { background: var(--bg-active); color: var(--text-primary); }
+.fav-color-picker-name { display: flex; }
+.fav-color-picker-swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.fav-color-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all 0.12s; padding: 0; flex-shrink: 0; }
+.fav-color-swatch:hover { transform: scale(1.15); }
+.fav-color-swatch.active { border-color: var(--text-primary); box-shadow: 0 0 0 2px var(--bg-surface); }
+.fav-color-swatch--custom { position: relative; overflow: hidden; background: var(--bg-hover) !important; display: inline-flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
+.fav-color-swatch--custom:hover { color: var(--text-primary); }
+.fav-color-custom-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.fav-color-picker-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.fav-color-remove { border: none; background: none; color: var(--danger); font-size: 11px; cursor: pointer; padding: 3px 8px; border-radius: var(--radius-sm); }
+.fav-color-remove:hover { background: var(--danger-bg); }
+.fav-color-save { border: none; background: var(--accent); color: white; font-size: 11px; cursor: pointer; padding: 3px 12px; border-radius: var(--radius-sm); }
+.fav-color-save:hover { opacity: 0.9; }
+
+/* Color picker row (inline, for new tags) */
+.fav-color-picker-row { display: flex; align-items: center; gap: 4px; margin-top: 4px; padding: 4px 0; }
+.fav-color-picker-row-label { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
+.fav-color-swatch-sm { width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all 0.12s; padding: 0; flex-shrink: 0; }
+.fav-color-swatch-sm:hover { transform: scale(1.2); }
+.fav-color-swatch-sm.active { border-color: var(--text-primary); box-shadow: 0 0 0 2px var(--bg-surface); }
+.fav-color-swatch-sm--custom { position: relative; overflow: hidden; background: var(--bg-hover) !important; display: inline-flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
+.fav-color-swatch-sm--custom:hover { color: var(--text-primary); }
+.fav-color-clear { border: none; background: none; color: var(--text-tertiary); font-size: 10px; cursor: pointer; padding: 2px 4px; }
+.fav-color-clear:hover { color: var(--danger); }
+.fav-color-picker-tag-name { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+@keyframes tagBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
 
 /* Confirm / Cancel icon buttons */
 .fav-col-icon-btn {
@@ -580,7 +1161,7 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-col-cancel:hover { background: var(--danger-bg); color: var(--danger); }
 
 /* Content */
-.fav-content { flex: 1; overflow-y: auto; padding: 16px 24px; }
+.fav-content { flex: 1; overflow-y: auto; padding: 16px 20px; }
 
 /* Empty */
 .fav-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; }
@@ -588,6 +1169,17 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-empty-title { font-weight: 600; font-size: 16px; color: var(--text-secondary); }
 .fav-empty-desc { font-size: 13px; color: var(--text-tertiary); text-align: center; max-width: 300px; }
 .fav-empty :deep(button) { padding: 0 20px !important; height: 36px !important; }
+
+/* Skeleton loading */
+.fav-skeleton { display: flex; flex-direction: column; gap: 12px; padding: 0 20px; }
+.fav-skeleton-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.fav-skeleton-card { height: 160px; border-radius: var(--radius-md); background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%); background-size: 200% 100%; animation: skeletonShimmer 1.5s ease-in-out infinite; }
+.fav-skeleton-list { display: flex; flex-direction: column; gap: 8px; }
+.fav-skeleton-row { height: 48px; border-radius: var(--radius-md); background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%); background-size: 200% 100%; animation: skeletonShimmer 1.5s ease-in-out infinite; }
+@keyframes skeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 
 /* Groups */
 .fav-groups { display: flex; flex-direction: column; gap: 20px; }
@@ -605,26 +1197,48 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-group-line { flex: 1; height: 1px; background: var(--border-subtle); }
 
 /* List view */
+.fav-list-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-md); transition: all 0.2s; position: relative; }
+.fav-list-item:hover { background: var(--bg-hover); }
+.fav-list-item.fav-item--editing-tags { z-index: 999 !important; }
 .fav-list-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-md); transition: background 0.12s; }
 .fav-list-item:hover { background: var(--bg-hover); }
+/* Tag editing: blur content to focus on tag editor */
+.fav-list-item.fav-item--editing-tags .fav-list-title,
+.fav-list-item.fav-item--editing-tags .fav-list-meta { filter: blur(2px); opacity: 0.4; }
+.fav-list-item.fav-item--editing-tags .fav-list-content { background: var(--accent-bg); border-radius: var(--radius-sm); }
 .fav-list-item[draggable="true"] { cursor: grab; }
 .fav-list-item[draggable="true"]:active { cursor: grabbing; }
 .fav-list-check { flex-shrink: 0; }
 .fav-list-content { flex: 1; min-width: 0; }
 .fav-list-title { font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fav-list-meta { font-size: 11px; color: var(--text-tertiary); display: flex; gap: 6px; margin-top: 2px; }
-.fav-list-tags { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.fav-list-tags-inner { display: flex; align-items: center; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
 .fav-list-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity 0.12s; }
 .fav-list-item:hover .fav-list-actions { opacity: 1; }
+.fav-list-actions :deep(button) { color: var(--text-tertiary); border-radius: var(--radius-sm); transition: background .15s ease, color .15s ease; }
+.fav-list-actions :deep(button):hover { background: var(--bg-active); color: var(--text-primary); }
+.fav-list-actions :deep(button.sensitive-locked) { color: var(--danger); }
+.fav-list-actions :deep(button.sensitive-locked):hover { background: var(--danger-bg); }
 
 /* Grid view */
 .fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.fav-card { position: relative; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow: hidden; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.fav-card { position: relative; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); display: flow-root; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
 .fav-card:hover { border-color: var(--border-focus); box-shadow: var(--shadow-card); }
 .fav-card--selected { border-color: var(--accent); }
+.fav-card.fav-item--editing-tags { z-index: 100; }
+/* Tag editing: blur card content to focus on tag editor */
+.fav-card.fav-item--editing-tags .fav-card-preview { filter: blur(2px); opacity: 0.4; }
+.fav-card.fav-item--editing-tags .fav-card-meta { filter: blur(2px); opacity: 0.4; }
+.fav-card.fav-item--editing-tags .fav-card-preview::after {
+  content: ''; position: absolute; inset: 0; background: var(--accent-bg); border-radius: var(--radius-sm); z-index: 1; pointer-events: none;
+}
 .fav-card[draggable="true"]:active { cursor: grabbing; opacity: 0.8; }
 .fav-card-check { position: absolute; top: 8px; left: 8px; z-index: 2; background: var(--bg-surface); border-radius: var(--radius-sm); box-shadow: var(--shadow-card); }
 .fav-card-preview { position: relative; height: 100px; display: flex; align-items: center; justify-content: center; background: var(--bg-hover); padding: 10px; overflow: hidden; }
+.fav-card-lock-btn { position: absolute; bottom: 4px; left: 4px; color: var(--text-tertiary); border-radius: var(--radius-sm); z-index: 2; }
+.fav-card-lock-btn:hover { background: var(--bg-active); color: var(--text-primary); }
+.fav-card-lock-btn.sensitive-locked { color: var(--danger); }
+.fav-card-lock-btn.sensitive-locked:hover { background: var(--danger-bg); }
 .fav-card-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--radius-sm); }
 .fav-card-placeholder { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--text-tertiary); opacity: 0.4; }
 .fav-card-text { font-size: 12px; line-height: 1.5; color: var(--text-primary); text-align: left; width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; word-break: break-all; }
@@ -642,12 +1256,22 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-card:hover .fav-card-actions { opacity: 1; }
 
 /* Tags */
-.fav-tag-badge { font-size: 10px !important; padding: 2px 8px !important; }
-.fav-tag-add-btn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px dashed var(--border-default); border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); cursor: pointer; transition: all 0.12s; flex-shrink: 0; }
-.fav-tag-add-btn:hover { border-color: var(--accent); color: var(--accent); }
-.fav-tag-edit { display: flex; align-items: center; gap: 4px; }
-.fav-tag-input { width: 120px; height: 26px; padding: 0 6px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-size: 11px; background: var(--bg-surface); color: var(--text-primary); outline: none; }
-.fav-tag-save { border: none; background: var(--success); color: white; border-radius: var(--radius-sm); width: 22px; height: 22px; cursor: pointer; font-size: 11px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.fav-tag-badge {
+  font-size: 11px !important; padding: 3px 10px !important;
+  border-color: var(--tag-c-border, var(--border-default)) !important;
+  color: var(--tag-c, var(--text-secondary)) !important;
+  background: var(--tag-c-bg, var(--bg-hover)) !important;
+  font-weight: 500 !important;
+}
+.fav-tag-add-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px dashed var(--border-default); border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); cursor: pointer; transition: all 0.12s; flex-shrink: 0; }
+.fav-tag-add-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.fav-tag-edit { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; position: relative; }
+.fav-tag-input { width: 120px; height: 28px; padding: 0 8px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-size: 12px; background: var(--bg-surface); color: var(--text-primary); outline: none; transition: border-color 0.12s; }
+.fav-tag-input:focus { border-color: var(--accent); }
+.fav-tag-save { border: none; background: none; color: var(--accent); border-radius: var(--radius-sm); width: 24px; height: 24px; cursor: pointer; padding: 0; display: inline-flex; align-items: center; justify-content: center; transition: all 0.12s; }
+.fav-tag-save:hover { background: var(--accent); color: white; }
+.fav-tag-cancel { border: none; background: none; color: var(--text-tertiary); cursor: pointer; padding: 2px; display: inline-flex; align-items: center; justify-content: center; transition: all 0.12s; border-radius: var(--radius-sm); }
+.fav-tag-cancel:hover { background: var(--bg-active); color: var(--text-primary); }
 .fav-tag-cancel { border: none; background: none; color: var(--text-tertiary); cursor: pointer; padding: 2px; display: inline-flex; align-items: center; justify-content: center; }
 
 /* Add to collection dropdown */
@@ -655,4 +1279,87 @@ onMounted(() => document.addEventListener('click', handleClickOutside))
 .fav-add-col-dropdown { position: absolute; top: 100%; right: 0; margin-top: 4px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-modal); padding: 4px; z-index: 50; min-width: 160px; }
 .fav-add-col-option { display: block; width: 100%; padding: 6px 10px; border: none; background: none; text-align: left; font-size: 12px; color: var(--text-primary); cursor: pointer; border-radius: var(--radius-sm); white-space: nowrap; }
 .fav-add-col-option:hover { background: var(--bg-hover); }
+
+/* Pick collection bar (方案 A: shown when navigating from ClipboardView popover) */
+.fav-pick-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 24px; border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0; background: var(--accent-bg); overflow-x: auto;
+}
+.fav-pick-label { font-size: 12px; color: var(--accent); font-weight: 500; flex-shrink: 0; }
+.fav-pick-cancel {
+  padding: 2px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-default);
+  background: var(--bg-surface); color: var(--text-secondary); font-size: 11px;
+  cursor: pointer; flex-shrink: 0; transition: all 0.12s;
+}
+.fav-pick-cancel:hover { border-color: var(--danger); color: var(--danger); }
+.fav-pick-collections { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.fav-pick-col-btn {
+  padding: 4px 12px; border-radius: 9999px; border: 1px solid var(--border-default);
+  background: var(--bg-surface); font-size: 12px; color: var(--text-secondary);
+  cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: all 0.12s;
+}
+.fav-pick-col-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.fav-pick-new-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 9999px;
+  border: 1px dashed var(--accent); background: var(--bg-surface);
+  font-size: 11px; color: var(--accent); cursor: pointer;
+  flex-shrink: 0; transition: all 0.12s;
+}
+.fav-pick-new-btn:hover { background: var(--accent-bg); }
+
+/* ===== Collection tree sidebar (replaces horizontal tab bar) ===== */
+.fav-tree-sidebar { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; padding: 6px 0; }
+.fav-tree-breadcrumb { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 0 8px; margin-bottom: 2px; }
+.fav-tree-breadcrumb-item { border: none; background: none; color: var(--text-tertiary); font-size: 11px; cursor: pointer; padding: 2px 4px; border-radius: var(--radius-sm); transition: all 0.12s; }
+.fav-tree-breadcrumb-item:hover { color: var(--text-primary); background: var(--bg-hover); }
+.fav-tree-breadcrumb-item.active { color: var(--accent); font-weight: 500; }
+.fav-tree-breadcrumb-sep { color: var(--text-tertiary); font-size: 10px; opacity: 0.5; }
+.fav-tree-list { display: flex; flex-direction: column; gap: 0; }
+.fav-tree-node { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--radius-sm); cursor: grab; transition: all 0.12s; user-select: none; position: relative; border: 1px solid transparent; }
+.fav-tree-node:hover { background: var(--bg-hover); }
+.fav-tree-node:active { cursor: grabbing; }
+.fav-tree-node--drag-over { background: var(--accent-bg) !important; border-color: var(--accent) !important; }
+.fav-tree-drag-handle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 20px; flex-shrink: 0;
+  color: var(--text-tertiary); cursor: grab;
+  opacity: 0; transition: opacity 0.12s;
+}
+.fav-tree-node:hover .fav-tree-drag-handle { opacity: 1; }
+.fav-tree-node:active .fav-tree-drag-handle { cursor: grabbing; }
+.fav-tree-expand { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex-shrink: 0; color: var(--text-tertiary); transition: transform 0.2s ease; border-radius: var(--radius-sm); }
+.fav-tree-expand:hover { background: var(--bg-active); }
+.fav-tree-expand--open { transform: rotate(90deg); }
+.fav-tree-icon { display: inline-flex; align-items: center; color: var(--text-secondary); flex-shrink: 0; }
+.fav-tree-icon.active { color: var(--accent); }
+.fav-tree-name { font-size: 13px; color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color 0.12s; }
+.fav-tree-name.active { color: var(--accent); font-weight: 500; }
+.fav-tree-count { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; background: var(--bg-hover); padding: 1px 6px; border-radius: 9999px; min-width: 20px; text-align: center; }
+.fav-tree-del { display: none; border: none; background: none; color: var(--text-tertiary); cursor: pointer; padding: 2px; font-size: 14px; line-height: 1; flex-shrink: 0; border-radius: var(--radius-sm); transition: all 0.12s; }
+.fav-tree-node:hover .fav-tree-del { display: inline-flex; }
+.fav-tree-del:hover { background: var(--danger-bg); color: var(--danger); }
+.fav-tree-new { margin-top: 8px; padding: 0 8px; }
+
+/* Context menu (teleported to body) */
+.fav-ctx-backdrop { position: fixed; inset: 0; z-index: 9998; }
+.fav-ctx-menu { position: fixed; z-index: 9999; min-width: 160px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-modal); padding: 4px; }
+.fav-ctx-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 12px; border: none; background: none; text-align: left; font-size: 12px; color: var(--text-primary); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.12s; }
+.fav-ctx-item:hover { background: var(--bg-hover); }
+.fav-ctx-item--danger { color: var(--danger); }
+.fav-ctx-item--danger:hover { background: var(--danger-bg); }
+.fav-ctx-sep { height: 1px; background: var(--border-subtle); margin: 4px 0; }
+
+/* Tree flyout (hover preview of children) */
+.fav-tree-flyout { position: absolute; left: 100%; top: 0; margin-left: 4px; min-width: 160px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-modal); padding: 4px; z-index: 100; }
+.fav-tree-flyout-item { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: none; background: none; text-align: left; font-size: 12px; color: var(--text-primary); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.12s; width: 100%; }
+.fav-tree-flyout-item:hover { background: var(--bg-hover); }
+.fav-tree-flyout-count { font-size: 10px; color: var(--text-tertiary); margin-left: auto; }
+
+/* Drag-over highlight */
+.fav-tree-node--drag-over { background: var(--accent-bg) !important; border: 1px dashed var(--accent); }
+
+/* Inline rename input */
+.fav-tree-rename-input { height: 24px; padding: 0 6px; border: 1px solid var(--accent); border-radius: var(--radius-sm); font-size: 12px; background: var(--bg-surface); color: var(--text-primary); outline: none; flex: 1; min-width: 60px; }
 </style>
