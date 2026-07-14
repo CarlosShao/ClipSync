@@ -7,7 +7,7 @@ import { useSonner } from '@/composables/useSonner'
 import { useConfigStore } from '@/stores/configStore'
 import { usePrivacy } from '@/composables/usePrivacy'
 import {
-  Star, Search, Copy, Image as ImageIcon, LayoutGrid, List, GripVertical,
+  Star, Search, Copy, Image as ImageIcon, LayoutGrid, List,
   ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
   ArrowUpDown, CheckSquare, Square,
   Plus, X, Check, Tag, ClipboardList, ChevronRight, Lock,
@@ -666,17 +666,13 @@ function cancelEditTags() {
       <div class="fav-tree-list">
         <!-- Inline new collection row -->
         <div v-if="showNewCollectionInput" class="fav-tree-node fav-tree-node--new">
-          <span class="fav-tree-drag-handle" style="opacity:0.3;cursor:default">
-            <GripVertical :size="12" />
-          </span>
-          <span class="fav-tree-expand" style="opacity:0"></span>
           <span class="fav-tree-icon">
             <component :is="COLLECTION_ICON_MAP[newCollectionIcon] || Folder" :size="14" />
           </span>
           <input
             ref="newCollectionInputRef"
             v-model="newCollectionName"
-            class="fav-tree-rename-input"
+            class="fav-tree-new-input"
             :placeholder="t('fav_new_col_placeholder')"
             maxlength="100"
             @keydown.enter="confirmNewCollection"
@@ -709,14 +705,11 @@ function cancelEditTags() {
           @dragstart="collections.onDragStart(node.id, $event)"
           @dragend="collections.onDragEnd()"
           @dragover.prevent="collections.onDragOver(node.id, $event)"
-          @dragleave="collections.onDragLeave()"
+          @dragleave="collections.onDragLeave($event)"
           @drop.prevent="collections.onDrop(node.id)"
           @contextmenu.prevent="collections.openCtxMenu(node.id, $event)"
           @mouseenter="collections.openFlyout(node.id)"
           @mouseleave="collections.closeFlyout">
-          <span class="fav-tree-drag-handle" title="拖拽移动">
-            <GripVertical :size="12" />
-          </span>
           <span class="fav-tree-expand" v-if="(node.children || []).length > 0" @click.stop="collections.toggleExpand(node.path)">
             <ChevronRight :size="14" :class="{ 'fav-tree-expand--open': collections.expandedPaths.value.has(node.path) }" />
           </span>
@@ -1402,14 +1395,6 @@ function cancelEditTags() {
 .fav-tree-node { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--radius-sm); cursor: grab; transition: all 0.12s; user-select: none; position: relative; border: 1px solid transparent; }
 .fav-tree-node:hover { background: var(--bg-hover); }
 .fav-tree-node:active { cursor: grabbing; }
-.fav-tree-drag-handle {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 14px; height: 20px; flex-shrink: 0;
-  color: var(--text-tertiary); cursor: grab;
-  opacity: 0; transition: opacity 0.12s;
-}
-.fav-tree-node:hover .fav-tree-drag-handle { opacity: 1; }
-.fav-tree-node:active .fav-tree-drag-handle { cursor: grabbing; }
 .fav-tree-expand { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex-shrink: 0; color: var(--text-tertiary); transition: transform 0.2s ease; border-radius: var(--radius-sm); }
 .fav-tree-expand:hover { background: var(--bg-active); }
 .fav-tree-expand--open { transform: rotate(90deg); }
@@ -1444,9 +1429,37 @@ function cancelEditTags() {
 .fav-tree-node--drag-over-before { border-top: 2px solid var(--accent) !important; }
 .fav-tree-node--drag-over-after { border-bottom: 2px solid var(--accent) !important; }
 
-/* Inline new collection row */
-.fav-tree-node--new { background: var(--bg-hover); cursor: default; }
-.fav-tree-node--new .fav-tree-rename-input { flex: 1; min-width: 0; height: 24px; }
+/* Inline new collection row: seamless like Windows Explorer new folder */
+.fav-tree-node--new {
+  background: transparent;
+  cursor: default;
+}
+.fav-tree-node--new .fav-tree-icon {
+  color: var(--accent);
+}
+.fav-tree-new-input {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.fav-tree-new-input::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+.fav-tree-new-input:focus {
+  border-bottom-color: var(--accent);
+}
 
 /* Drop zones (root / bottom) */
 .fav-tree-drop-zone {

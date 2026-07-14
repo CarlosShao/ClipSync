@@ -444,31 +444,36 @@ export function useCollections() {
     }
   }
 
-  function onDragLeave() {
+  function onDragLeave(event: DragEvent) {
+    // Ignore dragleave when the cursor is still inside this element or a child
+    const related = event.relatedTarget as HTMLElement | null
+    const current = event.currentTarget as HTMLElement | null
+    if (related && current && current.contains(related)) return
     dragOverNodeId.value = null
-    // Only clear drop state if not hovering the root/bottom zones; those have their own handlers
     if (dropTargetId.value !== null) {
       dropTargetId.value = null
       dropPosition.value = null
     }
   }
 
-  // Reassign sequential sort_order within a parent, placing draggedId at targetIndex
+  // Reassign sequential sort_order within a parent, placing draggedId at targetIndex.
+  // targetIndex is expressed relative to the full sibling list (including dragged).
+  // The dragged node is removed first, then inserted at the equivalent position.
   async function setOrderAtIndex(draggedId: string, parentId: string | null, targetIndex: number) {
     const siblings = getSiblings(parentId)
     const draggedIdx = siblings.findIndex(n => n.id === draggedId)
-    const insertIndex = Math.max(0, Math.min(targetIndex, siblings.length))
-    const ordered = [...siblings]
-    if (draggedIdx >= 0) {
-      const [moved] = ordered.splice(draggedIdx, 1)
-      ordered.splice(Math.min(insertIndex, ordered.length), 0, moved)
-    } else if (ordered.length === 0) {
-      // nothing to reorder
-    } else {
-      // dragged node not in siblings yet (should not happen after move)
-      const targetPos = Math.min(insertIndex, ordered.length)
-      ordered.splice(targetPos, 0, findNodeById(tree.value, draggedId)!)
+    const others = siblings.filter(n => n.id !== draggedId)
+
+    // Adjust insertion index after removing the dragged item
+    let insertIndex = targetIndex
+    if (draggedIdx >= 0 && targetIndex > draggedIdx) {
+      insertIndex = targetIndex - 1
     }
+    insertIndex = Math.max(0, Math.min(insertIndex, others.length))
+
+    const ordered = [...others]
+    const moved = draggedIdx >= 0 ? siblings[draggedIdx] : findNodeById(tree.value, draggedId)
+    if (moved) ordered.splice(insertIndex, 0, moved)
 
     const orders = ordered.map((n, i) => ({ id: n.id, sortOrder: i }))
 
@@ -489,20 +494,33 @@ export function useCollections() {
   }
 
   async function reorderCollection(draggedId: string, targetId: string | null, position: 'before' | 'after' | 'inside' | null) {
-    const targetNode = targetId ? findNodeById(tree.value, targetId) : null
     const draggedNode = findNodeById(tree.value, draggedId)
     if (!draggedNode) return
 
-    let targetParentId: string | null = null
+    // Step 1: handle parent changes first so the rest of the math is based on the new tree
+    if (position === 'inside' && targetId) {
+      const currentParentId = getParentId(draggedNode)
+      if (currentParentId !== targetId) {
+        await moveCollection(draggedId, targetId)
+      }
+    } else if (targetId === null) {
+      // Root drop zones
+      const currentParentId = getParentId(draggedNode)
+      if (currentParentId !== null) {
+        await moveCollection(draggedId, null)
+      }
+    }
+
+    // Step 2: compute final ordering based on the (possibly updated) tree
+    const targetNode = targetId ? findNodeById(tree.value, targetId) : null
+    let targetParentId: string | null
     let targetIndex = 0
 
     if (position === 'inside') {
-      // Move into target as first child
       targetParentId = targetId
       const children = targetNode ? targetNode.children : []
       targetIndex = children.length
-    } else if (targetId && targetNode) {
-      // Move to target's parent as sibling
+    } else if (targetNode) {
       targetParentId = getParentId(targetNode)
       const siblings = getSiblings(targetParentId)
       const idx = siblings.findIndex(n => n.id === targetId)
@@ -512,19 +530,12 @@ export function useCollections() {
         targetIndex = idx + 1
       }
     } else {
-      // Root zone
+      // Root drop zones
       targetParentId = null
       const siblings = getSiblings(null)
       targetIndex = position === 'after' ? siblings.length : 0
     }
 
-    const currentParentId = getParentId(draggedNode)
-    if (currentParentId !== targetParentId) {
-      // Path must change; move API handles backend path + local state
-      await moveCollection(draggedId, targetParentId)
-    }
-
-    // Now reorder within the target parent
     await setOrderAtIndex(draggedId, targetParentId, targetIndex)
   }
 
