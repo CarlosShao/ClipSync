@@ -15,15 +15,23 @@ const router = Router();
 router.get('/collections', apiLimiter, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT fc.id, fc.name, fc.icon, fc.sort_order, fc.created_at,
-              COUNT(fci.item_id)::int AS item_count
+      `SELECT fc.id, fc.name, fc.icon, fc.path::text AS path, fc.sort_order, fc.created_at,
+              COUNT(ci.id)::int AS item_count
        FROM favorite_collections fc
        LEFT JOIN favorite_collection_items fci ON fc.id = fci.collection_id
+       LEFT JOIN clipboard_items ci ON fci.item_id = ci.id AND ci.user_id = $1
        WHERE fc.user_id = $1
-       GROUP BY fc.id
-       ORDER BY fc.sort_order, fc.created_at`,
+       GROUP BY fc.id, fc.path, fc.sort_order, fc.created_at
+       ORDER BY fc.path`,
       [req.userId]
     );
+
+    // 兜底：对 path 为空的记录补全为根节点路径（兼容迁移未覆盖的数据）
+    for (const row of result.rows) {
+      if (!row.path) {
+        row.path = 'root.' + row.id.replace(/-/g, '_');
+      }
+    }
     res.json({ collections: result.rows });
   } catch (err) {
     logger.error('List collections error:', { error: err.message });
@@ -31,10 +39,10 @@ router.get('/collections', apiLimiter, async (req, res) => {
   }
 });
 
-// POST /api/favorites/collections - 创建收藏夹
+// POST /api/favorites/collections - 创建收藏夹（支持 parentId 创建子收藏夹）
 router.post('/collections', apiLimiter, async (req, res) => {
   try {
-    const { name, icon } = req.body;
+    const { name, icon, parentId } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Collection name is required' });
     }
@@ -47,11 +55,27 @@ router.post('/collections', apiLimiter, async (req, res) => {
       [req.userId]
     );
 
+    let path;
+    if (parentId) {
+      // 子收藏夹：path = parent.path.col_<new_uuid>
+      const parent = await pool.query(
+        'SELECT path FROM favorite_collections WHERE id = $1 AND user_id = $2',
+        [parentId, req.userId]
+      );
+      if (parent.rows.length === 0) return res.status(404).json({ error: 'Parent collection not found' });
+      const newId = 'xxxxxxxx_xxxx_4xxx_yxxx_xxxxxxxxxxxx'.replace(/[xy]/g, () => Math.floor(Math.random() * 16).toString(16));
+      path = parent.rows[0].path + '.col_' + newId;
+    } else {
+      // 根收藏夹：path = root.<sanitized_uuid>
+      const newId = 'xxxxxxxx_xxxx_4xxx_yxxx_xxxxxxxxxxxx'.replace(/[xy]/g, () => Math.floor(Math.random() * 16).toString(16));
+      path = 'root.' + newId;
+    }
+
     const result = await pool.query(
-      `INSERT INTO favorite_collections (user_id, name, icon, sort_order)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, name, icon, sort_order, created_at`,
-      [req.userId, cleanName, cleanIcon, maxOrder.rows[0].next_order]
+      `INSERT INTO favorite_collections (user_id, name, icon, sort_order, path)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, name, icon, sort_order, path, created_at`,
+      [req.userId, cleanName, cleanIcon, maxOrder.rows[0].next_order, path]
     );
 
     res.status(201).json({ collection: result.rows[0] });
@@ -104,18 +128,26 @@ router.put('/collections/:id', apiLimiter, async (req, res) => {
   }
 });
 
-// DELETE /api/favorites/collections/:id - 删除收藏夹
+// DELETE /api/favorites/collections/:id - 删除收藏夹（级联删除所有子收藏夹）
 router.delete('/collections/:id', apiLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isValidUUID(id)) return res.status(400).json({ error: 'Invalid ID' });
 
-    const result = await pool.query(
-      'DELETE FROM favorite_collections WHERE id = $1 AND user_id = $2 RETURNING id',
+    // 先获取目标收藏夹的 path，用于级联删除子级
+    const target = await pool.query(
+      'SELECT path FROM favorite_collections WHERE id = $1 AND user_id = $2',
       [id, req.userId]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Collection not found' });
-    res.json({ message: 'Collection deleted' });
+    if (target.rows.length === 0) return res.status(404).json({ error: 'Collection not found' });
+
+    // 级联删除：目标收藏夹及其所有后代（ltree path <@ 查询）
+    await pool.query(
+      'DELETE FROM favorite_collections WHERE path <@ $1 AND user_id = $2',
+      [target.rows[0].path, req.userId]
+    );
+
+    res.json({ message: 'Collection and all descendants deleted' });
   } catch (err) {
     logger.error('Delete collection error:', { error: err.message });
     res.status(500).json({ error: 'Failed to delete collection' });
@@ -123,10 +155,88 @@ router.delete('/collections/:id', apiLimiter, async (req, res) => {
 });
 
 // ============================================
+// 收藏夹移动（层级变更）
+// ============================================
+
+// PUT /api/favorites/collections/:id/move - 移动收藏夹到新的父级
+router.put('/collections/:id/move', apiLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { parentId } = req.body;
+    if (!isValidUUID(id)) return res.status(400).json({ error: 'Invalid ID' });
+
+    // 获取被移动的收藏夹
+    const src = await pool.query(
+      'SELECT path FROM favorite_collections WHERE id = $1 AND user_id = $2',
+      [id, req.userId]
+    );
+    if (src.rows.length === 0) return res.status(404).json({ error: 'Collection not found' });
+    const srcPath = src.rows[0].path;
+
+    let newParentPath;
+    if (parentId) {
+      // 移动到指定父级下
+      const parent = await pool.query(
+        'SELECT path FROM favorite_collections WHERE id = $1 AND user_id = $2',
+        [parentId, req.userId]
+      );
+      if (parent.rows.length === 0) return res.status(404).json({ error: 'Parent collection not found' });
+      newParentPath = parent.rows[0].path;
+
+      // 防止循环引用：目标不能是被移动节点的后代
+      if (newParentPath.startsWith(srcPath + '.') || newParentPath === srcPath) {
+        return res.status(400).json({ error: 'Cannot move collection into itself or its descendant' });
+      }
+    } else {
+      // 移动到根级
+      newParentPath = null;
+    }
+
+    // 计算新路径
+    const newLeaf = 'col_' + 'xxxxxxxx_xxxx_4xxx_yxxx_xxxxxxxxxxxx'.replace(/[xy]/g, () => Math.floor(Math.random() * 16).toString(16));
+    const newPath = newParentPath
+      ? newParentPath + '.' + newLeaf
+      : 'root.' + newLeaf;
+
+    // 计算路径前缀替换长度（srcPath 的层级数）
+    const srcLevels = await pool.query('SELECT nlevel($1::ltree) AS n', [srcPath]);
+    const srcNlevel = srcLevels.rows[0].n;
+    const newNlevel = await pool.query('SELECT nlevel($1::ltree) AS n', [newPath]);
+    const newPathNlevel = newNlevel.rows[0].n;
+
+    // 更新被移动节点自身的路径
+    await pool.query(
+      'UPDATE favorite_collections SET path = $1, updated_at = NOW() WHERE id = $2',
+      [newPath, id]
+    );
+
+    // 更新所有后代的路径：将 srcPath 前缀替换为 newPath
+    if (srcNlevel > 0) {
+      await pool.query(
+        `UPDATE favorite_collections
+         SET path = $1 || subpath(path, $2)
+         WHERE path <@ $3 AND id != $4`,
+        [newPath, srcNlevel, srcPath, id]
+      );
+    }
+
+    // 返回更新后的节点
+    const updated = await pool.query(
+      'SELECT id, name, icon, sort_order, path, created_at FROM favorite_collections WHERE id = $1',
+      [id]
+    );
+    res.json({ collection: updated.rows[0] });
+  } catch (err) {
+    logger.error('Move collection error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to move collection' });
+  }
+});
+
+// ============================================
 // 收藏夹内项目管理
 // ============================================
 
-// POST /api/favorites/collections/:id/items - 添加项目到收藏夹
+// POST /api/favorites/collections/:id/items - 添加项目到收藏夹（唯一归属：自动从其他收藏夹移除）
 router.post('/collections/:id/items', apiLimiter, async (req, res) => {
   try {
     const { id } = req.params;
@@ -138,6 +248,12 @@ router.post('/collections/:id/items', apiLimiter, async (req, res) => {
     // 验证收藏夹属于当前用户
     const col = await pool.query('SELECT id FROM favorite_collections WHERE id = $1 AND user_id = $2', [id, req.userId]);
     if (col.rows.length === 0) return res.status(404).json({ error: 'Collection not found' });
+
+    // 唯一归属：先移除 item 在其他收藏夹中的关联
+    await pool.query(
+      'DELETE FROM favorite_collection_items WHERE item_id = $1 AND collection_id != $2',
+      [itemId, id]
+    );
 
     // 获取当前最大 sort_order
     const maxOrder = await pool.query(
@@ -214,14 +330,14 @@ router.get('/collections/:id/items', apiLimiter, async (req, res) => {
 router.put('/:id/tags', apiLimiter, async (req, res) => {
   try {
     const { id } = req.params;
-    const { tags } = req.body;
+    const { tags, tagColors } = req.body;
     if (!isValidUUID(id)) return res.status(400).json({ error: 'Invalid ID' });
     if (!Array.isArray(tags)) return res.status(400).json({ error: 'Tags must be an array' });
 
     // 清洗标签：去重、截断、限制数量
     const cleanTags = [...new Set(tags.map(t => String(t).trim().substring(0, 30)))].slice(0, 10);
 
-    // 读取当前 metadata，更新 tags 字段
+    // 读取当前 metadata
     const current = await pool.query(
       'SELECT metadata FROM clipboard_items WHERE id = $1 AND user_id = $2',
       [id, req.userId]
@@ -231,26 +347,41 @@ router.put('/:id/tags', apiLimiter, async (req, res) => {
     const meta = typeof current.rows[0].metadata === 'string'
       ? JSON.parse(current.rows[0].metadata)
       : (current.rows[0].metadata || {});
+    // 修复旧数据：tags 可能是 string 而非 array
+    if (typeof meta.tags === 'string') {
+      try { meta.tags = JSON.parse(meta.tags) } catch { meta.tags = [] }
+    }
     meta.tags = cleanTags;
+
+    // 合并 tagColors：保留已有的，新增/更新传入的
+    if (tagColors && typeof tagColors === 'object') {
+      meta.tagColors = { ...(meta.tagColors || {}), ...tagColors }
+    }
 
     await pool.query(
       'UPDATE clipboard_items SET metadata = $1 WHERE id = $2 AND user_id = $3',
-      [JSON.stringify(meta), id, req.userId]
+      [meta, id, req.userId]
     );
 
-    res.json({ tags: cleanTags });
+    res.json({ tags: cleanTags, tagColors: meta.tagColors || {} });
   } catch (err) {
     logger.error('Set tags error:', { error: err.message });
     res.status(500).json({ error: 'Failed to set tags' });
   }
 });
 
-// GET /api/favorites/tags - 获取用户所有收藏项中使用的标签
+// GET /api/favorites/tags - 获取用户所有收藏项中使用的标签（含颜色）
 router.get('/tags', apiLimiter, async (req, res) => {
   try {
-    const result = await pool.query(
+    // 1. 获取所有标签名
+    const tagsResult = await pool.query(
       `SELECT DISTINCT jsonb_array_elements_text(
-         CASE WHEN jsonb_typeof(metadata->'tags') = 'array' THEN metadata->'tags' ELSE '[]'::jsonb END
+         CASE
+           WHEN jsonb_typeof(metadata->'tags') = 'array' THEN metadata->'tags'
+           WHEN jsonb_typeof(metadata->'tags') = 'string' THEN
+             CASE WHEN (metadata->'tags')::text LIKE '[%' THEN (metadata->'tags')::jsonb ELSE '[]'::jsonb END
+           ELSE '[]'::jsonb
+         END
        ) AS tag
        FROM clipboard_items
        WHERE user_id = $1 AND is_favorite = TRUE
@@ -258,10 +389,110 @@ router.get('/tags', apiLimiter, async (req, res) => {
        ORDER BY tag`,
       [req.userId]
     );
-    res.json({ tags: result.rows.map(r => r.tag) });
+
+    // 2. 从 metadata.tagColors 中提取所有标签颜色
+    const tagColors = {}
+    const colorsResult = await pool.query(
+      `SELECT metadata FROM clipboard_items
+       WHERE user_id = $1 AND is_favorite = TRUE
+         AND metadata ? 'tagColors'
+         AND jsonb_typeof(metadata->'tagColors') = 'object'`,
+      [req.userId]
+    );
+    for (const row of colorsResult.rows) {
+      const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata
+      if (meta.tagColors && typeof meta.tagColors === 'object') {
+        for (const [key, value] of Object.entries(meta.tagColors)) {
+          tagColors[key] = value
+        }
+      }
+    }
+
+    const tags = tagsResult.rows.map(r => ({
+      name: r.tag,
+      color: tagColors[r.tag] || null
+    }))
+
+    res.json({ tags });
   } catch (err) {
     logger.error('List tags error:', { error: err.message });
     res.status(500).json({ error: 'Failed to list tags' });
+  }
+});
+
+// DELETE /api/favorites/tags/:tag - 从用户所有收藏项中删除一个标签
+router.delete('/tags/:tag', apiLimiter, async (req, res) => {
+  try {
+    const { tag } = req.params;
+    // 从所有属于当前用户的收藏项的 metadata.tags 中移除指定标签
+    const result = await pool.query(
+      `UPDATE clipboard_items
+       SET metadata = jsonb_set(metadata, '{tags}', (metadata->'tags') - $2)
+       WHERE user_id = $1
+         AND is_favorite = TRUE
+         AND metadata->'tags' ? $2`,
+      [req.userId, tag]
+    );
+    res.json({ message: 'Tag deleted', deleted: result.rowCount });
+  } catch (err) {
+    logger.error('Delete tag error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to delete tag' });
+  }
+});
+
+// POST /api/favorites/migrate-hierarchy - 自动迁移：为已有数据库添加 ltree 层次结构支持
+// 幂等安全：可重复调用，会补全缺失的 path 和 NOT NULL 约束
+router.post('/migrate-hierarchy', apiLimiter, async (req, res) => {
+  try {
+    logger.info('[Migration] migrate-hierarchy called by user:', req.userId)
+
+    // 启用 ltree 扩展
+    await pool.query('CREATE EXTENSION IF NOT EXISTS ltree');
+    logger.info('[Migration] ltree extension enabled')
+
+    // 检查 path 列是否已存在
+    const colCheck = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'favorite_collections' AND column_name = 'path'`
+    );
+    logger.info('[Migration] path column exists:', colCheck.rows.length > 0)
+    if (colCheck.rows.length === 0) {
+      // 添加 path 列
+      await pool.query('ALTER TABLE favorite_collections ADD COLUMN path ltree');
+      logger.info('[Migration] path column added')
+    }
+
+    // 回填已有收藏夹为根节点（path 为 NULL 或空）
+    const backfillResult = await pool.query(
+      `UPDATE favorite_collections
+       SET path = 'root.' || replace(id::text, '-', '_')::ltree
+       WHERE path IS NULL`
+    );
+    logger.info('[Migration] backfilled rows:', backfillResult.rowCount)
+
+    // 设置 NOT NULL 约束
+    const nullCheck = await pool.query(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'favorite_collections' AND column_name = 'path'`
+    );
+    if (nullCheck.rows[0]?.is_nullable === 'YES') {
+      await pool.query('ALTER TABLE favorite_collections ALTER COLUMN path SET NOT NULL');
+      logger.info('[Migration] path column set NOT NULL')
+    }
+
+    // 创建 GIST 索引
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_favcol_path ON favorite_collections USING GIST(path)');
+
+    // 创建 favorite_collection_items 的唯一索引
+    await pool.query(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_fci_unique_item ON favorite_collection_items(item_id)'
+    );
+
+    logger.info('ltree hierarchy migration applied successfully');
+    res.json({ message: 'Migration applied successfully', status: 'done', backfilled: backfillResult.rowCount });
+  } catch (err) {
+    logger.error('Migration error:', { error: err.message });
+    res.status(500).json({ error: 'Migration failed: ' + err.message });
   }
 });
 
