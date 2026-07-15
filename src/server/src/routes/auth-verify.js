@@ -245,6 +245,105 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
   }
 });
 
+// 发送 PIN 重置验证码（手机号）
+router.post('/send-reset-pin-code', sendCodeLimiter, async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ error: 'Phone number is required' });
+    if (!isValidPhone(phone)) return res.status(400).json({ error: 'Invalid phone number format' });
+
+    const cleanPhone = sanitizeString(phone);
+    const code = '888888'; // MVP: fixed code
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await pool.query(
+      `INSERT INTO verification_codes (phone, code, expires_at) VALUES ($1, $2, $3)`,
+      [cleanPhone, code, expiresAt.toISOString()]
+    );
+
+    if (process.env.NODE_ENV !== 'production') {
+      logger.debug(`[MVP] PIN reset code for ${cleanPhone}: ${code}`);
+    }
+    res.json({ message: 'Verification code sent (MVP: 888888)' });
+  } catch (err) {
+    logger.error('Send reset pin code error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to send verification code' });
+  }
+});
+
+// 发送 PIN 重置验证码（邮箱）
+router.post('/send-reset-pin-email-code', sendCodeLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) return res.status(400).json({ error: 'Invalid email format' });
+
+    const cleanEmail = sanitizeString(email.toLowerCase());
+    const code = process.env.NODE_ENV === 'production'
+      ? Math.floor(100000 + Math.random() * 900000).toString()
+      : '888888';
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await pool.query(
+      `INSERT INTO verification_codes (phone, code, expires_at) VALUES ($1, $2, $3)`,
+      [cleanEmail, code, expiresAt.toISOString()]
+    );
+
+    if (process.env.NODE_ENV === 'production') {
+      await sendVerificationCodeEmail(cleanEmail, code, 'reset-pin');
+    } else {
+      logger.debug(`[MVP] PIN reset email code for ${cleanEmail}: ${code}`);
+    }
+
+    res.json({ message: 'Verification code sent' });
+  } catch (err) {
+    logger.error('Send reset pin email code error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to send verification code' });
+  }
+});
+
+// 验证验证码 + 重置 PIN（后端只验证身份，PIN 本身存在前端 localStorage）
+router.post('/reset-pin', async (req, res) => {
+  try {
+    const { phone, email, code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Verification code is required' });
+
+    let identifier = null;
+    if (phone) {
+      if (!isValidPhone(phone)) return res.status(400).json({ error: 'Invalid phone number format' });
+      identifier = sanitizeString(phone);
+    } else if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) return res.status(400).json({ error: 'Invalid email format' });
+      identifier = sanitizeString(email.toLowerCase());
+    } else {
+      return res.status(400).json({ error: 'Phone or email is required' });
+    }
+
+    // 验证验证码
+    const codeResult = await pool.query(
+      `SELECT * FROM verification_codes
+       WHERE phone = $1 AND code = $2 AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [identifier, code]
+    );
+
+    if (codeResult.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid or expired verification code' });
+    }
+
+    // 删除已使用的验证码
+    await pool.query('DELETE FROM verification_codes WHERE phone = $1', [identifier]);
+
+    // 验证通过，前端自行清除 PIN
+    res.json({ message: 'PIN reset verified', resetToken: identifier });
+  } catch (err) {
+    logger.error('Reset pin error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to reset PIN' });
+  }
+});
+
 // 接受服务条款
 router.post('/accept-tos', async (req, res) => {
   try {

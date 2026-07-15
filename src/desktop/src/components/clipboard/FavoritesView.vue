@@ -438,8 +438,8 @@ function toggleSort() {
   localOrder.value = [] // reset local reorder on sort change
 }
 function sortLabel(): string {
-  if (sortBy.value === 'time') return sortAsc.value ? '时间 ↑' : '时间 ↓'
-  return '类型'
+  if (sortBy.value === 'time') return sortAsc.value ? t('fav_sort_time_asc') : t('fav_sort_time_desc')
+  return t('fav_sort_type')
 }
 function openLink(item: ClipItem) { try { window.open(item.content, '_blank') } catch { /* */ } }
 function revealFileFolder(item: ClipItem) {
@@ -716,7 +716,7 @@ function cancelEditTags() {
 
         <!-- Tree nodes -->
         <div v-for="node in collections.visibleNodes.value" :key="node.id" class="fav-tree-node"
-          :style="{ paddingLeft: (node.depth - 1) * 18 + 'px' }"
+          :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }"
           :class="{
             'fav-tree-node--drag-over-inside': collections.dropTargetId.value === node.id && collections.dropPosition.value === 'inside',
             'fav-tree-node--drag-over-before': collections.dropTargetId.value === node.id && collections.dropPosition.value === 'before',
@@ -732,8 +732,8 @@ function cancelEditTags() {
           @contextmenu.prevent="collections.openCtxMenu(node.id, $event)"
           @mouseenter="collections.openFlyout(node.id)"
           @mouseleave="collections.closeFlyout">
-          <span class="fav-tree-expand" v-if="(node.children || []).length > 0" @click.stop="collections.toggleExpand(node.path)">
-            <ChevronRight :size="14" :class="{ 'fav-tree-expand--open': collections.expandedPaths.value.has(node.path) }" />
+          <span class="fav-tree-expand" :class="{ 'fav-tree-expand--empty': !(node.children || []).length }" @click.stop="(node.children || []).length && collections.toggleExpand(node.path)">
+            <ChevronRight v-if="(node.children || []).length > 0" :size="14" :class="{ 'fav-tree-expand--open': collections.expandedPaths.value.has(node.path) }" />
           </span>
           <span class="fav-tree-icon" :class="{ active: collections.activeNodeId.value === node.id }">
             <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
@@ -789,7 +789,7 @@ function cancelEditTags() {
             <ArrowUpDown :size="14" /><span>{{ sortLabel() }}</span>
           </Button>
           <Button v-if="favoriteItems.length > 0" variant="ghost" size="sm" class="fav-action-btn" :class="{ 'fav-active': batchMode }" @click="toggleBatchMode">
-            <CheckSquare v-if="batchMode" :size="14" /><Square v-else :size="14" /><span>{{ batchMode ? '退出' : '批量' }}</span>
+            <CheckSquare v-if="batchMode" :size="14" /><Square v-else :size="14" /><span>{{ batchMode ? t('fav_batch_exit') : t('fav_batch_select') }}</span>
           </Button>
           <template v-if="batchMode && selectedCount > 0">
             <span class="fav-batch-count">已选 {{ selectedCount }}</span>
@@ -1431,6 +1431,7 @@ function cancelEditTags() {
 .fav-tree-expand { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex-shrink: 0; color: var(--text-tertiary); transition: transform 0.2s ease; border-radius: var(--radius-sm); }
 .fav-tree-expand:hover { background: var(--bg-active); }
 .fav-tree-expand--open { transform: rotate(90deg); }
+.fav-tree-expand--empty { visibility: hidden; pointer-events: none; }
 .fav-tree-icon { display: inline-flex; align-items: center; color: var(--text-secondary); flex-shrink: 0; }
 .fav-tree-icon.active { color: var(--accent); }
 .fav-tree-name { font-size: 13px; color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color 0.12s; }

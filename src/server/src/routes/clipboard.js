@@ -48,11 +48,12 @@ function detectContentType(content, declaredType) {
 // GET /api/clipboard - List clipboard items (with pagination)
 router.get('/', apiLimiter, async (req, res) => {
   try {
-    const { page = 1, limit = 50, contentType, search, favorites } = req.query;
+    const { page = 1, limit = 50, contentType, search, favorites, all } = req.query;
 
     // 验证分页参数
-    const pagination = validatePagination(page, limit);
+    const pagination = validatePagination(page, limit, { all: all === 'true' });
     const offset = (pagination.page - 1) * pagination.limit;
+    const useLimit = pagination.limit < Infinity
 
     let whereClause = 'WHERE ci.user_id = $1';
     const params = [req.userId];
@@ -105,6 +106,7 @@ router.get('/', apiLimiter, async (req, res) => {
     const total = parseInt(countResult.rows[0].count);
 
     // Get items
+    const limitClause = useLimit ? `LIMIT $${paramIndex} OFFSET $${paramIndex + 1}` : ''
     const itemsResult = await pool.query(
       `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
               ci.metadata, ci.is_favorite, ci.favorited_at, ci.expires_at, ci.created_at,
@@ -113,8 +115,8 @@ router.get('/', apiLimiter, async (req, res) => {
        LEFT JOIN devices d ON ci.source_device_id = d.id
        ${whereClause}
        ORDER BY ci.created_at DESC
-       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-      [...params, pagination.limit, offset]
+       ${limitClause}`,
+      useLimit ? [...params, pagination.limit, offset] : params
     );
 
     res.json({
@@ -277,6 +279,32 @@ router.get('/:id', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('Get clipboard item error:', { error: err.message });
     res.status(500).json({ error: 'Failed to get clipboard item' });
+  }
+});
+
+// GET /api/clipboard/:id/content - Get clipboard item content only (lightweight)
+router.get('/:id/content', apiLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 验证ID格式
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ error: 'Invalid ID format' });
+    }
+
+    const result = await pool.query(
+      `SELECT content_encrypted FROM clipboard_items WHERE id = $1 AND user_id = $2`,
+      [id, req.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Clipboard item not found' });
+    }
+
+    res.json({ contentEncrypted: result.rows[0].content_encrypted });
+  } catch (err) {
+    logger.error('Get clipboard content error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to get clipboard content' });
   }
 });
 
@@ -491,6 +519,31 @@ router.put('/:id/favorite', apiLimiter, async (req, res) => {
   }
 });
 
+// PUT /api/clipboard/:id/sensitive - Toggle manual sensitive flag on item metadata
+router.put('/:id/sensitive', apiLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { sensitive } = req.body;
+    if (!isValidUUID(id)) return res.status(400).json({ error: 'Invalid ID format' });
+    if (typeof sensitive !== 'boolean') return res.status(400).json({ error: 'sensitive must be a boolean' });
+
+    const result = await pool.query(
+      `UPDATE clipboard_items
+       SET metadata = jsonb_set(metadata, '{sensitive}', $1::jsonb)
+       WHERE id = $2 AND user_id = $3
+       RETURNING id, metadata`,
+      [JSON.stringify(sensitive), id, req.userId]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Clipboard item not found' });
+
+    res.json({ id: result.rows[0].id, sensitive, metadata: result.rows[0].metadata });
+  } catch (err) {
+    logger.error('Toggle sensitive error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to toggle sensitive' });
+  }
+});
+
 // DELETE /api/clipboard/:id - Delete a clipboard item
 router.delete('/:id', apiLimiter, async (req, res) => {
   try {
@@ -509,6 +562,9 @@ router.delete('/:id', apiLimiter, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Clipboard item not found' });
     }
+
+    // 清理关联数据：从收藏夹中移除已删除的条目
+    await pool.query('DELETE FROM favorite_collection_items WHERE item_id = $1', [id]);
 
     // 审计日志：记录剪贴板删除
     await logAuditEvent(req.userId, AUDIT_ACTIONS.CLIPBOARD_DELETE, 'clipboard', id, {
@@ -552,6 +608,9 @@ router.delete('/', apiLimiter, async (req, res) => {
       `DELETE FROM clipboard_items WHERE id = ANY($1::uuid[]) AND user_id = $2 RETURNING id`,
       [ids, req.userId]
     );
+
+    // 清理关联数据：从收藏夹中移除已删除的条目
+    await pool.query('DELETE FROM favorite_collection_items WHERE item_id = ANY($1::uuid[])', [ids]);
 
     logger.info('Batch delete', { userId: req.userId, requested: ids.length, deleted: result.rowCount });
     res.json({ message: `${result.rowCount} records deleted`, deletedIds: result.rows.map(r => r.id) });

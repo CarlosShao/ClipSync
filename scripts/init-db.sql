@@ -4,6 +4,7 @@
 -- 启用 UUID 扩展
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+CREATE EXTENSION IF NOT EXISTS "ltree";
 
 -- 用户表（如果需要）
 -- CREATE TABLE IF NOT EXISTS users (
@@ -55,10 +56,12 @@ CREATE TABLE IF NOT EXISTS favorite_collections (
     name VARCHAR(100) NOT NULL,
     icon VARCHAR(10) DEFAULT '📁',
     sort_order INTEGER DEFAULT 0,
+    path ltree NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_favcol_user ON favorite_collections(user_id);
+CREATE INDEX IF NOT EXISTS idx_favcol_path ON favorite_collections USING GIST(path);
 
 -- 收藏夹与剪贴板项的关联表（多对多）
 CREATE TABLE IF NOT EXISTS favorite_collection_items (

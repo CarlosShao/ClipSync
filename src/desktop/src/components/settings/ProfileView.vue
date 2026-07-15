@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { Camera, Pencil, Lock } from 'lucide-vue-next'
 import { useI18n } from '@/composables/useI18n'
 import { useConfigStore } from '@/stores/configStore'
-import { useToast } from '@/composables/useToast'
+import { useSonner } from '@/composables/useSonner'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Avatar from '@/components/ui/avatar/Avatar.vue'
@@ -13,7 +13,7 @@ import Label from '@/components/ui/label/Label.vue'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
-const toast = useToast()
+const toast = useSonner()
 
 // === Display Name (nickname) ===
 const editingName = ref(false)

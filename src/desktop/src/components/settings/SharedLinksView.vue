@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { useToast } from '@/composables/useToast'
+import { useSonner } from '@/composables/useSonner'
 import { Link, Copy } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 
 const { t } = useI18n()
-const toast = useToast()
+const toast = useSonner()
 
 interface SharedLink {
   id: string

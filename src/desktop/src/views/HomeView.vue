@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useConfigStore } from '@/stores/configStore'
 import { useTheme, currentMode } from '@/composables/useTheme'
@@ -8,6 +8,8 @@ import { useClipboard } from '@/composables/useClipboard'
 import { useDevice } from '@/composables/useDevice'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useNotifications } from '@/composables/useNotifications'
+import { useSonner } from '@/composables/useSonner'
+import { usePrivacy } from '@/composables/usePrivacy'
 import * as tauri from '@/lib/tauri'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
@@ -22,11 +24,12 @@ import SubscriptionView from '@/components/settings/SubscriptionView.vue'
 import NotificationsView from '@/components/settings/NotificationsView.vue'
 import ModalManager from '@/components/modals/ModalManager.vue'
 import DocumentDrawer from '@/components/DocumentDrawer.vue'
-import ToastContainer from '@/components/ui/ToastContainer.vue'
 import OnboardingView from '@/components/OnboardingView.vue'
 import CoachMarks from '@/components/CoachMarks.vue'
 import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
 import { perfFirstDataLoad } from '@/utils/perfMonitor'
+import { toggleSensitive } from '@/api/client'
+import { Lock } from 'lucide-vue-next'
 
 const configStore = useConfigStore()
 const { t } = useI18n()
@@ -35,6 +38,8 @@ const device = useDevice()
 const ws = useWebSocket()
 const notif = useNotifications()
 const { toggleMode } = useTheme()
+const toast = useSonner()
+const privacy = usePrivacy()
 const route = useRoute()
 const router = useRouter()
 
@@ -45,8 +50,11 @@ const showQuickPaste = ref(false)
 // Avatar URL from localStorage (set by profile save / login)
 const userAvatarUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('clipsync-avatar') || undefined : undefined
 
-// Sync route param to currentSub
+// Sync route param to currentSub (both initial load and runtime navigation)
 if (route.params.sub) currentSub.value = route.params.sub as string
+watch(() => route.params.sub, (sub) => {
+  if (sub) currentSub.value = sub as string
+})
 
 // Modal state
 const showModalType = ref('')
@@ -59,6 +67,55 @@ const confirmMessage = ref('')
 let confirmCallback: (() => void) | null = null
 const showOnboarding = ref(!localStorage.getItem('clipsync-onboarded'))
 const showCoachMarks = ref(false)
+
+// PIN verification dialog
+const showPinDialog = ref(false)
+const pinInput = ref('')
+const pinVerifying = ref(false)
+const pinError = ref('')
+const pinNoPinSet = ref(false)
+const pinCountdown = ref(0) // remaining seconds shown in dialog
+let pinCountdownTimer: ReturnType<typeof setInterval> | null = null
+const pinBtnDisabled = computed(() => pinVerifying.value || !pinInput.value)
+
+function startPinCountdown() {
+  stopPinCountdown()
+  pinCountdown.value = Math.ceil(privacy.pinRemaining.value / 1000)
+  pinCountdownTimer = setInterval(() => {
+    const remaining = privacy.pinRemaining.value
+    pinCountdown.value = remaining > 0 ? Math.ceil(remaining / 1000) : 0
+    if (remaining <= 0) stopPinCountdown()
+  }, 1000)
+}
+function stopPinCountdown() {
+  if (pinCountdownTimer) { clearInterval(pinCountdownTimer); pinCountdownTimer = null }
+  pinCountdown.value = 0
+}
+
+function openPinDialog() { showPinDialog.value = true; pinInput.value = ''; pinError.value = ''; pinNoPinSet.value = false; startPinCountdown() }
+function openPinSetupPrompt() { showPinDialog.value = true; pinInput.value = ''; pinError.value = ''; pinNoPinSet.value = true; stopPinCountdown() }
+function closePinDialog() { showPinDialog.value = false; pinInput.value = ''; pinError.value = ''; pinNoPinSet.value = false; stopPinCountdown() }
+function goToSettings() { closePinDialog(); router.push('/app/settings') }
+async function verifyPin() {
+  console.log('[Home] verifyPin called:', { pinInput: pinInput.value, pinVerifying: pinVerifying.value, pinLen: pinInput.value?.length })
+  pinError.value = ''
+  if (!pinInput.value) { pinError.value = t('pin_required') || '请输入 PIN'; return }
+  pinVerifying.value = true
+  try {
+    await new Promise(r => setTimeout(r, 200))
+    const ok = privacy.verifyPin(pinInput.value)
+    console.log('[Home] verifyPin result:', ok)
+    if (ok) {
+      closePinDialog()
+      toast.show(t('pin_verified') || 'PIN 验证成功', 'success')
+    } else {
+      pinError.value = t('pin_wrong') || 'PIN 错误'
+    }
+  } finally {
+    pinVerifying.value = false
+    console.log('[Home] verifyPin finally: pinVerifying reset to', pinVerifying.value)
+  }
+}
 
 let stopPolling: (() => void) | null = null
 let nativeNotifPermission = false
@@ -186,6 +243,20 @@ function onPreviewFile(item: any) {
   }
 }
 function closePreview() { previewItem.value = null; previewType.value = '' }
+function onShowPinDialog() { openPinDialog() }
+function onShowPinSetup() { openPinSetupPrompt() }
+async function onToggleSensitive(item: any) {
+  try {
+    const newVal = !item.metadata?.sensitive
+    await toggleSensitive(item.id, newVal)
+    // Update local item metadata
+    const target = clip.items.value.find(i => i.id === item.id)
+    if (target) { (target as any).metadata = { ...(target as any).metadata, sensitive: newVal } }
+    toast.show(newVal ? (t('sens_locked') || '已标记为敏感') : (t('sens_unlocked') || '已取消敏感标记'), 'success')
+  } catch (e: any) {
+    toast.show(e.message || t('sens_toggle_fail') || '操作失败', 'error')
+  }
+}
 function closeDrawer() { showDrawer.value = false; drawerItem.value = null }
 
 function onOnboardingComplete() {
@@ -238,12 +309,18 @@ function confirmAction() {
         @preview-image="onPreviewImage"
         @preview-text="onPreviewText"
         @preview-file="onPreviewFile"
+        @show-pin-dialog="onShowPinDialog"
+        @show-pin-setup="onShowPinSetup"
+        @toggle-sensitive="onToggleSensitive"
       />
       <FavoritesView
         v-else-if="currentSub === 'favorites'"
         @preview-image="onPreviewImage"
         @preview-text="onPreviewText"
         @preview-file="onPreviewFile"
+        @show-pin-dialog="onShowPinDialog"
+        @show-pin-setup="onShowPinSetup"
+        @toggle-sensitive="onToggleSensitive"
       />
       <SettingsView v-else-if="currentSub === 'settings'" @open-modal="openModal" />
       <ProfileView v-else-if="currentSub === 'profile'" />
@@ -267,11 +344,39 @@ function confirmAction() {
     @close-preview="closePreview"
     @confirm-action="confirmAction"
     @switch-modal="openModal"
+    @show-pin-dialog="onShowPinDialog"
+    @show-pin-setup="onShowPinSetup"
+    @toggle-sensitive="onToggleSensitive"
   />
 
-  <DocumentDrawer :open="showDrawer" :item="drawerItem" @close="closeDrawer" />
+  <!-- PIN Verification Dialog -->
+  <div v-if="showPinDialog" class="pin-overlay" @click.self="closePinDialog">
+    <div class="pin-dialog">
+      <div class="pin-dialog-header">
+        <Lock :size="18" />
+        <span>{{ pinNoPinSet ? (t('pin_setup_title') || '请先设置 PIN') : (t('pin_title') || 'PIN 验证') }}</span>
+      </div>
+      <p v-if="pinNoPinSet" class="pin-dialog-hint">{{ t('pin_setup_hint') || '查看/复制敏感数据需要先设置 PIN' }}</p>
+      <p v-else class="pin-dialog-hint">{{ t('pin_hint') || '请输入 PIN 以查看/复制敏感数据' }}</p>
+      <!-- Countdown timer (shown during PIN verification) -->
+      <div v-if="!pinNoPinSet && pinCountdown > 0" class="pin-countdown">{{ t('pin_countdown', { s: pinCountdown }) || `PIN 验证剩余 ${pinCountdown} 秒` }}</div>
+      <!-- PIN input (hidden when no PIN set) -->
+      <input v-if="!pinNoPinSet" v-model="pinInput" type="password" inputmode="numeric" maxlength="6" class="pin-input" :placeholder="t('pin_placeholder') || '输入 PIN'" @keyup.enter="verifyPin" />
+      <div v-if="pinError" class="pin-error">{{ pinError }}</div>
+      <div class="pin-dialog-actions">
+        <!-- Plain HTML buttons to avoid Button component rendering issues -->
+        <button class="pin-btn-cancel" @click="closePinDialog">{{ t('cancel_btn') }}</button>
+        <template v-if="pinNoPinSet">
+          <button class="pin-btn-primary" @click="goToSettings">{{ t('pin_go_settings') || '前往设置' }}</button>
+        </template>
+        <template v-else>
+          <button class="pin-btn-primary" :class="{ 'pin-btn-primary--active': pinInput && !pinVerifying }" @click="verifyPin">{{ pinVerifying ? (t('verifying') || '验证中...') : (t('pin_verify_btn') || '验证') }}</button>
+        </template>
+      </div>
+    </div>
+  </div>
 
-  <ToastContainer />
+  <DocumentDrawer :open="showDrawer" :item="drawerItem" @close="closeDrawer" />
 
   <!-- First-run experience -->
   <OnboardingView v-if="showOnboarding" @complete="onOnboardingComplete" />
@@ -286,4 +391,39 @@ function confirmAction() {
 .main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-sm); background: transparent; border: none; color: var(--text-secondary); cursor: pointer; }
 .btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* PIN Verification Dialog */
+.pin-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-modal-overlay); animation: fadeIn 0.15s ease;
+}
+.pin-dialog {
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl); padding: 28px; max-width: 380px; width: 100%;
+  box-shadow: var(--shadow-modal); animation: slideUp 0.2s ease;
+}
+.pin-dialog-header { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.pin-dialog-hint { font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5; }
+.pin-input { width: 100%; height: 40px; text-align: center; font-size: 18px; letter-spacing: 6px; }
+.pin-error { font-size: 12px; color: var(--danger); margin-top: 8px; text-align: center; }
+.pin-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.pin-btn-cancel {
+  padding: 8px 18px; border-radius: var(--radius-md); border: 1px solid var(--border-default);
+  background: var(--bg-surface); color: var(--text-secondary); font-size: 13px;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.pin-btn-cancel:hover { background: var(--bg-hover); color: var(--text-primary); }
+.pin-btn-primary {
+  padding: 8px 18px; border-radius: var(--radius-md); border: none;
+  background: var(--accent); color: white; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.pin-btn-primary:hover { opacity: 0.9; }
+.pin-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.pin-btn-primary--active { opacity: 1; }
+.pin-countdown { font-size: 12px; color: var(--text-tertiary); text-align: center; margin-top: 8px; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 </style>

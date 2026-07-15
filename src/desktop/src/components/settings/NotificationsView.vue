@@ -2,13 +2,13 @@
 import { computed, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useNotifications, type NotifCategory } from '@/composables/useNotifications'
-import { useToast } from '@/composables/useToast'
+import { useSonner } from '@/composables/useSonner'
 import { Bell, Gift, Download, Smartphone, ShieldAlert, CheckCheck } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
 
 const { t } = useI18n()
-const toast = useToast()
+const toast = useSonner()
 const { notifications, unreadCount, loadHistory, markRead: rawMarkRead, markAllRead } = useNotifications()
 
 async function markRead(id: string) {

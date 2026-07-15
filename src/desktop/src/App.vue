@@ -3,7 +3,7 @@ import { onMounted, ref, watch } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
 import { useTheme } from '@/composables/useTheme'
 import { useI18n } from '@/composables/useI18n'
-import ToastContainer from '@/components/ui/ToastContainer.vue'
+import { Toaster } from 'vue-sonner'
 import * as tauri from '@/lib/tauri'
 
 const configStore = useConfigStore()
@@ -35,7 +35,15 @@ onMounted(async () => {
   <!-- Normal app shell -->
   <template v-else>
     <router-view />
-    <ToastContainer />
+    <Toaster
+      position="top-right"
+      :rich-colors="true"
+      :close-button="true"
+      close-button-position="top-right"
+      :duration="3000"
+      :expand="true"
+      :visible-toasts="3"
+    />
   </template>
 </template>
 

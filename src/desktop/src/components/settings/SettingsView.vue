@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useTheme, currentMode } from '@/composables/useTheme'
 import { useConfigStore } from '@/stores/configStore'
-import { useToast } from '@/composables/useToast'
+import { useSonner } from '@/composables/useSonner'
+import { usePrivacy } from '@/composables/usePrivacy'
 import { ChevronRight, ChevronDown, Github, Sun, Moon, Monitor } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -14,7 +15,9 @@ import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
 const { t, currentLang, setLang } = useI18n()
 const { setMode } = useTheme()
 const configStore = useConfigStore()
-const toast = useToast()
+const privacy = usePrivacy()
+const pinSet = computed(() => privacy.pinSet.value)
+const toast = useSonner()
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
 const langModel = ref<string>(currentLang.value as string)
 const syncIntervalModel = ref(String(configStore.syncInterval))
@@ -28,6 +31,54 @@ const pwdNew = ref('')
 const pwdConfirm = ref('')
 const pwdChanging = ref(false)
 const pwdError = ref('')
+
+// PIN setup form state
+const showPinSetup = ref(false)
+const pinNew = ref('')
+const pinConfirm = ref('')
+const pinSetting = ref(false)
+const pinError = ref('')
+
+// PIN timeout options (ms)
+const PIN_TIMEOUT_OPTIONS = [
+  { value: 30000, i18nKey: 'pin_timeout_30s' },
+  { value: 60000, i18nKey: 'pin_timeout_1m' },
+  { value: 120000, i18nKey: 'pin_timeout_2m' },
+  { value: 300000, i18nKey: 'pin_timeout_5m' },
+  { value: 600000, i18nKey: 'pin_timeout_10m' },
+  { value: 1800000, i18nKey: 'pin_timeout_30m' },
+]
+const pinTimeout = ref(privacy.getPinTimeout())
+watch(pinTimeout, (v) => { privacy.setPinTimeout(v) })
+
+function resetPinForm() {
+  pinNew.value = ''
+  pinConfirm.value = ''
+  pinError.value = ''
+}
+
+function handleSetPin() {
+  pinError.value = ''
+  if (!/^\d{4,6}$/.test(pinNew.value)) { pinError.value = t('pin_format_error') || 'PIN 必须为4-6位数字'; return }
+  if (pinNew.value !== pinConfirm.value) { pinError.value = t('pin_mismatch') || '两次输入的PIN不一致'; return }
+  pinSetting.value = true
+  setTimeout(() => {
+    privacy.setPin(pinNew.value)
+    pinSetting.value = false
+    resetPinForm()
+    showPinSetup.value = false
+    toast.show(t('pin_set_success') || 'PIN 已设置', 'success')
+  }, 300)
+}
+
+function handleResetPin() {
+  console.log('[Settings] handleResetPin: before reset, privacy.pinSet=', privacy.pinSet.value)
+  privacy.resetPin()
+  console.log('[Settings] handleResetPin: after reset, privacy.pinSet=', privacy.pinSet.value)
+  resetPinForm()
+  showPinSetup.value = false
+  toast.show(t('pin_reset_success') || 'PIN 已清除', 'info')
+}
 
 function onMaxHistoryChange() {
   const val = Number(maxHistoryModel.value)
@@ -181,6 +232,53 @@ function resetPwdForm() {
         <div class="sg-label"><div class="sg-name">{{ t('sg_notifp') }}</div><div class="sg-hint">{{ t('sg_notifp_h') }}</div></div>
         <ChevronRight class="sg-arrow" />
       </div>
+      <!-- Privacy: mask sensitive content -->
+      <div class="sg-row">
+        <div class="sg-label"><div class="sg-name">{{ t('sg_privacy_mask') }}</div><div class="sg-hint">{{ t('sg_privacy_mask_h') }}</div></div>
+        <Switch :model-value="configStore.privacyMode" @update:model-value="(v: boolean) => configStore.togglePrivacyMode(v)" />
+      </div>
+      <div class="sg-row">
+        <div class="sg-label"><div class="sg-name">{{ t('sg_privacy_autoblur') }}</div><div class="sg-hint">{{ t('sg_privacy_autoblur_h') }}</div></div>
+        <Switch :model-value="configStore.autoBlur" @update:model-value="(v: boolean) => configStore.toggleAutoBlur(v)" />
+      </div>
+      <!-- PIN Protection -->
+      <div class="sg-row" style="cursor:pointer;" @click="showPinSetup = !showPinSetup">
+        <div class="sg-label"><div class="sg-name">{{ t('sg_privacy_pin') || 'PIN 保护' }}</div><div class="sg-hint">{{ pinSet ? (t('sg_privacy_pin_set') || 'PIN 已设置，查看/复制敏感数据需验证') : (t('sg_privacy_pin_unset') || '未设置，查看/复制敏感数据无需验证') }}</div></div>
+        <ChevronDown :class="['sg-arrow', { 'sg-arrow--rotated': showPinSetup }]" />
+      </div>
+      <!-- PIN setup form (inline expand) -->
+      <div v-if="showPinSetup" class="pwd-change-form" style="padding: 20px 24px;">
+        <template v-if="!pinSet">
+          <div class="pwd-field">
+            <label class="pwd-label">{{ t('pin_new') || '设置 PIN（4-6位数字）' }}</label>
+            <Input v-model="pinNew" type="password" inputmode="numeric" maxlength="6" class="sg-input--block" :placeholder="t('pin_new_ph') || '输入4-6位数字PIN'" @keyup.enter="handleSetPin" />
+          </div>
+          <div class="pwd-field">
+            <label class="pwd-label">{{ t('pin_confirm') || '确认 PIN' }}</label>
+            <Input v-model="pinConfirm" type="password" inputmode="numeric" maxlength="6" class="sg-input--block" :placeholder="t('pin_confirm_ph') || '再次输入PIN'" @keyup.enter="handleSetPin" />
+          </div>
+          <div class="pwd-actions">
+            <Button class="pwd-btn" @click="handleSetPin" :disabled="pinSetting">{{ pinSetting ? (t('saving') || '设置中...') : (t('pin_set_btn') || '设置 PIN') }}</Button>
+            <Button variant="outline" class="pwd-btn" @click="showPinSetup = false; resetPinForm()">{{ t('cancel_btn') }}</Button>
+          </div>
+        </template>
+        <template v-else>
+          <div class="pwd-field">
+            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">{{ t('sg_privacy_pin_set') || 'PIN 已设置' }}</p>
+          </div>
+          <div class="pwd-field">
+            <label class="pwd-label">{{ t('pin_timeout_label') || 'PIN 验证有效期' }}</label>
+            <select v-model="pinTimeout" class="pin-timeout-select">
+              <option v-for="opt in PIN_TIMEOUT_OPTIONS" :key="opt.value" :value="opt.value">{{ t(opt.i18nKey) }}</option>
+            </select>
+          </div>
+          <div class="pwd-actions">
+            <Button variant="destructive" class="pwd-btn" @click="handleResetPin">{{ t('pin_reset_btn') || '清除 PIN' }}</Button>
+            <Button variant="outline" class="pwd-btn" @click="showPinSetup = false">{{ t('cancel_btn') }}</Button>
+          </div>
+        </template>
+        <div v-if="pinError" class="pwd-error">{{ pinError }}</div>
+      </div>
       <!-- Change Password -->
       <div class="sg-row" style="cursor:pointer;" @click="showPwdChange = !showPwdChange">
         <div class="sg-label"><div class="sg-name">{{ t('sg_chpwd') || '修改密码' }}</div><div class="sg-hint">{{ t('sg_chpwd_h') || '输入旧密码和新密码以修改登录密码' }}</div></div>
@@ -294,6 +392,15 @@ function resetPwdForm() {
 .pwd-actions { display: flex; gap: 10px; margin-top: 12px; padding-left: 4px; }
 .pwd-btn { padding: 10px 28px; }
 .pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
+.pin-timeout-select {
+  width: 100%; height: 36px; padding: 0 36px 0 12px; border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); font-size: 13px; background: var(--bg-surface);
+  color: var(--text-primary); outline: none; cursor: pointer;
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='14'%20height='14'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%239aa0a6'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpolyline%20points='6%209%2012%2015%2018%209'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 14px;
+}
+.pin-timeout-select:focus { border-color: var(--border-focus); }
 
 .sg-select { width: 160px; }
 .mode-seg { display: inline-flex; gap: 0; border: 1px solid var(--border-default); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-hover); }

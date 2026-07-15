@@ -5,6 +5,7 @@ import App from './App.vue'
 import { initErrorCapture } from './utils/errorReport'
 import { initPerfMonitor } from './utils/perfMonitor'
 import './styles/globals.css'
+import 'vue-sonner/style.css'
 
 // Capture uncaught errors before Vue mounts
 initErrorCapture()

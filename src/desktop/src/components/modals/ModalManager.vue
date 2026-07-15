@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, reactive, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { useToast } from '@/composables/useToast'
+import { useSonner } from '@/composables/useSonner'
 import { useTheme } from '@/composables/useTheme'
 import { QrCode, MessageCircle, Landmark } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
-import { api, apiBlob } from '@/api/client'
+import { api, apiBlob, getClipboardItemContent } from '@/api/client'
 import { useConfigStore } from '@/stores/configStore'
 import { useDevice } from '@/composables/useDevice'
+import { usePrivacy } from '@/composables/usePrivacy'
 import { initPairing, redeemPairing } from '@/api/device'
 import { useNotifications } from '@/composables/useNotifications'
 import * as tauri from '@/lib/tauri'
@@ -17,7 +18,7 @@ import ModalDialog from '@/components/ui/ModalDialog.vue'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
-import { Pencil, Monitor, Smartphone, FileText, CircleCheck, Download, ZoomIn, ZoomOut, RotateCcw, RotateCw } from 'lucide-vue-next'
+import { Pencil, Monitor, Smartphone, FileText, CircleCheck, Download, ZoomIn, ZoomOut, RotateCcw, RotateCw, Lock } from 'lucide-vue-next'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import mammoth from 'mammoth'
@@ -51,18 +52,20 @@ function renderMarkdown(text: string): string {
 }
 
 /** Detect file type from filename extension */
-function detectFileType(filename: string): 'markdown' | 'code' | 'text' | 'docx' | 'pdf' | 'image' | 'unsupported' {
+function detectFileType(filename: string): 'markdown' | 'code' | 'text' | 'docx' | 'pptx' | 'pdf' | 'image' | 'unsupported' {
   const ext = filename.split('.').pop()?.toLowerCase() || ''
-  if (['md', 'markdown', 'mdx'].includes(ext)) return 'markdown'
+  if (['md', 'markdown', 'mdx', 'rst'].includes(ext)) return 'markdown'
   if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'cs',
        'html', 'css', 'scss', 'less', 'json', 'yaml', 'yml', 'xml', 'toml',
        'sql', 'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd', 'rb', 'php', 'swift',
        'kt', 'scala', 'r', 'lua', 'vim', 'dockerfile', 'makefile', 'ini', 'env',
-       'vue', 'svelte'].includes(ext)) return 'code'
-  if (['txt', 'log', 'csv', 'tsv', 'cfg', 'conf', 'properties'].includes(ext)) return 'text'
-  if (['docx'].includes(ext)) return 'docx'
-  if (['pdf'].includes(ext)) return 'pdf'
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'tiff'].includes(ext)) return 'image'
+       'vue', 'svelte', 'dart', 'ex', 'exs', 'clj', 'hs', 'nim', 'zig', 'wasm',
+       'proto', 'graphql', 'tf', 'hcl', 'erl', 'ml', 'mli', 'f90', 'f95'].includes(ext)) return 'code'
+  if (['txt', 'log', 'csv', 'tsv', 'cfg', 'conf', 'properties', 'tex', 'latex', 'org'].includes(ext)) return 'text'
+  if (['doc', 'docx', 'pages', 'key', 'numbers', 'odt', 'rtf'].includes(ext)) return 'docx'
+  if (['ppt', 'pptx'].includes(ext)) return 'pptx'
+  if (['pdf', 'epub', 'mobi', 'azw3', 'djvu'].includes(ext)) return 'pdf'
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'tiff', 'avif', 'heic'].includes(ext)) return 'image'
   return 'unsupported'
 }
 
@@ -80,6 +83,13 @@ function getLangFromExt(filename: string): string {
     r: 'r', lua: 'lua', vue: 'html', svelte: 'html',
     dockerfile: 'dockerfile', makefile: 'makefile',
     ini: 'ini', env: 'bash', bat: 'batch', cmd: 'batch', ps1: 'powershell',
+    dart: 'dart', ex: 'elixir', exs: 'elixir', clj: 'clojure',
+    hs: 'haskell', nim: 'nim', zig: 'zig', wasm: 'wasm',
+    proto: 'protobuf', graphql: 'graphql', tf: 'hcl', hcl: 'hcl',
+    erl: 'erlang', ml: 'ocaml', mli: 'ocaml',
+    f90: 'fortran', f95: 'fortran',
+    tex: 'latex', latex: 'latex',
+    vim: 'vim',
   }
   return map[ext] || ext
 }
@@ -140,6 +150,9 @@ const emit = defineEmits<{
   'close-preview': []
   'confirm-action': []
   'switch-modal': [type: string]
+  'show-pin-dialog': []
+  'show-pin-setup': []
+  'toggle-sensitive': [item: any]
 }>()
 
 // 打开「生成配对码」弹窗时自动创建二维码；离开配对类弹窗时清理计时器与摄像头
@@ -158,6 +171,7 @@ watch(() => props.showModalType, (type) => {
 // Load file content when preview item changes
 watch(() => props.previewItem, (item) => {
   if (!item) return
+  // Reset peek state for new preview item (usePrivacy handles its own state)
   if (props.previewType === 'file') {
     loadFileContent(item)
   } else if (props.previewType === 'text') {
@@ -166,9 +180,36 @@ watch(() => props.previewItem, (item) => {
 }, { immediate: true })
 
 const { t } = useI18n()
-const toast = useToast()
+const toast = useSonner()
 const { allThemes, setStyle, currentStyle } = useTheme()
 const { savePreference, loadPreferencesInto, PREF_TYPE_BY_KEY } = useNotifications()
+const configStore = useConfigStore()
+const privacy = usePrivacy()
+
+// Privacy: helper for template — delegates to usePrivacy composable
+function isPreviewSensitive(): boolean {
+  if (privacy.peekItemId.value) return false // already peeked
+  const text = previewContent.value || props.previewItem?.content || ''
+  // Manual lock OR auto-detected sensitive content — always check
+  const item = props.previewItem
+  if (item?.metadata?.sensitive === true) return true
+  if (privacy.isSensitiveContent(text)) return true
+  return false
+}
+function onPreviewPeek() {
+  const itemId = props.previewItem?.id || 'modal-preview'
+  console.log('[Modal] onPreviewPeek:', { itemId: itemId.slice(0,8), pinSet: privacy.pinSet.value, pinVerified: privacy.pinVerified.value })
+  if (privacy.startPeek(itemId)) {
+    console.log('[Modal] onPreviewPeek: startPeek true, peekItemId=', privacy.peekItemId.value)
+  } else {
+    console.log('[Modal] onPreviewPeek: startPeek false, pinSet=', privacy.pinSet.value)
+    if (!privacy.pinSet.value) {
+      emit('show-pin-setup')
+    } else {
+      emit('show-pin-dialog')
+    }
+  }
+}
 
 // Plan selection state (for pricing → payment flow)
 const selectedPlan = ref<{ id: string; name: string; price: number } | null>(null)
@@ -323,14 +364,19 @@ function detectDocType(content: string, filename?: string): string {
   // Always prioritize filename extension if available
   if (filename) {
     const ext = filename.split('.').pop()?.toLowerCase() || ''
-    if (['md', 'markdown', 'mdx'].includes(ext)) return 'Markdown'
+    if (['md', 'markdown', 'mdx', 'rst'].includes(ext)) return 'Markdown'
     if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'cs',
          'html', 'css', 'scss', 'less', 'json', 'yaml', 'yml', 'xml', 'toml',
-         'sql', 'sh', 'bash', 'rb', 'php', 'swift', 'kt', 'scala', 'r', 'lua',
-         'vue', 'svelte', 'dockerfile', 'makefile', 'ini', 'env'].includes(ext)) return 'Code'
-    if (['txt', 'log', 'csv', 'tsv', 'cfg', 'conf', 'properties'].includes(ext)) return 'Text'
-    // Known but unsupported extensions (docx, pdf, image handled separately)
-    if (['doc', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar', '7z', 'apk', 'exe', 'msi', 'dmg', 'iso'].includes(ext)) return 'Unsupported'
+         'sql', 'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd', 'rb', 'php', 'swift',
+         'kt', 'scala', 'r', 'lua', 'vue', 'svelte', 'dockerfile', 'makefile',
+         'ini', 'env', 'dart', 'ex', 'exs', 'clj', 'hs', 'nim', 'zig',
+         'proto', 'graphql', 'tf', 'hcl', 'erl', 'ml', 'mli',
+         'f90', 'f95', 'vim'].includes(ext)) return 'Code'
+    if (['txt', 'log', 'csv', 'tsv', 'cfg', 'conf', 'properties', 'tex', 'latex', 'org'].includes(ext)) return 'Text'
+    // Known but unsupported extensions (docx, pdf, image handled separately by detectFileType)
+    if (['doc', 'pages', 'key', 'numbers', 'odt', 'rtf',
+         'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar', '7z', 'apk', 'exe', 'msi', 'dmg', 'iso',
+         'epub', 'mobi', 'azw3', 'djvu'].includes(ext)) return 'Unsupported'
   }
   // Fallback: content-based detection (only when no filename or unknown extension)
   if (!content) return 'Text'
@@ -371,14 +417,51 @@ const previewImageDataUrl = ref('') // for image file preview
 /** Load file content from server for file-type preview */
 async function loadFileContent(item: any) {
   if (!item?.id) return
-  // Parse filename from content — could be JSON metadata or plain filename
-  try {
-    const meta = JSON.parse(item.content)
-    previewFileName.value = meta.name || item.content.slice(0, 50)
-  } catch {
-    // item.content is a plain filename string (e.g. "SKILL.md")
-    previewFileName.value = item.content || 'Untitled'
+
+  // ── Step 1: Extract filename from item.content ──
+  // item.content can be: {name,paths} JSON | path array JSON | plain path | raw text
+  // Strategy: regex scan for a filename with known extension, then JSON parsing
+  const knownExts = ['md','markdown','mdx','rst','txt','log','csv','tsv','cfg','conf','properties','tex','latex','org',
+    'js','ts','jsx','tsx','py','java','go','rs','c','cpp','h','cs','html','css','scss','less','json','yaml','yml','xml','toml','sql','sh','bash','zsh','ps1','bat','cmd','rb','php','swift','kt','scala','r','lua','vue','svelte','dockerfile','makefile','ini','env','dart','ex','exs','clj','hs','nim','zig','proto','graphql','tf','hcl','erl','ml','mli','f90','f95','vim',
+    'doc','docx','pages','key','numbers','odt','rtf','xls','xlsx','ppt','pptx',
+    'pdf','epub','mobi','azw3','djvu',
+    'png','jpg','jpeg','gif','webp','bmp','svg','ico','tiff','avif','heic']
+  const extPattern = knownExts.join('|')
+  const filenameRegex = new RegExp(`([^/\\\\<>"|?*]+)\\.(${extPattern})(?=[^/\\\\]|$)`, 'i')
+  let fileName = ''
+  const contentStr = String(item.content || '')
+
+  // Strategy A: regex scan for filename with extension
+  const regexMatch = contentStr.match(filenameRegex)
+  if (regexMatch) {
+    fileName = regexMatch[0]
+  } else {
+    // Strategy B: JSON parsing
+    try {
+      const meta = JSON.parse(item.content)
+      if (meta && typeof meta === 'object') {
+        if (meta.name) fileName = meta.name
+        else if (meta.originalName) fileName = meta.originalName
+        else if (meta.fileName) fileName = meta.fileName
+        else if (Array.isArray(meta.paths) && meta.paths.length > 0 && typeof meta.paths[0] === 'string') {
+          fileName = meta.paths[0].split(/[/\\]/).pop() || 'Untitled'
+        } else if (Array.isArray(meta) && meta.length > 0 && typeof meta[0] === 'string') {
+          fileName = meta[0].split(/[/\\]/).pop() || 'Untitled'
+        }
+      }
+    } catch { /* not JSON */ }
+
+    // Strategy C: plain path or contentPreview fallback
+    if (!fileName) {
+      const raw = contentStr.split(/[/\\]/).pop()
+      if (raw && raw.includes('.')) fileName = raw
+      else if ((item as any).contentPreview) {
+        const prev = String((item as any).contentPreview).split(/[/\\]/).pop()
+        if (prev) fileName = prev
+      }
+    }
   }
+  previewFileName.value = fileName || 'Untitled'
 
   const fileType = detectFileType(previewFileName.value)
   const docType = detectDocType('', previewFileName.value)
@@ -464,35 +547,35 @@ async function loadFileContent(item: any) {
           if (fileType === 'docx') await renderDocx(arrayBuffer)
           else if (fileType === 'pdf') await renderPdf(arrayBuffer)
         } else {
-          previewContent.value = '[Unable to load file]'
+          previewContent.value = t('preview_unable')
         }
       }
     } else {
-      // Text-based files: fetch from clipboard endpoint
-      const res = await api('GET', `/api/clipboard/${item.id}`)
-      if (res.ok && res.data?.contentEncrypted) {
-        let content = res.data.contentEncrypted
+      // Text-based files: fetch content via lightweight endpoint
+      const content = await getClipboardItemContent(item.id)
+      if (content) {
         // If content is a file path array (old uploads), read actual file via Tauri
+        let finalContent = content
         try {
           const parsed = JSON.parse(content)
           if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string' && parsed[0].includes('\\')) {
             // Path array — try reading actual file content
             try {
               const fileContent = await tauri.readFileContent(parsed[0])
-              if (fileContent) content = fileContent
+              if (fileContent) finalContent = fileContent
             } catch { /* file not readable */ }
           }
         } catch { /* not JSON, use as-is */ }
-        previewContent.value = content
+        previewContent.value = finalContent
         if (docType === 'Markdown') {
-          previewToc.value = extractToc(content)
+          previewToc.value = extractToc(finalContent)
         }
       } else {
-        previewContent.value = '[Unable to load file content]'
+        previewContent.value = t('preview_unable')
       }
     }
   } catch {
-    previewContent.value = '[Failed to load file content]'
+    previewContent.value = t('preview_failed')
   }
   fileContentLoading.value = false
 }
@@ -885,7 +968,6 @@ async function loadInvoices() {
 }
 
 // ===== 二维码扫码配对（手动同步兜底方案）=====
-const configStore = useConfigStore()
 const device = useDevice()
 
 // --- 生成配对码（本机已登录设备）---
@@ -1413,16 +1495,32 @@ async function handleFeedbackSubmit() {
   <!-- Text / Document / File Detail -->
   <ModalDialog :open="previewType === 'text' || previewType === 'file'" :title="previewType === 'file' ? t('file_preview_title') : t('text_detail_title')" max-width="900px" @close="emit('close-preview')">
     <div v-if="previewItem" class="doc-preview-wrap">
+      <!-- Sensitive content mask overlay -->
+      <div v-if="isPreviewSensitive() && !privacy.peekItemId.value" class="doc-mask-overlay">
+          <div class="doc-mask-content">
+            <Lock :size="24" class="doc-mask-icon" />
+            <div class="doc-mask-text">{{ t('content_masked') }}</div>
+          <button class="doc-peek-btn" @click="onPreviewPeek()">{{ t('peek_content') }}</button>
+        </div>
+      </div>
+
       <!-- Content type indicator -->
       <div class="doc-type-bar">
-        <Badge variant="outline" class="doc-type-badge">{{ detectDocType(previewContent, previewFileName) }}</Badge>
-        <span class="doc-size">{{ formatDocSize(previewContent.length) }}</span>
+        <div class="doc-type-left">
+          <Badge variant="outline" class="doc-type-badge">{{ detectDocType(previewContent, previewFileName) }}</Badge>
+          <span class="doc-size">{{ formatDocSize(previewContent.length) }}</span>
+        </div>
+        <div class="doc-type-right">
+          <Button variant="ghost" size="icon-sm" :class="{ 'sensitive-locked': previewItem?.metadata?.sensitive }" @click="emit('toggle-sensitive', previewItem)" :title="previewItem?.metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
+            <Lock :size="14" />
+          </Button>
+        </div>
       </div>
 
       <!-- Loading state for file content -->
       <div v-if="fileContentLoading" class="doc-loading">
         <div class="doc-loading-spinner" />
-        <span>Loading file content...</span>
+        <span>{{ t('preview_loading') }}</span>
       </div>
 
       <!-- Image file preview (with zoom/rotate controls like image preview modal) -->
@@ -1460,24 +1558,24 @@ async function handleFeedbackSubmit() {
 
       <!-- PDF rendering -->
       <div v-else-if="detectFileType(previewFileName) === 'pdf' && pdfPages.length > 0" class="doc-pdf-wrap">
-        <div v-if="pdfTotalPages > 20" class="doc-pdf-info">Showing 20 of {{ pdfTotalPages }} pages</div>
+        <div v-if="pdfTotalPages > 20" class="doc-pdf-info">{{ t('preview_pages', { n: pdfTotalPages }) }}</div>
         <div v-for="page in pdfPages" :key="page.num" class="doc-pdf-page">
           <img :src="page.dataUrl" :alt="'Page ' + page.num" class="doc-pdf-img" />
           <span class="doc-pdf-num">{{ page.num }}</span>
         </div>
       </div>
 
-      <!-- Unsupported file type -->
-      <div v-else-if="detectDocType(previewContent, previewFileName) === 'Unsupported' && detectFileType(previewFileName) !== 'docx' && detectFileType(previewFileName) !== 'pdf' && detectFileType(previewFileName) !== 'image'" class="doc-unsupported">
-        <FileText :size="32" style="color:var(--text-tertiary);margin-bottom:8px" />
-        <p>Preview not available for this file type</p>
+      <!-- PPTX / other unsupported: show raw text content -->
+      <div v-else-if="detectFileType(previewFileName) === 'pptx' || (detectDocType(previewContent, previewFileName) === 'Unsupported' && detectFileType(previewFileName) !== 'docx' && detectFileType(previewFileName) !== 'pdf' && detectFileType(previewFileName) !== 'image')" class="doc-preview text-preview">
+        <div class="doc-unsupported-hint">{{ t('preview_unsupported') }}</div>
+        {{ previewContentLines.join('\n') }}
       </div>
 
       <!-- Markdown rendering with TOC -->
       <div v-else-if="detectDocType(previewContent, previewFileName) === 'Markdown'" class="doc-markdown-layout">
         <!-- TOC sidebar -->
         <nav v-if="previewToc.length > 0" class="doc-toc">
-          <div class="doc-toc-title">Table of Contents</div>
+          <div class="doc-toc-title">{{ t('toc_title') }}</div>
           <a v-for="item in previewToc" :key="item.id" :href="'#' + item.id" class="doc-toc-item"
              :class="'doc-toc-depth-' + item.depth"
              @click.prevent="scrollToHeading(item.id)">
@@ -1808,8 +1906,8 @@ async function handleFeedbackSubmit() {
 .doc-loading-spinner { width:24px; height:24px; border:2px solid var(--border-default); border-top-color:var(--accent); border-radius:50%; animation:spin .6s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 
-/* Unsupported file type */
-.doc-unsupported { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px; color:var(--text-tertiary); font-size:13px; }
+/* Unsupported file type hint (shown above raw text content) */
+.doc-unsupported-hint { font-size:12px; color:var(--text-tertiary); margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border-subtle); }
 
 /* Code with line numbers */
 .code-preview { display:flex; gap:0; padding:0; overflow:auto; max-height:500px; }
@@ -1868,6 +1966,21 @@ async function handleFeedbackSubmit() {
 .fb-char-count { font-size:11px; color:var(--text-tertiary); text-align:right; }
 .fb-input { width:100%; padding-left:12px !important; }
 .fb-success { font-size:13px; color:var(--success); text-align:center; margin-top:8px; }
+
+/* Privacy: sensitive content mask in modal preview */
+.doc-mask-overlay {
+  position: absolute; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-hover); border-radius: var(--radius-md);
+}
+.doc-mask-content { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.doc-mask-icon { color: var(--text-tertiary); opacity: 0.6; }
+.doc-mask-text { font-size: 13px; color: var(--text-secondary); }
+.doc-peek-btn { padding: 6px 16px; border-radius: 9999px; border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 12px; color: var(--accent); cursor: pointer; transition: all 0.12s; }
+.doc-peek-btn:hover { background: var(--accent-bg); border-color: var(--accent); }
+
+/* Ensure doc-preview-wrap is position:relative for the overlay */
+.doc-preview-wrap { position: relative; }
 </style>
 
 <!-- Non-scoped styles: needed for v-html rendered content (markdown-body) -->
