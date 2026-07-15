@@ -500,9 +500,35 @@ function toggleAddToCol(itemId: string) {
   addToColItemId.value = addToColItemId.value === itemId ? null : itemId
 }
 async function addToCollection(colId: string, itemId: string) {
-  const ok = await addCollectionItem(colId, itemId)
-  if (ok) toast.show(t('fav_added'), 'success')
   addToColItemId.value = null
+  try {
+    const ok = await addCollectionItem(colId, itemId)
+    if (!ok) {
+      toast.show(t('fav_add_fail'), 'error')
+      return
+    }
+    toast.show(t('fav_added'), 'success')
+    // Refresh collection counts in the tree
+    await collections.loadCollections()
+    // Optimistically update the active collection's item map so the moved item
+    // disappears from the current collection view (if applicable)
+    const activeId = collections.activeNodeId.value
+    const newMap = new Map(collections.collectionItemsMap.value)
+    if (activeId) {
+      const activeSet = newMap.get(activeId)
+      if (activeSet?.has(itemId)) {
+        const updated = new Set(activeSet)
+        updated.delete(itemId)
+        newMap.set(activeId, updated)
+      }
+    }
+    const targetSet = newMap.get(colId) || new Set()
+    newMap.set(colId, new Set(targetSet).add(itemId))
+    collections.collectionItemsMap.value = newMap
+  } catch (err: any) {
+    console.warn('[addToCollection] failed:', err)
+    toast.show(err.message || t('fav_add_fail'), 'error')
+  }
 }
 
 // --- Tags ---
@@ -937,7 +963,7 @@ function cancelEditTags() {
               <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                 <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
                 <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                  <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="addToCollection(node.id, item.id)">
+                  <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click.stop="addToCollection(node.id, item.id)">
                     <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
                     <span>{{ node.name }}</span>
                   </button>
@@ -1075,7 +1101,7 @@ function cancelEditTags() {
                 <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                   <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
                   <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                    <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="addToCollection(node.id, item.id)">
+                    <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click.stop="addToCollection(node.id, item.id)">
                       <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
                       <span>{{ node.name }}</span>
                     </button>
