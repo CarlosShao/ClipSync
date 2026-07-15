@@ -937,8 +937,9 @@ function cancelEditTags() {
               <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                 <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
                 <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                  <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 1) * 16 + 10 + 'px' }" @click="addToCollection(node.id, item.id)">
-                    <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" /> {{ node.name }}
+                  <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="addToCollection(node.id, item.id)">
+                    <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
+                    <span>{{ node.name }}</span>
                   </button>
                 </div>
               </div>
@@ -1074,8 +1075,9 @@ function cancelEditTags() {
                 <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                   <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
                   <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                    <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 1) * 16 + 10 + 'px' }" @click="addToCollection(node.id, item.id)">
-                      <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" /> {{ node.name }}
+                    <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="addToCollection(node.id, item.id)">
+                      <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
+                      <span>{{ node.name }}</span>
                     </button>
                   </div>
                 </div>
@@ -1383,7 +1385,7 @@ function cancelEditTags() {
 /* Add to collection dropdown */
 .fav-add-col-wrap { position: relative; display: inline-flex; }
 .fav-add-col-dropdown { position: absolute; top: 100%; right: 0; margin-top: 4px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-modal); padding: 4px; z-index: 50; min-width: 160px; }
-.fav-add-col-option { display: block; width: 100%; padding: 6px 10px; border: none; background: none; text-align: left; font-size: 12px; color: var(--text-primary); cursor: pointer; border-radius: var(--radius-sm); white-space: nowrap; }
+.fav-add-col-option { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 10px; border: none; background: none; text-align: left; font-size: 12px; color: var(--text-primary); cursor: pointer; border-radius: var(--radius-sm); white-space: nowrap; }
 .fav-add-col-option:hover { background: var(--bg-hover); }
 
 /* Pick collection bar (方案 A: shown when navigating from ClipboardView popover) */
