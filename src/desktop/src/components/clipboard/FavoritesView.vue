@@ -937,8 +937,8 @@ function cancelEditTags() {
               <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                 <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
                 <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                  <button v-for="col in collections.flatCollections.value" :key="col.id" class="fav-add-col-option" @click="addToCollection(col.id, item.id)">
-                    <component :is="COLLECTION_ICON_MAP[col.icon] || Folder" :size="14" /> {{ col.name }}
+                  <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 1) * 16 + 10 + 'px' }" @click="addToCollection(node.id, item.id)">
+                    <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" /> {{ node.name }}
                   </button>
                 </div>
               </div>
@@ -1074,8 +1074,8 @@ function cancelEditTags() {
                 <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                   <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
                   <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                    <button v-for="col in collections.flatCollections.value" :key="col.id" class="fav-add-col-option" @click="addToCollection(col.id, item.id)">
-                      <component :is="COLLECTION_ICON_MAP[col.icon] || Folder" :size="14" /> {{ col.name }}
+                    <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 1) * 16 + 10 + 'px' }" @click="addToCollection(node.id, item.id)">
+                      <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" /> {{ node.name }}
                     </button>
                   </div>
                 </div>
