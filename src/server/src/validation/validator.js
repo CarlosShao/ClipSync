@@ -197,7 +197,9 @@ export function escapeSql(input) {
  * @param {any} limit 
  * @returns {{page: number, limit: number}}
  */
-export function validatePagination(page, limit) {
+export function validatePagination(page, limit, opts = {}) {
+  const { all } = opts
+  if (all) return { page: 1, limit: Infinity }
   let pageNum = parseInt(page) || 1;
   let limitNum = parseInt(limit) || 50;
 

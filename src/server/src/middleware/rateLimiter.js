@@ -201,7 +201,7 @@ export const apiLimiter = process.env.NODE_ENV === 'test'
   ? (req, res, next) => next()
   : createRateLimiter({
       windowMs: 60 * 1000,  // 1分钟
-      max: 100,             // 100次
+      max: 300,             // 300次（桌面端同步需要更多请求）
       message: 'API rate limit exceeded, please try again later',
       keyGenerator: (req) => {
         // 已登录请求按用户限流（C5 修复）；匿名请求回退到 IP（兼容配对/匿名路由）

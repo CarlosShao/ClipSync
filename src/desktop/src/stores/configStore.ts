@@ -25,6 +25,8 @@ export const useConfigStore = defineStore('config', () => {
   const reduceMotion = ref(false)
   const autoSync = ref(true)   // 自动同步剪贴板（默认开启）
   const imageCompress = ref(false) // 图片压缩（默认关闭）
+  const privacyMode = ref(false) // 隐私模式：自动隐藏敏感内容
+  const autoBlur = ref(false) // 窗口失焦时自动隐藏敏感内容
 
   const isLoggedIn = computed(() => !!config.value.token)
   const serverUrl = computed(() => config.value.server_url)
@@ -54,6 +56,8 @@ export const useConfigStore = defineStore('config', () => {
       if (typeof prefs.autoSync === 'boolean') autoSync.value = prefs.autoSync
       if (typeof prefs.imageCompress === 'boolean') imageCompress.value = prefs.imageCompress
       if (typeof prefs.autostart === 'boolean') autostart.value = prefs.autostart
+      if (typeof prefs.privacyMode === 'boolean') privacyMode.value = prefs.privacyMode
+      if (typeof prefs.autoBlur === 'boolean') autoBlur.value = prefs.autoBlur
     } catch { /* ignore corrupt data */ }
 
     // 有 token 时立即从后端拉取用户资料（name/email/phone/plan/avatar）
@@ -113,6 +117,8 @@ export const useConfigStore = defineStore('config', () => {
       autoSync: autoSync.value,
       imageCompress: imageCompress.value,
       autostart: autostart.value,
+      privacyMode: privacyMode.value,
+      autoBlur: autoBlur.value,
     }
     localStorage.setItem('clipsync-prefs', JSON.stringify(prefs))
   }
@@ -149,6 +155,16 @@ export const useConfigStore = defineStore('config', () => {
     savePrefs()
     // 应用减少动画：给 html 添加/移除 class，供 CSS 使用
     document.documentElement.classList.toggle('reduce-motion', reduceMotion.value)
+  }
+
+  function togglePrivacyMode(val?: boolean) {
+    privacyMode.value = val ?? !privacyMode.value
+    savePrefs()
+  }
+
+  function toggleAutoBlur(val?: boolean) {
+    autoBlur.value = val ?? !autoBlur.value
+    savePrefs()
   }
 
   async function toggleAutostart(val?: boolean) {
@@ -234,9 +250,10 @@ export const useConfigStore = defineStore('config', () => {
 
   return {
     config, user, autostart, syncInterval, maxHistory, reduceMotion,
-    autoSync, imageCompress,
+    autoSync, imageCompress, privacyMode, autoBlur,
     isLoggedIn, serverUrl, load, save, savePrefs, login, completeLogin, registerCurrentDevice,
     fetchUserProfile, updateUserProfile, changePassword,
-    toggleAutostart, toggleAutoSync, toggleImageCompress, toggleReduceMotion, logout,
+    toggleAutostart, toggleAutoSync, toggleImageCompress, toggleReduceMotion,
+    togglePrivacyMode, toggleAutoBlur, logout,
   }
 })

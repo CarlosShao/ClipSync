@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
 import { useI18n } from '@/composables/useI18n'
-import { useToast } from '@/composables/useToast'
+import { useSonner } from '@/composables/useSonner'
 import { useTheme, currentMode } from '@/composables/useTheme'
 import { api, prefetchCsrf } from '@/api/client'
 import * as tauri from '@/lib/tauri'
@@ -16,7 +16,7 @@ const emit = defineEmits<{ (e: 'login-success'): void }>()
 
 const configStore = useConfigStore()
 const { t } = useI18n()
-const toast = useToast()
+const toast = useSonner()
 const { toggleMode } = useTheme()
 
 // ===== Auth state =====

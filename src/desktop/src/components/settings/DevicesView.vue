@@ -2,13 +2,13 @@
 import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useDevice } from '@/composables/useDevice'
-import { useToast } from '@/composables/useToast'
+import { useSonner } from '@/composables/useSonner'
 import { Monitor, Smartphone, Globe, Trash2, QrCode, Plus } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 
 const { t } = useI18n()
 const device = useDevice()
-const toast = useToast()
+const toast = useSonner()
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
 const deviceList = computed(() => device.devices.value)
 const isLoading = computed(() => device.loading.value)

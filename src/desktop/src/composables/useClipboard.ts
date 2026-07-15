@@ -329,14 +329,17 @@ function getCachedContent(id: string): string {
   return entry.v
 }
 
-async function loadClipboardItems(opts?: { page?: number; append?: boolean }) {
+async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?: boolean; favorite?: boolean }) {
   const page = opts?.page ?? 1
   const append = opts?.append ?? false
+  const loadAll = opts?.all ?? false
+  const loadFavorites = opts?.favorite ?? false
   if (!append) currentPage.value = page
   if (append) loadingMore.value = true; else loading.value = true
+  const limit = loadAll ? 500 : (loadFavorites ? 200 : pageSize.value)
+  const favParam = loadFavorites ? '&favorites=true' : ''
   try {
-  const res = await api('GET', `/api/clipboard?page=${page}&limit=${pageSize.value}`)
-  console.log('[Clipboard] loadClipboardItems:', res.ok, 'items:', res.data?.items?.length, 'page:', page, 'total:', res.data?.pagination?.total)
+  const res = await api('GET', `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}`)
   if (res.ok && Array.isArray(res.data?.items)) {
     totalItems.value = res.data?.pagination?.total ?? res.data.items.length
     const serverIds = new Set(res.data.items.map((i: any) => i.id))
@@ -373,7 +376,9 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean }) {
         // For file items: reconstruct content with paths from metadata if available
         if ((i.contentType || i.type) === 'file') {
           try {
-            const meta = JSON.parse(i.metadata || '{}')
+            // metadata may be a JSON string (from API) or already-parsed object (from pg driver)
+            const rawMeta = typeof i.metadata === 'string' ? i.metadata : JSON.stringify(i.metadata || {})
+            const meta = JSON.parse(rawMeta || '{}')
             if (meta.paths && Array.isArray(meta.paths) && meta.paths.length > 0) {
               content = JSON.stringify({ name: meta.originalName || content, paths: meta.paths })
             }
@@ -385,7 +390,8 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean }) {
         if ((i.contentType || i.type) === 'file' && content.length > 200 && !hasPaths) {
           // content is too long to be a filename — extract from metadata
           try {
-            const meta = JSON.parse(i.metadata || '{}')
+            const rawMeta = typeof i.metadata === 'string' ? i.metadata : JSON.stringify(i.metadata || {})
+            const meta = JSON.parse(rawMeta || '{}')
             if (meta.originalName) content = meta.originalName
             else if (meta.name) content = meta.name
           } catch { /* not JSON */ }
@@ -408,6 +414,7 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean }) {
         selected: false,
         isFavorite: !!i.isFavorite,
         favoritedAt: i.favoritedAt ? new Date(i.favoritedAt).getTime() : undefined,
+        metadata: i.metadata, // ← 必须映射，否则刷新后 tags/paths 等元数据丢失
       }
     })
     if (append) {
@@ -421,13 +428,12 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean }) {
     } else {
       items.value = [...localWithContent, ...serverItems]
     }
-    console.log('[Clipboard] items set to', items.value.length, 'filteredItems:', filteredItems.value.length)
 
     // 队列化加载图片：每批 3 张，间隔 200ms，避免并发过高被限流
     const imageQueue = serverItems.filter((i: ClipItem) => i.type === 'image' && !getCachedContent(i.id) && i.id)
     loadImagesFromQueue(imageQueue)
   } else {
-    console.warn('[Clipboard] loadClipboardItems failed:', res.status, res.error)
+    return
   }
   } finally {
     if (append) loadingMore.value = false; else loading.value = false
@@ -1168,6 +1174,31 @@ export function useClipboard() {
     }
   }
 
+  // 检测内容是否包含敏感信息（API key、密码、token、私钥等）
+  function isSensitiveContent(text: string): boolean {
+    if (!text || text.length > 5000) return false
+    const t = text.trim()
+    // AI/Cloud API keys with known prefixes
+    if (/\b(AKIA|AIza|sk-or-v1-|sk-proj-|sk-ant-|sk-)[A-Za-z0-9]{16,}\b/.test(t)) return true
+    // GitHub personal access token
+    if (/\bghp_[A-Za-z0-9]{36}\b/.test(t)) return true
+    // Stripe secret key
+    if (/\bsk_live_[A-Za-z0-9]{24,}\b/.test(t)) return true
+    // Slack token
+    if (/\bxox[baprs]-[A-Za-z0-9-]+/.test(t)) return true
+    // Generic Bearer / Authorization tokens
+    if (/Bearer\s+[A-Za-z0-9_\-\.]{20,}/i.test(t)) return true
+    // Private keys
+    if (/-----BEGIN\s+(RSA|EC|OPENSSH|DSA|PGP)\s+PRIVATE\s+Key-----/.test(t)) return true
+    // Password patterns
+    if (/^(password|passwd|pwd|secret|api[_-]?key)\s*[:=]\s*.{4,}$/im.test(t)) return true
+    // Long base64-looking secrets (32+ chars)
+    if (/\b[A-Za-z0-9_\-]{40,}\b/.test(t) && /[A-Z]/.test(t) && /[a-z]/.test(t) && /[0-9]/.test(t)) return true
+    // Connection strings with embedded passwords
+    if (/(mongodb|mysql|postgres|redis|amqp):\/\/[^:]+:([^@]+)@/.test(t)) return true
+    return false
+  }
+
   const offlineQueueSize = computed(() => getQueueSize())
 
   return {
@@ -1178,6 +1209,7 @@ export function useClipboard() {
     toggleSelectAll, clearSelection, batchDelete, deleteSingle, toggleFavorite,
     loadClipboardItems, setFilter, setSearch, toggleBatch, uploadFileItem,
     refresh: loadClipboardItems,
+    isSensitiveContent,
   }
 }
 
