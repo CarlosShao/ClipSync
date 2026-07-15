@@ -137,6 +137,21 @@ export function useCollections() {
     return result
   })
 
+  // Flat list of all nodes (ignores expanded state) for pickers/dropdowns
+  const allNodes = computed<CollectionNode[]>(() => {
+    const result: CollectionNode[] = []
+    function walk(nodes: CollectionNode[] | undefined) {
+      if (!nodes) return
+      for (const node of nodes) {
+        if (!node) continue
+        result.push(node)
+        walk(node.children)
+      }
+    }
+    walk(tree.value)
+    return result
+  })
+
   // Breadcrumb: path from root to active node
   const breadcrumb = computed<CollectionNode[]>(() => {
     if (!activeNodeId.value) return []
@@ -650,6 +665,7 @@ export function useCollections() {
   return {
     tree,
     visibleNodes,
+    allNodes,
     flatCollections,
     activeNodeId,
     breadcrumb,
