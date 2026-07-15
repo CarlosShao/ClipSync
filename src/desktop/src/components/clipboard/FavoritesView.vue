@@ -79,15 +79,37 @@ const newCollectionName = ref('')
 const newCollectionIcon = ref('folder')
 const newCollectionInputRef = ref<HTMLInputElement | null>(null)
 const isCreatingCollection = ref(false)
+const newCollectionParentId = ref<string | undefined>(undefined)
 
-function showNewCollectionInputAtTop() {
+// Rename input state
+const renameInputRef = ref<HTMLInputElement | null>(null)
+
+watch(() => collections.renamingNodeId.value, (id) => {
+  if (id) {
+    nextTick(() => {
+      renameInputRef.value?.focus()
+      renameInputRef.value?.select()
+    })
+  }
+})
+
+function showNewCollectionInputAtTop(parentId?: string) {
   showNewCollectionInput.value = true
+  newCollectionParentId.value = parentId
   newCollectionName.value = ''
   newCollectionIcon.value = 'folder'
   nextTick(() => {
     newCollectionInputRef.value?.focus()
   })
 }
+
+// Watch signal from context menu "新建子收藏夹"
+watch(() => collections.newSubCollectionParentId.value, (parentId) => {
+  if (parentId) {
+    showNewCollectionInputAtTop(parentId)
+    collections.newSubCollectionParentId.value = null
+  }
+})
 
 async function confirmNewCollection() {
   if (isCreatingCollection.value) return
@@ -107,6 +129,7 @@ function cancelNewCollection() {
   showNewCollectionInput.value = false
   newCollectionName.value = ''
   isCreatingCollection.value = false
+  newCollectionParentId.value = undefined
 }
 
 function onNewCollectionBlur() {
@@ -441,11 +464,10 @@ const pickAndCreate = ref(false)
 
 async function handleCreateCollection() {
   if (!newCollectionName.value.trim()) return
-  const subMatch = collections.ctxMenuNodeId.value?.match(/^___new_sub___(.+)$/)
-  const parentId = subMatch ? subMatch[1] : undefined
+  const parentId = newCollectionParentId.value
   const data = await collections.createCollection(newCollectionName.value.trim(), newCollectionIcon.value, parentId)
   if (data?.collection) {
-    newCollectionName.value = ''; newCollectionIcon.value = 'folder'; showNewCollectionInput.value = false
+    newCollectionName.value = ''; newCollectionIcon.value = 'folder'; showNewCollectionInput.value = false; newCollectionParentId.value = undefined
     toast.show(t('fav_create_ok'), 'success')
     // If in pick mode, auto-move the item to the newly created collection
     if (pickAndCreate.value && pickItemId.value) {
@@ -716,10 +738,19 @@ function cancelEditTags() {
           <span class="fav-tree-icon" :class="{ active: collections.activeNodeId.value === node.id }">
             <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
           </span>
-          <span class="fav-tree-name" :class="{ active: collections.activeNodeId.value === node.id }" @click.stop="collections.selectNode(node.id)" @dblclick.stop="collections.ctxRename()">
+          <input
+            v-if="collections.renamingNodeId.value === node.id"
+            ref="renameInputRef"
+            v-model="collections.renameValue.value"
+            class="fav-tree-rename-input"
+            @keydown.enter.stop="collections.confirmRename()"
+            @keydown.esc.stop="collections.cancelRename()"
+            @blur="collections.confirmRename()"
+          />
+          <span v-else class="fav-tree-name" :class="{ active: collections.activeNodeId.value === node.id }" @click.stop="collections.selectNode(node.id)" @dblclick.stop="collections.startRename(node.id)">
             {{ node.name }}
           </span>
-          <span class="fav-tree-count">{{ node.item_count }}</span>
+          <span class="fav-tree-count">{{ (node.children || []).length + node.item_count }}</span>
           <button class="fav-tree-del" @click.stop="collections.deleteCollection(node.id)" title="删除">×</button>
           <!-- Flyout: show direct children on hover -->
           <div v-if="collections.flyoutNodeId.value === node.id && (node.children || []).length > 0" class="fav-tree-flyout" @mouseenter="collections.closeFlyout" @mouseleave="collections.closeFlyout">
@@ -1064,7 +1095,7 @@ function cancelEditTags() {
     <div v-if="collections.ctxMenuVisible.value" class="fav-ctx-menu" :style="{ top: collections.ctxMenuPos.value.top + 'px', left: collections.ctxMenuPos.value.left + 'px' }">
       <button class="fav-ctx-item" @click="collections.ctxRename()"><Edit :size="14" /> {{ t('fav_ctx_rename') }}</button>
       <button class="fav-ctx-item" @click="collections.ctxNewSubCollection()"><FolderPlus :size="14" /> {{ t('fav_ctx_new_sub') }}</button>
-      <button class="fav-ctx-item" @click="collections.ctxMoveToRoot()"><FolderInput :size="14" /> {{ t('fav_ctx_move_root') }}</button>
+      <button v-if="collections.ctxMenuNode.value && collections.ctxMenuNode.value.depth > 2" class="fav-ctx-item" @click="collections.ctxMoveToRoot()"><FolderInput :size="14" /> {{ t('fav_ctx_move_root') }}</button>
       <div class="fav-ctx-sep"></div>
       <button class="fav-ctx-item fav-ctx-item--danger" @click="collections.ctxDelete()"><Trash2 :size="14" /> {{ t('fav_ctx_delete') }}</button>
     </div>

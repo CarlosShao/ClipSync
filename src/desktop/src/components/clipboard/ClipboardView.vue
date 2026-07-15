@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
-import { useToast } from '@/composables/useToast'
+import { useSonner } from '@/composables/useSonner'
 import * as tauri from '@/lib/tauri'
 import { useConfigStore } from '@/stores/configStore'
+import { usePrivacy } from '@/composables/usePrivacy'
 import {
   Upload, Plus, Search, Trash2, Copy, Image as ImageIcon,
-  ExternalLink, FileText, Folder, ClipboardList, Star, FolderPlus,
+  ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
+  ClipboardList, Star, Bookmark, Archive, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
+  Check, X, Lock,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -17,7 +20,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table'
 import Badge from '@/components/ui/badge/Badge.vue'
-import { getFavoriteCollections, addCollectionItem } from '@/api/client'
+import { getFavoriteCollections, addCollectionItem, createFavoriteCollection } from '@/api/client'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -25,10 +28,13 @@ const emit = defineEmits<{
   'preview-text': [item: ClipItem]
   'preview-file': [item: ClipItem]
   'version-history': [item: ClipItem]
+  'show-pin-dialog': []
+  'show-pin-setup': []
+  'toggle-sensitive': [item: ClipItem]
 }>()
 
 const { t } = useI18n()
-const toast = useToast()
+const toast = useSonner()
 const clip = useClipboard()
 const configStore = useConfigStore()
 const router = useRouter()
@@ -58,12 +64,107 @@ const allSelected = computed(() => clip.allSelected.value)
 
 const searchInput = ref('')
 const showQuickPaste = ref(false)
-// Keyboard-focused row index for in-app shortcuts (copyClip / deleteClip / arrow nav)
 const focusedIndex = ref(0)
+
+// Privacy: usePrivacy composable
+const privacy = usePrivacy()
+// Track which item is currently peeked (temporarily revealed)
+const peekItemId = ref<string | null>(null)
 
 // Collections (for "add to collection" dropdown)
 const collections = ref<any[]>([])
 const addToColItemId = ref<string | null>(null)
+
+const collectionIconMap: Record<string, any> = {
+  folder: Folder,
+  'folder-open': FolderOpen,
+  folderPlus: FolderPlus,
+  folderX: FolderX,
+  folderSearch: FolderSearch,
+  folderInput: FolderInput,
+  folderOutput: FolderOutput,
+  folderSync: FolderSync,
+  star: Star,
+  bookmark: Bookmark,
+  archive: Archive,
+  trash: Trash2,
+  heart: Heart,
+  zap: Zap,
+  shield: Shield,
+  globe: Globe,
+  code: Code2,
+  image: ImageIcon,
+  fileText: FileText,
+  music: Music,
+  video: Video,
+  settings: Settings,
+  palette: Palette,
+}
+
+interface CollectionTreeNode {
+  id: string
+  name: string
+  icon: string
+  path: string
+  depth: number
+  children: CollectionTreeNode[]
+}
+
+function buildCollectionTree(flat: any[]): CollectionTreeNode[] {
+  const sorted = [...flat].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.path).localeCompare(String(b.path)))
+  const nodes = new Map<string, CollectionTreeNode>()
+  const roots: CollectionTreeNode[] = []
+  for (const c of sorted) {
+    if (!c?.id) continue
+    const path = String(c.path || 'root.' + String(c.id).replace(/-/g, '_'))
+    const parts = path.split('.')
+    const node: CollectionTreeNode = {
+      id: c.id,
+      name: c.name || 'Untitled',
+      icon: c.icon || 'folder',
+      path,
+      depth: parts.length,
+      children: [],
+    }
+    nodes.set(c.id, node)
+  }
+  for (const node of nodes.values()) {
+    const parts = node.path.split('.')
+    if (parts.length <= 1) {
+      roots.push(node)
+    } else {
+      const parentPath = parts.slice(0, -1).join('.')
+      let found = false
+      for (const candidate of nodes.values()) {
+        if (candidate.path === parentPath) {
+          candidate.children.push(node)
+          found = true
+          break
+        }
+      }
+      if (!found) roots.push(node)
+    }
+  }
+  return roots
+}
+
+function flattenCollectionTree(nodes: CollectionTreeNode[], result: CollectionTreeNode[] = []): CollectionTreeNode[] {
+  for (const n of nodes) {
+    result.push(n)
+    flattenCollectionTree(n.children, result)
+  }
+  return result
+}
+
+const collectionTreeNodes = computed(() => flattenCollectionTree(buildCollectionTree(collections.value || [])))
+
+// Favorite success popover (方案 A: inline collection picker, no navigation)
+const favPopoverItemId = ref<string | null>(null)
+const favPopoverFlipped = ref(false) // true = show above the item instead of below
+let favPopoverTimer: ReturnType<typeof setTimeout> | null = null
+const favNewName = ref('')
+const showFavNewInput = ref(false)
+let creatingCollection = false  // prevent double-click race condition
 
 async function loadCollections() {
   const data = await getFavoriteCollections()
@@ -71,30 +172,144 @@ async function loadCollections() {
 }
 onMounted(() => { loadCollections() })
 
+function showFavPopover(itemId: string) {
+  if (favPopoverTimer) clearTimeout(favPopoverTimer)
+  favPopoverItemId.value = itemId
+  showFavNewInput.value = false
+  favNewName.value = ''
+  // Check if the item is near the bottom of the viewport → flip popover above
+  favPopoverFlipped.value = false
+  nextTick(() => {
+    const wrap = document.querySelector(`.add-col-wrap[data-item-id="${itemId}"]`)
+    if (wrap) {
+      const rect = wrap.getBoundingClientRect()
+      const viewportH = window.innerHeight || document.documentElement.clientHeight
+      if (rect.bottom > viewportH * 0.6) favPopoverFlipped.value = true
+    }
+  })
+  startFavPopoverTimer()
+}
+function startFavPopoverTimer() {
+  if (favPopoverTimer) clearTimeout(favPopoverTimer)
+  favPopoverTimer = setTimeout(() => { favPopoverItemId.value = null }, 4000)
+}
+function dismissFavPopover() {
+  if (favPopoverTimer) clearTimeout(favPopoverTimer)
+  favPopoverItemId.value = null
+  showFavNewInput.value = false
+  favNewName.value = ''
+}
+function onFavPopoverEnter() {
+  if (favPopoverTimer) clearTimeout(favPopoverTimer)
+}
+function onFavPopoverLeave() {
+  startFavPopoverTimer()
+}
+
+// Privacy: usePrivacy composable
+function isItemSensitive(item: ClipItem): boolean {
+  return privacy.isItemSensitive(item)
+}
+function showPeek(itemId: string) {
+  console.log('[Clip] showPeek:', { itemId: itemId.slice(0,8), pinSet: privacy.pinSet.value, pinVerified: privacy.pinVerified.value })
+  if (privacy.startPeek(itemId)) {
+    console.log('[Clip] showPeek: startPeek true, privacy.peekItemId=', privacy.peekItemId.value)
+    peekItemId.value = itemId
+  } else {
+    console.log('[Clip] showPeek: startPeek false, pinSet=', privacy.pinSet.value)
+    if (!privacy.pinSet.value) {
+      emit('show-pin-setup')
+    } else {
+      emit('show-pin-dialog')
+    }
+  }
+}
+async function copyWithPinCheck(item: ClipItem) {
+  if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
+    if (!privacy.pinSet.value) {
+      emit('show-pin-setup')
+    } else {
+      emit('show-pin-dialog')
+    }
+    return
+  }
+  clip.copyItem(item)
+  privacy.scheduleClipboardClear()
+  toast.show(t('copied'), 'success')
+}
+
+function onDblClick(item: ClipItem) {
+  if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
+    if (!privacy.pinSet.value) {
+      emit('show-pin-setup')
+    } else {
+      emit('show-pin-dialog')
+    }
+    return
+  }
+  clip.copyItem(item)
+  privacy.scheduleClipboardClear()
+}
+function onCopyItem(item: ClipItem) {
+  if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
+    emit('show-pin-dialog')
+    return
+  }
+  clip.copyItem(item)
+  privacy.scheduleClipboardClear()
+  toast.show(t('copied'), 'success')
+}
+
+async function pickCollection(itemId: string, colId: string) {
+  const ok = await addCollectionItem(colId, itemId)
+  if (ok) {
+    toast.show(t('fav_moved'), 'success')
+    await loadCollections()
+  }
+  dismissFavPopover()
+}
+async function createAndMove(itemId: string) {
+  if (creatingCollection) return
+  if (!favNewName.value.trim()) return
+  creatingCollection = true
+  try {
+    const data = await createFavoriteCollection(favNewName.value.trim(), 'folder')
+    if (data?.collection) {
+      collections.value.push(data.collection)
+      await addCollectionItem(data.collection.id, itemId)
+      toast.show(t('clip_col_created'), 'success')
+      await loadCollections()
+    } else {
+      toast.show(t('fav_create_fail'), 'error')
+    }
+  } finally {
+    creatingCollection = false
+    dismissFavPopover()
+  }
+}
+
 function toggleAddToCol(itemId: string) {
   addToColItemId.value = addToColItemId.value === itemId ? null : itemId
 }
 async function addToCollection(colId: string, itemId: string) {
   const ok = await addCollectionItem(colId, itemId)
-  if (ok) toast.show('已添加到收藏夹', 'success')
+  if (ok) toast.show(t('fav_added'), 'success')
   addToColItemId.value = null
 }
 
-// Star button: favorite + show collection picker (optional)
+// Star button: favorite immediately, then optionally move to collection
 function handleFavorite(item: ClipItem) {
   if (item.isFavorite) {
     clip.toggleFavorite(item)
     addToColItemId.value = null
+    dismissFavPopover()
   } else {
     clip.toggleFavorite(item)
     if (collections.value.length > 0) {
       addToColItemId.value = item.id
     } else {
-      // No collections → local confirm dialog
-      confirmMessage.value = '还没有收藏夹，是否现在创建一个？'
-      confirmCallback = () => { router.push('/app/favorites') }
-      confirmBtnVariant.value = 'default'
-      showConfirmModal.value = true
+      addToColItemId.value = null
+      showFavPopover(item.id)
     }
   }
 }
@@ -105,7 +320,7 @@ function handleDocClick(e: MouseEvent) {
     const target = e.target as HTMLElement
     if (!target.closest('.add-col-wrap')) {
       addToColItemId.value = null
-      toast.show('已收藏，可在「收藏」页面查看', 'info')
+      toast.show(t('clip_favorited'), 'info')
     }
   }
 }
@@ -224,8 +439,13 @@ function cancelConfirm() {
 function handleBatchDelete() {
   if (clip.selectedCount.value === 0) { toast.show(t('batch_none'), 'warning'); return }
   const count = clip.selectedCount.value
-  showConfirm(t('confirm_batch_delete', { n: count }), async () => {
+  const favCount = clip.items.value.filter(i => i.selected && (i as any).isFavorite).length
+  const msg = favCount > 0 ? t('confirm_delete_fav_batch', { n: favCount }) : t('confirm_batch_delete', { n: count })
+  showConfirm(msg, async () => {
     try {
+      // Unfavorite selected items first
+      const favItems = clip.items.value.filter(i => i.selected && (i as any).isFavorite)
+      for (const fi of favItems) clip.toggleFavorite(fi)
       await clip.batchDelete()
       toast.show(t('batch_deleted', { n: count }), 'success')
     } catch (err: any) {
@@ -242,17 +462,29 @@ function openLink(item: ClipItem) {
   }
 }
 
-/** Check if a file item is a local file (has a local path to reveal/copy).
- *  Shows copy/reveal buttons only for files that exist on the local disk. */
+/** Check if a file item has a local path (for copy/reveal buttons).
+ *  Checks item.content first, then falls back to item.metadata.paths.
+ *  Handles: JSON path arrays, {name,paths} objects, plain path strings, content with embedded paths */
 function hasLocalPath(item: ClipItem): boolean {
+  // Strategy A: check item.content (reconstructed by useClipboard.ts or raw from server)
+  const content = String(item.content || '')
   try {
-    const parsed = JSON.parse(item.content)
-    // 路径数组：["D:\\path\\to\\file"] → 本地文件
+    const parsed = JSON.parse(content)
     if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') return true
-    // 元数据带 paths 字段：{"name":"file.md","paths":["D:\\..."]} → 本地文件（clipboard monitor 上传）
     if (parsed && typeof parsed === 'object' && Array.isArray(parsed.paths) && parsed.paths.length > 0) return true
-    return false
-  } catch { return false }
+  } catch { /* not JSON */ }
+
+  // Strategy B: plain string path
+  if (/^[A-Za-z]:[\\/]/.test(content)) return true
+  if (/\b[A-Za-z]:[\\/][\w\s\\/.]+\.\w{1,5}\b/.test(content)) return true
+
+  // Strategy C: check metadata directly (useClipboard.ts may not have reconstructed content)
+  try {
+    const meta = JSON.parse((item as any).metadata || '{}')
+    if (Array.isArray(meta.paths) && meta.paths.length > 0 && typeof meta.paths[0] === 'string') return true
+  } catch { /* no metadata */ }
+
+  return false
 }
 
 async function revealFileFolder(item: ClipItem) {
@@ -262,7 +494,7 @@ async function revealFileFolder(item: ClipItem) {
     if (data.paths && Array.isArray(data.paths) && data.paths[0]) {
       tauri.revealInFolder(data.paths[0]).catch(() => {
         const dir = data.paths[0].replace(/[/\\][^/\\]+$/, '')
-        tauri.openUrl(dir).catch(() => toast.show('无法打开文件夹', 'error'))
+        tauri.openUrl(dir).catch(() => toast.show(t('err_open_folder'), 'error'))
       })
       return
     }
@@ -270,7 +502,7 @@ async function revealFileFolder(item: ClipItem) {
     if (data.path && typeof data.path === 'string' && data.path.length > 0) {
       tauri.revealInFolder(data.path).catch(() => {
         const dir = data.path.replace(/[/\\][^/\\]+$/, '')
-        tauri.openUrl(dir).catch(() => toast.show('无法打开文件夹', 'error'))
+        tauri.openUrl(dir).catch(() => toast.show(t('err_open_folder'), 'error'))
       })
       return
     }
@@ -278,17 +510,21 @@ async function revealFileFolder(item: ClipItem) {
     if (Array.isArray(data) && data.length > 0) {
       tauri.revealInFolder(data[0]).catch(() => {
         const dir = data[0].replace(/[/\\][^/\\]+$/, '')
-        tauri.openUrl(dir).catch(() => toast.show('无法打开文件夹', 'error'))
+        tauri.openUrl(dir).catch(() => toast.show(t('err_open_folder'), 'error'))
       })
       return
     }
   } catch { /* ignore */ }
-  toast.show('文件路径不可用', 'warning')
+  toast.show(t('err_no_path'), 'warning')
 }
 
 function handleSingleDelete(item: ClipItem) {
-  showConfirm(t('confirm_delete'), async () => {
+  const isFav = (item as any).isFavorite
+  const msg = isFav ? t('confirm_delete_fav') : t('confirm_delete')
+  showConfirm(msg, async () => {
     try {
+      // If favorited, unfavorite first
+      if (isFav) clip.toggleFavorite(item)
       await clip.deleteSingle(item)
       toast.show(t('deleted'), 'success')
     } catch (err: any) {
@@ -345,7 +581,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   if (matchShortcut(savedAppKeys('copyClip') || ['Enter'], e)) {
     e.preventDefault()
     const item = list[focusedIndex.value]
-    if (item) clip.copyItem(item)
+    if (item) copyWithPinCheck(item)
     return
   }
   // Delete selected (Delete) — honors customization
@@ -457,7 +693,7 @@ function extractDomain(url: string): string {
     <div class="toolbar">
       <div class="toolbar-left">
         <span class="toolbar-title">{{ t('nav_clipboard') }}</span>
-        <Badge variant="secondary" class="count-badge">{{ filteredItems.length }} / {{ totalItems }} {{ t('items_c') }}</Badge>
+        <Badge variant="secondary" class="count-badge">{{ totalItems }} {{ t('items_c') }}</Badge>
       </div>
       <div class="toolbar-spacer" />
       <div class="toolbar-right">
@@ -542,7 +778,7 @@ function extractDomain(url: string): string {
             :class="{ focused: idx === focusedIndex }"
             @mouseenter="focusedIndex = idx"
             @click="focusedIndex = idx"
-            @dblclick="clip.copyItem(item)"
+            @dblclick="onDblClick(item)"
           >
             <TableCell class="w-12">
               <Checkbox :model-value="item.selected" @update:model-value="(v: boolean | string) => (item.selected = v === true)" />
@@ -555,28 +791,50 @@ function extractDomain(url: string): string {
                   <div v-else class="cell-thumb cell-thumb-placeholder">
                     <ImageIcon :size="14" style="opacity:0.4" />
                   </div>
+                  <div v-if="isItemSensitive(item) && peekItemId !== item.id" class="cell-mask-overlay">
+                    <span>{{ t('content_masked') }}</span>
+                    <button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button>
+                  </div>
                 </span>
                 <!-- URL 链接样式 -->
                 <span v-else-if="item.type === 'link' || detectContentType(item.content) === 'url'" class="cell-link-preview">
-                  <ExternalLink :size="12" class="cell-link-icon" />
-                  <span class="cell-link-content">
-                    <span class="cell-link-text">{{ item.content }}</span>
-                    <span class="cell-link-domain">{{ extractDomain(item.content) }}</span>
-                  </span>
+                  <template v-if="isItemSensitive(item) && peekItemId !== item.id">
+                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button></div>
+                  </template>
+                  <template v-else>
+                    <ExternalLink :size="12" class="cell-link-icon" />
+                    <span class="cell-link-content">
+                      <span class="cell-link-text">{{ item.content }}</span>
+                      <span class="cell-link-domain">{{ extractDomain(item.content) }}</span>
+                    </span>
+                  </template>
                 </span>
                 <!-- 文件类型（必须在 code/url 检测之前，否则 JSON 路径数组会被误判为 code） -->
                 <span v-else-if="item.type === 'file'" class="cell-text">
-                  <span v-if="item.id.startsWith('local-') || item.id.startsWith('file-')" class="syncing-label">
-                    <span class="syncing-dot" /> {{ formatContent(item) }}
-                  </span>
-                  <span v-else>{{ formatContent(item) }}</span>
+                  <template v-if="isItemSensitive(item) && peekItemId !== item.id">
+                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button></div>
+                  </template>
+                  <template v-else>
+                    <span v-if="item.id.startsWith('local-') || item.id.startsWith('file-')" class="syncing-label">
+                      <span class="syncing-dot" /> {{ formatContent(item) }}
+                    </span>
+                    <span v-else>{{ formatContent(item) }}</span>
+                  </template>
                 </span>
                 <!-- 代码样式 -->
                 <span v-else-if="detectContentType(item.content) === 'code'" class="cell-code-preview">
-                  <code>{{ item.content }}</code>
+                  <template v-if="isItemSensitive(item) && peekItemId !== item.id">
+                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button></div>
+                  </template>
+                  <template v-else><code>{{ item.content }}</code></template>
                 </span>
                 <!-- 普通文本 -->
-                <span v-else class="cell-text">{{ formatContent(item) }}</span>
+                <span v-else class="cell-text">
+                  <template v-if="isItemSensitive(item) && peekItemId !== item.id">
+                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button></div>
+                  </template>
+                  <template v-else>{{ formatContent(item) }}</template>
+                </span>
               </div>
             </TableCell>
             <TableCell class="cell-source">{{ item.source || 'Desktop' }}</TableCell>
@@ -589,7 +847,7 @@ function extractDomain(url: string): string {
             <TableCell class="cell-time">{{ timeAgo(item.timestamp) }}</TableCell>
             <TableCell>
               <div class="cell-actions">
-                <Button v-if="item.type !== 'file' || hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="clip.copyItem(item)" :title="t('copy')">
+                <Button v-if="item.type !== 'file' || hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="onCopyItem(item)" :title="t('copy')">
                   <Copy :size="14" />
                 </Button>
                 <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-image', item)" :title="t('preview')">
@@ -604,18 +862,47 @@ function extractDomain(url: string): string {
                 <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-file', item)" :title="t('preview')">
                   <FileText :size="14" />
                 </Button>
-                <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="'在文件夹中显示'">
+                <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="t('show_in_folder')">
                   <Folder :size="14" />
                 </Button>
-                <!-- Star: click to favorite + pick collection -->
-                <div class="add-col-wrap">
+                <!-- Manual sensitive lock/unlock -->
+                <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click="emit('toggle-sensitive', item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
+                  <Lock :size="14" />
+                </Button>
+                <!-- Star: favorite immediately, show popover or dropdown -->
+                <div class="add-col-wrap" :data-item-id="item.id">
                   <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click.stop="handleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
                     <Star :size="14" :fill="item.isFavorite ? 'currentColor' : 'none'" />
                   </Button>
-                  <div v-if="addToColItemId === item.id" class="add-col-dropdown">
+                  <!-- Popover: inline collection picker (no navigation needed) -->
+                  <div v-if="favPopoverItemId === item.id" class="fav-popover" :class="{ 'fav-popover--flipped': favPopoverFlipped }" @click.stop @mouseenter="onFavPopoverEnter" @mouseleave="onFavPopoverLeave">
+                    <div class="fav-popover-msg">✓ {{ t('fav_popper_msg') }}</div>
+                    <div class="fav-popover-cols">
+                      <button v-for="node in collectionTreeNodes" :key="node.id" class="fav-popover-col" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="pickCollection(item.id, node.id)">
+                        <component :is="collectionIconMap[node.icon] || Folder" :size="14" />
+                        <span>{{ node.name }}</span>
+                      </button>
+                    </div>
+                    <template v-if="!showFavNewInput">
+                      <button class="fav-popover-new" @click="showFavNewInput = true">
+                        <Plus :size="12" /> {{ t('fav_new_col') }}
+                      </button>
+                    </template>
+                    <template v-else>
+                      <div class="fav-popover-new-form">
+                        <input v-model="favNewName" class="fav-popover-input" :placeholder="t('fav_new_col_placeholder')" maxlength="100"
+                          @keydown.enter="createAndMove(item.id)" @keydown.esc="dismissFavPopover()" />
+                        <button class="fav-popover-confirm" @click="createAndMove(item.id)" :title="t('confirm_t')"><Check :size="12" /></button>
+                        <button class="fav-popover-cancel" @click="dismissFavPopover()" :title="t('fav_cancel')"><X :size="12" /></button>
+                      </div>
+                    </template>
+                  </div>
+                  <!-- Dropdown: shown when collections exist -->
+                  <div v-if="addToColItemId === item.id && collections.length > 0" class="add-col-dropdown">
                     <div class="add-col-dropdown-title">收藏到</div>
-                    <button v-for="col in collections" :key="col.id" class="add-col-option" @click="addToCollection(col.id, item.id)">
-                      {{ col.icon }} {{ col.name }}
+                    <button v-for="node in collectionTreeNodes" :key="node.id" class="add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="addToCollection(node.id, item.id)">
+                      <component :is="collectionIconMap[node.icon] || Folder" :size="14" />
+                      <span>{{ node.name }}</span>
                     </button>
                   </div>
                 </div>
@@ -775,9 +1062,15 @@ function extractDomain(url: string): string {
 }
 
 /* 图片预览 */
-.cell-img-preview { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.cell-img-preview { display: flex; align-items: center; gap: 10px; flex-shrink: 0; position: relative; }
 .cell-thumb { width: 48px; height: 34px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); }
 .cell-thumb-placeholder { width: 48px; height: 34px; display: flex; align-items: center; justify-content: center; background: var(--bg-hover); border-radius: var(--radius-sm); }
+
+/* Privacy: sensitive content mask overlay */
+.cell-mask-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--bg-hover); border-radius: var(--radius-sm); font-size: 11px; color: var(--text-tertiary); z-index: 1; }
+.cell-peek-btn { padding: 2px 8px; border-radius: 9999px; border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 10px; color: var(--accent); cursor: pointer; white-space: nowrap; }
+.cell-peek-btn:hover { background: var(--accent-bg); border-color: var(--accent); }
+.cell-text-mask { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-tertiary); }
 
 /* URL 链接样式 */
 .cell-link-preview {
@@ -831,6 +1124,8 @@ function extractDomain(url: string): string {
 .cell-actions .btn-action-hide.danger { color: var(--danger); }
 .cell-actions .btn-action-hide.danger:hover { background: var(--danger-bg); }
 .cell-actions .btn-action-hide.favorited { color: var(--warning); }
+.cell-actions .btn-action-hide.sensitive-locked { color: var(--danger); }
+.cell-actions .btn-action-hide.sensitive-locked:hover { background: var(--danger-bg); }
 
 /* ===== EMPTY STATE ===== */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; text-align: center; }
@@ -891,7 +1186,7 @@ function extractDomain(url: string): string {
   padding: 4px; z-index: 50; min-width: 160px;
 }
 .add-col-option {
-  display: block; width: 100%; padding: 6px 10px; border: none; background: none;
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 10px; border: none; background: none;
   text-align: left; font-size: 12px; color: var(--text-primary); cursor: pointer;
   border-radius: var(--radius-sm); white-space: nowrap;
 }
@@ -899,5 +1194,53 @@ function extractDomain(url: string): string {
 .add-col-dropdown-title {
   padding: 4px 10px 2px; font-size: 11px; color: var(--text-tertiary);
   border-bottom: 1px solid var(--border-subtle); margin-bottom: 2px;
+}
+
+/* Favorite popover (方案 A: inline collection picker, no navigation) */
+.fav-popover {
+  position: absolute; top: 100%; right: 0; margin-top: 6px;
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-modal);
+  padding: 10px 12px; z-index: 50; min-width: 200px; max-width: 280px;
+  animation: favPopIn 0.2s ease;
+}
+.fav-popover--flipped {
+  position: absolute; bottom: 100%; right: 0; margin-bottom: 6px;
+}
+.fav-popover-msg { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; white-space: nowrap; }
+.fav-popover-cols { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.fav-popover-col {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 5px 10px; border: none; border-radius: var(--radius-sm);
+  background: transparent; font-size: 12px; color: var(--text-primary);
+  cursor: pointer; text-align: left; white-space: nowrap; transition: all 0.12s;
+}
+.fav-popover-col:hover { background: var(--accent-bg); color: var(--accent); }
+.fav-popover-new {
+  display: flex; align-items: center; gap: 4px; width: 100%;
+  padding: 5px 10px; border: 1px dashed var(--border-default); border-radius: var(--radius-sm);
+  background: transparent; font-size: 11px; color: var(--text-tertiary);
+  cursor: pointer; white-space: nowrap; transition: all 0.12s;
+}
+.fav-popover-new:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.fav-popover-new-form { display: flex; align-items: center; gap: 4px; }
+.fav-popover-input {
+  flex: 1; height: 28px; padding: 0 8px; border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm); font-size: 12px; background: var(--bg-surface);
+  color: var(--text-primary); outline: none; min-width: 0;
+}
+.fav-popover-confirm, .fav-popover-cancel {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: var(--radius-sm); border: none;
+  cursor: pointer; flex-shrink: 0; transition: all 0.12s;
+}
+.fav-popover-confirm { background: var(--success); color: white; }
+.fav-popover-confirm:hover { opacity: 0.85; }
+.fav-popover-cancel { background: var(--bg-hover); color: var(--text-tertiary); }
+.fav-popover-cancel:hover { background: var(--danger-bg); color: var(--danger); }
+
+@keyframes favPopIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 </style>

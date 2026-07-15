@@ -96,6 +96,12 @@ export function useCollections() {
   const ctxMenuPos = ref({ top: 0, left: 0 })
   const ctxMenuVisible = ref(false)
 
+  // Context menu node (for template checks like root/depth)
+  const ctxMenuNode = computed<CollectionNode | null>(() => {
+    if (!ctxMenuNodeId.value) return null
+    return findNodeById(tree.value, ctxMenuNodeId.value)
+  })
+
   // Flyout state (hover preview of children)
   const flyoutNodeId = ref<string | null>(null)
   const flyoutTimer = ref<number | null>(null)
@@ -343,19 +349,28 @@ export function useCollections() {
     ctxMenuNodeId.value = null
   }
 
+  // Signal to parent: open new-collection input under this parent
+  const newSubCollectionParentId = ref<string | null>(null)
+
   async function ctxRename() {
-    const node = findNodeById(tree.value, ctxMenuNodeId.value!)
-    if (node) {
-      renamingNodeId.value = node.id
-      renameValue.value = node.name
-    }
+    if (!ctxMenuNodeId.value) return
+    startRename(ctxMenuNodeId.value)
     closeCtxMenu()
+  }
+
+  function startRename(nodeId: string | null) {
+    if (!nodeId) return
+    const node = findNodeById(tree.value, nodeId)
+    if (!node) return
+    renamingNodeId.value = nodeId
+    renameValue.value = node.name
+    renameConfirmed.value = false
   }
 
   async function ctxNewSubCollection() {
     const parentId = ctxMenuNodeId.value
     // Signal to parent: open new-collection input under this parent
-    ctxMenuNodeId.value = '___new_sub___' + parentId
+    newSubCollectionParentId.value = parentId
     ctxMenuVisible.value = false // close the context menu
   }
 
@@ -651,12 +666,15 @@ export function useCollections() {
     loadNodeItems,
     // Context menu
     ctxMenuNodeId,
+    ctxMenuNode,
     ctxMenuPos,
     ctxMenuVisible,
     openCtxMenu,
     closeCtxMenu,
     ctxRename,
+    startRename,
     ctxNewSubCollection,
+    newSubCollectionParentId,
     ctxMoveToRoot,
     ctxDelete,
     // Rename
