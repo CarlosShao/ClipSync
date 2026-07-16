@@ -244,6 +244,21 @@ function showPeek(itemId: string) {
   }
 }
 
+function onToggleSensitive(item: ClipItem) {
+  // Unlocking a sensitive item requires PIN verification.
+  // Locking (marking as sensitive) is always allowed.
+  const isLocked = (item as any).metadata?.sensitive === true
+  if (isLocked && !privacy.canCopySensitive()) {
+    if (!privacy.pinSet.value) {
+      emit('show-pin-setup')
+    } else {
+      emit('show-pin-dialog')
+    }
+    return
+  }
+  emit('toggle-sensitive', item)
+}
+
 async function onCopyItem(item: ClipItem) {
   if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
     emit('show-pin-dialog')
@@ -958,7 +973,7 @@ function cancelEditTags() {
               <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" @click="emit('preview-text', item)"><FileText :size="14" /></Button>
               <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" @click="emit('preview-file', item)"><FileText :size="14" /></Button>
               <!-- Manual sensitive lock/unlock -->
-              <Button variant="ghost" size="icon-sm" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click="emit('toggle-sensitive', item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
+              <Button variant="ghost" size="icon-sm" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click="onToggleSensitive(item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
                 <Lock :size="14" />
               </Button>
               <!-- Add to collection dropdown -->
@@ -1021,7 +1036,7 @@ function cancelEditTags() {
                   <div v-else class="fav-card-text">{{ formatContent(item) }}</div>
                 </template>
                 <!-- Lock button: bottom-left of card preview for card view -->
-                <Button variant="ghost" size="icon-sm" class="fav-card-lock-btn" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click.stop="emit('toggle-sensitive', item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
+                <Button variant="ghost" size="icon-sm" class="fav-card-lock-btn" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click.stop="onToggleSensitive(item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
                   <Lock :size="14" />
                 </Button>
               </div>

@@ -211,12 +211,9 @@ function isItemSensitive(item: ClipItem): boolean {
   return privacy.isItemSensitive(item)
 }
 function showPeek(itemId: string) {
-  console.log('[Clip] showPeek:', { itemId: itemId.slice(0,8), pinSet: privacy.pinSet.value, pinVerified: privacy.pinVerified.value })
   if (privacy.startPeek(itemId)) {
-    console.log('[Clip] showPeek: startPeek true, privacy.peekItemId=', privacy.peekItemId.value)
     peekItemId.value = itemId
   } else {
-    console.log('[Clip] showPeek: startPeek false, pinSet=', privacy.pinSet.value)
     if (!privacy.pinSet.value) {
       emit('show-pin-setup')
     } else {
@@ -258,6 +255,21 @@ function onCopyItem(item: ClipItem) {
   clip.copyItem(item)
   privacy.scheduleClipboardClear()
   toast.show(t('copied'), 'success')
+}
+
+function onToggleSensitive(item: ClipItem) {
+  // Unlocking a sensitive item requires PIN verification.
+  // Locking (marking as sensitive) is always allowed.
+  const isLocked = (item as any).metadata?.sensitive === true
+  if (isLocked && !privacy.canCopySensitive()) {
+    if (!privacy.pinSet.value) {
+      emit('show-pin-setup')
+    } else {
+      emit('show-pin-dialog')
+    }
+    return
+  }
+  emit('toggle-sensitive', item)
 }
 
 async function pickCollection(itemId: string, colId: string) {
@@ -861,7 +873,7 @@ function extractDomain(url: string): string {
                   <Folder :size="14" />
                 </Button>
                 <!-- Manual sensitive lock/unlock -->
-                <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click="emit('toggle-sensitive', item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
+                <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click="onToggleSensitive(item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
                   <Lock :size="14" />
                 </Button>
                 <!-- Star: favorite immediately, show popover or dropdown -->

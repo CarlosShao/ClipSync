@@ -188,7 +188,8 @@ const privacy = usePrivacy()
 
 // Privacy: helper for template — delegates to usePrivacy composable
 function isPreviewSensitive(): boolean {
-  if (privacy.peekItemId.value) return false // already peeked
+  const itemId = props.previewItem?.id || 'modal-preview'
+  if (privacy.peekItemId.value === itemId) return false // already peeked for this item
   const text = previewContent.value || props.previewItem?.content || ''
   // Manual lock OR auto-detected sensitive content — always check
   const item = props.previewItem
@@ -198,17 +199,28 @@ function isPreviewSensitive(): boolean {
 }
 function onPreviewPeek() {
   const itemId = props.previewItem?.id || 'modal-preview'
-  console.log('[Modal] onPreviewPeek:', { itemId: itemId.slice(0,8), pinSet: privacy.pinSet.value, pinVerified: privacy.pinVerified.value })
   if (privacy.startPeek(itemId)) {
-    console.log('[Modal] onPreviewPeek: startPeek true, peekItemId=', privacy.peekItemId.value)
+    // peeked
   } else {
-    console.log('[Modal] onPreviewPeek: startPeek false, pinSet=', privacy.pinSet.value)
     if (!privacy.pinSet.value) {
       emit('show-pin-setup')
     } else {
       emit('show-pin-dialog')
     }
   }
+}
+
+function onToggleSensitive(item: any) {
+  const isLocked = item?.metadata?.sensitive === true
+  if (isLocked && !privacy.canCopySensitive()) {
+    if (!privacy.pinSet.value) {
+      emit('show-pin-setup')
+    } else {
+      emit('show-pin-dialog')
+    }
+    return
+  }
+  emit('toggle-sensitive', item)
 }
 
 // Plan selection state (for pricing → payment flow)
@@ -1537,7 +1549,7 @@ async function handleFeedbackSubmit() {
           <span class="doc-size">{{ formatDocSize(previewContent.length) }}</span>
         </div>
         <div class="doc-type-right">
-          <Button variant="ghost" size="icon-sm" :class="{ 'sensitive-locked': previewItem?.metadata?.sensitive }" @click="emit('toggle-sensitive', previewItem)" :title="previewItem?.metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
+          <Button variant="ghost" size="icon-sm" :class="{ 'sensitive-locked': previewItem?.metadata?.sensitive }" @click="onToggleSensitive(previewItem)" :title="previewItem?.metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
             <Lock :size="14" />
           </Button>
         </div>
