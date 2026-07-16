@@ -378,7 +378,7 @@ function resetPwdForm() {
 
 <style scoped>
 .settings-view { overflow-y: auto; flex: 1; max-width: 100%; }
-.settings-content { padding: 24px; max-width: 720px; }
+.settings-content { padding: 24px; max-width: 720px; margin: 0 auto; }
 .sv-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
 .settings-group { margin-bottom: 24px; }
 .sg-header { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); margin-bottom: 8px; }

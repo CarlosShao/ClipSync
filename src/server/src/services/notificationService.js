@@ -82,8 +82,8 @@ export async function getNotificationHistory(userId, options = {}) {
 export async function markNotificationAsRead(notificationId, userId) {
   const result = await pool.query(`
     UPDATE notification_history
-    SET read_at = NOW()
-    WHERE id = $1 AND user_id = $2 AND read_at IS NULL
+    SET read_at = COALESCE(read_at, NOW())
+    WHERE id = $1 AND user_id = $2
     RETURNING *
   `, [notificationId, userId]);
   

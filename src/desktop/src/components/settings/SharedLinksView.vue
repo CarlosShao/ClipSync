@@ -57,7 +57,7 @@ function copyLink(url: string) {
 </template>
 
 <style scoped>
-.settings-view { padding: 24px; max-width: 720px; overflow-y: auto; flex: 1; }
+.settings-view { padding: 24px; max-width: 720px; margin: 0 auto; overflow-y: auto; flex: 1; }
 .sv-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
 .links-list { display: flex; flex-direction: column; gap: 12px; }
 .link-card { display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); transition: all 0.15s; }
