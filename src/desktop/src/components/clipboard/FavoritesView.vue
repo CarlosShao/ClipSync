@@ -656,6 +656,7 @@ async function removeTag(tagName: string) {
 
 // --- Drag & Drop (local reorder only) ---
 function onDragStart(e: DragEvent, item: ClipItem) {
+  console.log('[DEBUG] card dragstart', item.id)
   dragItemId.value = item.id
   e.dataTransfer!.effectAllowed = 'move'
   // Initialize localOrder from current display order if not set
@@ -979,7 +980,7 @@ function cancelEditTags() {
               <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                 <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" :title="t('fav_add_to_col')"><FolderPlus :size="14" /></Button>
                 <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown" @mousedown.stop @click.stop>
-                  <button v-for="node in collections.allNodes.value" :key="node.id" type="button" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @mousedown="console.log('[DEBUG] option mousedown', node.id, item.id)" @click.stop="addToCollection(node.id, item.id)">
+                  <button v-for="node in collections.allNodes.value" :key="node.id" type="button" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @mousedown.stop="console.log('[DEBUG] option mousedown', node.id, item.id); addToCollection(node.id, item.id)" @click.stop="console.log('[DEBUG] option click', node.id, item.id); addToCollection(node.id, item.id)">
                     <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
                     <span>{{ node.name }}</span>
                   </button>
@@ -1117,7 +1118,7 @@ function cancelEditTags() {
                 <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                   <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" :title="t('fav_add_to_col')"><FolderPlus :size="14" /></Button>
                   <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown" @mousedown.stop @click.stop>
-                    <button v-for="node in collections.allNodes.value" :key="node.id" type="button" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @mousedown="console.log('[DEBUG] option mousedown', node.id, item.id)" @click.stop="addToCollection(node.id, item.id)">
+                    <button v-for="node in collections.allNodes.value" :key="node.id" type="button" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @mousedown.stop="console.log('[DEBUG] option mousedown', node.id, item.id); addToCollection(node.id, item.id)" @click.stop="console.log('[DEBUG] option click', node.id, item.id); addToCollection(node.id, item.id)">
                       <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
                       <span>{{ node.name }}</span>
                     </button>
