@@ -504,9 +504,11 @@ function toggleAddToCol(itemId: string) {
 async function addToCollection(colId: string, itemId: string) {
   console.log('[DEBUG] addToCollection start', { colId, itemId })
   addToColItemId.value = null
+  console.log('[DEBUG] addToColItemId nulled')
   try {
-    console.log('[DEBUG] calling addCollectionItem API...')
+    console.log('[DEBUG] about to call addCollectionItem', { colId, itemId })
     const ok = await addCollectionItem(colId, itemId)
+    console.log('[DEBUG] addCollectionItem returned', ok)
     console.log('[DEBUG] addCollectionItem returned', ok)
     if (!ok) {
       console.warn('[DEBUG] addCollectionItem ok=false')
@@ -677,7 +679,8 @@ function onDragEnd() { dragItemId.value = null }
 
 function goToClipboard() { router.push('/app/clipboard') }
 
-// Close dropdown on click outside
+// Close dropdown on mousedown outside (use mousedown instead of click to avoid
+// racing with the option's own click handler when the dropdown removes itself)
 function handleClickOutside(e: Event) {
   console.log('[DEBUG] handleClickOutside fired', { addToColItemId: addToColItemId.value, target: (e.target as HTMLElement)?.className })
   if (addToColItemId.value) {
@@ -688,7 +691,7 @@ function handleClickOutside(e: Event) {
   }
 }
 onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
+  document.addEventListener('mousedown', handleClickOutside)
   collections.loadCollections().catch((e: any) => {
     toast.show(e.message || t('fav_load_fail'), 'error')
   })
@@ -975,7 +978,7 @@ function cancelEditTags() {
               <!-- Add to collection dropdown -->
               <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                 <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" :title="t('fav_add_to_col')"><FolderPlus :size="14" /></Button>
-                <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown" @click.stop>
+                <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown" @mousedown.stop @click.stop>
                   <button v-for="node in collections.allNodes.value" :key="node.id" type="button" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @mousedown="console.log('[DEBUG] option mousedown', node.id, item.id)" @click.stop="addToCollection(node.id, item.id)">
                     <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
                     <span>{{ node.name }}</span>
@@ -1113,7 +1116,7 @@ function cancelEditTags() {
                 <!-- Add to collection -->
                 <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                   <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" :title="t('fav_add_to_col')"><FolderPlus :size="14" /></Button>
-                  <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown" @click.stop>
+                  <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown" @mousedown.stop @click.stop>
                     <button v-for="node in collections.allNodes.value" :key="node.id" type="button" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @mousedown="console.log('[DEBUG] option mousedown', node.id, item.id)" @click.stop="addToCollection(node.id, item.id)">
                       <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
                       <span>{{ node.name }}</span>
