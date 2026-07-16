@@ -15,7 +15,7 @@ export function fetchClips() {
 }
 
 export function uploadClip(content: string, type: string, preview?: string) {
-  return api('POST', '/api/clipboard', { content, type, preview: preview || content.slice(0, 200) })
+  return api('POST', '/api/clipboard', { content, type, preview: preview || content.slice(0, 5000) })
 }
 
 export function deleteClips(ids: string[]) {

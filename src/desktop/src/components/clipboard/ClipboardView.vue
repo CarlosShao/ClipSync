@@ -644,17 +644,12 @@ function formatContent(item: ClipItem): string {
       if (last && last.includes('.')) return last
     }
 
-    // 内容太长（可能是文件内容而非文件名），截断显示
-    if (raw.length > 100) return truncate(raw, 80)
-
+    // 旧逻辑会在这里截断文件名；现在预览由 CSS 控制，不再做字符截断。
     return raw || 'Unknown file'
   }
 
-  // 非文件类型
-  return truncate(item.content, 120)
-}
-function truncate(str: string, max: number): string {
-  return str.length > max ? str.slice(0, max) + '...' : str
+  // 非文件类型：不再硬截断字符，视觉行数由 CSS line-clamp 控制
+  return item.content
 }
 
 // 内容类型检测
@@ -1057,7 +1052,7 @@ function extractDomain(url: string): string {
 /* 普通文本 */
 .cell-text {
   font-size: 13px; line-height: 1.45; color: var(--text-primary);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden; text-overflow: ellipsis; word-break: break-word;
 }
 
@@ -1097,7 +1092,7 @@ function extractDomain(url: string): string {
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', monospace;
   font-size: 12px; line-height: 1.45; color: var(--text-secondary);
   white-space: pre-wrap; word-break: break-all;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
