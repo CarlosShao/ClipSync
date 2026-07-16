@@ -49,7 +49,12 @@ const PIN_TIMEOUT_OPTIONS = [
   { value: 1800000, i18nKey: 'pin_timeout_30m' },
 ]
 const pinTimeout = ref(privacy.getPinTimeout())
-watch(pinTimeout, (v) => { privacy.setPinTimeout(v) })
+const pinTimeoutModel = ref(String(pinTimeout.value))
+watch(pinTimeoutModel, (v) => { pinTimeout.value = Number(v) })
+watch(pinTimeout, (v) => {
+  pinTimeoutModel.value = String(v)
+  privacy.setPinTimeout(v)
+})
 
 function resetPinForm() {
   pinNew.value = ''
@@ -267,10 +272,19 @@ function resetPwdForm() {
             <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">{{ t('sg_privacy_pin_set') || 'PIN 已设置' }}</p>
           </div>
           <div class="pwd-field">
-            <label class="pwd-label">{{ t('pin_timeout_label') || 'PIN 验证有效期' }}</label>
-            <select v-model="pinTimeout" class="pin-timeout-select">
-              <option v-for="opt in PIN_TIMEOUT_OPTIONS" :key="opt.value" :value="opt.value">{{ t(opt.i18nKey) }}</option>
-            </select>
+            <label class="pwd-label">{{ t('pin_timeout_label') }}</label>
+            <CustomSelect v-model="pinTimeoutModel" class="pin-timeout-select">
+              {{ t(PIN_TIMEOUT_OPTIONS.find(o => String(o.value) === pinTimeoutModel)?.i18nKey || 'pin_timeout_30s') }}
+              <template #options>
+                <CustomSelectOption
+                  v-for="opt in PIN_TIMEOUT_OPTIONS"
+                  :key="opt.value"
+                  :value="String(opt.value)"
+                  :selected="String(opt.value) === pinTimeoutModel"
+                  @select="(v: string) => pinTimeoutModel = v"
+                >{{ t(opt.i18nKey) }}</CustomSelectOption>
+              </template>
+            </CustomSelect>
           </div>
           <div class="pwd-actions">
             <Button variant="destructive" class="pwd-btn" @click="handleResetPin">{{ t('pin_reset_btn') || '清除 PIN' }}</Button>
@@ -392,15 +406,8 @@ function resetPwdForm() {
 .pwd-actions { display: flex; gap: 10px; margin-top: 12px; padding-left: 4px; }
 .pwd-btn { padding: 10px 28px; }
 .pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
-.pin-timeout-select {
-  width: 100%; height: 36px; padding: 0 36px 0 12px; border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); font-size: 13px; background: var(--bg-surface);
-  color: var(--text-primary); outline: none; cursor: pointer;
-  appearance: none; -webkit-appearance: none; -moz-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='14'%20height='14'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%239aa0a6'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpolyline%20points='6%209%2012%2015%2018%209'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 12px center; background-size: 14px;
-}
-.pin-timeout-select:focus { border-color: var(--border-focus); }
+.pin-timeout-select { width: 100% !important; }
+.pin-timeout-select :deep(.custom-select-trigger) { height: 36px; }
 
 .sg-select { width: 160px; }
 .mode-seg { display: inline-flex; gap: 0; border: 1px solid var(--border-default); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-hover); }
