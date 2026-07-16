@@ -77,9 +77,7 @@ function handleSetPin() {
 }
 
 function handleResetPin() {
-  console.log('[Settings] handleResetPin: before reset, privacy.pinSet=', privacy.pinSet.value)
   privacy.resetPin()
-  console.log('[Settings] handleResetPin: after reset, privacy.pinSet=', privacy.pinSet.value)
   resetPinForm()
   showPinSetup.value = false
   toast.show(t('pin_reset_success') || 'PIN 已清除', 'info')

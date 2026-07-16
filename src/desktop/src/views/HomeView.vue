@@ -97,14 +97,12 @@ function openPinSetupPrompt() { showPinDialog.value = true; pinInput.value = '';
 function closePinDialog() { showPinDialog.value = false; pinInput.value = ''; pinError.value = ''; pinNoPinSet.value = false; stopPinCountdown() }
 function goToSettings() { closePinDialog(); router.push('/app/settings') }
 async function verifyPin() {
-  console.log('[Home] verifyPin called:', { pinInput: pinInput.value, pinVerifying: pinVerifying.value, pinLen: pinInput.value?.length })
   pinError.value = ''
   if (!pinInput.value) { pinError.value = t('pin_required') || '请输入 PIN'; return }
   pinVerifying.value = true
   try {
     await new Promise(r => setTimeout(r, 200))
     const ok = privacy.verifyPin(pinInput.value)
-    console.log('[Home] verifyPin result:', ok)
     if (ok) {
       closePinDialog()
       toast.show(t('pin_verified') || 'PIN 验证成功', 'success')
@@ -113,7 +111,6 @@ async function verifyPin() {
     }
   } finally {
     pinVerifying.value = false
-    console.log('[Home] verifyPin finally: pinVerifying reset to', pinVerifying.value)
   }
 }
 
