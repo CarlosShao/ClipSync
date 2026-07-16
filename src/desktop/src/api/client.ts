@@ -237,9 +237,7 @@ export async function reorderCollections(orders: { id: string; sortOrder: number
 }
 
 export async function addCollectionItem(collectionId: string, itemId: string): Promise<boolean> {
-  console.log('[DEBUG] addCollectionItem API', { collectionId, itemId })
   const res = await api('POST', `/api/favorites/collections/${collectionId}/items`, { itemId })
-  console.log('[DEBUG] addCollectionItem response', { ok: res.ok, status: res.status, error: res.error, data: res.data })
   return res.ok
 }
 
