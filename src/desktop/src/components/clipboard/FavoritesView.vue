@@ -574,6 +574,7 @@ async function saveItemTags(item: ClipItem) {
   const target = clip.items.value.find(i => i.id === item.id)
   if (target) { const meta = parseMetadata(target); meta.tags = tags; (target as any).metadata = meta }
   editingTagColor.value = ''
+  await loadTags() // 新增标签后实时同步到标签栏
   if (!result) toast.show(t('fav_tag_save_fail'), 'error')
 }
 
@@ -647,6 +648,7 @@ async function toggleTagSuggestion(tag: string) {
 }
 
 async function removeTag(tagName: string) {
+  if (!confirm(t('tag_delete_confirm').replace('{tag}', tagName))) return
   const ok = await deleteTag(tagName)
   if (ok) {
     if (activeTagFilter.value === tagName) activeTagFilter.value = null
@@ -968,10 +970,10 @@ function cancelEditTags() {
             </div>
             <div v-if="!batchMode" class="fav-list-actions">
               <Button variant="ghost" size="icon-sm" @click="onCopyItem(item)" :title="t('copy')"><Copy :size="14" /></Button>
-              <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" @click="emit('preview-image', item)"><ImageIcon :size="14" /></Button>
+              <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" @click="emit('preview-image', item)" :title="t('preview')"><ImageIcon :size="14" /></Button>
               <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" @click="openLink(item)"><ExternalLink :size="14" /></Button>
-              <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" @click="emit('preview-text', item)"><FileText :size="14" /></Button>
-              <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" @click="emit('preview-file', item)"><FileText :size="14" /></Button>
+              <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" @click="emit('preview-text', item)" :title="t('preview')"><FileText :size="14" /></Button>
+              <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" @click="emit('preview-file', item)" :title="t('preview')"><FileText :size="14" /></Button>
               <!-- Manual sensitive lock/unlock -->
               <Button variant="ghost" size="icon-sm" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click="onToggleSensitive(item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
                 <Lock :size="14" />
@@ -1109,10 +1111,10 @@ function cancelEditTags() {
               </div>
               <div v-if="!batchMode" class="fav-card-actions">
                 <Button variant="ghost" size="icon-sm" @click.stop="onCopyItem(item)" :title="t('copy')"><Copy :size="14" /></Button>
-                <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" @click.stop="emit('preview-image', item)"><ImageIcon :size="14" /></Button>
+                <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" @click.stop="emit('preview-image', item)" :title="t('preview')"><ImageIcon :size="14" /></Button>
                 <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" @click.stop="openLink(item)"><ExternalLink :size="14" /></Button>
-                <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" @click.stop="emit('preview-text', item)"><FileText :size="14" /></Button>
-                <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" @click.stop="emit('preview-file', item)"><FileText :size="14" /></Button>
+                <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" @click.stop="emit('preview-text', item)" :title="t('preview')"><FileText :size="14" /></Button>
+                <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" @click.stop="emit('preview-file', item)" :title="t('preview')"><FileText :size="14" /></Button>
                 <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" @click.stop="revealFileFolder(item)" :title="t('show_in_folder')"><Folder :size="14" /></Button>
                 <!-- Add to collection -->
                 <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
