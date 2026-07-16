@@ -374,7 +374,7 @@ const groupedItems = computed(() => {
   }
   return groups
 })
-const groupLabels: Record<string, string> = { text: '文本', code: '代码', link: '链接', image: '图片', file: '文件' }
+const groupLabels: Record<string, string> = { text: t('fav_group_text'), code: t('fav_group_code'), link: t('fav_group_link'), image: t('fav_group_image'), file: t('fav_group_file') }
 const groupOrder = ['text', 'code', 'link', 'image', 'file']
 const sortedGroupKeys = computed(() => groupOrder.filter(k => groupedItems.value[k]?.length))
 const favoriteCount = computed(() => clip.items.value.filter(i => (i as any).isFavorite).length)
@@ -394,24 +394,24 @@ function getTags(item: ClipItem): string[] {
 }
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts
-  if (diff < 60_000) return '刚刚'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分钟前`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}小时前`
-  return `${Math.floor(diff / 86_400_000)}天前`
+  if (diff < 60_000) return t('just_now')
+  if (diff < 3_600_000) return Math.floor(diff / 60_000) + t('m_ago')
+  if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + t('h_ago')
+  return Math.floor(diff / 86_400_000) + t('d_ago')
 }
 function getTypeLabel(type: string): string {
   const m: Record<string, string> = { text: 'TXT', image: 'IMG', link: 'URL', file: 'FILE', code: 'CODE' }
   return m[type] || type.toUpperCase()
 }
 function formatContent(item: ClipItem): string {
-  if (item.type === 'image') return '截图'
+  if (item.type === 'image') return t('fav_screenshot')
   if (item.type === 'file') {
     try {
       const meta = JSON.parse(item.content)
       if (meta.name) return meta.name
-      if (meta.paths && meta.paths[0]) return meta.paths[0].split(/[/\\]/).pop() || '文件'
+      if (meta.paths && meta.paths[0]) return meta.paths[0].split(/[/\\]/).pop() || t('fav_file_default')
     } catch { /* */ }
-    return item.content?.split(/[/\\]/).pop() || item.content || '文件'
+    return item.content?.split(/[/\\]/).pop() || item.content || t('fav_file_default')
   }
   if (item.type === 'link') {
     try { return new URL(item.content).hostname } catch { return item.content }
@@ -559,7 +559,7 @@ async function saveItemTags(item: ClipItem) {
   const target = clip.items.value.find(i => i.id === item.id)
   if (target) { const meta = parseMetadata(target); meta.tags = tags; (target as any).metadata = meta }
   editingTagColor.value = ''
-  if (!result) toast.show('保存标签失败，请稍后重试', 'error')
+  if (!result) toast.show(t('fav_tag_save_fail'), 'error')
 }
 
 // 标签颜色编辑器
@@ -587,10 +587,10 @@ async function saveTagColor() {
     const tags = getTags(item)
     const tagColors: Record<string, string> = { ..._tagColorMap.value }
     const result = await setItemTags(item.id, tags, tagColors)
-    if (!result) toast.show('保存失败，请稍后重试', 'error')
+    if (!result) toast.show(t('fav_tag_color_save_fail'), 'error')
   }
   colorPickerTag.value = ''
-  toast.show('标签颜色已更新', 'success')
+  toast.show(t('fav_tag_color_updated'), 'success')
 }
 function cancelTagColor() {
   colorPickerTag.value = ''
@@ -677,7 +677,7 @@ function handleClickOutside(e: Event) {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
   collections.loadCollections().catch((e: any) => {
-    toast.show(e.message || '加载收藏夹失败，请检查后端服务', 'error')
+    toast.show(e.message || t('fav_load_fail'), 'error')
   })
 })
 
@@ -737,7 +737,7 @@ function cancelEditTags() {
           @dragleave="collections.onDragLeaveRoot()"
           @drop.prevent="collections.onDropRoot()"
         >
-          <span class="fav-tree-drop-line" /> 拖到此处成为根收藏夹
+          <span class="fav-tree-drop-line" /> {{ t('fav_drop_root') }}
         </div>
 
         <!-- Tree nodes -->
@@ -777,7 +777,7 @@ function cancelEditTags() {
             {{ node.name }}
           </span>
           <span class="fav-tree-count">{{ (node.children || []).length + node.item_count }}</span>
-          <button class="fav-tree-del" @click.stop="collections.deleteCollection(node.id)" title="删除">×</button>
+          <button class="fav-tree-del" @click.stop="collections.deleteCollection(node.id)" :title="t('delete')">×</button>
           <!-- Flyout: show direct children on hover -->
           <div v-if="collections.flyoutNodeId.value === node.id && (node.children || []).length > 0" class="fav-tree-flyout" @mouseenter="collections.closeFlyout" @mouseleave="collections.closeFlyout">
             <div v-for="child in (node.children || [])" :key="child.id" class="fav-tree-flyout-item" @click="collections.selectNode(child.id)">
@@ -795,7 +795,7 @@ function cancelEditTags() {
           @dragleave="collections.onDragLeaveBottom()"
           @drop.prevent="collections.onDropBottom()"
         >
-          <span class="fav-tree-drop-line" /> 拖到此处成为根收藏夹
+          <span class="fav-tree-drop-line" /> {{ t('fav_drop_root') }}
         </div>
       </div>
       <!-- Resize handle -->
@@ -818,25 +818,25 @@ function cancelEditTags() {
             <CheckSquare v-if="batchMode" :size="14" /><Square v-else :size="14" /><span>{{ batchMode ? t('fav_batch_exit') : t('fav_batch_select') }}</span>
           </Button>
           <template v-if="batchMode && selectedCount > 0">
-            <span class="fav-batch-count">已选 {{ selectedCount }}</span>
+            <span class="fav-batch-count">{{ t('fav_batch_selected', { n: selectedCount }) }}</span>
             <Button variant="ghost" size="sm" class="fav-action-btn fav-unfav-btn" @click="batchUnfavorite">
               <Star :size="14" fill="currentColor" /><span>{{ t('unfavorite') }}</span>
             </Button>
           </template>
           <div class="fav-view-toggle">
-            <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格"><LayoutGrid :size="14" /></button>
-            <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表"><List :size="14" /></button>
+            <button :class="['fav-view-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" :title="t('fav_grid_view')"><LayoutGrid :size="14" /></button>
+            <button :class="['fav-view-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" :title="t('fav_list_view')"><List :size="14" /></button>
           </div>
         </div>
       </div>
 
       <!-- Row 2: Tag filters -->
       <div class="fav-tag-bar" v-if="allTags.length > 0">
-        <span class="fav-tag-label">标签:</span>
-        <button :class="['fav-tag-pill', { active: !activeTagFilter }]" @click="activeTagFilter = null">全部</button>
+        <span class="fav-tag-label">{{ t('fav_tags_label') }}</span>
+        <button :class="['fav-tag-pill', { active: !activeTagFilter }]" @click="activeTagFilter = null">{{ t('fav_filter_all') }}</button>
         <button v-for="tag in allTags" :key="tag.name" :class="['fav-tag-pill', { active: activeTagFilter === tag.name }]" @click="activeTagFilter = activeTagFilter === tag.name ? null : tag.name">
           {{ tag.name }}
-          <button class="fav-tag-del" @click.stop="removeTag(tag.name)" title="删除此标签">×</button>
+          <button class="fav-tag-del" @click.stop="removeTag(tag.name)" :title="t('fav_tag_delete_title')">×</button>
         </button>
       </div>
 
@@ -854,14 +854,14 @@ function cancelEditTags() {
       <!-- Empty -->
       <div v-else-if="favoriteItems.length === 0 && !searchInput" class="fav-empty">
         <div class="fav-empty-icon"><Star :size="48" :stroke-width="1.2" /></div>
-        <h3 class="fav-empty-title">还没有收藏</h3>
-        <p class="fav-empty-desc">在剪贴板中点击星标按钮，将重要内容添加到收藏</p>
-        <Button @click="goToClipboard"><ClipboardList :size="14" /> 去剪贴板看看</Button>
+        <h3 class="fav-empty-title">{{ t('fav_empty_title') }}</h3>
+        <p class="fav-empty-desc">{{ t('fav_empty_desc') }}</p>
+        <Button @click="goToClipboard"><ClipboardList :size="14" /> {{ t('fav_empty_action') }}</Button>
       </div>
       <div v-else-if="favoriteItems.length === 0 && searchInput" class="fav-empty">
         <div class="fav-empty-icon"><Search :size="48" :stroke-width="1.2" /></div>
-        <h3 class="fav-empty-title">未找到匹配项</h3>
-        <p class="fav-empty-desc">换个关键词试试</p>
+        <h3 class="fav-empty-title">{{ t('fav_search_empty_title') }}</h3>
+        <p class="fav-empty-desc">{{ t('fav_search_empty_desc') }}</p>
       </div>
 
       <!-- LIST VIEW (grouped) -->
@@ -870,12 +870,12 @@ function cancelEditTags() {
           <div class="fav-group-header" @click="toggleGroup(gk)" style="cursor:pointer">
             <ChevronRight :size="14" class="fav-group-chevron" :class="{ 'fav-group-chevron--open': !collapsedGroups.has(gk) }" />
             <Badge variant="outline" class="fav-group-badge" :data-type="gk"><span class="type-dot" />{{ groupLabels[gk] }}</Badge>
-            <span class="fav-group-count">{{ groupedItems[gk].length }} 项</span>
+            <span class="fav-group-count">{{ t('fav_items_count', { n: groupedItems[gk].length }) }}</span>
             <div class="fav-group-line" />
           </div>
           <template v-if="!collapsedGroups.has(gk)">
           <div v-for="item in groupedItems[gk]" :key="item.id" class="fav-list-item"
-            :class="{ 'fav-item--editing-tags': editingTagsItemId === item.id }"
+            :class="{ 'fav-item--editing-tags': editingTagsItemId === item.id, 'fav-list-item--dropdown-open': addToColItemId === item.id }"
             :draggable="!batchMode" @dragstart="onDragStart($event, item)" @dragover="onDragOver" @drop="onDrop($event, item)" @dragend="onDragEnd">
             <div v-if="batchMode" class="fav-list-check"><Checkbox :model-value="selectedIds.has(item.id)" @update:model-value="() => toggleSelect(item.id)" /></div>
             <div class="fav-list-content">
@@ -889,12 +889,12 @@ function cancelEditTags() {
               <div class="fav-list-tags-inner">
                 <template v-if="editingTagsItemId !== item.id">
                   <Badge v-for="tag in getTags(item)" :key="tag" class="fav-tag-badge" :style="tagColorStyle(tag)">{{ tag }}</Badge>
-                  <button class="fav-tag-add-btn" @click="startEditTags(item)" title="编辑标签"><Tag :size="12" /></button>
+                  <button class="fav-tag-add-btn" @click="startEditTags(item)" :title="t('tag_edit_hint')"><Tag :size="12" /></button>
                 </template>
                 <div v-else class="fav-tag-edit" @click.stop>
                   <input v-model="tagInputValue" class="fav-tag-input" :placeholder="t('tag_placeholder')" @keydown.enter="saveTags(item)" @keydown.esc="cancelEditTags" />
-                  <button class="fav-tag-save" @click="saveTags(item)" title="保存"><Check :size="14" /></button>
-                  <button class="fav-tag-cancel" @click="cancelEditTags" title="取消"><X :size="14" /></button>
+                  <button class="fav-tag-save" @click="saveTags(item)" :title="t('save_btn')"><Check :size="14" /></button>
+                  <button class="fav-tag-cancel" @click="cancelEditTags" :title="t('cancel_btn')"><X :size="14" /></button>
                   <div v-if="allTags.length > 0" class="fav-tag-suggestions">
                     <button v-for="suggestTag in allTags" :key="suggestTag.name"
                       :class="['fav-tag-suggest', { 'fav-tag-suggest--active': getTags(item).includes(suggestTag.name) }]"
@@ -906,16 +906,16 @@ function cancelEditTags() {
                   </div>
                   <!-- 新建标签颜色选择（始终显示） -->
                   <div class="fav-color-picker-row" @click.stop>
-                    <span class="fav-color-picker-row-label">颜色:</span>
+                    <span class="fav-color-picker-row-label">{{ t('fav_tag_color_label') }}</span>
                     <button v-for="c in TAG_PRESET_COLORS" :key="c"
                       :class="['fav-color-swatch-sm', { active: editingTagColor === c }]"
                       :style="{ background: c }"
                       @click="editingTagColor = editingTagColor === c ? '' : c" />
-                    <div class="fav-color-swatch-sm fav-color-swatch-sm--custom" title="自定义颜色" @click.stop>
+                    <div class="fav-color-swatch-sm fav-color-swatch-sm--custom" :title="t('fav_color_custom')" @click.stop>
                       <Palette :size="10" />
                       <input type="color" v-model="editingTagColor" class="fav-color-custom-input" />
                     </div>
-                    <button v-if="editingTagColor" class="fav-color-clear" @click="editingTagColor = ''">清除</button>
+                    <button v-if="editingTagColor" class="fav-color-clear" @click="editingTagColor = ''">{{ t('fav_color_clear') }}</button>
                   </div>
                   <!-- 标签颜色编辑器（点击已应用标签时弹出） -->
                   <Teleport to="body">
@@ -923,7 +923,7 @@ function cancelEditTags() {
                       <div class="fav-color-backdrop" @click="cancelTagColor"></div>
                       <div class="fav-color-picker" :style="{ top: colorPickerPos.top, left: colorPickerPos.left }" @click.stop>
                     <div class="fav-color-picker-header">
-                      <span class="fav-color-picker-label">编辑标签颜色</span>
+                      <span class="fav-color-picker-label">{{ t('fav_tag_color_edit') }}</span>
                       <button class="fav-color-picker-close" @click="cancelTagColor"><X :size="12" /></button>
                     </div>
                     <div class="fav-color-picker-name">
@@ -934,14 +934,14 @@ function cancelEditTags() {
                         :class="['fav-color-swatch', { active: colorPickerColor === c }]"
                         :style="{ background: c }"
                         @click="colorPickerColor = c" />
-                      <div class="fav-color-swatch fav-color-swatch--custom" title="自定义颜色">
+                      <div class="fav-color-swatch fav-color-swatch--custom" :title="t('fav_color_custom')">
                         <Palette :size="12" />
                         <input type="color" v-model="colorPickerColor" class="fav-color-custom-input" />
                       </div>
                     </div>
                     <div class="fav-color-picker-actions">
-                      <button class="fav-color-remove" @click="removeTagColor(colorPickerTag)">移除颜色</button>
-                      <button class="fav-color-save" @click="saveTagColor()">保存</button>
+                      <button class="fav-color-remove" @click="removeTagColor(colorPickerTag)">{{ t('fav_tag_remove_color') }}</button>
+                      <button class="fav-color-save" @click="saveTagColor()">{{ t('fav_tag_save_color') }}</button>
                     </div>
                   </div>
                     </div>
@@ -961,7 +961,7 @@ function cancelEditTags() {
               </Button>
               <!-- Add to collection dropdown -->
               <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
-                <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
+                <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" :title="t('fav_add_to_col')"><FolderPlus :size="14" /></Button>
                 <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
                   <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click.stop="addToCollection(node.id, item.id)">
                     <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
@@ -982,12 +982,12 @@ function cancelEditTags() {
           <div class="fav-group-header" @click="toggleGroup(gk)" style="cursor:pointer">
             <ChevronRight :size="14" class="fav-group-chevron" :class="{ 'fav-group-chevron--open': !collapsedGroups.has(gk) }" />
             <Badge variant="outline" class="fav-group-badge" :data-type="gk"><span class="type-dot" />{{ groupLabels[gk] }}</Badge>
-            <span class="fav-group-count">{{ groupedItems[gk].length }} 项</span>
+            <span class="fav-group-count">{{ t('fav_items_count', { n: groupedItems[gk].length }) }}</span>
             <div class="fav-group-line" />
           </div>
           <div v-if="!collapsedGroups.has(gk)" class="fav-grid">
             <div v-for="item in groupedItems[gk]" :key="item.id" class="fav-card"
-              :class="{ 'fav-card--selected': selectedIds.has(item.id), 'fav-item--editing-tags': editingTagsItemId === item.id }"
+              :class="{ 'fav-card--selected': selectedIds.has(item.id), 'fav-item--editing-tags': editingTagsItemId === item.id, 'fav-card--dropdown-open': addToColItemId === item.id }"
               :draggable="!batchMode"
               @click="batchMode ? toggleSelect(item.id) : undefined"
               @dragstart="onDragStart($event, item)" @dragover="onDragOver" @drop="onDrop($event, item)" @dragend="onDragEnd">
@@ -1027,12 +1027,12 @@ function cancelEditTags() {
               <div class="fav-card-tags">
                 <template v-if="editingTagsItemId !== item.id">
                   <Badge v-for="tag in getTags(item)" :key="tag" class="fav-tag-badge" :style="tagColorStyle(tag)">{{ tag }}</Badge>
-                  <button class="fav-tag-add-btn" @click.stop="startEditTags(item)" title="编辑标签"><Tag :size="12" /></button>
+                  <button class="fav-tag-add-btn" @click.stop="startEditTags(item)" :title="t('tag_edit_hint')"><Tag :size="12" /></button>
                 </template>
                 <div v-else class="fav-tag-edit" @click.stop>
                   <input v-model="tagInputValue" class="fav-tag-input" :placeholder="t('tag_placeholder')" @keydown.enter="saveTags(item)" @keydown.esc="cancelEditTags" />
-                  <button class="fav-tag-save" @click="saveTags(item)" title="保存"><Check :size="14" /></button>
-                  <button class="fav-tag-cancel" @click="cancelEditTags" title="取消"><X :size="14" /></button>
+                  <button class="fav-tag-save" @click="saveTags(item)" :title="t('save_btn')"><Check :size="14" /></button>
+                  <button class="fav-tag-cancel" @click="cancelEditTags" :title="t('cancel_btn')"><X :size="14" /></button>
                   <div v-if="allTags.length > 0" class="fav-tag-suggestions">
                     <button v-for="suggestTag in allTags" :key="suggestTag.name"
                       :class="['fav-tag-suggest', { 'fav-tag-suggest--active': getTags(item).includes(suggestTag.name) }]"
@@ -1044,16 +1044,16 @@ function cancelEditTags() {
                   </div>
                   <!-- 新建标签颜色选择（始终显示） -->
                   <div class="fav-color-picker-row" @click.stop>
-                    <span class="fav-color-picker-row-label">颜色:</span>
+                    <span class="fav-color-picker-row-label">{{ t('fav_tag_color_label') }}</span>
                     <button v-for="c in TAG_PRESET_COLORS" :key="c"
                       :class="['fav-color-swatch-sm', { active: editingTagColor === c }]"
                       :style="{ background: c }"
                       @click="editingTagColor = editingTagColor === c ? '' : c" />
-                    <div class="fav-color-swatch-sm fav-color-swatch-sm--custom" title="自定义颜色" @click.stop>
+                    <div class="fav-color-swatch-sm fav-color-swatch-sm--custom" :title="t('fav_color_custom')" @click.stop>
                       <Palette :size="10" />
                       <input type="color" v-model="editingTagColor" class="fav-color-custom-input" />
                     </div>
-                    <button v-if="editingTagColor" class="fav-color-clear" @click="editingTagColor = ''">清除</button>
+                    <button v-if="editingTagColor" class="fav-color-clear" @click="editingTagColor = ''">{{ t('fav_color_clear') }}</button>
                   </div>
                   <!-- 标签颜色编辑器（点击已应用标签时弹出） -->
                   <Teleport to="body">
@@ -1061,7 +1061,7 @@ function cancelEditTags() {
                       <div class="fav-color-backdrop" @click="cancelTagColor"></div>
                       <div class="fav-color-picker" :style="{ top: colorPickerPos.top, left: colorPickerPos.left }" @click.stop>
                     <div class="fav-color-picker-header">
-                      <span class="fav-color-picker-label">编辑标签颜色</span>
+                      <span class="fav-color-picker-label">{{ t('fav_tag_color_edit') }}</span>
                       <button class="fav-color-picker-close" @click="cancelTagColor"><X :size="12" /></button>
                     </div>
                     <div class="fav-color-picker-name">
@@ -1072,14 +1072,14 @@ function cancelEditTags() {
                         :class="['fav-color-swatch', { active: colorPickerColor === c }]"
                         :style="{ background: c }"
                         @click="colorPickerColor = c" />
-                      <div class="fav-color-swatch fav-color-swatch--custom" title="自定义颜色">
+                      <div class="fav-color-swatch fav-color-swatch--custom" :title="t('fav_color_custom')">
                         <Palette :size="12" />
                         <input type="color" v-model="colorPickerColor" class="fav-color-custom-input" />
                       </div>
                     </div>
                     <div class="fav-color-picker-actions">
-                      <button class="fav-color-remove" @click="removeTagColor(colorPickerTag)">移除颜色</button>
-                      <button class="fav-color-save" @click="saveTagColor()">保存</button>
+                      <button class="fav-color-remove" @click="removeTagColor(colorPickerTag)">{{ t('fav_tag_remove_color') }}</button>
+                      <button class="fav-color-save" @click="saveTagColor()">{{ t('fav_tag_save_color') }}</button>
                     </div>
                   </div>
                     </div>
@@ -1096,12 +1096,12 @@ function cancelEditTags() {
                 <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" @click.stop="openLink(item)"><ExternalLink :size="14" /></Button>
                 <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" @click.stop="emit('preview-text', item)"><FileText :size="14" /></Button>
                 <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" @click.stop="emit('preview-file', item)"><FileText :size="14" /></Button>
-                <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" @click.stop="revealFileFolder(item)" title="在文件夹中显示"><Folder :size="14" /></Button>
+                <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" @click.stop="revealFileFolder(item)" :title="t('show_in_folder')"><Folder :size="14" /></Button>
                 <!-- Add to collection -->
                 <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
-                  <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" title="加入收藏夹"><FolderPlus :size="14" /></Button>
+                  <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" :title="t('fav_add_to_col')"><FolderPlus :size="14" /></Button>
                   <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                    <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click.stop="addToCollection(node.id, item.id)">
+                    <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @click.prevent.stop="addToCollection(node.id, item.id)">
                       <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
                       <span>{{ node.name }}</span>
                     </button>
@@ -1348,7 +1348,8 @@ function cancelEditTags() {
 .fav-list-meta { font-size: 11px; color: var(--text-tertiary); display: flex; gap: 6px; margin-top: 2px; }
 .fav-list-tags-inner { display: flex; align-items: center; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
 .fav-list-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity 0.12s; }
-.fav-list-item:hover .fav-list-actions { opacity: 1; }
+.fav-list-item:hover .fav-list-actions,
+.fav-list-item--dropdown-open .fav-list-actions { opacity: 1; }
 .fav-list-actions :deep(button) { color: var(--text-tertiary); border-radius: var(--radius-sm); transition: background .15s ease, color .15s ease; }
 .fav-list-actions :deep(button):hover { background: var(--bg-active); color: var(--text-primary); }
 .fav-list-actions :deep(button.sensitive-locked) { color: var(--danger); }
@@ -1387,7 +1388,9 @@ function cancelEditTags() {
 .fav-card-source { font-size: 11px; color: var(--text-tertiary); max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fav-card-time { font-size: 11px; color: var(--text-tertiary); }
 .fav-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 4px 6px 6px; opacity: 0; transition: opacity 0.15s; }
-.fav-card:hover .fav-card-actions { opacity: 1; }
+.fav-card:hover .fav-card-actions,
+.fav-card--dropdown-open .fav-card-actions { opacity: 1; }
+.fav-add-col-dropdown { pointer-events: auto; }
 
 /* Tags */
 .fav-tag-badge {
