@@ -232,9 +232,11 @@ export function useCollections() {
   }
 
   async function loadCollections() {
+    console.log('[DEBUG] loadCollections start')
     loading.value = true
     try {
       const data = await getFavoriteCollections()
+      console.log('[DEBUG] getFavoriteCollections returned', data)
       if (data?.collections && data.collections.length > 0) {
         flatCollections.value = data.collections
         if (expandedPaths.value.size === 0) {

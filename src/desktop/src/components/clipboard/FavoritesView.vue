@@ -497,23 +497,32 @@ async function selectCollection(id: string | null) {
 
 // Add item to collection
 function toggleAddToCol(itemId: string) {
-  addToColItemId.value = addToColItemId.value === itemId ? null : itemId
+  const wasOpen = addToColItemId.value === itemId
+  addToColItemId.value = wasOpen ? null : itemId
+  console.log('[DEBUG] toggleAddToCol', { itemId, wasOpen, nowOpen: addToColItemId.value === itemId, allNodes: collections.allNodes.value.map(n => n.name) })
 }
 async function addToCollection(colId: string, itemId: string) {
+  console.log('[DEBUG] addToCollection start', { colId, itemId })
   addToColItemId.value = null
   try {
+    console.log('[DEBUG] calling addCollectionItem API...')
     const ok = await addCollectionItem(colId, itemId)
+    console.log('[DEBUG] addCollectionItem returned', ok)
     if (!ok) {
+      console.warn('[DEBUG] addCollectionItem ok=false')
       toast.show(t('fav_add_fail'), 'error')
       return
     }
     toast.show(t('fav_added'), 'success')
     // Refresh collection counts in the tree
+    console.log('[DEBUG] refreshing loadCollections...')
     await collections.loadCollections()
+    console.log('[DEBUG] loadCollections done. flatCollections', collections.flatCollections.value.map(c => ({ id: c.id, name: c.name, item_count: c.item_count })))
     // Optimistically update the active collection's item map so the moved item
     // disappears from the current collection view (if applicable)
     const activeId = collections.activeNodeId.value
     const newMap = new Map(collections.collectionItemsMap.value)
+    console.log('[DEBUG] activeNodeId', activeId, 'previous map size', collections.collectionItemsMap.value.size)
     if (activeId) {
       const activeSet = newMap.get(activeId)
       if (activeSet?.has(itemId)) {
@@ -525,8 +534,9 @@ async function addToCollection(colId: string, itemId: string) {
     const targetSet = newMap.get(colId) || new Set()
     newMap.set(colId, new Set(targetSet).add(itemId))
     collections.collectionItemsMap.value = newMap
+    console.log('[DEBUG] updated map keys', [...newMap.keys()], 'targetSet size', newMap.get(colId)?.size)
   } catch (err: any) {
-    console.warn('[addToCollection] failed:', err)
+    console.warn('[DEBUG] addToCollection exception:', err)
     toast.show(err.message || t('fav_add_fail'), 'error')
   }
 }
@@ -963,7 +973,7 @@ function cancelEditTags() {
               <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                 <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" :title="t('fav_add_to_col')"><FolderPlus :size="14" /></Button>
                 <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown">
-                  <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click.stop="addToCollection(node.id, item.id)">
+                  <button v-for="node in collections.allNodes.value" :key="node.id" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @click.prevent.stop="addToCollection(node.id, item.id)">
                     <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
                     <span>{{ node.name }}</span>
                   </button>
