@@ -6,9 +6,6 @@ const emit = defineEmits<{ 'open-modal': [type: string] }>()
 </script>
 
 <template>
-  <div class="toolbar">
-    <div class="toolbar-left"><span class="toolbar-title">{{ t('nav_subscription') }}</span></div>
-  </div>
   <div class="settings-view">
     <h2 class="sv-title">{{ t('nav_subscription') }}</h2>
     <div class="sg-header">{{ t('sub_usage') }}</div>
@@ -33,10 +30,7 @@ const emit = defineEmits<{ 'open-modal': [type: string] }>()
 </template>
 
 <style scoped>
-.toolbar { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--border-default); background: var(--bg-surface); flex-shrink: 0; }
-.toolbar-left { display: flex; align-items: center; gap: 8px; }
-.toolbar-title { font-weight: 600; font-size: 14px; }
-.settings-view { padding: 24px; max-width: 720px; overflow-y: auto; flex: 1; }
+.settings-view { padding: 24px; max-width: 720px; margin: 0 auto; overflow-y: auto; flex: 1; }
 .sv-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
 .sg-header { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); margin-bottom: 8px; }
 .sub-stats { display: flex; gap: 12px; margin-top: 8px; margin-bottom: 24px; }

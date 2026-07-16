@@ -83,11 +83,13 @@ function reset() {
 
 async function markRead(id: string) {
   const n = notifications.value.find((x) => x.id === id)
-  if (n) n.read = true // 乐观更新
+  if (!n) return
+  if (n.read) return // 已读则避免重复请求
+  n.read = true // 乐观更新
   const res = await markNotificationRead(id)
   if (!res.ok) {
     // 回滚
-    if (n) n.read = false
+    n.read = false
     console.warn('[Notifications] 标记已读失败:', res.error)
   }
 }
@@ -98,7 +100,8 @@ async function markAllRead() {
   await Promise.all(
     unread.map((n) =>
       markNotificationRead(n.id).then((res) => {
-        if (!res.ok && !n.read) n.read = false
+        // 仅当接口真正失败且当前仍显示已读时才回滚
+        if (!res.ok && n.read) n.read = false
       }),
     ),
   )

@@ -199,7 +199,7 @@ async function handleAvatarUpload(e: Event) {
 </template>
 
 <style scoped>
-.settings-view { padding: 24px; max-width: 720px; overflow-y: auto; flex: 1; }
+.settings-view { padding: 24px; max-width: 720px; margin: 0 auto; overflow-y: auto; flex: 1; }
 .sv-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
 .profile-card { display: flex; gap: 24px; padding: 24px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-lg); }
 
