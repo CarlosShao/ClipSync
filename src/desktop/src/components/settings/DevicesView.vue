@@ -89,7 +89,7 @@ async function handleDelete(id: string, name: string) {
 </template>
 
 <style scoped>
-.settings-view { padding: 24px; max-width: 720px; overflow-y: auto; flex: 1; }
+.settings-view { padding: 24px; width: 100%; min-width: 0; overflow-y: auto; flex: 1; }
 .sv-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .sv-actions { display: flex; gap: 12px; }
 .device-action-btn { gap: 8px !important; padding: 0 20px !important; }
