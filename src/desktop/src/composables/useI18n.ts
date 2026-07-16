@@ -208,6 +208,7 @@ const _dicts: Record<Lang, I18nDict> = {
     fav_screenshot:'Screenshot', fav_add_to_col:'Add to collection', fav_file_default:'File',
     // Tags
     tag_saved:'Tags saved', tag_deleted:'Tag deleted', tag_delete_fail:'Failed to delete tag',
+    tag_delete_confirm:'Are you sure you want to delete the tag "{tag}"? This will remove it from all favorited items.',
     tag_placeholder:'Add tags (comma separated)',
     tag_reuse_hint:'Existing tags — click to add',
     tag_reuse_added:'Tag added', tag_reuse_removed:'Tag removed',
@@ -689,6 +690,7 @@ const _dicts: Record<Lang, I18nDict> = {
     fav_screenshot:'截图', fav_add_to_col:'加入收藏夹', fav_file_default:'文件',
     // Tags
     tag_saved:'标签已保存', tag_deleted:'标签已删除', tag_delete_fail:'删除标签失败',
+    tag_delete_confirm:'确定要删除标签"{tag}"吗？所有收藏项将不再带有该标签。',
     tag_placeholder:'添加标签（逗号分隔）',
     tag_reuse_hint:'已有标签 — 点击添加',
     tag_reuse_added:'标签已添加', tag_reuse_removed:'标签已移除',
