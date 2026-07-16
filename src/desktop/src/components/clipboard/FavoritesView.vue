@@ -499,32 +499,22 @@ async function selectCollection(id: string | null) {
 function toggleAddToCol(itemId: string) {
   const wasOpen = addToColItemId.value === itemId
   addToColItemId.value = wasOpen ? null : itemId
-  console.log('[DEBUG] toggleAddToCol', { itemId, wasOpen, nowOpen: addToColItemId.value === itemId, allNodes: collections.allNodes.value.map(n => n.name) })
 }
 async function addToCollection(colId: string, itemId: string) {
-  console.log('[DEBUG] addToCollection start', { colId, itemId })
   addToColItemId.value = null
-  console.log('[DEBUG] addToColItemId nulled')
   try {
-    console.log('[DEBUG] about to call addCollectionItem', { colId, itemId })
     const ok = await addCollectionItem(colId, itemId)
-    console.log('[DEBUG] addCollectionItem returned', ok)
-    console.log('[DEBUG] addCollectionItem returned', ok)
     if (!ok) {
-      console.warn('[DEBUG] addCollectionItem ok=false')
       toast.show(t('fav_add_fail'), 'error')
       return
     }
     toast.show(t('fav_added'), 'success')
     // Refresh collection counts in the tree
-    console.log('[DEBUG] refreshing loadCollections...')
     await collections.loadCollections()
-    console.log('[DEBUG] loadCollections done. flatCollections', collections.flatCollections.value.map(c => ({ id: c.id, name: c.name, item_count: c.item_count })))
     // Optimistically update the active collection's item map so the moved item
     // disappears from the current collection view (if applicable)
     const activeId = collections.activeNodeId.value
     const newMap = new Map(collections.collectionItemsMap.value)
-    console.log('[DEBUG] activeNodeId', activeId, 'previous map size', collections.collectionItemsMap.value.size)
     if (activeId) {
       const activeSet = newMap.get(activeId)
       if (activeSet?.has(itemId)) {
@@ -536,9 +526,7 @@ async function addToCollection(colId: string, itemId: string) {
     const targetSet = newMap.get(colId) || new Set()
     newMap.set(colId, new Set(targetSet).add(itemId))
     collections.collectionItemsMap.value = newMap
-    console.log('[DEBUG] updated map keys', [...newMap.keys()], 'targetSet size', newMap.get(colId)?.size)
   } catch (err: any) {
-    console.warn('[DEBUG] addToCollection exception:', err)
     toast.show(err.message || t('fav_add_fail'), 'error')
   }
 }
@@ -656,7 +644,6 @@ async function removeTag(tagName: string) {
 
 // --- Drag & Drop (local reorder only) ---
 function onDragStart(e: DragEvent, item: ClipItem) {
-  console.log('[DEBUG] card dragstart', item.id)
   dragItemId.value = item.id
   e.dataTransfer!.effectAllowed = 'move'
   // Initialize localOrder from current display order if not set
@@ -683,11 +670,9 @@ function goToClipboard() { router.push('/app/clipboard') }
 // Close dropdown on mousedown outside (use mousedown instead of click to avoid
 // racing with the option's own click handler when the dropdown removes itself)
 function handleClickOutside(e: Event) {
-  console.log('[DEBUG] handleClickOutside fired', { addToColItemId: addToColItemId.value, target: (e.target as HTMLElement)?.className })
   if (addToColItemId.value) {
     const target = e.target as HTMLElement
     const inside = target.closest('.fav-add-col-wrap')
-    console.log('[DEBUG] click outside check', { inside: !!inside })
     if (!inside) addToColItemId.value = null
   }
 }
@@ -980,7 +965,7 @@ function cancelEditTags() {
               <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                 <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" :title="t('fav_add_to_col')"><FolderPlus :size="14" /></Button>
                 <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown" @mousedown.stop @click.stop>
-                  <button v-for="node in collections.allNodes.value" :key="node.id" type="button" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @mousedown.stop="console.log('[DEBUG] option mousedown', node.id, item.id); addToCollection(node.id, item.id)" @click.stop="console.log('[DEBUG] option click', node.id, item.id); addToCollection(node.id, item.id)">
+                  <button v-for="node in collections.allNodes.value" :key="node.id" type="button" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @mousedown.stop="addToCollection(node.id, item.id)" @click.stop="addToCollection(node.id, item.id)">
                     <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
                     <span>{{ node.name }}</span>
                   </button>
@@ -1118,7 +1103,7 @@ function cancelEditTags() {
                 <div v-if="collections.flatCollections.value.length > 0" class="fav-add-col-wrap">
                   <Button variant="ghost" size="icon-sm" @click.stop="toggleAddToCol(item.id)" :title="t('fav_add_to_col')"><FolderPlus :size="14" /></Button>
                   <div v-if="addToColItemId === item.id" class="fav-add-col-dropdown" @mousedown.stop @click.stop>
-                    <button v-for="node in collections.allNodes.value" :key="node.id" type="button" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @mousedown.stop="console.log('[DEBUG] option mousedown', node.id, item.id); addToCollection(node.id, item.id)" @click.stop="console.log('[DEBUG] option click', node.id, item.id); addToCollection(node.id, item.id)">
+                    <button v-for="node in collections.allNodes.value" :key="node.id" type="button" class="fav-add-col-option" :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }" @mousedown.stop="addToCollection(node.id, item.id)" @click.stop="addToCollection(node.id, item.id)">
                       <component :is="COLLECTION_ICON_MAP[node.icon] || Folder" :size="14" />
                       <span>{{ node.name }}</span>
                     </button>

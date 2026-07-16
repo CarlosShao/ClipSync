@@ -290,23 +290,19 @@ router.post('/collections/:id/items', apiLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     const { itemId } = req.body;
-    console.log('[DEBUG] server POST /collections/:id/items', { id, itemId, userId: req.userId });
     if (!isValidUUID(id) || !isValidUUID(itemId)) {
-      console.log('[DEBUG] server invalid IDs', { id, itemId });
       return res.status(400).json({ error: 'Invalid ID' });
     }
 
     // 验证收藏夹属于当前用户
     const col = await pool.query('SELECT id FROM favorite_collections WHERE id = $1 AND user_id = $2', [id, req.userId]);
-    console.log('[DEBUG] server collection check', { found: col.rows.length > 0 });
     if (col.rows.length === 0) return res.status(404).json({ error: 'Collection not found' });
 
     // 唯一归属：先移除 item 在其他收藏夹中的关联
-    const deleteOthers = await pool.query(
+    await pool.query(
       'DELETE FROM favorite_collection_items WHERE item_id = $1 AND collection_id != $2',
       [itemId, id]
     );
-    console.log('[DEBUG] server removed from other collections', { rowCount: deleteOthers.rowCount });
 
     // 获取当前最大 sort_order
     const maxOrder = await pool.query(
@@ -314,18 +310,16 @@ router.post('/collections/:id/items', apiLimiter, async (req, res) => {
       [id]
     );
 
-    const insert = await pool.query(
+    await pool.query(
       `INSERT INTO favorite_collection_items (collection_id, item_id, sort_order)
        VALUES ($1, $2, $3)
        ON CONFLICT (collection_id, item_id) DO NOTHING
        RETURNING collection_id`,
       [id, itemId, maxOrder.rows[0].next_order]
     );
-    console.log('[DEBUG] server insert result', { inserted: insert.rows.length > 0, rowCount: insert.rowCount });
 
     res.json({ message: 'Item added to collection' });
   } catch (err) {
-    console.error('[DEBUG] server add item error', err);
     logger.error('Add item to collection error:', { error: err.message });
     res.status(500).json({ error: 'Failed to add item' });
   }
