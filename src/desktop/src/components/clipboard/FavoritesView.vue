@@ -16,6 +16,7 @@ import {
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   createFavoriteCollection, deleteFavoriteCollection,
   addCollectionItem, removeCollectionItem, setItemTags, getAllFavoriteTags, deleteTag,
@@ -214,6 +215,11 @@ const editingTagColor = ref<string>('')
 const colorPickerTag = ref<string>('')
 const colorPickerColor = ref<string>('')
 const colorPickerPos = ref({ top: '0px', left: '0px' })
+
+// Tag delete confirmation dialog
+const showTagDeleteConfirm = ref(false)
+const pendingDeleteTag = ref('')
+const pendingDeleteTagMessage = ref('')
 
 // Debounce helper
 function debounce<T extends (...args: any[]) => any>(fn: T, ms: number): T {
@@ -648,7 +654,14 @@ async function toggleTagSuggestion(tag: string) {
 }
 
 async function removeTag(tagName: string) {
-  if (!confirm(t('tag_delete_confirm').replace('{tag}', tagName))) return
+  pendingDeleteTag.value = tagName
+  pendingDeleteTagMessage.value = t('tag_delete_confirm').replace('{tag}', tagName)
+  showTagDeleteConfirm.value = true
+}
+
+async function doDeleteTag() {
+  const tagName = pendingDeleteTag.value
+  if (!tagName) return
   const ok = await deleteTag(tagName)
   if (ok) {
     if (activeTagFilter.value === tagName) activeTagFilter.value = null
@@ -657,6 +670,7 @@ async function removeTag(tagName: string) {
   } else {
     toast.show(t('tag_delete_fail'), 'error')
   }
+  pendingDeleteTag.value = ''
 }
 
 // --- Drag & Drop (local reorder only) ---
@@ -1147,6 +1161,17 @@ function cancelEditTags() {
       <button class="fav-ctx-item fav-ctx-item--danger" @click="collections.ctxDelete()"><Trash2 :size="14" /> {{ t('fav_ctx_delete') }}</button>
     </div>
   </Teleport>
+
+  <!-- Tag delete confirmation dialog -->
+  <ConfirmDialog
+    v-model:open="showTagDeleteConfirm"
+    :title="t('confirm_t')"
+    :message="pendingDeleteTagMessage"
+    :confirm-text="t('delete_btn')"
+    :cancel-text="t('cancel_btn')"
+    confirm-variant="destructive"
+    @confirm="doDeleteTag"
+  />
 </template>
 
 <style scoped>

@@ -20,6 +20,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table'
 import Badge from '@/components/ui/badge/Badge.vue'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { getFavoriteCollections, addCollectionItem, createFavoriteCollection } from '@/api/client'
 
 const emit = defineEmits<{
@@ -370,10 +371,10 @@ const filterOptions = [
   { value: 'links', label: t('tab_links') },
   { value: 'files', label: t('tab_files') },
 ] as const
-const showConfirmModal = ref(false)
+const confirmOpen = ref(false)
 const confirmMessage = ref('')
-let confirmCallback: (() => void) | null = null
-const confirmBtnVariant = ref<'default' | 'destructive'>('destructive')
+const confirmCallback = ref<(() => void) | null>(null)
+const confirmVariant = ref<'default' | 'destructive'>('destructive')
 
 // File upload
 const fileInputRef = ref<HTMLInputElement>()
@@ -430,21 +431,22 @@ function toggleQuickPaste() {
 }
 
 // ===== Confirm Dialog =====
-function showConfirm(message: string, cb: () => void) {
+function showConfirm(message: string, cb: () => void, variant: 'default' | 'destructive' = 'destructive') {
   confirmMessage.value = message
-  confirmCallback = cb
-  showConfirmModal.value = true
+  confirmCallback.value = cb
+  confirmVariant.value = variant
+  confirmOpen.value = true
 }
 
-function confirmAction() {
-  if (confirmCallback) confirmCallback()
-  showConfirmModal.value = false
-  confirmCallback = null
+function onConfirmDialog() {
+  if (confirmCallback.value) confirmCallback.value()
+  confirmOpen.value = false
+  confirmCallback.value = null
 }
 
-function cancelConfirm() {
-  showConfirmModal.value = false
-  confirmCallback = null
+function onCancelDialog() {
+  confirmOpen.value = false
+  confirmCallback.value = null
 }
 
 // ===== Clipboard Operations =====
@@ -549,7 +551,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   // ESC: close modals / quick paste
   if (e.key === 'Escape') {
     if (showQuickPaste.value) { showQuickPaste.value = false; return }
-    if (showConfirmModal.value) { showConfirmModal.value = false; return }
+    if (confirmOpen.value) { confirmOpen.value = false; return }
   }
   // Ctrl+K or Cmd+K: toggle quick paste
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -572,7 +574,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   // Row navigation + copy/delete: only when clipboard table is active and not typing in a field
   const target = e.target as HTMLElement | null
   const typing = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
-  if (typing || showQuickPaste.value || showConfirmModal.value) return
+  if (typing || showQuickPaste.value || confirmOpen.value) return
 
   const list = clip.filteredItems.value
   if (!list.length) return
@@ -738,16 +740,17 @@ function extractDomain(url: string): string {
       </Button>
     </div>
 
-    <!-- Confirm Modal -->
-    <div v-if="showConfirmModal" class="confirm-modal-overlay" @click.self="cancelConfirm">
-      <div class="confirm-modal">
-        <p class="confirm-msg">{{ confirmMessage }}</p>
-        <div class="confirm-actions">
-          <Button variant="outline" size="default" @click="cancelConfirm" class="confirm-btn-cancel">{{ t('cancel_btn') }}</Button>
-          <Button :variant="confirmBtnVariant" size="default" @click="confirmAction" class="confirm-btn-delete">{{ t('confirm_t') }}</Button>
-        </div>
-      </div>
-    </div>
+    <!-- Confirm Dialog -->
+    <ConfirmDialog
+      v-model:open="confirmOpen"
+      :title="t('confirm_t')"
+      :message="confirmMessage"
+      :confirm-text="t('confirm_t')"
+      :cancel-text="t('cancel_btn')"
+      :confirm-variant="confirmVariant"
+      @confirm="onConfirmDialog"
+      @cancel="onCancelDialog"
+    />
 
     <!-- Clipboard Table (shadcn-vue Data Table style) -->
     <div class="clipboard-view" role="region" :aria-label="t('nav_clipboard')" @scroll="onClipboardScroll">
@@ -1158,27 +1161,6 @@ function extractDomain(url: string): string {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
-
-/* ===== CONFIRM MODAL ===== */
-.confirm-modal-overlay {
-  position: fixed; inset: 0; z-index: 9999;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--bg-modal-overlay);
-  animation: fadeIn 0.15s ease;
-}
-.confirm-modal {
-  background: var(--bg-surface); border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl); padding: 28px; max-width: 400px; width: 100%;
-  box-shadow: var(--shadow-modal);
-  animation: slideUp 0.2s ease;
-}
-.confirm-msg { font-size: 14px; margin-bottom: 28px; color: var(--text-primary); line-height: 1.6; }
-.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
-.confirm-btn-cancel { min-width: 80px; }
-.confirm-btn-delete { min-width: 80px; }
-
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUp { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
 /* Icon-only toolbar buttons */
 .btn-icon { color: var(--text-secondary); }
