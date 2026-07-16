@@ -20,6 +20,8 @@ export interface ClipItem {
   selected?: boolean
   isFavorite?: boolean
   favoritedAt?: number
+  contentSize?: number
+  metadata?: any
 }
 
 // === SINGLETON STATE - module-level refs shared across all callers ===
@@ -401,7 +403,7 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
           }
         }
       }
-      const preview = isImage ? (cached || '') : (content.slice(0, 200))
+      const preview = isImage ? (cached || '') : content
       return {
         id: i.id,
         type: (i.contentType || i.type || 'text') as ClipItem['type'],
@@ -415,6 +417,7 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
         isFavorite: !!i.isFavorite,
         favoritedAt: i.favoritedAt ? new Date(i.favoritedAt).getTime() : undefined,
         metadata: i.metadata, // ← 必须映射，否则刷新后 tags/paths 等元数据丢失
+        contentSize: i.contentSize,
       }
     })
     if (append) {
@@ -536,7 +539,8 @@ async function uploadToServer(content: string, type: ClipItem['type'] = 'text') 
     contentEncrypted: content,
     sourceDeviceId: deviceId,
     contentType: type,
-    contentPreview: content.slice(0, 200),
+    contentPreview: content.slice(0, 5000),
+    contentSize: content.length,
   }
   const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
   // 上传成功后：用服务器返回的 id 替换本地临时 id，并缓存内容
@@ -969,7 +973,27 @@ export function useClipboard() {
         }
         return false
       }
-      await tauri.setClipboardContent(item.content)
+
+      // 文本/链接/代码：item.content 可能是服务端返回的 contentPreview（<=5000 字符）。
+      // 如果已知 contentSize 且当前 content 不完整，先从服务器拉取完整内容再写入剪贴板。
+      // 老数据 contentSize 可能为 0，对非空服务端条目也尝试拉取，确保不会只复制 200 字符预览。
+      let textContent = item.content
+      const isLocalItem = /^local-|^text-|^file-|^img-|^browser-/.test(item.id)
+      const contentSize = item.contentSize || 0
+      const needsFetch = !isLocalItem && textContent.length > 0 &&
+        (contentSize === 0 || textContent.length < contentSize)
+      if (needsFetch) {
+        try {
+          const full = await api<{ contentEncrypted: string }>('GET', `/api/clipboard/${item.id}/content`)
+          if (full.ok && full.data?.contentEncrypted) {
+            textContent = full.data.contentEncrypted
+            cacheContent(item.id, textContent)
+          }
+        } catch (e: any) {
+          console.warn('[Clipboard] failed to fetch full text content for copy:', e?.message || e)
+        }
+      }
+      await tauri.setClipboardContent(textContent)
       return true
     } catch (e: any) {
       console.warn('[Clipboard] copyItem failed:', e?.message || e)

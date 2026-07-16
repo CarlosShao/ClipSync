@@ -175,7 +175,7 @@ watch(() => props.previewItem, (item) => {
   if (props.previewType === 'file') {
     loadFileContent(item)
   } else if (props.previewType === 'text') {
-    setTextContent(item)
+    loadTextContent(item)
   }
 }, { immediate: true })
 
@@ -409,6 +409,7 @@ function formatDocSize(chars: number): string {
 
 // ===== File content loading for file-type items =====
 const fileContentLoading = ref(false)
+const textContentLoading = ref(false)
 const previewContent = ref('')
 const previewFileName = ref('')
 const previewToc = ref<TocItem[]>([])
@@ -580,15 +581,40 @@ async function loadFileContent(item: any) {
   fileContentLoading.value = false
 }
 
-/** Set content directly for text-type items (already have content) */
-function setTextContent(item: any) {
-  previewContent.value = item?.content || ''
+/** Load full content for text-type items (server list only returns a preview) */
+async function loadTextContent(item: any) {
+  if (!item?.id) return
+
   previewFileName.value = ''
   previewToc.value = []
-  const docType = detectDocType(previewContent.value)
-  if (docType === 'Markdown') {
-    previewToc.value = extractToc(previewContent.value)
+  textContentLoading.value = true
+
+  let content = item?.content || ''
+  // If the list only gave us a preview, fetch the complete content.
+  const contentSize = (item as any)?.contentSize || 0
+  const isLocalItem = /^local-|^text-|^file-|^img-|^browser-/.test(item.id)
+  // New items: contentSize tells us whether the preview is complete.
+  // Old items: contentSize may be 0/missing, so treat any non-empty server item as potentially truncated.
+  const needsFetch = (!isLocalItem && content.length > 0) &&
+    (contentSize === 0 || content.length < contentSize)
+  if (needsFetch) {
+    try {
+      const full = await getClipboardItemContent(item.id)
+      if (full) {
+        content = full
+      }
+    } catch (e: any) {
+      console.warn('[Preview] failed to load full text content:', e?.message || e)
+    }
   }
+
+  previewContent.value = content
+  const docType = detectDocType(content)
+  if (docType === 'Markdown') {
+    previewToc.value = extractToc(content)
+  }
+
+  textContentLoading.value = false
 }
 
 /** Render code with highlight.js */
@@ -1517,8 +1543,8 @@ async function handleFeedbackSubmit() {
         </div>
       </div>
 
-      <!-- Loading state for file content -->
-      <div v-if="fileContentLoading" class="doc-loading">
+      <!-- Loading state for file / text content -->
+      <div v-if="fileContentLoading || textContentLoading" class="doc-loading">
         <div class="doc-loading-spinner" />
         <span>{{ t('preview_loading') }}</span>
       </div>

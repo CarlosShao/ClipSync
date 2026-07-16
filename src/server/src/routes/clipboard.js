@@ -347,7 +347,7 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
     }
 
     // 清理预览内容 — 只做截断，不做 HTML 转义（contentPreview 用于前端展示，非 HTML 执行）
-    const cleanPreview = contentPreview ? String(contentPreview).substring(0, 1000) : '';
+    const cleanPreview = contentPreview ? String(contentPreview).substring(0, 5000) : '';
 
     // 非文件类型按密文哈希去重；文件类型用路径去重（content_hash 留空）
     const isFile = detectedType === 'file';
