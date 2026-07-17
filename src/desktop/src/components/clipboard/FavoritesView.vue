@@ -729,7 +729,7 @@ function cancelEditTags() {
           <span class="fav-col-panel-title">{{ t('nav_favorites') }}</span>
           <Badge variant="outline" class="fav-count">{{ favoriteCount }}</Badge>
         </div>
-        <Button variant="ghost" size="icon-sm" class="fav-col-header-new-btn" @click="showNewCollectionInputAtTop" :title="t('fav_new_col')">
+        <Button variant="ghost" size="icon-sm" class="fav-col-header-new-btn" @click="showNewCollectionInputAtTop()" :title="t('fav_new_col')">
           <Plus :size="14" />
         </Button>
       </div>
