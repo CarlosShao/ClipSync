@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, reactive, nextTick } from 'vue'
+import { ref, computed, watch, reactive, nextTick, onUnmounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useTheme } from '@/composables/useTheme'
@@ -166,7 +166,8 @@ watch(() => props.showModalType, (type) => {
   if (type === 'sessions') loadSessions()
   if (type === 'billing') loadInvoices()
   if (type === 'notifications') loadPreferencesInto(secNotif)
-})
+// 组件改为异步 + v-if 门控后，挂载时 showModalType 已是目标值，必须 immediate 否则漏触发首次加载
+}, { immediate: true })
 
 // Load file content when preview item changes
 watch(() => props.previewItem, (item) => {
@@ -1150,6 +1151,12 @@ function closePairModals() {
   stopScan()
   emit('close-modal')
 }
+
+// 组件卸载（门控关闭）时兜底清理定时器与摄像头，避免泄漏
+onUnmounted(() => {
+  if (expireTimer) { clearInterval(expireTimer); expireTimer = undefined }
+  stopScan()
+})
 
 // ===== Sessions (real API) =====
 const sessionItems = ref<any[]>([])

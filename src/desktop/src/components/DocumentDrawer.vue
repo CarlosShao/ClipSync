@@ -394,9 +394,10 @@ function extractDocxToc(html: string): { id: string; text: string; depth: number
 }
 
 // ===== Watch for open =====
+// 组件改为 v-if 门控后，挂载时 open 已为 true，必须 immediate 否则漏触发首次加载
 watch(() => props.open, (v) => {
   if (v && props.item) loadContent(props.item)
-})
+}, { immediate: true })
 watch(() => props.item, (item) => {
   if (props.open && item) loadContent(item)
 })
