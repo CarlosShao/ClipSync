@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { AppConfig } from '@/types'
 import * as tauri from '@/lib/tauri'
+import { useClipboard } from '@/composables/useClipboard'
 
 const isDev = import.meta.env.DEV
 
@@ -102,6 +103,8 @@ export const useConfigStore = defineStore('config', () => {
     config.value.token = null
     config.value.user_id = null
     config.value.device_id = null
+    // 释放剪贴板图片的 blob URL，防止旧账号图片常驻 WebView 内存（泄漏修复）
+    try { useClipboard().resetImages() } catch { /* composable 尚未初始化则忽略 */ }
     // 清除 Rust 端持久化的认证态（clear_auth 命令只清 token/device_id/user_id，
     // 不会动 server_url/快捷键）。不再用 save({token:null})，避免 update_config
     // 整体覆盖语义误伤其它字段。
