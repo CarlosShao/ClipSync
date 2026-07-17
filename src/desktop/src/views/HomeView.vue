@@ -23,8 +23,10 @@ const DevicesView = defineAsyncComponent(() => import('@/components/settings/Dev
 const SharedLinksView = defineAsyncComponent(() => import('@/components/settings/SharedLinksView.vue'))
 const SubscriptionView = defineAsyncComponent(() => import('@/components/settings/SubscriptionView.vue'))
 const NotificationsView = defineAsyncComponent(() => import('@/components/settings/NotificationsView.vue'))
-import ModalManager from '@/components/modals/ModalManager.vue'
-import DocumentDrawer from '@/components/DocumentDrawer.vue'
+// ModalManager/DocumentDrawer 携带全套重型库（pdfjs/xlsx/mammoth/highlight.js/jszip/qrcode/jsqr/marked），
+// 改为异步 + v-if 门控，仅在真正需要时才加载进内存，避免启动即常驻数十 MB
+const ModalManager = defineAsyncComponent(() => import('@/components/modals/ModalManager.vue'))
+const DocumentDrawer = defineAsyncComponent(() => import('@/components/DocumentDrawer.vue'))
 import OnboardingView from '@/components/OnboardingView.vue'
 import CoachMarks from '@/components/CoachMarks.vue'
 import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
@@ -66,6 +68,8 @@ const showDrawer = ref(false)
 const drawerItem = ref<any>(null)
 const confirmMessage = ref('')
 let confirmCallback: (() => void) | null = null
+// 门控：仅当有弹窗/忘记密码/预览项时才挂载 ModalManager（否则其重型库常驻内存）
+const modalManagerActive = computed(() => !!showModalType.value || showForgotPwd.value || !!previewItem.value)
 const showOnboarding = ref(!localStorage.getItem('clipsync-onboarded'))
 const showCoachMarks = ref(false)
 
@@ -332,6 +336,7 @@ function confirmAction() {
   <QuickPastePanel :open="showQuickPaste" @close="showQuickPaste = false" />
 
   <ModalManager
+    v-if="modalManagerActive"
     :show-modal-type="showModalType"
     :show-forgot-pwd="showForgotPwd"
     :preview-item="previewItem"
@@ -374,7 +379,7 @@ function confirmAction() {
     </div>
   </div>
 
-  <DocumentDrawer :open="showDrawer" :item="drawerItem" @close="closeDrawer" />
+  <DocumentDrawer v-if="showDrawer" :open="showDrawer" :item="drawerItem" @close="closeDrawer" />
 
   <!-- First-run experience -->
   <OnboardingView v-if="showOnboarding" @complete="onOnboardingComplete" />
