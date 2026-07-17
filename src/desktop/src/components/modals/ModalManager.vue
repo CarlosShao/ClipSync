@@ -206,10 +206,14 @@ const privacy = usePrivacy()
 function isPreviewSensitive(): boolean {
   const itemId = props.previewItem?.id || 'modal-preview'
   if (privacy.peekItemId.value === itemId) return false // already peeked for this item
-  const text = previewContent.value || props.previewItem?.content || ''
-  // Manual lock OR auto-detected sensitive content — always check
   const item = props.previewItem
+  // Manual lock always applies
   if (item?.metadata?.sensitive === true) return true
+  // Auto-detect only for text-like previews; file/image previews are not secrets
+  const itemType = props.previewType || item?.type || item?.contentType
+  const textLikeTypes = ['text', 'link', 'code']
+  if (!textLikeTypes.includes(itemType)) return false
+  const text = previewContent.value || item?.content || ''
   if (privacy.isSensitiveContent(text)) return true
   return false
 }
