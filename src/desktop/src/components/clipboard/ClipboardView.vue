@@ -171,7 +171,11 @@ async function loadCollections() {
   const data = await getFavoriteCollections()
   if (data) collections.value = data.collections
 }
-onMounted(() => { loadCollections() })
+onMounted(() => {
+  loadCollections()
+  // 从收藏页/其他视图切回剪贴板时，items 可能被收藏数据填充，必须重新按当前分类刷新。
+  clip.loadClipboardItems()
+})
 
 function showFavPopover(itemId: string) {
   if (favPopoverTimer) clearTimeout(favPopoverTimer)

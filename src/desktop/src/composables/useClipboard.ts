@@ -222,6 +222,13 @@ async function processClipboardQueue() {
           const text = task.payload as string
           const isUrl = /^https?:\/\/\S+$/.test(text.trim())
           const itemType = isUrl ? 'link' : 'text'
+          // 先从 copiedTexts/copiedItems 判断：这是自己刚复制出去的内容，必须跳过。
+          // 不能仅靠 items.value.some(i.content === text) 去重，因为列表里可能是预览内容，
+          // 而剪贴板/服务端已经是完整内容，导致复制长文本后又被当作新内容重复上传。
+          if (isClipboardChangeFromInternalCopy({ content: text }, undefined)) {
+            console.log('[Clipboard] queue: skip text from internal copy')
+            continue
+          }
           if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === text)) {
             await uploadToServer(text, itemType)
           } else {
