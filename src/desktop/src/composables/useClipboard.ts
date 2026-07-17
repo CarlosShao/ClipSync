@@ -395,8 +395,12 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
     const serverIds = new Set(res.data.items.map((i: any) => i.id))
     // Build set of server content previews for dedup
     const serverContentPreviews = new Set(res.data.items.map((i: any) => (i.contentPreview || '').slice(0, 100)))
-    // 保留有本地 content 的项，但排除与服务端重复的（乐观更新项）
+    // 整表刷新时只保留本地乐观更新项（临时 ID），避免切换分类/收藏夹后旧分类的服务器条目
+    // 因为不在新分类第一页而被残留到列表最前面，导致“切到全部后链接/收藏数据置顶”的错乱。
     const localWithContent = items.value.filter(i => {
+      // 仅保留本地临时 ID 的乐观项；正式服务器 ID 的条目应当完全由本次接口返回决定顺序与内容。
+      const isLocal = i.id.startsWith('local-') || i.id.startsWith('text-') || i.id.startsWith('img-') || i.id.startsWith('browser-')
+      if (!isLocal) return false
       if (serverIds.has(i.id)) return false
       if (!i.content || !i.content.trim()) return false
       // File items with local-/file- prefix are optimistic updates — always replace with server data
@@ -404,13 +408,6 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
       // Check if this local item matches a server item by content preview
       const localPreview = i.content.slice(0, 100)
       if (serverContentPreviews.has(localPreview)) return false
-      // Also check by filename for file items
-      if (i.type === 'file') {
-        try {
-          const meta = JSON.parse(i.content)
-          if (meta.name && serverContentPreviews.has(meta.name)) return false
-        } catch { /* not JSON */ }
-      }
       return true
     })
     const serverItems = res.data.items.map((i: any) => {
@@ -1102,6 +1099,14 @@ export function useClipboard() {
           console.warn('[Clipboard] failed to fetch full text content for copy:', e?.message || e)
         }
       }
+      // 记录实际写入剪贴板的内容，用于 monitor 去重。
+      // 必须在这里重新记录，因为上面可能已经把 item.content（预览）替换成了完整内容；
+      // 如果只按 item.content 去重，剪贴板里的完整文本和记录的预览不一致，会导致重复同步。
+      const now = Date.now()
+      copiedTexts.set(textContent, now)
+      copiedItems.set(item.id, { type: item.type, content: textContent, timestamp: now })
+      cleanupCopiedContent()
+
       await tauri.setClipboardContent(textContent)
       return true
     } catch (e: any) {

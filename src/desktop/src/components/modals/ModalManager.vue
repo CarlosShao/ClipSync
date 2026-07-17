@@ -176,8 +176,7 @@ onMounted(() => {
   handleShowModalTypeChange(props.showModalType)
 })
 
-// Load file content when preview item changes
-watch(() => props.previewItem, (item) => {
+function handlePreviewItemChange(item: any) {
   if (!item) return
   // Reset peek state for new preview item (usePrivacy handles its own state)
   if (props.previewType === 'file') {
@@ -185,7 +184,16 @@ watch(() => props.previewItem, (item) => {
   } else if (props.previewType === 'text') {
     loadTextContent(item)
   }
-}, { immediate: true })
+}
+
+// Load file content when preview item changes
+watch(() => props.previewItem, handlePreviewItemChange)
+
+onMounted(() => {
+  // 组件改为异步 + v-if 门控后，挂载时 previewItem 已是目标值，
+  // 必须手动触发一次初始化，否则文本/文件预览首次不会加载
+  handlePreviewItemChange(props.previewItem)
+})
 
 const { t } = useI18n()
 const toast = useSonner()
