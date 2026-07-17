@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, reactive, nextTick, onUnmounted } from 'vue'
+import { ref, computed, watch, reactive, nextTick, onUnmounted, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useTheme } from '@/composables/useTheme'
@@ -156,7 +156,7 @@ const emit = defineEmits<{
 }>()
 
 // 打开「生成配对码」弹窗时自动创建二维码；离开配对类弹窗时清理计时器与摄像头
-watch(() => props.showModalType, (type) => {
+function handleShowModalTypeChange(type: string) {
   if (type === 'pair-generate') {
     generatePairing()
   } else if (type !== 'pair-scan') {
@@ -166,8 +166,15 @@ watch(() => props.showModalType, (type) => {
   if (type === 'sessions') loadSessions()
   if (type === 'billing') loadInvoices()
   if (type === 'notifications') loadPreferencesInto(secNotif)
-// 组件改为异步 + v-if 门控后，挂载时 showModalType 已是目标值，必须 immediate 否则漏触发首次加载
-}, { immediate: true })
+}
+
+watch(() => props.showModalType, handleShowModalTypeChange)
+
+onMounted(() => {
+  // 组件改为异步 + v-if 门控后，挂载时 showModalType 已是目标值，
+  // 必须手动触发一次初始化，否则二维码/列表/账单等首次不会加载
+  handleShowModalTypeChange(props.showModalType)
+})
 
 // Load file content when preview item changes
 watch(() => props.previewItem, (item) => {

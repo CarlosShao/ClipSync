@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { X, FileText } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -394,10 +394,17 @@ function extractDocxToc(html: string): { id: string; text: string; depth: number
 }
 
 // ===== Watch for open =====
-// 组件改为 v-if 门控后，挂载时 open 已为 true，必须 immediate 否则漏触发首次加载
-watch(() => props.open, (v) => {
-  if (v && props.item) loadContent(props.item)
-}, { immediate: true })
+function handleOpenChange(open: boolean) {
+  if (open && props.item) loadContent(props.item)
+}
+
+watch(() => props.open, handleOpenChange)
+
+onMounted(() => {
+  // 组件改为 v-if 门控后，挂载时 open 已为 true，必须手动触发一次加载
+  if (props.open && props.item) loadContent(props.item)
+})
+
 watch(() => props.item, (item) => {
   if (props.open && item) loadContent(item)
 })
