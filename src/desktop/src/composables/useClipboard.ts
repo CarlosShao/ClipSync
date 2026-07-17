@@ -340,8 +340,13 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
   if (append) loadingMore.value = true; else loading.value = true
   const limit = loadAll ? 500 : (loadFavorites ? 200 : pageSize.value)
   const favParam = loadFavorites ? '&favorites=true' : ''
+  // 按当前分类筛选：后端直接过滤并返回该类型总数，避免"图片分类下显示全部总数"的 bug。
+  // 注意 filter 值与后端 content_type 的映射：images -> image，links -> link，files -> file。
+  const filterToContentType: Record<string, string> = { text: 'text', images: 'image', links: 'link', files: 'file' }
+  const contentType = (!loadAll && !loadFavorites) ? (filterToContentType[activeFilter.value] || '') : ''
+  const typeParam = contentType ? `&contentType=${encodeURIComponent(contentType)}` : ''
   try {
-  const res = await api('GET', `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}`)
+  const res = await api('GET', `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}`)
   if (res.ok && Array.isArray(res.data?.items)) {
     totalItems.value = res.data?.pagination?.total ?? res.data.items.length
     const serverIds = new Set(res.data.items.map((i: any) => i.id))
@@ -1129,7 +1134,12 @@ export function useClipboard() {
     }
   }
 
-  function setFilter(f: typeof activeFilter.value) { activeFilter.value = f }
+  function setFilter(f: typeof activeFilter.value) {
+    if (activeFilter.value === f) return
+    activeFilter.value = f
+    // 切换分类后必须按新分类重新从后端拉取，否则总数/剩余数都是按全部类型算的。
+    loadClipboardItems({ page: 1, append: false })
+  }
   function setSearch(q: string) { searchQuery.value = q }
   function toggleBatch() { batchMode.value = !batchMode.value; if (!batchMode.value) clearSelection() }
 
