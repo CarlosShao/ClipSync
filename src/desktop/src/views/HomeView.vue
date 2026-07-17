@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useConfigStore } from '@/stores/configStore'
 import { useTheme, currentMode } from '@/composables/useTheme'
@@ -16,12 +16,13 @@ import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ClipboardView from '@/components/clipboard/ClipboardView.vue'
 import FavoritesView from '@/components/clipboard/FavoritesView.vue'
 import QuickPastePanel from '@/components/QuickPastePanel.vue'
-import SettingsView from '@/components/settings/SettingsView.vue'
-import ProfileView from '@/components/settings/ProfileView.vue'
-import DevicesView from '@/components/settings/DevicesView.vue'
-import SharedLinksView from '@/components/settings/SharedLinksView.vue'
-import SubscriptionView from '@/components/settings/SubscriptionView.vue'
-import NotificationsView from '@/components/settings/NotificationsView.vue'
+// 设置类页面非首屏，改为异步加载，避免初始化时全部解析进内存
+const SettingsView = defineAsyncComponent(() => import('@/components/settings/SettingsView.vue'))
+const ProfileView = defineAsyncComponent(() => import('@/components/settings/ProfileView.vue'))
+const DevicesView = defineAsyncComponent(() => import('@/components/settings/DevicesView.vue'))
+const SharedLinksView = defineAsyncComponent(() => import('@/components/settings/SharedLinksView.vue'))
+const SubscriptionView = defineAsyncComponent(() => import('@/components/settings/SubscriptionView.vue'))
+const NotificationsView = defineAsyncComponent(() => import('@/components/settings/NotificationsView.vue'))
 import ModalManager from '@/components/modals/ModalManager.vue'
 import DocumentDrawer from '@/components/DocumentDrawer.vue'
 import OnboardingView from '@/components/OnboardingView.vue'
