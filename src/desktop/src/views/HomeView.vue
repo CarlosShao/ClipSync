@@ -14,7 +14,8 @@ import * as tauri from '@/lib/tauri'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ClipboardView from '@/components/clipboard/ClipboardView.vue'
-import FavoritesView from '@/components/clipboard/FavoritesView.vue'
+// FavoritesView 非首屏（仅切到收藏页时挂载），改异步避免启动即解析其代码
+const FavoritesView = defineAsyncComponent(() => import('@/components/clipboard/FavoritesView.vue'))
 import QuickPastePanel from '@/components/QuickPastePanel.vue'
 // 设置类页面非首屏，改为异步加载，避免初始化时全部解析进内存
 const SettingsView = defineAsyncComponent(() => import('@/components/settings/SettingsView.vue'))
