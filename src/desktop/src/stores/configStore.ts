@@ -99,6 +99,9 @@ export const useConfigStore = defineStore('config', () => {
 
   function logout() {
     localStorage.removeItem('clipsync-token')
+    // 清除剪贴板内容缓存与 tab 状态，避免切换账号后旧数据/图片残留内存和磁盘
+    localStorage.removeItem('clipsync-content-cache-v2')
+    localStorage.removeItem('clipsync-clipboard-filter')
     user.value = { name: '', email: '', phone: '', plan: 'Free' }
     config.value.token = null
     config.value.user_id = null
