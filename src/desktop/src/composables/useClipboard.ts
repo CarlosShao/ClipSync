@@ -25,9 +25,21 @@ export interface ClipItem {
 }
 
 // === SINGLETON STATE - module-level refs shared across all callers ===
+type ClipboardFilter = 'all' | 'text' | 'images' | 'links' | 'files' | 'favorites'
+const VALID_FILTERS: ClipboardFilter[] = ['all', 'text', 'images', 'links', 'files', 'favorites']
+const CLIPBOARD_FILTER_KEY = 'clipsync-clipboard-filter'
+
+function loadSavedFilter(): ClipboardFilter {
+  try {
+    const saved = localStorage.getItem(CLIPBOARD_FILTER_KEY)
+    if (saved && VALID_FILTERS.includes(saved as ClipboardFilter)) return saved as ClipboardFilter
+  } catch { /* ignore */ }
+  return 'all'
+}
+
 const items = ref<ClipItem[]>([])
 const searchQuery = ref('')
-const activeFilter = ref<'all' | 'text' | 'images' | 'links' | 'files' | 'favorites'>('all')
+const activeFilter = ref<ClipboardFilter>(loadSavedFilter())
 const batchMode = ref(false)
 const polling = ref(false)
 const loading = ref(false)
@@ -1134,9 +1146,10 @@ export function useClipboard() {
     }
   }
 
-  function setFilter(f: typeof activeFilter.value) {
+  function setFilter(f: ClipboardFilter) {
     if (activeFilter.value === f) return
     activeFilter.value = f
+    try { localStorage.setItem(CLIPBOARD_FILTER_KEY, f) } catch { /* ignore */ }
     // 切换分类后必须按新分类重新从后端拉取，否则总数/剩余数都是按全部类型算的。
     loadClipboardItems({ page: 1, append: false })
   }
