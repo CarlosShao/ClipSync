@@ -366,15 +366,19 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
       return true
     })
     const serverItems = res.data.items.map((i: any) => {
-      const cached = getCachedContent(i.id)
       const isImage = (i.contentType || i.type) === 'image'
+      // 复用已在列表里加载好的图片预览（blob URL），避免刷新时重新拉取并生成新 blob
+      // 造成内存膨胀/闪烁。仅当服务端条目与本地已加载条目 ID 一致时复用。
+      const existingImage = isImage ? items.value.find(e => e.id === i.id && e.type === 'image') : undefined
+      const existingPreview = existingImage?.preview || ''
+      const cachedContent = getCachedContent(i.id)
       let content: string
       if (isImage) {
-        content = cached || ''
+        content = cachedContent || ''
         // 图片异步加载：不在这里触发，统一放到下面的队列
       } else {
         const existing = items.value.find(e => e.id === i.id && e.content)
-        content = existing?.content || cached || i.contentPreview || i.content || ''
+        content = existing?.content || cachedContent || i.contentPreview || i.content || ''
         // For file items: reconstruct content with paths from metadata if available
         if ((i.contentType || i.type) === 'file') {
           try {
@@ -403,7 +407,7 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
           }
         }
       }
-      const preview = isImage ? (cached || '') : content
+      const preview = isImage ? (cachedContent || existingPreview || '') : content
       return {
         id: i.id,
         type: (i.contentType || i.type || 'text') as ClipItem['type'],
@@ -427,13 +431,18 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
       for (const s of serverItems) {
         if (!existingIds.has(s.id)) merged.push(s)
       }
+      // 释放被移除条目的 blob URL（追加模式通常不会移除，但保持一致性）
+      releaseRemovedObjectUrls(merged)
       items.value = merged
     } else {
+      // 整表刷新：先释放不再出现的旧图片 blob，再替换
+      releaseRemovedObjectUrls([...localWithContent, ...serverItems])
       items.value = [...localWithContent, ...serverItems]
     }
 
-    // 队列化加载图片：每批 3 张，间隔 200ms，避免并发过高被限流
-    const imageQueue = serverItems.filter((i: ClipItem) => i.type === 'image' && !getCachedContent(i.id) && i.id)
+    // 队列化加载图片：每批 3 张，间隔 200ms，避免并发过高被限流。
+    // 已带有预览（blob/data URL）的条目跳过，避免重复拉取并生成新 blob。
+    const imageQueue = serverItems.filter((i: ClipItem) => i.type === 'image' && !i.preview && !getCachedContent(i.id) && i.id)
     loadImagesFromQueue(imageQueue)
   } else {
     return
@@ -497,7 +506,8 @@ async function loadImagesFromQueue(queue: ClipItem[]) {
         const current = items.value.find(x => x.id === item.id)
         if (current) {
           current.content = isDataUrl ? raw : ''
-          current.preview = renderSrc
+          // 用 setItemPreview 自动回收被替换的旧 blob URL，避免内存泄漏
+          setItemPreview(current, renderSrc)
         }
         // 缓存放到最后，且 cacheContent 内部已 try/catch，绝不会回滚上面的显示。
         if (isDataUrl) cacheContent(item.id, raw)
@@ -677,6 +687,57 @@ function simpleHash(s: string): string {
   let hash = 0
   for (let i = 0; i < s.length; i++) { hash = ((hash << 5) - hash) + s.charCodeAt(i); hash |= 0 }
   return hash.toString(36)
+}
+
+// === 图片 Object URL 生命周期管理（修复内存泄漏）===
+// loadImagesFromQueue 用 URL.createObjectURL(blob) 生成预览图，但浏览器不会自动回收 blob，
+// 必须显式 revokeObjectURL。否则列表刷新/加载更多/删除图片时，旧 blob 持续占用 WebView 内存
+// （实测空闲 ~147MB，同类应用约 60MB，差距主要来自未释放的图片对象）。
+// 用 id→url 映射精确跟踪每个图片条目的 blob，替换/删除/登出时释放。
+const imageObjectUrls = new Map<string, string>()
+
+function isBlobUrl(s: any): s is string {
+  return typeof s === 'string' && s.startsWith('blob:')
+}
+
+/** 给条目设置预览图，自动回收被替换掉的旧 blob URL */
+function setItemPreview(item: ClipItem, url: string) {
+  if (item.preview && isBlobUrl(item.preview)) {
+    const old = imageObjectUrls.get(item.id)
+    if (old && old !== url) {
+      URL.revokeObjectURL(old)
+      imageObjectUrls.delete(item.id)
+    }
+  }
+  item.preview = url
+  if (isBlobUrl(url)) {
+    imageObjectUrls.set(item.id, url)
+  } else if (imageObjectUrls.has(item.id)) {
+    // 预览被换成 data URL 或清空，解除跟踪
+    imageObjectUrls.delete(item.id)
+  }
+}
+
+/** 列表即将被替换/过滤前调用：释放不再被任何条目引用的 blob URL */
+function releaseRemovedObjectUrls(nextItems: ClipItem[]) {
+  const liveUrls = new Set<string>()
+  for (const it of nextItems) {
+    if (isBlobUrl(it.preview)) liveUrls.add(it.preview)
+  }
+  for (const [id, url] of imageObjectUrls) {
+    if (!liveUrls.has(url)) {
+      URL.revokeObjectURL(url)
+      imageObjectUrls.delete(id)
+    }
+  }
+}
+
+/** 强制释放所有图片 blob URL（切换账号 / 清空列表时调用） */
+function releaseAllObjectUrls() {
+  for (const [, url] of imageObjectUrls) {
+    try { URL.revokeObjectURL(url) } catch { /* 已失效则忽略 */ }
+  }
+  imageObjectUrls.clear()
 }
 
 /** Try API call; on network failure, enqueue for later sync. */
@@ -1016,7 +1077,10 @@ export function useClipboard() {
     }
     // 仅在服务端确认成功后才从本地列表移除选中项
     const selectedIds = new Set(selected.map(i => i.id))
-    items.value = items.value.filter(i => !selectedIds.has(i.id))
+    const nextItems = items.value.filter(i => !selectedIds.has(i.id))
+    // 释放被删除条目占用的图片 blob URL
+    releaseRemovedObjectUrls(nextItems)
+    items.value = nextItems
     // 同步本地总数（后端是硬删）。不减会导致 hasMore/remaining 计算偏差，
     // 出现"加载更多"按钮卡在末尾删不掉项的情况。
     if (serverIds.length > 0 && (res.ok || res.status === 0)) {
@@ -1038,7 +1102,10 @@ export function useClipboard() {
       }
     }
     // 仅在服务端确认成功（或是本地临时项）后才从本地列表移除
-    items.value = items.value.filter(i => i.id !== item.id)
+    const nextItems = items.value.filter(i => i.id !== item.id)
+    // 释放被删除条目占用的图片 blob URL
+    releaseRemovedObjectUrls(nextItems)
+    items.value = nextItems
     // 同步本地总数（后端是硬删），保持 hasMore/remaining 计算正确
     if (!isLocal && res && (res.ok || res.status === 0)) {
       totalItems.value = Math.max(0, totalItems.value - 1)
@@ -1225,6 +1292,11 @@ export function useClipboard() {
 
   const offlineQueueSize = computed(() => getQueueSize())
 
+  /** 清空所有图片 blob URL（登出 / 切换账号时调用，防止旧账号图片常驻内存） */
+  function resetImages() {
+    releaseAllObjectUrls()
+  }
+
   return {
     items, filteredItems, searchQuery, activeFilter, batchMode, polling, loading,
     offlineQueueSize,
@@ -1233,6 +1305,7 @@ export function useClipboard() {
     toggleSelectAll, clearSelection, batchDelete, deleteSingle, toggleFavorite,
     loadClipboardItems, setFilter, setSearch, toggleBatch, uploadFileItem,
     refresh: loadClipboardItems,
+    resetImages,
     isSensitiveContent,
   }
 }
