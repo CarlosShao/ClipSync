@@ -430,11 +430,19 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
     );
 
     // 审计日志：记录剪贴板创建（在事务内，保证一致性）
-    await logAuditEvent(req.userId, AUDIT_ACTIONS.CLIPBOARD_CREATE, 'clipboard', item.id, {
-      contentType: detectedType,
-      sourceDeviceId,
-      contentSize,
-    }, req);
+    await logAuditEvent({
+      userId: req.userId,
+      action: AUDIT_ACTIONS.CLIPBOARD_CREATE,
+      resourceType: 'clipboard',
+      resourceId: item.id,
+      details: {
+        contentType: detectedType,
+        sourceDeviceId,
+        contentSize,
+      },
+      ipAddress: req.ip || req.connection?.remoteAddress,
+      userAgent: req.get('User-Agent') || '',
+    });
 
     await client.query('COMMIT');
     shouldBroadcast = true;
@@ -567,9 +575,17 @@ router.delete('/:id', apiLimiter, async (req, res) => {
     await pool.query('DELETE FROM favorite_collection_items WHERE item_id = $1', [id]);
 
     // 审计日志：记录剪贴板删除
-    await logAuditEvent(req.userId, AUDIT_ACTIONS.CLIPBOARD_DELETE, 'clipboard', id, {
-      contentType: null, // 已删除，无法获取
-    }, req);
+    await logAuditEvent({
+      userId: req.userId,
+      action: AUDIT_ACTIONS.CLIPBOARD_DELETE,
+      resourceType: 'clipboard',
+      resourceId: id,
+      details: {
+        contentType: null, // 已删除，无法获取
+      },
+      ipAddress: req.ip || req.connection?.remoteAddress,
+      userAgent: req.get('User-Agent') || '',
+    });
 
     res.json({ message: 'Clipboard item deleted' });
 
