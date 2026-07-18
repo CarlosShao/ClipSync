@@ -42,7 +42,7 @@ function fmtTime(iso: string): string {
             :key="v"
             :class="['var-chip', isBuiltinVar(v) ? 'var-builtin' : 'var-user']"
             :title="isBuiltinVar(v) ? '内置变量（自动填充）' : '自定义变量（插入时填写）'"
-          >{{ '{{' + v + '}}' }}</span>
+          >{{ '{' + '{' + v + '}' + '}' }}</span>
         </span>
         <span class="tpl-time">{{ fmtTime(template.updated_at) }}</span>
       </div>

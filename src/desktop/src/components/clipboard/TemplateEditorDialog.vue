@@ -67,7 +67,7 @@ function onSave() {
             class="tpl-builtin-btn"
             :title="`插入 {{${v}}}`"
             @click="insertBuiltin(v)"
-          >{{ '{{' + v + '}}' }}</button>
+          >{{ '{' + '{' + v + '}' + '}' }}</button>
         </div>
       </div>
 
@@ -77,7 +77,7 @@ function onSave() {
           v-for="v in vars"
           :key="v"
           :class="['var-chip', isBuiltinVar(v) ? 'var-builtin' : 'var-user']"
-        >{{ '{{' + v + '}}' }}</span>
+        >{{ '{' + '{' + v + '}' + '}' }}</span>
       </div>
     </div>
 
