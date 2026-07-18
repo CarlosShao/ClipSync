@@ -40,6 +40,7 @@ import surveyRoutes from './routes/surveys.js';
 import favoritesRoutes from './routes/favorites.js';
 import templatesRoutes from './routes/templates.js';
 import templateVariablesRoutes from './routes/templateVariables.js';
+import sharedLinksRoutes from './routes/sharedLinks.js';
 import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
 import metricsRoutes from './routes/metrics.js';
@@ -395,6 +396,10 @@ app.use('/api/template-variables', authenticateToken, apiLimiter, csrfProtection
   req.userId = req.user.userId;
   next();
 }, templateVariablesRoutes);
+
+// 分享链接路由（免费功能）。公开取用 /public/:token 无登录，故鉴权在路由内逐条处理；
+// 此处仅挂 apiLimiter，csrf 对 GET/Bearer 自动放行。
+app.use('/api/shared-links', apiLimiter, sharedLinksRoutes);
 
 // ============================================
 // 404 Handler

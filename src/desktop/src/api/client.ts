@@ -321,6 +321,45 @@ export async function deleteTemplateVariable(name: string): Promise<boolean> {
   return res.ok
 }
 
+// ============================================
+// Shared Links API（剪贴板内容对外分享链接）
+// ============================================
+
+// 公开分享链接的基础域名（可由构建期环境变量覆盖）
+export const SHARE_LINK_BASE: string =
+  (import.meta.env.VITE_SHARE_BASE_URL as string | undefined) || 'https://clipsync.io/s/'
+
+export interface SharedLink {
+  id: string
+  title: string
+  url: string
+  contentType?: string
+  preview?: string
+  views: number
+  createdAt: string
+  expiresAt?: string | null
+}
+
+export async function getSharedLinks(): Promise<SharedLink[] | null> {
+  const res = await api<{ links: SharedLink[] }>('GET', '/api/shared-links')
+  return res.ok ? res.data?.links ?? [] : null
+}
+
+export async function createSharedLink(payload: {
+  content: string
+  title?: string
+  contentType?: string
+  expiresInHours?: number
+}): Promise<SharedLink | null> {
+  const res = await api<SharedLink>('POST', '/api/shared-links', payload)
+  return res.ok ? (res.data ?? null) : null
+}
+
+export async function deleteSharedLink(id: string): Promise<boolean> {
+  const res = await api('DELETE', `/api/shared-links/${id}`)
+  return res.ok
+}
+
 /** Send PIN reset verification code (phone) */
 export async function sendPinResetCode(phone: string): Promise<boolean> {
   const res = await api('POST', '/api/auth/send-reset-pin-code', { phone })
