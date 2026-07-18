@@ -23,7 +23,6 @@ import QuickPastePanel from '@/components/QuickPastePanel.vue'
 const SettingsView = defineAsyncComponent(() => import('@/components/settings/SettingsView.vue'))
 const ProfileView = defineAsyncComponent(() => import('@/components/settings/ProfileView.vue'))
 const DevicesView = defineAsyncComponent(() => import('@/components/settings/DevicesView.vue'))
-const SharedLinksView = defineAsyncComponent(() => import('@/components/settings/SharedLinksView.vue'))
 const SubscriptionView = defineAsyncComponent(() => import('@/components/settings/SubscriptionView.vue'))
 const NotificationsView = defineAsyncComponent(() => import('@/components/settings/NotificationsView.vue'))
 // ModalManager/DocumentDrawer 携带全套重型库（pdfjs/xlsx/mammoth/highlight.js/jszip/qrcode/jsqr/marked），
@@ -331,7 +330,6 @@ function confirmAction() {
       <SettingsView v-else-if="currentSub === 'settings'" @open-modal="openModal" />
       <ProfileView v-else-if="currentSub === 'profile'" />
       <DevicesView v-else-if="currentSub === 'devices'" @open-modal="openModal" />
-      <SharedLinksView v-else-if="currentSub === 'shared-links'" />
       <NotificationsView v-else-if="currentSub === 'notifications'" />
       <SubscriptionView v-else-if="currentSub === 'subscription'" @open-modal="openModal" />
     </main>
