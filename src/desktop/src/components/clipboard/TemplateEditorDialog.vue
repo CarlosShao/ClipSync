@@ -57,7 +57,7 @@ function onSave() {
 
       <div class="tpl-field">
         <Label for="tpl-content">{{ t('templates_content') }}</Label>
-        <Textarea id="tpl-content" v-model="content" :placeholder="t('templates_content_ph')" class="tpl-content min-h-[160px] px-5 py-5 leading-relaxed" />
+        <Textarea id="tpl-content" v-model="content" :placeholder="t('templates_content_ph')" class="tpl-content min-h-[180px] px-6 py-6 leading-relaxed" />
         <div class="tpl-builtin-bar">
           <span class="tpl-builtin-label">{{ t('templates_builtin_label') }}：</span>
           <button
@@ -91,7 +91,7 @@ function onSave() {
 <style scoped>
 .tpl-form { display: flex; flex-direction: column; gap: 20px; }
 .tpl-field { display: flex; flex-direction: column; gap: 10px; }
-.tpl-content { min-height: 160px; font-family: var(--font-mono, monospace); font-size: 13px; }
+.tpl-content { min-height: 180px; font-family: var(--font-mono, monospace); font-size: 13px; }
 .tpl-builtin-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .tpl-builtin-label { font-size: 12px; color: var(--text-muted); }
 .tpl-builtin-btn {
