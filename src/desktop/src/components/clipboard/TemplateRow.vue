@@ -48,11 +48,11 @@ function fmtTime(iso: string): string {
       </div>
     </div>
     <div class="tpl-actions">
-      <Button size="sm" variant="outline" class="px-5 text-sm" @click="emit('insert', template)">
-        <ClipboardPlus :size="15" /> 插入
+      <Button size="sm" variant="outline" class="min-w-[80px] rounded-md" @click="emit('insert', template)">
+        <ClipboardPlus :size="14" /> 插入
       </Button>
-      <Button size="sm" variant="ghost" class="px-3 text-sm" @click="emit('edit', template)">
-        <Pencil :size="15" /> 编辑
+      <Button size="sm" variant="ghost" class="min-w-[80px] rounded-md" @click="emit('edit', template)">
+        <Pencil :size="14" /> 编辑
       </Button>
       <Button size="icon-sm" variant="ghost" class="tpl-del" @click="emit('delete', template)" title="删除">
         <Trash2 :size="15" />
