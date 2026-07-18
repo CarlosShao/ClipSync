@@ -48,10 +48,10 @@ function fmtTime(iso: string): string {
       </div>
     </div>
     <div class="tpl-actions">
-      <Button size="sm" variant="outline" @click="emit('insert', template)">
+      <Button size="sm" variant="outline" class="px-5 text-sm" @click="emit('insert', template)">
         <ClipboardPlus :size="15" /> 插入
       </Button>
-      <Button size="sm" variant="ghost" @click="emit('edit', template)">
+      <Button size="sm" variant="ghost" class="px-3 text-sm" @click="emit('edit', template)">
         <Pencil :size="15" /> 编辑
       </Button>
       <Button size="icon-sm" variant="ghost" class="tpl-del" @click="emit('delete', template)" title="删除">
@@ -64,7 +64,7 @@ function fmtTime(iso: string): string {
 <style scoped>
 .tpl-row {
   display: flex; align-items: center; gap: 16px;
-  padding: 14px 16px; border-bottom: 1px solid var(--border-default);
+  padding: 16px 20px; border-bottom: 1px solid var(--border-default);
   transition: background 0.12s;
 }
 .tpl-row:hover { background: var(--bg-hover); }
@@ -74,11 +74,11 @@ function fmtTime(iso: string): string {
   font-size: 13px; color: var(--text-secondary); line-height: 1.5;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
-.tpl-meta { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.tpl-vars { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.tpl-meta { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.tpl-vars { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 .var-chip {
-  font-family: var(--font-mono, monospace); font-size: 11px; padding: 2px 7px;
-  border-radius: 6px; border: 1px solid transparent;
+  font-family: var(--font-mono, monospace); font-size: 12px; padding: 4px 10px;
+  border-radius: 8px; border: 1px solid transparent;
 }
 .var-builtin { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 25%, transparent); }
 .var-user { background: var(--bg-hover); color: var(--text-secondary); border-color: var(--border-default); }

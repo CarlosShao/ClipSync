@@ -52,12 +52,12 @@ function onSave() {
     <div class="tpl-form">
       <div class="tpl-field">
         <Label for="tpl-name">{{ t('templates_name') }}</Label>
-        <Input id="tpl-name" v-model="name" :placeholder="t('templates_name_ph')" />
+        <Input id="tpl-name" v-model="name" :placeholder="t('templates_name_ph')" class="h-11 px-4 py-3" />
       </div>
 
       <div class="tpl-field">
         <Label for="tpl-content">{{ t('templates_content') }}</Label>
-        <Textarea id="tpl-content" v-model="content" :placeholder="t('templates_content_ph')" class="tpl-content" />
+        <Textarea id="tpl-content" v-model="content" :placeholder="t('templates_content_ph')" class="tpl-content px-4 py-3.5" />
         <div class="tpl-builtin-bar">
           <span class="tpl-builtin-label">{{ t('templates_builtin_label') }}：</span>
           <button
@@ -82,27 +82,27 @@ function onSave() {
     </div>
 
     <template #footer>
-      <Button variant="ghost" @click="emit('close')">{{ t('templates_cancel') }}</Button>
-      <Button @click="onSave">{{ t('templates_save') }}</Button>
+      <Button variant="outline" class="h-10 px-5" @click="emit('close')">{{ t('templates_cancel') }}</Button>
+      <Button class="h-10 px-6" @click="onSave">{{ t('templates_save') }}</Button>
     </template>
   </ModalDialog>
 </template>
 
 <style scoped>
-.tpl-form { display: flex; flex-direction: column; gap: 18px; }
-.tpl-field { display: flex; flex-direction: column; gap: 8px; }
+.tpl-form { display: flex; flex-direction: column; gap: 20px; }
+.tpl-field { display: flex; flex-direction: column; gap: 10px; }
 .tpl-content { min-height: 160px; font-family: var(--font-mono, monospace); font-size: 13px; }
 .tpl-builtin-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .tpl-builtin-label { font-size: 12px; color: var(--text-muted); }
 .tpl-builtin-btn {
   font-family: var(--font-mono, monospace); font-size: 12px; cursor: pointer;
-  padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border-default);
+  padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border-default);
   background: var(--bg-surface); color: var(--text-secondary); transition: all 0.12s;
 }
-.tpl-builtin-btn:hover { border-color: var(--primary); color: var(--primary); }
+.tpl-builtin-btn:hover { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 5%, transparent); }
 .tpl-detected { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-top: 4px; }
 .tpl-detected-label { font-size: 12px; color: var(--text-muted); }
-.var-chip { font-family: var(--font-mono, monospace); font-size: 11px; padding: 2px 7px; border-radius: 6px; border: 1px solid transparent; }
+.var-chip { font-family: var(--font-mono, monospace); font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 1px solid transparent; }
 .var-builtin { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 25%, transparent); }
 .var-user { background: var(--bg-hover); color: var(--text-secondary); border-color: var(--border-default); }
 </style>
