@@ -203,11 +203,12 @@ fn get_clipboard_content() -> Result<String, String> {
 fn set_clipboard_content(content: String) -> Result<(), String> {
     use clipboard_win::raw;
     raw::open().map_err(|e| format!("open: {}", e))?;
-    // CF_UNICODETEXT (format 13) 要求 UTF-16LE 编码，不能直接用 .as_bytes() (UTF-8)
-    let utf16_bytes: Vec<u8> = content
+    // CF_UNICODETEXT (format 13) 要求 UTF-16LE 编码，且必须以双字节 null 结尾
+    let mut utf16_bytes: Vec<u8> = content
         .encode_utf16()
         .flat_map(|c| c.to_le_bytes())
         .collect();
+    utf16_bytes.extend_from_slice(&[0, 0]); // 追加 UTF-16LE null 终止符
     let result = raw::set(13, &utf16_bytes);
     let _ = raw::close();
     result.map_err(|e| format!("write: {}", e))
