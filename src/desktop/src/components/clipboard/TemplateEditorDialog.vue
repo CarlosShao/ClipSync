@@ -52,12 +52,12 @@ function onSave() {
     <div class="tpl-form">
       <div class="tpl-field">
         <Label for="tpl-name">{{ t('templates_name') }}</Label>
-        <Input id="tpl-name" v-model="name" :placeholder="t('templates_name_ph')" class="h-11 px-5 leading-6" />
+        <Input id="tpl-name" v-model="name" :placeholder="t('templates_name_ph')" class="!p-4 leading-6" />
       </div>
 
       <div class="tpl-field">
         <Label for="tpl-content">{{ t('templates_content') }}</Label>
-        <Textarea id="tpl-content" v-model="content" :placeholder="t('templates_content_ph')" class="tpl-content min-h-[180px] px-6 py-6 leading-relaxed" />
+        <Textarea id="tpl-content" v-model="content" :placeholder="t('templates_content_ph')" class="tpl-content min-h-[180px] !p-6 leading-relaxed" />
         <div class="tpl-builtin-bar">
           <span class="tpl-builtin-label">{{ t('templates_builtin_label') }}：</span>
           <button
@@ -91,7 +91,7 @@ function onSave() {
 <style scoped>
 .tpl-form { display: flex; flex-direction: column; gap: 20px; }
 .tpl-field { display: flex; flex-direction: column; gap: 10px; }
-.tpl-content { min-height: 180px; font-family: var(--font-mono, monospace); font-size: 13px; }
+.tpl-content { min-height: 180px; font-family: var(--font-mono, monospace); font-size: 13px; padding: 24px; }
 .tpl-builtin-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .tpl-builtin-label { font-size: 12px; color: var(--text-muted); }
 .tpl-builtin-btn {
