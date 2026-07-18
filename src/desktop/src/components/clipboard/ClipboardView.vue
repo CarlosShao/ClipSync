@@ -54,7 +54,10 @@ const loadingMore = computed(() => clip.loadingMore.value)
 const remaining = computed(() => Math.max(0, totalItems.value - filteredItems.value.length))
 
 // 滚动到底部自动加载更多（无限滚动）
+let scrollDebounceTimer: ReturnType<typeof setTimeout> | null = null
 function onClipboardScroll(e: Event) {
+  if (scrollDebounceTimer) return
+  scrollDebounceTimer = setTimeout(() => { scrollDebounceTimer = null }, 150)
   const el = e.target as HTMLElement
   if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) {
     clip.loadMore()
@@ -213,8 +216,20 @@ function onFavPopoverLeave() {
 }
 
 // Privacy: usePrivacy composable
+// 缓存敏感内容判定结果（依赖隐私模式 + 内容），减少列表重渲染时的重复计算
+const sensitivityCache = new Map<string, boolean>()
+const MAX_SENSITIVITY_CACHE = 2000
 function isItemSensitive(item: ClipItem): boolean {
-  return privacy.isItemSensitive(item)
+  const key = `${item.id}:${item.content.length}:${configStore.privacyMode ? 1 : 0}:${item.metadata?.sensitive ? 1 : 0}`
+  const cached = sensitivityCache.get(key)
+  if (cached !== undefined) return cached
+  const result = privacy.isItemSensitive(item)
+  if (sensitivityCache.size > MAX_SENSITIVITY_CACHE) {
+    const firstKey = sensitivityCache.keys().next().value
+    if (firstKey !== undefined) sensitivityCache.delete(firstKey)
+  }
+  sensitivityCache.set(key, result)
+  return result
 }
 function showPeek(itemId: string) {
   if (privacy.startPeek(itemId)) {
@@ -765,12 +780,23 @@ function formatContent(item: ClipItem): string {
   return item.content
 }
 
-// 内容类型检测
+// 内容类型检测（带缓存，避免长文本列表渲染时反复正则扫描）
+const contentTypeCache = new Map<string, 'code' | 'url' | 'text'>()
+const MAX_CONTENT_TYPE_CACHE = 2000
 function detectContentType(content: string): 'code' | 'url' | 'text' {
   if (!content) return 'text'
+  const cached = contentTypeCache.get(content)
+  if (cached !== undefined) return cached
   const trimmed = content.trim()
   // URL 检测
-  if (/^https?:\/\/\S+$/.test(trimmed)) return 'url'
+  if (/^https?:\/\/\S+$/.test(trimmed)) {
+    if (contentTypeCache.size > MAX_CONTENT_TYPE_CACHE) {
+      const firstKey = contentTypeCache.keys().next().value
+      if (firstKey !== undefined) contentTypeCache.delete(firstKey)
+    }
+    contentTypeCache.set(content, 'url')
+    return 'url'
+  }
   // 代码检测：常见代码模式
   if (/[{}\[\]];?\s*$/.test(trimmed) ||
       /\b(function|const|let|var|class|import|export|return|if|for|while|async|await)\s/.test(trimmed) ||
@@ -778,8 +804,18 @@ function detectContentType(content: string): 'code' | 'url' | 'text' {
       /=>\s*[{(]/.test(trimmed) ||
       /^\s*<\/?[a-z][\w-]*(?:\s[^>]*)?\/?>/i.test(trimmed) ||
       /:\s*(string|number|boolean|void|any|null|undefined)\s/.test(trimmed)) {
+    if (contentTypeCache.size > MAX_CONTENT_TYPE_CACHE) {
+      const firstKey = contentTypeCache.keys().next().value
+      if (firstKey !== undefined) contentTypeCache.delete(firstKey)
+    }
+    contentTypeCache.set(content, 'code')
     return 'code'
   }
+  if (contentTypeCache.size > MAX_CONTENT_TYPE_CACHE) {
+    const firstKey = contentTypeCache.keys().next().value
+    if (firstKey !== undefined) contentTypeCache.delete(firstKey)
+  }
+  contentTypeCache.set(content, 'text')
   return 'text'
 }
 
