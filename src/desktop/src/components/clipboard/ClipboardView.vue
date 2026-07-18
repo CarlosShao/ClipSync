@@ -8,7 +8,7 @@ import * as tauri from '@/lib/tauri'
 import { useConfigStore } from '@/stores/configStore'
 import { usePrivacy } from '@/composables/usePrivacy'
 import {
-  Upload, Plus, Search, Trash2, Copy, Image as ImageIcon,
+  Upload, Plus, Search, Trash2, Copy, Image as ImageIcon, Link,
   ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
   ClipboardList, Star, Bookmark, Archive, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
   Check, X, Lock,
@@ -21,7 +21,8 @@ import {
 } from '@/components/ui/table'
 import Badge from '@/components/ui/badge/Badge.vue'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { getFavoriteCollections, addCollectionItem, createFavoriteCollection } from '@/api/client'
+import { getFavoriteCollections, addCollectionItem, createFavoriteCollection, createSharedLink } from '@/api/client'
+import { api } from '@/api/client'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -536,6 +537,100 @@ async function revealFileFolder(item: ClipItem) {
   toast.show(t('err_no_path'), 'warning')
 }
 
+async function shareItem(item: ClipItem) {
+  // 敏感内容需要先验证 PIN（与复制/查看同等级安全策略）
+  if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
+    if (!privacy.pinSet.value) {
+      emit('show-pin-setup')
+    } else {
+      emit('show-pin-dialog')
+    }
+    return
+  }
+
+  const payload = await buildSharePayload(item)
+  if (!payload) {
+    toast.show(t('shared_link_create_err'), 'error')
+    return
+  }
+
+  try {
+    const created = await createSharedLink({
+      content: payload.content,
+      title: payload.title,
+      contentType: payload.contentType,
+    })
+    if (!created) {
+      toast.show(t('shared_link_create_err'), 'error')
+      return
+    }
+    const ok = await clip.copyText(created.url)
+    toast.show(ok ? t('shared_link_copied') : t('shared_link_copy_err'), ok ? 'success' : 'error')
+  } catch (e: any) {
+    console.warn('[Clipboard] share failed', e)
+    toast.show(t('shared_link_create_err'), 'error')
+  }
+}
+
+async function buildSharePayload(item: ClipItem): Promise<{ content: string; title: string; contentType: string } | null> {
+  const isLocalItem = /^local-|^text-|^file-|^img-|^browser-/.test(item.id)
+  const contentSize = item.contentSize || 0
+
+  // 文本 / 链接：确保拿到完整内容，不分享被截断的预览
+  if (item.type === 'text' || item.type === 'link') {
+    let textContent = item.content
+    const needsFetch = !isLocalItem && textContent.length > 0 && (contentSize === 0 || textContent.length < contentSize)
+    if (needsFetch) {
+      try {
+        const full = await api<{ contentEncrypted: string }>('GET', `/api/clipboard/${item.id}/content`)
+        if (full.ok && full.data?.contentEncrypted) {
+          textContent = full.data.contentEncrypted
+        }
+      } catch (e: any) {
+        console.warn('[Clipboard] failed to fetch full content for share:', e?.message || e)
+      }
+    }
+    if (!textContent) return null
+    return {
+      content: textContent,
+      title: textContent.slice(0, 60),
+      contentType: item.type,
+    }
+  }
+
+  // 图片：优先用本地 data URL，否则从服务器拉完整内容
+  if (item.type === 'image') {
+    let imgData = item.content || item.preview || ''
+    if (!imgData || imgData.startsWith('[Image')) {
+      try {
+        const full = await api('GET', `/api/clipboard/${item.id}`)
+        imgData = full.data?.contentEncrypted || full.data?.contentPreview || ''
+      } catch (e: any) {
+        console.warn('[Clipboard] failed to fetch image for share:', e?.message || e)
+      }
+    }
+    if (!imgData || imgData.startsWith('[Image')) return null
+    return {
+      content: imgData,
+      title: item.metadata?.originalName || item.metadata?.name || 'Image',
+      contentType: 'image',
+    }
+  }
+
+  // 文件：当前后端分享模型只接收一个 content 字符串，分享文件元数据（文件名/大小）
+  if (item.type === 'file') {
+    const display = formatContent(item) || item.content
+    if (!display) return null
+    return {
+      content: display,
+      title: display.slice(0, 60),
+      contentType: 'file',
+    }
+  }
+
+  return null
+}
+
 function handleSingleDelete(item: ClipItem) {
   const isFav = (item as any).isFavorite
   const msg = isFav ? t('confirm_delete_fav') : t('confirm_delete')
@@ -863,6 +958,9 @@ function extractDomain(url: string): string {
               <div class="cell-actions">
                 <Button v-if="item.type !== 'file' || hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="onCopyItem(item)" :title="t('copy')">
                   <Copy :size="14" />
+                </Button>
+                <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click="shareItem(item)" :title="t('shared_link')">
+                  <Link :size="14" />
                 </Button>
                 <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-image', item)" :title="t('preview')">
                   <ImageIcon :size="14" />
