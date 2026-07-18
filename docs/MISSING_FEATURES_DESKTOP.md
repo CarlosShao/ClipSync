@@ -1,6 +1,6 @@
 # ClipSync 桌面端 & 强相关功能缺失/不完整清单（Gap 文档）
 
-> 更新时间：2026-07-17 22:30
+> 更新时间：2026-07-18 22:46（模板功能/全局变量已落地，对应状态已同步）
 > 范围：桌面端（Windows Tauri）为主，含与之强相关的后端/全平台功能
 > 信息来源：代码实测核查（grep / Read）+ docs/production-roadmap.md、pending-tasks-roadmap.md、enterprise-gap-analysis.md、hidden-issues-review.md、commercial-readiness-review.md，以及 2026-07-17 用户结构化完成度报告
 > 状态图例：**✅ 已实现** | **🔶 部分实现/不完整** | **❌ 未实现** | **❓ 待核查**
@@ -28,7 +28,7 @@
 
 | 功能 | 状态 | 说明 | 优先级 |
 |------|------|------|--------|
-| 模板功能 / 模板库 | ❌ 未实现 | 无 store / api / 组件；roadmap 阶段十二 12.1 标 P0 | 🔴 P0 |
+| 模板功能 / 模板库 | ✅ 已实现 | `TemplatesView.vue`/`templateStore.ts`/`routes/templates.js`+迁移017；变量引擎 `{{var}}` 内置 date/time/datetime/clipboard + 自定义填空；2026-07-18 新增持久化全局变量（`template_variables` 表+迁移018+`/api/template-variables` 路由+设置页「模板变量」分组，支持 `{{name:default}}` 与「记住本次值」） | ✅ |
 | 归档（archive） | ❌ 未实现 | 仅 lucide `Archive` 图标导入，无归档功能；阶段十二 12.3 | 🟡 P1 |
 | 表格预览 | ❓ 待核查 | 未实测到表格渲染组件（预览路径仅见 marked/highlight） | 🟡 P1 |
 | HTML 预览 | ❓ 待核查 | 未实测到 HTML 安全预览组件 | 🟡 P1 |
