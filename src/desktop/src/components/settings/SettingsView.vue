@@ -33,6 +33,7 @@ const editValue = ref('')
 const newVarName = ref('')
 const newVarValue = ref('')
 const varError = ref('')
+const addOpen = ref(false)
 
 function startEditVar(v: { name: string; value: string }) {
   editingVarName.value = v.name
@@ -64,6 +65,7 @@ async function addVar() {
     toast.show(t('tpl_vars_saved') || '变量已保存', 'success')
     newVarName.value = ''
     newVarValue.value = ''
+    addOpen.value = false
   }
 }
 
@@ -431,7 +433,14 @@ function resetPwdForm() {
 
       <div v-if="tplVarList.length === 0" class="tpl-var-empty">{{ t('tpl_vars_empty') }}</div>
 
-      <div class="pwd-change-form">
+      <div class="sg-row" style="cursor:pointer;" @click="addOpen = !addOpen">
+        <div class="sg-label">
+          <div class="sg-name">{{ t('tpl_vars_add') || '添加变量' }}</div>
+          <div class="sg-hint">{{ t('tpl_vars_add_h') || '新增一个模板全局变量' }}</div>
+        </div>
+        <ChevronDown :class="['sg-arrow', { 'sg-arrow--rotated': addOpen }]" />
+      </div>
+      <div v-if="addOpen" class="pwd-change-form">
         <div class="pwd-field">
           <label class="pwd-label">{{ t('tpl_vars_name') }}</label>
           <Input v-model="newVarName" class="sg-input--block" :placeholder="t('tpl_vars_name_ph')" />
@@ -442,6 +451,7 @@ function resetPwdForm() {
         </div>
         <div class="pwd-actions">
           <Button class="pwd-btn" @click="addVar">{{ t('tpl_vars_add') }}</Button>
+          <Button variant="outline" class="pwd-btn" @click="addOpen = false; newVarName = ''; newVarValue = ''; varError = ''">{{ t('cancel_btn') }}</Button>
         </div>
         <div v-if="varError" class="pwd-error">{{ varError }}</div>
       </div>
