@@ -16,6 +16,8 @@ import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ClipboardView from '@/components/clipboard/ClipboardView.vue'
 // FavoritesView 非首屏（仅切到收藏页时挂载），改异步避免启动即解析其代码
 const FavoritesView = defineAsyncComponent(() => import('@/components/clipboard/FavoritesView.vue'))
+// TemplatesView 非首屏，异步加载
+const TemplatesView = defineAsyncComponent(() => import('@/components/clipboard/TemplatesView.vue'))
 import QuickPastePanel from '@/components/QuickPastePanel.vue'
 // 设置类页面非首屏，改为异步加载，避免初始化时全部解析进内存
 const SettingsView = defineAsyncComponent(() => import('@/components/settings/SettingsView.vue'))
@@ -325,6 +327,7 @@ function confirmAction() {
         @show-pin-setup="onShowPinSetup"
         @toggle-sensitive="onToggleSensitive"
       />
+      <TemplatesView v-else-if="currentSub === 'templates'" />
       <SettingsView v-else-if="currentSub === 'settings'" @open-modal="openModal" />
       <ProfileView v-else-if="currentSub === 'profile'" />
       <DevicesView v-else-if="currentSub === 'devices'" @open-modal="openModal" />

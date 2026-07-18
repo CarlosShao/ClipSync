@@ -38,6 +38,7 @@ import paymentRoutes from './routes/payments.js';
 import invoiceRoutes from './routes/invoices.js';
 import surveyRoutes from './routes/surveys.js';
 import favoritesRoutes from './routes/favorites.js';
+import templatesRoutes from './routes/templates.js';
 import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
 import metricsRoutes from './routes/metrics.js';
@@ -381,6 +382,12 @@ app.use('/api/favorites', authenticateToken, apiLimiter, csrfProtection, (req, r
   req.userId = req.user.userId;
   next();
 }, favoritesRoutes);
+
+// 模板库路由（免费功能，不挂 subscriptionCheck）
+app.use('/api/templates', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, templatesRoutes);
 
 // ============================================
 // 404 Handler

@@ -30,3 +30,12 @@ export type AuthView =
   | 'register'
   | 'set-password'
   | 'forgot-password'
+
+// 模板库条目：后端仅持久化 name + content（含 {{变量}} 占位符），变量解析在前端完成
+export interface ClipboardTemplate {
+  id: string
+  name: string
+  content: string
+  created_at: string
+  updated_at: string
+}
