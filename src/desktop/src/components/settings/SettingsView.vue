@@ -399,7 +399,6 @@ function resetPwdForm() {
         <div class="sg-label"><div class="sg-name">{{ t('sg_invoices') }}</div><div class="sg-hint">{{ t('sg_invoices_h') }}</div></div>
         <ChevronRight class="sg-arrow" />
       </div>
-      </div>
     </div>
 
     <div class="settings-group">
@@ -424,8 +423,8 @@ function resetPwdForm() {
             <Input v-model="editValue" class="sg-input--block" :placeholder="t('tpl_vars_value_ph')" @keyup.enter="saveEditVar(v.name)" />
           </div>
           <div class="pwd-actions">
-            <Button size="default" class="px-6 min-w-[100px] rounded-md" @click="saveEditVar(v.name)">{{ t('tpl_vars_save') }}</Button>
-            <Button size="default" variant="outline" class="px-6 min-w-[100px] rounded-md" @click="editingVarName = ''">{{ t('cancel_btn') }}</Button>
+            <Button class="pwd-btn" @click="saveEditVar(v.name)">{{ t('tpl_vars_save') }}</Button>
+            <Button variant="outline" class="pwd-btn" @click="editingVarName = ''">{{ t('cancel_btn') }}</Button>
           </div>
         </div>
       </div>
@@ -442,7 +441,7 @@ function resetPwdForm() {
           <Input v-model="newVarValue" class="sg-input--block" :placeholder="t('tpl_vars_value_ph')" @keyup.enter="addVar" />
         </div>
         <div class="pwd-actions">
-          <Button size="default" class="px-6 min-w-[100px] rounded-md" @click="addVar">{{ t('tpl_vars_add') }}</Button>
+          <Button class="pwd-btn" @click="addVar">{{ t('tpl_vars_add') }}</Button>
         </div>
         <div v-if="varError" class="pwd-error">{{ varError }}</div>
       </div>
@@ -465,6 +464,7 @@ function resetPwdForm() {
         </a>
         <span class="about-link about-link-disabled">{{ t('app_docs') }}</span>
       </div>
+    </div>
     </div>
     </div>
 </template>
