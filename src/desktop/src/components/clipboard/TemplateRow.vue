@@ -48,10 +48,10 @@ function fmtTime(iso: string): string {
       </div>
     </div>
     <div class="tpl-actions">
-      <Button size="sm" variant="outline" class="min-w-[80px] rounded-md" @click="emit('insert', template)">
+      <Button size="sm" variant="outline" class="px-5 min-w-[80px] rounded-md" @click="emit('insert', template)">
         <ClipboardPlus :size="14" /> 插入
       </Button>
-      <Button size="sm" variant="ghost" class="min-w-[80px] rounded-md" @click="emit('edit', template)">
+      <Button size="sm" variant="ghost" class="px-5 min-w-[80px] rounded-md" @click="emit('edit', template)">
         <Pencil :size="14" /> 编辑
       </Button>
       <Button size="icon-sm" variant="ghost" class="tpl-del" @click="emit('delete', template)" title="删除">
@@ -77,7 +77,7 @@ function fmtTime(iso: string): string {
 .tpl-meta { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
 .tpl-vars { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 .var-chip {
-  font-family: var(--font-mono, monospace); font-size: 12px; padding: 4px 10px;
+  font-family: var(--font-mono, monospace); font-size: 12px; padding: 5px 12px;
   border-radius: 8px; border: 1px solid transparent;
 }
 .var-builtin { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 25%, transparent); }

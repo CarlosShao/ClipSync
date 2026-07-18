@@ -38,13 +38,13 @@ function onConfirm() {
         <Label :for="`fill-${v}`">
           <span class="tpl-var-name">{{ '{' + '{' + v + '}' + '}' }}</span>
         </Label>
-        <Input :id="`fill-${v}`" v-model="values[v]" :placeholder="t('templates_var_ph')" class="h-11 px-4 leading-6" />
+        <Input :id="`fill-${v}`" v-model="values[v]" :placeholder="t('templates_var_ph')" class="h-11 px-5 leading-6" />
       </div>
     </div>
 
     <template #footer>
-      <Button variant="outline" size="default" class="min-w-[100px] rounded-md" @click="emit('close')">{{ t('templates_cancel') }}</Button>
-      <Button size="default" class="min-w-[100px] rounded-md" @click="onConfirm">{{ t('templates_insert') }}</Button>
+      <Button variant="outline" size="default" class="px-6 min-w-[100px] rounded-md" @click="emit('close')">{{ t('templates_cancel') }}</Button>
+      <Button size="default" class="px-6 min-w-[100px] rounded-md" @click="onConfirm">{{ t('templates_insert') }}</Button>
     </template>
   </ModalDialog>
 </template>
