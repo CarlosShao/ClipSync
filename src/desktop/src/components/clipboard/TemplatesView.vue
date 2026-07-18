@@ -99,8 +99,8 @@ async function confirmDelete() {
         <FileText :size="40" :stroke-width="1.5" />
         <div class="tpl-empty-title">{{ t('templates_empty_title') }}</div>
         <div class="tpl-empty-desc">{{ t('templates_empty_desc') }}</div>
-        <Button class="tpl-empty-btn" @click="onNew">
-          <Plus :size="16" /> {{ t('templates_empty_new') }}
+        <Button class="tpl-empty-btn h-10 px-6" @click="onNew">
+          <Plus :size="18" /> {{ t('templates_empty_new') }}
         </Button>
       </div>
 
@@ -140,11 +140,11 @@ async function confirmDelete() {
 .tpl-loading { padding: 40px; text-align: center; color: var(--text-muted); font-size: 14px; }
 .tpl-empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 10px; padding: 60px 20px; color: var(--text-muted); text-align: center;
+  gap: 12px; padding: 72px 24px; color: var(--text-muted); text-align: center;
   border: 1px dashed var(--border-default); border-radius: var(--radius-lg);
   background: var(--bg-surface);
 }
 .tpl-empty-title { font-size: 15px; font-weight: 600; color: var(--text-secondary); }
 .tpl-empty-desc { font-size: 13px; max-width: 360px; line-height: 1.6; }
-.tpl-empty-btn { margin-top: 8px; }
+.tpl-empty-btn { margin-top: 10px; }
 </style>
