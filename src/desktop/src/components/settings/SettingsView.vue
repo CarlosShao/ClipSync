@@ -418,7 +418,7 @@ function resetPwdForm() {
           </div>
           <Button size="default" variant="outline" class="px-6 min-w-[100px] rounded-md" @click="removeVar(v.name)">{{ t('tpl_vars_delete') }}</Button>
         </div>
-        <div v-if="editingVarName === v.name" class="pwd-change-form">
+        <div v-if="editingVarName === v.name" class="pwd-change-form tpl-var-form">
           <div class="pwd-field">
             <label class="pwd-label">{{ t('tpl_vars_value') }}</label>
             <Input v-model="editValue" class="sg-input--block" :placeholder="t('tpl_vars_value_ph')" @keyup.enter="saveEditVar(v.name)" />
@@ -432,7 +432,7 @@ function resetPwdForm() {
 
       <div v-if="tplVarList.length === 0" class="tpl-var-empty">{{ t('tpl_vars_empty') }}</div>
 
-      <div class="pwd-change-form">
+      <div class="pwd-change-form tpl-var-form">
         <div class="pwd-field">
           <label class="pwd-label">{{ t('tpl_vars_name') }}</label>
           <Input v-model="newVarName" class="sg-input--block" :placeholder="t('tpl_vars_name_ph')" />
@@ -531,4 +531,15 @@ function resetPwdForm() {
 .tpl-var-block { margin-bottom: 2px; }
 .tpl-var-name { font-family: var(--font-mono, monospace); color: var(--primary); }
 .tpl-var-empty { font-size: 12px; color: var(--text-tertiary); padding: 4px 14px 10px; }
+.tpl-var-form {
+  padding: 10px 14px !important;
+  margin: 4px 0 8px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+.tpl-var-form .pwd-field { padding-left: 0; }
+.tpl-var-form .pwd-label { padding-left: 0; }
+.tpl-var-form .pwd-actions { padding-left: 0; justify-content: flex-end; }
+.tpl-var-actions { justify-content: flex-end; }
 </style>
