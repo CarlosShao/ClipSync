@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, reactive } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useTemplateStore } from '@/stores/templateStore'
+import { useTemplateVariableStore } from '@/stores/templateVariableStore'
 import type { ClipboardTemplate } from '@/types'
 import { FileText, Plus, SearchX } from 'lucide-vue-next'
 import TemplateToolbar from './TemplateToolbar.vue'
@@ -17,7 +18,11 @@ const store = useTemplateStore()
 const search = ref('')
 const editorOpen = ref(false)
 const editing = ref<ClipboardTemplate | null>(null)
-const fillState = reactive<{ open: boolean; tpl: ClipboardTemplate | null }>({ open: false, tpl: null })
+const fillState = reactive<{
+  open: boolean
+  tpl: ClipboardTemplate | null
+  defs: { name: string; defaultValue: string }[]
+}>({ open: false, tpl: null, defs: [] })
 const deleteTarget = ref<ClipboardTemplate | null>(null)
 
 const filtered = computed(() => {
@@ -53,21 +58,31 @@ async function onEditorSave(payload: { name: string; content: string }) {
 }
 
 function onInsert(tpl: ClipboardTemplate) {
-  const userVars = store.userVariables(tpl)
-  if (userVars.length > 0) {
+  const defs = store.userVariableDefs(tpl)
+  if (defs.length > 0) {
     fillState.tpl = tpl
+    fillState.defs = defs
     fillState.open = true
   } else {
     store.insertTemplate(tpl)
   }
 }
 
-async function onFillConfirm(values: Record<string, string>) {
+async function onFillConfirm(values: Record<string, string>, remember: string[]) {
+  // 把勾选「记住」且非空的输入回写到全局变量存储（下次自动预填）
+  const varStore = useTemplateVariableStore()
+  for (const name of remember) {
+    const val = values[name]
+    if (val !== undefined && val !== '') {
+      await varStore.setVariable(name, val)
+    }
+  }
   if (fillState.tpl) {
     await store.insertTemplate(fillState.tpl, values)
   }
   fillState.open = false
   fillState.tpl = null
+  fillState.defs = []
 }
 
 async function confirmDelete() {
@@ -119,7 +134,7 @@ async function confirmDelete() {
 
     <VariableFillDialog
       :open="fillState.open"
-      :variables="fillState.tpl ? store.userVariables(fillState.tpl) : []"
+      :defs="fillState.defs"
       @close="fillState.open = false"
       @confirm="onFillConfirm"
     />

@@ -9,12 +9,14 @@ import Button from '@/components/ui/button/Button.vue'
 import { Textarea } from '@/components/ui/textarea'
 import type { ClipboardTemplate } from '@/types'
 import { extractVariables, isBuiltinVar, BUILTIN_VARS } from '@/stores/templateStore'
+import { useTemplateVariableStore } from '@/stores/templateVariableStore'
 
 const props = defineProps<{ open: boolean; editing: ClipboardTemplate | null }>()
 const emit = defineEmits<{ close: []; save: [payload: { name: string; content: string }] }>()
 
 const { t } = useI18n()
 const toast = useSonner()
+const varStore = useTemplateVariableStore()
 
 const name = ref('')
 const content = ref('')
@@ -31,8 +33,9 @@ watch(
 )
 
 const vars = computed(() => extractVariables(content.value))
+const globalVars = computed(() => varStore.list())
 
-function insertBuiltin(v: string) {
+function insertVar(v: string) {
   content.value += (content.value && !content.value.endsWith('\n') ? '\n' : '') + `{{${v}}}`
 }
 
@@ -67,8 +70,19 @@ function onSave() {
             type="button"
             class="tpl-builtin-btn"
             :title="`插入 {{${v}}}`"
-            @click="insertBuiltin(v)"
+            @click="insertVar(v)"
           >{{ '{' + '{' + v + '}' + '}' }}</button>
+        </div>
+        <div v-if="globalVars.length" class="tpl-builtin-bar">
+          <span class="tpl-builtin-label">{{ t('templates_global_var_label') }}：</span>
+          <button
+            v-for="gv in globalVars"
+            :key="gv.name"
+            type="button"
+            class="tpl-builtin-btn"
+            :title="`插入 {{${gv.name}}}`"
+            @click="insertVar(gv.name)"
+          >{{ '{' + '{' + gv.name + '}' + '}' }}</button>
         </div>
       </div>
 

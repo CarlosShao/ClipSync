@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useTheme, currentMode } from '@/composables/useTheme'
 import { useConfigStore } from '@/stores/configStore'
 import { useSonner } from '@/composables/useSonner'
 import { usePrivacy } from '@/composables/usePrivacy'
+import { useTemplateVariableStore } from '@/stores/templateVariableStore'
 import { ChevronRight, ChevronDown, Github, Sun, Moon, Monitor } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -23,6 +24,52 @@ const langModel = ref<string>(currentLang.value as string)
 const syncIntervalModel = ref(String(configStore.syncInterval))
 const maxHistoryModel = ref(String(configStore.maxHistory))
 const appVersion = '0.1.0'
+
+// 模板全局变量状态
+const varStore = useTemplateVariableStore()
+const tplVarList = computed(() => varStore.list())
+const editingVarName = ref('')
+const editValue = ref('')
+const newVarName = ref('')
+const newVarValue = ref('')
+const varError = ref('')
+
+function startEditVar(v: { name: string; value: string }) {
+  editingVarName.value = v.name
+  editValue.value = v.value
+}
+
+async function saveEditVar(name: string) {
+  const ok = await varStore.setVariable(name, editValue.value)
+  if (ok) {
+    toast.show(t('tpl_vars_saved') || '变量已保存', 'success')
+    editingVarName.value = ''
+    editValue.value = ''
+  }
+}
+
+async function removeVar(name: string) {
+  await varStore.removeVariable(name)
+}
+
+async function addVar() {
+  varError.value = ''
+  const name = newVarName.value.trim()
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    varError.value = t('tpl_vars_name_invalid') || '变量名必须是字母/下划线开头的标识符'
+    return
+  }
+  const ok = await varStore.setVariable(name, newVarValue.value)
+  if (ok) {
+    toast.show(t('tpl_vars_saved') || '变量已保存', 'success')
+    newVarName.value = ''
+    newVarValue.value = ''
+  }
+}
+
+onMounted(() => {
+  if (!varStore.initialized) varStore.fetchVariables()
+})
 
 // Password change form state
 const showPwdChange = ref(false)
@@ -355,6 +402,52 @@ function resetPwdForm() {
       </div>
     </div>
 
+    <div class="settings-group">
+      <div class="sg-header">{{ t('sg_tpl_vars') }}</div>
+      <div class="sg-row">
+        <div class="sg-label">
+          <div class="sg-name" style="font-size:12px;">{{ t('sg_tpl_vars_h') }}</div>
+        </div>
+      </div>
+
+      <div v-for="v in tplVarList" :key="v.name" class="tpl-var-block">
+        <div class="sg-row">
+          <div class="sg-label" style="cursor:pointer;" @click="editingVarName = editingVarName === v.name ? '' : v.name">
+            <div class="sg-name tpl-var-name">{{ '{' + '{' + v.name + '}' + '}' }}</div>
+            <div class="sg-hint">{{ v.value || t('tpl_vars_empty_value') }}</div>
+          </div>
+          <Button size="default" variant="outline" class="px-4 min-w-[100px] rounded-md" @click="removeVar(v.name)">{{ t('tpl_vars_delete') }}</Button>
+        </div>
+        <div v-if="editingVarName === v.name" class="pwd-change-form">
+          <div class="pwd-field">
+            <label class="pwd-label">{{ t('tpl_vars_value') }}</label>
+            <Input v-model="editValue" class="sg-input--block" :placeholder="t('tpl_vars_value_ph')" @keyup.enter="saveEditVar(v.name)" />
+          </div>
+          <div class="pwd-actions">
+            <Button class="pwd-btn" @click="saveEditVar(v.name)">{{ t('tpl_vars_save') }}</Button>
+            <Button variant="outline" class="pwd-btn" @click="editingVarName = ''">{{ t('cancel_btn') }}</Button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="tplVarList.length === 0" class="tpl-var-empty">{{ t('tpl_vars_empty') }}</div>
+
+      <div class="pwd-change-form">
+        <div class="pwd-field">
+          <label class="pwd-label">{{ t('tpl_vars_name') }}</label>
+          <Input v-model="newVarName" class="sg-input--block" :placeholder="t('tpl_vars_name_ph')" />
+        </div>
+        <div class="pwd-field">
+          <label class="pwd-label">{{ t('tpl_vars_value') }}</label>
+          <Input v-model="newVarValue" class="sg-input--block" :placeholder="t('tpl_vars_value_ph')" @keyup.enter="addVar" />
+        </div>
+        <div class="pwd-actions">
+          <Button class="pwd-btn" @click="addVar">{{ t('tpl_vars_add') }}</Button>
+        </div>
+        <div v-if="varError" class="pwd-error">{{ varError }}</div>
+      </div>
+    </div>
+
     <!-- About / Version -->
     <div class="about-section">
       <div class="about-card">
@@ -433,4 +526,9 @@ function resetPwdForm() {
 .about-link { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--accent); text-decoration: none; cursor: pointer; transition: opacity .15s; font-weight: 500; }
 .about-link:hover { opacity: .75; text-decoration: underline; }
 .about-link-disabled { color: var(--text-tertiary); cursor: not-allowed; opacity: .45; font-size: 13px; }
+
+/* Template global variables group */
+.tpl-var-block { margin-bottom: 2px; }
+.tpl-var-name { font-family: var(--font-mono, monospace); color: var(--primary); }
+.tpl-var-empty { font-size: 12px; color: var(--text-tertiary); padding: 4px 14px 10px; }
 </style>

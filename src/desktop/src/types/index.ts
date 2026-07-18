@@ -39,3 +39,12 @@ export interface ClipboardTemplate {
   created_at: string
   updated_at: string
 }
+
+// 模板全局变量：name → value，后端按用户隔离存储（template_variables 表）
+export interface TemplateVariable {
+  id: string
+  name: string
+  value: string
+  created_at: string
+  updated_at: string
+}
