@@ -99,8 +99,8 @@ async function confirmDelete() {
         <FileText :size="40" :stroke-width="1.5" />
         <div class="tpl-empty-title">{{ t('templates_empty_title') }}</div>
         <div class="tpl-empty-desc">{{ t('templates_empty_desc') }}</div>
-        <Button class="tpl-empty-btn h-10 px-6" @click="onNew">
-          <Plus :size="18" /> {{ t('templates_empty_new') }}
+        <Button size="default" class="tpl-empty-btn" @click="onNew">
+          <Plus :size="16" /> {{ t('templates_empty_new') }}
         </Button>
       </div>
 

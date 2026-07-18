@@ -52,12 +52,12 @@ function onSave() {
     <div class="tpl-form">
       <div class="tpl-field">
         <Label for="tpl-name">{{ t('templates_name') }}</Label>
-        <Input id="tpl-name" v-model="name" :placeholder="t('templates_name_ph')" class="h-11 px-4 py-3" />
+        <Input id="tpl-name" v-model="name" :placeholder="t('templates_name_ph')" class="h-11 px-4 leading-6" />
       </div>
 
       <div class="tpl-field">
         <Label for="tpl-content">{{ t('templates_content') }}</Label>
-        <Textarea id="tpl-content" v-model="content" :placeholder="t('templates_content_ph')" class="tpl-content px-4 py-3.5" />
+        <Textarea id="tpl-content" v-model="content" :placeholder="t('templates_content_ph')" class="tpl-content min-h-[160px] px-4 py-4 leading-relaxed" />
         <div class="tpl-builtin-bar">
           <span class="tpl-builtin-label">{{ t('templates_builtin_label') }}：</span>
           <button
@@ -82,8 +82,8 @@ function onSave() {
     </div>
 
     <template #footer>
-      <Button variant="outline" class="h-10 px-5" @click="emit('close')">{{ t('templates_cancel') }}</Button>
-      <Button class="h-10 px-6" @click="onSave">{{ t('templates_save') }}</Button>
+      <Button variant="outline" size="default" class="min-w-[100px] rounded-md" @click="emit('close')">{{ t('templates_cancel') }}</Button>
+      <Button size="default" class="min-w-[100px] rounded-md" @click="onSave">{{ t('templates_save') }}</Button>
     </template>
   </ModalDialog>
 </template>

@@ -22,8 +22,8 @@ const { t } = useI18n()
           class="tpl-search-input"
         />
       </div>
-      <Button class="h-10 px-6" @click="emit('new')">
-        <Plus :size="18" /> {{ t('templates_new') }}
+      <Button size="default" @click="emit('new')">
+        <Plus :size="16" /> {{ t('templates_new') }}
       </Button>
     </div>
   </div>
