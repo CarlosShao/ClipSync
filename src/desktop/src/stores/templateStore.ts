@@ -9,10 +9,14 @@ import {
 import { useClipboard } from '@/composables/useClipboard'
 import { useSonner } from '@/composables/useSonner'
 import * as tauri from '@/lib/tauri'
+import { useTemplateVariableStore } from '@/stores/templateVariableStore'
 import type { ClipboardTemplate } from '@/types'
 
-// 变量语法：{{ name }}，name 为字母/数字/下划线（允许前后空格）
-const VAR_PATTERN = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g
+// 变量语法：
+//   {{ name }}           → 普通占位符，插入时填写
+//   {{ name:default }}   → 带默认值，未填写时使用 default
+// name 为字母/数字/下划线（允许前后空格）；default 可为任意不含 } 的文本。
+const VAR_PATTERN = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*([^{}]*?))?\s*\}\}/g
 
 // 内置变量（自动解析，无需用户输入）
 export const BUILTIN_VARS = ['date', 'time', 'datetime', 'clipboard'] as const
@@ -24,16 +28,21 @@ export function isBuiltinVar(name: string): boolean {
 
 // 提取模板内容中的全部变量名（去重、保序）
 export function extractVariables(content: string): string[] {
+  return extractVariableDefs(content).map((d) => d.name)
+}
+
+// 提取模板内容中的全部变量定义（name + 默认值），去重、保序
+export function extractVariableDefs(content: string): { name: string; defaultValue: string }[] {
   const re = new RegExp(VAR_PATTERN.source, 'g')
   const seen = new Set<string>()
-  const result: string[] = []
+  const result: { name: string; defaultValue: string }[] = []
   let m: RegExpExecArray | null
   while ((m = re.exec(content)) !== null) {
     const name = m[1]
-    if (!seen.has(name)) {
-      seen.add(name)
-      result.push(name)
-    }
+    if (seen.has(name)) continue
+    seen.add(name)
+    const def = (m[2] ?? '').trim()
+    result.push({ name, defaultValue: def })
   }
   return result
 }
@@ -51,10 +60,12 @@ function fmtDateTime(d: Date): string {
   return `${fmtDate(d)} ${fmtTime(d)}`
 }
 
-// 解析模板内容：内置变量即时求值，用户变量用 userValues 替换（缺失则填空串）
+// 解析模板内容：内置变量即时求值，用户变量用 userValues 替换；
+// 若 userValues 缺失，则回退到全局变量 globals，再回退到语法默认值 def，最后填空串。
 export async function resolveTemplate(
   content: string,
   userValues: Record<string, string> = {},
+  globals: Record<string, string> = {},
 ): Promise<string> {
   const now = new Date()
   const builtins: Record<string, string> = {
@@ -70,9 +81,11 @@ export async function resolveTemplate(
     builtins.clipboard = ''
   }
   const re = new RegExp(VAR_PATTERN.source, 'g')
-  return content.replace(re, (_full, name: string) => {
+  return content.replace(re, (_full, name: string, def?: string) => {
     if (name in builtins) return builtins[name]
-    return userValues[name] ?? ''
+    if (userValues && name in userValues && userValues[name] !== '') return userValues[name]
+    if (globals && name in globals && globals[name] !== '') return globals[name]
+    return (def ?? '').trim()
   })
 }
 
@@ -149,13 +162,14 @@ export const useTemplateStore = defineStore('templates', () => {
     return false
   }
 
-  // 解析并写入剪贴板；userValues 为用户变量填充值
+  // 解析并写入剪贴板；userValues 为用户变量填充值，globals 为全局默认值回退
   async function insertTemplate(
     tpl: ClipboardTemplate,
     userValues: Record<string, string> = {},
   ): Promise<boolean> {
     try {
-      const resolved = await resolveTemplate(tpl.content, userValues)
+      const globals = useTemplateVariableStore().variables
+      const resolved = await resolveTemplate(tpl.content, userValues, globals)
       const ok = await copyText(resolved)
       if (ok) {
         toast.show('已插入剪贴板', 'success')
@@ -172,6 +186,11 @@ export const useTemplateStore = defineStore('templates', () => {
   // 该模板需要用户填充的变量（排除内置变量）
   function userVariables(tpl: ClipboardTemplate): string[] {
     return extractVariables(tpl.content).filter((v) => !isBuiltinVar(v))
+  }
+
+  // 该模板需要用户填充的变量定义（含默认值，排除内置变量）
+  function userVariableDefs(tpl: ClipboardTemplate): { name: string; defaultValue: string }[] {
+    return extractVariableDefs(tpl.content).filter((d) => !isBuiltinVar(d.name))
   }
 
   // 该模板的全部变量（含内置，用于编辑器提示）
@@ -191,6 +210,7 @@ export const useTemplateStore = defineStore('templates', () => {
     insertTemplate,
     extractVariables,
     userVariables,
+    userVariableDefs,
     allVariables,
   }
 })

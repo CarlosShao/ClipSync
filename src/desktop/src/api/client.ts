@@ -302,6 +302,25 @@ export async function deleteTemplate(id: string): Promise<boolean> {
   return res.ok
 }
 
+// ============================================
+// Template Variables API（全局变量默认值，后端按用户隔离存储）
+// ============================================
+
+export async function getTemplateVariables(): Promise<{ data: any[] } | null> {
+  const res = await api('GET', '/api/template-variables')
+  return res.ok ? res.data : null
+}
+
+export async function upsertTemplateVariable(name: string, value: string): Promise<any | null> {
+  const res = await api('PUT', '/api/template-variables', { name, value })
+  return res.ok ? res.data : null
+}
+
+export async function deleteTemplateVariable(name: string): Promise<boolean> {
+  const res = await api('DELETE', `/api/template-variables/${encodeURIComponent(name)}`)
+  return res.ok
+}
+
 /** Send PIN reset verification code (phone) */
 export async function sendPinResetCode(phone: string): Promise<boolean> {
   const res = await api('POST', '/api/auth/send-reset-pin-code', { phone })

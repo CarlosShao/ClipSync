@@ -39,6 +39,7 @@ import invoiceRoutes from './routes/invoices.js';
 import surveyRoutes from './routes/surveys.js';
 import favoritesRoutes from './routes/favorites.js';
 import templatesRoutes from './routes/templates.js';
+import templateVariablesRoutes from './routes/templateVariables.js';
 import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
 import metricsRoutes from './routes/metrics.js';
@@ -388,6 +389,12 @@ app.use('/api/templates', authenticateToken, apiLimiter, csrfProtection, (req, r
   req.userId = req.user.userId;
   next();
 }, templatesRoutes);
+
+// 模板全局变量路由（免费功能，不挂 subscriptionCheck）
+app.use('/api/template-variables', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, templateVariablesRoutes);
 
 // ============================================
 // 404 Handler
