@@ -435,8 +435,8 @@ function resetPwdForm() {
 
       <div class="sg-row" style="cursor:pointer;" @click="addOpen = !addOpen">
         <div class="sg-label">
-          <div class="sg-name">{{ t('tpl_vars_add') || '添加变量' }}</div>
-          <div class="sg-hint">{{ t('tpl_vars_add_h') || '新增一个模板全局变量' }}</div>
+          <div class="sg-name">{{ t('tpl_vars_add') }}</div>
+          <div class="sg-hint">{{ t('tpl_vars_add_h') }}</div>
         </div>
         <ChevronDown :class="['sg-arrow', { 'sg-arrow--rotated': addOpen }]" />
       </div>
