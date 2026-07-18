@@ -278,6 +278,30 @@ export async function toggleSensitive(itemId: string, sensitive: boolean): Promi
   return res.ok ? res.data : null
 }
 
+// ============================================
+// Templates API（模板库，变量解析在前端完成）
+// ============================================
+
+export async function getTemplates(): Promise<{ data: any[] } | null> {
+  const res = await api('GET', '/api/templates')
+  return res.ok ? res.data : null
+}
+
+export async function createTemplate(name: string, content: string): Promise<any | null> {
+  const res = await api('POST', '/api/templates', { name, content })
+  return res.ok ? res.data : null
+}
+
+export async function updateTemplate(id: string, data: { name?: string; content?: string }): Promise<any | null> {
+  const res = await api('PUT', `/api/templates/${id}`, data)
+  return res.ok ? res.data : null
+}
+
+export async function deleteTemplate(id: string): Promise<boolean> {
+  const res = await api('DELETE', `/api/templates/${id}`)
+  return res.ok
+}
+
 /** Send PIN reset verification code (phone) */
 export async function sendPinResetCode(phone: string): Promise<boolean> {
   const res = await api('POST', '/api/auth/send-reset-pin-code', { phone })

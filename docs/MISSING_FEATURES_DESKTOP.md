@@ -20,6 +20,7 @@
 | 收藏夹国际化 + PIN | `CHECKLIST_FAVORITES_I18N_PIN.md` 对应实现 | 已落地 |
 | 文档预览 Drawer | `DocumentDrawer.vue`（Markdown/Word/Excel/PDF 右侧抽屉） | 已落地 |
 | 后端自动过期清理（基础） | `server/src/db/cleanup.js` 按 `expires_at` 清理 | 仅后端 Job，无前端入口 |
+| 模板库 | `TemplatesView.vue` / `templateStore.ts` / `routes/templates.js` + 迁移 017；变量引擎（`{{var}}` 内置 date/time/datetime/clipboard + 自定义填空） | 已落地 |
 
 ---
 
@@ -162,7 +163,7 @@
 
 ## 当前最优先补齐（按个人版上线标准）
 
-1. **模板功能 + 批量操作**（P0，高级剪贴板核心，当前完全缺失）
+1. ~~模板功能~~ ✅ 已实现（2026-07-17：模板库 + 变量引擎）；批量删除早已落地（见普通剪贴板列表多选）
 2. **分享链接后端打通**（当前是 mock，P1）
 3. **条目级密码保护 / 端到端加密集成**（P0/P1，安全债务）
 4. **应用内通知中心落库**（P1，当前不落库导致 history 空）

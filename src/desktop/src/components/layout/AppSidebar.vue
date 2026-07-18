@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
-  PanelLeftClose, PanelLeftOpen, Clipboard, Monitor, Link,
+  PanelLeftClose, PanelLeftOpen, Clipboard, Monitor, Link, FileText,
   User, Star, Crown, Settings, LogOut, Bell,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
@@ -48,6 +48,7 @@ function setFooterRef(el: HTMLElement | null) {
 const mainNavItems = computed(() => [
   { key: 'clipboard', label: t('nav_clipboard'), badge: String(props.itemsCount) },
   { key: 'favorites', label: t('nav_favorites'), badge: '' },
+  { key: 'templates', label: t('nav_templates'), badge: '' },
   { key: 'devices',   label: t('nav_devices'),   badge: '' },
   { key: 'shared-links', label: t('nav_shared_links'), badge: '' },
 ])
@@ -92,6 +93,7 @@ const accountNavItems = computed(() => [
         >
           <Clipboard v-if="item.key === 'clipboard'" :size="20" :stroke-width="1.8" />
           <Star v-else-if="item.key === 'favorites'" :size="20" :stroke-width="1.8" />
+          <FileText v-else-if="item.key === 'templates'" :size="20" :stroke-width="1.8" />
           <Monitor v-else-if="item.key === 'devices'" :size="20" :stroke-width="1.8" />
           <Link v-else-if="item.key === 'shared-links'" :size="20" :stroke-width="1.8" />
           <span v-show="!isCollapsed" class="sb-label">{{ item.label }}</span>

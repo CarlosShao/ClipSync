@@ -1370,11 +1370,28 @@ export function useClipboard() {
     } catch { /* ignore */ }
   }
 
+  // 把任意文本写入剪贴板，复用与 copyItem 文本路径相同的去重逻辑：
+  // 记录内容 + 暂停 monitor 轮询 3s，避免 ClipSync 自身写入被 monitor 当成新剪贴同步。
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (!text) return false
+      skipNextPolls(3000)
+      const now = Date.now()
+      copiedTexts.set(text, now)
+      cleanupCopiedContent()
+      await tauri.setClipboardContent(text)
+      return true
+    } catch (e: any) {
+      console.warn('[Clipboard] copyText failed:', e?.message || e)
+      return false
+    }
+  }
+
   return {
     items, filteredItems, searchQuery, activeFilter, batchMode, polling, loading,
     offlineQueueSize,
     totalItems, hasMore, loadingMore, loadMore, currentPage, pageSize,
-    selectedCount, allSelected, startPolling, copyItem,
+    selectedCount, allSelected, startPolling, copyItem, copyText,
     toggleSelectAll, clearSelection, batchDelete, deleteSingle, toggleFavorite,
     loadClipboardItems, setFilter, setSearch, toggleBatch, uploadFileItem,
     refresh: loadClipboardItems,
