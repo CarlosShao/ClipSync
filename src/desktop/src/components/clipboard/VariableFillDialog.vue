@@ -38,7 +38,7 @@ function onConfirm() {
         <Label :for="`fill-${v}`">
           <span class="tpl-var-name">{{ '{' + '{' + v + '}' + '}' }}</span>
         </Label>
-        <Input :id="`fill-${v}`" v-model="values[v]" :placeholder="t('templates_var_ph')" class="h-11 px-5 leading-6" />
+        <Input :id="`fill-${v}`" v-model="values[v]" :placeholder="t('templates_var_ph')" class="!p-4 leading-6" />
       </div>
     </div>
 
