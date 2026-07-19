@@ -144,7 +144,7 @@ function renderSharePage({ title, content, contentType, views, createdAt, fileNa
     ${title && contentType !== 'file' ? `<div class="title">${safeTitle}</div>` : ''}
     <div class="content">${body}</div>
     ${meta ? `<div class="meta">${escapeHtml(meta)}</div>` : ''}
-    <footer>Shared securely with ClipSync · <a href="/" style="color:#6b7280;">clipsync.io</a></footer>
+    <footer>Shared securely with ClipSync</footer>
   </div>
 </body>
 </html>`;
@@ -311,7 +311,7 @@ router.get('/public/:token', apiLimiter, async (req, res) => {
        SET views = views + 1
        WHERE token = $1
          AND (expires_at IS NULL OR expires_at > NOW())
-       RETURNING id, title, content_encrypted, content_type, file_path, file_name, file_size, views, created_at, expires_at`,
+       RETURNING id, token, title, content_encrypted, content_type, file_path, file_name, file_size, views, created_at, expires_at`,
       [token],
     );
     if (rows.length === 0) {
