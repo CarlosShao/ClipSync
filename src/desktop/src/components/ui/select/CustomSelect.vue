@@ -38,6 +38,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
       type="button"
       class="custom-select-trigger"
       :class="{ 'custom-select-trigger-sm': props.size === 'sm' }"
+      :style="props.size === 'sm' ? { height: '36px', padding: '0 10px', fontSize: '13px' } : undefined"
       @click="toggle"
     >
       <slot />
@@ -59,6 +60,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
   display: flex;
   align-items: center;
   justify-content: space-between;
+  box-sizing: border-box;
   width: 100%;
   height: 40px;
   padding: 0 14px;
@@ -82,9 +84,10 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
 }
 
 .custom-select-trigger-sm {
-  height: 36px;
-  padding: 0 10px;
-  font-size: 13px;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 10px !important;
+  font-size: 13px !important;
 }
 
 .custom-select-chevron {
