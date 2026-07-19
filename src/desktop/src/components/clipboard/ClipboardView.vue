@@ -1628,16 +1628,16 @@ function extractDomain(url: string): string {
 /* ===== 高级搜索筛选面板 ===== */
 .filter-active { border-color: var(--color-primary, #6366f1) !important; color: var(--color-primary, #6366f1) !important; }
 .adv-filter-panel {
-  display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
   padding: 20px 24px; margin: 0 12px 8px; background: var(--bg-surface);
   border: 1px solid var(--border-default); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
 }
-.adv-filter-grid { display: flex; gap: 24px; flex-wrap: wrap; flex: 1; align-items: flex-end; }
+.adv-filter-grid { display: flex; gap: 24px; flex-wrap: wrap; flex: 1; align-items: center; }
 .adv-filter-field { display: flex; flex-direction: column; gap: 8px; }
 .adv-filter-field label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
 .adv-filter-select-cs { min-width: 150px; max-width: 200px; }
-.adv-filter-actions { display: flex; gap: 12px; align-items: flex-end; }
+.adv-filter-actions { display: flex; gap: 12px; align-items: center; }
 .cell-protected-mask {
   display: flex; align-items: center; gap: 8px; padding: 6px 10px;
   background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
