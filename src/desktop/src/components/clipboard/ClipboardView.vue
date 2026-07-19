@@ -1060,7 +1060,7 @@ function extractDomain(url: string): string {
       <div class="adv-filter-grid">
         <div class="adv-filter-field">
           <label>{{ t('filter_device') }}</label>
-          <CustomSelect v-model="clip.advancedFilters.value.deviceId" class="adv-filter-select-cs">
+          <CustomSelect v-model="clip.advancedFilters.value.deviceId" class="adv-filter-select-cs" size="sm">
             {{ deviceLabel }}
             <template #options>
               <CustomSelectOption value="" :selected="clip.advancedFilters.value.deviceId === ''" @select="onDeviceChange('')">{{ t('filter_all_devices') }}</CustomSelectOption>
@@ -1637,7 +1637,6 @@ function extractDomain(url: string): string {
 .adv-filter-field { display: flex; flex-direction: column; gap: 8px; }
 .adv-filter-field label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
 .adv-filter-select-cs { min-width: 150px; max-width: 200px; }
-.adv-filter-select-cs :deep(.custom-select-trigger) { height: 36px; }
 .adv-filter-actions { display: flex; gap: 12px; align-items: flex-end; }
 .cell-protected-mask {
   display: flex; align-items: center; gap: 8px; padding: 6px 10px;

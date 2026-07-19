@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 const props = defineProps<{
   modelValue?: string
   class?: string
+  size?: 'sm' | 'default'
 }>()
 
 const emit = defineEmits<{
@@ -33,7 +34,12 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
 
 <template>
   <div ref="dropdownRef" class="custom-select" :class="props.class">
-    <button type="button" class="custom-select-trigger" @click="toggle">
+    <button
+      type="button"
+      class="custom-select-trigger"
+      :class="{ 'custom-select-trigger-sm': props.size === 'sm' }"
+      @click="toggle"
+    >
       <slot />
       <ChevronDown class="custom-select-chevron" :class="{ 'open': open }" />
     </button>
@@ -73,6 +79,12 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
 .custom-select-trigger:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.custom-select-trigger-sm {
+  height: 36px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 .custom-select-chevron {
