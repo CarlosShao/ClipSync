@@ -1046,7 +1046,7 @@ function extractDomain(url: string): string {
         <Search :size="14" class="search-field-icon" />
         <Input v-model="searchInput" type="text" :placeholder="t('search_ph')" class="search-input" :aria-label="t('search_ph')" @input="clip.setSearch(searchInput)" />
       </div>
-      <Button variant="outline" :class="{ 'filter-active': showFilterPanel }" class="px-5 h-10 gap-2" @click="toggleFilterPanel" :title="t('adv_filter')">
+      <Button variant="outline" :class="{ 'filter-active': showFilterPanel }" class="px-5 h-10 gap-2 min-w-[120px]" @click="toggleFilterPanel" :title="t('adv_filter')">
         <Filter :size="16" />
         <span>{{ t('adv_filter') }}</span>
       </Button>
@@ -1079,7 +1079,7 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_from') }}</label>
           <Popover>
             <PopoverTrigger as-child>
-              <Button variant="outline" class="font-normal h-10 px-4 gap-2 rounded-md">
+              <Button variant="outline" class="font-normal h-10 px-5 gap-3 min-w-[110px] rounded-md">
                 <CalendarIcon class="h-4 w-4 shrink-0" />
                 <span class="truncate">{{ clip.advancedFilters.value.dateFrom || t('filter_from') }}</span>
               </Button>
@@ -1093,7 +1093,7 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_to') }}</label>
           <Popover>
             <PopoverTrigger as-child>
-              <Button variant="outline" class="font-normal h-10 px-4 gap-2 rounded-md">
+              <Button variant="outline" class="font-normal h-10 px-5 gap-3 min-w-[110px] rounded-md">
                 <CalendarIcon class="h-4 w-4 shrink-0" />
                 <span class="truncate">{{ clip.advancedFilters.value.dateTo || t('filter_to') }}</span>
               </Button>
@@ -1115,8 +1115,8 @@ function extractDomain(url: string): string {
         </div>
       </div>
       <div class="adv-filter-actions">
-        <Button variant="ghost" size="default" class="min-w-[100px] rounded-md" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
-        <Button variant="outline" size="default" class="min-w-[100px] rounded-md" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
+        <Button variant="ghost" size="default" class="min-w-[100px] rounded-md px-5" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
+        <Button variant="outline" size="default" class="min-w-[100px] rounded-md px-5" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
       </div>
     </div>
 
