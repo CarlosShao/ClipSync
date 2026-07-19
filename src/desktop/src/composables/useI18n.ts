@@ -416,6 +416,21 @@ const _dicts: Record<Lang, I18nDict> = {
     adv_filter:'Advanced Filter', filter_device:'Device', filter_all_devices:'All devices', filter_from:'From', filter_to:'To', filter_tag:'Tag', filter_tag_ph:'Filter by tag', filter_clear:'Clear', filter_close:'Close',
     item_protected_mask:'Protected', item_unlock:'Unlock',
     item_password_set:'Set password', item_password_unlock:'Unlock', item_password_managed:'Password set', item_password_updated:'Updated', item_password_unsupported:'Password protection only supports text/link/code',
+    cancel:'Cancel',
+    item_password_set_title:'Set Password', item_password_unlock_title:'Unlock Item', item_password_managed_title:'Password Protection',
+    item_password_set_desc:'Set an independent password for this item. Encryption is done locally; the password is never uploaded to the server.',
+    item_password_unlock_desc:'This item is encrypted. Enter the password to view and copy it in the current session.',
+    item_password_new:'Password', item_password_new_ph:'Enter password (at least 4 characters)',
+    item_password_confirm:'Confirm Password', item_password_confirm_ph:'Enter password again',
+    item_password_enter:'Password', item_password_enter_ph:'Enter item password',
+    item_password_too_short:'Password must be at least 4 characters', item_password_mismatch:'The two passwords do not match',
+    item_password_no_content:'Cannot retrieve item content', item_password_set_failed:'Failed to set password, please try again',
+    item_password_set_error:'Encryption failed: ', item_password_required:'Please enter the password',
+    item_password_load_failed:'Failed to load encrypted content', item_password_wrong:'Incorrect password',
+    item_password_unlock_error:'Decryption failed: ', item_password_unlock_first:'Please unlock before removing protection',
+    item_password_remove_failed:'Failed to remove protection, please try again', item_password_remove_error:'Removal failed: ',
+    item_password_unlocked:'Unlocked. You can view and copy in this session.', item_password_mask:'[Password Protected]',
+    item_password_protect:'Encrypt', item_password_unlock_btn:'Unlock', item_password_lock:'Lock', item_password_remove:'Remove Protection',
     item_tags:'Tags', item_tags_edit:'Edit tags', item_tags_ph:'Comma-separated tags', item_tags_saved:'Tags saved', item_tags_save_failed:'Failed to save tags',
   },
   zh: {
@@ -424,6 +439,21 @@ const _dicts: Record<Lang, I18nDict> = {
     adv_filter:'高级筛选', filter_device:'设备', filter_all_devices:'全部设备', filter_from:'起始', filter_to:'结束', filter_tag:'标签', filter_tag_ph:'按标签筛选', filter_clear:'清除', filter_close:'关闭',
     item_protected_mask:'已加密', item_unlock:'解锁',
     item_password_set:'设置密码', item_password_unlock:'解锁', item_password_managed:'已设密码', item_password_updated:'已更新', item_password_unsupported:'条目密码仅支持文字/链接/代码',
+    cancel:'取消',
+    item_password_set_title:'设置条目密码', item_password_unlock_title:'解锁条目', item_password_managed_title:'条目密码保护',
+    item_password_set_desc:'为该条目设置独立密码。加密在本地完成，密码不会上传服务器。',
+    item_password_unlock_desc:'该条目已加密。输入密码以在当前会话查看与复制。',
+    item_password_new:'密码', item_password_new_ph:'输入密码（至少 4 位）',
+    item_password_confirm:'确认密码', item_password_confirm_ph:'再次输入密码',
+    item_password_enter:'密码', item_password_enter_ph:'输入条目密码',
+    item_password_too_short:'密码至少 4 位', item_password_mismatch:'两次输入的密码不一致',
+    item_password_no_content:'无法获取条目明文内容', item_password_set_failed:'设置密码失败，请重试',
+    item_password_set_error:'加密失败：', item_password_required:'请输入密码',
+    item_password_load_failed:'无法加载加密内容', item_password_wrong:'密码错误',
+    item_password_unlock_error:'解密失败：', item_password_unlock_first:'请先解锁再移除保护',
+    item_password_remove_failed:'移除保护失败，请重试', item_password_remove_error:'移除失败：',
+    item_password_unlocked:'已解锁，当前会话可查看与复制', item_password_mask:'[受密码保护]',
+    item_password_protect:'加密保护', item_password_unlock_btn:'解锁', item_password_lock:'锁定', item_password_remove:'移除保护',
     item_tags:'标签', item_tags_edit:'编辑标签', item_tags_ph:'逗号分隔的多个标签', item_tags_saved:'标签已保存', item_tags_save_failed:'标签保存失败',
     nav_profile:'个人资料', nav_subscription:'订阅', nav_settings:'设置',
     nav_templates:'模板库',
@@ -837,11 +867,13 @@ export function useI18n() {
   const currentLang = computed(() => _lang.value)
   const dict = computed(() => _dicts[_lang.value])
 
-  function t(key: string, params?: Record<string, string | number>): string {
+  function t(key: string, fallbackOrParams?: string | Record<string, string | number>): string {
     let val = dict.value[key]
     if (!val) val = _dicts.en[key] ?? key
-    if (params) {
-      Object.entries(params).forEach(([k, v]) => {
+    if (typeof fallbackOrParams === 'string') {
+      if (val === key) val = fallbackOrParams
+    } else if (fallbackOrParams) {
+      Object.entries(fallbackOrParams).forEach(([k, v]) => {
         val = val.replace(`{${k}}`, String(v))
       })
     }
