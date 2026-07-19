@@ -13,6 +13,7 @@ export const setClipboardContent = (content: string) => invoke('set_clipboard_co
 export const getClipboardFiles = () => invoke<string[]>('get_clipboard_files')
 export const setClipboardFiles = (paths: string[]) => invoke('set_clipboard_files', { paths })
 export const readFileContent = (path: string) => invoke<string>('read_file_content', { path })
+export const readFileContentBase64 = (path: string) => invoke<string>('read_file_content_base64', { path })
 export const copyLocalFiles = (paths: string[]) => invoke<string>('copy_local_files', { paths })
 export const saveAndCopyFile = (base64Data: string, filename: string) =>
   invoke<string>('save_and_copy_file', { base64Data, filename })

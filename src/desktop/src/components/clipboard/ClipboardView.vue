@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/table'
 import Badge from '@/components/ui/badge/Badge.vue'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { getFavoriteCollections, addCollectionItem, createFavoriteCollection, createSharedLink } from '@/api/client'
+import { getFavoriteCollections, addCollectionItem, createFavoriteCollection, createSharedLink, uploadSharedFile } from '@/api/client'
 import { api } from '@/api/client'
 
 const emit = defineEmits<{
@@ -574,6 +574,9 @@ async function shareItem(item: ClipItem) {
       content: payload.content,
       title: payload.title,
       contentType: payload.contentType,
+      fileKey: payload.fileKey,
+      fileName: payload.fileName,
+      fileSize: payload.fileSize,
     })
     if (!created) {
       toast.show(t('shared_link_create_err'), 'error')
@@ -587,7 +590,40 @@ async function shareItem(item: ClipItem) {
   }
 }
 
-async function buildSharePayload(item: ClipItem): Promise<{ content: string; title: string; contentType: string } | null> {
+function extractFilePath(content: string): string | null {
+  try {
+    const parsed = JSON.parse(content)
+    if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.paths) && parsed.paths[0]) return parsed.paths[0]
+      if (Array.isArray(parsed) && typeof parsed[0] === 'string') return parsed[0]
+    }
+  } catch { /* not JSON */ }
+  const raw = content.trim()
+  if (raw.startsWith('["') && raw.includes('\\')) {
+    try {
+      const paths = JSON.parse(raw)
+      if (Array.isArray(paths) && paths[0]) return paths[0]
+    } catch { /* ignore */ }
+  }
+  if (raw.includes('\\') || raw.includes('/')) return raw
+  return null
+}
+
+function base64ToBlob(base64: string, type = 'application/octet-stream'): Blob {
+  const byteCharacters = atob(base64)
+  const byteArrays: Uint8Array[] = []
+  for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+    const slice = byteCharacters.slice(offset, offset + 512)
+    const byteNumbers = new Array(slice.length)
+    for (let i = 0; i < slice.length; i++) {
+      byteNumbers[i] = slice.charCodeAt(i)
+    }
+    byteArrays.push(new Uint8Array(byteNumbers))
+  }
+  return new Blob(byteArrays, { type })
+}
+
+async function buildSharePayload(item: ClipItem): Promise<{ content: string; title: string; contentType: string; fileKey?: string; fileName?: string; fileSize?: number } | null> {
   const isLocalItem = /^local-|^text-|^file-|^img-|^browser-/.test(item.id)
   const contentSize = item.contentSize || 0
 
@@ -632,14 +668,39 @@ async function buildSharePayload(item: ClipItem): Promise<{ content: string; tit
     }
   }
 
-  // 文件：当前后端分享模型只接收一个 content 字符串，分享文件元数据（文件名/大小）
+  // 文件：读取真实文件、上传到后端，生成可下载的分享链接
   if (item.type === 'file') {
-    const display = formatContent(item) || item.content
-    if (!display) return null
+    const filePath = extractFilePath(item.content)
+    if (!filePath) {
+      console.warn('[Clipboard] share file: no file path found in item.content')
+      return null
+    }
+    let base64: string
+    try {
+      base64 = await tauri.readFileContentBase64(filePath)
+    } catch (e: any) {
+      console.warn('[Clipboard] failed to read file for share:', e?.message || e)
+      return null
+    }
+    const fileName = formatContent(item) || filePath.split(/[/\\]/).pop() || 'file'
+    const blob = base64ToBlob(base64)
+    const file = new File([blob], fileName)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.show(t('shared_link_file_too_large'), 'warning')
+      return null
+    }
+    const uploaded = await uploadSharedFile(file)
+    if (!uploaded) {
+      console.warn('[Clipboard] failed to upload file for share')
+      return null
+    }
     return {
-      content: display,
-      title: display.slice(0, 60),
+      content: '',
+      title: fileName,
       contentType: 'file',
+      fileKey: uploaded.fileKey,
+      fileName: uploaded.fileName,
+      fileSize: uploaded.fileSize,
     }
   }
 
