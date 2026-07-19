@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import * as tauri from '@/lib/tauri'
 import { api, apiBlob, apiForm } from '@/api/client'
+import { useItemPassword } from '@/composables/useItemPassword'
 import { useConfigStore } from '@/stores/configStore'
 import { useI18n } from '@/composables/useI18n'
 import { enqueue, initOfflineSync, getQueueSize } from '@/utils/offlineQueue'
@@ -22,6 +23,10 @@ export interface ClipItem {
   favoritedAt?: number
   contentSize?: number
   metadata?: any
+  // === 高级搜索 / 条目级密码 字段 ===
+  sourceDeviceId?: string
+  tags?: string[]
+  isProtected?: boolean
 }
 
 // === SINGLETON STATE - module-level refs shared across all callers ===
@@ -51,6 +56,23 @@ const pageSize = ref(50)
 const totalItems = ref(0)
 const loadingMore = ref(false)
 const hasMore = computed(() => totalItems.value > 0 && items.value.length < totalItems.value)
+
+// === 高级搜索筛选（device / date range / tag）===
+// 与 activeFilter/searchQuery 同理，使用 module-level ref 让筛选面板双向绑定，
+// 并由 loadClipboardItems 读取它们拼接到后端查询参数。
+const advancedFilters = ref<{
+  deviceId: string
+  dateFrom: string
+  dateTo: string
+  tag: string
+}>({
+  deviceId: '',
+  dateFrom: '',
+  dateTo: '',
+  tag: '',
+})
+// 设备列表（用于筛选下拉），懒加载 + 内存缓存，避免每次打开筛选面板都打 /api/devices
+let devicesCache: { id: string; name: string; platform?: string }[] = []
 
 let lastImageSize = 0
 // 图片按 PNG content hash 去重（不是 Rust raw-DIB hash），避免某些剪贴板源
@@ -395,8 +417,18 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
   const filterToContentType: Record<string, string> = { text: 'text', images: 'image', links: 'link', files: 'file' }
   const contentType = (!loadAll && !loadFavorites) ? (filterToContentType[activeFilter.value] || '') : ''
   const typeParam = contentType ? `&contentType=${encodeURIComponent(contentType)}` : ''
+  // 高级筛选参数：deviceId / dateFrom / dateTo / tag，全部走后端精确过滤。
+  // 注意：加载"全部/收藏"时仍可叠加这些筛选；但 all=true 模式用来表示"不按分类裁剪"，
+  // 与高级筛选是正交的，故始终附加。
+  const af = advancedFilters.value
+  const advParts: string[] = []
+  if (af.deviceId && af.deviceId.trim()) advParts.push(`deviceId=${encodeURIComponent(af.deviceId.trim())}`)
+  if (af.dateFrom && af.dateFrom.trim()) advParts.push(`dateFrom=${encodeURIComponent(af.dateFrom.trim())}`)
+  if (af.dateTo && af.dateTo.trim()) advParts.push(`dateTo=${encodeURIComponent(af.dateTo.trim())}`)
+  if (af.tag && af.tag.trim()) advParts.push(`tag=${encodeURIComponent(af.tag.trim())}`)
+  const advParamStr = advParts.length > 0 ? `&${advParts.join('&')}` : ''
   try {
-  const res = await api('GET', `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}`)
+  const res = await api('GET', `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}`)
   if (res.ok && Array.isArray(res.data?.items)) {
     totalItems.value = res.data?.pagination?.total ?? res.data.items.length
     const serverIds = new Set(res.data.items.map((i: any) => i.id))
@@ -474,6 +506,10 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
         favoritedAt: i.favoritedAt ? new Date(i.favoritedAt).getTime() : undefined,
         metadata: i.metadata, // ← 必须映射，否则刷新后 tags/paths 等元数据丢失
         contentSize: i.contentSize,
+        // === 高级搜索 / 条目级密码 ===
+        sourceDeviceId: i.sourceDevice?.id || i.sourceDeviceId || undefined,
+        tags: (i.metadata && Array.isArray(i.metadata.tags)) ? i.metadata.tags : undefined,
+        isProtected: !!(i.metadata && i.metadata.protected === true),
       }
     })
     if (append) {
@@ -509,6 +545,72 @@ async function loadMore() {
   const next = currentPage.value + 1
   await loadClipboardItems({ page: next, append: true })
   currentPage.value = next
+}
+
+// === 高级搜索：设备列表（用于筛选下拉）===
+async function loadDevices(): Promise<{ id: string; name: string; platform?: string }[]> {
+  if (devicesCache.length > 0) return devicesCache
+  try {
+    const res = await api('GET', '/api/devices')
+    const list = res.data?.devices || res.data
+    if (res.ok && Array.isArray(list)) {
+      devicesCache = list.map((d: any) => ({
+        id: d.id,
+        name: d.device_name || d.deviceName || d.id,
+        platform: d.platform,
+      }))
+    }
+  } catch (e: any) {
+    console.warn('[Clipboard] loadDevices failed:', e?.message || e)
+  }
+  return devicesCache
+}
+
+// === 条目级内容更新（标签 / 条目级密码 protection 标记 / 内容本身）===
+// 后端 PUT /api/clipboard/:id 做浅合并：只接受 metadata 白名单字段
+// (protected/protectedAt/tags) 与可选的 content/contentPreview/contentSize。
+async function updateItemContent(
+  itemId: string,
+  payload: {
+    metadata?: Record<string, any>
+    content?: string
+    contentPreview?: string
+    contentSize?: number
+  },
+): Promise<boolean> {
+  try {
+    const res = await api('PUT', `/api/clipboard/${itemId}`, payload)
+    if (!res.ok) {
+      console.warn('[Clipboard] updateItemContent failed:', res.status, res.error)
+      return false
+    }
+    // 乐观更新：把返回的最新值同步到本地列表对应条目，避免整表刷新闪烁。
+    const updated = res.data
+    if (updated) {
+      const item = items.value.find(i => i.id === itemId)
+      if (item) {
+        if (updated.metadata !== undefined) {
+          item.metadata = updated.metadata
+          const meta = updated.metadata
+          item.tags = Array.isArray(meta?.tags) ? meta.tags : item.tags
+          item.isProtected = !!(meta && meta.protected === true)
+        }
+        if (updated.contentPreview !== undefined) item.preview = updated.contentPreview
+        if (updated.contentSize !== undefined) item.contentSize = updated.contentSize
+        if (updated.sourceDeviceId !== undefined) item.sourceDeviceId = updated.sourceDeviceId
+      }
+    }
+    return true
+  } catch (e: any) {
+    console.warn('[Clipboard] updateItemContent error:', e?.message || e)
+    return false
+  }
+}
+
+// === 清空高级筛选并重新拉取 ===
+function clearAdvancedFilters() {
+  advancedFilters.value = { deviceId: '', dateFrom: '', dateTo: '', tag: '' }
+  loadClipboardItems({ page: 1, append: false })
 }
 
 // 图片异步加载队列（防并发 + 防竞态 + 429 保护）
@@ -1031,6 +1133,16 @@ export function useClipboard() {
 
   async function copyItem(item: ClipItem) {
     try {
+      // === 条目级密码保护：受保护且未解锁的条目禁止复制 ===
+      // 受保护且已解锁的条目：用会话内存中的明文（服务端存的是密文，不能从 /content 拉）。
+      const itemPw = useItemPassword()
+      if (itemPw.isItemProtected(item)) {
+        if (!itemPw.isUnlocked(item.id)) {
+          console.warn('[Clipboard] copy blocked: item is password protected and locked')
+          return false
+        }
+      }
+
       // 精确内容去重：复制时记录会写入剪贴板的实际内容/路径，monitor 检测到相同内容时跳过
       // 窗口只开 3s：足够 monitor 下一次轮询跳过自身复制，同时不会误杀紧接着的外部复制。
       skipNextPolls(3000)
@@ -1093,7 +1205,11 @@ export function useClipboard() {
       let textContent = item.content
       const isLocalItem = /^local-|^text-|^file-|^img-|^browser-/.test(item.id)
       const contentSize = item.contentSize || 0
-      const needsFetch = !isLocalItem && textContent.length > 0 &&
+      // 受保护且已解锁：服务端存的是密文，必须用会话内存里的明文，绝不向 /content 拉取。
+      if (itemPw.isItemProtected(item) && itemPw.isUnlocked(item.id)) {
+        textContent = itemPw.getUnlockedPlaintext(item.id) ?? item.content
+      }
+      const needsFetch = !isLocalItem && !itemPw.isItemProtected(item) && textContent.length > 0 &&
         (contentSize === 0 || textContent.length < contentSize)
       if (needsFetch) {
         try {
@@ -1398,6 +1514,8 @@ export function useClipboard() {
     resetImages,
     clearContentCache,
     isSensitiveContent,
+    // === 高级搜索 / 条目级密码 ===
+    advancedFilters, loadDevices, updateItemContent, clearAdvancedFilters,
   }
 }
 
