@@ -412,9 +412,19 @@ const _dicts: Record<Lang, I18nDict> = {
     reg_nickname_hint:'e.g. Alice, 2-30 chars', reg_email_hint:'Optional — for account recovery',
     reg_pwd_min_8:'Password must be at least 8 characters',
     auth_need_account:'Please enter your account', auth_pwd_too_short:'Password must be at least 6 characters',
+    // === 条目级密码 + 高级搜索 + 标签 (P0 desktop) ===
+    adv_filter:'Advanced Filter', filter_device:'Device', filter_all_devices:'All devices', filter_from:'From', filter_to:'To', filter_tag:'Tag', filter_tag_ph:'Filter by tag', filter_clear:'Clear', filter_close:'Close',
+    item_protected_mask:'Protected', item_unlock:'Unlock',
+    item_password_set:'Set password', item_password_unlock:'Unlock', item_password_managed:'Password set', item_password_updated:'Updated', item_password_unsupported:'Password protection only supports text/link/code',
+    item_tags:'Tags', item_tags_edit:'Edit tags', item_tags_ph:'Comma-separated tags', item_tags_saved:'Tags saved', item_tags_save_failed:'Failed to save tags',
   },
   zh: {
     nav_main:'主菜单', nav_account:'账号', nav_clipboard:'剪贴板', nav_favorites:'收藏', nav_devices:'设备', nav_shared_links:'共享链接',
+    // === 条目级密码 + 高级搜索 + 标签 (P0 desktop) ===
+    adv_filter:'高级筛选', filter_device:'设备', filter_all_devices:'全部设备', filter_from:'起始', filter_to:'结束', filter_tag:'标签', filter_tag_ph:'按标签筛选', filter_clear:'清除', filter_close:'关闭',
+    item_protected_mask:'已加密', item_unlock:'解锁',
+    item_password_set:'设置密码', item_password_unlock:'解锁', item_password_managed:'已设密码', item_password_updated:'已更新', item_password_unsupported:'条目密码仅支持文字/链接/代码',
+    item_tags:'标签', item_tags_edit:'编辑标签', item_tags_ph:'逗号分隔的多个标签', item_tags_saved:'标签已保存', item_tags_save_failed:'标签保存失败',
     nav_profile:'个人资料', nav_subscription:'订阅', nav_settings:'设置',
     nav_templates:'模板库',
     templates_title:'模板库', templates_new:'新建模板', templates_search_ph:'搜索模板...',

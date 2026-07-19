@@ -11,7 +11,7 @@ import {
   Upload, Plus, Search, Trash2, Copy, Image as ImageIcon, Link,
   ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
   ClipboardList, Star, Bookmark, Archive, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
-  Check, X, Lock,
+  Check, X, Lock, Tag, Unlock, ShieldCheck, Filter,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -21,8 +21,10 @@ import {
 } from '@/components/ui/table'
 import Badge from '@/components/ui/badge/Badge.vue'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { getFavoriteCollections, addCollectionItem, createFavoriteCollection, createSharedLink, uploadSharedFile } from '@/api/client'
+import { getFavoriteCollections, addCollectionItem, createFavoriteCollection, createSharedLink, uploadSharedFile, setItemTags } from '@/api/client'
 import { api } from '@/api/client'
+import { useItemPassword } from '@/composables/useItemPassword'
+import ItemPasswordDialog from '@/components/clipboard/ItemPasswordDialog.vue'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -40,6 +42,74 @@ const toast = useSonner()
 const clip = useClipboard()
 const configStore = useConfigStore()
 const router = useRouter()
+
+const itemPw = useItemPassword()
+
+// === 高级搜索筛选面板 ===
+const showFilterPanel = ref(false)
+const devices = ref<{ id: string; name: string; platform?: string }[]>([])
+const deviceLoading = ref(false)
+async function toggleFilterPanel() {
+  showFilterPanel.value = !showFilterPanel.value
+  if (showFilterPanel.value && devices.value.length === 0 && !deviceLoading.value) {
+    deviceLoading.value = true
+    try { devices.value = await clip.loadDevices() } catch { /* ignore */ } finally { deviceLoading.value = false }
+  }
+}
+
+// 展示内容：受保护且已解锁时返回会话明文，否则返回原内容（列表只返回 preview，受保护项 preview 为掩码串）
+function displayContent(item: ClipItem): string {
+  if (itemPw.isItemProtected(item) && itemPw.isUnlocked(item.id)) {
+    return itemPw.getUnlockedPlaintext(item.id) ?? item.content
+  }
+  return item.content
+}
+
+// 复制/查看前检查条目级密码：受保护未解锁则弹出解锁框
+function requireUnlocked(item: ClipItem): boolean {
+  if (itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)) {
+    openItemPassword(item)
+    return false
+  }
+  return true
+}
+
+// === 条目级密码对话框 ===
+const pwDialogOpen = ref(false)
+const pwDialogItem = ref<ClipItem | null>(null)
+function openItemPassword(item: ClipItem) {
+  if (item.type === 'image' || item.type === 'file') {
+    toast.show(t('item_password_unsupported'), 'info')
+    return
+  }
+  pwDialogItem.value = item
+  pwDialogOpen.value = true
+}
+function onItemPasswordUpdated(_item: ClipItem) {
+  toast.show(t('item_password_updated'), 'success')
+}
+
+// === 条目标签编辑 ===
+const tagEditorItemId = ref<string | null>(null)
+const tagInput = ref('')
+function openTagEditor(item: ClipItem) {
+  tagEditorItemId.value = item.id
+  tagInput.value = (item.tags || []).join(', ')
+}
+async function saveItemTags(item: ClipItem) {
+  const tags = tagInput.value.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10)
+  const res = await setItemTags(item.id, tags)
+  if (res) {
+    item.tags = tags
+    if (!item.metadata) item.metadata = {}
+    item.metadata.tags = tags
+    toast.show(t('item_tags_saved'), 'success')
+  } else {
+    toast.show(t('item_tags_save_failed'), 'error')
+  }
+  tagEditorItemId.value = null
+}
+function closeTagEditor() { tagEditorItemId.value = null }
 // 用 computed 包裹 ref，确保 Vue 3 模板正确追踪响应式依赖
 const filteredItems = computed(() => clip.filteredItems.value)
 const allItems = computed(() => clip.items.value)
@@ -243,6 +313,7 @@ function showPeek(itemId: string) {
   }
 }
 async function copyWithPinCheck(item: ClipItem) {
+  if (!requireUnlocked(item)) return
   if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
     if (!privacy.pinSet.value) {
       emit('show-pin-setup')
@@ -257,6 +328,7 @@ async function copyWithPinCheck(item: ClipItem) {
 }
 
 function onDblClick(item: ClipItem) {
+  if (!requireUnlocked(item)) return
   if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
     if (!privacy.pinSet.value) {
       emit('show-pin-setup')
@@ -269,6 +341,7 @@ function onDblClick(item: ClipItem) {
   privacy.scheduleClipboardClear()
 }
 function onCopyItem(item: ClipItem) {
+  if (!requireUnlocked(item)) return
   if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
     emit('show-pin-dialog')
     return
@@ -800,10 +873,11 @@ function getTypeLabel(type: string): string {
 }
 
 function formatContent(item: ClipItem): string {
+  const content = displayContent(item)
   // 文件类型：始终尝试显示文件名
   if (item.type === 'file') {
     try {
-      const parsed = JSON.parse(item.content)
+      const parsed = JSON.parse(content)
       // { name, size, type } 格式
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.name) {
         return String(parsed.name)
@@ -819,7 +893,7 @@ function formatContent(item: ClipItem): string {
     } catch { /* not JSON */ }
 
     // 内容可能是文件路径数组字符串（旧格式）
-    const raw = item.content.trim()
+    const raw = content.trim()
     if (raw.startsWith('["') && raw.includes('\\')) {
       try {
         const paths = JSON.parse(raw)
@@ -839,7 +913,7 @@ function formatContent(item: ClipItem): string {
   }
 
   // 非文件类型：不再硬截断字符，视觉行数由 CSS line-clamp 控制
-  return item.content
+  return content
 }
 
 // 内容类型检测（带缓存，避免长文本列表渲染时反复正则扫描）
@@ -931,10 +1005,43 @@ function extractDomain(url: string): string {
         <Search :size="14" class="search-field-icon" />
         <Input v-model="searchInput" type="text" :placeholder="t('search_ph')" class="search-input" :aria-label="t('search_ph')" @input="clip.setSearch(searchInput)" />
       </div>
+      <Button variant="outline" size="sm" :class="{ 'filter-active': showFilterPanel }" @click="toggleFilterPanel" :title="t('adv_filter')">
+        <Filter :size="14" />
+        <span>{{ t('adv_filter') }}</span>
+      </Button>
       <Button v-if="selectedCount > 0" variant="ghost" size="icon-sm" class="batch-del-btn" @click="handleBatchDelete" :title="t('batch_select')">
         <Trash2 :size="15" />
         <span style="margin-left:2px;font-size:11px;">{{ selectedCount }}</span>
       </Button>
+    </div>
+
+    <!-- 高级搜索筛选面板 -->
+    <div v-if="showFilterPanel" class="adv-filter-panel">
+      <div class="adv-filter-grid">
+        <div class="adv-filter-field">
+          <label>{{ t('filter_device') }}</label>
+          <select v-model="clip.advancedFilters.value.deviceId" class="adv-filter-select" @change="clip.loadClipboardItems({ page: 1 })">
+            <option value="">{{ t('filter_all_devices') }}</option>
+            <option v-for="d in devices" :key="d.id" :value="d.id">{{ d.name }}</option>
+          </select>
+        </div>
+        <div class="adv-filter-field">
+          <label>{{ t('filter_from') }}</label>
+          <input type="date" v-model="clip.advancedFilters.value.dateFrom" class="adv-filter-input" @change="clip.loadClipboardItems({ page: 1 })" />
+        </div>
+        <div class="adv-filter-field">
+          <label>{{ t('filter_to') }}</label>
+          <input type="date" v-model="clip.advancedFilters.value.dateTo" class="adv-filter-input" @change="clip.loadClipboardItems({ page: 1 })" />
+        </div>
+        <div class="adv-filter-field">
+          <label>{{ t('filter_tag') }}</label>
+          <input type="text" v-model="clip.advancedFilters.value.tag" class="adv-filter-input" :placeholder="t('filter_tag_ph')" @keyup.enter="clip.loadClipboardItems({ page: 1 })" @blur="clip.loadClipboardItems({ page: 1 })" />
+        </div>
+      </div>
+      <div class="adv-filter-actions">
+        <Button variant="ghost" size="sm" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
+        <Button variant="outline" size="sm" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
+      </div>
     </div>
 
     <!-- Confirm Dialog -->
@@ -947,6 +1054,13 @@ function extractDomain(url: string): string {
       :confirm-variant="confirmVariant"
       @confirm="onConfirmDialog"
       @cancel="onCancelDialog"
+    />
+
+    <!-- 条目级密码对话框 -->
+    <ItemPasswordDialog
+      v-model:open="pwDialogOpen"
+      :item="pwDialogItem"
+      @updated="onItemPasswordUpdated"
     />
 
     <!-- Clipboard Table (shadcn-vue Data Table style) -->
@@ -992,8 +1106,16 @@ function extractDomain(url: string): string {
             </TableCell>
             <TableCell class="cell-content">
               <div class="cell-content-inner">
+                <!-- 条目级密码保护遮罩：受保护且未解锁时覆盖所有内容 -->
+                <template v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)">
+                  <div class="cell-protected-mask">
+                    <Lock :size="14" />
+                    <span>{{ t('item_protected_mask') }}</span>
+                    <button class="cell-peek-btn" @click.stop="openItemPassword(item)">{{ t('item_unlock') }}</button>
+                  </div>
+                </template>
                 <!-- 图片预览 -->
-                <span v-if="item.type === 'image'" class="cell-img-preview">
+                <span v-else-if="item.type === 'image'" class="cell-img-preview">
                   <img v-if="item.preview && item.preview !== 'loading'" :src="item.preview" alt="" class="cell-thumb" />
                   <div v-else class="cell-thumb cell-thumb-placeholder">
                     <ImageIcon :size="14" style="opacity:0.4" />
@@ -1004,15 +1126,15 @@ function extractDomain(url: string): string {
                   </div>
                 </span>
                 <!-- URL 链接样式 -->
-                <span v-else-if="item.type === 'link' || detectContentType(item.content) === 'url'" class="cell-link-preview">
+                <span v-else-if="item.type === 'link' || detectContentType(displayContent(item)) === 'url'" class="cell-link-preview">
                   <template v-if="isItemSensitive(item) && peekItemId !== item.id">
                     <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button></div>
                   </template>
                   <template v-else>
                     <ExternalLink :size="12" class="cell-link-icon" />
                     <span class="cell-link-content">
-                      <span class="cell-link-text">{{ item.content }}</span>
-                      <span class="cell-link-domain">{{ extractDomain(item.content) }}</span>
+                      <span class="cell-link-text">{{ displayContent(item) }}</span>
+                      <span class="cell-link-domain">{{ extractDomain(displayContent(item)) }}</span>
                     </span>
                   </template>
                 </span>
@@ -1029,11 +1151,11 @@ function extractDomain(url: string): string {
                   </template>
                 </span>
                 <!-- 代码样式 -->
-                <span v-else-if="detectContentType(item.content) === 'code'" class="cell-code-preview">
+                <span v-else-if="detectContentType(displayContent(item)) === 'code'" class="cell-code-preview">
                   <template v-if="isItemSensitive(item) && peekItemId !== item.id">
                     <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button></div>
                   </template>
-                  <template v-else><code>{{ item.content }}</code></template>
+                  <template v-else><code>{{ displayContent(item) }}</code></template>
                 </span>
                 <!-- 普通文本 -->
                 <span v-else class="cell-text">
@@ -1079,6 +1201,15 @@ function extractDomain(url: string): string {
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click="onToggleSensitive(item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
                   <Lock :size="14" />
                 </Button>
+                <!-- 条目级密码保护（仅文本/链接/代码支持） -->
+                <Button v-if="item.type === 'text' || item.type === 'link' || detectContentType(displayContent(item)) === 'code'" variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'pw-locked': itemPw.isItemProtected(item) }" @click="openItemPassword(item)" :title="itemPw.isItemProtected(item) ? (itemPw.isUnlocked(item.id) ? t('item_password_managed') : t('item_password_unlock')) : t('item_password_set')">
+                  <Lock v-if="!itemPw.isItemProtected(item) || !itemPw.isUnlocked(item.id)" :size="14" />
+                  <Unlock v-else :size="14" />
+                </Button>
+                <!-- 标签 -->
+                <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'tag-active': item.tags && item.tags.length }" @click="openTagEditor(item)" :title="t('item_tags')">
+                  <Tag :size="14" />
+                </Button>
                 <!-- Star: favorite immediately, show popover or dropdown -->
                 <div class="add-col-wrap" :data-item-id="item.id">
                   <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click.stop="handleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
@@ -1119,6 +1250,15 @@ function extractDomain(url: string): string {
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide danger" @click="handleSingleDelete(item)" :title="t('delete')">
                   <Trash2 :size="14" />
                 </Button>
+                <!-- 标签编辑弹出层 -->
+                <div v-if="tagEditorItemId === item.id" class="tag-popover" @click.stop>
+                  <div class="tag-popover-title">{{ t('item_tags_edit') }}</div>
+                  <input v-model="tagInput" class="tag-popover-input" :placeholder="t('item_tags_ph')" maxlength="200" @keydown.enter="saveItemTags(item)" @keydown.esc="closeTagEditor()" />
+                  <div class="tag-popover-actions">
+                    <Button variant="outline" size="sm" class="min-w-[60px] rounded-md" @click="closeTagEditor()">{{ t('cancel') }}</Button>
+                    <Button variant="default" size="sm" class="min-w-[60px] rounded-md" @click="saveItemTags(item)">{{ t('save') }}</Button>
+                  </div>
+                </div>
               </div>
             </TableCell>
           </TableRow>
@@ -1432,4 +1572,52 @@ function extractDomain(url: string): string {
   from { opacity: 0; transform: translateY(-4px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* ===== 高级搜索筛选面板 ===== */
+.filter-active { border-color: var(--color-primary, #6366f1) !important; color: var(--color-primary, #6366f1) !important; }
+.adv-filter-panel {
+  display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  padding: 14px 24px; margin: 0 12px 4px; background: var(--bg-surface);
+  border: 1px solid var(--border-default); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+.adv-filter-grid { display: flex; gap: 14px; flex-wrap: wrap; flex: 1; }
+.adv-filter-field { display: flex; flex-direction: column; gap: 4px; }
+.adv-filter-field label { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+.adv-filter-select, .adv-filter-input {
+  height: 34px; padding: 0 10px; min-width: 150px;
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  background: var(--bg-input); color: var(--text-primary); font-size: 13px; outline: none;
+}
+.adv-filter-select:focus, .adv-filter-input:focus { border-color: var(--color-primary, #6366f1); }
+.adv-filter-actions { display: flex; gap: 8px; }
+
+/* ===== 条目级密码保护遮罩 ===== */
+.cell-protected-mask {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--color-primary, #6366f1) 40%, transparent);
+  border-radius: var(--radius-md); font-size: 13px; color: var(--text-secondary);
+}
+.cell-protected-mask .cell-peek-btn { margin-left: 4px; }
+
+/* ===== 条目操作按钮状态 ===== */
+.pw-locked { color: var(--color-primary, #6366f1) !important; }
+.tag-active { color: var(--color-primary, #6366f1) !important; }
+
+/* ===== 标签编辑弹出层 ===== */
+.tag-popover {
+  position: absolute; right: 8px; bottom: 40px; z-index: 50;
+  width: 240px; padding: 12px; background: var(--bg-surface);
+  border: 1px solid var(--border-default); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal); animation: favPopIn 0.12s ease;
+}
+.tag-popover-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
+.tag-popover-input {
+  width: 100%; height: 34px; padding: 0 10px; margin-bottom: 10px;
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  background: var(--bg-input); color: var(--text-primary); font-size: 13px; outline: none;
+}
+.tag-popover-input:focus { border-color: var(--color-primary, #6366f1); }
+.tag-popover-actions { display: flex; justify-content: flex-end; gap: 8px; }
 </style>

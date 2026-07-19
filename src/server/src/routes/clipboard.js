@@ -48,7 +48,7 @@ function detectContentType(content, declaredType) {
 // GET /api/clipboard - List clipboard items (with pagination)
 router.get('/', apiLimiter, async (req, res) => {
   try {
-    const { page = 1, limit = 50, contentType, search, favorites, all } = req.query;
+    const { page = 1, limit = 50, contentType, search, favorites, all, deviceId, dateFrom, dateTo, tag } = req.query;
 
     // 验证分页参数
     const pagination = validatePagination(page, limit, { all: all === 'true' });
@@ -98,6 +98,45 @@ router.get('/', apiLimiter, async (req, res) => {
       }
     }
 
+    // Advanced filters: device / date range / tag
+    if (deviceId) {
+      if (!isValidUUID(deviceId)) {
+        return res.status(400).json({ error: 'Invalid deviceId' });
+      }
+      whereClause += ` AND ci.source_device_id = $${paramIndex}`;
+      params.push(deviceId);
+      paramIndex++;
+    }
+
+    if (dateFrom) {
+      const df = new Date(dateFrom);
+      if (isNaN(df.getTime())) {
+        return res.status(400).json({ error: 'Invalid dateFrom' });
+      }
+      whereClause += ` AND ci.created_at >= $${paramIndex}`;
+      params.push(df.toISOString());
+      paramIndex++;
+    }
+
+    if (dateTo) {
+      const dt = new Date(dateTo);
+      if (isNaN(dt.getTime())) {
+        return res.status(400).json({ error: 'Invalid dateTo' });
+      }
+      whereClause += ` AND ci.created_at <= $${paramIndex}`;
+      params.push(dt.toISOString());
+      paramIndex++;
+    }
+
+    if (tag) {
+      const cleanTag = sanitizeString(String(tag).trim());
+      if (cleanTag) {
+        whereClause += ` AND ci.metadata->'tags' @> $${paramIndex}::jsonb`;
+        params.push(JSON.stringify([cleanTag]));
+        paramIndex++;
+      }
+    }
+
     // Get total count
     const countResult = await pool.query(
       `SELECT COUNT(*) FROM clipboard_items ci ${whereClause}`,
@@ -109,7 +148,7 @@ router.get('/', apiLimiter, async (req, res) => {
     const limitClause = useLimit ? `LIMIT $${paramIndex} OFFSET $${paramIndex + 1}` : ''
     const itemsResult = await pool.query(
       `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
-              ci.metadata, ci.is_favorite, ci.favorited_at, ci.expires_at, ci.created_at,
+              ci.source_device_id, ci.metadata, ci.is_favorite, ci.favorited_at, ci.expires_at, ci.created_at,
               d.device_name, d.platform
        FROM clipboard_items ci
        LEFT JOIN devices d ON ci.source_device_id = d.id
@@ -131,6 +170,7 @@ router.get('/', apiLimiter, async (req, res) => {
         expiresAt: item.expires_at,
         createdAt: item.created_at,
         sourceDevice: {
+          id: item.source_device_id,
           name: item.device_name,
           platform: item.platform,
         },
@@ -549,6 +589,106 @@ router.put('/:id/sensitive', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('Toggle sensitive error:', { error: err.message });
     res.status(500).json({ error: 'Failed to toggle sensitive' });
+  }
+});
+
+// PUT /api/clipboard/:id - Update item (content + metadata shallow-merge)
+// Used by: per-item password protection, tag editing, server-side content re-encrypt.
+// Metadata merge is shallow (jsonb ||) — only allowed keys are written.
+router.put('/:id', apiLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content, contentPreview, contentSize, metadata } = req.body;
+
+    if (!isValidUUID(id)) return res.status(400).json({ error: 'Invalid ID format' });
+
+    // Validate the metadata patch — only allow known keys (shallow merge)
+    let metaPatch = null;
+    if (metadata !== undefined) {
+      if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
+        return res.status(400).json({ error: 'metadata must be an object' });
+      }
+      const allowed = ['protected', 'protectedAt', 'tags'];
+      metaPatch = {};
+      for (const key of allowed) {
+        if (key in metadata) metaPatch[key] = metadata[key];
+      }
+      if ('protected' in metaPatch && typeof metaPatch.protected !== 'boolean') {
+        return res.status(400).json({ error: 'protected must be a boolean' });
+      }
+      if ('tags' in metaPatch && !Array.isArray(metaPatch.tags)) {
+        return res.status(400).json({ error: 'tags must be an array' });
+      }
+      if ('protectedAt' in metaPatch && metaPatch.protectedAt !== null && typeof metaPatch.protectedAt !== 'string') {
+        return res.status(400).json({ error: 'protectedAt must be a string or null' });
+      }
+    }
+
+    // Validate content fields
+    if (content !== undefined && typeof content !== 'string') {
+      return res.status(400).json({ error: 'content must be a string' });
+    }
+    if (contentPreview !== undefined && typeof contentPreview !== 'string') {
+      return res.status(400).json({ error: 'contentPreview must be a string' });
+    }
+    if (contentSize !== undefined && (!Number.isInteger(contentSize) || contentSize < 0)) {
+      return res.status(400).json({ error: 'contentSize must be a non-negative integer' });
+    }
+
+    // Build dynamic SET clause
+    const setClauses = [];
+    const params = [id, req.userId];
+    let p = 3;
+
+    if (content !== undefined) {
+      setClauses.push(`content_encrypted = $${p++}`);
+      params.push(content);
+    }
+    if (contentPreview !== undefined) {
+      setClauses.push(`content_preview = $${p++}`);
+      params.push(contentPreview);
+    }
+    if (contentSize !== undefined) {
+      setClauses.push(`content_size = $${p++}`);
+      params.push(contentSize);
+    }
+    if (metaPatch !== null) {
+      setClauses.push(`metadata = metadata || $${p}::jsonb`);
+      params.push(JSON.stringify(metaPatch));
+      p++;
+    }
+
+    if (setClauses.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    const result = await pool.query(
+      `UPDATE clipboard_items
+       SET ${setClauses.join(', ')}
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, content_type, content_preview, content_size, metadata, is_favorite, source_device_id, created_at`,
+      params
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Clipboard item not found' });
+
+    const item = result.rows[0];
+    const payload = {
+      id: item.id,
+      contentType: item.content_type,
+      contentPreview: item.content_preview,
+      contentSize: item.content_size,
+      metadata: item.metadata,
+      isFavorite: item.is_favorite,
+      sourceDeviceId: item.source_device_id,
+      createdAt: item.created_at,
+    };
+    res.json(payload);
+
+    broadcastToUser(req.userId, { type: 'clipboard_updated', item: payload });
+  } catch (err) {
+    logger.error('Update clipboard item error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to update clipboard item' });
   }
 });
 
