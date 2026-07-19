@@ -418,3 +418,12 @@ body {
 .border-default { border-color: var(--border-default); }
 .border-subtle { border-color: var(--border-subtle); }
 .border-focus { border-color: var(--border-focus); }
+
+/* ============================================================
+   SELECT OVERRIDE — force compact trigger height globally
+   ============================================================ */
+.custom-select-trigger {
+  height: 36px !important;
+  min-height: 36px !important;
+  box-sizing: border-box;
+}
