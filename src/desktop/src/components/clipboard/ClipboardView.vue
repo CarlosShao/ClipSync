@@ -1078,7 +1078,7 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_from') }}</label>
           <Popover>
             <PopoverTrigger as-child>
-              <Button variant="outline" class="font-normal h-10 px-3 gap-2 min-w-[90px] rounded-md">
+              <Button variant="outline" class="font-normal h-9 px-3 gap-2 min-w-[90px] rounded-md">
                 <CalendarIcon class="h-4 w-4 shrink-0" />
                 <span class="truncate">{{ clip.advancedFilters.value.dateFrom || t('filter_from') }}</span>
               </Button>
@@ -1092,7 +1092,7 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_to') }}</label>
           <Popover>
             <PopoverTrigger as-child>
-              <Button variant="outline" class="font-normal h-10 px-3 gap-2 min-w-[90px] rounded-md">
+              <Button variant="outline" class="font-normal h-9 px-3 gap-2 min-w-[90px] rounded-md">
                 <CalendarIcon class="h-4 w-4 shrink-0" />
                 <span class="truncate">{{ clip.advancedFilters.value.dateTo || t('filter_to') }}</span>
               </Button>
@@ -1106,7 +1106,7 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_tag') }}</label>
           <Input
             v-model="clip.advancedFilters.value.tag"
-            class="h-10 text-sm px-4 w-40"
+            class="h-9 text-sm px-4 w-40"
             :placeholder="t('filter_tag_ph')"
             @keyup.enter="clip.loadClipboardItems({ page: 1 })"
             @blur="clip.loadClipboardItems({ page: 1 })"
@@ -1637,6 +1637,7 @@ function extractDomain(url: string): string {
 .adv-filter-field { display: flex; flex-direction: column; gap: 8px; }
 .adv-filter-field label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
 .adv-filter-select-cs { min-width: 150px; max-width: 200px; }
+.adv-filter-select-cs :deep(.custom-select-trigger) { height: 36px; }
 .adv-filter-actions { display: flex; gap: 12px; align-items: flex-end; }
 .cell-protected-mask {
   display: flex; align-items: center; gap: 8px; padding: 6px 10px;
