@@ -11,7 +11,7 @@ import {
   Upload, Plus, Search, Trash2, Copy, Image as ImageIcon, Link,
   ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
   ClipboardList, Star, Bookmark, Archive, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
-  Check, X, Lock, Tag, Unlock, ShieldCheck, Filter,
+  Check, X, Lock, Tag, Unlock, ShieldCheck, Filter, KeyRound,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -25,6 +25,8 @@ import { getFavoriteCollections, addCollectionItem, createFavoriteCollection, cr
 import { api } from '@/api/client'
 import { useItemPassword } from '@/composables/useItemPassword'
 import ItemPasswordDialog from '@/components/clipboard/ItemPasswordDialog.vue'
+import CustomSelect from '@/components/ui/select/CustomSelect.vue'
+import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -55,6 +57,18 @@ async function toggleFilterPanel() {
     deviceLoading.value = true
     try { devices.value = await clip.loadDevices() } catch { /* ignore */ } finally { deviceLoading.value = false }
   }
+}
+
+// 设备筛选：当前选中设备的名称（用于 CustomSelect 触发器展示）
+const deviceLabel = computed(() => {
+  const id = clip.advancedFilters.value.deviceId
+  if (!id) return t('filter_all_devices')
+  const d = devices.value.find(x => x.id === id)
+  return d ? d.name : t('filter_all_devices')
+})
+function onDeviceChange(v: string) {
+  clip.advancedFilters.value.deviceId = v
+  clip.loadClipboardItems({ page: 1 })
 }
 
 // 展示内容：受保护且已解锁时返回会话明文，否则返回原内容（列表只返回 preview，受保护项 preview 为掩码串）
@@ -1020,10 +1034,19 @@ function extractDomain(url: string): string {
       <div class="adv-filter-grid">
         <div class="adv-filter-field">
           <label>{{ t('filter_device') }}</label>
-          <select v-model="clip.advancedFilters.value.deviceId" class="adv-filter-select" @change="clip.loadClipboardItems({ page: 1 })">
-            <option value="">{{ t('filter_all_devices') }}</option>
-            <option v-for="d in devices" :key="d.id" :value="d.id">{{ d.name }}</option>
-          </select>
+          <CustomSelect v-model="clip.advancedFilters.value.deviceId" class="adv-filter-select-cs">
+            {{ deviceLabel }}
+            <template #options>
+              <CustomSelectOption value="" :selected="clip.advancedFilters.value.deviceId === ''" @select="onDeviceChange('')">{{ t('filter_all_devices') }}</CustomSelectOption>
+              <CustomSelectOption
+                v-for="d in devices"
+                :key="d.id"
+                :value="d.id"
+                :selected="clip.advancedFilters.value.deviceId === d.id"
+                @select="onDeviceChange(d.id)"
+              >{{ d.name }}</CustomSelectOption>
+            </template>
+          </CustomSelect>
         </div>
         <div class="adv-filter-field">
           <label>{{ t('filter_from') }}</label>
@@ -1111,7 +1134,7 @@ function extractDomain(url: string): string {
                   <div class="cell-protected-mask">
                     <Lock :size="14" />
                     <span>{{ t('item_protected_mask') }}</span>
-                    <button class="cell-peek-btn" @click.stop="openItemPassword(item)">{{ t('item_unlock') }}</button>
+                    <Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="openItemPassword(item)">{{ t('item_unlock') }}</Button>
                   </div>
                 </template>
                 <!-- 图片预览 -->
@@ -1122,13 +1145,13 @@ function extractDomain(url: string): string {
                   </div>
                   <div v-if="isItemSensitive(item) && peekItemId !== item.id" class="cell-mask-overlay">
                     <span>{{ t('content_masked') }}</span>
-                    <button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button>
+                    <Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</Button>
                   </div>
                 </span>
                 <!-- URL 链接样式 -->
                 <span v-else-if="item.type === 'link' || detectContentType(displayContent(item)) === 'url'" class="cell-link-preview">
                   <template v-if="isItemSensitive(item) && peekItemId !== item.id">
-                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button></div>
+                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</Button></div>
                   </template>
                   <template v-else>
                     <ExternalLink :size="12" class="cell-link-icon" />
@@ -1141,7 +1164,7 @@ function extractDomain(url: string): string {
                 <!-- 文件类型（必须在 code/url 检测之前，否则 JSON 路径数组会被误判为 code） -->
                 <span v-else-if="item.type === 'file'" class="cell-text">
                   <template v-if="isItemSensitive(item) && peekItemId !== item.id">
-                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button></div>
+                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</Button></div>
                   </template>
                   <template v-else>
                     <span v-if="item.id.startsWith('local-') || item.id.startsWith('file-')" class="syncing-label">
@@ -1153,14 +1176,14 @@ function extractDomain(url: string): string {
                 <!-- 代码样式 -->
                 <span v-else-if="detectContentType(displayContent(item)) === 'code'" class="cell-code-preview">
                   <template v-if="isItemSensitive(item) && peekItemId !== item.id">
-                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button></div>
+                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</Button></div>
                   </template>
                   <template v-else><code>{{ displayContent(item) }}</code></template>
                 </span>
                 <!-- 普通文本 -->
                 <span v-else class="cell-text">
                   <template v-if="isItemSensitive(item) && peekItemId !== item.id">
-                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><button class="cell-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button></div>
+                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</Button></div>
                   </template>
                   <template v-else>{{ formatContent(item) }}</template>
                 </span>
@@ -1203,7 +1226,7 @@ function extractDomain(url: string): string {
                 </Button>
                 <!-- 条目级密码保护（仅文本/链接/代码支持） -->
                 <Button v-if="item.type === 'text' || item.type === 'link' || detectContentType(displayContent(item)) === 'code'" variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'pw-locked': itemPw.isItemProtected(item) }" @click="openItemPassword(item)" :title="itemPw.isItemProtected(item) ? (itemPw.isUnlocked(item.id) ? t('item_password_managed') : t('item_password_unlock')) : t('item_password_set')">
-                  <Lock v-if="!itemPw.isItemProtected(item) || !itemPw.isUnlocked(item.id)" :size="14" />
+                  <KeyRound v-if="!itemPw.isItemProtected(item) || !itemPw.isUnlocked(item.id)" :size="14" />
                   <Unlock v-else :size="14" />
                 </Button>
                 <!-- 标签 -->
@@ -1219,32 +1242,32 @@ function extractDomain(url: string): string {
                   <div v-if="favPopoverItemId === item.id" class="fav-popover" :class="{ 'fav-popover--flipped': favPopoverFlipped }" @click.stop @mouseenter="onFavPopoverEnter" @mouseleave="onFavPopoverLeave">
                     <div class="fav-popover-msg">✓ {{ t('fav_popper_msg') }}</div>
                     <div class="fav-popover-cols">
-                      <button v-for="node in collectionTreeNodes" :key="node.id" class="fav-popover-col" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="pickCollection(item.id, node.id)">
+                      <Button v-for="node in collectionTreeNodes" :key="node.id" variant="ghost" size="sm" class="fav-popover-col w-full justify-start" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="pickCollection(item.id, node.id)">
                         <component :is="collectionIconMap[node.icon] || Folder" :size="14" />
                         <span>{{ node.name }}</span>
-                      </button>
+                      </Button>
                     </div>
                     <template v-if="!showFavNewInput">
-                      <button class="fav-popover-new" @click="showFavNewInput = true">
+                      <Button variant="outline" size="sm" class="w-full justify-start gap-1" @click="showFavNewInput = true">
                         <Plus :size="12" /> {{ t('fav_new_col') }}
-                      </button>
+                      </Button>
                     </template>
                     <template v-else>
-                      <div class="fav-popover-new-form">
-                        <input v-model="favNewName" class="fav-popover-input" :placeholder="t('fav_new_col_placeholder')" maxlength="100"
+                      <div class="flex items-center gap-1">
+                        <Input v-model="favNewName" class="h-8 flex-1 px-2 text-xs" :placeholder="t('fav_new_col_placeholder')" maxlength="100"
                           @keydown.enter="createAndMove(item.id)" @keydown.esc="dismissFavPopover()" />
-                        <button class="fav-popover-confirm" @click="createAndMove(item.id)" :title="t('confirm_t')"><Check :size="12" /></button>
-                        <button class="fav-popover-cancel" @click="dismissFavPopover()" :title="t('fav_cancel')"><X :size="12" /></button>
+                        <Button variant="default" size="icon-sm" @click="createAndMove(item.id)" :title="t('confirm_t')"><Check :size="12" /></Button>
+                        <Button variant="ghost" size="icon-sm" @click="dismissFavPopover()" :title="t('fav_cancel')"><X :size="12" /></Button>
                       </div>
                     </template>
                   </div>
                   <!-- Dropdown: shown when collections exist -->
                   <div v-if="addToColItemId === item.id && collections.length > 0" class="add-col-dropdown">
                     <div class="add-col-dropdown-title">收藏到</div>
-                    <button v-for="node in collectionTreeNodes" :key="node.id" class="add-col-option" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="addToCollection(node.id, item.id)">
+                    <Button v-for="node in collectionTreeNodes" :key="node.id" variant="ghost" size="sm" class="add-col-option w-full justify-start" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="addToCollection(node.id, item.id)">
                       <component :is="collectionIconMap[node.icon] || Folder" :size="14" />
                       <span>{{ node.name }}</span>
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide danger" @click="handleSingleDelete(item)" :title="t('delete')">
@@ -1253,7 +1276,7 @@ function extractDomain(url: string): string {
                 <!-- 标签编辑弹出层 -->
                 <div v-if="tagEditorItemId === item.id" class="tag-popover" @click.stop>
                   <div class="tag-popover-title">{{ t('item_tags_edit') }}</div>
-                  <input v-model="tagInput" class="tag-popover-input" :placeholder="t('item_tags_ph')" maxlength="200" @keydown.enter="saveItemTags(item)" @keydown.esc="closeTagEditor()" />
+                  <Input v-model="tagInput" class="h-9 px-3 text-xs" :placeholder="t('item_tags_ph')" maxlength="200" @keydown.enter="saveItemTags(item)" @keydown.esc="closeTagEditor()" />
                   <div class="tag-popover-actions">
                     <Button variant="outline" size="sm" class="min-w-[60px] rounded-md" @click="closeTagEditor()">{{ t('cancel') }}</Button>
                     <Button variant="default" size="sm" class="min-w-[60px] rounded-md" @click="saveItemTags(item)">{{ t('save') }}</Button>
@@ -1418,8 +1441,6 @@ function extractDomain(url: string): string {
 
 /* Privacy: sensitive content mask overlay */
 .cell-mask-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--bg-hover); border-radius: var(--radius-sm); font-size: 11px; color: var(--text-tertiary); z-index: 1; }
-.cell-peek-btn { padding: 2px 8px; border-radius: 9999px; border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 10px; color: var(--accent); cursor: pointer; white-space: nowrap; }
-.cell-peek-btn:hover { background: var(--accent-bg); border-color: var(--accent); }
 .cell-text-mask { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-tertiary); }
 
 /* URL 链接样式 */
@@ -1545,28 +1566,7 @@ function extractDomain(url: string): string {
   cursor: pointer; text-align: left; white-space: nowrap; transition: all 0.12s;
 }
 .fav-popover-col:hover { background: var(--accent-bg); color: var(--accent); }
-.fav-popover-new {
-  display: flex; align-items: center; gap: 4px; width: 100%;
-  padding: 5px 10px; border: 1px dashed var(--border-default); border-radius: var(--radius-sm);
-  background: transparent; font-size: 11px; color: var(--text-tertiary);
-  cursor: pointer; white-space: nowrap; transition: all 0.12s;
-}
-.fav-popover-new:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
-.fav-popover-new-form { display: flex; align-items: center; gap: 4px; }
-.fav-popover-input {
-  flex: 1; height: 28px; padding: 0 8px; border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm); font-size: 12px; background: var(--bg-surface);
-  color: var(--text-primary); outline: none; min-width: 0;
-}
-.fav-popover-confirm, .fav-popover-cancel {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px; border-radius: var(--radius-sm); border: none;
-  cursor: pointer; flex-shrink: 0; transition: all 0.12s;
-}
-.fav-popover-confirm { background: var(--success); color: white; }
-.fav-popover-confirm:hover { opacity: 0.85; }
-.fav-popover-cancel { background: var(--bg-hover); color: var(--text-tertiary); }
-.fav-popover-cancel:hover { background: var(--danger-bg); color: var(--danger); }
+/* fav-popover 内的操作按钮已统一改用 shadcn Button / Input 组件 */
 
 @keyframes favPopIn {
   from { opacity: 0; transform: translateY(-4px) scale(0.96); }
@@ -1577,20 +1577,21 @@ function extractDomain(url: string): string {
 .filter-active { border-color: var(--color-primary, #6366f1) !important; color: var(--color-primary, #6366f1) !important; }
 .adv-filter-panel {
   display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
-  padding: 14px 24px; margin: 0 12px 4px; background: var(--bg-surface);
+  padding: 16px 20px; margin: 0 12px 8px; background: var(--bg-surface);
   border: 1px solid var(--border-default); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
 }
-.adv-filter-grid { display: flex; gap: 14px; flex-wrap: wrap; flex: 1; }
-.adv-filter-field { display: flex; flex-direction: column; gap: 4px; }
+.adv-filter-grid { display: flex; gap: 16px; flex-wrap: wrap; flex: 1; align-items: flex-end; }
+.adv-filter-field { display: flex; flex-direction: column; gap: 6px; }
 .adv-filter-field label { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
-.adv-filter-select, .adv-filter-input {
-  height: 34px; padding: 0 10px; min-width: 150px;
+.adv-filter-input {
+  height: 40px; padding: 0 10px; min-width: 150px;
   border: 1px solid var(--border-default); border-radius: var(--radius-md);
   background: var(--bg-input); color: var(--text-primary); font-size: 13px; outline: none;
 }
-.adv-filter-select:focus, .adv-filter-input:focus { border-color: var(--color-primary, #6366f1); }
-.adv-filter-actions { display: flex; gap: 8px; }
+.adv-filter-input:focus { border-color: var(--color-primary, #6366f1); }
+.adv-filter-select-cs { min-width: 150px; max-width: 220px; }
+.adv-filter-actions { display: flex; gap: 8px; align-items: flex-end; }
 
 /* ===== 条目级密码保护遮罩 ===== */
 .cell-protected-mask {
@@ -1599,7 +1600,6 @@ function extractDomain(url: string): string {
   border: 1px dashed color-mix(in srgb, var(--color-primary, #6366f1) 40%, transparent);
   border-radius: var(--radius-md); font-size: 13px; color: var(--text-secondary);
 }
-.cell-protected-mask .cell-peek-btn { margin-left: 4px; }
 
 /* ===== 条目操作按钮状态 ===== */
 .pw-locked { color: var(--color-primary, #6366f1) !important; }
@@ -1613,11 +1613,5 @@ function extractDomain(url: string): string {
   box-shadow: var(--shadow-modal); animation: favPopIn 0.12s ease;
 }
 .tag-popover-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
-.tag-popover-input {
-  width: 100%; height: 34px; padding: 0 10px; margin-bottom: 10px;
-  border: 1px solid var(--border-default); border-radius: var(--radius-md);
-  background: var(--bg-input); color: var(--text-primary); font-size: 13px; outline: none;
-}
-.tag-popover-input:focus { border-color: var(--color-primary, #6366f1); }
 .tag-popover-actions { display: flex; justify-content: flex-end; gap: 8px; }
 </style>
