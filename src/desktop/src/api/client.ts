@@ -332,10 +332,18 @@ export interface SharedLink {
   title: string
   url: string
   contentType?: string
+  fileName?: string
+  fileSize?: number
   preview?: string
   views: number
   createdAt: string
   expiresAt?: string | null
+}
+
+export interface SharedFileUploadResult {
+  fileKey: string
+  fileName: string
+  fileSize: number
 }
 
 export async function getSharedLinks(): Promise<SharedLink[] | null> {
@@ -343,11 +351,35 @@ export async function getSharedLinks(): Promise<SharedLink[] | null> {
   return res.ok ? res.data?.links ?? [] : null
 }
 
+export async function uploadSharedFile(file: File): Promise<SharedFileUploadResult | null> {
+  const config = useConfigStore()
+  const formData = new FormData()
+  formData.append('file', file)
+  const headers: Record<string, string> = {}
+  const token = config.config.token
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  try {
+    const res = await fetch(`${config.serverUrl}/api/shared-links/upload-file`, {
+      method: 'POST',
+      body: formData,
+      headers,
+    })
+    if (!res.ok) return null
+    return await res.json() as SharedFileUploadResult
+  } catch (e: any) {
+    console.warn('[client] upload shared file failed', e?.message || e)
+    return null
+  }
+}
+
 export async function createSharedLink(payload: {
   content: string
   title?: string
   contentType?: string
   expiresInHours?: number
+  fileKey?: string
+  fileName?: string
+  fileSize?: number
 }): Promise<SharedLink | null> {
   const res = await api<SharedLink>('POST', '/api/shared-links', payload)
   return res.ok ? (res.data ?? null) : null
