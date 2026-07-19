@@ -1106,7 +1106,7 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_tag') }}</label>
           <Input
             v-model="clip.advancedFilters.value.tag"
-            class="h-9 text-sm px-4 w-40"
+            class="h-9 text-sm px-5 py-0 w-40"
             :placeholder="t('filter_tag_ph')"
             @keyup.enter="clip.loadClipboardItems({ page: 1 })"
             @blur="clip.loadClipboardItems({ page: 1 })"
@@ -1114,8 +1114,8 @@ function extractDomain(url: string): string {
         </div>
       </div>
       <div class="adv-filter-actions">
-        <Button variant="ghost" size="default" class="min-w-[100px] rounded-md px-5" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
-        <Button variant="outline" size="default" class="min-w-[100px] rounded-md px-5" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
+        <Button variant="ghost" size="sm" class="min-w-[100px] rounded-md px-5" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
+        <Button variant="outline" size="sm" class="min-w-[100px] rounded-md px-5" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
       </div>
     </div>
 
