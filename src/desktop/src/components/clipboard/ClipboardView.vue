@@ -1058,9 +1058,9 @@ function extractDomain(url: string): string {
     <!-- 高级搜索筛选面板 -->
     <div v-if="showFilterPanel" class="adv-filter-panel">
       <div class="adv-filter-grid">
-        <div class="adv-filter-field">
+        <div class="adv-filter-field adv-filter-field--device">
           <label>{{ t('filter_device') }}</label>
-          <CustomSelect v-model="clip.advancedFilters.value.deviceId" class="adv-filter-select-cs" size="sm">
+          <CustomSelect v-model="clip.advancedFilters.value.deviceId" class="adv-filter-select-cs" size="sm" @update:modelValue="onDeviceChange">
             {{ deviceLabel }}
             <template #options>
               <CustomSelectOption value="" :selected="clip.advancedFilters.value.deviceId === ''" @select="onDeviceChange('')">{{ t('filter_all_devices') }}</CustomSelectOption>
@@ -1078,7 +1078,7 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_from') }}</label>
           <Popover>
             <PopoverTrigger as-child>
-              <Button variant="outline" class="font-normal h-9 px-3 gap-2 min-w-[90px] rounded-md">
+              <Button variant="outline" class="font-normal h-8 px-3 gap-2 min-w-[90px] rounded-md">
                 <CalendarIcon class="h-4 w-4 shrink-0" />
                 <span class="truncate">{{ clip.advancedFilters.value.dateFrom || t('filter_from') }}</span>
               </Button>
@@ -1092,7 +1092,7 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_to') }}</label>
           <Popover>
             <PopoverTrigger as-child>
-              <Button variant="outline" class="font-normal h-9 px-3 gap-2 min-w-[90px] rounded-md">
+              <Button variant="outline" class="font-normal h-8 px-3 gap-2 min-w-[90px] rounded-md">
                 <CalendarIcon class="h-4 w-4 shrink-0" />
                 <span class="truncate">{{ clip.advancedFilters.value.dateTo || t('filter_to') }}</span>
               </Button>
@@ -1106,16 +1106,20 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_tag') }}</label>
           <Input
             v-model="clip.advancedFilters.value.tag"
-            class="h-9 text-sm px-5 py-0 w-40"
+            class="filter-input-sm text-sm w-40"
             :placeholder="t('filter_tag_ph')"
             @keyup.enter="clip.loadClipboardItems({ page: 1 })"
             @blur="clip.loadClipboardItems({ page: 1 })"
           />
         </div>
-      </div>
-      <div class="adv-filter-actions">
-        <Button variant="ghost" size="sm" class="min-w-[100px] rounded-md px-5" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
-        <Button variant="outline" size="sm" class="min-w-[100px] rounded-md px-5" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
+
+        <div class="adv-filter-field adv-filter-field--actions">
+          <div class="adv-filter-label-placeholder"></div>
+          <div class="adv-filter-actions-inline">
+            <Button variant="ghost" size="sm" class="min-w-[80px] rounded-md px-4 h-8" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
+            <Button variant="outline" size="sm" class="min-w-[80px] rounded-md px-4 h-8" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1633,11 +1637,20 @@ function extractDomain(url: string): string {
   border: 1px solid var(--border-default); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
 }
-.adv-filter-grid { display: flex; gap: 24px; flex-wrap: wrap; flex: 1; align-items: center; }
-.adv-filter-field { display: flex; flex-direction: column; gap: 8px; }
+.adv-filter-grid { display: flex; gap: 16px; flex-wrap: wrap; flex: 1; align-items: flex-end; }
+.adv-filter-field { display: flex; flex-direction: column; gap: 6px; }
+.adv-filter-field--actions { gap: 0; }
 .adv-filter-field label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
-.adv-filter-select-cs { min-width: 150px; max-width: 200px; }
-.adv-filter-actions { display: flex; gap: 12px; align-items: center; }
+.adv-filter-label-placeholder { height: 18px; }
+.adv-filter-field--device { min-width: 170px; }
+.adv-filter-field--actions { min-width: 180px; }
+.adv-filter-actions-inline { display: flex; gap: 8px; align-items: center; }
+.filter-input-sm {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 12px !important;
+  font-size: 13px !important;
+}
 .cell-protected-mask {
   display: flex; align-items: center; gap: 8px; padding: 6px 10px;
   background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);

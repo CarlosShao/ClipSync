@@ -22,6 +22,15 @@ function select(value: string) {
   open.value = false
 }
 
+// Close dropdown when modelValue changes externally (e.g. from @select handler)
+let lastModelValue: string | undefined
+watch(() => props.modelValue, (val) => {
+  if (open.value && val !== lastModelValue) {
+    open.value = false
+  }
+  lastModelValue = val
+})
+
 function handleClickOutside(e: MouseEvent) {
   if (dropdownRef.value && !dropdownRef.value.contains(e.target as Node)) {
     open.value = false
@@ -38,7 +47,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
       type="button"
       class="custom-select-trigger"
       :class="{ 'custom-select-trigger-sm': props.size === 'sm' }"
-      :style="props.size === 'sm' ? 'height: 36px !important; min-height: 36px !important; padding: 0 10px !important; font-size: 13px !important; box-sizing: border-box;' : undefined"
+      :style="props.size === 'sm' ? 'height: 32px !important; min-height: 32px !important; padding: 0 12px !important; font-size: 13px !important;' : undefined"
       @click="toggle"
     >
       <slot />
@@ -54,8 +63,8 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
 .custom-select {
   position: relative;
   width: 160px;
-  height: 36px;
-  min-height: 36px;
+  height: 32px;
+  min-height: 32px;
 }
 
 .custom-select-trigger {
@@ -64,8 +73,8 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
   justify-content: space-between;
   box-sizing: border-box;
   width: 100%;
-  height: 36px;
-  min-height: 36px;
+  height: 32px;
+  min-height: 32px;
   padding: 0 14px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
@@ -87,10 +96,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
 }
 
 .custom-select-trigger-sm {
-  height: 36px !important;
-  min-height: 36px !important;
-  padding: 0 10px !important;
-  font-size: 13px !important;
+  /* height/padding/font-size now controlled by inline CSS vars from :style binding */
 }
 
 .custom-select-chevron {
