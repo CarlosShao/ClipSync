@@ -45,13 +45,6 @@ const sharedFileStorage = multer.diskStorage({
 const sharedFileUpload = multer({
   storage: sharedFileStorage,
   limits: { fileSize: MAX_FILE_SIZE },
-  fileFilter: (req, file, cb) => {
-    // 屏蔽可执行脚本，降低分享恶意文件风险
-    const ext = path.extname(file.originalname).toLowerCase();
-    const blocked = ['.bat', '.cmd', '.ps1', '.vbs', '.wsf', '.sh', '.bash', '.php', '.asp', '.aspx', '.jsp', '.exe', '.dll', '.msi'];
-    if (blocked.includes(ext)) return cb(new Error('Script/executable files are not allowed'));
-    cb(null, true);
-  },
 });
 
 function getRequestOrigin(req) {
@@ -242,7 +235,7 @@ router.post('/', ...protect, apiLimiter, async (req, res) => {
       title: r.title,
       contentType: r.content_type,
       fileName: r.file_name,
-      fileSize: r.file_size,
+      fileSize: Number(r.file_size),
       views: r.views,
       createdAt: r.created_at,
       expiresAt: r.expires_at,
@@ -269,7 +262,7 @@ router.get('/', ...protect, apiLimiter, async (req, res) => {
       url: buildShareUrl(req, r.token),
       contentType: r.content_type,
       fileName: r.file_name,
-      fileSize: r.file_size,
+      fileSize: Number(r.file_size),
       preview: r.content_preview,
       views: r.views,
       createdAt: r.created_at,
@@ -353,7 +346,7 @@ router.get('/public/:token', apiLimiter, async (req, res) => {
         views: r.views,
         createdAt: r.created_at,
         fileName: r.file_name,
-        fileSize: r.file_size,
+        fileSize: Number(r.file_size),
         downloadUrl: buildFileDownloadUrl(req, r.token),
       }));
     }
@@ -364,7 +357,7 @@ router.get('/public/:token', apiLimiter, async (req, res) => {
       content,
       contentType: r.content_type,
       fileName: r.file_name,
-      fileSize: r.file_size,
+      fileSize: Number(r.file_size),
     });
   } catch (err) {
     logger.error('[sharedLinks] public fetch failed', err);
