@@ -11,7 +11,7 @@ import {
   Upload, Plus, Search, Trash2, Copy, Image as ImageIcon, Link,
   ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
   ClipboardList, Star, Bookmark, Archive, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
-  Check, X, Lock, Tag, Unlock, ShieldCheck, Filter, KeyRound,
+  Check, X, Lock, Tag, Unlock, ShieldCheck, Filter, KeyRound, Calendar as CalendarIcon,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -27,6 +27,9 @@ import { useItemPassword } from '@/composables/useItemPassword'
 import ItemPasswordDialog from '@/components/clipboard/ItemPasswordDialog.vue'
 import CustomSelect from '@/components/ui/select/CustomSelect.vue'
 import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+import { parseDate, type DateValue } from '@internationalized/date'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -70,6 +73,30 @@ function onDeviceChange(v: string) {
   clip.advancedFilters.value.deviceId = v
   clip.loadClipboardItems({ page: 1 })
 }
+
+// 日期筛选：字符串 YYYY-MM-DD <-> @internationalized/date DateValue
+const dateFromValue = computed<DateValue | undefined>({
+  get: () => {
+    const str = clip.advancedFilters.value.dateFrom
+    if (!str) return undefined
+    try { return parseDate(str) } catch { return undefined }
+  },
+  set: (val) => {
+    clip.advancedFilters.value.dateFrom = val ? val.toString() : ''
+    clip.loadClipboardItems({ page: 1 })
+  },
+})
+const dateToValue = computed<DateValue | undefined>({
+  get: () => {
+    const str = clip.advancedFilters.value.dateTo
+    if (!str) return undefined
+    try { return parseDate(str) } catch { return undefined }
+  },
+  set: (val) => {
+    clip.advancedFilters.value.dateTo = val ? val.toString() : ''
+    clip.loadClipboardItems({ page: 1 })
+  },
+})
 
 // 展示内容：受保护且已解锁时返回会话明文，否则返回原内容（列表只返回 preview，受保护项 preview 为掩码串）
 function displayContent(item: ClipItem): string {
@@ -1050,20 +1077,46 @@ function extractDomain(url: string): string {
         </div>
         <div class="adv-filter-field">
           <label>{{ t('filter_from') }}</label>
-          <input type="date" v-model="clip.advancedFilters.value.dateFrom" class="adv-filter-input" @change="clip.loadClipboardItems({ page: 1 })" />
+          <Popover>
+            <PopoverTrigger as-child>
+              <Button variant="outline" size="sm" class="w-full justify-start text-left font-normal h-10">
+                <CalendarIcon class="mr-2 h-4 w-4 shrink-0" />
+                <span class="truncate">{{ clip.advancedFilters.value.dateFrom || t('filter_from') }}</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent class="w-auto p-0">
+              <Calendar v-model="dateFromValue" />
+            </PopoverContent>
+          </Popover>
         </div>
         <div class="adv-filter-field">
           <label>{{ t('filter_to') }}</label>
-          <input type="date" v-model="clip.advancedFilters.value.dateTo" class="adv-filter-input" @change="clip.loadClipboardItems({ page: 1 })" />
+          <Popover>
+            <PopoverTrigger as-child>
+              <Button variant="outline" size="sm" class="w-full justify-start text-left font-normal h-10">
+                <CalendarIcon class="mr-2 h-4 w-4 shrink-0" />
+                <span class="truncate">{{ clip.advancedFilters.value.dateTo || t('filter_to') }}</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent class="w-auto p-0">
+              <Calendar v-model="dateToValue" />
+            </PopoverContent>
+          </Popover>
         </div>
         <div class="adv-filter-field">
           <label>{{ t('filter_tag') }}</label>
-          <input type="text" v-model="clip.advancedFilters.value.tag" class="adv-filter-input" :placeholder="t('filter_tag_ph')" @keyup.enter="clip.loadClipboardItems({ page: 1 })" @blur="clip.loadClipboardItems({ page: 1 })" />
+          <Input
+            v-model="clip.advancedFilters.value.tag"
+            class="h-10 text-sm"
+            :placeholder="t('filter_tag_ph')"
+            @keyup.enter="clip.loadClipboardItems({ page: 1 })"
+            @blur="clip.loadClipboardItems({ page: 1 })"
+          />
         </div>
       </div>
       <div class="adv-filter-actions">
-        <Button variant="ghost" size="sm" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
-        <Button variant="outline" size="sm" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
+        <Button variant="ghost" size="default" class="min-w-[80px]" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
+        <Button variant="outline" size="default" class="min-w-[80px]" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
       </div>
     </div>
 
@@ -1225,7 +1278,7 @@ function extractDomain(url: string): string {
                   <Lock :size="14" />
                 </Button>
                 <!-- 条目级密码保护（仅文本/链接/代码支持） -->
-                <Button v-if="item.type === 'text' || item.type === 'link' || detectContentType(displayContent(item)) === 'code'" variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'pw-locked': itemPw.isItemProtected(item) }" @click="openItemPassword(item)" :title="itemPw.isItemProtected(item) ? (itemPw.isUnlocked(item.id) ? t('item_password_managed') : t('item_password_unlock')) : t('item_password_set')">
+                <Button v-if="item.type === 'text' || item.type === 'link'" variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'pw-locked': itemPw.isItemProtected(item) }" @click="openItemPassword(item)" :title="itemPw.isItemProtected(item) ? (itemPw.isUnlocked(item.id) ? t('item_password_managed') : t('item_password_unlock')) : t('item_password_set')">
                   <KeyRound v-if="!itemPw.isItemProtected(item) || !itemPw.isUnlocked(item.id)" :size="14" />
                   <Unlock v-else :size="14" />
                 </Button>
@@ -1584,16 +1637,8 @@ function extractDomain(url: string): string {
 .adv-filter-grid { display: flex; gap: 16px; flex-wrap: wrap; flex: 1; align-items: flex-end; }
 .adv-filter-field { display: flex; flex-direction: column; gap: 6px; }
 .adv-filter-field label { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
-.adv-filter-input {
-  height: 40px; padding: 0 10px; min-width: 150px;
-  border: 1px solid var(--border-default); border-radius: var(--radius-md);
-  background: var(--bg-input); color: var(--text-primary); font-size: 13px; outline: none;
-}
-.adv-filter-input:focus { border-color: var(--color-primary, #6366f1); }
 .adv-filter-select-cs { min-width: 150px; max-width: 220px; }
-.adv-filter-actions { display: flex; gap: 8px; align-items: flex-end; }
-
-/* ===== 条目级密码保护遮罩 ===== */
+.adv-filter-actions { display: flex; gap: 10px; align-items: flex-end; }
 .cell-protected-mask {
   display: flex; align-items: center; gap: 8px; padding: 6px 10px;
   background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
