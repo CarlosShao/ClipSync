@@ -1079,12 +1079,12 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_from') }}</label>
           <Popover>
             <PopoverTrigger as-child>
-              <Button variant="outline" size="sm" class="w-full justify-start text-left font-normal h-10">
+              <Button variant="outline" class="w-full justify-start text-left font-normal h-10">
                 <CalendarIcon class="mr-2 h-4 w-4 shrink-0" />
                 <span class="truncate">{{ clip.advancedFilters.value.dateFrom || t('filter_from') }}</span>
               </Button>
             </PopoverTrigger>
-            <PopoverContent class="w-auto p-0">
+            <PopoverContent class="w-80 p-4">
               <Calendar v-model="dateFromValue" />
             </PopoverContent>
           </Popover>
@@ -1093,12 +1093,12 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_to') }}</label>
           <Popover>
             <PopoverTrigger as-child>
-              <Button variant="outline" size="sm" class="w-full justify-start text-left font-normal h-10">
+              <Button variant="outline" class="w-full justify-start text-left font-normal h-10">
                 <CalendarIcon class="mr-2 h-4 w-4 shrink-0" />
                 <span class="truncate">{{ clip.advancedFilters.value.dateTo || t('filter_to') }}</span>
               </Button>
             </PopoverTrigger>
-            <PopoverContent class="w-auto p-0">
+            <PopoverContent class="w-80 p-4">
               <Calendar v-model="dateToValue" />
             </PopoverContent>
           </Popover>
@@ -1115,8 +1115,8 @@ function extractDomain(url: string): string {
         </div>
       </div>
       <div class="adv-filter-actions">
-        <Button variant="ghost" size="default" class="min-w-[80px]" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
-        <Button variant="outline" size="default" class="min-w-[80px]" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
+        <Button variant="ghost" size="default" class="min-w-[100px] rounded-md" @click="clip.clearAdvancedFilters()">{{ t('filter_clear') }}</Button>
+        <Button variant="outline" size="default" class="min-w-[100px] rounded-md" @click="showFilterPanel = false">{{ t('filter_close') }}</Button>
       </div>
     </div>
 
@@ -1629,16 +1629,16 @@ function extractDomain(url: string): string {
 /* ===== 高级搜索筛选面板 ===== */
 .filter-active { border-color: var(--color-primary, #6366f1) !important; color: var(--color-primary, #6366f1) !important; }
 .adv-filter-panel {
-  display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
-  padding: 16px 20px; margin: 0 12px 8px; background: var(--bg-surface);
+  display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap;
+  padding: 20px 24px; margin: 0 12px 8px; background: var(--bg-surface);
   border: 1px solid var(--border-default); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
 }
-.adv-filter-grid { display: flex; gap: 16px; flex-wrap: wrap; flex: 1; align-items: flex-end; }
-.adv-filter-field { display: flex; flex-direction: column; gap: 6px; }
-.adv-filter-field label { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
-.adv-filter-select-cs { min-width: 150px; max-width: 220px; }
-.adv-filter-actions { display: flex; gap: 10px; align-items: flex-end; }
+.adv-filter-grid { display: flex; gap: 24px; flex-wrap: wrap; flex: 1; align-items: flex-end; }
+.adv-filter-field { display: flex; flex-direction: column; gap: 8px; }
+.adv-filter-field label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.adv-filter-select-cs { min-width: 160px; max-width: 220px; }
+.adv-filter-actions { display: flex; gap: 12px; align-items: flex-end; }
 .cell-protected-mask {
   display: flex; align-items: center; gap: 8px; padding: 6px 10px;
   background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
