@@ -690,8 +690,9 @@ async function buildSharePayload(item: ClipItem): Promise<{ content: string; tit
       return null
     }
     const uploaded = await uploadSharedFile(file)
-    if (!uploaded) {
-      console.warn('[Clipboard] failed to upload file for share')
+    if (!uploaded.ok) {
+      console.warn('[Clipboard] failed to upload file for share:', uploaded.error)
+      toast.show(uploaded.error, 'error')
       return null
     }
     return {

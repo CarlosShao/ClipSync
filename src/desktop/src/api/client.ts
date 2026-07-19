@@ -351,7 +351,9 @@ export async function getSharedLinks(): Promise<SharedLink[] | null> {
   return res.ok ? res.data?.links ?? [] : null
 }
 
-export async function uploadSharedFile(file: File): Promise<SharedFileUploadResult | null> {
+export async function uploadSharedFile(
+  file: File,
+): Promise<{ ok: true; fileKey: string; fileName: string; fileSize: number } | { ok: false; error: string }> {
   const config = useConfigStore()
   const formData = new FormData()
   formData.append('file', file)
@@ -364,11 +366,19 @@ export async function uploadSharedFile(file: File): Promise<SharedFileUploadResu
       body: formData,
       headers,
     })
-    if (!res.ok) return null
-    return await res.json() as SharedFileUploadResult
+    if (!res.ok) {
+      let errorText = `HTTP ${res.status}`
+      try {
+        const body = (await res.json()) as { error?: string; message?: string }
+        if (body?.error || body?.message) errorText = body.error || body.message || errorText
+      } catch { /* response body not JSON */ }
+      return { ok: false, error: errorText }
+    }
+    const data = (await res.json()) as SharedFileUploadResult
+    return { ok: true, ...data }
   } catch (e: any) {
     console.warn('[client] upload shared file failed', e?.message || e)
-    return null
+    return { ok: false, error: e?.message || 'network error' }
   }
 }
 
