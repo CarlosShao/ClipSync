@@ -1078,7 +1078,7 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_from') }}</label>
           <Popover>
             <PopoverTrigger as-child>
-              <Button variant="outline" class="font-normal h-9 px-3 gap-2 min-w-[90px] rounded-md">
+              <Button variant="outline" class="font-normal h-10 px-3 gap-2 min-w-[90px] rounded-md">
                 <CalendarIcon class="h-4 w-4 shrink-0" />
                 <span class="truncate">{{ clip.advancedFilters.value.dateFrom || t('filter_from') }}</span>
               </Button>
@@ -1092,7 +1092,7 @@ function extractDomain(url: string): string {
           <label>{{ t('filter_to') }}</label>
           <Popover>
             <PopoverTrigger as-child>
-              <Button variant="outline" class="font-normal h-9 px-3 gap-2 min-w-[90px] rounded-md">
+              <Button variant="outline" class="font-normal h-10 px-3 gap-2 min-w-[90px] rounded-md">
                 <CalendarIcon class="h-4 w-4 shrink-0" />
                 <span class="truncate">{{ clip.advancedFilters.value.dateTo || t('filter_to') }}</span>
               </Button>
