@@ -65,6 +65,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
   box-sizing: border-box;
   width: 100%;
   height: 36px;
+  min-height: 36px;
   padding: 0 14px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);

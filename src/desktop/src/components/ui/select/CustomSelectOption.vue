@@ -16,7 +16,7 @@ const emit = defineEmits<{
   <div
     class="custom-select-option"
     :class="{ selected, disabled }"
-    @click="!disabled && emit('select', value)"
+    @click.stop="!disabled && emit('select', value)"
   >
     <span class="option-text"><slot /></span>
     <Check v-if="selected" class="option-check" />
