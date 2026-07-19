@@ -323,11 +323,9 @@ export async function deleteTemplateVariable(name: string): Promise<boolean> {
 
 // ============================================
 // Shared Links API（剪贴板内容对外分享链接）
+// 注意：分享 URL 由后端根据请求 origin 或 SHARE_LINK_BASE_URL 环境变量生成，
+// 前端不要自己拼域名，避免本地开发时指向错误的 clipsync.io。
 // ============================================
-
-// 公开分享链接的基础域名（可由构建期环境变量覆盖）
-export const SHARE_LINK_BASE: string =
-  (import.meta.env.VITE_SHARE_BASE_URL as string | undefined) || 'https://clipsync.io/s/'
 
 export interface SharedLink {
   id: string
