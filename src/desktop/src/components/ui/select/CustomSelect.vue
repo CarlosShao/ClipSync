@@ -54,6 +54,8 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
 .custom-select {
   position: relative;
   width: 160px;
+  height: 36px;
+  min-height: 36px;
 }
 
 .custom-select-trigger {
