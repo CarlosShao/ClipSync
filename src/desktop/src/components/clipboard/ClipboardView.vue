@@ -24,7 +24,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { getFavoriteCollections, addCollectionItem, createFavoriteCollection, createSharedLink, uploadSharedFile, setItemTags } from '@/api/client'
 import { api } from '@/api/client'
 import { useItemPassword } from '@/composables/useItemPassword'
-import ItemPasswordDialog from '@/components/clipboard/ItemPasswordDialog.vue'
+import ProtectionDialog from '@/components/clipboard/ProtectionDialog.vue'
 import CustomSelect from '@/components/ui/select/CustomSelect.vue'
 import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -98,8 +98,18 @@ const dateToValue = computed<DateValue | undefined>({
   },
 })
 
-// 展示内容：受保护且已解锁时返回会话明文，否则返回原内容（列表只返回 preview，受保护项 preview 为掩码串）
+// 条目是否对当前用户可见（受保护 → 需解锁 + PIN 超时检查）
+function isItemVisible(item: ClipItem): boolean {
+  if (!itemPw.isItemProtected(item)) return true
+  if (!itemPw.isUnlocked(item.id)) return false
+  // PIN 保护：还需检查 peekItemId（超时后自动重新锁定）
+  if (item.metadata?.sensitive) return privacy.peekItemId.value === item.id
+  return true
+}
+
+// 展示内容：受保护且可见时返回明文；不可见时显示掩码
 function displayContent(item: ClipItem): string {
+  if (!isItemVisible(item)) return t('item_password_mask')
   if (itemPw.isItemProtected(item) && itemPw.isUnlocked(item.id)) {
     return itemPw.getUnlockedPlaintext(item.id) ?? item.content
   }
@@ -109,25 +119,69 @@ function displayContent(item: ClipItem): string {
 // 复制/查看前检查条目级密码：受保护未解锁则弹出解锁框
 function requireUnlocked(item: ClipItem): boolean {
   if (itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)) {
-    openItemPassword(item)
+    openProtectionDialog(item)
     return false
   }
   return true
 }
 
-// === 条目级密码对话框 ===
-const pwDialogOpen = ref(false)
-const pwDialogItem = ref<ClipItem | null>(null)
-function openItemPassword(item: ClipItem) {
-  if (item.type === 'image' || item.type === 'file') {
-    toast.show(t('item_password_unsupported'), 'info')
-    return
-  }
-  pwDialogItem.value = item
-  pwDialogOpen.value = true
+// === 统一保护级别对话框 ===
+const protectionDialogOpen = ref(false)
+const protectionDialogItem = ref<ClipItem | null>(null)
+function openProtectionDialog(item: ClipItem) {
+  protectionDialogItem.value = item
+  protectionDialogOpen.value = true
 }
-function onItemPasswordUpdated(_item: ClipItem) {
-  toast.show(t('item_password_updated'), 'success')
+function onProtectionProtected(level: string) {
+  // 更新本地条目元数据，让 UI 立即反映保护状态
+  if (protectionDialogItem.value) {
+    const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
+    if (item) {
+      if (!item.metadata) item.metadata = {}
+      item.isProtected = true
+      if (level === 'advanced') {
+        item.metadata.protected = true
+      } else if (level === 'pin') {
+        item.metadata.sensitive = true
+      }
+    }
+  }
+  toast.show(t('protection_applied'), 'success')
+}
+function onProtectionUnprotected() {
+  // 清除本地条目保护状态
+  if (protectionDialogItem.value) {
+    const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
+    if (item) {
+      if (item.metadata) {
+        item.metadata.protected = false
+        item.metadata.sensitive = false
+      }
+      item.isProtected = false
+      itemPw.lockItem(protectionDialogItem.value.id)
+    }
+  }
+  toast.show(t('protection_removed'), 'success')
+}
+function onProtectionUnlocked(content: string) {
+  if (protectionDialogItem.value) {
+    itemPw.setUnlocked(protectionDialogItem.value.id, content)
+    // 同时更新 item.content，确保复制/操作时用的是明文
+    const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
+    if (item && content) {
+      item.content = content
+    }
+  }
+  toast.show(t('protection_unlocked'), 'success')
+}
+
+// Get protection button title based on item state
+function getProtectionTitle(item: ClipItem): string {
+  if (itemPw.isItemProtected(item)) {
+    if (isItemVisible(item)) return t('protection_unlocked')
+    return t('protection_locked')
+  }
+  return t('protection_set')
 }
 
 // === 条目标签编辑 ===
@@ -393,8 +447,13 @@ function onCopyItem(item: ClipItem) {
 }
 
 function onToggleSensitive(item: ClipItem) {
-  // Unlocking a sensitive item requires PIN verification.
-  // Locking (marking as sensitive) is always allowed.
+  // 高级加密条目：打开保护对话框，让用户选择加密方式
+  if ((item as any).metadata?.protected === true) {
+    openProtectionDialog(item)
+    return
+  }
+
+  // PIN 保护条目：切换锁定状态
   const isLocked = (item as any).metadata?.sensitive === true
   if (isLocked && !privacy.canCopySensitive()) {
     if (!privacy.pinSet.value) {
@@ -1135,11 +1194,16 @@ function extractDomain(url: string): string {
       @cancel="onCancelDialog"
     />
 
-    <!-- 条目级密码对话框 -->
-    <ItemPasswordDialog
-      v-model:open="pwDialogOpen"
-      :item="pwDialogItem"
-      @updated="onItemPasswordUpdated"
+    <!-- 统一保护级别对话框 -->
+    <ProtectionDialog
+      v-model:open="protectionDialogOpen"
+      :item-id="protectionDialogItem?.id || ''"
+      :content="protectionDialogItem?.content || ''"
+      :current-level="protectionDialogItem?.metadata?.protected ? 'advanced' : (protectionDialogItem?.metadata?.sensitive ? 'pin' : 'none')"
+      :item-name="protectionDialogItem?.content || ''"
+      @protected="onProtectionProtected"
+      @unprotected="onProtectionUnprotected"
+      @unlocked="onProtectionUnlocked"
     />
 
     <!-- Clipboard Table (shadcn-vue Data Table style) -->
@@ -1185,12 +1249,12 @@ function extractDomain(url: string): string {
             </TableCell>
             <TableCell class="cell-content">
               <div class="cell-content-inner">
-                <!-- 条目级密码保护遮罩：受保护且未解锁时覆盖所有内容 -->
-                <template v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)">
+                <!-- 条目级密码保护遮罩：受保护且未解锁/超时时覆盖所有内容 -->
+                <template v-if="!isItemVisible(item)">
                   <div class="cell-protected-mask">
                     <Lock :size="14" />
                     <span>{{ t('item_protected_mask') }}</span>
-                    <Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="openItemPassword(item)">{{ t('item_unlock') }}</Button>
+                    <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
                   </div>
                 </template>
                 <!-- 图片预览 -->
@@ -1199,49 +1263,29 @@ function extractDomain(url: string): string {
                   <div v-else class="cell-thumb cell-thumb-placeholder">
                     <ImageIcon :size="14" style="opacity:0.4" />
                   </div>
-                  <div v-if="isItemSensitive(item) && peekItemId !== item.id" class="cell-mask-overlay">
-                    <span>{{ t('content_masked') }}</span>
-                    <Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</Button>
-                  </div>
                 </span>
                 <!-- URL 链接样式 -->
                 <span v-else-if="item.type === 'link' || detectContentType(displayContent(item)) === 'url'" class="cell-link-preview">
-                  <template v-if="isItemSensitive(item) && peekItemId !== item.id">
-                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</Button></div>
-                  </template>
-                  <template v-else>
-                    <ExternalLink :size="12" class="cell-link-icon" />
-                    <span class="cell-link-content">
-                      <span class="cell-link-text">{{ displayContent(item) }}</span>
-                      <span class="cell-link-domain">{{ extractDomain(displayContent(item)) }}</span>
-                    </span>
-                  </template>
+                  <ExternalLink :size="12" class="cell-link-icon" />
+                  <span class="cell-link-content">
+                    <span class="cell-link-text">{{ displayContent(item) }}</span>
+                    <span class="cell-link-domain">{{ extractDomain(displayContent(item)) }}</span>
+                  </span>
                 </span>
                 <!-- 文件类型（必须在 code/url 检测之前，否则 JSON 路径数组会被误判为 code） -->
                 <span v-else-if="item.type === 'file'" class="cell-text">
-                  <template v-if="isItemSensitive(item) && peekItemId !== item.id">
-                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</Button></div>
-                  </template>
-                  <template v-else>
-                    <span v-if="item.id.startsWith('local-') || item.id.startsWith('file-')" class="syncing-label">
-                      <span class="syncing-dot" /> {{ formatContent(item) }}
-                    </span>
-                    <span v-else>{{ formatContent(item) }}</span>
-                  </template>
+                  <span v-if="item.id.startsWith('local-') || item.id.startsWith('file-')" class="syncing-label">
+                    <span class="syncing-dot" /> {{ formatContent(item) }}
+                  </span>
+                  <span v-else>{{ formatContent(item) }}</span>
                 </span>
                 <!-- 代码样式 -->
                 <span v-else-if="detectContentType(displayContent(item)) === 'code'" class="cell-code-preview">
-                  <template v-if="isItemSensitive(item) && peekItemId !== item.id">
-                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</Button></div>
-                  </template>
-                  <template v-else><code>{{ displayContent(item) }}</code></template>
+                  <code>{{ displayContent(item) }}</code>
                 </span>
                 <!-- 普通文本 -->
                 <span v-else class="cell-text">
-                  <template v-if="isItemSensitive(item) && peekItemId !== item.id">
-                    <div class="cell-text-mask"><span>{{ t('content_masked') }}</span><Button variant="outline" size="sm" class="h-7 px-2 text-[11px]" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</Button></div>
-                  </template>
-                  <template v-else>{{ formatContent(item) }}</template>
+                  {{ formatContent(item) }}
                 </span>
               </div>
             </TableCell>
@@ -1276,14 +1320,15 @@ function extractDomain(url: string): string {
                 <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="t('show_in_folder')">
                   <Folder :size="14" />
                 </Button>
-                <!-- Manual sensitive lock/unlock -->
-                <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click="onToggleSensitive(item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
+                <!-- Unified protection button -->
+                <Button variant="ghost" size="icon-sm" class="btn-action-hide"
+                  :class="{
+                    'sensitive-locked': !isItemVisible(item),
+                    'pw-locked': !isItemVisible(item)
+                  }"
+                  @click="openProtectionDialog(item)"
+                  :title="getProtectionTitle(item)">
                   <Lock :size="14" />
-                </Button>
-                <!-- 条目级密码保护（仅文本/链接/代码支持） -->
-                <Button v-if="item.type === 'text' || item.type === 'link'" variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'pw-locked': itemPw.isItemProtected(item) }" @click="openItemPassword(item)" :title="itemPw.isItemProtected(item) ? (itemPw.isUnlocked(item.id) ? t('item_password_managed') : t('item_password_unlock')) : t('item_password_set')">
-                  <KeyRound v-if="!itemPw.isItemProtected(item) || !itemPw.isUnlocked(item.id)" :size="14" />
-                  <Unlock v-else :size="14" />
                 </Button>
                 <!-- 标签 -->
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'tag-active': item.tags && item.tags.length }" @click="openTagEditor(item)" :title="t('item_tags')">
@@ -1475,6 +1520,17 @@ function extractDomain(url: string): string {
 .cell-content { overflow: hidden; max-width: 0; }
 .cell-content-inner { display: flex; align-items: center; gap: 8px; }
 
+/* 受保护条目遮罩 */
+.cell-protected-mask {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 10px; border-radius: var(--radius-sm);
+  background: var(--bg-hover); border: 1px solid var(--border-subtle);
+  font-size: 12px; color: var(--text-secondary);
+}
+.cell-protected-mask :deep(button) {
+  padding: 2px 12px !important;
+}
+
 /* Syncing indicator */
 .syncing-label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
 .syncing-dot {
@@ -1495,9 +1551,7 @@ function extractDomain(url: string): string {
 .cell-thumb { width: 48px; height: 34px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); }
 .cell-thumb-placeholder { width: 48px; height: 34px; display: flex; align-items: center; justify-content: center; background: var(--bg-hover); border-radius: var(--radius-sm); }
 
-/* Privacy: sensitive content mask overlay */
-.cell-mask-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--bg-hover); border-radius: var(--radius-sm); font-size: 11px; color: var(--text-tertiary); z-index: 1; }
-.cell-text-mask { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-tertiary); }
+/* (已废弃旧版敏感内容遮罩，统一使用 cell-protected-mask) */
 
 /* URL 链接样式 */
 .cell-link-preview {
@@ -1640,11 +1694,17 @@ function extractDomain(url: string): string {
 .adv-filter-grid { display: flex; gap: 16px; flex-wrap: wrap; flex: 1; align-items: flex-end; }
 .adv-filter-field { display: flex; flex-direction: column; gap: 6px; }
 .adv-filter-field--actions { gap: 0; }
-.adv-filter-field label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.adv-filter-field label { font-size: 13px; font-weight: 500; color: var(--text-secondary); height: 18px; line-height: 18px; }
 .adv-filter-label-placeholder { height: 18px; }
 .adv-filter-field--device { min-width: 170px; }
-.adv-filter-field--actions { min-width: 180px; }
+.adv-filter-field--actions { min-width: 180px; margin-left: auto; }
 .adv-filter-actions-inline { display: flex; gap: 8px; align-items: center; }
+.adv-filter-field .custom-select,
+.adv-filter-field .custom-select-trigger {
+  height: 32px !important;
+  min-height: 32px !important;
+}
+.adv-filter-field .h-8 { height: 32px !important; min-height: 32px !important; }
 .filter-input-sm {
   height: 32px !important;
   min-height: 32px !important;
