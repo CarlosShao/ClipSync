@@ -1201,6 +1201,7 @@ function extractDomain(url: string): string {
       :content="protectionDialogItem?.content || ''"
       :current-level="protectionDialogItem?.metadata?.protected ? 'advanced' : (protectionDialogItem?.metadata?.sensitive ? 'pin' : 'none')"
       :item-name="protectionDialogItem?.content || ''"
+      :is-unlocked="itemPw.isUnlocked(protectionDialogItem?.id || '')"
       @protected="onProtectionProtected"
       @unprotected="onProtectionUnprotected"
       @unlocked="onProtectionUnlocked"
