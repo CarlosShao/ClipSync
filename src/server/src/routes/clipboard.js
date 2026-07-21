@@ -616,7 +616,7 @@ router.put('/:id/sensitive', apiLimiter, async (req, res) => {
 router.put('/:id', apiLimiter, async (req, res) => {
   try {
     const { id } = req.params;
-    const { content, contentPreview, contentSize, metadata, archived } = req.body;
+    const { content, contentPreview, contentSize, metadata, archived, expiresAt } = req.body;
 
     if (!isValidUUID(id)) return res.status(400).json({ error: 'Invalid ID format' });
 
@@ -656,6 +656,22 @@ router.put('/:id', apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'archived must be a boolean' });
     }
 
+    // Validate expiresAt —— 用户侧条目自动过期。允许 null（清除过期）或合法 ISO 日期字符串
+    let expiresAtValue;
+    if (expiresAt !== undefined) {
+      if (expiresAt === null) {
+        expiresAtValue = null;
+      } else if (typeof expiresAt === 'string' && expiresAt.trim() !== '') {
+        const d = new Date(expiresAt);
+        if (isNaN(d.getTime())) {
+          return res.status(400).json({ error: 'expiresAt must be a valid ISO date string or null' });
+        }
+        expiresAtValue = d.toISOString();
+      } else {
+        return res.status(400).json({ error: 'expiresAt must be a valid ISO date string or null' });
+      }
+    }
+
     // Build dynamic SET clause
     const setClauses = [];
     const params = [id, req.userId];
@@ -682,6 +698,10 @@ router.put('/:id', apiLimiter, async (req, res) => {
       setClauses.push(`archived = $${p++}`);
       params.push(archived);
     }
+    if (expiresAtValue !== undefined) {
+      setClauses.push(`expires_at = $${p++}`);
+      params.push(expiresAtValue);
+    }
 
     if (setClauses.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
@@ -691,7 +711,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
       `UPDATE clipboard_items
        SET ${setClauses.join(', ')}
        WHERE id = $1 AND user_id = $2
-       RETURNING id, content_type, content_preview, content_size, metadata, is_favorite, archived, source_device_id, created_at`,
+       RETURNING id, content_type, content_preview, content_size, metadata, is_favorite, archived, expires_at, source_device_id, created_at`,
       params
     );
 
@@ -706,6 +726,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
       metadata: item.metadata,
       isFavorite: item.is_favorite,
       archived: item.archived,
+      expiresAt: item.expires_at,
       sourceDeviceId: item.source_device_id,
       createdAt: item.created_at,
     };
