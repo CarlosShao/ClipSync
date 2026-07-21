@@ -23,6 +23,8 @@ import { marked } from 'marked'
 import hljs from 'highlight.js'
 import mammoth from 'mammoth'
 import * as pdfjsLib from 'pdfjs-dist'
+import HtmlPreview from '@/components/clipboard/HtmlPreview.vue'
+import { isHtmlContent } from '@/utils/html'
 
 // Set PDF.js worker source
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href
@@ -1658,6 +1660,11 @@ async function handleFeedbackSubmit() {
         <pre class="code-content"><code v-html="renderCode(previewContent, previewFileName)"></code></pre>
       </div>
 
+      <!-- HTML safe preview (DOMPurify sanitized, only when content is rich-text HTML) -->
+      <div v-else-if="isHtmlContent(previewContent)" class="doc-preview html-preview-doc">
+        <HtmlPreview :content="previewContent" />
+      </div>
+
       <!-- Plain text -->
       <div v-else class="doc-preview text-preview">{{ previewContentLines.join('\n') }}</div>
 
@@ -2045,6 +2052,9 @@ async function handleFeedbackSubmit() {
 
 /* Ensure doc-preview-wrap is position:relative for the overlay */
 .doc-preview-wrap { position: relative; }
+
+/* HTML safe preview wrapper in detail modal */
+.html-preview-doc { max-height: 70vh; overflow: auto; }
 </style>
 
 <!-- Non-scoped styles: needed for v-html rendered content (markdown-body) -->
