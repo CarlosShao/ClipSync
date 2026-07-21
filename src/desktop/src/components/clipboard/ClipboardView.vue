@@ -31,7 +31,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar'
 import { parseDate, type DateValue } from '@internationalized/date'
 import TablePreview from '@/components/clipboard/TablePreview.vue'
+import HtmlPreview from '@/components/clipboard/HtmlPreview.vue'
 import { parseTable } from '@/utils/table'
+import { isHtmlContent } from '@/utils/html'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -1077,6 +1079,21 @@ function isTableContent(content: string): boolean {
   return result
 }
 
+// HTML 检测（带缓存，与 isTableContent 同级）
+const htmlDetectCache = new Map<string, boolean>()
+const MAX_HTML_CACHE = 1000
+function isHtmlItem(content: string): boolean {
+  const cached = htmlDetectCache.get(content)
+  if (cached !== undefined) return cached
+  const result = isHtmlContent(content)
+  if (htmlDetectCache.size > MAX_HTML_CACHE) {
+    const firstKey = htmlDetectCache.keys().next().value
+    if (firstKey !== undefined) htmlDetectCache.delete(firstKey)
+  }
+  htmlDetectCache.set(content, result)
+  return result
+}
+
 // 提取 URL 域名
 function extractDomain(url: string): string {
   try {
@@ -1290,6 +1307,10 @@ function extractDomain(url: string): string {
                     <span class="syncing-dot" /> {{ formatContent(item) }}
                   </span>
                   <span v-else>{{ formatContent(item) }}</span>
+                </span>
+                <!-- HTML 安全预览（DOMPurify 净化，仅渲染层，不改 content_type） -->
+                <span v-else-if="item.type === 'text' && isHtmlItem(displayContent(item))" class="cell-html-preview">
+                  <HtmlPreview :content="displayContent(item)" />
                 </span>
                 <!-- 代码样式 -->
                 <span v-else-if="detectContentType(displayContent(item)) === 'code'" class="cell-code-preview">
@@ -1551,6 +1572,9 @@ function extractDomain(url: string): string {
 
 /* 表格预览容器：让 TablePreview 充满单元格宽度 */
 .cell-table-preview { display: block; width: 100%; min-width: 0; }
+
+/* HTML 预览容器：让 HtmlPreview 充满单元格宽度 */
+.cell-html-preview { display: block; width: 100%; min-width: 0; }
 
 /* 普通文本 */
 .cell-text {
