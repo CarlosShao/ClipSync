@@ -1044,14 +1044,7 @@ function cancelEditTags() {
             :draggable="!batchMode" @dragstart="onDragStart($event, item)" @dragover="onDragOver" @drop="onDrop($event, item)" @dragend="onDragEnd">
             <div v-if="batchMode" class="fav-list-check"><Checkbox :model-value="selectedIds.has(item.id)" @update:model-value="() => toggleSelect(item.id)" /></div>
             <div class="fav-list-content">
-              <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="cell-protected-mask">
-                <Lock :size="14" />
-                <span>{{ t('item_protected_mask') }}</span>
-                <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
-              </div>
-              <div v-else class="fav-list-title">{{ formatContent(item) }}</div>
-              <div class="fav-list-meta"><span>{{ item.source || 'Desktop' }}</span><span>·</span><span>{{ timeAgo((item as any).favoritedAt || item.timestamp) }}</span></div>
-              <!-- Tags inside content so they flow naturally -->
+              <!-- Tags at top-left, consistent with card view -->
               <div class="fav-list-tags-inner">
                 <template v-if="editingTagsItemId !== item.id">
                   <Badge v-for="tag in getTags(item)" :key="tag" class="fav-tag-badge" :style="tagColorStyle(tag)">{{ tag }}</Badge>
@@ -1088,32 +1081,39 @@ function cancelEditTags() {
                     <div v-if="colorPickerTag && editingTagsItemId === item.id">
                       <div class="fav-color-backdrop" @click="cancelTagColor"></div>
                       <div class="fav-color-picker" :style="{ top: colorPickerPos.top, left: colorPickerPos.left }" @click.stop>
-                    <div class="fav-color-picker-header">
-                      <span class="fav-color-picker-label">{{ t('fav_tag_color_edit') }}</span>
-                      <button class="fav-color-picker-close" @click="cancelTagColor"><X :size="12" /></button>
-                    </div>
-                    <div class="fav-color-picker-name">
-                      <span class="fav-color-picker-tag-name">{{ colorPickerTag }}</span>
-                    </div>
-                    <div class="fav-color-picker-swatches">
-                      <button v-for="c in TAG_PRESET_COLORS" :key="c"
-                        :class="['fav-color-swatch', { active: colorPickerColor === c }]"
-                        :style="{ background: c }"
-                        @click="colorPickerColor = c" />
-                      <div class="fav-color-swatch fav-color-swatch--custom" :title="t('fav_color_custom')">
-                        <Palette :size="12" />
-                        <input type="color" v-model="colorPickerColor" class="fav-color-custom-input" />
+                        <div class="fav-color-picker-header">
+                          <span class="fav-color-picker-label">{{ t('fav_tag_color_edit') }}</span>
+                          <button class="fav-color-picker-close" @click="cancelTagColor"><X :size="12" /></button>
+                        </div>
+                        <div class="fav-color-picker-name">
+                          <span class="fav-color-picker-tag-name">{{ colorPickerTag }}</span>
+                        </div>
+                        <div class="fav-color-picker-swatches">
+                          <button v-for="c in TAG_PRESET_COLORS" :key="c"
+                            :class="['fav-color-swatch', { active: colorPickerColor === c }]"
+                            :style="{ background: c }"
+                            @click="colorPickerColor = c" />
+                          <div class="fav-color-swatch fav-color-swatch--custom" :title="t('fav_color_custom')">
+                            <Palette :size="12" />
+                            <input type="color" v-model="colorPickerColor" class="fav-color-custom-input" />
+                          </div>
+                        </div>
+                        <div class="fav-color-picker-actions">
+                          <button class="fav-color-remove" @click="removeTagColor(colorPickerTag)">{{ t('fav_tag_remove_color') }}</button>
+                          <button class="fav-color-save" @click="saveTagColor()">{{ t('fav_tag_save_color') }}</button>
+                        </div>
                       </div>
-                    </div>
-                    <div class="fav-color-picker-actions">
-                      <button class="fav-color-remove" @click="removeTagColor(colorPickerTag)">{{ t('fav_tag_remove_color') }}</button>
-                      <button class="fav-color-save" @click="saveTagColor()">{{ t('fav_tag_save_color') }}</button>
-                    </div>
-                  </div>
                     </div>
                   </Teleport>
                 </div>
               </div>
+              <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="cell-protected-mask">
+                <Lock :size="14" />
+                <span>{{ t('item_protected_mask') }}</span>
+                <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
+              </div>
+              <div v-else class="fav-list-title">{{ formatContent(item) }}</div>
+              <div class="fav-list-meta"><span>{{ item.source || 'Desktop' }}</span><span>·</span><span>{{ timeAgo((item as any).favoritedAt || item.timestamp) }}</span></div>
             </div>
             <div v-if="!batchMode" class="fav-list-actions">
               <Button variant="ghost" size="icon-sm" @click="onCopyItem(item)" :title="t('copy')"><Copy :size="14" /></Button>
@@ -1546,10 +1546,10 @@ function cancelEditTags() {
 .fav-list-item[draggable="true"] { cursor: grab; }
 .fav-list-item[draggable="true"]:active { cursor: grabbing; }
 .fav-list-check { flex-shrink: 0; }
-.fav-list-content { flex: 1; min-width: 0; }
+.fav-list-content { flex: 1; min-width: 0; position: relative; padding-top: 22px; }
 .fav-list-title { font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fav-list-meta { font-size: 11px; color: var(--text-tertiary); display: flex; gap: 6px; margin-top: 2px; }
-.fav-list-tags-inner { display: flex; align-items: center; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+.fav-list-tags-inner { position: absolute; top: 0; left: 0; z-index: 2; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; max-width: calc(100% - 80px); }
 .fav-list-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity 0.12s; }
 .fav-list-item:hover .fav-list-actions,
 .fav-list-item--dropdown-open .fav-list-actions { opacity: 1; }
