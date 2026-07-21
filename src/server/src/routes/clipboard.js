@@ -149,6 +149,7 @@ router.get('/', apiLimiter, async (req, res) => {
     const itemsResult = await pool.query(
       `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
               ci.source_device_id, ci.metadata, ci.is_favorite, ci.favorited_at, ci.expires_at, ci.created_at,
+              ci.protection_level,
               d.device_name, d.platform
        FROM clipboard_items ci
        LEFT JOIN devices d ON ci.source_device_id = d.id
@@ -169,6 +170,7 @@ router.get('/', apiLimiter, async (req, res) => {
         favoritedAt: item.favorited_at,
         expiresAt: item.expires_at,
         createdAt: item.created_at,
+        protectionLevel: item.protection_level || 'none',
         sourceDevice: {
           id: item.source_device_id,
           name: item.device_name,
