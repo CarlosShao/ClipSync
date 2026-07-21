@@ -55,6 +55,10 @@ const loading = ref(false)
 // 让人以为删除没生效。改为：展示服务器总数 + "加载更多"按钮拉取后续分页。
 const currentPage = ref(1)
 const pageSize = ref(50)
+// 当前视图：'all' = 主列表（默认隐藏已归档），'archive' = 仅归档视图。
+// 用 module-level ref 让 setFilter/loadMore/clearAdvancedFilters 自动沿用当前视图，
+// 避免切到归档视图后切换分类竟把非归档数据拉进来。
+const currentView = ref<'all' | 'archive'>('all')
 const totalItems = ref(0)
 const loadingMore = ref(false)
 const hasMore = computed(() => totalItems.value > 0 && items.value.length < totalItems.value)
@@ -403,15 +407,20 @@ function getCachedContent(id: string): string {
   return entry.v
 }
 
-async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?: boolean; favorite?: boolean }) {
+async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?: boolean; favorite?: boolean; view?: 'all' | 'archive' }) {
   const page = opts?.page ?? 1
   const append = opts?.append ?? false
   const loadAll = opts?.all ?? false
   const loadFavorites = opts?.favorite ?? false
+  // 视图：归档视图(view=archive)只拉 archived=TRUE 的条目；默认沿用 currentView，
+  // 保证分类切换/加载更多时不丢失归档上下文。
+  const view = opts?.view || currentView.value
+  currentView.value = view
   if (!append) currentPage.value = page
   if (append) loadingMore.value = true; else loading.value = true
   const limit = loadAll ? 500 : (loadFavorites ? 200 : pageSize.value)
   const favParam = loadFavorites ? '&favorites=true' : ''
+  const viewParam = view === 'archive' ? '&view=archive' : ''
   // 按当前分类筛选：后端直接过滤并返回该类型总数，避免"图片分类下显示全部总数"的 bug。
   // 注意 filter 值与后端 content_type 的映射：images -> image，links -> link，files -> file。
   const filterToContentType: Record<string, string> = { text: 'text', images: 'image', links: 'link', files: 'file' }
@@ -427,7 +436,7 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
   if (af.dateTo && af.dateTo.trim()) advParts.push(`dateTo=${encodeURIComponent(af.dateTo.trim())}`)
   const advParamStr = advParts.length > 0 ? `&${advParts.join('&')}` : ''
   try {
-  const res = await api('GET', `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}`)
+  const res = await api('GET', `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}${viewParam}`)
   if (res.ok && Array.isArray(res.data?.items)) {
     totalItems.value = res.data?.pagination?.total ?? res.data.items.length
     const serverIds = new Set(res.data.items.map((i: any) => i.id))

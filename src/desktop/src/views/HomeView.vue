@@ -307,7 +307,8 @@ function confirmAction() {
 
     <main class="main-content">
       <ClipboardView
-        v-if="currentSub === 'clipboard'"
+        v-if="currentSub === 'clipboard' || currentSub === 'archive'"
+        :mode="currentSub === 'archive' ? 'archive' : 'default'"
         @toggle-quick-paste="showQuickPaste = !showQuickPaste"
         @toggle-theme="toggleMode"
         @preview-image="onPreviewImage"

@@ -6,7 +6,7 @@ type I18nDict = Record<string, string>
 const _lang = ref<Lang>('zh')
 const _dicts: Record<Lang, I18nDict> = {
   en: {
-    nav_main:'Main', nav_account:'Account', nav_clipboard:'Clipboard', nav_favorites:'Favorites', nav_devices:'Devices', nav_shared_links:'Shared Links',
+    nav_main:'Main', nav_account:'Account', nav_clipboard:'Clipboard', nav_favorites:'Favorites', nav_archive:'Archive', nav_devices:'Devices', nav_shared_links:'Shared Links',
     nav_profile:'Profile', nav_subscription:'Subscription', nav_settings:'Settings',
     nav_templates:'Templates',
     templates_title:'Templates', templates_new:'New Template', templates_search_ph:'Search templates...',
@@ -294,6 +294,8 @@ const _dicts: Record<Lang, I18nDict> = {
     clip_favorited:'Favorited', clip_unfavorited:'Unfavorited',
     clip_moved_to_col:'Moved to collection', clip_added_to_col:'Added to collection',
     clip_col_created:'Collection created & item moved',
+    archive_action:'Archive', unarchive_action:'Unarchive',
+    archive_empty_title:'No archived clips', archive_empty_desc:'Archived clips are kept here and won\'t appear in the main list.',
     // Missing keys (not in original dict)
     login_forgot_code:"Didn't receive?",
     sp_pwd_mismatch:"Passwords don't match",
@@ -448,7 +450,7 @@ const _dicts: Record<Lang, I18nDict> = {
     protection_saved:'Protection saved', protection_removed:'Protection removed',
   },
   zh: {
-    nav_main:'主菜单', nav_account:'账号', nav_clipboard:'剪贴板', nav_favorites:'收藏', nav_devices:'设备', nav_shared_links:'共享链接',
+    nav_main:'主菜单', nav_account:'账号', nav_clipboard:'剪贴板', nav_favorites:'收藏', nav_archive:'归档', nav_devices:'设备', nav_shared_links:'共享链接',
     // === 条目级密码 + 高级搜索 + 标签 (P0 desktop) ===
     adv_filter:'高级筛选', filter_device:'设备', filter_all_devices:'全部设备', filter_from:'起始', filter_to:'结束', filter_tag:'标签', filter_tag_ph:'按标签筛选', filter_clear:'清除', filter_close:'关闭',
     item_protected_mask:'已加密', item_unlock:'解锁',
@@ -879,6 +881,8 @@ const _dicts: Record<Lang, I18nDict> = {
     clip_favorited:'已收藏', clip_unfavorited:'已取消收藏',
     clip_moved_to_col:'已移入收藏夹', clip_added_to_col:'已加入收藏夹',
     clip_col_created:'已创建收藏夹并移入',
+    archive_action:'归档', unarchive_action:'取消归档',
+    archive_empty_title:'暂无归档', archive_empty_desc:'归档的剪贴内容会保存在这里，不会出现在主列表中。',
     reg_label_phone:'手机号', reg_label_nickname:'用户名', reg_label_email:'邮箱',
     reg_nickname_hint:'如：Alice、张三，2-30个字符', reg_email_hint:'选填 — 用于账号找回',
     reg_pwd_min_8:'密码至少需要 8 位',
