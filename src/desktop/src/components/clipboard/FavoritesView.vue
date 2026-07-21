@@ -540,7 +540,33 @@ function hasLocalPath(item: ClipItem): boolean {
   try { const m = JSON.parse(item.content); return !!(m.paths && m.paths.length) } catch { return false }
 }
 async function copyItem(item: ClipItem) { await clip.copyItem(item); toast.show(t('copied'), 'success') }
-function handleUnfavorite(item: ClipItem) { clip.toggleFavorite(item); selectedIds.value.delete(item.id); toast.show(t('unfavorite'), 'info') }
+async function handleUnfavorite(item: ClipItem) {
+  // 如果当前在收藏夹视图中，先从收藏夹移除并实时更新计数
+  const activeColId = collections.activeNodeId.value
+  if (activeColId) {
+    try {
+      await removeCollectionItem(activeColId, item.id)
+      // 乐观更新 collectionItemsMap
+      const newMap = new Map(collections.collectionItemsMap.value)
+      const activeSet = newMap.get(activeColId)
+      if (activeSet?.has(item.id)) {
+        const updated = new Set(activeSet)
+        updated.delete(item.id)
+        newMap.set(activeColId, updated)
+      }
+      collections.collectionItemsMap.value = newMap
+      // 乐观更新 flatCollections 的 item_count
+      collections.flatCollections.value = collections.flatCollections.value.map(c =>
+        c.id === activeColId ? { ...c, item_count: Math.max(0, (c.item_count || 0) - 1) } : c
+      )
+    } catch (err: any) {
+      console.warn('[Favorites] remove from collection failed:', err)
+    }
+  }
+  clip.toggleFavorite(item)
+  selectedIds.value.delete(item.id)
+  toast.show(t('unfavorite'), 'info')
+}
 function toggleSort() {
   if (sortBy.value === 'time') sortBy.value = 'type'
   else { sortBy.value = 'time'; sortAsc.value = !sortAsc.value }
@@ -561,8 +587,26 @@ function revealFileFolder(item: ClipItem) {
 // --- Batch ---
 function toggleBatchMode() { batchMode.value = !batchMode.value; if (!batchMode.value) selectedIds.value.clear() }
 function toggleSelect(id: string) { selectedIds.value.has(id) ? selectedIds.value.delete(id) : selectedIds.value.add(id) }
-function batchUnfavorite() {
+async function batchUnfavorite() {
   const items = clip.items.value.filter(i => selectedIds.value.has(i.id))
+  const activeColId = collections.activeNodeId.value
+  if (activeColId) {
+    for (const item of items) {
+      try { await removeCollectionItem(activeColId, item.id) } catch (e) { /* ignore */ }
+    }
+    // 批量乐观更新计数
+    const newMap = new Map(collections.collectionItemsMap.value)
+    const activeSet = newMap.get(activeColId)
+    if (activeSet) {
+      const updated = new Set(activeSet)
+      for (const item of items) updated.delete(item.id)
+      newMap.set(activeColId, updated)
+    }
+    collections.collectionItemsMap.value = newMap
+    collections.flatCollections.value = collections.flatCollections.value.map(c =>
+      c.id === activeColId ? { ...c, item_count: Math.max(0, (c.item_count || 0) - items.length) } : c
+    )
+  }
   for (const item of items) clip.toggleFavorite(item)
   toast.show(t('fav_unfav_count', {n: selectedIds.value.size}), 'info')
   selectedIds.value.clear(); batchMode.value = false
@@ -1003,7 +1047,7 @@ function cancelEditTags() {
               <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap">
                 <Lock :size="14" />
                 <span>{{ t('item_protected_mask') }}</span>
-                <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
+                <Button variant="outline" size="sm" class="h-7 px-4 py-1 text-[11px] rounded-md whitespace-nowrap" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
               </div>
               <div v-else class="fav-list-title">{{ formatContent(item) }}</div>
               <div class="fav-list-meta"><span>{{ item.source || 'Desktop' }}</span><span>·</span><span>{{ timeAgo((item as any).favoritedAt || item.timestamp) }}</span></div>
@@ -1123,7 +1167,7 @@ function cancelEditTags() {
                   <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap fav-mask-wrap--card">
                     <Lock :size="14" />
                     <span>{{ t('item_protected_mask') }}</span>
-                    <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
+                    <Button variant="outline" size="sm" class="h-7 px-4 py-1 text-[11px] rounded-md whitespace-nowrap" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
                   </div>
                   <div v-else class="fav-card-text fav-card-link"><ExternalLink :size="14" class="fav-card-link-icon" /><span class="fav-card-link-url">{{ item.content }}</span><span class="fav-card-link-domain">{{ extractDomain(item.content) }}</span></div>
                 </template>
@@ -1131,7 +1175,7 @@ function cancelEditTags() {
                   <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap fav-mask-wrap--card">
                     <Lock :size="14" />
                     <span>{{ t('item_protected_mask') }}</span>
-                    <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
+                    <Button variant="outline" size="sm" class="h-7 px-4 py-1 text-[11px] rounded-md whitespace-nowrap" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
                   </div>
                   <div v-else class="fav-card-text fav-card-file"><FileText :size="20" /><span>{{ formatContent(item) }}</span></div>
                 </template>
@@ -1139,7 +1183,7 @@ function cancelEditTags() {
                   <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap fav-mask-wrap--card">
                     <Lock :size="14" />
                     <span>{{ t('item_protected_mask') }}</span>
-                    <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
+                    <Button variant="outline" size="sm" class="h-7 px-4 py-1 text-[11px] rounded-md whitespace-nowrap" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
                   </div>
                   <div v-else class="fav-card-text">{{ formatContent(item) }}</div>
                 </template>
@@ -1372,7 +1416,7 @@ function cancelEditTags() {
 
 /* Privacy: sensitive content mask */
 .fav-mask-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px; height: 100%; }
-.fav-mask-wrap--card { position: absolute; inset: 0; background: var(--bg-hover); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+.fav-mask-wrap--card { position: absolute; inset: 0; background: var(--bg-hover); border-radius: var(--radius-sm); padding: 16px; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px; }
 .fav-masked-text { font-size: 12px; color: var(--text-tertiary); text-align: center; line-height: 1.4; }
 .fav-peek-btn { padding: 3px 10px; border-radius: 9999px; border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 11px; color: var(--accent); cursor: pointer; transition: all 0.12s; white-space: nowrap; }
 .fav-peek-btn:hover { background: var(--accent-bg); border-color: var(--accent); }

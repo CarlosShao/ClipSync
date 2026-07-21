@@ -38,6 +38,7 @@ import paymentRoutes from './routes/payments.js';
 import invoiceRoutes from './routes/invoices.js';
 import surveyRoutes from './routes/surveys.js';
 import favoritesRoutes from './routes/favorites.js';
+import protectionRoutes from './routes/protection.js';
 import templatesRoutes from './routes/templates.js';
 import templateVariablesRoutes from './routes/templateVariables.js';
 import sharedLinksRoutes from './routes/sharedLinks.js';
@@ -384,6 +385,12 @@ app.use('/api/favorites', authenticateToken, apiLimiter, csrfProtection, (req, r
   req.userId = req.user.userId;
   next();
 }, favoritesRoutes);
+
+// 统一保护级别路由
+app.use('/api/protection', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, protectionRoutes);
 
 // 模板库路由（免费功能，不挂 subscriptionCheck）
 app.use('/api/templates', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
