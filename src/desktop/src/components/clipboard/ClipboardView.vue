@@ -1346,9 +1346,20 @@ function extractDomain(url: string): string {
                   <Lock :size="14" />
                 </Button>
                 <!-- 标签 -->
-                <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'tag-active': item.tags && item.tags.length }" @click="openTagEditor(item)" :title="t('item_tags')">
-                  <Tag :size="14" />
-                </Button>
+                <div class="tag-wrap">
+                  <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'tag-active': item.tags && item.tags.length }" @click="openTagEditor(item)" :title="t('item_tags')">
+                    <Tag :size="14" />
+                  </Button>
+                  <!-- 标签编辑弹出层 -->
+                  <div v-if="tagEditorItemId === item.id" class="tag-popover" @click.stop>
+                    <div class="tag-popover-title">{{ t('item_tags_edit') }}</div>
+                    <Input v-model="tagInput" class="h-9 px-3 text-xs" :placeholder="t('item_tags_ph')" maxlength="200" @keydown.enter="saveItemTags(item)" @keydown.esc="closeTagEditor()" />
+                    <div class="tag-popover-actions">
+                      <Button variant="outline" size="sm" class="min-w-[60px] rounded-md" @click="closeTagEditor()">{{ t('cancel') }}</Button>
+                      <Button variant="default" size="sm" class="min-w-[60px] rounded-md" @click="saveItemTags(item)">{{ t('save') }}</Button>
+                    </div>
+                  </div>
+                </div>
                 <!-- Star: favorite immediately, show popover or dropdown -->
                 <div class="add-col-wrap" :data-item-id="item.id">
                   <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click.stop="handleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
@@ -1389,15 +1400,6 @@ function extractDomain(url: string): string {
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide danger" @click="handleSingleDelete(item)" :title="t('delete')">
                   <Trash2 :size="14" />
                 </Button>
-                <!-- 标签编辑弹出层 -->
-                <div v-if="tagEditorItemId === item.id" class="tag-popover" @click.stop>
-                  <div class="tag-popover-title">{{ t('item_tags_edit') }}</div>
-                  <Input v-model="tagInput" class="h-9 px-3 text-xs" :placeholder="t('item_tags_ph')" maxlength="200" @keydown.enter="saveItemTags(item)" @keydown.esc="closeTagEditor()" />
-                  <div class="tag-popover-actions">
-                    <Button variant="outline" size="sm" class="min-w-[60px] rounded-md" @click="closeTagEditor()">{{ t('cancel') }}</Button>
-                    <Button variant="default" size="sm" class="min-w-[60px] rounded-md" @click="saveItemTags(item)">{{ t('save') }}</Button>
-                  </div>
-                </div>
               </div>
             </TableCell>
           </TableRow>
@@ -1660,6 +1662,7 @@ function extractDomain(url: string): string {
   border-radius: var(--radius-md); box-shadow: var(--shadow-modal);
   padding: 4px; z-index: 50; min-width: 160px;
 }
+.tag-wrap { position: relative; display: inline-flex; }
 .add-col-option {
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 10px; border: none; background: none;
   text-align: left; font-size: 12px; color: var(--text-primary); cursor: pointer;
