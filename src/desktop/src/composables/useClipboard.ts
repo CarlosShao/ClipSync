@@ -57,7 +57,7 @@ const totalItems = ref(0)
 const loadingMore = ref(false)
 const hasMore = computed(() => totalItems.value > 0 && items.value.length < totalItems.value)
 
-// === 高级搜索筛选（device / date range / tag）===
+// === 高级搜索筛选（device / date range）===
 // 与 activeFilter/searchQuery 同理，使用 module-level ref 让筛选面板双向绑定，
 // 并由 loadClipboardItems 读取它们拼接到后端查询参数。
 const advancedFilters = ref<{
@@ -415,7 +415,7 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
   const filterToContentType: Record<string, string> = { text: 'text', images: 'image', links: 'link', files: 'file' }
   const contentType = (!loadAll && !loadFavorites) ? (filterToContentType[activeFilter.value] || '') : ''
   const typeParam = contentType ? `&contentType=${encodeURIComponent(contentType)}` : ''
-  // 高级筛选参数：deviceId / dateFrom / dateTo / tag，全部走后端精确过滤。
+  // 高级筛选参数：deviceId / dateFrom / dateTo，全部走后端精确过滤。
   // 注意：加载"全部/收藏"时仍可叠加这些筛选；但 all=true 模式用来表示"不按分类裁剪"，
   // 与高级筛选是正交的，故始终附加。
   const af = advancedFilters.value
@@ -612,7 +612,7 @@ async function updateItemContent(
 
 // === 清空高级筛选并重新拉取 ===
 function clearAdvancedFilters() {
-  advancedFilters.value = { deviceId: '', dateFrom: '', dateTo: '', tag: '' }
+  advancedFilters.value = { deviceId: '', dateFrom: '', dateTo: '' }
   loadClipboardItems({ page: 1, append: false })
 }
 
