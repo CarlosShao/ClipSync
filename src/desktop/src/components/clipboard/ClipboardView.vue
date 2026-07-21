@@ -11,7 +11,7 @@ import {
   Upload, Plus, Search, Trash2, Copy, Image as ImageIcon, Link,
   ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
   ClipboardList, Star, Bookmark, Archive, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
-  Check, X, Lock, Tag, Unlock, ShieldCheck, Filter, KeyRound, Calendar as CalendarIcon,
+  Check, X, Lock, Unlock, ShieldCheck, Filter, KeyRound, Calendar as CalendarIcon,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/table'
 import Badge from '@/components/ui/badge/Badge.vue'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { getFavoriteCollections, addCollectionItem, createFavoriteCollection, createSharedLink, uploadSharedFile, setItemTags } from '@/api/client'
+import { getFavoriteCollections, addCollectionItem, createFavoriteCollection, createSharedLink, uploadSharedFile } from '@/api/client'
 import { api } from '@/api/client'
 import { useItemPassword } from '@/composables/useItemPassword'
 import ProtectionDialog from '@/components/clipboard/ProtectionDialog.vue'
@@ -198,27 +198,6 @@ function getProtectionTitle(item: ClipItem): string {
   return t('protection_set')
 }
 
-// === 条目标签编辑 ===
-const tagEditorItemId = ref<string | null>(null)
-const tagInput = ref('')
-function openTagEditor(item: ClipItem) {
-  tagEditorItemId.value = item.id
-  tagInput.value = (item.tags || []).join(', ')
-}
-async function saveItemTags(item: ClipItem) {
-  const tags = tagInput.value.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10)
-  const res = await setItemTags(item.id, tags)
-  if (res) {
-    item.tags = tags
-    if (!item.metadata) item.metadata = {}
-    item.metadata.tags = tags
-    toast.show(t('item_tags_saved'), 'success')
-  } else {
-    toast.show(t('item_tags_save_failed'), 'error')
-  }
-  tagEditorItemId.value = null
-}
-function closeTagEditor() { tagEditorItemId.value = null }
 // 用 computed 包裹 ref，确保 Vue 3 模板正确追踪响应式依赖
 const filteredItems = computed(() => clip.filteredItems.value)
 const allItems = computed(() => clip.items.value)
@@ -1349,21 +1328,6 @@ function extractDomain(url: string): string {
                   :title="getProtectionTitle(item)">
                   <Lock :size="14" />
                 </Button>
-                <!-- 标签 -->
-                <div class="tag-wrap">
-                  <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'tag-active': item.tags && item.tags.length }" @click="openTagEditor(item)" :title="t('item_tags')">
-                    <Tag :size="14" />
-                  </Button>
-                  <!-- 标签编辑弹出层 -->
-                  <div v-if="tagEditorItemId === item.id" class="tag-popover" @click.stop>
-                    <div class="tag-popover-title">{{ t('item_tags_edit') }}</div>
-                    <Input v-model="tagInput" class="tag-popover-input" :placeholder="t('item_tags_ph')" maxlength="200" @keydown.enter="saveItemTags(item)" @keydown.esc="closeTagEditor()" />
-                    <div class="tag-popover-actions">
-                      <Button variant="outline" size="sm" class="min-w-[60px] rounded-md" @click="closeTagEditor()">{{ t('cancel') }}</Button>
-                      <Button variant="default" size="sm" class="min-w-[60px] rounded-md" @click="saveItemTags(item)">{{ t('save_btn') }}</Button>
-                    </div>
-                  </div>
-                </div>
                 <!-- Star: favorite immediately, show popover or dropdown -->
                 <div class="add-col-wrap" :data-item-id="item.id">
                   <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click.stop="handleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
@@ -1674,7 +1638,6 @@ function extractDomain(url: string): string {
   border-radius: var(--radius-md); box-shadow: var(--shadow-modal);
   padding: 4px; z-index: 50; min-width: 160px;
 }
-.tag-wrap { position: relative; display: inline-flex; }
 .add-col-option {
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 10px; border: none; background: none;
   text-align: left; font-size: 12px; color: var(--text-primary); cursor: pointer;
@@ -1750,16 +1713,4 @@ function extractDomain(url: string): string {
 
 /* ===== 条目操作按钮状态 ===== */
 .pw-locked { color: var(--color-primary, #6366f1) !important; }
-.tag-active { color: var(--color-primary, #6366f1) !important; }
-
-/* ===== 标签编辑弹出层 ===== */
-.tag-popover {
-  position: absolute; right: 8px; bottom: 40px; z-index: 50;
-  width: 240px; padding: 12px; background: var(--bg-surface);
-  border: 1px solid var(--border-default); border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-modal); animation: favPopIn 0.12s ease;
-}
-.tag-popover-input { height: 32px !important; padding: 0 10px !important; font-size: 12px !important; }
-.tag-popover-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
-.tag-popover-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 </style>
