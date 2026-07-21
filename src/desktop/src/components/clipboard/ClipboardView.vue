@@ -1329,13 +1329,13 @@ function extractDomain(url: string): string {
                 <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="t('show_in_folder')">
                   <Folder :size="14" />
                 </Button>
-                <!-- Unified protection button -->
+                <!-- Unified protection button: route by protection type -->
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide"
                   :class="{
                     'sensitive-locked': !isItemVisible(item),
                     'pw-locked': !isItemVisible(item)
                   }"
-                  @click="openProtectionDialog(item)"
+                  @click="onToggleSensitive(item)"
                   :title="getProtectionTitle(item)">
                   <Lock :size="14" />
                 </Button>
