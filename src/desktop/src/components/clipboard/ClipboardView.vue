@@ -101,10 +101,18 @@ const dateToValue = computed<DateValue | undefined>({
 // 条目是否对当前用户可见（受保护 → 需解锁 + PIN 超时检查）
 function isItemVisible(item: ClipItem): boolean {
   if (!itemPw.isItemProtected(item)) return true
-  if (!itemPw.isUnlocked(item.id)) return false
-  // PIN 保护：还需检查 peekItemId（超时后自动重新锁定）
-  if (item.metadata?.sensitive) return privacy.peekItemId.value === item.id
-  return true
+  
+  // 高级加密：解锁状态存在 itemPw.unlockedIds 中
+  if ((item as any).metadata?.protected === true) {
+    return itemPw.isUnlocked(item.id)
+  }
+  
+  // PIN 保护：解锁状态在 privacy.peekItemId 中（30s 超时）
+  if (item.metadata?.sensitive) {
+    return privacy.peekItemId.value === item.id
+  }
+  
+  return false
 }
 
 // 展示内容：受保护且可见时返回明文；不可见时显示掩码

@@ -23,6 +23,8 @@ import {
   getCollectionItems, type FavoriteTag,
 } from '@/api/client'
 import { useCollections, type CollectionNode } from '@/composables/useCollections'
+import { useItemPassword } from '@/composables/useItemPassword'
+import ProtectionDialog from '@/components/clipboard/ProtectionDialog.vue'
 
 const emit = defineEmits<{
   'preview-image': [item: ClipItem]
@@ -39,6 +41,7 @@ const clip = useClipboard()
 const router = useRouter()
 const route = useRoute()
 const configStore = useConfigStore()
+const itemPw = useItemPassword()
 
 // --- State ---
 const searchInput = ref('')
@@ -237,16 +240,23 @@ const addToColItemId = ref<string | null>(null)
 // Privacy: usePrivacy composable
 const privacy = usePrivacy()
 function isItemSensitive(item: ClipItem): boolean {
-  return privacy.isItemSensitive(item)
+  // Check if item is sensitive (PIN protection) or password-protected (advanced encryption)
+  return privacy.isItemSensitive(item) || itemPw.isItemProtected(item)
 }
-function showPeek(itemId: string) {
-  if (privacy.startPeek(itemId)) {
+function showPeek(item: ClipItem) {
+  // Password-protected item — open protection dialog to unlock
+  if (itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)) {
+    openProtectionDialog(item)
+    return
+  }
+
+  // Sensitive item — use PIN verification
+  if (privacy.startPeek(item.id)) {
+    // Peek revealed successfully
+  } else if (!privacy.pinSet.value) {
+    emit('show-pin-setup')
   } else {
-    if (!privacy.pinSet.value) {
-      emit('show-pin-setup') // no PIN → prompt user to set one first
-    } else {
-      emit('show-pin-dialog') // PIN set but not verified → ask for PIN
-    }
+    emit('show-pin-dialog')
   }
 }
 
@@ -266,13 +276,91 @@ function onToggleSensitive(item: ClipItem) {
 }
 
 async function onCopyItem(item: ClipItem) {
+  // Check if item is password-protected and not unlocked
+  if (itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)) {
+    // Password-protected item - need to unlock first
+    // This will be handled by the protection dialog
+    toast.show(t('protection_locked'), 'info')
+    return
+  }
+  
+  // Sensitive item - check PIN verification
   if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
     emit('show-pin-dialog')
     return
   }
+  
   await clip.copyItem(item)
   privacy.scheduleClipboardClear()
   toast.show(t('copied'), 'success')
+}
+
+// === 统一保护级别对话框 ===
+const protectionDialogOpen = ref(false)
+const protectionDialogItem = ref<ClipItem | null>(null)
+function openProtectionDialog(item: ClipItem) {
+  protectionDialogItem.value = item
+  protectionDialogOpen.value = true
+}
+function onProtectionProtected(level: string) {
+  // 更新本地条目元数据，让 UI 立即反映保护状态
+  if (protectionDialogItem.value) {
+    const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
+    if (item) {
+      if (!item.metadata) item.metadata = {}
+      item.isProtected = true
+      if (level === 'advanced') {
+        item.metadata.protected = true
+      } else if (level === 'pin') {
+        item.metadata.sensitive = true
+      }
+    }
+  }
+  toast.show(t('protection_applied'), 'success')
+}
+function onProtectionUnprotected() {
+  if (protectionDialogItem.value) {
+    const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
+    if (item) {
+      if (item.metadata) {
+        item.metadata.protected = false
+        item.metadata.sensitive = false
+      }
+      item.isProtected = false
+      itemPw.lockItem(protectionDialogItem.value.id)
+    }
+  }
+  toast.show(t('protection_removed'), 'success')
+}
+function onProtectionUnlocked(content: string) {
+  if (protectionDialogItem.value) {
+    itemPw.setUnlocked(protectionDialogItem.value.id, content)
+    // FavoritesView 用 formatContent 直接显示 item.content，需要把明文写回去并清除保护标记
+    const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
+    if (item && content) {
+      item.content = content
+      item.isProtected = false
+      if (item.metadata) item.metadata.protected = false
+    }
+  }
+  toast.show(t('protection_unlocked'), 'success')
+}
+
+// Get protection button title based on item state
+function getProtectionTitle(item: ClipItem): string {
+  if (!itemPw.isItemProtected(item)) return t('protection_set')
+  
+  // 高级加密：解锁状态存在 itemPw.unlockedIds 中
+  if ((item as any).metadata?.protected === true) {
+    return itemPw.isUnlocked(item.id) ? t('protection_unlocked') : t('protection_locked')
+  }
+  
+  // PIN 保护：解锁状态在 privacy.peekItemId 中（30s 超时）
+  if (item.metadata?.sensitive) {
+    return privacy.peekItemId.value === item.id ? t('protection_unlocked') : t('protection_locked')
+  }
+  
+  return t('protection_set')
 }
 
 // Drag & drop (local reorder only within favorites)
@@ -912,9 +1000,10 @@ function cancelEditTags() {
             :draggable="!batchMode" @dragstart="onDragStart($event, item)" @dragover="onDragOver" @drop="onDrop($event, item)" @dragend="onDragEnd">
             <div v-if="batchMode" class="fav-list-check"><Checkbox :model-value="selectedIds.has(item.id)" @update:model-value="() => toggleSelect(item.id)" /></div>
             <div class="fav-list-content">
-              <div v-if="isItemSensitive(item) && privacy.peekItemId.value !== item.id" class="fav-mask-wrap">
-                <div class="fav-masked-text">{{ t('content_masked') }}</div>
-                <button class="fav-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button>
+              <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap">
+                <Lock :size="14" />
+                <span>{{ t('item_protected_mask') }}</span>
+                <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
               </div>
               <div v-else class="fav-list-title">{{ formatContent(item) }}</div>
               <div class="fav-list-meta"><span>{{ item.source || 'Desktop' }}</span><span>·</span><span>{{ timeAgo((item as any).favoritedAt || item.timestamp) }}</span></div>
@@ -1031,28 +1120,37 @@ function cancelEditTags() {
                   <div v-else class="fav-card-placeholder"><ImageIcon :size="24" /></div>
                 </template>
                 <template v-else-if="item.type === 'link' || detectContentType(item.content) === 'url'">
-                  <div v-if="isItemSensitive(item) && privacy.peekItemId.value !== item.id" class="fav-mask-wrap fav-mask-wrap--card">
-                    <div class="fav-masked-text">{{ t('content_masked') }}</div>
-                    <button class="fav-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button>
+                  <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap fav-mask-wrap--card">
+                    <Lock :size="14" />
+                    <span>{{ t('item_protected_mask') }}</span>
+                    <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
                   </div>
                   <div v-else class="fav-card-text fav-card-link"><ExternalLink :size="14" class="fav-card-link-icon" /><span class="fav-card-link-url">{{ item.content }}</span><span class="fav-card-link-domain">{{ extractDomain(item.content) }}</span></div>
                 </template>
                 <template v-else-if="item.type === 'file'">
-                  <div v-if="isItemSensitive(item) && privacy.peekItemId.value !== item.id" class="fav-mask-wrap fav-mask-wrap--card">
-                    <div class="fav-masked-text">{{ t('content_masked') }}</div>
-                    <button class="fav-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button>
+                  <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap fav-mask-wrap--card">
+                    <Lock :size="14" />
+                    <span>{{ t('item_protected_mask') }}</span>
+                    <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
                   </div>
                   <div v-else class="fav-card-text fav-card-file"><FileText :size="20" /><span>{{ formatContent(item) }}</span></div>
                 </template>
                 <template v-else>
-                  <div v-if="isItemSensitive(item) && privacy.peekItemId.value !== item.id" class="fav-mask-wrap fav-mask-wrap--card">
-                    <div class="fav-masked-text">{{ t('content_masked') }}</div>
-                    <button class="fav-peek-btn" @click.stop="showPeek(item.id)">{{ t('peek_content') }}</button>
+                  <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap fav-mask-wrap--card">
+                    <Lock :size="14" />
+                    <span>{{ t('item_protected_mask') }}</span>
+                    <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
                   </div>
                   <div v-else class="fav-card-text">{{ formatContent(item) }}</div>
                 </template>
                 <!-- Lock button: bottom-left of card preview for card view -->
-                <Button variant="ghost" size="icon-sm" class="fav-card-lock-btn" :class="{ 'sensitive-locked': (item as any).metadata?.sensitive }" @click.stop="onToggleSensitive(item)" :title="(item as any).metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
+                <Button variant="ghost" size="icon-sm" class="fav-card-lock-btn" 
+                  :class="{ 
+                    'sensitive-locked': (item as any).metadata?.sensitive,
+                    'pw-locked': itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)
+                  }" 
+                  @click.stop="openProtectionDialog(item)" 
+                  :title="getProtectionTitle(item)">
                   <Lock :size="14" />
                 </Button>
               </div>
@@ -1171,6 +1269,18 @@ function cancelEditTags() {
     :cancel-text="t('cancel_btn')"
     confirm-variant="destructive"
     @confirm="doDeleteTag"
+  />
+
+  <!-- 统一保护级别对话框 -->
+  <ProtectionDialog
+    v-model:open="protectionDialogOpen"
+    :item-id="protectionDialogItem?.id || ''"
+    :content="protectionDialogItem?.content || ''"
+    :current-level="protectionDialogItem?.metadata?.protected ? 'advanced' : (protectionDialogItem?.metadata?.sensitive ? 'pin' : 'none')"
+    :item-name="protectionDialogItem?.content || ''"
+    @protected="onProtectionProtected"
+    @unprotected="onProtectionUnprotected"
+    @unlocked="onProtectionUnlocked"
   />
 </template>
 
