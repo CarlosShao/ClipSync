@@ -1357,10 +1357,10 @@ function extractDomain(url: string): string {
                   <!-- 标签编辑弹出层 -->
                   <div v-if="tagEditorItemId === item.id" class="tag-popover" @click.stop>
                     <div class="tag-popover-title">{{ t('item_tags_edit') }}</div>
-                    <Input v-model="tagInput" class="h-9 px-3 text-xs" :placeholder="t('item_tags_ph')" maxlength="200" @keydown.enter="saveItemTags(item)" @keydown.esc="closeTagEditor()" />
+                    <Input v-model="tagInput" class="tag-popover-input" :placeholder="t('item_tags_ph')" maxlength="200" @keydown.enter="saveItemTags(item)" @keydown.esc="closeTagEditor()" />
                     <div class="tag-popover-actions">
                       <Button variant="outline" size="sm" class="min-w-[60px] rounded-md" @click="closeTagEditor()">{{ t('cancel') }}</Button>
-                      <Button variant="default" size="sm" class="min-w-[60px] rounded-md" @click="saveItemTags(item)">{{ t('save') }}</Button>
+                      <Button variant="default" size="sm" class="min-w-[60px] rounded-md" @click="saveItemTags(item)">{{ t('save_btn') }}</Button>
                     </div>
                   </div>
                 </div>
@@ -1759,6 +1759,7 @@ function extractDomain(url: string): string {
   border: 1px solid var(--border-default); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-modal); animation: favPopIn 0.12s ease;
 }
+.tag-popover-input { height: 32px !important; padding: 0 10px !important; font-size: 12px !important; }
 .tag-popover-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
 .tag-popover-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 </style>
