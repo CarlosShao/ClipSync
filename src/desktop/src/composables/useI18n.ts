@@ -296,6 +296,12 @@ const _dicts: Record<Lang, I18nDict> = {
     clip_col_created:'Collection created & item moved',
     archive_action:'Archive', unarchive_action:'Unarchive',
     archive_empty_title:'No archived clips', archive_empty_desc:'Archived clips are kept here and won\'t appear in the main list.',
+    // 用户侧自动过期（exp-menu #188 / exp-detail #189）
+    exp_set:'Set expiry', exp_submenu:'Set expiry', exp_back:'Back',
+    exp_1h:'In 1 hour', exp_1d:'In 1 day', exp_7d:'In 7 days', exp_30d:'In 30 days',
+    exp_custom:'Custom date…', exp_time:'Time', exp_apply:'Apply', exp_never:'Never expires',
+    exp_current:'Expires', exp_cleared:'Expiry cleared', exp_set_toast:'Expiry set', exp_clear_toast:'Expiry cleared',
+    exp_label:'Expiry', exp_expired:'Expired',
     // Missing keys (not in original dict)
     login_forgot_code:"Didn't receive?",
     sp_pwd_mismatch:"Passwords don't match",
@@ -883,6 +889,12 @@ const _dicts: Record<Lang, I18nDict> = {
     clip_col_created:'已创建收藏夹并移入',
     archive_action:'归档', unarchive_action:'取消归档',
     archive_empty_title:'暂无归档', archive_empty_desc:'归档的剪贴内容会保存在这里，不会出现在主列表中。',
+    // 用户侧自动过期（exp-menu #188 / exp-detail #189）
+    exp_set:'设置过期', exp_submenu:'设置过期', exp_back:'返回',
+    exp_1h:'1 小时后', exp_1d:'1 天后', exp_7d:'7 天后', exp_30d:'30 天后',
+    exp_custom:'自定义日期…', exp_time:'时间', exp_apply:'确定', exp_never:'永不失效',
+    exp_current:'过期时间', exp_cleared:'已清除过期', exp_set_toast:'已设置过期', exp_clear_toast:'已清除过期',
+    exp_label:'过期', exp_expired:'已过期',
     reg_label_phone:'手机号', reg_label_nickname:'用户名', reg_label_email:'邮箱',
     reg_nickname_hint:'如：Alice、张三，2-30个字符', reg_email_hint:'选填 — 用于账号找回',
     reg_pwd_min_8:'密码至少需要 8 位',

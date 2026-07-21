@@ -15,16 +15,19 @@ import * as tauri from '@/lib/tauri'
 import QRCode from 'qrcode'
 import jsQR from 'jsqr'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
-import { Pencil, Monitor, Smartphone, FileText, CircleCheck, Download, ZoomIn, ZoomOut, RotateCcw, RotateCw, Lock } from 'lucide-vue-next'
+import { Pencil, Monitor, Smartphone, FileText, CircleCheck, Download, ZoomIn, ZoomOut, RotateCcw, RotateCw, Lock, Clock } from 'lucide-vue-next'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import mammoth from 'mammoth'
 import * as pdfjsLib from 'pdfjs-dist'
 import HtmlPreview from '@/components/clipboard/HtmlPreview.vue'
+import ExpiryPicker from '@/components/clipboard/ExpiryPicker.vue'
 import { isHtmlContent } from '@/utils/html'
+import { useClipboard } from '@/composables/useClipboard'
 
 // Set PDF.js worker source
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href
@@ -243,6 +246,22 @@ function onToggleSensitive(item: any) {
     return
   }
   emit('toggle-sensitive', item)
+}
+
+// 详情弹窗：用户侧自动过期控制（exp-detail #189）
+const clip = useClipboard()
+function formatExpiry(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleString()
+}
+async function onExpirySelect(iso: string | null) {
+  const item = props.previewItem
+  if (!item?.id) return
+  const ok = await clip.setExpiry(item, iso)
+  if (ok) toast.show(iso ? t('exp_set_toast') : t('exp_clear_toast'), 'success')
+  else toast.show(t('del_fail'), 'error')
 }
 
 // Plan selection state (for pricing → payment flow)
@@ -1577,6 +1596,21 @@ async function handleFeedbackSubmit() {
           <span class="doc-size">{{ formatDocSize(previewContent.length) }}</span>
         </div>
         <div class="doc-type-right">
+          <Popover>
+            <PopoverTrigger as-child>
+              <Button variant="ghost" size="icon-sm" :title="t('exp_set')">
+                <Clock :size="14" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent class="w-auto p-3">
+              <div class="doc-expiry-head">
+                <span class="doc-expiry-label">{{ t('exp_current') }}</span>
+                <span v-if="previewItem?.expiresAt" class="doc-expiry-current">{{ formatExpiry(previewItem.expiresAt) }}</span>
+                <span v-else class="doc-expiry-none">{{ t('exp_never') }}</span>
+              </div>
+              <ExpiryPicker :model-value="previewItem?.expiresAt ?? null" @select="onExpirySelect" />
+            </PopoverContent>
+          </Popover>
           <Button variant="ghost" size="icon-sm" :class="{ 'sensitive-locked': previewItem?.metadata?.sensitive }" @click="onToggleSensitive(previewItem)" :title="previewItem?.metadata?.sensitive ? t('sens_unlock') : t('sens_lock')">
             <Lock :size="14" />
           </Button>
@@ -2055,6 +2089,12 @@ async function handleFeedbackSubmit() {
 
 /* HTML safe preview wrapper in detail modal */
 .html-preview-doc { max-height: 70vh; overflow: auto; }
+
+/* Expiry control inside detail-modal popover (portaled, must be non-scoped) */
+.doc-expiry-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 12px; }
+.doc-expiry-label { color: var(--text-tertiary); }
+.doc-expiry-current { color: var(--text-primary); font-weight: 500; }
+.doc-expiry-none { color: var(--text-tertiary); }
 </style>
 
 <!-- Non-scoped styles: needed for v-html rendered content (markdown-body) -->
