@@ -64,12 +64,10 @@ const advancedFilters = ref<{
   deviceId: string
   dateFrom: string
   dateTo: string
-  tag: string
 }>({
   deviceId: '',
   dateFrom: '',
   dateTo: '',
-  tag: '',
 })
 // 设备列表（用于筛选下拉），懒加载 + 内存缓存，避免每次打开筛选面板都打 /api/devices
 let devicesCache: { id: string; name: string; platform?: string }[] = []
@@ -425,7 +423,6 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
   if (af.deviceId && af.deviceId.trim()) advParts.push(`deviceId=${encodeURIComponent(af.deviceId.trim())}`)
   if (af.dateFrom && af.dateFrom.trim()) advParts.push(`dateFrom=${encodeURIComponent(af.dateFrom.trim())}`)
   if (af.dateTo && af.dateTo.trim()) advParts.push(`dateTo=${encodeURIComponent(af.dateTo.trim())}`)
-  if (af.tag && af.tag.trim()) advParts.push(`tag=${encodeURIComponent(af.tag.trim())}`)
   const advParamStr = advParts.length > 0 ? `&${advParts.join('&')}` : ''
   try {
   const res = await api('GET', `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}`)
@@ -504,12 +501,18 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
         selected: false,
         isFavorite: !!i.isFavorite,
         favoritedAt: i.favoritedAt ? new Date(i.favoritedAt).getTime() : undefined,
-        metadata: i.metadata, // ← 必须映射，否则刷新后 tags/paths 等元数据丢失
+        metadata: (() => {
+          // 从服务端 protectionLevel 同步元数据标记
+          const meta = i.metadata && typeof i.metadata === 'object' ? { ...i.metadata } : {}
+          if (i.protectionLevel === 'advanced') meta.protected = true
+          else if (i.protectionLevel === 'pin') meta.sensitive = true
+          return meta
+        })(),
         contentSize: i.contentSize,
         // === 高级搜索 / 条目级密码 ===
         sourceDeviceId: i.sourceDevice?.id || i.sourceDeviceId || undefined,
         tags: (i.metadata && Array.isArray(i.metadata.tags)) ? i.metadata.tags : undefined,
-        isProtected: !!(i.metadata && i.metadata.protected === true),
+        isProtected: !!(i.metadata && i.metadata.protected === true) || !!(i.metadata && i.metadata.sensitive === true) || (i.protectionLevel && i.protectionLevel !== 'none'),
       }
     })
     if (append) {

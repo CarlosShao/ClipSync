@@ -502,6 +502,8 @@ function handleFavorite(item: ClipItem) {
     clip.toggleFavorite(item)
     addToColItemId.value = null
     dismissFavPopover()
+    // 取消收藏后立即刷新收藏夹计数，保证左侧数字实时同步
+    loadCollections()
   } else {
     clip.toggleFavorite(item)
     if (collections.value.length > 0) {
@@ -1154,17 +1156,6 @@ function extractDomain(url: string): string {
             </PopoverContent>
           </Popover>
         </div>
-        <div class="adv-filter-field">
-          <label>{{ t('filter_tag') }}</label>
-          <Input
-            v-model="clip.advancedFilters.value.tag"
-            class="filter-input-sm text-sm w-40"
-            :placeholder="t('filter_tag_ph')"
-            @keyup.enter="clip.loadClipboardItems({ page: 1 })"
-            @blur="clip.loadClipboardItems({ page: 1 })"
-          />
-        </div>
-
         <div class="adv-filter-field adv-filter-field--actions">
           <div class="adv-filter-label-placeholder"></div>
           <div class="adv-filter-actions-inline">
@@ -1281,10 +1272,6 @@ function extractDomain(url: string): string {
                 <span v-else class="cell-text">
                   {{ formatContent(item) }}
                 </span>
-                <!-- 标签标识（已打标签时显示） -->
-                <div v-if="item.tags && item.tags.length" class="cell-tag-chips">
-                  <span v-for="tag in item.tags" :key="tag" class="cell-tag-chip">{{ tag }}</span>
-                </div>
               </div>
             </TableCell>
             <TableCell class="cell-source">{{ item.source || 'Desktop' }}</TableCell>
@@ -1531,13 +1518,6 @@ function extractDomain(url: string): string {
   overflow: hidden; text-overflow: ellipsis; word-break: break-word;
 }
 
-/* 标签标识 */
-.cell-tag-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.cell-tag-chip {
-  display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
-  border-radius: var(--radius-sm); font-size: 11px; line-height: 1;
-  background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent);
-}
 
 /* 图片预览 */
 .cell-img-preview { display: flex; align-items: center; gap: 10px; flex-shrink: 0; position: relative; }
