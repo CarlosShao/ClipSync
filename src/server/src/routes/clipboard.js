@@ -551,6 +551,11 @@ router.put('/:id/favorite', apiLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Clipboard item not found' });
     }
 
+    // Clean up collection associations when unfavoriting
+    if (!result.rows[0].is_favorite) {
+      await pool.query('DELETE FROM favorite_collection_items WHERE item_id = $1', [id]);
+    }
+
     res.json({
       id: result.rows[0].id,
       isFavorite: result.rows[0].is_favorite,

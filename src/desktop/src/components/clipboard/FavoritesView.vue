@@ -1372,7 +1372,7 @@ function cancelEditTags() {
 
 /* Privacy: sensitive content mask */
 .fav-mask-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px; height: 100%; }
-.fav-mask-wrap--card { position: absolute; inset: 0; background: var(--bg-hover); border-radius: var(--radius-sm); }
+.fav-mask-wrap--card { position: absolute; inset: 0; background: var(--bg-hover); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
 .fav-masked-text { font-size: 12px; color: var(--text-tertiary); text-align: center; line-height: 1.4; }
 .fav-peek-btn { padding: 3px 10px; border-radius: 9999px; border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 11px; color: var(--accent); cursor: pointer; transition: all 0.12s; white-space: nowrap; }
 .fav-peek-btn:hover { background: var(--accent-bg); border-color: var(--accent); }

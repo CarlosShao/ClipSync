@@ -19,7 +19,7 @@ router.get('/collections', apiLimiter, async (req, res) => {
               COUNT(ci.id)::int AS item_count
        FROM favorite_collections fc
        LEFT JOIN favorite_collection_items fci ON fc.id = fci.collection_id
-       LEFT JOIN clipboard_items ci ON fci.item_id = ci.id AND ci.user_id = $1
+       LEFT JOIN clipboard_items ci ON fci.item_id = ci.id AND ci.user_id = $1 AND ci.is_favorite = TRUE
        WHERE fc.user_id = $1
        GROUP BY fc.id, fc.path, fc.sort_order, fc.created_at
        ORDER BY fc.sort_order ASC, fc.path ASC`,
