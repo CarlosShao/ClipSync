@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
@@ -41,6 +41,10 @@ const emit = defineEmits<{
   'show-pin-setup': []
   'toggle-sensitive': [item: ClipItem]
 }>()
+
+// mode: 'default' = 主列表；'archive' = 仅归档视图（复用同一组件，按 view 拉取不同数据）
+const props = defineProps<{ mode?: 'default' | 'archive' }>()
+const isArchive = computed(() => props.mode === 'archive')
 
 const { t } = useI18n()
 const toast = useSonner()
@@ -336,7 +340,13 @@ async function loadCollections() {
 onMounted(() => {
   loadCollections()
   // 从收藏页/其他视图切回剪贴板时，items 可能被收藏数据填充，必须重新按当前分类刷新。
-  clip.loadClipboardItems()
+  // 归档视图：按 mode 拉取 view=archive；主列表：view=all（默认隐藏已归档）。
+  clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
+})
+
+// mode 切换（clipboard ↔ archive 复用同一组件实例）时，按新视图重新拉取
+watch(() => props.mode, () => {
+  clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
 })
 
 function showFavPopover(itemId: string) {
@@ -1067,17 +1077,17 @@ function extractDomain(url: string): string {
     <!-- Toolbar -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <span class="toolbar-title">{{ t('nav_clipboard') }}</span>
+        <span class="toolbar-title">{{ isArchive ? t('nav_archive') : t('nav_clipboard') }}</span>
         <Badge variant="secondary" class="count-badge">{{ totalItems }} {{ t('items_c') }}</Badge>
       </div>
       <div class="toolbar-spacer" />
       <div class="toolbar-right">
-        <Button variant="outline" size="sm" @click="triggerFileUpload">
+        <Button v-if="!isArchive" variant="outline" size="sm" @click="triggerFileUpload">
           <Upload :size="15" />
           <span>{{ t('upload_file') }}</span>
         </Button>
         <input ref="fileInputRef" type="file" style="display:none" multiple @change="handleFileUpload" />
-        <Button variant="default" size="sm" @click="toggleQuickPaste">
+        <Button v-if="!isArchive" variant="default" size="sm" @click="toggleQuickPaste">
           <Plus :size="15" />
           <span>{{ t('new_clip') }}</span>
         </Button>
@@ -1352,6 +1362,13 @@ function extractDomain(url: string): string {
                     </Button>
                   </div>
                 </div>
+                <!-- Archive / Unarchive -->
+                <Button v-if="!isArchive" variant="ghost" size="icon-sm" class="btn-action-hide" @click="clip.archiveItem(item)" :title="t('archive_action')">
+                  <Archive :size="14" />
+                </Button>
+                <Button v-else variant="ghost" size="icon-sm" class="btn-action-hide" @click="clip.unarchiveItem(item)" :title="t('unarchive_action')">
+                  <Archive :size="14" />
+                </Button>
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide danger" @click="handleSingleDelete(item)" :title="t('delete')">
                   <Trash2 :size="14" />
                 </Button>
@@ -1376,9 +1393,9 @@ function extractDomain(url: string): string {
         <div class="empty-icon-wrap">
           <ClipboardList :size="48" style="color:var(--text-tertiary)" />
         </div>
-        <h3 class="empty-title">{{ t('empty_title') }}</h3>
-        <p class="empty-desc">{{ t('empty_desc') }}</p>
-        <div class="empty-hints">
+        <h3 class="empty-title">{{ isArchive ? t('archive_empty_title') : t('empty_title') }}</h3>
+        <p class="empty-desc">{{ isArchive ? t('archive_empty_desc') : t('empty_desc') }}</p>
+        <div v-if="!isArchive" class="empty-hints">
           <div class="empty-hint">
             <Copy :size="14" class="empty-hint-icon" />
             <span>{{ t('empty_hint_copy') }}</span>
@@ -1392,7 +1409,7 @@ function extractDomain(url: string): string {
             <span>{{ t('empty_hint_upload') }}</span>
           </div>
         </div>
-        <p class="empty-action">{{ t('empty_action') }}</p>
+        <p v-if="!isArchive" class="empty-action">{{ t('empty_action') }}</p>
       </div>
     </div>
   </div>
