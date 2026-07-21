@@ -48,7 +48,7 @@ function detectContentType(content, declaredType) {
 // GET /api/clipboard - List clipboard items (with pagination)
 router.get('/', apiLimiter, async (req, res) => {
   try {
-    const { page = 1, limit = 50, contentType, search, favorites, all, deviceId, dateFrom, dateTo, tag } = req.query;
+    const { page = 1, limit = 50, contentType, search, favorites, all, deviceId, dateFrom, dateTo, tag, view } = req.query;
 
     // 验证分页参数
     const pagination = validatePagination(page, limit, { all: all === 'true' });
@@ -70,6 +70,13 @@ router.get('/', apiLimiter, async (req, res) => {
 
     if (favorites === 'true') {
       whereClause += ' AND is_favorite = TRUE';
+    }
+
+    // Archive view: default hides archived items; view=archive shows only archived
+    if (view === 'archive') {
+      whereClause += ' AND ci.archived = TRUE';
+    } else {
+      whereClause += ' AND ci.archived = FALSE';
     }
 
     if (search) {
@@ -148,7 +155,7 @@ router.get('/', apiLimiter, async (req, res) => {
     const limitClause = useLimit ? `LIMIT $${paramIndex} OFFSET $${paramIndex + 1}` : ''
     const itemsResult = await pool.query(
       `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
-              ci.source_device_id, ci.metadata, ci.is_favorite, ci.favorited_at, ci.expires_at, ci.created_at,
+              ci.source_device_id, ci.metadata, ci.is_favorite, ci.favorited_at, ci.expires_at, ci.archived, ci.created_at,
               ci.protection_level,
               d.device_name, d.platform
        FROM clipboard_items ci
@@ -168,6 +175,7 @@ router.get('/', apiLimiter, async (req, res) => {
         metadata: item.metadata,
         isFavorite: item.is_favorite,
         favoritedAt: item.favorited_at,
+        archived: item.archived,
         expiresAt: item.expires_at,
         createdAt: item.created_at,
         protectionLevel: item.protection_level || 'none',
@@ -205,6 +213,8 @@ router.get('/search', apiLimiter, async (req, res) => {
 
     let whereClause = 'WHERE ci.user_id = $1';
     const params = [req.userId];
+    // Archived items are excluded from search results
+    whereClause += ' AND ci.archived = FALSE';
     let paramIndex = 2;
 
     if (contentType) {
@@ -231,7 +241,7 @@ router.get('/search', apiLimiter, async (req, res) => {
     // Get items with relevance ranking
     const itemsResult = await pool.query(
       `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
-              ci.metadata, ci.is_favorite, ci.expires_at, ci.created_at,
+              ci.metadata, ci.is_favorite, ci.archived, ci.expires_at, ci.created_at,
               d.device_name, d.platform,
               ts_rank(ci.search_vector, to_tsquery('simple', $${paramIndex - 2})) AS relevance
        FROM clipboard_items ci
@@ -257,6 +267,7 @@ router.get('/search', apiLimiter, async (req, res) => {
         contentSize: item.content_size,
         metadata: item.metadata,
         isFavorite: item.is_favorite,
+        archived: item.archived,
         expiresAt: item.expires_at,
         createdAt: item.created_at,
         relevance: parseFloat(item.relevance) || 0,
@@ -605,7 +616,7 @@ router.put('/:id/sensitive', apiLimiter, async (req, res) => {
 router.put('/:id', apiLimiter, async (req, res) => {
   try {
     const { id } = req.params;
-    const { content, contentPreview, contentSize, metadata } = req.body;
+    const { content, contentPreview, contentSize, metadata, archived } = req.body;
 
     if (!isValidUUID(id)) return res.status(400).json({ error: 'Invalid ID format' });
 
@@ -641,6 +652,9 @@ router.put('/:id', apiLimiter, async (req, res) => {
     if (contentSize !== undefined && (!Number.isInteger(contentSize) || contentSize < 0)) {
       return res.status(400).json({ error: 'contentSize must be a non-negative integer' });
     }
+    if (archived !== undefined && typeof archived !== 'boolean') {
+      return res.status(400).json({ error: 'archived must be a boolean' });
+    }
 
     // Build dynamic SET clause
     const setClauses = [];
@@ -664,6 +678,10 @@ router.put('/:id', apiLimiter, async (req, res) => {
       params.push(JSON.stringify(metaPatch));
       p++;
     }
+    if (archived !== undefined) {
+      setClauses.push(`archived = $${p++}`);
+      params.push(archived);
+    }
 
     if (setClauses.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
@@ -673,7 +691,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
       `UPDATE clipboard_items
        SET ${setClauses.join(', ')}
        WHERE id = $1 AND user_id = $2
-       RETURNING id, content_type, content_preview, content_size, metadata, is_favorite, source_device_id, created_at`,
+       RETURNING id, content_type, content_preview, content_size, metadata, is_favorite, archived, source_device_id, created_at`,
       params
     );
 
@@ -687,6 +705,7 @@ router.put('/:id', apiLimiter, async (req, res) => {
       contentSize: item.content_size,
       metadata: item.metadata,
       isFavorite: item.is_favorite,
+      archived: item.archived,
       sourceDeviceId: item.source_device_id,
       createdAt: item.created_at,
     };
@@ -826,7 +845,7 @@ router.get('/sync/:deviceId', apiLimiter, async (req, res) => {
 
     const result = await pool.query(
       `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
-              ci.metadata, ci.is_favorite, ci.expires_at, ci.created_at,
+              ci.metadata, ci.is_favorite, ci.archived, ci.expires_at, ci.created_at,
               d.device_name, d.platform
        FROM clipboard_items ci
        LEFT JOIN devices d ON ci.source_device_id = d.id
@@ -855,6 +874,7 @@ router.get('/sync/:deviceId', apiLimiter, async (req, res) => {
         contentSize: item.content_size,
         metadata: item.metadata,
         isFavorite: item.is_favorite,
+        archived: item.archived,
         expiresAt: item.expires_at,
         createdAt: item.created_at,
         sourceDevice: {
