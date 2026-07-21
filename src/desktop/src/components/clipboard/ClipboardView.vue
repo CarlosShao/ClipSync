@@ -1246,7 +1246,7 @@ function extractDomain(url: string): string {
             <TableHead class="w-[160px]">{{ t('head_source') }}</TableHead>
             <TableHead class="w-[64px]">{{ t('head_type') }}</TableHead>
             <TableHead class="w-[90px]">{{ t('head_time') }}</TableHead>
-            <TableHead class="w-[120px] text-center">{{ t('head_actions') }}</TableHead>
+            <TableHead class="w-[150px] text-center">{{ t('head_actions') }}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1302,6 +1302,10 @@ function extractDomain(url: string): string {
                 <span v-else class="cell-text">
                   {{ formatContent(item) }}
                 </span>
+                <!-- 标签标识（已打标签时显示） -->
+                <div v-if="item.tags && item.tags.length" class="cell-tag-chips">
+                  <span v-for="tag in item.tags" :key="tag" class="cell-tag-chip">{{ tag }}</span>
+                </div>
               </div>
             </TableCell>
             <TableCell class="cell-source">{{ item.source || 'Desktop' }}</TableCell>
@@ -1563,6 +1567,14 @@ function extractDomain(url: string): string {
   overflow: hidden; text-overflow: ellipsis; word-break: break-word;
 }
 
+/* 标签标识 */
+.cell-tag-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.cell-tag-chip {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
+  border-radius: var(--radius-sm); font-size: 11px; line-height: 1;
+  background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent);
+}
+
 /* 图片预览 */
 .cell-img-preview { display: flex; align-items: center; gap: 10px; flex-shrink: 0; position: relative; }
 .cell-thumb { width: 48px; height: 34px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); }
@@ -1748,5 +1760,5 @@ function extractDomain(url: string): string {
   box-shadow: var(--shadow-modal); animation: favPopIn 0.12s ease;
 }
 .tag-popover-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
-.tag-popover-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.tag-popover-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 </style>
