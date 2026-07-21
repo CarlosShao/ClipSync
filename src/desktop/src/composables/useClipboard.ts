@@ -29,6 +29,8 @@ export interface ClipItem {
   isProtected?: boolean
   // === 归档字段 ===
   isArchived?: boolean
+  // === 用户侧自动过期字段 ===
+  expiresAt?: string | null
 }
 
 // === SINGLETON STATE - module-level refs shared across all callers ===
@@ -526,6 +528,7 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
         isProtected: !!(i.metadata && i.metadata.protected === true) || !!(i.metadata && i.metadata.sensitive === true) || (i.protectionLevel && i.protectionLevel !== 'none'),
         // === 归档字段：后端 archived 标志映射到本地条目 ===
         isArchived: !!i.archived,
+        expiresAt: i.expires_at ?? null,
       }
     })
     if (append) {
@@ -1377,6 +1380,29 @@ export function useClipboard() {
     }
   }
 
+  /**
+   * 设置/清除用户侧自动过期：调用 PUT /api/clipboard/:id { expiresAt }。
+   * iso 为 null 表示清除过期；否则传 ISO 字符串。乐观更新本地 expiresAt，失败回滚。
+   */
+  async function setExpiry(item: ClipItem, iso: string | null): Promise<boolean> {
+    const prev = item.expiresAt
+    item.expiresAt = iso
+    try {
+      const res = await api('PUT', `/api/clipboard/${item.id}`, { expiresAt: iso })
+      if (!res.ok) {
+        item.expiresAt = prev
+        console.warn('[Clipboard] setExpiry failed:', res.error)
+        return false
+      }
+      skipNextPolls(3000)
+      return true
+    } catch (e: any) {
+      item.expiresAt = prev
+      console.warn('[Clipboard] setExpiry error:', e?.message || e)
+      return false
+    }
+  }
+
   function setFilter(f: ClipboardFilter) {
     if (activeFilter.value === f) return
     activeFilter.value = f
@@ -1581,7 +1607,7 @@ export function useClipboard() {
     totalItems, hasMore, loadingMore, loadMore, currentPage, pageSize,
     selectedCount, allSelected, startPolling, copyItem, copyText,
     toggleSelectAll, clearSelection, batchDelete, deleteSingle, toggleFavorite,
-    archiveItem, unarchiveItem,
+    archiveItem, unarchiveItem, setExpiry,
     loadClipboardItems, setFilter, setSearch, toggleBatch, uploadFileItem,
     refresh: loadClipboardItems,
     resetImages,
