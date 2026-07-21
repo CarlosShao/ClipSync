@@ -200,6 +200,10 @@ const postMigrations = [
     ('Pro', '专业版', '完整功能解锁', 9.9, 99, 10, 500, 10, 1024,
      '{"ai_classify":true,"offline_queue":true,"e2e_encryption":true,"push_notification":true,"full_text_search":true,"version_history_days":30}')
    ON CONFLICT (name) DO NOTHING`,
+
+  // Archive feature: add archived flag (idempotent, additive column)
+  `ALTER TABLE clipboard_items ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE`,
+  `CREATE INDEX IF NOT EXISTS idx_clipboard_items_archived ON clipboard_items(archived, created_at DESC)`,
 ];
 
 async function migrate() {
