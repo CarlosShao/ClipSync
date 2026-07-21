@@ -11,7 +11,7 @@ import {
   Upload, Plus, Search, Trash2, Copy, Image as ImageIcon, Link,
   ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
   ClipboardList, Star, Bookmark, Archive, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
-  Check, X, Lock, Unlock, ShieldCheck, Filter, KeyRound, Calendar as CalendarIcon,
+  Check, X, Lock, Unlock, ShieldCheck, Filter, KeyRound, Calendar as CalendarIcon, Clock,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -32,6 +32,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { parseDate, type DateValue } from '@internationalized/date'
 import TablePreview from '@/components/clipboard/TablePreview.vue'
 import HtmlPreview from '@/components/clipboard/HtmlPreview.vue'
+import ExpiryPicker from '@/components/clipboard/ExpiryPicker.vue'
 import { parseTable } from '@/utils/table'
 import { isHtmlContent } from '@/utils/html'
 
@@ -965,6 +966,35 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
 }
 
+// ===== 右击上下文菜单（含过期设置，exp-menu #188） =====
+const ctxMenu = ref<{ item: ClipItem | null; x: number; y: number; mode: 'main' | 'expiry' }>({ item: null, x: 0, y: 0, mode: 'main' })
+const ctxStyle = computed(() => {
+  const w = 200
+  const h = 320
+  const vw = window?.innerWidth || 1200
+  const vh = window?.innerHeight || 800
+  const x = Math.min(ctxMenu.value.x, vw - w - 8)
+  const y = Math.min(ctxMenu.value.y, vh - h - 8)
+  return { left: Math.max(8, x) + 'px', top: Math.max(8, y) + 'px' }
+})
+function openCtxMenu(item: ClipItem, e: MouseEvent) {
+  if (!requireUnlocked(item)) return
+  const idx = filteredItems.value.findIndex(i => i.id === item.id)
+  if (idx >= 0) focusedIndex.value = idx
+  ctxMenu.value = { item, x: e.clientX, y: e.clientY, mode: 'main' }
+}
+function closeCtxMenu() { ctxMenu.value = { ...ctxMenu.value, item: null } }
+function ctxSetExpiryMode() { ctxMenu.value = { ...ctxMenu.value, mode: 'expiry' } }
+function ctxBack() { ctxMenu.value = { ...ctxMenu.value, mode: 'main' } }
+async function ctxApplyExpiry(iso: string | null) {
+  const item = ctxMenu.value.item
+  if (!item) return
+  const ok = await clip.setExpiry(item, iso)
+  if (ok) toast.show(iso ? t('exp_set_toast') : t('exp_clear_toast'), 'success')
+  else toast.show(t('del_fail'), 'error')
+  closeCtxMenu()
+}
+
 // ===== Helpers =====
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts
@@ -1102,6 +1132,19 @@ function extractDomain(url: string): string {
   } catch {
     return url.slice(0, 30)
   }
+}
+
+// 列表单元格过期短标识（exp-detail #189 补充：让过期设置可见）
+function formatExpiryShort(iso: string): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const diff = d.getTime() - Date.now()
+  if (diff <= 0) return t('exp_expired')
+  const day = 86400000
+  if (diff < 3600000) return Math.ceil((diff / 3600000) * 10) / 10 + 'h'
+  if (diff < day) return Math.floor(diff / 3600000) + 'h'
+  if (diff < 30 * day) return Math.floor(diff / day) + 'd'
+  return Math.floor(diff / day) + 'd'
 }
 </script>
 
@@ -1272,6 +1315,7 @@ function extractDomain(url: string): string {
             @mouseenter="focusedIndex = idx"
             @click="focusedIndex = idx"
             @dblclick="onDblClick(item)"
+            @contextmenu.prevent="openCtxMenu(item, $event)"
           >
             <TableCell class="w-12">
               <Checkbox :model-value="item.selected" @update:model-value="(v: boolean | string) => (item.selected = v === true)" />
@@ -1333,7 +1377,12 @@ function extractDomain(url: string): string {
                 {{ getTypeLabel(item.type) }}
               </Badge>
             </TableCell>
-            <TableCell class="cell-time">{{ timeAgo(item.timestamp) }}</TableCell>
+            <TableCell class="cell-time">
+              <span>{{ timeAgo(item.timestamp) }}</span>
+              <span v-if="item.expiresAt" class="cell-expiry" :title="t('exp_label') + ': ' + new Date(item.expiresAt).toLocaleString()">
+                <Clock :size="11" />{{ formatExpiryShort(item.expiresAt) }}
+              </span>
+            </TableCell>
             <TableCell>
               <div class="cell-actions">
                 <Button v-if="item.type !== 'file' || hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="onCopyItem(item)" :title="t('copy')">
@@ -1453,6 +1502,24 @@ function extractDomain(url: string): string {
         </div>
         <p v-if="!isArchive" class="empty-action">{{ t('empty_action') }}</p>
       </div>
+    </div>
+
+    <!-- 右击上下文菜单（exp-menu #188） -->
+    <div v-if="ctxMenu.item" class="ctx-overlay" @click="closeCtxMenu" @contextmenu.prevent="closeCtxMenu" />
+    <div v-if="ctxMenu.item" class="ctx-menu" :style="ctxStyle">
+      <template v-if="ctxMenu.mode === 'main'">
+        <button type="button" class="ctx-item" @click="copyWithPinCheck(ctxMenu.item!); closeCtxMenu()">{{ t('copy') }}</button>
+        <button type="button" class="ctx-item" @click="handleFavorite(ctxMenu.item!); closeCtxMenu()">{{ ctxMenu.item.isFavorite ? t('unfavorite') : t('favorite') }}</button>
+        <button v-if="!isArchive" type="button" class="ctx-item" @click="clip.archiveItem(ctxMenu.item!); closeCtxMenu()">{{ t('archive_action') }}</button>
+        <button v-else type="button" class="ctx-item" @click="clip.unarchiveItem(ctxMenu.item!); closeCtxMenu()">{{ t('unarchive_action') }}</button>
+        <button type="button" class="ctx-item ctx-item--accent" @click="ctxSetExpiryMode()">{{ t('exp_set') }}…</button>
+        <div class="ctx-sep" />
+        <button type="button" class="ctx-item ctx-item--danger" @click="handleSingleDelete(ctxMenu.item!); closeCtxMenu()">{{ t('delete') }}</button>
+      </template>
+      <template v-else>
+        <button type="button" class="ctx-item ctx-back" @click="ctxBack()">{{ t('exp_back') }}</button>
+        <div class="ctx-expiry"><ExpiryPicker :model-value="ctxMenu.item.expiresAt" @select="ctxApplyExpiry" /></div>
+      </template>
     </div>
   </div>
 </template>
@@ -1635,6 +1702,7 @@ function extractDomain(url: string): string {
 .type-badge-new[data-type="text"] .type-dot { background: var(--text-tertiary); }
 
 .cell-time { color: var(--text-tertiary); font-size: 12px; white-space: nowrap; }
+.cell-expiry { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; padding: 1px 5px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warning) 14%, transparent); color: var(--warning); font-size: 10px; white-space: nowrap; }
 
 /* Action buttons (always visible) */
 .cell-actions { display: flex; align-items: center; gap: 2px; justify-content: flex-end; }
@@ -1758,4 +1826,29 @@ function extractDomain(url: string): string {
 
 /* ===== 条目操作按钮状态 ===== */
 .pw-locked { color: var(--color-primary, #6366f1) !important; }
+
+/* ===== 右击上下文菜单 ===== */
+.ctx-overlay {
+  position: fixed; inset: 0; z-index: 90; background: transparent;
+}
+.ctx-menu {
+  position: fixed; z-index: 91; width: 200px; padding: 6px;
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-modal);
+  display: flex; flex-direction: column; gap: 2px;
+  animation: ctxFadeIn 0.12s ease;
+}
+@keyframes ctxFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.ctx-item {
+  display: flex; align-items: center; width: 100%; padding: 7px 10px;
+  border: none; background: transparent; text-align: left; cursor: pointer;
+  font-size: 13px; color: var(--text-primary); border-radius: var(--radius-sm);
+  transition: background .12s;
+}
+.ctx-item:hover { background: var(--bg-hover); }
+.ctx-item--accent { color: var(--accent); }
+.ctx-item--danger { color: var(--danger); }
+.ctx-item--danger:hover { background: var(--danger-bg); }
+.ctx-sep { height: 1px; background: var(--border-subtle); margin: 4px 2px; }
+.ctx-expiry { padding: 4px 2px 2px; }
 </style>
