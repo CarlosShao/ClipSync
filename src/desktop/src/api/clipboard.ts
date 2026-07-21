@@ -25,3 +25,8 @@ export function deleteClips(ids: string[]) {
 export function deleteClip(id: string) {
   return api(`/api/clipboard/${id}`, 'DELETE')
 }
+
+// 归档/取消归档：复用后端 PUT /api/clipboard/:id 的 archived 字段
+export function setArchive(id: string, archived: boolean) {
+  return api('PUT', `/api/clipboard/${id}`, { archived })
+}

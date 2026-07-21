@@ -27,6 +27,8 @@ export interface ClipItem {
   sourceDeviceId?: string
   tags?: string[]
   isProtected?: boolean
+  // === 归档字段 ===
+  isArchived?: boolean
 }
 
 // === SINGLETON STATE - module-level refs shared across all callers ===
@@ -513,6 +515,8 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
         sourceDeviceId: i.sourceDevice?.id || i.sourceDeviceId || undefined,
         tags: (i.metadata && Array.isArray(i.metadata.tags)) ? i.metadata.tags : undefined,
         isProtected: !!(i.metadata && i.metadata.protected === true) || !!(i.metadata && i.metadata.sensitive === true) || (i.protectionLevel && i.protectionLevel !== 'none'),
+        // === 归档字段：后端 archived 标志映射到本地条目 ===
+        isArchived: !!i.archived,
       }
     })
     if (append) {
@@ -1308,6 +1312,62 @@ export function useClipboard() {
     }
   }
 
+  /**
+   * 归档条目：调用 PUT /api/clipboard/:id { archived: true }。
+   * 乐观更新本地 isArchived 并从当前列表移除（后端 view=all 默认排除 archived，
+   * 移除可避免"归档后还留在主列表"的感知错位）。失败回滚。
+   */
+  async function archiveItem(item: ClipItem): Promise<boolean> {
+    const prev = item.isArchived
+    item.isArchived = true
+    try {
+      const res = await api('PUT', `/api/clipboard/${item.id}`, { archived: true })
+      if (!res.ok) {
+        item.isArchived = prev
+        console.warn('[Clipboard] archiveItem failed:', res.error)
+        return false
+      }
+      // 从当前视图移除（归档视图由 view=archive 单独拉取）
+      const next = items.value.filter(i => i.id !== item.id)
+      releaseRemovedObjectUrls(next)
+      items.value = next
+      if (totalItems.value > 0) totalItems.value = Math.max(0, totalItems.value - 1)
+      skipNextPolls(3000)
+      return true
+    } catch (e: any) {
+      item.isArchived = prev
+      console.warn('[Clipboard] archiveItem error:', e?.message || e)
+      return false
+    }
+  }
+
+  /**
+   * 取消归档：调用 PUT /api/clipboard/:id { archived: false }。
+   * 乐观更新并从当前（归档）视图移除；失败回滚。
+   */
+  async function unarchiveItem(item: ClipItem): Promise<boolean> {
+    const prev = item.isArchived
+    item.isArchived = false
+    try {
+      const res = await api('PUT', `/api/clipboard/${item.id}`, { archived: false })
+      if (!res.ok) {
+        item.isArchived = prev
+        console.warn('[Clipboard] unarchiveItem failed:', res.error)
+        return false
+      }
+      const next = items.value.filter(i => i.id !== item.id)
+      releaseRemovedObjectUrls(next)
+      items.value = next
+      if (totalItems.value > 0) totalItems.value = Math.max(0, totalItems.value - 1)
+      skipNextPolls(3000)
+      return true
+    } catch (e: any) {
+      item.isArchived = prev
+      console.warn('[Clipboard] unarchiveItem error:', e?.message || e)
+      return false
+    }
+  }
+
   function setFilter(f: ClipboardFilter) {
     if (activeFilter.value === f) return
     activeFilter.value = f
@@ -1512,6 +1572,7 @@ export function useClipboard() {
     totalItems, hasMore, loadingMore, loadMore, currentPage, pageSize,
     selectedCount, allSelected, startPolling, copyItem, copyText,
     toggleSelectAll, clearSelection, batchDelete, deleteSingle, toggleFavorite,
+    archiveItem, unarchiveItem,
     loadClipboardItems, setFilter, setSearch, toggleBatch, uploadFileItem,
     refresh: loadClipboardItems,
     resetImages,
