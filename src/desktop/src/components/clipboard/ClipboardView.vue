@@ -30,6 +30,8 @@ import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { parseDate, type DateValue } from '@internationalized/date'
+import TablePreview from '@/components/clipboard/TablePreview.vue'
+import { parseTable } from '@/utils/table'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -1060,6 +1062,21 @@ function detectContentType(content: string): 'code' | 'url' | 'text' {
   return 'text'
 }
 
+// 表格检测（带缓存，与 detectContentType 同级，避免列表重渲染反复解析）
+const tableDetectCache = new Map<string, boolean>()
+const MAX_TABLE_CACHE = 1000
+function isTableContent(content: string): boolean {
+  const cached = tableDetectCache.get(content)
+  if (cached !== undefined) return cached
+  const result = parseTable(content) !== null
+  if (tableDetectCache.size > MAX_TABLE_CACHE) {
+    const firstKey = tableDetectCache.keys().next().value
+    if (firstKey !== undefined) tableDetectCache.delete(firstKey)
+  }
+  tableDetectCache.set(content, result)
+  return result
+}
+
 // 提取 URL 域名
 function extractDomain(url: string): string {
   try {
@@ -1277,6 +1294,10 @@ function extractDomain(url: string): string {
                 <!-- 代码样式 -->
                 <span v-else-if="detectContentType(displayContent(item)) === 'code'" class="cell-code-preview">
                   <code>{{ displayContent(item) }}</code>
+                </span>
+                <!-- 表格预览（TSV/CSV/分号分隔，不改 content_type，仅渲染层呈现） -->
+                <span v-else-if="item.type === 'text' && isTableContent(displayContent(item))" class="cell-table-preview">
+                  <TablePreview :content="displayContent(item)" />
                 </span>
                 <!-- 普通文本 -->
                 <span v-else class="cell-text">
@@ -1527,6 +1548,9 @@ function extractDomain(url: string): string {
   animation: syncPulse 1.2s ease-in-out infinite; flex-shrink: 0;
 }
 @keyframes syncPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* 表格预览容器：让 TablePreview 充满单元格宽度 */
+.cell-table-preview { display: block; width: 100%; min-width: 0; }
 
 /* 普通文本 */
 .cell-text {
