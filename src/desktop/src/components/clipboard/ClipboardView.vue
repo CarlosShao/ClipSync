@@ -172,14 +172,20 @@ function onProtectionUnprotected() {
   toast.show(t('protection_removed'), 'success')
 }
 function onProtectionUnlocked(content: string) {
-  if (protectionDialogItem.value) {
-    itemPw.setUnlocked(protectionDialogItem.value.id, content)
-    // 同时更新 item.content，确保复制/操作时用的是明文
-    const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
-    if (item && content) {
-      item.content = content
-    }
+  if (!protectionDialogItem.value) return
+  const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
+  if (!item) return
+
+  // 高级加密：解锁状态写入 itemPw.unlockedIds
+  if ((item as any).metadata?.protected === true) {
+    itemPw.setUnlocked(item.id, content)
   }
+
+  // PIN 保护：解锁状态由 privacy 模块管理，只更新明文内容
+  if (item.metadata?.sensitive) {
+    item.content = content
+  }
+
   toast.show(t('protection_unlocked'), 'success')
 }
 
@@ -1329,13 +1335,13 @@ function extractDomain(url: string): string {
                 <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="t('show_in_folder')">
                   <Folder :size="14" />
                 </Button>
-                <!-- Unified protection button: route by protection type -->
+                <!-- Unified protection button -->
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide"
                   :class="{
                     'sensitive-locked': !isItemVisible(item),
                     'pw-locked': !isItemVisible(item)
                   }"
-                  @click="onToggleSensitive(item)"
+                  @click="openProtectionDialog(item)"
                   :title="getProtectionTitle(item)">
                   <Lock :size="14" />
                 </Button>
