@@ -1044,10 +1044,10 @@ function cancelEditTags() {
             :draggable="!batchMode" @dragstart="onDragStart($event, item)" @dragover="onDragOver" @drop="onDrop($event, item)" @dragend="onDragEnd">
             <div v-if="batchMode" class="fav-list-check"><Checkbox :model-value="selectedIds.has(item.id)" @update:model-value="() => toggleSelect(item.id)" /></div>
             <div class="fav-list-content">
-              <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap">
+              <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="cell-protected-mask">
                 <Lock :size="14" />
                 <span>{{ t('item_protected_mask') }}</span>
-                <Button variant="outline" size="sm" class="h-7 px-4 py-1 text-[11px] rounded-md whitespace-nowrap" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
+                <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
               </div>
               <div v-else class="fav-list-title">{{ formatContent(item) }}</div>
               <div class="fav-list-meta"><span>{{ item.source || 'Desktop' }}</span><span>·</span><span>{{ timeAgo((item as any).favoritedAt || item.timestamp) }}</span></div>
@@ -1164,26 +1164,26 @@ function cancelEditTags() {
                   <div v-else class="fav-card-placeholder"><ImageIcon :size="24" /></div>
                 </template>
                 <template v-else-if="item.type === 'link' || detectContentType(item.content) === 'url'">
-                  <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap fav-mask-wrap--card">
+                  <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="cell-protected-mask">
                     <Lock :size="14" />
                     <span>{{ t('item_protected_mask') }}</span>
-                    <Button variant="outline" size="sm" class="h-7 px-4 py-1 text-[11px] rounded-md whitespace-nowrap" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
+                    <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
                   </div>
                   <div v-else class="fav-card-text fav-card-link"><ExternalLink :size="14" class="fav-card-link-icon" /><span class="fav-card-link-url">{{ item.content }}</span><span class="fav-card-link-domain">{{ extractDomain(item.content) }}</span></div>
                 </template>
                 <template v-else-if="item.type === 'file'">
-                  <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap fav-mask-wrap--card">
+                  <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="cell-protected-mask">
                     <Lock :size="14" />
                     <span>{{ t('item_protected_mask') }}</span>
-                    <Button variant="outline" size="sm" class="h-7 px-4 py-1 text-[11px] rounded-md whitespace-nowrap" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
+                    <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
                   </div>
                   <div v-else class="fav-card-text fav-card-file"><FileText :size="20" /><span>{{ formatContent(item) }}</span></div>
                 </template>
                 <template v-else>
-                  <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="fav-mask-wrap fav-mask-wrap--card">
+                  <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="cell-protected-mask">
                     <Lock :size="14" />
                     <span>{{ t('item_protected_mask') }}</span>
-                    <Button variant="outline" size="sm" class="h-7 px-4 py-1 text-[11px] rounded-md whitespace-nowrap" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
+                    <Button variant="outline" size="sm" class="h-7 px-3 text-[11px] rounded-md" @click.stop="openProtectionDialog(item)">{{ t('item_unlock') }}</Button>
                   </div>
                   <div v-else class="fav-card-text">{{ formatContent(item) }}</div>
                 </template>
@@ -1414,12 +1414,17 @@ function cancelEditTags() {
 .fav-tag-pill:hover .fav-tag-del { color: var(--text-primary); }
 .fav-tag-del:hover { background: var(--danger-bg); color: var(--danger) !important; }
 
-/* Privacy: sensitive content mask */
-.fav-mask-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px; height: 100%; }
-.fav-mask-wrap--card { position: absolute; inset: 0; background: var(--bg-hover); border-radius: var(--radius-sm); padding: 16px; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px; }
-.fav-masked-text { font-size: 12px; color: var(--text-tertiary); text-align: center; line-height: 1.4; }
-.fav-peek-btn { padding: 3px 10px; border-radius: 9999px; border: 1px solid var(--border-default); background: var(--bg-surface); font-size: 11px; color: var(--accent); cursor: pointer; transition: all 0.12s; white-space: nowrap; }
-.fav-peek-btn:hover { background: var(--accent-bg); border-color: var(--accent); }
+/* Privacy: sensitive content mask - unified with ClipboardView */
+.cell-protected-mask {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--color-primary, #6366f1) 40%, transparent);
+  font-size: 13px; color: var(--text-secondary);
+}
+.cell-protected-mask :deep(button) {
+  padding: 2px 12px !important;
+}
 
 /* Grid view card adjustments for mask */
 .fav-card-preview { position: relative; }
