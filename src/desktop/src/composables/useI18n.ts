@@ -77,6 +77,7 @@ const _dicts: Record<Lang, I18nDict> = {
     sg_motion:'Reduce motion', sg_motion_h:'Minimize animations throughout the interface',
     sg_export:'Export my data (GDPR)', sg_export_h:'Download a copy of all your data in standard formats',
     sg_update:'Check for updates', sg_update_h:'Current version v2.4.1 · Last checked today',
+    sg_update_last:'Last checked', sg_update_latest:'Already up to date', sg_update_checking:'Checking...', sg_update_fail:'Failed to check updates',
     btn_check:'Check Now',
     prof_t:'Profile', acct_s:'Account',
     pf_name:'Display Name', pf_email:'Email', pf_phone:'Phone', pf_plan:'Plan',
@@ -294,7 +295,7 @@ const _dicts: Record<Lang, I18nDict> = {
     clip_favorited:'Favorited', clip_unfavorited:'Unfavorited',
     clip_moved_to_col:'Moved to collection', clip_added_to_col:'Added to collection',
     clip_col_created:'Collection created & item moved',
-    archive_action:'Archive', unarchive_action:'Unarchive',
+    archive_action:'Archive', unarchive_action:'Unarchive', more_actions:'More actions',
     archive_empty_title:'No archived clips', archive_empty_desc:'Archived clips are kept here and won\'t appear in the main list.',
     // 用户侧自动过期（exp-menu #188 / exp-detail #189）
     exp_set:'Set expiry', exp_submenu:'Set expiry', exp_back:'Back',
@@ -561,6 +562,7 @@ const _dicts: Record<Lang, I18nDict> = {
     sg_motion:'减少动画', sg_motion_h:'减少界面中的动画效果',
     sg_export:'导出我的数据 (GDPR)', sg_export_h:'下载所有数据的标准格式副本',
     sg_update:'检查更新', sg_update_h:'当前版本 v2.4.1 · 上次检查于今天',
+    sg_update_last:'上次检查', sg_update_latest:'当前已是最新版本', sg_update_checking:'检查中...', sg_update_fail:'检查更新失败',
     btn_check:'立即检查',
     prof_t:'个人资料', acct_s:'账号信息',
     pf_name:'显示名称', pf_email:'邮箱', pf_phone:'手机号', pf_plan:'套餐',
@@ -891,7 +893,7 @@ const _dicts: Record<Lang, I18nDict> = {
     clip_favorited:'已收藏', clip_unfavorited:'已取消收藏',
     clip_moved_to_col:'已移入收藏夹', clip_added_to_col:'已加入收藏夹',
     clip_col_created:'已创建收藏夹并移入',
-    archive_action:'归档', unarchive_action:'取消归档',
+    archive_action:'归档', unarchive_action:'取消归档', more_actions:'更多操作',
     archive_empty_title:'暂无归档', archive_empty_desc:'归档的剪贴内容会保存在这里，不会出现在主列表中。',
     // 用户侧自动过期（exp-menu #188 / exp-detail #189）
     exp_set:'设置过期', exp_submenu:'设置过期', exp_back:'返回',

@@ -11,7 +11,7 @@ import {
   Upload, Plus, Search, Trash2, Copy, Image as ImageIcon, Link,
   ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
   ClipboardList, Star, Bookmark, Archive, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
-  Check, X, Lock, Unlock, ShieldCheck, Filter, KeyRound, Calendar as CalendarIcon, Clock,
+  Check, X, Lock, Unlock, ShieldCheck, Filter, KeyRound, Calendar as CalendarIcon, Clock, MoreHorizontal,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -451,6 +451,20 @@ function onCopyItem(item: ClipItem) {
   toast.show(t('copied'), 'success')
 }
 
+// 统一预览入口：按类型路由到图片/链接/文本/文件预览（供操作栏常驻按钮与右键菜单共用）
+function onPreview(item: ClipItem) {
+  if (!requireUnlocked(item)) return
+  if (privacy.isItemSensitive(item) && !privacy.canCopySensitive()) {
+    if (!privacy.pinSet.value) emit('show-pin-setup')
+    else emit('show-pin-dialog')
+    return
+  }
+  if (item.type === 'image') emit('preview-image', item)
+  else if (item.type === 'link') openLink(item)
+  else if (item.type === 'file') emit('preview-file', item)
+  else emit('preview-text', item)
+}
+
 function onToggleSensitive(item: ClipItem) {
   // 高级加密条目：打开保护对话框，让用户选择加密方式
   if ((item as any).metadata?.protected === true) {
@@ -535,6 +549,11 @@ function handleDocClick(e: MouseEvent) {
       addToColItemId.value = null
       toast.show(t('clip_favorited'), 'info')
     }
+  }
+  // 关闭「更多」操作下拉（点击区域不在 .more-wrap 内时）
+  if (moreOpenId.value) {
+    const target = e.target as HTMLElement
+    if (!target.closest('.more-wrap')) moreOpenId.value = null
   }
 }
 onMounted(() => document.addEventListener('click', handleDocClick))
@@ -967,7 +986,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 const ctxMenu = ref<{ item: ClipItem | null; x: number; y: number; mode: 'main' | 'expiry' }>({ item: null, x: 0, y: 0, mode: 'main' })
 const ctxStyle = computed(() => {
   const w = 200
-  const h = 320
+  const h = 360
   const vw = window?.innerWidth || 1200
   const vh = window?.innerHeight || 800
   const x = Math.min(ctxMenu.value.x, vw - w - 8)
@@ -983,6 +1002,18 @@ function openCtxMenu(item: ClipItem, e: MouseEvent) {
 function closeCtxMenu() { ctxMenu.value = { ...ctxMenu.value, item: null } }
 function ctxSetExpiryMode() { ctxMenu.value = { ...ctxMenu.value, mode: 'expiry' } }
 function ctxBack() { ctxMenu.value = { ...ctxMenu.value, mode: 'main' } }
+// 「更多」操作下拉：状态 + 开合函数（点击外部由 handleDocClick 关闭）
+const moreOpenId = ref<string | null>(null)
+function toggleMore(item: ClipItem) {
+  moreOpenId.value = moreOpenId.value === item.id ? null : item.id
+}
+function closeMore() { moreOpenId.value = null }
+// 从下拉打开过期设置子菜单（复用 ctx 的 expiry 模式）
+function openExpiryFromDropdown(item: ClipItem, e: MouseEvent) {
+  moreOpenId.value = null
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  ctxMenu.value = { item, x: rect.right, y: rect.bottom, mode: 'expiry' }
+}
 async function ctxApplyExpiry(iso: string | null) {
   const item = ctxMenu.value.item
   if (!item) return
@@ -1353,38 +1384,17 @@ function formatExpiryShort(iso: string): string {
             </TableCell>
             <TableCell>
               <div class="cell-actions">
+                <!-- 常驻：复制 -->
                 <Button v-if="item.type !== 'file' || hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="onCopyItem(item)" :title="t('copy')">
                   <Copy :size="14" />
                 </Button>
-                <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click="shareItem(item)" :title="t('shared_link')">
-                  <Link :size="14" />
+                <!-- 常驻：预览（按类型路由，与右键菜单共用 onPreview） -->
+                <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click="onPreview(item)" :title="t('preview')">
+                  <ImageIcon v-if="item.type === 'image'" :size="14" />
+                  <ExternalLink v-else-if="item.type === 'link'" :size="14" />
+                  <FileText v-else :size="14" />
                 </Button>
-                <Button v-if="item.type === 'image'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-image', item)" :title="t('preview')">
-                  <ImageIcon :size="14" />
-                </Button>
-                <Button v-else-if="item.type === 'link'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="openLink(item)" :title="t('link_opened')">
-                  <ExternalLink :size="14" />
-                </Button>
-                <Button v-else-if="item.type === 'text'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-text', item)" :title="t('preview')">
-                  <FileText :size="14" />
-                </Button>
-                <Button v-else-if="item.type === 'file'" variant="ghost" size="icon-sm" class="btn-action-hide" @click="emit('preview-file', item)" :title="t('preview')">
-                  <FileText :size="14" />
-                </Button>
-                <Button v-if="item.type === 'file' && hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="revealFileFolder(item)" :title="t('show_in_folder')">
-                  <Folder :size="14" />
-                </Button>
-                <!-- Unified protection button -->
-                <Button variant="ghost" size="icon-sm" class="btn-action-hide"
-                  :class="{
-                    'sensitive-locked': !isItemVisible(item),
-                    'pw-locked': !isItemVisible(item)
-                  }"
-                  @click="openProtectionDialog(item)"
-                  :title="getProtectionTitle(item)">
-                  <Lock :size="14" />
-                </Button>
-                <!-- Star: favorite immediately, show popover or dropdown -->
+                <!-- 常驻：收藏（含收藏夹 popover） -->
                 <div class="add-col-wrap" :data-item-id="item.id">
                   <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click.stop="handleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
                     <Star :size="14" :fill="item.isFavorite ? 'currentColor' : 'none'" />
@@ -1421,16 +1431,37 @@ function formatExpiryShort(iso: string): string {
                     </Button>
                   </div>
                 </div>
-                <!-- Archive / Unarchive -->
-                <Button v-if="!isArchive" variant="ghost" size="icon-sm" class="btn-action-hide" @click="clip.archiveItem(item)" :title="t('archive_action')">
-                  <Archive :size="14" />
-                </Button>
-                <Button v-else variant="ghost" size="icon-sm" class="btn-action-hide" @click="clip.unarchiveItem(item)" :title="t('unarchive_action')">
-                  <Archive :size="14" />
-                </Button>
+                <!-- 常驻：删除 -->
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide danger" @click="handleSingleDelete(item)" :title="t('delete')">
                   <Trash2 :size="14" />
                 </Button>
+                <!-- 更多下拉：分享 / 文件夹 / 保护 / 归档 / 过期（与右键菜单逐类型对齐） -->
+                <div class="more-wrap">
+                  <Button variant="ghost" size="icon-sm" class="btn-action-hide" :title="t('more_actions')" @click.stop="toggleMore(item)">
+                    <MoreHorizontal :size="14" />
+                  </Button>
+                  <div v-if="moreOpenId === item.id" class="more-dropdown" @click.stop>
+                    <button type="button" class="more-item" @click="shareItem(item); closeMore()">
+                      <Link :size="14" />{{ t('shared_link') }}
+                    </button>
+                    <button v-if="item.type === 'file' && hasLocalPath(item)" type="button" class="more-item" @click="revealFileFolder(item); closeMore()">
+                      <Folder :size="14" />{{ t('show_in_folder') }}
+                    </button>
+                    <button type="button" class="more-item" @click="openProtectionDialog(item); closeMore()">
+                      <Lock :size="14" />{{ t('protection_set') }}
+                    </button>
+                    <button v-if="!isArchive" type="button" class="more-item" @click="clip.archiveItem(item); closeMore()">
+                      <Archive :size="14" />{{ t('archive_action') }}
+                    </button>
+                    <button v-else type="button" class="more-item" @click="clip.unarchiveItem(item); closeMore()">
+                      <Archive :size="14" />{{ t('unarchive_action') }}
+                    </button>
+                    <div class="more-sep" />
+                    <button type="button" class="more-item more-item--accent" @click="openExpiryFromDropdown(item, $event)">
+                      <Clock :size="14" />{{ t('exp_set') }}…
+                    </button>
+                  </div>
+                </div>
               </div>
             </TableCell>
           </TableRow>
@@ -1476,13 +1507,39 @@ function formatExpiryShort(iso: string): string {
     <div v-if="ctxMenu.item" class="ctx-overlay" @click="closeCtxMenu" @contextmenu.prevent="closeCtxMenu" />
     <div v-if="ctxMenu.item" class="ctx-menu" :style="ctxStyle">
       <template v-if="ctxMenu.mode === 'main'">
-        <button type="button" class="ctx-item" @click="copyWithPinCheck(ctxMenu.item!); closeCtxMenu()">{{ t('copy') }}</button>
-        <button type="button" class="ctx-item" @click="handleFavorite(ctxMenu.item!); closeCtxMenu()">{{ ctxMenu.item.isFavorite ? t('unfavorite') : t('favorite') }}</button>
-        <button v-if="!isArchive" type="button" class="ctx-item" @click="clip.archiveItem(ctxMenu.item!); closeCtxMenu()">{{ t('archive_action') }}</button>
-        <button v-else type="button" class="ctx-item" @click="clip.unarchiveItem(ctxMenu.item!); closeCtxMenu()">{{ t('unarchive_action') }}</button>
-        <button type="button" class="ctx-item ctx-item--accent" @click="ctxSetExpiryMode()">{{ t('exp_set') }}…</button>
+        <button type="button" class="ctx-item" @click="copyWithPinCheck(ctxMenu.item!); closeCtxMenu()">
+          <Copy :size="14" />{{ t('copy') }}
+        </button>
+        <button type="button" class="ctx-item" @click="shareItem(ctxMenu.item!); closeCtxMenu()">
+          <Link :size="14" />{{ t('shared_link') }}
+        </button>
+        <button type="button" class="ctx-item" @click="onPreview(ctxMenu.item!); closeCtxMenu()">
+          <ImageIcon v-if="ctxMenu.item!.type === 'image'" :size="14" />
+          <ExternalLink v-else-if="ctxMenu.item!.type === 'link'" :size="14" />
+          <FileText v-else :size="14" />{{ t('preview') }}
+        </button>
+        <button v-if="ctxMenu.item!.type === 'file' && hasLocalPath(ctxMenu.item!)" type="button" class="ctx-item" @click="revealFileFolder(ctxMenu.item!); closeCtxMenu()">
+          <Folder :size="14" />{{ t('show_in_folder') }}
+        </button>
+        <button type="button" class="ctx-item" @click="openProtectionDialog(ctxMenu.item!); closeCtxMenu()">
+          <Lock :size="14" />{{ t('protection_set') }}
+        </button>
+        <button type="button" class="ctx-item" @click="handleFavorite(ctxMenu.item!); closeCtxMenu()">
+          <Star :size="14" :fill="ctxMenu.item!.isFavorite ? 'currentColor' : 'none'" />{{ ctxMenu.item!.isFavorite ? t('unfavorite') : t('favorite') }}
+        </button>
+        <button v-if="!isArchive" type="button" class="ctx-item" @click="clip.archiveItem(ctxMenu.item!); closeCtxMenu()">
+          <Archive :size="14" />{{ t('archive_action') }}
+        </button>
+        <button v-else type="button" class="ctx-item" @click="clip.unarchiveItem(ctxMenu.item!); closeCtxMenu()">
+          <Archive :size="14" />{{ t('unarchive_action') }}
+        </button>
+        <button type="button" class="ctx-item ctx-item--accent" @click="ctxSetExpiryMode()">
+          <Clock :size="14" />{{ t('exp_set') }}…
+        </button>
         <div class="ctx-sep" />
-        <button type="button" class="ctx-item ctx-item--danger" @click="handleSingleDelete(ctxMenu.item!); closeCtxMenu()">{{ t('delete') }}</button>
+        <button type="button" class="ctx-item ctx-item--danger" @click="handleSingleDelete(ctxMenu.item!); closeCtxMenu()">
+          <Trash2 :size="14" />{{ t('delete') }}
+        </button>
       </template>
       <template v-else>
         <button type="button" class="ctx-item ctx-back" @click="ctxBack()">{{ t('exp_back') }}</button>
@@ -1676,6 +1733,26 @@ function formatExpiryShort(iso: string): string {
 .cell-actions .btn-action-hide.sensitive-locked { color: var(--danger); }
 .cell-actions .btn-action-hide.sensitive-locked:hover { background: var(--danger-bg); }
 
+/* 「更多」操作下拉 */
+.more-wrap { position: relative; display: inline-flex; }
+.more-dropdown {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: 50;
+  min-width: 172px; padding: 4px;
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-pop);
+}
+.more-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-primary);
+  font-size: 13px; line-height: 1; text-align: left; cursor: pointer;
+}
+.more-item:hover { background: var(--bg-active); }
+.more-item svg { flex-shrink: 0; color: var(--text-tertiary); }
+.more-item--accent { color: var(--accent); }
+.more-item--accent svg { color: var(--accent); }
+.more-sep { height: 1px; background: var(--border-subtle); margin: 4px 2px; }
+
 /* ===== EMPTY STATE ===== */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; text-align: center; }
 .empty-icon-wrap { width: 64px; height: 64px; border-radius: 16px; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
@@ -1802,14 +1879,17 @@ function formatExpiryShort(iso: string): string {
 }
 @keyframes ctxFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 .ctx-item {
-  display: flex; align-items: center; width: 100%; padding: 7px 10px;
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px;
   border: none; background: transparent; text-align: left; cursor: pointer;
   font-size: 13px; color: var(--text-primary); border-radius: var(--radius-sm);
   transition: background .12s;
 }
+.ctx-item svg { flex-shrink: 0; color: var(--text-tertiary); }
 .ctx-item:hover { background: var(--bg-hover); }
 .ctx-item--accent { color: var(--accent); }
+.ctx-item--accent svg { color: var(--accent); }
 .ctx-item--danger { color: var(--danger); }
+.ctx-item--danger svg { color: var(--danger); }
 .ctx-item--danger:hover { background: var(--danger-bg); }
 .ctx-sep { height: 1px; background: var(--border-subtle); margin: 4px 2px; }
 .ctx-expiry { padding: 4px 2px 2px; }
