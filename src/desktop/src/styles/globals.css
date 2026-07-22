@@ -427,3 +427,25 @@ body {
   min-height: 36px !important;
   box-sizing: border-box;
 }
+
+/* ============================================================
+   SHADCN BUTTON DEFENSIVE RESET
+   Root cause: Scoped CSS in parent components (e.g. .sg-row button)
+   can override Tailwind utility classes on shadcn Button children
+   because scoped selectors gain a data-attribute qualifier that
+   increases specificity beyond unscoped Tailwind classes.
+
+   This ensures shadcn buttons ALWAYS have proper padding, regardless
+   of parent scoped CSS specificity conflicts.
+
+   EXCLUSION: Switch uses a <button> with inline-flex too, but it must
+   NOT get padding. We exclude it via the rounded-full selector.
+   ============================================================ */
+button.inline-flex:not([class*="rounded-full"]) {
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+}
+button.inline-flex:not([class*="rounded-full"])[class*="h-10"] {
+  padding-left: 20px !important;
+  padding-right: 20px !important;
+}
