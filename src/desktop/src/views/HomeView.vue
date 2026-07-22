@@ -20,7 +20,8 @@ const FavoritesView = defineAsyncComponent(() => import('@/components/clipboard/
 const TemplatesView = defineAsyncComponent(() => import('@/components/clipboard/TemplatesView.vue'))
 import QuickPastePanel from '@/components/QuickPastePanel.vue'
 // 设置类页面非首屏，改为异步加载，避免初始化时全部解析进内存
-const SettingsView = defineAsyncComponent(() => import('@/components/settings/SettingsView.vue'))
+// SettingsView archived to backups/old-settings-v1/ — replaced by SettingsDialog (settings-dialog/)
+const SettingsDialog = defineAsyncComponent(() => import('@/components/settings/settings-dialog/SettingsDialog.vue'))
 const ProfileView = defineAsyncComponent(() => import('@/components/settings/ProfileView.vue'))
 const DevicesView = defineAsyncComponent(() => import('@/components/settings/DevicesView.vue'))
 const SubscriptionView = defineAsyncComponent(() => import('@/components/settings/SubscriptionView.vue'))
@@ -74,6 +75,8 @@ let confirmCallback: (() => void) | null = null
 const modalManagerActive = computed(() => !!showModalType.value || showForgotPwd.value || !!previewItem.value)
 const showOnboarding = ref(!localStorage.getItem('clipsync-onboarded'))
 const showCoachMarks = ref(false)
+const showSettingsDialog = ref(false)
+function openModalFromDialog(type: string) { showModalType.value = type }
 
 // PIN verification dialog
 const showPinDialog = ref(false)
@@ -102,7 +105,7 @@ function stopPinCountdown() {
 function openPinDialog() { showPinDialog.value = true; pinInput.value = ''; pinError.value = ''; pinNoPinSet.value = false; startPinCountdown() }
 function openPinSetupPrompt() { showPinDialog.value = true; pinInput.value = ''; pinError.value = ''; pinNoPinSet.value = true; stopPinCountdown() }
 function closePinDialog() { showPinDialog.value = false; pinInput.value = ''; pinError.value = ''; pinNoPinSet.value = false; stopPinCountdown() }
-function goToSettings() { closePinDialog(); router.push('/app/settings') }
+function goToSettings() { closePinDialog(); showSettingsDialog.value = true }
 async function verifyPin() {
   pinError.value = ''
   if (!pinInput.value) { pinError.value = t('pin_required') || '请输入 PIN'; return }
@@ -300,8 +303,10 @@ function confirmAction() {
       :user-plan="configStore.user.plan"
       :user-email="configStore.user.email"
       :user-avatar-url="userAvatarUrl"
+      :settings-dialog-open="showSettingsDialog"
       @toggle="sidebarOpen = !sidebarOpen"
       @navigate="switchSub"
+      @open-settings-dialog="showSettingsDialog = true"
       @logout="handleLogout"
     />
 
@@ -328,7 +333,7 @@ function confirmAction() {
         @toggle-sensitive="onToggleSensitive"
       />
       <TemplatesView v-else-if="currentSub === 'templates'" />
-      <SettingsView v-else-if="currentSub === 'settings'" @open-modal="openModal" />
+      <!-- SettingsView archived to backups/old-settings-v1/ — replaced by SettingsDialog -->
       <ProfileView v-else-if="currentSub === 'profile'" />
       <DevicesView v-else-if="currentSub === 'devices'" @open-modal="openModal" />
       <NotificationsView v-else-if="currentSub === 'notifications'" />
@@ -390,6 +395,9 @@ function confirmAction() {
 
   <!-- Satisfaction Survey (shows after 7 days, once per 30 days) -->
   <SatisfactionSurvey />
+
+  <!-- Settings Dialog (v2 — progressive migration) -->
+  <SettingsDialog :open="showSettingsDialog" @close="showSettingsDialog = false" />
 </template>
 
 <style scoped>

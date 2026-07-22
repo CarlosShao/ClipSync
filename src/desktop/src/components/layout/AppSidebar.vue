@@ -20,11 +20,13 @@ const props = defineProps<{
   userPlan: string
   userEmail?: string
   userAvatarUrl?: string
+  settingsDialogOpen?: boolean
 }>()
 
 const emit = defineEmits<{
   toggle: []
   navigate: [sub: string]
+  'open-settings-dialog': []
   logout: []
 }>()
 
@@ -56,7 +58,7 @@ const mainNavItems = computed(() => [
 const accountNavItems = computed(() => [
   { key: 'profile',     label: t('nav_profile'),     badge: '' },
   { key: 'subscription', label: t('nav_subscription'), badge: '' },
-  { key: 'settings',    label: t('nav_settings'),     badge: '' },
+  // Settings archived to backups/old-settings-v1/ — replaced by SettingsDialog
 ])
 </script>
 
@@ -86,7 +88,7 @@ const accountNavItems = computed(() => [
       <div v-if="!isCollapsed" class="sb-sect-label">{{ t('nav_main') }}</div>
       <template v-for="item in mainNavItems" :key="item.key">
         <button
-          :class="['sb-item', { active: currentSub === item.key }]"
+          :class="['sb-item', { active: !settingsDialogOpen && currentSub === item.key }]"
           :title="isCollapsed ? item.label : undefined"
           :aria-current="currentSub === item.key ? 'page' : undefined"
           @click="emit('navigate', item.key)"
@@ -107,16 +109,24 @@ const accountNavItems = computed(() => [
       <template v-for="(item, idx) in accountNavItems" :key="item.key">
         <div v-if="idx === 0 && !isCollapsed" class="sb-sect-label">{{ t('nav_account') }}</div>
         <button
-          :class="['sb-item', { active: currentSub === item.key }]"
+          :class="['sb-item', { active: !settingsDialogOpen && currentSub === item.key }]"
           :title="isCollapsed ? item.label : undefined"
           @click="emit('navigate', item.key)"
         >
           <User v-if="item.key === 'profile'" :size="20" :stroke-width="1.8" />
           <Crown v-else-if="item.key === 'subscription'" :size="20" :stroke-width="1.8" />
-          <Settings v-else-if="item.key === 'settings'" :size="20" :stroke-width="1.8" />
           <span v-show="!isCollapsed" class="sb-label">{{ item.label }}</span>
         </button>
       </template>
+      <!-- Settings Dialog entry (replaces archived SettingsView) -->
+      <button
+        class="sb-item sb-item--new"
+        :title="isCollapsed ? t('nav_settings') : undefined"
+        @click="emit('open-settings-dialog')"
+      >
+        <Settings :size="20" :stroke-width="1.8" />
+        <span v-show="!isCollapsed" class="sb-label">{{ t('nav_settings') }}</span>
+      </button>
     </nav>
 
     <!-- ===== Footer (expanded only: user chip + popover menu) ===== -->
@@ -383,4 +393,7 @@ const accountNavItems = computed(() => [
   display: flex; justify-content: center; padding: 10px 0 8px;
   margin-top: auto;
 }
+
+/* ---- Settings Dialog entry ---- */
+.sb-item--new { margin-top: 4px; }
 </style>
