@@ -6,28 +6,37 @@ import { useI18n } from '@/composables/useI18n'
 const { t } = useI18n()
 const props = defineProps<{ content: string }>()
 const html = computed(() => sanitizeHtml(props.content))
-
-// 如果 HTML 净下来只剩空壳（只有属性、没有可见文本/图片/输入框等），
-// 回退到源码展示，否则用户会看到一个空白区域。
-const isEffectivelyEmpty = computed(() => {
-  const sanitized = html.value
-  if (!sanitized || !sanitized.trim()) return true
-  const text = sanitized.replace(/<[^>]+>/g, '').trim()
-  if (text.length > 0) return false
-  const hasVisibleElement = /<(img|input|button|select|textarea|svg|canvas|video|audio|iframe|embed|object|table|ul|ol|dl|hr|br)\b/i.test(sanitized)
-  return !hasVisibleElement
-})
 </script>
 
 <template>
-  <div v-if="!isEffectivelyEmpty" class="html-preview" v-html="html" />
-  <div v-else class="html-empty-fallback">
-    <div class="html-empty-hint">{{ t('html_empty_hint') }}</div>
-    <pre class="html-source"><code>{{ content }}</code></pre>
+  <div class="html-preview-stack">
+    <div class="html-preview-section">
+      <div class="html-section-label">{{ t('preview') }}</div>
+      <div class="html-preview" v-html="html" />
+    </div>
+    <div class="html-source-section">
+      <div class="html-section-label">{{ t('head_source') }}</div>
+      <pre class="html-source"><code>{{ content }}</code></pre>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.html-preview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  overflow: auto;
+}
+.html-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
 .html-preview {
   width: 100%;
   overflow: auto;
@@ -35,18 +44,7 @@ const isEffectivelyEmpty = computed(() => {
   line-height: 1.5;
   color: var(--text-primary);
   word-break: break-word;
-}
-.html-empty-fallback {
-  width: 100%;
-  overflow: auto;
-}
-.html-empty-hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin-bottom: 8px;
-  padding: 4px 8px;
-  background: var(--bg-hover);
-  border-radius: var(--radius-sm);
+  min-height: 24px;
 }
 .html-source {
   margin: 0;
