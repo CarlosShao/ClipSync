@@ -27,7 +27,7 @@ const parsed = computed(() => parseTable(props.content))
       · {{ parsed.delimiter === '\t' ? 'TSV' : parsed.delimiter === ',' ? 'CSV' : '分隔符' }}
     </div>
   </div>
-  <span v-else class="cell-text">{{ content }}</span>
+  <span v-else class="fallback-text">{{ content }}</span>
 </template>
 
 <style scoped>
@@ -38,7 +38,6 @@ const parsed = computed(() => parseTable(props.content))
   width: 100%;
 }
 .table-preview-scroll {
-  max-height: 180px;
   overflow: auto;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -78,5 +77,11 @@ const parsed = computed(() => parseTable(props.content))
 .table-preview-meta {
   font-size: 11px;
   color: var(--text-tertiary);
+}
+.fallback-text {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

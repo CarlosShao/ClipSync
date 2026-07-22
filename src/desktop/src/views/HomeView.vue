@@ -295,7 +295,7 @@ function confirmAction() {
     <AppSidebar
       :sidebar-open="sidebarOpen"
       :current-sub="currentSub"
-      :items-count="clip.items.value.length"
+      :items-count="clip.mainTotalItems.value"
       :user-name="configStore.user.name"
       :user-plan="configStore.user.plan"
       :user-email="configStore.user.email"
