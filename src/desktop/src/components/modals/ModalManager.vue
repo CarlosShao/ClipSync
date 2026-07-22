@@ -437,6 +437,8 @@ function detectDocType(content: string, filename?: string): string {
   if (!content) return 'Text'
   const trimmed = content.trim()
   if (/^#{1,6}\s/.test(trimmed) || /\*\*.*\*\*/.test(trimmed) || /^\s*[-*+]\s/.test(trimmed) || /^\s*\d+\.\s/.test(trimmed) || /```/.test(trimmed)) return 'Markdown'
+  // 富文本 HTML 要在 Code 之前识别，否则 <section> 等标签会被 detectDocType 当成源码
+  if (isHtmlContent(trimmed)) return 'HTML'
   if (/\b(function|const|let|var|class|import|export|return|if|for|while|async|await)\s/.test(trimmed) ||
       /[{}\[\]];?\s*$/.test(trimmed) || /^\s*(def |class |import |from |public |private )/.test(trimmed) ||
       /=>\s*[{(]/.test(trimmed) || /^\s*<\/?[a-z][\w-]*(?:\s[^>]*)?\/?>/i.test(trimmed)) return 'Code'
