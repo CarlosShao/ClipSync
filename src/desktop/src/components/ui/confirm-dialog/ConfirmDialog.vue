@@ -2,13 +2,17 @@
 import { onMounted, onUnmounted } from 'vue'
 import { Button } from '@/components/ui/button'
 
+type BtnVariant = 'default' | 'outline' | 'destructive'
+
 interface Props {
   open: boolean
   title?: string
   message?: string
   confirmText?: string
   cancelText?: string
-  confirmVariant?: 'default' | 'destructive'
+  confirmVariant?: BtnVariant
+  secondaryText?: string
+  secondaryVariant?: BtnVariant
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -17,12 +21,15 @@ const props = withDefaults(defineProps<Props>(), {
   confirmText: '确认',
   cancelText: '取消',
   confirmVariant: 'destructive',
+  secondaryText: '',
+  secondaryVariant: 'outline',
 })
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
   confirm: []
   cancel: []
+  secondary: []
 }>()
 
 function onConfirm() {
@@ -32,6 +39,11 @@ function onConfirm() {
 
 function onCancel() {
   emit('cancel')
+  emit('update:open', false)
+}
+
+function onSecondary() {
+  emit('secondary')
   emit('update:open', false)
 }
 
@@ -52,6 +64,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       <p v-if="message" class="confirm-dialog-message">{{ message }}</p>
       <div class="confirm-dialog-actions">
         <Button variant="outline" size="default" class="min-w-[100px] rounded-md" @click="onCancel">{{ cancelText }}</Button>
+        <Button v-if="secondaryText" :variant="secondaryVariant" size="default" class="min-w-[100px] rounded-md" @click="onSecondary">{{ secondaryText }}</Button>
         <Button :variant="confirmVariant" size="default" class="min-w-[100px] rounded-md" @click="onConfirm">{{ confirmText }}</Button>
       </div>
     </div>
@@ -75,7 +88,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   padding: 28px;
-  max-width: 400px;
+  max-width: 420px;
   width: 100%;
   box-shadow: var(--shadow-modal);
   animation: slideUp 0.2s ease;
@@ -93,6 +106,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
   color: var(--text-primary);
   line-height: 1.6;
   margin-bottom: 28px;
+  white-space: pre-line;
 }
 
 .confirm-dialog-actions {

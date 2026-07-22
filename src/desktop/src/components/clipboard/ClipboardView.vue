@@ -10,7 +10,7 @@ import { usePrivacy } from '@/composables/usePrivacy'
 import {
   Upload, Plus, Search, Trash2, Copy, Image as ImageIcon, Link,
   ExternalLink, FileText, Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
-  ClipboardList, Star, Bookmark, Archive, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
+  ClipboardList, Star, Bookmark, Archive, ArchiveRestore, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
   Check, X, Lock, Unlock, ShieldCheck, Filter, KeyRound, Calendar as CalendarIcon, Clock, MoreHorizontal,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
@@ -591,9 +591,14 @@ const filterOptions = [
   { value: 'files', label: t('tab_files') },
 ] as const
 const confirmOpen = ref(false)
+const confirmTitle = ref('')
 const confirmMessage = ref('')
+const confirmConfirmText = ref('')
 const confirmCallback = ref<(() => void) | null>(null)
 const confirmVariant = ref<'default' | 'destructive'>('destructive')
+const confirmSecondaryText = ref('')
+const confirmSecondaryVariant = ref<'default' | 'outline' | 'destructive'>('outline')
+const confirmSecondaryCallback = ref<(() => void) | null>(null)
 
 // File upload
 const fileInputRef = ref<HTMLInputElement>()
@@ -650,22 +655,49 @@ function toggleQuickPaste() {
 }
 
 // ===== Confirm Dialog =====
-function showConfirm(message: string, cb: () => void, variant: 'default' | 'destructive' = 'destructive') {
-  confirmMessage.value = message
-  confirmCallback.value = cb
-  confirmVariant.value = variant
+interface ConfirmOptions {
+  title: string
+  message: string
+  confirmText: string
+  confirmVariant?: 'default' | 'destructive'
+  secondaryText?: string
+  secondaryVariant?: 'default' | 'outline' | 'destructive'
+  onConfirm: () => void
+  onSecondary?: () => void
+}
+
+function showConfirm(opts: ConfirmOptions) {
+  confirmTitle.value = opts.title
+  confirmMessage.value = opts.message
+  confirmConfirmText.value = opts.confirmText
+  confirmCallback.value = opts.onConfirm
+  confirmVariant.value = opts.confirmVariant ?? 'destructive'
+  confirmSecondaryText.value = opts.secondaryText ?? ''
+  confirmSecondaryVariant.value = opts.secondaryVariant ?? 'outline'
+  confirmSecondaryCallback.value = opts.onSecondary ?? null
   confirmOpen.value = true
 }
 
 function onConfirmDialog() {
-  if (confirmCallback.value) confirmCallback.value()
+  const cb = confirmCallback.value
   confirmOpen.value = false
   confirmCallback.value = null
+  confirmSecondaryCallback.value = null
+  if (cb) cb()
 }
 
 function onCancelDialog() {
   confirmOpen.value = false
   confirmCallback.value = null
+  confirmSecondaryCallback.value = null
+}
+
+function onSecondaryDialog() {
+  const cb = confirmSecondaryCallback.value
+  confirmOpen.value = false
+  confirmSecondaryCallback.value = null
+  confirmCallback.value = null
+  if (cb) cb()
 }
 
 // ===== Clipboard Operations =====
@@ -673,18 +705,71 @@ function handleBatchDelete() {
   if (clip.selectedCount.value === 0) { toast.show(t('batch_none'), 'warning'); return }
   const count = clip.selectedCount.value
   const favCount = clip.items.value.filter(i => i.selected && (i as any).isFavorite).length
-  const msg = favCount > 0 ? t('confirm_delete_fav_batch', { n: favCount }) : t('confirm_batch_delete', { n: count })
-  showConfirm(msg, async () => {
-    try {
-      // Unfavorite selected items first
-      const favItems = clip.items.value.filter(i => i.selected && (i as any).isFavorite)
-      for (const fi of favItems) clip.toggleFavorite(fi)
-      await clip.batchDelete()
-      toast.show(t('batch_deleted', { n: count }), 'success')
-    } catch (err: any) {
-      toast.show(err.message || t('del_fail'), 'error')
-    }
+
+  // 回收站视图：批量删除 = 永久清空（无归档逃生通道）
+  if (isArchive.value) {
+    showConfirm({
+      title: t('confirm_purge_title'),
+      message: count === 1 ? t('confirm_purge_msg') : t('confirm_purge_batch_msg', { n: count }),
+      confirmText: t('delete_permanent_btn'),
+      confirmVariant: 'destructive',
+      onConfirm: async () => {
+        try {
+          await clip.batchDelete()
+          toast.show(t('batch_deleted', { n: count }), 'success')
+        } catch (err: any) {
+          toast.show(err.message || t('del_fail'), 'error')
+        }
+      },
+    })
+    return
+  }
+
+  // 主列表视图：批量删除 = 永久删除（强提示 + 引导归档代替）
+  const msg = favCount > 0
+    ? t('confirm_delete_permanent_fav_batch_msg', { n: favCount })
+    : t('confirm_delete_permanent_batch_msg', { n: count })
+  showConfirm({
+    title: t('confirm_delete_title'),
+    message: msg,
+    confirmText: t('delete_permanent_btn'),
+    confirmVariant: 'destructive',
+    secondaryText: t('archive_instead_btn'),
+    secondaryVariant: 'default',
+    onConfirm: async () => {
+      try {
+        // Unfavorite selected items first
+        const favItems = clip.items.value.filter(i => i.selected && (i as any).isFavorite)
+        for (const fi of favItems) clip.toggleFavorite(fi)
+        await clip.batchDelete()
+        toast.show(t('batch_deleted', { n: count }), 'success')
+      } catch (err: any) {
+        toast.show(err.message || t('del_fail'), 'error')
+      }
+    },
+    onSecondary: async () => {
+      // 改为归档：批量归档选中项，避免误永久删除
+      try {
+        const selected = clip.items.value.filter(i => i.selected)
+        for (const si of selected) await clip.archiveItem(si)
+        toast.show(t('batch_archived', { n: selected.length }), 'success')
+      } catch (err: any) {
+        toast.show(err.message || t('archive_fail'), 'error')
+      }
+    },
   })
+}
+
+// 回收站视图：批量恢复选中项到主列表
+async function handleBatchUnarchive() {
+  const selected = clip.items.value.filter(i => i.selected)
+  if (selected.length === 0) { toast.show(t('batch_none'), 'warning'); return }
+  try {
+    for (const si of selected) await clip.unarchiveItem(si)
+    toast.show(t('batch_restored', { n: selected.length }), 'success')
+  } catch (err: any) {
+    toast.show(err.message || t('archive_fail'), 'error')
+  }
 }
 
 function openLink(item: ClipItem) {
@@ -909,17 +994,62 @@ async function buildSharePayload(item: ClipItem): Promise<{ content: string; tit
 
 function handleSingleDelete(item: ClipItem) {
   const isFav = (item as any).isFavorite
-  const msg = isFav ? t('confirm_delete_fav') : t('confirm_delete')
-  showConfirm(msg, async () => {
-    try {
-      // If favorited, unfavorite first
-      if (isFav) clip.toggleFavorite(item)
-      await clip.deleteSingle(item)
-      toast.show(t('deleted'), 'success')
-    } catch (err: any) {
-      toast.show(err.message || t('del_fail'), 'error')
-    }
+
+  // 回收站视图：单条删除 = 永久清空（无归档逃生通道）
+  if (isArchive.value) {
+    showConfirm({
+      title: t('confirm_purge_title'),
+      message: t('confirm_purge_msg'),
+      confirmText: t('delete_permanent_btn'),
+      confirmVariant: 'destructive',
+      onConfirm: async () => {
+        try {
+          if (isFav) clip.toggleFavorite(item)
+          await clip.deleteSingle(item)
+          toast.show(t('deleted'), 'success')
+        } catch (err: any) {
+          toast.show(err.message || t('del_fail'), 'error')
+        }
+      },
+    })
+    return
+  }
+
+  // 主列表视图：单条删除 = 永久删除（强提示 + 引导归档代替）
+  const msg = isFav ? t('confirm_delete_permanent_fav_msg') : t('confirm_delete_permanent_msg')
+  showConfirm({
+    title: t('confirm_delete_title'),
+    message: msg,
+    confirmText: t('delete_permanent_btn'),
+    confirmVariant: 'destructive',
+    secondaryText: t('archive_instead_btn'),
+    secondaryVariant: 'default',
+    onConfirm: async () => {
+      try {
+        if (isFav) clip.toggleFavorite(item)
+        await clip.deleteSingle(item)
+        toast.show(t('deleted'), 'success')
+      } catch (err: any) {
+        toast.show(err.message || t('del_fail'), 'error')
+      }
+    },
+    onSecondary: async () => {
+      const ok = await clip.archiveItem(item)
+      if (ok) toast.show(t('archived_toast'), 'success')
+      else toast.show(t('archive_fail'), 'error')
+    },
   })
+}
+
+// 回收站视图：单条恢复
+async function handleUnarchive(item: ClipItem) {
+  try {
+    const ok = await clip.unarchiveItem(item)
+    if (ok) toast.show(t('unarchived_toast'), 'success')
+    else toast.show(t('archive_fail'), 'error')
+  } catch (err: any) {
+    toast.show(err.message || t('archive_fail'), 'error')
+  }
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
@@ -1197,9 +1327,16 @@ function formatExpiryShort(iso: string): string {
       <Button variant="ghost" size="icon-sm" :class="{ 'text-primary': showFilterPanel }" @click="toggleFilterPanel" :title="t('adv_filter')">
         <Filter :size="16" />
       </Button>
-      <Button v-if="selectedCount > 0" variant="ghost" size="icon-sm" class="batch-del-btn" @click="handleBatchDelete" :title="t('batch_select')">
+      <Button v-if="selectedCount > 0 && !isArchive" variant="ghost" size="icon-sm" class="batch-del-btn" @click="handleBatchDelete" :title="t('batch_delete_selected_btn')">
         <Trash2 :size="15" />
         <span style="margin-left:2px;font-size:11px;">{{ selectedCount }}</span>
+      </Button>
+      <Button v-if="selectedCount > 0 && isArchive" variant="ghost" size="icon-sm" class="batch-restore-btn" @click="handleBatchUnarchive" :title="t('unarchive_selected_btn')">
+        <ArchiveRestore :size="15" />
+        <span style="margin-left:2px;font-size:11px;">{{ selectedCount }}</span>
+      </Button>
+      <Button v-if="selectedCount > 0 && isArchive" variant="ghost" size="icon-sm" class="batch-del-btn" @click="handleBatchDelete" :title="t('batch_delete_selected_btn')">
+        <Trash2 :size="15" />
       </Button>
     </div>
 
@@ -1263,13 +1400,16 @@ function formatExpiryShort(iso: string): string {
     <!-- Confirm Dialog -->
     <ConfirmDialog
       v-model:open="confirmOpen"
-      :title="t('confirm_t')"
+      :title="confirmTitle"
       :message="confirmMessage"
-      :confirm-text="t('confirm_t')"
+      :confirm-text="confirmConfirmText"
       :cancel-text="t('cancel_btn')"
       :confirm-variant="confirmVariant"
+      :secondary-text="confirmSecondaryText"
+      :secondary-variant="confirmSecondaryVariant"
       @confirm="onConfirmDialog"
       @cancel="onCancelDialog"
+      @secondary="onSecondaryDialog"
     />
 
     <!-- 统一保护级别对话框 -->
@@ -1384,84 +1524,97 @@ function formatExpiryShort(iso: string): string {
             </TableCell>
             <TableCell>
               <div class="cell-actions">
-                <!-- 常驻：复制 -->
-                <Button v-if="item.type !== 'file' || hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="onCopyItem(item)" :title="t('copy')">
-                  <Copy :size="14" />
-                </Button>
                 <!-- 常驻：预览（按类型路由，与右键菜单共用 onPreview） -->
                 <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click="onPreview(item)" :title="t('preview')">
                   <ImageIcon v-if="item.type === 'image'" :size="14" />
                   <ExternalLink v-else-if="item.type === 'link'" :size="14" />
                   <FileText v-else :size="14" />
                 </Button>
-                <!-- 常驻：收藏（含收藏夹 popover） -->
-                <div class="add-col-wrap" :data-item-id="item.id">
-                  <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click.stop="handleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
-                    <Star :size="14" :fill="item.isFavorite ? 'currentColor' : 'none'" />
+
+                <!-- 回收站视图：恢复（取消归档） + 删除（永久清空），仅此三项 -->
+                <template v-if="isArchive">
+                  <Button variant="ghost" size="icon-sm" class="btn-action-hide" @click="handleUnarchive(item)" :title="t('unarchive_action')">
+                    <ArchiveRestore :size="14" />
                   </Button>
-                  <!-- Popover: inline collection picker (no navigation needed) -->
-                  <div v-if="favPopoverItemId === item.id" class="fav-popover" :class="{ 'fav-popover--flipped': favPopoverFlipped }" @click.stop @mouseenter="onFavPopoverEnter" @mouseleave="onFavPopoverLeave">
-                    <div class="fav-popover-msg">✓ {{ t('fav_popper_msg') }}</div>
-                    <div class="fav-popover-cols">
-                      <Button v-for="node in collectionTreeNodes" :key="node.id" variant="ghost" size="sm" class="fav-popover-col w-full justify-start" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="pickCollection(item.id, node.id)">
+                  <Button variant="ghost" size="icon-sm" class="btn-action-hide danger" @click="handleSingleDelete(item)" :title="t('delete')">
+                    <Trash2 :size="14" />
+                  </Button>
+                </template>
+
+                <!-- 主列表视图：复制 / 收藏 / 删除 / 更多 -->
+                <template v-else>
+                  <Button v-if="item.type !== 'file' || hasLocalPath(item)" variant="ghost" size="icon-sm" class="btn-action-hide" @click="onCopyItem(item)" :title="t('copy')">
+                    <Copy :size="14" />
+                  </Button>
+                  <!-- 常驻：收藏（含收藏夹 popover） -->
+                  <div class="add-col-wrap" :data-item-id="item.id">
+                    <Button variant="ghost" size="icon-sm" class="btn-action-hide" :class="{ 'favorited': item.isFavorite }" @click.stop="handleFavorite(item)" :title="item.isFavorite ? t('unfavorite') : t('favorite')">
+                      <Star :size="14" :fill="item.isFavorite ? 'currentColor' : 'none'" />
+                    </Button>
+                    <!-- Popover: inline collection picker (no navigation needed) -->
+                    <div v-if="favPopoverItemId === item.id" class="fav-popover" :class="{ 'fav-popover--flipped': favPopoverFlipped }" @click.stop @mouseenter="onFavPopoverEnter" @mouseleave="onFavPopoverLeave">
+                      <div class="fav-popover-msg">✓ {{ t('fav_popper_msg') }}</div>
+                      <div class="fav-popover-cols">
+                        <Button v-for="node in collectionTreeNodes" :key="node.id" variant="ghost" size="sm" class="fav-popover-col w-full justify-start" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="pickCollection(item.id, node.id)">
+                          <component :is="collectionIconMap[node.icon] || Folder" :size="14" />
+                          <span>{{ node.name }}</span>
+                        </Button>
+                      </div>
+                      <template v-if="!showFavNewInput">
+                        <Button variant="outline" size="sm" class="w-full justify-start gap-1" @click="showFavNewInput = true">
+                          <Plus :size="12" /> {{ t('fav_new_col') }}
+                        </Button>
+                      </template>
+                      <template v-else>
+                        <div class="flex items-center gap-1">
+                          <Input v-model="favNewName" class="h-8 flex-1 px-2 text-xs" :placeholder="t('fav_new_col_placeholder')" maxlength="100"
+                            @keydown.enter="createAndMove(item.id)" @keydown.esc="dismissFavPopover()" />
+                          <Button variant="default" size="icon-sm" @click="createAndMove(item.id)" :title="t('confirm_t')"><Check :size="12" /></Button>
+                          <Button variant="ghost" size="icon-sm" @click="dismissFavPopover()" :title="t('fav_cancel')"><X :size="12" /></Button>
+                        </div>
+                      </template>
+                    </div>
+                    <!-- Dropdown: shown when collections exist -->
+                    <div v-if="addToColItemId === item.id && collections.length > 0" class="add-col-dropdown">
+                      <div class="add-col-dropdown-title">收藏到</div>
+                      <Button v-for="node in collectionTreeNodes" :key="node.id" variant="ghost" size="sm" class="add-col-option w-full justify-start" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="addToCollection(node.id, item.id)">
                         <component :is="collectionIconMap[node.icon] || Folder" :size="14" />
                         <span>{{ node.name }}</span>
                       </Button>
                     </div>
-                    <template v-if="!showFavNewInput">
-                      <Button variant="outline" size="sm" class="w-full justify-start gap-1" @click="showFavNewInput = true">
-                        <Plus :size="12" /> {{ t('fav_new_col') }}
-                      </Button>
-                    </template>
-                    <template v-else>
-                      <div class="flex items-center gap-1">
-                        <Input v-model="favNewName" class="h-8 flex-1 px-2 text-xs" :placeholder="t('fav_new_col_placeholder')" maxlength="100"
-                          @keydown.enter="createAndMove(item.id)" @keydown.esc="dismissFavPopover()" />
-                        <Button variant="default" size="icon-sm" @click="createAndMove(item.id)" :title="t('confirm_t')"><Check :size="12" /></Button>
-                        <Button variant="ghost" size="icon-sm" @click="dismissFavPopover()" :title="t('fav_cancel')"><X :size="12" /></Button>
-                      </div>
-                    </template>
                   </div>
-                  <!-- Dropdown: shown when collections exist -->
-                  <div v-if="addToColItemId === item.id && collections.length > 0" class="add-col-dropdown">
-                    <div class="add-col-dropdown-title">收藏到</div>
-                    <Button v-for="node in collectionTreeNodes" :key="node.id" variant="ghost" size="sm" class="add-col-option w-full justify-start" :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }" @click="addToCollection(node.id, item.id)">
-                      <component :is="collectionIconMap[node.icon] || Folder" :size="14" />
-                      <span>{{ node.name }}</span>
-                    </Button>
-                  </div>
-                </div>
-                <!-- 常驻：删除 -->
-                <Button variant="ghost" size="icon-sm" class="btn-action-hide danger" @click="handleSingleDelete(item)" :title="t('delete')">
-                  <Trash2 :size="14" />
-                </Button>
-                <!-- 更多下拉：分享 / 文件夹 / 保护 / 归档 / 过期（与右键菜单逐类型对齐） -->
-                <div class="more-wrap">
-                  <Button variant="ghost" size="icon-sm" class="btn-action-hide" :title="t('more_actions')" @click.stop="toggleMore(item)">
-                    <MoreHorizontal :size="14" />
+                  <!-- 常驻：删除 -->
+                  <Button variant="ghost" size="icon-sm" class="btn-action-hide danger" @click="handleSingleDelete(item)" :title="t('delete')">
+                    <Trash2 :size="14" />
                   </Button>
-                  <div v-if="moreOpenId === item.id" class="more-dropdown" @click.stop>
-                    <button type="button" class="more-item" @click="shareItem(item); closeMore()">
-                      <Link :size="14" />{{ t('shared_link') }}
-                    </button>
-                    <button v-if="item.type === 'file' && hasLocalPath(item)" type="button" class="more-item" @click="revealFileFolder(item); closeMore()">
-                      <Folder :size="14" />{{ t('show_in_folder') }}
-                    </button>
-                    <button type="button" class="more-item" @click="openProtectionDialog(item); closeMore()">
-                      <Lock :size="14" />{{ t('protection_set') }}
-                    </button>
-                    <button v-if="!isArchive" type="button" class="more-item" @click="clip.archiveItem(item); closeMore()">
-                      <Archive :size="14" />{{ t('archive_action') }}
-                    </button>
-                    <button v-else type="button" class="more-item" @click="clip.unarchiveItem(item); closeMore()">
-                      <Archive :size="14" />{{ t('unarchive_action') }}
-                    </button>
-                    <div class="more-sep" />
-                    <button type="button" class="more-item more-item--accent" @click="openExpiryFromDropdown(item, $event)">
-                      <Clock :size="14" />{{ t('exp_set') }}…
-                    </button>
+                  <!-- 更多下拉：分享 / 文件夹 / 保护 / 归档 / 过期（与右键菜单逐类型对齐） -->
+                  <div class="more-wrap">
+                    <Button variant="ghost" size="icon-sm" class="btn-action-hide" :title="t('more_actions')" @click.stop="toggleMore(item)">
+                      <MoreHorizontal :size="14" />
+                    </Button>
+                    <div v-if="moreOpenId === item.id" class="more-dropdown" @click.stop>
+                      <button type="button" class="more-item" @click="shareItem(item); closeMore()">
+                        <Link :size="14" />{{ t('shared_link') }}
+                      </button>
+                      <button v-if="item.type === 'file' && hasLocalPath(item)" type="button" class="more-item" @click="revealFileFolder(item); closeMore()">
+                        <Folder :size="14" />{{ t('show_in_folder') }}
+                      </button>
+                      <button type="button" class="more-item" @click="openProtectionDialog(item); closeMore()">
+                        <Lock :size="14" />{{ t('protection_set') }}
+                      </button>
+                      <button v-if="!isArchive" type="button" class="more-item" @click="clip.archiveItem(item); closeMore()">
+                        <Archive :size="14" />{{ t('archive_action') }}
+                      </button>
+                      <button v-else type="button" class="more-item" @click="clip.unarchiveItem(item); closeMore()">
+                        <Archive :size="14" />{{ t('unarchive_action') }}
+                      </button>
+                      <div class="more-sep" />
+                      <button type="button" class="more-item more-item--accent" @click="openExpiryFromDropdown(item, $event)">
+                        <Clock :size="14" />{{ t('exp_set') }}…
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </template>
               </div>
             </TableCell>
           </TableRow>
@@ -1510,7 +1663,7 @@ function formatExpiryShort(iso: string): string {
         <button type="button" class="ctx-item" @click="copyWithPinCheck(ctxMenu.item!); closeCtxMenu()">
           <Copy :size="14" />{{ t('copy') }}
         </button>
-        <button type="button" class="ctx-item" @click="shareItem(ctxMenu.item!); closeCtxMenu()">
+        <button v-if="!isArchive" type="button" class="ctx-item" @click="shareItem(ctxMenu.item!); closeCtxMenu()">
           <Link :size="14" />{{ t('shared_link') }}
         </button>
         <button type="button" class="ctx-item" @click="onPreview(ctxMenu.item!); closeCtxMenu()">
@@ -1518,13 +1671,13 @@ function formatExpiryShort(iso: string): string {
           <ExternalLink v-else-if="ctxMenu.item!.type === 'link'" :size="14" />
           <FileText v-else :size="14" />{{ t('preview') }}
         </button>
-        <button v-if="ctxMenu.item!.type === 'file' && hasLocalPath(ctxMenu.item!)" type="button" class="ctx-item" @click="revealFileFolder(ctxMenu.item!); closeCtxMenu()">
+        <button v-if="!isArchive && ctxMenu.item!.type === 'file' && hasLocalPath(ctxMenu.item!)" type="button" class="ctx-item" @click="revealFileFolder(ctxMenu.item!); closeCtxMenu()">
           <Folder :size="14" />{{ t('show_in_folder') }}
         </button>
-        <button type="button" class="ctx-item" @click="openProtectionDialog(ctxMenu.item!); closeCtxMenu()">
+        <button v-if="!isArchive" type="button" class="ctx-item" @click="openProtectionDialog(ctxMenu.item!); closeCtxMenu()">
           <Lock :size="14" />{{ t('protection_set') }}
         </button>
-        <button type="button" class="ctx-item" @click="handleFavorite(ctxMenu.item!); closeCtxMenu()">
+        <button v-if="!isArchive" type="button" class="ctx-item" @click="handleFavorite(ctxMenu.item!); closeCtxMenu()">
           <Star :size="14" :fill="ctxMenu.item!.isFavorite ? 'currentColor' : 'none'" />{{ ctxMenu.item!.isFavorite ? t('unfavorite') : t('favorite') }}
         </button>
         <button v-if="!isArchive" type="button" class="ctx-item" @click="clip.archiveItem(ctxMenu.item!); closeCtxMenu()">
@@ -1533,10 +1686,10 @@ function formatExpiryShort(iso: string): string {
         <button v-else type="button" class="ctx-item" @click="clip.unarchiveItem(ctxMenu.item!); closeCtxMenu()">
           <Archive :size="14" />{{ t('unarchive_action') }}
         </button>
-        <button type="button" class="ctx-item ctx-item--accent" @click="ctxSetExpiryMode()">
+        <button v-if="!isArchive" type="button" class="ctx-item ctx-item--accent" @click="ctxSetExpiryMode()">
           <Clock :size="14" />{{ t('exp_set') }}…
         </button>
-        <div class="ctx-sep" />
+        <div v-if="!isArchive" class="ctx-sep" />
         <button type="button" class="ctx-item ctx-item--danger" @click="handleSingleDelete(ctxMenu.item!); closeCtxMenu()">
           <Trash2 :size="14" />{{ t('delete') }}
         </button>
