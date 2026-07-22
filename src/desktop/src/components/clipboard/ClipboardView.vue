@@ -30,10 +30,7 @@ import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { parseDate, type DateValue } from '@internationalized/date'
-import TablePreview from '@/components/clipboard/TablePreview.vue'
-import HtmlPreview from '@/components/clipboard/HtmlPreview.vue'
 import ExpiryPicker from '@/components/clipboard/ExpiryPicker.vue'
-import { parseTable } from '@/utils/table'
 import { isHtmlContent } from '@/utils/html'
 
 const emit = defineEmits<{
@@ -1072,12 +1069,21 @@ function detectContentType(content: string): 'code' | 'url' | 'text' {
     contentTypeCache.set(content, 'url')
     return 'url'
   }
-  // 代码检测：常见代码模式
+  // HTML 在主列表当作 plain text，详情弹窗才渲染；避免 HTML 被误判为 code 导致列表显示源码样式
+  if (isHtmlContent(trimmed)) {
+    if (contentTypeCache.size > MAX_CONTENT_TYPE_CACHE) {
+      const firstKey = contentTypeCache.keys().next().value
+      if (firstKey !== undefined) contentTypeCache.delete(firstKey)
+    }
+    contentTypeCache.set(content, 'text')
+    return 'text'
+  }
+  // 代码检测：常见代码模式（HTML 已提前排除）
   if (/[{}\[\]];?\s*$/.test(trimmed) ||
       /\b(function|const|let|var|class|import|export|return|if|for|while|async|await)\s/.test(trimmed) ||
       /^\s*(def |class |import |from |public |private |protected )/.test(trimmed) ||
       /=>\s*[{(]/.test(trimmed) ||
-      /^\s*<\/?[a-z][\w-]*(?:\s[^>]*)?\/?>/i.test(trimmed) ||
+      /^\s*<\?xml\b/i.test(trimmed) ||
       /:\s*(string|number|boolean|void|any|null|undefined)\s/.test(trimmed)) {
     if (contentTypeCache.size > MAX_CONTENT_TYPE_CACHE) {
       const firstKey = contentTypeCache.keys().next().value
@@ -1092,36 +1098,6 @@ function detectContentType(content: string): 'code' | 'url' | 'text' {
   }
   contentTypeCache.set(content, 'text')
   return 'text'
-}
-
-// 表格检测（带缓存，与 detectContentType 同级，避免列表重渲染反复解析）
-const tableDetectCache = new Map<string, boolean>()
-const MAX_TABLE_CACHE = 1000
-function isTableContent(content: string): boolean {
-  const cached = tableDetectCache.get(content)
-  if (cached !== undefined) return cached
-  const result = parseTable(content) !== null
-  if (tableDetectCache.size > MAX_TABLE_CACHE) {
-    const firstKey = tableDetectCache.keys().next().value
-    if (firstKey !== undefined) tableDetectCache.delete(firstKey)
-  }
-  tableDetectCache.set(content, result)
-  return result
-}
-
-// HTML 检测（带缓存，与 isTableContent 同级）
-const htmlDetectCache = new Map<string, boolean>()
-const MAX_HTML_CACHE = 1000
-function isHtmlItem(content: string): boolean {
-  const cached = htmlDetectCache.get(content)
-  if (cached !== undefined) return cached
-  const result = isHtmlContent(content)
-  if (htmlDetectCache.size > MAX_HTML_CACHE) {
-    const firstKey = htmlDetectCache.keys().next().value
-    if (firstKey !== undefined) htmlDetectCache.delete(firstKey)
-  }
-  htmlDetectCache.set(content, result)
-  return result
 }
 
 // 提取 URL 域名
@@ -1352,19 +1328,11 @@ function formatExpiryShort(iso: string): string {
                   </span>
                   <span v-else>{{ formatContent(item) }}</span>
                 </span>
-                <!-- HTML 安全预览（DOMPurify 净化，仅渲染层，不改 content_type） -->
-                <span v-else-if="item.type === 'text' && isHtmlItem(displayContent(item))" class="cell-html-preview">
-                  <HtmlPreview :content="displayContent(item)" />
-                </span>
                 <!-- 代码样式 -->
                 <span v-else-if="detectContentType(displayContent(item)) === 'code'" class="cell-code-preview">
                   <code>{{ displayContent(item) }}</code>
                 </span>
-                <!-- 表格预览（TSV/CSV/分号分隔，不改 content_type，仅渲染层呈现） -->
-                <span v-else-if="item.type === 'text' && isTableContent(displayContent(item))" class="cell-table-preview">
-                  <TablePreview :content="displayContent(item)" />
-                </span>
-                <!-- 普通文本 -->
+                <!-- 普通文本（表格/HTML 仅详情弹窗优化展示，主列表保持 plain text，避免撑大单元格） -->
                 <span v-else class="cell-text">
                   {{ formatContent(item) }}
                 </span>
@@ -1636,12 +1604,6 @@ function formatExpiryShort(iso: string): string {
   animation: syncPulse 1.2s ease-in-out infinite; flex-shrink: 0;
 }
 @keyframes syncPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-
-/* 表格预览容器：让 TablePreview 充满单元格宽度 */
-.cell-table-preview { display: block; width: 100%; min-width: 0; }
-
-/* HTML 预览容器：让 HtmlPreview 充满单元格宽度 */
-.cell-html-preview { display: block; width: 100%; min-width: 0; }
 
 /* 普通文本 */
 .cell-text {

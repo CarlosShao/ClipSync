@@ -25,8 +25,10 @@ import hljs from 'highlight.js'
 import mammoth from 'mammoth'
 import * as pdfjsLib from 'pdfjs-dist'
 import HtmlPreview from '@/components/clipboard/HtmlPreview.vue'
+import TablePreview from '@/components/clipboard/TablePreview.vue'
 import ExpiryPicker from '@/components/clipboard/ExpiryPicker.vue'
 import { isHtmlContent } from '@/utils/html'
+import { parseTable } from '@/utils/table'
 import { useClipboard } from '@/composables/useClipboard'
 
 // Set PDF.js worker source
@@ -1686,17 +1688,23 @@ async function handleFeedbackSubmit() {
         <div class="doc-preview markdown-body doc-markdown-content" v-html="renderMarkdown(previewContent)"></div>
       </div>
 
+      <!-- HTML safe preview (DOMPurify sanitized, only when content is rich-text HTML) -->
+      <!-- 必须在 Code 分支之前：detectDocType 会把 HTML 标签识别为 Code，导致 HTML 被当成源码高亮 -->
+      <div v-else-if="isHtmlContent(previewContent)" class="doc-preview html-preview-doc">
+        <HtmlPreview :content="previewContent" />
+      </div>
+
+      <!-- Table preview (TSV/CSV/semicolon) -->
+      <div v-else-if="parseTable(previewContent)" class="doc-preview table-preview-doc">
+        <TablePreview :content="previewContent" />
+      </div>
+
       <!-- Code with line numbers + syntax highlighting -->
       <div v-else-if="isCodeContent(previewContent, previewFileName)" class="doc-preview code-preview">
         <div class="code-lines">
           <span v-for="(_, i) in previewContentLines" :key="i" class="line-num">{{ i + 1 }}</span>
         </div>
         <pre class="code-content"><code v-html="renderCode(previewContent, previewFileName)"></code></pre>
-      </div>
-
-      <!-- HTML safe preview (DOMPurify sanitized, only when content is rich-text HTML) -->
-      <div v-else-if="isHtmlContent(previewContent)" class="doc-preview html-preview-doc">
-        <HtmlPreview :content="previewContent" />
       </div>
 
       <!-- Plain text -->
@@ -2089,6 +2097,9 @@ async function handleFeedbackSubmit() {
 
 /* HTML safe preview wrapper in detail modal */
 .html-preview-doc { max-height: 70vh; overflow: auto; }
+
+/* Table preview wrapper in detail modal */
+.table-preview-doc { max-height: 70vh; overflow: auto; }
 
 /* Expiry control inside detail-modal popover (portaled, must be non-scoped) */
 .doc-expiry-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 12px; }

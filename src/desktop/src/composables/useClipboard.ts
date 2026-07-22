@@ -62,6 +62,9 @@ const pageSize = ref(50)
 // 避免切到归档视图后切换分类竟把非归档数据拉进来。
 const currentView = ref<'all' | 'archive'>('all')
 const totalItems = ref(0)
+// 主剪贴板视图（非归档）的总数，用于侧边栏计数稳定显示：
+// 归档视图拉取时只更新 totalItems，不覆盖 mainTotalItems，避免侧边栏「剪贴板」数字跳到归档数量。
+const mainTotalItems = ref(0)
 const loadingMore = ref(false)
 const hasMore = computed(() => totalItems.value > 0 && items.value.length < totalItems.value)
 
@@ -441,6 +444,10 @@ async function loadClipboardItems(opts?: { page?: number; append?: boolean; all?
   const res = await api('GET', `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}${viewParam}`)
   if (res.ok && Array.isArray(res.data?.items)) {
     totalItems.value = res.data?.pagination?.total ?? res.data.items.length
+    // 仅在主视图（all）更新侧边栏计数，归档视图不覆盖主视图总数
+    if (view !== 'archive') {
+      mainTotalItems.value = totalItems.value
+    }
     const serverIds = new Set(res.data.items.map((i: any) => i.id))
     // Build set of server content previews for dedup
     const serverContentPreviews = new Set(res.data.items.map((i: any) => (i.contentPreview || '').slice(0, 100)))
@@ -697,10 +704,21 @@ async function loadImagesFromQueue(queue: ClipItem[]) {
   }
 }
 
+// 文本同步大小上限：比后端 express.json 的 10MB 小 1MB 留余量，避免 413 Payload Too Large
+const MAX_TEXT_UPLOAD_SIZE = 9 * 1024 * 1024
+
 async function uploadToServer(content: string, type: ClipItem['type'] = 'text') {
   const hash = simpleHash(content)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
   recentUploadHashes.set(hash, Date.now())
+
+  // 超大文本提前拒绝，避免卡主线程 + 413 异常被闷掉
+  if (content.length > MAX_TEXT_UPLOAD_SIZE) {
+    console.warn('[Clipboard] text too large, skipping upload:', content.length)
+    toast.show(t('text_too_large', { n: Math.round(MAX_TEXT_UPLOAD_SIZE / 1024 / 1024) }), 'warning')
+    return
+  }
+
   // 立即添加到本地列表（乐观更新）
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   items.value.unshift({ id: localId, type, content, source: 'Desktop', timestamp: Date.now(), selected: false })
@@ -725,14 +743,28 @@ async function uploadToServer(content: string, type: ClipItem['type'] = 'text') 
     contentPreview: content.slice(0, 5000),
     contentSize: content.length,
   }
-  const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
-  // 上传成功后：用服务器返回的 id 替换本地临时 id，并缓存内容
-  if (res.ok && res.data?.id) {
-    const localItem = items.value.find(i => i.id === localId)
-    if (localItem) {
-      localItem.id = res.data.id
-      cacheContent(res.data.id, content)
+  try {
+    const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
+    // 上传成功后：用服务器返回的 id 替换本地临时 id，并缓存内容
+    if (res.ok && res.data?.id) {
+      const localItem = items.value.find(i => i.id === localId)
+      if (localItem) {
+        localItem.id = res.data.id
+        cacheContent(res.data.id, content)
+      }
+      return
     }
+    // 上传失败：从本地列表移除乐观项，避免残留脏数据
+    items.value = items.value.filter(i => i.id !== localId)
+    if (res.status === 413) {
+      toast.show(t('text_too_large', { n: Math.round(MAX_TEXT_UPLOAD_SIZE / 1024 / 1024) }), 'warning')
+    } else {
+      toast.show(t('text_upload_failed') + (res.error ? `: ${res.error}` : ''), 'error')
+    }
+  } catch (e: any) {
+    // 网络/未知异常：同样移除乐观项并提示
+    items.value = items.value.filter(i => i.id !== localId)
+    toast.show(t('text_upload_failed') + (e?.message ? `: ${e.message}` : ''), 'error')
   }
 }
 
@@ -1280,6 +1312,9 @@ export function useClipboard() {
     // 出现"加载更多"按钮卡在末尾删不掉项的情况。
     if (serverIds.length > 0 && (res.ok || res.status === 0)) {
       totalItems.value = Math.max(0, totalItems.value - serverIds.length)
+      if (currentView.value !== 'archive') {
+        mainTotalItems.value = Math.max(0, mainTotalItems.value - serverIds.length)
+      }
     }
     // 批量删除后跳过轮询，防止系统剪贴板内容被重新上传
     skipNextPolls(3000)
@@ -1304,6 +1339,9 @@ export function useClipboard() {
     // 同步本地总数（后端是硬删），保持 hasMore/remaining 计算正确
     if (!isLocal && res && (res.ok || res.status === 0)) {
       totalItems.value = Math.max(0, totalItems.value - 1)
+      if (currentView.value !== 'archive') {
+        mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+      }
     }
     // 删除后跳过轮询，防止系统剪贴板内容被重新上传
     skipNextPolls(3000)
@@ -1344,6 +1382,9 @@ export function useClipboard() {
       releaseRemovedObjectUrls(next)
       items.value = next
       if (totalItems.value > 0) totalItems.value = Math.max(0, totalItems.value - 1)
+      if (currentView.value !== 'archive') {
+        mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+      }
       skipNextPolls(3000)
       return true
     } catch (e: any) {
@@ -1371,6 +1412,7 @@ export function useClipboard() {
       releaseRemovedObjectUrls(next)
       items.value = next
       if (totalItems.value > 0) totalItems.value = Math.max(0, totalItems.value - 1)
+      mainTotalItems.value += 1
       skipNextPolls(3000)
       return true
     } catch (e: any) {
@@ -1604,7 +1646,7 @@ export function useClipboard() {
   return {
     items, filteredItems, searchQuery, activeFilter, batchMode, polling, loading,
     offlineQueueSize,
-    totalItems, hasMore, loadingMore, loadMore, currentPage, pageSize,
+    totalItems, mainTotalItems, hasMore, loadingMore, loadMore, currentPage, pageSize,
     selectedCount, allSelected, startPolling, copyItem, copyText,
     toggleSelectAll, clearSelection, batchDelete, deleteSingle, toggleFavorite,
     archiveItem, unarchiveItem, setExpiry,

@@ -13,7 +13,6 @@ const html = computed(() => sanitizeHtml(props.content))
 <style scoped>
 .html-preview {
   width: 100%;
-  max-height: 200px;
   overflow: auto;
   font-size: 13px;
   line-height: 1.5;
