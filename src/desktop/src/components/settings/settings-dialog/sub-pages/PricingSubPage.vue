@@ -67,24 +67,67 @@ function selectPlan(planId: string, planName: string, price: number) {
 </template>
 
 <style scoped>
-.sp-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.sp-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
-.pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.price-card {
-  padding: 20px; border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); cursor: pointer;
-  position: relative; transition: border-color 0.15s;
+.sp-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
-.price-card:hover { border-color: var(--accent); }
-.price-card.popular { border-color: var(--accent); background: var(--accent-light); }
+.sp-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.price-card {
+  padding: 20px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s;
+}
+.price-card:hover {
+  border-color: var(--accent);
+}
+.price-card.popular {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
 .pc-tag {
-  position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
-  font-size: 10px; font-weight: 600; color: var(--text-inverse);
-  background: var(--accent); padding: 2px 10px; border-radius: 8px;
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-inverse);
+  background: var(--accent);
+  padding: 2px 10px;
+  border-radius: 8px;
   white-space: nowrap;
 }
-.pc-name { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
-.pc-price { font-size: 24px; font-weight: 700; margin-bottom: 12px; }
-.pc-period { font-size: 12px; font-weight: 400; color: var(--text-tertiary); }
-.pc-feats { font-size: 12px; color: var(--text-secondary); line-height: 1.8; }
+.pc-name {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.pc-price {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.pc-period {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+.pc-feats {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
 </style>

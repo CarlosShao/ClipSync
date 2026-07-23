@@ -20,7 +20,10 @@ const steps = [
 function positionHighlight() {
   const s = steps[currentStep.value]
   const el = document.querySelector(s.selector)
-  if (!el) { next(); return }
+  if (!el) {
+    next()
+    return
+  }
   const r = el.getBoundingClientRect()
   highlightRect.value = { top: r.top - 4, left: r.left - 4, width: r.width + 8, height: r.height + 8 }
 
@@ -47,7 +50,10 @@ function complete() {
 }
 
 onMounted(() => {
-  if (localStorage.getItem('clipsync-coach-done')) { complete(); return }
+  if (localStorage.getItem('clipsync-coach-done')) {
+    complete()
+    return
+  }
   visible.value = true
   nextTick(positionHighlight)
   window.addEventListener('resize', positionHighlight)
@@ -57,10 +63,16 @@ onMounted(() => {
 <template>
   <div v-if="visible" class="coach-overlay" @click="complete">
     <!-- Highlight cutout -->
-    <div class="coach-highlight" :style="{
-      top: highlightRect.top + 'px', left: highlightRect.left + 'px',
-      width: highlightRect.width + 'px', height: highlightRect.height + 'px',
-    }" @click.stop="next" />
+    <div
+      class="coach-highlight"
+      :style="{
+        top: highlightRect.top + 'px',
+        left: highlightRect.left + 'px',
+        width: highlightRect.width + 'px',
+        height: highlightRect.height + 'px',
+      }"
+      @click.stop="next"
+    />
 
     <!-- Tooltip -->
     <div class="coach-tooltip" :style="{ top: tooltipPos.top + 'px', left: tooltipPos.left + 'px' }" @click.stop>
@@ -76,23 +88,56 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.coach-overlay { position: fixed; inset: 0; z-index: 9998; }
+.coach-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+}
 .coach-highlight {
-  position: fixed; border-radius: var(--radius-md);
-  box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
-  transition: all 0.3s cubic-bezier(.16,1,.3,1);
-  cursor: pointer; z-index: 9999;
+  position: fixed;
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  z-index: 9999;
 }
 .coach-tooltip {
-  position: fixed; z-index: 10000; max-width: 300px;
-  background: var(--bg-surface); border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg); padding: 16px;
+  position: fixed;
+  z-index: 10000;
+  max-width: 300px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 16px;
   box-shadow: var(--shadow-modal);
   animation: coachFadeIn 0.25s ease;
 }
-.coach-text { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px; }
-.coach-actions { display: flex; align-items: center; justify-content: space-between; }
-.coach-progress { font-size: 11px; color: var(--text-tertiary); }
-.coach-btn { min-width: 80px; }
-@keyframes coachFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.coach-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.coach-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.coach-progress {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.coach-btn {
+  min-width: 80px;
+}
+@keyframes coachFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 </style>

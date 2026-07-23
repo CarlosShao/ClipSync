@@ -18,10 +18,7 @@ const delegatedProps = computed(() => {
 </script>
 
 <template>
-  <Primitive
-    v-bind="delegatedProps"
-    :class="cn('p-4 align-middle [&:has([role=checkbox])]:pr-0', props.class)"
-  >
+  <Primitive v-bind="delegatedProps" :class="cn('p-4 align-middle [&:has([role=checkbox])]:pr-0', props.class)">
     <slot />
   </Primitive>
 </template>

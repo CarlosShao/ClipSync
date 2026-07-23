@@ -68,7 +68,7 @@ export function useClipboardActions(emit: ClipboardActionEmits) {
   function openLink(item: ClipItem) {
     const url = item.content.trim()
     if (!url) return
-    import('@/lib/tauri').then(tauri => {
+    import('@/lib/tauri').then((tauri) => {
       tauri.openUrl(url).catch(() => window.open(url, '_blank'))
     })
   }

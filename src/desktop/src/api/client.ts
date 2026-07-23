@@ -16,7 +16,9 @@ function loadCsrfFromStorage() {
       csrfToken = parsed.token
       csrfExpiresAt = parsed.exp
     }
-  } catch (e) { console.warn('[API] CSRF cache load failed:', e) }
+  } catch (e) {
+    console.warn('[API] CSRF cache load failed:', e)
+  }
 }
 loadCsrfFromStorage()
 
@@ -42,16 +44,23 @@ async function getCsrfToken(): Promise<string | null> {
   try {
     const res = await fetch(`${config.serverUrl}/api/csrf-token`, {
       credentials: 'include',
-      headers: { 'Authorization': `Bearer ${config.config.token}` },
+      headers: { Authorization: `Bearer ${config.config.token}` },
     })
     const data = await res.json()
     csrfToken = data.token || null
     csrfExpiresAt = Date.now() + 300_000 // 缓存 5 分钟，减少 ~50% 的请求量（之前 4.5s）
     if (csrfToken) {
-      try { localStorage.setItem(CSRF_STORAGE_KEY, JSON.stringify({ token: csrfToken, exp: csrfExpiresAt })) } catch (e) { console.warn('[API] CSRF cache persist failed:', e) }
+      try {
+        localStorage.setItem(CSRF_STORAGE_KEY, JSON.stringify({ token: csrfToken, exp: csrfExpiresAt }))
+      } catch (e) {
+        console.warn('[API] CSRF cache persist failed:', e)
+      }
     }
     return csrfToken
-  } catch (e) { console.warn('[API] CSRF token fetch failed:', e); return null }
+  } catch (e) {
+    console.warn('[API] CSRF token fetch failed:', e)
+    return null
+  }
 }
 
 /** Warm up the CSRF token after login so the first clipboard sync doesn't pay a cold round-trip. */
@@ -66,11 +75,7 @@ export interface ApiResponse<T = any> {
   status: number
 }
 
-export async function api<T = any>(
-  method: string,
-  path: string,
-  body?: any,
-): Promise<ApiResponse<T>> {
+export async function api<T = any>(method: string, path: string, body?: any): Promise<ApiResponse<T>> {
   const config = useConfigStore()
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
 
@@ -90,23 +95,38 @@ export async function api<T = any>(
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const res = await fetch(`${config.serverUrl}${path}`, {
-        method, headers, body: body ? JSON.stringify(body) : undefined, credentials: 'include',
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        credentials: 'include',
       })
 
       if (res.status === 429 && attempt < MAX_RETRIES) {
         const retryAfter = res.headers.get('Retry-After')
         const serverDelay = retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAYS[attempt]
         const delay = Math.min(serverDelay, MAX_RETRY_DELAY)
-        console.warn(`[API] 429 on ${method} ${path} (attempt ${attempt + 1}/${MAX_RETRIES}), retrying after ${delay}ms`)
-        await new Promise(r => setTimeout(r, delay))
+        console.warn(
+          `[API] 429 on ${method} ${path} (attempt ${attempt + 1}/${MAX_RETRIES}), retrying after ${delay}ms`,
+        )
+        await new Promise((r) => setTimeout(r, delay))
         continue
       }
 
       const text = await res.text()
       let json: any
-      try { json = JSON.parse(text) } catch { json = { message: text } }
+      try {
+        json = JSON.parse(text)
+      } catch {
+        json = { message: text }
+      }
 
-      if (!res.ok) return { ok: false, status: res.status, error: json?.error || json?.message || `HTTP ${res.status}`, data: json }
+      if (!res.ok)
+        return {
+          ok: false,
+          status: res.status,
+          error: json?.error || json?.message || `HTTP ${res.status}`,
+          data: json,
+        }
       return { ok: true, status: res.status, data: json }
     } catch (e: any) {
       // 网络错误不重试（非 429）
@@ -126,10 +146,7 @@ export async function api<T = any>(
 /**
  * FormData 上传请求（multipart/form-data）。Content-Type 由浏览器自动设置（含 boundary）。
  */
-export async function apiForm<T = any>(
-  path: string,
-  formData: FormData,
-): Promise<ApiResponse<T>> {
+export async function apiForm<T = any>(path: string, formData: FormData): Promise<ApiResponse<T>> {
   const config = useConfigStore()
   const idemKey = genIdempotencyKey()
   const MAX_RETRIES = 2
@@ -147,25 +164,38 @@ export async function apiForm<T = any>(
     headers['Idempotency-Key'] = idemKey
     try {
       const res = await fetch(`${config.serverUrl}${path}`, {
-        method: 'POST', headers, body: formData, credentials: 'include',
+        method: 'POST',
+        headers,
+        body: formData,
+        credentials: 'include',
       })
       const text = await res.text()
       let json: any
-      try { json = JSON.parse(text) } catch { json = { message: text } }
+      try {
+        json = JSON.parse(text)
+      } catch {
+        json = { message: text }
+      }
       // 429 退避重试（复用同一幂等键）
       if (res.status === 429 && attempt < MAX_RETRIES) {
         const retryAfter = res.headers.get('Retry-After')
         const delay = Math.min(retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAYS[attempt], MAX_RETRY_DELAY)
         console.warn(`[API] 429 on ${path} (attempt ${attempt + 1}/${MAX_RETRIES}), retrying after ${delay}ms`)
-        await new Promise(r => setTimeout(r, delay))
+        await new Promise((r) => setTimeout(r, delay))
         continue
       }
-      if (!res.ok) return { ok: false, status: res.status, error: json?.error || json?.message || `HTTP ${res.status}`, data: json }
+      if (!res.ok)
+        return {
+          ok: false,
+          status: res.status,
+          error: json?.error || json?.message || `HTTP ${res.status}`,
+          data: json,
+        }
       return { ok: true, status: res.status, data: json }
     } catch (e: any) {
       // 网络层错误才重试；否则直接返回失败
       if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, BASE_DELAYS[attempt]))
+        await new Promise((r) => setTimeout(r, BASE_DELAYS[attempt]))
         continue
       }
       return { ok: false, status: 0, error: String(e.message || e) }
@@ -174,10 +204,7 @@ export async function apiForm<T = any>(
   return { ok: false, status: 429, error: 'Upload failed after retries, please try again.' }
 }
 
-export async function apiBlob(
-  method: string,
-  path: string,
-): Promise<Response | null> {
+export async function apiBlob(method: string, path: string): Promise<Response | null> {
   const config = useConfigStore()
   const headers: Record<string, string> = {}
   const token = config.config.token
@@ -186,7 +213,9 @@ export async function apiBlob(
   if (csrf) headers['X-CSRF-Token'] = csrf
   try {
     return await fetch(`${config.serverUrl}${path}`, {
-      method, headers, credentials: 'include',
+      method,
+      headers,
+      credentials: 'include',
     })
   } catch (e) {
     console.warn('[API] blob fetch failed:', e)
@@ -225,18 +254,9 @@ export {
   deleteTemplateVariable,
 } from './templates'
 
-export {
-  getSharedLinks,
-  uploadSharedFile,
-  createSharedLink,
-  deleteSharedLink,
-} from './sharedLinks'
+export { getSharedLinks, uploadSharedFile, createSharedLink, deleteSharedLink } from './sharedLinks'
 export type { SharedLink, SharedFileUploadResult } from './sharedLinks'
 
-export {
-  sendPinResetCode,
-  sendPinResetEmailCode,
-  resetPinViaCode,
-} from './auth'
+export { sendPinResetCode, sendPinResetEmailCode, resetPinViaCode } from './auth'
 
 export { getClipboardItemContent } from './clipboard'

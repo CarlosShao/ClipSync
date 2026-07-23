@@ -28,9 +28,7 @@ const deleteTarget = ref<ClipboardTemplate | null>(null)
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return store.templates
-  return store.templates.filter(
-    (tpl) => tpl.name.toLowerCase().includes(q) || tpl.content.toLowerCase().includes(q),
-  )
+  return store.templates.filter((tpl) => tpl.name.toLowerCase().includes(q) || tpl.content.toLowerCase().includes(q))
 })
 
 onMounted(() => {
@@ -125,12 +123,7 @@ async function confirmDelete() {
       </div>
     </template>
 
-    <TemplateEditorDialog
-      :open="editorOpen"
-      :editing="editing"
-      @close="editorOpen = false"
-      @save="onEditorSave"
-    />
+    <TemplateEditorDialog :open="editorOpen" :editing="editing" @close="editorOpen = false" @save="onEditorSave" />
 
     <VariableFillDialog
       :open="fillState.open"
@@ -151,15 +144,41 @@ async function confirmDelete() {
 </template>
 
 <style scoped>
-.tpl-view { width: 100%; padding: 4px 4px 40px; box-sizing: border-box; }
-.tpl-loading { padding: 40px; text-align: center; color: var(--text-muted); font-size: 14px; }
+.tpl-view {
+  width: 100%;
+  padding: 4px 4px 40px;
+  box-sizing: border-box;
+}
+.tpl-loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
 .tpl-empty {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 12px; padding: 72px 24px; color: var(--text-muted); text-align: center;
-  border: 1px dashed var(--border-default); border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 72px 24px;
+  color: var(--text-muted);
+  text-align: center;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
 }
-.tpl-empty-title { font-size: 15px; font-weight: 600; color: var(--text-secondary); }
-.tpl-empty-desc { font-size: 13px; max-width: 360px; line-height: 1.6; }
-.tpl-empty-btn { margin-top: 10px; }
+.tpl-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.tpl-empty-desc {
+  font-size: 13px;
+  max-width: 360px;
+  line-height: 1.6;
+}
+.tpl-empty-btn {
+  margin-top: 10px;
+}
 </style>

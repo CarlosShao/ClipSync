@@ -31,12 +31,39 @@ const { t } = useI18n()
 </template>
 
 <style scoped>
-.toolbar { display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 24px; background: var(--bg-surface); flex-shrink: 0; }
-.toolbar-left { display: flex; align-items: center; gap: 8px; }
-.toolbar-title { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
-.count-badge { padding: 2px 10px !important; }
-.toolbar-spacer { flex: 1; }
-.toolbar-right { display: flex; align-items: center; gap: 8px; }
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 56px;
+  padding: 0 24px;
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toolbar-title {
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+.count-badge {
+  padding: 2px 10px !important;
+}
+.toolbar-spacer {
+  flex: 1;
+}
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 /* Ensure toolbar buttons have comfortable padding like the reference */
-.toolbar-right :deep(button) { padding-left: 18px !important; padding-right: 18px !important; }
+.toolbar-right :deep(button) {
+  padding-left: 18px !important;
+  padding-right: 18px !important;
+}
 </style>

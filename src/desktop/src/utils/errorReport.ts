@@ -28,13 +28,17 @@ function loadErrors(): ErrorEntry[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     return raw ? JSON.parse(raw) : []
-  } catch { return [] }
+  } catch {
+    return []
+  }
 }
 
 function saveErrors(errors: ErrorEntry[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(errors.slice(-MAX_STORED)))
-  } catch { /* quota exceeded — drop oldest */ }
+  } catch {
+    /* quota exceeded — drop oldest */
+  }
 }
 
 function store(entry: ErrorEntry) {

@@ -1,10 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import {
-  getTemplateVariables,
-  upsertTemplateVariable,
-  deleteTemplateVariable,
-} from '@/api/client'
+import { getTemplateVariables, upsertTemplateVariable, deleteTemplateVariable } from '@/api/client'
 import { useSonner } from '@/composables/useSonner'
 
 // 全局模板变量：name → value（默认值 / 上次记住的输入）。

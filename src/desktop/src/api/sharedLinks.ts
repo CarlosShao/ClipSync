@@ -27,7 +27,7 @@ export interface SharedFileUploadResult {
 
 export async function getSharedLinks(): Promise<SharedLink[] | null> {
   const res = await api<{ links: SharedLink[] }>('GET', '/api/shared-links')
-  return res.ok ? res.data?.links ?? [] : null
+  return res.ok ? (res.data?.links ?? []) : null
 }
 
 export async function uploadSharedFile(
@@ -50,7 +50,9 @@ export async function uploadSharedFile(
       try {
         const body = (await res.json()) as { error?: string; message?: string }
         if (body?.error || body?.message) errorText = body.error || body.message || errorText
-      } catch { /* response body not JSON */ }
+      } catch {
+        /* response body not JSON */
+      }
       return { ok: false, error: errorText }
     }
     const data = (await res.json()) as SharedFileUploadResult

@@ -25,7 +25,7 @@ export function useProtectionDialog() {
   function onProtectionProtected(level: string) {
     // 更新本地条目元数据，让 UI 立即反映保护状态
     if (protectionDialogItem.value) {
-      const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
+      const item = clip.items.value.find((i) => i.id === protectionDialogItem.value!.id)
       if (item) {
         if (!item.metadata) item.metadata = {}
         item.isProtected = true
@@ -42,7 +42,7 @@ export function useProtectionDialog() {
   function onProtectionUnprotected() {
     // 清除本地条目保护状态
     if (protectionDialogItem.value) {
-      const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
+      const item = clip.items.value.find((i) => i.id === protectionDialogItem.value!.id)
       if (item) {
         if (item.metadata) {
           item.metadata.protected = false
@@ -57,7 +57,7 @@ export function useProtectionDialog() {
 
   function onProtectionUnlocked(content: string) {
     if (!protectionDialogItem.value) return
-    const item = clip.items.value.find(i => i.id === protectionDialogItem.value!.id)
+    const item = clip.items.value.find((i) => i.id === protectionDialogItem.value!.id)
     if (!item) return
 
     // 高级加密：解锁状态写入 itemPw.unlockedIds
@@ -74,8 +74,11 @@ export function useProtectionDialog() {
   }
 
   return {
-    protectionDialogOpen, protectionDialogItem,
+    protectionDialogOpen,
+    protectionDialogItem,
     openProtectionDialog,
-    onProtectionProtected, onProtectionUnprotected, onProtectionUnlocked,
+    onProtectionProtected,
+    onProtectionUnprotected,
+    onProtectionUnlocked,
   }
 }

@@ -69,9 +69,9 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
-  'protected': [level: ProtectionLevel]
-  'unprotected': []
-  'unlocked': [content: string]
+  protected: [level: ProtectionLevel]
+  unprotected: []
+  unlocked: [content: string]
 }>()
 
 // State
@@ -100,31 +100,34 @@ const hasChanges = computed(() => {
 })
 
 // Watch for dialog open
-watch(() => props.open, (isOpen) => {
-  if (isOpen) {
-    selectedLevel.value = props.currentLevel
-    password.value = ''
-    confirmPassword.value = ''
-    showPassword.value = false
-    showRecoveryKey.value = false
-    recoveryKey.value = ''
-    unlockPassword.value = ''
-    // 已解锁的条目总是显示保护选项（select），允许用户修改保护级别
-    step.value = (props.currentLevel === 'none' || props.isUnlocked) ? 'select' : 'unlock'
-  }
-})
+watch(
+  () => props.open,
+  (isOpen) => {
+    if (isOpen) {
+      selectedLevel.value = props.currentLevel
+      password.value = ''
+      confirmPassword.value = ''
+      showPassword.value = false
+      showRecoveryKey.value = false
+      recoveryKey.value = ''
+      unlockPassword.value = ''
+      // 已解锁的条目总是显示保护选项（select），允许用户修改保护级别
+      step.value = props.currentLevel === 'none' || props.isUnlocked ? 'select' : 'unlock'
+    }
+  },
+)
 
 // Methods
 async function handleSetup() {
   if (!canSetup.value) return
-  
+
   const result = await protection.setupProtection(
     props.itemId,
     selectedLevel.value as 'pin' | 'advanced',
     selectedLevel.value === 'advanced' ? password.value : undefined,
-    selectedLevel.value === 'advanced' ? props.content : undefined
+    selectedLevel.value === 'advanced' ? props.content : undefined,
   )
-  
+
   if (result) {
     if (result.recoveryKey) {
       recoveryKey.value = result.recoveryKey
@@ -166,11 +169,11 @@ async function handleUnlock() {
 
 async function handleRecoveryUnlock() {
   if (!recoveryKey.value || recoveryKey.value.length !== 128) return
-  
+
   isUnlocking.value = true
   const content = await protection.unlockWithRecovery(props.itemId, recoveryKey.value)
   isUnlocking.value = false
-  
+
   if (content) {
     emit('unlocked', content)
     emit('update:open', false)
@@ -180,9 +183,9 @@ async function handleRecoveryUnlock() {
 async function handleRemove() {
   const content = await protection.removeProtection(
     props.itemId,
-    selectedLevel.value === 'advanced' ? unlockPassword.value : undefined
+    selectedLevel.value === 'advanced' ? unlockPassword.value : undefined,
   )
-  
+
   emit('unprotected')
   emit('update:open', false)
 }
@@ -219,7 +222,7 @@ function nextStep() {
 
           <div class="protection-options">
             <label class="protection-option" :class="{ active: selectedLevel === 'none' }">
-              <input type="radio" v-model="selectedLevel" value="none" />
+              <input v-model="selectedLevel" type="radio" value="none" />
               <div class="protection-option-icon"><Unlock :size="20" /></div>
               <div class="protection-option-text">
                 <span class="protection-option-title">{{ L.none }}</span>
@@ -228,7 +231,7 @@ function nextStep() {
             </label>
 
             <label class="protection-option" :class="{ active: selectedLevel === 'pin' }">
-              <input type="radio" v-model="selectedLevel" value="pin" />
+              <input v-model="selectedLevel" type="radio" value="pin" />
               <div class="protection-option-icon"><Lock :size="20" /></div>
               <div class="protection-option-text">
                 <span class="protection-option-title">{{ L.pin }}</span>
@@ -237,7 +240,7 @@ function nextStep() {
             </label>
 
             <label class="protection-option" :class="{ active: selectedLevel === 'advanced' }">
-              <input type="radio" v-model="selectedLevel" value="advanced" />
+              <input v-model="selectedLevel" type="radio" value="advanced" />
               <div class="protection-option-icon"><Key :size="20" /></div>
               <div class="protection-option-text">
                 <span class="protection-option-title">{{ L.advanced }}</span>
@@ -260,7 +263,11 @@ function nextStep() {
             </div>
             <div class="protection-input-group">
               <label>{{ L.confirm_pwd }}</label>
-              <Input v-model="confirmPassword" :type="showPassword ? 'text' : 'password'" :placeholder="L.confirm_pwd_ph" />
+              <Input
+                v-model="confirmPassword"
+                :type="showPassword ? 'text' : 'password'"
+                :placeholder="L.confirm_pwd_ph"
+              />
             </div>
             <div v-if="password && confirmPassword && password !== confirmPassword" class="protection-error">
               {{ L.pwd_mismatch }}
@@ -269,15 +276,30 @@ function nextStep() {
 
           <!-- Actions -->
           <div class="protection-actions">
-            <Button variant="outline" size="default" class="min-w-[100px] rounded-md" @click="emit('update:open', false)">
+            <Button
+              variant="outline"
+              size="default"
+              class="min-w-[100px] rounded-md"
+              @click="emit('update:open', false)"
+            >
               {{ L.cancel }}
             </Button>
-            <Button v-if="currentLevel !== 'none'" variant="destructive" size="default" class="min-w-[100px] rounded-md"
-              @click="handleRemove" :disabled="protection.loading.value">
+            <Button
+              v-if="currentLevel !== 'none'"
+              variant="destructive"
+              size="default"
+              class="min-w-[100px] rounded-md"
+              :disabled="protection.loading.value"
+              @click="handleRemove"
+            >
               {{ L.remove }}
             </Button>
-            <Button size="default" class="min-w-[100px] rounded-md"
-              @click="handleSetup" :disabled="!canSetup || protection.loading.value">
+            <Button
+              size="default"
+              class="min-w-[100px] rounded-md"
+              :disabled="!canSetup || protection.loading.value"
+              @click="handleSetup"
+            >
               {{ protection.loading.value ? L.saving : L.apply }}
             </Button>
           </div>
@@ -294,11 +316,21 @@ function nextStep() {
           </div>
           <div v-if="protection.error.value" class="protection-error">{{ protection.error.value }}</div>
           <div class="protection-actions">
-            <Button v-if="props.currentLevel !== 'pin'" variant="outline" size="default" class="min-w-[100px] rounded-md" @click="step = 'recovery'">
+            <Button
+              v-if="props.currentLevel !== 'pin'"
+              variant="outline"
+              size="default"
+              class="min-w-[100px] rounded-md"
+              @click="step = 'recovery'"
+            >
               {{ L.use_recovery }}
             </Button>
-            <Button size="default" class="min-w-[100px] rounded-md"
-              @click="handleUnlock" :disabled="!unlockPassword || isUnlocking">
+            <Button
+              size="default"
+              class="min-w-[100px] rounded-md"
+              :disabled="!unlockPassword || isUnlocking"
+              @click="handleUnlock"
+            >
               {{ isUnlocking ? L.unlocking : L.unlock }}
             </Button>
           </div>
@@ -318,8 +350,12 @@ function nextStep() {
             <Button variant="outline" size="default" class="min-w-[100px] rounded-md" @click="step = 'unlock'">
               {{ L.back }}
             </Button>
-            <Button size="default" class="min-w-[100px] rounded-md"
-              @click="handleRecoveryUnlock" :disabled="recoveryKey.length !== 128 || isUnlocking">
+            <Button
+              size="default"
+              class="min-w-[100px] rounded-md"
+              :disabled="recoveryKey.length !== 128 || isUnlocking"
+              @click="handleRecoveryUnlock"
+            >
               {{ isUnlocking ? L.unlocking : L.unlock }}
             </Button>
           </div>
@@ -456,7 +492,7 @@ function nextStep() {
   background: var(--accent-light);
 }
 
-.protection-option input[type="radio"] {
+.protection-option input[type='radio'] {
   display: none;
 }
 

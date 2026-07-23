@@ -15,7 +15,10 @@ export function truncate(str: string, max: number): string {
 
 export function simpleHash(s: string): string {
   let hash = 0
-  for (let i = 0; i < s.length; i++) { hash = ((hash << 5) - hash) + s.charCodeAt(i); hash |= 0 }
+  for (let i = 0; i < s.length; i++) {
+    hash = (hash << 5) - hash + s.charCodeAt(i)
+    hash |= 0
+  }
   return hash.toString(36)
 }
 

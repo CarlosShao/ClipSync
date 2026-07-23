@@ -14,7 +14,7 @@ const lastChecked = ref('')
 async function checkForUpdates() {
   checkingUpdate.value = true
   try {
-    await new Promise(r => setTimeout(r, 1500))
+    await new Promise((r) => setTimeout(r, 1500))
     toast.show(t('sg_update_latest') || '当前已是最新版本', 'success')
     lastChecked.value = new Date().toLocaleDateString()
   } catch {
@@ -51,28 +51,19 @@ async function checkForUpdates() {
     <div class="about-row about-row--space">
       <div class="about-row-left">
         <span class="about-row-label">{{ t('sg_update') || '检查更新' }}</span>
-        <span v-if="lastChecked" class="about-row-hint">{{ t('sg_update_last') || '上次检查' }}: {{ lastChecked }}</span>
+        <span v-if="lastChecked" class="about-row-hint"
+          >{{ t('sg_update_last') || '上次检查' }}: {{ lastChecked }}</span
+        >
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        :disabled="checkingUpdate"
-        class="update-btn"
-        @click="checkForUpdates"
-      >
-        <RefreshCw :size="14" :class="{ 'spin': checkingUpdate }" />
-        {{ checkingUpdate ? (t('sg_update_checking') || '检查中...') : (t('btn_check') || '立即检查') }}
+      <Button variant="outline" size="sm" :disabled="checkingUpdate" class="update-btn" @click="checkForUpdates">
+        <RefreshCw :size="14" :class="{ spin: checkingUpdate }" />
+        {{ checkingUpdate ? t('sg_update_checking') || '检查中...' : t('btn_check') || '立即检查' }}
       </Button>
     </div>
 
     <!-- Feedback row -->
     <div class="about-row">
-      <a
-        href="https://github.com/CarlosShao/ClipSync/issues"
-        target="_blank"
-        rel="noopener"
-        class="about-link"
-      >
+      <a href="https://github.com/CarlosShao/ClipSync/issues" target="_blank" rel="noopener" class="about-link">
         {{ t('fb_title') || '发送反馈' }}
         <ExternalLink :size="12" class="link-ext" />
       </a>
@@ -81,11 +72,17 @@ async function checkForUpdates() {
 </template>
 
 <style scoped>
-.about-view { display: flex; flex-direction: column; gap: 0; }
+.about-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
 
 /* Hero */
 .about-hero {
-  display: flex; align-items: center; gap: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
   padding: 20px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
@@ -93,53 +90,100 @@ async function checkForUpdates() {
   margin-bottom: 8px;
 }
 .about-logo {
-  width: 52px; height: 52px;
+  width: 52px;
+  height: 52px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #6366F1 0%, #A78BFA 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #a78bfa 100%);
   color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 24px; font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(99,102,241,.25);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
 }
-.about-info { flex: 1; min-width: 0; }
-.about-name { font-size: 18px; font-weight: 700; color: var(--text-primary); }
-.about-version { font-size: 13px; color: var(--accent); font-weight: 500; margin-top: 2px; }
+.about-info {
+  flex: 1;
+  min-width: 0;
+}
+.about-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.about-version {
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 500;
+  margin-top: 2px;
+}
 .about-desc {
-  font-size: 13px; color: var(--text-secondary);
+  font-size: 13px;
+  color: var(--text-secondary);
   line-height: 1.6;
   padding: 4px 0 16px;
 }
 
 /* Row */
 .about-row {
-  display: flex; align-items: center; gap: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 14px 0;
   border-top: 1px solid var(--border-subtle);
 }
-.about-row--space { justify-content: space-between; }
-.about-row-left { display: flex; flex-direction: column; gap: 2px; }
-.about-row-label { font-size: 14px; font-weight: 500; color: var(--text-primary); }
-.about-row-hint { font-size: 12px; color: var(--text-tertiary); }
+.about-row--space {
+  justify-content: space-between;
+}
+.about-row-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.about-row-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.about-row-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
 
 /* Link */
 .about-link {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 14px; font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--accent);
   text-decoration: none;
   cursor: pointer;
-  transition: opacity .15s;
+  transition: opacity 0.15s;
 }
-.about-link:hover { opacity: .75; }
-.link-ext { opacity: 0.5; }
+.about-link:hover {
+  opacity: 0.75;
+}
+.link-ext {
+  opacity: 0.5;
+}
 
 /* Update button */
-.update-btn { gap: 6px; }
+.update-btn {
+  gap: 6px;
+}
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
-.spin { animation: spin 1s linear infinite; }
+.spin {
+  animation: spin 1s linear infinite;
+}
 </style>

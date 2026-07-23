@@ -50,17 +50,21 @@ const route = useRoute()
 const router = useRouter()
 
 const sidebarOpen = ref(true)
-const currentSub = ref('clipboard')  // will be synced with route
+const currentSub = ref('clipboard') // will be synced with route
 const showQuickPaste = ref(false)
 
 // Avatar URL from localStorage (set by profile save / login)
-const userAvatarUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('clipsync-avatar') || undefined : undefined
+const userAvatarUrl =
+  typeof localStorage !== 'undefined' ? localStorage.getItem('clipsync-avatar') || undefined : undefined
 
 // Sync route param to currentSub (both initial load and runtime navigation)
 if (route.params.sub) currentSub.value = route.params.sub as string
-watch(() => route.params.sub, (sub) => {
-  if (sub) currentSub.value = sub as string
-})
+watch(
+  () => route.params.sub,
+  (sub) => {
+    if (sub) currentSub.value = sub as string
+  },
+)
 
 // Modal state
 const showModalType = ref('')
@@ -76,7 +80,9 @@ const modalManagerActive = computed(() => !!showModalType.value || showForgotPwd
 const showOnboarding = ref(!localStorage.getItem('clipsync-onboarded'))
 const showCoachMarks = ref(false)
 const showSettingsDialog = ref(false)
-function openModalFromDialog(type: string) { showModalType.value = type }
+function openModalFromDialog(type: string) {
+  showModalType.value = type
+}
 
 // PIN verification dialog
 const showPinDialog = ref(false)
@@ -98,20 +104,47 @@ function startPinCountdown() {
   }, 1000)
 }
 function stopPinCountdown() {
-  if (pinCountdownTimer) { clearInterval(pinCountdownTimer); pinCountdownTimer = null }
+  if (pinCountdownTimer) {
+    clearInterval(pinCountdownTimer)
+    pinCountdownTimer = null
+  }
   pinCountdown.value = 0
 }
 
-function openPinDialog() { showPinDialog.value = true; pinInput.value = ''; pinError.value = ''; pinNoPinSet.value = false; startPinCountdown() }
-function openPinSetupPrompt() { showPinDialog.value = true; pinInput.value = ''; pinError.value = ''; pinNoPinSet.value = true; stopPinCountdown() }
-function closePinDialog() { showPinDialog.value = false; pinInput.value = ''; pinError.value = ''; pinNoPinSet.value = false; stopPinCountdown() }
-function goToSettings() { closePinDialog(); showSettingsDialog.value = true }
+function openPinDialog() {
+  showPinDialog.value = true
+  pinInput.value = ''
+  pinError.value = ''
+  pinNoPinSet.value = false
+  startPinCountdown()
+}
+function openPinSetupPrompt() {
+  showPinDialog.value = true
+  pinInput.value = ''
+  pinError.value = ''
+  pinNoPinSet.value = true
+  stopPinCountdown()
+}
+function closePinDialog() {
+  showPinDialog.value = false
+  pinInput.value = ''
+  pinError.value = ''
+  pinNoPinSet.value = false
+  stopPinCountdown()
+}
+function goToSettings() {
+  closePinDialog()
+  showSettingsDialog.value = true
+}
 async function verifyPin() {
   pinError.value = ''
-  if (!pinInput.value) { pinError.value = t('pin_required') || '请输入 PIN'; return }
+  if (!pinInput.value) {
+    pinError.value = t('pin_required') || '请输入 PIN'
+    return
+  }
   pinVerifying.value = true
   try {
-    await new Promise(r => setTimeout(r, 200))
+    await new Promise((r) => setTimeout(r, 200))
     const ok = privacy.verifyPin(pinInput.value)
     if (ok) {
       closePinDialog()
@@ -130,7 +163,11 @@ let nativeNotifPermission = false
 /** Send a native OS notification (system tray balloon). Silently skips if permission denied. */
 function notifyNative(title: string, body: string) {
   if (!nativeNotifPermission) return
-  try { sendNotification({ title, body }) } catch { /* plugin not available */ }
+  try {
+    sendNotification({ title, body })
+  } catch {
+    /* plugin not available */
+  }
 }
 
 onMounted(async () => {
@@ -141,7 +178,9 @@ onMounted(async () => {
     } else {
       nativeNotifPermission = (await requestPermission()) === 'granted'
     }
-  } catch { /* plugin not available in dev mode */ }
+  } catch {
+    /* plugin not available in dev mode */
+  }
 
   stopPolling = clip.startPolling(1500)
   device.loadDevices()
@@ -158,7 +197,11 @@ onMounted(async () => {
       const label = source ? `${source}` : t('app_name')
       const text = preview ? String(preview).slice(0, 80) : t('empty_action')
       // Only notify when main window is not focused (avoid redundant alerts)
-      try { notifyNative(label, text) } catch { /* ignore */ }
+      try {
+        notifyNative(label, text)
+      } catch {
+        /* ignore */
+      }
     }
     if (data?.type === 'notification') {
       notif.pushRealtime(data)
@@ -171,9 +214,15 @@ onMounted(async () => {
 
   // Expose the quick-paste toggle for the Rust global-shortcut handler to call via eval.
   // This is the SINGLE source of truth — the visible panel is bound to HomeView's showQuickPaste.
-  ;(window as any).__toggleQuickPaste = () => { showQuickPaste.value = !showQuickPaste.value }
-  ;(window as any).__toggleWindow = () => { tauri.toggleWindow() }
-  ;(window as any).__toggleTheme = () => { toggleMode() }
+  ;(window as any).__toggleQuickPaste = () => {
+    showQuickPaste.value = !showQuickPaste.value
+  }
+  ;(window as any).__toggleWindow = () => {
+    tauri.toggleWindow()
+  }
+  ;(window as any).__toggleTheme = () => {
+    toggleMode()
+  }
 
   // Re-apply user's saved global shortcuts (Rust hardcodes defaults at startup,
   // so without this the user's customization is lost after a restart).
@@ -184,11 +233,18 @@ onMounted(async () => {
       const ks = saved[gid]
       if (Array.isArray(ks) && ks.length) globalMap[gid] = ks.join('+')
     }
-    if (Object.keys(globalMap).length) tauri.setGlobalShortcuts(globalMap).catch((e) => console.warn('[Home] setGlobalShortcuts failed:', e))
-  } catch (e) { console.warn('[Home] shortcut restore failed:', e) }
+    if (Object.keys(globalMap).length)
+      tauri.setGlobalShortcuts(globalMap).catch((e) => console.warn('[Home] setGlobalShortcuts failed:', e))
+  } catch (e) {
+    console.warn('[Home] shortcut restore failed:', e)
+  }
 
   document.addEventListener('keydown', handleGlobalKeydown)
-  try { tauri.setTitlebarMode(currentMode.value === 'dark') } catch (e) { console.warn('[Home] setTitlebarMode failed:', e) }
+  try {
+    tauri.setTitlebarMode(currentMode.value === 'dark')
+  } catch (e) {
+    console.warn('[Home] setTitlebarMode failed:', e)
+  }
 })
 
 onUnmounted(() => {
@@ -201,11 +257,18 @@ onUnmounted(() => {
 
 function handleGlobalKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    if (showQuickPaste.value) { showQuickPaste.value = false; return }
-    if (showModalType.value) { showModalType.value = ''; return }
+    if (showQuickPaste.value) {
+      showQuickPaste.value = false
+      return
+    }
+    if (showModalType.value) {
+      showModalType.value = ''
+      return
+    }
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-    e.preventDefault(); showQuickPaste.value = !showQuickPaste.value
+    e.preventDefault()
+    showQuickPaste.value = !showQuickPaste.value
   }
 }
 
@@ -215,18 +278,71 @@ function switchSub(sub: string) {
   if (sub === 'devices') device.loadDevices()
 }
 
-function openModal(type: string) { showModalType.value = type }
-function closeModal() { showModalType.value = '' }
+function openModal(type: string) {
+  showModalType.value = type
+}
+function closeModal() {
+  showModalType.value = ''
+}
 
-function onPreviewImage(item: any) { previewItem.value = item; previewType.value = 'image' }
-function onPreviewText(item: any) { previewItem.value = item; previewType.value = 'text' }
+function onPreviewImage(item: any) {
+  previewItem.value = item
+  previewType.value = 'image'
+}
+function onPreviewText(item: any) {
+  previewItem.value = item
+  previewType.value = 'text'
+}
 function onPreviewFile(item: any) {
   // Document types open in drawer, others in modal
-  const docExtensions = ['md', 'markdown', 'mdx', 'txt', 'log', 'json', 'yaml', 'yml', 'xml', 'toml',
-    'js', 'ts', 'jsx', 'tsx', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'cs',
-    'html', 'css', 'scss', 'less', 'sql', 'sh', 'bash', 'rb', 'php',
-    'doc', 'docx', 'xls', 'xlsx', 'xlsm', 'pptx', 'pdf', 'csv', 'tsv',
-    'ini', 'env', 'vue', 'svelte', 'dockerfile', 'makefile']
+  const docExtensions = [
+    'md',
+    'markdown',
+    'mdx',
+    'txt',
+    'log',
+    'json',
+    'yaml',
+    'yml',
+    'xml',
+    'toml',
+    'js',
+    'ts',
+    'jsx',
+    'tsx',
+    'py',
+    'java',
+    'go',
+    'rs',
+    'c',
+    'cpp',
+    'h',
+    'cs',
+    'html',
+    'css',
+    'scss',
+    'less',
+    'sql',
+    'sh',
+    'bash',
+    'rb',
+    'php',
+    'doc',
+    'docx',
+    'xls',
+    'xlsx',
+    'xlsm',
+    'pptx',
+    'pdf',
+    'csv',
+    'tsv',
+    'ini',
+    'env',
+    'vue',
+    'svelte',
+    'dockerfile',
+    'makefile',
+  ]
   let ext = ''
   try {
     const meta = JSON.parse(item.content)
@@ -244,27 +360,41 @@ function onPreviewFile(item: any) {
     ext = raw.split('.').pop()?.toLowerCase() || ''
   }
   if (docExtensions.includes(ext)) {
-    drawerItem.value = item; showDrawer.value = true
+    drawerItem.value = item
+    showDrawer.value = true
   } else {
-    previewItem.value = item; previewType.value = 'file'
+    previewItem.value = item
+    previewType.value = 'file'
   }
 }
-function closePreview() { previewItem.value = null; previewType.value = '' }
-function onShowPinDialog() { openPinDialog() }
-function onShowPinSetup() { openPinSetupPrompt() }
+function closePreview() {
+  previewItem.value = null
+  previewType.value = ''
+}
+function onShowPinDialog() {
+  openPinDialog()
+}
+function onShowPinSetup() {
+  openPinSetupPrompt()
+}
 async function onToggleSensitive(item: any) {
   try {
     const newVal = !item.metadata?.sensitive
     await toggleSensitive(item.id, newVal)
     // Update local item metadata
-    const target = clip.items.value.find(i => i.id === item.id)
-    if (target) { (target as any).metadata = { ...(target as any).metadata, sensitive: newVal } }
-    toast.show(newVal ? (t('sens_locked') || '已标记为敏感') : (t('sens_unlocked') || '已取消敏感标记'), 'success')
+    const target = clip.items.value.find((i) => i.id === item.id)
+    if (target) {
+      ;(target as any).metadata = { ...(target as any).metadata, sensitive: newVal }
+    }
+    toast.show(newVal ? t('sens_locked') || '已标记为敏感' : t('sens_unlocked') || '已取消敏感标记', 'success')
   } catch (e: any) {
     toast.show(e.message || t('sens_toggle_fail') || '操作失败', 'error')
   }
 }
-function closeDrawer() { showDrawer.value = false; drawerItem.value = null }
+function closeDrawer() {
+  showDrawer.value = false
+  drawerItem.value = null
+}
 
 function onOnboardingComplete() {
   showOnboarding.value = false
@@ -279,7 +409,9 @@ function onCoachMarksComplete() {
 }
 
 function showConfirm(msg: string, cb: () => void) {
-  confirmMessage.value = msg; confirmCallback = cb; showModalType.value = 'confirm'
+  confirmMessage.value = msg
+  confirmCallback = cb
+  showModalType.value = 'confirm'
 }
 function handleLogout() {
   notif.reset()
@@ -288,7 +420,10 @@ function handleLogout() {
   router.replace('/auth')
 }
 function confirmAction() {
-  if (confirmCallback) { confirmCallback(); confirmCallback = null }
+  if (confirmCallback) {
+    confirmCallback()
+    confirmCallback = null
+  }
   showModalType.value = ''
 }
 </script>
@@ -365,14 +500,25 @@ function confirmAction() {
     <div class="pin-dialog">
       <div class="pin-dialog-header">
         <Lock :size="18" />
-        <span>{{ pinNoPinSet ? (t('pin_setup_title') || '请先设置 PIN') : (t('pin_title') || 'PIN 验证') }}</span>
+        <span>{{ pinNoPinSet ? t('pin_setup_title') || '请先设置 PIN' : t('pin_title') || 'PIN 验证' }}</span>
       </div>
       <p v-if="pinNoPinSet" class="pin-dialog-hint">{{ t('pin_setup_hint') || '查看/复制敏感数据需要先设置 PIN' }}</p>
       <p v-else class="pin-dialog-hint">{{ t('pin_hint') || '请输入 PIN 以查看/复制敏感数据' }}</p>
       <!-- Countdown timer (shown during PIN verification) -->
-      <div v-if="!pinNoPinSet && pinCountdown > 0" class="pin-countdown">{{ t('pin_countdown', { s: pinCountdown }) || `PIN 验证剩余 ${pinCountdown} 秒` }}</div>
+      <div v-if="!pinNoPinSet && pinCountdown > 0" class="pin-countdown">
+        {{ t('pin_countdown', { s: pinCountdown }) || `PIN 验证剩余 ${pinCountdown} 秒` }}
+      </div>
       <!-- PIN input (hidden when no PIN set) -->
-      <input v-if="!pinNoPinSet" v-model="pinInput" type="password" inputmode="numeric" maxlength="6" class="pin-input" :placeholder="t('pin_placeholder') || '输入 PIN'" @keyup.enter="verifyPin" />
+      <input
+        v-if="!pinNoPinSet"
+        v-model="pinInput"
+        type="password"
+        inputmode="numeric"
+        maxlength="6"
+        class="pin-input"
+        :placeholder="t('pin_placeholder') || '输入 PIN'"
+        @keyup.enter="verifyPin"
+      />
       <div v-if="pinError" class="pin-error">{{ pinError }}</div>
       <div class="pin-dialog-actions">
         <!-- Plain HTML buttons to avoid Button component rendering issues -->
@@ -381,7 +527,13 @@ function confirmAction() {
           <button class="pin-btn-primary" @click="goToSettings">{{ t('pin_go_settings') || '前往设置' }}</button>
         </template>
         <template v-else>
-          <button class="pin-btn-primary" :class="{ 'pin-btn-primary--active': pinInput && !pinVerifying }" @click="verifyPin">{{ pinVerifying ? (t('verifying') || '验证中...') : (t('pin_verify_btn') || '验证') }}</button>
+          <button
+            class="pin-btn-primary"
+            :class="{ 'pin-btn-primary--active': pinInput && !pinVerifying }"
+            @click="verifyPin"
+          >
+            {{ pinVerifying ? t('verifying') || '验证中...' : t('pin_verify_btn') || '验证' }}
+          </button>
         </template>
       </div>
     </div>
@@ -401,43 +553,151 @@ function confirmAction() {
 </template>
 
 <style scoped>
-.app-shell { display: flex; height: 100vh; height: 100dvh; overflow: hidden; background: var(--bg-base); }
-.main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-.btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-sm); background: transparent; border: none; color: var(--text-secondary); cursor: pointer; }
-.btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); }
+.app-shell {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+.main-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.btn-icon:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 
 /* PIN Verification Dialog */
 .pin-overlay {
-  position: fixed; inset: 0; z-index: 10000;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--bg-modal-overlay); animation: fadeIn 0.15s ease;
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-modal-overlay);
+  animation: fadeIn 0.15s ease;
 }
 .pin-dialog {
-  background: var(--bg-surface); border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl); padding: 28px; max-width: 380px; width: 100%;
-  box-shadow: var(--shadow-modal); animation: slideUp 0.2s ease;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  padding: 28px;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: var(--shadow-modal);
+  animation: slideUp 0.2s ease;
 }
-.pin-dialog-header { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; margin-bottom: 8px; }
-.pin-dialog-hint { font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5; }
-.pin-input { width: 100%; height: 40px; text-align: center; font-size: 18px; letter-spacing: 6px; }
-.pin-error { font-size: 12px; color: var(--danger); margin-top: 8px; text-align: center; }
-.pin-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.pin-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.pin-dialog-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.pin-input {
+  width: 100%;
+  height: 40px;
+  text-align: center;
+  font-size: 18px;
+  letter-spacing: 6px;
+}
+.pin-error {
+  font-size: 12px;
+  color: var(--danger);
+  margin-top: 8px;
+  text-align: center;
+}
+.pin-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
 .pin-btn-cancel {
-  padding: 8px 18px; border-radius: var(--radius-md); border: 1px solid var(--border-default);
-  background: var(--bg-surface); color: var(--text-secondary); font-size: 13px;
-  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
-.pin-btn-cancel:hover { background: var(--bg-hover); color: var(--text-primary); }
+.pin-btn-cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 .pin-btn-primary {
-  padding: 8px 18px; border-radius: var(--radius-md); border: none;
-  background: var(--accent); color: white; font-size: 13px; font-weight: 500;
-  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
-.pin-btn-primary:hover { opacity: 0.9; }
-.pin-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.pin-btn-primary--active { opacity: 1; }
-.pin-countdown { font-size: 12px; color: var(--text-tertiary); text-align: center; margin-top: 8px; }
+.pin-btn-primary:hover {
+  opacity: 0.9;
+}
+.pin-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pin-btn-primary--active {
+  opacity: 1;
+}
+.pin-countdown {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
+  margin-top: 8px;
+}
 
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUp { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
 </style>

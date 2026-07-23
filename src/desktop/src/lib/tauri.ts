@@ -21,9 +21,9 @@ export const checkClipboardImageInfo = () => invoke<ClipboardImageInfo>('check_c
 export const getClipboardImage = () => invoke<string>('get_clipboard_image')
 export const convertBmpToPng = (bmpDataUrl: string) => invoke<string>('convert_bmp_to_png', { bmpDataUrl })
 
-
 // ===== Auth =====
-export const login = (phone: string, code: string) => invoke<{ token: string; user: { id: string } }>('login', { phone, code })
+export const login = (phone: string, code: string) =>
+  invoke<{ token: string; user: { id: string } }>('login', { phone, code })
 export const sendVerificationCode = (phone: string) => invoke('send_verification_code', { phone })
 
 // ===== App =====
@@ -39,8 +39,7 @@ export const isAutostartEnabled = () => invoke<boolean>('is_autostart_enabled')
 export const registerShortcut = (shortcut: string) => invoke('register_shortcut', { shortcut })
 export const unregisterAllShortcuts = () => invoke('unregister_all_shortcuts')
 // Re-register all global shortcuts from a map: { quickPaste, toggleWindow }
-export const setGlobalShortcuts = (shortcuts: Record<string, string>) =>
-  invoke('set_global_shortcuts', { shortcuts })
+export const setGlobalShortcuts = (shortcuts: Record<string, string>) => invoke('set_global_shortcuts', { shortcuts })
 // Toggle main window visibility (show/hide to tray)
 export const toggleWindow = () => invoke('toggle_window')
 
@@ -53,5 +52,4 @@ export const openImageViewer = (imageDataUrl: string, title: string) =>
 
 // ===== File Explorer =====
 // 在资源管理器中选中并显示文件/文件夹
-export const revealInFolder = (path: string) =>
-  invoke('revealInFolder', { path })
+export const revealInFolder = (path: string) => invoke('revealInFolder', { path })

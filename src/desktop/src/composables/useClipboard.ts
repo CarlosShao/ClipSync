@@ -9,17 +9,42 @@ import { initOfflineSync, getQueueSize } from '@/utils/offlineQueue'
 import { chunkedUpload, shouldUseChunkedUpload } from '@/utils/chunkedUpload'
 import { logger } from '@/utils/logger'
 import {
-  items, filteredItems, searchQuery, activeFilter, batchMode, polling, loading,
-  totalItems, mainTotalItems, hasMore, loadingMore, currentPage, pageSize, currentView,
-  selectedCount, allSelected, toggleSelectAll, clearSelection,
-  advancedFilters, skipPollUntil, initialLoadDone, setInitialLoadDone, persistFilter,
-  recentUploadHashes, HASH_TTL,
-  type ClipItem, type ClipboardFilter,
+  items,
+  filteredItems,
+  searchQuery,
+  activeFilter,
+  batchMode,
+  polling,
+  loading,
+  totalItems,
+  mainTotalItems,
+  hasMore,
+  loadingMore,
+  currentPage,
+  pageSize,
+  currentView,
+  selectedCount,
+  allSelected,
+  toggleSelectAll,
+  clearSelection,
+  advancedFilters,
+  skipPollUntil,
+  initialLoadDone,
+  setInitialLoadDone,
+  persistFilter,
+  recentUploadHashes,
+  HASH_TTL,
+  type ClipItem,
+  type ClipboardFilter,
 } from './clipboardState'
 import { cacheContent, clearContentCache } from './clipboardCache'
 import {
-  skipNextPolls, markContentCopiedFromClipSync, isClipboardChangeFromInternalCopy,
-  copiedTexts, copiedItems, cleanupCopiedContent,
+  skipNextPolls,
+  markContentCopiedFromClipSync,
+  isClipboardChangeFromInternalCopy,
+  copiedTexts,
+  copiedItems,
+  cleanupCopiedContent,
 } from './clipboardDedup'
 import { releaseRemovedObjectUrls, releaseAllObjectUrls } from './clipboardObjectUrls'
 import { simpleHash, apiOrEnqueue, resizeImageIfNeeded } from './clipboardUpload'
@@ -104,7 +129,9 @@ async function readAndUpload() {
           lastBrowserText = clipText
           enqueueClipboardTask({ type: 'text', payload: clipText })
         }
-      } catch { /* clipboard API 权限不足 */ }
+      } catch {
+        /* clipboard API 权限不足 */
+      }
     }
 
     for (const [h, t] of recentUploadHashes) {
@@ -193,26 +220,32 @@ export function useClipboard() {
       if (!state?.uploadId || !state?.filename) return
 
       // Check if session is still valid on server
-      api('GET', `/api/upload/status/${state.uploadId}`).then(res => {
-        if (res.ok && res.data?.missingChunks?.length > 0) {
-          logger.debug(`[Clipboard] Resuming upload: ${state.filename} (${res.data.uploadedChunks?.length || 0}/${state.totalChunks} chunks)`)
-          // Find the item in the list and update its display
-          const item = items.value.find(i => i.content?.includes(state.filename))
-          if (item) {
-            const pct = Math.round(((res.data.uploadedChunks?.length || 0) / state.totalChunks) * 100)
-            item.content = `${state.filename} (${pct}%) — resuming...`
+      api('GET', `/api/upload/status/${state.uploadId}`)
+        .then((res) => {
+          if (res.ok && res.data?.missingChunks?.length > 0) {
+            logger.debug(
+              `[Clipboard] Resuming upload: ${state.filename} (${res.data.uploadedChunks?.length || 0}/${state.totalChunks} chunks)`,
+            )
+            // Find the item in the list and update its display
+            const item = items.value.find((i) => i.content?.includes(state.filename))
+            if (item) {
+              const pct = Math.round(((res.data.uploadedChunks?.length || 0) / state.totalChunks) * 100)
+              item.content = `${state.filename} (${pct}%) — resuming...`
+            }
+            // Note: actual resume requires the File object which is lost on refresh.
+            // User needs to re-select the file to resume. Log this for now.
+            logger.debug('[Clipboard] Upload session found but File object lost on refresh. Re-select file to resume.')
+          } else {
+            // Session expired or complete — clean up
+            localStorage.removeItem('clipsync-chunked-upload')
           }
-          // Note: actual resume requires the File object which is lost on refresh.
-          // User needs to re-select the file to resume. Log this for now.
-          logger.debug('[Clipboard] Upload session found but File object lost on refresh. Re-select file to resume.')
-        } else {
-          // Session expired or complete — clean up
+        })
+        .catch(() => {
           localStorage.removeItem('clipsync-chunked-upload')
-        }
-      }).catch(() => {
-        localStorage.removeItem('clipsync-chunked-upload')
-      })
-    } catch { /* ignore */ }
+        })
+    } catch {
+      /* ignore */
+    }
   }
 
   function startPolling(interval = 1500) {
@@ -235,12 +268,14 @@ export function useClipboard() {
     // while the loop is blocked compressing the previous one.
     listen<any>('clipboard-changed', async (event) => {
       await handleClipboardEvent(event.payload)
-    }).then(unlisten => {
-      unlistenEvent = unlisten
-      logger.debug('[Clipboard] Listening for native clipboard-changed events')
-    }).catch(err => {
-      console.warn('[Clipboard] Failed to attach event listener, falling back to polling:', err)
     })
+      .then((unlisten) => {
+        unlistenEvent = unlisten
+        logger.debug('[Clipboard] Listening for native clipboard-changed events')
+      })
+      .catch((err) => {
+        console.warn('[Clipboard] Failed to attach event listener, falling back to polling:', err)
+      })
 
     // --- Fallback: slow polling (every 10s) as safety net ---
     // If the Rust monitor is not running or events are missed, this ensures
@@ -292,7 +327,9 @@ export function useClipboard() {
             return true
           }
           return false
-        } catch { /* 解析失败 */ }
+        } catch {
+          /* 解析失败 */
+        }
         return false
       }
       if (item.type === 'image') {
@@ -302,7 +339,9 @@ export function useClipboard() {
           try {
             const full = await api('GET', `/api/clipboard/${item.id}`)
             dataUrl = full.data?.contentEncrypted || full.data?.contentPreview || dataUrl
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
         if (dataUrl && !dataUrl.startsWith('[Image')) {
           // 优先写入实际图片格式
@@ -318,7 +357,9 @@ export function useClipboard() {
             const info = await tauri.checkClipboardImageInfo()
             lastImageSize = info.size
             lastImageHash = info.hash || ''
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
           return true
         }
         return false
@@ -334,7 +375,10 @@ export function useClipboard() {
       if (itemPw.isItemProtected(item) && itemPw.isUnlocked(item.id)) {
         textContent = itemPw.getUnlockedPlaintext(item.id) ?? item.content
       }
-      const needsFetch = !isLocalItem && !itemPw.isItemProtected(item) && textContent.length > 0 &&
+      const needsFetch =
+        !isLocalItem &&
+        !itemPw.isItemProtected(item) &&
+        textContent.length > 0 &&
         (contentSize === 0 || textContent.length < contentSize)
       if (needsFetch) {
         try {
@@ -364,10 +408,19 @@ export function useClipboard() {
   }
 
   async function batchDelete(): Promise<number> {
-    const selected = items.value.filter(i => i.selected)
+    const selected = items.value.filter((i) => i.selected)
     const count = selected.length
     // 只删服务器上的（过滤掉所有本地临时 id）
-    const serverIds = selected.map(i => i.id).filter(id => !id.startsWith('local-') && !id.startsWith('text-') && !id.startsWith('img-') && !id.startsWith('file-') && !id.startsWith('browser-'))
+    const serverIds = selected
+      .map((i) => i.id)
+      .filter(
+        (id) =>
+          !id.startsWith('local-') &&
+          !id.startsWith('text-') &&
+          !id.startsWith('img-') &&
+          !id.startsWith('file-') &&
+          !id.startsWith('browser-'),
+      )
     let res: any = { ok: true, status: 200 }
     if (serverIds.length > 0) {
       res = await apiOrEnqueue('DELETE', '/api/clipboard', { ids: serverIds }, 'delete', { ids: serverIds })
@@ -377,8 +430,8 @@ export function useClipboard() {
       }
     }
     // 仅在服务端确认成功后才从本地列表移除选中项
-    const selectedIds = new Set(selected.map(i => i.id))
-    const nextItems = items.value.filter(i => !selectedIds.has(i.id))
+    const selectedIds = new Set(selected.map((i) => i.id))
+    const nextItems = items.value.filter((i) => !selectedIds.has(i.id))
     // 释放被删除条目占用的图片 blob URL
     releaseRemovedObjectUrls(nextItems)
     items.value = nextItems
@@ -406,7 +459,7 @@ export function useClipboard() {
       }
     }
     // 仅在服务端确认成功（或是本地临时项）后才从本地列表移除
-    const nextItems = items.value.filter(i => i.id !== item.id)
+    const nextItems = items.value.filter((i) => i.id !== item.id)
     // 释放被删除条目占用的图片 blob URL
     releaseRemovedObjectUrls(nextItems)
     items.value = nextItems
@@ -452,7 +505,7 @@ export function useClipboard() {
         return false
       }
       // 从当前视图移除（归档视图由 view=archive 单独拉取）
-      const next = items.value.filter(i => i.id !== item.id)
+      const next = items.value.filter((i) => i.id !== item.id)
       releaseRemovedObjectUrls(next)
       items.value = next
       if (totalItems.value > 0) totalItems.value = Math.max(0, totalItems.value - 1)
@@ -482,7 +535,7 @@ export function useClipboard() {
         console.warn('[Clipboard] unarchiveItem failed:', res.error)
         return false
       }
-      const next = items.value.filter(i => i.id !== item.id)
+      const next = items.value.filter((i) => i.id !== item.id)
       releaseRemovedObjectUrls(next)
       items.value = next
       if (totalItems.value > 0) totalItems.value = Math.max(0, totalItems.value - 1)
@@ -526,8 +579,13 @@ export function useClipboard() {
     // 切换分类后必须按新分类重新从后端拉取，否则总数/剩余数都是按全部类型算的。
     loadClipboardItems({ page: 1, append: false })
   }
-  function setSearch(q: string) { searchQuery.value = q }
-  function toggleBatch() { batchMode.value = !batchMode.value; if (!batchMode.value) clearSelection() }
+  function setSearch(q: string) {
+    searchQuery.value = q
+  }
+  function toggleBatch() {
+    batchMode.value = !batchMode.value
+    if (!batchMode.value) clearSelection()
+  }
 
   /** 从文件选择器上传文件到剪贴板 */
   async function uploadFileItem(file: File): Promise<void> {
@@ -535,23 +593,27 @@ export function useClipboard() {
     // Free: 128MB, Pro: 256MB, Enterprise: 1GB
     const configStore = useConfigStore()
     const planLimits: Record<string, number> = {
-      'Free': 128, 'free': 128, '免费版': 128,
-      'Pro': 256, 'pro': 256, '专业版': 256,
-      'Enterprise': 1024, 'enterprise': 1024, '企业版': 1024,
+      Free: 128,
+      free: 128,
+      免费版: 128,
+      Pro: 256,
+      pro: 256,
+      专业版: 256,
+      Enterprise: 1024,
+      enterprise: 1024,
+      企业版: 1024,
     }
     const userPlan = configStore.user.plan || 'Free'
     const maxMb = planLimits[userPlan] || 128 // 默认免费版 128MB
     const maxBytes = maxMb * 1024 * 1024
 
     if (file.size > maxBytes) {
-      const sizeStr = file.size < 1024 * 1024
-        ? `${(file.size / 1024).toFixed(0)} KB`
-        : `${(file.size / 1024 / 1024).toFixed(1)} MB`
+      const sizeStr =
+        file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(0)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`
       throw new Error(`${t('file_exceeds_plan', { size: sizeStr, limit: `${maxMb}MB`, plan: userPlan })}`)
     }
-    const sizeStr = file.size < 1024 * 1024
-      ? `${(file.size / 1024).toFixed(1)} KB`
-      : `${(file.size / 1024 / 1024).toFixed(1)} MB`
+    const sizeStr =
+      file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`
     // 上传文件不包含本地路径（文件已上传到服务器，其他设备从服务器访问）
     const displayContent = JSON.stringify({ name: file.name, size: sizeStr, type: file.type || 'unknown' })
 
@@ -574,7 +636,9 @@ export function useClipboard() {
           deviceId = devList[0].id || devList[0].device_id || null
           if (deviceId) localStorage.setItem('clipsync-device-id', deviceId)
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     if (!deviceId) throw new Error('No device ID')
 
@@ -598,8 +662,13 @@ export function useClipboard() {
         contentPreview: `[Image ${file.name}]`,
       })
       if (res.ok && res.data?.id) {
-        const item = items.value.find(i => i.id === localId)
-        if (item) { item.id = res.data.id; item.type = 'image'; item.content = dataUrl; item.preview = dataUrl }
+        const item = items.value.find((i) => i.id === localId)
+        if (item) {
+          item.id = res.data.id
+          item.type = 'image'
+          item.content = dataUrl
+          item.preview = dataUrl
+        }
         cacheContent(res.data.id, dataUrl)
       }
     } else if (shouldUseChunkedUpload(file)) {
@@ -617,18 +686,18 @@ export function useClipboard() {
         })
         const serverId = createRes.data?.id
         if (serverId) {
-          const item = items.value.find(i => i.id === localId)
+          const item = items.value.find((i) => i.id === localId)
           if (item) item.id = serverId
         }
         // Step 2: 分片上传（localStorage 保存进度，支持刷新后恢复）
         await chunkedUpload(file, (progress) => {
-          const item = items.value.find(i => i.id === (serverId || localId))
+          const item = items.value.find((i) => i.id === (serverId || localId))
           if (item && !progress.done) {
             item.content = `${file.name} (${progress.percent}%)`
           }
         })
         // Step 3: 上传完成，更新最终内容
-        const finalItem = items.value.find(i => i.id === (serverId || localId))
+        const finalItem = items.value.find((i) => i.id === (serverId || localId))
         if (finalItem) finalItem.content = displayContent
       } catch (e: any) {
         console.error('[Clipboard] Chunked upload failed:', e)
@@ -642,7 +711,7 @@ export function useClipboard() {
 
       const res = await apiForm('/api/media/file', formData)
       if (res.ok && res.data?.id) {
-        const item = items.value.find(i => i.id === localId)
+        const item = items.value.find((i) => i.id === localId)
         if (item) {
           item.id = res.data.id
           // Update content with server metadata for display
@@ -674,13 +743,13 @@ export function useClipboard() {
     // Slack token
     if (/\bxox[baprs]-[A-Za-z0-9-]+/.test(t)) return true
     // Generic Bearer / Authorization tokens
-    if (/Bearer\s+[A-Za-z0-9_\-\.]{20,}/i.test(t)) return true
+    if (/Bearer\s+[A-Za-z0-9_.-]{20,}/i.test(t)) return true
     // Private keys
     if (/-----BEGIN\s+(RSA|EC|OPENSSH|DSA|PGP)\s+PRIVATE\s+Key-----/.test(t)) return true
     // Password patterns
     if (/^(password|passwd|pwd|secret|api[_-]?key)\s*[:=]\s*.{4,}$/im.test(t)) return true
     // Long base64-looking secrets (32+ chars)
-    if (/\b[A-Za-z0-9_\-]{40,}\b/.test(t) && /[A-Z]/.test(t) && /[a-z]/.test(t) && /[0-9]/.test(t)) return true
+    if (/\b[A-Za-z0-9_-]{40,}\b/.test(t) && /[A-Z]/.test(t) && /[a-z]/.test(t) && /[0-9]/.test(t)) return true
     // Connection strings with embedded passwords
     if (/(mongodb|mysql|postgres|redis|amqp):\/\/[^:]+:([^@]+)@/.test(t)) return true
     return false
@@ -711,18 +780,47 @@ export function useClipboard() {
   }
 
   return {
-    items, filteredItems, searchQuery, activeFilter, batchMode, polling, loading,
+    items,
+    filteredItems,
+    searchQuery,
+    activeFilter,
+    batchMode,
+    polling,
+    loading,
     offlineQueueSize,
-    totalItems, mainTotalItems, hasMore, loadingMore, loadMore, currentPage, pageSize,
-    selectedCount, allSelected, startPolling, copyItem, copyText,
-    toggleSelectAll, clearSelection, batchDelete, deleteSingle, toggleFavorite,
-    archiveItem, unarchiveItem, setExpiry,
-    loadClipboardItems, setFilter, setSearch, toggleBatch, uploadFileItem,
+    totalItems,
+    mainTotalItems,
+    hasMore,
+    loadingMore,
+    loadMore,
+    currentPage,
+    pageSize,
+    selectedCount,
+    allSelected,
+    startPolling,
+    copyItem,
+    copyText,
+    toggleSelectAll,
+    clearSelection,
+    batchDelete,
+    deleteSingle,
+    toggleFavorite,
+    archiveItem,
+    unarchiveItem,
+    setExpiry,
+    loadClipboardItems,
+    setFilter,
+    setSearch,
+    toggleBatch,
+    uploadFileItem,
     refresh: loadClipboardItems,
     resetImages,
     clearContentCache,
     isSensitiveContent,
     // === 高级搜索 / 条目级密码 ===
-    advancedFilters, loadDevices, updateItemContent, clearAdvancedFilters,
+    advancedFilters,
+    loadDevices,
+    updateItemContent,
+    clearAdvancedFilters,
   }
 }

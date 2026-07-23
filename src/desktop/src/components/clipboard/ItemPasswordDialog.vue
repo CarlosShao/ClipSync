@@ -12,10 +12,13 @@ const { t } = useI18n()
 const { updateItemContent } = useClipboard()
 const pw = useItemPassword()
 
-const props = withDefaults(defineProps<{
-  open: boolean
-  item: ClipItem | null
-}>(), { item: null })
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    item: ClipItem | null
+  }>(),
+  { item: null },
+)
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -43,15 +46,18 @@ const title = computed(() => {
 })
 
 // 打开时重置表单
-watch(() => props.open, (v) => {
-  if (v) {
-    password.value = ''
-    confirmPassword.value = ''
-    error.value = ''
-    busy.value = false
-    showPassword.value = false
-  }
-})
+watch(
+  () => props.open,
+  (v) => {
+    if (v) {
+      password.value = ''
+      confirmPassword.value = ''
+      error.value = ''
+      busy.value = false
+      showPassword.value = false
+    }
+  },
+)
 
 function close() {
   emit('update:open', false)
@@ -199,7 +205,9 @@ function onSubmit() {
     <div v-if="item" class="ipd">
       <!-- set 模式 -->
       <template v-if="mode === 'set'">
-        <p class="ipd-desc">{{ t('item_password_set_desc', '为该条目设置独立密码。加密在本地完成，密码不会上传服务器。') }}</p>
+        <p class="ipd-desc">
+          {{ t('item_password_set_desc', '为该条目设置独立密码。加密在本地完成，密码不会上传服务器。') }}
+        </p>
         <label class="ipd-label">{{ t('item_password_new', '密码') }}</label>
         <div class="ipd-input-wrap">
           <input
@@ -282,7 +290,13 @@ function onSubmit() {
           <EyeOff :size="16" />
           {{ t('item_password_lock', '锁定') }}
         </Button>
-        <Button variant="destructive" size="default" class="min-w-[100px] rounded-md" :disabled="busy" @click="removeProtection">
+        <Button
+          variant="destructive"
+          size="default"
+          class="min-w-[100px] rounded-md"
+          :disabled="busy"
+          @click="removeProtection"
+        >
           <Loader2 v-if="busy" :size="16" class="animate-spin" />
           <ShieldOff v-else :size="16" />
           {{ t('item_password_remove', '移除保护') }}
@@ -293,28 +307,76 @@ function onSubmit() {
 </template>
 
 <style scoped>
-.ipd { display: flex; flex-direction: column; gap: 8px; }
-.ipd-desc { font-size: 13px; line-height: 1.6; color: var(--text-secondary); margin: 0 0 6px; }
-.ipd-label { font-size: 13px; font-weight: 500; color: var(--text-primary); margin-top: 4px; }
-.ipd-input-wrap { position: relative; display: flex; align-items: center; }
+.ipd {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ipd-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0 0 6px;
+}
+.ipd-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-top: 4px;
+}
+.ipd-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
 .ipd-input {
-  width: 100%; height: 40px; padding: 0 40px 0 12px;
-  border: 1px solid var(--border-default); border-radius: var(--radius-md);
-  background: var(--bg-input); color: var(--text-primary); font-size: 14px;
-  outline: none; transition: border-color 0.15s;
+  width: 100%;
+  height: 40px;
+  padding: 0 40px 0 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
 }
-.ipd-input:focus { border-color: var(--color-primary, #6366f1); }
+.ipd-input:focus {
+  border-color: var(--color-primary, #6366f1);
+}
 .ipd-eye {
-  position: absolute; right: 8px; display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border: none; background: transparent; color: var(--text-secondary);
-  cursor: pointer; border-radius: var(--radius-sm);
+  position: absolute;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
 }
-.ipd-eye:hover { color: var(--text-primary); background: var(--bg-hover); }
-.ipd-error { font-size: 13px; color: var(--destructive, #ef4444); margin: 6px 0 0; min-height: 18px; }
+.ipd-eye:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.ipd-error {
+  font-size: 13px;
+  color: var(--destructive, #ef4444);
+  margin: 6px 0 0;
+  min-height: 18px;
+}
 .ipd-managed {
-  display: flex; align-items: center; gap: 8px; padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
   background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-primary, #6366f1) 30%, transparent);
-  border-radius: var(--radius-md); font-size: 14px; color: var(--text-primary);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--text-primary);
 }
 </style>

@@ -8,7 +8,10 @@ const CONTENT_CACHE_MAX = 100 // 最多缓存条数
 const CONTENT_CACHE_MAX_TOTAL_SIZE = 500 * 1024 // 总大小上限 500KB
 const CONTENT_CACHE_TTL = 7 * 24 * 60 * 60 * 1000 // 7天过期
 
-interface CacheEntry { v: string; t: number } // value + timestamp
+interface CacheEntry {
+  v: string
+  t: number
+} // value + timestamp
 
 function loadContentCache(): Map<string, CacheEntry> {
   try {
@@ -42,12 +45,14 @@ function loadContentCache(): Map<string, CacheEntry> {
     }
     if (dirty) saveContentCache(cache)
     return cache
-  } catch { return new Map() }
+  } catch {
+    return new Map()
+  }
 }
 
 function saveContentCache(cache: Map<string, CacheEntry>) {
   // 先按总大小淘汰：value 越长越先淘汰，直到总大小低于上限
-  let entries = [...cache.entries()].sort((a, b) => a[1].t - b[1].t)
+  const entries = [...cache.entries()].sort((a, b) => a[1].t - b[1].t)
   let totalSize = entries.reduce((sum, [, e]) => sum + (e.v?.length || 0), 0)
   while (totalSize > CONTENT_CACHE_MAX_TOTAL_SIZE && entries.length > 0) {
     const removed = entries.shift()
@@ -65,7 +70,9 @@ function saveContentCache(cache: Map<string, CacheEntry>) {
     const reduced = entries.slice(Math.floor(entries.length / 2))
     try {
       localStorage.setItem(CONTENT_CACHE_KEY, JSON.stringify(reduced))
-    } catch { /* 彻底放弃 */ }
+    } catch {
+      /* 彻底放弃 */
+    }
   }
 }
 
@@ -78,7 +85,9 @@ export function cacheContent(id: string, content: string) {
     const cache = loadContentCache()
     cache.set(id, { v: content.slice(0, 5000), t: Date.now() })
     saveContentCache(cache)
-  } catch { /* 绝不允许缓存异常影响图片渲染 */ }
+  } catch {
+    /* 绝不允许缓存异常影响图片渲染 */
+  }
 }
 
 export function getCachedContent(id: string): string {
@@ -94,5 +103,7 @@ export function getCachedContent(id: string): string {
 export function clearContentCache() {
   try {
     localStorage.removeItem(CONTENT_CACHE_KEY)
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }

@@ -38,7 +38,10 @@ async function generatePairing() {
     if (res.ok && res.data) {
       pairingToken.value = res.data.token
       pairingRemaining.value = Math.max(0, Math.ceil((res.data.expiresAt - Date.now()) / 1000))
-      pairingQr.value = await (QRCode as any).toDataURL(`clipsync://pair?token=${res.data.token}`, { width: 220, margin: 1 })
+      pairingQr.value = await (QRCode as any).toDataURL(`clipsync://pair?token=${res.data.token}`, {
+        width: 220,
+        margin: 1,
+      })
       if (expireTimer) clearInterval(expireTimer)
       expireTimer = window.setInterval(() => {
         pairingRemaining.value -= 1
@@ -58,7 +61,8 @@ async function generatePairing() {
 
 function copyPairingToken() {
   if (!pairingToken.value) return
-  navigator.clipboard.writeText(pairingToken.value)
+  navigator.clipboard
+    .writeText(pairingToken.value)
     .then(() => toast.show(t('pair_copy_done'), 'success'))
     .catch(() => toast.show(t('pair_copy_fail'), 'error'))
 }
@@ -76,7 +80,7 @@ function stopScan() {
   if (rafId) cancelAnimationFrame(rafId)
   rafId = 0
   if (mediaStream) {
-    mediaStream.getTracks().forEach(tr => tr.stop())
+    mediaStream.getTracks().forEach((tr) => tr.stop())
     mediaStream = null
   }
   if (videoEl.value) videoEl.value.srcObject = null
@@ -158,7 +162,10 @@ async function handlePairingToken(raw: string) {
 }
 
 function closePairModals() {
-  if (expireTimer) { clearInterval(expireTimer); expireTimer = undefined }
+  if (expireTimer) {
+    clearInterval(expireTimer)
+    expireTimer = undefined
+  }
   stopScan()
   emit('close')
 }
@@ -168,7 +175,10 @@ function handleTypeChange(type: string) {
   if (type === 'pair-generate') {
     generatePairing()
   } else if (type !== 'pair-scan') {
-    if (expireTimer) { clearInterval(expireTimer); expireTimer = undefined }
+    if (expireTimer) {
+      clearInterval(expireTimer)
+      expireTimer = undefined
+    }
     stopScan()
   }
 }
@@ -176,14 +186,22 @@ watch(() => props.showModalType, handleTypeChange, { immediate: true })
 
 // 组件卸载（门控关闭）时兜底清理定时器与摄像头，避免泄漏
 onUnmounted(() => {
-  if (expireTimer) { clearInterval(expireTimer); expireTimer = undefined }
+  if (expireTimer) {
+    clearInterval(expireTimer)
+    expireTimer = undefined
+  }
   stopScan()
 })
 </script>
 
 <template>
   <!-- QR Pairing: Generate (本机已登录设备) -->
-  <ModalDialog :open="showModalType === 'pair-generate'" :title="t('pair_generate')" max-width="420px" @close="closePairModals">
+  <ModalDialog
+    :open="showModalType === 'pair-generate'"
+    :title="t('pair_generate')"
+    max-width="420px"
+    @close="closePairModals"
+  >
     <div class="pair-gen-box">
       <div v-if="pairingQr" class="pair-qr-box">
         <img :src="pairingQr" class="pair-qr-img" alt="pairing qr" />
@@ -193,8 +211,17 @@ onUnmounted(() => {
       <p class="pair-token-box">{{ pairingToken }}</p>
 
       <div class="pair-btn-row">
-        <Button variant="outline" size="sm" @click="copyPairingToken" :disabled="!pairingToken" class="modal-action-btn">{{ t('pair_copy') }}</Button>
-        <Button variant="outline" size="sm" @click="generatePairing" class="modal-action-btn">{{ t('pair_regenerate') }}</Button>
+        <Button
+          variant="outline"
+          size="sm"
+          :disabled="!pairingToken"
+          class="modal-action-btn"
+          @click="copyPairingToken"
+          >{{ t('pair_copy') }}</Button
+        >
+        <Button variant="outline" size="sm" class="modal-action-btn" @click="generatePairing">{{
+          t('pair_regenerate')
+        }}</Button>
       </div>
 
       <p class="pair-expire-text">
@@ -216,15 +243,25 @@ onUnmounted(() => {
       </div>
 
       <div class="pair-scan-btn-row">
-        <Button v-if="!scanning" size="sm" @click="startScan" class="modal-action-btn">{{ t('pair_scan_start') }}</Button>
-        <Button v-else variant="ghost" size="sm" @click="stopScan" class="modal-action-btn">{{ t('pair_scan_stop') }}</Button>
+        <Button v-if="!scanning" size="sm" class="modal-action-btn" @click="startScan">{{
+          t('pair_scan_start')
+        }}</Button>
+        <Button v-else variant="ghost" size="sm" class="modal-action-btn" @click="stopScan">{{
+          t('pair_scan_stop')
+        }}</Button>
       </div>
 
       <div class="pair-manual-sec">
         <p class="pair-manual-label">{{ t('pair_enter_code') }}</p>
         <div class="pair-manual-row">
           <Input v-model="manualToken" class="manual-token-input" :placeholder="t('pair_token_placeholder')" />
-          <Button size="sm" :disabled="redeemSending" @click="handlePairingToken(manualToken)" class="modal-action-btn">{{ t('pair_pair_btn') }}</Button>
+          <Button
+            size="sm"
+            :disabled="redeemSending"
+            class="modal-action-btn"
+            @click="handlePairingToken(manualToken)"
+            >{{ t('pair_pair_btn') }}</Button
+          >
         </div>
         <p class="pair-scan-hint">{{ t('pair_scan_hint') }}</p>
       </div>
@@ -234,25 +271,124 @@ onUnmounted(() => {
 
 <style scoped>
 /* Pairing: generate */
-.pair-gen-box { text-align:center; padding:12px 0; }
-.pair-qr-box { width:220px; height:220px; margin:0 auto 16px; background:#fff; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:center; padding:8px; }
-.pair-qr-img { width:100%; height:100%; object-fit:contain; }
-.pair-generating { color:var(--text-tertiary); padding:48px 0; }
-.pair-token-box { font-size:12px; color:var(--text-secondary); word-break:break-all; background:var(--bg-hover); padding:8px 10px; border-radius:var(--radius-sm); min-height:32px; }
-.pair-btn-row { display:flex; gap:12px; justify-content:center; margin-top:16px; }
-.pair-expire-text { font-size:12px; color:var(--text-tertiary); margin-top:10px; }
-.pair-gen-desc { font-size:12px; color:var(--text-secondary); margin-top:6px; }
+.pair-gen-box {
+  text-align: center;
+  padding: 12px 0;
+}
+.pair-qr-box {
+  width: 220px;
+  height: 220px;
+  margin: 0 auto 16px;
+  background: #fff;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+.pair-qr-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.pair-generating {
+  color: var(--text-tertiary);
+  padding: 48px 0;
+}
+.pair-token-box {
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-all;
+  background: var(--bg-hover);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  min-height: 32px;
+}
+.pair-btn-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}
+.pair-expire-text {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 10px;
+}
+.pair-gen-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
 
 /* Pairing: scan */
-.pair-scan-box { padding:8px 0; }
-.pair-scan-desc { font-size:13px; color:var(--text-secondary); margin-bottom:12px; }
-.pair-video-box { position:relative; width:100%; max-width:300px; margin:0 auto; border-radius:var(--radius-md); overflow:hidden; background:#000; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; }
-.pair-video { width:100%; height:100%; object-fit:cover; }
-.pair-camera-hint { color:#888; font-size:13px; text-align:center; padding:20px; }
-.pair-scan-btn-row { display:flex; gap:12px; justify-content:center; margin-top:14px; }
-.pair-manual-sec { margin-top:20px; border-top:1px solid var(--border-subtle); padding-top:14px; }
-.pair-manual-label { font-size:12px; color:var(--text-tertiary); margin-bottom:8px; }
-.pair-manual-row { display:flex; gap:10px; }
-.pair-scan-hint { font-size:11px; color:var(--text-tertiary); margin-top:10px; }
-.manual-token-input { flex:1; height:32px; padding:0 10px; border-radius:var(--radius-sm); border:1px solid var(--border-default); background:var(--bg-surface); color:var(--text-primary); font-size:13px; outline:none; box-sizing:border-box; }
+.pair-scan-box {
+  padding: 8px 0;
+}
+.pair-scan-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.pair-video-box {
+  position: relative;
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #000;
+  aspect-ratio: 1/1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pair-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pair-camera-hint {
+  color: #888;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+.pair-scan-btn-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 14px;
+}
+.pair-manual-sec {
+  margin-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 14px;
+}
+.pair-manual-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+.pair-manual-row {
+  display: flex;
+  gap: 10px;
+}
+.pair-scan-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 10px;
+}
+.manual-token-input {
+  flex: 1;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
 </style>

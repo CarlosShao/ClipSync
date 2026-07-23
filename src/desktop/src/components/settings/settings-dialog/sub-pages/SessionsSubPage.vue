@@ -60,7 +60,7 @@ async function revokeSession(sessionId: string) {
     const res = await api('DELETE', `/api/user/sessions/${sessionId}`)
     if (res.ok) {
       toast.show(t('sess_revoked'), 'success')
-      sessionItems.value = sessionItems.value.filter(s => s.id !== sessionId)
+      sessionItems.value = sessionItems.value.filter((s) => s.id !== sessionId)
     } else {
       toast.show(res.error || 'Failed to revoke session', 'error')
     }
@@ -116,23 +116,62 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.sp-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.sp-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
-.modal-state { text-align: center; padding: 24px; color: var(--text-tertiary); }
-.session-list { display: flex; flex-direction: column; gap: 8px; }
+.sp-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.sp-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.modal-state {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-tertiary);
+}
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .session-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 0; border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
 }
-.session-item:last-child { border-bottom: none; }
-.session-icon { flex-shrink: 0; color: var(--text-secondary); }
-.session-info { flex: 1; }
-.session-name { font-size: 13px; font-weight: 500; }
-.session-detail { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+.session-item:last-child {
+  border-bottom: none;
+}
+.session-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.session-info {
+  flex: 1;
+}
+.session-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+.session-detail {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
 .session-badge {
-  font-size: 10px; font-weight: 600; text-transform: uppercase;
-  color: var(--accent); background: var(--accent-light);
-  padding: 2px 8px; border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-light);
+  padding: 2px 8px;
+  border-radius: 8px;
 }
-.session-revoke-btn { color: var(--danger); }
+.session-revoke-btn {
+  color: var(--danger);
+}
 </style>

@@ -17,9 +17,9 @@ const { t } = useI18n()
         <Search :size="16" class="tpl-search-icon" />
         <Input
           :model-value="search"
-          @update:model-value="emit('update:search', String($event))"
           :placeholder="t('templates_search_ph')"
           class="tpl-search-input"
+          @update:model-value="emit('update:search', String($event))"
         />
       </div>
       <Button size="default" class="px-6 min-w-[120px]" @click="emit('new')">
@@ -31,12 +31,38 @@ const { t } = useI18n()
 
 <style scoped>
 .tpl-toolbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  margin-bottom: 18px; flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
 }
-.tpl-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--text-primary); }
-.tpl-toolbar-right { display: flex; align-items: center; gap: 12px; }
-.tpl-search { position: relative; display: flex; align-items: center; }
-.tpl-search-icon { position: absolute; left: 12px; color: var(--text-muted); pointer-events: none; }
-.tpl-search-input { padding-left: 36px; width: 240px; max-width: 50vw; }
+.tpl-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.tpl-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tpl-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.tpl-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.tpl-search-input {
+  padding-left: 36px;
+  width: 240px;
+  max-width: 50vw;
+}
 </style>

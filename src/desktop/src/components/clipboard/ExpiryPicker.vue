@@ -54,7 +54,7 @@ function applyCustom() {
           <Calendar v-model="customDate" />
           <div class="flex items-center gap-2">
             <label class="expiry-time-label">{{ t('exp_time') }}</label>
-            <input type="time" v-model="customTime" class="expiry-time-input" />
+            <input v-model="customTime" type="time" class="expiry-time-input" />
           </div>
           <button type="button" class="expiry-apply-btn" :disabled="!customDate" @click="applyCustom">
             {{ t('exp_apply') }}
@@ -67,29 +67,68 @@ function applyCustom() {
 </template>
 
 <style scoped>
-.expiry-picker { display: flex; flex-direction: column; gap: 8px; min-width: 180px; }
-.expiry-quick { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.expiry-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+}
+.expiry-quick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
 .expiry-quick-btn,
 .expiry-custom-btn,
 .expiry-clear-btn {
-  font-size: 12px; padding: 6px 10px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border-default); background: var(--bg-surface);
-  color: var(--text-primary); cursor: pointer; transition: background .12s;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.12s;
 }
 .expiry-quick-btn:hover,
 .expiry-custom-btn:hover,
-.expiry-clear-btn:hover { background: var(--bg-hover); }
-.expiry-row { display: flex; gap: 6px; }
-.expiry-row > button { flex: 1; }
-.expiry-time-label { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.expiry-clear-btn:hover {
+  background: var(--bg-hover);
+}
+.expiry-row {
+  display: flex;
+  gap: 6px;
+}
+.expiry-row > button {
+  flex: 1;
+}
+.expiry-time-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
 .expiry-time-input {
-  flex: 1; height: 30px; padding: 0 8px; font-size: 12px;
-  border: 1px solid var(--border-default); border-radius: var(--radius-sm);
-  background: var(--bg-surface); color: var(--text-primary); outline: none;
+  flex: 1;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
 }
 .expiry-apply-btn {
-  font-size: 12px; padding: 6px 10px; border-radius: var(--radius-sm);
-  border: 1px solid transparent; background: var(--accent); color: #fff; cursor: pointer;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
 }
-.expiry-apply-btn:disabled { opacity: .5; cursor: not-allowed; }
+.expiry-apply-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 </style>

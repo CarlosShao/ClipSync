@@ -30,7 +30,11 @@ function handleToggle(key: keyof NotifPrefs, value: boolean) {
   // Persist to localStorage as fallback
   const raw = localStorage.getItem('clipsync-sec-notif')
   let existing: any = {}
-  try { if (raw) existing = JSON.parse(raw) } catch { /* ignore */ }
+  try {
+    if (raw) existing = JSON.parse(raw)
+  } catch {
+    /* ignore */
+  }
   existing[key] = value
   localStorage.setItem('clipsync-sec-notif', JSON.stringify(existing))
   // Sync to backend
@@ -94,14 +98,38 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.sp-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.sp-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
-.sec-list { display: flex; flex-direction: column; }
-.sec-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 0; border-bottom: 1px solid var(--border-subtle);
+.sp-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
-.sec-item:last-child { border-bottom: none; }
-.sec-label { font-size: 14px; font-weight: 500; color: var(--text-primary); }
-.sec-hint { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.sp-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.sec-list {
+  display: flex;
+  flex-direction: column;
+}
+.sec-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sec-item:last-child {
+  border-bottom: none;
+}
+.sec-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.sec-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
 </style>

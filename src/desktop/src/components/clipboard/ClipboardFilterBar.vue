@@ -39,32 +39,74 @@ const searchInput = ref('')
         class="segment-btn"
         :class="{ active: activeFilter === opt.value }"
         @click="clip.setFilter(opt.value)"
-      >{{ opt.label }}</button>
+      >
+        {{ opt.label }}
+      </button>
     </div>
     <div class="tab-spacer" />
     <div class="search-field">
       <Search :size="14" class="search-field-icon" />
-      <Input v-model="searchInput" type="text" :placeholder="t('search_ph')" class="search-input" :aria-label="t('search_ph')" @input="clip.setSearch(searchInput)" />
+      <Input
+        v-model="searchInput"
+        type="text"
+        :placeholder="t('search_ph')"
+        class="search-input"
+        :aria-label="t('search_ph')"
+        @input="clip.setSearch(searchInput)"
+      />
     </div>
-    <Button variant="ghost" size="icon-sm" :class="{ 'text-primary': showFilterPanel }" @click="emit('toggle-filter-panel')" :title="t('adv_filter')">
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      :class="{ 'text-primary': showFilterPanel }"
+      :title="t('adv_filter')"
+      @click="emit('toggle-filter-panel')"
+    >
       <Filter :size="16" />
     </Button>
-    <Button v-if="selectedCount > 0 && !isArchive" variant="ghost" size="icon-sm" class="batch-del-btn" @click="emit('batch-delete')" :title="t('batch_delete_selected_btn')">
+    <Button
+      v-if="selectedCount > 0 && !isArchive"
+      variant="ghost"
+      size="icon-sm"
+      class="batch-del-btn"
+      :title="t('batch_delete_selected_btn')"
+      @click="emit('batch-delete')"
+    >
       <Trash2 :size="15" />
-      <span style="margin-left:2px;font-size:11px;">{{ selectedCount }}</span>
+      <span style="margin-left: 2px; font-size: 11px">{{ selectedCount }}</span>
     </Button>
-    <Button v-if="selectedCount > 0 && isArchive" variant="ghost" size="icon-sm" class="batch-restore-btn" @click="emit('batch-unarchive')" :title="t('unarchive_selected_btn')">
+    <Button
+      v-if="selectedCount > 0 && isArchive"
+      variant="ghost"
+      size="icon-sm"
+      class="batch-restore-btn"
+      :title="t('unarchive_selected_btn')"
+      @click="emit('batch-unarchive')"
+    >
       <ArchiveRestore :size="15" />
-      <span style="margin-left:2px;font-size:11px;">{{ selectedCount }}</span>
+      <span style="margin-left: 2px; font-size: 11px">{{ selectedCount }}</span>
     </Button>
-    <Button v-if="selectedCount > 0 && isArchive" variant="ghost" size="icon-sm" class="batch-del-btn" @click="emit('batch-delete')" :title="t('batch_delete_selected_btn')">
+    <Button
+      v-if="selectedCount > 0 && isArchive"
+      variant="ghost"
+      size="icon-sm"
+      class="batch-del-btn"
+      :title="t('batch_delete_selected_btn')"
+      @click="emit('batch-delete')"
+    >
       <Trash2 :size="15" />
     </Button>
   </div>
 </template>
 
 <style scoped>
-.filter-row { display: flex; align-items: center; gap: 12px; padding: 12px 24px; flex-shrink: 0; }
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  flex-shrink: 0;
+}
 
 /* Pill / segmented control container */
 .segment-control {
@@ -87,7 +129,10 @@ const searchInput = ref('')
   white-space: nowrap;
   line-height: 1.4;
 }
-.segment-btn:hover { color: var(--text-primary); background: var(--bg-active); }
+.segment-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
 .segment-btn.active {
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -95,20 +140,44 @@ const searchInput = ref('')
   font-weight: 600;
 }
 
-.tab-spacer { flex: 1; }
+.tab-spacer {
+  flex: 1;
+}
 
 /* Search field (always visible) */
-.search-field { position: relative; display: inline-flex; align-items: center; }
-.search-field-icon { position: absolute; left: 10px; color: var(--text-tertiary); pointer-events: none; }
-.search-input {
-  width: 200px; height: 34px; padding: 0 12px 0 32px;
-  border: 1px solid var(--border-default); border-radius: var(--radius-md);
-  font-size: 13px; background: var(--bg-surface); color: var(--text-primary);
-  outline: none; transition: border-color 0.15s;
+.search-field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
 }
-.search-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
+.search-field-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+.search-input {
+  width: 200px;
+  height: 34px;
+  padding: 0 12px 0 32px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.search-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
 
 /* Batch delete button */
-.batch-del-btn { color: var(--danger); }
-.batch-del-btn:hover { background: var(--danger-bg); }
+.batch-del-btn {
+  color: var(--danger);
+}
+.batch-del-btn:hover {
+  background: var(--danger-bg);
+}
 </style>

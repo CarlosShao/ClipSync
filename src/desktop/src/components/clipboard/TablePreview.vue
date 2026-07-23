@@ -23,8 +23,8 @@ const parsed = computed(() => parseTable(props.content))
       </table>
     </div>
     <div class="table-preview-meta">
-      {{ parsed.rows.length }} 行 × {{ (parsed.hasHeader ? parsed.headers.length : parsed.rows[0]?.length || 0) }} 列
-      · {{ parsed.delimiter === '\t' ? 'TSV' : parsed.delimiter === ',' ? 'CSV' : '分隔符' }}
+      {{ parsed.rows.length }} 行 × {{ parsed.hasHeader ? parsed.headers.length : parsed.rows[0]?.length || 0 }} 列 ·
+      {{ parsed.delimiter === '\t' ? 'TSV' : parsed.delimiter === ',' ? 'CSV' : '分隔符' }}
     </div>
   </div>
   <span v-else class="fallback-text">{{ content }}</span>

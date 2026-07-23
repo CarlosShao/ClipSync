@@ -147,7 +147,9 @@ async function loadPreferencesInto(target: Record<string, boolean>) {
     const res = await getNotificationPreferences()
     if (res.ok && Array.isArray(res.data)) {
       const map: Record<string, boolean> = {}
-      res.data.forEach((p) => { map[p.notification_type] = !!p.enabled })
+      res.data.forEach((p) => {
+        map[p.notification_type] = !!p.enabled
+      })
       Object.entries(PREF_TYPE_BY_KEY).forEach(([key, type]) => {
         if (map[type] !== undefined) target[key] = map[type]
       })

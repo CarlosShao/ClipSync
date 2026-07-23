@@ -62,8 +62,16 @@ export function useConfirmDialog() {
   }
 
   return {
-    confirmOpen, confirmTitle, confirmMessage, confirmConfirmText,
-    confirmVariant, confirmSecondaryText, confirmSecondaryVariant,
-    showConfirm, onConfirmDialog, onCancelDialog, onSecondaryDialog,
+    confirmOpen,
+    confirmTitle,
+    confirmMessage,
+    confirmConfirmText,
+    confirmVariant,
+    confirmSecondaryText,
+    confirmSecondaryVariant,
+    showConfirm,
+    onConfirmDialog,
+    onCancelDialog,
+    onSecondaryDialog,
   }
 }

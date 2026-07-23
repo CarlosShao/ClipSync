@@ -2,24 +2,44 @@
   <div class="settings-group">
     <div class="sg-header">{{ t('sg_appear') }}</div>
     <div class="sg-row sg-row--clickable" @click="emit('open-sub-page', 'themes')">
-      <div class="sg-label"><div class="sg-name">{{ t('sg_theme') }}</div><div class="sg-hint">{{ t('sg_theme_h') }}</div></div>
+      <div class="sg-label">
+        <div class="sg-name">{{ t('sg_theme') }}</div>
+        <div class="sg-hint">{{ t('sg_theme_h') }}</div>
+      </div>
       <ChevronRight class="sg-arrow" />
     </div>
     <div class="sg-row">
-      <div class="sg-label"><div class="sg-name">{{ t('sg_mode') }}</div><div class="sg-hint">{{ t('sg_mode_h') }}</div></div>
+      <div class="sg-label">
+        <div class="sg-name">{{ t('sg_mode') }}</div>
+        <div class="sg-hint">{{ t('sg_mode_h') }}</div>
+      </div>
       <div class="mode-seg-shadcn">
-        <Button variant="ghost" size="sm" class="mode-seg-btn-shadcn" :class="{ active: currentMode === 'light' }" @click="setMode('light')">
+        <Button
+          variant="ghost"
+          size="sm"
+          class="mode-seg-btn-shadcn"
+          :class="{ active: currentMode === 'light' }"
+          @click="setMode('light')"
+        >
           <Sun :size="14" />
           <span>{{ t('mode_light') }}</span>
         </Button>
-        <Button variant="ghost" size="sm" class="mode-seg-btn-shadcn" :class="{ active: currentMode === 'dark' }" @click="setMode('dark')">
+        <Button
+          variant="ghost"
+          size="sm"
+          class="mode-seg-btn-shadcn"
+          :class="{ active: currentMode === 'dark' }"
+          @click="setMode('dark')"
+        >
           <Moon :size="14" />
           <span>{{ t('mode_dark') }}</span>
         </Button>
       </div>
     </div>
     <div class="sg-row">
-      <div class="sg-label"><div class="sg-name sg-name--hint">{{ t('sg_theme_hint') }}</div></div>
+      <div class="sg-label">
+        <div class="sg-name sg-name--hint">{{ t('sg_theme_hint') }}</div>
+      </div>
     </div>
   </div>
 </template>
@@ -40,16 +60,53 @@ const emit = defineEmits<{
 
 <style scoped>
 /* settings-group & sg-* base classes (replicated from SettingsView) */
-.settings-group { margin-bottom: 24px; }
-.sg-header { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); margin-bottom: 8px; }
-.sg-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: var(--radius-md); gap: 16px; }
-.sg-row:hover { background: var(--bg-hover); }
-.sg-row--clickable { cursor: pointer; }
-.sg-label { flex: 1; min-width: 0; }
-.sg-name { font-size: 14px; font-weight: 500; }
-.sg-name--hint { font-size: 12px; }
-.sg-hint { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
-.sg-arrow { width: 16px; height: 16px; color: var(--text-tertiary); flex-shrink: 0; }
+.settings-group {
+  margin-bottom: 24px;
+}
+.sg-header {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+.sg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  gap: 16px;
+}
+.sg-row:hover {
+  background: var(--bg-hover);
+}
+.sg-row--clickable {
+  cursor: pointer;
+}
+.sg-label {
+  flex: 1;
+  min-width: 0;
+}
+.sg-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.sg-name--hint {
+  font-size: 12px;
+}
+.sg-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 1px;
+}
+.sg-arrow {
+  width: 16px;
+  height: 16px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
 
 /* mode-seg: shadcn Button based segmented control */
 .mode-seg-shadcn {
@@ -91,7 +148,9 @@ const emit = defineEmits<{
 }
 .mode-seg-btn-shadcn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--ring);
+  box-shadow:
+    0 0 0 2px var(--bg-surface),
+    0 0 0 4px var(--ring);
 }
 .mode-seg-btn-shadcn:active {
   --tw-scale-x: 1;

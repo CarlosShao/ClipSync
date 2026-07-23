@@ -9,13 +9,13 @@ const { currentStyle, allThemes, setStyle } = useTheme()
 const emit = defineEmits<{ back: [] }>()
 
 const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string }> = {
-  vercel:    { bg: 'linear-gradient(135deg,#FAFAFA 0%,#E5E5E5 100%)', text: '#111', border: '1px solid #E5E5E5' },
-  clipsync:  { bg: 'linear-gradient(135deg,#6366F1 0%,#A78BFA 100%)', text: '#fff' },
-  notion:    { bg: 'linear-gradient(135deg,#FFFFFF 0%,#EBF4FF 100%)', text: '#37352F', border: '1px solid #E8E7E3' },
-  linear:    { bg: 'linear-gradient(135deg,#0A0A0A 0%,#1a162d 100%)', text: '#fff' },
-  apple:     { bg: 'linear-gradient(135deg,#F5F5F7 0%,#E5F1FF 100%)', text: '#1D1D1F' },
-  raycast:   { bg: 'linear-gradient(135deg,#07080a 0%,#1b1c1e 100%)', text: '#fff' },
-  arc:       { bg: 'linear-gradient(135deg,#FEFEFE 0%,#F3EEFF 100%)', text: '#1A1A2E' },
+  vercel: { bg: 'linear-gradient(135deg,#FAFAFA 0%,#E5E5E5 100%)', text: '#111', border: '1px solid #E5E5E5' },
+  clipsync: { bg: 'linear-gradient(135deg,#6366F1 0%,#A78BFA 100%)', text: '#fff' },
+  notion: { bg: 'linear-gradient(135deg,#FFFFFF 0%,#EBF4FF 100%)', text: '#37352F', border: '1px solid #E8E7E3' },
+  linear: { bg: 'linear-gradient(135deg,#0A0A0A 0%,#1a162d 100%)', text: '#fff' },
+  apple: { bg: 'linear-gradient(135deg,#F5F5F7 0%,#E5F1FF 100%)', text: '#1D1D1F' },
+  raycast: { bg: 'linear-gradient(135deg,#07080a 0%,#1b1c1e 100%)', text: '#fff' },
+  arc: { bg: 'linear-gradient(135deg,#FEFEFE 0%,#F3EEFF 100%)', text: '#1A1A2E' },
 }
 </script>
 
@@ -38,7 +38,9 @@ const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string 
             color: gradients[theme.value]?.text,
             border: gradients[theme.value]?.border || 'none',
           }"
-        >{{ theme.value === 'vercel' ? 'Vercel ★' : theme.label }}</div>
+        >
+          {{ theme.value === 'vercel' ? 'Vercel ★' : theme.label }}
+        </div>
         <div class="theme-name">
           {{ theme.label }}
           <Check v-if="currentStyle === theme.value" :size="14" class="theme-check" />
@@ -50,9 +52,21 @@ const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string 
 </template>
 
 <style scoped>
-.sp-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.sp-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
-.sp-hint { font-size: 12px; color: var(--text-tertiary); margin-top: 12px; }
+.sp-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.sp-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.sp-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 12px;
+}
 .theme-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -63,10 +77,14 @@ const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string 
   border-radius: var(--radius-md);
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
   background: var(--bg-surface);
 }
-.theme-card:hover { border-color: var(--border-focus); }
+.theme-card:hover {
+  border-color: var(--border-focus);
+}
 .theme-card.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
@@ -81,10 +99,16 @@ const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string 
   font-weight: 600;
 }
 .theme-name {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 8px 10px;
-  font-size: 12px; font-weight: 500;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-primary);
 }
-.theme-check { color: var(--accent); flex-shrink: 0; }
+.theme-check {
+  color: var(--accent);
+  flex-shrink: 0;
+}
 </style>

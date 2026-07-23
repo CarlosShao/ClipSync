@@ -5,13 +5,9 @@ import { setTitlebarMode } from '@/lib/tauri'
 const THEME_STYLE_KEY = 'clipsync-theme-style'
 const THEME_MODE_KEY = 'clipsync-theme-mode'
 
-export const currentStyle = ref<ThemeStyle>(
-  (localStorage.getItem(THEME_STYLE_KEY) as ThemeStyle) || 'vercel'
-)
+export const currentStyle = ref<ThemeStyle>((localStorage.getItem(THEME_STYLE_KEY) as ThemeStyle) || 'vercel')
 
-export const currentMode = ref<ThemeMode>(
-  (localStorage.getItem(THEME_MODE_KEY) as ThemeMode) || 'light'
-)
+export const currentMode = ref<ThemeMode>((localStorage.getItem(THEME_MODE_KEY) as ThemeMode) || 'light')
 
 const allThemes: { value: ThemeStyle; label: string; previewColor: string }[] = [
   { value: 'vercel', label: 'Vercel', previewColor: '#FAFAFA' },
@@ -27,7 +23,7 @@ function applyTheme() {
   const html = document.documentElement
 
   // Remove all theme classes
-  allThemes.forEach(t => html.classList.remove(`theme-${t.value}`))
+  allThemes.forEach((t) => html.classList.remove(`theme-${t.value}`))
   html.classList.remove('light', 'dark')
 
   // Add new ones
@@ -40,7 +36,9 @@ function applyTheme() {
   // Sync Tauri title bar
   try {
     setTitlebarMode(currentMode.value === 'dark')
-  } catch { /* desktop only */ }
+  } catch {
+    /* desktop only */
+  }
 }
 
 // Auto-apply when style or mode changes
@@ -51,8 +49,14 @@ export function useTheme() {
     currentStyle,
     currentMode,
     allThemes,
-    setStyle: (s: ThemeStyle) => { currentStyle.value = s },
-    toggleMode: () => { currentMode.value = currentMode.value === 'dark' ? 'light' : 'dark' },
-    setMode: (m: ThemeMode) => { currentMode.value = m },
+    setStyle: (s: ThemeStyle) => {
+      currentStyle.value = s
+    },
+    toggleMode: () => {
+      currentMode.value = currentMode.value === 'dark' ? 'light' : 'dark'
+    },
+    setMode: (m: ThemeMode) => {
+      currentMode.value = m
+    },
   }
 }

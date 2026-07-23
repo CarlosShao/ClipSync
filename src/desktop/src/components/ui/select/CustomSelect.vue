@@ -16,7 +16,9 @@ const emit = defineEmits<{
 const open = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 
-function toggle() { open.value = !open.value }
+function toggle() {
+  open.value = !open.value
+}
 function select(value: string) {
   emit('update:modelValue', value)
   open.value = false
@@ -24,12 +26,15 @@ function select(value: string) {
 
 // Close dropdown when modelValue changes externally (e.g. from @select handler)
 let lastModelValue: string | undefined
-watch(() => props.modelValue, (val) => {
-  if (open.value && val !== lastModelValue) {
-    open.value = false
-  }
-  lastModelValue = val
-})
+watch(
+  () => props.modelValue,
+  (val) => {
+    if (open.value && val !== lastModelValue) {
+      open.value = false
+    }
+    lastModelValue = val
+  },
+)
 
 function handleClickOutside(e: MouseEvent) {
   if (dropdownRef.value && !dropdownRef.value.contains(e.target as Node)) {
@@ -47,11 +52,15 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
       type="button"
       class="custom-select-trigger"
       :class="{ 'custom-select-trigger-sm': props.size === 'sm' }"
-      :style="props.size === 'sm' ? 'height: 32px !important; min-height: 32px !important; padding: 0 12px !important; font-size: 13px !important;' : undefined"
+      :style="
+        props.size === 'sm'
+          ? 'height: 32px !important; min-height: 32px !important; padding: 0 12px !important; font-size: 13px !important;'
+          : undefined
+      "
       @click="toggle"
     >
       <slot />
-      <ChevronDown class="custom-select-chevron" :class="{ 'open': open }" />
+      <ChevronDown class="custom-select-chevron" :class="{ open: open }" />
     </button>
     <div v-if="open" class="custom-select-dropdown">
       <slot name="options" />
@@ -126,7 +135,13 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
 }
 
 @keyframes selectSlideIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

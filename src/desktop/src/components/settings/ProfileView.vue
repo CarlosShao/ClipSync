@@ -26,9 +26,18 @@ function startEditName() {
 
 async function saveDisplayName() {
   const trimmed = nameInput.value.trim()
-  if (!trimmed) { toast.show(t('val_name_required'), 'error'); return }
-  if (trimmed.length < 2) { toast.show(t('val_name_short'), 'error'); return }
-  if (trimmed.length > 30) { toast.show(t('val_name_long'), 'error'); return }
+  if (!trimmed) {
+    toast.show(t('val_name_required'), 'error')
+    return
+  }
+  if (trimmed.length < 2) {
+    toast.show(t('val_name_short'), 'error')
+    return
+  }
+  if (trimmed.length > 30) {
+    toast.show(t('val_name_long'), 'error')
+    return
+  }
 
   const ok = await configStore.updateUserProfile({ displayName: trimmed })
   if (ok) {
@@ -58,16 +67,22 @@ function startEditEmail() {
 
 async function saveEmail() {
   const trimmed = emailInput.value.trim().toLowerCase()
-  if (!trimmed) { toast.show(t('val_email_required'), 'error'); return }
+  if (!trimmed) {
+    toast.show(t('val_email_required'), 'error')
+    return
+  }
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(trimmed)) { toast.show(t('val_email_invalid'), 'error'); return }
+  if (!emailRegex.test(trimmed)) {
+    toast.show(t('val_email_invalid'), 'error')
+    return
+  }
 
   try {
     const res = await fetch(`${configStore.serverUrl}/api/auth/profile`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${configStore.config.token}`,
+        Authorization: `Bearer ${configStore.config.token}`,
       },
       body: JSON.stringify({ email: trimmed }),
     })
@@ -136,7 +151,7 @@ async function handleAvatarUpload(e: Event) {
     <h2 class="sv-title">{{ t('prof_t') }}</h2>
     <div class="profile-card">
       <!-- Avatar section — shadcn Avatar -->
-      <div class="avatar-wrap" @click="triggerAvatarUpload" :title="t('avatar_change') || '点击更换头像'">
+      <div class="avatar-wrap" :title="t('avatar_change') || '点击更换头像'" @click="triggerAvatarUpload">
         <Avatar class="avatar-shadcn">
           <AvatarImageComp v-if="avatarUrl" :src="avatarUrl" alt="Avatar" />
           <AvatarFallbackComp>{{ configStore.user.name?.slice(0, 2) || 'CS' }}</AvatarFallbackComp>
@@ -144,7 +159,7 @@ async function handleAvatarUpload(e: Event) {
         <div class="avatar-overlay">
           <Camera :size="16" />
         </div>
-        <input ref="avatarInputRef" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload" />
+        <input ref="avatarInputRef" type="file" accept="image/*" style="display: none" @change="handleAvatarUpload" />
       </div>
 
       <div class="profile-details">
@@ -153,11 +168,19 @@ async function handleAvatarUpload(e: Event) {
           <Label class="sg-label">{{ t('pf_name') }}</Label>
           <div v-if="!editingName" class="sg-control sg-control--clickable" @click="startEditName">
             {{ configStore.user.name || t('pf_noset') }}
-            <Pencil :size="12" style="margin-left:4px;opacity:.5;" />
+            <Pencil :size="12" style="margin-left: 4px; opacity: 0.5" />
           </div>
           <div v-else class="sg-edit-group">
-            <Input v-model="nameInput" :placeholder="t('pf_name')" maxlength="30" class="sg-input-shadcn" @keyup.enter="saveDisplayName" />
-            <Button variant="outline" size="sm" class="sg-save-btn" @click="saveDisplayName">{{ t('save_btn') }}</Button>
+            <Input
+              v-model="nameInput"
+              :placeholder="t('pf_name')"
+              maxlength="30"
+              class="sg-input-shadcn"
+              @keyup.enter="saveDisplayName"
+            />
+            <Button variant="outline" size="sm" class="sg-save-btn" @click="saveDisplayName">{{
+              t('save_btn')
+            }}</Button>
             <Button variant="ghost" size="sm" class="sg-cancel-btn" @click="cancelEdit">{{ t('cancel_btn') }}</Button>
           </div>
         </div>
@@ -173,12 +196,21 @@ async function handleAvatarUpload(e: Event) {
           <Label class="sg-label">EMAIL</Label>
           <div v-if="!editingEmail" class="sg-control sg-control--clickable" @click="startEditEmail">
             {{ configStore.user.email || t('pf_noset') }}
-            <Pencil :size="12" style="margin-left:4px;opacity:.5;" />
+            <Pencil :size="12" style="margin-left: 4px; opacity: 0.5" />
           </div>
           <div v-else class="sg-edit-group">
-            <Input v-model="emailInput" type="email" placeholder="email@example.com" maxlength="100" class="sg-input-shadcn" @keyup.enter="saveEmail" />
+            <Input
+              v-model="emailInput"
+              type="email"
+              placeholder="email@example.com"
+              maxlength="100"
+              class="sg-input-shadcn"
+              @keyup.enter="saveEmail"
+            />
             <Button variant="outline" size="sm" class="sg-save-btn" @click="saveEmail">{{ t('save_btn') }}</Button>
-            <Button variant="ghost" size="sm" class="sg-cancel-btn" @click="cancelEditEmail">{{ t('cancel_btn') }}</Button>
+            <Button variant="ghost" size="sm" class="sg-cancel-btn" @click="cancelEditEmail">{{
+              t('cancel_btn')
+            }}</Button>
           </div>
         </div>
 
@@ -192,16 +224,32 @@ async function handleAvatarUpload(e: Event) {
 
     <!-- Password change hint -->
     <div class="profile-hint">
-      <Lock :size="14" style="flex-shrink:0;" />
+      <Lock :size="14" style="flex-shrink: 0" />
       <span>{{ t('pwd_change_hint') || '修改密码请前往 设置 → 隐私和安全 → 修改密码' }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.settings-view { padding: 24px; max-width: 720px; overflow-y: auto; flex: 1; }
-.sv-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
-.profile-card { display: flex; gap: 24px; padding: 24px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-lg); }
+.settings-view {
+  padding: 24px;
+  max-width: 720px;
+  overflow-y: auto;
+  flex: 1;
+}
+.sv-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 24px;
+}
+.profile-card {
+  display: flex;
+  gap: 24px;
+  padding: 24px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
 
 /* Avatar — wraps shadcn Avatar with hover overlay */
 .avatar-wrap {
@@ -212,7 +260,9 @@ async function handleAvatarUpload(e: Event) {
   cursor: pointer;
   border-radius: 50%;
   overflow: hidden;
-  transition: transform .15s, box-shadow .15s;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
 }
 .avatar-wrap:hover {
   transform: scale(1.04);
@@ -225,28 +275,73 @@ async function handleAvatarUpload(e: Event) {
 .avatar-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0,0,0,.45);
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   opacity: 0;
-  transition: opacity .15s;
+  transition: opacity 0.15s;
 }
-.avatar-wrap:hover .avatar-overlay { opacity: 1; }
+.avatar-wrap:hover .avatar-overlay {
+  opacity: 1;
+}
 
 /* Details */
-.profile-details { flex: 1; }
-.sg-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: var(--radius-md); }
-.sg-row:hover { background: var(--bg-hover); }
-.sg-label { flex: 1; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; font-weight: 500; color: var(--text-secondary); }
-.sg-control { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; }
-.sg-control--clickable { cursor: pointer; transition: color .15s; }
-.sg-control--clickable:hover { color: var(--accent); }
-.sg-edit-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.sg-input-shadcn { width: 160px; height: 32px; padding-left: 12px !important; padding-right: 12px !important; }
-.sg-save-btn { padding-left: 14px !important; padding-right: 14px !important; }
-.sg-cancel-btn { padding-left: 10px !important; padding-right: 10px !important; }
+.profile-details {
+  flex: 1;
+}
+.sg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+}
+.sg-row:hover {
+  background: var(--bg-hover);
+}
+.sg-label {
+  flex: 1;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.sg-control {
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+}
+.sg-control--clickable {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.sg-control--clickable:hover {
+  color: var(--accent);
+}
+.sg-edit-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.sg-input-shadcn {
+  width: 160px;
+  height: 32px;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+.sg-save-btn {
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+}
+.sg-cancel-btn {
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+}
 
 /* Hint */
 .profile-hint {

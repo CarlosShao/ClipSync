@@ -17,11 +17,11 @@ const toast = useSonner()
 // global = registered with Tauri (works when app unfocused/minimized)
 // app    = in-app key (only when main window focused), handled by local listeners
 const DEFAULT_SHORTCUTS = {
-  'quickPaste': ['Ctrl', 'Shift', 'V'],
-  'toggleWindow': ['Ctrl', 'Alt', 'Space'],
-  'copyClip': ['Enter'],
-  'deleteClip': ['Delete'],
-  'search': ['Ctrl', 'F'],
+  quickPaste: ['Ctrl', 'Shift', 'V'],
+  toggleWindow: ['Ctrl', 'Alt', 'Space'],
+  copyClip: ['Enter'],
+  deleteClip: ['Delete'],
+  search: ['Ctrl', 'F'],
 }
 const GLOBAL_IDS = ['quickPaste', 'toggleWindow']
 const STORAGE_KEY = 'clipsync-custom-shortcuts'
@@ -29,9 +29,7 @@ type ShortcutId = keyof typeof DEFAULT_SHORTCUTS
 
 // Sanitize a saved shortcut array — remove empty/non-string entries
 function sanitizeKeys(keys: string[]): string[] {
-  return keys
-    .filter(k => k && typeof k === 'string' && k.trim().length > 0)
-    .map(k => k.trim())
+  return keys.filter((k) => k && typeof k === 'string' && k.trim().length > 0).map((k) => k.trim())
 }
 
 let savedShortcuts: Record<string, string[]> = {}
@@ -39,9 +37,13 @@ try {
   const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
   // Sanitize each stored key array to clean up any corrupt entries
   for (const [k, v] of Object.entries(raw)) {
-    if (Array.isArray(v)) { savedShortcuts[k] = sanitizeKeys(v) }
+    if (Array.isArray(v)) {
+      savedShortcuts[k] = sanitizeKeys(v)
+    }
   }
-} catch { /* ignore */ }
+} catch {
+  /* ignore */
+}
 const customShortcuts = reactive<Record<string, string[]>>({ ...DEFAULT_SHORTCUTS, ...savedShortcuts })
 const recordingId = ref<string | null>(null)
 const recorderEl = ref<HTMLElement | null>(null)
@@ -54,7 +56,9 @@ const shortcutList = [
   { id: 'search' as ShortcutId, label: 'sk_search', global: false },
 ]
 
-function getKeys(id: string): string[] { return customShortcuts[id] || [] }
+function getKeys(id: string): string[] {
+  return customShortcuts[id] || []
+}
 
 function startRecord(id: string) {
   recordingId.value = id
@@ -82,21 +86,52 @@ function stopRecord() {
 // Special key display-name mapping (e.code / e.key → human-readable label)
 const SPECIAL_KEY_MAP: Record<string, string> = {
   // Whitespace / navigation
-  'Space': 'Space', ' ': 'Space',
-  'Enter': 'Enter', 'Tab': 'Tab', 'Backspace': 'Backspace', 'Delete': 'Delete',
-  'Insert': 'Insert',
+  Space: 'Space',
+  ' ': 'Space',
+  Enter: 'Enter',
+  Tab: 'Tab',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  Insert: 'Insert',
   // Function keys
-  'F1': 'F1', 'F2': 'F2', 'F3': 'F3', 'F4': 'F4', 'F5': 'F5', 'F6': 'F6',
-  'F7': 'F7', 'F8': 'F8', 'F9': 'F9', 'F10': 'F10', 'F11': 'F11', 'F12': 'F12',
+  F1: 'F1',
+  F2: 'F2',
+  F3: 'F3',
+  F4: 'F4',
+  F5: 'F5',
+  F6: 'F6',
+  F7: 'F7',
+  F8: 'F8',
+  F9: 'F9',
+  F10: 'F10',
+  F11: 'F11',
+  F12: 'F12',
   // Symbols (need explicit mapping because .toUpperCase() mangles some)
-  ';': ';', '=': '=', ',': ',', '-': '-', '.': '.', '/': '/', '`': '`',
-  '[': '[', '\\': '\\', ']': ']', '"': '"',
+  ';': ';',
+  '=': '=',
+  ',': ',',
+  '-': '-',
+  '.': '.',
+  '/': '/',
+  '`': '`',
+  '[': '[',
+  '\\': '\\',
+  ']': ']',
+  '"': '"',
   // Arrow keys (useful for in-app shortcuts)
-  'ArrowUp': '↑', 'ArrowDown': '↓', 'ArrowLeft': '←', 'ArrowRight': '→',
-  'Home': 'Home', 'End': 'End', 'PageUp': 'PageUp', 'PageDown': 'PageDown',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
+  ArrowLeft: '←',
+  ArrowRight: '→',
+  Home: 'Home',
+  End: 'End',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
   // Numpad
-  'NumLock': 'NumLock', 'ScrollLock': 'ScrollLock', 'Pause': 'Pause',
-  'CapsLock': 'CapsLock',
+  NumLock: 'NumLock',
+  ScrollLock: 'ScrollLock',
+  Pause: 'Pause',
+  CapsLock: 'CapsLock',
 }
 
 function getDisplayKey(raw: string): string {
@@ -106,8 +141,9 @@ function getDisplayKey(raw: string): string {
 // Display safety: if a key looks like garbage (non-printable, too long, etc.),
 // fall back to a placeholder rather than rendering junk.
 function safeDisplayKey(k: string): string {
-  if (!k || k.length > 12) return '�'  // suspiciously long → replacement char
+  if (!k || k.length > 12) return '�' // suspiciously long → replacement char
   // Check for non-printable/control characters (allow space and common symbols)
+  // eslint-disable-next-line no-control-regex -- intentionally detecting non-printable keys
   if (/[\x00-\x1F\x7F]/.test(k) && k !== ' ' && !SPECIAL_KEY_MAP[k]) return '�'
   return k
 }
@@ -117,10 +153,11 @@ function resolveMainKey(e: KeyboardEvent): string | null {
   // These keys are commonly used in shortcuts but have unreliable e.key/e.code
   // across OS / keyboard layout / WebView2 versions.
   const spaceLike: Record<string, string> = {
-    'Space': 'Space', ' ': 'Space',
-    'space': 'Space',
+    Space: 'Space',
+    ' ': 'Space',
+    space: 'Space',
     // WebView2 on Windows sometimes reports Space with these codes
-    'Spacebar': 'Space',
+    Spacebar: 'Space',
   }
   if (spaceLike[e.key] || spaceLike[e.code]) return 'Space'
 
@@ -172,7 +209,9 @@ function onKeyDown(e: KeyboardEvent) {
   const shortcutStr = cleanKeys.join('+')
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...savedShortcuts, [id]: cleanKeys }))
-  } catch (e) { console.warn('[Shortcuts] persist failed:', e) }
+  } catch (e) {
+    console.warn('[Shortcuts] persist failed:', e)
+  }
   recordingId.value = null
 
   if (isGlobal) {
@@ -182,11 +221,14 @@ function onKeyDown(e: KeyboardEvent) {
       const ks = customShortcuts[gid]
       if (ks && ks.length) globalMap[gid] = ks.join('+')
     }
-    tauri.setGlobalShortcuts(globalMap).then(() => {
-      toast.show(`Shortcut updated: ${shortcutStr}`, 'success')
-    }).catch((err: any) => {
-      toast.show(`Failed to register shortcut: ${err}`, 'error')
-    })
+    tauri
+      .setGlobalShortcuts(globalMap)
+      .then(() => {
+        toast.show(`Shortcut updated: ${shortcutStr}`, 'success')
+      })
+      .catch((err: any) => {
+        toast.show(`Failed to register shortcut: ${err}`, 'error')
+      })
   } else {
     // In-app shortcut: persisted only, handled by local key listeners.
     toast.show(`Shortcut updated: ${shortcutStr}`, 'success')
@@ -195,10 +237,17 @@ function onKeyDown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <ModalDialog :open="showModalType === 'shortcuts'" :title="t('modal_shortcuts')" max-width="440px" @close="emit('close')">
+  <ModalDialog
+    :open="showModalType === 'shortcuts'"
+    :title="t('modal_shortcuts')"
+    max-width="440px"
+    @close="emit('close')"
+  >
     <div class="shortcut-list">
       <div v-for="sk in shortcutList" :key="sk.id" class="sk-item" :class="{ 'sk-recording': recordingId === sk.id }">
-        <span class="sk-label-wrap">{{ t(sk.label) }}<span v-if="sk.global" class="sk-global-tag">{{ t('sk_global') }}</span></span>
+        <span class="sk-label-wrap"
+          >{{ t(sk.label) }}<span v-if="sk.global" class="sk-global-tag">{{ t('sk_global') }}</span></span
+        >
         <div v-if="recordingId !== sk.id" class="sk-keys" @click="startRecord(sk.id)">
           <kbd v-for="k in getKeys(sk.id)" :key="k">{{ safeDisplayKey(k) }}</kbd>
           <Pencil :size="12" class="sk-edit-ico" />
@@ -215,22 +264,101 @@ function onKeyDown(e: KeyboardEvent) {
 </template>
 
 <style scoped>
-.shortcut-list { display: flex; flex-direction: column; gap: 8px; }
-.sk-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
-.sk-item:last-child { border-bottom: none; }
-.sk-item.sk-recording { background: var(--accent-light); border-radius: var(--radius-sm); padding: 10px 12px; }
-.sk-label-wrap { display: inline-flex; align-items: center; gap: 6px; }
-.sk-global-tag { font-size: 9px; font-weight: 600; line-height: 1; padding: 2px 5px; border-radius: 9999px; background: var(--accent-light); color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
-.sk-keys { display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; flex-shrink: 0; }
-.sk-keys kbd { font-size: 11px; background: var(--bg-hover); border: 1px solid var(--border-default); border-radius: 3px; padding: 2px 6px; font-family: monospace; cursor: pointer; transition: all .15s; }
-.sk-keys kbd:hover { border-color: var(--accent); color: var(--accent); }
-.sk-recorder { padding: 6px 14px; border-radius: var(--radius-sm); border: 2px dashed var(--accent); font-size: 13px; font-weight: 500; color: var(--accent); outline: none; min-width: 120px; text-align: center; animation: pulse-border 1.5s infinite; }
-.sk-edit-ico { margin-left:4px; opacity:.4; cursor:pointer; }
-.sk-hint { margin-top:12px; padding:8px 10px; background:var(--bg-hover); border-radius:var(--radius-sm); font-size:11px; color:var(--text-tertiary); line-height:1.6; }
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sk-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+.sk-item:last-child {
+  border-bottom: none;
+}
+.sk-item.sk-recording {
+  background: var(--accent-light);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.sk-label-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sk-global-tag {
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 9999px;
+  background: var(--accent-light);
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.sk-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+.sk-keys kbd {
+  font-size: 11px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-default);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-family: monospace;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.sk-keys kbd:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sk-recorder {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 2px dashed var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  outline: none;
+  min-width: 120px;
+  text-align: center;
+  animation: pulse-border 1.5s infinite;
+}
+.sk-edit-ico {
+  margin-left: 4px;
+  opacity: 0.4;
+  cursor: pointer;
+}
+.sk-hint {
+  margin-top: 12px;
+  padding: 8px 10px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.6;
+}
 
 /* Shortcut recorder pulse animation */
 @keyframes pulse-border {
-  0%, 100% { border-color: var(--accent); opacity: 1; }
-  50% { border-color: var(--text-tertiary); opacity: 0.6; }
+  0%,
+  100% {
+    border-color: var(--accent);
+    opacity: 1;
+  }
+  50% {
+    border-color: var(--text-tertiary);
+    opacity: 0.6;
+  }
 }
 </style>

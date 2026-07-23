@@ -47,7 +47,9 @@ const PIN_TIMEOUT_OPTIONS = [
 const pinTimeout = ref(privacy.getPinTimeout())
 const pinTimeoutModel = ref(String(pinTimeout.value))
 
-watch(pinTimeoutModel, (v) => { pinTimeout.value = Number(v) })
+watch(pinTimeoutModel, (v) => {
+  pinTimeout.value = Number(v)
+})
 watch(pinTimeout, (v) => {
   pinTimeoutModel.value = String(v)
   privacy.setPinTimeout(v)
@@ -126,7 +128,7 @@ async function handleChangePassword() {
     if (err.includes('Current password is incorrect')) {
       pwdError.value = t('pwd_old_incorrect') || '当前密码不正确'
     } else {
-      pwdError.value = err || (t('pwd_change_fail') || '密码修改失败')
+      pwdError.value = err || t('pwd_change_fail') || '密码修改失败'
     }
   }
 }
@@ -137,7 +139,7 @@ async function handleChangePassword() {
     <div class="sg-header">{{ t('sg_privacy') }}</div>
 
     <!-- 2FA security -->
-    <div class="sg-row" style="cursor:pointer;" @click="emit('open-sub-page', 'security')">
+    <div class="sg-row" style="cursor: pointer" @click="emit('open-sub-page', 'security')">
       <div class="sg-label">
         <div class="sg-name">{{ t('sg_2fa') }}</div>
         <div class="sg-hint">{{ t('sg_2fa_h') }}</div>
@@ -146,7 +148,7 @@ async function handleChangePassword() {
     </div>
 
     <!-- Sessions -->
-    <div class="sg-row" style="cursor:pointer;" @click="emit('open-sub-page', 'sessions')">
+    <div class="sg-row" style="cursor: pointer" @click="emit('open-sub-page', 'sessions')">
       <div class="sg-label">
         <div class="sg-name">{{ t('sg_sessions') }}</div>
         <div class="sg-hint">{{ t('sg_sessions_h') }}</div>
@@ -155,7 +157,7 @@ async function handleChangePassword() {
     </div>
 
     <!-- Notification preferences -->
-    <div class="sg-row" style="cursor:pointer;" @click="emit('open-sub-page', 'notifications')">
+    <div class="sg-row" style="cursor: pointer" @click="emit('open-sub-page', 'notifications')">
       <div class="sg-label">
         <div class="sg-name">{{ t('sg_notifp') }}</div>
         <div class="sg-hint">{{ t('sg_notifp_h') }}</div>
@@ -181,20 +183,19 @@ async function handleChangePassword() {
         <div class="sg-name">{{ t('sg_privacy_autoblur') }}</div>
         <div class="sg-hint">{{ t('sg_privacy_autoblur_h') }}</div>
       </div>
-      <Switch
-        :model-value="configStore.autoBlur"
-        @update:model-value="(v: boolean) => configStore.toggleAutoBlur(v)"
-      />
+      <Switch :model-value="configStore.autoBlur" @update:model-value="(v: boolean) => configStore.toggleAutoBlur(v)" />
     </div>
 
     <!-- PIN Protection (expandable) -->
-    <div class="sg-row" style="cursor:pointer;" @click="showPinSetup = !showPinSetup">
+    <div class="sg-row" style="cursor: pointer" @click="showPinSetup = !showPinSetup">
       <div class="sg-label">
         <div class="sg-name">{{ t('sg_privacy_pin') || 'PIN 保护' }}</div>
         <div class="sg-hint">
-          {{ pinSet
-            ? (t('sg_privacy_pin_set') || 'PIN 已设置，查看/复制敏感数据需验证')
-            : (t('sg_privacy_pin_unset') || '未设置，查看/复制敏感数据无需验证') }}
+          {{
+            pinSet
+              ? t('sg_privacy_pin_set') || 'PIN 已设置，查看/复制敏感数据需验证'
+              : t('sg_privacy_pin_unset') || '未设置，查看/复制敏感数据无需验证'
+          }}
         </div>
       </div>
       <ChevronDown :class="['sg-arrow', { 'sg-arrow--rotated': showPinSetup }]" />
@@ -229,9 +230,13 @@ async function handleChangePassword() {
         </div>
         <div class="pwd-actions">
           <Button class="pwd-btn" :disabled="pinSetting" @click="handleSetPin">
-            {{ pinSetting ? (t('saving') || '设置中...') : (t('pin_set_btn') || '设置 PIN') }}
+            {{ pinSetting ? t('saving') || '设置中...' : t('pin_set_btn') || '设置 PIN' }}
           </Button>
-          <Button variant="outline" class="pwd-btn" @click="showPinSetup = false; resetPinForm()">
+          <Button
+            variant="outline"
+            class="pwd-btn"
+            @click="() => { showPinSetup = false; resetPinForm() }"
+          >
             {{ t('cancel_btn') }}
           </Button>
         </div>
@@ -244,15 +249,16 @@ async function handleChangePassword() {
         <div class="pwd-field">
           <label class="pwd-label">{{ t('pin_timeout_label') }}</label>
           <CustomSelect v-model="pinTimeoutModel" class="pin-timeout-select">
-            {{ t(PIN_TIMEOUT_OPTIONS.find(o => String(o.value) === pinTimeoutModel)?.i18nKey || 'pin_timeout_30s') }}
+            {{ t(PIN_TIMEOUT_OPTIONS.find((o) => String(o.value) === pinTimeoutModel)?.i18nKey || 'pin_timeout_30s') }}
             <template #options>
               <CustomSelectOption
                 v-for="opt in PIN_TIMEOUT_OPTIONS"
                 :key="opt.value"
                 :value="String(opt.value)"
                 :selected="String(opt.value) === pinTimeoutModel"
-                @select="(v: string) => pinTimeoutModel = v"
-              >{{ t(opt.i18nKey) }}</CustomSelectOption>
+                @select="(v: string) => (pinTimeoutModel = v)"
+                >{{ t(opt.i18nKey) }}</CustomSelectOption
+              >
             </template>
           </CustomSelect>
         </div>
@@ -270,7 +276,7 @@ async function handleChangePassword() {
     </div>
 
     <!-- Change Password (expandable) -->
-    <div class="sg-row" style="cursor:pointer;" @click="showPwdChange = !showPwdChange">
+    <div class="sg-row" style="cursor: pointer" @click="showPwdChange = !showPwdChange">
       <div class="sg-label">
         <div class="sg-name">{{ t('sg_chpwd') || '修改密码' }}</div>
         <div class="sg-hint">{{ t('sg_chpwd_h') || '输入旧密码和新密码以修改登录密码' }}</div>
@@ -311,9 +317,13 @@ async function handleChangePassword() {
       </div>
       <div class="pwd-actions">
         <Button class="pwd-btn" :disabled="pwdChanging" @click="handleChangePassword">
-          {{ pwdChanging ? (t('saving') || '修改中...') : (t('sg_chpwd_btn') || '确认修改') }}
+          {{ pwdChanging ? t('saving') || '修改中...' : t('sg_chpwd_btn') || '确认修改' }}
         </Button>
-        <Button variant="outline" class="pwd-btn" @click="showPwdChange = false; resetPwdForm()">
+        <Button
+          variant="outline"
+          class="pwd-btn"
+          @click="() => { showPwdChange = false; resetPwdForm() }"
+        >
           {{ t('cancel_btn') }}
         </Button>
       </div>
@@ -323,12 +333,14 @@ async function handleChangePassword() {
 </template>
 
 <style scoped>
-.settings-group { margin-bottom: 24px; }
+.settings-group {
+  margin-bottom: 24px;
+}
 .sg-header {
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .06em;
+  letter-spacing: 0.06em;
   color: var(--text-tertiary);
   margin-bottom: 8px;
 }
@@ -340,12 +352,31 @@ async function handleChangePassword() {
   border-radius: var(--radius-md);
   gap: 16px;
 }
-.sg-row:hover { background: var(--bg-hover); }
-.sg-label { flex: 1; min-width: 0; }
-.sg-name { font-size: 14px; font-weight: 500; }
-.sg-hint { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
-.sg-arrow { width: 16px; height: 16px; color: var(--text-tertiary); flex-shrink: 0; }
-.sg-arrow--rotated { transform: rotate(180deg); }
+.sg-row:hover {
+  background: var(--bg-hover);
+}
+.sg-label {
+  flex: 1;
+  min-width: 0;
+}
+.sg-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.sg-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 1px;
+}
+.sg-arrow {
+  width: 16px;
+  height: 16px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.sg-arrow--rotated {
+  transform: rotate(180deg);
+}
 
 /* Password / PIN change inline form */
 .pwd-change-form {
@@ -355,7 +386,10 @@ async function handleChangePassword() {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
-.pwd-field { margin-bottom: 14px; padding-left: 4px; }
+.pwd-field {
+  margin-bottom: 14px;
+  padding-left: 4px;
+}
 .pwd-label {
   display: block;
   font-size: 12px;
@@ -364,12 +398,30 @@ async function handleChangePassword() {
   margin-bottom: 6px;
   padding-left: 4px;
 }
-.sg-input--block { width: 100%; padding-left: 16px !important; }
-.pwd-actions { display: flex; gap: 10px; margin-top: 12px; padding-left: 4px; }
-.pwd-btn { padding: 10px 28px; }
-.pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
-.pin-timeout-select { width: 100% !important; }
-.pin-timeout-select :deep(.custom-select-trigger) { height: 36px; }
+.sg-input--block {
+  width: 100%;
+  padding-left: 16px !important;
+}
+.pwd-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  padding-left: 4px;
+}
+.pwd-btn {
+  padding: 10px 28px;
+}
+.pwd-error {
+  color: var(--danger, #ef4444);
+  font-size: 12px;
+  margin-top: 6px;
+}
+.pin-timeout-select {
+  width: 100% !important;
+}
+.pin-timeout-select :deep(.custom-select-trigger) {
+  height: 36px;
+}
 .pin-status-text {
   font-size: 13px;
   color: var(--text-secondary);

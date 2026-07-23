@@ -48,7 +48,9 @@ export function markContentCopiedFromClipSync(item: ClipItem) {
       if (Array.isArray(paths)) {
         paths.forEach((p: string) => copiedFilePaths.set(normalizePath(p), now))
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   } else if (item.type === 'text' || item.type === 'link') {
     copiedTexts.set(item.content, now)
   }
@@ -60,7 +62,7 @@ export function isClipboardChangeFromInternalCopy(payload: any, contentType?: st
   cleanupCopiedContent()
   if (contentType === 'file') {
     const paths = payload?.filePaths as string[] | undefined
-    if (paths?.some(p => copiedFilePaths.has(normalizePath(p)))) {
+    if (paths?.some((p) => copiedFilePaths.has(normalizePath(p)))) {
       logger.debug('[Clipboard] skip file upload: path matches internal copy', paths)
       return true
     }
@@ -77,7 +79,9 @@ export function isClipboardChangeFromInternalCopy(payload: any, contentType?: st
             logger.debug('[Clipboard] skip file upload: filename matches internal copy', filename)
             return true
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     }
   }

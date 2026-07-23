@@ -1,8 +1,13 @@
 import { ref, computed, nextTick } from 'vue'
 import {
-  getFavoriteCollections, createFavoriteCollection, deleteFavoriteCollection,
-  moveCollection as apiMoveCollection, getCollectionItems, updateFavoriteCollection,
-  migrateHierarchy, reorderCollections,
+  getFavoriteCollections,
+  createFavoriteCollection,
+  deleteFavoriteCollection,
+  moveCollection as apiMoveCollection,
+  getCollectionItems,
+  updateFavoriteCollection,
+  migrateHierarchy,
+  reorderCollections,
 } from '@/api/client'
 import { useSonner } from '@/composables/useSonner'
 
@@ -66,7 +71,7 @@ function buildTree(flat: any[]): CollectionNode[] {
   }
 
   function sortChildren(n: CollectionNode) {
-    n.children.sort((a, b) => (a.sort_order - b.sort_order) || a.path.localeCompare(b.path))
+    n.children.sort((a, b) => a.sort_order - b.sort_order || a.path.localeCompare(b.path))
     n.children.forEach(sortChildren)
   }
   roots.forEach(sortChildren)
@@ -208,7 +213,7 @@ export function useCollections() {
 
   // Get all sibling node IDs under a given parent (null = root)
   function getSiblings(parentId: string | null): CollectionNode[] {
-    return (tree.value || []).filter(n => getParentId(n) === parentId)
+    return (tree.value || []).filter((n) => getParentId(n) === parentId)
   }
 
   // Auto-expand path when selecting a node deep in the tree
@@ -289,7 +294,7 @@ export function useCollections() {
     const data = await createFavoriteCollection(name, icon, parentId)
     if (data?.collection) {
       // 后端已将现有收藏夹 sort_order +1，前端同步偏移以保持本地顺序一致
-      flatCollections.value = flatCollections.value.map(c => ({ ...c, sort_order: (c.sort_order || 0) + 1 }))
+      flatCollections.value = flatCollections.value.map((c) => ({ ...c, sort_order: (c.sort_order || 0) + 1 }))
       flatCollections.value = [data.collection, ...flatCollections.value]
       if (parentId) {
         const parent = findNodeById(tree.value, parentId)
@@ -304,7 +309,7 @@ export function useCollections() {
 
   async function deleteCollection(id: string) {
     await deleteFavoriteCollection(id)
-    flatCollections.value = flatCollections.value.filter(c => c.id !== id)
+    flatCollections.value = flatCollections.value.filter((c) => c.id !== id)
     if (activeNodeId.value === id) activeNodeId.value = null
     closeCtxMenu()
   }
@@ -318,7 +323,7 @@ export function useCollections() {
     if (oldPath) {
       const oldPrefix = oldPath + '.'
       const newPrefix = data.collection.path + '.'
-      flatCollections.value = flatCollections.value.map(c => {
+      flatCollections.value = flatCollections.value.map((c) => {
         if (c.id === id) {
           return { ...c, path: data.collection.path }
         } else if (c.path.startsWith(oldPrefix)) {
@@ -419,7 +424,9 @@ export function useCollections() {
     renamingNodeId.value = null
     renameValue.value = ''
     // Reset guard after a tick so future renames work
-    nextTick(() => { renameConfirmed.value = false })
+    nextTick(() => {
+      renameConfirmed.value = false
+    })
   }
 
   function cancelRename() {
@@ -491,8 +498,8 @@ export function useCollections() {
   // The dragged node is removed first, then inserted at the equivalent position.
   async function setOrderAtIndex(draggedId: string, parentId: string | null, targetIndex: number) {
     const siblings = getSiblings(parentId)
-    const draggedIdx = siblings.findIndex(n => n.id === draggedId)
-    const others = siblings.filter(n => n.id !== draggedId)
+    const draggedIdx = siblings.findIndex((n) => n.id === draggedId)
+    const others = siblings.filter((n) => n.id !== draggedId)
 
     // Adjust insertion index after removing the dragged item
     let insertIndex = targetIndex
@@ -508,8 +515,8 @@ export function useCollections() {
     const orders = ordered.map((n, i) => ({ id: n.id, sortOrder: i }))
 
     // Optimistically update local state
-    flatCollections.value = flatCollections.value.map(c => {
-      const o = orders.find(o => o.id === c.id)
+    flatCollections.value = flatCollections.value.map((c) => {
+      const o = orders.find((o) => o.id === c.id)
       if (o) return { ...c, sort_order: o.sortOrder }
       return c
     })
@@ -523,7 +530,11 @@ export function useCollections() {
     }
   }
 
-  async function reorderCollection(draggedId: string, targetId: string | null, position: 'before' | 'after' | 'inside' | null) {
+  async function reorderCollection(
+    draggedId: string,
+    targetId: string | null,
+    position: 'before' | 'after' | 'inside' | null,
+  ) {
     const draggedNode = findNodeById(tree.value, draggedId)
     if (!draggedNode) return
 
@@ -544,7 +555,7 @@ export function useCollections() {
     // Step 2: compute final ordering based on the (possibly updated) tree
     const targetNode = targetId ? findNodeById(tree.value, targetId) : null
     let targetParentId: string | null
-    let targetIndex = 0
+    let targetIndex: number
 
     if (position === 'inside') {
       targetParentId = targetId
@@ -553,7 +564,7 @@ export function useCollections() {
     } else if (targetNode) {
       targetParentId = getParentId(targetNode)
       const siblings = getSiblings(targetParentId)
-      const idx = siblings.findIndex(n => n.id === targetId)
+      const idx = siblings.findIndex((n) => n.id === targetId)
       if (position === 'before') {
         targetIndex = Math.max(0, idx)
       } else {

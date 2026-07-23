@@ -54,7 +54,7 @@ async function revokeSession(sessionId: string) {
     const res = await api('DELETE', `/api/sessions/${sessionId}`)
     if (res.ok) {
       toast.show(t('sess_revoked'), 'success')
-      sessionItems.value = sessionItems.value.filter(s => s.id !== sessionId)
+      sessionItems.value = sessionItems.value.filter((s) => s.id !== sessionId)
     } else {
       toast.show(res.error || 'Failed to revoke session', 'error')
     }
@@ -65,11 +65,22 @@ async function revokeSession(sessionId: string) {
 }
 
 // 打开会话弹窗时自动加载（异步 v-if 门控下 immediate watch 覆盖首次挂载）
-watch(() => props.showModalType, (type) => { if (type === 'sessions') loadSessions() }, { immediate: true })
+watch(
+  () => props.showModalType,
+  (type) => {
+    if (type === 'sessions') loadSessions()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <ModalDialog :open="showModalType === 'sessions'" :title="t('modal_sessions')" max-width="480px" @close="emit('close'); loadSessions()">
+  <ModalDialog
+    :open="showModalType === 'sessions'"
+    :title="t('modal_sessions')"
+    max-width="480px"
+    @close="() => { emit('close'); loadSessions() }"
+  >
     <div v-if="loadingSessions" class="modal-state">{{ t('sess_loading') }}</div>
     <div v-else-if="sessionItems.length === 0" class="modal-state">{{ t('sess_empty') }}</div>
     <div v-else class="session-list">
@@ -78,22 +89,69 @@ watch(() => props.showModalType, (type) => { if (type === 'sessions') loadSessio
           <Monitor v-if="s.isCurrent" :size="20" />
           <Smartphone v-else :size="20" />
         </div>
-        <div class="session-info"><div class="session-name">{{ s.deviceName || s.device_type || 'Unknown Device' }}</div><div class="session-detail">{{ s.isCurrent ? t('sess_current') : formatSessionTime(s.last_active || s.created_at) }}</div></div>
+        <div class="session-info">
+          <div class="session-name">{{ s.deviceName || s.device_type || 'Unknown Device' }}</div>
+          <div class="session-detail">
+            {{ s.isCurrent ? t('sess_current') : formatSessionTime(s.last_active || s.created_at) }}
+          </div>
+        </div>
         <span v-if="s.isCurrent" class="session-badge">{{ t('sess_current') }}</span>
-        <Button v-else variant="ghost" size="sm" class="session-revoke-btn" :disabled="revokingId === s.id" @click="revokeSession(s.id)">{{ revokingId === s.id ? '...' : t('sess_sign_out_btn') }}</Button>
+        <Button
+          v-else
+          variant="ghost"
+          size="sm"
+          class="session-revoke-btn"
+          :disabled="revokingId === s.id"
+          @click="revokeSession(s.id)"
+          >{{ revokingId === s.id ? '...' : t('sess_sign_out_btn') }}</Button
+        >
       </div>
     </div>
   </ModalDialog>
 </template>
 
 <style scoped>
-.session-list { display: flex; flex-direction: column; gap: 8px; }
-.session-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
-.session-item:last-child { border-bottom: none; }
-.session-icon { flex-shrink: 0; color: var(--text-secondary); }
-.session-info { flex: 1; }
-.session-name { font-size: 13px; font-weight: 500; }
-.session-detail { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
-.session-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--accent); background: var(--accent-light); padding: 2px 8px; border-radius: 8px; }
-.session-revoke-btn { color: var(--danger); }
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.session-item:last-child {
+  border-bottom: none;
+}
+.session-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.session-info {
+  flex: 1;
+}
+.session-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+.session-detail {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+.session-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-light);
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+.session-revoke-btn {
+  color: var(--danger);
+}
 </style>

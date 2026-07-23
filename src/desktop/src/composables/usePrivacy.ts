@@ -52,7 +52,10 @@ export function usePrivacy() {
     _pinVerified.value = false
     _peekItemId.value = null
     _pinExpiresAt.value = 0
-    if (_peekTimer) { clearTimeout(_peekTimer); _peekTimer = null }
+    if (_peekTimer) {
+      clearTimeout(_peekTimer)
+      _peekTimer = null
+    }
   }
 
   // Get/set PIN timeout (ms), persisted in localStorage
@@ -107,7 +110,10 @@ export function usePrivacy() {
     if (configStore.autoBlur) {
       _pinVerified.value = false
       _peekItemId.value = null
-      if (_peekTimer) { clearTimeout(_peekTimer); _peekTimer = null }
+      if (_peekTimer) {
+        clearTimeout(_peekTimer)
+        _peekTimer = null
+      }
     }
   }
 
@@ -129,14 +135,15 @@ export function usePrivacy() {
     if (/\bghp_[A-Za-z0-9]{36}\b/.test(t)) return true
     if (/\bsk_live_[A-Za-z0-9]{24,}\b/.test(t)) return true
     if (/\bxox[baprs]-[A-Za-z0-9-]+/.test(t)) return true
-    if (/Bearer\s+[A-Za-z0-9_\-\.]{20,}/i.test(t)) return true
+    if (/Bearer\s+[A-Za-z0-9_.-]{20,}/i.test(t)) return true
     if (/-----BEGIN\s+(RSA|EC|OPENSSH|DSA|PGP)\s+PRIVATE\s+Key-----/.test(t)) return true
     if (/^(password|passwd|pwd|secret|api[_-]?key)\s*[:=]\s*.{4,}$/im.test(t)) return true
     // Long base64-looking secrets (40+ chars). Require mixed case and digits
     // *inside the token itself* so file paths/filenames made of separate words
     // (e.g. CursorUserSetup + stepfun-desktop-0.3.22...) are not flagged.
-    const longTokens = t.match(/\b[A-Za-z0-9_\-]{40,}\b/g)
-    if (longTokens && longTokens.some(token => /[A-Z]/.test(token) && /[a-z]/.test(token) && /[0-9]/.test(token))) return true
+    const longTokens = t.match(/\b[A-Za-z0-9_-]{40,}\b/g)
+    if (longTokens && longTokens.some((token) => /[A-Z]/.test(token) && /[a-z]/.test(token) && /[0-9]/.test(token)))
+      return true
     if (/(mongodb|mysql|postgres|redis|amqp):\/\/[^:]+:([^@]+)@/.test(t)) return true
     return false
   }
@@ -148,9 +155,8 @@ export function usePrivacy() {
     const manualLock = item.metadata?.sensitive === true
     const itemType = item.type || item.contentType
     const textLikeTypes = ['text', 'link', 'code']
-    const autoDetect = configStore.privacyMode
-      && textLikeTypes.includes(itemType)
-      && isSensitiveContent(item.content || '')
+    const autoDetect =
+      configStore.privacyMode && textLikeTypes.includes(itemType) && isSensitiveContent(item.content || '')
     return manualLock || autoDetect
   }
 
@@ -161,8 +167,14 @@ export function usePrivacy() {
 
   onUnmounted(() => {
     window.removeEventListener('blur', onWindowBlur)
-    if (_peekTimer) { clearTimeout(_peekTimer); _peekTimer = null }
-    if (_clipboardTimer) { clearTimeout(_clipboardTimer); _clipboardTimer = null }
+    if (_peekTimer) {
+      clearTimeout(_peekTimer)
+      _peekTimer = null
+    }
+    if (_clipboardTimer) {
+      clearTimeout(_clipboardTimer)
+      _clipboardTimer = null
+    }
   })
 
   return {
@@ -170,9 +182,16 @@ export function usePrivacy() {
     pinVerified: computed(() => _pinVerified.value),
     peekItemId: computed(() => _peekItemId.value),
     pinRemaining: computed(() => getPinRemaining()),
-    loadPin, setPin, verifyPin, resetPin,
-    getPinTimeout, setPinTimeout,
-    startPeek, canCopySensitive, scheduleClipboardClear,
-    isSensitiveContent, isItemSensitive,
+    loadPin,
+    setPin,
+    verifyPin,
+    resetPin,
+    getPinTimeout,
+    setPinTimeout,
+    startPeek,
+    canCopySensitive,
+    scheduleClipboardClear,
+    isSensitiveContent,
+    isItemSensitive,
   }
 }

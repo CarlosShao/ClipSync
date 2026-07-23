@@ -15,9 +15,12 @@ const isLoading = computed(() => device.loading.value)
 
 function getDeviceIcon(type: string) {
   switch (type) {
-    case 'mobile': return Smartphone
-    case 'browser': return Globe
-    default: return Monitor
+    case 'mobile':
+      return Smartphone
+    case 'browser':
+      return Globe
+    default:
+      return Monitor
   }
 }
 
@@ -37,11 +40,11 @@ async function handleDelete(id: string, name: string) {
     <div class="sv-header">
       <h2 class="sv-title">{{ t('nav_devices') }}</h2>
       <div class="sv-actions">
-        <Button variant="outline" size="default" @click="emit('open-modal', 'pair-generate')" class="device-action-btn">
+        <Button variant="outline" size="default" class="device-action-btn" @click="emit('open-modal', 'pair-generate')">
           <Plus :size="16" />
           <span>{{ t('pair_generate') }}</span>
         </Button>
-        <Button variant="outline" size="default" @click="emit('open-modal', 'pair-scan')" class="device-action-btn">
+        <Button variant="outline" size="default" class="device-action-btn" @click="emit('open-modal', 'pair-scan')">
           <QrCode :size="16" />
           <span>{{ t('pair_scan') }}</span>
         </Button>
@@ -50,7 +53,7 @@ async function handleDelete(id: string, name: string) {
     <div class="devices-grid">
       <!-- Skeleton Loading -->
       <template v-if="isLoading && deviceList.length === 0">
-        <div v-for="n in 3" :key="'sk-'+n" class="dev-card dev-card-skeleton">
+        <div v-for="n in 3" :key="'sk-' + n" class="dev-card dev-card-skeleton">
           <div class="dev-card-header">
             <div class="sk sk-icon" />
             <div class="sk sk-dot" />
@@ -69,14 +72,22 @@ async function handleDelete(id: string, name: string) {
           </div>
           <div class="dev-actions">
             <div class="dev-status-dot" :class="{ on: d.online }" />
-            <Button variant="ghost" size="icon" class="text-destructive" @click="handleDelete(d.id, d.name)" :title="t('delete_btn')">
+            <Button
+              variant="ghost"
+              size="icon"
+              class="text-destructive"
+              :title="t('delete_btn')"
+              @click="handleDelete(d.id, d.name)"
+            >
               <Trash2 :size="14" />
             </Button>
           </div>
         </div>
         <div class="dev-card-body">
           <div class="dev-name">{{ d.name }}</div>
-          <div class="dev-detail">{{ d.location || t('dev_desktop') }} · {{ d.online ? t('dev_online') : t('dev_offline') }}</div>
+          <div class="dev-detail">
+            {{ d.location || t('dev_desktop') }} · {{ d.online ? t('dev_online') : t('dev_offline') }}
+          </div>
         </div>
       </div>
     </div>
@@ -89,38 +100,165 @@ async function handleDelete(id: string, name: string) {
 </template>
 
 <style scoped>
-.settings-view { padding: 24px; width: 100%; min-width: 0; overflow-y: auto; flex: 1; }
-.sv-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-.sv-actions { display: flex; gap: 12px; }
-.device-action-btn { gap: 8px !important; padding: 0 20px !important; }
-.sv-title { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
-.devices-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-.dev-card { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 16px; transition: all 0.15s; }
-.dev-card:hover { border-color: var(--accent); box-shadow: var(--shadow-elevated); transform: translateY(-1px); }
-.dev-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; }
-.dev-icon { width: 40px; height: 40px; border-radius: var(--radius-sm); background: var(--bg-hover); display: flex; align-items: center; justify-content: center; color: var(--text-secondary); }
-.dev-actions { display: flex; align-items: center; gap: 8px; }
-.dev-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-tertiary); }
-.dev-status-dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
-.dev-delete { background: none; border: none; cursor: pointer; color: var(--text-tertiary); padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 150ms; }
-.dev-delete:hover { color: var(--danger); background: var(--danger-bg); }
-.dev-name { font-size: 14px; font-weight: 500; margin-bottom: 2px; }
-.dev-detail { font-size: 12px; color: var(--text-tertiary); }
-.empty-state { text-align: center; padding: 40px 0; }
-.empty-icon { color: var(--text-tertiary); margin-bottom: 12px; display: flex; justify-content: center; }
-.empty-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
-.empty-desc { font-size: 13px; color: var(--text-secondary); }
+.settings-view {
+  padding: 24px;
+  width: 100%;
+  min-width: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+.sv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.sv-actions {
+  display: flex;
+  gap: 12px;
+}
+.device-action-btn {
+  gap: 8px !important;
+  padding: 0 20px !important;
+}
+.sv-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.devices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.dev-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  transition: all 0.15s;
+}
+.dev-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+.dev-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.dev-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+.dev-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dev-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+.dev-status-dot.on {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+.dev-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 150ms;
+}
+.dev-delete:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.dev-name {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.dev-detail {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.empty-state {
+  text-align: center;
+  padding: 40px 0;
+}
+.empty-icon {
+  color: var(--text-tertiary);
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: center;
+}
+.empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.empty-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
 
 /* Skeleton Loading */
-.dev-card-skeleton { pointer-events: none; }
-.dev-card-skeleton .dev-card-header { justify-content: space-between; }
-.sk { border-radius: var(--radius-sm); background: var(--bg-hover); animation: sk-pulse 1.5s ease-in-out infinite; }
-.sk-icon { width: 40px; height: 40px; border-radius: var(--radius-sm); }
-.sk-dot { width: 8px; height: 8px; border-radius: 50%; }
-.sk-name { width: 100px; height: 14px; margin-bottom: 6px; }
-.sk-detail { width: 140px; height: 12px; }
+.dev-card-skeleton {
+  pointer-events: none;
+}
+.dev-card-skeleton .dev-card-header {
+  justify-content: space-between;
+}
+.sk {
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  animation: sk-pulse 1.5s ease-in-out infinite;
+}
+.sk-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+}
+.sk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.sk-name {
+  width: 100px;
+  height: 14px;
+  margin-bottom: 6px;
+}
+.sk-detail {
+  width: 140px;
+  height: 12px;
+}
 @keyframes sk-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 </style>

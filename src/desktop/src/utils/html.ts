@@ -28,7 +28,10 @@ export function isHtmlContent(content: string): boolean {
 
   // 只在标签外的文本里检查代码关键字，避免 class/src/id 等 HTML 属性被误判
   const textWithoutTags = trimmed.replace(globalTagRe, ' ')
-  const looksLikeCode = /\b(function|const|let|var|interface|import|export|return|=>|def |public |private |protected )\b/.test(textWithoutTags)
+  const looksLikeCode =
+    /\b(function|const|let|var|interface|import|export|return|=>|def |public |private |protected )\b/.test(
+      textWithoutTags,
+    )
 
   if (looksLikeCode && tagCount <= 2) return false
   return true
@@ -44,9 +47,21 @@ export function sanitizeHtml(content: string): string {
       USE_PROFILES: { html: true },
       FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'link', 'meta', 'style', 'base', 'form'],
       FORBID_ATTR: [
-        'onerror', 'onload', 'onclick', 'ondblclick', 'onmouseover', 'onmouseout',
-        'onfocus', 'onblur', 'onchange', 'onsubmit', 'onkeydown', 'onkeyup',
-        'style', 'srcset', 'formaction',
+        'onerror',
+        'onload',
+        'onclick',
+        'ondblclick',
+        'onmouseover',
+        'onmouseout',
+        'onfocus',
+        'onblur',
+        'onchange',
+        'onsubmit',
+        'onkeydown',
+        'onkeyup',
+        'style',
+        'srcset',
+        'formaction',
       ],
     })
   } catch {
