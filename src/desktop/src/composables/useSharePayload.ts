@@ -15,14 +15,22 @@ export function useSharePayload() {
   const toast = useSonner()
   const display = useClipItemDisplay()
 
-  async function buildSharePayload(item: ClipItem): Promise<{ content: string; title: string; contentType: string; fileKey?: string; fileName?: string; fileSize?: number } | null> {
+  async function buildSharePayload(item: ClipItem): Promise<{
+    content: string
+    title: string
+    contentType: string
+    fileKey?: string
+    fileName?: string
+    fileSize?: number
+  } | null> {
     const isLocalItem = /^local-|^text-|^file-|^img-|^browser-/.test(item.id)
     const contentSize = item.contentSize || 0
 
     // 文本 / 链接：确保拿到完整内容，不分享被截断的预览
     if (item.type === 'text' || item.type === 'link') {
       let textContent = item.content
-      const needsFetch = !isLocalItem && textContent.length > 0 && (contentSize === 0 || textContent.length < contentSize)
+      const needsFetch =
+        !isLocalItem && textContent.length > 0 && (contentSize === 0 || textContent.length < contentSize)
       if (needsFetch) {
         try {
           const full = await api<{ contentEncrypted: string }>('GET', `/api/clipboard/${item.id}/content`)

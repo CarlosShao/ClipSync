@@ -27,7 +27,9 @@ function togglePin(id: string) {
   localStorage.setItem(PINNED_KEY, JSON.stringify([...pinnedIds.value]))
 }
 
-function isPinned(id: string) { return pinnedIds.value.has(id) }
+function isPinned(id: string) {
+  return pinnedIds.value.has(id)
+}
 
 // ── Window dimensions ──
 const COLLAPSED_W = 660
@@ -90,13 +92,19 @@ async function expandDrawer() {
 async function collapseAndClose(action: () => void = () => {}) {
   expanded.value = false
   action()
-  await new Promise(r => setTimeout(r, 200))
+  await new Promise((r) => setTimeout(r, 200))
   // Use Tauri API — native window.close() crashes the webview in Tauri v2
-  try { await getCurrentWindow().close() } catch (e) { console.warn('[QP] window close failed:', e) }
+  try {
+    await getCurrentWindow().close()
+  } catch (e) {
+    console.warn('[QP] window close failed:', e)
+  }
 }
 
 // ── Input focus triggers expansion ──
-function onFocus() { expandDrawer() }
+function onFocus() {
+  expandDrawer()
+}
 
 // ── Drag: explicit startDragging() on bar mousedown ──
 async function onBarMousedown(e: MouseEvent) {
@@ -115,12 +123,12 @@ const filteredItems = computed(() => {
   let result = clip.items.value
   // Type filter
   if (qpTypeFilter.value !== 'all') {
-    result = result.filter(i => i.type === qpTypeFilter.value)
+    result = result.filter((i) => i.type === qpTypeFilter.value)
   }
   // Search filter
   if (qpSearch.value.trim()) {
     const q = qpSearch.value.toLowerCase()
-    result = result.filter(i => i.content.toLowerCase().includes(q) || (i.source || '').toLowerCase().includes(q))
+    result = result.filter((i) => i.content.toLowerCase().includes(q) || (i.source || '').toLowerCase().includes(q))
   }
   // Pinned items first, then by timestamp
   result.sort((a, b) => {
@@ -141,14 +149,26 @@ function closePopup() {
 
 function handleKeydown(e: KeyboardEvent) {
   const list = filteredItems.value
-  if (e.key === 'ArrowDown') { e.preventDefault(); qpSelectedIndex.value = Math.min(qpSelectedIndex.value + 1, list.length - 1) }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); qpSelectedIndex.value = Math.max(qpSelectedIndex.value - 1, 0) }
-  else if (e.key === 'Enter' && list[qpSelectedIndex.value]) { e.preventDefault(); selectItem(list[qpSelectedIndex.value]) }
-  else if (e.key === 'Escape') { e.preventDefault(); closePopup() }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    qpSelectedIndex.value = Math.min(qpSelectedIndex.value + 1, list.length - 1)
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    qpSelectedIndex.value = Math.max(qpSelectedIndex.value - 1, 0)
+  } else if (e.key === 'Enter' && list[qpSelectedIndex.value]) {
+    e.preventDefault()
+    selectItem(list[qpSelectedIndex.value])
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    closePopup()
+  }
 }
 
 onMounted(() => document.addEventListener('keydown', handleKeydown))
-onUnmounted(() => { document.removeEventListener('keydown', handleKeydown); delete (window as any).__qpActivate })
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
+  delete (window as any).__qpActivate
+})
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts
@@ -168,13 +188,7 @@ function truncate(str: string, max: number): string {
     <!-- Search bar — drag handle (explicit mousedown handler) -->
     <div class="qp-bar" :style="{ height: COLLAPSED_H + 'px' }" @mousedown="onBarMousedown">
       <Search :size="14" class="qp-ico" />
-      <input
-        v-model="qpSearch"
-        type="text"
-        :placeholder="t('search_ph')"
-        class="qp-in"
-        @focus="onFocus"
-      />
+      <input v-model="qpSearch" type="text" :placeholder="t('search_ph')" class="qp-in" @focus="onFocus" />
       <span class="qp-esc">ESC</span>
     </div>
 
@@ -183,7 +197,21 @@ function truncate(str: string, max: number): string {
       <div v-show="expanded" class="qp-drp">
         <!-- Type filter bar -->
         <div class="qp-filters">
-          <button v-for="f in [{v:'all',l:'全部'},{v:'text',l:'文本'},{v:'image',l:'图片'},{v:'file',l:'文件'},{v:'link',l:'链接'}]" :key="f.v" class="qp-filter-btn" :class="{active: qpTypeFilter===f.v}" @click="qpTypeFilter=f.v as any">{{ f.l }}</button>
+          <button
+            v-for="f in [
+              { v: 'all', l: '全部' },
+              { v: 'text', l: '文本' },
+              { v: 'image', l: '图片' },
+              { v: 'file', l: '文件' },
+              { v: 'link', l: '链接' },
+            ]"
+            :key="f.v"
+            class="qp-filter-btn"
+            :class="{ active: qpTypeFilter === f.v }"
+            @click="qpTypeFilter = f.v as any"
+          >
+            {{ f.l }}
+          </button>
         </div>
         <div class="qp-lst">
           <div
@@ -193,7 +221,12 @@ function truncate(str: string, max: number): string {
             @click="selectItem(item)"
             @mouseenter="qpSelectedIndex = idx"
           >
-            <img v-if="item.type === 'image' && (item.preview || item.content).startsWith('data:')" :src="item.preview || item.content" class="qp-thumb" alt="" />
+            <img
+              v-if="item.type === 'image' && (item.preview || item.content).startsWith('data:')"
+              :src="item.preview || item.content"
+              class="qp-thumb"
+              alt=""
+            />
             <span v-else class="qp-em">
               <ImageIcon v-if="item.type === 'image'" :size="14" />
               <FileText v-else-if="item.type === 'file'" :size="14" />
@@ -201,7 +234,7 @@ function truncate(str: string, max: number): string {
               <ClipboardList v-else :size="14" />
             </span>
             <span class="qp-tx">{{ truncate(item.content, 60) }}</span>
-            <Pin :size="12" class="qp-pin" :class="{pinned: isPinned(item.id)}" @click.stop="togglePin(item.id)" />
+            <Pin :size="12" class="qp-pin" :class="{ pinned: isPinned(item.id) }" @click.stop="togglePin(item.id)" />
             <span class="qp-ag">{{ timeAgo(item.timestamp) }}</span>
           </div>
           <div v-if="filteredItems.length === 0" class="qp-no">{{ t('empty_title') }}</div>
@@ -243,9 +276,15 @@ function truncate(str: string, max: number): string {
   -webkit-user-select: none;
   user-select: none;
 }
-.qp-bar:active { cursor: grabbing; }
+.qp-bar:active {
+  cursor: grabbing;
+}
 
-.qp-ico { color: var(--text-tertiary); flex-shrink: 0; pointer-events: none; }
+.qp-ico {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  pointer-events: none;
+}
 
 .qp-in {
   flex: 1;
@@ -258,7 +297,9 @@ function truncate(str: string, max: number): string {
   cursor: text;
   pointer-events: auto;
 }
-.qp-in::placeholder { color: var(--text-tertiary); }
+.qp-in::placeholder {
+  color: var(--text-tertiary);
+}
 
 .qp-esc {
   font-size: 11px;
@@ -283,11 +324,11 @@ function truncate(str: string, max: number): string {
 
 /* Vue Transition: slide-down drawer animation */
 .dr-enter-active {
-  transition: all .28s cubic-bezier(.16, 1, .3, 1);
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
 }
 .dr-leave-active {
-  transition: all .2s ease-in;
+  transition: all 0.2s ease-in;
   overflow: hidden;
 }
 .dr-enter-from {
@@ -313,16 +354,30 @@ function truncate(str: string, max: number): string {
 
 /* Type filter bar */
 .qp-filters {
-  display: flex; gap: 4px; padding: 6px 14px;
-  border-bottom: 1px solid var(--border-subtle, rgba(128,128,128,.12));
+  display: flex;
+  gap: 4px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.12));
 }
 .qp-filter-btn {
-  font-size: 11px; padding: 3px 10px; border-radius: 10px;
-  border: none; background: transparent; color: var(--text-tertiary);
-  cursor: pointer; transition: all .15s;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s;
 }
-.qp-filter-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
-.qp-filter-btn.active { color: var(--accent); background: var(--accent-light, rgba(99,102,241,.1)); font-weight: 600; }
+.qp-filter-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.qp-filter-btn.active {
+  color: var(--accent);
+  background: var(--accent-light, rgba(99, 102, 241, 0.1));
+  font-weight: 600;
+}
 
 /* Scrollable list */
 .qp-lst {
@@ -331,9 +386,16 @@ function truncate(str: string, max: number): string {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
-.qp-lst::-webkit-scrollbar { width: 3px; }
-.qp-lst::-webkit-scrollbar-track { background: transparent; }
-.qp-lst::-webkit-scrollbar-thumb { background: var(--border-subtle, rgba(128,128,128,.25)); border-radius: 2px; }
+.qp-lst::-webkit-scrollbar {
+  width: 3px;
+}
+.qp-lst::-webkit-scrollbar-track {
+  background: transparent;
+}
+.qp-lst::-webkit-scrollbar-thumb {
+  background: var(--border-subtle, rgba(128, 128, 128, 0.25));
+  border-radius: 2px;
+}
 
 /* Item row */
 .qp-it {
@@ -342,21 +404,71 @@ function truncate(str: string, max: number): string {
   gap: 8px;
   padding: 8px 18px;
   cursor: pointer;
-  transition: background .08s;
+  transition: background 0.08s;
   border-left: 3px solid transparent;
 }
-.qp-it:hover { background: var(--bg-hover); }
-.qp-it.on   { background: var(--bg-selected, var(--bg-hover)); border-left-color: var(--accent); }
+.qp-it:hover {
+  background: var(--bg-hover);
+}
+.qp-it.on {
+  background: var(--bg-selected, var(--bg-hover));
+  border-left-color: var(--accent);
+}
 
-.qp-em { flex-shrink: 0; width: 20px; display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
-.qp-thumb { flex-shrink: 0; width: 28px; height: 28px; border-radius: 4px; object-fit: cover; border: 1px solid var(--border-subtle, rgba(128,128,128,.15)); }
-.qp-tx { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.qp-pin { flex-shrink: 0; color: var(--text-tertiary); cursor: pointer; opacity: 0; transition: opacity .15s; }
-.qp-it:hover .qp-pin { opacity: 0.5; }
-.qp-pin:hover { opacity: 1 !important; color: var(--accent); }
-.qp-pin.pinned { opacity: 1; color: var(--accent); }
-.qp-ag { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.qp-no { padding: 24px; text-align: center; font-size: 13px; color: var(--text-tertiary); }
+.qp-em {
+  flex-shrink: 0;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+.qp-thumb {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.15));
+}
+.qp-tx {
+  flex: 1;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.qp-pin {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.qp-it:hover .qp-pin {
+  opacity: 0.5;
+}
+.qp-pin:hover {
+  opacity: 1 !important;
+  color: var(--accent);
+}
+.qp-pin.pinned {
+  opacity: 1;
+  color: var(--accent);
+}
+.qp-ag {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.qp-no {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
 
 /* Footer */
 .qp-ft {
@@ -366,10 +478,14 @@ function truncate(str: string, max: number): string {
   padding: 7px 18px 8px;
   font-size: 11px;
   color: var(--text-tertiary);
-  border-top: 1px solid var(--border-subtle, rgba(128,128,128,.12));
+  border-top: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.12));
   flex-shrink: 0;
 }
-.qp-ft span:first-child { margin-right: auto; font-weight: 600; color: var(--text-secondary); }
+.qp-ft span:first-child {
+  margin-right: auto;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
 .qp-ft kbd {
   font-size: 10px;
   background: var(--bg-hover);

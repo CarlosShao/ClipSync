@@ -16,7 +16,9 @@ function savedAppKeys(id: string): string[] | undefined {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
     const ks = saved[id]
     return Array.isArray(ks) && ks.length ? ks : undefined
-  } catch { return undefined }
+  } catch {
+    return undefined
+  }
 }
 
 function matchShortcut(saved: string[] | undefined, e: KeyboardEvent): boolean {
@@ -26,10 +28,12 @@ function matchShortcut(saved: string[] | undefined, e: KeyboardEvent): boolean {
   const needAlt = saved.includes('Alt')
   const needShift = saved.includes('Shift')
   const pressedMain = e.key.length === 1 ? e.key.toUpperCase() : e.key
-  return pressedMain.toLowerCase() === mainKey.toLowerCase()
-    && (needCtrl === (e.ctrlKey || e.metaKey))
-    && needAlt === e.altKey
-    && needShift === e.shiftKey
+  return (
+    pressedMain.toLowerCase() === mainKey.toLowerCase() &&
+    needCtrl === (e.ctrlKey || e.metaKey) &&
+    needAlt === e.altKey &&
+    needShift === e.shiftKey
+  )
 }
 
 /**
@@ -51,8 +55,14 @@ export function useClipboardKeyboard(options: ClipboardKeyboardOptions) {
 
   function handleGlobalKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
-      if (options.showQuickPaste.value) { options.showQuickPaste.value = false; return }
-      if (options.confirmOpen.value) { options.confirmOpen.value = false; return }
+      if (options.showQuickPaste.value) {
+        options.showQuickPaste.value = false
+        return
+      }
+      if (options.confirmOpen.value) {
+        options.confirmOpen.value = false
+        return
+      }
     }
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault()

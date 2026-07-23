@@ -32,12 +32,18 @@ function loadSavedFilter(): ClipboardFilter {
   try {
     const saved = localStorage.getItem(CLIPBOARD_FILTER_KEY)
     if (saved && VALID_FILTERS.includes(saved as ClipboardFilter)) return saved as ClipboardFilter
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return 'all'
 }
 
 export function persistFilter(f: ClipboardFilter) {
-  try { localStorage.setItem(CLIPBOARD_FILTER_KEY, f) } catch { /* ignore */ }
+  try {
+    localStorage.setItem(CLIPBOARD_FILTER_KEY, f)
+  } catch {
+    /* ignore */
+  }
 }
 
 export const items = ref<ClipItem[]>([])
@@ -85,15 +91,19 @@ export const HASH_TTL = 30000 // 30s dedup window — covers monitor event + fal
 // ESM 不允许给导入的 let 赋值，故读取侧直接 import skipPollUntil（live binding），
 // 写入侧统一走 setter。
 export let skipPollUntil = 0
-export function setSkipPollUntil(v: number) { skipPollUntil = v }
+export function setSkipPollUntil(v: number) {
+  skipPollUntil = v
+}
 // 初始加载后跳过轮询，防止系统剪贴板内容被重新上传
 export let initialLoadDone = false
-export function setInitialLoadDone(v: boolean) { initialLoadDone = v }
+export function setInitialLoadDone(v: boolean) {
+  initialLoadDone = v
+}
 
 export const filteredItems = computed(() => {
   let result = items.value
   if (activeFilter.value !== 'all') {
-    result = result.filter(i => {
+    result = result.filter((i) => {
       if (activeFilter.value === 'text') return i.type === 'text'
       if (activeFilter.value === 'images') return i.type === 'image'
       if (activeFilter.value === 'links') return i.type === 'link'
@@ -103,25 +113,27 @@ export const filteredItems = computed(() => {
   }
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.toLowerCase()
-    result = result.filter(i => i.content.toLowerCase().includes(q) || (i.source || '').toLowerCase().includes(q))
+    result = result.filter((i) => i.content.toLowerCase().includes(q) || (i.source || '').toLowerCase().includes(q))
   }
   return result
 })
 
-export const selectedCount = computed(() => items.value.filter(i => i.selected).length)
-export const allSelected = computed(() => filteredItems.value.length > 0 && filteredItems.value.every(i => i.selected))
+export const selectedCount = computed(() => items.value.filter((i) => i.selected).length)
+export const allSelected = computed(
+  () => filteredItems.value.length > 0 && filteredItems.value.every((i) => i.selected),
+)
 
 export function toggleSelectAll() {
   const shouldSelect = !allSelected.value
   // 不可变更新：替换整个 items 数组中 filteredItems 对应项的引用，
   // 确保 Vue 3 检测到变化并触发所有依赖它的 computed/子组件重渲染。
   // （直接修改 i.selected 属性在边界情况下可能不触发 Checkbox 重渲染）
-  const selectedIds = new Set(filteredItems.value.map(i => i.id))
-  items.value = items.value.map(item =>
-    selectedIds.has(item.id) ? { ...item, selected: shouldSelect } : item
-  )
+  const selectedIds = new Set(filteredItems.value.map((i) => i.id))
+  items.value = items.value.map((item) => (selectedIds.has(item.id) ? { ...item, selected: shouldSelect } : item))
 }
 
 export function clearSelection() {
-  items.value.forEach(i => { i.selected = false })
+  items.value.forEach((i) => {
+    i.selected = false
+  })
 }

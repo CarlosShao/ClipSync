@@ -20,27 +20,39 @@ export function enqueueClipboardTask(task: ClipboardTask) {
   if (task.type === 'file') {
     const paths = task.payload as string[]
     const normalized = JSON.stringify(paths.map(normalizePath))
-    if (clipboardQueue.some(t => t.type === 'file' && JSON.stringify((t.payload as string[]).map(normalizePath)) === normalized)) {
+    if (
+      clipboardQueue.some(
+        (t) => t.type === 'file' && JSON.stringify((t.payload as string[]).map(normalizePath)) === normalized,
+      )
+    ) {
       logger.debug('[Clipboard] queue: skip duplicate file task', paths)
       return
     }
   } else if (task.type === 'text') {
     const text = task.payload as string
-    if (clipboardQueue.some(t => t.type === 'text' && t.payload === text)) {
+    if (clipboardQueue.some((t) => t.type === 'text' && t.payload === text)) {
       logger.debug('[Clipboard] queue: skip duplicate text task')
       return
     }
   } else if (task.type === 'image') {
     const p = task.payload as { dataUrl?: string; hash?: string }
     const key = p.hash || p.dataUrl
-    if (key && clipboardQueue.some(t => t.type === 'image' && ((t.payload as { dataUrl?: string; hash?: string }).hash || (t.payload as { dataUrl?: string }).dataUrl) === key)) {
+    if (
+      key &&
+      clipboardQueue.some(
+        (t) =>
+          t.type === 'image' &&
+          ((t.payload as { dataUrl?: string; hash?: string }).hash || (t.payload as { dataUrl?: string }).dataUrl) ===
+            key,
+      )
+    ) {
       logger.debug('[Clipboard] queue: skip duplicate image task')
       return
     }
   }
   clipboardQueue.push(task)
   logger.debug('[Clipboard] queue: task enqueued', task.type, 'length:', clipboardQueue.length)
-  processClipboardQueue().catch(e => console.warn('[Clipboard] processClipboardQueue error:', e))
+  processClipboardQueue().catch((e) => console.warn('[Clipboard] processClipboardQueue error:', e))
 }
 
 async function processClipboardQueue() {
@@ -56,9 +68,9 @@ async function processClipboardQueue() {
           const paths = task.payload as string[]
           const payload = JSON.stringify(paths)
           const payloadHash = simpleHash(payload)
-          const alreadyUploading = recentUploadHashes.has(payloadHash) &&
-            Date.now() - (recentUploadHashes.get(payloadHash) || 0) < HASH_TTL
-          if (!alreadyUploading && !items.value.some(i => i.type === 'file' && i.content === payload)) {
+          const alreadyUploading =
+            recentUploadHashes.has(payloadHash) && Date.now() - (recentUploadHashes.get(payloadHash) || 0) < HASH_TTL
+          if (!alreadyUploading && !items.value.some((i) => i.type === 'file' && i.content === payload)) {
             await uploadFileToServer(payload)
           } else {
             logger.debug('[Clipboard] queue: skip file already uploading or exists', paths)
@@ -74,17 +86,17 @@ async function processClipboardQueue() {
             logger.debug('[Clipboard] queue: skip text from internal copy')
             continue
           }
-          if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === text)) {
+          if (!items.value.some((i) => (i.type === 'text' || i.type === 'link') && i.content === text)) {
             await uploadToServer(text, itemType)
           } else {
             logger.debug('[Clipboard] queue: skip text already exists')
           }
-      } else if (task.type === 'image') {
-        const { dataUrl, hash } = task.payload as { dataUrl: string; size: number; hash?: string }
-        if (dataUrl) {
-          await uploadImageToServer(dataUrl, hash)
+        } else if (task.type === 'image') {
+          const { dataUrl, hash } = task.payload as { dataUrl: string; size: number; hash?: string }
+          if (dataUrl) {
+            await uploadImageToServer(dataUrl, hash)
+          }
         }
-      }
       } catch (e) {
         console.warn('[Clipboard] queue: task error', task.type, e)
       }
@@ -93,7 +105,7 @@ async function processClipboardQueue() {
     isProcessingQueue = false
     // 处理期间可能有新任务入队，触发再消费
     if (clipboardQueue.length > 0) {
-      processClipboardQueue().catch(e => console.warn('[Clipboard] processClipboardQueue restart error:', e))
+      processClipboardQueue().catch((e) => console.warn('[Clipboard] processClipboardQueue restart error:', e))
     }
   }
 }

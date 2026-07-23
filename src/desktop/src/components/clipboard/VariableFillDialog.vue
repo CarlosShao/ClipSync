@@ -22,9 +22,7 @@ const values = ref<Record<string, string>>({})
 const remember = ref<Record<string, boolean>>({})
 
 // 存在至少一个变量被全局默认值预填时，提示用户
-const hasGlobalPrefill = computed(() =>
-  props.defs.some((d) => (varStore.variables[d.name] ?? '') !== ''),
-)
+const hasGlobalPrefill = computed(() => props.defs.some((d) => (varStore.variables[d.name] ?? '') !== ''))
 
 watch(
   () => [props.open, props.defs] as const,
@@ -60,7 +58,12 @@ function onConfirm() {
         <Label :for="`fill-${d.name}`">
           <span class="tpl-var-name">{{ '{' + '{' + d.name + '}' + '}' }}</span>
         </Label>
-        <Input :id="`fill-${d.name}`" v-model="values[d.name]" :placeholder="t('templates_var_ph')" class="!p-4 leading-6" />
+        <Input
+          :id="`fill-${d.name}`"
+          v-model="values[d.name]"
+          :placeholder="t('templates_var_ph')"
+          class="!p-4 leading-6"
+        />
         <label class="tpl-remember">
           <Checkbox
             :model-value="!!remember[d.name]"
@@ -72,17 +75,54 @@ function onConfirm() {
     </div>
 
     <template #footer>
-      <Button variant="outline" size="default" class="px-6 min-w-[100px] rounded-md" @click="emit('close')">{{ t('templates_cancel') }}</Button>
-      <Button size="default" class="px-6 min-w-[100px] rounded-md" @click="onConfirm">{{ t('templates_insert') }}</Button>
+      <Button variant="outline" size="default" class="px-6 min-w-[100px] rounded-md" @click="emit('close')">{{
+        t('templates_cancel')
+      }}</Button>
+      <Button size="default" class="px-6 min-w-[100px] rounded-md" @click="onConfirm">{{
+        t('templates_insert')
+      }}</Button>
     </template>
   </ModalDialog>
 </template>
 
 <style scoped>
-.tpl-fill-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
-.tpl-fill-hint { font-size: 12px; color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent); border-radius: var(--radius-md); padding: 8px 12px; margin-bottom: 16px; line-height: 1.5; }
-.tpl-fill-list { display: flex; flex-direction: column; gap: 14px; }
-.tpl-field { display: flex; flex-direction: column; gap: 6px; }
-.tpl-var-name { font-family: var(--font-mono, monospace); font-size: 12px; color: var(--primary); }
-.tpl-remember { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); cursor: pointer; user-select: none; margin-top: 2px; }
+.tpl-fill-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.tpl-fill-hint {
+  font-size: 12px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+.tpl-fill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tpl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tpl-var-name {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--primary);
+}
+.tpl-remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  margin-top: 2px;
+}
 </style>

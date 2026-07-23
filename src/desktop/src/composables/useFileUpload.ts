@@ -37,9 +37,8 @@ export function useFileUpload() {
       const maxBytes = planMaxBytes()
       if (file.size > maxBytes) {
         const maxMb = Math.round(maxBytes / 1024 / 1024)
-        const sizeStr = file.size < 1024 * 1024
-          ? `${(file.size / 1024).toFixed(0)}KB`
-          : `${(file.size / 1024 / 1024).toFixed(1)}MB`
+        const sizeStr =
+          file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(0)}KB` : `${(file.size / 1024 / 1024).toFixed(1)}MB`
         toast.show(`${file.name}: ${t('file_exceeds_plan', { size: sizeStr, limit: `${maxMb}MB`, plan: '' })}`, 'error')
         errorCount++
         continue

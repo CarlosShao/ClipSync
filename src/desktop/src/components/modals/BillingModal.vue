@@ -26,11 +26,19 @@ async function loadInvoices() {
     if (res.ok && Array.isArray(res.data?.invoices)) {
       invoices.value = res.data.invoices
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   loadingInvoices.value = false
 }
 
-watch(() => props.showModalType, (type) => { if (type === 'billing') loadInvoices() }, { immediate: true })
+watch(
+  () => props.showModalType,
+  (type) => {
+    if (type === 'billing') loadInvoices()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -59,14 +67,58 @@ watch(() => props.showModalType, (type) => { if (type === 'billing') loadInvoice
 </template>
 
 <style scoped>
-.billing-empty-box { text-align:center; padding:40px 20px; }
-.billing-ico { display: block; margin: 0 auto 12px; color: var(--text-tertiary); }
-.billing-title { font-size:15px; font-weight:600; margin-bottom:4px; }
-.invoice-list { display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto; }
-.invoice-item { display:flex; align-items:center; justify-content:space-between; padding:12px; border-radius:var(--radius-md); background:var(--bg-hover); border:1px solid var(--border-subtle); }
-.invoice-info { display:flex; flex-direction:column; gap:2px; }
-.invoice-no { font-size:13px; font-weight:500; color:var(--text-primary); }
-.invoice-date { font-size:11px; color:var(--text-tertiary); }
-.invoice-right { display:flex; align-items:center; gap:8px; }
-.invoice-amount { font-size:14px; font-weight:600; color:var(--text-primary); }
+.billing-empty-box {
+  text-align: center;
+  padding: 40px 20px;
+}
+.billing-ico {
+  display: block;
+  margin: 0 auto 12px;
+  color: var(--text-tertiary);
+}
+.billing-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.invoice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.invoice-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+}
+.invoice-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.invoice-no {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.invoice-date {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.invoice-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.invoice-amount {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
 </style>

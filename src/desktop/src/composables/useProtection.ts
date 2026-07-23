@@ -3,7 +3,7 @@ import { api } from '@/api/client'
 
 /**
  * Unified Protection Level System - Frontend Composable
- * 
+ *
  * Protection levels:
  * - 'none': No protection
  * - 'pin': PIN protection (temporary access, auto-relock)
@@ -32,10 +32,10 @@ interface UnlockResult {
 export function useProtection() {
   const loading = ref(false)
   const error = ref<string | null>(null)
-  
+
   // Cache for protection status
   const protectionCache = ref<Map<string, ProtectionStatus>>(new Map())
-  
+
   /**
    * Get protection status for an item
    */
@@ -53,7 +53,7 @@ export function useProtection() {
       return null
     }
   }
-  
+
   /**
    * Set up protection for an item
    * @param itemId - Item ID
@@ -66,14 +66,14 @@ export function useProtection() {
     itemId: string,
     level: 'pin' | 'advanced',
     password?: string,
-    content?: string
+    content?: string,
   ): Promise<SetupResult | null> {
     loading.value = true
     error.value = null
-    
+
     try {
       const body: any = { itemId, level }
-      
+
       if (level === 'advanced') {
         if (!password || password.length < 4) {
           throw new Error('Password must be at least 4 characters')
@@ -84,15 +84,15 @@ export function useProtection() {
         body.password = password
         body.content = content
       }
-      
+
       const response = await api('POST', '/api/protection/setup', body)
-      
+
       if (response.ok && response.data) {
         const result = response.data as SetupResult
-        
+
         // Update cache
         protectionCache.value.set(itemId, { level, hasRecoveryKey: !!result.recoveryKey })
-        
+
         return result
       } else {
         throw new Error(response.error || 'Failed to set up protection')
@@ -104,7 +104,7 @@ export function useProtection() {
       loading.value = false
     }
   }
-  
+
   /**
    * Unlock a protected item
    * @param itemId - Item ID
@@ -114,13 +114,13 @@ export function useProtection() {
   async function unlock(itemId: string, password: string): Promise<string | null> {
     loading.value = true
     error.value = null
-    
+
     try {
       const response = await api('POST', '/api/protection/unlock', {
         itemId,
-        password
+        password,
       })
-      
+
       if (response.ok && response.data) {
         const result = response.data as UnlockResult
         return result.content || null
@@ -134,7 +134,7 @@ export function useProtection() {
       loading.value = false
     }
   }
-  
+
   /**
    * Unlock with recovery key
    * @param itemId - Item ID
@@ -144,13 +144,13 @@ export function useProtection() {
   async function unlockWithRecovery(itemId: string, recoveryKey: string): Promise<string | null> {
     loading.value = true
     error.value = null
-    
+
     try {
       const response = await api('POST', '/api/protection/recovery', {
         itemId,
-        recoveryKey
+        recoveryKey,
       })
-      
+
       if (response.ok && response.data) {
         const result = response.data as UnlockResult
         return result.content || null
@@ -164,7 +164,7 @@ export function useProtection() {
       loading.value = false
     }
   }
-  
+
   /**
    * Rotate password for a protected item
    * @param itemId - Item ID
@@ -174,18 +174,18 @@ export function useProtection() {
   async function rotatePassword(itemId: string, oldPassword: string, newPassword: string): Promise<boolean> {
     loading.value = true
     error.value = null
-    
+
     try {
       if (newPassword.length < 4) {
         throw new Error('New password must be at least 4 characters')
       }
-      
+
       const response = await api('POST', '/api/protection/rotate-password', {
         itemId,
         oldPassword,
-        newPassword
+        newPassword,
       })
-      
+
       return response.ok
     } catch (err: any) {
       error.value = err.message
@@ -194,7 +194,7 @@ export function useProtection() {
       loading.value = false
     }
   }
-  
+
   /**
    * Remove protection from an item
    * @param itemId - Item ID
@@ -204,19 +204,19 @@ export function useProtection() {
   async function removeProtection(itemId: string, password?: string): Promise<string | null> {
     loading.value = true
     error.value = null
-    
+
     try {
       const response = await api('POST', '/api/protection/remove', {
         itemId,
-        password
+        password,
       })
-      
+
       if (response.ok) {
         const result = response.data as { content?: string }
-        
+
         // Update cache
         protectionCache.value.set(itemId, { level: 'none', hasRecoveryKey: false })
-        
+
         return result.content || null
       } else {
         throw new Error(response.error || 'Failed to remove protection')
@@ -228,7 +228,7 @@ export function useProtection() {
       loading.value = false
     }
   }
-  
+
   /**
    * Get protection level for an item (from cache or API)
    */
@@ -236,33 +236,33 @@ export function useProtection() {
     const cached = protectionCache.value.get(itemId)
     return cached?.level || 'none'
   }
-  
+
   /**
    * Check if an item is protected
    */
   function isProtected(itemId: string): boolean {
     return getLevel(itemId) !== 'none'
   }
-  
+
   /**
    * Check if an item uses advanced protection
    */
   function isAdvanced(itemId: string): boolean {
     return getLevel(itemId) === 'advanced'
   }
-  
+
   /**
    * Clear protection cache
    */
   function clearCache() {
     protectionCache.value.clear()
   }
-  
+
   return {
     // State
     loading,
     error,
-    
+
     // Methods
     getStatus,
     setupProtection,
@@ -273,6 +273,6 @@ export function useProtection() {
     getLevel,
     isProtected,
     isAdvanced,
-    clearCache
+    clearCache,
   }
 }

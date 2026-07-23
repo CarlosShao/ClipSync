@@ -7,9 +7,12 @@ import { watch } from 'vue'
 const configStore = useConfigStore()
 const router = useRouter()
 
-watch(() => configStore.isLoggedIn, (val) => {
-  if (val) router.push('/app/clipboard')
-})
+watch(
+  () => configStore.isLoggedIn,
+  (val) => {
+    if (val) router.push('/app/clipboard')
+  },
+)
 </script>
 
 <template>

@@ -71,7 +71,9 @@ function observeLongTasks() {
       }
     })
     observer.observe({ type: 'longtask', buffered: true })
-  } catch { /* longtask not supported */ }
+  } catch {
+    /* longtask not supported */
+  }
 }
 
 /** Initialize all perf monitoring. */
@@ -87,8 +89,13 @@ export function initPerfMonitor() {
 
 /** Stop all monitoring (cleanup). */
 export function stopPerfMonitor() {
-  if (memoryInterval) { clearInterval(memoryInterval); memoryInterval = null }
+  if (memoryInterval) {
+    clearInterval(memoryInterval)
+    memoryInterval = null
+  }
 }
 
 /** Get current metrics snapshot. */
-export function getPerfMetrics(): Readonly<PerfMetrics> { return { ...metrics } }
+export function getPerfMetrics(): Readonly<PerfMetrics> {
+  return { ...metrics }
+}

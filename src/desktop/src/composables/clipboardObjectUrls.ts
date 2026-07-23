@@ -46,7 +46,11 @@ export function releaseRemovedObjectUrls(nextItems: ClipItem[]) {
 /** 强制释放所有图片 blob URL（切换账号 / 清空列表时调用） */
 export function releaseAllObjectUrls() {
   for (const [, url] of imageObjectUrls) {
-    try { URL.revokeObjectURL(url) } catch { /* 已失效则忽略 */ }
+    try {
+      URL.revokeObjectURL(url)
+    } catch {
+      /* 已失效则忽略 */
+    }
   }
   imageObjectUrls.clear()
 }

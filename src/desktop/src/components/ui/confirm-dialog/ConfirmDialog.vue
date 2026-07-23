@@ -63,9 +63,20 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       <h3 v-if="title" class="confirm-dialog-title">{{ title }}</h3>
       <p v-if="message" class="confirm-dialog-message">{{ message }}</p>
       <div class="confirm-dialog-actions">
-        <Button variant="outline" size="default" class="min-w-[100px] rounded-md" @click="onCancel">{{ cancelText }}</Button>
-        <Button v-if="secondaryText" :variant="secondaryVariant" size="default" class="min-w-[100px] rounded-md" @click="onSecondary">{{ secondaryText }}</Button>
-        <Button :variant="confirmVariant" size="default" class="min-w-[100px] rounded-md" @click="onConfirm">{{ confirmText }}</Button>
+        <Button variant="outline" size="default" class="min-w-[100px] rounded-md" @click="onCancel">{{
+          cancelText
+        }}</Button>
+        <Button
+          v-if="secondaryText"
+          :variant="secondaryVariant"
+          size="default"
+          class="min-w-[100px] rounded-md"
+          @click="onSecondary"
+          >{{ secondaryText }}</Button
+        >
+        <Button :variant="confirmVariant" size="default" class="min-w-[100px] rounded-md" @click="onConfirm">{{
+          confirmText
+        }}</Button>
       </div>
     </div>
   </div>
@@ -116,12 +127,22 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(8px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 </style>

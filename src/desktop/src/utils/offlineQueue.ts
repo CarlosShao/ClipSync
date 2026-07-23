@@ -27,7 +27,9 @@ function loadQueue(): OfflineAction[] {
   try {
     const raw = localStorage.getItem(QUEUE_KEY)
     return raw ? JSON.parse(raw) : []
-  } catch { return [] }
+  } catch {
+    return []
+  }
 }
 
 function saveQueue(queue: OfflineAction[]) {
@@ -37,9 +39,14 @@ function saveQueue(queue: OfflineAction[]) {
   }
   try {
     localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
-  } catch { /* quota exceeded — drop oldest entries */
+  } catch {
+    /* quota exceeded — drop oldest entries */
     const half = queue.slice(Math.floor(queue.length / 2))
-    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(half)) } catch (e) { console.warn('[OfflineQueue] persist failed after trim:', e) }
+    try {
+      localStorage.setItem(QUEUE_KEY, JSON.stringify(half))
+    } catch (e) {
+      console.warn('[OfflineQueue] persist failed after trim:', e)
+    }
   }
 }
 
@@ -58,8 +65,14 @@ let queueChain: Promise<unknown> = Promise.resolve()
 
 function withQueueLock<T>(fn: () => T | Promise<T>): Promise<T> {
   // 无论前序任务成功/失败都执行 fn；把自身挂到 chain 上，并吞掉自身 rejection 防止污染 chain
-  const run = queueChain.then(() => fn(), () => fn())
-  queueChain = run.then(() => {}, () => {})
+  const run = queueChain.then(
+    () => fn(),
+    () => fn(),
+  )
+  queueChain = run.then(
+    () => {},
+    () => {},
+  )
   return run
 }
 
@@ -86,7 +99,7 @@ export async function flushQueue(): Promise<number> {
   try {
     return await withQueueLock(async () => {
       const queue = loadQueue()
-      const pending = queue.filter(a => !a.synced)
+      const pending = queue.filter((a) => !a.synced)
       if (pending.length === 0) return 0
 
       logger.debug(`[OfflineQueue] Flushing ${pending.length} pending actions...`)
@@ -111,7 +124,7 @@ export async function flushQueue(): Promise<number> {
       }
 
       // Remove synced entries
-      const remaining = queue.filter(a => !a.synced)
+      const remaining = queue.filter((a) => !a.synced)
       saveQueue(remaining)
 
       if (synced > 0) {
@@ -126,7 +139,7 @@ export async function flushQueue(): Promise<number> {
 
 /** Get current queue size (for UI display). */
 export function getQueueSize(): number {
-  return loadQueue().filter(a => !a.synced).length
+  return loadQueue().filter((a) => !a.synced).length
 }
 
 /** Clear the entire queue (used on logout). */
@@ -139,16 +152,22 @@ export function initOfflineSync(onFlush?: (count: number) => void) {
   // Listen for Tauri connectivity events if available
   window.addEventListener('online', () => {
     logger.debug('[OfflineQueue] Network restored, flushing...')
-    flushQueue().then(count => { if (count > 0 && onFlush) onFlush(count) })
+    flushQueue().then((count) => {
+      if (count > 0 && onFlush) onFlush(count)
+    })
   })
 
   // Also flush on app focus (network may have恢复d while app was backgrounded)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      flushQueue().then(count => { if (count > 0 && onFlush) onFlush(count) })
+      flushQueue().then((count) => {
+        if (count > 0 && onFlush) onFlush(count)
+      })
     }
   })
 
   // Initial flush attempt
-  flushQueue().then(count => { if (count > 0 && onFlush) onFlush(count) })
+  flushQueue().then((count) => {
+    if (count > 0 && onFlush) onFlush(count)
+  })
 }

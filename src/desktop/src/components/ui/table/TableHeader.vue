@@ -18,10 +18,7 @@ const delegatedProps = computed(() => {
 </script>
 
 <template>
-  <Primitive
-    v-bind="delegatedProps"
-    :class="cn('[&_tr]:border-b', props.class)"
-  >
+  <Primitive v-bind="delegatedProps" :class="cn('[&_tr]:border-b', props.class)">
     <slot />
   </Primitive>
 </template>

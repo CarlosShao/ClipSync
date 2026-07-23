@@ -38,47 +38,140 @@ watch(maxHistoryModel, () => onMaxHistoryChange())
   <div class="settings-group">
     <div class="sg-header">{{ t('sg_gen') }}</div>
     <div class="sg-row">
-      <div class="sg-label"><div class="sg-name">{{ t('sg_autosync') }}</div><div class="sg-hint">{{ t('sg_autosync_h') }}</div></div>
+      <div class="sg-label">
+        <div class="sg-name">{{ t('sg_autosync') }}</div>
+        <div class="sg-hint">{{ t('sg_autosync_h') }}</div>
+      </div>
       <Switch :model-value="configStore.autoSync" @update:model-value="(v: boolean) => configStore.toggleAutoSync(v)" />
     </div>
     <div class="sg-row">
-      <div class="sg-label"><div class="sg-name">{{ t('sg_imgcomp') }}</div><div class="sg-hint">{{ t('sg_imgcomp_h') }}</div></div>
-      <Switch :model-value="configStore.imageCompress" @update:model-value="(v: boolean) => configStore.toggleImageCompress(v)" />
+      <div class="sg-label">
+        <div class="sg-name">{{ t('sg_imgcomp') }}</div>
+        <div class="sg-hint">{{ t('sg_imgcomp_h') }}</div>
+      </div>
+      <Switch
+        :model-value="configStore.imageCompress"
+        @update:model-value="(v: boolean) => configStore.toggleImageCompress(v)"
+      />
     </div>
     <div class="sg-row">
-      <div class="sg-label"><div class="sg-name">{{ t('sg_startup') }}</div><div class="sg-hint">{{ t('sg_startup_h') }}</div></div>
-      <Switch :model-value="configStore.autostart" @update:model-value="(v: boolean) => configStore.toggleAutostart(v)" />
+      <div class="sg-label">
+        <div class="sg-name">{{ t('sg_startup') }}</div>
+        <div class="sg-hint">{{ t('sg_startup_h') }}</div>
+      </div>
+      <Switch
+        :model-value="configStore.autostart"
+        @update:model-value="(v: boolean) => configStore.toggleAutostart(v)"
+      />
     </div>
     <div class="sg-row">
-      <div class="sg-label"><div class="sg-name">{{ t('sg_lang') }}</div><div class="sg-hint">{{ t('sg_lang_h') }}</div></div>
+      <div class="sg-label">
+        <div class="sg-name">{{ t('sg_lang') }}</div>
+        <div class="sg-hint">{{ t('sg_lang_h') }}</div>
+      </div>
       <CustomSelect v-model="langModel">
         {{ langModel === 'zh' ? t('lang_zh') : t('lang_en') }}
         <template #options>
-          <CustomSelectOption value="zh" :selected="langModel === 'zh'" @select="(v: string) => { langModel = v; setLang(v as 'zh' | 'en') }">{{ t('lang_zh') }}</CustomSelectOption>
-          <CustomSelectOption value="en" :selected="langModel === 'en'" @select="(v: string) => { langModel = v; setLang(v as 'zh' | 'en') }">{{ t('lang_en') }}</CustomSelectOption>
+          <CustomSelectOption
+            value="zh"
+            :selected="langModel === 'zh'"
+            @select="
+              (v: string) => {
+                langModel = v
+                setLang(v as 'zh' | 'en')
+              }
+            "
+            >{{ t('lang_zh') }}</CustomSelectOption
+          >
+          <CustomSelectOption
+            value="en"
+            :selected="langModel === 'en'"
+            @select="
+              (v: string) => {
+                langModel = v
+                setLang(v as 'zh' | 'en')
+              }
+            "
+            >{{ t('lang_en') }}</CustomSelectOption
+          >
         </template>
       </CustomSelect>
     </div>
     <div class="sg-row">
-      <div class="sg-label"><div class="sg-name">{{ t('sg_interval') }}</div><div class="sg-hint">{{ t('sg_interval_h') }}</div></div>
+      <div class="sg-label">
+        <div class="sg-name">{{ t('sg_interval') }}</div>
+        <div class="sg-hint">{{ t('sg_interval_h') }}</div>
+      </div>
       <CustomSelect v-model="syncIntervalModel">
         {{ syncIntervalModel === '0' ? t('int_rt') : syncIntervalModel === '5' ? t('int_5m') : t('int_15m') }}
         <template #options>
-          <CustomSelectOption value="0" :selected="syncIntervalModel === '0'" @select="(v) => syncIntervalModel = v">{{ t('int_rt') }}</CustomSelectOption>
-          <CustomSelectOption value="5" :selected="syncIntervalModel === '5'" @select="(v) => syncIntervalModel = v">{{ t('int_5m') }}</CustomSelectOption>
-          <CustomSelectOption value="15" :selected="syncIntervalModel === '15'" @select="(v) => syncIntervalModel = v">{{ t('int_15m') }}</CustomSelectOption>
+          <CustomSelectOption
+            value="0"
+            :selected="syncIntervalModel === '0'"
+            @select="(v) => (syncIntervalModel = v)"
+            >{{ t('int_rt') }}</CustomSelectOption
+          >
+          <CustomSelectOption
+            value="5"
+            :selected="syncIntervalModel === '5'"
+            @select="(v) => (syncIntervalModel = v)"
+            >{{ t('int_5m') }}</CustomSelectOption
+          >
+          <CustomSelectOption
+            value="15"
+            :selected="syncIntervalModel === '15'"
+            @select="(v) => (syncIntervalModel = v)"
+            >{{ t('int_15m') }}</CustomSelectOption
+          >
         </template>
       </CustomSelect>
     </div>
     <div class="sg-row">
-      <div class="sg-label"><div class="sg-name">{{ t('sg_maxhist') }}</div><div class="sg-hint">{{ t('sg_maxhist_h') }}</div></div>
+      <div class="sg-label">
+        <div class="sg-name">{{ t('sg_maxhist') }}</div>
+        <div class="sg-hint">{{ t('sg_maxhist_h') }}</div>
+      </div>
       <CustomSelect v-model="maxHistoryModel">
-        {{ maxHistoryModel === '100' ? t('hist_100') : maxHistoryModel === '500' ? t('hist_500') : maxHistoryModel === '1000' ? t('hist_1k') : t('hist_unl') }}
+        {{
+          maxHistoryModel === '100'
+            ? t('hist_100')
+            : maxHistoryModel === '500'
+              ? t('hist_500')
+              : maxHistoryModel === '1000'
+                ? t('hist_1k')
+                : t('hist_unl')
+        }}
         <template #options>
-          <CustomSelectOption value="100" :selected="maxHistoryModel === '100'" @select="(v) => maxHistoryModel = v">{{ t('hist_100') }}</CustomSelectOption>
-          <CustomSelectOption value="500" :selected="maxHistoryModel === '500'" @select="(v) => maxHistoryModel = v">{{ t('hist_500') }}</CustomSelectOption>
-          <CustomSelectOption value="1000" :selected="maxHistoryModel === '1000'" @select="(v) => maxHistoryModel = v">{{ t('hist_1k') }}</CustomSelectOption>
-          <CustomSelectOption value="999999" :selected="maxHistoryModel === '999999'" :disabled="configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise'" @select="(v) => maxHistoryModel = v">{{ t('hist_unl') }}{{ configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise' ? ` (${t('upgrade_required')})` : '' }}</CustomSelectOption>
+          <CustomSelectOption
+            value="100"
+            :selected="maxHistoryModel === '100'"
+            @select="(v) => (maxHistoryModel = v)"
+            >{{ t('hist_100') }}</CustomSelectOption
+          >
+          <CustomSelectOption
+            value="500"
+            :selected="maxHistoryModel === '500'"
+            @select="(v) => (maxHistoryModel = v)"
+            >{{ t('hist_500') }}</CustomSelectOption
+          >
+          <CustomSelectOption
+            value="1000"
+            :selected="maxHistoryModel === '1000'"
+            @select="(v) => (maxHistoryModel = v)"
+            >{{ t('hist_1k') }}</CustomSelectOption
+          >
+          <CustomSelectOption
+            value="999999"
+            :selected="maxHistoryModel === '999999'"
+            :disabled="configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise'"
+            @select="(v) => (maxHistoryModel = v)"
+            >{{ t('hist_unl')
+            }}{{
+              configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise'
+                ? ` (${t('upgrade_required')})`
+                : ''
+            }}</CustomSelectOption
+          >
         </template>
       </CustomSelect>
     </div>
@@ -94,7 +187,7 @@ watch(maxHistoryModel, () => onMaxHistoryChange())
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .06em;
+  letter-spacing: 0.06em;
   color: var(--text-tertiary);
   margin-bottom: 8px;
 }

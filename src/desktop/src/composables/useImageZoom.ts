@@ -21,9 +21,18 @@ export function useImageZoom() {
   let imgPanStartX = 0
   let imgPanStartY = 0
 
-  function resetImgZoom() { imgZoom.value = 1; imgPanX.value = 0; imgPanY.value = 0; imgRotate.value = 0 }
-  function rotateLeft() { imgRotate.value = (imgRotate.value - 90) % 360 }
-  function rotateRight() { imgRotate.value = (imgRotate.value + 90) % 360 }
+  function resetImgZoom() {
+    imgZoom.value = 1
+    imgPanX.value = 0
+    imgPanY.value = 0
+    imgRotate.value = 0
+  }
+  function rotateLeft() {
+    imgRotate.value = (imgRotate.value - 90) % 360
+  }
+  function rotateRight() {
+    imgRotate.value = (imgRotate.value + 90) % 360
+  }
   function zoomIn() {
     const next = Math.min(IMG_ZOOM_MAX, imgZoom.value + IMG_ZOOM_STEP)
     if (Math.abs(next - imgZoom.value) > 0.01) imgZoom.value = next
@@ -32,7 +41,10 @@ export function useImageZoom() {
     const next = Math.max(IMG_ZOOM_MIN, imgZoom.value - IMG_ZOOM_STEP)
     if (Math.abs(next - imgZoom.value) > 0.01) imgZoom.value = next
     // Zoom out to 1x also resets pan
-    if (imgZoom.value <= 1) { imgPanX.value = 0; imgPanY.value = 0 }
+    if (imgZoom.value <= 1) {
+      imgPanX.value = 0
+      imgPanY.value = 0
+    }
   }
   function onImgWheel(e: WheelEvent) {
     e.preventDefault()
@@ -64,14 +76,25 @@ export function useImageZoom() {
 
   /** 模板光标样式（拖拽中/可拖拽/可放大） */
   function imgCursor() {
-    return isImgDragging ? 'grabbing' : (imgZoom.value > 1 ? 'grab' : 'zoom-in')
+    return isImgDragging ? 'grabbing' : imgZoom.value > 1 ? 'grab' : 'zoom-in'
   }
 
   return {
-    imgZoom, imgPanX, imgPanY, imgRotate,
-    IMG_ZOOM_MIN, IMG_ZOOM_MAX,
-    resetImgZoom, rotateLeft, rotateRight, zoomIn, zoomOut,
-    onImgWheel, onImgPointerDown, onImgPointerMove, onImgPointerUp,
+    imgZoom,
+    imgPanX,
+    imgPanY,
+    imgRotate,
+    IMG_ZOOM_MIN,
+    IMG_ZOOM_MAX,
+    resetImgZoom,
+    rotateLeft,
+    rotateRight,
+    zoomIn,
+    zoomOut,
+    onImgWheel,
+    onImgPointerDown,
+    onImgPointerMove,
+    onImgPointerUp,
     imgCursor,
   }
 }

@@ -32,7 +32,9 @@ const activeFilter = computed<{ value: string; labelKey: string }[]>(() => [
 import { ref } from 'vue'
 const currentFilter = ref<string>('all')
 
-onMounted(() => { loadHistory() })
+onMounted(() => {
+  loadHistory()
+})
 
 const filtered = computed(() => {
   if (currentFilter.value === 'all') return notifications.value
@@ -41,10 +43,10 @@ const filtered = computed(() => {
 })
 
 const catMeta: Record<string, { icon: any; color: string; labelKey: string }> = {
-  subscription: { icon: Gift,        color: 'var(--accent)',  labelKey: 'notif_cat_subscription' },
-  update:       { icon: Download,    color: 'var(--info)',    labelKey: 'notif_cat_update' },
-  device:       { icon: Smartphone,  color: 'var(--success)', labelKey: 'notif_cat_device' },
-  security:     { icon: ShieldAlert, color: 'var(--danger)',  labelKey: 'notif_cat_security' },
+  subscription: { icon: Gift, color: 'var(--accent)', labelKey: 'notif_cat_subscription' },
+  update: { icon: Download, color: 'var(--info)', labelKey: 'notif_cat_update' },
+  device: { icon: Smartphone, color: 'var(--success)', labelKey: 'notif_cat_device' },
+  security: { icon: ShieldAlert, color: 'var(--danger)', labelKey: 'notif_cat_security' },
 }
 
 function catOf(n: { category: string }) {
@@ -86,23 +88,16 @@ function timeAgo(ts: number): string {
         class="notif-filter-btn"
         :class="{ active: currentFilter === f.value }"
         @click="currentFilter = f.value"
-      >{{ t(f.labelKey) }}</button>
+      >
+        {{ t(f.labelKey) }}
+      </button>
     </div>
 
     <!-- List -->
     <div class="notif-list">
       <div v-if="filtered.length > 0" class="notif-items">
-        <div
-          v-for="n in filtered"
-          :key="n.id"
-          class="notif-item"
-          :class="{ unread: !n.read }"
-          @click="markRead(n.id)"
-        >
-          <div
-            class="notif-icon"
-            :style="{ color: catOf(n).color, background: catOf(n).color + '1f' }"
-          >
+        <div v-for="n in filtered" :key="n.id" class="notif-item" :class="{ unread: !n.read }" @click="markRead(n.id)">
+          <div class="notif-icon" :style="{ color: catOf(n).color, background: catOf(n).color + '1f' }">
             <component :is="catOf(n).icon" :size="18" />
           </div>
           <div class="notif-body">
@@ -127,81 +122,192 @@ function timeAgo(ts: number): string {
 </template>
 
 <style scoped>
-.notif-page { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.notif-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
 
 /* Header */
 .notif-header {
-  display: flex; align-items: center; justify-content: space-between;
-  height: 56px; padding: 0 24px; background: var(--bg-surface); flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 24px;
+  background: var(--bg-surface);
+  flex-shrink: 0;
 }
-.notif-title-wrap { display: flex; align-items: center; gap: 10px; }
-.notif-title { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
-.notif-unread-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; }
+.notif-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.notif-title {
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+.notif-unread-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+}
 
 /* Filter segmented control (matches clipboard filter-row style) */
 .notif-filters {
-  display: flex; align-items: center; gap: 12px; padding: 12px 24px; flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  flex-shrink: 0;
   overflow-x: auto;
 }
 .notif-filter-btn {
-  font-size: 13px; font-weight: 500; color: var(--text-secondary);
-  background: var(--bg-hover); border: none; border-radius: var(--radius-md);
-  padding: 5px 14px; cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
   line-height: 1.4;
 }
-.notif-filter-btn:hover { color: var(--text-primary); background: var(--bg-active); }
+.notif-filter-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
 .notif-filter-btn.active {
-  background: var(--bg-surface); color: var(--text-primary);
-  box-shadow: var(--shadow-card); font-weight: 600;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+  font-weight: 600;
 }
 
 /* List */
-.notif-list { flex: 1; overflow-y: auto; padding: 4px 24px 24px; }
-.notif-items { display: flex; flex-direction: column; gap: 8px; }
+.notif-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 24px 24px;
+}
+.notif-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 .notif-item {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 14px; border-radius: var(--radius-lg);
-  background: var(--bg-surface); border: 1px solid var(--border-subtle);
-  cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
   position: relative;
 }
-.notif-item:hover { background: var(--bg-hover); border-color: var(--border-default); }
-.notif-item.unread { border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle)); }
+.notif-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+}
+.notif-item.unread {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
+}
 
 .notif-icon {
-  width: 36px; height: 36px; border-radius: var(--radius-md);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
-.notif-body { flex: 1; min-width: 0; }
+.notif-body {
+  flex: 1;
+  min-width: 0;
+}
 .notif-item-head {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
 }
 .notif-cat {
-  font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
   color: var(--text-tertiary);
 }
-.notif-time { font-size: 11px; color: var(--text-tertiary); }
-.notif-item-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
-.notif-item-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.notif-time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.notif-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.notif-item-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
 .notif-dot {
-  width: 8px; height: 8px; border-radius: 9999px; background: var(--accent);
-  flex-shrink: 0; margin-top: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--accent);
+  flex-shrink: 0;
+  margin-top: 6px;
 }
 
 /* Empty state */
 .notif-empty {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 80px 20px; text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
 }
 .notif-empty-icon {
-  width: 64px; height: 64px; border-radius: 16px; background: var(--bg-hover);
-  display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
-  color: var(--text-tertiary); opacity: 0.6;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--text-tertiary);
+  opacity: 0.6;
 }
-.notif-empty-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--text-primary); }
-.notif-empty-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.notif-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+.notif-empty-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
 
 /* Mark-all-read button: extra horizontal padding for CJK text */
-.mark-all-btn { padding-left: 18px !important; padding-right: 18px !important; }
+.mark-all-btn {
+  padding-left: 18px !important;
+  padding-right: 18px !important;
+}
 </style>

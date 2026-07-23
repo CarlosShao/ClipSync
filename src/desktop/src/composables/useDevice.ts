@@ -37,7 +37,7 @@ export function useDevice() {
   async function removeDevice(id: string) {
     const res = await api('DELETE', `/api/devices/${id}`)
     if (res.ok) {
-      devices.value = devices.value.filter(d => d.id !== id)
+      devices.value = devices.value.filter((d) => d.id !== id)
     }
     return res
   }

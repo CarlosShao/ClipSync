@@ -37,7 +37,9 @@ async function loadSecurityNotifications() {
         if (typeof parsed.twoFA === 'boolean') secNotif.twoFA = parsed.twoFA
         if (typeof parsed.loginNotification === 'boolean') secNotif.loginNotification = parsed.loginNotification
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -68,10 +70,7 @@ onMounted(() => {
           <div class="sec-label">{{ t('sec_2fa') }}</div>
           <div class="sec-hint">{{ t('sec_2fa_h') }}</div>
         </div>
-        <Switch
-          :model-value="secNotif.twoFA"
-          @update:model-value="(v: boolean) => saveSecNotif({ twoFA: v })"
-        />
+        <Switch :model-value="secNotif.twoFA" @update:model-value="(v: boolean) => saveSecNotif({ twoFA: v })" />
       </div>
       <div class="sec-item">
         <div>
@@ -95,14 +94,38 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.sp-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.sp-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
-.sec-list { display: flex; flex-direction: column; }
-.sec-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 0; border-bottom: 1px solid var(--border-subtle);
+.sp-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
-.sec-item:last-child { border-bottom: none; }
-.sec-label { font-size: 14px; font-weight: 500; color: var(--text-primary); }
-.sec-hint { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.sp-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.sec-list {
+  display: flex;
+  flex-direction: column;
+}
+.sec-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sec-item:last-child {
+  border-bottom: none;
+}
+.sec-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.sec-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
 </style>

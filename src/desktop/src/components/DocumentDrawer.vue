@@ -11,19 +11,14 @@ const { t } = useI18n()
 import * as tauri from '@/lib/tauri'
 import { Marked } from 'marked'
 import hljs from 'highlight.js'
-import mammoth from 'mammoth'
-import * as pdfjsLib from 'pdfjs-dist'
-import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href
 
 const props = defineProps<{
   open: boolean
   item: any // ClipItem
 }>()
 const emit = defineEmits<{
-  'close': []
+  close: []
 }>()
 
 // ===== Markdown setup =====
@@ -34,7 +29,10 @@ marked.use({
   renderer: {
     heading({ text, depth }: { text: string; depth: number }) {
       const raw = String(text).replace(/<[^>]+>/g, '')
-      const id = raw.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '')
+      const id = raw
+        .toLowerCase()
+        .replace(/[^\w\u4e00-\u9fff]+/g, '-')
+        .replace(/^-|-$/g, '')
       return `<h${depth} id="${id}">${text}</h${depth}>`
     },
   },
@@ -69,10 +67,48 @@ const pptxSlides = ref<string[]>([])
 function detectType(filename: string): typeof docType.value {
   const ext = filename.split('.').pop()?.toLowerCase() || ''
   if (['md', 'markdown', 'mdx'].includes(ext)) return 'markdown'
-  if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'cs',
-       'html', 'css', 'scss', 'less', 'json', 'yaml', 'yml', 'xml', 'toml',
-       'sql', 'sh', 'bash', 'rb', 'php', 'swift', 'kt', 'scala', 'r', 'lua',
-       'vue', 'svelte', 'dockerfile', 'makefile', 'ini', 'env'].includes(ext)) return 'code'
+  if (
+    [
+      'js',
+      'ts',
+      'jsx',
+      'tsx',
+      'py',
+      'java',
+      'go',
+      'rs',
+      'c',
+      'cpp',
+      'h',
+      'cs',
+      'html',
+      'css',
+      'scss',
+      'less',
+      'json',
+      'yaml',
+      'yml',
+      'xml',
+      'toml',
+      'sql',
+      'sh',
+      'bash',
+      'rb',
+      'php',
+      'swift',
+      'kt',
+      'scala',
+      'r',
+      'lua',
+      'vue',
+      'svelte',
+      'dockerfile',
+      'makefile',
+      'ini',
+      'env',
+    ].includes(ext)
+  )
+    return 'code'
   if (['txt', 'log', 'csv', 'tsv', 'cfg', 'conf', 'properties'].includes(ext)) return 'text'
   if (['docx', 'doc'].includes(ext)) return 'docx'
   if (['xls', 'xlsx', 'xlsm', 'xlsb', 'csv'].includes(ext)) return 'excel'
@@ -85,16 +121,44 @@ function detectType(filename: string): typeof docType.value {
 function getLangFromExt(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || ''
   const map: Record<string, string> = {
-    js: 'javascript', ts: 'typescript', jsx: 'javascript', tsx: 'typescript',
-    py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
-    c: 'c', cpp: 'cpp', h: 'c', cs: 'csharp',
-    html: 'html', css: 'css', scss: 'scss', less: 'less',
-    json: 'json', yaml: 'yaml', yml: 'yaml', xml: 'xml', toml: 'ini',
-    sql: 'sql', sh: 'bash', bash: 'bash', zsh: 'bash',
-    php: 'php', swift: 'swift', kt: 'kotlin', scala: 'scala',
-    r: 'r', lua: 'lua', vue: 'html', svelte: 'html',
-    dockerfile: 'dockerfile', makefile: 'makefile',
-    ini: 'ini', env: 'bash',
+    js: 'javascript',
+    ts: 'typescript',
+    jsx: 'javascript',
+    tsx: 'typescript',
+    py: 'python',
+    rb: 'ruby',
+    rs: 'rust',
+    go: 'go',
+    java: 'java',
+    c: 'c',
+    cpp: 'cpp',
+    h: 'c',
+    cs: 'csharp',
+    html: 'html',
+    css: 'css',
+    scss: 'scss',
+    less: 'less',
+    json: 'json',
+    yaml: 'yaml',
+    yml: 'yaml',
+    xml: 'xml',
+    toml: 'ini',
+    sql: 'sql',
+    sh: 'bash',
+    bash: 'bash',
+    zsh: 'bash',
+    php: 'php',
+    swift: 'swift',
+    kt: 'kotlin',
+    scala: 'scala',
+    r: 'r',
+    lua: 'lua',
+    vue: 'html',
+    svelte: 'html',
+    dockerfile: 'dockerfile',
+    makefile: 'makefile',
+    ini: 'ini',
+    env: 'bash',
   }
   return map[ext] || ext
 }
@@ -132,14 +196,20 @@ function extractToc(md: string): { id: string; text: string; depth: number }[] {
   const lines = md.split(/\r?\n/)
   let inCode = false
   for (const line of lines) {
-    if (/^```/.test(line) || /^~~~/.test(line)) { inCode = !inCode; continue }
+    if (/^```/.test(line) || /^~~~/.test(line)) {
+      inCode = !inCode
+      continue
+    }
     if (inCode) continue
     if (/^\s{4,}/.test(line)) continue
     const m = line.match(/^(#{1,6})\s+(.+)$/)
     if (m) {
       const depth = m[1].length
       const text = m[2].replace(/[*_`]/g, '')
-      const id = text.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '')
+      const id = text
+        .toLowerCase()
+        .replace(/[^\w\u4e00-\u9fff]+/g, '-')
+        .replace(/^-|-$/g, '')
       items.push({ id, text, depth })
     }
   }
@@ -205,9 +275,15 @@ async function loadText(item: any) {
     try {
       const parsed = JSON.parse(c)
       if (Array.isArray(parsed) && parsed[0] && (parsed[0].includes('\\') || parsed[0].includes('/'))) {
-        try { c = await tauri.readFileContent(parsed[0]) } catch { /* keep as-is */ }
+        try {
+          c = await tauri.readFileContent(parsed[0])
+        } catch {
+          /* keep as-is */
+        }
       }
-    } catch { /* not JSON */ }
+    } catch {
+      /* not JSON */
+    }
 
     // Case 2: content is a UUID filename (file picker uploads via /api/media/file)
     // UUID format: 8-4-4-4-12 hex chars
@@ -221,7 +297,9 @@ async function loadText(item: any) {
         } else {
           logger.debug('[Drawer] Download failed:', blobRes?.status)
         }
-      } catch (e) { logger.debug('[Drawer] Download error:', e) }
+      } catch (e) {
+        logger.debug('[Drawer] Download error:', e)
+      }
     } else {
       logger.debug('[Drawer] Not UUID, using content directly:', c.length, 'chars')
     }
@@ -253,10 +331,19 @@ async function loadImage(item: any) {
         const base64: string = await invoke('read_file_content_base64', { path: filePath })
         if (base64) {
           const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
-          const mimeMap: Record<string, string> = { png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', webp:'image/webp', bmp:'image/bmp' }
+          const mimeMap: Record<string, string> = {
+            png: 'image/png',
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            gif: 'image/gif',
+            webp: 'image/webp',
+            bmp: 'image/bmp',
+          }
           imageDataUrl.value = `data:${mimeMap[ext] || 'image/png'};base64,${base64}`
         }
-      } catch (e) { console.error('[Drawer] Image load error:', e) }
+      } catch (e) {
+        console.error('[Drawer] Image load error:', e)
+      }
     }
   }
 }
@@ -281,15 +368,20 @@ async function loadBinary(item: any) {
     try {
       const { invoke } = await import('@tauri-apps/api/core')
       const base64: string = await invoke('read_file_content_base64', { path: filePath })
-      if (base64) arrayBuffer = Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer
-    } catch { /* fallback */ }
+      if (base64) arrayBuffer = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)).buffer
+    } catch {
+      /* fallback */
+    }
   }
   if (!arrayBuffer) {
     const blobRes = await apiBlob('GET', `/api/media/${item.id}/download`)
     if (blobRes && blobRes.ok) arrayBuffer = await blobRes.arrayBuffer()
   }
 
-  if (!arrayBuffer) { content.value = t('drawer_file_fail'); return }
+  if (!arrayBuffer) {
+    content.value = t('drawer_file_fail')
+    return
+  }
 
   // === Word (.docx / .doc) ===
   if (docType.value === 'docx') {
@@ -300,22 +392,33 @@ async function loadBinary(item: any) {
       </div>`
     } else {
       try {
+        const { default: mammoth } = await import('mammoth')
         const result = await mammoth.convertToHtml({ arrayBuffer })
         let html = result.value || `<p style="color:var(--text-tertiary)">${t('drawer_doc_empty')}</p>`
         // Add IDs to headings for TOC anchor links
-        html = html.replace(/<h([1-6])([^>]*)>([\s\S]*?)<\/h\1>/gi, (match: string, level: string, attrs: string, text: string) => {
-          const plainText = text.replace(/<[^>]+>/g, '').trim()
-          const id = plainText.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '')
-          return `<h${level} id="${id}"${attrs}>${text}</h${level}>`
-        })
+        html = html.replace(
+          /<h([1-6])([^>]*)>([\s\S]*?)<\/h\1>/gi,
+          (match: string, level: string, attrs: string, text: string) => {
+            const plainText = text.replace(/<[^>]+>/g, '').trim()
+            const id = plainText
+              .toLowerCase()
+              .replace(/[^\w\u4e00-\u9fff]+/g, '-')
+              .replace(/^-|-$/g, '')
+            return `<h${level} id="${id}"${attrs}>${text}</h${level}>`
+          },
+        )
         docxHtml.value = html
         docxToc.value = extractDocxToc(html)
-      } catch { docxHtml.value = `<p style="color:var(--danger)">${t('drawer_doc_fail')}</p>` }
+      } catch {
+        docxHtml.value = `<p style="color:var(--danger)">${t('drawer_doc_fail')}</p>`
+      }
     }
   }
   // === PDF ===
   else if (docType.value === 'pdf') {
     try {
+      const pdfjsLib = await import('pdfjs-dist')
+      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
       pdfTotalPages.value = pdf.numPages
       const max = Math.min(pdf.numPages, 30)
@@ -329,24 +432,32 @@ async function loadBinary(item: any) {
         await page.render({ canvasContext: ctx, viewport, canvas }).promise
         pdfPages.value.push({ num: i, dataUrl: canvas.toDataURL('image/png') })
       }
-    } catch (e) { console.error('[Drawer] PDF error:', e) }
+    } catch (e) {
+      console.error('[Drawer] PDF error:', e)
+    }
   }
   // === Excel (.xlsx / .xls) ===
   else if (docType.value === 'excel') {
     try {
+      const XLSX = await import('xlsx')
       const workbook = XLSX.read(arrayBuffer, { type: 'array' })
-      excelSheets.value = workbook.SheetNames.map(name => {
+      excelSheets.value = workbook.SheetNames.map((name) => {
         const sheet = workbook.Sheets[name]
         return { name, html: XLSX.utils.sheet_to_html(sheet, { editable: false }) }
       })
       activeSheetIdx.value = 0
-    } catch (e) { console.error('[Drawer] Excel error:', e) }
+    } catch (e) {
+      console.error('[Drawer] Excel error:', e)
+    }
   }
   // === PowerPoint (.pptx) ===
   else if (docType.value === 'pptx') {
     try {
       pptxSlides.value = await extractPptxText(arrayBuffer)
-    } catch (e) { console.error('[Drawer] PPTX error:', e); pptxSlides.value = [`<p style="color:var(--danger)">${t('drawer_pptx_fail')}</p>`] }
+    } catch (e) {
+      console.error('[Drawer] PPTX error:', e)
+      pptxSlides.value = [`<p style="color:var(--danger)">${t('drawer_pptx_fail')}</p>`]
+    }
   }
 }
 
@@ -354,7 +465,9 @@ async function loadBinary(item: any) {
 async function extractPptxText(buf: ArrayBuffer): Promise<string[]> {
   try {
     const zip = await JSZip.loadAsync(buf)
-    const slideFiles = Object.keys(zip.files).filter(f => f.match(/ppt\/slides\/slide\d+\.xml$/)).sort()
+    const slideFiles = Object.keys(zip.files)
+      .filter((f) => f.match(/ppt\/slides\/slide\d+\.xml$/))
+      .sort()
     const slides: string[] = []
     for (const slideFile of slideFiles) {
       const xml = await zip.file(slideFile)!.async('text')
@@ -365,7 +478,9 @@ async function extractPptxText(buf: ArrayBuffer): Promise<string[]> {
       while ((match = regex.exec(xml)) !== null) {
         if (match[1].trim()) textParts.push(escapeHtml(match[1]))
       }
-      slides.push(`<div class="pptx-slide"><div class="pptx-slide-num">${slideFile.match(/slide(\d+)/)?.[1] || ''}</div><div class="pptx-slide-text">${textParts.join('<br>')}</div></div>`)
+      slides.push(
+        `<div class="pptx-slide"><div class="pptx-slide-num">${slideFile.match(/slide(\d+)/)?.[1] || ''}</div><div class="pptx-slide-text">${textParts.join('<br>')}</div></div>`,
+      )
     }
     return slides.length > 0 ? slides : [`<p style="color:var(--text-tertiary)">${t('drawer_pptx_no_slides')}</p>`]
   } catch (e) {
@@ -387,7 +502,10 @@ function extractDocxToc(html: string): { id: string; text: string; depth: number
     const depth = parseInt(match[1])
     const text = match[2].replace(/<[^>]+>/g, '').trim()
     if (text) {
-      const id = text.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '')
+      const id = text
+        .toLowerCase()
+        .replace(/[^\w\u4e00-\u9fff]+/g, '-')
+        .replace(/^-|-$/g, '')
       items.push({ id, text, depth })
     }
   }
@@ -406,16 +524,25 @@ onMounted(() => {
   if (props.open && props.item) loadContent(props.item)
 })
 
-watch(() => props.item, (item) => {
-  if (props.open && item) loadContent(item)
-})
+watch(
+  () => props.item,
+  (item) => {
+    if (props.open && item) loadContent(item)
+  },
+)
 
 // ===== Computed =====
 const typeLabel = computed(() => {
   const map: Record<string, string> = {
-    markdown: 'Markdown', code: 'Code', text: 'Text',
-    docx: 'Word', pdf: 'PDF', excel: 'Excel', pptx: 'PPT',
-    image: 'Image', unsupported: 'Unsupported',
+    markdown: 'Markdown',
+    code: 'Code',
+    text: 'Text',
+    docx: 'Word',
+    pdf: 'PDF',
+    excel: 'Excel',
+    pptx: 'PPT',
+    image: 'Image',
+    unsupported: 'Unsupported',
   }
   return map[docType.value] || docType.value
 })
@@ -438,7 +565,7 @@ const contentLines = computed(() => {
               <span class="drawer-header-title">{{ fileName }}</span>
               <Badge variant="outline" class="drawer-type-badge">{{ typeLabel }}</Badge>
             </div>
-            <Button variant="ghost" size="icon-sm" @click="emit('close')" class="drawer-close-btn">
+            <Button variant="ghost" size="icon-sm" class="drawer-close-btn" @click="emit('close')">
               <X :size="18" />
             </Button>
           </div>
@@ -453,7 +580,7 @@ const contentLines = computed(() => {
           <div v-else class="drawer-body">
             <!-- Unsupported -->
             <div v-if="docType === 'unsupported'" class="drawer-unsupported">
-              <FileText :size="40" style="color:var(--text-tertiary);margin-bottom:12px" />
+              <FileText :size="40" style="color: var(--text-tertiary); margin-bottom: 12px" />
               <p>{{ t('drawer_unsupported') }}</p>
             </div>
 
@@ -461,9 +588,13 @@ const contentLines = computed(() => {
             <div v-else-if="docType === 'markdown'" class="drawer-markdown-layout">
               <nav v-if="toc.length > 0" class="drawer-toc">
                 <div class="drawer-toc-title">{{ t('drawer_toc') }}</div>
-                <a v-for="t in toc" :key="t.id" class="drawer-toc-item"
-                   :class="'drawer-toc-depth-' + t.depth"
-                   @click.prevent="scrollToHeading(t.id)">
+                <a
+                  v-for="t in toc"
+                  :key="t.id"
+                  class="drawer-toc-item"
+                  :class="'drawer-toc-depth-' + t.depth"
+                  @click.prevent="scrollToHeading(t.id)"
+                >
                   {{ t.text }}
                 </a>
               </nav>
@@ -485,9 +616,13 @@ const contentLines = computed(() => {
             <div v-else-if="docType === 'docx'" class="drawer-docx-layout">
               <nav v-if="docxToc.length > 0" class="drawer-toc">
                 <div class="drawer-toc-title">{{ t('drawer_toc') }}</div>
-                <a v-for="item in docxToc" :key="item.id" class="drawer-toc-item"
-                   :class="'drawer-toc-depth-' + item.depth"
-                   @click.prevent="scrollToHeading(item.id)">
+                <a
+                  v-for="item in docxToc"
+                  :key="item.id"
+                  class="drawer-toc-item"
+                  :class="'drawer-toc-depth-' + item.depth"
+                  @click.prevent="scrollToHeading(item.id)"
+                >
                   {{ item.text }}
                 </a>
               </nav>
@@ -497,12 +632,24 @@ const contentLines = computed(() => {
             <!-- Excel (.xlsx / .xls) -->
             <div v-else-if="docType === 'excel'" class="drawer-excel-wrap">
               <div v-if="excelSheets.length > 1" class="drawer-excel-tabs">
-                <button v-for="(sheet, i) in excelSheets" :key="i"
-                  class="drawer-excel-tab" :class="{ active: activeSheetIdx === i }"
-                  @click="activeSheetIdx = i">{{ sheet.name }}</button>
+                <button
+                  v-for="(sheet, i) in excelSheets"
+                  :key="i"
+                  class="drawer-excel-tab"
+                  :class="{ active: activeSheetIdx === i }"
+                  @click="activeSheetIdx = i"
+                >
+                  {{ sheet.name }}
+                </button>
               </div>
-              <div class="drawer-excel-content" v-if="excelSheets.length > 0" v-html="excelSheets[activeSheetIdx]?.html"></div>
-              <div v-else class="drawer-unsupported"><p>{{ t('drawer_xlsx_empty') }}</p></div>
+              <div
+                v-if="excelSheets.length > 0"
+                class="drawer-excel-content"
+                v-html="excelSheets[activeSheetIdx]?.html"
+              ></div>
+              <div v-else class="drawer-unsupported">
+                <p>{{ t('drawer_xlsx_empty') }}</p>
+              </div>
             </div>
 
             <!-- PowerPoint (.pptx) -->
@@ -512,7 +659,9 @@ const contentLines = computed(() => {
 
             <!-- PDF -->
             <div v-else-if="docType === 'pdf'" class="drawer-pdf">
-              <div v-if="pdfTotalPages > 30" class="drawer-pdf-info">{{ t('drawer_pdf_pages', { n: 30, total: pdfTotalPages }) }}</div>
+              <div v-if="pdfTotalPages > 30" class="drawer-pdf-info">
+                {{ t('drawer_pdf_pages', { n: 30, total: pdfTotalPages }) }}
+              </div>
               <div v-for="page in pdfPages" :key="page.num" class="drawer-pdf-page">
                 <img :src="page.dataUrl" :alt="'Page ' + page.num" class="drawer-pdf-img" />
                 <span class="drawer-pdf-num">{{ page.num }}</span>
@@ -533,165 +682,437 @@ const contentLines = computed(() => {
 <style scoped>
 /* Overlay */
 .drawer-overlay {
-  position: fixed; inset: 0; z-index: 9990;
-  background: rgba(0,0,0,0.3); display: flex; justify-content: flex-end;
-  animation: fadeIn .2s ease;
+  position: fixed;
+  inset: 0;
+  z-index: 9990;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  justify-content: flex-end;
+  animation: fadeIn 0.2s ease;
 }
 /* Panel */
 .drawer-panel {
-  width: 60vw; min-width: 480px; max-width: 960px; height: 100vh; background: var(--bg-surface);
-  border-left: 1px solid var(--border-subtle); display: flex; flex-direction: column;
-  box-shadow: -4px 0 24px rgba(0,0,0,0.12);
-  animation: slideInRight .25s ease;
+  width: 60vw;
+  min-width: 480px;
+  max-width: 960px;
+  height: 100vh;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  animation: slideInRight 0.25s ease;
 }
 /* Header */
 .drawer-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
-.drawer-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.drawer-header-icon { color: var(--text-tertiary); flex-shrink: 0; }
+.drawer-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.drawer-header-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
 .drawer-header-title {
-  font-size: 15px; font-weight: 600; color: var(--text-primary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.drawer-type-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; flex-shrink: 0; }
-.drawer-close-btn { color: var(--text-tertiary); }
+.drawer-type-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+.drawer-close-btn {
+  color: var(--text-tertiary);
+}
 
 /* Loading */
 .drawer-loading {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 10px; flex: 1; color: var(--text-tertiary); font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1;
+  color: var(--text-tertiary);
+  font-size: 13px;
 }
 .drawer-spinner {
-  width: 24px; height: 24px; border: 2px solid var(--border-default);
-  border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* Body */
-.drawer-body { flex: 1; overflow-y: auto; }
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+}
 
 /* Unsupported */
 .drawer-unsupported {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 60px 20px; color: var(--text-tertiary); font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: var(--text-tertiary);
+  font-size: 13px;
 }
 
 /* Markdown + TOC */
-.drawer-markdown-layout { display: flex; height: 100%; }
+.drawer-markdown-layout {
+  display: flex;
+  height: 100%;
+}
 .drawer-toc {
-  width: 220px; min-width: 180px; flex-shrink: 0; border-right: 1px solid var(--border-subtle);
-  padding: 16px 0; overflow-y: auto; background: var(--bg-surface);
+  width: 220px;
+  min-width: 180px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
+  padding: 16px 0;
+  overflow-y: auto;
+  background: var(--bg-surface);
 }
 .drawer-toc-title {
-  font-size: 11px; font-weight: 600; color: var(--text-tertiary);
-  text-transform: uppercase; letter-spacing: .05em; padding: 0 16px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 16px 10px;
 }
 .drawer-toc-item {
-  display: block; font-size: 12px; color: var(--text-secondary); text-decoration: none;
-  padding: 3px 16px; cursor: pointer; transition: color .15s, background .15s;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.5;
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 3px 16px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.5;
 }
-.drawer-toc-item:hover { color: var(--accent); background: var(--bg-hover); }
-.drawer-toc-depth-1 { font-weight: 600; padding-left: 16px; }
-.drawer-toc-depth-2 { padding-left: 28px; }
-.drawer-toc-depth-3 { padding-left: 40px; font-size: 11px; }
-.drawer-toc-depth-4, .drawer-toc-depth-5, .drawer-toc-depth-6 { padding-left: 52px; font-size: 11px; color: var(--text-tertiary); }
+.drawer-toc-item:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+.drawer-toc-depth-1 {
+  font-weight: 600;
+  padding-left: 16px;
+}
+.drawer-toc-depth-2 {
+  padding-left: 28px;
+}
+.drawer-toc-depth-3 {
+  padding-left: 40px;
+  font-size: 11px;
+}
+.drawer-toc-depth-4,
+.drawer-toc-depth-5,
+.drawer-toc-depth-6 {
+  padding-left: 52px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
 .drawer-markdown-content {
-  flex: 1; overflow-y: auto; padding: 24px 32px; min-width: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+  min-width: 0;
 }
 
 /* Code */
-.drawer-code { display: flex; font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; font-size: 13px; }
+.drawer-code {
+  display: flex;
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 13px;
+}
 .drawer-code-lines {
-  display: flex; flex-direction: column; padding: 16px 0 16px 16px;
-  border-right: 1px solid var(--border-subtle); user-select: none; flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0 16px 16px;
+  border-right: 1px solid var(--border-subtle);
+  user-select: none;
+  flex-shrink: 0;
 }
 .drawer-line-num {
-  font-size: 12px; color: var(--text-tertiary); line-height: 1.65;
-  text-align: right; min-width: 36px; padding-right: 12px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.65;
+  text-align: right;
+  min-width: 36px;
+  padding-right: 12px;
 }
 .drawer-code-content {
-  margin: 0; padding: 16px; font-size: 13px; line-height: 1.65;
-  color: var(--text-primary); white-space: pre; overflow-x: auto; flex: 1;
-  background: transparent; border: none;
+  margin: 0;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-primary);
+  white-space: pre;
+  overflow-x: auto;
+  flex: 1;
+  background: transparent;
+  border: none;
 }
 
 /* Text */
 .drawer-text {
-  padding: 24px 32px; white-space: pre-wrap; word-break: break-word;
-  font-size: 14px; line-height: 1.7; color: var(--text-primary);
+  padding: 24px 32px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-primary);
 }
 
 /* Word */
-.drawer-docx-layout { display: flex; height: 100%; }
-.drawer-docx { padding: 24px 32px; flex: 1; overflow-y: auto; }
-.drawer-docx table { border-collapse: collapse; width: 100%; margin: 8px 0; }
-.drawer-docx th, .drawer-docx td { border: 1px solid var(--border-default); padding: 6px 12px; text-align: left; font-size: 13px; }
-.drawer-docx th { background: var(--bg-hover); font-weight: 600; }
+.drawer-docx-layout {
+  display: flex;
+  height: 100%;
+}
+.drawer-docx {
+  padding: 24px 32px;
+  flex: 1;
+  overflow-y: auto;
+}
+.drawer-docx table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+.drawer-docx th,
+.drawer-docx td {
+  border: 1px solid var(--border-default);
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 13px;
+}
+.drawer-docx th {
+  background: var(--bg-hover);
+  font-weight: 600;
+}
 
 /* PDF */
-.drawer-pdf { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; }
-.drawer-pdf-info { font-size: 12px; color: var(--text-tertiary); }
-.drawer-pdf-page { position: relative; display: inline-block; }
-.drawer-pdf-img { max-width: 100%; border: 1px solid var(--border-subtle); border-radius: 6px; }
+.drawer-pdf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+}
+.drawer-pdf-info {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.drawer-pdf-page {
+  position: relative;
+  display: inline-block;
+}
+.drawer-pdf-img {
+  max-width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
 .drawer-pdf-num {
-  position: absolute; bottom: 6px; right: 10px; font-size: 11px;
-  color: var(--text-tertiary); background: var(--bg-surface); padding: 1px 8px; border-radius: 10px;
+  position: absolute;
+  bottom: 6px;
+  right: 10px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background: var(--bg-surface);
+  padding: 1px 8px;
+  border-radius: 10px;
 }
 
 /* Image */
-.drawer-image { display: flex; align-items: center; justify-content: center; padding: 24px; }
-.drawer-image-img { max-width: 100%; max-height: calc(100vh - 80px); object-fit: contain; border-radius: 6px; }
+.drawer-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.drawer-image-img {
+  max-width: 100%;
+  max-height: calc(100vh - 80px);
+  object-fit: contain;
+  border-radius: 6px;
+}
 
 /* Excel */
-.drawer-excel-wrap { display: flex; flex-direction: column; height: 100%; }
+.drawer-excel-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
 .drawer-excel-tabs {
-  display: flex; gap: 0; border-bottom: 1px solid var(--border-default);
-  background: var(--bg-hover); padding: 0 8px; flex-shrink: 0; overflow-x: auto;
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-hover);
+  padding: 0 8px;
+  flex-shrink: 0;
+  overflow-x: auto;
 }
 .drawer-excel-tab {
-  font-size: 12px; font-weight: 500; padding: 8px 16px; border: none; background: none;
-  color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent;
-  transition: all .15s; white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
-.drawer-excel-tab:hover { color: var(--text-primary); background: var(--bg-active); }
-.drawer-excel-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; background: var(--bg-surface); }
-.drawer-excel-content { flex: 1; overflow: auto; padding: 12px; }
-.drawer-excel-content :deep(table) { border-collapse: collapse; width: 100%; font-size: 13px; }
-.drawer-excel-content :deep(th), .drawer-excel-content :deep(td) { border: 1px solid var(--border-default); padding: 5px 10px; text-align: left; white-space: nowrap; }
-.drawer-excel-content :deep(th) { background: #f6f8fa; font-weight: 600; position: sticky; top: 0; z-index: 1; }
-.drawer-excel-content :deep(tr:nth-child(2n)) { background: rgba(0,0,0,0.02); }
-.drawer-excel-content :deep(td.selected) { background: #e8f0fe; }
+.drawer-excel-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
+.drawer-excel-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+  background: var(--bg-surface);
+}
+.drawer-excel-content {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+}
+.drawer-excel-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.drawer-excel-content :deep(th),
+.drawer-excel-content :deep(td) {
+  border: 1px solid var(--border-default);
+  padding: 5px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+.drawer-excel-content :deep(th) {
+  background: #f6f8fa;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.drawer-excel-content :deep(tr:nth-child(2n)) {
+  background: rgba(0, 0, 0, 0.02);
+}
+.drawer-excel-content :deep(td.selected) {
+  background: #e8f0fe;
+}
 
 /* PowerPoint */
-.drawer-pptx { padding: 24px; display: flex; flex-direction: column; gap: 24px; align-items: center; }
+.drawer-pptx {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+}
 .drawer-pptx-slide {
-  background: #ffffff; border: 1px solid var(--border-subtle); border-radius: 4px;
-  padding: 0; width: 100%; max-width: 640px; aspect-ratio: 16/9;
-  display: flex; flex-direction: column; justify-content: center; align-items: center;
-  font-size: 14px; line-height: 1.6; position: relative;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 0;
+  width: 100%;
+  max-width: 640px;
+  aspect-ratio: 16/9;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-size: 14px;
+  line-height: 1.6;
+  position: relative;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.06);
   overflow: hidden;
 }
 .pptx-slide-num {
-  position: absolute; bottom: 8px; right: 12px; font-size: 10px; color: var(--text-tertiary);
-  background: rgba(0,0,0,0.04); padding: 1px 8px; border-radius: 8px;
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: rgba(0, 0, 0, 0.04);
+  padding: 1px 8px;
+  border-radius: 8px;
 }
 .pptx-slide-text {
-  white-space: pre-wrap; text-align: center; padding: 32px 40px;
-  font-size: 15px; line-height: 1.8; color: #1a1a1a;
+  white-space: pre-wrap;
+  text-align: center;
+  padding: 32px 40px;
+  font-size: 15px;
+  line-height: 1.8;
+  color: #1a1a1a;
 }
 .pptx-slide-text:empty::after {
-  content: '(Empty slide)'; color: var(--text-tertiary); font-style: italic;
+  content: '(Empty slide)';
+  color: var(--text-tertiary);
+  font-style: italic;
 }
 
 /* Animations */
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
-.drawer-enter-active { animation: fadeIn .2s ease; }
-.drawer-enter-active .drawer-panel { animation: slideInRight .25s ease; }
-.drawer-leave-active { animation: fadeIn .15s ease reverse; }
-.drawer-leave-active .drawer-panel { animation: slideInRight .15s ease reverse; }
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.drawer-enter-active {
+  animation: fadeIn 0.2s ease;
+}
+.drawer-enter-active .drawer-panel {
+  animation: slideInRight 0.25s ease;
+}
+.drawer-leave-active {
+  animation: fadeIn 0.15s ease reverse;
+}
+.drawer-leave-active .drawer-panel {
+  animation: slideInRight 0.15s ease reverse;
+}
 </style>

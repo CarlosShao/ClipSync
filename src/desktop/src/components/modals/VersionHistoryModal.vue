@@ -28,7 +28,9 @@ async function loadVersions(clipboardItemId: string) {
       versionItems.value = res.data.versions
       latestVersionNum.value = res.data.versions[0]?.versionNumber || 0
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   loadingVersions.value = false
 }
 
@@ -62,18 +64,27 @@ function formatVersionTime(ts: string): string {
 
 // 打开版本历史弹窗时按条目加载（当前 versionItemId 未从上层接线，弹窗为空态，
 // 与原行为一致；后续接入 version-history 事件后此处自动生效）
-watch(() => props.showModalType, (type) => {
-  if (type === 'versions' && props.versionItemId) loadVersions(props.versionItemId)
-}, { immediate: true })
+watch(
+  () => props.showModalType,
+  (type) => {
+    if (type === 'versions' && props.versionItemId) loadVersions(props.versionItemId)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <ModalDialog :open="showModalType === 'versions'" :title="t('modal_versions')" max-width="520px" @close="emit('close')">
+  <ModalDialog
+    :open="showModalType === 'versions'"
+    :title="t('modal_versions')"
+    max-width="520px"
+    @close="emit('close')"
+  >
     <div v-if="loadingVersions" class="modal-state">{{ t('ver_loading') }}</div>
     <div v-else-if="versionItems.length === 0" class="modal-state">{{ t('ver_empty') }}</div>
     <div v-else class="version-list">
       <div v-for="(v, vi) in versionItems" :key="v.id" class="version-item">
-        <div class="version-head" @click="v._expanded = !v._expanded" style="cursor:pointer">
+        <div class="version-head" style="cursor: pointer" @click="v._expanded = !v._expanded">
           <span class="version-num">v{{ v.versionNumber }}</span>
           <span class="version-time">{{ formatVersionTime(v.createdAt) }}</span>
         </div>
@@ -89,7 +100,14 @@ watch(() => props.showModalType, (type) => {
         </div>
         <div class="version-foot">
           <span class="version-device">{{ v.sourceDevice?.name || '' }}</span>
-          <Button v-if="v.versionNumber !== latestVersionNum" variant="ghost" size="sm" class="version-restore-btn" :disabled="restoringId === v.id" @click="restoreVersion(v.id)">
+          <Button
+            v-if="v.versionNumber !== latestVersionNum"
+            variant="ghost"
+            size="sm"
+            class="version-restore-btn"
+            :disabled="restoringId === v.id"
+            @click="restoreVersion(v.id)"
+          >
             {{ restoringId === v.id ? '...' : t('ver_restore') }}
           </Button>
           <span v-else class="version-current">{{ t('ver_current') }}</span>
@@ -100,18 +118,87 @@ watch(() => props.showModalType, (type) => {
 </template>
 
 <style scoped>
-.version-list { display:flex; flex-direction:column; gap:8px; max-height:360px; overflow-y:auto; }
-.version-item { padding:12px; border-radius:var(--radius-md); background:var(--bg-hover); border:1px solid var(--border-subtle); }
-.version-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
-.version-num { font-size:13px; font-weight:600; color:var(--accent); }
-.version-time { font-size:11px; color:var(--text-tertiary); }
-.version-preview { font-size:13px; color:var(--text-secondary); line-height:1.5; max-height:3em; overflow:hidden; text-overflow:ellipsis; word-break:break-all; }
-.version-full { margin-top:6px; }
-.version-full-label { font-size:11px; color:var(--text-tertiary); margin-bottom:4px; }
-.version-code { font-size:12px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:8px; white-space:pre-wrap; word-break:break-all; max-height:120px; overflow-y:auto; font-family:'SF Mono',monospace; color:var(--text-secondary); margin:0; }
-.version-diff-hint { font-size:11px; color:var(--accent); margin-top:6px; }
-.version-foot { display:flex; align-items:center; justify-content:space-between; margin-top:8px; }
-.version-device { font-size:11px; color:var(--text-tertiary); }
-.version-restore-btn { font-size:12px; color:var(--accent); }
-.version-current { font-size:11px; color:var(--text-tertiary); font-weight:500; }
+.version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.version-item {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+}
+.version-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.version-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.version-time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.version-preview {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-height: 3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-all;
+}
+.version-full {
+  margin-top: 6px;
+}
+.version-full-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+.version-code {
+  font-size: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: 'SF Mono', monospace;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.version-diff-hint {
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 6px;
+}
+.version-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.version-device {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.version-restore-btn {
+  font-size: 12px;
+  color: var(--accent);
+}
+.version-current {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
 </style>

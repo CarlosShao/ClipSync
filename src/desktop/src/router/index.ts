@@ -30,13 +30,13 @@ const router = createRouter({
 router.beforeEach((to) => {
   // Skip guard for /auth
   if (to.path.startsWith('/auth')) return true
-  
+
   // For app routes, check token
   if (to.path.startsWith('/app')) {
     const token = localStorage.getItem('clipsync-token')
     if (!token) return '/auth'
   }
-  
+
   return true
 })
 

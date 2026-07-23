@@ -14,14 +14,21 @@ export async function migrateHierarchy(): Promise<boolean> {
   return res.ok
 }
 
-export async function createFavoriteCollection(name: string, icon?: string, parentId?: string): Promise<{ collection: any } | null> {
+export async function createFavoriteCollection(
+  name: string,
+  icon?: string,
+  parentId?: string,
+): Promise<{ collection: any } | null> {
   const body: any = { name, icon }
   if (parentId) body.parentId = parentId
   const res = await api('POST', '/api/favorites/collections', body)
   return res.ok ? res.data : null
 }
 
-export async function updateFavoriteCollection(id: string, data: { name?: string; icon?: string; sortOrder?: number }): Promise<{ collection: any } | null> {
+export async function updateFavoriteCollection(
+  id: string,
+  data: { name?: string; icon?: string; sortOrder?: number },
+): Promise<{ collection: any } | null> {
   const res = await api('PUT', `/api/favorites/collections/${id}`, data)
   return res.ok ? res.data : null
 }
@@ -56,7 +63,11 @@ export async function getCollectionItems(collectionId: string): Promise<{ items:
   return res.ok ? res.data : null
 }
 
-export async function setItemTags(itemId: string, tags: string[], tagColors?: Record<string, string>): Promise<{ tags: string[]; tagColors: Record<string, string> } | null> {
+export async function setItemTags(
+  itemId: string,
+  tags: string[],
+  tagColors?: Record<string, string>,
+): Promise<{ tags: string[]; tagColors: Record<string, string> } | null> {
   const body: any = { tags }
   if (tagColors) body.tagColors = tagColors
   const res = await api('PUT', `/api/favorites/${itemId}/tags`, body)
@@ -74,11 +85,14 @@ export interface FavoriteTag {
 }
 export async function getAllFavoriteTags(): Promise<FavoriteTag[]> {
   const res = await api('GET', '/api/favorites/tags')
-  return res.ok ? (res.data?.tags || []) : []
+  return res.ok ? res.data?.tags || [] : []
 }
 
 /** Toggle manual sensitive flag on a clipboard item */
-export async function toggleSensitive(itemId: string, sensitive: boolean): Promise<{ id: string; sensitive: boolean } | null> {
+export async function toggleSensitive(
+  itemId: string,
+  sensitive: boolean,
+): Promise<{ id: string; sensitive: boolean } | null> {
   const res = await api('PUT', `/api/clipboard/${itemId}/sensitive`, { sensitive })
   return res.ok ? res.data : null
 }

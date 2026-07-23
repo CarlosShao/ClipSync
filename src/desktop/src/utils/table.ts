@@ -22,7 +22,10 @@ export function splitCsvLine(line: string, delimiter: string): string[] {
     const ch = line[i]
     if (inQuotes) {
       if (ch === '"') {
-        if (line[i + 1] === '"') { cur += '"'; i++ } else inQuotes = false
+        if (line[i + 1] === '"') {
+          cur += '"'
+          i++
+        } else inQuotes = false
       } else cur += ch
     } else if (ch === '"') {
       inQuotes = true
@@ -83,7 +86,10 @@ export function parseTable(content: string): ParsedTable | null {
         const headVal = (first[col] || '').trim()
         const headIsNum = /^-?\d+(\.\d+)?$/.test(headVal)
         const dataHasNum = dataRows.some((r) => /^-?\d+(\.\d+)?$/.test((r[col] || '').trim()))
-        if (!headIsNum && dataHasNum) { hasHeader = true; break }
+        if (!headIsNum && dataHasNum) {
+          hasHeader = true
+          break
+        }
       }
     }
 

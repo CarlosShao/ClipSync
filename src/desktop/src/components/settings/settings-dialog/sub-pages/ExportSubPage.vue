@@ -88,19 +88,62 @@ async function handleExportRequest() {
 </template>
 
 <style scoped>
-.sp-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.sp-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
-.export-box { display: flex; flex-direction: column; gap: 16px; padding: 4px 0; }
-.export-row { display: flex; gap: 16px; align-items: flex-start; }
-.export-ico-box {
-  width: 48px; height: 48px; border-radius: 12px;
-  background: var(--bg-hover); display: flex; align-items: center;
-  justify-content: center; flex-shrink: 0;
+.sp-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
-.export-ico { color: var(--accent); }
-.export-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
-.export-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
-.export-feats { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--text-secondary); }
-.export-request-btn { margin-top: 4px; }
-.btn-ico-left { margin-right: 6px; }
+.sp-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.export-box {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0;
+}
+.export-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.export-ico-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.export-ico {
+  color: var(--accent);
+}
+.export-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.export-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.export-feats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.export-request-btn {
+  margin-top: 4px;
+}
+.btn-ico-left {
+  margin-right: 6px;
+}
 </style>

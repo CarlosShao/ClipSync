@@ -6,9 +6,7 @@ import { useI18n } from '@/composables/useI18n'
 import { Toaster } from 'vue-sonner'
 import * as tauri from '@/lib/tauri'
 
-const QuickPasteStandalone = defineAsyncComponent(() =>
-  import('@/views/QuickPasteStandalone.vue')
-)
+const QuickPasteStandalone = defineAsyncComponent(() => import('@/views/QuickPasteStandalone.vue'))
 
 const configStore = useConfigStore()
 const { currentMode } = useTheme()
@@ -17,14 +15,16 @@ const { setLang } = useI18n()
 // Detect standalone QuickPaste mode via URL parameter.
 // Rust creates QP window with ?mode=qp → window.location.search is available
 // SYNCHRONOUSLY before Vue mounts — zero race condition.
-const isQuickPasteStandalone = ref(
-  typeof window !== 'undefined' && window.location.search.includes('mode=qp')
-)
+const isQuickPasteStandalone = ref(typeof window !== 'undefined' && window.location.search.includes('mode=qp'))
 
 onMounted(async () => {
   await configStore.load()
   // Sync titlebar color on mount
-  try { tauri.setTitlebarMode(currentMode.value === 'dark') } catch (e) { console.warn('[App] setTitlebarMode failed:', e) }
+  try {
+    tauri.setTitlebarMode(currentMode.value === 'dark')
+  } catch (e) {
+    console.warn('[App] setTitlebarMode failed:', e)
+  }
   // QP standalone mode: strip body/html background so the transparent
   // Tauri window doesn't show as a colored rectangle (the "frame" bug)
   if (isQuickPasteStandalone.value) {

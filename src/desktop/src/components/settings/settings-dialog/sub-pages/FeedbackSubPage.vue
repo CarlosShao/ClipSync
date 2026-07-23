@@ -92,20 +92,11 @@ async function handleFeedbackSubmit() {
           {{ t('fb_contact') }}
           <span class="fb-optional">({{ t('fb_optional') }})</span>
         </label>
-        <Input
-          v-model="fbForm.contact"
-          type="text"
-          class="fb-input"
-          :placeholder="t('fb_contact_ph')"
-        />
+        <Input v-model="fbForm.contact" type="text" class="fb-input" :placeholder="t('fb_contact_ph')" />
       </div>
 
       <!-- Submit -->
-      <Button
-        class="w-full"
-        :disabled="!fbForm.description.trim() || fbSending"
-        @click="handleFeedbackSubmit"
-      >
+      <Button class="w-full" :disabled="!fbForm.description.trim() || fbSending" @click="handleFeedbackSubmit">
         {{ fbSending ? '...' : t('fb_submit') }}
       </Button>
     </div>
@@ -113,25 +104,75 @@ async function handleFeedbackSubmit() {
 </template>
 
 <style scoped>
-.sp-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.sp-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
-.fb-form { display: flex; flex-direction: column; gap: 16px; }
-.fb-field { display: flex; flex-direction: column; gap: 6px; }
-.fb-label { font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.fb-optional { font-size: 12px; color: var(--text-tertiary); font-weight: 400; }
-.fb-type-row { display: flex; gap: 8px; }
-.fb-type-btn { font-size: 12px; padding: 6px 14px; }
+.sp-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.sp-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.fb-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.fb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fb-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.fb-optional {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+.fb-type-row {
+  display: flex;
+  gap: 8px;
+}
+.fb-type-btn {
+  font-size: 12px;
+  padding: 6px 14px;
+}
 .fb-textarea {
-  width: 100%; padding: 10px; border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); font-size: 13px; resize: vertical;
-  background: var(--bg-surface); color: var(--text-primary); font-family: inherit;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  resize: vertical;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: inherit;
 }
 .fb-textarea:focus {
-  outline: none; border-color: var(--border-focus);
+  outline: none;
+  border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-light);
 }
-.fb-char-count { font-size: 11px; color: var(--text-tertiary); text-align: right; }
-.fb-input { width: 100%; padding-left: 12px !important; }
-.fb-success-box { text-align: center; padding: 32px 0; }
-.fb-success { font-size: 14px; color: var(--success); }
+.fb-char-count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-align: right;
+}
+.fb-input {
+  width: 100%;
+  padding-left: 12px !important;
+}
+.fb-success-box {
+  text-align: center;
+  padding: 32px 0;
+}
+.fb-success {
+  font-size: 14px;
+  color: var(--success);
+}
 </style>

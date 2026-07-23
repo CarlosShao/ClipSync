@@ -1,11 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import {
-  getTemplates,
-  createTemplate,
-  updateTemplate,
-  deleteTemplate,
-} from '@/api/client'
+import { getTemplates, createTemplate, updateTemplate, deleteTemplate } from '@/api/client'
 import { useClipboard } from '@/composables/useClipboard'
 import { useSonner } from '@/composables/useSonner'
 import * as tauri from '@/lib/tauri'
@@ -128,10 +123,7 @@ export const useTemplateStore = defineStore('templates', () => {
     return null
   }
 
-  async function update(
-    id: string,
-    data: { name?: string; content?: string },
-  ): Promise<ClipboardTemplate | null> {
+  async function update(id: string, data: { name?: string; content?: string }): Promise<ClipboardTemplate | null> {
     try {
       const updated = await updateTemplate(id, data)
       if (updated) {
@@ -163,10 +155,7 @@ export const useTemplateStore = defineStore('templates', () => {
   }
 
   // 解析并写入剪贴板；userValues 为用户变量填充值，globals 为全局默认值回退
-  async function insertTemplate(
-    tpl: ClipboardTemplate,
-    userValues: Record<string, string> = {},
-  ): Promise<boolean> {
+  async function insertTemplate(tpl: ClipboardTemplate, userValues: Record<string, string> = {}): Promise<boolean> {
     try {
       const globals = useTemplateVariableStore().variables
       const resolved = await resolveTemplate(tpl.content, userValues, globals)

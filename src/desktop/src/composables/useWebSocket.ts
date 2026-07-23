@@ -7,8 +7,8 @@ const handlers: MessageHandler[] = []
 
 // Heartbeat config — must stay below the server's 30s heartbeatInterval
 // and above the server's 5s heartbeatTimeout.
-const PING_INTERVAL = 25_000   // send ping every 25s
-const PONG_TIMEOUT  = 35_000   // expect pong within 35s of last ping; force reconnect otherwise
+const PING_INTERVAL = 25_000 // send ping every 25s
+const PONG_TIMEOUT = 35_000 // expect pong within 35s of last ping; force reconnect otherwise
 
 export function useWebSocket() {
   const connected = ref(false)
@@ -57,8 +57,12 @@ export function useWebSocket() {
 
       lastMessage.value = data
       // 通知所有注册的处理器
-      handlers.forEach(h => {
-        try { h(data) } catch (e) { console.warn('[WS] Handler error:', e) }
+      handlers.forEach((h) => {
+        try {
+          h(data)
+        } catch (e) {
+          console.warn('[WS] Handler error:', e)
+        }
       })
     }
 
@@ -85,14 +89,22 @@ export function useWebSocket() {
       if (ws && ws.readyState === WebSocket.OPEN) {
         try {
           ws.send(JSON.stringify({ type: 'ping' }))
-        } catch { /* send failure will trigger onclose */ }
+        } catch {
+          /* send failure will trigger onclose */
+        }
       }
     }, PING_INTERVAL)
   }
 
   function stopHeartbeat() {
-    if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
-    if (pongTimer) { clearTimeout(pongTimer); pongTimer = null }
+    if (pingTimer) {
+      clearInterval(pingTimer)
+      pingTimer = null
+    }
+    if (pongTimer) {
+      clearTimeout(pongTimer)
+      pongTimer = null
+    }
   }
 
   /// If no pong arrives within PONG_TIMEOUT of the last ping, the connection
@@ -129,9 +141,15 @@ export function useWebSocket() {
   }
 
   function disconnect() {
-    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
     stopHeartbeat()
-    if (ws) { ws.close(); ws = null }
+    if (ws) {
+      ws.close()
+      ws = null
+    }
     connected.value = false
   }
 

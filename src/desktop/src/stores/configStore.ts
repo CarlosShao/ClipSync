@@ -24,7 +24,7 @@ export const useConfigStore = defineStore('config', () => {
   const syncInterval = ref(0) // 0=realtime
   const maxHistory = ref(500)
   const reduceMotion = ref(false)
-  const autoSync = ref(true)   // 自动同步剪贴板（默认开启）
+  const autoSync = ref(true) // 自动同步剪贴板（默认开启）
   const imageCompress = ref(false) // 图片压缩（默认关闭）
   const privacyMode = ref(false) // 隐私模式：自动隐藏敏感内容
   const autoBlur = ref(false) // 窗口失焦时自动隐藏敏感内容
@@ -38,7 +38,9 @@ export const useConfigStore = defineStore('config', () => {
       config.value = c
       const auto = await tauri.isAutostartEnabled().catch(() => false)
       autostart.value = auto
-    } catch { /* defaults */ }
+    } catch {
+      /* defaults */
+    }
     // 根据构建模式强制设置正确的 server_url
     config.value.server_url = import.meta.env.DEV ? '' : 'http://localhost:3001'
     // 从 localStorage 恢复 token（Tauri getConfig 可能不包含 token）
@@ -59,7 +61,9 @@ export const useConfigStore = defineStore('config', () => {
       if (typeof prefs.autostart === 'boolean') autostart.value = prefs.autostart
       if (typeof prefs.privacyMode === 'boolean') privacyMode.value = prefs.privacyMode
       if (typeof prefs.autoBlur === 'boolean') autoBlur.value = prefs.autoBlur
-    } catch { /* ignore corrupt data */ }
+    } catch {
+      /* ignore corrupt data */
+    }
 
     // 有 token 时立即从后端拉取用户资料（name/email/phone/plan/avatar）
     // 否则重开 app 后所有 profile 字段永远显示 "Not set"
@@ -73,7 +77,9 @@ export const useConfigStore = defineStore('config', () => {
     try {
       await tauri.updateConfig(updated)
       config.value = updated
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   // 统一登录收尾：持久化 token + 注册设备 + 拉取用户资料。供 login(验证码) 与 二维码配对兑换 复用
@@ -107,7 +113,11 @@ export const useConfigStore = defineStore('config', () => {
     config.value.user_id = null
     config.value.device_id = null
     // 释放剪贴板图片的 blob URL，防止旧账号图片常驻 WebView 内存（泄漏修复）
-    try { useClipboard().resetImages() } catch { /* composable 尚未初始化则忽略 */ }
+    try {
+      useClipboard().resetImages()
+    } catch {
+      /* composable 尚未初始化则忽略 */
+    }
     // 清除 Rust 端持久化的认证态（clear_auth 命令只清 token/device_id/user_id，
     // 不会动 server_url/快捷键）。不再用 save({token:null})，避免 update_config
     // 整体覆盖语义误伤其它字段。
@@ -140,10 +150,12 @@ export const useConfigStore = defineStore('config', () => {
     try {
       await fetch(`${serverUrl}/api/devices`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({ deviceName: 'Desktop', deviceType: 'desktop', platform }),
       })
-    } catch { /* 设备注册失败不影响登录 */ }
+    } catch {
+      /* 设备注册失败不影响登录 */
+    }
   }
 
   function toggleAutoSync(val?: boolean) {
@@ -179,7 +191,9 @@ export const useConfigStore = defineStore('config', () => {
       if (next) await tauri.enableAutostart()
       else await tauri.disableAutostart()
       autostart.value = next
-    } catch { /* ignore Tauri API failure, still persist preference */ }
+    } catch {
+      /* ignore Tauri API failure, still persist preference */
+    }
     savePrefs()
   }
 
@@ -195,7 +209,7 @@ export const useConfigStore = defineStore('config', () => {
       const token = config.value.token
       if (!token) return
       const res = await fetch(`${serverUrl}/api/auth/me`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) return
       const data = await res.json()
@@ -207,7 +221,9 @@ export const useConfigStore = defineStore('config', () => {
         // avatarUrl 存到 localStorage 供 ProfileView 使用
         if (data.avatarUrl) localStorage.setItem('clipsync-avatar', data.avatarUrl)
       }
-    } catch { /* 静默失败，user 保持默认值 */ }
+    } catch {
+      /* 静默失败，user 保持默认值 */
+    }
   }
 
   // 更新用户资料（昵称/头像）→ 同步调 API + 本地 state
@@ -221,7 +237,7 @@ export const useConfigStore = defineStore('config', () => {
       if (partial.avatarUrl !== undefined) body.avatarUrl = partial.avatarUrl
       const res = await fetch(`${serverUrl}/api/auth/profile`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
       })
       if (res.ok) {
@@ -232,7 +248,9 @@ export const useConfigStore = defineStore('config', () => {
         return true
       }
       return false
-    } catch { return false }
+    } catch {
+      return false
+    }
   }
 
   // 修改密码（已登录状态，需要旧密码 + 新密码）
@@ -243,7 +261,7 @@ export const useConfigStore = defineStore('config', () => {
     try {
       const res = await fetch(`${serverUrl}/api/auth/change-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ oldPassword, newPassword }),
       })
       const data = await res.json()
@@ -255,11 +273,33 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   return {
-    config, user, autostart, syncInterval, maxHistory, reduceMotion,
-    autoSync, imageCompress, privacyMode, autoBlur,
-    isLoggedIn, serverUrl, load, save, savePrefs, login, completeLogin, registerCurrentDevice,
-    fetchUserProfile, updateUserProfile, changePassword,
-    toggleAutostart, toggleAutoSync, toggleImageCompress, toggleReduceMotion,
-    togglePrivacyMode, toggleAutoBlur, logout,
+    config,
+    user,
+    autostart,
+    syncInterval,
+    maxHistory,
+    reduceMotion,
+    autoSync,
+    imageCompress,
+    privacyMode,
+    autoBlur,
+    isLoggedIn,
+    serverUrl,
+    load,
+    save,
+    savePrefs,
+    login,
+    completeLogin,
+    registerCurrentDevice,
+    fetchUserProfile,
+    updateUserProfile,
+    changePassword,
+    toggleAutostart,
+    toggleAutoSync,
+    toggleImageCompress,
+    toggleReduceMotion,
+    togglePrivacyMode,
+    toggleAutoBlur,
+    logout,
   }
 })

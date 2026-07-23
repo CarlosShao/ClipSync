@@ -6,14 +6,7 @@ export interface AppConfig {
   quick_paste_shortcut: string | null
 }
 
-export type ThemeStyle =
-  | 'vercel'
-  | 'clipsync'
-  | 'notion'
-  | 'linear'
-  | 'apple'
-  | 'raycast'
-  | 'arc'
+export type ThemeStyle = 'vercel' | 'clipsync' | 'notion' | 'linear' | 'apple' | 'raycast' | 'arc'
 
 export type ThemeMode = 'light' | 'dark'
 
@@ -24,12 +17,7 @@ export interface ClipboardImageInfo {
   hash?: string
 }
 
-export type AuthView =
-  | 'login-phone'
-  | 'login-password'
-  | 'register'
-  | 'set-password'
-  | 'forgot-password'
+export type AuthView = 'login-phone' | 'login-password' | 'register' | 'set-password' | 'forgot-password'
 
 // 模板库条目：后端仅持久化 name + content（含 {{变量}} 占位符），变量解析在前端完成
 export interface ClipboardTemplate {

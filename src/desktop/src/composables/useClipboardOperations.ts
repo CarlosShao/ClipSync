@@ -25,9 +25,12 @@ export function useClipboardOperations(isArchive: { value: boolean }, emit: Clip
   const { showConfirm } = useConfirmDialog()
 
   function handleBatchDelete() {
-    if (clip.selectedCount.value === 0) { toast.show(t('batch_none'), 'warning'); return }
+    if (clip.selectedCount.value === 0) {
+      toast.show(t('batch_none'), 'warning')
+      return
+    }
     const count = clip.selectedCount.value
-    const favCount = clip.items.value.filter(i => i.selected && (i as any).isFavorite).length
+    const favCount = clip.items.value.filter((i) => i.selected && (i as any).isFavorite).length
 
     if (isArchive.value) {
       showConfirm({
@@ -47,9 +50,10 @@ export function useClipboardOperations(isArchive: { value: boolean }, emit: Clip
       return
     }
 
-    const msg = favCount > 0
-      ? t('confirm_delete_permanent_fav_batch_msg', { n: favCount })
-      : t('confirm_delete_permanent_batch_msg', { n: count })
+    const msg =
+      favCount > 0
+        ? t('confirm_delete_permanent_fav_batch_msg', { n: favCount })
+        : t('confirm_delete_permanent_batch_msg', { n: count })
     showConfirm({
       title: t('confirm_delete_title'),
       message: msg,
@@ -59,7 +63,7 @@ export function useClipboardOperations(isArchive: { value: boolean }, emit: Clip
       secondaryVariant: 'default',
       onConfirm: async () => {
         try {
-          const favItems = clip.items.value.filter(i => i.selected && (i as any).isFavorite)
+          const favItems = clip.items.value.filter((i) => i.selected && (i as any).isFavorite)
           for (const fi of favItems) clip.toggleFavorite(fi)
           await clip.batchDelete()
           toast.show(t('batch_deleted', { n: count }), 'success')
@@ -69,7 +73,7 @@ export function useClipboardOperations(isArchive: { value: boolean }, emit: Clip
       },
       onSecondary: async () => {
         try {
-          const selected = clip.items.value.filter(i => i.selected)
+          const selected = clip.items.value.filter((i) => i.selected)
           for (const si of selected) await clip.archiveItem(si)
           toast.show(t('batch_archived', { n: selected.length }), 'success')
         } catch (err: any) {
@@ -80,8 +84,11 @@ export function useClipboardOperations(isArchive: { value: boolean }, emit: Clip
   }
 
   async function handleBatchUnarchive() {
-    const selected = clip.items.value.filter(i => i.selected)
-    if (selected.length === 0) { toast.show(t('batch_none'), 'warning'); return }
+    const selected = clip.items.value.filter((i) => i.selected)
+    if (selected.length === 0) {
+      toast.show(t('batch_none'), 'warning')
+      return
+    }
     try {
       for (const si of selected) await clip.unarchiveItem(si)
       toast.show(t('batch_restored', { n: selected.length }), 'success')
@@ -176,7 +183,9 @@ export function useClipboardOperations(isArchive: { value: boolean }, emit: Clip
         })
         return
       }
-    } catch (e) { console.warn('[Clipboard] open path failed:', e) }
+    } catch (e) {
+      console.warn('[Clipboard] open path failed:', e)
+    }
     toast.show(t('err_no_path'), 'warning')
   }
 

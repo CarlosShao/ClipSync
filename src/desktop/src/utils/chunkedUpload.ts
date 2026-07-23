@@ -13,9 +13,19 @@ import { logger } from './logger'
 
 // Upload state persistence for resume after refresh
 const UPLOAD_STATE_KEY = 'clipsync-chunked-upload'
-interface UploadState { uploadId: string; filename: string; totalChunks: number; uploadedChunks: number[]; timestamp: number }
+interface UploadState {
+  uploadId: string
+  filename: string
+  totalChunks: number
+  uploadedChunks: number[]
+  timestamp: number
+}
 function saveUploadState(state: UploadState | null) {
-  try { localStorage.setItem(UPLOAD_STATE_KEY, state ? JSON.stringify(state) : '') } catch (e) { console.warn('[ChunkedUpload] state persist failed:', e) }
+  try {
+    localStorage.setItem(UPLOAD_STATE_KEY, state ? JSON.stringify(state) : '')
+  } catch (e) {
+    console.warn('[ChunkedUpload] state persist failed:', e)
+  }
 }
 function loadUploadState(): UploadState | null {
   try {
@@ -23,9 +33,14 @@ function loadUploadState(): UploadState | null {
     if (!raw) return null
     const state: UploadState = JSON.parse(raw)
     // Expire after 24 hours
-    if (Date.now() - state.timestamp > 24 * 60 * 60 * 1000) { localStorage.removeItem(UPLOAD_STATE_KEY); return null }
+    if (Date.now() - state.timestamp > 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(UPLOAD_STATE_KEY)
+      return null
+    }
     return state
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 const CHUNK_SIZE = 10 * 1024 * 1024 // 10MB per chunk (server limit)
@@ -66,7 +81,7 @@ async function uploadChunk(uploadId: string, chunkIndex: number, chunk: Blob, re
     try {
       const res = await fetch(`${config.serverUrl}/api/upload/chunk/${uploadId}/${chunkIndex}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
         credentials: 'include',
       })
@@ -74,7 +89,7 @@ async function uploadChunk(uploadId: string, chunkIndex: number, chunk: Blob, re
       // 429 / 5xx: retry with backoff
       if (res.status === 429 || res.status >= 500) {
         if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 1000 * attempt))
+          await new Promise((r) => setTimeout(r, 1000 * attempt))
           continue
         }
       }
@@ -82,7 +97,7 @@ async function uploadChunk(uploadId: string, chunkIndex: number, chunk: Blob, re
       throw new Error(`Chunk ${chunkIndex} failed: ${res.status} ${text}`)
     } catch (e: any) {
       if (attempt < retries && (e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError'))) {
-        await new Promise(r => setTimeout(r, 1000 * attempt))
+        await new Promise((r) => setTimeout(r, 1000 * attempt))
         continue
       }
       throw e
@@ -149,7 +164,13 @@ export async function chunkedUpload(
   }
 
   // Save state for resume after refresh
-  saveUploadState({ uploadId, filename: file.name, totalChunks, uploadedChunks: uploadedIndices, timestamp: Date.now() })
+  saveUploadState({
+    uploadId,
+    filename: file.name,
+    totalChunks,
+    uploadedChunks: uploadedIndices,
+    timestamp: Date.now(),
+  })
 
   // Upload each chunk (skip already uploaded)
   for (let i = 0; i < totalChunks; i++) {
@@ -163,7 +184,13 @@ export async function chunkedUpload(
 
     // Update saved state after each successful chunk
     uploadedIndices.push(i)
-    saveUploadState({ uploadId, filename: file.name, totalChunks, uploadedChunks: uploadedIndices, timestamp: Date.now() })
+    saveUploadState({
+      uploadId,
+      filename: file.name,
+      totalChunks,
+      uploadedChunks: uploadedIndices,
+      timestamp: Date.now(),
+    })
 
     onProgress?.({
       uploadId,

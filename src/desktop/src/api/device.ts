@@ -46,11 +46,6 @@ export function initPairing() {
 }
 
 // 二维码配对：兑换令牌（扫码设备调用，等价于登录到令牌所属账号）
-export function redeemPairing(payload: {
-  token: string
-  deviceName: string
-  deviceType: string
-  platform: string
-}) {
+export function redeemPairing(payload: { token: string; deviceName: string; deviceType: string; platform: string }) {
   return api<PairingRedeemResult>('POST', '/api/devices/pairing/redeem', payload)
 }

@@ -3,12 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useClipboard } from '@/composables/useClipboard'
-import {
-  getSharedLinks,
-  createSharedLink,
-  deleteSharedLink,
-  type SharedLink,
-} from '@/api/client'
+import { getSharedLinks, createSharedLink, deleteSharedLink, type SharedLink } from '@/api/client'
 import { Link, Copy, Trash2, ChevronDown } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -29,7 +24,7 @@ const error = ref('')
 const revokeId = ref<string | null>(null)
 
 // 列表项结构（与后端 /api/shared-links 返回一致）
-interface SharedLinkLike extends SharedLink {}
+type SharedLinkLike = SharedLink
 
 async function load() {
   loading.value = true
@@ -122,12 +117,7 @@ onMounted(load)
     <div v-if="addOpen" class="pwd-change-form">
       <div class="pwd-field">
         <label class="pwd-label">{{ t('shared_links_content') }}</label>
-        <Textarea
-          v-model="content"
-          class="sg-input--block"
-          :placeholder="t('shared_links_content_ph')"
-          rows="4"
-        />
+        <Textarea v-model="content" class="sg-input--block" :placeholder="t('shared_links_content_ph')" rows="4" />
       </div>
       <div class="pwd-field">
         <label class="pwd-label">{{ t('shared_links_title') }}</label>
@@ -148,12 +138,7 @@ onMounted(load)
         <Button size="default" class="px-6 min-w-[100px] rounded-md" @click="createLink">
           {{ t('shared_links_create_btn') }}
         </Button>
-        <Button
-          size="default"
-          variant="outline"
-          class="px-6 min-w-[100px] rounded-md"
-          @click="addOpen = false"
-        >
+        <Button size="default" variant="outline" class="px-6 min-w-[100px] rounded-md" @click="addOpen = false">
           {{ t('shared_links_cancel') }}
         </Button>
       </div>
@@ -214,17 +199,54 @@ onMounted(load)
 </template>
 
 <style scoped>
-.settings-view { padding: 24px; max-width: 720px; overflow-y: auto; flex: 1; }
-.sv-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
+.settings-view {
+  padding: 24px;
+  max-width: 720px;
+  overflow-y: auto;
+  flex: 1;
+}
+.sv-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 24px;
+}
 
 /* 系统设置分组/行样式（与 SettingsView 一致） */
-.sg-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: var(--radius-md); gap: 16px; margin-bottom: 8px; }
-.sg-row:hover { background: var(--bg-hover); }
-.sg-label { flex: 1; min-width: 0; }
-.sg-name { font-size: 14px; font-weight: 500; }
-.sg-hint { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
-.sg-arrow { width: 16px; height: 16px; color: var(--text-tertiary); flex-shrink: 0; transition: transform 0.15s; }
-.sg-arrow--rotated { transform: rotate(180deg); }
+.sg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.sg-row:hover {
+  background: var(--bg-hover);
+}
+.sg-label {
+  flex: 1;
+  min-width: 0;
+}
+.sg-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.sg-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 1px;
+}
+.sg-arrow {
+  width: 16px;
+  height: 16px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.sg-arrow--rotated {
+  transform: rotate(180deg);
+}
 
 .pwd-change-form {
   margin: 4px 0 16px;
@@ -233,26 +255,126 @@ onMounted(load)
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
-.pwd-field { margin-bottom: 14px; padding-left: 4px; }
-.pwd-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; padding-left: 4px; }
-.sg-input--block { width: 100%; padding-left: 16px !important; }
-.pwd-actions { display: flex; gap: 10px; margin-top: 12px; padding-left: 4px; }
-.pwd-error { color: var(--danger, #ef4444); font-size: 12px; margin-top: 6px; }
+.pwd-field {
+  margin-bottom: 14px;
+  padding-left: 4px;
+}
+.pwd-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  padding-left: 4px;
+}
+.sg-input--block {
+  width: 100%;
+  padding-left: 16px !important;
+}
+.pwd-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  padding-left: 4px;
+}
+.pwd-error {
+  color: var(--danger, #ef4444);
+  font-size: 12px;
+  margin-top: 6px;
+}
 
-.links-list { display: flex; flex-direction: column; gap: 12px; }
-.link-card { display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); transition: all 0.15s; }
-.link-card:hover { border-color: var(--accent); box-shadow: var(--shadow-elevated); }
-.link-icon { width: 40px; height: 40px; border-radius: var(--radius-sm); background: var(--info-bg); display: flex; align-items: center; justify-content: center; color: var(--info); flex-shrink: 0; }
-.link-info { flex: 1; min-width: 0; }
-.link-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.link-url { font-size: 12px; color: var(--text-secondary); font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.link-meta { text-align: right; flex-shrink: 0; }
-.link-views { font-size: 12px; color: var(--text-tertiary); }
-.link-date { font-size: 11px; color: var(--text-tertiary); }
-.link-copy, .link-revoke { background: none; border: none; cursor: pointer; color: var(--text-tertiary); padding: 8px; border-radius: var(--radius-sm); transition: all 150ms; flex-shrink: 0; }
-.link-copy:hover { color: var(--accent); background: var(--accent-light); }
-.link-revoke:hover { color: var(--danger, #ef4444); background: var(--danger-light, rgba(239, 68, 68, 0.1)); }
-.empty-state { text-align: center; padding: 40px 0; }
-.empty-icon { font-size: 32px; margin-bottom: 8px; }
-.empty-text { font-size: 13px; color: var(--text-secondary); }
+.links-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.link-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  transition: all 0.15s;
+}
+.link-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-elevated);
+}
+.link-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--info-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--info);
+  flex-shrink: 0;
+}
+.link-info {
+  flex: 1;
+  min-width: 0;
+}
+.link-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-url {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-meta {
+  text-align: right;
+  flex-shrink: 0;
+}
+.link-views {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.link-date {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.link-copy,
+.link-revoke {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  transition: all 150ms;
+  flex-shrink: 0;
+}
+.link-copy:hover {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+.link-revoke:hover {
+  color: var(--danger, #ef4444);
+  background: var(--danger-light, rgba(239, 68, 68, 0.1));
+}
+.empty-state {
+  text-align: center;
+  padding: 40px 0;
+}
+.empty-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+.empty-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
 </style>

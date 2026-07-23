@@ -22,7 +22,7 @@ async function handleExportRequest() {
       if ('showSaveFilePicker' in window) {
         try {
           const handle = await (window as any).showSaveFilePicker({
-            suggestedName: `clipsync-export-${new Date().toISOString().slice(0,10)}.json`,
+            suggestedName: `clipsync-export-${new Date().toISOString().slice(0, 10)}.json`,
             types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
           })
           const writable = await handle.createWritable()
@@ -40,7 +40,7 @@ async function handleExportRequest() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `clipsync-export-${new Date().toISOString().slice(0,10)}.json`
+      a.download = `clipsync-export-${new Date().toISOString().slice(0, 10)}.json`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -69,9 +69,7 @@ async function handleExportRequest() {
           <p class="export-desc">{{ t('export_msg') }}</p>
         </div>
       </div>
-      <div class="export-feats">
-        <span>✓ 剪贴板记录</span><span>✓ 设备信息</span><span>✓ 账户资料</span>
-      </div>
+      <div class="export-feats"><span>✓ 剪贴板记录</span><span>✓ 设备信息</span><span>✓ 账户资料</span></div>
       <Button class="w-full export-request-btn" @click="handleExportRequest">
         <Download :size="14" class="btn-ico-left" />
         {{ t('export_request_btn') }}
@@ -81,13 +79,51 @@ async function handleExportRequest() {
 </template>
 
 <style scoped>
-.export-box { display:flex; flex-direction:column; gap:16px; padding:4px 0; }
-.export-row { display:flex; gap:16px; align-items:flex-start; }
-.export-ico-box { width:48px; height:48px; border-radius:12px; background:var(--bg-hover); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-.export-ico { color: var(--accent); }
-.export-title { font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:4px; }
-.export-desc { font-size:12px; color:var(--text-secondary); line-height:1.6; }
-.export-feats { display:flex; gap:8px; font-size:11px; color:var(--text-tertiary); }
-.export-request-btn { margin-top:4px; }
-.btn-ico-left { margin-right:6px; }
+.export-box {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0;
+}
+.export-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.export-ico-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.export-ico {
+  color: var(--accent);
+}
+.export-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.export-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.export-feats {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.export-request-btn {
+  margin-top: 4px;
+}
+.btn-ico-left {
+  margin-right: 6px;
+}
 </style>

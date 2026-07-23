@@ -34,5 +34,5 @@ export function setArchive(id: string, archived: boolean) {
 /** Get clipboard item content only (lightweight, for preview) */
 export async function getClipboardItemContent(id: string): Promise<string | null> {
   const res = await api<{ contentEncrypted: string }>('GET', `/api/clipboard/${id}/content`)
-  return res.ok ? (res.data?.contentEncrypted || null) : null
+  return res.ok ? res.data?.contentEncrypted || null : null
 }

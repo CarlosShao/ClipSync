@@ -6,10 +6,7 @@ import { useClipboardActions } from '@/composables/useClipboardActions'
 /**
  * 剪贴板右击上下文菜单 + 「更多」下拉状态管理。
  */
-export function useContextMenu(
-  actions: ReturnType<typeof useClipboardActions>,
-  focusedIndex: Ref<number>,
-) {
+export function useContextMenu(actions: ReturnType<typeof useClipboardActions>, focusedIndex: Ref<number>) {
   const clip = useClipboard()
   const fav = useFavoritePopover()
 
@@ -21,7 +18,7 @@ export function useContextMenu(
 
   function openCtxMenu(item: ClipItem, e: MouseEvent) {
     if (!actions.requireUnlocked(item)) return
-    const idx = clip.filteredItems.value.findIndex(i => i.id === item.id)
+    const idx = clip.filteredItems.value.findIndex((i) => i.id === item.id)
     if (idx >= 0) focusedIndex.value = idx
     ctxInitialMode.value = 'main'
     ctxItem.value = item
@@ -29,13 +26,17 @@ export function useContextMenu(
     ctxY.value = e.clientY
   }
 
-  function closeCtxMenu() { ctxItem.value = null }
+  function closeCtxMenu() {
+    ctxItem.value = null
+  }
 
   function toggleMore(item: ClipItem) {
     moreOpenId.value = moreOpenId.value === item.id ? null : item.id
   }
 
-  function closeMore() { moreOpenId.value = null }
+  function closeMore() {
+    moreOpenId.value = null
+  }
 
   function openExpiryFromDropdown(item: ClipItem, e: MouseEvent) {
     moreOpenId.value = null
@@ -58,9 +59,16 @@ export function useContextMenu(
   onUnmounted(() => document.removeEventListener('click', handleDocClick))
 
   return reactive({
-    ctxItem, ctxX, ctxY, ctxInitialMode,
-    openCtxMenu, closeCtxMenu,
-    moreOpenId, toggleMore, closeMore, openExpiryFromDropdown,
+    ctxItem,
+    ctxX,
+    ctxY,
+    ctxInitialMode,
+    openCtxMenu,
+    closeCtxMenu,
+    moreOpenId,
+    toggleMore,
+    closeMore,
+    openExpiryFromDropdown,
     handleDocClick,
   })
 }

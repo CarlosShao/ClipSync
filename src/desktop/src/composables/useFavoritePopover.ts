@@ -3,9 +3,29 @@
 // 行内 FavoriteStarCell 渲染气泡，右键菜单动作也走同一 handleFavorite。
 import { ref, computed, nextTick } from 'vue'
 import {
-  Star, Bookmark, Archive, Trash2, Heart, Zap, Shield, Globe, Code2, Music, Video, Settings, Palette,
-  Folder, FolderOpen, FolderPlus, FolderX, FolderSearch, FolderInput, FolderOutput, FolderSync,
-  Image as ImageIcon, FileText,
+  Star,
+  Bookmark,
+  Archive,
+  Trash2,
+  Heart,
+  Zap,
+  Shield,
+  Globe,
+  Code2,
+  Music,
+  Video,
+  Settings,
+  Palette,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  FolderX,
+  FolderSearch,
+  FolderInput,
+  FolderOutput,
+  FolderSync,
+  Image as ImageIcon,
+  FileText,
 } from 'lucide-vue-next'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
@@ -55,7 +75,9 @@ export interface CollectionTreeNode {
 }
 
 function buildCollectionTree(flat: any[]): CollectionTreeNode[] {
-  const sorted = [...flat].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.path).localeCompare(String(b.path)))
+  const sorted = [...flat].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.path).localeCompare(String(b.path)),
+  )
   const nodes = new Map<string, CollectionTreeNode>()
   const roots: CollectionTreeNode[] = []
   for (const c of sorted) {
@@ -108,7 +130,7 @@ const favPopoverFlipped = ref(false) // true = show above the item instead of be
 let favPopoverTimer: ReturnType<typeof setTimeout> | null = null
 const favNewName = ref('')
 const showFavNewInput = ref(false)
-let creatingCollection = false  // prevent double-click race condition
+let creatingCollection = false // prevent double-click race condition
 
 async function loadCollections() {
   const data = await getFavoriteCollections()
@@ -134,7 +156,9 @@ function showFavPopover(itemId: string) {
 }
 function startFavPopoverTimer() {
   if (favPopoverTimer) clearTimeout(favPopoverTimer)
-  favPopoverTimer = setTimeout(() => { favPopoverItemId.value = null }, 4000)
+  favPopoverTimer = setTimeout(() => {
+    favPopoverItemId.value = null
+  }, 4000)
 }
 function dismissFavPopover() {
   if (favPopoverTimer) clearTimeout(favPopoverTimer)

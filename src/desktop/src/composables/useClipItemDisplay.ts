@@ -57,7 +57,9 @@ export function useClipItemDisplay() {
         if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
           return parsed[0].split(/[/\\]/).pop() || parsed[0]
         }
-      } catch { /* not JSON */ }
+      } catch {
+        /* not JSON */
+      }
 
       // 内容可能是文件路径数组字符串（旧格式）
       const raw = content.trim()
@@ -65,7 +67,9 @@ export function useClipItemDisplay() {
         try {
           const paths = JSON.parse(raw)
           if (Array.isArray(paths) && paths[0]) return paths[0].split(/[/\\]/).pop() || paths[0]
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
 
       // 内容是文件路径（含反斜杠）
@@ -93,7 +97,10 @@ export function useClipItemDisplay() {
 
   function getTypeLabel(type: string): string {
     const map: Record<string, string> = {
-      text: 'TXT', image: 'IMG', file: 'FILE', link: 'URL',
+      text: 'TXT',
+      image: 'IMG',
+      file: 'FILE',
+      link: 'URL',
     }
     return map[type] || type.toUpperCase()
   }
@@ -131,7 +138,9 @@ export function useClipItemDisplay() {
       const parsed = JSON.parse(content)
       if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') return true
       if (parsed && typeof parsed === 'object' && Array.isArray(parsed.paths) && parsed.paths.length > 0) return true
-    } catch { /* not JSON */ }
+    } catch {
+      /* not JSON */
+    }
 
     // Strategy B: plain string path
     if (/^[A-Za-z]:[\\/]/.test(content)) return true
@@ -141,7 +150,9 @@ export function useClipItemDisplay() {
     try {
       const meta = JSON.parse((item as any).metadata || '{}')
       if (Array.isArray(meta.paths) && meta.paths.length > 0 && typeof meta.paths[0] === 'string') return true
-    } catch { /* no metadata */ }
+    } catch {
+      /* no metadata */
+    }
 
     return false
   }
@@ -153,13 +164,17 @@ export function useClipItemDisplay() {
         if (Array.isArray(parsed.paths) && parsed.paths[0]) return parsed.paths[0]
         if (Array.isArray(parsed) && typeof parsed[0] === 'string') return parsed[0]
       }
-    } catch { /* not JSON */ }
+    } catch {
+      /* not JSON */
+    }
     const raw = content.trim()
     if (raw.startsWith('["') && raw.includes('\\')) {
       try {
         const paths = JSON.parse(raw)
         if (Array.isArray(paths) && paths[0]) return paths[0]
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     if (raw.includes('\\') || raw.includes('/')) return raw
     return null
@@ -180,9 +195,16 @@ export function useClipItemDisplay() {
   }
 
   return {
-    isItemVisible, displayContent, formatContent,
-    timeAgo, getTypeLabel, extractDomain, formatExpiryShort,
-    hasLocalPath, extractFilePath, base64ToBlob,
+    isItemVisible,
+    displayContent,
+    formatContent,
+    timeAgo,
+    getTypeLabel,
+    extractDomain,
+    formatExpiryShort,
+    hasLocalPath,
+    extractFilePath,
+    base64ToBlob,
   }
 }
 
@@ -214,12 +236,14 @@ export function detectContentType(content: string): 'code' | 'url' | 'text' {
     return 'text'
   }
   // 代码检测：常见代码模式（HTML 已提前排除）
-  if (/[{}\[\]];?\s*$/.test(trimmed) ||
-      /\b(function|const|let|var|class|import|export|return|if|for|while|async|await)\s/.test(trimmed) ||
-      /^\s*(def |class |import |from |public |private |protected )/.test(trimmed) ||
-      /=>\s*[{(]/.test(trimmed) ||
-      /^\s*<\?xml\b/i.test(trimmed) ||
-      /:\s*(string|number|boolean|void|any|null|undefined)\s/.test(trimmed)) {
+  if (
+    /[{}[\]];?\s*$/.test(trimmed) ||
+    /\b(function|const|let|var|class|import|export|return|if|for|while|async|await)\s/.test(trimmed) ||
+    /^\s*(def |class |import |from |public |private |protected )/.test(trimmed) ||
+    /=>\s*[{(]/.test(trimmed) ||
+    /^\s*<\?xml\b/i.test(trimmed) ||
+    /:\s*(string|number|boolean|void|any|null|undefined)\s/.test(trimmed)
+  ) {
     if (contentTypeCache.size > MAX_CONTENT_TYPE_CACHE) {
       const firstKey = contentTypeCache.keys().next().value
       if (firstKey !== undefined) contentTypeCache.delete(firstKey)

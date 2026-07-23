@@ -29,7 +29,9 @@ async function loadInvoices() {
     if (res.ok && Array.isArray(res.data?.invoices)) {
       invoices.value = res.data.invoices
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   loadingInvoices.value = false
 }
 
@@ -64,11 +66,7 @@ onMounted(() => {
         </div>
         <div class="invoice-right">
           <span class="invoice-amount">&yen;{{ inv.amount || 0 }}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            @click="toast.show(t('fb_not_available'), 'info')"
-          >
+          <Button variant="ghost" size="sm" @click="toast.show(t('fb_not_available'), 'info')">
             <Download :size="14" />
           </Button>
         </div>
@@ -78,25 +76,77 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.sp-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.sp-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
-.modal-state { text-align: center; padding: 24px; color: var(--text-tertiary); }
-.modal-desc { font-size: 13px; color: var(--text-secondary); }
-.billing-empty-box { text-align: center; padding: 40px 20px; }
-.billing-ico { display: block; margin: 0 auto 12px; color: var(--text-tertiary); }
-.billing-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.sp-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.sp-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.modal-state {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-tertiary);
+}
+.modal-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.billing-empty-box {
+  text-align: center;
+  padding: 40px 20px;
+}
+.billing-ico {
+  display: block;
+  margin: 0 auto 12px;
+  color: var(--text-tertiary);
+}
+.billing-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
 .invoice-list {
-  display: flex; flex-direction: column; gap: 8px;
-  max-height: 300px; overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 .invoice-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px; border-radius: var(--radius-md);
-  background: var(--bg-hover); border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
 }
-.invoice-info { display: flex; flex-direction: column; gap: 2px; }
-.invoice-no { font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.invoice-date { font-size: 11px; color: var(--text-tertiary); }
-.invoice-right { display: flex; align-items: center; gap: 8px; }
-.invoice-amount { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.invoice-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.invoice-no {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.invoice-date {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.invoice-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.invoice-amount {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
 </style>
