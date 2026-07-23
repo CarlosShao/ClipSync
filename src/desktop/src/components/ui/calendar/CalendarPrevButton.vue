@@ -18,12 +18,12 @@ const forwardedProps = useForwardProps(delegatedProps)
   <CalendarPrev
     data-slot="calendar-prev-button"
     :class="
-      cn(buttonVariants({ variant: 'outline' }), 'size-8 bg-transparent p-0 opacity-50 hover:opacity-100', props.class)
+      cn('inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:pointer-events-none', props.class)
     "
     v-bind="forwardedProps"
   >
     <slot>
-      <ChevronLeft class="size-4" />
+      <ChevronLeft class="size-3.5" />
     </slot>
   </CalendarPrev>
 </template>
