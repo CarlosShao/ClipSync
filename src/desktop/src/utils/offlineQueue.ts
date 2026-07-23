@@ -10,6 +10,7 @@
  */
 
 import { api } from '@/api/client'
+import { logger } from './logger'
 
 export interface OfflineAction {
   id: string
@@ -38,7 +39,7 @@ function saveQueue(queue: OfflineAction[]) {
     localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
   } catch { /* quota exceeded — drop oldest entries */
     const half = queue.slice(Math.floor(queue.length / 2))
-    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(half)) } catch {}
+    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(half)) } catch (e) { console.warn('[OfflineQueue] persist failed after trim:', e) }
   }
 }
 
@@ -73,7 +74,7 @@ export function enqueue(action: Omit<OfflineAction, 'id' | 'timestamp'>) {
     const queue = loadQueue()
     queue.push(entry)
     saveQueue(queue)
-    console.log(`[OfflineQueue] Enqueued ${action.type} (queue size: ${queue.length})`)
+    logger.debug(`[OfflineQueue] Enqueued ${action.type} (queue size: ${queue.length})`)
     return entry
   })
 }
@@ -88,7 +89,7 @@ export async function flushQueue(): Promise<number> {
       const pending = queue.filter(a => !a.synced)
       if (pending.length === 0) return 0
 
-      console.log(`[OfflineQueue] Flushing ${pending.length} pending actions...`)
+      logger.debug(`[OfflineQueue] Flushing ${pending.length} pending actions...`)
 
       let synced = 0
       for (const action of pending) {
@@ -114,7 +115,7 @@ export async function flushQueue(): Promise<number> {
       saveQueue(remaining)
 
       if (synced > 0) {
-        console.log(`[OfflineQueue] Synced ${synced} actions, ${remaining.length} remaining`)
+        logger.debug(`[OfflineQueue] Synced ${synced} actions, ${remaining.length} remaining`)
       }
       return synced
     })
@@ -137,7 +138,7 @@ export function clearQueue() {
 export function initOfflineSync(onFlush?: (count: number) => void) {
   // Listen for Tauri connectivity events if available
   window.addEventListener('online', () => {
-    console.log('[OfflineQueue] Network restored, flushing...')
+    logger.debug('[OfflineQueue] Network restored, flushing...')
     flushQueue().then(count => { if (count > 0 && onFlush) onFlush(count) })
   })
 

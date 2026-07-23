@@ -64,7 +64,7 @@ async function toggleFilterPanel() {
   showFilterPanel.value = !showFilterPanel.value
   if (showFilterPanel.value && devices.value.length === 0 && !deviceLoading.value) {
     deviceLoading.value = true
-    try { devices.value = await clip.loadDevices() } catch { /* ignore */ } finally { deviceLoading.value = false }
+    try { devices.value = await clip.loadDevices() } catch (e) { console.warn('[Clipboard] loadDevices failed:', e) } finally { deviceLoading.value = false }
   }
 }
 
@@ -832,7 +832,7 @@ async function revealFileFolder(item: ClipItem) {
       })
       return
     }
-  } catch { /* ignore */ }
+  } catch (e) { console.warn('[Clipboard] open path failed:', e) }
   toast.show(t('err_no_path'), 'warning')
 }
 

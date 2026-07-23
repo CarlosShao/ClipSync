@@ -92,7 +92,7 @@ async function collapseAndClose(action: () => void = () => {}) {
   action()
   await new Promise(r => setTimeout(r, 200))
   // Use Tauri API — native window.close() crashes the webview in Tauri v2
-  try { await getCurrentWindow().close() } catch {}
+  try { await getCurrentWindow().close() } catch (e) { console.warn('[QP] window close failed:', e) }
 }
 
 // ── Input focus triggers expansion ──

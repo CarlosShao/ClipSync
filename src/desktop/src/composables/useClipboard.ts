@@ -8,6 +8,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { enqueue, initOfflineSync, getQueueSize } from '@/utils/offlineQueue'
 import { chunkedUpload, shouldUseChunkedUpload } from '@/utils/chunkedUpload'
+import { logger } from '@/utils/logger'
 
 const { t } = useI18n()
 const toast = useSonner()
@@ -170,7 +171,7 @@ function isClipboardChangeFromInternalCopy(payload: any, contentType?: string): 
   if (contentType === 'file') {
     const paths = payload?.filePaths as string[] | undefined
     if (paths?.some(p => copiedFilePaths.has(normalizePath(p)))) {
-      console.log('[Clipboard] skip file upload: path matches internal copy', paths)
+      logger.debug('[Clipboard] skip file upload: path matches internal copy', paths)
       return true
     }
     // Fallback: 路径未精确匹配（大小写/规范化差异），用文件名兜底
@@ -183,7 +184,7 @@ function isClipboardChangeFromInternalCopy(payload: any, contentType?: string): 
           const parsed = JSON.parse(info.content)
           const name = parsed?.name || (Array.isArray(parsed) ? parsed[0]?.split(/[/\\]/).pop() : '')
           if (name && filename && (filename === name || filename.includes(name))) {
-            console.log('[Clipboard] skip file upload: filename matches internal copy', filename)
+            logger.debug('[Clipboard] skip file upload: filename matches internal copy', filename)
             return true
           }
         } catch { /* ignore */ }
@@ -193,7 +194,7 @@ function isClipboardChangeFromInternalCopy(payload: any, contentType?: string): 
   if (!contentType) {
     const text = payload?.content as string | undefined
     if (text ? copiedTexts.has(text) : false) {
-      console.log('[Clipboard] skip text upload: content matches internal copy')
+      logger.debug('[Clipboard] skip text upload: content matches internal copy')
       return true
     }
   }
@@ -209,25 +210,25 @@ function enqueueClipboardTask(task: ClipboardTask) {
     const paths = task.payload as string[]
     const normalized = JSON.stringify(paths.map(normalizePath))
     if (clipboardQueue.some(t => t.type === 'file' && JSON.stringify((t.payload as string[]).map(normalizePath)) === normalized)) {
-      console.log('[Clipboard] queue: skip duplicate file task', paths)
+      logger.debug('[Clipboard] queue: skip duplicate file task', paths)
       return
     }
   } else if (task.type === 'text') {
     const text = task.payload as string
     if (clipboardQueue.some(t => t.type === 'text' && t.payload === text)) {
-      console.log('[Clipboard] queue: skip duplicate text task')
+      logger.debug('[Clipboard] queue: skip duplicate text task')
       return
     }
   } else if (task.type === 'image') {
     const p = task.payload as { dataUrl?: string; hash?: string }
     const key = p.hash || p.dataUrl
     if (key && clipboardQueue.some(t => t.type === 'image' && ((t.payload as { dataUrl?: string; hash?: string }).hash || (t.payload as { dataUrl?: string }).dataUrl) === key)) {
-      console.log('[Clipboard] queue: skip duplicate image task')
+      logger.debug('[Clipboard] queue: skip duplicate image task')
       return
     }
   }
   clipboardQueue.push(task)
-  console.log('[Clipboard] queue: task enqueued', task.type, 'length:', clipboardQueue.length)
+  logger.debug('[Clipboard] queue: task enqueued', task.type, 'length:', clipboardQueue.length)
   processClipboardQueue().catch(e => console.warn('[Clipboard] processClipboardQueue error:', e))
 }
 
@@ -238,7 +239,7 @@ async function processClipboardQueue() {
     while (clipboardQueue.length > 0) {
       const task = clipboardQueue.shift()
       if (!task) continue
-      console.log('[Clipboard] queue: processing task', task.type, 'remaining:', clipboardQueue.length)
+      logger.debug('[Clipboard] queue: processing task', task.type, 'remaining:', clipboardQueue.length)
       try {
         if (task.type === 'file') {
           const paths = task.payload as string[]
@@ -249,7 +250,7 @@ async function processClipboardQueue() {
           if (!alreadyUploading && !items.value.some(i => i.type === 'file' && i.content === payload)) {
             await uploadFileToServer(payload)
           } else {
-            console.log('[Clipboard] queue: skip file already uploading or exists', paths)
+            logger.debug('[Clipboard] queue: skip file already uploading or exists', paths)
           }
         } else if (task.type === 'text') {
           const text = task.payload as string
@@ -259,13 +260,13 @@ async function processClipboardQueue() {
           // 不能仅靠 items.value.some(i.content === text) 去重，因为列表里可能是预览内容，
           // 而剪贴板/服务端已经是完整内容，导致复制长文本后又被当作新内容重复上传。
           if (isClipboardChangeFromInternalCopy({ content: text }, undefined)) {
-            console.log('[Clipboard] queue: skip text from internal copy')
+            logger.debug('[Clipboard] queue: skip text from internal copy')
             continue
           }
           if (!items.value.some(i => (i.type === 'text' || i.type === 'link') && i.content === text)) {
             await uploadToServer(text, itemType)
           } else {
-            console.log('[Clipboard] queue: skip text already exists')
+            logger.debug('[Clipboard] queue: skip text already exists')
           }
       } else if (task.type === 'image') {
         const { dataUrl, hash } = task.payload as { dataUrl: string; size: number; hash?: string }
@@ -833,7 +834,7 @@ async function uploadImageToServer(dataUrl: string, contentHash?: string) {
 async function uploadFileToServer(payload: string) {
   const hash = simpleHash(payload)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) {
-    console.log('[Clipboard] uploadFileToServer: skip duplicate hash', hash)
+    logger.debug('[Clipboard] uploadFileToServer: skip duplicate hash', hash)
     return
   }
   recentUploadHashes.set(hash, Date.now())
@@ -878,7 +879,7 @@ async function uploadFileToServer(payload: string) {
     if (localItem) {
       if (res.data.duplicate) {
         // 后端判定为重复条目：直接移除本地乐观项，避免 UI 出现两条同名记录
-        console.log('[Clipboard] server reported duplicate, removing optimistic local item')
+        logger.debug('[Clipboard] server reported duplicate, removing optimistic local item')
         items.value = items.value.filter(i => i.id !== localId)
       } else {
         localItem.id = res.data.id
@@ -988,7 +989,7 @@ async function readAndUpload() {
     // 优先尝试 Tauri API
     const files = await tauri.getClipboardFiles().catch(() => [] as string[])
     if (files.length > 0) {
-      console.log('[Clipboard] poll detected files:', files)
+      logger.debug('[Clipboard] poll detected files:', files)
       // 精确匹配：如果这是刚从 ClipSync 内部复制出去的文件路径，直接跳过
       if (isClipboardChangeFromInternalCopy({ filePaths: files }, 'file')) return
       enqueueClipboardTask({ type: 'file', payload: files })
@@ -1010,7 +1011,7 @@ async function readAndUpload() {
           lastImageHash = pngHash
           enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size: imgInfo.size, hash: pngHash } })
         } else {
-          console.log('[Clipboard] fallback poll: PNG hash matches last image, skipping')
+          logger.debug('[Clipboard] fallback poll: PNG hash matches last image, skipping')
         }
       }
       return
@@ -1060,7 +1061,7 @@ export function useClipboard() {
           // If this file path was just copied from ClipSync UI, skip it
           if (isClipboardChangeFromInternalCopy(payload, 'file')) return
 
-          console.log('[Clipboard] enqueue file event:', filePaths)
+          logger.debug('[Clipboard] enqueue file event:', filePaths)
           enqueueClipboardTask({ type: 'file', payload: filePaths })
         }
       } else if (contentType === 'image') {
@@ -1072,7 +1073,7 @@ export function useClipboard() {
         if (Date.now() < skipPollUntil) return
         const size = (payload?.size as number | undefined) ?? 0
         const captured = (payload?.dataUrl as string | undefined) || ''
-        console.log('[Clipboard] event: image received, size=', size, 'hasData=', !!captured)
+        logger.debug('[Clipboard] event: image received, size=', size, 'hasData=', !!captured)
         let imgData = captured
         if (!imgData) {
           imgData = await tauri.getClipboardImage().catch((e: any) => {
@@ -1093,7 +1094,7 @@ export function useClipboard() {
             lastImageHash = dedupHash
             enqueueClipboardTask({ type: 'image', payload: { dataUrl: imgData, size, hash: dedupHash } })
           } else {
-            console.log('[Clipboard] event: hash matches last image, skipping duplicate')
+            logger.debug('[Clipboard] event: hash matches last image, skipping duplicate')
           }
         } else {
           console.warn('[Clipboard] Image data empty — capture failed')
@@ -1123,7 +1124,7 @@ export function useClipboard() {
       // Check if session is still valid on server
       api('GET', `/api/upload/status/${state.uploadId}`).then(res => {
         if (res.ok && res.data?.missingChunks?.length > 0) {
-          console.log(`[Clipboard] Resuming upload: ${state.filename} (${res.data.uploadedChunks?.length || 0}/${state.totalChunks} chunks)`)
+          logger.debug(`[Clipboard] Resuming upload: ${state.filename} (${res.data.uploadedChunks?.length || 0}/${state.totalChunks} chunks)`)
           // Find the item in the list and update its display
           const item = items.value.find(i => i.content?.includes(state.filename))
           if (item) {
@@ -1132,7 +1133,7 @@ export function useClipboard() {
           }
           // Note: actual resume requires the File object which is lost on refresh.
           // User needs to re-select the file to resume. Log this for now.
-          console.log('[Clipboard] Upload session found but File object lost on refresh. Re-select file to resume.')
+          logger.debug('[Clipboard] Upload session found but File object lost on refresh. Re-select file to resume.')
         } else {
           // Session expired or complete — clean up
           localStorage.removeItem('clipsync-chunked-upload')
@@ -1148,7 +1149,7 @@ export function useClipboard() {
     initialLoadDone = false
     // Initialize offline queue: auto-flush on reconnect/focus
     initOfflineSync((count) => {
-      console.log(`[Clipboard] Offline sync restored: ${count} actions synced`)
+      logger.debug(`[Clipboard] Offline sync restored: ${count} actions synced`)
       loadClipboardItems() // Refresh list after offline sync
     })
     loadClipboardItems()
@@ -1165,7 +1166,7 @@ export function useClipboard() {
       await handleClipboardEvent(event.payload)
     }).then(unlisten => {
       unlistenEvent = unlisten
-      console.log('[Clipboard] Listening for native clipboard-changed events')
+      logger.debug('[Clipboard] Listening for native clipboard-changed events')
     }).catch(err => {
       console.warn('[Clipboard] Failed to attach event listener, falling back to polling:', err)
     })

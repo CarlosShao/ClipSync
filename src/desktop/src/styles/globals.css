@@ -135,7 +135,7 @@ html.theme-clipsync.light {
   --shadow-card: 0 1px 3px rgba(99,102,241,0.06), 0 1px 2px rgba(99,102,241,0.03);
   --shadow-elevated: 0 6px 20px rgba(99,102,241,0.12), 0 1px 4px rgba(99,102,241,0.05);
   --shadow-dropdown: 0 10px 40px rgba(99,102,241,0.18);
-  --shadow-modal: 0 28px 72px rgba(99,102,24,0.2);
+  --shadow-modal: 0 28px 72px rgba(99,102,241,0.2);
   --icon-stroke: 1.85;
 }
 
@@ -164,7 +164,7 @@ html.theme-notion.light {
   --bg-base: #FFFFFF; --bg-sidebar: #F7F6F3; --bg-surface: #FFFFFF;
   --bg-hover: #F0F0EF; --bg-active: #E9E9E7; --bg-selected: #EBECEB;
   --bg-modal-overlay: rgba(0,0,0,0.3); --border-default: #E8E7E3;
-  --border-subtle: #EFEEEc; --border-focus: #2383E2;
+  --border-subtle: #EFEEEC; --border-focus: #2383E2;
   --text-primary: #37352F; --text-secondary: #787774; --text-tertiary: #9B9A97;
   --text-inverse: #FFFFFF; --accent: #2383E2; --accent-hover: #1A6EC2;
   --accent-light: rgba(35,131,226,0.07); --accent-bg: #EBF4FF;

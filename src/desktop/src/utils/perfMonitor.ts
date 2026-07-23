@@ -10,6 +10,8 @@
  * All metrics stored in memory; accessible via window.__clipSyncPerf.
  */
 
+import { logger } from './logger'
+
 export interface PerfMetrics {
   startupMs: number
   firstDataLoadMs: number
@@ -40,7 +42,7 @@ export function perfStartTimer() {
 export function perfFirstDataLoad() {
   if (metrics.firstDataLoadMs === 0) {
     metrics.firstDataLoadMs = Math.round(performance.now() - perfStart)
-    console.log(`[Perf] First data load: ${metrics.firstDataLoadMs}ms`)
+    logger.debug(`[Perf] First data load: ${metrics.firstDataLoadMs}ms`)
   }
 }
 
@@ -80,7 +82,7 @@ export function initPerfMonitor() {
   sampleMemory()
   metrics.startupMs = Math.round(performance.now())
   ;(window as any).__clipSyncPerf = metrics
-  console.log('[Perf] Performance monitoring initialized')
+  logger.debug('[Perf] Performance monitoring initialized')
 }
 
 /** Stop all monitoring (cleanup). */
