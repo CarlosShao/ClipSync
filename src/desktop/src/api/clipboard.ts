@@ -30,3 +30,9 @@ export function deleteClip(id: string) {
 export function setArchive(id: string, archived: boolean) {
   return api('PUT', `/api/clipboard/${id}`, { archived })
 }
+
+/** Get clipboard item content only (lightweight, for preview) */
+export async function getClipboardItemContent(id: string): Promise<string | null> {
+  const res = await api<{ contentEncrypted: string }>('GET', `/api/clipboard/${id}/content`)
+  return res.ok ? (res.data?.contentEncrypted || null) : null
+}

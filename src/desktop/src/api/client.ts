@@ -1,4 +1,3 @@
-import { ref } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
 
 const CSRF_STORAGE_KEY = 'clipsync-csrf'
@@ -196,234 +195,48 @@ export async function apiBlob(
 }
 
 // ============================================
-// Favorites API
+// 业务域 API（已拆分至独立文件，此处 re-export 保持既有 import 兼容）
 // ============================================
+export {
+  getFavoriteCollections,
+  migrateHierarchy,
+  createFavoriteCollection,
+  updateFavoriteCollection,
+  deleteFavoriteCollection,
+  moveCollection,
+  reorderCollections,
+  addCollectionItem,
+  removeCollectionItem,
+  getCollectionItems,
+  setItemTags,
+  deleteTag,
+  getAllFavoriteTags,
+  toggleSensitive,
+} from './favorites'
+export type { FavoriteTag } from './favorites'
 
-export async function getFavoriteCollections(): Promise<{ collections: any[] } | null> {
-  const res = await api('GET', '/api/favorites/collections')
-  return res.ok ? res.data : null
-}
+export {
+  getTemplates,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  getTemplateVariables,
+  upsertTemplateVariable,
+  deleteTemplateVariable,
+} from './templates'
 
-/** Run ltree hierarchy migration on the database (idempotent). */
-export async function migrateHierarchy(): Promise<boolean> {
-  const res = await api('POST', '/api/favorites/migrate-hierarchy')
-  return res.ok
-}
+export {
+  getSharedLinks,
+  uploadSharedFile,
+  createSharedLink,
+  deleteSharedLink,
+} from './sharedLinks'
+export type { SharedLink, SharedFileUploadResult } from './sharedLinks'
 
-export async function createFavoriteCollection(name: string, icon?: string, parentId?: string): Promise<{ collection: any } | null> {
-  const body: any = { name, icon }
-  if (parentId) body.parentId = parentId
-  const res = await api('POST', '/api/favorites/collections', body)
-  return res.ok ? res.data : null
-}
+export {
+  sendPinResetCode,
+  sendPinResetEmailCode,
+  resetPinViaCode,
+} from './auth'
 
-export async function updateFavoriteCollection(id: string, data: { name?: string; icon?: string; sortOrder?: number }): Promise<{ collection: any } | null> {
-  const res = await api('PUT', `/api/favorites/collections/${id}`, data)
-  return res.ok ? res.data : null
-}
-
-export async function deleteFavoriteCollection(id: string): Promise<boolean> {
-  const res = await api('DELETE', `/api/favorites/collections/${id}`)
-  return res.ok
-}
-
-export async function moveCollection(id: string, parentId: string | null): Promise<{ collection: any } | null> {
-  const res = await api('PUT', `/api/favorites/collections/${id}/move`, { parentId })
-  return res.ok ? res.data : null
-}
-
-export async function reorderCollections(orders: { id: string; sortOrder: number }[]): Promise<boolean> {
-  const res = await api('PUT', '/api/favorites/collections/reorder', { orders })
-  return res.ok
-}
-
-export async function addCollectionItem(collectionId: string, itemId: string): Promise<boolean> {
-  const res = await api('POST', `/api/favorites/collections/${collectionId}/items`, { itemId })
-  return res.ok
-}
-
-export async function removeCollectionItem(collectionId: string, itemId: string): Promise<boolean> {
-  const res = await api('DELETE', `/api/favorites/collections/${collectionId}/items/${itemId}`)
-  return res.ok
-}
-
-export async function getCollectionItems(collectionId: string): Promise<{ items: any[] } | null> {
-  const res = await api('GET', `/api/favorites/collections/${collectionId}/items`)
-  return res.ok ? res.data : null
-}
-
-export async function setItemTags(itemId: string, tags: string[], tagColors?: Record<string, string>): Promise<{ tags: string[]; tagColors: Record<string, string> } | null> {
-  const body: any = { tags }
-  if (tagColors) body.tagColors = tagColors
-  const res = await api('PUT', `/api/favorites/${itemId}/tags`, body)
-  return res.ok ? res.data : null
-}
-
-export async function deleteTag(tagName: string): Promise<boolean> {
-  const res = await api('DELETE', `/api/favorites/tags/${encodeURIComponent(tagName)}`)
-  return res.ok
-}
-
-export interface FavoriteTag {
-  name: string
-  color: string | null
-}
-export async function getAllFavoriteTags(): Promise<FavoriteTag[]> {
-  const res = await api('GET', '/api/favorites/tags')
-  return res.ok ? (res.data?.tags || []) : []
-}
-
-/** Toggle manual sensitive flag on a clipboard item */
-export async function toggleSensitive(itemId: string, sensitive: boolean): Promise<{ id: string; sensitive: boolean } | null> {
-  const res = await api('PUT', `/api/clipboard/${itemId}/sensitive`, { sensitive })
-  return res.ok ? res.data : null
-}
-
-// ============================================
-// Templates API（模板库，变量解析在前端完成）
-// ============================================
-
-export async function getTemplates(): Promise<{ data: any[] } | null> {
-  const res = await api('GET', '/api/templates')
-  return res.ok ? res.data : null
-}
-
-export async function createTemplate(name: string, content: string): Promise<any | null> {
-  const res = await api('POST', '/api/templates', { name, content })
-  return res.ok ? res.data : null
-}
-
-export async function updateTemplate(id: string, data: { name?: string; content?: string }): Promise<any | null> {
-  const res = await api('PUT', `/api/templates/${id}`, data)
-  return res.ok ? res.data : null
-}
-
-export async function deleteTemplate(id: string): Promise<boolean> {
-  const res = await api('DELETE', `/api/templates/${id}`)
-  return res.ok
-}
-
-// ============================================
-// Template Variables API（全局变量默认值，后端按用户隔离存储）
-// ============================================
-
-export async function getTemplateVariables(): Promise<{ data: any[] } | null> {
-  const res = await api('GET', '/api/template-variables')
-  return res.ok ? res.data : null
-}
-
-export async function upsertTemplateVariable(name: string, value: string): Promise<any | null> {
-  const res = await api('PUT', '/api/template-variables', { name, value })
-  return res.ok ? res.data : null
-}
-
-export async function deleteTemplateVariable(name: string): Promise<boolean> {
-  const res = await api('DELETE', `/api/template-variables/${encodeURIComponent(name)}`)
-  return res.ok
-}
-
-// ============================================
-// Shared Links API（剪贴板内容对外分享链接）
-// 注意：分享 URL 由后端根据请求 origin 或 SHARE_LINK_BASE_URL 环境变量生成，
-// 前端不要自己拼域名，避免本地开发时指向错误的 clipsync.io。
-// ============================================
-
-export interface SharedLink {
-  id: string
-  title: string
-  url: string
-  contentType?: string
-  fileName?: string
-  fileSize?: number
-  preview?: string
-  views: number
-  createdAt: string
-  expiresAt?: string | null
-}
-
-export interface SharedFileUploadResult {
-  fileKey: string
-  fileName: string
-  fileSize: number
-}
-
-export async function getSharedLinks(): Promise<SharedLink[] | null> {
-  const res = await api<{ links: SharedLink[] }>('GET', '/api/shared-links')
-  return res.ok ? res.data?.links ?? [] : null
-}
-
-export async function uploadSharedFile(
-  file: File,
-): Promise<{ ok: true; fileKey: string; fileName: string; fileSize: number } | { ok: false; error: string }> {
-  const config = useConfigStore()
-  const formData = new FormData()
-  formData.append('file', file)
-  const headers: Record<string, string> = {}
-  const token = config.config.token
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  try {
-    const res = await fetch(`${config.serverUrl}/api/shared-links/upload-file`, {
-      method: 'POST',
-      body: formData,
-      headers,
-    })
-    if (!res.ok) {
-      let errorText = `HTTP ${res.status}`
-      try {
-        const body = (await res.json()) as { error?: string; message?: string }
-        if (body?.error || body?.message) errorText = body.error || body.message || errorText
-      } catch { /* response body not JSON */ }
-      return { ok: false, error: errorText }
-    }
-    const data = (await res.json()) as SharedFileUploadResult
-    return { ok: true, ...data }
-  } catch (e: any) {
-    console.warn('[client] upload shared file failed', e?.message || e)
-    return { ok: false, error: e?.message || 'network error' }
-  }
-}
-
-export async function createSharedLink(payload: {
-  content: string
-  title?: string
-  contentType?: string
-  expiresInHours?: number
-  fileKey?: string
-  fileName?: string
-  fileSize?: number
-}): Promise<SharedLink | null> {
-  const res = await api<SharedLink>('POST', '/api/shared-links', payload)
-  return res.ok ? (res.data ?? null) : null
-}
-
-export async function deleteSharedLink(id: string): Promise<boolean> {
-  const res = await api('DELETE', `/api/shared-links/${id}`)
-  return res.ok
-}
-
-/** Send PIN reset verification code (phone) */
-export async function sendPinResetCode(phone: string): Promise<boolean> {
-  const res = await api('POST', '/api/auth/send-reset-pin-code', { phone })
-  return res.ok
-}
-
-/** Send PIN reset verification code (email) */
-export async function sendPinResetEmailCode(email: string): Promise<boolean> {
-  const res = await api('POST', '/api/auth/send-reset-pin-email-code', { email })
-  return res.ok
-}
-
-/** Verify code and reset PIN (backend validates identity, frontend stores new PIN) */
-export async function resetPinViaCode(phoneOrEmail: string, code: string, method: 'phone' | 'email'): Promise<boolean> {
-  const body: any = { code }
-  if (method === 'phone') body.phone = phoneOrEmail
-  else body.email = phoneOrEmail
-  const res = await api('POST', '/api/auth/reset-pin', body)
-  return res.ok
-}
-
-/** Get clipboard item content only (lightweight, for preview) */
-export async function getClipboardItemContent(id: string): Promise<string | null> {
-  const res = await api<{ contentEncrypted: string }>('GET', `/api/clipboard/${id}/content`)
-  return res.ok ? (res.data?.contentEncrypted || null) : null
-}
+export { getClipboardItemContent } from './clipboard'
