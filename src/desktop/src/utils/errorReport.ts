@@ -8,6 +8,8 @@
  * Access via: window.__clipSyncErrors
  */
 
+import { logger } from './logger'
+
 export interface ErrorEntry {
   id: string
   type: 'error' | 'unhandledrejection'
@@ -94,7 +96,7 @@ export function initErrorCapture() {
   // Expose for diagnostics: window.__clipSyncErrors
   ;(window as any).__clipSyncErrors = recentErrors
 
-  console.log('[ClipSync] Error capture initialized (persisted to localStorage)')
+  logger.debug('[ClipSync] Error capture initialized (persisted to localStorage)')
 }
 
 /** Get all stored errors (for export/diagnostics). */

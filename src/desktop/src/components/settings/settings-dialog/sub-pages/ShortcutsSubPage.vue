@@ -135,7 +135,7 @@ function onKeyDown(e: KeyboardEvent) {
   const shortcutStr = cleanKeys.join('+')
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...savedShortcuts, [id]: cleanKeys }))
-  } catch {}
+  } catch (e) { console.warn('[Shortcuts] persist failed:', e) }
   recordingId.value = null
 
   if (isGlobal) {

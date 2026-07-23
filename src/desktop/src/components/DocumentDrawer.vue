@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { logger } from '@/utils/logger'
 import { X, FileText } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -154,7 +155,7 @@ function scrollToHeading(id: string) {
 
 // ===== Content loading =====
 async function loadContent(item: any) {
-  console.log('[Drawer] loadContent called, item:', item?.id, 'content:', item?.content?.slice(0, 80))
+  logger.debug('[Drawer] loadContent called, item:', item?.id, 'content:', item?.content?.slice(0, 80))
   if (!item?.id) return
 
   // Parse filename
@@ -166,7 +167,7 @@ async function loadContent(item: any) {
   }
 
   docType.value = detectType(fileName.value)
-  console.log('[Drawer] fileName:', fileName.value, 'docType:', docType.value)
+  logger.debug('[Drawer] fileName:', fileName.value, 'docType:', docType.value)
   content.value = ''
   toc.value = []
   docxHtml.value = ''
@@ -211,25 +212,25 @@ async function loadText(item: any) {
     // Case 2: content is a UUID filename (file picker uploads via /api/media/file)
     // UUID format: 8-4-4-4-12 hex chars
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(c.trim())) {
-      console.log('[Drawer] Detected UUID, fetching from download endpoint...')
+      logger.debug('[Drawer] Detected UUID, fetching from download endpoint...')
       try {
         const blobRes = await apiBlob('GET', `/api/media/${item.id}/download`)
         if (blobRes && blobRes.ok) {
           c = await blobRes.text()
-          console.log('[Drawer] Downloaded content:', c.length, 'chars, first 200:', c.slice(0, 200))
+          logger.debug('[Drawer] Downloaded content:', c.length, 'chars, first 200:', c.slice(0, 200))
         } else {
-          console.log('[Drawer] Download failed:', blobRes?.status)
+          logger.debug('[Drawer] Download failed:', blobRes?.status)
         }
-      } catch (e) { console.log('[Drawer] Download error:', e) }
+      } catch (e) { logger.debug('[Drawer] Download error:', e) }
     } else {
-      console.log('[Drawer] Not UUID, using content directly:', c.length, 'chars')
+      logger.debug('[Drawer] Not UUID, using content directly:', c.length, 'chars')
     }
 
     content.value = c
-    console.log('[Drawer] Content set:', c.length, 'chars')
+    logger.debug('[Drawer] Content set:', c.length, 'chars')
     if (docType.value === 'markdown') {
       toc.value = extractToc(c)
-      console.log('[Drawer] TOC:', toc.value.length, 'items, docType:', docType.value)
+      logger.debug('[Drawer] TOC:', toc.value.length, 'items, docType:', docType.value)
     }
   }
 }

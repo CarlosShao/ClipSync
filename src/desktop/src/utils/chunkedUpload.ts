@@ -9,12 +9,13 @@
  */
 
 import { api } from '@/api/client'
+import { logger } from './logger'
 
 // Upload state persistence for resume after refresh
 const UPLOAD_STATE_KEY = 'clipsync-chunked-upload'
 interface UploadState { uploadId: string; filename: string; totalChunks: number; uploadedChunks: number[]; timestamp: number }
 function saveUploadState(state: UploadState | null) {
-  try { localStorage.setItem(UPLOAD_STATE_KEY, state ? JSON.stringify(state) : '') } catch {}
+  try { localStorage.setItem(UPLOAD_STATE_KEY, state ? JSON.stringify(state) : '') } catch (e) { console.warn('[ChunkedUpload] state persist failed:', e) }
 }
 function loadUploadState(): UploadState | null {
   try {
@@ -127,7 +128,7 @@ export async function chunkedUpload(
     if (saved && saved.filename === file.name && saved.totalChunks === totalChunks) {
       uploadId = saved.uploadId
       uploadedIndices = saved.uploadedChunks
-      console.log(`[ChunkedUpload] Resuming upload ${uploadId} from chunk ${uploadedIndices.length}/${totalChunks}`)
+      logger.debug(`[ChunkedUpload] Resuming upload ${uploadId} from chunk ${uploadedIndices.length}/${totalChunks}`)
     }
   }
 

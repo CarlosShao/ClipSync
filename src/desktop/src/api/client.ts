@@ -17,7 +17,7 @@ function loadCsrfFromStorage() {
       csrfToken = parsed.token
       csrfExpiresAt = parsed.exp
     }
-  } catch { /* ignore */ }
+  } catch (e) { console.warn('[API] CSRF cache load failed:', e) }
 }
 loadCsrfFromStorage()
 
@@ -49,10 +49,10 @@ async function getCsrfToken(): Promise<string | null> {
     csrfToken = data.token || null
     csrfExpiresAt = Date.now() + 300_000 // 缓存 5 分钟，减少 ~50% 的请求量（之前 4.5s）
     if (csrfToken) {
-      try { localStorage.setItem(CSRF_STORAGE_KEY, JSON.stringify({ token: csrfToken, exp: csrfExpiresAt })) } catch { /* ignore */ }
+      try { localStorage.setItem(CSRF_STORAGE_KEY, JSON.stringify({ token: csrfToken, exp: csrfExpiresAt })) } catch (e) { console.warn('[API] CSRF cache persist failed:', e) }
     }
     return csrfToken
-  } catch { return null }
+  } catch (e) { console.warn('[API] CSRF token fetch failed:', e); return null }
 }
 
 /** Warm up the CSRF token after login so the first clipboard sync doesn't pay a cold round-trip. */
@@ -189,7 +189,8 @@ export async function apiBlob(
     return await fetch(`${config.serverUrl}${path}`, {
       method, headers, credentials: 'include',
     })
-  } catch {
+  } catch (e) {
+    console.warn('[API] blob fetch failed:', e)
     return null
   }
 }

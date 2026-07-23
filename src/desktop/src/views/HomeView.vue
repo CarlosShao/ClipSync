@@ -184,11 +184,11 @@ onMounted(async () => {
       const ks = saved[gid]
       if (Array.isArray(ks) && ks.length) globalMap[gid] = ks.join('+')
     }
-    if (Object.keys(globalMap).length) tauri.setGlobalShortcuts(globalMap).catch(() => {})
-  } catch { /* ignore */ }
+    if (Object.keys(globalMap).length) tauri.setGlobalShortcuts(globalMap).catch((e) => console.warn('[Home] setGlobalShortcuts failed:', e))
+  } catch (e) { console.warn('[Home] shortcut restore failed:', e) }
 
   document.addEventListener('keydown', handleGlobalKeydown)
-  try { tauri.setTitlebarMode(currentMode.value === 'dark') } catch {}
+  try { tauri.setTitlebarMode(currentMode.value === 'dark') } catch (e) { console.warn('[Home] setTitlebarMode failed:', e) }
 })
 
 onUnmounted(() => {

@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, defineAsyncComponent } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
 import { useTheme } from '@/composables/useTheme'
 import { useI18n } from '@/composables/useI18n'
 import { Toaster } from 'vue-sonner'
 import * as tauri from '@/lib/tauri'
+
+const QuickPasteStandalone = defineAsyncComponent(() =>
+  import('@/views/QuickPasteStandalone.vue')
+)
 
 const configStore = useConfigStore()
 const { currentMode } = useTheme()
@@ -20,7 +24,7 @@ const isQuickPasteStandalone = ref(
 onMounted(async () => {
   await configStore.load()
   // Sync titlebar color on mount
-  try { tauri.setTitlebarMode(currentMode.value === 'dark') } catch {}
+  try { tauri.setTitlebarMode(currentMode.value === 'dark') } catch (e) { console.warn('[App] setTitlebarMode failed:', e) }
   // QP standalone mode: strip body/html background so the transparent
   // Tauri window doesn't show as a colored rectangle (the "frame" bug)
   if (isQuickPasteStandalone.value) {
@@ -46,14 +50,3 @@ onMounted(async () => {
     />
   </template>
 </template>
-
-<script lang="ts">
-import { defineAsyncComponent } from 'vue'
-export default {
-  components: {
-    QuickPasteStandalone: defineAsyncComponent(() =>
-      import('@/views/QuickPasteStandalone.vue')
-    ),
-  },
-}
-</script>
