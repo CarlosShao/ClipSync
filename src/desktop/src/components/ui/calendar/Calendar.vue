@@ -130,8 +130,8 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
     data-slot="calendar"
     :class="cn('p-0', props.class)"
   >
-    <CalendarHeader class="pt-0 pb-3 mb-2 border-b">
-      <nav class="flex items-center gap-1 absolute top-0 inset-x-0 justify-between">
+    <CalendarHeader class="relative flex h-10 items-center pt-0 pb-3 mb-2 border-b">
+      <nav class="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-between px-1">
         <CalendarPrevButton>
           <slot name="calendar-prev-icon" />
         </CalendarPrevButton>

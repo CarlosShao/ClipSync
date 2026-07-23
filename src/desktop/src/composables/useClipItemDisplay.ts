@@ -22,9 +22,9 @@ export function useClipItemDisplay() {
       return itemPw.isUnlocked(item.id)
     }
 
-    // PIN 保护：解锁状态在 privacy.peekItemId 中（30s 超时）
+    // PIN 保护：解锁状态在 privacy 中（30s 超时）
     if (item.metadata?.sensitive) {
-      return privacy.peekItemId.value === item.id
+      return privacy.isPinUnlocked(item.id)
     }
 
     return false

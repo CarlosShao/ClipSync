@@ -122,7 +122,7 @@ const dateToValue = computed<DateValue | undefined>({
               <span class="truncate">{{ clip.advancedFilters.value.dateFrom || t('filter_from') }}</span>
             </Button>
           </PopoverTrigger>
-          <PopoverContent class="w-80 p-4">
+          <PopoverContent class="w-80 p-4 z-[9999]">
             <Calendar v-model="dateFromValue" />
           </PopoverContent>
         </Popover>
@@ -136,7 +136,7 @@ const dateToValue = computed<DateValue | undefined>({
               <span class="truncate">{{ clip.advancedFilters.value.dateTo || t('filter_to') }}</span>
             </Button>
           </PopoverTrigger>
-          <PopoverContent class="w-80 p-4">
+          <PopoverContent class="w-80 p-4 z-[9999]">
             <Calendar v-model="dateToValue" />
           </PopoverContent>
         </Popover>
