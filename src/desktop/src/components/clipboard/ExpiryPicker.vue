@@ -50,13 +50,13 @@ function applyCustom() {
         <PopoverTrigger as-child>
           <button type="button" class="expiry-custom-btn">{{ t('exp_custom') }}</button>
         </PopoverTrigger>
-        <PopoverContent class="w-80 p-3 flex flex-col gap-2 z-[9999]">
+        <PopoverContent class="w-[340px] p-4 flex flex-col gap-3 z-[9999]">
           <Calendar v-model="customDate" />
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-3 px-1">
             <label class="expiry-time-label">{{ t('exp_time') }}</label>
             <input v-model="customTime" type="time" class="expiry-time-input" />
           </div>
-          <button type="button" class="expiry-apply-btn" :disabled="!customDate" @click="applyCustom">
+          <button type="button" class="expiry-apply-btn mx-1" :disabled="!customDate" @click="applyCustom">
             {{ t('exp_apply') }}
           </button>
         </PopoverContent>
@@ -109,19 +109,20 @@ function applyCustom() {
 }
 .expiry-time-input {
   flex: 1;
-  height: 30px;
-  padding: 0 8px;
+  height: 32px;
+  padding: 0 12px;
   font-size: 12px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
   color: var(--text-primary);
   outline: none;
 }
 .expiry-apply-btn {
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
   background: var(--accent);
   color: #fff;
