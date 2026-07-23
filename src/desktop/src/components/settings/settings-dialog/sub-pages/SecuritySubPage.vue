@@ -2,12 +2,13 @@
 import { reactive, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
-import { api } from '@/api/client'
 import Switch from '@/components/ui/switch/Switch.vue'
 
 const { t } = useI18n()
 const toast = useSonner()
 const emit = defineEmits<{ back: [] }>()
+
+const STORAGE_KEY = 'clipsync-sec-notif'
 
 // ===== State =====
 interface SecNotifPrefs {
@@ -20,43 +21,28 @@ const secNotif = reactive<SecNotifPrefs>({
   loginNotification: true,
 })
 
-// ===== Data loading =====
-async function loadSecurityNotifications() {
+function loadFromStorage() {
   try {
-    const res = await api('GET', '/api/user/security-notifications')
-    if (res.ok && res.data) {
-      if (typeof res.data.twoFA === 'boolean') secNotif.twoFA = res.data.twoFA
-      if (typeof res.data.loginNotification === 'boolean') secNotif.loginNotification = res.data.loginNotification
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (typeof parsed.twoFA === 'boolean') secNotif.twoFA = parsed.twoFA
+      if (typeof parsed.loginNotification === 'boolean') secNotif.loginNotification = parsed.loginNotification
     }
   } catch {
-    // Fallback to localStorage
-    try {
-      const raw = localStorage.getItem('clipsync-sec-notif')
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (typeof parsed.twoFA === 'boolean') secNotif.twoFA = parsed.twoFA
-        if (typeof parsed.loginNotification === 'boolean') secNotif.loginNotification = parsed.loginNotification
-      }
-    } catch {
-      /* ignore */
-    }
+    /* ignore */
   }
 }
 
-async function saveSecNotif(partial: Partial<SecNotifPrefs>) {
+function saveSecNotif(partial: Partial<SecNotifPrefs>) {
   Object.assign(secNotif, partial)
-  // Persist to localStorage as fallback
-  localStorage.setItem('clipsync-sec-notif', JSON.stringify({ ...secNotif }))
-  // Sync to backend
-  try {
-    await api('PUT', '/api/user/security-notifications', { ...secNotif })
-  } catch {
-    // Local state already saved
-  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...secNotif }))
+  // 后端暂无 /api/user/security-notifications，本地持久化即可
+  toast.show(t('settings_saved'), 'success')
 }
 
 onMounted(() => {
-  loadSecurityNotifications()
+  loadFromStorage()
 })
 </script>
 

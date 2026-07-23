@@ -28,7 +28,7 @@ const revokingId = ref<string | null>(null)
 async function loadSessions() {
   loadingSessions.value = true
   try {
-    const res = await api('GET', '/api/user/sessions')
+    const res = await api('GET', '/api/sessions')
     if (res.ok && Array.isArray(res.data?.sessions)) {
       const currentDeviceId = localStorage.getItem('clipsync-device-id')
       sessionItems.value = (res.data.sessions as any[]).map((s: any) => ({
@@ -57,7 +57,7 @@ function formatSessionTime(ts: string | number | undefined): string {
 async function revokeSession(sessionId: string) {
   revokingId.value = sessionId
   try {
-    const res = await api('DELETE', `/api/user/sessions/${sessionId}`)
+    const res = await api('DELETE', `/api/sessions/${sessionId}`)
     if (res.ok) {
       toast.show(t('sess_revoked'), 'success')
       sessionItems.value = sessionItems.value.filter((s) => s.id !== sessionId)
