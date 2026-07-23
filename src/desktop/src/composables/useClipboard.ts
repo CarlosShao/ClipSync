@@ -5,10 +5,12 @@ import { api, apiBlob, apiForm } from '@/api/client'
 import { useItemPassword } from '@/composables/useItemPassword'
 import { useConfigStore } from '@/stores/configStore'
 import { useI18n } from '@/composables/useI18n'
+import { useSonner } from '@/composables/useSonner'
 import { enqueue, initOfflineSync, getQueueSize } from '@/utils/offlineQueue'
 import { chunkedUpload, shouldUseChunkedUpload } from '@/utils/chunkedUpload'
 
 const { t } = useI18n()
+const toast = useSonner()
 
 export interface ClipItem {
   id: string
