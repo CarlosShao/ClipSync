@@ -128,17 +128,12 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
     v-bind="forwarded"
     v-model:placeholder="placeholder"
     data-slot="calendar"
-    :class="cn('p-0', props.class)"
+    :class="cn('p-3', props.class)"
   >
-    <CalendarHeader class="relative flex h-10 items-center pt-0 pb-3 mb-2 border-b">
-      <nav class="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-between px-1">
-        <CalendarPrevButton>
-          <slot name="calendar-prev-icon" />
-        </CalendarPrevButton>
-        <CalendarNextButton>
-          <slot name="calendar-next-icon" />
-        </CalendarNextButton>
-      </nav>
+    <CalendarHeader class="border-b pb-2 mb-2">
+      <CalendarPrevButton>
+        <slot name="calendar-prev-icon" />
+      </CalendarPrevButton>
 
       <slot name="calendar-heading" :date="date" :month="ReuseMonthTemplate" :year="ReuseYearTemplate">
         <template v-if="layout === 'month-and-year'">
@@ -163,12 +158,16 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
           <CalendarHeading />
         </template>
       </slot>
+
+      <CalendarNextButton>
+        <slot name="calendar-next-icon" />
+      </CalendarNextButton>
     </CalendarHeader>
 
-    <div class="flex flex-col gap-y-4 mt-4 sm:flex-row sm:gap-x-4 sm:gap-y-0">
+    <div class="flex flex-col gap-y-3 mt-3 sm:flex-row sm:gap-x-3 sm:gap-y-0">
       <CalendarGrid v-for="month in grid" :key="month.value.toString()">
         <CalendarGridHead>
-          <CalendarGridRow class="flex justify-center gap-1">
+          <CalendarGridRow class="flex justify-center gap-1.5">
             <CalendarHeadCell v-for="day in weekDays" :key="day">
               {{ day }}
             </CalendarHeadCell>
@@ -178,7 +177,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
           <CalendarGridRow
             v-for="(weekDates, index) in month.rows"
             :key="`weekDate-${index}`"
-            class="mt-3 flex justify-center gap-1 w-full"
+            class="mt-2 flex justify-center gap-1.5 w-full"
           >
             <CalendarCell v-for="weekDate in weekDates" :key="weekDate.toString()" :date="weekDate">
               <CalendarCellTrigger :day="weekDate" :month="month.value" />
