@@ -50,7 +50,7 @@ function applyCustom() {
         <PopoverTrigger as-child>
           <button type="button" class="expiry-custom-btn">{{ t('exp_custom') }}</button>
         </PopoverTrigger>
-        <PopoverContent class="w-72 p-3 flex flex-col gap-2">
+        <PopoverContent class="w-72 p-3 flex flex-col gap-2 z-[9999]">
           <Calendar v-model="customDate" />
           <div class="flex items-center gap-2">
             <label class="expiry-time-label">{{ t('exp_time') }}</label>

@@ -89,13 +89,13 @@ const ctx = useContextMenu(actions, focusedIndex)
 const upload = useFileUpload()
 
 // PIN 保护与高级加密共用保护弹窗：is-unlocked 需同时识别 itemPw.unlockedIds（高级）
-// 和 privacy.peekItemId（PIN 临时解锁），否则明文状态下再次打开设置仍要求输入密码。
+// 和 privacy.isPinUnlocked（PIN 临时解锁），否则明文状态下再次打开设置仍要求输入密码。
 const isProtectionDialogUnlocked = computed(() => {
   const item = protectionDialogItem.value
   if (!item?.id) return false
   if (itemPw.isUnlocked(item.id)) return true
   if (item.metadata?.sensitive === true) {
-    return privacy.peekItemId.value === item.id && privacy.canCopySensitive()
+    return privacy.isPinUnlocked(item.id)
   }
   return false
 })

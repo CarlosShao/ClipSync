@@ -44,6 +44,7 @@ export function useClipboardOperations(
         onConfirm: async () => {
           try {
             await clip.batchDelete()
+            await clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
             toast.show(t('batch_deleted', { n: count }), 'success')
           } catch (err: any) {
             toast.show(err.message || t('del_fail'), 'error')
@@ -69,6 +70,7 @@ export function useClipboardOperations(
           const favItems = clip.items.value.filter((i) => i.selected && (i as any).isFavorite)
           for (const fi of favItems) clip.toggleFavorite(fi)
           await clip.batchDelete()
+          await clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
           toast.show(t('batch_deleted', { n: count }), 'success')
         } catch (err: any) {
           toast.show(err.message || t('del_fail'), 'error')
@@ -109,20 +111,21 @@ export function useClipboardOperations(
         message: t('confirm_purge_msg'),
         confirmText: t('delete_permanent_btn'),
         confirmVariant: 'destructive',
-        onConfirm: async () => {
-          try {
-            if (isFav) clip.toggleFavorite(item)
-            await clip.deleteSingle(item)
-            toast.show(t('deleted'), 'success')
-          } catch (err: any) {
-            toast.show(err.message || t('del_fail'), 'error')
-          }
-        },
-      })
-      return
-    }
+      onConfirm: async () => {
+        try {
+          if (isFav) clip.toggleFavorite(item)
+          await clip.deleteSingle(item)
+          await clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
+          toast.show(t('deleted'), 'success')
+        } catch (err: any) {
+          toast.show(err.message || t('del_fail'), 'error')
+        }
+      },
+    })
+    return
+  }
 
-    const msg = isFav ? t('confirm_delete_permanent_fav_msg') : t('confirm_delete_permanent_msg')
+  const msg = isFav ? t('confirm_delete_permanent_fav_msg') : t('confirm_delete_permanent_msg')
     showConfirm({
       title: t('confirm_delete_title'),
       message: msg,
@@ -134,6 +137,7 @@ export function useClipboardOperations(
         try {
           if (isFav) clip.toggleFavorite(item)
           await clip.deleteSingle(item)
+          await clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
           toast.show(t('deleted'), 'success')
         } catch (err: any) {
           toast.show(err.message || t('del_fail'), 'error')

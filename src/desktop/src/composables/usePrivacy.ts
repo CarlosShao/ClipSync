@@ -105,6 +105,11 @@ export function usePrivacy() {
     return false
   }
 
+  // 统一判断某条目是否处于 PIN 临时解锁状态（peekItemId 匹配且 PIN 验证未过期）
+  function isPinUnlocked(itemId: string): boolean {
+    return _pinSet.value && _peekItemId.value === itemId && canCopySensitive()
+  }
+
   // Auto-blur on window lose focus
   function onWindowBlur() {
     if (configStore.autoBlur) {
@@ -193,5 +198,6 @@ export function usePrivacy() {
     scheduleClipboardClear,
     isSensitiveContent,
     isItemSensitive,
+    isPinUnlocked,
   }
 }
