@@ -21,7 +21,7 @@ const forwardedProps = useForwardProps(delegatedProps)
     :class="
       cn(
         buttonVariants({ variant: 'ghost' }),
-        'size-10 p-0 font-normal aria-selected:opacity-100 cursor-default',
+        'size-8 p-0 text-xs font-normal aria-selected:opacity-100 cursor-default',
         '[&[data-today]:not([data-selected])]:bg-accent [&[data-today]:not([data-selected])]:text-accent-foreground',
         // Selected
         'data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[selected]:opacity-100 [&[data-selected]:hover]:bg-primary data-[selected]:hover:text-primary-foreground data-[selected]:focus:bg-primary data-[selected]:focus:text-primary-foreground',
