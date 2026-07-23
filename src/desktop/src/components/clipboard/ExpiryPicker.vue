@@ -50,13 +50,13 @@ function applyCustom() {
         <PopoverTrigger as-child>
           <button type="button" class="expiry-custom-btn">{{ t('exp_custom') }}</button>
         </PopoverTrigger>
-        <PopoverContent class="w-[340px] p-4 flex flex-col gap-3 z-[9999]">
+        <PopoverContent class="w-[360px] p-5 flex flex-col gap-4 z-[9999]">
           <Calendar v-model="customDate" />
-          <div class="flex items-center gap-3 px-1">
+          <div class="flex items-center gap-3 px-2">
             <label class="expiry-time-label">{{ t('exp_time') }}</label>
             <input v-model="customTime" type="time" class="expiry-time-input" />
           </div>
-          <button type="button" class="expiry-apply-btn mx-1" :disabled="!customDate" @click="applyCustom">
+          <button type="button" class="expiry-apply-btn mx-2" :disabled="!customDate" @click="applyCustom">
             {{ t('exp_apply') }}
           </button>
         </PopoverContent>

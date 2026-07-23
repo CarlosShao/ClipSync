@@ -235,7 +235,12 @@ async function handleChangePassword() {
           <Button
             variant="outline"
             class="pwd-btn"
-            @click="() => { showPinSetup = false; resetPinForm() }"
+            @click="
+              () => {
+                showPinSetup = false
+                resetPinForm()
+              }
+            "
           >
             {{ t('cancel_btn') }}
           </Button>
@@ -322,7 +327,12 @@ async function handleChangePassword() {
         <Button
           variant="outline"
           class="pwd-btn"
-          @click="() => { showPwdChange = false; resetPwdForm() }"
+          @click="
+            () => {
+              showPwdChange = false
+              resetPwdForm()
+            }
+          "
         >
           {{ t('cancel_btn') }}
         </Button>

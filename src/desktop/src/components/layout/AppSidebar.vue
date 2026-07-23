@@ -172,14 +172,24 @@ const accountNavItems = computed(() => [
         <div v-if="showUserMenu" class="user-menu">
           <button
             class="user-menu-item"
-            @click="() => { emit('navigate', 'profile'); closeUserMenu() }"
+            @click="
+              () => {
+                emit('navigate', 'profile')
+                closeUserMenu()
+              }
+            "
           >
             <User :size="14" />
             <span>{{ t('nav_profile') || '个人资料' }}</span>
           </button>
           <button
             class="user-menu-item"
-            @click="() => { emit('navigate', 'notifications'); closeUserMenu() }"
+            @click="
+              () => {
+                emit('navigate', 'notifications')
+                closeUserMenu()
+              }
+            "
           >
             <Bell :size="14" />
             <span>{{ t('nav_notifications') || '通知' }}</span>
@@ -188,7 +198,12 @@ const accountNavItems = computed(() => [
           <div class="user-menu-divider" />
           <button
             class="user-menu-item user-menu-item--danger"
-            @click="() => { emit('logout'); closeUserMenu() }"
+            @click="
+              () => {
+                emit('logout')
+                closeUserMenu()
+              }
+            "
           >
             <LogOut :size="14" />
             <span>{{ t('logout') }}</span>
