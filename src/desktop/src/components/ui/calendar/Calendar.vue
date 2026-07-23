@@ -158,10 +158,6 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
   background: var(--bg-active);
   color: var(--text-primary);
 }
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
 :deep(button[data-slot='calendar-cell-trigger']) {
   font-size: 12px;
   color: var(--text-primary);
