@@ -172,7 +172,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
   color: var(--accent);
   font-weight: 600;
 }
-:deep(button[data-slot='calendar-cell-trigger']:hover:not([data-selected]) {
+:deep(button[data-slot='calendar-cell-trigger']:hover:not([data-selected])) {
   background: var(--bg-hover);
 }
 </style>
