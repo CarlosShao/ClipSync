@@ -1,14 +1,14 @@
 <script lang="ts" setup>
 import type { CalendarRootEmits, CalendarRootProps, DateValue } from 'reka-ui'
 import type { HTMLAttributes, Ref } from 'vue'
+import type { LayoutTypes } from '.'
 import { getLocalTimeZone, today } from '@internationalized/date'
-import { reactiveOmit, useVModel } from '@vueuse/core'
+import { createReusableTemplate, reactiveOmit, useVModel } from '@vueuse/core'
 import { CalendarRoot, useDateFormatter, useForwardPropsEmits } from 'reka-ui'
 import { createYear, createYearRange, toDate } from 'reka-ui/date'
 import { computed, toRaw } from 'vue'
 import { cn } from '@/lib/utils'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import {
   CalendarCell,
   CalendarCellTrigger,
@@ -18,19 +18,21 @@ import {
   CalendarGridRow,
   CalendarHeadCell,
   CalendarHeader,
+  CalendarHeading,
   CalendarNextButton,
   CalendarPrevButton,
 } from '.'
 
 const props = withDefaults(
-  defineProps<CalendarRootProps & { class?: HTMLAttributes['class'] }>(),
+  defineProps<CalendarRootProps & { class?: HTMLAttributes['class']; layout?: LayoutTypes; yearRange?: DateValue[] }>(),
   {
     modelValue: undefined,
+    layout: undefined,
   },
 )
 const emits = defineEmits<CalendarRootEmits>()
 
-const delegatedProps = reactiveOmit(props, 'class')
+const delegatedProps = reactiveOmit(props, 'class', 'layout', 'placeholder')
 
 const placeholder = useVModel(props, 'placeholder', emits, {
   passive: true,
@@ -40,139 +42,145 @@ const placeholder = useVModel(props, 'placeholder', emits, {
 const formatter = useDateFormatter(props.locale ?? 'en')
 
 const yearRange = computed(() => {
-  return createYearRange({
-    start:
-      props?.minValue ??
-      (toRaw(props.placeholder) ?? props.defaultPlaceholder ?? today(getLocalTimeZone())).cycle('year', -100),
+  return (
+    props.yearRange ??
+    createYearRange({
+      start:
+        props?.minValue ??
+        (toRaw(props.placeholder) ?? props.defaultPlaceholder ?? today(getLocalTimeZone())).cycle('year', -100),
 
-    end:
-      props?.maxValue ??
-      (toRaw(props.placeholder) ?? props.defaultPlaceholder ?? today(getLocalTimeZone())).cycle('year', 10),
-  })
+      end:
+        props?.maxValue ??
+        (toRaw(props.placeholder) ?? props.defaultPlaceholder ?? today(getLocalTimeZone())).cycle('year', 10),
+    })
+  )
 })
+
+const [DefineMonthTemplate, ReuseMonthTemplate] = createReusableTemplate<{ date: DateValue }>()
+const [DefineYearTemplate, ReuseYearTemplate] = createReusableTemplate<{ date: DateValue }>()
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
+  <DefineMonthTemplate v-slot="{ date }">
+    <div class="**:data-[slot=native-select-icon]:right-1">
+      <div class="relative">
+        <div class="absolute inset-0 flex h-full items-center text-sm pl-2 pointer-events-none">
+          {{ formatter.custom(toDate(date), { month: 'short' }) }}
+        </div>
+        <NativeSelect
+          class="text-xs h-8 pr-6 pl-2 text-transparent relative"
+          :model-value="date.month"
+          @change="
+            (e: Event) => {
+              placeholder = placeholder.set({
+                month: Number((e?.target as any)?.value),
+              })
+            }
+          "
+        >
+          <NativeSelectOption
+            v-for="month in createYear({ dateObj: date })"
+            :key="month.toString()"
+            :value="month.month"
+            :selected="date.month === month.month"
+          >
+            {{ formatter.custom(toDate(month), { month: 'short' }) }}
+          </NativeSelectOption>
+        </NativeSelect>
+      </div>
+    </div>
+  </DefineMonthTemplate>
+
+  <DefineYearTemplate v-slot="{ date }">
+    <div class="**:data-[slot=native-select-icon]:right-1">
+      <div class="relative">
+        <div class="absolute inset-0 flex h-full items-center text-sm pl-2 pointer-events-none">
+          {{ formatter.custom(toDate(date), { year: 'numeric' }) }}
+        </div>
+        <NativeSelect
+          class="text-xs h-8 pr-6 pl-2 text-transparent relative"
+          :model-value="date.year"
+          @change="
+            (e: Event) => {
+              placeholder = placeholder.set({
+                year: Number((e?.target as any)?.value),
+              })
+            }
+          "
+        >
+          <NativeSelectOption
+            v-for="year in yearRange"
+            :key="year.toString()"
+            :value="year.year"
+            :selected="date.year === year.year"
+          >
+            {{ formatter.custom(toDate(year), { year: 'numeric' }) }}
+          </NativeSelectOption>
+        </NativeSelect>
+      </div>
+    </div>
+  </DefineYearTemplate>
+
   <CalendarRoot
     v-slot="{ grid, weekDays, date }"
     v-bind="forwarded"
     v-model:placeholder="placeholder"
     data-slot="calendar"
-    :class="cn('p-5', props.class)"
+    :class="cn('p-4', props.class)"
   >
-    <CalendarHeader class="flex items-center justify-between mb-4">
+    <CalendarHeader class="border-b pb-2 mb-2">
       <CalendarPrevButton>
-        <ChevronLeft class="size-3.5" />
+        <slot name="calendar-prev-icon" />
       </CalendarPrevButton>
 
-      <div class="flex items-center justify-center gap-1">
-        <div class="relative">
-          <div class="absolute inset-0 flex h-7 items-center text-sm font-medium pl-2.5 pointer-events-none">
-            {{ formatter.custom(toDate(date), { month: 'short' }) }}
+      <slot name="calendar-heading" :date="date" :month="ReuseMonthTemplate" :year="ReuseYearTemplate">
+        <template v-if="layout === 'month-and-year'">
+          <div class="flex items-center justify-center gap-1">
+            <ReuseMonthTemplate :date="date" />
+            <ReuseYearTemplate :date="date" />
           </div>
-          <NativeSelect
-            class="text-xs h-7 pr-7 pl-2.5 text-transparent relative min-w-[64px] cursor-pointer"
-            :model-value="date.month"
-            @change="
-              (e: Event) => {
-                placeholder = placeholder.set({
-                  month: Number((e?.target as any)?.value),
-                })
-              }
-            "
-          >
-            <NativeSelectOption
-              v-for="month in createYear({ dateObj: date })"
-              :key="month.toString()"
-              :value="month.month"
-              :selected="date.month === month.month"
-            >
-              {{ formatter.custom(toDate(month), { month: 'short' }) }}
-            </NativeSelectOption>
-          </NativeSelect>
-        </div>
-        <div class="relative">
-          <div class="absolute inset-0 flex h-7 items-center text-sm font-medium pl-2.5 pointer-events-none">
+        </template>
+        <template v-else-if="layout === 'month-only'">
+          <div class="flex items-center justify-center gap-1">
+            <ReuseMonthTemplate :date="date" />
             {{ formatter.custom(toDate(date), { year: 'numeric' }) }}
           </div>
-          <NativeSelect
-            class="text-xs h-7 pr-7 pl-2.5 text-transparent relative min-w-[64px] cursor-pointer"
-            :model-value="date.year"
-            @change="
-              (e: Event) => {
-                placeholder = placeholder.set({
-                  year: Number((e?.target as any)?.value),
-                })
-              }
-            "
-          >
-            <NativeSelectOption
-              v-for="year in yearRange"
-              :key="year.toString()"
-              :value="year.year"
-              :selected="date.year === year.year"
-            >
-              {{ formatter.custom(toDate(year), { year: 'numeric' }) }}
-            </NativeSelectOption>
-          </NativeSelect>
-        </div>
-      </div>
+        </template>
+        <template v-else-if="layout === 'year-only'">
+          <div class="flex items-center justify-center gap-1">
+            {{ formatter.custom(toDate(date), { month: 'short' }) }}
+            <ReuseYearTemplate :date="date" />
+          </div>
+        </template>
+        <template v-else>
+          <CalendarHeading />
+        </template>
+      </slot>
 
       <CalendarNextButton>
-        <ChevronRight class="size-3.5" />
+        <slot name="calendar-next-icon" />
       </CalendarNextButton>
     </CalendarHeader>
 
-    <CalendarGrid v-for="month in grid" :key="month.value.toString()">
-      <CalendarGridHead>
-        <CalendarGridRow>
-          <CalendarHeadCell v-for="day in weekDays" :key="day">
-            {{ day }}
-          </CalendarHeadCell>
-        </CalendarGridRow>
-      </CalendarGridHead>
-      <CalendarGridBody>
-        <CalendarGridRow v-for="(weekDates, index) in month.rows" :key="`weekDate-${index}`">
-          <CalendarCell v-for="weekDate in weekDates" :key="weekDate.toString()" :date="weekDate">
-            <CalendarCellTrigger :day="weekDate" :month="month.value" />
-          </CalendarCell>
-        </CalendarGridRow>
-      </CalendarGridBody>
-    </CalendarGrid>
+    <div class="flex flex-col gap-y-3 mt-3 sm:flex-row sm:gap-x-3 sm:gap-y-0">
+      <CalendarGrid v-for="month in grid" :key="month.value.toString()">
+        <CalendarGridHead>
+          <CalendarGridRow class="gap-1.5">
+            <CalendarHeadCell v-for="day in weekDays" :key="day">
+              {{ day }}
+            </CalendarHeadCell>
+          </CalendarGridRow>
+        </CalendarGridHead>
+        <CalendarGridBody>
+          <CalendarGridRow v-for="(weekDates, index) in month.rows" :key="`weekDate-${index}`" class="mt-2 gap-1.5">
+            <CalendarCell v-for="weekDate in weekDates" :key="weekDate.toString()" :date="weekDate">
+              <CalendarCellTrigger :day="weekDate" :month="month.value" />
+            </CalendarCell>
+          </CalendarGridRow>
+        </CalendarGridBody>
+      </CalendarGrid>
+    </div>
   </CalendarRoot>
 </template>
-
-<style scoped>
-:deep(button[data-slot='calendar-prev-button']),
-:deep(button[data-slot='calendar-next-button']) {
-  height: 28px;
-  width: 28px;
-  border-radius: 6px;
-  color: var(--text-tertiary);
-  transition: all 0.15s;
-}
-:deep(button[data-slot='calendar-prev-button']:hover),
-:deep(button[data-slot='calendar-next-button']:hover) {
-  background: var(--bg-active);
-  color: var(--text-primary);
-}
-:deep(button[data-slot='calendar-cell-trigger']) {
-  font-size: 12px;
-  color: var(--text-primary);
-  border-radius: 6px;
-}
-:deep(button[data-slot='calendar-cell-trigger'][data-selected]) {
-  background: var(--color-primary, #6366f1);
-  color: var(--color-primary-foreground, #ffffff);
-}
-:deep(button[data-slot='calendar-cell-trigger'][data-today]:not([data-selected])) {
-  background: var(--accent-light);
-  color: var(--accent);
-  font-weight: 600;
-}
-:deep(button[data-slot='calendar-cell-trigger']:hover:not([data-selected])) {
-  background: var(--bg-hover);
-}
-</style>
