@@ -1,0 +1,75 @@
+/* ============================================================
+   Modal shared styles (non-scoped, imported by modal components)
+   - Generic helpers used across multiple modals
+   - v-html rendered content (markdown-body) MUST be non-scoped
+   - Portaled popover content (doc-expiry) MUST be non-scoped
+   ============================================================ */
+
+/* Spinner inside buttons / loading states */
+.btn-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: modal-spin 0.6s linear infinite; margin-right: 6px; }
+@keyframes modal-spin { to { transform: rotate(360deg); } }
+
+/* Action buttons inside modals (pairing, image preview, etc.) */
+.modal-action-btn { padding: 0 20px !important; gap: 6px !important; }
+
+/* Generic modal text helpers */
+.modal-state { text-align: center; padding: 24px; color: var(--text-tertiary); }
+.modal-center-pad20 { text-align: center; padding: 20px 0; }
+.modal-desc { font-size: 13px; color: var(--text-secondary); }
+
+/* Expiry control inside detail-modal popover (portaled, must be non-scoped) */
+.doc-expiry-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 12px; }
+.doc-expiry-label { color: var(--text-tertiary); }
+.doc-expiry-current { color: var(--text-primary); font-weight: 500; }
+.doc-expiry-none { color: var(--text-tertiary); }
+
+/* Markdown rendered content (v-html) */
+.markdown-body { color: var(--text-primary); font-size: 14px; line-height: 1.7; word-wrap: break-word; }
+.markdown-body > :first-child { margin-top: 0 !important; }
+.markdown-body > :last-child { margin-bottom: 0 !important; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 { margin: 24px 0 16px; font-weight: 600; line-height: 1.35; scroll-margin-top: 8px; }
+.markdown-body h1 { font-size: 26px; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle); }
+.markdown-body h2 { font-size: 22px; padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
+.markdown-body h3 { font-size: 18px; }
+.markdown-body h4 { font-size: 16px; }
+.markdown-body h5 { font-size: 14px; }
+.markdown-body h6 { font-size: 14px; color: var(--text-secondary); }
+.markdown-body p { margin: 12px 0; }
+.markdown-body a { color: var(--accent); text-decoration: none; }
+.markdown-body a:hover { text-decoration: underline; }
+.markdown-body strong { font-weight: 600; }
+.markdown-body em { font-style: italic; }
+.markdown-body del { text-decoration: line-through; color: var(--text-tertiary); }
+.markdown-body code { background: rgba(175,184,193,0.15); padding: 2px 7px; border-radius: 6px; font-family: 'SF Mono','Monaco','Consolas','Liberation Mono',monospace; font-size: 85%; }
+.markdown-body pre { background: var(--bg-hover); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 16px; overflow-x: auto; margin: 16px 0; line-height: 1.5; }
+.markdown-body pre code { background: none; padding: 0; border-radius: 0; font-size: 12.5px; font-family: 'SF Mono','Monaco','Consolas','Liberation Mono',monospace; color: var(--text-primary); white-space: pre; }
+.markdown-body ul, .markdown-body ol { padding-left: 2em; margin: 12px 0; }
+.markdown-body li { margin: 4px 0; line-height: 1.7; }
+.markdown-body li + li { margin-top: 4px; }
+.markdown-body ul ul, .markdown-body ul ol, .markdown-body ol ul, .markdown-body ol ol { margin: 4px 0; }
+.markdown-body input[type="checkbox"] { margin-right: 6px; vertical-align: middle; }
+.markdown-body blockquote { margin: 16px 0; padding: 8px 16px; border-left: 4px solid var(--accent); color: var(--text-secondary); background: transparent; }
+.markdown-body blockquote > :first-child { margin-top: 0; }
+.markdown-body blockquote > :last-child { margin-bottom: 0; }
+.markdown-body table { border-collapse: collapse; border-spacing: 0; margin: 16px 0; width: 100%; display: block; overflow: auto; }
+.markdown-body table th, .markdown-body table td { padding: 8px 16px; border: 1px solid var(--border-default); font-size: 13px; }
+.markdown-body table th { font-weight: 600; background: var(--bg-hover); }
+.markdown-body table tr:nth-child(2n) { background: var(--bg-hover); }
+.markdown-body table tr { background: var(--bg-surface); }
+.markdown-body hr { border: none; border-top: 2px solid var(--border-subtle); margin: 24px 0; height: 0; overflow: hidden; }
+.markdown-body img { max-width: 100%; border-radius: 6px; }
+.markdown-body details { margin: 12px 0; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 6px; }
+.markdown-body details summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.markdown-body details[open] summary { margin-bottom: 8px; }
+.markdown-body .hljs { background: transparent; color: var(--text-primary); }
+.markdown-body .hljs-keyword { color: #cf222e; }
+.markdown-body .hljs-string { color: #0a3069; }
+.markdown-body .hljs-comment { color: var(--text-tertiary); font-style: italic; }
+.markdown-body .hljs-number { color: #0550ae; }
+.markdown-body .hljs-function { color: #8250df; }
+.markdown-body .hljs-title { color: #8250df; }
+.markdown-body .hljs-built_in { color: #e36209; }
+.markdown-body .hljs-type { color: #953800; }
+.markdown-body .hljs-attr { color: #0550ae; }
+.markdown-body .hljs-meta { color: #6e7781; }
+.markdown-body .hljs-literal { color: #0550ae; }
