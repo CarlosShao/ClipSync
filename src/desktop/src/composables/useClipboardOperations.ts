@@ -3,7 +3,7 @@ import { useSonner } from '@/composables/useSonner'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useSharePayload } from '@/composables/useSharePayload'
 import { useClipItemDisplay } from '@/composables/useClipItemDisplay'
-import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { type ConfirmOptions } from '@/composables/useConfirmDialog'
 import * as tauri from '@/lib/tauri'
 import { createSharedLink } from '@/api/client'
 import { logger } from '@/utils/logger'
@@ -16,13 +16,16 @@ export interface ClipboardOperationEmits {
 /**
  * 剪贴板批量/单条操作：删除、归档、恢复、分享、在文件夹中显示。
  */
-export function useClipboardOperations(isArchive: { value: boolean }, emit: ClipboardOperationEmits) {
+export function useClipboardOperations(
+  isArchive: { value: boolean },
+  emit: ClipboardOperationEmits,
+  showConfirm: (opts: ConfirmOptions) => void,
+) {
   const { t } = useI18n()
   const toast = useSonner()
   const clip = useClipboard()
   const display = useClipItemDisplay()
   const { buildSharePayload } = useSharePayload()
-  const { showConfirm } = useConfirmDialog()
 
   function handleBatchDelete() {
     if (clip.selectedCount.value === 0) {
@@ -154,9 +157,14 @@ export function useClipboardOperations(isArchive: { value: boolean }, emit: Clip
     }
   }
 
-  function onArchiveToggle(item: ClipItem) {
-    if (isArchive.value) clip.unarchiveItem(item)
-    else clip.archiveItem(item)
+  async function onArchiveToggle(item: ClipItem) {
+    if (isArchive.value) {
+      const ok = await clip.unarchiveItem(item)
+      toast.show(ok ? t('unarchived_toast') : t('archive_fail'), ok ? 'success' : 'error')
+    } else {
+      const ok = await clip.archiveItem(item)
+      toast.show(ok ? t('archived_toast') : t('archive_fail'), ok ? 'success' : 'error')
+    }
   }
 
   async function revealFileFolder(item: ClipItem) {
@@ -184,7 +192,7 @@ export function useClipboardOperations(isArchive: { value: boolean }, emit: Clip
         return
       }
     } catch (e) {
-      console.warn('[Clipboard] open path failed:', e)
+      logger.debug('[Clipboard] open path failed:', e)
     }
     toast.show(t('err_no_path'), 'warning')
   }
@@ -219,7 +227,7 @@ export function useClipboardOperations(isArchive: { value: boolean }, emit: Clip
       const ok = await clip.copyText(created.url)
       toast.show(ok ? t('shared_link_copied') : t('shared_link_copy_err'), ok ? 'success' : 'error')
     } catch (e: any) {
-      console.warn('[Clipboard] share failed', e)
+      logger.debug('[Clipboard] share failed', e)
       toast.show(t('shared_link_create_err'), 'error')
     }
   }
