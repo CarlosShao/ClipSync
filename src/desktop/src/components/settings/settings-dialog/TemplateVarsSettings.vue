@@ -122,7 +122,14 @@ onMounted(() => {
         <Button
           variant="outline"
           class="pwd-btn"
-          @click="() => { addOpen = false; newVarName = ''; newVarValue = ''; varError = '' }"
+          @click="
+            () => {
+              addOpen = false
+              newVarName = ''
+              newVarValue = ''
+              varError = ''
+            }
+          "
           >{{ t('cancel_btn') }}</Button
         >
       </div>

@@ -79,7 +79,12 @@ watch(
     :open="showModalType === 'sessions'"
     :title="t('modal_sessions')"
     max-width="480px"
-    @close="() => { emit('close'); loadSessions() }"
+    @close="
+      () => {
+        emit('close')
+        loadSessions()
+      }
+    "
   >
     <div v-if="loadingSessions" class="modal-state">{{ t('sess_loading') }}</div>
     <div v-else-if="sessionItems.length === 0" class="modal-state">{{ t('sess_empty') }}</div>

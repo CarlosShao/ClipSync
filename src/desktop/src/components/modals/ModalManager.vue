@@ -107,7 +107,12 @@ watch(
         v-for="th in allThemes"
         :key="th.value"
         :class="['theme-opt', { active: currentStyle === th.value }]"
-        @click="() => { setStyle(th.value as any); emit('close-modal') }"
+        @click="
+          () => {
+            setStyle(th.value as any)
+            emit('close-modal')
+          }
+        "
       >
         <div
           class="theme-preview"
