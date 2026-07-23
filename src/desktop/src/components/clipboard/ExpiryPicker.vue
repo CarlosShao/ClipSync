@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import type { DateValue } from '@internationalized/date'
 import { useI18n } from '@/composables/useI18n'
 
 const props = defineProps<{ modelValue?: string | null }>()
@@ -24,7 +23,9 @@ function clearExpiry() {
 }
 
 const customOpen = ref(false)
-const customDate = ref<DateValue | undefined>(undefined)
+// 宽松类型：Calendar 的 v-model emit 类型（DateValue | DateValue[] | null）与
+// @internationalized/date 多版本实例不兼容，此处仅需 toString()，与 ClipboardView 的 computed 模式等效
+const customDate = ref()
 const customTime = ref('23:59')
 
 function applyCustom() {

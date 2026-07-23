@@ -44,8 +44,10 @@ async function loadSessions() {
   loadingSessions.value = false
 }
 
-function formatSessionTime(ts: string | number): string {
+function formatSessionTime(ts: string | number | undefined): string {
+  if (!ts) return ''
   const diff = Date.now() - new Date(ts).getTime()
+  if (isNaN(diff)) return ''
   if (diff < 60000) return t('just_now')
   if (diff < 3600000) return Math.floor(diff / 60000) + t('m_ago')
   if (diff < 86400000) return Math.floor(diff / 3600000) + t('h_ago')
