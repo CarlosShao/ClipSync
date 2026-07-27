@@ -1,21 +1,21 @@
 info:
-  name: MiniMax CN Chat
+  name: StepFun Step Plan Chat
   type: http
   seq: 1
 
 http:
   method: POST
-  url: https://api.minimaxi.com/v1/chat/completions
+  url: https://api.stepfun.com/step_plan/v1/chat/completions
   headers:
     - name: Authorization
-      value: Bearer sk-cp-XzIC7LHaj_EA4s9u850ONPWv12kNCNznLas5piQF
+      value: Bearer 4ht7XMQIza75P819zfna8rCZEnCegevBfA5zfbiqMU1iUYInE9Jd1GLFAXbSllYn3
     - name: Content-Type
       value: application/json
   body:
     mode: json
     json: |
       {
-        "model": "MiniMax-M3",
+        "model": "step-3.5-flash",
         "messages": [
           {"role": "user", "content": "Hello, just a test."}
         ],

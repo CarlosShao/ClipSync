@@ -146,7 +146,7 @@ function npsLabel(score: number): string {
 .survey-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10001;
+  z-index: var(--z-toast);
   display: flex;
   align-items: center;
   justify-content: center;

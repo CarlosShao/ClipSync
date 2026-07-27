@@ -400,7 +400,7 @@ function nextStep() {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 9998;
+  z-index: var(--z-modal);
 }
 
 .protection-dialog {
@@ -415,7 +415,7 @@ function nextStep() {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-modal);
-  z-index: 9999;
+  z-index: var(--z-modal);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -612,7 +612,7 @@ function nextStep() {
   padding: 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  font-family: monospace;
+  font-family: var(--font-mono, monospace);
   font-size: 12px;
   resize: vertical;
 }
@@ -643,7 +643,7 @@ function nextStep() {
 
 .protection-recovery-key code {
   flex: 1;
-  font-family: monospace;
+  font-family: var(--font-mono, monospace);
   font-size: 12px;
   word-break: break-all;
 }

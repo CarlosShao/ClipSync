@@ -116,7 +116,7 @@ const fav = useFavoritePopover()
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-modal);
   padding: 4px;
-  z-index: 50;
+  z-index: var(--z-dropdown);
   min-width: 160px;
 }
 .add-col-option {
@@ -156,7 +156,7 @@ const fav = useFavoritePopover()
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-modal);
   padding: 10px 12px;
-  z-index: 50;
+  z-index: var(--z-dropdown);
   min-width: 200px;
   max-width: 280px;
   animation: favPopIn 0.2s ease;

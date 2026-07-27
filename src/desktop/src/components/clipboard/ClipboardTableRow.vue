@@ -381,7 +381,7 @@ const display = useClipItemDisplay()
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
   border: 1px solid var(--border-subtle);
-  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', monospace;
+  font-family: var(--font-mono, monospace);
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-secondary);
@@ -488,7 +488,7 @@ const display = useClipItemDisplay()
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  z-index: 50;
+  z-index: var(--z-dropdown);
   min-width: 172px;
   padding: 4px;
   background: var(--bg-surface);
@@ -512,6 +512,11 @@ const display = useClipItemDisplay()
   cursor: pointer;
 }
 .more-item:hover {
+  background: var(--bg-active);
+}
+.more-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
   background: var(--bg-active);
 }
 .more-item svg {

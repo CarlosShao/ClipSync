@@ -129,7 +129,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-dropdown);
-  z-index: 50;
+  z-index: var(--z-dropdown);
   overflow: hidden;
   animation: selectSlideIn 0.15s ease;
 }

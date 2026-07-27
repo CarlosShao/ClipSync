@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TaskBoardFrontmatter",
+  "type": "object",
+  "required": ["id", "title", "priority", "status", "source"],
+  "properties": {
+    "id": { "type": "string", "description": "全局唯一标识" },
+    "title": { "type": "string" },
+    "priority": {
+      "type": "string",
+      "enum": ["p0-now", "p1-next", "p2-later", "p3-icebox", "done"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["todo", "in_progress", "review", "done", "blocked"]
+    },
+    "source": {
+      "type": "string",
+      "description": "kimi-cli / workbuddy / manual / lifecycle"
+    },
+    "module": { "type": "string" },
+    "assignee": { "type": "string", "description": "留空表示未分配" },
+    "estimate": { "type": "string", "description": "如 2h / 1d" },
+    "progress": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "lifecycle_id": { "type": "string" },
+    "batchId": { "type": "string", "description": "所属批次 ID，任意字符串，看板自动识别并分组（无需预登记）" },
+    "batchName": { "type": "string", "description": "批次显示名（可选），由任务文件提供，看板用于展示" },
+    "created": { "type": "string" },
+    "updated": { "type": "string" }
+  }
+}

@@ -588,7 +588,7 @@ function confirmAction() {
 .pin-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  z-index: var(--z-toast);
   display: flex;
   align-items: center;
   justify-content: center;

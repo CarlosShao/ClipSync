@@ -10,13 +10,19 @@ import ModalDialog from '@/components/ui/ModalDialog.vue'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ZoomIn, ZoomOut, RotateCcw, RotateCw, Lock, Clock } from 'lucide-vue-next'
+import { Lock, Clock } from 'lucide-vue-next'
 import HtmlPreview from '@/components/clipboard/HtmlPreview.vue'
 import TablePreview from '@/components/clipboard/TablePreview.vue'
 import ExpiryPicker from '@/components/clipboard/ExpiryPicker.vue'
+import MarkdownPreview from '@/components/doc-preview/MarkdownPreview.vue'
+import CodePreview from '@/components/doc-preview/CodePreview.vue'
+import DocxPreview from '@/components/doc-preview/DocxPreview.vue'
+import PdfPreview from '@/components/doc-preview/PdfPreview.vue'
+import ImagePreview from '@/components/doc-preview/ImagePreview.vue'
+import TextPreview from '@/components/doc-preview/TextPreview.vue'
 import { isHtmlContent } from '@/utils/html'
 import { parseTable } from '@/utils/table'
-import { renderMarkdown, detectFileType, extractToc, renderCode, type TocItem } from '@/utils/docPreview'
+import { detectFileType, extractToc, type TocItem } from '@/utils/docPreview'
 import './modal-shared.css'
 
 const props = defineProps<{ previewItem?: any; previewType?: string }>()
@@ -39,34 +45,6 @@ const previewContent = ref('')
 const previewFileName = ref('')
 const previewToc = ref<TocItem[]>([])
 const previewImageDataUrl = ref('') // for image file preview
-
-// ===== Image file zoom/pan/rotate (in-file image preview) =====
-import { useImageZoom } from '@/composables/useImageZoom'
-const {
-  imgZoom,
-  imgPanX,
-  imgPanY,
-  imgRotate,
-  IMG_ZOOM_MIN,
-  IMG_ZOOM_MAX,
-  resetImgZoom,
-  rotateLeft,
-  rotateRight,
-  zoomIn,
-  zoomOut,
-  onImgWheel,
-  onImgPointerDown,
-  onImgPointerMove,
-  onImgPointerUp,
-} = useImageZoom()
-
-/** Scroll to a heading in the markdown preview */
-function scrollToHeading(id: string) {
-  nextTick(() => {
-    const el = document.getElementById(id)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  })
-}
 
 // ===== Document Preview =====
 const DOC_PREVIEW_MAX_LINES = 500 // Show first 500 lines for large files
@@ -421,11 +399,6 @@ async function loadFileContent(item: any) {
   docxHtml.value = ''
   pdfPages.value = []
   previewImageDataUrl.value = ''
-  // Reset image zoom/rotate for file image preview
-  imgZoom.value = 1
-  imgRotate.value = 0
-  imgPanX.value = 0
-  imgPanY.value = 0
 
   // For unsupported types (except image/docx/pdf handled below), show message immediately
   if (docType === 'Unsupported' && fileType !== 'docx' && fileType !== 'pdf' && fileType !== 'image') {
@@ -713,70 +686,28 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
         <span>{{ t('preview_loading') }}</span>
       </div>
 
-      <!-- Image file preview (with zoom/rotate controls like image preview modal) -->
-      <div
+      <!-- Image file preview -->
+      <ImagePreview
         v-else-if="detectFileType(previewFileName) === 'image' && previewImageDataUrl"
-        class="doc-image-file-preview"
-      >
-        <div class="img-zoom-toolbar">
-          <Button variant="ghost" size="icon-sm" :disabled="imgZoom <= IMG_ZOOM_MIN" title="缩小" @click="zoomOut">
-            <ZoomOut :size="15" />
-          </Button>
-          <span class="img-zoom-label">{{ Math.round(imgZoom * 100) }}%</span>
-          <Button variant="ghost" size="icon-sm" :disabled="imgZoom >= IMG_ZOOM_MAX" title="放大" @click="zoomIn">
-            <ZoomIn :size="15" />
-          </Button>
-          <span class="img-preview-sep" />
-          <Button variant="ghost" size="icon-sm" title="左旋90度" @click="rotateLeft">
-            <RotateCcw :size="15" />
-          </Button>
-          <Button variant="ghost" size="icon-sm" title="右旋90度" @click="rotateRight">
-            <RotateCw :size="15" />
-          </Button>
-          <Button
-            v-if="imgZoom !== 1 || imgRotate !== 0"
-            variant="ghost"
-            size="sm"
-            class="ml-1"
-            title="重置"
-            @click="resetImgZoom"
-            >1:1</Button
-          >
-        </div>
-        <div
-          class="img-zoom-area"
-          @wheel.prevent="onImgWheel"
-          @pointerdown="onImgPointerDown"
-          @pointermove="onImgPointerMove"
-          @pointerup="onImgPointerUp"
-        >
-          <img
-            :src="previewImageDataUrl"
-            :alt="previewFileName"
-            class="doc-image-file-img"
-            :style="{ transform: `scale(${imgZoom}) rotate(${imgRotate}deg) translate(${imgPanX}px, ${imgPanY}px)` }"
-          />
-        </div>
-      </div>
+        :src="previewImageDataUrl"
+        :alt="previewFileName"
+      />
 
       <!-- Word (.docx) rendering -->
-      <div
+      <DocxPreview
         v-else-if="detectFileType(previewFileName) === 'docx' && docxHtml"
-        class="doc-preview docx-preview markdown-body"
-        v-html="docxHtml"
-      ></div>
+        :html="docxHtml"
+      />
 
       <!-- PDF rendering -->
-      <div v-else-if="detectFileType(previewFileName) === 'pdf' && pdfPages.length > 0" class="doc-pdf-wrap">
-        <div v-if="pdfTotalPages > 20" class="doc-pdf-info">{{ t('preview_pages', { n: pdfTotalPages }) }}</div>
-        <div v-for="page in pdfPages" :key="page.num" class="doc-pdf-page">
-          <img :src="page.dataUrl" :alt="'Page ' + page.num" class="doc-pdf-img" />
-          <span class="doc-pdf-num">{{ page.num }}</span>
-        </div>
-      </div>
+      <PdfPreview
+        v-else-if="detectFileType(previewFileName) === 'pdf' && pdfPages.length > 0"
+        :pages="pdfPages"
+        :total-pages="pdfTotalPages"
+      />
 
       <!-- PPTX / other unsupported: show raw text content -->
-      <div
+      <TextPreview
         v-else-if="
           detectFileType(previewFileName) === 'pptx' ||
           (detectDocType(previewContent, previewFileName) === 'Unsupported' &&
@@ -784,31 +715,15 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
             detectFileType(previewFileName) !== 'pdf' &&
             detectFileType(previewFileName) !== 'image')
         "
-        class="doc-preview text-preview"
-      >
-        <div class="doc-unsupported-hint">{{ t('preview_unsupported') }}</div>
-        {{ previewContentLines.join('\n') }}
-      </div>
+        :content="previewContentLines.join('\n')"
+      />
 
       <!-- Markdown rendering with TOC -->
-      <div v-else-if="detectDocType(previewContent, previewFileName) === 'Markdown'" class="doc-markdown-layout">
-        <!-- TOC sidebar -->
-        <nav v-if="previewToc.length > 0" class="doc-toc">
-          <div class="doc-toc-title">{{ t('toc_title') }}</div>
-          <a
-            v-for="item in previewToc"
-            :key="item.id"
-            :href="'#' + item.id"
-            class="doc-toc-item"
-            :class="'doc-toc-depth-' + item.depth"
-            @click.prevent="scrollToHeading(item.id)"
-          >
-            {{ item.text }}
-          </a>
-        </nav>
-        <!-- Markdown content -->
-        <div class="doc-preview markdown-body doc-markdown-content" v-html="renderMarkdown(previewContent)"></div>
-      </div>
+      <MarkdownPreview
+        v-else-if="detectDocType(previewContent, previewFileName) === 'Markdown'"
+        :content="previewContent"
+        :toc="previewToc"
+      />
 
       <!-- HTML safe preview (DOMPurify sanitized, only when content is rich-text HTML) -->
       <!-- 必须在 Code 分支之前：detectDocType 会把 HTML 标签识别为 Code，导致 HTML 被当成源码高亮 -->
@@ -822,15 +737,14 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
       </div>
 
       <!-- Code with line numbers + syntax highlighting -->
-      <div v-else-if="isCodeContent(previewContent, previewFileName)" class="doc-preview code-preview">
-        <div class="code-lines">
-          <span v-for="(_, i) in previewContentLines" :key="i" class="line-num">{{ i + 1 }}</span>
-        </div>
-        <pre class="code-content"><code v-html="renderCode(previewContent, previewFileName)"></code></pre>
-      </div>
+      <CodePreview
+        v-else-if="isCodeContent(previewContent, previewFileName)"
+        :content="previewContent"
+        :file-name="previewFileName"
+      />
 
       <!-- Plain text -->
-      <div v-else class="doc-preview text-preview">{{ previewContentLines.join('\n') }}</div>
+      <TextPreview v-else :content="previewContentLines.join('\n')" />
 
       <div v-if="isTruncated" class="doc-truncated">{{ t('doc_truncated') }}</div>
     </div>
@@ -868,11 +782,6 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
   font-size: 13px;
   line-height: 1.7;
 }
-.text-preview {
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text-primary);
-}
 
 /* Loading state */
 .doc-loading {
@@ -894,243 +803,16 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
   animation: modal-spin 0.6s linear infinite;
 }
 
-/* Unsupported file type hint (shown above raw text content) */
-.doc-unsupported-hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-/* Code with line numbers */
-.code-preview {
-  display: flex;
-  gap: 0;
-  padding: 0;
+/* HTML safe preview wrapper in detail modal */
+.html-preview-doc {
+  max-height: 70vh;
   overflow: auto;
-  max-height: 500px;
-}
-.code-lines {
-  display: flex;
-  flex-direction: column;
-  padding: 14px 0 14px 12px;
-  border-right: 1px solid var(--border-subtle);
-  user-select: none;
-  flex-shrink: 0;
-}
-.line-num {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  line-height: 1.65;
-  text-align: right;
-  min-width: 32px;
-  padding-right: 8px;
-}
-.code-content {
-  margin: 0;
-  padding: 14px;
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-  font-size: 12px;
-  line-height: 1.65;
-  color: var(--text-primary);
-  white-space: pre;
-  overflow-x: auto;
-  flex: 1;
-}
-.doc-truncated {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  text-align: center;
-  padding: 8px 0;
-  border-top: 1px solid var(--border-subtle);
 }
 
-/* Markdown + TOC layout */
-.doc-markdown-layout {
-  display: flex;
-  gap: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  max-height: 500px;
-}
-.doc-toc {
-  width: 200px;
-  min-width: 160px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
-  padding: 12px 0;
-  overflow-y: auto;
-}
-.doc-toc-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0 14px 8px;
-}
-.doc-toc-item {
-  display: block;
-  font-size: 12px;
-  color: var(--text-secondary);
-  text-decoration: none;
-  padding: 3px 14px;
-  cursor: pointer;
-  transition:
-    color 0.15s,
-    background 0.15s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.5;
-}
-.doc-toc-item:hover {
-  color: var(--accent);
-  background: var(--bg-hover);
-}
-.doc-toc-depth-1 {
-  font-weight: 600;
-  padding-left: 14px;
-}
-.doc-toc-depth-2 {
-  padding-left: 24px;
-}
-.doc-toc-depth-3 {
-  padding-left: 34px;
-  font-size: 11px;
-}
-.doc-toc-depth-4,
-.doc-toc-depth-5,
-.doc-toc-depth-6 {
-  padding-left: 44px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
-.doc-markdown-content {
-  flex: 1;
-  overflow-y: auto;
-  border: none;
-  border-radius: 0;
-  max-height: 500px;
-}
-
-/* Image file preview with zoom/rotate */
-.doc-image-file-preview {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-.doc-image-file-preview .img-zoom-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
-  flex-shrink: 0;
-}
-.doc-image-file-preview .img-zoom-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  min-width: 40px;
-  text-align: center;
-}
-.doc-image-file-preview .img-preview-sep {
-  width: 1px;
-  height: 16px;
-  background: var(--border-default);
-  margin: 0 4px;
-}
-.doc-image-file-preview .img-zoom-area {
-  position: relative;
+/* Table preview wrapper in detail modal */
+.table-preview-doc {
+  max-height: 70vh;
   overflow: auto;
-  cursor: grab;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 300px;
-  max-height: 500px;
-  background: var(--bg-hover);
-}
-.doc-image-file-preview .img-zoom-area:active {
-  cursor: grabbing;
-}
-.doc-image-file-img {
-  max-width: 100%;
-  transform-origin: center center;
-  transition: transform 0.1s ease;
-  user-select: none;
-}
-
-/* Word (.docx) preview */
-.docx-preview {
-  max-height: 500px;
-  overflow-y: auto;
-}
-.docx-preview table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 8px 0;
-}
-.docx-preview th,
-.docx-preview td {
-  border: 1px solid var(--border-default);
-  padding: 4px 8px;
-  text-align: left;
-  font-size: 12px;
-}
-.docx-preview th {
-  background: var(--bg-hover);
-  font-weight: 600;
-}
-.docx-preview p {
-  margin: 4px 0;
-}
-.docx-preview ul,
-.docx-preview ol {
-  padding-left: 20px;
-  margin: 4px 0;
-}
-
-/* PDF preview */
-.doc-pdf-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: center;
-  max-height: 500px;
-  overflow-y: auto;
-  padding: 8px 0;
-}
-.doc-pdf-info {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  text-align: center;
-  padding: 4px 0;
-}
-.doc-pdf-page {
-  position: relative;
-  display: inline-block;
-}
-.doc-pdf-img {
-  max-width: 100%;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-}
-.doc-pdf-num {
-  position: absolute;
-  bottom: 4px;
-  right: 8px;
-  font-size: 10px;
-  color: var(--text-tertiary);
-  background: var(--bg-surface);
-  padding: 1px 6px;
-  border-radius: 8px;
 }
 
 /* Privacy: sensitive content mask in modal preview */
@@ -1176,30 +858,5 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
 /* Ensure doc-preview-wrap is position:relative for the overlay */
 .doc-preview-wrap {
   position: relative;
-}
-
-/* HTML safe preview wrapper in detail modal */
-.html-preview-doc {
-  max-height: 70vh;
-  overflow: auto;
-}
-
-/* Table preview wrapper in detail modal */
-.table-preview-doc {
-  max-height: 70vh;
-  overflow: auto;
-}
-
-.text-preview-content {
-  font-size: 13px;
-  line-height: 1.7;
-  background: var(--bg-hover);
-  padding: 16px;
-  border-radius: var(--radius-md);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 400px;
-  overflow-y: auto;
-  color: var(--text-primary);
 }
 </style>

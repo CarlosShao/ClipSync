@@ -12,6 +12,7 @@ import * as tauri from '@/lib/tauri'
 import { Marked } from 'marked'
 import hljs from 'highlight.js'
 import JSZip from 'jszip'
+import './modals/modal-shared.css'
 
 const props = defineProps<{
   open: boolean
@@ -1021,17 +1022,17 @@ const contentLines = computed(() => {
   white-space: nowrap;
 }
 .drawer-excel-content :deep(th) {
-  background: #f6f8fa;
+  background: var(--bg-hover);
   font-weight: 600;
   position: sticky;
   top: 0;
   z-index: 1;
 }
 .drawer-excel-content :deep(tr:nth-child(2n)) {
-  background: rgba(0, 0, 0, 0.02);
+  background: color-mix(in srgb, var(--bg-hover) 50%, transparent);
 }
 .drawer-excel-content :deep(td.selected) {
-  background: #e8f0fe;
+  background: var(--accent-light);
 }
 
 /* PowerPoint */
@@ -1043,7 +1044,7 @@ const contentLines = computed(() => {
   align-items: center;
 }
 .drawer-pptx-slide {
-  background: #ffffff;
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 0;
@@ -1057,9 +1058,7 @@ const contentLines = computed(() => {
   font-size: 14px;
   line-height: 1.6;
   position: relative;
-  box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.1),
-    0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 .pptx-slide-num {
@@ -1068,7 +1067,7 @@ const contentLines = computed(() => {
   right: 12px;
   font-size: 10px;
   color: var(--text-tertiary);
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--bg-hover);
   padding: 1px 8px;
   border-radius: 8px;
 }
@@ -1078,7 +1077,7 @@ const contentLines = computed(() => {
   padding: 32px 40px;
   font-size: 15px;
   line-height: 1.8;
-  color: #1a1a1a;
+  color: var(--text-primary);
 }
 .pptx-slide-text:empty::after {
   content: '(Empty slide)';

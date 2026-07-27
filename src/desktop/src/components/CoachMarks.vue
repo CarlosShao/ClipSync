@@ -91,7 +91,7 @@ onMounted(() => {
 .coach-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9998;
+  z-index: var(--z-modal);
 }
 .coach-highlight {
   position: fixed;
@@ -99,11 +99,11 @@ onMounted(() => {
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
-  z-index: 9999;
+  z-index: var(--z-modal);
 }
 .coach-tooltip {
   position: fixed;
-  z-index: 10000;
+  z-index: var(--z-toast);
   max-width: 300px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);

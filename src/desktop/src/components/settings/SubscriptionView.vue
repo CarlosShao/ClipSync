@@ -47,25 +47,6 @@ const emit = defineEmits<{ 'open-modal': [type: string] }>()
 </template>
 
 <style scoped>
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 48px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border-default);
-  background: var(--bg-surface);
-  flex-shrink: 0;
-}
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.toolbar-title {
-  font-weight: 600;
-  font-size: 14px;
-}
 .settings-view {
   padding: 24px;
   max-width: 720px;

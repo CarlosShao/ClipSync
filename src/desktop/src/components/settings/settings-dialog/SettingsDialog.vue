@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import GeneralSettings from './GeneralSettings.vue'
@@ -36,6 +36,9 @@ const { t } = useI18n()
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
+
+const panelRef = ref<HTMLElement | null>(null)
+const previousActiveElement = ref<HTMLElement | null>(null)
 
 const activeCategory = ref('general')
 const activeSubPage = ref('')
@@ -93,21 +96,64 @@ function onBackdropClick(e: MouseEvent) {
   if ((e.target as HTMLElement).classList.contains('sd-backdrop')) emit('close')
 }
 
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && props.open) {
+function onKeyDown(e: KeyboardEvent) {
+  if (!props.open) return
+  if (e.key === 'Escape') {
     if (activeSubPage.value) {
       goBack()
     } else {
       emit('close')
     }
+    return
+  }
+  if (e.key === 'Tab' && panelRef.value) {
+    const focusable = panelRef.value.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
   }
 }
+
+watch(
+  () => props.open,
+  async (isOpen) => {
+    if (isOpen) {
+      previousActiveElement.value = document.activeElement as HTMLElement
+      document.addEventListener('keydown', onKeyDown)
+      await nextTick()
+      const firstFocusable = panelRef.value?.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+      firstFocusable?.focus()
+    } else {
+      document.removeEventListener('keydown', onKeyDown)
+      previousActiveElement.value?.focus()
+    }
+  },
+)
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onKeyDown)
+})
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="sd-backdrop" @keydown="onKeydown" @click="onBackdropClick">
-      <div class="sd-panel" role="dialog" aria-modal="true">
+    <div v-if="open" class="sd-backdrop" @click="onBackdropClick">
+      <div ref="panelRef" class="sd-panel" role="dialog" aria-modal="true">
         <!-- Header -->
         <div class="sd-header">
           <div class="sd-header-left">
@@ -181,7 +227,7 @@ function onKeydown(e: KeyboardEvent) {
 .sd-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;

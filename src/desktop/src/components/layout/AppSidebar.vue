@@ -414,6 +414,10 @@ const accountNavItems = computed(() => [
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+.sb-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
 
 /* Active: visible pill background + left accent indicator (shadcn-style) */
 .sb-item.active {
@@ -498,7 +502,7 @@ const accountNavItems = computed(() => [
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-modal);
   padding: 4px;
-  z-index: 50;
+  z-index: var(--z-dropdown);
   overflow: hidden;
 }
 .user-menu-item {
@@ -517,6 +521,11 @@ const accountNavItems = computed(() => [
   text-align: left;
 }
 .user-menu-item:hover {
+  background: var(--bg-hover);
+}
+.user-menu-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
   background: var(--bg-hover);
 }
 .user-menu-item--danger {

@@ -173,7 +173,7 @@ watch(
   word-break: break-all;
   max-height: 120px;
   overflow-y: auto;
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono, monospace);
   color: var(--text-secondary);
   margin: 0;
 }

@@ -188,12 +188,12 @@ async function ctxApplyExpiry(iso: string | null) {
 .ctx-overlay {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: var(--z-popover);
   background: transparent;
 }
 .ctx-menu {
   position: fixed;
-  z-index: 91;
+  z-index: var(--z-popover);
   width: 200px;
   padding: 6px;
   background: var(--bg-surface);
@@ -235,6 +235,11 @@ async function ctxApplyExpiry(iso: string | null) {
   color: var(--text-tertiary);
 }
 .ctx-item:hover {
+  background: var(--bg-hover);
+}
+.ctx-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
   background: var(--bg-hover);
 }
 .ctx-item--accent {

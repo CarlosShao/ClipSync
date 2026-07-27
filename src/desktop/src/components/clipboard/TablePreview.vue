@@ -66,7 +66,7 @@ const parsed = computed(() => parseTable(props.content))
   background: var(--bg-hover);
   color: var(--text-secondary);
   font-weight: 600;
-  z-index: 1;
+  z-index: var(--z-base);
 }
 .table-preview tbody tr:hover {
   background: var(--bg-hover);

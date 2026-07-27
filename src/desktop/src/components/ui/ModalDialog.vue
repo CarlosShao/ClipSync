@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, nextTick, onUnmounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { X } from 'lucide-vue-next'
 
@@ -14,17 +14,75 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ close: [] }>()
 
+const modalRef = ref<HTMLElement | null>(null)
+const previousActiveElement = ref<HTMLElement | null>(null)
+
 function onBackdropClick(e: MouseEvent) {
   if ((e.target as HTMLElement).classList.contains('modal-backdrop')) emit('close')
 }
+
+function onKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    emit('close')
+    return
+  }
+  if (e.key === 'Tab' && modalRef.value) {
+    const focusable = modalRef.value.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+  }
+}
+
+watch(
+  () => props.open,
+  async (isOpen) => {
+    if (isOpen) {
+      previousActiveElement.value = document.activeElement as HTMLElement
+      document.addEventListener('keydown', onKeyDown)
+      await nextTick()
+      const firstFocusable = modalRef.value?.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+      firstFocusable?.focus()
+    } else {
+      document.removeEventListener('keydown', onKeyDown)
+      previousActiveElement.value?.focus()
+    }
+  },
+)
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onKeyDown)
+})
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="open" class="modal-backdrop" @click="onBackdropClick">
-      <div class="modal-panel" :style="{ maxWidth }">
+      <div
+        ref="modalRef"
+        class="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="title ? 'modal-title' : undefined"
+        :style="{ maxWidth }"
+      >
         <div v-if="title" class="modal-header">
-          <span class="modal-title-text">{{ title }}</span>
+          <span id="modal-title" class="modal-title-text">{{ title }}</span>
           <button class="btn-icon" @click="emit('close')">
             <X :size="16" />
           </button>
@@ -44,7 +102,7 @@ function onBackdropClick(e: MouseEvent) {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--z-modal);
   background: var(--bg-modal-overlay);
   display: flex;
   align-items: center;

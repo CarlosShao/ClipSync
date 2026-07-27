@@ -133,6 +133,10 @@ const searchInput = ref('')
   color: var(--text-primary);
   background: var(--bg-active);
 }
+.segment-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
 .segment-btn.active {
   background: var(--bg-surface);
   color: var(--text-primary);

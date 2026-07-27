@@ -105,7 +105,7 @@ function truncate(str: string, max: number): string {
 .qp-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  z-index: var(--z-toast);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -158,7 +158,7 @@ function truncate(str: string, max: number): string {
   border: 1px solid var(--border-default);
   border-radius: 3px;
   padding: 1px 5px;
-  font-family: monospace;
+  font-family: var(--font-mono, monospace);
 }
 .qp-list {
   max-height: 300px;
@@ -220,6 +220,6 @@ function truncate(str: string, max: number): string {
   border: 1px solid var(--border-default);
   border-radius: 3px;
   padding: 1px 4px;
-  font-family: monospace;
+  font-family: var(--font-mono, monospace);
 }
 </style>

@@ -377,7 +377,7 @@ watch(
   background: var(--bg-surface);
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-base);
 }
 .clipboard-view :deep(tbody tr) {
   border-bottom: 1px solid var(--border-subtle);
@@ -465,8 +465,9 @@ watch(
 }
 .sk {
   border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.04) 25%, rgba(0, 0, 0, 0.08) 50%, rgba(0, 0, 0, 0.04) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
 }
 .sk-checkbox {
   width: 18px;
@@ -500,13 +501,12 @@ watch(
   height: 14px;
   flex-shrink: 0;
 }
-@keyframes skeleton-pulse {
-  0%,
-  100% {
-    opacity: 1;
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
   }
-  50% {
-    opacity: 0.4;
+  100% {
+    background-position: -200% 0;
   }
 }
 </style>

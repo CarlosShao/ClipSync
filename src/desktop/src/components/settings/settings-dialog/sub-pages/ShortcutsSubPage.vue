@@ -273,7 +273,7 @@ function onKeyDown(e: KeyboardEvent) {
   border: 1px solid var(--border-default);
   border-radius: 3px;
   padding: 2px 6px;
-  font-family: monospace;
+  font-family: var(--font-mono, monospace);
   cursor: pointer;
   transition: all 0.15s;
 }

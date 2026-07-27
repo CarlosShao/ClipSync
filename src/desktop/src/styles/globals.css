@@ -574,6 +574,22 @@ html.dark {
   --sidebar-primary: var(--accent-bg);
   --sidebar-primary-foreground: var(--accent);
   --sidebar-ring: var(--border-focus);
+  /* Semantic aliases for variables used in components but not defined in theme tokens */
+  --shadow-pop: var(--shadow-dropdown);
+  --text-muted: var(--text-tertiary);
+  --purple: #8b5cf6;
+  --font-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Consolas', monospace;
+  /* Z-index scale */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dropdown: 50;
+  --z-popover: 60;
+  --z-overlay: 100;
+  --z-drawer: 9000;
+  --z-modal: 9100;
+  --z-toast: 9200;
+  --z-tooltip: 9300;
+  --z-max: 9999;
 }
 
 /* ============================================================
@@ -650,6 +666,32 @@ body {
 }
 .border-focus {
   border-color: var(--border-focus);
+}
+
+/* ============================================================
+   GLOBAL FOCUS-VISIBLE BASELINE
+   Ensures all interactive elements have a visible focus indicator
+   for keyboard navigation. Components using shadcn Button/Input
+   already have their own ring-based focus via Tailwind classes;
+   this covers raw <button>, <a>, and custom interactive elements.
+   ============================================================ */
+button:focus-visible,
+[role='button']:focus-visible,
+[role='menuitem']:focus-visible,
+[role='tab']:focus-visible,
+[role='option']:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  /* Inputs typically have their own focus styles (border-color / ring),
+     so we only suppress the default outline here to avoid double indicators. */
+  outline: none;
 }
 
 /* ============================================================
