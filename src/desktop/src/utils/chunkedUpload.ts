@@ -8,7 +8,7 @@
  * and persistence to localStorage for resume after page refresh.
  */
 
-import { api } from '@/api/client'
+import { api, getCsrfToken } from '@/api/client'
 import { logger } from './logger'
 
 // Upload state persistence for resume after refresh
@@ -76,12 +76,16 @@ async function uploadChunk(uploadId: string, chunkIndex: number, chunk: Blob, re
   formData.append('chunk', chunk, 'chunk')
   const config = (await import('@/stores/configStore')).useConfigStore()
   const token = config.config.token
+  // /api/upload 挂载了 csrfProtection，分片裸 fetch 必须带 X-CSRF-Token，否则 403
+  const csrf = await getCsrfToken()
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
+      if (csrf) headers['X-CSRF-Token'] = csrf
       const res = await fetch(`${config.serverUrl}/api/upload/chunk/${uploadId}/${chunkIndex}`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers,
         body: formData,
         credentials: 'include',
       })

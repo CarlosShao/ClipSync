@@ -36,7 +36,7 @@ function genIdempotencyKey(): string {
   }
 }
 
-async function getCsrfToken(): Promise<string | null> {
+export async function getCsrfToken(): Promise<string | null> {
   if (csrfToken && Date.now() < csrfExpiresAt) return csrfToken
   // 未登录时跳过 CSRF（登录/注册/忘记密码不需要）
   const config = useConfigStore()
