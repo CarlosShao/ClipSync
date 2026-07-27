@@ -12,6 +12,7 @@ const routeConfigs = [
   { path: '/api/auth', file: './routes/auth-password.js' },
   { path: '/api/auth', file: './routes/auth-profile.js' },
   { path: '/api/auth', file: './routes/auth-session.js' },
+  { path: '/api/auth', file: './routes/two-factor.js' },
 
   // 核心功能路由
   { path: '/api/devices', file: './routes/device.js' },

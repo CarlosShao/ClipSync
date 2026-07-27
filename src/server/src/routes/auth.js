@@ -273,7 +273,7 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     // Find or create user
     // 先尝试明文查询
     let userResult = await pool.query(
-      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted FROM users WHERE phone = $1',
+      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, two_factor_enabled FROM users WHERE phone = $1',
       [cleanPhone]
     );
     
@@ -365,6 +365,16 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
       platform: req.body.platform,
       ip: req.ip || req.connection.remoteAddress,
     });
+
+    // 两步验证：启用则下发挑战令牌，不签发正式会话
+    if (user.two_factor_enabled) {
+      const challengeToken = jwt.sign(
+        { userId: user.id, twoFactorChallenge: true },
+        config.jwt.secret,
+        { expiresIn: '5m' }
+      );
+      return res.json({ twoFactorRequired: true, challengeToken });
+    }
 
     const { token } = await createSessionAndGenerateToken(user, req);
 
@@ -486,7 +496,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
 
     // ===== 查找或创建用户（身份关联：先按 email/email_hash 查已有账号）=====
     let userResult = await pool.query(
-      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted FROM users WHERE email = $1',
+      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, two_factor_enabled FROM users WHERE email = $1',
       [cleanEmail]
     );
 
@@ -1073,7 +1083,7 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
     } else {
       // 手机号或邮箱：直接查询
       const result = await pool.query(
-        `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE ${identifierField} = $1`,
+        `SELECT id, phone, email, nickname, avatar_url, password_hash, two_factor_enabled FROM users WHERE ${identifierField} = $1`,
         [cleanIdentifier]
       );
       if (result.rows.length > 0) { user = result.rows[0]; }
@@ -1091,6 +1101,16 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // 两步验证：启用则下发挑战令牌，不签发正式会话
+    if (user.two_factor_enabled) {
+      const challengeToken = jwt.sign(
+        { userId: user.id, twoFactorChallenge: true },
+        config.jwt.secret,
+        { expiresIn: '5m' }
+      );
+      return res.json({ twoFactorRequired: true, challengeToken });
+    }
+
     // 身份合并：检查并合并同一人的重复账号（同一 email/nickname 的其他 user 行）
     const mergeResult = await mergeDuplicateAccounts(user.id, user).catch((err) => {
       logger.error('[IdentityMerge] Failed:', { error: err.message });
@@ -1105,6 +1125,16 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       platform: req.body.platform,
       ip: req.ip || req.connection.remoteAddress,
     });
+
+    // 两步验证：启用则下发挑战令牌，不签发正式会话
+    if (user.two_factor_enabled) {
+      const challengeToken = jwt.sign(
+        { userId: user.id, twoFactorChallenge: true },
+        config.jwt.secret,
+        { expiresIn: '5m' }
+      );
+      return res.json({ twoFactorRequired: true, challengeToken });
+    }
 
     // 创建会话并生成JWT
     const { token } = await createSessionAndGenerateToken(user, req);
