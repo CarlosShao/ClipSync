@@ -43,6 +43,7 @@ import protectionRoutes from './routes/protection.js';
 import templatesRoutes from './routes/templates.js';
 import templateVariablesRoutes from './routes/templateVariables.js';
 import sharedLinksRoutes from './routes/sharedLinks.js';
+import searchHistoryRoutes from './routes/searchHistory.js';
 import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
 import metricsRoutes from './routes/metrics.js';
@@ -405,6 +406,12 @@ app.use('/api/template-variables', authenticateToken, apiLimiter, csrfProtection
   req.userId = req.user.userId;
   next();
 }, templateVariablesRoutes);
+
+// 搜索历史路由（免费功能，不挂 subscriptionCheck）
+app.use('/api/search-history', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, searchHistoryRoutes);
 
 // 分享链接路由（免费功能）。公开取用 /public/:token 无登录，故鉴权在路由内逐条处理；
 // 此处仅挂 apiLimiter，csrf 对 GET/Bearer 自动放行。
