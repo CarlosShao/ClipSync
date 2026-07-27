@@ -69,8 +69,8 @@
 
 | 功能 | 状态 | 优先级 | 说明 |
 |------|------|--------|------|
-| 2FA / OTP 登录 | ❌ | P1 | 与安全设置「两步验证」开关对应；用户可随时关闭 |
-| OAuth 登录 | ❌ | P1 | **外部依赖**：需第三方平台 AppID/AppSecret 并备案回调域名（如微信开放平台 / Apple Developer / GitHub OAuth App 等）；登录页已有 WeChat/Apple/GitHub/WeCom 4 个占位按钮（均未接），后端需新增 OAuth 授权端点。**处理顺序**：用户决定先完成全部 P1/P2/P3 桌面端任务后，再手动处理此功能 |
+| 2FA / OTP 登录 | ✅ | P1 | 与安全设置「两步验证」开关对应；用户可随时关闭。TOTP(RFC6238) 已前后端打通，用户 E2E 验收通过（提交 3302ac5 / d68a0bb / 949ea3a / 6541ad9 / 443938a） |
+| OAuth 登录 | ❌ | P1 | **外部依赖**：需第三方平台 AppID/AppSecret 并备案回调域名（微信开放平台 / Apple Developer / GitHub OAuth App / 企业微信 等）；登录页已有 WeChat/Apple/GitHub/WeCom 4 个占位按钮（均未接），后端需新增 OAuth 授权端点。当前用户正在逐个申请各平台凭证（见对话）；**处理顺序**：凭证齐 + 全部 P1/P2/P3 桌面端任务后再手动接入 |
 
 > 注：JWT 黑名单、审计日志、登录历史、密钥管理已移至后台管理章节（三）
 
@@ -78,8 +78,8 @@
 
 | 功能 | 状态 | 优先级 | 说明 |
 |------|------|--------|------|
-| 离线队列跨用户清理 | ❌ | P1 | 登出时需清理 `clipsync-offline-queue`（localStorage）；当前 `configStore.logout()` 未调用 `clearQueue()` |
-| 大文件分片上传 | 🔶 | P1 | 前后端分片逻辑已实现（>10MB 走分片）；后端 `chunked-upload.js` 仍用 `multer.memoryStorage`，需改 `diskStorage` 防内存爆 |
+| 离线队列跨用户清理 | ✅ | P1 | 登出时已调用 `clearQueue()` 清理 `clipsync-offline-queue`；断网自动入队、恢复网络自动重传，重传前确保 `deviceId`（提交 a638d84 / e2a2539，用户验收通过） |
+| 大文件分片上传 | ✅ | P1 | 前后端分片逻辑已实现（>10MB 走分片）；后端 `chunked-upload.js` 已改用 `multer.diskStorage` 防内存爆；分片上传补齐 CSRF 头（提交 04e9a62），用户实测 100MB 上传飞快 |
 
 ---
 
