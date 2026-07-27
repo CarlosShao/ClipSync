@@ -36,3 +36,23 @@ export async function getClipboardItemContent(id: string): Promise<string | null
   const res = await api<{ contentEncrypted: string }>('GET', `/api/clipboard/${id}/content`)
   return res.ok ? res.data?.contentEncrypted || null : null
 }
+
+export interface FrequentItem {
+  id: string
+  contentType: string
+  contentPreview: string
+  contentSize: number
+  createdAt: string
+  usageCount: number
+  lastUsedAt: string | null
+}
+
+/** 记录用户粘贴了某条（用于预测粘贴的智能建议）。失败静默，不阻断复制。 */
+export function recordUse(id: string) {
+  return api('POST', `/api/clipboard/${id}/use`)
+}
+
+/** 拉取按使用频率衰减加权排序的「热门」条目，作为智能建议候选。 */
+export function fetchFrequent(limit = 3) {
+  return api<{ items: FrequentItem[] }>('GET', `/api/clipboard/frequent?limit=${limit}`)
+}

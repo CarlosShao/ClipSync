@@ -2,6 +2,7 @@ import { computed } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import * as tauri from '@/lib/tauri'
 import { api, apiForm } from '@/api/client'
+import { recordUse } from '@/api/clipboard'
 import { useItemPassword } from '@/composables/useItemPassword'
 import { useConfigStore } from '@/stores/configStore'
 import { useI18n } from '@/composables/useI18n'
@@ -308,22 +309,34 @@ export function useClipboard() {
       skipNextPolls(3000)
       markContentCopiedFromClipSync(item)
 
+      // 预测粘贴：复制成功后记录使用（仅 server item；local 临时 id 后端静默跳过）
+      const isServerItem = !/^local-|^text-|^file-|^img-|^browser-/.test(item.id)
+      const recordUseIfServer = () => {
+        if (!isServerItem) return
+        recordUse(item.id).catch((e: any) =>
+          console.warn('[Clipboard] record use failed:', e?.message || e),
+        )
+      }
+
       if (item.type === 'file') {
         try {
           const parsed = JSON.parse(item.content)
           // 路径数组 ["D:\\path\\to\\file"] → 复制文件到剪贴板
           if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
             await tauri.setClipboardFiles(parsed)
+            recordUseIfServer()
             return true
           }
           // 带 paths 字段的元数据 {"name":"...","paths":["D:\\..."]} → 复制文件到剪贴板
           if (parsed && typeof parsed === 'object' && Array.isArray(parsed.paths) && parsed.paths.length > 0) {
             await tauri.setClipboardFiles(parsed.paths)
+            recordUseIfServer()
             return true
           }
           // 纯元数据对象（服务器上传的文件）→ 复制文件名
           if (parsed && typeof parsed === 'object' && parsed.name) {
             await tauri.setClipboardContent(parsed.name)
+            recordUseIfServer()
             return true
           }
           return false
@@ -360,6 +373,7 @@ export function useClipboard() {
           } catch {
             /* ignore */
           }
+          recordUseIfServer()
           return true
         }
         return false
@@ -400,6 +414,7 @@ export function useClipboard() {
       cleanupCopiedContent()
 
       await tauri.setClipboardContent(textContent)
+      recordUseIfServer()
       return true
     } catch (e: any) {
       console.warn('[Clipboard] copyItem failed:', e?.message || e)

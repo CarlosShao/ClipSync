@@ -290,6 +290,38 @@ router.get('/search', apiLimiter, async (req, res) => {
   }
 });
 
+// GET /api/clipboard/frequent - Decay-weighted most-used items (smart paste suggestions)
+// 排序：usage_count × exp(-age_days / 30d)，近 30 天的使用权重最高；跳过从未使用过的条目。
+router.get('/frequent', apiLimiter, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 3, 1), 10);
+    const result = await pool.query(
+      `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
+              ci.created_at, ci.usage_count, ci.last_used_at,
+              (ci.usage_count * 1.0) * exp(-extract(epoch from now() - coalesce(ci.last_used_at, ci.created_at)) / 2592000.0) AS score
+       FROM clipboard_items ci
+       WHERE ci.user_id = $1 AND ci.archived = FALSE AND ci.usage_count > 0
+       ORDER BY score DESC, ci.last_used_at DESC NULLS LAST
+       LIMIT $2`,
+      [req.userId, limit]
+    );
+    res.json({
+      items: result.rows.map((row) => ({
+        id: row.id,
+        contentType: row.content_type,
+        contentPreview: row.content_preview,
+        contentSize: row.content_size,
+        createdAt: row.created_at,
+        usageCount: row.usage_count,
+        lastUsedAt: row.last_used_at,
+      })),
+    });
+  } catch (err) {
+    logger.error('Frequent items error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to get frequent items' });
+  }
+});
+
 // GET /api/clipboard/:id - Get a single clipboard item (including encrypted content)
 router.get('/:id', apiLimiter, async (req, res) => {
   try {
@@ -332,6 +364,31 @@ router.get('/:id', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('Get clipboard item error:', { error: err.message });
     res.status(500).json({ error: 'Failed to get clipboard item' });
+  }
+});
+
+// POST /api/clipboard/:id/use - Record that the user pasted this item (smart suggestions)
+// 累加 usage_count + 刷新 last_used_at。临时 id（local-/text-/img-）不记录，静默跳过。
+router.post('/:id/use', apiLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidUUID(id)) {
+      return res.json({ ok: true, skipped: true });
+    }
+    const result = await pool.query(
+      `UPDATE clipboard_items
+       SET usage_count = usage_count + 1, last_used_at = NOW()
+       WHERE id = $1 AND user_id = $2
+       RETURNING usage_count`,
+      [id, req.userId]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ ok: false, error: 'Clipboard item not found' });
+    }
+    res.json({ ok: true, usageCount: result.rows[0].usage_count });
+  } catch (err) {
+    logger.error('Record item use error:', { error: err.message });
+    res.status(500).json({ ok: false, error: 'Failed to record item use' });
   }
 });
 

@@ -2,12 +2,17 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
+import { usePastePrediction } from '@/composables/usePastePrediction'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { Search, Image as ImageIcon, FileText, ClipboardList, Pin, Link, Filter } from 'lucide-vue-next'
+import QuickPasteSuggestions from '@/components/clipboard/QuickPasteSuggestions.vue'
+import type { FrequentItem } from '@/api/clipboard'
 
 const { t } = useI18n()
 const clip = useClipboard()
+const prediction = usePastePrediction()
+const suggestions = prediction.suggestions
 
 const qpSearch = ref('')
 const qpSelectedIndex = ref(0)
@@ -43,6 +48,7 @@ onMounted(async () => {
   // 若 QP 也 startPolling，两个 webview 各自入队上传 → 文本/链接/图片无条件重复。
   // 这里仅从服务端拉取历史供展示与粘贴，自身复制条目时由 copyItem 的跳过窗口去重。
   clip.refresh()
+  prediction.load()
   await nextTick()
   setTimeout(() => focusSearch(), 80)
 })
@@ -55,6 +61,7 @@ function focusSearch() {
 
 ;(window as any).__qpActivate = () => {
   clip.refresh()
+  prediction.load()
   qpSearch.value = ''
   qpSelectedIndex.value = 0
   expanded.value = false
@@ -143,6 +150,21 @@ const filteredItems = computed(() => {
 async function selectItem(item: any) {
   await collapseAndClose(() => clip.copyItem(item))
 }
+
+// 智能建议项 → ClipItem（content 用 preview 作为初值，copyItem 会按需拉取完整内容）
+function onSuggestionSelect(f: FrequentItem) {
+  selectItem({
+    id: f.id,
+    type: f.contentType,
+    content: f.contentPreview,
+    preview: f.contentPreview,
+    contentSize: f.contentSize,
+    timestamp: new Date(f.createdAt).getTime(),
+    source: '',
+    isFavorite: false,
+    isArchived: false,
+  })
+}
 function closePopup() {
   collapseAndClose()
 }
@@ -195,6 +217,8 @@ function truncate(str: string, max: number): string {
     <!-- Results drawer — slides down on focus -->
     <Transition name="dr">
       <div v-show="expanded" class="qp-drp">
+        <!-- Smart suggestions (frequently-used, decay-weighted) -->
+        <QuickPasteSuggestions :suggestions="suggestions" @select="onSuggestionSelect" />
         <!-- Type filter bar -->
         <div class="qp-filters">
           <button
