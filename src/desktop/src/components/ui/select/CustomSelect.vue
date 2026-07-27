@@ -59,7 +59,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
       "
       @click="toggle"
     >
-      <slot />
+      <span class="custom-select-trigger-text"><slot /></span>
       <ChevronDown class="custom-select-chevron" :class="{ open: open }" />
     </button>
     <div v-if="open" class="custom-select-dropdown">
@@ -120,11 +120,22 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
   transform: rotate(180deg);
 }
 
+.custom-select-trigger-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
 .custom-select-dropdown {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  right: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(420px, 80vw);
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);

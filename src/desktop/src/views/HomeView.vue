@@ -455,9 +455,11 @@ function confirmAction() {
       :user-email="configStore.user.email"
       :user-avatar-url="userAvatarUrl"
       :settings-dialog-open="showSettingsDialog"
+      :ai-open="aiSidebarOpen"
       @toggle="sidebarOpen = !sidebarOpen"
       @navigate="switchSub"
       @open-settings-dialog="showSettingsDialog = true"
+      @open-ai="aiSidebarOpen = true"
       @logout="handleLogout"
     />
 

@@ -359,24 +359,35 @@ onMounted(load)
 }
 .ai-form {
   margin: 8px 0;
-  padding: 18px 20px;
+  padding: 22px 24px;
   background: var(--bg-hover);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
 .ai-field {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
+}
+.ai-field .custom-select {
+  width: 100%;
+}
+.ai-field :deep(input) {
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.ai-field :deep(.custom-select-trigger) {
+  padding-left: 14px;
+  padding-right: 14px;
 }
 .ai-label {
   display: block;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  padding-left: 2px;
 }
 .ai-default-row {
-  padding-left: 0;
-  padding-right: 0;
+  padding: 10px 4px;
 }
 .ai-error {
   color: var(--danger, #ef4444);

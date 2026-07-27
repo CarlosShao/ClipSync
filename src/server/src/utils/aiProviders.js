@@ -2,8 +2,9 @@
  * AI 供应商预设与上游请求构造工具
  *
  * 职责：
- * 1. 维护内置供应商预设（OpenAI / Anthropic / DeepSeek / Qwen / Hunyuan / Custom），
- *    每个预设包含默认 base_url、默认 model、请求协议族（openai 兼容 / anthropic）。
+ * 1. 维护内置供应商预设（OpenAI / Anthropic / DeepSeek / Qwen / Hunyuan / MiMo /
+ *    MiniMax / StepFun / LongCat / Custom），每个预设包含默认 base_url、默认 model、
+ *    请求协议族（openai 兼容 / anthropic）、认证头字段。
  * 2. 根据供应商配置构造上游聊天请求（URL / headers / body）。
  *
  * 安全：本文件不接触任何密钥明文，密钥由调用方（路由层）从加密字段解密后传入。
@@ -11,14 +12,18 @@
 
 /**
  * 协议族：
- * - 'openai'：OpenAI Chat Completions 兼容协议（OpenAI / DeepSeek / Qwen / Hunyuan / 自定义均属此类）
+ * - 'openai'：OpenAI Chat Completions 兼容协议（OpenAI / DeepSeek / Qwen / Hunyuan /
+ *   MiMo / MiniMax / StepFun / LongCat / 自定义均属此类）
  * - 'anthropic'：Anthropic Messages 协议（请求/响应结构不同，需单独处理）
+ *
+ * authHeader：默认 Authorization；MiMo 等部分平台需要 api-key 头。
  */
 export const PROVIDER_PRESETS = {
   openai: {
     provider: 'openai',
     label: 'OpenAI',
     family: 'openai',
+    authHeader: 'Authorization',
     defaultBaseUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4o',
   },
@@ -26,6 +31,7 @@ export const PROVIDER_PRESETS = {
     provider: 'anthropic',
     label: 'Anthropic',
     family: 'anthropic',
+    authHeader: 'x-api-key',
     defaultBaseUrl: 'https://api.anthropic.com/v1',
     defaultModel: 'claude-3-5-sonnet-latest',
   },
@@ -33,6 +39,7 @@ export const PROVIDER_PRESETS = {
     provider: 'deepseek',
     label: 'DeepSeek',
     family: 'openai',
+    authHeader: 'Authorization',
     defaultBaseUrl: 'https://api.deepseek.com/v1',
     defaultModel: 'deepseek-chat',
   },
@@ -40,6 +47,7 @@ export const PROVIDER_PRESETS = {
     provider: 'qwen',
     label: 'Qwen (通义千问)',
     family: 'openai',
+    authHeader: 'Authorization',
     defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     defaultModel: 'qwen-plus',
   },
@@ -47,13 +55,47 @@ export const PROVIDER_PRESETS = {
     provider: 'hunyuan',
     label: 'Hunyuan (腾讯混元)',
     family: 'openai',
+    authHeader: 'Authorization',
     defaultBaseUrl: 'https://api.hunyuan.cloud.tencent.com/v1',
     defaultModel: 'hunyuan-turbo',
+  },
+  mimo: {
+    provider: 'mimo',
+    label: 'MiMo (小米)',
+    family: 'openai',
+    authHeader: 'api-key',
+    defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
+    defaultModel: 'mimo-v2.5-pro',
+  },
+  minimax: {
+    provider: 'minimax',
+    label: 'MiniMax',
+    family: 'openai',
+    authHeader: 'Authorization',
+    defaultBaseUrl: 'https://api.minimaxi.com/v1',
+    defaultModel: 'MiniMax-M3',
+  },
+  stepfun: {
+    provider: 'stepfun',
+    label: 'StepFun (阶跃星辰)',
+    family: 'openai',
+    authHeader: 'Authorization',
+    defaultBaseUrl: 'https://api.stepfun.com/step_plan/v1',
+    defaultModel: 'step-3.7-flash',
+  },
+  longcat: {
+    provider: 'longcat',
+    label: 'LongCat (美团)',
+    family: 'openai',
+    authHeader: 'Authorization',
+    defaultBaseUrl: 'https://api.longcat.chat/openai',
+    defaultModel: 'LongCat-Flash-Chat',
   },
   custom: {
     provider: 'custom',
     label: 'Custom (OpenAI 兼容)',
     family: 'openai',
+    authHeader: 'Authorization',
     defaultBaseUrl: '',
     defaultModel: '',
   },
@@ -103,22 +145,23 @@ export function buildUpstreamChat(cfg) {
     throw new Error('base_url is required for custom provider')
   }
 
+  const stream = options.stream !== false
+
   if (preset.family === 'anthropic') {
     // Anthropic Messages 协议：system 必须独立成字段，不能放在 messages 里
     const systemMessages = messages.filter((m) => m.role === 'system')
     const chatMessages = messages.filter((m) => m.role !== 'system')
-  const stream = options.stream !== false
-  const headers = {
-    'Content-Type': 'application/json',
-    'x-api-key': apiKey,
-    'anthropic-version': '2023-06-01',
-  }
-  const body = {
-    model,
-    messages: chatMessages,
-    max_tokens: options.maxTokens || 1024,
-    stream,
-  }
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    }
+    const body = {
+      model,
+      messages: chatMessages,
+      max_tokens: options.maxTokens || 1024,
+      stream,
+    }
     if (systemMessages.length > 0) {
       body.system = systemMessages.map((m) => m.content).join('\n\n')
     }
@@ -134,11 +177,14 @@ export function buildUpstreamChat(cfg) {
   }
 
   // OpenAI 兼容协议
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
+  const authHeader = preset.authHeader || 'Authorization'
+  const headers = { 'Content-Type': 'application/json' }
+  if (authHeader === 'Authorization') {
+    headers.Authorization = `Bearer ${apiKey}`
+  } else {
+    // MiMo 等平台使用 api-key 头，且不需要 Bearer 前缀
+    headers[authHeader] = apiKey
   }
-  const stream = options.stream !== false
   const body = {
     model,
     messages,

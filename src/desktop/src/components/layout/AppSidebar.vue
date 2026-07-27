@@ -14,6 +14,7 @@ import {
   LogOut,
   Bell,
   Archive,
+  Bot,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useI18n } from '@/composables/useI18n'
@@ -31,12 +32,14 @@ const props = defineProps<{
   userEmail?: string
   userAvatarUrl?: string
   settingsDialogOpen?: boolean
+  aiOpen?: boolean
 }>()
 
 const emit = defineEmits<{
   toggle: []
   navigate: [sub: string]
   'open-settings-dialog': []
+  'open-ai': []
   logout: []
 }>()
 
@@ -121,6 +124,16 @@ const accountNavItems = computed(() => [
           <span v-if="item.badge && !isCollapsed" class="sb-badge">{{ item.badge }}</span>
         </button>
       </template>
+
+      <!-- AI Agent entry (opens right-side sidebar, not a route) -->
+      <button
+        :class="['sb-item', { active: props.aiOpen }]"
+        :title="isCollapsed ? t('nav_ai') : undefined"
+        @click="emit('open-ai')"
+      >
+        <Bot :size="20" :stroke-width="1.8" />
+        <span v-show="!isCollapsed" class="sb-label">{{ t('nav_ai') }}</span>
+      </button>
     </nav>
 
     <!-- ===== Account Navigation ===== -->

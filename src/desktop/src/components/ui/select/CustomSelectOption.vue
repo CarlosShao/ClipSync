@@ -48,6 +48,10 @@ const emit = defineEmits<{
 
 .option-text {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .option-check {
