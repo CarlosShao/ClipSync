@@ -111,10 +111,8 @@ export const filteredItems = computed(() => {
       return true
     })
   }
-  if (searchQuery.value.trim()) {
-    const q = searchQuery.value.toLowerCase()
-    result = result.filter((i) => i.content.toLowerCase().includes(q) || (i.source || '').toLowerCase().includes(q))
-  }
+  // 搜索词由后端全文检索过滤（GET /api/clipboard?search=...），前端不再二次过滤，
+  // 避免"只搜到已加载的本地数据"的问题。
   return result
 })
 

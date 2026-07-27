@@ -581,6 +581,12 @@ export function useClipboard() {
   }
   function setSearch(q: string) {
     searchQuery.value = q
+    // 搜索词变化时走后端全文检索（GET /api/clipboard?search=...），不再只过滤本地已加载数据。
+    loadClipboardItems({ page: 1, append: false })
+  }
+  function clearSearch() {
+    searchQuery.value = ''
+    loadClipboardItems({ page: 1, append: false })
   }
   function toggleBatch() {
     batchMode.value = !batchMode.value
@@ -799,6 +805,7 @@ export function useClipboard() {
     loadClipboardItems,
     setFilter,
     setSearch,
+    clearSearch,
     toggleBatch,
     uploadFileItem,
     refresh: loadClipboardItems,

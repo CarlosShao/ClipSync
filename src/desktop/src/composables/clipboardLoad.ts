@@ -13,6 +13,7 @@ import {
   hasMore,
   activeFilter,
   advancedFilters,
+  searchQuery,
   type ClipItem,
 } from './clipboardState'
 import { getCachedContent, cacheContent } from './clipboardCache'
@@ -56,10 +57,12 @@ export async function loadClipboardItems(opts?: {
   if (af.dateFrom && af.dateFrom.trim()) advParts.push(`dateFrom=${encodeURIComponent(af.dateFrom.trim())}`)
   if (af.dateTo && af.dateTo.trim()) advParts.push(`dateTo=${encodeURIComponent(af.dateTo.trim())}`)
   const advParamStr = advParts.length > 0 ? `&${advParts.join('&')}` : ''
+  const q = searchQuery.value.trim()
+  const searchParam = q ? `&search=${encodeURIComponent(q)}` : ''
   try {
     const res = await api(
       'GET',
-      `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}${viewParam}`,
+      `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}${viewParam}${searchParam}`,
     )
     if (res.ok && Array.isArray(res.data?.items)) {
       totalItems.value = res.data?.pagination?.total ?? res.data.items.length
