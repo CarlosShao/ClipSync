@@ -160,7 +160,7 @@ router.post('/2fa/verify-login', async (req, res) => {
     const userId = decoded.userId;
     const r = await pool.query(
       `SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted,
-              two_factor_secret, two_factor_backup_codes
+              two_factor_enabled, two_factor_secret, two_factor_backup_codes
        FROM users WHERE id = $1`,
       [userId]
     );
