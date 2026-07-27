@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import Switch from '@/components/ui/switch/Switch.vue'
@@ -70,8 +70,8 @@ async function load2FAStatus() {
   try {
     const res = await get2FAStatus()
     if (res.ok && res.data) twoFAEnabled.value = !!res.data.enabled
-  } catch {
-    /* 静默：保持默认关闭 */
+  } catch (e) {
+    console.warn('[2FA] load status failed:', e)
   } finally {
     twoFALoading.value = false
   }
@@ -79,12 +79,18 @@ async function load2FAStatus() {
 
 // 用户拨动 Switch：true=开启(进入设置流程) / false=关闭(进入关闭确认)
 async function onToggle2FA(next: boolean) {
+  console.log('[2FA] toggle clicked, next=', next, 'current=', twoFAEnabled.value)
   if (next && !twoFAEnabled.value) {
     await startSetup()
   } else if (!next && twoFAEnabled.value) {
     openDisable()
   }
 }
+
+const twoFAEnabledModel = computed({
+  get: () => twoFAEnabled.value,
+  set: (v: boolean) => onToggle2FA(v),
+})
 
 async function startSetup() {
   setupLoading.value = true
@@ -104,7 +110,8 @@ async function startSetup() {
     }
     setupCode.value = ''
     showSetupModal.value = true
-  } catch {
+  } catch (e) {
+    console.warn('[2FA] setup failed:', e)
     toast.show(t('sec_2fa_setup_fail'), 'error')
   } finally {
     setupLoading.value = false
@@ -128,7 +135,8 @@ async function confirmEnable() {
     } else {
       toast.show(t('sec_2fa_verify_fail'), 'error')
     }
-  } catch {
+  } catch (e) {
+    console.warn('[2FA] enable failed:', e)
     toast.show(t('sec_2fa_setup_fail'), 'error')
   } finally {
     setupLoading.value = false
@@ -155,7 +163,8 @@ async function confirmDisable() {
     } else {
       toast.show(t('sec_2fa_verify_fail'), 'error')
     }
-  } catch {
+  } catch (e) {
+    console.warn('[2FA] disable failed:', e)
     toast.show(t('sec_2fa_setup_fail'), 'error')
   } finally {
     disableLoading.value = false
@@ -194,7 +203,7 @@ onMounted(() => {
           </div>
           <div class="sec-hint">{{ t('sec_2fa_h') }}</div>
         </div>
-        <Switch :model-value="twoFAEnabled" :disabled="twoFALoading || setupLoading" @update:model-value="(v: boolean) => onToggle2FA(v)" />
+        <Switch v-model="twoFAEnabledModel" :disabled="twoFALoading || setupLoading" />
       </div>
 
       <!-- 登录通知：本地持久化 -->
