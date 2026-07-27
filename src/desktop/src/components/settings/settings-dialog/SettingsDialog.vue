@@ -9,6 +9,7 @@ import DataSettings from './DataSettings.vue'
 import SubscriptionSettings from './SubscriptionSettings.vue'
 import TemplateVarsSettings from './TemplateVarsSettings.vue'
 import AboutView from './AboutView.vue'
+import AIProviderSettings from './AIProviderSettings.vue'
 import ShortcutsSettings from './ShortcutsSettings.vue'
 import ThemeSubPage from './sub-pages/ThemeSubPage.vue'
 import ShortcutsSubPage from './sub-pages/ShortcutsSubPage.vue'
@@ -28,13 +29,14 @@ import {
   CreditCard,
   Variable,
   Info,
+  Bot,
   X,
   ArrowLeft,
 } from 'lucide-vue-next'
 
 const { t } = useI18n()
 
-const props = defineProps<{ open: boolean }>()
+const props = defineProps<{ open: boolean; initialCategory?: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const panelRef = ref<HTMLElement | null>(null)
@@ -76,6 +78,7 @@ const navItems = computed<NavItem[]>(() => [
   { key: 'data', label: t('sg_data'), icon: Database },
   { key: 'subscription', label: t('sg_sub_bill'), icon: CreditCard },
   { key: 'variables', label: t('sg_tpl_vars'), icon: Variable },
+  { key: 'ai', label: t('sg_ai'), icon: Bot },
   { key: 'about', label: t('sg_about') || '关于', icon: Info },
 ])
 
@@ -131,6 +134,11 @@ watch(
   () => props.open,
   async (isOpen) => {
     if (isOpen) {
+      // 若指定了初始分类（如从 AI 侧边栏"管理"跳入），直接定位
+      if (props.initialCategory) {
+        activeCategory.value = props.initialCategory
+        activeSubPage.value = ''
+      }
       previousActiveElement.value = document.activeElement as HTMLElement
       document.addEventListener('keydown', onKeyDown)
       await nextTick()
@@ -213,6 +221,7 @@ onUnmounted(() => {
               <DataSettings v-else-if="activeCategory === 'data'" @open-sub-page="handleOpenSubPage" />
               <SubscriptionSettings v-else-if="activeCategory === 'subscription'" @open-sub-page="handleOpenSubPage" />
               <TemplateVarsSettings v-else-if="activeCategory === 'variables'" />
+              <AIProviderSettings v-else-if="activeCategory === 'ai'" />
               <AboutView v-else-if="activeCategory === 'about'" />
             </template>
           </div>

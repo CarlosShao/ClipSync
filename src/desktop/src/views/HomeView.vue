@@ -22,6 +22,8 @@ import QuickPastePanel from '@/components/QuickPastePanel.vue'
 // 设置类页面非首屏，改为异步加载，避免初始化时全部解析进内存
 // SettingsView archived to backups/old-settings-v1/ — replaced by SettingsDialog (settings-dialog/)
 const SettingsDialog = defineAsyncComponent(() => import('@/components/settings/settings-dialog/SettingsDialog.vue'))
+// AI 侧边栏非首屏，异步加载
+const AISidebar = defineAsyncComponent(() => import('@/components/ai/AISidebar.vue'))
 const ProfileView = defineAsyncComponent(() => import('@/components/settings/ProfileView.vue'))
 const DevicesView = defineAsyncComponent(() => import('@/components/settings/DevicesView.vue'))
 const SubscriptionView = defineAsyncComponent(() => import('@/components/settings/SubscriptionView.vue'))
@@ -36,7 +38,7 @@ import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
 import { perfFirstDataLoad } from '@/utils/perfMonitor'
 import { toggleSensitive } from '@/api/client'
 import { ensureDeviceId } from '@/composables/clipboardUpload'
-import { Lock } from 'lucide-vue-next'
+import { Lock, Bot } from 'lucide-vue-next'
 
 const configStore = useConfigStore()
 const { t } = useI18n()
@@ -81,6 +83,12 @@ const modalManagerActive = computed(() => !!showModalType.value || showForgotPwd
 const showOnboarding = ref(!localStorage.getItem('clipsync-onboarded'))
 const showCoachMarks = ref(false)
 const showSettingsDialog = ref(false)
+const settingsInitialCategory = ref('')
+const aiSidebarOpen = ref(false)
+function openAiSettings() {
+  settingsInitialCategory.value = 'ai'
+  showSettingsDialog.value = true
+}
 function openModalFromDialog(type: string) {
   showModalType.value = type
 }
@@ -267,6 +275,10 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     }
     if (showModalType.value) {
       showModalType.value = ''
+      return
+    }
+    if (aiSidebarOpen.value && !showSettingsDialog.value) {
+      aiSidebarOpen.value = false
       return
     }
   }
@@ -553,7 +565,20 @@ function confirmAction() {
   <SatisfactionSurvey />
 
   <!-- Settings Dialog (v2 — progressive migration) -->
-  <SettingsDialog :open="showSettingsDialog" @close="showSettingsDialog = false" />
+  <SettingsDialog :open="showSettingsDialog" :initial-category="settingsInitialCategory" @close="showSettingsDialog = false; settingsInitialCategory = ''" />
+
+  <!-- AI Agent 侧边栏（右侧集成 AI 区） -->
+  <AISidebar :open="aiSidebarOpen" @close="aiSidebarOpen = false" @open-settings="openAiSettings" />
+
+  <!-- AI 悬浮开关 -->
+  <button
+    class="ai-fab"
+    :class="{ 'ai-fab--active': aiSidebarOpen }"
+    :title="t('sg_ai')"
+    @click="aiSidebarOpen = !aiSidebarOpen"
+  >
+    <Bot :size="20" />
+  </button>
 </template>
 
 <style scoped>
@@ -703,5 +728,31 @@ function confirmAction() {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+/* AI 悬浮开关 */
+.ai-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: var(--z-fab, 45);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-default);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: var(--shadow-modal);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.ai-fab:hover {
+  transform: scale(1.06);
+}
+.ai-fab--active {
+  background: var(--accent-strong, var(--accent));
 }
 </style>
