@@ -52,7 +52,7 @@
 | 功能 | 状态 | 优先级 | 说明 |
 |------|------|--------|------|
 | 保存的搜索 | ❌ | P1 | |
-| 搜索历史 | ❌ | P2 | 后端持久化 + 跨设备同步；localStorage 仅作离线缓存。ClipSync 核心是跨设备同步，搜索历史理应随账号走 |
+| 搜索历史 | ✅ | P2 | 后端持久化 + 跨设备同步；localStorage 仅作离线缓存。实现：迁移 022_search_history（(user_id,keyword) 唯一去重）、routes/searchHistory.js（GET/POST/DELETE 按 req.userId 隔离）、前端 ClipboardFilterBar 历史下拉 + 回车记录。提交 e5ba481，真实 HTTP 冒烟 + vue-tsc 通过 |
 
 ### 1.3 收藏夹
 
