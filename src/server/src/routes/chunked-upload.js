@@ -70,11 +70,14 @@ const router = Router();
 // 分片上传目录
 const CHUNK_DIR = path.join(__dirname, '../../uploads/chunks');
 const UPLOAD_DIR = path.join(__dirname, '../../uploads');
+// multer 临时落盘目录（分片先写这里，再由 writeChunk 持久化到最终位置）
+const MULTER_TMP = path.join(CHUNK_DIR, '.multer-tmp');
 
 // 确保目录存在  
 async function ensureDirs() {
   await fs.mkdir(CHUNK_DIR, { recursive: true });
   await fs.mkdir(UPLOAD_DIR, { recursive: true });
+  await fs.mkdir(MULTER_TMP, { recursive: true });
 }
 ensureDirs().catch(err => logger.error('Failed to create upload dirs', { error: err.message }));
 
@@ -137,8 +140,15 @@ async function removeUploadSession(uploadId) {
   }
 }
 
-// 内存存储分片（暂时保留，后续迁移到Redis）  
-const storage = multer.memoryStorage();
+// 磁盘存储分片：每个分片先落临时盘（MULTER_TMP），再由 writeChunk 持久化到最终位置，
+// 避免大文件分片全部缓冲进 Node 内存导致 OOM（原 memoryStorage 的隐患）
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, MULTER_TMP),
+  filename: (req, file, cb) => {
+    const { uploadId, chunkIndex } = req.params;
+    cb(null, `${uploadId}_${chunkIndex}`);
+  },
+});
 const upload = multer({
   storage,
   limits: { fileSize: 12 * 1024 * 1024 } // 12MB per chunk (10MB data + headroom)
@@ -280,7 +290,10 @@ router.post('/chunk/:uploadId/:chunkIndex', authenticateToken, apiLimiter, uploa
     }
     
     // 保存分片（通过存储服务）
-    await writeChunk(uploadId, chunkIndexNum, req.file.buffer);
+    // diskStorage 模式下 req.file 仅含 .path（无 .buffer），需读盘后写入并清理临时文件
+    const chunkBuffer = await fs.readFile(req.file.path);
+    await writeChunk(uploadId, chunkIndexNum, chunkBuffer);
+    await fs.unlink(req.file.path).catch(() => {});
     
     // 记录已上传的分片（使用数组，避免重复）  
     if (!session.uploadedChunks.includes(chunkIndexNum)) {

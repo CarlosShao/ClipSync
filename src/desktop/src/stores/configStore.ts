@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type { AppConfig } from '@/types'
 import * as tauri from '@/lib/tauri'
 import { useClipboard } from '@/composables/useClipboard'
+import { clearQueue } from '@/utils/offlineQueue'
 
 const isDev = import.meta.env.DEV
 
@@ -108,6 +109,8 @@ export const useConfigStore = defineStore('config', () => {
     // 清除剪贴板内容缓存与 tab 状态，避免切换账号后旧数据/图片残留内存和磁盘
     localStorage.removeItem('clipsync-content-cache-v2')
     localStorage.removeItem('clipsync-clipboard-filter')
+    // 登出时清理离线队列，避免上一个账号的离线操作被下一个登录账号刷出（跨用户清理）
+    clearQueue()
     user.value = { name: '', email: '', phone: '', plan: 'Free' }
     config.value.token = null
     config.value.user_id = null
