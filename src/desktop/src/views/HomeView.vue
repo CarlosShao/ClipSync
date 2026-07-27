@@ -35,6 +35,7 @@ import CoachMarks from '@/components/CoachMarks.vue'
 import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
 import { perfFirstDataLoad } from '@/utils/perfMonitor'
 import { toggleSensitive } from '@/api/client'
+import { ensureDeviceId } from '@/composables/clipboardUpload'
 import { Lock } from 'lucide-vue-next'
 
 const configStore = useConfigStore()
@@ -183,6 +184,9 @@ onMounted(async () => {
   }
 
   stopPolling = clip.startPolling(1500)
+  // 首屏启动时预热 deviceId：离线队列的 create payload 必须带有效 deviceId，
+  // 等断网后再现取会失败，导致无法入队。
+  ensureDeviceId().catch(() => null)
   device.loadDevices()
   ws.connect()
   notif.loadHistory()

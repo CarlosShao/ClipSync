@@ -85,6 +85,69 @@ export function resizeImageIfNeeded(dataUrl: string, maxPx = 1080): Promise<stri
 // 文本同步大小上限：比后端 express.json 的 10MB 小 1MB 留余量，避免 413 Payload Too Large
 const MAX_TEXT_UPLOAD_SIZE = 9 * 1024 * 1024
 
+const DEVICE_ID_KEY = 'clipsync-device-id'
+
+function guessPlatform(): string {
+  const ua = navigator.userAgent.toLowerCase()
+  if (ua.includes('win')) return 'windows'
+  if (ua.includes('mac')) return 'macos'
+  if (ua.includes('linux')) return 'linux'
+  return 'windows'
+}
+
+/**
+ * 确保本地已缓存当前设备的 deviceId。
+ * 离线队列里的 create payload 必须带有效的 deviceId，否则恢复网络后 flush 会 404。
+ * 因此登录成功 / 应用启动时就要把 deviceId 准备好，不能等第一次上传时才现取。
+ */
+export async function ensureDeviceId(): Promise<string | null> {
+  let deviceId = localStorage.getItem(DEVICE_ID_KEY)
+  if (deviceId) return deviceId
+
+  try {
+    // 先尝试拉取已有设备
+    const devRes = await api('GET', '/api/devices')
+    const devList = devRes.data?.devices || devRes.data
+    if (devRes.ok && Array.isArray(devList) && devList.length > 0) {
+      deviceId = devList[0].id || devList[0].device_id
+      if (deviceId) {
+        localStorage.setItem(DEVICE_ID_KEY, deviceId)
+        return deviceId
+      }
+    }
+  } catch {
+    /* ignore, try register */
+  }
+
+  // 没有已有设备：注册本机
+  try {
+    const platform = guessPlatform()
+    const registerRes = await api('POST', '/api/devices', {
+      deviceName: 'Desktop',
+      deviceType: 'desktop',
+      platform,
+      platformVersion: '',
+      appVersion: '0.1.0',
+    })
+    if (registerRes.ok && registerRes.data?.id) {
+      const did = registerRes.data.id
+      localStorage.setItem(DEVICE_ID_KEY, did)
+      return did
+    }
+    // 设备名冲突时后端返回 409 并带已有 deviceId
+    if (registerRes.status === 409 && registerRes.data?.deviceId) {
+      const did = registerRes.data.deviceId
+      localStorage.setItem(DEVICE_ID_KEY, did)
+      return did
+    }
+  } catch {
+    /* ignore */
+  }
+
+  console.warn('[Clipboard] Failed to ensure deviceId')
+  return null
+}
+
 export async function uploadToServer(content: string, type: ClipItem['type'] = 'text') {
   const hash = simpleHash(content)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
@@ -101,20 +164,12 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   items.value.unshift({ id: localId, type, content, source: 'Desktop', timestamp: Date.now(), selected: false })
   // 获取设备ID
-  let deviceId = localStorage.getItem('clipsync-device-id')
+  const deviceId = await ensureDeviceId()
   if (!deviceId) {
-    try {
-      const devRes = await api('GET', '/api/devices')
-      const devList = devRes.data?.devices || devRes.data
-      if (devRes.ok && Array.isArray(devList) && devList.length > 0) {
-        deviceId = devList[0].id || devList[0].device_id
-        localStorage.setItem('clipsync-device-id', deviceId!)
-      }
-    } catch {
-      /* ignore */
-    }
+    console.warn('[Clipboard] uploadToServer: no deviceId, dropping text')
+    items.value = items.value.filter((i) => i.id !== localId)
+    return
   }
-  if (!deviceId) return
   const uploadPayload = {
     content,
     contentEncrypted: content,
@@ -171,8 +226,11 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
     timestamp: Date.now(),
     selected: false,
   })
-  const deviceId = localStorage.getItem('clipsync-device-id')
-  if (!deviceId) return
+  const deviceId = await ensureDeviceId()
+  if (!deviceId) {
+    console.warn('[Clipboard] uploadImageToServer: no deviceId, dropping image')
+    return
+  }
   const uploadPayload = {
     contentType: 'image',
     contentEncrypted: resized,
@@ -236,8 +294,11 @@ export async function uploadFileToServer(payload: string) {
     selected: false,
   })
 
-  const deviceId = localStorage.getItem('clipsync-device-id')
-  if (!deviceId) return
+  const deviceId = await ensureDeviceId()
+  if (!deviceId) {
+    console.warn('[Clipboard] uploadFileToServer: no deviceId, dropping file')
+    return
+  }
   const uploadPayload = {
     contentType: 'file',
     content: JSON.stringify({ name: fileName, paths: filePaths }),

@@ -47,7 +47,7 @@ import {
   cleanupCopiedContent,
 } from './clipboardDedup'
 import { releaseRemovedObjectUrls, releaseAllObjectUrls } from './clipboardObjectUrls'
-import { simpleHash, apiOrEnqueue, resizeImageIfNeeded } from './clipboardUpload'
+import { simpleHash, apiOrEnqueue, resizeImageIfNeeded, ensureDeviceId } from './clipboardUpload'
 import { enqueueClipboardTask } from './clipboardQueue'
 import { loadClipboardItems, loadMore, loadDevices, updateItemContent, clearAdvancedFilters } from './clipboardLoad'
 
@@ -627,19 +627,7 @@ export function useClipboard() {
       timestamp: Date.now(),
     })
 
-    let deviceId: string | null = localStorage.getItem('clipsync-device-id')
-    if (!deviceId) {
-      try {
-        const devRes = await api('GET', '/api/devices')
-        const devList = devRes.data?.devices || devRes.data
-        if (devRes.ok && Array.isArray(devList) && devList.length > 0) {
-          deviceId = devList[0].id || devList[0].device_id || null
-          if (deviceId) localStorage.setItem('clipsync-device-id', deviceId)
-        }
-      } catch {
-        /* ignore */
-      }
-    }
+    const deviceId = await ensureDeviceId()
     if (!deviceId) throw new Error('No device ID')
 
     // 判断文件类型走不同上传路径
