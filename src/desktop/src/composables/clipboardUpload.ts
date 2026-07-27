@@ -31,7 +31,15 @@ export async function apiOrEnqueue(
   try {
     const res = await api(method, path, body)
     if (res.ok) return res
-    // Non-network error (4xx/5xx) — don't enqueue, just return failure
+    // status === 0 表示 fetch 抛错（断网 / CORS / DNS 失败），需要入队离线同步。
+    // 4xx/5xx 属于服务端业务错误，不入队。
+    if (res.status === 0) {
+      const msg = String(res.error || 'network error')
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('offline')) {
+        console.warn(`[Clipboard] Network unavailable, enqueueing ${offlineType}`)
+        enqueue({ type: offlineType, payload: offlinePayload })
+      }
+    }
     return res
   } catch (e: any) {
     const msg = String(e?.message || e)
