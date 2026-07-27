@@ -3,10 +3,10 @@ import { ref, computed, watch } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { useI18n } from '@/composables/useI18n'
 import { useClipboard } from '@/composables/useClipboard'
-import { getSearchHistory, recordSearch, clearSearchHistory } from '@/api/searchHistory'
-import type { SearchHistoryItem } from '@/api/searchHistory'
+import { useSearchHistory } from '@/composables/useSearchHistory'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
+import SearchHistoryDropdown from './SearchHistoryDropdown.vue'
 import { Search, Filter, Trash2, ArchiveRestore, X } from 'lucide-vue-next'
 
 const props = defineProps<{ isArchive: boolean; showFilterPanel: boolean }>()
@@ -18,6 +18,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const clip = useClipboard()
+const sh = useSearchHistory()
+
+// 历史下拉显隐：聚焦显示、失焦延迟关闭（确保下拉项 mousedown 先触发）
+const showHistory = ref(false)
 
 // Filter options for segmented control
 const filterOptions = [
@@ -37,32 +41,9 @@ watch(() => clip.searchQuery.value, (q) => {
   if (q !== searchInput.value) searchInput.value = q
 })
 
-// 搜索历史（后端持久化，随账号跨设备同步）
-const searchHistory = ref<SearchHistoryItem[]>([])
-const showHistory = ref(false)
-const historyLoaded = ref(false)
-
-async function loadHistory() {
-  historyLoaded.value = false
-  try {
-    const res = await getSearchHistory(10)
-    if (res.ok) {
-      searchHistory.value = res.data?.items ?? []
-    } else {
-      console.warn('[search-history] load failed', res.error)
-      searchHistory.value = []
-    }
-  } catch (e) {
-    console.warn('[search-history] load error', e)
-    searchHistory.value = []
-  } finally {
-    historyLoaded.value = true
-  }
-}
-
 function onSearchFocus() {
   showHistory.value = true
-  loadHistory()
+  sh.load()
 }
 
 function onSearchBlur() {
@@ -88,23 +69,7 @@ async function commitSearch(kw?: string) {
   if (!keyword) return
   searchInput.value = keyword
   clip.setSearch(keyword)
-  showHistory.value = false
-  const res = await recordSearch(keyword)
-  if (!res.ok) {
-    console.warn('[search-history] record failed', res.error)
-    return
-  }
-  // 乐观更新本地历史，下次 focus 立刻能看到刚搜的词
-  const existingIndex = searchHistory.value.findIndex((h) => h.keyword === keyword)
-  if (existingIndex >= 0) {
-    searchHistory.value.splice(existingIndex, 1)
-  }
-  searchHistory.value.unshift({
-    id: `local-${Date.now()}`,
-    keyword,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  })
+  await sh.record(keyword) // 失败已在 composable 内 console.warn
 }
 
 function pickHistory(kw: string) {
@@ -116,13 +81,6 @@ function clearSearch() {
   searchSessionId++ // 废弃可能正在 pending 的防抖调用
   searchInput.value = ''
   clip.clearSearch()
-  showHistory.value = false
-}
-
-async function clearHistory() {
-  const res = await clearSearchHistory()
-  if (res.ok) searchHistory.value = []
-  else console.warn('[search-history] clear failed', res.error)
 }
 </script>
 
@@ -162,25 +120,13 @@ async function clearHistory() {
       >
         <X :size="14" />
       </button>
-      <div v-if="showHistory" class="search-history-dropdown">
-        <template v-if="searchHistory.length > 0">
-          <div
-            v-for="item in searchHistory"
-            :key="item.id"
-            class="search-history-item"
-            @mousedown.prevent="pickHistory(item.keyword)"
-          >
-            <Search :size="12" class="search-history-item-icon" />
-            <span class="search-history-item-text">{{ item.keyword }}</span>
-          </div>
-          <button class="search-history-clear" @mousedown.prevent="clearHistory">
-            {{ t('clear_search_history') }}
-          </button>
-        </template>
-        <div v-else-if="historyLoaded" class="search-history-empty">
-          {{ t('no_search_history') }}
-        </div>
-      </div>
+      <SearchHistoryDropdown
+        v-if="showHistory"
+        :keywords="sh.history.value"
+        :loaded="sh.loaded.value"
+        @pick="pickHistory"
+        @clear="sh.clear"
+      />
     </div>
     <Button
       variant="ghost"
@@ -325,69 +271,6 @@ async function clearHistory() {
 .search-clear-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-}
-
-/* 搜索历史下拉 */
-.search-history-dropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 200;
-  min-width: 100%;
-  width: max-content;
-  max-width: 360px;
-  max-height: 280px;
-  overflow-y: auto;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card);
-  padding: 4px;
-}
-.search-history-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  color: var(--text-primary);
-  font-size: 13px;
-}
-.search-history-item:hover {
-  background: var(--bg-hover);
-}
-.search-history-item-icon {
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-}
-.search-history-item-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.search-history-clear {
-  width: 100%;
-  margin-top: 2px;
-  padding: 7px 10px;
-  border: none;
-  border-top: 1px solid var(--border-default);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-}
-.search-history-clear:hover {
-  color: var(--danger);
-  background: var(--danger-bg);
-}
-.search-history-empty {
-  padding: 10px 12px;
-  color: var(--text-tertiary);
-  font-size: 13px;
-  text-align: center;
 }
 
 /* Batch delete button */
