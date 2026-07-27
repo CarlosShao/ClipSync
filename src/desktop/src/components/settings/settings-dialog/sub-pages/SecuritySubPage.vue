@@ -1,8 +1,18 @@
 <script setup lang="ts">
-import { reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import Switch from '@/components/ui/switch/Switch.vue'
+import Button from '@/components/ui/button/Button.vue'
+import Input from '@/components/ui/input/Input.vue'
+import { X, ShieldCheck, Copy } from 'lucide-vue-next'
+import QRCode from 'qrcode'
+import {
+  get2FAStatus,
+  setup2FA,
+  enable2FA,
+  disable2FA,
+} from '@/api/auth'
 
 const { t } = useI18n()
 const toast = useSonner()
@@ -10,39 +20,161 @@ const emit = defineEmits<{ back: [] }>()
 
 const STORAGE_KEY = 'clipsync-sec-notif'
 
-// ===== State =====
+// ===== 登录通知（本地持久化，后端暂无对应接口） =====
 interface SecNotifPrefs {
-  twoFA: boolean
   loginNotification: boolean
 }
-
 const secNotif = reactive<SecNotifPrefs>({
-  twoFA: false,
   loginNotification: true,
 })
-
 function loadFromStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
-      if (typeof parsed.twoFA === 'boolean') secNotif.twoFA = parsed.twoFA
       if (typeof parsed.loginNotification === 'boolean') secNotif.loginNotification = parsed.loginNotification
     }
   } catch {
     /* ignore */
   }
 }
-
 function saveSecNotif(partial: Partial<SecNotifPrefs>) {
   Object.assign(secNotif, partial)
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...secNotif }))
-  // 后端暂无 /api/user/security-notifications，本地持久化即可
   toast.show(t('settings_saved'), 'success')
+}
+
+// ===== 2FA 状态（来自后端，非本地） =====
+const twoFAEnabled = ref(false)
+const twoFALoading = ref(false)
+
+// 开启流程弹窗
+const showSetupModal = ref(false)
+const setupSecret = ref('')
+const setupUri = ref('')
+const setupQr = ref('') // data URL
+const setupCode = ref('')
+const setupLoading = ref(false)
+
+// 备份码弹窗
+const showBackupModal = ref(false)
+const backupCodes = ref<string[]>([])
+
+// 关闭流程弹窗
+const showDisableModal = ref(false)
+const disableCode = ref('')
+const disableLoading = ref(false)
+
+async function load2FAStatus() {
+  twoFALoading.value = true
+  try {
+    const res = await get2FAStatus()
+    if (res.ok && res.data) twoFAEnabled.value = !!res.data.enabled
+  } catch {
+    /* 静默：保持默认关闭 */
+  } finally {
+    twoFALoading.value = false
+  }
+}
+
+// 用户拨动 Switch：true=开启(进入设置流程) / false=关闭(进入关闭确认)
+async function onToggle2FA(next: boolean) {
+  if (next && !twoFAEnabled.value) {
+    await startSetup()
+  } else if (!next && twoFAEnabled.value) {
+    openDisable()
+  }
+}
+
+async function startSetup() {
+  setupLoading.value = true
+  try {
+    const res = await setup2FA()
+    if (!res.ok || !res.data?.secret) {
+      toast.show(t('sec_2fa_setup_fail'), 'error')
+      return
+    }
+    setupSecret.value = res.data.secret
+    setupUri.value = res.data.otpauthUri || ''
+    // 生成二维码（data URL），失败则退化为手动密钥展示
+    try {
+      setupQr.value = await QRCode.toDataURL(setupUri.value || `otpauth://totp/ClipSync?secret=${res.data.secret}`)
+    } catch {
+      setupQr.value = ''
+    }
+    setupCode.value = ''
+    showSetupModal.value = true
+  } catch {
+    toast.show(t('sec_2fa_setup_fail'), 'error')
+  } finally {
+    setupLoading.value = false
+  }
+}
+
+async function confirmEnable() {
+  if (!setupCode.value || setupCode.value.length !== 6) {
+    toast.show(t('sec_2fa_verify_fail'), 'error')
+    return
+  }
+  setupLoading.value = true
+  try {
+    const res = await enable2FA(setupCode.value)
+    if (res.ok && res.data?.success) {
+      twoFAEnabled.value = true
+      backupCodes.value = res.data.backupCodes || []
+      showSetupModal.value = false
+      showBackupModal.value = true
+      toast.show(t('sec_2fa_enabled_toast'), 'success')
+    } else {
+      toast.show(t('sec_2fa_verify_fail'), 'error')
+    }
+  } catch {
+    toast.show(t('sec_2fa_setup_fail'), 'error')
+  } finally {
+    setupLoading.value = false
+  }
+}
+
+function openDisable() {
+  disableCode.value = ''
+  showDisableModal.value = true
+}
+
+async function confirmDisable() {
+  if (!disableCode.value || disableCode.value.length < 6) {
+    toast.show(t('sec_2fa_verify_fail'), 'error')
+    return
+  }
+  disableLoading.value = true
+  try {
+    const res = await disable2FA(disableCode.value)
+    if (res.ok && res.data?.success) {
+      twoFAEnabled.value = false
+      showDisableModal.value = false
+      toast.show(t('sec_2fa_disabled_toast'), 'success')
+    } else {
+      toast.show(t('sec_2fa_verify_fail'), 'error')
+    }
+  } catch {
+    toast.show(t('sec_2fa_setup_fail'), 'error')
+  } finally {
+    disableLoading.value = false
+  }
+}
+
+async function copyBackupCodes() {
+  const text = backupCodes.value.join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.show(t('sec_2fa_copy_codes'), 'success')
+  } catch {
+    toast.show(t('sec_2fa_copy_codes'), 'info')
+  }
 }
 
 onMounted(() => {
   loadFromStorage()
+  load2FAStatus()
 })
 </script>
 
@@ -51,13 +183,21 @@ onMounted(() => {
     <h3 class="sp-title">{{ t('modal_security') }}</h3>
     <p class="sp-desc">{{ t('sg_2fa_h') }}</p>
     <div class="sec-list">
+      <!-- 两步验证：真实后端流程 -->
       <div class="sec-item">
         <div>
-          <div class="sec-label">{{ t('sec_2fa') }}</div>
+          <div class="sec-label">
+            {{ t('sec_2fa') }}
+            <span v-if="twoFALoading" class="sec-badge">{{ t('sec_2fa_processing') }}</span>
+            <span v-else-if="twoFAEnabled" class="sec-badge on">{{ t('sec_2fa_status_on') }}</span>
+            <span v-else class="sec-badge off">{{ t('sec_2fa_status_off') }}</span>
+          </div>
           <div class="sec-hint">{{ t('sec_2fa_h') }}</div>
         </div>
-        <Switch :model-value="secNotif.twoFA" @update:model-value="(v: boolean) => saveSecNotif({ twoFA: v })" />
+        <Switch :model-value="twoFAEnabled" :disabled="twoFALoading || setupLoading" @update:model-value="(v: boolean) => onToggle2FA(v)" />
       </div>
+
+      <!-- 登录通知：本地持久化 -->
       <div class="sec-item">
         <div>
           <div class="sec-label">{{ t('sec_login_notif') }}</div>
@@ -68,6 +208,8 @@ onMounted(() => {
           @update:model-value="(v: boolean) => saveSecNotif({ loginNotification: v })"
         />
       </div>
+
+      <!-- 端到端加密：待上线 -->
       <div class="sec-item">
         <div>
           <div class="sec-label">{{ t('sec_e2ee') }}</div>
@@ -76,6 +218,86 @@ onMounted(() => {
         <Switch :model-value="false" disabled />
       </div>
     </div>
+
+    <!-- ===== 开启设置弹窗（扫码 + 输入验证码） ===== -->
+    <Teleport to="body">
+      <div v-if="showSetupModal" class="modal-overlay" @click.self="showSetupModal = false">
+        <div class="modal-box setup-box">
+          <Button variant="ghost" size="icon" class="modal-close" @click="showSetupModal = false"><X :size="18" /></Button>
+          <h2 class="modal-title">{{ t('sec_2fa_setup_title') }}</h2>
+          <p class="modal-desc">{{ t('sec_2fa_setup_desc') }}</p>
+
+          <div class="qr-wrap">
+            <img v-if="setupQr" :src="setupQr" alt="2FA QR" class="qr-img" />
+            <div v-else class="qr-fallback"><ShieldCheck :size="32" /></div>
+          </div>
+
+          <div class="secret-row">
+            <span class="secret-label">{{ t('sec_2fa_secret_label') }}</span>
+            <code class="secret-code">{{ setupSecret }}</code>
+          </div>
+
+          <div class="form-group">
+            <Input
+              v-model="setupCode"
+              type="text"
+              maxlength="6"
+              class="form-input"
+              :placeholder="t('sec_2fa_code_ph')"
+              @keydown.enter="confirmEnable"
+            />
+          </div>
+          <Button class="w-full" :disabled="setupLoading || setupCode.length !== 6" @click="confirmEnable">
+            <span v-if="setupLoading" class="spinner" /> {{ t('sec_2fa_verify_enable') }}
+          </Button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ===== 备份码弹窗 ===== -->
+    <Teleport to="body">
+      <div v-if="showBackupModal" class="modal-overlay" @click.self="showBackupModal = false">
+        <div class="modal-box">
+          <Button variant="ghost" size="icon" class="modal-close" @click="showBackupModal = false"><X :size="18" /></Button>
+          <h2 class="modal-title">{{ t('sec_2fa_backup_title') }}</h2>
+          <p class="modal-desc">{{ t('sec_2fa_backup_desc') }}</p>
+
+          <div class="backup-grid">
+            <code v-for="(c, i) in backupCodes" :key="i" class="backup-code">{{ c }}</code>
+          </div>
+
+          <Button variant="outline" class="w-full" @click="copyBackupCodes">
+            <Copy :size="14" /> {{ t('sec_2fa_copy_codes') }}
+          </Button>
+          <Button class="w-full" @click="showBackupModal = false">{{ t('btn_done') || 'Done' }}</Button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ===== 关闭确认弹窗 ===== -->
+    <Teleport to="body">
+      <div v-if="showDisableModal" class="modal-overlay" @click.self="showDisableModal = false">
+        <div class="modal-box">
+          <Button variant="ghost" size="icon" class="modal-close" @click="showDisableModal = false"><X :size="18" /></Button>
+          <h2 class="modal-title">{{ t('sec_2fa_disable_title') }}</h2>
+          <p class="modal-desc">{{ t('sec_2fa_disable_desc') }}</p>
+
+          <div class="form-group">
+            <Input
+              v-model="disableCode"
+              type="text"
+              maxlength="8"
+              class="form-input"
+              :placeholder="t('sec_2fa_code_ph')"
+              @keydown.enter="confirmDisable"
+            />
+          </div>
+          <Button class="w-full" :disabled="disableLoading || disableCode.length < 6" @click="confirmDisable">
+            <span v-if="disableLoading" class="spinner" /> {{ t('sec_2fa_disable_btn') }}
+          </Button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -108,10 +330,178 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .sec-hint {
   font-size: 12px;
   color: var(--text-secondary);
   margin-top: 2px;
+}
+.sec-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+}
+.sec-badge.on {
+  background: var(--success-light, #dcfce7);
+  color: var(--success, #16a34a);
+}
+.sec-badge.off {
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+}
+
+/* ===== Modals ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-modal-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+.modal-box {
+  position: relative;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: var(--shadow-modal);
+}
+.setup-box {
+  max-width: 360px;
+}
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.modal-close:hover {
+  color: var(--text-primary);
+}
+.modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+}
+.modal-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 18px;
+  line-height: 1.5;
+}
+.qr-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: #fff;
+  border-radius: var(--radius-md);
+  margin-bottom: 14px;
+}
+.qr-img {
+  width: 180px;
+  height: 180px;
+  display: block;
+}
+.qr-fallback {
+  width: 180px;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+.secret-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.secret-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.secret-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  word-break: break-all;
+  user-select: all;
+}
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.form-input {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 150ms;
+  width: 100%;
+  box-sizing: border-box;
+}
+.form-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+.backup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.backup-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  letter-spacing: 1px;
+}
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent-light);
+  border-top-color: var(--text-inverse);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+:global(.modal-box .w-full) {
+  width: 100%;
+}
+:global(.modal-box .w-full + .w-full) {
+  margin-top: 10px;
 }
 </style>

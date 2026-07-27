@@ -44,3 +44,32 @@ export async function resetPinViaCode(phoneOrEmail: string, code: string, method
   const res = await api('POST', '/api/auth/reset-pin', body)
   return res.ok
 }
+
+// ============================================
+// 两步验证（2FA / TOTP）
+// ============================================
+
+/** 查询 2FA 是否已开启 */
+export function get2FAStatus() {
+  return api('GET', '/api/auth/2fa/status')
+}
+
+/** 开启设置：生成待确认密钥，返回 secret + otpauthUri 供扫码 */
+export function setup2FA() {
+  return api('POST', '/api/auth/2fa/setup')
+}
+
+/** 确认开启：校验动态码，落盘密钥 + 返回 10 个备份码 */
+export function enable2FA(code: string) {
+  return api('POST', '/api/auth/2fa/enable', { code })
+}
+
+/** 关闭 2FA：需提供动态码或备份码 */
+export function disable2FA(code: string) {
+  return api('POST', '/api/auth/2fa/disable', { code })
+}
+
+/** 登录挑战：消费 challengeToken，校验动态码后返回正式会话 token */
+export function verify2FALogin(challengeToken: string, code: string) {
+  return api('POST', '/api/auth/2fa/verify-login', { challengeToken, code })
+}

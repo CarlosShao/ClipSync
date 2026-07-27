@@ -5,6 +5,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useTheme, currentMode } from '@/composables/useTheme'
 import { api, prefetchCsrf } from '@/api/client'
+import { verify2FALogin } from '@/api/auth'
 import * as tauri from '@/lib/tauri'
 import { Eye, EyeOff, Sun, Moon, ArrowLeft, X } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
@@ -20,7 +21,7 @@ const toast = useSonner()
 const { toggleMode } = useTheme()
 
 // ===== Auth state =====
-const authView = ref<'login-phone' | 'login-password' | 'register' | 'set-password'>('login-phone')
+const authView = ref<'login-phone' | 'login-password' | 'register' | 'set-password' | 'login-2fa'>('login-phone')
 const authTab = ref<'phone' | 'password'>('phone')
 const authPhone = ref('')
 const authCode = ref('')
@@ -32,6 +33,11 @@ const isSendingCode = ref(false)
 const isLoggingIn = ref(false)
 const codeCountdown = ref(0)
 let countdownTimer: ReturnType<typeof setInterval> | null = null
+
+// ===== 2FA 登录挑战状态 =====
+const twoFactorChallengeToken = ref('')
+const twoFactorCode = ref('')
+const isVerifying2FA = ref(false)
 
 // ===== Register state =====
 const regPhone = ref('')
@@ -177,6 +183,11 @@ async function handleLogin() {
       try {
         // 直接调用 HTTP API（Tauri login 命令调用了错误的端点 /api/auth/login）
         const res = await api('POST', '/api/auth/verify-code', { phone, code: authCode.value })
+        if (res.ok && res.data?.twoFactorRequired) {
+          twoFactorChallengeToken.value = res.data.challengeToken || ''
+          authView.value = 'login-2fa'
+          return
+        }
         if (res.ok && res.data?.token) {
           configStore.config.token = res.data.token
           configStore.config.user_id = res.data.user?.id || ''
@@ -232,6 +243,11 @@ async function handleLogin() {
       else if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(acct)) loginBody.email = acct
       else loginBody.account = acct
       const res = await api('POST', '/api/auth/login', loginBody)
+      if (res.ok && res.data?.twoFactorRequired) {
+        twoFactorChallengeToken.value = res.data.challengeToken || ''
+        authView.value = 'login-2fa'
+        return
+      }
       if (res.ok && res.data) {
         // 密码登录直接从 API 响应存储 token
         const token = res.data.token || res.data.data?.token
@@ -253,6 +269,39 @@ async function handleLogin() {
     toast.show(t('login_failed') + String(e), 'error')
   }
   isLoggingIn.value = false
+}
+
+// ===== 2FA 登录挑战验证 =====
+async function handle2FAVerify() {
+  if (!twoFactorCode.value || twoFactorCode.value.length !== 6) {
+    toast.show(t('auth_need_code'), 'error')
+    shakeById('lp-2fa')
+    return
+  }
+  isVerifying2FA.value = true
+  try {
+    const res = await verify2FALogin(twoFactorChallengeToken.value, twoFactorCode.value)
+    if (res.ok && res.data?.token) {
+      configStore.config.token = res.data.token
+      configStore.config.user_id = res.data.user?.id || ''
+      localStorage.setItem('clipsync-token', res.data.token)
+      await prefetchCsrf()
+      toast.show(t('login_success'), 'success')
+      window.location.href = '/app/clipboard'
+    } else {
+      toast.show(t('sec_2fa_verify_fail') + (res.error || ''), 'error')
+    }
+  } catch (e: any) {
+    console.warn('[Auth] 2FA verify error:', e)
+    toast.show(t('sec_2fa_verify_fail') + String(e), 'error')
+  }
+  isVerifying2FA.value = false
+}
+
+// 从 2FA 挑战返回登录页
+function backToLoginFrom2FA() {
+  twoFactorCode.value = ''
+  authView.value = 'login-phone'
 }
 
 // ===== Register =====
@@ -670,6 +719,36 @@ const isRegisterView = computed(() => authView.value === 'register')
                   />
                 </svg>
               </button>
+            </div>
+          </div>
+
+          <!-- ===== 2FA 登录挑战 ===== -->
+          <div v-else-if="authView === 'login-2fa'" class="auth-view">
+            <Button variant="ghost" size="sm" class="back-btn" @click="backToLoginFrom2FA"
+              ><ArrowLeft :size="14" /> {{ t('login_2fa_back') }}</Button
+            >
+            <div class="auth-brand">
+              <div class="auth-logo">C</div>
+              <span class="auth-brand-name">ClipSync</span>
+            </div>
+            <h1 class="auth-heading">{{ t('login_2fa_title') }}</h1>
+            <p class="auth-subtitle">{{ t('login_2fa_desc') }}</p>
+            <div class="auth-form">
+              <div class="form-group">
+                <label class="form-label">{{ t('login_2fa_code') }}</label>
+                <Input
+                  id="lp-2fa"
+                  v-model="twoFactorCode"
+                  type="text"
+                  maxlength="6"
+                  class="form-input"
+                  :placeholder="t('sec_2fa_code_ph')"
+                  @keydown.enter="handle2FAVerify"
+                />
+              </div>
+              <Button class="w-full" :disabled="isVerifying2FA" @click="handle2FAVerify">
+                <span v-if="isVerifying2FA" class="spinner" /> {{ t('login_2fa_verify') }}
+              </Button>
             </div>
           </div>
 
