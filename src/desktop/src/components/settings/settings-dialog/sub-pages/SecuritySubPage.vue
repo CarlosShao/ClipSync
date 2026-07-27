@@ -80,11 +80,31 @@ async function load2FAStatus() {
 // 用户拨动 Switch：true=开启(进入设置流程) / false=关闭(进入关闭确认)
 async function onToggle2FA(next: boolean) {
   console.log('[2FA] toggle clicked, next=', next, 'current=', twoFAEnabled.value)
-  if (next && !twoFAEnabled.value) {
+  // 立即让 UI 切换，不要等后端请求
+  twoFAEnabled.value = next
+  if (next) {
     await startSetup()
-  } else if (!next && twoFAEnabled.value) {
+    // 请求失败时 startSetup 不会打开弹框，需把开关回滚
+    if (!showSetupModal.value) twoFAEnabled.value = false
+  } else {
     openDisable()
   }
+}
+
+function cancelSetup() {
+  // 只有尚未完成启用流程（备份码未展示）时才回滚
+  if (!showBackupModal.value) {
+    twoFAEnabled.value = false
+    setupSecret.value = ''
+    setupUri.value = ''
+    setupQr.value = ''
+    setupCode.value = ''
+  }
+}
+
+function cancelDisable() {
+  // 关闭弹框但未真正关闭 2FA 时把开关回滚
+  if (!twoFAEnabled.value) twoFAEnabled.value = true
 }
 
 const twoFAEnabledModel = computed({
@@ -161,10 +181,13 @@ async function confirmDisable() {
       showDisableModal.value = false
       toast.show(t('sec_2fa_disabled_toast'), 'success')
     } else {
+      // 关闭失败，开关回滚为开启
+      twoFAEnabled.value = true
       toast.show(t('sec_2fa_verify_fail'), 'error')
     }
   } catch (e) {
     console.warn('[2FA] disable failed:', e)
+    twoFAEnabled.value = true
     toast.show(t('sec_2fa_setup_fail'), 'error')
   } finally {
     disableLoading.value = false
@@ -230,9 +253,9 @@ onMounted(() => {
 
     <!-- ===== 开启设置弹窗（扫码 + 输入验证码） ===== -->
     <Teleport to="body">
-      <div v-if="showSetupModal" class="modal-overlay" @click.self="showSetupModal = false">
+      <div v-if="showSetupModal" class="modal-overlay" @click.self="cancelSetup">
         <div class="modal-box setup-box">
-          <Button variant="ghost" size="icon" class="modal-close" @click="showSetupModal = false"><X :size="18" /></Button>
+          <Button variant="ghost" size="icon" class="modal-close" @click="cancelSetup"><X :size="18" /></Button>
           <h2 class="modal-title">{{ t('sec_2fa_setup_title') }}</h2>
           <p class="modal-desc">{{ t('sec_2fa_setup_desc') }}</p>
 
@@ -285,9 +308,9 @@ onMounted(() => {
 
     <!-- ===== 关闭确认弹窗 ===== -->
     <Teleport to="body">
-      <div v-if="showDisableModal" class="modal-overlay" @click.self="showDisableModal = false">
+      <div v-if="showDisableModal" class="modal-overlay" @click.self="cancelDisable">
         <div class="modal-box">
-          <Button variant="ghost" size="icon" class="modal-close" @click="showDisableModal = false"><X :size="18" /></Button>
+          <Button variant="ghost" size="icon" class="modal-close" @click="cancelDisable"><X :size="18" /></Button>
           <h2 class="modal-title">{{ t('sec_2fa_disable_title') }}</h2>
           <p class="modal-desc">{{ t('sec_2fa_disable_desc') }}</p>
 
