@@ -396,7 +396,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1100;
+  z-index: calc(var(--z-modal) + 100);
 }
 .modal-box {
   position: relative;
