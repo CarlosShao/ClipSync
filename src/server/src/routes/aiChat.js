@@ -251,12 +251,17 @@ router.post('/chat', apiLimiter, async (req, res) => {
           chatOptions.thinkingBudget = thinkingStrength === 'low' ? 1024 : thinkingStrength === 'high' ? 8192 : 4096
         }
 
-        // 记忆工具在 ask/agent 模式下都可用：让模型能主动保存用户偏好/项目事实等长期记忆。
-        // 其他 Agent 工作流工具只在 agent 模式下暴露。
-        const MEMORY_TOOL_NAMES = ['get_memories', 'save_memory']
-        const memoryTools = TOOLS.filter((t) => MEMORY_TOOL_NAMES.includes(t.function.name))
-        const agentTools = TOOLS.filter((t) => !MEMORY_TOOL_NAMES.includes(t.function.name))
-        chatOptions.tools = isAgentMode ? [...memoryTools, ...agentTools] : memoryTools
+        // 两类工具在 ask/agent 两种模式下都可用：
+        //  1) 记忆工具——让模型能主动保存用户偏好/项目事实等长期记忆；
+        //  2) 项目元知识工具——让「大管家」随时能讲解功能/隐私模型/部署/架构（只读、非敏感）。
+        // 其余 Agent 工作流与隐私敏感的内容读取工具（read_clip_content 等）只在 agent 模式下暴露。
+        const ALWAYS_TOOL_NAMES = [
+          'get_memories', 'save_memory',
+          'explain_feature', 'explain_privacy_model', 'explain_deployment', 'get_project_architecture'
+        ]
+        const alwaysTools = TOOLS.filter((t) => ALWAYS_TOOL_NAMES.includes(t.function.name))
+        const agentOnlyTools = TOOLS.filter((t) => !ALWAYS_TOOL_NAMES.includes(t.function.name))
+        chatOptions.tools = isAgentMode ? [...alwaysTools, ...agentOnlyTools] : alwaysTools
         chatOptions.tool_choice = 'auto'
 
         const upstream = buildUpstreamChat({

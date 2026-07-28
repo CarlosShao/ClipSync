@@ -3,6 +3,9 @@ import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { logger } from '../utils/logger.js'
 import { getAiContext } from '../utils/aiContext.js'
+import { decrypt } from '../utils/encryption.js'
+import { unlockWithPassword } from '../utils/protectionCrypto.js'
+import { getFeatureDoc, getPrivacyModelDoc, getDeploymentDoc, getArchitectureDoc } from '../utils/aiKnowledge.js'
 
 const router = Router()
 
@@ -254,17 +257,179 @@ export const TOOLS = [
   },
   {
     type: 'function',
-    function: {
-      name: 'organize_by_type',
-      description: '按类型整理剪贴板内容，返回分类结果',
-      parameters: {
-        type: 'object',
-        properties: {},
-        required: []
+        function: {
+          name: 'organize_by_type',
+          description: '按类型整理剪贴板内容，返回分类结果',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        }
+      },
+
+      // ============ 大管家增强：隐私感知的内容读取 ============
+      {
+        type: 'function',
+        function: {
+          name: 'read_clip_content',
+          description: '读取某条剪贴板条目的完整明文内容（解密后返回）。这是处理敏感数据的高权限工具，仅在用户明确要求「看这条内容 / 读出明文」时调用。' +
+            '隐私规则：本地条目（local-/text-/img- 临时ID）内容不在服务端，无法读取并会说明；' +
+            '高级密码保护（advanced）条目必须传入 password 才能解密，否则返回「需要密码」提示；' +
+            '图片/文件的存储值实为服务端文件名而非原文，会返回引用名并说明如何查看。',
+          parameters: {
+            type: 'object',
+            properties: {
+              clip_id: { type: 'string', description: '剪贴板条目ID' },
+              password: { type: 'string', description: '可选：该条目若启用高级密码保护，需提供用户密码才能解密明文' }
+            },
+            required: ['clip_id']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_clip_meta',
+          description: '获取某条目的完整元数据（类型/预览/大小/收藏/归档/保护级别/标签/来源设备/时间），不含明文。先调用它判断条目性质，再决定是否 read_clip_content',
+          parameters: {
+            type: 'object',
+            properties: {
+              clip_id: { type: 'string', description: '剪贴板条目ID' }
+            },
+            required: ['clip_id']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_protected_clips',
+          description: '列出所有开启了密码保护（protection_level <> none）的条目，返回 id/类型/保护级别，让用户知道哪些内容需要密码才能被 AI 读出',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_archived_clips',
+          description: '列出已归档（archived=true）的剪贴板条目',
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'number', description: '返回数量，默认20' }
+            },
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_subscription_details',
+          description: '获取当前订阅套餐（free/Pro/企业）及其设备数/历史条数/单文件大小/总存储等限制，并附当前用量',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_security_overview',
+          description: '获取账号安全概览：两步验证(2FA)是否开启、账号是否活跃、设备总数与在线数、高级密码保护条目数',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_template_variables',
+          description: '获取用户设置的全局模板变量（name→value），用于解释快捷模板的占位符来源',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_notifications',
+          description: '获取用户最近的通知（类型/标题/内容/是否已读/时间）',
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'number', description: '返回数量，默认20' }
+            },
+            required: []
+          }
+        }
+      },
+
+      // ============ 大管家增强：项目元知识（功能/隐私/部署/架构）============
+      {
+        type: 'function',
+        function: {
+          name: 'explain_feature',
+          description: '讲解 ClipSync 的某项功能。传入功能 key（如 clipboard_sync / favorites / collections / templates / shared_links / devices_pairing / subscriptions_plans / security_2fa / item_protection / notifications / ai_agent / archive / search_filters / encryption_model）查看详情；不传则返回功能清单。',
+          parameters: {
+            type: 'object',
+            properties: {
+              feature: { type: 'string', description: '功能 key，见描述中的枚举' }
+            },
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'explain_privacy_model',
+          description: '讲解 ClipSync 的数据隐私与加密模型：服务端静态加密、本地条目为何 AI 读不到、高级密码保护为何需要用户密码、AI 能/不能做什么、用户如何查看明文、2FA 与数据导出等',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'explain_deployment',
+          description: '讲解 ClipSync 如何启动与部署：本地开发（Node/Rust/Docker/PostgreSQL/Redis、dev 拓扑直连 localhost:3001）、构建打包（tauri build）、生产部署要点（ENCRYPTION_KEY、nginx、SSE 不缓冲）、常见排查',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_project_architecture',
+          description: '讲解 ClipSync 整体技术架构：客户端（Tauri v2 + Vue3 + Vite + Pinia + shadcn-vue）、服务端（Express5 + PostgreSQL + Redis）、AI 代理 SSE 流式、实时同步（WebSocket + Redis Pub/Sub）',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        }
       }
-    }
-  }
-]
+    ]
 
 /**
  * 执行工具调用
@@ -325,10 +490,19 @@ async function executeTool(toolName, args, userId) {
       case 'get_clip_details': {
         const { clip_id } = args
         const result = await pool.query(
-          'SELECT id, content_type, content_preview, created_at, is_favorite FROM clipboard_items WHERE id = $1 AND user_id = $2',
+          `SELECT id, content_type, content_preview, content_size, is_favorite, archived,
+                  protection_level, created_at, source_device_id
+           FROM clipboard_items WHERE id = $1 AND user_id = $2`,
           [clip_id, userId]
         )
-        return result.rows[0] || { error: 'Clip not found' }
+        if (result.rowCount === 0) return { error: 'Clip not found' }
+        const r = result.rows[0]
+        return {
+          ...r,
+          note: r.protection_level === 'advanced'
+            ? '该条目为高级密码保护，读取明文需提供密码（调用 read_clip_content 并传 password）。'
+            : undefined
+        }
       }
 
       case 'get_recent_clips': {
@@ -522,6 +696,202 @@ async function executeTool(toolName, args, userId) {
           [userId, cat, String(title).trim(), String(content).trim()]
         )
         return { saved: result.rows[0] }
+      }
+
+      // ============ 大管家增强：隐私感知内容读取 ============
+      case 'read_clip_content': {
+        const { clip_id, password } = args
+        if (!clip_id) return { error: 'clip_id is required' }
+
+        // 本地临时 ID（local-/text-/img-）根本不入服务端库
+        const isTempLocal = clip_id.startsWith('local-') || clip_id.startsWith('text-') || clip_id.startsWith('img-')
+        if (isTempLocal) {
+          return {
+            error: '本地条目不可读',
+            reason: '该条目是本地条目（仅存在于你的设备，未同步到服务端），AI 无法在服务端读取其明文。请在 ClipSync 应用内查看。'
+          }
+        }
+
+        const result = await pool.query(
+          `SELECT id, content_type, content_encrypted, content_preview, content_size,
+                  protection_level, wrapped_dek_password, protection_salt
+           FROM clipboard_items WHERE id = $1 AND user_id = $2`,
+          [clip_id, userId]
+        )
+        if (result.rowCount === 0) {
+          return { error: '未找到该条目', reason: '可能已被删除，或它是未同步到服务端的本地条目。' }
+        }
+        const item = result.rows[0]
+        const type = item.content_type
+
+        // 图片/文件：content_encrypted 实际是服务端文件名，不是原文
+        if (type === 'image' || type === 'file') {
+          let filename = null
+          try { filename = decrypt(item.content_encrypted) } catch { /* ignore */ }
+          return {
+            contentType: type,
+            note: '图片/文件的 content_encrypted 在服务端是存储文件名（非原文），AI 只返回引用名。要查看实际内容请在应用内打开，或使用媒体下载接口。',
+            storedFilename: filename,
+            sizeBytes: item.content_size,
+            protectionLevel: item.protection_level
+          }
+        }
+
+        // 高级密码保护：必须密码
+        if (item.protection_level === 'advanced') {
+          if (!password) {
+            return {
+              error: '需要密码',
+              reason: '该条目启用了高级密码保护（独立 DEK 加密），服务端无密码无法还原明文。请在询问时提供密码，或使用恢复密钥。',
+              protectionLevel: 'advanced'
+            }
+          }
+          const plain = unlockWithPassword(item.content_encrypted, item.wrapped_dek_password, password, item.protection_salt)
+          if (plain === null) {
+            return { error: '密码错误', reason: '提供的解锁密码不正确，无法解密该条目。' }
+          }
+          return { contentType: type, protectionLevel: 'advanced', decryptedWithPassword: true, content: plain.slice(0, 50000) }
+        }
+
+        // none / pin：主密钥可解密
+        let plain
+        try {
+          plain = decrypt(item.content_encrypted)
+        } catch (e) {
+          return { error: '解密失败', reason: e.message }
+        }
+        return {
+          contentType: type,
+          protectionLevel: item.protection_level,
+          note: item.protection_level === 'pin' ? 'PIN 保护仅控制客户端展示，服务端内容可被解密。' : undefined,
+          content: (plain || '').slice(0, 50000),
+          sizeBytes: item.content_size
+        }
+      }
+
+      case 'get_clip_meta': {
+        const { clip_id } = args
+        if (!clip_id) return { error: 'clip_id is required' }
+        const result = await pool.query(
+          `SELECT id, content_type, content_preview, content_size, is_favorite, archived,
+                  protection_level, metadata, created_at, updated_at, source_device_id
+           FROM clipboard_items WHERE id = $1 AND user_id = $2`,
+          [clip_id, userId]
+        )
+        if (result.rowCount === 0) return { error: '未找到该条目' }
+        const i = result.rows[0]
+        return {
+          id: i.id,
+          type: i.content_type,
+          preview: (i.content_preview || '').slice(0, 200),
+          sizeBytes: i.content_size,
+          isFavorite: i.is_favorite,
+          archived: i.archived,
+          protectionLevel: i.protection_level,
+          tags: i.metadata?.tags || [],
+          deviceId: i.source_device_id,
+          createdAt: i.created_at,
+          updatedAt: i.updated_at,
+          note: '只返回元数据，不含明文。需要明文请调用 read_clip_content。'
+        }
+      }
+
+      case 'get_protected_clips': {
+        const result = await pool.query(
+          `SELECT id, content_type, protection_level, content_size, created_at
+           FROM clipboard_items WHERE user_id = $1 AND protection_level <> 'none'
+           ORDER BY created_at DESC`,
+          [userId]
+        )
+        return { protectedItems: result.rows, count: result.rowCount }
+      }
+
+      case 'get_archived_clips': {
+        const { limit = 20 } = args
+        const result = await pool.query(
+          `SELECT id, content_type, content_preview, content_size, is_favorite, protection_level, created_at
+           FROM clipboard_items WHERE user_id = $1 AND archived = TRUE
+           ORDER BY created_at DESC LIMIT $2`,
+          [userId, limit]
+        )
+        return { archivedItems: result.rows, count: result.rowCount }
+      }
+
+      case 'get_subscription_details': {
+        const ctx = await getAiContext(userId)
+        const sub = ctx.subscription
+        const usage = await pool.query(
+          `SELECT COUNT(*)::int AS total, COALESCE(SUM(content_size),0)::bigint AS total_bytes
+           FROM clipboard_items WHERE user_id = $1`,
+          [userId]
+        )
+        return {
+          plan: sub
+            ? {
+                name: sub.plan_name,
+                displayName: sub.display_name,
+                maxDevices: sub.max_devices,
+                maxItems: sub.max_clipboard_items,
+                maxFileMb: sub.max_file_size_mb,
+                maxStorageMb: sub.max_storage_mb
+              }
+            : 'free',
+          usage: { totalItems: usage.rows[0].total, totalBytes: Number(usage.rows[0].total_bytes) },
+          note: '套餐限制见 plan 字段；usage 为当前用量（条数 + 内容总字节）。'
+        }
+      }
+
+      case 'get_security_overview': {
+        const userRes = await pool.query('SELECT two_factor_enabled, is_active FROM users WHERE id = $1', [userId])
+        const u = userRes.rows[0] || {}
+        const dev = await pool.query(
+          'SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_online)::int AS online FROM devices WHERE user_id = $1',
+          [userId]
+        )
+        const prot = await pool.query(
+          "SELECT COUNT(*)::int AS advanced FROM clipboard_items WHERE user_id = $1 AND protection_level = 'advanced'",
+          [userId]
+        )
+        return {
+          twoFactorEnabled: !!u.two_factor_enabled,
+          accountActive: !!u.is_active,
+          devices: { total: dev.rows[0].total, online: dev.rows[0].online },
+          advancedProtectedItems: prot.rows[0].advanced,
+          note: '2FA 状态、设备在线数、高级密码保护条目数。更多账号安全在应用内「设置 → 安全」中管理。'
+        }
+      }
+
+      case 'get_template_variables': {
+        const result = await pool.query(
+          'SELECT name, value, updated_at FROM template_variables WHERE user_id = $1 ORDER BY name',
+          [userId]
+        )
+        return { variables: result.rows, count: result.rowCount }
+      }
+
+      case 'get_notifications': {
+        const { limit = 20 } = args
+        const result = await pool.query(
+          `SELECT id, notification_type, title, body, read, created_at
+           FROM notification_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+          [userId, limit]
+        )
+        return { notifications: result.rows, count: result.rowCount }
+      }
+
+      // ============ 大管家增强：项目元知识 ============
+      case 'explain_feature': {
+        const { feature } = args
+        return { doc: getFeatureDoc(feature) }
+      }
+      case 'explain_privacy_model': {
+        return { doc: getPrivacyModelDoc() }
+      }
+      case 'explain_deployment': {
+        return { doc: getDeploymentDoc() }
+      }
+      case 'get_project_architecture': {
+        return { doc: getArchitectureDoc() }
       }
 
       default:
