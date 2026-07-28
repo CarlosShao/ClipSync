@@ -1,37 +1,12 @@
 import { ref, shallowRef, computed } from 'vue'
-import { getProviders, streamChat } from '@/api/ai'
-import type { AiProvider, ChatMessage } from '@/api/ai'
-import { useClipboard } from '@/composables/useClipboard'
+import { getProviders, getAiContext, streamChat } from '@/api/ai'
+import type { AiProvider, ChatMessage, AiContext } from '@/api/ai'
+import { buildSystemPrompt } from '@/utils/aiSystemPrompt'
+import { useAiConversations } from './useAiConversations'
 
-// ClipSync 产品上下文提示词
-function buildSystemPrompt(clipboardData?: string) {
-  return `You are ClipSync AI, an intelligent assistant integrated into the ClipSync clipboard synchronization application.
-
-## About ClipSync
-ClipSync is a cross-device clipboard synchronization tool that allows users to:
-- Sync clipboard content (text, images, files) across multiple devices
-- Organize clips with favorites, tags, and collections
-- Preview various file formats (Markdown, Word, Excel, PDF, code)
-- Share clips via links
-- Protect sensitive content with passwords and PIN
-- Use templates for quick pasting
-- Manage multiple devices
-
-## Your Capabilities
-As ClipSync AI, you can:
-- Answer questions about the user's clipboard data
-- Help organize and categorize clips
-- Suggest ways to use templates
-- Provide insights about clipboard usage patterns
-- Help with file format conversions
-- Assist with device management
-
-${clipboardData ? `## Current Clipboard Data\nThe user currently has the following clipboard data:\n${clipboardData}` : ''}
-
-## Current Context
-The user is currently using ClipSync desktop app. You have access to their clipboard data and can help them manage it effectively.
-Always respond in the user's language. Be helpful, concise, and focused on clipboard management tasks.`
-}
+let cachedContext: AiContext | null = null
+let contextFetchedAt = 0
+const CONTEXT_TTL_MS = 30_000
 
 interface SendOptions {
   mode?: 'ask' | 'agent'
@@ -39,7 +14,7 @@ interface SendOptions {
   thinkingStrength?: 'low' | 'medium' | 'high'
 }
 
-// 原生支持 reasoning 的模型关键词（与后端 THINKING_MODELS 保持一致）
+// 原生支持 reasoning 的模型关键词
 const NATIVE_REASONING_KEYWORDS = [
   'deepseek-r1',
   'claude-3-7-sonnet',
@@ -70,6 +45,8 @@ export function useAiChat() {
   const abortCtrl = shallowRef<AbortController | null>(null)
   const initialized = ref(false)
 
+  const conv = useAiConversations()
+
   const hasProviders = computed(() => providers.value.length > 0)
   const canSend = computed(() => !!selectedProviderId.value && !isStreaming.value)
 
@@ -87,11 +64,58 @@ export function useAiChat() {
   async function init() {
     if (initialized.value) return
     initialized.value = true
-    await loadProviders()
+    await Promise.all([loadProviders(), conv.loadConversations()])
+  }
+
+  async function fetchContext(): Promise<AiContext | null> {
+    try {
+      if (cachedContext && Date.now() - contextFetchedAt < CONTEXT_TTL_MS) {
+        return cachedContext
+      }
+      const res = await getAiContext()
+      if (res.ok && res.data?.context) {
+        cachedContext = res.data.context
+        contextFetchedAt = Date.now()
+        return cachedContext
+      }
+    } catch {
+      /* ignore */
+    }
+    return cachedContext
   }
 
   function selectProvider(id: string) {
     selectedProviderId.value = id
+  }
+
+  async function newConversation(options?: {
+    title?: string
+    mode?: 'ask' | 'agent'
+    thinkingEnabled?: boolean
+  }) {
+    const p = providers.value.find((x) => x.id === selectedProviderId.value)
+    await conv.createNew({
+      title: options?.title || '新对话',
+      providerId: selectedProviderId.value,
+      model: p?.model || undefined,
+      mode: options?.mode,
+      thinkingEnabled: options?.thinkingEnabled,
+    })
+    messages.value = []
+    error.value = ''
+  }
+
+  async function loadConversation(id: string) {
+    const msgs = await conv.select(id)
+    if (msgs) {
+      messages.value = msgs
+      error.value = ''
+      // 同步 provider/model/mode
+      const c = conv.currentConversation.value
+      if (c?.mode) {
+        // 通过事件通知上层（AISidebar）同步模式，这里不直接修改 props
+      }
+    }
   }
 
   async function send(content: string, options: SendOptions = {}) {
@@ -101,9 +125,14 @@ export function useAiChat() {
       error.value = 'ai_no_provider_selected'
       return
     }
+
+    // 确保有当前对话；首次发送时创建
+    if (!conv.currentConversationId.value) {
+      await newConversation({ mode: options.mode, thinkingEnabled: options.thinking })
+    }
+
     error.value = ''
     messages.value.push({ role: 'user', content: text })
-    // 创建 assistant 消息，包含 thinking 字段
     const assistantMsg: ChatMessage = { role: 'assistant', content: '', thinking: '' }
     messages.value.push(assistantMsg)
     isStreaming.value = true
@@ -111,80 +140,65 @@ export function useAiChat() {
     const controller = new AbortController()
     abortCtrl.value = controller
 
-    // 用于从 <think>...</think> 中提取思考过程
+    // 用于从 <think>...</think> 中提取思考过程。
     const thinkState = {
       raw: '',
+      pos: 0,
       inThink: false,
-      thinkPos: -1,
     }
-    function processThinkContent(delta: string): { text: string; thinking: string } {
+    function processThinkContent(delta: string): { textDelta: string; thinkingDelta: string } {
       thinkState.raw += delta
-      const raw = thinkState.raw
+      let textDelta = ''
+      let thinkingDelta = ''
 
-      if (!thinkState.inThink) {
-        const idx = raw.indexOf('<think>')
-        if (idx === -1) return { text: raw, thinking: '' }
-        thinkState.inThink = true
-        thinkState.thinkPos = idx
+      while (true) {
+        if (!thinkState.inThink) {
+          const idx = thinkState.raw.indexOf('<think>', thinkState.pos)
+          if (idx === -1) {
+            textDelta += thinkState.raw.slice(thinkState.pos)
+            thinkState.pos = thinkState.raw.length
+            break
+          }
+          textDelta += thinkState.raw.slice(thinkState.pos, idx)
+          thinkState.pos = idx + 7
+          thinkState.inThink = true
+        } else {
+          const idx = thinkState.raw.indexOf('</think>', thinkState.pos)
+          if (idx === -1) {
+            thinkingDelta += thinkState.raw.slice(thinkState.pos)
+            thinkState.pos = thinkState.raw.length
+            break
+          }
+          thinkingDelta += thinkState.raw.slice(thinkState.pos, idx)
+          thinkState.pos = idx + 8
+          thinkState.inThink = false
+        }
       }
 
-      const endIdx = raw.indexOf('</think>', thinkState.thinkPos + 7)
-      const textBefore = raw.slice(0, thinkState.thinkPos)
-
-      if (endIdx === -1) {
-        return { text: textBefore, thinking: raw.slice(thinkState.thinkPos + 7) }
-      }
-
-      thinkState.inThink = false
-      return {
-        text: textBefore + raw.slice(endIdx + 8),
-        thinking: raw.slice(thinkState.thinkPos + 7, endIdx),
-      }
+      return { textDelta, thinkingDelta }
     }
 
-    // 获取更多实时数据注入系统提示词
-    let clipboardData = ''
-    try {
-      const clip = useClipboard()
-      const total = clip.mainTotalItems.value || 0
-      const items = clip.items.value || []
-      const textCount = items.filter((i: any) => i.type === 'text').length
-      const imageCount = items.filter((i: any) => i.type === 'image').length
-      const fileCount = items.filter((i: any) => i.type === 'file').length
-      const linkCount = items.filter((i: any) => i.type === 'link').length
-      
-      // 获取最近的 5 条记录内容预览
-      const recentItems = items.slice(0, 5).map((i: any) => {
-        const preview = (i.content || '').slice(0, 100)
-        return `- [${i.type}] ${preview}${preview.length >= 100 ? '...' : ''}`
-      }).join('\n')
-      
-      // 获取当前选中的条目
-      const selectedItems = items.filter((i: any) => i.selected).map((i: any) => i.id)
-      
-      // 获取收藏夹数据
-      const favorites = items.filter((i: any) => i.isFavorite).length
-      
-      clipboardData = `Total clips: ${total}
-Breakdown: ${textCount} text, ${imageCount} images, ${fileCount} files, ${linkCount} links
-Favorites: ${favorites}
-Selected items: ${selectedItems.length > 0 ? selectedItems.join(', ') : 'none'}
-Recent items:
-${recentItems || '(empty)'}
-
-You can help the user manage these clips, answer questions about them, or perform actions like organizing, searching, or analyzing patterns.`
-    } catch {
-      /* ignore */
-    }
+    // 从后端获取完整、真实的 ClipSync 上下文
+    const ctx = await fetchContext()
+    const ctxData = ctx
+      ? {
+          total: ctx.stats.total,
+          favoriteItemsCount: ctx.stats.favoriteItemsCount,
+          collectionsCount: ctx.collections.collectionsCount,
+          devicesCount: ctx.devices.devicesCount,
+          templatesCount: ctx.templates.templatesCount,
+          sharedLinksCount: ctx.sharedLinks.sharedLinksCount,
+          recentItems: ctx.recentItems
+            .map((i) => `- [${i.type}] ${i.preview}${i.preview.length >= 120 ? '...' : ''}${i.isFavorite ? ' ⭐' : ''}`)
+            .join('\n'),
+        }
+      : undefined
 
     const selectedProvider = providers.value.find((p) => p.id === selectedProviderId.value)
     const modelName = selectedProvider?.model || ''
     const nativeReasoning = isNativeReasoningModel(modelName)
 
-    const systemPrompt = buildSystemPrompt(clipboardData)
-    // 发送给上游的历史只保留 {role, content}：
-    // 1. 剔除 thinking / toolCalls / toolResults 等前端展示字段（避免非法字段被上游拒绝）
-    // 2. 丢弃上一轮出错的 assistant 气泡（避免把 "[Upstream error]" 当成对话上下文回传）
+    const systemPrompt = buildSystemPrompt(ctxData)
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...messages.value
@@ -193,22 +207,19 @@ You can help the user manage these clips, answer questions about them, or perfor
         .map((m) => ({ role: m.role, content: m.content })),
     ]
 
-    // 如果启用思考模式，添加思考指令
     if (options.thinking) {
       const strengthMap = {
         low: 'Think step by step briefly.',
         medium: 'Think step by step with moderate detail.',
-        high: 'Think step by step with thorough analysis.'
+        high: 'Think step by step with thorough analysis.',
       }
       history[0].content += `\n\n${strengthMap[options.thinkingStrength || 'medium']}`
 
-      // 非原生 reasoning 模型：要求把思考过程放在 <think> 标签内，方便前端提取展示
       if (!nativeReasoning) {
         history[0].content += `\n\nWhen you need to think before answering, put your step-by-step reasoning inside <think>...</think> tags. Only the final answer should appear outside the tags. Keep the reasoning concise.`
       }
     }
 
-    // Agent 模式：添加工作流指令
     if (options.mode === 'agent') {
       history[0].content += `\n\nYou are in Agent mode. When the user asks you to perform actions, you may call available tools to get real-time data. After tools return results, provide a clear final answer based on the tool outputs.`
     }
@@ -224,21 +235,20 @@ You can help the user manage these clips, answer questions about them, or perfor
         },
         signal: controller.signal,
         onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any) => {
-          // 原生 reasoning 内容（ DeepSeek reasoning_content / Claude thinking 等）
           if (thinkingNative) {
+            if (!assistantMsg.thinkingStartedAt) assistantMsg.thinkingStartedAt = Date.now()
             assistantMsg.thinking = (assistantMsg.thinking || '') + thinkingNative
           }
 
-          // 普通内容：实时提取 <think>...</think> 标签中的思考过程
           if (d) {
             const res = processThinkContent(d)
-            assistantMsg.content = res.text
-            if (res.thinking && !nativeReasoning) {
-              assistantMsg.thinking = res.thinking
+            assistantMsg.content += res.textDelta
+            if (res.thinkingDelta && !nativeReasoning) {
+              if (!assistantMsg.thinkingStartedAt) assistantMsg.thinkingStartedAt = Date.now()
+              assistantMsg.thinking = (assistantMsg.thinking || '') + res.thinkingDelta
             }
           }
 
-          // 工具调用：按 id 合并分片
           if (toolCall) {
             if (!assistantMsg.toolCalls) assistantMsg.toolCalls = []
             const existing = assistantMsg.toolCalls.find((tc) => tc.id === toolCall.id)
@@ -249,7 +259,6 @@ You can help the user manage these clips, answer questions about them, or perfor
             }
           }
 
-          // 工具结果：按 tool_call_id 合并分片
           if (toolResult) {
             if (!assistantMsg.toolResults) assistantMsg.toolResults = []
             const existing = assistantMsg.toolResults.find((tr) => tr.tool_call_id === toolResult.tool_call_id)
@@ -262,21 +271,24 @@ You can help the user manage these clips, answer questions about them, or perfor
         },
         onError: (msg) => {
           error.value = msg
-          // 移除最后一条空的 assistant 占位气泡，避免把错误内容当成对话回传给上游
           const last = messages.value[messages.value.length - 1]
           if (last && last.role === 'assistant') {
-            messages.value.pop()
+            last.isError = true
           }
         },
         onDone: () => {
-          /* no-op */
+          /* 流正常结束，最后统一持久化 */
         },
       })
     } catch (e: any) {
       error.value = String(e?.message || e)
+      const last = messages.value[messages.value.length - 1]
+      if (last && last.role === 'assistant') last.isError = true
     } finally {
       isStreaming.value = false
       abortCtrl.value = null
+      // 保存当前对话的消息（不等待，失败静默）
+      conv.saveCurrent(messages.value).catch(() => {})
     }
   }
 
@@ -288,6 +300,7 @@ You can help the user manage these clips, answer questions about them, or perfor
     if (isStreaming.value) stop()
     messages.value = []
     error.value = ''
+    conv.setCurrent('')
   }
 
   return {
@@ -304,5 +317,14 @@ You can help the user manage these clips, answer questions about them, or perfor
     send,
     stop,
     clear,
+    // 会话相关
+    conversations: conv.conversations,
+    currentConversationId: conv.currentConversationId,
+    currentConversation: conv.currentConversation,
+    loadConversations: conv.loadConversations,
+    newConversation,
+    loadConversation,
+    renameConversation: conv.rename,
+    deleteConversation: conv.remove,
   }
 }

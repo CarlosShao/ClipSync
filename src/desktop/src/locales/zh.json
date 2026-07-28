@@ -939,5 +939,16 @@
   "ai_workflow_active": "工作流模式",
   "ai_no_providers_title": "未配置 AI 供应商",
   "ai_thinking_off": "关闭思考",
-  "ai_thinking_on": "开启思考"
+  "ai_thinking_on": "开启思考",
+  "ai_thinking_sec": "{n} 秒",
+  "ai_thinking_sec_short": "秒",
+  "ai_thinking_less_than_sec": "不到 1 秒",
+  "ai_thinking_done": "已思考",
+  "ai_thinking_progress": "思考中",
+  "ai_no_thinking": "无思考过程",
+  "ai_history": "历史对话",
+  "ai_new_chat": "新对话",
+  "ai_no_history": "暂无历史对话",
+  "ai_rename": "重命名",
+  "ai_messages": "条消息"
 }

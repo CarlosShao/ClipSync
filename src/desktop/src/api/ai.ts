@@ -25,6 +25,7 @@ export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
   thinking?: string // 思考过程
+  thinkingStartedAt?: number // 思考开始时间戳（毫秒），用于显示思考秒数
   toolCalls?: ToolCall[] // 工具调用
   toolResults?: ToolResult[] // 工具结果
   isError?: boolean // 标记该助手消息是否因出错而生成（不进入上游历史）
@@ -49,6 +50,25 @@ export interface ChatOptions {
   thinkingStrength?: 'low' | 'medium' | 'high'
 }
 
+export interface AiConversation {
+  id: string
+  title: string
+  model: string | null
+  mode: 'ask' | 'agent'
+  thinking_enabled: boolean
+  created_at: string
+  updated_at: string
+  message_count: number
+}
+
+export interface AiConversationInput {
+  title?: string
+  providerId?: string
+  model?: string
+  mode?: 'ask' | 'agent'
+  thinkingEnabled?: boolean
+}
+
 export interface AiProviderInput {
   provider: string
   name: string
@@ -68,6 +88,30 @@ export function getPresets() {
   return api<{ items: AiProviderPreset[] }>('GET', '/api/ai/presets')
 }
 
+export interface AiContext {
+  stats: {
+    total: number
+    textCount: number
+    imageCount: number
+    fileCount: number
+    linkCount: number
+    codeCount: number
+    favoriteItemsCount: number
+    archivedCount: number
+  }
+  collections: { collectionsCount: number; collectionItemsCount: number }
+  tags: { tagsCount: number }
+  devices: { devicesCount: number; onlineDevicesCount: number }
+  templates: { templatesCount: number; variablesCount: number }
+  sharedLinks: { sharedLinksCount: number }
+  recentItems: Array<{ id: string; type: string; preview: string; isFavorite: boolean; createdAt: string }>
+  subscription: { planName: string; displayName: string; maxDevices: number; maxClipboardItems: number; maxFileSizeMb: number; maxStorageMb: number } | null
+}
+
+export function getAiContext() {
+  return api<{ context: AiContext }>('GET', '/api/ai/context')
+}
+
 export function createProvider(input: AiProviderInput) {
   return api<AiProvider>('POST', '/api/ai/providers', input)
 }
@@ -82,6 +126,32 @@ export function deleteProvider(id: string) {
 
 export function testProvider(id: string) {
   return api<{ ok: boolean; detail?: string; status?: number }>('POST', `/api/ai/providers/${id}/test`)
+}
+
+// ===== Conversations =====
+
+export function getConversations() {
+  return api<{ items: AiConversation[]; count: number }>('GET', '/api/ai/conversations')
+}
+
+export function createConversation(input: AiConversationInput) {
+  return api<{ conversation: AiConversation }>('POST', '/api/ai/conversations', input)
+}
+
+export function getConversation(id: string) {
+  return api<{ conversation: AiConversation; messages: ChatMessage[] }>('GET', `/api/ai/conversations/${id}`)
+}
+
+export function updateConversation(id: string, title: string) {
+  return api<{ conversation: AiConversation }>('PUT', `/api/ai/conversations/${id}`, { title })
+}
+
+export function deleteConversation(id: string) {
+  return api<{ deleted: boolean }>('DELETE', `/api/ai/conversations/${id}`)
+}
+
+export function saveMessages(id: string, messages: ChatMessage[]) {
+  return api<{ messages: ChatMessage[] }>('POST', `/api/ai/conversations/${id}/messages`, { messages })
 }
 
 // ===== SSE 流式聊天 =====

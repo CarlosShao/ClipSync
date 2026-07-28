@@ -41,6 +41,7 @@ function roleLabel() {
       <AiThinking
         v-if="message.role === 'assistant'"
         :thinking="message.thinking || ''"
+        :thinking-started-at="message.thinkingStartedAt"
         :is-streaming="isStreaming && index === 0"
         :expanded="expandedThinking"
         @toggle="expandedThinking = !expandedThinking"

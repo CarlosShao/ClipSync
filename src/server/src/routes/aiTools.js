@@ -2,6 +2,7 @@ import { Router } from 'express'
 import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { logger } from '../utils/logger.js'
+import { getAiContext } from '../utils/aiContext.js'
 
 const router = Router()
 
@@ -14,7 +15,19 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'get_clipboard_stats',
-      description: '获取剪贴板的统计数据，包括总数、各类型数量等',
+      description: '获取剪贴板的完整统计数据，包括总条目数、各类型数量、收藏条目数、归档数、收藏夹数量、标签数、设备数、模板数、共享链接数、订阅套餐',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_ai_context',
+      description: '一次性获取 ClipSync 完整上下文（统计、收藏夹、标签、设备、模板、共享链接、最近条目、订阅），回答综合问题时优先调用',
       parameters: {
         type: 'object',
         properties: {},
@@ -71,6 +84,66 @@ export const TOOLS = [
     function: {
       name: 'analyze_clip_usage',
       description: '分析剪贴板使用模式，提供使用统计和建议',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_collections',
+      description: '获取用户所有收藏夹及其条目数量',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_tags',
+      description: '获取用户所有收藏项中使用的标签列表',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_devices',
+      description: '获取用户所有配对设备及其在线状态',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_templates',
+      description: '获取用户的快速粘贴模板列表',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_shared_links',
+      description: '获取用户创建的共享链接列表',
       parameters: {
         type: 'object',
         properties: {},
@@ -170,17 +243,33 @@ async function executeTool(toolName, args, userId) {
   try {
     switch (toolName) {
       case 'get_clipboard_stats': {
-        const result = await pool.query(`
-          SELECT 
-            COUNT(*) as total,
-            COUNT(*) FILTER (WHERE content_type = 'text') as text_count,
-            COUNT(*) FILTER (WHERE content_type = 'image') as image_count,
-            COUNT(*) FILTER (WHERE content_type = 'file') as file_count,
-            COUNT(*) FILTER (WHERE content_type = 'link') as link_count,
-            COUNT(*) FILTER (WHERE is_favorite = true) as favorites_count
-          FROM clipboard_items WHERE user_id = $1
-        `, [userId])
-        return result.rows[0]
+        const ctx = await getAiContext(userId)
+        return {
+          total: ctx.stats.total,
+          typeBreakdown: {
+            text: ctx.stats.textCount,
+            image: ctx.stats.imageCount,
+            file: ctx.stats.fileCount,
+            link: ctx.stats.linkCount,
+            code: ctx.stats.codeCount,
+          },
+          favoriteItemsCount: ctx.stats.favoriteItemsCount,
+          archivedCount: ctx.stats.archivedCount,
+          collectionsCount: ctx.collections.collectionsCount,
+          collectionItemsCount: ctx.collections.collectionItemsCount,
+          tagsCount: ctx.tags.tagsCount,
+          devicesCount: ctx.devices.devicesCount,
+          onlineDevicesCount: ctx.devices.onlineDevicesCount,
+          templatesCount: ctx.templates.templatesCount,
+          variablesCount: ctx.templates.variablesCount,
+          sharedLinksCount: ctx.sharedLinks.sharedLinksCount,
+          subscription: ctx.subscription,
+          note: 'favoriteItemsCount 是被标记为收藏的条目数；collectionItemsCount 是被归入收藏夹的条目关联数，可能小于 favoriteItemsCount。'
+        }
+      }
+
+      case 'get_ai_context': {
+        return await getAiContext(userId)
       }
 
       case 'search_clips': {
@@ -318,6 +407,68 @@ async function executeTool(toolName, args, userId) {
           status: 'completed',
           result
         }
+      }
+
+      case 'get_collections': {
+        const result = await pool.query(
+          `SELECT id, name, icon, path::text AS path, sort_order,
+                  (SELECT COUNT(*)::int FROM favorite_collection_items fci WHERE fci.collection_id = fc.id) AS item_count
+           FROM favorite_collections fc
+           WHERE fc.user_id = $1
+           ORDER BY sort_order ASC, path ASC`,
+          [userId]
+        )
+        return { collections: result.rows, count: result.rowCount }
+      }
+
+      case 'get_tags': {
+        const result = await pool.query(
+          `
+          SELECT DISTINCT tag
+          FROM (
+            SELECT jsonb_array_elements_text(metadata->'tags') AS tag
+            FROM clipboard_items
+            WHERE user_id = $1 AND is_favorite = TRUE AND metadata->'tags' IS NOT NULL
+          ) t
+          WHERE tag IS NOT NULL
+          ORDER BY tag
+          `,
+          [userId]
+        )
+        return { tags: result.rows.map((r) => r.tag), count: result.rowCount }
+      }
+
+      case 'get_devices': {
+        const result = await pool.query(
+          `SELECT id, device_name, device_type, platform, is_online, last_seen_at, created_at
+           FROM devices
+           WHERE user_id = $1
+           ORDER BY last_seen_at DESC`,
+          [userId]
+        )
+        return { devices: result.rows, count: result.rowCount }
+      }
+
+      case 'get_templates': {
+        const result = await pool.query(
+          `SELECT id, name, content_preview, shortcut, created_at
+           FROM clipboard_templates
+           WHERE user_id = $1
+           ORDER BY updated_at DESC`,
+          [userId]
+        )
+        return { templates: result.rows, count: result.rowCount }
+      }
+
+      case 'get_shared_links': {
+        const result = await pool.query(
+          `SELECT id, item_id, access_code, expires_at, created_at
+           FROM shared_links
+           WHERE user_id = $1
+           ORDER BY created_at DESC`,
+          [userId]
+        )
+        return { sharedLinks: result.rows, count: result.rowCount }
       }
 
       default:

@@ -1,19 +1,64 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from '@/composables/useI18n'
 import { Brain, ChevronDown, ChevronRight } from 'lucide-vue-next'
 
 const props = defineProps<{
   thinking: string
+  thinkingStartedAt?: number
   isStreaming?: boolean
   expanded?: boolean
 }>()
 const emit = defineEmits<{ toggle: [] }>()
+const { t } = useI18n()
 
-const charCount = computed(() => props.thinking?.length || 0)
-const hasContent = computed(() => charCount.value > 0)
+const hasContent = computed(() => (props.thinking?.length || 0) > 0)
+const elapsedSeconds = ref(0)
+let timer: number | undefined
+
+function updateElapsed() {
+  const start = props.thinkingStartedAt
+  if (!start) {
+    elapsedSeconds.value = 0
+    return
+  }
+  elapsedSeconds.value = Math.max(0, Math.floor((Date.now() - start) / 1000))
+}
+
+function startTimer() {
+  updateElapsed()
+  if (timer) return
+  timer = window.setInterval(updateElapsed, 1000)
+}
+
+function stopTimer() {
+  if (timer) {
+    window.clearInterval(timer)
+    timer = undefined
+  }
+}
+
+onMounted(() => {
+  if (props.isStreaming) startTimer()
+  else updateElapsed()
+})
+
+onUnmounted(stopTimer)
+
+watch(() => props.isStreaming, (v) => {
+  if (v) startTimer()
+  else stopTimer()
+})
+
 const summary = computed(() => {
-  if (!hasContent.value) return props.isStreaming ? '思考中...' : '无思考过程'
-  return props.isStreaming ? `思考中 (${charCount.value} 字)` : `已思考 ${charCount.value} 字`
+  if (!hasContent.value) {
+    return props.isStreaming ? `${t('ai_thinking_progress')}...` : t('ai_no_thinking') || '无思考过程'
+  }
+  const sec = elapsedSeconds.value
+  const timeText = sec < 1 ? t('ai_thinking_less_than_sec') : t('ai_thinking_sec').replace('{n}', String(sec))
+  return props.isStreaming
+    ? `${t('ai_thinking_progress')} (${timeText})`
+    : `${t('ai_thinking_done')} ${timeText}`
 })
 </script>
 

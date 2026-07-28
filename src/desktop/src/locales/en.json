@@ -948,5 +948,16 @@
   "ai_workflow_active": "Workflow Mode",
   "ai_no_providers_title": "No AI Provider",
   "ai_thinking_off": "Turn off thinking",
-  "ai_thinking_on": "Turn on thinking"
+  "ai_thinking_on": "Turn on thinking",
+  "ai_thinking_sec": "{n}s",
+  "ai_thinking_sec_short": "s",
+  "ai_thinking_less_than_sec": "<1s",
+  "ai_thinking_done": "Thought for",
+  "ai_thinking_progress": "Thinking",
+  "ai_no_thinking": "No thinking",
+  "ai_history": "History",
+  "ai_new_chat": "New chat",
+  "ai_no_history": "No history yet",
+  "ai_rename": "Rename",
+  "ai_messages": "messages"
 }

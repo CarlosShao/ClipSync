@@ -3,6 +3,7 @@ import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { encrypt, decrypt } from '../utils/encryption.js'
 import { listPresets, getPreset, buildUpstreamChat } from '../utils/aiProviders.js'
+import { getAiContext } from '../utils/aiContext.js'
 import { logger } from '../utils/logger.js'
 
 const router = Router()
@@ -28,6 +29,17 @@ router.get('/providers', apiLimiter, async (req, res) => {
 // GET /api/ai/presets - 内置供应商预设（脱敏，仅下拉用）
 router.get('/presets', apiLimiter, async (req, res) => {
   res.json({ items: listPresets() })
+})
+
+// GET /api/ai/context - 聚合当前用户的 ClipSync 上下文（供 AI system prompt 使用）
+router.get('/context', apiLimiter, async (req, res) => {
+  try {
+    const context = await getAiContext(req.userId)
+    res.json({ context })
+  } catch (err) {
+    logger.error('Get AI context error:', err)
+    res.status(500).json({ error: 'Failed to get AI context' })
+  }
 })
 
 // POST /api/ai/providers - 新建供应商
