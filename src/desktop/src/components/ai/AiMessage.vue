@@ -101,26 +101,35 @@ function roleLabel() {
   margin-bottom: 4px;
 }
 .ai-msg-content {
-  white-space: pre-wrap;
+  /* 关键：markdown 渲染走 v-html，marked 在 </p> 与 <p> 之间留有换行文本节点；
+     若用 pre-wrap 会把那些换行渲染成真实空行，造成“大量空行”。这里用 normal 让 HTML 正常折叠。 */
+  white-space: normal;
   word-break: break-word;
+}
+/* 用户原始文本（非 markdown）才需要保留其自身换行 */
+.ai-msg.user .ai-msg-content {
+  white-space: pre-wrap;
 }
 .ai-msg-content :deep(h1),
 .ai-msg-content :deep(h2),
 .ai-msg-content :deep(h3),
 .ai-msg-content :deep(h4) {
-  margin: 6px 0 3px;
+  margin: 5px 0 2px;
   font-weight: 600;
 }
 .ai-msg-content :deep(h1) { font-size: 15px; }
 .ai-msg-content :deep(h2) { font-size: 14px; }
 .ai-msg-content :deep(h3) { font-size: 13px; }
-.ai-msg-content :deep(p) { margin: 2px 0; }
+.ai-msg-content :deep(p) { margin: 1px 0; }
 .ai-msg-content :deep(ul),
 .ai-msg-content :deep(ol) {
-  padding-left: 16px;
+  padding-left: 18px;
   margin: 2px 0;
 }
 .ai-msg-content :deep(li) { margin: 1px 0; }
+/* 松散列表（loose list）里每个 item 被包成 <li><p>…</p></li>，
+   内层 <p> 的 margin 会额外撑出空白，这里清零 */
+.ai-msg-content :deep(li > p) { margin: 0; }
 .ai-msg-content :deep(code) {
   background: rgba(0,0,0,0.06);
   padding: 1px 4px;
