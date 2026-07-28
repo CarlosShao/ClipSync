@@ -197,6 +197,9 @@ app.use(compression({
   filter: (req, res) => {
     // 不压缩 WebSocket 升级请求
     if (req.headers['upgrade']) return false;
+    // 不压缩 SSE 流式响应：text/event-stream 被 gzip 缓冲后只能在响应结束时一次性下发，
+    // 会导致 AI 思考过程与回答“一下子蹦出来”，破坏逐字流式体验。
+    if (res.getHeader('Content-Type') === 'text/event-stream') return false;
     return compression.filter(req, res);
   },
   threshold: 1024, // 仅压缩大于 1KB 的响应
