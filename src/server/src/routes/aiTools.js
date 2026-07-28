@@ -726,12 +726,15 @@ async function executeTool(toolName, args, userId) {
         const { clip_id, password } = args
         if (!clip_id) return { error: 'clip_id is required' }
 
-        // 本地临时 ID（local-/text-/img-）根本不入服务端库
-        const isTempLocal = clip_id.startsWith('local-') || clip_id.startsWith('text-') || clip_id.startsWith('img-')
+        // 本地临时 ID（local-/text-/img-/file-/browser-）是前端乐观更新用的临时 ID，
+        // 在服务端确认写入之前根本不入库，AI 后端自然查不到。
+        const LOCAL_TEMP_PREFIXES = ['local-', 'text-', 'img-', 'file-', 'browser-']
+        const isTempLocal = LOCAL_TEMP_PREFIXES.some((p) => clip_id.startsWith(p))
         if (isTempLocal) {
           return {
-            error: '本地条目不可读',
-            reason: '该条目是本地条目（仅存在于你的设备，未同步到服务端），AI 无法在服务端读取其明文。请在 ClipSync 应用内查看。'
+            error: '该条目尚未同步到服务端',
+            reason: 'temporary_local_item',
+            detail: '这个 ID 是 ClipSync 桌面端捕获内容后、在列表里临时生成的乐观项（local-/text-/img-/file-/browser- 前缀）。它此时只存在于你的设备内存，还没完成服务端同步，因此没有入库。等几秒同步完成后 ID 会变成标准 UUID，AI 就能读取了。请在应用内查看或稍后再试。'
           }
         }
 
