@@ -32,7 +32,19 @@ const activePopup = ref<string | null>(null)
 
 const providerLabel = computed(() => {
   const p = props.providers.find((x) => x.id === props.selectedProviderId)
-  return p?.name || t('ai_select_provider')
+  if (!p) return t('ai_select_provider')
+  // 用户要求展示模型名而非配置名称
+  return p.model || p.name
+})
+
+const inputPlaceholder = computed(() => {
+  if (props.providers.length === 0 || !props.selectedProviderId) {
+    return t('ai_input_disabled') || '请先添加供应商'
+  }
+  if (props.isStreaming) {
+    return t('ai_input_streaming') || 'AI 回答中...'
+  }
+  return t('ai_input_ph') || '输入消息，Enter 发送，Shift+Enter 换行'
 })
 
 const modeLabel = computed(() => {
@@ -89,7 +101,7 @@ function toggleThinking() {
     <textarea
       v-model="text"
       class="ai-textarea"
-      :placeholder="disabled ? t('ai_input_disabled') : t('ai_input_ph')"
+      :placeholder="inputPlaceholder"
       :disabled="disabled"
       rows="2"
       @keydown="onKeydown"

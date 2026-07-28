@@ -926,6 +926,8 @@
   "ai_assistant": "AI",
   "ai_input_ph": "输入消息，Enter 发送，Shift+Enter 换行",
   "ai_input_disabled": "请先添加供应商",
+  "ai_input_streaming": "AI 回答中...",
+  "ai_create_conversation_failed": "创建会话失败，请检查网络或刷新后重试",
   "ai_input_hint": "Enter 发送",
   "ai_send": "发送",
   "ai_stop": "停止",

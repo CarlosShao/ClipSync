@@ -935,6 +935,8 @@
   "ai_assistant": "AI",
   "ai_input_ph": "Type a message. Enter to send, Shift+Enter for newline",
   "ai_input_disabled": "Add a provider first",
+  "ai_input_streaming": "AI is responding...",
+  "ai_create_conversation_failed": "Failed to create conversation. Please check your network and retry.",
   "ai_input_hint": "Enter to send",
   "ai_send": "Send",
   "ai_stop": "Stop",

@@ -76,6 +76,19 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* 明确显示滚动条，避免 WebView 默认隐藏导致用户以为无法滚动 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
+}
+.ai-msg-list::-webkit-scrollbar {
+  width: 6px;
+}
+.ai-msg-list::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 3px;
+}
+.ai-msg-list::-webkit-scrollbar-track {
+  background: transparent;
 }
 .ai-msg-empty {
   margin: auto;

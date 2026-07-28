@@ -428,11 +428,19 @@ app.use('/api/search-history', authenticateToken, apiLimiter, csrfProtection, (r
 // AI 供应商 & 聊天代理路由（免费功能，不挂 subscriptionCheck）
 // /api/ai/providers, /api/ai/presets 由 aiProvidersRoutes 处理；
 // /api/ai/chat 由 aiChatRoutes 处理（SSE 流式）；
-// /api/ai/conversations 由 aiConversationsRoutes 处理。
+// 注意：aiProviders/aiChat 路由内部自带 /providers、/chat 前缀，故挂在 /api/ai 即可；
+// 而 aiConversationsRoutes 内部以根 / 定义（list=GET /、create=POST /、detail=GET /:id…），
+// 必须挂在 /api/ai/conversations 才能与前端调用的 /api/ai/conversations 对齐，否则全部 404。
 app.use('/api/ai', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
   req.userId = req.user.userId;
   next();
-}, aiProvidersRoutes, aiChatRoutes, aiConversationsRoutes);
+}, aiProvidersRoutes, aiChatRoutes);
+
+// 对话路由：单独挂子路径 /api/ai/conversations（与前端路径一致）。
+app.use('/api/ai/conversations', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, aiConversationsRoutes);
 
 // AI 长程记忆路由（单独子路径，避免与 /api/ai/conversations 的 / 与 /:id 冲突）
 app.use('/api/ai/memories', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {

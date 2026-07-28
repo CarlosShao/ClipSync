@@ -24,7 +24,11 @@ export function useAiConversations() {
       const res = await getConversations()
       if (res.ok) {
         conversations.value = res.data?.items || []
+      } else {
+        console.error('[useAiConversations] loadConversations failed:', res.status, res.error)
       }
+    } catch (e: any) {
+      console.error('[useAiConversations] loadConversations error:', e?.message || e)
     } finally {
       loading.value = false
     }
@@ -44,7 +48,10 @@ export function useAiConversations() {
       mode: options.mode || 'ask',
       thinkingEnabled: options.thinkingEnabled || false,
     })
-    if (!res.ok || !res.data?.conversation) return null
+    if (!res.ok || !res.data?.conversation) {
+      console.error('[useAiConversations] createConversation failed:', res.status, res.error)
+      return null
+    }
     const conv = res.data.conversation
     conversations.value.unshift(conv)
     currentConversationId.value = conv.id

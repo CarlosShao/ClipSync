@@ -252,14 +252,17 @@ export async function runOrchestration({
     return
   }
 
-  // 没有触发 dispatch_agents → 单任务短路，直接采用协调器回答
+  // 没有触发 dispatch_agents → 单任务短路，降级为单代理直答（带完整工具集）。
+  // 协调器本身只挂 dispatch_agents，不挂实际工具；若直接采用协调器文本回答，
+  // 它只会说“我来帮你查”却不会真查。因此必须再跑一次单代理工具循环。
   const dispatch = coordinator.toolCalls.find((tc) => tc.function?.name === 'dispatch_agents')
   if (!dispatch) {
-    if (coordinator.content) {
-      sendDelta({ choices: [{ delta: { content: coordinator.content } }] })
-    }
     sendDelta({
       choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'done', kind: 'coordinator' } } }],
+    })
+    await runChatLoop({
+      messages, options, providerRow, apiKey, tools: TOOLS, userId,
+      sendDelta, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength,
     })
     safeFinish()
     return
@@ -282,7 +285,14 @@ export async function runOrchestration({
     .slice(0, MAX_AGENTS)
 
   if (agents.length === 0) {
-    if (coordinator.content) sendDelta({ choices: [{ delta: { content: coordinator.content } }] })
+    // 协调器调用了 dispatch_agents 但解析不出合法子代理 → 同样降级为单代理直答
+    sendDelta({
+      choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'done', kind: 'coordinator' } } }],
+    })
+    await runChatLoop({
+      messages, options, providerRow, apiKey, tools: TOOLS, userId,
+      sendDelta, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength,
+    })
     safeFinish()
     return
   }

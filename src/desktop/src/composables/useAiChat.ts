@@ -99,17 +99,22 @@ export function useAiChat() {
     title?: string
     mode?: 'ask' | 'agent'
     thinkingEnabled?: boolean
-  }) {
+  }): Promise<AiConversation | null> {
     const p = providers.value.find((x) => x.id === selectedProviderId.value)
-    await conv.createNew({
+    const created = await conv.createNew({
       title: options?.title || '新对话',
       providerId: selectedProviderId.value,
       model: p?.model || undefined,
       mode: options?.mode,
       thinkingEnabled: options?.thinkingEnabled,
     })
+    if (!created) {
+      console.error('[useAiChat] newConversation failed: backend did not create conversation')
+      return null
+    }
     messages.value = []
     error.value = ''
+    return created
   }
 
   async function loadConversation(id: string) {
@@ -135,7 +140,12 @@ export function useAiChat() {
 
     // 确保有当前对话；首次发送时创建
     if (!conv.currentConversationId.value) {
-      await newConversation({ mode: options.mode, thinkingEnabled: options.thinking })
+      const created = await newConversation({ mode: options.mode, thinkingEnabled: options.thinking })
+      if (!created) {
+        error.value = 'ai_create_conversation_failed'
+        isStreaming.value = false
+        return
+      }
     }
 
     error.value = ''
