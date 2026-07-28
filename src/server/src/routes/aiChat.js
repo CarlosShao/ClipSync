@@ -226,6 +226,9 @@ router.post('/chat', apiLimiter, async (req, res) => {
           options: chatOptions,
         })
 
+        logger.debug(`[AI] upstream request: ${upstream.url} model=${providerRow.model}`)
+        logger.debug(`[AI] upstream body: ${JSON.stringify(upstream.body).slice(0, 2000)}`)
+
         const upstreamRes = await fetch(upstream.url, {
           method: 'POST',
           headers: { ...upstream.headers, Accept: 'text/event-stream' },
@@ -234,7 +237,8 @@ router.post('/chat', apiLimiter, async (req, res) => {
 
         if (!upstreamRes.ok || !upstreamRes.body) {
           const text = await upstreamRes.text().catch(() => '')
-          sendDelta({ error: `Upstream error: ${upstreamRes.status}`, detail: text.slice(0, 500) })
+          logger.error(`[AI] upstream error ${upstreamRes.status}: ${text.slice(0, 2000)}`)
+          sendDelta({ error: `Upstream error: ${upstreamRes.status}`, detail: text.slice(0, 1500) })
           finish()
           return
         }

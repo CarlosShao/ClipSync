@@ -80,7 +80,7 @@ export const PROVIDER_PRESETS = {
     label: 'StepFun (阶跃星辰)',
     family: 'openai',
     authHeader: 'Authorization',
-    defaultBaseUrl: 'https://api.stepfun.com/step_plan/v1',
+    defaultBaseUrl: 'https://api.stepfun.ai/step_plan/v1',
     defaultModel: 'step-3.7-flash',
   },
   longcat: {
