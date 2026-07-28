@@ -174,20 +174,60 @@ router.post('/chat', apiLimiter, async (req, res) => {
 
     const streamStartAt = Date.now()
     let chunkCount = 0
-    const sendDelta = (obj) => {
-      res.write(`data: ${JSON.stringify(obj)}\n\n`)
-    }
-    const logChunk = ({ bytes, sinceLastMs }) => {
-      chunkCount++
-      if (chunkCount <= 20 || chunkCount % 50 === 0) {
-        logger.debug(`[AI] SSE chunk #${chunkCount} +${sinceLastMs}ms ${bytes}B total=${Date.now() - streamStartAt}ms`)
+    let thinkingChunks = 0
+    let contentChunks = 0
+    let lastDiagAt = Date.now()
+
+    // 幂等结束：流已结束时绝不再次 write，杜绝 ERR_STREAM_WRITE_AFTER_END 把 SSE 连接异常撕断。
+    // 这直接对应“思考卡在小半程 → 突然一下全出来”的现象：连接中途崩溃后客户端只能延迟 reconcile 状态。
+    const safeFinish = () => {
+      if (res.writableEnded) return
+      try {
+        res.write('data: [DONE]\n\n')
+        res.flush?.()
+        res.end()
+      } catch (e) {
+        logger.warn('[AI] safeFinish write skipped (stream already closed):', e.message)
       }
     }
 
-    const finish = () => {
-      res.write('data: [DONE]\n\n')
-      res.flush?.()
-      res.end()
+    const diagLog = (type, n) => {
+      const now = Date.now()
+      const since = now - lastDiagAt
+      lastDiagAt = now
+      if (n <= 30 || n % 100 === 0) {
+        logger.info(`[AI][diag] forwarded ${type} delta #${n} +${since}ms elapsed=${now - streamStartAt}ms`)
+      }
+    }
+
+    const sendDelta = (obj) => {
+      if (res.writableEnded) return
+      const delta = obj?.choices?.[0]?.delta
+      if (delta?.thinking) {
+        thinkingChunks++
+        diagLog('thinking', thinkingChunks)
+      } else if (delta?.content) {
+        contentChunks++
+        diagLog('content', contentChunks)
+      } else if (delta?.tool_call) {
+        logger.info(`[AI][diag] tool_call -> ${delta.tool_call.name}`)
+      } else if (delta?.tool_result) {
+        logger.info(`[AI][diag] tool_result <- ${delta.tool_result.tool_call_id}`)
+      }
+      try {
+        res.write(`data: ${JSON.stringify(obj)}\n\n`)
+      } catch (e) {
+        logger.warn('[AI] sendDelta write skipped (stream already closed):', e.message)
+      }
+    }
+
+    // 原始上游网络块诊断（info 级、节流）：用于判断上游是把思考一次性下发还是分片流式下发。
+    const logChunk = ({ bytes, sinceLastMs }) => {
+      chunkCount++
+      const elapsed = Date.now() - streamStartAt
+      if (chunkCount <= 30 || chunkCount % 100 === 0) {
+        logger.info(`[AI][diag] upstream net chunk #${chunkCount} +${sinceLastMs}ms ${bytes}B elapsed=${elapsed}ms (thinking=${thinkingChunks} content=${contentChunks})`)
+      }
     }
 
     try {
@@ -243,7 +283,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
           if (fetchErr?.name === 'AbortError') {
             logger.error('[AI] upstream timeout (180s)')
             sendDelta({ error: '上游模型响应超时（180s），请稍后重试或换用其他模型' })
-            finish()
+            safeFinish()
             return
           }
           throw fetchErr
@@ -253,7 +293,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
           const text = await upstreamRes.text().catch(() => '')
           logger.error(`[AI] upstream error ${upstreamRes.status}: ${text.slice(0, 2000)}`)
           sendDelta({ error: `Upstream error: ${upstreamRes.status}`, detail: text.slice(0, 1500) })
-          finish()
+          safeFinish()
           return
         }
 
@@ -289,19 +329,19 @@ router.post('/chat', apiLimiter, async (req, res) => {
         }
 
         // 没有 tool calls，结束
-        finish()
+        safeFinish()
         return
       }
 
       // 循环结束
       sendDelta({ error: 'Too many tool calling rounds' })
-      finish()
+      safeFinish()
     } catch (streamErr) {
       logger.error('AI chat stream error:', streamErr)
       if (!res.headersSent) {
         res.status(500).json({ error: 'AI chat failed', detail: streamErr.message })
       } else {
-        finish()
+        safeFinish()
       }
     } finally {
       clearTimeout(upstreamTimer)
@@ -311,8 +351,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: 'AI chat failed', detail: err.message })
     } else {
-      res.write('data: [DONE]\n\n')
-      res.end()
+      safeFinish()
     }
   }
 })
