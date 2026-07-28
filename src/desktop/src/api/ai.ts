@@ -31,6 +31,7 @@ export interface ChatMessage {
   thinkingActive?: boolean // 思考阶段是否仍在进行：工具开始调用后视为结束（用于前端正确显示“思考完成”而非一直“思考中”）
   tool_call_id?: string // tool 角色消息关联的调用 id
   isError?: boolean // 标记该助手消息是否因出错而生成（不进入上游历史）
+  agentRuns?: AgentRun[] // 多代理并行模式：本次回答中各子代理的运行状态卡片
 }
 
 export interface ToolCall {
@@ -44,12 +45,46 @@ export interface ToolResult {
   content: string
 }
 
+// 多代理并行模式：子代理运行状态
+export type AgentRunStatus = 'planning' | 'working' | 'done' | 'failed' | 'synthesis'
+export type AgentRunKind = 'coordinator' | 'worker' | 'synthesis'
+
+export interface AgentRun {
+  id: string
+  name: string
+  status: AgentRunStatus
+  kind?: AgentRunKind
+  error?: string
+  thinking?: string
+  thinkingStartedAt?: number
+  thinkingActive?: boolean
+  content?: string
+  toolCalls?: ToolCall[]
+  toolResults?: ToolResult[]
+}
+
+// SSE 增量附带的元信息（多代理路由用）
+export interface StreamDeltaMeta {
+  // 该增量所属的“子代理”id（worker 的 thinking/content/tool 增量携带）
+  agentId?: string
+  // 代理生命周期事件（coordinator/worker/synthesis 的状态切换携带，无 agent_id）
+  agent?: {
+    id: string
+    name: string
+    status: AgentRunStatus
+    kind?: AgentRunKind
+    error?: string
+  }
+}
+
 export interface ChatOptions {
   maxTokens?: number
   temperature?: number
   mode?: 'ask' | 'agent'
   thinking?: boolean
   thinkingStrength?: 'low' | 'medium' | 'high'
+  // 多代理并行编排开关（仅当用户手动开启时触发）
+  parallel?: boolean
 }
 
 export interface AiConversation {
@@ -197,7 +232,7 @@ export interface StreamChatOptions {
   messages: ChatMessage[]
   options?: ChatOptions
   signal?: AbortSignal
-  onDelta: (text: string, thinking?: string, toolCall?: any, toolResult?: any) => void
+  onDelta: (text: string, thinking?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => void
   onError?: (msg: string) => void
   onDone?: () => void
 }
@@ -278,21 +313,30 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
             }
             const delta = parsed?.choices?.[0]?.delta
             if (delta) {
-              // 处理 thinking 内容
-              if (delta.thinking) {
-                opts.onDelta('', delta.thinking)
-              }
-              // 处理工具调用
-              if (delta.tool_call) {
-                opts.onDelta('', undefined, delta.tool_call)
-              }
-              // 处理工具结果
-              if (delta.tool_result) {
-                opts.onDelta('', undefined, undefined, delta.tool_result)
-              }
-              // 处理普通内容
-              if (delta.content) {
-                opts.onDelta(delta.content)
+              // 多代理路由元信息：delta.agent_id（子代理增量）→ 路由到对应卡片；
+              // delta.agent（生命周期事件）→ upsert agentRuns。
+              const meta: StreamDeltaMeta = {}
+              if (delta.agent_id) meta.agentId = delta.agent_id
+              if (delta.agent) meta.agent = delta.agent
+              const hasMeta = !!(meta.agentId || meta.agent)
+
+              if (hasMeta) {
+                const hasPayload = delta.thinking || delta.tool_call || delta.tool_result || delta.content
+                if (!hasPayload) {
+                  // 纯生命周期事件（无 content）：必须转发以触发 agentRuns upsert
+                  opts.onDelta('', undefined, undefined, undefined, meta)
+                } else {
+                  if (delta.thinking) opts.onDelta('', delta.thinking, undefined, undefined, meta)
+                  if (delta.tool_call) opts.onDelta('', undefined, delta.tool_call, undefined, meta)
+                  if (delta.tool_result) opts.onDelta('', undefined, undefined, delta.tool_result, meta)
+                  if (delta.content) opts.onDelta(delta.content, undefined, undefined, undefined, meta)
+                }
+              } else {
+                // 单代理（非并行）模式：不携带任何路由元信息，保持原始行为
+                if (delta.thinking) opts.onDelta('', delta.thinking)
+                if (delta.tool_call) opts.onDelta('', undefined, delta.tool_call)
+                if (delta.tool_result) opts.onDelta('', undefined, undefined, delta.tool_result)
+                if (delta.content) opts.onDelta(delta.content)
               }
             }
           } catch {

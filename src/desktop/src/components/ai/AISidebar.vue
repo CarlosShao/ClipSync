@@ -55,6 +55,10 @@ const thinkingStrength = ref<'low' | 'medium' | 'high'>(
 watch(thinkingEnabled, (v) => localStorage.setItem('ai-thinking-enabled', String(v)))
 watch(thinkingStrength, (v) => localStorage.setItem('ai-thinking-strength', v))
 
+// 并行多代理开关（从 localStorage 恢复，默认关闭）
+const parallelEnabled = ref(localStorage.getItem('ai-parallel') === 'true')
+watch(parallelEnabled, (v) => localStorage.setItem('ai-parallel', String(v)))
+
 // 历史面板展开状态（桌面端默认折叠，点击历史按钮展开）
 const showHistory = ref(false)
 
@@ -84,7 +88,7 @@ async function onNewConversation() {
 }
 
 function onSend(text: string) {
-  send(text, { mode: mode.value, thinking: thinkingEnabled.value, thinkingStrength: thinkingStrength.value })
+  send(text, { mode: mode.value, thinking: thinkingEnabled.value, thinkingStrength: thinkingStrength.value, parallel: parallelEnabled.value })
 }
 
 function toggleThinking() {
@@ -187,12 +191,14 @@ async function onDelete(id: string) {
             :thinking-enabled="thinkingEnabled"
             :thinking-strength="thinkingStrength"
             :mode="mode"
+            :parallel-enabled="parallelEnabled"
             @send="onSend"
             @stop="stop"
             @select-provider="selectProvider"
             @toggle-thinking="toggleThinking"
             @set-thinking-strength="setThinkingStrength"
             @set-mode="(m) => mode = m"
+            @toggle-parallel="parallelEnabled = !parallelEnabled"
             @open-settings="emit('open-settings')"
           />
         </template>

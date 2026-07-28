@@ -978,5 +978,12 @@
   "ai_mem_cat_fact": "Fact",
   "ai_mem_cat_project": "Project",
   "ai_mem_cat_feedback": "Feedback",
-  "ai_mem_cat_other": "Other"
+  "ai_mem_cat_other": "Other",
+  "ai_parallel": "Parallel",
+  "ai_parallel_hint": "Parallel multi-agent: auto-split the task across sub-agents (read-only tools only; slower but more thorough)",
+  "ai_agent_planning": "Planning",
+  "ai_agent_working": "Working",
+  "ai_agent_synthesis": "Synthesizing",
+  "ai_agent_done": "Done",
+  "ai_agent_failed": "Failed"
 }

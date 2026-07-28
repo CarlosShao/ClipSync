@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import type { AiProvider } from '@/api/ai'
-import { Send, Square, Brain, ChevronDown, Settings2 } from 'lucide-vue-next'
+import { Send, Square, Brain, ChevronDown, Settings2, Boxes } from 'lucide-vue-next'
 
 const props = defineProps<{
   disabled: boolean
@@ -13,6 +13,7 @@ const props = defineProps<{
   thinkingEnabled: boolean
   thinkingStrength: 'low' | 'medium' | 'high'
   mode: 'ask' | 'agent'
+  parallelEnabled: boolean
 }>()
 const emit = defineEmits<{
   send: [text: string]
@@ -21,6 +22,7 @@ const emit = defineEmits<{
   'toggle-thinking': []
   'set-thinking-strength': [strength: 'low' | 'medium' | 'high']
   'set-mode': [mode: 'ask' | 'agent']
+  'toggle-parallel': []
   'open-settings': []
 }>()
 const { t } = useI18n()
@@ -118,6 +120,12 @@ function toggleThinking() {
           <button :class="{ active: mode === 'ask' }" @click="setMode('ask')">{{ t('ai_mode_ask') }}</button>
           <button :class="{ active: mode === 'agent' }" @click="setMode('agent')">{{ t('ai_mode_agent') }}</button>
         </div>
+
+        <!-- 并行多代理（手动开关，默认关闭） -->
+        <button class="ai-tag-btn" :class="{ active: parallelEnabled }" :title="t('ai_parallel_hint')" @click.stop="emit('toggle-parallel')">
+          <Boxes :size="12" />
+          <span>{{ t('ai_parallel') }}</span>
+        </button>
 
         <!-- 模型选择 -->
         <button class="ai-tag-btn" @click.stop="togglePopup('model')">

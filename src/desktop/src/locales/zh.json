@@ -969,5 +969,12 @@
   "ai_mem_cat_fact": "事实",
   "ai_mem_cat_project": "项目",
   "ai_mem_cat_feedback": "反馈",
-  "ai_mem_cat_other": "其他"
+  "ai_mem_cat_other": "其他",
+  "ai_parallel": "并行",
+  "ai_parallel_hint": "并行多代理：自动把任务拆给多个子代理并行处理（仅只读工具，更慢但更全）",
+  "ai_agent_planning": "规划中",
+  "ai_agent_working": "进行中",
+  "ai_agent_synthesis": "综合中",
+  "ai_agent_done": "已完成",
+  "ai_agent_failed": "失败"
 }

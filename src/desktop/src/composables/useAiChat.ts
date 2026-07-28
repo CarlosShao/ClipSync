@@ -1,6 +1,6 @@
 import { ref, shallowRef, computed } from 'vue'
 import { getProviders, getAiContext, streamChat } from '@/api/ai'
-import type { AiProvider, ChatMessage, AiContext } from '@/api/ai'
+import type { AiProvider, ChatMessage, AiContext, AgentRun, StreamDeltaMeta } from '@/api/ai'
 import { buildSystemPrompt } from '@/utils/aiSystemPrompt'
 import { useAiConversations } from './useAiConversations'
 
@@ -12,6 +12,7 @@ interface SendOptions {
   mode?: 'ask' | 'agent'
   thinking?: boolean
   thinkingStrength?: 'low' | 'medium' | 'high'
+  parallel?: boolean
 }
 
 // 原生支持 reasoning 的模型关键词
@@ -143,6 +144,37 @@ export function useAiChat() {
     messages.value.push(assistantMsg)
     isStreaming.value = true
 
+    // —— 多代理并行模式：子代理运行状态维护 ——
+    function ensureAgentRuns(): AgentRun[] {
+      if (!assistantMsg.agentRuns) assistantMsg.agentRuns = []
+      return assistantMsg.agentRuns
+    }
+    function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
+      const runs = ensureAgentRuns()
+      let run = runs.find((r) => r.id === a.id)
+      if (!run) {
+        run = { id: a.id, name: a.name, status: a.status, kind: a.kind }
+        runs.push(run)
+      }
+      run.name = a.name
+      run.status = a.status
+      if (a.kind) run.kind = a.kind
+      // 携带 error 视为失败（后端把 error 放在 failed 事件中）
+      if (a.error !== undefined) {
+        run.status = 'failed'
+        run.error = a.error
+      }
+    }
+    function getOrCreateAgentRun(id: string): AgentRun {
+      const runs = ensureAgentRuns()
+      let run = runs.find((r) => r.id === id)
+      if (!run) {
+        run = { id, name: id, status: 'working' }
+        runs.push(run)
+      }
+      return run
+    }
+
     const controller = new AbortController()
     abortCtrl.value = controller
 
@@ -255,43 +287,55 @@ export function useAiChat() {
           mode: options.mode,
           thinking: options.thinking,
           thinkingStrength: options.thinkingStrength,
+          parallel: options.parallel,
         },
         signal: controller.signal,
-        onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any) => {
+        onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => {
+          // 生命周期事件（coordinator/worker/synthesis 状态切换）始终 upsert 到 agentRuns
+          if (meta?.agent) {
+            upsertAgentRun(meta.agent)
+          }
+
+          // 有 agentId 的增量属于某个子代理 → 路由到对应卡片；否则归到主气泡
+          const target: AgentRun | null = meta?.agentId ? getOrCreateAgentRun(meta.agentId) : null
+
           if (thinkingNative) {
-            if (!assistantMsg.thinkingStartedAt) assistantMsg.thinkingStartedAt = Date.now()
-            assistantMsg.thinking = (assistantMsg.thinking || '') + thinkingNative
+            const bucket = target || assistantMsg
+            if (!bucket.thinkingStartedAt) bucket.thinkingStartedAt = Date.now()
+            bucket.thinking = (bucket.thinking || '') + thinkingNative
           }
 
           if (d) {
             const res = processThinkContent(d)
-            assistantMsg.content += res.textDelta
+            const bucket = target || assistantMsg
+            ;(bucket as any).content = (bucket.content || '') + res.textDelta
             if (res.thinkingDelta && !nativeReasoning) {
-              if (!assistantMsg.thinkingStartedAt) assistantMsg.thinkingStartedAt = Date.now()
-              assistantMsg.thinking = (assistantMsg.thinking || '') + res.thinkingDelta
+              if (!bucket.thinkingStartedAt) bucket.thinkingStartedAt = Date.now()
+              bucket.thinking = (bucket.thinking || '') + res.thinkingDelta
             }
           }
 
           if (toolCall) {
-            // 工具一旦开始调用，思考阶段即视为结束：避免前端在工具执行期间
-            // 仍把思考面板显示成“思考中”，造成“工具比思考先开始”的错觉。
-            assistantMsg.thinkingActive = false
-            if (!assistantMsg.toolCalls) assistantMsg.toolCalls = []
-            const existing = assistantMsg.toolCalls.find((tc) => tc.id === toolCall.id)
+            // 工具一旦开始调用，对应气泡的思考阶段即视为结束
+            const bucket = target || assistantMsg
+            bucket.thinkingActive = false
+            if (!bucket.toolCalls) bucket.toolCalls = []
+            const existing = bucket.toolCalls.find((tc) => tc.id === toolCall.id)
             if (existing) {
               existing.arguments = (existing.arguments || '') + (toolCall.arguments || '')
             } else {
-              assistantMsg.toolCalls.push(toolCall)
+              bucket.toolCalls.push(toolCall)
             }
           }
 
           if (toolResult) {
-            if (!assistantMsg.toolResults) assistantMsg.toolResults = []
-            const existing = assistantMsg.toolResults.find((tr) => tr.tool_call_id === toolResult.tool_call_id)
+            const bucket = target || assistantMsg
+            if (!bucket.toolResults) bucket.toolResults = []
+            const existing = bucket.toolResults.find((tr) => tr.tool_call_id === toolResult.tool_call_id)
             if (existing) {
               existing.content = (existing.content || '') + (toolResult.content || '')
             } else {
-              assistantMsg.toolResults.push(toolResult)
+              bucket.toolResults.push(toolResult)
             }
           }
         },

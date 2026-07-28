@@ -455,6 +455,24 @@ export const TOOLS = [
     ]
 
 /**
+ * 写入类工具集合（多代理编排时，子代理只配发只读工具，写入操作统一由
+ * 协调器/综合阶段串行执行，避免并发写竞争）。
+ */
+export const WRITE_TOOL_NAMES = new Set([
+  'save_memory',
+  'create_workflow',
+  'execute_workflow_step',
+  'batch_favorite',
+  'batch_delete',
+])
+
+/**
+ * 只读工具子集：供并行子代理使用，杜绝子代理并发触发写入/破坏性操作。
+ * 与 TOOLS 同步维护——新增写入类工具时必须加入 WRITE_TOOL_NAMES，否则会被误判为只读。
+ */
+export const READONLY_TOOLS = TOOLS.filter((t) => !WRITE_TOOL_NAMES.has(t.function.name))
+
+/**
  * 执行工具调用
  */
 async function executeTool(toolName, args, userId) {

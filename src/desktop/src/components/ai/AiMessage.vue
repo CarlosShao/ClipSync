@@ -5,6 +5,7 @@ import { Marked } from 'marked'
 import type { ChatMessage } from '@/api/ai'
 import AiThinking from './AiThinking.vue'
 import AiToolTimeline from './AiToolTimeline.vue'
+import AiAgentRun from './AiAgentRun.vue'
 
 const props = defineProps<{ message: ChatMessage; index: number; isStreaming: boolean }>()
 const { t } = useI18n()
@@ -65,6 +66,16 @@ function roleLabel() {
         :tool-calls="message.toolCalls"
         :tool-results="message.toolResults"
       />
+
+      <!-- 多代理并行模式：子代理运行状态卡片（coordinator / workers / synthesis） -->
+      <template v-if="message.role === 'assistant' && message.agentRuns && message.agentRuns.length">
+        <AiAgentRun
+          v-for="run in message.agentRuns"
+          :key="run.id"
+          :run="run"
+          :is-streaming="isStreaming"
+        />
+      </template>
 
       <div v-if="message.role === 'assistant'" class="ai-msg-content markdown-body" v-html="renderMarkdown(message.content)"></div>
       <div v-else class="ai-msg-content">{{ compactBlankLines(message.content) }}</div>
