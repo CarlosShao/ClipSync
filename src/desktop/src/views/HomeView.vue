@@ -459,7 +459,7 @@ function confirmAction() {
       @toggle="sidebarOpen = !sidebarOpen"
       @navigate="switchSub"
       @open-settings-dialog="showSettingsDialog = true"
-      @open-ai="aiSidebarOpen = true"
+      @open-ai="aiSidebarOpen = !aiSidebarOpen"
       @logout="handleLogout"
     />
 
