@@ -28,6 +28,7 @@ export interface ChatMessage {
   thinkingStartedAt?: number // 思考开始时间戳（毫秒），用于显示思考秒数
   toolCalls?: ToolCall[] // 工具调用
   toolResults?: ToolResult[] // 工具结果
+  thinkingActive?: boolean // 思考阶段是否仍在进行：工具开始调用后视为结束（用于前端正确显示“思考完成”而非一直“思考中”）
   tool_call_id?: string // tool 角色消息关联的调用 id
   isError?: boolean // 标记该助手消息是否因出错而生成（不进入上游历史）
 }

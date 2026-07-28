@@ -43,6 +43,12 @@ watch(
   () => (props.messages[props.messages.length - 1]?.thinking || ''),
   () => scrollToBottom(),
 )
+// 切换对话（messages 引用整体被替换）时强制滚到底部，确保打开历史对话看到最新消息，
+// 而不是停留在旧位置导致“上一条记录滚不上去/看不到”。
+watch(
+  () => props.messages,
+  () => scrollToBottom(true),
+)
 </script>
 
 <template>
@@ -65,6 +71,7 @@ watch(
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;

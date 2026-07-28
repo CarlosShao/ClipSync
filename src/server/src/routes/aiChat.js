@@ -92,56 +92,60 @@ async function collectToolCallsFromStream(reader, decoder, sendDelta, logChunk) 
 }
 
 /**
- * 执行工具调用
+ * 执行同一轮内的多个工具调用（并行，互不依赖，缩短整体延迟）
+ * 每个工具完成即向前端推送 tool_call / tool_result 增量，保证时间线实时刷新。
  */
 async function handleToolCalls(toolCalls, userId, sendDelta) {
-  const results = []
-  for (const tc of toolCalls) {
-    if (!tc.function?.name) continue
+  const settled = await Promise.all(
+    toolCalls.map(async (tc) => {
+      if (!tc.function?.name) return null
 
-    const toolName = tc.function.name
-    let args = {}
-    try {
-      args = JSON.parse(tc.function.arguments || '{}')
-    } catch { /* ignore */ }
+      const toolName = tc.function.name
+      let args = {}
+      try {
+        args = JSON.parse(tc.function.arguments || '{}')
+      } catch { /* ignore */ }
 
-    // 通知前端正在执行工具
-    sendDelta({
-      choices: [{
-        delta: {
-          tool_call: {
-            id: tc.id,
-            name: toolName,
-            arguments: tc.function.arguments
-          }
-        },
-        index: 0
-      }]
+      // 通知前端正在执行工具
+      sendDelta({
+        choices: [{
+          delta: {
+            tool_call: {
+              id: tc.id,
+              name: toolName,
+              arguments: tc.function.arguments
+            }
+          },
+          index: 0
+        }]
+      })
+
+      // 执行工具（同一轮内并行）
+      const result = await executeTool(toolName, args, userId)
+
+      // 通知前端工具执行结果
+      sendDelta({
+        choices: [{
+          delta: {
+            tool_result: {
+              tool_call_id: tc.id,
+              content: JSON.stringify(result)
+            }
+          },
+          index: 0
+        }]
+      })
+
+      return {
+        role: 'tool',
+        tool_call_id: tc.id,
+        content: JSON.stringify(result)
+      }
     })
+  )
 
-    // 执行工具
-    const result = await executeTool(toolName, args, userId)
-
-    // 通知前端工具执行结果
-    sendDelta({
-      choices: [{
-        delta: {
-          tool_result: {
-            tool_call_id: tc.id,
-            content: JSON.stringify(result)
-          }
-        },
-        index: 0
-      }]
-    })
-
-    results.push({
-      role: 'tool',
-      tool_call_id: tc.id,
-      content: JSON.stringify(result)
-    })
-  }
-  return results
+  // 保持与入参一致的顺序，供下一轮上下文拼接
+  return settled.filter(Boolean)
 }
 
 // POST /api/ai/chat - SSE 流式代理（支持多轮 tool calling）
@@ -251,17 +255,12 @@ router.post('/chat', apiLimiter, async (req, res) => {
           chatOptions.thinkingBudget = thinkingStrength === 'low' ? 1024 : thinkingStrength === 'high' ? 8192 : 4096
         }
 
-        // 两类工具在 ask/agent 两种模式下都可用：
-        //  1) 记忆工具——让模型能主动保存用户偏好/项目事实等长期记忆；
-        //  2) 项目元知识工具——让「大管家」随时能讲解功能/隐私模型/部署/架构（只读、非敏感）。
-        // 其余 Agent 工作流与隐私敏感的内容读取工具（read_clip_content 等）只在 agent 模式下暴露。
-        const ALWAYS_TOOL_NAMES = [
-          'get_memories', 'save_memory',
-          'explain_feature', 'explain_privacy_model', 'explain_deployment', 'get_project_architecture'
-        ]
-        const alwaysTools = TOOLS.filter((t) => ALWAYS_TOOL_NAMES.includes(t.function.name))
-        const agentOnlyTools = TOOLS.filter((t) => !ALWAYS_TOOL_NAMES.includes(t.function.name))
-        chatOptions.tools = isAgentMode ? [...alwaysTools, ...agentOnlyTools] : alwaysTools
+        // 「大管家」在 ask / agent 两种模式下都拥有完整工具集：
+        // 记忆工具 + 项目元知识工具 + 全部剪贴板数据工具（收藏/搜索/读内容/统计/设备/模板/共享链接/工作流等）。
+        // 之前仅在 agent 模式暴露数据工具，导致 ask 模式下模型“有权限却没工具”，
+        // 遇到“查我收藏夹/读这条内容”这类问题只能回“我没有工具”。现统一全量暴露，
+        // 由 tool_choice=auto 让模型自行决定是否调用。
+        chatOptions.tools = TOOLS
         chatOptions.tool_choice = 'auto'
 
         const upstream = buildUpstreamChat({

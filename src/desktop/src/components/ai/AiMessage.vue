@@ -9,8 +9,13 @@ import AiToolTimeline from './AiToolTimeline.vue'
 const props = defineProps<{ message: ChatMessage; index: number; isStreaming: boolean }>()
 const { t } = useI18n()
 
-const marked = new Marked()
+// GFM 已默认开启（表格、删除线、任务列表等）；breaks:false 保持标准 markdown 段落语义。
+const marked = new Marked({ gfm: true, breaks: false })
 const expandedThinking = ref(false)
+
+// 思考是否仍在进行：工具一旦开始调用，thinkingActive 置 false，面板即显示“思考完成（N 秒）”，
+// 避免工具执行期间思考面板仍显示“思考中”，造成“工具比思考先开始”的错觉。
+const thinkingStillActive = computed(() => isStreamingNow.value && props.message.thinkingActive !== false)
 
 // 当前消息是否处于“正在生成”状态（仅最后一条助手消息为 true）
 const isStreamingNow = computed(() => props.isStreaming && props.index === 0)
@@ -50,7 +55,7 @@ function roleLabel() {
         v-if="message.role === 'assistant'"
         :thinking="message.thinking || ''"
         :thinking-started-at="message.thinkingStartedAt"
-        :is-streaming="isStreamingNow"
+        :is-streaming="thinkingStillActive"
         :expanded="expandedThinking || isStreamingNow"
         @toggle="expandedThinking = !expandedThinking"
       />

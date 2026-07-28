@@ -139,7 +139,7 @@ export function useAiChat() {
 
     error.value = ''
     messages.value.push({ role: 'user', content: text })
-    const assistantMsg: ChatMessage = { role: 'assistant', content: '', thinking: '' }
+    const assistantMsg: ChatMessage = { role: 'assistant', content: '', thinking: '', thinkingActive: true }
     messages.value.push(assistantMsg)
     isStreaming.value = true
 
@@ -273,6 +273,9 @@ export function useAiChat() {
           }
 
           if (toolCall) {
+            // 工具一旦开始调用，思考阶段即视为结束：避免前端在工具执行期间
+            // 仍把思考面板显示成“思考中”，造成“工具比思考先开始”的错觉。
+            assistantMsg.thinkingActive = false
             if (!assistantMsg.toolCalls) assistantMsg.toolCalls = []
             const existing = assistantMsg.toolCalls.find((tc) => tc.id === toolCall.id)
             if (existing) {
@@ -326,28 +329,6 @@ export function useAiChat() {
     conv.setCurrent('')
   }
 
-  // 继续生成：基于现有完整上下文（含已产生的部分回答）让模型续写
-  async function resume(options: SendOptions = {}) {
-    if (isStreaming.value) return
-    const last = messages.value[messages.value.length - 1]
-    if (!last || last.role !== 'assistant') return
-
-    // 如果当前没有会话 ID（例如之前流异常中断导致未创建），先补建一个，
-    // 且不能清空已有消息，否则“继续”会变成第一条消息、上下文全丢。
-    if (!conv.currentConversationId.value) {
-      const p = providers.value.find((x) => x.id === selectedProviderId.value)
-      await conv.createNew({
-        title: messages.value[0]?.content?.slice(0, 30) || '继续对话',
-        providerId: selectedProviderId.value,
-        model: p?.model,
-        mode: options.mode,
-        thinkingEnabled: options.thinking,
-      })
-    }
-
-    await send('请继续完成你刚才的回答（结合我们之前的对话上下文）。', options)
-  }
-
   return {
     providers,
     selectedProviderId,
@@ -362,7 +343,6 @@ export function useAiChat() {
     loadProviders,
     selectProvider,
     send,
-    resume,
     stop,
     clear,
     // 会话相关

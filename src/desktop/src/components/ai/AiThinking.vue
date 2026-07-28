@@ -15,16 +15,58 @@ const { t } = useI18n()
 const hasContent = computed(() => (props.thinking?.length || 0) > 0)
 const contentRef = ref<HTMLElement | null>(null)
 
-// 流式生成时，思考内容持续增长；自动滚动到底部，确保最新思考 token 始终可见，
-// 避免内容超过 max-height 后新内容被遮挡、看起来“没在流式”。
+// 渐进式显示：上游可能一次性下发整段思考（导致“卡一下然后全蹦出”），
+// 这里用 rAF 把 displayThinking 平滑追上真实 thinking，让思考过程“生长”而非“跳变”。
+const displayThinking = ref('')
+let rafId: number | undefined
+
+function flushThinking() {
+  const target = props.thinking || ''
+  if (displayThinking.value.length >= target.length) {
+    rafId = undefined
+    return
+  }
+  // 剩余越多，单帧补得越多（约 5 帧内追上），既平滑又不拖沓
+  const remain = target.length - displayThinking.value.length
+  const step = Math.max(1, Math.ceil(remain / 5))
+  displayThinking.value = target.slice(0, displayThinking.value.length + step)
+  if (props.isStreaming && contentRef.value) {
+    contentRef.value.scrollTop = contentRef.value.scrollHeight
+  }
+  rafId = requestAnimationFrame(flushThinking)
+}
+
+function ensureFlush() {
+  const target = props.thinking || ''
+  // 新会话/重置：真实思考变短，清空显示
+  if (target.length < displayThinking.value.length) displayThinking.value = ''
+  if (displayThinking.value.length < target.length && rafId === undefined) {
+    rafId = requestAnimationFrame(flushThinking)
+  }
+}
+
 watch(
   () => props.thinking,
   () => {
+    ensureFlush()
     if (props.isStreaming && contentRef.value) {
       contentRef.value.scrollTop = contentRef.value.scrollHeight
     }
   },
 )
+
+watch(
+  () => props.thinkingStartedAt,
+  () => {
+    displayThinking.value = ''
+    if (rafId !== undefined) {
+      cancelAnimationFrame(rafId)
+      rafId = undefined
+    }
+    ensureFlush()
+  },
+)
+
 const elapsedSeconds = ref(0)
 let timer: number | undefined
 
@@ -53,13 +95,20 @@ function stopTimer() {
 onMounted(() => {
   if (props.isStreaming) startTimer()
   else updateElapsed()
+  ensureFlush()
 })
 
-onUnmounted(stopTimer)
+onUnmounted(() => {
+  stopTimer()
+  if (rafId !== undefined) cancelAnimationFrame(rafId)
+})
 
 watch(() => props.isStreaming, (v) => {
   if (v) startTimer()
-  else stopTimer()
+  else {
+    stopTimer()
+    ensureFlush()
+  }
 })
 
 const summary = computed(() => {
@@ -83,7 +132,7 @@ const summary = computed(() => {
       <ChevronRight v-else :size="13" />
     </button>
     <div v-if="expanded" ref="contentRef" class="ai-thinking-content">
-      <pre>{{ thinking }}</pre>
+      <pre>{{ displayThinking }}</pre>
     </div>
   </div>
 </template>

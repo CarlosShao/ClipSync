@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useAiChat } from '@/composables/useAiChat'
 import Button from '@/components/ui/button/Button.vue'
@@ -27,7 +27,6 @@ const {
   loadProviders,
   selectProvider,
   send,
-  resume,
   stop,
   clear,
   conversations,
@@ -38,17 +37,11 @@ const {
   loadConversation,
   renameConversation,
   deleteConversation,
+  // 注意：resume（继续生成）按钮已按用户要求移除，用户可自行输入“继续”。
 } = useAiChat()
 
 // 记忆面板展开状态
 const showMemory = ref(false)
-
-// 是否可“继续生成”：最后一条是助手消息且未在流式
-const canResume = computed(() => {
-  if (isStreaming.value) return false
-  const last = messages.value[messages.value.length - 1]
-  return !!last && last.role === 'assistant'
-})
 
 // 模式：ask 或 agent
 const mode = ref<'ask' | 'agent'>('ask')
@@ -140,9 +133,6 @@ async function onDelete(id: string) {
           </div>
         </div>
         <div class="ai-header-right">
-          <Button v-if="canResume" variant="outline" size="sm" :title="t('ai_resume') || '继续'" @click="resume()">
-            {{ t('ai_resume') }}
-          </Button>
           <Button v-if="hasProviders" variant="ghost" size="icon-sm" :title="t('ai_new_chat') || '新对话'" @click="onNewConversation">
             <Plus :size="15" />
           </Button>
