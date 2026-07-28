@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { onMounted, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useAiChat } from '@/composables/useAiChat'
 import Button from '@/components/ui/button/Button.vue'
-import CustomSelect from '@/components/ui/select/CustomSelect.vue'
-import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
 import AiMessageList from './AiMessageList.vue'
 import AiChatInput from './AiChatInput.vue'
 import { X, Trash2, Bot, Plus, Settings2 } from 'lucide-vue-next'
@@ -15,11 +13,6 @@ const { t } = useI18n()
 
 const { providers, selectedProviderId, messages, isStreaming, error, hasProviders, canSend, init, loadProviders, selectProvider, send, stop, clear } =
   useAiChat()
-
-const providerLabel = computed(() => {
-  const p = providers.value.find((x) => x.id === selectedProviderId.value)
-  return p?.name || t('ai_select_provider')
-})
 
 onMounted(init)
 
@@ -44,6 +37,9 @@ function onSend(text: string) {
         <span>{{ t('sg_ai') }}</span>
       </div>
       <div class="ai-header-actions">
+        <Button variant="ghost" size="icon-sm" :title="t('ai_manage')" @click="emit('open-settings')">
+          <Settings2 :size="15" />
+        </Button>
         <Button v-if="messages.length" variant="ghost" size="icon-sm" :title="t('ai_clear')" @click="clear">
           <Trash2 :size="15" />
         </Button>
@@ -51,26 +47,6 @@ function onSend(text: string) {
           <X :size="16" />
         </Button>
       </div>
-    </div>
-
-    <div class="ai-toolbar">
-      <CustomSelect :model-value="selectedProviderId" @update:model-value="selectProvider">
-        {{ providerLabel }}
-        <template #options>
-          <CustomSelectOption
-            v-for="p in providers"
-            :key="p.id"
-            :value="p.id"
-            :selected="selectedProviderId === p.id"
-            @select="selectProvider"
-          >
-            {{ p.name }}
-          </CustomSelectOption>
-        </template>
-      </CustomSelect>
-      <Button variant="outline" size="icon-sm" :title="t('ai_manage')" @click="emit('open-settings')">
-        <Settings2 :size="15" />
-      </Button>
     </div>
 
     <div v-if="!hasProviders" class="ai-no-providers">
@@ -84,7 +60,15 @@ function onSend(text: string) {
     <template v-else>
       <AiMessageList :messages="messages" :is-streaming="isStreaming" />
       <div v-if="error" class="ai-error-bar">{{ error }}</div>
-      <AiChatInput :disabled="!canSend" :is-streaming="isStreaming" @send="onSend" @stop="stop" />
+      <AiChatInput
+        :disabled="!canSend"
+        :is-streaming="isStreaming"
+        :providers="providers"
+        :selected-provider-id="selectedProviderId"
+        @send="onSend"
+        @stop="stop"
+        @select-provider="selectProvider"
+      />
     </template>
   </aside>
 </template>
@@ -95,6 +79,7 @@ function onSend(text: string) {
   top: 0;
   right: 0;
   height: 100vh;
+  height: 100dvh;
   width: 380px;
   max-width: 92vw;
   background: var(--bg-surface);
@@ -128,17 +113,6 @@ function onSend(text: string) {
 .ai-header-actions {
   display: flex;
   gap: 4px;
-}
-.ai-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-default);
-  flex-shrink: 0;
-}
-.ai-toolbar :deep(.cs-trigger) {
-  flex: 1;
 }
 .ai-no-providers {
   flex: 1;

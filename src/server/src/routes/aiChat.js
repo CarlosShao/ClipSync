@@ -110,10 +110,25 @@ router.post('/chat', apiLimiter, async (req, res) => {
               }
             }
           } else {
-            // OpenAI 兼容：原样转发 data（已是 OpenAI 风格），忽略其 [DONE]
+            // OpenAI 兼容：ev.data 是上游 JSON 字符串，parse 成对象后再统一包装，避免 double-stringify
             if (ev.data === '[DONE]') continue
-            sendOpenAIDelta(ev.data)
+            try {
+              const obj = JSON.parse(ev.data)
+              sendOpenAIDelta(obj)
+            } catch {
+              // 极少数非 JSON 行，原样透传
+              res.write(`data: ${ev.data}\n\n`)
+            }
           }
+        }
+      }
+      // 上游可能以非 \n\n 结尾，尝试 flush 剩余 buffer
+      if (buffer.trim()) {
+        try {
+          const obj = JSON.parse(buffer.trim())
+          sendOpenAIDelta(obj)
+        } catch {
+          /* ignore trailing incomplete chunk */
         }
       }
       finish()

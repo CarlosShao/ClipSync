@@ -42,8 +42,10 @@ export function useAiChat() {
   }
 
   function lastAssistant() {
-    const arr = messages.value
-    return arr[arr.length - 1]
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      if (messages.value[i].role === 'assistant') return messages.value[i]
+    }
+    return null
   }
 
   async function send(content: string) {

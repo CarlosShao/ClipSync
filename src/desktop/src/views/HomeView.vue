@@ -38,7 +38,7 @@ import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
 import { perfFirstDataLoad } from '@/utils/perfMonitor'
 import { toggleSensitive } from '@/api/client'
 import { ensureDeviceId } from '@/composables/clipboardUpload'
-import { Lock, Bot } from 'lucide-vue-next'
+import { Lock } from 'lucide-vue-next'
 
 const configStore = useConfigStore()
 const { t } = useI18n()
@@ -571,16 +571,6 @@ function confirmAction() {
 
   <!-- AI Agent 侧边栏（右侧集成 AI 区） -->
   <AISidebar :open="aiSidebarOpen" @close="aiSidebarOpen = false" @open-settings="openAiSettings" />
-
-  <!-- AI 悬浮开关 -->
-  <button
-    class="ai-fab"
-    :class="{ 'ai-fab--active': aiSidebarOpen }"
-    :title="t('sg_ai')"
-    @click="aiSidebarOpen = !aiSidebarOpen"
-  >
-    <Bot :size="20" />
-  </button>
 </template>
 
 <style scoped>
@@ -732,29 +722,4 @@ function confirmAction() {
   }
 }
 
-/* AI 悬浮开关 */
-.ai-fab {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: var(--z-fab, 45);
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-default);
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-  box-shadow: var(--shadow-modal);
-  transition: transform 0.15s ease, background 0.15s ease;
-}
-.ai-fab:hover {
-  transform: scale(1.06);
-}
-.ai-fab--active {
-  background: var(--accent-strong, var(--accent));
-}
 </style>
