@@ -226,8 +226,8 @@ router.post('/chat', apiLimiter, async (req, res) => {
           options: chatOptions,
         })
 
-        logger.debug(`[AI] upstream request: ${upstream.url} model=${providerRow.model}`)
-        logger.debug(`[AI] upstream body: ${JSON.stringify(upstream.body).slice(0, 2000)}`)
+        logger.info(`[AI] upstream request: ${upstream.url} model=${providerRow.model}`)
+        logger.info(`[AI] upstream body: ${JSON.stringify(upstream.body).slice(0, 3000)}`)
 
         const upstreamRes = await fetch(upstream.url, {
           method: 'POST',
