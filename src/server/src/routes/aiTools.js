@@ -169,7 +169,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'save_memory',
-      description: '保存一条用户长期记忆（如用户明确表达的偏好、项目事实、对我方产品的反馈）。仅当用户明确陈述了值得长期记住的信息时调用，避免记录临时内容。',
+      description: '保存一条用户长期记忆。当你从对话中了解到用户的偏好、项目事实、工作习惯、对我方产品的反馈，或任何跨会话有用的信息时，主动调用此工具写入记忆，不要等用户要求。每次只保存一条最有价值的信息，标题简短，内容具体。',
       parameters: {
         type: 'object',
         properties: {

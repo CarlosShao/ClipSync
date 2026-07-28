@@ -91,7 +91,14 @@ export function useAiConversations() {
     if (!currentConversationId.value) return
     const toSave = messages.filter((m) => m.role !== 'system')
     if (toSave.length === 0) return
-    await saveMessages(currentConversationId.value, toSave)
+    try {
+      const res = await saveMessages(currentConversationId.value, toSave)
+      if (!res.ok) {
+        console.warn('[useAiConversations] saveMessages failed:', res.error)
+      }
+    } catch (e: any) {
+      console.warn('[useAiConversations] saveMessages error:', e?.message || e)
+    }
     // 更新本地 updated_at，让排序保持最新
     const idx = conversations.value.findIndex((c) => c.id === currentConversationId.value)
     if (idx !== -1) {

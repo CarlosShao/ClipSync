@@ -167,7 +167,7 @@ function onToggleMemory(v: boolean) {
       <textarea v-model="form.content" class="ai-memory-textarea" rows="3" :placeholder="t('ai_memory_content_ph')" />
       <div class="ai-memory-form-actions">
         <Button v-if="editingId" variant="ghost" size="sm" @click="resetForm">{{ t('ai_memory_cancel') }}</Button>
-        <Button size="sm" @click="save">
+        <Button size="sm" class="ai-memory-save-btn" @click="save">
           <Plus :size="14" />
           {{ editingId ? t('ai_memory_save') : t('ai_memory_add') }}
         </Button>
@@ -306,5 +306,11 @@ function onToggleMemory(v: boolean) {
   display: flex;
   justify-content: flex-end;
   gap: 6px;
+}
+.ai-memory-save-btn {
+  gap: 6px;
+  padding-left: 14px;
+  padding-right: 14px;
+  min-width: 100px;
 }
 </style>

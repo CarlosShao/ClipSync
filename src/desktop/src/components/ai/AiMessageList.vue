@@ -8,12 +8,27 @@ const props = defineProps<{ messages: ChatMessage[]; isStreaming: boolean }>()
 const { t } = useI18n()
 
 const scrollRef = ref<HTMLElement | null>(null)
+const userScrolledUp = ref(false)
 
-function scrollToBottom() {
+function isNearBottom(el: HTMLElement) {
+  // 距离底部 80px 内视为“已在底部”
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 80
+}
+
+function scrollToBottom(force = false) {
   nextTick(() => {
     const el = scrollRef.value
-    if (el) el.scrollTop = el.scrollHeight
+    if (!el) return
+    if (!force && userScrolledUp.value && !isNearBottom(el)) return
+    el.scrollTop = el.scrollHeight
+    if (isNearBottom(el)) userScrolledUp.value = false
   })
+}
+
+function onScroll() {
+  const el = scrollRef.value
+  if (!el) return
+  userScrolledUp.value = !isNearBottom(el)
 }
 
 watch(
@@ -31,7 +46,7 @@ watch(
 </script>
 
 <template>
-  <div ref="scrollRef" class="ai-msg-list">
+  <div ref="scrollRef" class="ai-msg-list" @scroll="onScroll">
     <div v-if="messages.length === 0" class="ai-msg-empty">
       {{ t('ai_chat_empty') }}
     </div>

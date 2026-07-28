@@ -29,15 +29,21 @@ function parseSSEEvent(block) {
 /**
  * 从 SSE 流中收集 tool_calls（同时流式发送 thinking 和 content）
  */
-async function collectToolCallsFromStream(reader, decoder, sendDelta) {
+async function collectToolCallsFromStream(reader, decoder, sendDelta, logChunk) {
   let buffer = ''
   let content = ''
   let toolCalls = []
   let finishReason = ''
+  let lastChunkAt = Date.now()
 
   while (true) {
     const { value, done } = await reader.read()
     if (done) break
+    const chunkSize = value ? value.byteLength : 0
+    const now = Date.now()
+    const sinceLast = now - lastChunkAt
+    lastChunkAt = now
+    if (logChunk) logChunk({ bytes: chunkSize, sinceLastMs: sinceLast })
     buffer += decoder.decode(value, { stream: true })
 
     let idx
@@ -166,8 +172,16 @@ router.post('/chat', apiLimiter, async (req, res) => {
     // 禁用 Nagle：确保每个增量块立刻发到 socket，杜绝攒批导致“一次性蹦出”
     res.socket?.setNoDelay?.(true)
 
+    const streamStartAt = Date.now()
+    let chunkCount = 0
     const sendDelta = (obj) => {
       res.write(`data: ${JSON.stringify(obj)}\n\n`)
+    }
+    const logChunk = ({ bytes, sinceLastMs }) => {
+      chunkCount++
+      if (chunkCount <= 20 || chunkCount % 50 === 0) {
+        logger.debug(`[AI] SSE chunk #${chunkCount} +${sinceLastMs}ms ${bytes}B total=${Date.now() - streamStartAt}ms`)
+      }
     }
 
     const finish = () => {
@@ -197,11 +211,13 @@ router.post('/chat', apiLimiter, async (req, res) => {
           chatOptions.thinkingBudget = thinkingStrength === 'low' ? 1024 : thinkingStrength === 'high' ? 8192 : 4096
         }
 
-        // Agent 模式：传递工具定义
-        if (isAgentMode) {
-          chatOptions.tools = TOOLS
-          chatOptions.tool_choice = 'auto'
-        }
+        // 记忆工具在 ask/agent 模式下都可用：让模型能主动保存用户偏好/项目事实等长期记忆。
+        // 其他 Agent 工作流工具只在 agent 模式下暴露。
+        const MEMORY_TOOL_NAMES = ['get_memories', 'save_memory']
+        const memoryTools = TOOLS.filter((t) => MEMORY_TOOL_NAMES.includes(t.function.name))
+        const agentTools = TOOLS.filter((t) => !MEMORY_TOOL_NAMES.includes(t.function.name))
+        chatOptions.tools = isAgentMode ? [...memoryTools, ...agentTools] : memoryTools
+        chatOptions.tool_choice = 'auto'
 
         const upstream = buildUpstreamChat({
           provider: providerRow.provider,
@@ -245,10 +261,10 @@ router.post('/chat', apiLimiter, async (req, res) => {
         const decoder = new TextDecoder()
 
         // 流式发送 thinking 和 content，同时收集 tool_calls
-        const response = await collectToolCallsFromStream(reader, decoder, sendDelta)
+        const response = await collectToolCallsFromStream(reader, decoder, sendDelta, logChunk)
 
-        // 如果有 tool calls，执行工具并继续下一轮
-        if (response.toolCalls.length > 0 && isAgentMode) {
+        // 如果有 tool calls（记忆工具在 ask/agent 都可用），执行工具并继续下一轮
+        if (response.toolCalls.length > 0) {
           const toolResults = await handleToolCalls(response.toolCalls, req.userId, sendDelta)
 
           // 将 assistant 回复添加到消息历史

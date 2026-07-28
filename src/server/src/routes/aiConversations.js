@@ -143,29 +143,41 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
     )
     if (convCheck.rowCount === 0) return res.status(404).json({ error: 'Conversation not found' })
 
-    const inserted = []
-    for (const m of messages) {
-      if (!m || !m.role) continue
-      const result = await pool.query(
-        `INSERT INTO ai_messages (conversation_id, role, content, thinking, tool_calls, tool_results)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, role, content, thinking, tool_calls, tool_results, created_at`,
-        [
-          id,
-          m.role,
-          m.content || '',
-          m.thinking || null,
-          Array.isArray(m.toolCalls) ? JSON.stringify(m.toolCalls) : '[]',
-          Array.isArray(m.toolResults) ? JSON.stringify(m.toolResults) : '[]',
-        ]
-      )
-      inserted.push(result.rows[0])
+    // 用“替换”语义保存消息：先清空该对话的现有消息，再全量插入。
+    // 这样前端可以安全地每次发送整个 messages 数组，而不会出现重复条目。
+    await pool.query('BEGIN')
+    try {
+      await pool.query('DELETE FROM ai_messages WHERE conversation_id = $1', [id])
+
+      const inserted = []
+      for (const m of messages) {
+        if (!m || !m.role) continue
+        const result = await pool.query(
+          `INSERT INTO ai_messages (conversation_id, role, content, thinking, tool_calls, tool_results)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, role, content, thinking, tool_calls, tool_results, created_at`,
+          [
+            id,
+            m.role,
+            m.content || '',
+            m.thinking || null,
+            Array.isArray(m.toolCalls) ? JSON.stringify(m.toolCalls) : '[]',
+            Array.isArray(m.toolResults) ? JSON.stringify(m.toolResults) : '[]',
+          ]
+        )
+        inserted.push(result.rows[0])
+      }
+
+      // 更新对话 updated_at
+      await pool.query('UPDATE ai_conversations SET updated_at = NOW() WHERE id = $1', [id])
+      await pool.query('COMMIT')
+      res.status(201).json({ messages: inserted })
+    } catch (txErr) {
+      await pool.query('ROLLBACK')
+      throw txErr
     }
+    return
 
-    // 更新对话 updated_at
-    await pool.query('UPDATE ai_conversations SET updated_at = NOW() WHERE id = $1', [id])
-
-    res.status(201).json({ messages: inserted })
   } catch (err) {
     logger.error('Save AI messages error:', err)
     res.status(500).json({ error: 'Failed to save messages' })

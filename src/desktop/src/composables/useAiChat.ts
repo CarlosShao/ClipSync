@@ -210,7 +210,7 @@ export function useAiChat() {
     // 构造上游历史：保留工具调用结构（转换为 OpenAI 嵌套格式），确保多轮 Agent 上下文正确
     const historyMessages: any[] = []
     for (const m of messages.value.slice(0, -1)) {
-      if (m.role === 'assistant' && m.isError) continue
+      // 保留出错消息：如果跳过 isError，继续/resume 时会丢失上下文，导致模型“看不到之前对话”
       if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
         historyMessages.push({
           role: 'assistant',
@@ -331,6 +331,20 @@ export function useAiChat() {
     if (isStreaming.value) return
     const last = messages.value[messages.value.length - 1]
     if (!last || last.role !== 'assistant') return
+
+    // 如果当前没有会话 ID（例如之前流异常中断导致未创建），先补建一个，
+    // 且不能清空已有消息，否则“继续”会变成第一条消息、上下文全丢。
+    if (!conv.currentConversationId.value) {
+      const p = providers.value.find((x) => x.id === selectedProviderId.value)
+      await conv.createNew({
+        title: messages.value[0]?.content?.slice(0, 30) || '继续对话',
+        providerId: selectedProviderId.value,
+        model: p?.model,
+        mode: options.mode,
+        thinkingEnabled: options.thinking,
+      })
+    }
+
     await send('请继续完成你刚才的回答（结合我们之前的对话上下文）。', options)
   }
 
