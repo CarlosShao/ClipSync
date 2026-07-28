@@ -1,4 +1,7 @@
 import { Router } from 'express'
+import path from 'path'
+import fs from 'fs/promises'
+import { fileURLToPath } from 'url'
 import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { logger } from '../utils/logger.js'
@@ -6,8 +9,28 @@ import { getAiContext } from '../utils/aiContext.js'
 import { decrypt } from '../utils/encryption.js'
 import { unlockWithPassword } from '../utils/protectionCrypto.js'
 import { getFeatureDoc, getPrivacyModelDoc, getDeploymentDoc, getArchitectureDoc } from '../utils/aiKnowledge.js'
+import { TEXT_PREVIEW_EXTENSIONS } from './media.js'
 
 const router = Router()
+
+// 服务端存储目录（与 storage.js / media.js 一致：src/server/uploads）
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const UPLOAD_BASE = path.join(__dirname, '../../uploads')
+const IMAGE_DIR = path.join(UPLOAD_BASE, 'images')
+const FILE_DIR = path.join(UPLOAD_BASE, 'files')
+
+// 在多个候选目录中定位媒体文件（media 直传在 files/ 或 images/，分片上传在 uploads/ 根）
+async function locateStoredFile(relName, dirs) {
+  for (const d of dirs) {
+    const p = path.join(d, relName)
+    try {
+      const s = await fs.stat(p)
+      return { path: p, size: s.size }
+    } catch { /* try next */ }
+  }
+  return null
+}
 
 /**
  * ClipSync 工具定义
@@ -714,7 +737,7 @@ async function executeTool(toolName, args, userId) {
 
         const result = await pool.query(
           `SELECT id, content_type, content_encrypted, content_preview, content_size,
-                  protection_level, wrapped_dek_password, protection_salt
+                  protection_level, wrapped_dek_password, protection_salt, metadata
            FROM clipboard_items WHERE id = $1 AND user_id = $2`,
           [clip_id, userId]
         )
@@ -724,16 +747,113 @@ async function executeTool(toolName, args, userId) {
         const item = result.rows[0]
         const type = item.content_type
 
-        // 图片/文件：content_encrypted 实际是服务端文件名，不是原文
+        // 图片 / 文件：服务端持有完整数据，AI 大管家拥有读取权限——绝不一句"非原文"打发。
+        // 存储形态有两种：
+        //  A) 内联 base64（data URL）——桌面端直接把字节存入 content_encrypted；
+        //  B) 磁盘文件——content_encrypted 存文件名，字节在 uploads/images、uploads/files（分片上传在根）。
         if (type === 'image' || type === 'file') {
-          let filename = null
-          try { filename = decrypt(item.content_encrypted) } catch { /* ignore */ }
+          const meta = (() => {
+            try { return typeof item.metadata === 'string' ? JSON.parse(item.metadata || '{}') : (item.metadata || {}) }
+            catch { return {} }
+          })()
+          const raw = item.content_encrypted || ''
+
+          // —— A) 内联 data URL ——
+          if (raw.startsWith('data:')) {
+            const comma = raw.indexOf(',')
+            const header = comma > 0 ? raw.slice(0, comma) : 'data:'
+            const mimeMatch = header.match(/data:([^;]+)/)
+            const mime = mimeMatch ? mimeMatch[1] : (meta.mimeType || 'application/octet-stream')
+            const b64 = comma > 0 ? raw.slice(comma + 1) : ''
+            const byteLen = Math.round(b64.length * 3 / 4)
+            if (type === 'image') {
+              return {
+                accessible: true, contentType: 'image', storage: 'inline_data_url',
+                fileName: meta.originalName || 'image', mimeType: mime, byteSize: byteLen, onServer: true,
+                message: `图片以 base64 内联存储于服务端数据库，AI 大管家拥有完整读取权限（${byteLen} 字节）。当前文本模型无法"看见"像素；若接入视觉（vision）模型，可直接把该 data URL 作为图像输入。`
+              }
+            }
+            return {
+              accessible: true, contentType: 'file', storage: 'inline_data_url',
+              fileName: meta.originalName || 'file', mimeType: mime, byteSize: byteLen, onServer: true,
+              message: `文件以 base64 内联存储于服务端数据库，AI 拥有读取权限（${byteLen} 字节）。`
+            }
+          }
+
+          // —— A2) 文件复制类：content_encrypted 是源文件路径（JSON 数组或裸路径），字节未上传服务端 ——
+          if (type === 'file') {
+            let pathRefs = null
+            try {
+              const p = JSON.parse(raw)
+              if (Array.isArray(p)) pathRefs = p.filter(x => typeof x === 'string')
+            } catch { /* 不是 JSON 数组 */ }
+            if (!pathRefs && (/^[a-zA-Z]:\\/.test(raw) || raw.startsWith('/') || raw.includes('\\'))) pathRefs = [raw]
+            if (pathRefs && pathRefs.length) {
+              return {
+                accessible: false, contentType: 'file', storage: 'path_reference',
+                sourcePaths: pathRefs, onServer: false,
+                message: '这是「文件复制」条目：服务端仅保存源文件路径，文件字节并未上传（就在你的本机/原设备上）。AI 可读取并展示这些路径以辅助你在本地定位、粘贴或打开该文件，但无法读取其字节内容——需在你的设备上操作。'
+              }
+            }
+          }
+
+          // —— B) 磁盘文件 ——
+          const located = type === 'image'
+            ? locateStoredFile(item.content_encrypted, [IMAGE_DIR])
+            : locateStoredFile(item.content_encrypted, [FILE_DIR, UPLOAD_BASE])
+
+          if (type === 'image') {
+            return {
+              accessible: true,
+              contentType: 'image',
+              storage: 'server_disk',
+              fileName: meta.originalName || item.content_encrypted,
+              mimeType: meta.mimeType,
+              width: meta.width,
+              height: meta.height,
+              sizeBytes: located ? located.size : (meta.compressedSize || item.content_size),
+              originalSize: meta.originalSize,
+              onServer: !!located,
+              message: located
+                ? '图片字节完整存储于服务端磁盘，AI 大管家拥有读取与检索权限。当前文本模型无法"看见"像素；要识别图像内容需接入支持视觉（vision）的模型。你可在应用内直接预览，或让我管理/检索该图片的元数据。'
+                : '数据库记录存在，但磁盘文件缺失（可能已被清理），仅能返回元数据。'
+            }
+          }
+
+          // file：文本/代码类直接读取原文；其他二进制返回元数据并声明可访问
+          const ext = (meta.extension || path.extname(item.content_encrypted || '') || '').toLowerCase()
+          const isText = TEXT_PREVIEW_EXTENSIONS.has(ext)
+          if (isText && located && located.size <= 5 * 1024 * 1024) {
+            try {
+              const buf = await fs.readFile(located.path)
+              let content = buf.toString('utf-8')
+              if (content.includes('\ufffd')) content = buf.toString('latin1')
+              const limit = 50000
+              const truncated = content.length > limit
+                ? content.slice(0, limit) + `\n…[截断，原文 ${content.length} 字符]`
+                : content
+              return {
+                accessible: true, contentType: 'file', textFile: true,
+                fileName: meta.originalName || item.content_encrypted, extension: ext,
+                sizeBytes: located.size, content: truncated
+              }
+            } catch { /* 落到下方元数据分支 */ }
+          }
           return {
-            contentType: type,
-            note: '图片/文件的 content_encrypted 在服务端是存储文件名（非原文），AI 只返回引用名。要查看实际内容请在应用内打开，或使用媒体下载接口。',
-            storedFilename: filename,
-            sizeBytes: item.content_size,
-            protectionLevel: item.protection_level
+            accessible: true,
+            contentType: 'file',
+            storage: 'server_disk',
+            fileName: meta.originalName || item.content_encrypted,
+            extension: ext,
+            mimeType: meta.mimeType,
+            sizeBytes: located ? located.size : item.content_size,
+            onServer: !!located,
+            textReadable: isText,
+            message: located
+              ? (isText
+                  ? '文本/代码文件已完整读取（见 content 字段）。'
+                  : `文件字节完整存储于服务端磁盘，AI 大管家拥有读取权限。该类型为非文本（${ext || '未知'}），如需提取其中文本（如 PDF/Word）可进一步接入解析器。`)
+              : '数据库记录存在，但磁盘文件缺失，仅能返回元数据。'
           }
         }
 

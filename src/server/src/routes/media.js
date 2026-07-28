@@ -504,7 +504,7 @@ router.get('/:id/preview', apiLimiter, async (req, res) => {
 });
 
 // Text/code previewable extensions and their MIME types
-const TEXT_PREVIEW_EXTENSIONS = new Set([
+export const TEXT_PREVIEW_EXTENSIONS = new Set([
   '.txt', '.md', '.csv', '.json', '.xml', '.yaml', '.yml',
   '.js', '.ts', '.py', '.java', '.c', '.cpp', '.h', '.go', '.rs',
   '.html', '.css', '.sh', '.sql', '.log', '.ini', '.conf', '.env',
