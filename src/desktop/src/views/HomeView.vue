@@ -38,7 +38,7 @@ import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
 import { perfFirstDataLoad } from '@/utils/perfMonitor'
 import { toggleSensitive } from '@/api/client'
 import { ensureDeviceId } from '@/composables/clipboardUpload'
-import { Lock } from 'lucide-vue-next'
+import { Lock, Bot } from 'lucide-vue-next'
 
 const configStore = useConfigStore()
 const { t } = useI18n()
@@ -286,6 +286,10 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     e.preventDefault()
     showQuickPaste.value = !showQuickPaste.value
   }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'j') {
+    e.preventDefault()
+    aiSidebarOpen.value = !aiSidebarOpen.value
+  }
 }
 
 function switchSub(sub: string) {
@@ -492,6 +496,9 @@ function confirmAction() {
       <NotificationsView v-else-if="currentSub === 'notifications'" />
       <SubscriptionView v-else-if="currentSub === 'subscription'" @open-modal="openModal" />
     </main>
+
+    <!-- AI 面板（右侧展开/折叠） -->
+    <AISidebar :open="aiSidebarOpen" @close="aiSidebarOpen = false" @open-settings="openAiSettings" />
   </div>
 
   <QuickPastePanel :open="showQuickPaste" @close="showQuickPaste = false" />
@@ -570,7 +577,15 @@ function confirmAction() {
   <SettingsDialog :open="showSettingsDialog" :initial-category="settingsInitialCategory" @close="showSettingsDialog = false; settingsInitialCategory = ''" />
 
   <!-- AI Agent 侧边栏（右侧集成 AI 区） -->
-  <AISidebar :open="aiSidebarOpen" @close="aiSidebarOpen = false" @open-settings="openAiSettings" />
+  <!-- AI 浮动按钮 -->
+  <button
+    v-if="!aiSidebarOpen"
+    class="ai-fab"
+    title="AI Assistant (Ctrl+J)"
+    @click="aiSidebarOpen = true"
+  >
+    <Bot :size="22" />
+  </button>
 </template>
 
 <style scoped>
@@ -722,4 +737,32 @@ function confirmAction() {
   }
 }
 
+/* AI 浮动按钮 */
+.ai-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--text-inverse);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+  z-index: 50;
+}
+
+.ai-fab:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.ai-fab:active {
+  transform: scale(0.95);
+}
 </style>

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useAiChat } from '@/composables/useAiChat'
 import Button from '@/components/ui/button/Button.vue'
 import AiMessageList from './AiMessageList.vue'
 import AiChatInput from './AiChatInput.vue'
-import { X, Trash2, Bot, Plus, Settings2 } from 'lucide-vue-next'
+import { X, Trash2, Bot, Plus, Settings2, MessageSquare, Workflow, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; 'open-settings': [] }>()
@@ -14,9 +14,24 @@ const { t } = useI18n()
 const { providers, selectedProviderId, messages, isStreaming, error, hasProviders, canSend, init, loadProviders, selectProvider, send, stop, clear } =
   useAiChat()
 
+// 模式：ask 或 agent
+const mode = ref<'ask' | 'agent'>('ask')
+
+// 思考模式（从 localStorage 恢复）
+const thinkingEnabled = ref(localStorage.getItem('ai-thinking-enabled') === 'true')
+const thinkingStrength = ref<'low' | 'medium' | 'high'>(
+  (localStorage.getItem('ai-thinking-strength') as 'low' | 'medium' | 'high') || 'medium'
+)
+
+// 监听变化并持久化
+watch(thinkingEnabled, (v) => localStorage.setItem('ai-thinking-enabled', String(v)))
+watch(thinkingStrength, (v) => localStorage.setItem('ai-thinking-strength', v))
+
+// 对话历史面板
+const showHistory = ref(false)
+
 onMounted(init)
 
-// 每次打开时刷新供应商列表（用户在设置里改动后回来能看到）
 watch(
   () => props.open,
   (v) => {
@@ -25,21 +40,29 @@ watch(
 )
 
 function onSend(text: string) {
-  send(text)
+  send(text, { mode: mode.value, thinking: thinkingEnabled.value, thinkingStrength: thinkingStrength.value })
+}
+
+function toggleThinking() {
+  thinkingEnabled.value = !thinkingEnabled.value
+}
+
+function setThinkingStrength(s: 'low' | 'medium' | 'high') {
+  thinkingStrength.value = s
 }
 </script>
 
 <template>
-  <aside class="ai-sidebar" :class="{ 'ai-sidebar--open': open }" :aria-hidden="!open">
+  <aside class="ai-panel" :class="{ 'ai-panel--open': open }" :aria-hidden="!open">
+    <!-- 顶部栏 -->
     <div class="ai-header">
-      <div class="ai-header-title">
-        <Bot :size="18" />
-        <span>{{ t('sg_ai') }}</span>
+      <div class="ai-header-left">
+        <div class="ai-header-title">
+          <Bot :size="18" />
+          <span>AI</span>
+        </div>
       </div>
-      <div class="ai-header-actions">
-        <Button variant="ghost" size="icon-sm" :title="t('ai_manage')" @click="emit('open-settings')">
-          <Settings2 :size="15" />
-        </Button>
+      <div class="ai-header-right">
         <Button v-if="messages.length" variant="ghost" size="icon-sm" :title="t('ai_clear')" @click="clear">
           <Trash2 :size="15" />
         </Button>
@@ -49,51 +72,69 @@ function onSend(text: string) {
       </div>
     </div>
 
+    <!-- 无供应商提示 -->
     <div v-if="!hasProviders" class="ai-no-providers">
+      <Bot :size="48" class="ai-no-providers-icon" />
+      <h3>{{ t('ai_no_providers_title') || 'No AI Provider' }}</h3>
       <p>{{ t('ai_no_providers_hint') }}</p>
-      <Button class="min-w-[140px]" @click="emit('open-settings')">
+      <Button class="ai-setup-btn" @click="emit('open-settings')">
         <Plus :size="14" />
         {{ t('ai_go_settings') }}
       </Button>
     </div>
 
+    <!-- 主聊天区 -->
     <template v-else>
+      <!-- Agent 模式：工作流显示 -->
+      <div v-if="mode === 'agent'" class="ai-workflow-bar">
+        <div class="ai-workflow-info">
+          <Workflow :size="14" />
+          <span>{{ t('ai_workflow_active') || 'Workflow Mode Active' }}</span>
+        </div>
+      </div>
+
       <AiMessageList :messages="messages" :is-streaming="isStreaming" />
+      
       <div v-if="error" class="ai-error-bar">{{ error }}</div>
+      
       <AiChatInput
         :disabled="!canSend"
         :is-streaming="isStreaming"
         :providers="providers"
         :selected-provider-id="selectedProviderId"
+        :thinking-enabled="thinkingEnabled"
+        :thinking-strength="thinkingStrength"
+        :mode="mode"
         @send="onSend"
         @stop="stop"
         @select-provider="selectProvider"
+        @toggle-thinking="toggleThinking"
+        @set-thinking-strength="setThinkingStrength"
+        @set-mode="(m) => mode = m"
+        @open-settings="emit('open-settings')"
       />
     </template>
   </aside>
 </template>
 
 <style scoped>
-.ai-sidebar {
-  position: fixed;
-  top: 0;
-  right: 0;
-  height: 100vh;
-  height: 100dvh;
-  width: 380px;
-  max-width: 92vw;
+.ai-panel {
+  width: 0;
+  min-width: 0;
   background: var(--bg-surface);
   border-left: 1px solid var(--border-default);
-  box-shadow: var(--shadow-modal);
   display: flex;
   flex-direction: column;
-  transform: translateX(100%);
-  transition: transform 0.22s ease;
-  z-index: var(--z-panel, 40);
+  overflow: hidden;
+  transition: width 0.22s ease, min-width 0.22s ease;
+  flex-shrink: 0;
 }
-.ai-sidebar--open {
-  transform: translateX(0);
+
+.ai-panel--open {
+  width: 420px;
+  min-width: 420px;
 }
+
 .ai-header {
   display: flex;
   align-items: center;
@@ -102,6 +143,13 @@ function onSend(text: string) {
   border-bottom: 1px solid var(--border-default);
   flex-shrink: 0;
 }
+
+.ai-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .ai-header-title {
   display: flex;
   align-items: center;
@@ -110,10 +158,12 @@ function onSend(text: string) {
   font-weight: 600;
   color: var(--text-primary);
 }
-.ai-header-actions {
+
+.ai-header-right {
   display: flex;
   gap: 4px;
 }
+
 .ai-no-providers {
   flex: 1;
   display: flex;
@@ -124,8 +174,46 @@ function onSend(text: string) {
   padding: 24px;
   text-align: center;
   color: var(--text-secondary);
-  font-size: 13px;
 }
+
+.ai-no-providers-icon {
+  opacity: 0.3;
+  margin-bottom: 8px;
+}
+
+.ai-no-providers h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.ai-no-providers p {
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.ai-setup-btn {
+  min-width: 140px;
+}
+
+.ai-workflow-bar {
+  padding: 8px 14px;
+  background: var(--accent-bg);
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.ai-workflow-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
 .ai-error-bar {
   padding: 8px 12px;
   font-size: 12px;

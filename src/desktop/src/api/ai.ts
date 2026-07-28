@@ -24,6 +24,20 @@ export interface AiProviderPreset {
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
+  thinking?: string // 思考过程
+  toolCalls?: ToolCall[] // 工具调用
+  toolResults?: ToolResult[] // 工具结果
+}
+
+export interface ToolCall {
+  id: string
+  name: string
+  arguments: string
+}
+
+export interface ToolResult {
+  tool_call_id: string
+  content: string
 }
 
 export interface ChatOptions {
@@ -73,7 +87,7 @@ export interface StreamChatOptions {
   messages: ChatMessage[]
   options?: ChatOptions
   signal?: AbortSignal
-  onDelta: (text: string) => void
+  onDelta: (text: string, thinking?: string, toolCall?: any, toolResult?: any) => void
   onError?: (msg: string) => void
   onDone?: () => void
 }
@@ -152,8 +166,25 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
               errored = true
               opts.onError?.(parsed.error)
             }
-            const delta = parsed?.choices?.[0]?.delta?.content
-            if (delta) opts.onDelta(delta)
+            const delta = parsed?.choices?.[0]?.delta
+            if (delta) {
+              // 处理 thinking 内容
+              if (delta.thinking) {
+                opts.onDelta('', delta.thinking)
+              }
+              // 处理工具调用
+              if (delta.tool_call) {
+                opts.onDelta('', undefined, delta.tool_call)
+              }
+              // 处理工具结果
+              if (delta.tool_result) {
+                opts.onDelta('', undefined, undefined, delta.tool_result)
+              }
+              // 处理普通内容
+              if (delta.content) {
+                opts.onDelta(delta.content)
+              }
+            }
           } catch {
             /* 跳过无法解析的行 */
           }

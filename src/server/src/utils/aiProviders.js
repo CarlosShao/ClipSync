@@ -196,6 +196,20 @@ export function buildUpstreamChat(cfg) {
   if (options.maxTokens) {
     body.max_tokens = options.maxTokens
   }
+  // 支持工具定义
+  if (options.tools) {
+    body.tools = options.tools
+  }
+  if (options.tool_choice) {
+    body.tool_choice = options.tool_choice
+  }
+  // 支持 thinking（DeepSeek/StepFun 兼容）
+  if (options.thinking) {
+    body.thinking = true
+    if (options.thinkingBudget) {
+      body.thinking_budget = options.thinkingBudget
+    }
+  }
   return {
     url: `${resolvedBaseUrl}/chat/completions`,
     headers,

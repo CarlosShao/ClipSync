@@ -4,11 +4,12 @@ import { apiLimiter } from '../middleware/rateLimiter.js'
 import { decrypt } from '../utils/encryption.js'
 import { buildUpstreamChat } from '../utils/aiProviders.js'
 import { logger } from '../utils/logger.js'
+import { TOOLS, executeTool } from './aiTools.js'
 
 const router = Router()
 
 /**
- * 解析单个 SSE 事件块（以 \n\n 分隔的原始文本）为 { event, data }
+ * 解析 SSE 事件
  */
 function parseSSEEvent(block) {
   let eventName
@@ -18,16 +19,137 @@ function parseSSEEvent(block) {
       eventName = line.slice(6).trim()
     } else if (line.startsWith('data:')) {
       dataLines.push(line.slice(5).trim())
-    } else if (line.startsWith(':')) {
-      // SSE 注释行，忽略
-      continue
     }
   }
   return { event: eventName, data: dataLines.join('\n') }
 }
 
-// POST /api/ai/chat - SSE 流式代理
-// body: { providerId, messages: [{role, content}], options?: { maxTokens, temperature } }
+/**
+ * 支持 thinking 的模型列表
+ */
+const THINKING_MODELS = [
+  'deepseek-r1', 'deepseek-r1-0528', 'deepseek-r1-distill',
+  'claude-3-7-sonnet-latest', 'claude-3-5-sonnet-latest',
+  'o1', 'o1-preview', 'o1-mini', 'o3', 'o4-mini',
+]
+
+function isThinkingModel(model) {
+  if (!model) return false
+  return THINKING_MODELS.some(m => model.toLowerCase().includes(m))
+}
+
+/**
+ * 从 SSE 流中收集 tool_calls（同时流式发送 thinking 和 content）
+ */
+async function collectToolCallsFromStream(reader, decoder, sendDelta) {
+  let buffer = ''
+  let content = ''
+  let toolCalls = []
+  let finishReason = ''
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    let idx
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      const rawEvent = buffer.slice(0, idx)
+      buffer = buffer.slice(idx + 2)
+      const ev = parseSSEEvent(rawEvent)
+      if (!ev || !ev.data || ev.data === '[DONE]') continue
+
+      try {
+        const obj = JSON.parse(ev.data)
+        const delta = obj?.choices?.[0]?.delta
+        const choice = obj?.choices?.[0]
+
+        if (delta) {
+          // 流式发送 thinking
+          if (delta.thinking) {
+            sendDelta({ choices: [{ delta: { thinking: delta.thinking }, index: 0 }] })
+          }
+          // 流式发送 content
+          if (delta.content) {
+            content += delta.content
+            sendDelta({ choices: [{ delta: { content: delta.content }, index: 0 }] })
+          }
+          // 收集 tool_calls
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index || 0
+              if (!toolCalls[idx]) {
+                toolCalls[idx] = { id: tc.id, type: 'function', function: { name: '', arguments: '' } }
+              }
+              if (tc.id) toolCalls[idx].id = tc.id
+              if (tc.function?.name) toolCalls[idx].function.name += tc.function.name
+              if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments
+            }
+          }
+        }
+        if (choice?.finish_reason) finishReason = choice.finish_reason
+      } catch { /* ignore */ }
+    }
+  }
+
+  toolCalls = toolCalls.filter(tc => tc && tc.function?.name)
+  return { content, toolCalls, finishReason }
+}
+
+/**
+ * 执行工具调用
+ */
+async function handleToolCalls(toolCalls, userId, sendDelta) {
+  const results = []
+  for (const tc of toolCalls) {
+    if (!tc.function?.name) continue
+
+    const toolName = tc.function.name
+    let args = {}
+    try {
+      args = JSON.parse(tc.function.arguments || '{}')
+    } catch { /* ignore */ }
+
+    // 通知前端正在执行工具
+    sendDelta({
+      choices: [{
+        delta: {
+          tool_call: {
+            id: tc.id,
+            name: toolName,
+            arguments: tc.function.arguments
+          }
+        },
+        index: 0
+      }]
+    })
+
+    // 执行工具
+    const result = await executeTool(toolName, args, userId)
+
+    // 通知前端工具执行结果
+    sendDelta({
+      choices: [{
+        delta: {
+          tool_result: {
+            tool_call_id: tc.id,
+            content: JSON.stringify(result)
+          }
+        },
+        index: 0
+      }]
+    })
+
+    results.push({
+      role: 'tool',
+      tool_call_id: tc.id,
+      content: JSON.stringify(result)
+    })
+  }
+  return results
+}
+
+// POST /api/ai/chat - SSE 流式代理（支持多轮 tool calling）
 router.post('/chat', apiLimiter, async (req, res) => {
   try {
     const { providerId, messages, options } = req.body || {}
@@ -42,25 +164,9 @@ router.post('/chat', apiLimiter, async (req, res) => {
     if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
-    const upstream = buildUpstreamChat({
-      provider: providerRow.provider,
-      baseUrl: providerRow.base_url,
-      model: providerRow.model,
-      apiKey,
-      messages,
-      options: options || {},
-    })
-
-    const upstreamRes = await fetch(upstream.url, {
-      method: 'POST',
-      headers: { ...upstream.headers, Accept: 'text/event-stream' },
-      body: JSON.stringify(upstream.body),
-    })
-
-    if (!upstreamRes.ok || !upstreamRes.body) {
-      const text = await upstreamRes.text().catch(() => '')
-      return res.status(502).json({ error: 'Upstream error', status: upstreamRes.status, detail: text.slice(0, 800) })
-    }
+    const thinkingEnabled = options?.thinking || false
+    const thinkingStrength = options?.thinkingStrength || 'medium'
+    const isAgentMode = options?.mode === 'agent'
 
     // SSE 响应头
     res.setHeader('Content-Type', 'text/event-stream')
@@ -69,73 +175,100 @@ router.post('/chat', apiLimiter, async (req, res) => {
     res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders?.()
 
-    const reader = upstreamRes.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let finished = false
-
-    const sendOpenAIDelta = (obj) => {
+    const sendDelta = (obj) => {
       res.write(`data: ${JSON.stringify(obj)}\n\n`)
     }
+
     const finish = () => {
-      if (finished) return
-      finished = true
       res.write('data: [DONE]\n\n')
       res.end()
     }
 
     try {
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
+      let currentMessages = [...messages]
 
-        let idx
-        while ((idx = buffer.indexOf('\n\n')) !== -1) {
-          const rawEvent = buffer.slice(0, idx)
-          buffer = buffer.slice(idx + 2)
-          const ev = parseSSEEvent(rawEvent)
-          if (!ev || !ev.data) continue
+      // 最多执行 5 轮 tool calling
+      for (let round = 0; round < 5; round++) {
+        const chatOptions = { ...options }
 
-          if (upstream.family === 'anthropic') {
-            if (ev.event === 'content_block_delta') {
-              try {
-                const parsed = JSON.parse(ev.data)
-                const text = parsed?.delta?.text
-                if (text) {
-                  sendOpenAIDelta({ choices: [{ delta: { content: text }, index: 0 }] })
-                }
-              } catch {
-                // 跳过无法解析的块
+        // thinking 支持
+        if (thinkingEnabled && isThinkingModel(providerRow.model)) {
+          chatOptions.thinking = true
+          chatOptions.thinkingBudget = thinkingStrength === 'low' ? 1024 : thinkingStrength === 'high' ? 8192 : 4096
+        }
+
+        // Agent 模式：传递工具定义
+        if (isAgentMode) {
+          chatOptions.tools = TOOLS
+          chatOptions.tool_choice = 'auto'
+        }
+
+        const upstream = buildUpstreamChat({
+          provider: providerRow.provider,
+          baseUrl: providerRow.base_url,
+          model: providerRow.model,
+          apiKey,
+          messages: currentMessages,
+          options: chatOptions,
+        })
+
+        const upstreamRes = await fetch(upstream.url, {
+          method: 'POST',
+          headers: { ...upstream.headers, Accept: 'text/event-stream' },
+          body: JSON.stringify(upstream.body),
+        })
+
+        if (!upstreamRes.ok || !upstreamRes.body) {
+          const text = await upstreamRes.text().catch(() => '')
+          sendDelta({ error: `Upstream error: ${upstreamRes.status}`, detail: text.slice(0, 500) })
+          finish()
+          return
+        }
+
+        const reader = upstreamRes.body.getReader()
+        const decoder = new TextDecoder()
+
+        // 流式发送 thinking 和 content，同时收集 tool_calls
+        const response = await collectToolCallsFromStream(reader, decoder, sendDelta)
+
+        // 如果有 tool calls，执行工具并继续下一轮
+        if (response.toolCalls.length > 0 && isAgentMode) {
+          const toolResults = await handleToolCalls(response.toolCalls, req.userId, sendDelta)
+
+          // 将 assistant 回复添加到消息历史
+          currentMessages.push({
+            role: 'assistant',
+            content: response.content || '',
+            tool_calls: response.toolCalls.map(tc => ({
+              id: tc.id,
+              type: 'function',
+              function: {
+                name: tc.function.name,
+                arguments: tc.function.arguments
               }
-            }
-          } else {
-            // OpenAI 兼容：ev.data 是上游 JSON 字符串，parse 成对象后再统一包装，避免 double-stringify
-            if (ev.data === '[DONE]') continue
-            try {
-              const obj = JSON.parse(ev.data)
-              sendOpenAIDelta(obj)
-            } catch {
-              // 极少数非 JSON 行，原样透传
-              res.write(`data: ${ev.data}\n\n`)
-            }
-          }
+            }))
+          })
+
+          // 将工具结果添加到消息历史
+          currentMessages.push(...toolResults)
+
+          // 继续下一轮
+          continue
         }
+
+        // 没有 tool calls，结束
+        finish()
+        return
       }
-      // 上游可能以非 \n\n 结尾，尝试 flush 剩余 buffer
-      if (buffer.trim()) {
-        try {
-          const obj = JSON.parse(buffer.trim())
-          sendOpenAIDelta(obj)
-        } catch {
-          /* ignore trailing incomplete chunk */
-        }
-      }
+
+      // 循环结束
+      sendDelta({ error: 'Too many tool calling rounds' })
       finish()
     } catch (streamErr) {
       logger.error('AI chat stream error:', streamErr)
-      if (!finished) {
-        sendOpenAIDelta({ error: 'stream interrupted' })
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'AI chat failed', detail: streamErr.message })
+      } else {
         finish()
       }
     }
