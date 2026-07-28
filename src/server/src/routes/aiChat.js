@@ -2,7 +2,7 @@ import { Router } from 'express'
 import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { decrypt } from '../utils/encryption.js'
-import { buildUpstreamChat } from '../utils/aiProviders.js'
+import { buildUpstreamChat, getPreset } from '../utils/aiProviders.js'
 import { logger } from '../utils/logger.js'
 import { TOOLS, executeTool } from './aiTools.js'
 
@@ -24,32 +24,7 @@ function parseSSEEvent(block) {
   return { event: eventName, data: dataLines.join('\n') }
 }
 
-/**
- * 支持 thinking / reasoning 的模型列表（前缀/包含匹配）
- */
-const THINKING_MODELS = [
-  // DeepSeek
-  'deepseek-r1', 'deepseek-r1-0528', 'deepseek-r1-distill',
-  // Anthropic
-  'claude-3-7-sonnet', 'claude-3-5-sonnet',
-  // OpenAI reasoning
-  'o1', 'o1-preview', 'o1-mini', 'o3', 'o4-mini',
-  // 阶跃星辰
-  'step-2-thinking', 'step-3-thinking', 'step-3.7-flash',
-  // MiniMax
-  'minimax-m3',
-  // 小米
-  'mimo',
-  // 通义千问 reasoning
-  'qwq', 'qwen3',
-  // 美团
-  'longcat',
-]
-
-function isThinkingModel(model) {
-  if (!model) return false
-  return THINKING_MODELS.some(m => model.toLowerCase().includes(m))
-}
+// 思考能力由前端 <think> 标签提示词 + 上游 reasoning_content 自动下发实现，无需后端模型匹配表。
 
 /**
  * 从 SSE 流中收集 tool_calls（同时流式发送 thinking 和 content）
@@ -205,8 +180,11 @@ router.post('/chat', apiLimiter, async (req, res) => {
       for (let round = 0; round < 5; round++) {
         const chatOptions = { ...options }
 
-        // thinking 支持
-        if (thinkingEnabled && isThinkingModel(providerRow.model)) {
+        // thinking 支持：仅 Anthropic 协议需要显式 thinking 参数
+        // OpenAI 兼容族（DeepSeek/StepFun/Qwen 等）由 reasoning_content 自动下发，
+        // 传 thinking 顶层参数会触发上游 request_params_invalid
+        const preset = getPreset(providerRow.provider)
+        if (thinkingEnabled && preset?.family === 'anthropic') {
           chatOptions.thinking = true
           chatOptions.thinkingBudget = thinkingStrength === 'low' ? 1024 : thinkingStrength === 'high' ? 8192 : 4096
         }

@@ -27,6 +27,7 @@ export interface ChatMessage {
   thinking?: string // 思考过程
   toolCalls?: ToolCall[] // 工具调用
   toolResults?: ToolResult[] // 工具结果
+  isError?: boolean // 标记该助手消息是否因出错而生成（不进入上游历史）
 }
 
 export interface ToolCall {

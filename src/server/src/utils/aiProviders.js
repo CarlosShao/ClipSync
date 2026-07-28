@@ -162,6 +162,10 @@ export function buildUpstreamChat(cfg) {
       max_tokens: options.maxTokens || 1024,
       stream,
     }
+    // Anthropic 原生 thinking 参数（OpenAI 兼容族不支持该字段，由 reasoning_content 自动下发）
+    if (options.thinking) {
+      body.thinking = { type: 'enabled', budget_tokens: options.thinkingBudget || 4096 }
+    }
     if (systemMessages.length > 0) {
       body.system = systemMessages.map((m) => m.content).join('\n\n')
     }
@@ -202,13 +206,6 @@ export function buildUpstreamChat(cfg) {
   }
   if (options.tool_choice) {
     body.tool_choice = options.tool_choice
-  }
-  // 支持 thinking（DeepSeek/StepFun 兼容）
-  if (options.thinking) {
-    body.thinking = true
-    if (options.thinkingBudget) {
-      body.thinking_budget = options.thinkingBudget
-    }
   }
   return {
     url: `${resolvedBaseUrl}/chat/completions`,

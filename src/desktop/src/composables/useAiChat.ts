@@ -94,13 +94,6 @@ export function useAiChat() {
     selectedProviderId.value = id
   }
 
-  function lastAssistant() {
-    for (let i = messages.value.length - 1; i >= 0; i--) {
-      if (messages.value[i].role === 'assistant') return messages.value[i]
-    }
-    return null
-  }
-
   async function send(content: string, options: SendOptions = {}) {
     const text = content.trim()
     if (!text || isStreaming.value) return
@@ -189,9 +182,15 @@ You can help the user manage these clips, answer questions about them, or perfor
     const nativeReasoning = isNativeReasoningModel(modelName)
 
     const systemPrompt = buildSystemPrompt(clipboardData)
+    // 发送给上游的历史只保留 {role, content}：
+    // 1. 剔除 thinking / toolCalls / toolResults 等前端展示字段（避免非法字段被上游拒绝）
+    // 2. 丢弃上一轮出错的 assistant 气泡（避免把 "[Upstream error]" 当成对话上下文回传）
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...messages.value.slice(0, -1)
+      ...messages.value
+        .slice(0, -1)
+        .filter((m) => !(m.role === 'assistant' && m.isError))
+        .map((m) => ({ role: m.role, content: m.content })),
     ]
 
     // 如果启用思考模式，添加思考指令
@@ -263,9 +262,10 @@ You can help the user manage these clips, answer questions about them, or perfor
         },
         onError: (msg) => {
           error.value = msg
-          const last = lastAssistant()
+          // 移除最后一条空的 assistant 占位气泡，避免把错误内容当成对话回传给上游
+          const last = messages.value[messages.value.length - 1]
           if (last && last.role === 'assistant') {
-            last.content += `\n[${msg}]`
+            messages.value.pop()
           }
         },
         onDone: () => {
