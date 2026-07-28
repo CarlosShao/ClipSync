@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { Marked } from 'marked'
 import type { ChatMessage } from '@/api/ai'
@@ -11,6 +11,14 @@ const { t } = useI18n()
 
 const marked = new Marked()
 const expandedThinking = ref(false)
+
+// 当前消息是否处于“正在生成”状态（仅最后一条助手消息为 true）
+const isStreamingNow = computed(() => props.isStreaming && props.index === 0)
+// 思考面板在生成期间强制展开：让用户看到思考过程流式“生长”，而不是生成完后一次性“蹦出来”。
+// 生成结束后保持展开便于回看，用户仍可手动折叠。
+watch(isStreamingNow, (now, before) => {
+  if (before && !now) expandedThinking.value = true
+})
 
 function compactBlankLines(content: string): string {
   if (!content) return ''
@@ -42,8 +50,8 @@ function roleLabel() {
         v-if="message.role === 'assistant'"
         :thinking="message.thinking || ''"
         :thinking-started-at="message.thinkingStartedAt"
-        :is-streaming="isStreaming && index === 0"
-        :expanded="expandedThinking"
+        :is-streaming="isStreamingNow"
+        :expanded="expandedThinking || isStreamingNow"
         @toggle="expandedThinking = !expandedThinking"
       />
 

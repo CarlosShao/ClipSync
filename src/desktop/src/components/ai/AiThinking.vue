@@ -13,6 +13,18 @@ const emit = defineEmits<{ toggle: [] }>()
 const { t } = useI18n()
 
 const hasContent = computed(() => (props.thinking?.length || 0) > 0)
+const contentRef = ref<HTMLElement | null>(null)
+
+// 流式生成时，思考内容持续增长；自动滚动到底部，确保最新思考 token 始终可见，
+// 避免内容超过 max-height 后新内容被遮挡、看起来“没在流式”。
+watch(
+  () => props.thinking,
+  () => {
+    if (props.isStreaming && contentRef.value) {
+      contentRef.value.scrollTop = contentRef.value.scrollHeight
+    }
+  },
+)
 const elapsedSeconds = ref(0)
 let timer: number | undefined
 
@@ -70,7 +82,7 @@ const summary = computed(() => {
       <ChevronDown v-if="expanded" :size="13" />
       <ChevronRight v-else :size="13" />
     </button>
-    <div v-if="expanded" class="ai-thinking-content">
+    <div v-if="expanded" ref="contentRef" class="ai-thinking-content">
       <pre>{{ thinking }}</pre>
     </div>
   </div>
