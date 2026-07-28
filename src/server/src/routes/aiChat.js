@@ -25,12 +25,25 @@ function parseSSEEvent(block) {
 }
 
 /**
- * 支持 thinking 的模型列表
+ * 支持 thinking / reasoning 的模型列表（前缀/包含匹配）
  */
 const THINKING_MODELS = [
+  // DeepSeek
   'deepseek-r1', 'deepseek-r1-0528', 'deepseek-r1-distill',
-  'claude-3-7-sonnet-latest', 'claude-3-5-sonnet-latest',
+  // Anthropic
+  'claude-3-7-sonnet', 'claude-3-5-sonnet',
+  // OpenAI reasoning
   'o1', 'o1-preview', 'o1-mini', 'o3', 'o4-mini',
+  // 阶跃星辰
+  'step-2-thinking', 'step-3-thinking', 'step-3.7-flash',
+  // MiniMax
+  'minimax-m3',
+  // 小米
+  'mimo',
+  // 通义千问 reasoning
+  'qwq', 'qwen3',
+  // 美团
+  'longcat',
 ]
 
 function isThinkingModel(model) {
@@ -65,9 +78,10 @@ async function collectToolCallsFromStream(reader, decoder, sendDelta) {
         const choice = obj?.choices?.[0]
 
         if (delta) {
-          // 流式发送 thinking
-          if (delta.thinking) {
-            sendDelta({ choices: [{ delta: { thinking: delta.thinking }, index: 0 }] })
+          // 流式发送 thinking / reasoning_content（统一成 thinking 字段下发）
+          const reasoning = delta.thinking || delta.reasoning_content
+          if (reasoning) {
+            sendDelta({ choices: [{ delta: { thinking: reasoning }, index: 0 }] })
           }
           // 流式发送 content
           if (delta.content) {

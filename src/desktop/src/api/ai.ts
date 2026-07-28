@@ -43,6 +43,9 @@ export interface ToolResult {
 export interface ChatOptions {
   maxTokens?: number
   temperature?: number
+  mode?: 'ask' | 'agent'
+  thinking?: boolean
+  thinkingStrength?: 'low' | 'medium' | 'high'
 }
 
 export interface AiProviderInput {
