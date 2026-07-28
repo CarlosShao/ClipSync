@@ -22,12 +22,13 @@ export interface AiProviderPreset {
 }
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
   thinking?: string // 思考过程
   thinkingStartedAt?: number // 思考开始时间戳（毫秒），用于显示思考秒数
   toolCalls?: ToolCall[] // 工具调用
   toolResults?: ToolResult[] // 工具结果
+  tool_call_id?: string // tool 角色消息关联的调用 id
   isError?: boolean // 标记该助手消息是否因出错而生成（不进入上游历史）
 }
 
@@ -106,6 +107,21 @@ export interface AiContext {
   sharedLinks: { sharedLinksCount: number }
   recentItems: Array<{ id: string; type: string; preview: string; isFavorite: boolean; createdAt: string }>
   subscription: { planName: string; displayName: string; maxDevices: number; maxClipboardItems: number; maxFileSizeMb: number; maxStorageMb: number } | null
+  memories: AiMemory[]
+}
+
+export interface AiMemory {
+  id: string
+  category: 'preference' | 'fact' | 'project' | 'feedback' | 'other'
+  title: string
+  content: string
+  updatedAt: string
+}
+
+export interface AiMemoryInput {
+  category?: AiMemory['category']
+  title: string
+  content: string
 }
 
 export function getAiContext() {
@@ -152,6 +168,25 @@ export function deleteConversation(id: string) {
 
 export function saveMessages(id: string, messages: ChatMessage[]) {
   return api<{ messages: ChatMessage[] }>('POST', `/api/ai/conversations/${id}/messages`, { messages })
+}
+
+// ===== 长程记忆（记忆管理） =====
+
+export function getMemories(category?: AiMemory['category']) {
+  const q = category ? `?category=${category}` : ''
+  return api<{ items: AiMemory[]; count: number }>('GET', `/api/ai/memories${q}`)
+}
+
+export function createMemory(input: AiMemoryInput) {
+  return api<{ memory: AiMemory }>('POST', `/api/ai/memories`, input)
+}
+
+export function updateMemory(id: string, input: Partial<AiMemoryInput>) {
+  return api<{ memory: AiMemory }>('PUT', `/api/ai/memories/${id}`, input)
+}
+
+export function deleteMemory(id: string) {
+  return api<{ deleted: boolean }>('DELETE', `/api/ai/memories/${id}`)
 }
 
 // ===== SSE 流式聊天 =====

@@ -6,7 +6,8 @@ import Button from '@/components/ui/button/Button.vue'
 import AiMessageList from './AiMessageList.vue'
 import AiChatInput from './AiChatInput.vue'
 import AiConversationList from './AiConversationList.vue'
-import { X, Bot, Plus, Settings2, MessageSquare, Workflow, History } from 'lucide-vue-next'
+import AiMemoryPanel from './AiMemoryPanel.vue'
+import { X, Bot, Plus, Settings2, MessageSquare, Workflow, History, Brain } from 'lucide-vue-next'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; 'open-settings': [] }>()
@@ -20,10 +21,13 @@ const {
   error,
   hasProviders,
   canSend,
+  memoryEnabled,
+  setMemoryEnabled,
   init,
   loadProviders,
   selectProvider,
   send,
+  resume,
   stop,
   clear,
   conversations,
@@ -35,6 +39,16 @@ const {
   renameConversation,
   deleteConversation,
 } = useAiChat()
+
+// 记忆面板展开状态
+const showMemory = ref(false)
+
+// 是否可“继续生成”：最后一条是助手消息且未在流式
+const canResume = computed(() => {
+  if (isStreaming.value) return false
+  const last = messages.value[messages.value.length - 1]
+  return !!last && last.role === 'assistant'
+})
 
 // 模式：ask 或 agent
 const mode = ref<'ask' | 'agent'>('ask')
@@ -117,12 +131,18 @@ async function onDelete(id: string) {
           <Button v-if="hasProviders" variant="ghost" size="icon-sm" :title="t('ai_history') || '历史'" @click="showHistory = !showHistory">
             <History :size="16" />
           </Button>
+          <Button v-if="hasProviders" variant="ghost" size="icon-sm" :title="t('ai_memory') || '记忆'" @click="showMemory = !showMemory">
+            <Brain :size="16" />
+          </Button>
           <div class="ai-header-title">
             <Bot :size="18" />
             <span>AI</span>
           </div>
         </div>
         <div class="ai-header-right">
+          <Button v-if="canResume" variant="outline" size="sm" :title="t('ai_resume') || '继续'" @click="resume()">
+            {{ t('ai_resume') }}
+          </Button>
           <Button v-if="hasProviders" variant="ghost" size="icon-sm" :title="t('ai_new_chat') || '新对话'" @click="onNewConversation">
             <Plus :size="15" />
           </Button>
@@ -135,46 +155,57 @@ async function onDelete(id: string) {
         </div>
       </div>
 
-      <!-- 无供应商提示 -->
-      <div v-if="!hasProviders" class="ai-no-providers">
-        <Bot :size="48" class="ai-no-providers-icon" />
-        <h3>{{ t('ai_no_providers_title') || 'No AI Provider' }}</h3>
-        <p>{{ t('ai_no_providers_hint') }}</p>
-        <Button class="ai-setup-btn" @click="emit('open-settings')">
-          <Plus :size="14" />
-          {{ t('ai_go_settings') }}
-        </Button>
-      </div>
+      <!-- 记忆管理面板 -->
+      <AiMemoryPanel
+        v-if="showMemory"
+        :open="showMemory"
+        :memory-enabled="memoryEnabled"
+        @close="showMemory = false"
+        @update:memory-enabled="setMemoryEnabled"
+      />
 
-      <!-- 主聊天区 -->
+      <!-- 无供应商提示 / 主聊天区 -->
       <template v-else>
-        <div v-if="mode === 'agent'" class="ai-workflow-bar">
-          <div class="ai-workflow-info">
-            <Workflow :size="14" />
-            <span>{{ t('ai_workflow_active') || 'Workflow Mode Active' }}</span>
-          </div>
+        <div v-if="!hasProviders" class="ai-no-providers">
+          <Bot :size="48" class="ai-no-providers-icon" />
+          <h3>{{ t('ai_no_providers_title') || 'No AI Provider' }}</h3>
+          <p>{{ t('ai_no_providers_hint') }}</p>
+          <Button class="ai-setup-btn" @click="emit('open-settings')">
+            <Plus :size="14" />
+            {{ t('ai_go_settings') }}
+          </Button>
         </div>
 
-        <AiMessageList :messages="messages" :is-streaming="isStreaming" />
+        <!-- 主聊天区 -->
+        <template v-else>
+          <div v-if="mode === 'agent'" class="ai-workflow-bar">
+            <div class="ai-workflow-info">
+              <Workflow :size="14" />
+              <span>{{ t('ai_workflow_active') || 'Workflow Mode Active' }}</span>
+            </div>
+          </div>
 
-        <div v-if="error" class="ai-error-bar">{{ error }}</div>
+          <AiMessageList :messages="messages" :is-streaming="isStreaming" />
 
-        <AiChatInput
-          :disabled="!canSend"
-          :is-streaming="isStreaming"
-          :providers="providers"
-          :selected-provider-id="selectedProviderId"
-          :thinking-enabled="thinkingEnabled"
-          :thinking-strength="thinkingStrength"
-          :mode="mode"
-          @send="onSend"
-          @stop="stop"
-          @select-provider="selectProvider"
-          @toggle-thinking="toggleThinking"
-          @set-thinking-strength="setThinkingStrength"
-          @set-mode="(m) => mode = m"
-          @open-settings="emit('open-settings')"
-        />
+          <div v-if="error" class="ai-error-bar">{{ error }}</div>
+
+          <AiChatInput
+            :disabled="!canSend"
+            :is-streaming="isStreaming"
+            :providers="providers"
+            :selected-provider-id="selectedProviderId"
+            :thinking-enabled="thinkingEnabled"
+            :thinking-strength="thinkingStrength"
+            :mode="mode"
+            @send="onSend"
+            @stop="stop"
+            @select-provider="selectProvider"
+            @toggle-thinking="toggleThinking"
+            @set-thinking-strength="setThinkingStrength"
+            @set-mode="(m) => mode = m"
+            @open-settings="emit('open-settings')"
+          />
+        </template>
       </template>
     </div>
   </aside>

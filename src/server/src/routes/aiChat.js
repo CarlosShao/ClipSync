@@ -163,6 +163,8 @@ router.post('/chat', apiLimiter, async (req, res) => {
     res.setHeader('Connection', 'keep-alive')
     res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders?.()
+    // 禁用 Nagle：确保每个增量块立刻发到 socket，杜绝攒批导致“一次性蹦出”
+    res.socket?.setNoDelay?.(true)
 
     const sendDelta = (obj) => {
       res.write(`data: ${JSON.stringify(obj)}\n\n`)
@@ -170,11 +172,17 @@ router.post('/chat', apiLimiter, async (req, res) => {
 
     const finish = () => {
       res.write('data: [DONE]\n\n')
+      res.flush?.()
       res.end()
     }
 
     try {
       let currentMessages = [...messages]
+
+      // 上游整体超时保护（覆盖连接 + 全部轮次 + 流读取）：
+      // 避免上游卡死导致后端 reader.read() 永久阻塞、前端一直卡在“思考 N 秒”不动。
+      const upstreamAbort = new AbortController()
+      const upstreamTimer = setTimeout(() => upstreamAbort.abort(), 180_000)
 
       // 最多执行 5 轮 tool calling
       for (let round = 0; round < 5; round++) {
@@ -207,11 +215,23 @@ router.post('/chat', apiLimiter, async (req, res) => {
         logger.info(`[AI] upstream request: ${upstream.url} model=${providerRow.model}`)
         logger.info(`[AI] upstream body: ${JSON.stringify(upstream.body).slice(0, 3000)}`)
 
-        const upstreamRes = await fetch(upstream.url, {
-          method: 'POST',
-          headers: { ...upstream.headers, Accept: 'text/event-stream' },
-          body: JSON.stringify(upstream.body),
-        })
+        let upstreamRes
+        try {
+          upstreamRes = await fetch(upstream.url, {
+            method: 'POST',
+            headers: { ...upstream.headers, Accept: 'text/event-stream' },
+            body: JSON.stringify(upstream.body),
+            signal: upstreamAbort.signal,
+          })
+        } catch (fetchErr) {
+          if (fetchErr?.name === 'AbortError') {
+            logger.error('[AI] upstream timeout (180s)')
+            sendDelta({ error: '上游模型响应超时（180s），请稍后重试或换用其他模型' })
+            finish()
+            return
+          }
+          throw fetchErr
+        }
 
         if (!upstreamRes.ok || !upstreamRes.body) {
           const text = await upstreamRes.text().catch(() => '')
@@ -267,6 +287,8 @@ router.post('/chat', apiLimiter, async (req, res) => {
       } else {
         finish()
       }
+    } finally {
+      clearTimeout(upstreamTimer)
     }
   } catch (err) {
     logger.error('AI chat proxy error:', err)

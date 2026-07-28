@@ -15,6 +15,7 @@ export async function getAiContext(userId) {
     sharedLinksResult,
     recentResult,
     subscriptionResult,
+    memoriesResult,
   ] = await Promise.all([
     // 1. 剪贴板统计
     pool.query(
@@ -115,6 +116,18 @@ export async function getAiContext(userId) {
       `,
       [userId]
     ),
+
+    // 10. 用户长程记忆（跨会话）
+    pool.query(
+      `
+      SELECT id, category, title, content, updated_at
+      FROM ai_memories
+      WHERE user_id = $1
+      ORDER BY updated_at DESC
+      LIMIT 50
+      `,
+      [userId]
+    ),
   ])
 
   const stats = statsResult.rows[0] || {}
@@ -125,6 +138,7 @@ export async function getAiContext(userId) {
   const variables = variablesResult.rows[0] || {}
   const sharedLinks = sharedLinksResult.rows[0] || {}
   const subscription = subscriptionResult.rows[0] || null
+  const memories = memoriesResult.rows || []
 
   return {
     stats: {
@@ -163,6 +177,13 @@ export async function getAiContext(userId) {
       createdAt: i.created_at,
     })),
     subscription,
+    memories: memories.map((m) => ({
+      id: m.id,
+      category: m.category,
+      title: m.title,
+      content: m.content,
+      updatedAt: m.updated_at,
+    })),
   }
 }
 

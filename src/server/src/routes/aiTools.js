@@ -151,6 +151,36 @@ export const TOOLS = [
       }
     }
   },
+  {
+    type: 'function',
+    function: {
+      name: 'get_memories',
+      description: '读取用户的长期记忆（偏好/项目事实/反馈等跨会话信息）。当用户问到“你记得吗/我们之前说过/我的偏好”或需要结合历史背景时调用',
+      parameters: {
+        type: 'object',
+        properties: {
+          category: { type: 'string', enum: ['preference', 'fact', 'project', 'feedback', 'other'], description: '可选：按类别过滤' }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'save_memory',
+      description: '保存一条用户长期记忆（如用户明确表达的偏好、项目事实、对我方产品的反馈）。仅当用户明确陈述了值得长期记住的信息时调用，避免记录临时内容。',
+      parameters: {
+        type: 'object',
+        properties: {
+          category: { type: 'string', enum: ['preference', 'fact', 'project', 'feedback', 'other'], description: '记忆类别' },
+          title: { type: 'string', description: '简短标题' },
+          content: { type: 'string', description: '记忆内容' }
+        },
+        required: ['category', 'title', 'content']
+      }
+    }
+  },
   // Agent 工作流工具
   {
     type: 'function',
@@ -469,6 +499,29 @@ async function executeTool(toolName, args, userId) {
           [userId]
         )
         return { sharedLinks: result.rows, count: result.rowCount }
+      }
+
+      case 'get_memories': {
+        const { category } = args
+        let sql = 'SELECT id, category, title, content, updated_at FROM ai_memories WHERE user_id = $1'
+        const params = [userId]
+        if (category) { sql += ' AND category = $2'; params.push(category) }
+        sql += ' ORDER BY updated_at DESC'
+        const result = await pool.query(sql, params)
+        return { memories: result.rows, count: result.rowCount }
+      }
+
+      case 'save_memory': {
+        const { category = 'fact', title, content } = args
+        if (!title || !content) return { error: 'title and content are required' }
+        const cat = ['preference', 'fact', 'project', 'feedback', 'other'].includes(category) ? category : 'fact'
+        const result = await pool.query(
+          `INSERT INTO ai_memories (user_id, category, title, content)
+           VALUES ($1, $2, $3, $4)
+           RETURNING id, category, title, content, updated_at`,
+          [userId, cat, String(title).trim(), String(content).trim()]
+        )
+        return { saved: result.rows[0] }
       }
 
       default:

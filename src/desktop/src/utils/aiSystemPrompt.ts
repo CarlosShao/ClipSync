@@ -10,6 +10,8 @@ export interface AiContextData {
   devicesCount?: number
   templatesCount?: number
   sharedLinksCount?: number
+  memories?: Array<{ category: string; title: string; content: string }>
+  memoryEnabled?: boolean
 }
 
 export function buildSystemPrompt(ctx?: AiContextData): string {
@@ -78,6 +80,10 @@ ${ctx && ctx.devicesCount !== undefined ? `当前配对设备数量：${ctx.devi
 ${ctx && ctx.templatesCount !== undefined ? `当前模板数量：${ctx.templatesCount} 个。` : ''}
 ${ctx && ctx.sharedLinksCount !== undefined ? `当前共享链接数量：${ctx.sharedLinksCount} 个。` : ''}
 ${ctx && ctx.recentItems ? `最近条目预览：\n${ctx.recentItems}` : ''}
+${ctx && ctx.memoryEnabled && ctx.memories && ctx.memories.length > 0 ? `
+# 用户长期记忆（跨会话）
+以下是关于该用户长期积累的记忆，涵盖其偏好、项目事实与历史反馈。回答时务必结合这些背景，让其感受到你“记得”他：
+${ctx.memories.map((m) => `- [${m.category}] ${m.title}：${m.content}`).join('\n')}` : ''}
 
 # 如何回答数据类问题
 - 当用户问"有多少条""收藏夹多少""关于 xxx 的内容"时，必须先调用工具获取真实数据，再给出结论。

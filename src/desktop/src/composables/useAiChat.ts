@@ -44,6 +44,12 @@ export function useAiChat() {
   const error = ref('')
   const abortCtrl = shallowRef<AbortController | null>(null)
   const initialized = ref(false)
+  // 长程记忆模式：开启时把用户记忆注入系统提示词，让 AI 跨会话“记得”用户
+  const memoryEnabled = ref(localStorage.getItem('clipsync-ai-memory') !== '0')
+  function setMemoryEnabled(v: boolean) {
+    memoryEnabled.value = v
+    localStorage.setItem('clipsync-ai-memory', v ? '1' : '0')
+  }
 
   const conv = useAiConversations()
 
@@ -191,6 +197,8 @@ export function useAiChat() {
           recentItems: ctx.recentItems
             .map((i) => `- [${i.type}] ${i.preview}${i.preview.length >= 120 ? '...' : ''}${i.isFavorite ? ' ⭐' : ''}`)
             .join('\n'),
+          memories: (ctx.memories || []).map((m) => ({ category: m.category, title: m.title, content: m.content })),
+          memoryEnabled: memoryEnabled.value,
         }
       : undefined
 
@@ -199,13 +207,28 @@ export function useAiChat() {
     const nativeReasoning = isNativeReasoningModel(modelName)
 
     const systemPrompt = buildSystemPrompt(ctxData)
-    const history: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
-      ...messages.value
-        .slice(0, -1)
-        .filter((m) => !(m.role === 'assistant' && m.isError))
-        .map((m) => ({ role: m.role, content: m.content })),
-    ]
+    // 构造上游历史：保留工具调用结构（转换为 OpenAI 嵌套格式），确保多轮 Agent 上下文正确
+    const historyMessages: any[] = []
+    for (const m of messages.value.slice(0, -1)) {
+      if (m.role === 'assistant' && m.isError) continue
+      if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+        historyMessages.push({
+          role: 'assistant',
+          content: m.content || '',
+          tool_calls: m.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: 'function',
+            function: { name: tc.name, arguments: tc.arguments || '' },
+          })),
+        })
+        for (const tr of m.toolResults || []) {
+          historyMessages.push({ role: 'tool', content: tr.content, tool_call_id: tr.tool_call_id })
+        }
+      } else {
+        historyMessages.push({ role: m.role, content: m.content })
+      }
+    }
+    const history: any[] = [{ role: 'system', content: systemPrompt }, ...historyMessages]
 
     if (options.thinking) {
       const strengthMap = {
@@ -303,6 +326,14 @@ export function useAiChat() {
     conv.setCurrent('')
   }
 
+  // 继续生成：基于现有完整上下文（含已产生的部分回答）让模型续写
+  async function resume(options: SendOptions = {}) {
+    if (isStreaming.value) return
+    const last = messages.value[messages.value.length - 1]
+    if (!last || last.role !== 'assistant') return
+    await send('请继续完成你刚才的回答（结合我们之前的对话上下文）。', options)
+  }
+
   return {
     providers,
     selectedProviderId,
@@ -311,10 +342,13 @@ export function useAiChat() {
     error,
     hasProviders,
     canSend,
+    memoryEnabled,
+    setMemoryEnabled,
     init,
     loadProviders,
     selectProvider,
     send,
+    resume,
     stop,
     clear,
     // 会话相关

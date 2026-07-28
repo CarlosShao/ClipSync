@@ -47,6 +47,7 @@ import searchHistoryRoutes from './routes/searchHistory.js';
 import aiProvidersRoutes from './routes/aiProviders.js';
 import aiChatRoutes from './routes/aiChat.js';
 import aiConversationsRoutes from './routes/aiConversations.js';
+import aiMemoriesRoutes from './routes/aiMemories.js';
 import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
 import metricsRoutes from './routes/metrics.js';
@@ -198,7 +199,12 @@ app.use(compression({
     // 不压缩 WebSocket 升级请求
     if (req.headers['upgrade']) return false;
     // 不压缩 SSE 流式响应：text/event-stream 被 gzip 缓冲后只能在响应结束时一次性下发，
-    // 会导致 AI 思考过程与回答“一下子蹦出来”，破坏逐字流式体验。
+    // 会导致 AI 思考过程与回答"一下子蹦出来"，破坏逐字流式体验。
+    // 注意：compression 的 filter 在路由处理之前执行，此时响应头尚未设置，
+    // res.getHeader('Content-Type') 永远拿不到 text/event-stream，因此必须按请求 URL 判断。
+    const url = req.originalUrl || req.url || '';
+    if (url.includes('/api/ai/chat')) return false;
+    // 兜底：若响应头已显式声明 SSE 也不压缩（部分场景下 originalUrl 不含路径时生效）
     if (res.getHeader('Content-Type') === 'text/event-stream') return false;
     return compression.filter(req, res);
   },
@@ -427,6 +433,12 @@ app.use('/api/ai', authenticateToken, apiLimiter, csrfProtection, (req, res, nex
   req.userId = req.user.userId;
   next();
 }, aiProvidersRoutes, aiChatRoutes, aiConversationsRoutes);
+
+// AI 长程记忆路由（单独子路径，避免与 /api/ai/conversations 的 / 与 /:id 冲突）
+app.use('/api/ai/memories', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, aiMemoriesRoutes);
 
 // 分享链接路由（免费功能）。公开取用 /public/:token 无登录，故鉴权在路由内逐条处理；
 // 此处仅挂 apiLimiter，csrf 对 GET/Bearer 自动放行。
