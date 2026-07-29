@@ -161,12 +161,11 @@ const summary = computed(() => {
 
 <template>
   <!-- 轻量加载态：刚发送、尚未收到任何思考内容时，只显示一条友好的进度提示条
-       （含左→右闪烁动画），不渲染带折叠按钮的空卡片，避免“一上来就卡一张空白思考卡片”。 -->
+       （含左→右明显闪烁动画），不渲染带折叠按钮的空卡片，避免“一上来就卡一张空白思考卡片”。 -->
   <div v-if="isStreaming && !hasContent" class="ai-thinking-loading">
     <span class="ai-thinking-shimmer"></span>
-    <span class="ai-thinking-status-text">
-      <Brain :size="12" class="ai-thinking-status-icon" />
-      {{ t('ai_thinking_loading') || 'AI 正在思考…' }}
+    <span class="ai-thinking-loading-text">
+      {{ t('ai_thinking_loading') || '正在思考' }}
     </span>
   </div>
 
@@ -208,10 +207,10 @@ const summary = computed(() => {
 /* 轻量加载态：刚发送、尚无思考内容时，仅显示一条友好进度提示条，不渲染空卡片 */
 .ai-thinking-loading {
   position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 6px 14px;
   margin-bottom: 6px;
   background: var(--bg-hover);
   border: 1px solid var(--border-subtle);
@@ -233,22 +232,47 @@ const summary = computed(() => {
   min-height: 28px;
 }
 
-/* 左→右闪烁进度条：叠加在状态栏背景上 */
+/* 左→右闪烁进度条：叠加在状态栏/加载条背景上 */
 .ai-thinking-shimmer {
   position: absolute;
   top: 0;
   left: 0;
-  width: 40%;
+  width: 55%;
   height: 100%;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    var(--accent-bg) 50%,
+    var(--accent) 50%,
     transparent 100%
   );
-  animation: ai-thinking-shimmer-slide 1.8s ease-in-out infinite;
+  animation: ai-thinking-shimmer-slide 1.3s ease-in-out infinite;
   pointer-events: none;
-  opacity: 0.7;
+  opacity: 0.35;
+}
+
+/* 加载态文字：从左到右的高光泽扫过，让“正在思考”明显在动 */
+.ai-thinking-loading-text {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  font-weight: 600;
+  background: linear-gradient(
+    90deg,
+    var(--text-secondary) 0%,
+    var(--accent) 45%,
+    var(--text-secondary) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: ai-thinking-text-shimmer 1.6s linear infinite;
+}
+
+@keyframes ai-thinking-text-shimmer {
+  0% { background-position: 220% 0; }
+  100% { background-position: -220% 0; }
 }
 
 @keyframes ai-thinking-shimmer-slide {

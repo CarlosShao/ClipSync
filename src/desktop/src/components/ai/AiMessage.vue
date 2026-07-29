@@ -23,6 +23,9 @@ const isStreamingNow = computed(() => props.isStreaming && props.index === 0)
 // 是否已开始输出正式答案：一旦主气泡有内容，思考面板即视为“流出阶段已结束”，
 // 不再显示“思考中”闪烁条，让思考卡片收敛为“已思考 N 秒”。
 const hasAnswer = computed(() => (props.message.content?.trim().length || 0) > 0)
+// 是否已有子代理运行卡片（coordinator/workers/synthesis）。一旦有，就用具体卡片代替
+// 泛化的“正在思考”加载条，避免“任务规划都出来了，上面还卡着正在思考”。
+const hasAgentRuns = computed(() => (props.message.agentRuns?.length || 0) > 0)
 // 思考面板在生成期间强制展开：让用户看到思考过程流式“生长”，而不是生成完后一次性“蹦出来”。
 // 生成结束后保持展开便于回看，用户仍可手动折叠。
 watch(isStreamingNow, (now, before) => {
@@ -55,8 +58,12 @@ function roleLabel() {
     <div class="ai-msg-bubble">
       <div class="ai-msg-role">{{ roleLabel() }}</div>
 
+      <!-- 思考面板/加载条：
+           - 有思考内容 → 始终显示思考卡片
+           - 无思考内容但仍在流式、且主答案未开始、且无子代理卡片时 → 显示“正在思考”加载条
+           - 一旦子代理卡片出现，加载条让位给具体卡片 -->
       <AiThinking
-        v-if="message.role === 'assistant'"
+        v-if="message.role === 'assistant' && ((message.thinking?.length || 0) > 0 || (isStreamingNow && !hasAnswer && !hasAgentRuns))"
         :thinking="message.thinking || ''"
         :thinking-started-at="message.thinkingStartedAt"
         :is-streaming="isStreamingNow && !hasAnswer"

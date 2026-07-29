@@ -298,8 +298,9 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
       }
     }, 10_000)
 
-    // 子代理超时看门狗：每 5 秒检查一次，如果某个 agent 超过 60 秒没有更新（没有收到新的增量），
-    // 自动收敛为 done，避免后端丢失 agent done 事件导致卡片永久转圈。
+    // 子代理超时看门狗：每 5 秒检查一次，如果某个 agent 超过阈值没有更新，
+    // 自动收敛为 done/failed，避免后端丢失 agent done 事件导致卡片永久转圈。
+    // planning 阶段本身无内容产出，可能持续较久，阈值放宽到 120s；working/synthesis 保持 60s。
     // 只在 streaming 期间激活，streaming 结束后由 settleAgentRuns 最终收敛。
     const agentTimeoutWatchdog = setInterval(() => {
       if (!assistantMsg.agentRuns?.length) return
@@ -307,12 +308,13 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
       for (const run of assistantMsg.agentRuns) {
         if (run.status === 'planning' || run.status === 'working' || run.status === 'synthesis') {
           const lastUpdate = run._lastUpdateAt || 0
-          // 超过 60 秒没有更新，强制收敛
-          if (lastUpdate && now - lastUpdate > 60_000) {
-            console.warn(`[useAiChat] agent ${run.id} timed out (>60s no update), auto-concluding`)
+          if (!lastUpdate) continue
+          const threshold = run.status === 'planning' ? 120_000 : 60_000
+          if (now - lastUpdate > threshold) {
+            console.warn(`[useAiChat] agent ${run.id} timed out (>${threshold / 1000}s no update), auto-concluding`)
             run.status = run.content || run.thinking ? 'done' : 'failed'
             if (!run.error && !run.content && !run.thinking) {
-              run.error = 'agent timed out (no response for 60s)'
+              run.error = `agent timed out (no response for ${threshold / 1000}s)`
             }
           }
         }
