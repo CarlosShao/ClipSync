@@ -48,6 +48,7 @@ import aiProvidersRoutes from './routes/aiProviders.js';
 import aiChatRoutes from './routes/aiChat.js';
 import aiConversationsRoutes from './routes/aiConversations.js';
 import aiMemoriesRoutes from './routes/aiMemories.js';
+import aiSettingsRoutes from './routes/aiSettings.js';
 import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
 import metricsRoutes from './routes/metrics.js';
@@ -447,6 +448,12 @@ app.use('/api/ai/memories', authenticateToken, apiLimiter, csrfProtection, (req,
   req.userId = req.user.userId;
   next();
 }, aiMemoriesRoutes);
+
+// AI 用户偏好设置（默认供应商/模型/模式/思考/并行等，入库持久化）
+app.use('/api/ai/settings', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, aiSettingsRoutes);
 
 // 分享链接路由（免费功能）。公开取用 /public/:token 无登录，故鉴权在路由内逐条处理；
 // 此处仅挂 apiLimiter，csrf 对 GET/Bearer 自动放行。

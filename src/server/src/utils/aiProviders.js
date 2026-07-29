@@ -10,6 +10,8 @@
  * 安全：本文件不接触任何密钥明文，密钥由调用方（路由层）从加密字段解密后传入。
  */
 
+import { logger } from './logger.js'
+
 /**
  * 协议族：
  * - 'openai'：OpenAI Chat Completions 兼容协议（OpenAI / DeepSeek / Qwen / Hunyuan /
@@ -215,9 +217,61 @@ export function buildUpstreamChat(cfg) {
   }
 }
 
+/**
+ * 向上游拉取该供应商可用的模型列表（用于「一个配置支持多模型」的标签展示）。
+ *
+ * - OpenAI 兼容族：GET {baseUrl}/models，解析 data[].id
+ * - Anthropic 族：GET {baseUrl}/models（需 x-api-key + anthropic-version），解析 data[].id
+ * - 任何失败（无密钥 / 网络 / 鉴权）均回退到预设 defaultModel，保证至少有 1 个标签可点。
+ *
+ * @param {object} cfg { provider, baseUrl, apiKey }
+ * @returns {Promise<string[]>} 模型标识数组
+ */
+export async function fetchProviderModels(cfg) {
+  const { provider, baseUrl, apiKey } = cfg || {}
+  const preset = getPreset(provider)
+  if (!preset) return []
+  const resolvedBaseUrl = (baseUrl || preset.defaultBaseUrl || '').replace(/\/+$/, '')
+  // 自定义供应商未填 base_url 或没有密钥：无法拉取，回退预设默认模型
+  if (!resolvedBaseUrl || !apiKey) {
+    return preset.defaultModel ? [preset.defaultModel] : []
+  }
+
+  const authHeader = preset.authHeader || 'Authorization'
+  const headers = {}
+  if (authHeader === 'Authorization') {
+    headers.Authorization = `Bearer ${apiKey}`
+  } else {
+    headers[authHeader] = apiKey
+  }
+  if (preset.family === 'anthropic') {
+    headers['anthropic-version'] = '2023-06-01'
+  }
+
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 8000)
+  try {
+    const res = await fetch(`${resolvedBaseUrl}/models`, { headers, signal: ctrl.signal })
+    if (!res.ok) throw new Error(`models endpoint status ${res.status}`)
+    const json = await res.json()
+    const list = Array.isArray(json?.data)
+      ? json.data.map((m) => m.id).filter(Boolean)
+      : []
+    // 去重并保持稳定顺序
+    const unique = Array.from(new Set(list))
+    return unique.length ? unique : (preset.defaultModel ? [preset.defaultModel] : [])
+  } catch (e) {
+    logger.warn('fetchProviderModels fallback to preset default:', e.message)
+    return preset.defaultModel ? [preset.defaultModel] : []
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export default {
   PROVIDER_PRESETS,
   getPreset,
   listPresets,
   buildUpstreamChat,
+  fetchProviderModels,
 }

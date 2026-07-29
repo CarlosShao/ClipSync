@@ -30,6 +30,19 @@ router.post('/chat', apiLimiter, async (req, res) => {
     const thinkingStrength = options?.thinkingStrength || 'medium'
     const isAgentMode = options?.mode === 'agent'
 
+    // 模型覆盖：前端可在请求里指定本次使用的模型（多选标签场景）。
+    // 校验规则：必须属于该供应商 models 列表，或与已存 model 一致（避免拼错/越权）。
+    if (options?.model && typeof options.model === 'string' && options.model.trim().length > 0) {
+      const requested = options.model.trim()
+      const allowed = Array.isArray(providerRow.models) ? providerRow.models : []
+      const isAllowed = allowed.includes(requested) || requested === providerRow.model
+      if (isAllowed) {
+        providerRow.model = requested
+      } else {
+        logger.warn(`[AI] requested model "${requested}" not in provider models (${allowed.join(',')}); ignoring override`)
+      }
+    }
+
     // SSE 响应头
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache, no-transform')
