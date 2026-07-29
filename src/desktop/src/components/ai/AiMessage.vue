@@ -16,19 +16,52 @@ const expandedThinking = ref(false)
 
 // 当前消息是否处于“正在生成”状态（仅最后一条助手消息为 true）
 const isStreamingNow = computed(() => props.isStreaming && props.index === 0)
-// 是否已开始输出正式答案
-const hasAnswer = computed(() => (props.message.content?.trim().length || 0) > 0)
-// 思考是否仍在流式生长：主答案开始输出，或工具已开始调用时，思考视为结束
-const isThinkingStreaming = computed(() => isStreamingNow.value && !hasAnswer.value && props.message.thinkingActive !== false)
-// 思考面板在生成期间强制展开：让用户看到思考过程流式“生长”，而不是生成完后一次性“蹦出来”。
-// 生成结束后保持展开便于回看，用户仍可手动折叠。
-watch(isStreamingNow, (now, before) => {
+
+// 思考是否正在流式生长：有 thinking 内容且 thinkingActive 仍为 true
+const isThinkingStreaming = computed(() =>
+  isStreamingNow.value &&
+  (props.message.thinking?.length || 0) > 0 &&
+  props.message.thinkingActive !== false,
+)
+
+// 思考是否已结束：有内容，但已经停止（工具开始 / 答案开始 / 流结束）
+const isThinkingDone = computed(() =>
+  (props.message.thinking?.length || 0) > 0 &&
+  (!isStreamingNow.value || props.message.thinkingActive === false),
+)
+
+// loading 占位：尚未收到任何有效阶段数据（无 thinking、无答案、无工具）
+const isLoading = computed(() =>
+  isStreamingNow.value &&
+  !isThinkingStreaming.value &&
+  !isThinkingDone.value &&
+  (props.message.content?.trim().length || 0) === 0 &&
+  (props.message.toolCalls?.length || 0) === 0,
+)
+
+// thinking 活跃 / loading 期间，隐藏工具/子代理卡片，避免“思考过程都没看到就任务规划中”
+const visibleAgentRuns = computed(() => {
+  if (isThinkingStreaming.value || isLoading.value) return []
+  return props.message.agentRuns || []
+})
+
+const visibleToolCalls = computed(() => {
+  if (isThinkingStreaming.value || isLoading.value) return []
+  return props.message.toolCalls || []
+})
+
+// 是否显示思考组件（loading 占位 / 深度思考 / 已完成）
+const showThinking = computed(() => isLoading.value || isThinkingStreaming.value || isThinkingDone.value)
+// 传给 AiThinking 的 isStreaming：loading 占位和 thinking 流式阶段都扫光
+const thinkingIsStreaming = computed(() => isLoading.value || isThinkingStreaming.value)
+
+// 思考阶段强制展开，让用户看到 reasoning 流式生长；结束后保持展开便于回看
+watch(isThinkingStreaming, (now, before) => {
   if (before && !now) expandedThinking.value = true
 })
 
 function compactBlankLines(content: string): string {
   if (!content) return ''
-  // 把 3 个及以上连续换行压缩为 2 个，消除无意义大段空白
   return content.replace(/\n{3,}/g, '\n\n').trim()
 }
 
@@ -52,26 +85,27 @@ function roleLabel() {
     <div class="ai-msg-bubble">
       <div class="ai-msg-role">{{ roleLabel() }}</div>
 
-      <!-- 深度思考面板：极简折叠条，组件自己决定何时渲染 -->
+      <!-- 阶段 1/2/3：loading 占位 / 深度思考 / 思考完成 -->
       <AiThinking
-        v-if="message.role === 'assistant'"
+        v-if="message.role === 'assistant' && showThinking"
         :thinking="message.thinking || ''"
         :thinking-started-at="message.thinkingStartedAt"
-        :is-streaming="isThinkingStreaming"
+        :is-streaming="thinkingIsStreaming"
         :expanded="expandedThinking || isThinkingStreaming"
         @toggle="expandedThinking = !expandedThinking"
       />
 
+      <!-- 工具调用日志：仅在思考结束后出现 -->
       <AiToolTimeline
-        v-if="message.role === 'assistant'"
-        :tool-calls="message.toolCalls"
+        v-if="message.role === 'assistant' && visibleToolCalls.length"
+        :tool-calls="visibleToolCalls"
         :tool-results="message.toolResults"
       />
 
-      <!-- 多代理并行模式：子代理运行状态卡片（coordinator / workers / synthesis） -->
-      <template v-if="message.role === 'assistant' && message.agentRuns && message.agentRuns.length">
+      <!-- 多代理并行模式：子代理运行状态卡片，仅在思考结束后出现 -->
+      <template v-if="message.role === 'assistant' && visibleAgentRuns.length">
         <AiAgentRun
-          v-for="run in message.agentRuns"
+          v-for="run in visibleAgentRuns"
           :key="run.id"
           :run="run"
           :is-streaming="isStreaming"
@@ -118,12 +152,9 @@ function roleLabel() {
   margin-bottom: 4px;
 }
 .ai-msg-content {
-  /* 关键：markdown 渲染走 v-html，marked 在 </p> 与 <p> 之间留有换行文本节点；
-     若用 pre-wrap 会把那些换行渲染成真实空行，造成“大量空行”。这里用 normal 让 HTML 正常折叠。 */
   white-space: normal;
   word-break: break-word;
 }
-/* 用户原始文本（非 markdown）才需要保留其自身换行 */
 .ai-msg.user .ai-msg-content {
   white-space: pre-wrap;
 }
@@ -144,8 +175,6 @@ function roleLabel() {
   margin: 2px 0;
 }
 .ai-msg-content :deep(li) { margin: 1px 0; }
-/* 松散列表（loose list）里每个 item 被包成 <li><p>…</p></li>，
-   内层 <p> 的 margin 会额外撑出空白，这里清零 */
 .ai-msg-content :deep(li > p) { margin: 0; }
 .ai-msg-content :deep(code) {
   background: rgba(0,0,0,0.06);

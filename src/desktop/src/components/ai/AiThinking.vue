@@ -4,13 +4,13 @@ import { useI18n } from '@/composables/useI18n'
 import { ChevronDown, ChevronRight, CheckCircle2 } from 'lucide-vue-next'
 
 /**
- * AiThinking — AI 深度思考过程面板
+ * AiThinking — AI 思考过程面板
  *
- * 交互参考 Claude / OpenCode / Hermes 等 Agent Harness：
- *   整个思考过程只表现为一个深色细长折叠按钮，
- *   思考中左侧有脉冲光点 + “深度思考”，
- *   完成后显示对勾 + “已深度思考(N秒)”，
- *   点击展开查看完整 reasoning 内容。
+ * 阶段 1（loading 占位）：尚未收到任何数据时，显示“正在思考”轻量提示条，
+ *                        文字带从左到右扫光动画。
+ * 阶段 2（深度思考）：收到 thinking 内容后，切换为深色折叠条；
+ *                    “深度思考”四字同样带扫光，点击展开看 reasoning。
+ * 阶段 3（完成）：思考结束 → 对勾 + “已深度思考(N秒)”。
  */
 
 const props = defineProps<{
@@ -130,7 +130,10 @@ watch(() => props.isStreaming, (v) => {
 
 // ==================== 折叠按钮文案 ====================
 const label = computed(() => {
-  if (props.isStreaming || !hasContent.value) {
+  if (!hasContent.value) {
+    return t('ai_thinking_loading') || '正在思考'
+  }
+  if (props.isStreaming) {
     return t('ai_thinking_deep') || '深度思考'
   }
   const sec = elapsedSeconds.value
@@ -142,26 +145,94 @@ const label = computed(() => {
 </script>
 
 <template>
-  <div v-if="isStreaming || hasContent" class="ai-thinking">
+  <!-- 阶段 1：loading 占位。未收到任何数据，只显示“正在思考”+ 扫光 -->
+  <div v-if="!hasContent && isStreaming" class="ai-thinking-loading">
+    <span class="ai-thinking-shimmer-bar"></span>
+    <span class="ai-thinking-loading-text">{{ t('ai_thinking_loading') || '正在思考' }}</span>
+  </div>
+
+  <!-- 阶段 2/3：有内容后切换为深度思考折叠条 -->
+  <div v-else-if="hasContent" class="ai-thinking">
     <button
       class="ai-thinking-toggle"
       :class="{ active: expanded, streaming: isStreaming }"
       @click="emit('toggle')"
     >
-      <span class="ai-thinking-indicator" :class="{ pulse: isStreaming, done: !isStreaming && hasContent }"></span>
-      <CheckCircle2 v-if="!isStreaming && hasContent" :size="12" class="ai-thinking-done-icon" />
-      <span class="ai-thinking-label">{{ label }}</span>
+      <span class="ai-thinking-indicator" :class="{ pulse: isStreaming, done: !isStreaming }"></span>
+      <CheckCircle2 v-if="!isStreaming" :size="12" class="ai-thinking-done-icon" />
+      <span class="ai-thinking-label" :class="{ streaming: isStreaming }">{{ label }}</span>
       <ChevronDown v-if="expanded" :size="13" />
       <ChevronRight v-else :size="13" />
     </button>
 
-    <div v-if="expanded && hasContent" ref="contentRef" class="ai-thinking-content">
+    <div v-if="expanded" ref="contentRef" class="ai-thinking-content">
       <pre>{{ displayThinking }}</pre>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* ========== 阶段 1：loading 占位 ========== */
+.ai-thinking-loading {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.ai-thinking-shimmer-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent-bg) 50%,
+    transparent 100%
+  );
+  animation: ai-thinking-shimmer-bar 1.6s linear infinite;
+  pointer-events: none;
+}
+
+.ai-thinking-loading-text {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  font-weight: 600;
+  background: linear-gradient(
+    90deg,
+    var(--text-secondary) 0%,
+    var(--text-primary) 45%,
+    var(--text-primary) 55%,
+    var(--text-secondary) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: ai-thinking-shimmer-text 1.6s linear infinite;
+}
+
+@keyframes ai-thinking-shimmer-bar {
+  0% { transform: translateX(-150%); }
+  100% { transform: translateX(250%); }
+}
+
+@keyframes ai-thinking-shimmer-text {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ========== 阶段 2/3：深度思考折叠条 ========== */
 .ai-thinking {
   display: inline-flex;
   flex-direction: column;
@@ -193,9 +264,6 @@ const label = computed(() => {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.ai-thinking-toggle.streaming {
-  color: var(--accent);
-}
 
 .ai-thinking-indicator {
   flex-shrink: 0;
@@ -222,6 +290,20 @@ const label = computed(() => {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.ai-thinking-label.streaming {
+  background: linear-gradient(
+    90deg,
+    var(--text-secondary) 0%,
+    var(--accent) 45%,
+    var(--accent) 55%,
+    var(--text-secondary) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: ai-thinking-shimmer-text 1.6s linear infinite;
 }
 
 .ai-thinking-content {

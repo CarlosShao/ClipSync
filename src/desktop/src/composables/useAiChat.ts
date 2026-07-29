@@ -458,8 +458,9 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
               if (!bucket.thinkingStartedAt) bucket.thinkingStartedAt = Date.now()
               bucket.thinking = (bucket.thinking || '') + res.thinkingDelta
             }
-            // 主答案（未路由给子代理）开始输出 → 规划态卡片立即收敛，停止转圈
+            // 主答案（未路由给子代理）开始输出 → 思考阶段结束，规划态卡片立即收敛
             if (target === null && res.textDelta) {
+              assistantMsg.thinkingActive = false
               convergePlanning()
             }
           }
