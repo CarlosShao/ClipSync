@@ -79,7 +79,7 @@ const SYNTHESIS_SYSTEM = `你是一个结果综合器（Synthesis）。
 /**
  * 协调器单次调用：只挂 dispatch_agents，收集 content + toolCalls（不下发增量）。
  */
-async function runCoordinatorCall({ messages, providerRow, apiKey, abortSignal }) {
+async function runCoordinatorCall({ messages, providerRow, apiKey, abortSignal, sendDelta, logChunk }) {
   const coMessages = [{ role: 'system', content: COORDINATOR_SYSTEM }, ...messages]
   const chatOptions = { tools: [DISPATCH_AGENTS_TOOL], tool_choice: 'auto' }
 
@@ -111,8 +111,13 @@ async function runCoordinatorCall({ messages, providerRow, apiKey, abortSignal }
 
   const reader = upstreamRes.body.getReader()
   const decoder = new TextDecoder()
-  const noop = () => {}
-  const resp = await collectToolCallsFromStream(reader, decoder, noop, noop)
+  const wrappedSend = (obj) => {
+    if (!sendDelta) return
+    const d = obj?.choices?.[0]?.delta
+    if (d && !d.agent_id && !d.agent) d.agent_id = 'coordinator'
+    sendDelta(obj)
+  }
+  const resp = await collectToolCallsFromStream(reader, decoder, wrappedSend, logChunk)
   return { content: resp.content, toolCalls: resp.toolCalls }
 }
 
@@ -237,7 +242,7 @@ export async function runOrchestration({
 
   let coordinator
   try {
-    coordinator = await runCoordinatorCall({ messages, providerRow, apiKey, abortSignal })
+    coordinator = await runCoordinatorCall({ messages, providerRow, apiKey, abortSignal, sendDelta, logChunk })
   } catch (e) {
     // 协调器失败：降级为单代理直答（完整工具集）
     logger.warn('[AI][orchestrator] coordinator failed, fallback to single chat:', e.message)

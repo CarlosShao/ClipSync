@@ -248,6 +248,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
         run = { id, name: id, status: 'working' }
         runs.push(run)
       }
+      ;(run as any)._lastUpdateAt = Date.now()
       return run
     }
 
@@ -436,6 +437,13 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
         signal: controller.signal,
         onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => {
           lastActivityAt = Date.now()
+          if (assistantMsg.agentRuns?.length) {
+            for (const r of assistantMsg.agentRuns) {
+              if (r.status === 'planning' || r.status === 'working' || r.status === 'synthesis') {
+                ;(r as any)._lastUpdateAt = Date.now()
+              }
+            }
+          }
           // 生命周期事件（coordinator/worker/synthesis 状态切换）始终 upsert 到 agentRuns
           if (meta?.agent) {
             upsertAgentRun(meta.agent)

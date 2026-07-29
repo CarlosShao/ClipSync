@@ -62,6 +62,7 @@ export interface AgentRun {
   content?: string
   toolCalls?: ToolCall[]
   toolResults?: ToolResult[]
+  _lastUpdateAt?: number
 }
 
 // SSE 增量附带的元信息（多代理路由用）

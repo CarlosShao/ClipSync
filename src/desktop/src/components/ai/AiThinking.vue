@@ -145,9 +145,8 @@ const label = computed(() => {
 </script>
 
 <template>
-  <!-- 阶段 1：loading 占位。未收到任何数据，只显示“正在思考”+ 扫光 -->
+  <!-- 阶段 1：loading 占位。未收到任何数据，只显示“正在思考”在文字表面的扫光 -->
   <div v-if="!hasContent && isStreaming" class="ai-thinking-loading">
-    <span class="ai-thinking-shimmer-bar"></span>
     <span class="ai-thinking-loading-text">{{ t('ai_thinking_loading', '正在思考') }}</span>
   </div>
 
@@ -187,33 +186,20 @@ const label = computed(() => {
   max-width: 100%;
 }
 
-.ai-thinking-shimmer-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--accent-bg) 50%,
-    transparent 100%
-  );
-  animation: ai-thinking-shimmer-bar 1.6s linear infinite;
-  pointer-events: none;
-}
-
 .ai-thinking-loading-text {
   position: relative;
-  z-index: 1;
   font-size: 12px;
   font-weight: 600;
+  display: inline-block;
   background: linear-gradient(
     90deg,
-    var(--text-secondary) 0%,
-    var(--text-primary) 45%,
-    var(--text-primary) 55%,
-    var(--text-secondary) 100%
+    var(--text-tertiary, #94a3b8) 0%,
+    var(--text-tertiary, #94a3b8) 20%,
+    var(--text-primary, #0f172a) 45%,
+    var(--accent, #6366f1) 50%,
+    var(--text-primary, #0f172a) 55%,
+    var(--text-tertiary, #94a3b8) 80%,
+    var(--text-tertiary, #94a3b8) 100%
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
@@ -222,14 +208,9 @@ const label = computed(() => {
   animation: ai-thinking-shimmer-text 1.6s linear infinite;
 }
 
-@keyframes ai-thinking-shimmer-bar {
-  0% { transform: translateX(-150%); }
-  100% { transform: translateX(250%); }
-}
-
 @keyframes ai-thinking-shimmer-text {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% { background-position: 180% 0; }
+  100% { background-position: -180% 0; }
 }
 
 /* ========== 阶段 2/3：深度思考折叠条 ========== */

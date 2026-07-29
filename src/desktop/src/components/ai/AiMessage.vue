@@ -30,23 +30,27 @@ const isThinkingDone = computed(() =>
   (!isStreamingNow.value || props.message.thinkingActive === false),
 )
 
-// loading 占位：尚未收到任何有效阶段数据（无 thinking、无答案、无工具）
+const hasAgentRuns = computed(() => (props.message.agentRuns?.length || 0) > 0)
+const hasToolCalls = computed(() => (props.message.toolCalls?.length || 0) > 0)
+
+// loading 占位：尚未收到任何有效阶段数据（无 thinking、无答案、无工具、无 agent 运行卡片）
 const isLoading = computed(() =>
   isStreamingNow.value &&
   !isThinkingStreaming.value &&
   !isThinkingDone.value &&
-  (props.message.content?.trim().length || 0) === 0 &&
-  (props.message.toolCalls?.length || 0) === 0,
+  !hasAgentRuns.value &&
+  !hasToolCalls.value &&
+  (props.message.content?.trim().length || 0) === 0,
 )
 
-// thinking 活跃 / loading 期间，隐藏工具/子代理卡片，避免“思考过程都没看到就任务规划中”
+// 当主消息有全局 thinking 流正在展开时，暂时隐藏 agentRuns；否则立即展示 Agent 运行卡片
 const visibleAgentRuns = computed(() => {
-  if (isThinkingStreaming.value || isLoading.value) return []
+  if (isThinkingStreaming.value) return []
   return props.message.agentRuns || []
 })
 
 const visibleToolCalls = computed(() => {
-  if (isThinkingStreaming.value || isLoading.value) return []
+  if (isThinkingStreaming.value) return []
   return props.message.toolCalls || []
 })
 
