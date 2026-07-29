@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { Brain, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, CheckCircle2 } from 'lucide-vue-next'
 
 /**
- * AiThinking — AI 思考过程面板
+ * AiThinking — AI 深度思考过程面板
  *
- * 设计灵感来源于 Claude Code / OpenCode 等成熟 Agent Harness：
- *   1. 顶部状态栏：流式输出中显示左→右闪烁进度条 + 阶段文字（"正在连接模型"/"思考中"/"生成中"）
- *   2. 折叠内容区：有思考内容时渐进式释放（rAF 平滑追赶），无内容时仅显示状态栏
- *   3. 状态栏与内容分离：状态栏始终可见（有流式活动时），思考内容独立折叠
+ * 交互参考 Claude / OpenCode / Hermes 等 Agent Harness：
+ *   整个思考过程只表现为一个深色细长折叠按钮，
+ *   思考中左侧有脉冲光点 + “深度思考”，
+ *   完成后显示对勾 + “已深度思考(N秒)”，
+ *   点击展开查看完整 reasoning 内容。
  */
 
 const props = defineProps<{
@@ -25,7 +26,6 @@ const hasContent = computed(() => (props.thinking?.length || 0) > 0)
 const contentRef = ref<HTMLElement | null>(null)
 
 // ==================== 渐进式释放逻辑 ====================
-// 基于时间均匀释放（每帧固定追加字数），让思考过程"生长"而非"跳变"。
 const displayThinking = ref('')
 let rafId: number | undefined
 const CHARS_PER_FRAME = 6
@@ -76,7 +76,6 @@ watch(
 watch(
   () => props.expanded,
   (now) => {
-    // 展开面板且内容已完整到达时：从头重播渐进动画
     if (now && props.thinking?.length && displayThinking.value.length >= props.thinking.length) {
       displayThinking.value = ''
       rafId = requestAnimationFrame(flushThinking)
@@ -129,67 +128,34 @@ watch(() => props.isStreaming, (v) => {
   }
 })
 
-// ==================== 阶段文字（Claude Code 风格） ====================
-// 流式输出期间根据已处时长显示不同阶段文字，让用户感知 AI 正在工作
-const phaseText = computed(() => {
-  if (!props.isStreaming) {
-    // 已完成：显示耗时
-    if (!hasContent.value) return t('ai_no_thinking') || '无思考过程'
-    const sec = elapsedSeconds.value
-    const timeText = sec < 1 ? t('ai_thinking_less_than_sec') : t('ai_thinking_sec').replace('{n}', String(sec))
-    return `${t('ai_thinking_done')} ${timeText}`
+// ==================== 折叠按钮文案 ====================
+const label = computed(() => {
+  if (props.isStreaming || !hasContent.value) {
+    return t('ai_thinking_deep') || '深度思考'
   }
-
-  // 流式进行中：根据已处时长切换阶段文字
-  if (!hasContent.value) {
-    // 还未收到任何思考内容：显示阶段指示
-    return t('ai_thinking_progress') || '思考中'
-  }
-  // 有思考内容在流动中
   const sec = elapsedSeconds.value
-  const timeText = sec < 1 ? t('ai_thinking_less_than_sec') : t('ai_thinking_sec').replace('{n}', String(sec))
-  return `${t('ai_thinking_progress')} ${timeText}`
-})
-
-// 折叠按钮摘要
-const summary = computed(() => {
-  if (props.isStreaming && !hasContent.value) return phaseText.value
-  if (!hasContent.value) return t('ai_no_thinking') || '无思考过程'
-  return phaseText.value
+  const timeText = sec < 1
+    ? (t('ai_thinking_less_than_sec') || '少于 1 秒')
+    : (t('ai_thinking_sec') || '{n} 秒').replace('{n}', String(sec))
+  return `${t('ai_thinking_deep_done') || '已深度思考'} ${timeText}`
 })
 </script>
 
 <template>
-  <!-- 轻量加载态：刚发送、尚未收到任何思考内容时，只显示一条友好的进度提示条
-       （含左→右明显闪烁动画），不渲染带折叠按钮的空卡片，避免“一上来就卡一张空白思考卡片”。 -->
-  <div v-if="isStreaming && !hasContent" class="ai-thinking-loading">
-    <span class="ai-thinking-shimmer"></span>
-    <span class="ai-thinking-loading-text">
-      {{ t('ai_thinking_loading') || '正在思考' }}
-    </span>
-  </div>
-
-  <!-- 已收到思考内容：渲染完整的思考卡片（流式期间顶部状态栏 + 折叠按钮 + 内容） -->
-  <div v-else-if="hasContent" class="ai-thinking">
-    <!-- ===== 顶部状态栏（流式期间可见） ===== -->
-    <div v-if="isStreaming" class="ai-thinking-statusbar">
-      <div class="ai-thinking-shimmer"></div>
-      <span class="ai-thinking-status-text">
-        <Brain :size="12" class="ai-thinking-status-icon" />
-        {{ phaseText }}
-      </span>
-    </div>
-
-    <!-- ===== 折叠按钮（始终可见） ===== -->
-    <button class="ai-thinking-toggle" :class="{ active: expanded }" @click="emit('toggle')">
-      <Brain :size="13" />
-      <span class="ai-thinking-label">{{ summary }}</span>
+  <div v-if="isStreaming || hasContent" class="ai-thinking">
+    <button
+      class="ai-thinking-toggle"
+      :class="{ active: expanded, streaming: isStreaming }"
+      @click="emit('toggle')"
+    >
+      <span class="ai-thinking-indicator" :class="{ pulse: isStreaming, done: !isStreaming && hasContent }"></span>
+      <CheckCircle2 v-if="!isStreaming && hasContent" :size="12" class="ai-thinking-done-icon" />
+      <span class="ai-thinking-label">{{ label }}</span>
       <ChevronDown v-if="expanded" :size="13" />
       <ChevronRight v-else :size="13" />
     </button>
 
-    <!-- ===== 折叠内容区（仅展开时渲染） ===== -->
-    <div v-if="expanded" ref="contentRef" class="ai-thinking-content">
+    <div v-if="expanded && hasContent" ref="contentRef" class="ai-thinking-content">
       <pre>{{ displayThinking }}</pre>
     </div>
   </div>
@@ -197,154 +163,71 @@ const summary = computed(() => {
 
 <style scoped>
 .ai-thinking {
+  display: inline-flex;
+  flex-direction: column;
   margin-bottom: 6px;
-  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  max-width: 100%;
 }
 
-/* 轻量加载态：刚发送、尚无思考内容时，仅显示一条友好进度提示条，不渲染空卡片 */
-.ai-thinking-loading {
-  position: relative;
+.ai-thinking-toggle {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 14px;
-  margin-bottom: 6px;
-  background: var(--bg-hover);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  min-height: 28px;
-}
-
-/* ===== 顶部状态栏（流式输出期间可见） ===== */
-.ai-thinking-statusbar {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  background: var(--bg-hover);
-  overflow: hidden;
-  border-bottom: 1px solid var(--border-subtle);
-  min-height: 28px;
-}
-
-/* 左→右闪烁进度条：叠加在状态栏/加载条背景上 */
-.ai-thinking-shimmer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 55%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--accent) 50%,
-    transparent 100%
-  );
-  animation: ai-thinking-shimmer-slide 1.3s ease-in-out infinite;
-  pointer-events: none;
-  opacity: 0.35;
-}
-
-/* 加载态文字：从左到右的高光泽扫过，让“正在思考”明显在动 */
-.ai-thinking-loading-text {
-  position: relative;
-  z-index: 1;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  background: linear-gradient(
-    90deg,
-    var(--text-secondary) 0%,
-    var(--accent) 45%,
-    var(--text-secondary) 100%
-  );
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  animation: ai-thinking-text-shimmer 1.6s linear infinite;
-}
-
-@keyframes ai-thinking-text-shimmer {
-  0% { background-position: 220% 0; }
-  100% { background-position: -220% 0; }
-}
-
-@keyframes ai-thinking-shimmer-slide {
-  0% {
-    transform: translateX(-120%);
-    opacity: 0;
-  }
-  10% {
-    opacity: 0.7;
-  }
-  90% {
-    opacity: 0.7;
-  }
-  100% {
-    transform: translateX(350%);
-    opacity: 0;
-  }
-}
-
-.ai-thinking-status-text {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--accent);
-  z-index: 1;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+  text-align: left;
   white-space: nowrap;
+}
+.ai-thinking-toggle:hover,
+.ai-thinking-toggle.active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ai-thinking-toggle.streaming {
+  color: var(--accent);
+}
+
+.ai-thinking-indicator {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+.ai-thinking-indicator.pulse {
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent);
+  animation: ai-thinking-pulse 1.4s ease-in-out infinite;
+}
+.ai-thinking-indicator.done {
+  display: none;
+}
+.ai-thinking-done-icon {
+  flex-shrink: 0;
+  color: var(--success, #16a34a);
+}
+
+.ai-thinking-label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.ai-thinking-status-icon {
-  flex-shrink: 0;
-  animation: ai-thinking-pulse 2s ease-in-out infinite;
-}
-
-@keyframes ai-thinking-pulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
-/* ===== 折叠按钮 ===== */
-.ai-thinking-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 6px 10px;
-  background: var(--bg-surface);
-  border: none;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text-secondary);
-  transition: background 0.15s, color 0.15s;
-  text-align: left;
-}
-.ai-thinking-toggle:hover,
-.ai-thinking-toggle.active {
-  background: var(--accent-bg);
-  color: var(--accent);
-}
-.ai-thinking-label {
-  flex: 1;
-}
-
-/* ===== 折叠内容区 ===== */
 .ai-thinking-content {
-  padding: 10px;
+  padding: 10px 12px;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--text-secondary);
   border-top: 1px solid var(--border-subtle);
   max-height: 280px;
@@ -355,5 +238,16 @@ const summary = computed(() => {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-mono, monospace);
+}
+
+@keyframes ai-thinking-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    box-shadow: 0 0 0 0 rgba(var(--accent-rgb, 99 102 241), 0.35);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 8px 3px rgba(var(--accent-rgb, 99 102 241), 0.15);
+  }
 }
 </style>

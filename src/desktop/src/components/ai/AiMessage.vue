@@ -14,18 +14,12 @@ const { t } = useI18n()
 const marked = new Marked({ gfm: true, breaks: false })
 const expandedThinking = ref(false)
 
-// 思考是否仍在进行：工具一旦开始调用，thinkingActive 置 false，面板即显示“思考完成（N 秒）”，
-// 避免工具执行期间思考面板仍显示“思考中”，造成“工具比思考先开始”的错觉。
-const thinkingStillActive = computed(() => isStreamingNow.value && props.message.thinkingActive !== false)
-
 // 当前消息是否处于“正在生成”状态（仅最后一条助手消息为 true）
 const isStreamingNow = computed(() => props.isStreaming && props.index === 0)
-// 是否已开始输出正式答案：一旦主气泡有内容，思考面板即视为“流出阶段已结束”，
-// 不再显示“思考中”闪烁条，让思考卡片收敛为“已思考 N 秒”。
+// 是否已开始输出正式答案
 const hasAnswer = computed(() => (props.message.content?.trim().length || 0) > 0)
-// 是否已有子代理运行卡片（coordinator/workers/synthesis）。一旦有，就用具体卡片代替
-// 泛化的“正在思考”加载条，避免“任务规划都出来了，上面还卡着正在思考”。
-const hasAgentRuns = computed(() => (props.message.agentRuns?.length || 0) > 0)
+// 思考是否仍在流式生长：主答案开始输出，或工具已开始调用时，思考视为结束
+const isThinkingStreaming = computed(() => isStreamingNow.value && !hasAnswer.value && props.message.thinkingActive !== false)
 // 思考面板在生成期间强制展开：让用户看到思考过程流式“生长”，而不是生成完后一次性“蹦出来”。
 // 生成结束后保持展开便于回看，用户仍可手动折叠。
 watch(isStreamingNow, (now, before) => {
@@ -58,16 +52,13 @@ function roleLabel() {
     <div class="ai-msg-bubble">
       <div class="ai-msg-role">{{ roleLabel() }}</div>
 
-      <!-- 思考面板/加载条：
-           - 有思考内容 → 始终显示思考卡片
-           - 无思考内容但仍在流式、且主答案未开始、且无子代理卡片时 → 显示“正在思考”加载条
-           - 一旦子代理卡片出现，加载条让位给具体卡片 -->
+      <!-- 深度思考面板：极简折叠条，组件自己决定何时渲染 -->
       <AiThinking
-        v-if="message.role === 'assistant' && ((message.thinking?.length || 0) > 0 || (isStreamingNow && !hasAnswer && !hasAgentRuns))"
+        v-if="message.role === 'assistant'"
         :thinking="message.thinking || ''"
         :thinking-started-at="message.thinkingStartedAt"
-        :is-streaming="isStreamingNow && !hasAnswer"
-        :expanded="expandedThinking || isStreamingNow"
+        :is-streaming="isThinkingStreaming"
+        :expanded="expandedThinking || isThinkingStreaming"
         @toggle="expandedThinking = !expandedThinking"
       />
 

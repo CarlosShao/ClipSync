@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from '@/composables/useI18n'
 import type { ToolCall, ToolResult } from '@/api/ai'
-import { Wrench, ChevronDown, ChevronRight, CheckCircle2, Loader2 } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, CheckCircle2, Loader2 } from 'lucide-vue-next'
 
 const props = defineProps<{
   toolCalls?: ToolCall[]
   toolResults?: ToolResult[]
 }>()
+const { t } = useI18n()
 
 const expanded = ref<Set<string>>(new Set())
 
@@ -71,34 +73,32 @@ const steps = computed(() => {
 </script>
 
 <template>
-  <div v-if="steps.length > 0" class="ai-tool-timeline">
-    <div class="ai-tool-timeline-header">
-      <Wrench :size="13" />
-      <span>Agent 工作流</span>
-      <span class="ai-tool-timeline-count">{{ steps.length }} 步</span>
-    </div>
-    <div class="ai-tool-timeline-body">
-      <div v-for="step in steps" :key="step.id" class="ai-tool-step" :class="{ done: step.done }">
-        <div class="ai-tool-step-dot">
-          <CheckCircle2 v-if="step.done" :size="14" />
-          <Loader2 v-else :size="14" class="ai-tool-spin" />
+  <div v-if="steps.length > 0" class="ai-tool-log">
+    <div
+      v-for="step in steps"
+      :key="step.id"
+      class="ai-tool-log-line"
+      :class="{ done: step.done }"
+    >
+      <button class="ai-tool-log-summary" @click="toggle(step.id)">
+        <Loader2 v-if="!step.done" :size="12" class="ai-tool-log-spin" />
+        <CheckCircle2 v-else :size="12" class="ai-tool-log-done" />
+        <span class="ai-tool-log-text">
+          {{ step.done ? (t('ai_tool_called') || '已调用') : (t('ai_tool_calling') || '调用') }}
+          {{ getToolName(step.name) }}
+        </span>
+        <ChevronDown v-if="expanded.has(step.id)" :size="13" />
+        <ChevronRight v-else :size="13" />
+      </button>
+
+      <div v-if="expanded.has(step.id)" class="ai-tool-log-detail">
+        <div class="ai-tool-log-section">
+          <div class="ai-tool-log-section-title">{{ t('ai_tool_args') || '参数' }}</div>
+          <pre>{{ formatArgs(step.arguments) }}</pre>
         </div>
-        <div class="ai-tool-step-main">
-          <button class="ai-tool-step-title" @click="toggle(step.id)">
-            <span>{{ getToolName(step.name) }}</span>
-            <ChevronDown v-if="expanded.has(step.id)" :size="13" />
-            <ChevronRight v-else :size="13" />
-          </button>
-          <div v-if="expanded.has(step.id)" class="ai-tool-step-detail">
-            <div class="ai-tool-step-section">
-              <div class="ai-tool-step-section-title">参数</div>
-              <pre>{{ formatArgs(step.arguments) }}</pre>
-            </div>
-            <div v-if="step.result" class="ai-tool-step-section">
-              <div class="ai-tool-step-section-title">结果</div>
-              <pre>{{ formatResult(step.result.content) }}</pre>
-            </div>
-          </div>
+        <div v-if="step.result" class="ai-tool-log-section">
+          <div class="ai-tool-log-section-title">{{ t('ai_tool_result') || '结果' }}</div>
+          <pre>{{ formatResult(step.result.content) }}</pre>
         </div>
       </div>
     </div>
@@ -106,91 +106,77 @@ const steps = computed(() => {
 </template>
 
 <style scoped>
-.ai-tool-timeline {
-  border: 1px solid var(--border-subtle);
+.ai-tool-log {
+  display: inline-flex;
+  flex-direction: column;
+  margin-bottom: 6px;
   border-radius: var(--radius-md);
   overflow: hidden;
-  margin-bottom: 6px;
   background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  max-width: 100%;
 }
-.ai-tool-timeline-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  background: var(--accent-bg);
+
+.ai-tool-log-line {
   border-bottom: 1px solid var(--border-subtle);
+}
+.ai-tool-log-line:last-child {
+  border-bottom: none;
+}
+
+.ai-tool-log-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--text-secondary);
+  text-align: left;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
 }
-.ai-tool-timeline-count {
-  margin-left: auto;
-  font-weight: 400;
-  opacity: 0.8;
+.ai-tool-log-summary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
-.ai-tool-timeline-body {
-  padding: 8px 10px;
-}
-.ai-tool-step {
-  display: flex;
-  gap: 10px;
-  padding: 6px 0;
-}
-.ai-tool-step:not(:last-child) {
-  border-bottom: 1px solid var(--border-subtle);
-}
-.ai-tool-step-dot {
-  width: 18px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 2px;
-  color: var(--text-tertiary);
+
+.ai-tool-log-spin {
   flex-shrink: 0;
-}
-.ai-tool-step.done .ai-tool-step-dot {
-  color: var(--success, #16a34a);
-}
-.ai-tool-spin {
+  color: var(--accent);
   animation: spin 1s linear infinite;
 }
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.ai-tool-log-done {
+  flex-shrink: 0;
+  color: var(--success, #16a34a);
 }
-.ai-tool-step-main {
+.ai-tool-log-text {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.ai-tool-step-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 0;
-  border: none;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: left;
+
+.ai-tool-log-detail {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-subtle);
 }
-.ai-tool-step-title:hover {
-  color: var(--accent);
-}
-.ai-tool-step-detail {
-  margin-top: 6px;
-}
-.ai-tool-step-section {
+.ai-tool-log-section {
   margin-bottom: 6px;
 }
-.ai-tool-step-section-title {
+.ai-tool-log-section:last-child {
+  margin-bottom: 0;
+}
+.ai-tool-log-section-title {
   font-size: 11px;
   color: var(--text-tertiary);
   margin-bottom: 2px;
 }
-.ai-tool-step-section pre {
+.ai-tool-log-section pre {
   margin: 0;
   padding: 6px 8px;
   background: var(--bg-hover);
@@ -202,5 +188,9 @@ const steps = computed(() => {
   max-height: 160px;
   overflow-y: auto;
   color: var(--text-secondary);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

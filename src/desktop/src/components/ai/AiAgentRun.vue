@@ -115,22 +115,26 @@ watch(
 
 <style scoped>
 .ai-agent-run {
-  border: 1px solid var(--border-subtle);
+  display: inline-flex;
+  flex-direction: column;
   border-radius: var(--radius-md);
   background: var(--bg-surface);
-  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
   margin-bottom: 6px;
+  max-width: 100%;
+  overflow: hidden;
 }
 .ai-agent-run.status-failed {
   border-color: var(--danger, #ef4444);
 }
 .ai-agent-run-head {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 6px 12px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 .ai-agent-run-spin {
   color: var(--accent);
@@ -163,6 +167,7 @@ watch(
   max-width: 50%;
 }
 .ai-agent-run-content {
+  padding: 0 12px 8px;
   font-size: 12px;
   line-height: 1.5;
   white-space: normal;
