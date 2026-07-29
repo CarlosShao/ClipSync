@@ -276,13 +276,16 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
         }
       }
     }
-    // 主答案内容开始抵达（未携带 agentId 的增量）→ 立即把仍处于“规划中”的卡片收敛为 done，
+    // 主答案内容开始抵达（未携带 agentId 的增量）→ 立即把协调者（任务规划）卡片收敛为 done，
     // 避免“答案都出来了，协调器还在转圈”的违和感。worker/synthesis 仍按各自生命周期收敛。
     function convergePlanning() {
       for (const m of messages.value) {
         if (m.role !== 'assistant' || !m.agentRuns?.length) continue
         for (const run of m.agentRuns) {
-          if (run.status === 'planning') run.status = 'done'
+          // 不论是 planning 还是 working，只要主答案已输出，协调者即视为完成
+          if (run.kind === 'coordinator' && run.status !== 'done' && run.status !== 'failed') {
+            run.status = 'done'
+          }
         }
       }
     }
