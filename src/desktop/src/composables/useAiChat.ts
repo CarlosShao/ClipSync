@@ -66,7 +66,7 @@ export function useAiChat() {
       if (!selectedProviderId.value) {
         const def = providers.value.find((p) => p.is_default) || providers.value[0]
         selectedProviderId.value = def?.id || ''
-        selectedModel.value = def?.model || ''
+        selectedModel.value = settings.value?.selectedModels?.[def?.id || ''] || def?.model || ''
       }
     }
   }
@@ -88,10 +88,8 @@ export function useAiChat() {
           const p = providers.value.find((x) => x.id === res.data!.defaultProviderId)
           if (p) {
             selectedProviderId.value = p.id
-            if (res.data.defaultModel) {
-              p.model = res.data.defaultModel
-            }
-            selectedModel.value = p.model
+            // 优先使用 per-provider 记忆模型，其次用供应商默认 model
+            selectedModel.value = res.data.selectedModels?.[p.id] || res.data.defaultModel || p.model
           }
         }
       }
@@ -137,8 +135,14 @@ export function useAiChat() {
     selectedProviderId.value = id
     const p = providers.value.find((x) => x.id === id)
     if (p) {
-      selectedModel.value = p.model
-      persistSettings({ defaultProviderId: id, defaultModel: p.model })
+      // per-provider 记忆模型 > 全局默认 > 供应商默认
+      const remembered = settings.value?.selectedModels?.[p.id]
+      selectedModel.value = remembered || settings.value?.defaultModel || p.model
+      persistSettings({
+        defaultProviderId: id,
+        defaultModel: selectedModel.value,
+        selectedModels: { ...settings.value?.selectedModels, [id]: selectedModel.value },
+      })
     }
   }
 
@@ -148,10 +152,10 @@ export function useAiChat() {
     selectedModel.value = model
     const p = providers.value.find((x) => x.id === selectedProviderId.value)
     if (p) {
-      p.model = model
-      // 持久化到供应商（provider.model）与全局偏好
-      updateProvider(p.id, { model }).catch(() => {})
-      persistSettings({ defaultModel: model })
+      persistSettings({
+        defaultModel: model,
+        selectedModels: { ...settings.value?.selectedModels, [p.id]: model },
+      })
     }
   }
 
@@ -247,6 +251,34 @@ export function useAiChat() {
 
     const controller = new AbortController()
     abortCtrl.value = controller
+
+    // 最后收到增量的时间戳：用于前端静默看门狗，防止连接挂起导致 isStreaming 永远卡 true。
+    let lastActivityAt = Date.now()
+    // 流结束（含正常结束与异常）后，把任何仍停留在非终态的 agent 卡片收敛为终态，
+    // 彻底杜绝“子代理永久转圈”。跨消息生效：也会清理上一条挂掉的并行请求残留的卡片。
+    function settleAgentRuns() {
+      for (const m of messages.value) {
+        if (m.role !== 'assistant' || !m.agentRuns?.length) continue
+        for (const run of m.agentRuns) {
+          if (run.status === 'planning' || run.status === 'working' || run.status === 'synthesis') {
+            if (run.content || run.thinking) {
+              run.status = 'done'
+            } else {
+              run.status = 'failed'
+              if (!run.error) run.error = 'stream ended unexpectedly'
+            }
+          }
+        }
+      }
+    }
+    // 静默看门狗：超过 200s 没有任何增量（后端 180s 上游超时本应已关流），强制中止并复位，
+    // 作为后端异常挂死时的最后兜底，避免 isStreaming 永久卡 true / 思考面板永久“思考中”。
+    const silenceWatchdog = setInterval(() => {
+      if (Date.now() - lastActivityAt > 200_000) {
+        console.warn('[useAiChat] stream silent >200s, aborting to avoid stuck state')
+        controller.abort()
+      }
+    }, 10_000)
 
     // 用于从 <think>...</think> 中提取思考过程。
     const thinkState = {
@@ -362,6 +394,7 @@ export function useAiChat() {
         },
         signal: controller.signal,
         onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => {
+          lastActivityAt = Date.now()
           // 生命周期事件（coordinator/worker/synthesis 状态切换）始终 upsert 到 agentRuns
           if (meta?.agent) {
             upsertAgentRun(meta.agent)
@@ -426,8 +459,11 @@ export function useAiChat() {
       const last = messages.value[messages.value.length - 1]
       if (last && last.role === 'assistant') last.isError = true
     } finally {
+      clearInterval(silenceWatchdog)
       isStreaming.value = false
       abortCtrl.value = null
+      // 收敛所有残留的非终态 agent 卡片（含上一条挂掉的并行请求残留），避免永久转圈
+      settleAgentRuns()
       // 保存当前对话的消息（不等待，失败静默）
       conv.saveCurrent(messages.value).catch(() => {})
     }

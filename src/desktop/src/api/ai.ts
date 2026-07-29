@@ -200,6 +200,11 @@ export function getProviderModels(id: string) {
   return api<{ models: string[] }>('GET', `/api/ai/providers/${id}/models`)
 }
 
+// 未保存供应商预览可用模型列表（不落地）
+export function fetchProviderModels(input: { provider: string; baseUrl?: string; apiKey: string }) {
+  return api<{ models: string[] }>('POST', '/api/ai/providers/fetch-models', input)
+}
+
 // AI 用户偏好
 export function getSettings() {
   return api<AiSettings>('GET', '/api/ai/settings')

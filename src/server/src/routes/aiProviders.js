@@ -52,8 +52,16 @@ router.post('/providers', apiLimiter, async (req, res) => {
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ error: 'Name is required' })
     }
-    if (!model || typeof model !== 'string' || model.trim().length === 0) {
-      return res.status(400).json({ error: 'Model is required' })
+
+    // models 多选列表：至少选一个模型；model 字段取 models[0]（或显式传入的 model）
+    const selectedModels = Array.isArray(models)
+      ? models.filter((m) => typeof m === 'string' && m.trim().length > 0)
+      : []
+    const activeModel = typeof model === 'string' && model.trim().length > 0
+      ? model.trim()
+      : selectedModels[0] || ''
+    if (!activeModel) {
+      return res.status(400).json({ error: 'At least one model is required' })
     }
 
     let encryptedKey = null
@@ -62,12 +70,7 @@ router.post('/providers', apiLimiter, async (req, res) => {
     }
 
     const wantDefault = isDefault === true
-
-    // models：可选，客户端可传入已知模型列表；不传则默认空数组（由 /providers/:id/models 刷新补全）
-    let modelsJson = '[]'
-    if (Array.isArray(models)) {
-      modelsJson = JSON.stringify(models.filter((m) => typeof m === 'string'))
-    }
+    const modelsJson = JSON.stringify(selectedModels)
 
     const client = await pool.connect()
     try {
@@ -80,7 +83,7 @@ router.post('/providers', apiLimiter, async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
          RETURNING id, provider, name, base_url, model, models, is_default, created_at, updated_at,
                    (api_key_encrypted IS NOT NULL AND api_key_encrypted <> '') AS has_key`,
-        [req.userId, provider, name.trim(), encryptedKey, baseUrl || null, model.trim(), modelsJson, wantDefault]
+        [req.userId, provider, name.trim(), encryptedKey, baseUrl || null, activeModel, modelsJson, wantDefault]
       )
       await client.query('COMMIT')
       res.status(201).json(result.rows[0])
@@ -110,13 +113,15 @@ router.put('/providers/:id', apiLimiter, async (req, res) => {
 
     const newName = name != null ? String(name).trim() : cur.name
     const newBaseUrl = baseUrl != null ? (baseUrl || null) : cur.base_url
-    const newModel = model != null ? String(model).trim() : cur.model
 
-    // models：仅当客户端显式传入数组时才覆盖（否则保留已刷新的列表）
-    let modelsJson = null
-    if (Array.isArray(models)) {
-      modelsJson = JSON.stringify(models.filter((m) => typeof m === 'string'))
-    }
+    // models 多选列表：客户端显式传入数组时覆盖；同时保证 model 落在 models 内
+    const selectedModels = Array.isArray(models)
+      ? models.filter((m) => typeof m === 'string' && m.trim().length > 0)
+      : null
+    const newModel = model != null
+      ? String(model).trim()
+      : (selectedModels?.[0] || cur.model)
+    const modelsJson = selectedModels ? JSON.stringify(selectedModels) : null
 
     // apiKey：提供且非空 → 重新加密覆盖；不提供 → 保留旧值
     let encryptedKey = cur.api_key_encrypted
@@ -182,6 +187,24 @@ router.get('/providers/:id/models', apiLimiter, async (req, res) => {
     res.json({ models })
   } catch (err) {
     logger.error('Get provider models error:', err)
+    res.status(500).json({ error: 'Failed to fetch provider models' })
+  }
+})
+
+// POST /api/ai/providers/fetch-models - 未保存供应商也能刷新模型列表（不落地）
+router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
+  try {
+    const { provider, baseUrl, apiKey } = req.body || {}
+    if (!provider || !getPreset(provider)) {
+      return res.status(400).json({ error: 'Invalid provider' })
+    }
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
+      return res.status(400).json({ error: 'API key is required', models: [] })
+    }
+    const models = await fetchProviderModels({ provider, baseUrl, apiKey: apiKey.trim() })
+    res.json({ models })
+  } catch (err) {
+    logger.error('Fetch models (preview) error:', err)
     res.status(500).json({ error: 'Failed to fetch provider models' })
   }
 })

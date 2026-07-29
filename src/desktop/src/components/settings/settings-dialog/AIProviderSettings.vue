@@ -16,6 +16,7 @@ import {
   deleteProvider,
   testProvider,
   getProviderModels,
+  fetchProviderModels,
 } from '@/api/ai'
 import type { AiProvider, AiProviderPreset } from '@/api/ai'
 
@@ -31,8 +32,10 @@ const formProvider = ref('')
 const formName = ref('')
 const formApiKey = ref('')
 const formBaseUrl = ref('')
-const formModel = ref('')
-const formModels = ref<string[]>([]) // 该配置可用模型列表（上游刷新得到）
+// 多选：该配置已启用的模型（tags 形式）
+const formSelectedModels = ref<string[]>([])
+// 上游刷新得到的完整模型列表（用于点选）
+const formModels = ref<string[]>([])
 const formIsDefault = ref(false)
 const saving = ref(false)
 const refreshingModels = ref(false)
@@ -68,7 +71,9 @@ function onProviderChange(v: string) {
   const preset = presets.value.find((x) => x.provider === v)
   if (preset) {
     if (!formBaseUrl.value) formBaseUrl.value = preset.defaultBaseUrl
-    if (!formModel.value) formModel.value = preset.defaultModel
+    if (formSelectedModels.value.length === 0) {
+      formSelectedModels.value = [preset.defaultModel]
+    }
   }
 }
 
@@ -78,7 +83,7 @@ function resetForm() {
   formName.value = ''
   formApiKey.value = ''
   formBaseUrl.value = ''
-  formModel.value = ''
+  formSelectedModels.value = []
   formModels.value = []
   formIsDefault.value = false
   formError.value = ''
@@ -90,20 +95,53 @@ function startEdit(p: AiProvider) {
   formName.value = p.name
   formApiKey.value = '' // 不回显密钥；留空表示不修改
   formBaseUrl.value = p.base_url || ''
-  formModel.value = p.model
-  formModels.value = Array.isArray(p.models) ? p.models : []
+  formSelectedModels.value = Array.isArray(p.models) && p.models.length > 0 ? [...p.models] : [p.model]
+  formModels.value = Array.isArray(p.models) ? [...p.models] : []
   formIsDefault.value = p.is_default
   formError.value = ''
 }
 
-// 刷新该供应商可用模型列表（上游 /models），并写回后端
+function toggleModel(m: string) {
+  const idx = formSelectedModels.value.indexOf(m)
+  if (idx >= 0) {
+    formSelectedModels.value = formSelectedModels.value.filter((x) => x !== m)
+  } else {
+    formSelectedModels.value = [...formSelectedModels.value, m]
+  }
+}
+
+// 刷新该供应商可用模型列表（上游 /models）。
+// 已保存供应商走后端解密 key；未保存供应商用表单中的 key/baseUrl 直接拉取（不落地）。
 async function refreshModels() {
-  if (!editingId.value) return
+  if (refreshingModels.value) return
+  const hasKey = formApiKey.value.trim().length > 0
+  if (!hasKey) {
+    formError.value = t('ai_api_key_required')
+    return
+  }
   refreshingModels.value = true
+  formError.value = ''
   try {
-    const res = await getProviderModels(editingId.value)
+    let res
+    if (editingId.value) {
+      res = await getProviderModels(editingId.value)
+    } else {
+      res = await fetchProviderModels({
+        provider: formProvider.value,
+        baseUrl: formBaseUrl.value.trim(),
+        apiKey: formApiKey.value.trim(),
+      })
+    }
     if (res.ok && res.data) {
-      formModels.value = res.data.models || []
+      const list = res.data.models || []
+      formModels.value = list
+      // 把当前已选但不在新列表里的模型合并进去，避免用户先手工输入后被刷新清空
+      const selected = new Set([...formSelectedModels.value, ...list.filter((m) => formSelectedModels.value.includes(m))])
+      // 若当前未选任何模型，默认勾选第一个
+      if (selected.size === 0 && list.length > 0) {
+        selected.add(list[0])
+      }
+      formSelectedModels.value = Array.from(selected)
       toast.show(t('ai_models_refreshed'), 'success')
     } else {
       toast.show(res.error || t('ai_models_refresh_fail'), 'error')
@@ -125,7 +163,7 @@ async function save() {
     formError.value = t('ai_name_required')
     return
   }
-  if (!formModel.value.trim()) {
+  if (formSelectedModels.value.length === 0) {
     formError.value = t('ai_model_required')
     return
   }
@@ -136,7 +174,8 @@ async function save() {
       name: formName.value.trim(),
       apiKey: formApiKey.value || undefined,
       baseUrl: formBaseUrl.value.trim() || undefined,
-      model: formModel.value.trim(),
+      model: formSelectedModels.value[0],
+      models: formSelectedModels.value,
       isDefault: formIsDefault.value,
     }
     const res = editingId.value
@@ -144,18 +183,8 @@ async function save() {
       : await createProvider(payload)
     if (res.ok) {
       toast.show(t('ai_saved'), 'success')
-      // 保存后保持表单打开，便于继续选择模型（尤其新建的供应商）
-      if (!editingId.value && res.data?.id) {
-        editingId.value = res.data.id
-        formProvider.value = res.data.provider
-        formName.value = res.data.name
-        formBaseUrl.value = res.data.base_url || ''
-        formIsDefault.value = res.data.is_default
-      }
-      formModels.value = res.data?.models || formModels.value
-      // 已配置密钥则自动刷新模型列表（满足“配置 key 后自动刷新可用模型”）
-      if (res.data?.has_key) refreshModels()
       await load()
+      resetForm()
     } else {
       formError.value = res.error || t('ai_save_failed')
     }
@@ -216,7 +245,13 @@ onMounted(load)
             <span v-if="p.has_key" class="ai-badge ai-badge--key">{{ t('ai_key_set') }}</span>
             <span v-else class="ai-badge ai-badge--nokey">{{ t('ai_no_key') }}</span>
           </div>
-          <div class="sg-hint">{{ presetLabel(p.provider) }} · {{ p.model }}</div>
+          <div class="sg-hint">
+            {{ presetLabel(p.provider) }} ·
+            <template v-if="Array.isArray(p.models) && p.models.length > 1">
+              {{ p.models[0] }} 等 {{ p.models.length }} 个模型
+            </template>
+            <template v-else>{{ p.model }}</template>
+          </div>
         </div>
         <div class="ai-card-actions">
           <Button size="sm" variant="outline" class="min-w-[100px]" :disabled="testingId === p.id" @click="test(p.id)">
@@ -294,28 +329,50 @@ onMounted(load)
 
       <div class="ai-field">
         <label class="ai-label">{{ t('ai_model') }}</label>
-        <Input v-model="formModel" :placeholder="t('ai_model_ph')" />
+        <!-- 已选模型以 tag 形式展示，可直接删除；亦可从下方列表点选添加 -->
+        <div v-if="formSelectedModels.length" class="ai-models">
+          <div class="ai-models-tags">
+            <button
+              v-for="m in formSelectedModels"
+              :key="m"
+              type="button"
+              class="ai-model-tag ai-model-tag--selected"
+              @click="toggleModel(m)"
+            >
+              {{ m }}
+              <span class="ai-model-remove">×</span>
+            </button>
+          </div>
+        </div>
+        <Input
+          v-model="formSelectedModels[formSelectedModels.length - 1]"
+          :placeholder="t('ai_model_ph')"
+          @keydown.enter.prevent="
+            ($event.target as HTMLInputElement)?.value &&
+              toggleModel(($event.target as HTMLInputElement).value)
+          "
+        />
         <div v-if="formModels.length" class="ai-models">
+          <div class="ai-models-hint">{{ t('ai_models_hint') }}</div>
           <div class="ai-models-tags">
             <button
               v-for="m in formModels"
               :key="m"
               type="button"
               class="ai-model-tag"
-              :class="{ active: formModel === m }"
-              @click="formModel = m"
+              :class="{ active: formSelectedModels.includes(m) }"
+              @click="toggleModel(m)"
             >
               {{ m }}
             </button>
           </div>
-          <div class="ai-models-hint">{{ t('ai_models_hint') }}</div>
         </div>
         <div class="ai-models-actions">
           <Button
             size="sm"
             variant="outline"
             class="min-w-[100px]"
-            :disabled="!editingId || refreshingModels"
+            :disabled="refreshingModels || !formApiKey.trim()"
             @click="refreshModels"
           >
             <RefreshCw v-if="!refreshingModels" :size="12" />
@@ -478,6 +535,30 @@ onMounted(load)
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 500;
+}
+.ai-model-tag--selected {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+  padding-right: 8px;
+}
+.ai-model-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-bg);
+  font-size: 10px;
+  line-height: 1;
+}
+.ai-model-tag--selected:hover .ai-model-remove {
+  background: var(--danger, #ef4444);
+  color: #fff;
 }
 .ai-models-hint {
   font-size: 11px;

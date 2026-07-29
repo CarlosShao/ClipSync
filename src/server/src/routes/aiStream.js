@@ -93,6 +93,22 @@ export async function collectToolCallsFromStream(reader, decoder, sendDelta, log
 }
 
 /**
+ * 给 promise 加超时：超过 ms 毫秒未完成则 reject，避免某个工具/上游调用永久挂起，
+ * 把整个多代理编排（含 Promise.allSettled）拖死，造成流永不关闭、子代理卡片永久转圈。
+ */
+function withTimeout(promise, ms, msg) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(msg)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
+// 单工具执行超时（必须显著小于 aiChat.js 的 180s 上游整体超时，保证编排能在上游超时前收敛）。
+// 工具多为本地 DB / 内部查询，120s 已极其宽裕；真正卡死时按失败处理而非无限等待。
+const TOOL_EXEC_TIMEOUT_MS = 120_000
+
+/**
  * 执行同一轮内的多个工具调用（并行，互不依赖，缩短整体延迟）
  * 每个工具完成即向前端推送 tool_call / tool_result 增量，保证时间线实时刷新。
  *
@@ -128,8 +144,17 @@ export async function handleToolCalls(toolCalls, userId, sendDelta, agentId = nu
         }]
       })
 
-      // 执行工具（同一轮内并行）
-      const result = await executeTool(toolName, args, userId)
+      // 执行工具（同一轮内并行），带超时保护，避免挂起拖垮整个编排
+      let result
+      try {
+        result = await withTimeout(
+          executeTool(toolName, args, userId),
+          TOOL_EXEC_TIMEOUT_MS,
+          `tool ${toolName} timed out after ${TOOL_EXEC_TIMEOUT_MS}ms`,
+        )
+      } catch (err) {
+        result = { error: String(err?.message || err), timedOut: true }
+      }
 
       // 通知前端工具执行结果
       sendDelta({

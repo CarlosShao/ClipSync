@@ -58,11 +58,30 @@ router.post('/chat', apiLimiter, async (req, res) => {
     let contentChunks = 0
     let lastDiagAt = Date.now()
 
+    // 跟踪各 agent 生命周期状态：确保流结束前，所有“已发出但非终态”的 agent 卡片
+    // 都被收敛为终态（failed），否则前端对应卡片会因永远收不到 done/failed 而永久转圈。
+    // 覆盖两类场景：① 编排中途异常抛出（走 catch→safeFinish）；② 上游/工具挂起被超时中止。
+    const agentLifecycle = new Map()
+
     // 幂等结束：流已结束时绝不再次 write，杜绝 ERR_STREAM_WRITE_AFTER_END 把 SSE 连接异常撕断。
     // 这直接对应“思考卡在小半程 → 突然一下全出来”的现象：连接中途崩溃后客户端只能延迟 reconcile 状态。
     const safeFinish = () => {
       if (res.writableEnded) return
       try {
+        // 先收敛残留非终态 agent：避免前端卡片永久转圈
+        for (const [id, status] of agentLifecycle) {
+          if (status === 'planning' || status === 'working' || status === 'synthesis') {
+            try {
+              res.write(
+                `data: ${JSON.stringify({
+                  choices: [{ delta: { agent: { id, status: 'failed', error: 'stream closed before completion' } } }],
+                })}\n\n`,
+              )
+            } catch {
+              /* ignore */
+            }
+          }
+        }
         res.write('data: [DONE]\n\n')
         res.flush?.()
         res.end()
@@ -83,6 +102,10 @@ router.post('/chat', apiLimiter, async (req, res) => {
     const sendDelta = (obj) => {
       if (res.writableEnded) return
       const delta = obj?.choices?.[0]?.delta
+      // 记录 agent 生命周期状态，供 safeFinish 收敛残留卡片
+      if (delta?.agent?.id) {
+        agentLifecycle.set(delta.agent.id, delta.agent.status)
+      }
       if (delta?.thinking) {
         thinkingChunks++
         diagLog('thinking', thinkingChunks)

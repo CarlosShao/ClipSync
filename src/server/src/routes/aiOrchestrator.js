@@ -299,6 +299,12 @@ export async function runOrchestration({
 
   logger.info(`[AI][orchestrator] dispatching ${agents.length} agents: ${agents.map((a) => a.id).join(', ')}`)
 
+  // 协调器已完成规划（已成功拆解并下发子代理），显式标记 done，
+  // 否则协调器卡片会永远停留在“规划中”转圈（前端 spinner 只看 status）。
+  sendDelta({
+    choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'done', kind: 'coordinator' } } }],
+  })
+
   // —— 阶段二：并行子代理 ——
   const workerResults = await runWorkers({
     agents, messages, providerRow, apiKey, userId, abortSignal, sendDelta, logChunk,
