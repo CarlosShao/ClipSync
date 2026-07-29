@@ -987,5 +987,12 @@
   "ai_agent_working": "Working",
   "ai_agent_synthesis": "Synthesizing",
   "ai_agent_done": "Done",
-  "ai_agent_failed": "Failed"
+  "ai_agent_failed": "Failed",
+  "ai_select_model": "Select model",
+  "ai_switch_provider": "Switch provider",
+  "ai_models_hint": "Click a tag to choose the active model. After configuring a key you can refresh the full model list for this provider.",
+  "ai_refresh_models": "Refresh models",
+  "ai_refreshing": "Refreshing...",
+  "ai_models_refreshed": "Model list refreshed",
+  "ai_models_refresh_fail": "Failed to refresh model list"
 }

@@ -7,6 +7,7 @@ import Input from '@/components/ui/input/Input.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
 import CustomSelect from '@/components/ui/select/CustomSelect.vue'
 import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
+import { RefreshCw } from 'lucide-vue-next'
 import {
   getProviders,
   getPresets,
@@ -14,6 +15,7 @@ import {
   updateProvider,
   deleteProvider,
   testProvider,
+  getProviderModels,
 } from '@/api/ai'
 import type { AiProvider, AiProviderPreset } from '@/api/ai'
 
@@ -30,8 +32,10 @@ const formName = ref('')
 const formApiKey = ref('')
 const formBaseUrl = ref('')
 const formModel = ref('')
+const formModels = ref<string[]>([]) // 该配置可用模型列表（上游刷新得到）
 const formIsDefault = ref(false)
 const saving = ref(false)
+const refreshingModels = ref(false)
 const formError = ref('')
 const confirmingDeleteId = ref<string | null>(null)
 const testingId = ref<string | null>(null)
@@ -75,6 +79,7 @@ function resetForm() {
   formApiKey.value = ''
   formBaseUrl.value = ''
   formModel.value = ''
+  formModels.value = []
   formIsDefault.value = false
   formError.value = ''
 }
@@ -86,8 +91,28 @@ function startEdit(p: AiProvider) {
   formApiKey.value = '' // 不回显密钥；留空表示不修改
   formBaseUrl.value = p.base_url || ''
   formModel.value = p.model
+  formModels.value = Array.isArray(p.models) ? p.models : []
   formIsDefault.value = p.is_default
   formError.value = ''
+}
+
+// 刷新该供应商可用模型列表（上游 /models），并写回后端
+async function refreshModels() {
+  if (!editingId.value) return
+  refreshingModels.value = true
+  try {
+    const res = await getProviderModels(editingId.value)
+    if (res.ok && res.data) {
+      formModels.value = res.data.models || []
+      toast.show(t('ai_models_refreshed'), 'success')
+    } else {
+      toast.show(res.error || t('ai_models_refresh_fail'), 'error')
+    }
+  } catch (e: any) {
+    toast.show(String(e?.message || e), 'error')
+  } finally {
+    refreshingModels.value = false
+  }
 }
 
 async function save() {
@@ -119,7 +144,17 @@ async function save() {
       : await createProvider(payload)
     if (res.ok) {
       toast.show(t('ai_saved'), 'success')
-      resetForm()
+      // 保存后保持表单打开，便于继续选择模型（尤其新建的供应商）
+      if (!editingId.value && res.data?.id) {
+        editingId.value = res.data.id
+        formProvider.value = res.data.provider
+        formName.value = res.data.name
+        formBaseUrl.value = res.data.base_url || ''
+        formIsDefault.value = res.data.is_default
+      }
+      formModels.value = res.data?.models || formModels.value
+      // 已配置密钥则自动刷新模型列表（满足“配置 key 后自动刷新可用模型”）
+      if (res.data?.has_key) refreshModels()
       await load()
     } else {
       formError.value = res.error || t('ai_save_failed')
@@ -260,6 +295,33 @@ onMounted(load)
       <div class="ai-field">
         <label class="ai-label">{{ t('ai_model') }}</label>
         <Input v-model="formModel" :placeholder="t('ai_model_ph')" />
+        <div v-if="formModels.length" class="ai-models">
+          <div class="ai-models-tags">
+            <button
+              v-for="m in formModels"
+              :key="m"
+              type="button"
+              class="ai-model-tag"
+              :class="{ active: formModel === m }"
+              @click="formModel = m"
+            >
+              {{ m }}
+            </button>
+          </div>
+          <div class="ai-models-hint">{{ t('ai_models_hint') }}</div>
+        </div>
+        <div class="ai-models-actions">
+          <Button
+            size="sm"
+            variant="outline"
+            class="min-w-[100px]"
+            :disabled="!editingId || refreshingModels"
+            @click="refreshModels"
+          >
+            <RefreshCw v-if="!refreshingModels" :size="12" />
+            {{ refreshingModels ? t('ai_refreshing') : t('ai_refresh_models') }}
+          </Button>
+        </div>
       </div>
 
       <div class="sg-row ai-default-row">
@@ -388,6 +450,46 @@ onMounted(load)
 }
 .ai-default-row {
   padding: 10px 4px;
+}
+.ai-models {
+  margin-top: 10px;
+}
+.ai-models-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ai-model-tag {
+  padding: 4px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ai-model-tag:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ai-model-tag.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+}
+.ai-models-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 6px;
+}
+.ai-models-actions {
+  margin-top: 10px;
+}
+.ai-models-actions :deep(.ai-model-tag svg) {
+  display: inline-block;
+  vertical-align: middle;
 }
 .ai-error {
   color: var(--danger, #ef4444);

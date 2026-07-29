@@ -7,6 +7,7 @@ export interface AiProvider {
   name: string
   base_url: string | null
   model: string
+  models?: string[] // 该配置下可用模型列表（由上游 /models 刷新得到）
   is_default: boolean
   created_at: string
   updated_at: string
@@ -85,6 +86,8 @@ export interface ChatOptions {
   thinkingStrength?: 'low' | 'medium' | 'high'
   // 多代理并行编排开关（仅当用户手动开启时触发）
   parallel?: boolean
+  // 本次请求使用的模型（覆盖供应商默认 model，用于多选标签场景）
+  model?: string
 }
 
 export interface AiConversation {
@@ -112,7 +115,19 @@ export interface AiProviderInput {
   apiKey?: string
   baseUrl?: string
   model: string
+  models?: string[]
   isDefault?: boolean
+}
+
+// AI 用户偏好（入库持久化）
+export interface AiSettings {
+  defaultProviderId: string | null
+  defaultModel: string | null
+  selectedModels: Record<string, string>
+  defaultMode: 'ask' | 'agent'
+  thinkingEnabled: boolean
+  thinkingStrength: 'low' | 'medium' | 'high'
+  parallelEnabled: boolean
 }
 
 // ===== CRUD =====
@@ -178,6 +193,20 @@ export function deleteProvider(id: string) {
 
 export function testProvider(id: string) {
   return api<{ ok: boolean; detail?: string; status?: number }>('POST', `/api/ai/providers/${id}/test`)
+}
+
+// 拉取某供应商可用模型列表（上游 /models 刷新），返回 { models: string[] }
+export function getProviderModels(id: string) {
+  return api<{ models: string[] }>('GET', `/api/ai/providers/${id}/models`)
+}
+
+// AI 用户偏好
+export function getSettings() {
+  return api<AiSettings>('GET', '/api/ai/settings')
+}
+
+export function saveSettings(settings: Partial<AiSettings>) {
+  return api<AiSettings>('PUT', '/api/ai/settings', settings)
 }
 
 // ===== Conversations =====

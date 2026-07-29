@@ -1,6 +1,6 @@
 import { ref, shallowRef, computed } from 'vue'
-import { getProviders, getAiContext, streamChat } from '@/api/ai'
-import type { AiProvider, ChatMessage, AiContext, AgentRun, StreamDeltaMeta } from '@/api/ai'
+import { getProviders, getAiContext, streamChat, getSettings, saveSettings, updateProvider } from '@/api/ai'
+import type { AiProvider, ChatMessage, AiContext, AgentRun, StreamDeltaMeta, AiSettings, AiConversation } from '@/api/ai'
 import { buildSystemPrompt } from '@/utils/aiSystemPrompt'
 import { useAiConversations } from './useAiConversations'
 
@@ -40,6 +40,8 @@ function isNativeReasoningModel(model: string): boolean {
 export function useAiChat() {
   const providers = ref<AiProvider[]>([])
   const selectedProviderId = ref<string>('')
+  const selectedModel = ref<string>('') // 当前选中的模型（= 选中供应商的 model）
+  const settings = ref<AiSettings | null>(null) // 用户 AI 偏好（DB 持久化）
   const messages = ref<ChatMessage[]>([])
   const isStreaming = ref(false)
   const error = ref('')
@@ -64,6 +66,7 @@ export function useAiChat() {
       if (!selectedProviderId.value) {
         const def = providers.value.find((p) => p.is_default) || providers.value[0]
         selectedProviderId.value = def?.id || ''
+        selectedModel.value = def?.model || ''
       }
     }
   }
@@ -72,6 +75,45 @@ export function useAiChat() {
     if (initialized.value) return
     initialized.value = true
     await Promise.all([loadProviders(), conv.loadConversations()])
+    await loadSettings()
+  }
+
+  // 加载并应用用户 AI 偏好（默认供应商 / 模型 / 模式 / 思考 / 并行）
+  async function loadSettings() {
+    try {
+      const res = await getSettings()
+      if (res.ok && res.data) {
+        settings.value = res.data
+        if (res.data.defaultProviderId) {
+          const p = providers.value.find((x) => x.id === res.data!.defaultProviderId)
+          if (p) {
+            selectedProviderId.value = p.id
+            if (res.data.defaultModel) {
+              p.model = res.data.defaultModel
+            }
+            selectedModel.value = p.model
+          }
+        }
+      }
+    } catch {
+      /* 偏好加载失败不阻塞聊天 */
+    }
+  }
+
+  // 增量持久化 AI 偏好到 DB（不阻塞 UI）
+  function persistSettings(patch: Partial<AiSettings>) {
+    const next: AiSettings = {
+      defaultProviderId: settings.value?.defaultProviderId ?? null,
+      defaultModel: settings.value?.defaultModel ?? null,
+      selectedModels: settings.value?.selectedModels ?? {},
+      defaultMode: settings.value?.defaultMode ?? 'ask',
+      thinkingEnabled: settings.value?.thinkingEnabled ?? false,
+      thinkingStrength: settings.value?.thinkingStrength ?? 'medium',
+      parallelEnabled: settings.value?.parallelEnabled ?? false,
+      ...patch,
+    }
+    settings.value = next
+    saveSettings(next).catch(() => {})
   }
 
   async function fetchContext(): Promise<AiContext | null> {
@@ -93,6 +135,24 @@ export function useAiChat() {
 
   function selectProvider(id: string) {
     selectedProviderId.value = id
+    const p = providers.value.find((x) => x.id === id)
+    if (p) {
+      selectedModel.value = p.model
+      persistSettings({ defaultProviderId: id, defaultModel: p.model })
+    }
+  }
+
+  // 选择当前供应商下的某个模型（多选标签场景）
+  async function selectModel(model: string) {
+    if (!model) return
+    selectedModel.value = model
+    const p = providers.value.find((x) => x.id === selectedProviderId.value)
+    if (p) {
+      p.model = model
+      // 持久化到供应商（provider.model）与全局偏好
+      updateProvider(p.id, { model }).catch(() => {})
+      persistSettings({ defaultModel: model })
+    }
   }
 
   async function newConversation(options?: {
@@ -104,7 +164,7 @@ export function useAiChat() {
     const created = await conv.createNew({
       title: options?.title || '新对话',
       providerId: selectedProviderId.value,
-      model: p?.model || undefined,
+      model: selectedModel.value || p?.model || undefined,
       mode: options?.mode,
       thinkingEnabled: options?.thinkingEnabled,
     })
@@ -245,7 +305,7 @@ export function useAiChat() {
       : undefined
 
     const selectedProvider = providers.value.find((p) => p.id === selectedProviderId.value)
-    const modelName = selectedProvider?.model || ''
+    const modelName = selectedModel.value || selectedProvider?.model || ''
     const nativeReasoning = isNativeReasoningModel(modelName)
 
     const systemPrompt = buildSystemPrompt(ctxData)
@@ -298,6 +358,7 @@ export function useAiChat() {
           thinking: options.thinking,
           thinkingStrength: options.thinkingStrength,
           parallel: options.parallel,
+          model: selectedModel.value || selectedProvider?.model || undefined,
         },
         signal: controller.signal,
         onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => {
@@ -386,6 +447,9 @@ export function useAiChat() {
   return {
     providers,
     selectedProviderId,
+    selectedModel,
+    settings,
+    persistSettings,
     messages,
     isStreaming,
     error,
@@ -396,6 +460,7 @@ export function useAiChat() {
     init,
     loadProviders,
     selectProvider,
+    selectModel,
     send,
     stop,
     clear,

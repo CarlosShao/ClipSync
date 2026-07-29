@@ -16,6 +16,9 @@ const { t } = useI18n()
 const {
   providers,
   selectedProviderId,
+  selectedModel,
+  settings,
+  persistSettings,
   messages,
   isStreaming,
   error,
@@ -26,6 +29,7 @@ const {
   init,
   loadProviders,
   selectProvider,
+  selectModel,
   send,
   stop,
   clear,
@@ -43,21 +47,50 @@ const {
 // 记忆面板展开状态
 const showMemory = ref(false)
 
-// 模式：ask 或 agent
-const mode = ref<'ask' | 'agent'>('ask')
+// 模式：ask 或 agent（localStorage 作瞬时回退，DB 加载后由 settings 覆盖）
+const mode = ref<'ask' | 'agent'>((localStorage.getItem('ai-mode') as 'ask' | 'agent') || 'ask')
 
-// 思考模式（从 localStorage 恢复）
+// 思考模式（localStorage 瞬时回退，DB 为准）
 const thinkingEnabled = ref(localStorage.getItem('ai-thinking-enabled') === 'true')
 const thinkingStrength = ref<'low' | 'medium' | 'high'>(
   (localStorage.getItem('ai-thinking-strength') as 'low' | 'medium' | 'high') || 'medium'
 )
 
-watch(thinkingEnabled, (v) => localStorage.setItem('ai-thinking-enabled', String(v)))
-watch(thinkingStrength, (v) => localStorage.setItem('ai-thinking-strength', v))
-
-// 并行多代理开关（从 localStorage 恢复，默认关闭）
+// 并行多代理开关（localStorage 瞬时回退，DB 为准）
 const parallelEnabled = ref(localStorage.getItem('ai-parallel') === 'true')
-watch(parallelEnabled, (v) => localStorage.setItem('ai-parallel', String(v)))
+
+// DB 偏好加载后：以 DB 为准覆盖本地（仅一次）
+let settingsApplied = false
+watch(
+  settings,
+  (s) => {
+    if (s && !settingsApplied) {
+      settingsApplied = true
+      mode.value = s.defaultMode || 'ask'
+      thinkingEnabled.value = s.thinkingEnabled || false
+      thinkingStrength.value = s.thinkingStrength || 'medium'
+      parallelEnabled.value = s.parallelEnabled || false
+    }
+  },
+  { immediate: true }
+)
+
+// 变更时：同时写 localStorage（瞬时回退）与 DB（持久化，满足“入库不丢失”）
+watch(
+  [mode, thinkingEnabled, thinkingStrength, parallelEnabled],
+  () => {
+    localStorage.setItem('ai-mode', mode.value)
+    localStorage.setItem('ai-thinking-enabled', String(thinkingEnabled.value))
+    localStorage.setItem('ai-thinking-strength', thinkingStrength.value)
+    localStorage.setItem('ai-parallel', String(parallelEnabled.value))
+    persistSettings({
+      defaultMode: mode.value,
+      thinkingEnabled: thinkingEnabled.value,
+      thinkingStrength: thinkingStrength.value,
+      parallelEnabled: parallelEnabled.value,
+    })
+  }
+)
 
 // 历史面板展开状态（桌面端默认折叠，点击历史按钮展开）
 const showHistory = ref(false)
@@ -188,6 +221,7 @@ async function onDelete(id: string) {
             :is-streaming="isStreaming"
             :providers="providers"
             :selected-provider-id="selectedProviderId"
+            :selected-model="selectedModel"
             :thinking-enabled="thinkingEnabled"
             :thinking-strength="thinkingStrength"
             :mode="mode"
@@ -195,6 +229,7 @@ async function onDelete(id: string) {
             @send="onSend"
             @stop="stop"
             @select-provider="selectProvider"
+            @select-model="selectModel"
             @toggle-thinking="toggleThinking"
             @set-thinking-strength="setThinkingStrength"
             @set-mode="(m) => mode = m"

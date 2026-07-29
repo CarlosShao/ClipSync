@@ -978,5 +978,12 @@
   "ai_agent_working": "进行中",
   "ai_agent_synthesis": "综合中",
   "ai_agent_done": "已完成",
-  "ai_agent_failed": "失败"
+  "ai_agent_failed": "失败",
+  "ai_select_model": "选择模型",
+  "ai_switch_provider": "切换供应商",
+  "ai_models_hint": "点击标签选择当前使用的模型；配置密钥后可刷新该供应商下的全部模型。",
+  "ai_refresh_models": "刷新模型列表",
+  "ai_refreshing": "刷新中...",
+  "ai_models_refreshed": "模型列表已刷新",
+  "ai_models_refresh_fail": "刷新模型列表失败"
 }

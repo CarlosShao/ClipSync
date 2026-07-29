@@ -10,6 +10,7 @@ const props = defineProps<{
   isStreaming: boolean
   providers: AiProvider[]
   selectedProviderId: string
+  selectedModel: string
   thinkingEnabled: boolean
   thinkingStrength: 'low' | 'medium' | 'high'
   mode: 'ask' | 'agent'
@@ -19,6 +20,7 @@ const emit = defineEmits<{
   send: [text: string]
   stop: []
   'select-provider': [id: string]
+  'select-model': [model: string]
   'toggle-thinking': []
   'set-thinking-strength': [strength: 'low' | 'medium' | 'high']
   'set-mode': [mode: 'ask' | 'agent']
@@ -30,11 +32,21 @@ const { t } = useI18n()
 const text = ref('')
 const activePopup = ref<string | null>(null)
 
+const selectedProvider = computed(() => props.providers.find((x) => x.id === props.selectedProviderId))
+
 const providerLabel = computed(() => {
-  const p = props.providers.find((x) => x.id === props.selectedProviderId)
+  const p = selectedProvider.value
   if (!p) return t('ai_select_provider')
   // 用户要求展示模型名而非配置名称
-  return p.model || p.name
+  return props.selectedModel || p.model || p.name
+})
+
+// 当前选中供应商下可用模型列表（多选标签来源）
+const selectedProviderModels = computed<string[]>(() => {
+  const p = selectedProvider.value
+  if (p && Array.isArray(p.models) && p.models.length > 0) return p.models
+  // 无上游列表时，至少把当前 model 作为唯一标签
+  return p?.model ? [p.model] : []
 })
 
 const inputPlaceholder = computed(() => {
@@ -139,13 +151,26 @@ function toggleThinking() {
           <span>{{ t('ai_parallel') }}</span>
         </button>
 
-        <!-- 模型选择 -->
+        <!-- 模型选择（当前供应商的多模型以标签形式展示） -->
         <button class="ai-tag-btn" @click.stop="togglePopup('model')">
           <span>{{ providerLabel }}</span>
           <ChevronDown :size="10" />
         </button>
-        <div v-if="activePopup === 'model'" class="ai-popup ai-popup--right" @click.stop>
-          <button v-for="p in providers" :key="p.id" :class="{ active: selectedProviderId === p.id }" @click="selectProvider(p.id)">{{ p.name }}</button>
+        <div v-if="activePopup === 'model'" class="ai-popup ai-popup--right ai-popup--models" @click.stop>
+          <div class="ai-popup-title">{{ t('ai_select_model') }}</div>
+          <button
+            v-for="m in selectedProviderModels"
+            :key="m"
+            :class="{ active: (selectedModel || selectedProvider?.model) === m }"
+            @click="emit('select-model', m); closePopups()"
+          >{{ m }}</button>
+          <div class="ai-popup-title ai-popup-title--sub">{{ t('ai_switch_provider') }}</div>
+          <button
+            v-for="p in providers"
+            :key="p.id"
+            :class="{ active: selectedProviderId === p.id }"
+            @click="selectProvider(p.id)"
+          >{{ p.name }}</button>
           <button class="ai-popup-divider" @click="emit('open-settings'); closePopups()">{{ t('ai_manage') }}</button>
         </div>
       </div>
@@ -262,6 +287,27 @@ function toggleThinking() {
 .ai-popup--right {
   left: auto;
   right: 0;
+}
+
+.ai-popup--models {
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.ai-popup-title {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.ai-popup-title--sub {
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 4px;
+  padding-top: 8px;
 }
 
 .ai-popup button {
