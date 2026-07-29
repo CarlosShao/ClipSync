@@ -160,9 +160,18 @@ const summary = computed(() => {
 </script>
 
 <template>
-  <!-- 有流式活动或有思考内容时渲染整个组件 -->
-  <div v-if="hasContent || isStreaming" class="ai-thinking">
+  <!-- 轻量加载态：刚发送、尚未收到任何思考内容时，只显示一条友好的进度提示条
+       （含左→右闪烁动画），不渲染带折叠按钮的空卡片，避免“一上来就卡一张空白思考卡片”。 -->
+  <div v-if="isStreaming && !hasContent" class="ai-thinking-loading">
+    <span class="ai-thinking-shimmer"></span>
+    <span class="ai-thinking-status-text">
+      <Brain :size="12" class="ai-thinking-status-icon" />
+      {{ t('ai_thinking_loading') || 'AI 正在思考…' }}
+    </span>
+  </div>
 
+  <!-- 已收到思考内容：渲染完整的思考卡片（流式期间顶部状态栏 + 折叠按钮 + 内容） -->
+  <div v-else-if="hasContent" class="ai-thinking">
     <!-- ===== 顶部状态栏（流式期间可见） ===== -->
     <div v-if="isStreaming" class="ai-thinking-statusbar">
       <div class="ai-thinking-shimmer"></div>
@@ -194,6 +203,21 @@ const summary = computed(() => {
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg-surface);
+}
+
+/* 轻量加载态：刚发送、尚无思考内容时，仅显示一条友好进度提示条，不渲染空卡片 */
+.ai-thinking-loading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  min-height: 28px;
 }
 
 /* ===== 顶部状态栏（流式输出期间可见） ===== */

@@ -38,6 +38,14 @@ const statusText = computed(() => {
   }
 })
 
+// 卡片标题：按 kind 翻译成用户友好的中文，避免“协调器”这类看不懂的名字。
+// coordinator → 任务规划；synthesis → 整合答案；worker 尽量保留后端给的角色名。
+const displayName = computed(() => {
+  if (props.run.kind === 'coordinator') return t('ai_agent_coordinator_label') || '任务规划'
+  if (props.run.kind === 'synthesis') return t('ai_agent_synthesis_label') || '整合答案'
+  return props.run.name || (t('ai_agent_worker_label') || '子代理')
+})
+
 function compactBlankLines(content: string): string {
   if (!content) return ''
   return content.replace(/\n{3,}/g, '\n\n').trim()
@@ -81,7 +89,7 @@ watch(
       <Loader2 v-if="runActive" :size="13" class="ai-agent-run-spin" />
       <CheckCircle2 v-else-if="run.status === 'done'" :size="13" class="ai-agent-run-ok" />
       <XCircle v-else-if="run.status === 'failed'" :size="13" class="ai-agent-run-err" />
-      <span class="ai-agent-run-name">{{ run.name }}</span>
+      <span class="ai-agent-run-name">{{ displayName }}</span>
       <span class="ai-agent-run-status">{{ statusText }}</span>
       <span v-if="run.error" class="ai-agent-run-err-text" :title="run.error">{{ run.error }}</span>
     </div>

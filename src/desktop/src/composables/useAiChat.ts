@@ -263,13 +263,26 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
         if (m.role !== 'assistant' || !m.agentRuns?.length) continue
         for (const run of m.agentRuns) {
           if (run.status === 'planning' || run.status === 'working' || run.status === 'synthesis') {
-            if (run.content || run.thinking) {
+            if (run.status === 'planning') {
+              // 规划阶段本就无内容产出，直接标完成，避免被误判为失败
+              run.status = 'done'
+            } else if (run.content || run.thinking) {
               run.status = 'done'
             } else {
               run.status = 'failed'
               if (!run.error) run.error = 'stream ended unexpectedly'
             }
           }
+        }
+      }
+    }
+    // 主答案内容开始抵达（未携带 agentId 的增量）→ 立即把仍处于“规划中”的卡片收敛为 done，
+    // 避免“答案都出来了，协调器还在转圈”的违和感。worker/synthesis 仍按各自生命周期收敛。
+    function convergePlanning() {
+      for (const m of messages.value) {
+        if (m.role !== 'assistant' || !m.agentRuns?.length) continue
+        for (const run of m.agentRuns) {
+          if (run.status === 'planning') run.status = 'done'
         }
       }
     }
@@ -439,6 +452,10 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
             if (res.thinkingDelta && !nativeReasoning) {
               if (!bucket.thinkingStartedAt) bucket.thinkingStartedAt = Date.now()
               bucket.thinking = (bucket.thinking || '') + res.thinkingDelta
+            }
+            // 主答案（未路由给子代理）开始输出 → 规划态卡片立即收敛，停止转圈
+            if (target === null && res.textDelta) {
+              convergePlanning()
             }
           }
 
