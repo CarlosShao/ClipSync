@@ -56,7 +56,7 @@ function roleLabel() {
         v-if="message.role === 'assistant'"
         :thinking="message.thinking || ''"
         :thinking-started-at="message.thinkingStartedAt"
-        :is-streaming="thinkingStillActive"
+        :is-streaming="isStreamingNow"
         :expanded="expandedThinking || isStreamingNow"
         @toggle="expandedThinking = !expandedThinking"
       />

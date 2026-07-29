@@ -64,7 +64,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
     const agentLifecycle = new Map()
 
     // 幂等结束：流已结束时绝不再次 write，杜绝 ERR_STREAM_WRITE_AFTER_END 把 SSE 连接异常撕断。
-    // 这直接对应“思考卡在小半程 → 突然一下全出来”的现象：连接中途崩溃后客户端只能延迟 reconcile 状态。
+    // 这直接对应"思考卡在小半程 → 突然一下全出来"的现象：连接中途崩溃后客户端只能延迟 reconcile 状态。
     const safeFinish = () => {
       if (res.writableEnded) return
       try {
@@ -82,9 +82,19 @@ router.post('/chat', apiLimiter, async (req, res) => {
             }
           }
         }
-        res.write('data: [DONE]\n\n')
-        res.flush?.()
-        res.end()
+        // 关键修复：使用 write 的回调确保数据已写入 socket 后再 end()
+        // 避免最后一个 agent 的 done 事件在 Windows socket 缓冲区丢失
+        res.write('data: [DONE]\n\n', () => {
+          // write 回调触发说明数据已进入 OS 缓冲区，现在可以安全关闭
+          res.flush?.()
+          res.end()
+        })
+        // 兜底：如果 write 回调 1s 内未触发（极端情况），强制关闭避免泄漏
+        setTimeout(() => {
+          if (!res.writableEnded) {
+            try { res.end() } catch { /* ignore */ }
+          }
+        }, 1000)
       } catch (e) {
         logger.warn('[AI] safeFinish write skipped (stream already closed):', e.message)
       }

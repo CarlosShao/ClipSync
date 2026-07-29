@@ -223,22 +223,24 @@ export function useAiChat() {
       if (!assistantMsg.agentRuns) assistantMsg.agentRuns = []
       return assistantMsg.agentRuns
     }
-    function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
-      const runs = ensureAgentRuns()
-      let run = runs.find((r) => r.id === a.id)
-      if (!run) {
-        run = { id: a.id, name: a.name, status: a.status, kind: a.kind }
-        runs.push(run)
-      }
-      run.name = a.name
-      run.status = a.status
-      if (a.kind) run.kind = a.kind
-      // 携带 error 视为失败（后端把 error 放在 failed 事件中）
-      if (a.error !== undefined) {
-        run.status = 'failed'
-        run.error = a.error
-      }
-    }
+function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
+  const runs = ensureAgentRuns()
+  let run = runs.find((r) => r.id === a.id)
+  if (!run) {
+    run = { id: a.id, name: a.name, status: a.status, kind: a.kind }
+    runs.push(run)
+  }
+  run.name = a.name
+  run.status = a.status
+  if (a.kind) run.kind = a.kind
+  // 记录最后更新时间，用于 agent 超时看门狗检测
+  ;(run as any)._lastUpdateAt = Date.now()
+  // 携带 error 视为失败（后端把 error 放在 failed 事件中）
+  if (a.error !== undefined) {
+    run.status = 'failed'
+    run.error = a.error
+  }
+}
     function getOrCreateAgentRun(id: string): AgentRun {
       const runs = ensureAgentRuns()
       let run = runs.find((r) => r.id === id)
@@ -272,13 +274,34 @@ export function useAiChat() {
       }
     }
     // 静默看门狗：超过 200s 没有任何增量（后端 180s 上游超时本应已关流），强制中止并复位，
-    // 作为后端异常挂死时的最后兜底，避免 isStreaming 永久卡 true / 思考面板永久“思考中”。
+    // 作为后端异常挂死时的最后兜底，避免 isStreaming 永久卡 true / 思考面板永久"思考中"。
     const silenceWatchdog = setInterval(() => {
       if (Date.now() - lastActivityAt > 200_000) {
         console.warn('[useAiChat] stream silent >200s, aborting to avoid stuck state')
         controller.abort()
       }
     }, 10_000)
+
+    // 子代理超时看门狗：每 5 秒检查一次，如果某个 agent 超过 60 秒没有更新（没有收到新的增量），
+    // 自动收敛为 done，避免后端丢失 agent done 事件导致卡片永久转圈。
+    // 只在 streaming 期间激活，streaming 结束后由 settleAgentRuns 最终收敛。
+    const agentTimeoutWatchdog = setInterval(() => {
+      if (!assistantMsg.agentRuns?.length) return
+      const now = Date.now()
+      for (const run of assistantMsg.agentRuns) {
+        if (run.status === 'planning' || run.status === 'working' || run.status === 'synthesis') {
+          const lastUpdate = run._lastUpdateAt || 0
+          // 超过 60 秒没有更新，强制收敛
+          if (lastUpdate && now - lastUpdate > 60_000) {
+            console.warn(`[useAiChat] agent ${run.id} timed out (>60s no update), auto-concluding`)
+            run.status = run.content || run.thinking ? 'done' : 'failed'
+            if (!run.error && !run.content && !run.thinking) {
+              run.error = 'agent timed out (no response for 60s)'
+            }
+          }
+        }
+      }
+    }, 5_000)
 
     // 用于从 <think>...</think> 中提取思考过程。
     const thinkState = {
@@ -460,6 +483,7 @@ export function useAiChat() {
       if (last && last.role === 'assistant') last.isError = true
     } finally {
       clearInterval(silenceWatchdog)
+      clearInterval(agentTimeoutWatchdog)
       isStreaming.value = false
       abortCtrl.value = null
       // 收敛所有残留的非终态 agent 卡片（含上一条挂掉的并行请求残留），避免永久转圈

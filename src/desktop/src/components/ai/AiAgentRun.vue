@@ -55,6 +55,24 @@ function renderMarkdown(content: string): string {
 
 const hasThinking = computed(() => (props.run.thinking?.length || 0) > 0)
 const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
+
+// 前端安全网：当流式输出结束时，如果该 run 仍处于非终态（planning/working/synthesis），
+// 强制收敛为 done/failed。这是最后一道防线，即使后端丢失了 done 事件也能保证 UI 不会永久卡住。
+watch(
+  () => props.isStreaming,
+  (stillStreaming) => {
+    if (!stillStreaming && runActive.value) {
+      // 流式已结束但卡片仍显示进行中 → 强制收敛
+      const run = props.run
+      if (run.status === 'planning' || run.status === 'working' || run.status === 'synthesis') {
+        run.status = run.content || run.thinking ? 'done' : 'failed'
+        if (!run.error && !run.content && !run.thinking) {
+          run.error = '已自动结束'
+        }
+      }
+    }
+  },
+)
 </script>
 
 <template>

@@ -322,69 +322,103 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
   const decoder = new TextDecoder()
   let buffer = ''
   let errored = false
+  let streamDone = false
+  // 最后一次收到增量事件的时间戳：用于在流结束时判断是否还有未处理的 agent 事件
+  let lastEventAt = Date.now()
+
+  // 处理 buffer 中的所有完整 SSE 事件
+  function processBuffer() {
+    let idx
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      const raw = buffer.slice(0, idx)
+      buffer = buffer.slice(idx + 2)
+      const dataLines = raw
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(5).trim())
+      for (const data of dataLines) {
+        if (!data) continue
+        if (data === '[DONE]') continue  // [DONE] 仅标记结束，不触发回调
+        try {
+          const parsed = JSON.parse(data)
+          if (parsed.error) {
+            errored = true
+            opts.onError?.(parsed.error)
+          }
+          const delta = parsed?.choices?.[0]?.delta
+          if (delta) {
+            lastEventAt = Date.now()
+            // 多代理路由元信息：delta.agent_id（子代理增量）→ 路由到对应卡片；
+            // delta.agent（生命周期事件）→ upsert agentRuns。
+            const meta: StreamDeltaMeta = {}
+            if (delta.agent_id) meta.agentId = delta.agent_id
+            if (delta.agent) meta.agent = delta.agent
+            const hasMeta = !!(meta.agentId || meta.agent)
+
+            if (hasMeta) {
+              const hasPayload = delta.thinking || delta.tool_call || delta.tool_result || delta.content
+              if (!hasPayload) {
+                // 纯生命周期事件（无 content）：必须转发以触发 agentRuns upsert
+                opts.onDelta('', undefined, undefined, undefined, meta)
+              } else {
+                if (delta.thinking) opts.onDelta('', delta.thinking, undefined, undefined, meta)
+                if (delta.tool_call) opts.onDelta('', undefined, delta.tool_call, undefined, meta)
+                if (delta.tool_result) opts.onDelta('', undefined, undefined, delta.tool_result, meta)
+                if (delta.content) opts.onDelta(delta.content, undefined, undefined, undefined, meta)
+              }
+            } else {
+              // 单代理（非并行）模式：不携带任何路由元信息，保持原始行为
+              if (delta.thinking) opts.onDelta('', delta.thinking)
+              if (delta.tool_call) opts.onDelta('', undefined, delta.tool_call)
+              if (delta.tool_result) opts.onDelta('', undefined, undefined, delta.tool_result)
+              if (delta.content) opts.onDelta(delta.content)
+            }
+          }
+        } catch {
+          /* 跳过无法解析的行 */
+        }
+      }
+    }
+  }
 
   try {
     while (true) {
       const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
+      // 关键修复：即使 done 为 true，也要先处理本次 value 和 buffer 中剩余数据
+      // 否则最后几个 SSE 事件（特别是 agent 的 done 事件）可能丢失
+      if (value) {
+        buffer += decoder.decode(value, { stream: true })
+      }
+      processBuffer()
 
-      let idx
-      while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const raw = buffer.slice(0, idx)
-        buffer = buffer.slice(idx + 2)
-        const dataLines = raw
-          .split('\n')
-          .filter((l) => l.startsWith('data:'))
-          .map((l) => l.slice(5).trim())
-        for (const data of dataLines) {
-          if (!data || data === '[DONE]') continue
-          try {
-            const parsed = JSON.parse(data)
-            if (parsed.error) {
-              errored = true
-              opts.onError?.(parsed.error)
-            }
-            const delta = parsed?.choices?.[0]?.delta
-            if (delta) {
-              // 多代理路由元信息：delta.agent_id（子代理增量）→ 路由到对应卡片；
-              // delta.agent（生命周期事件）→ upsert agentRuns。
-              const meta: StreamDeltaMeta = {}
-              if (delta.agent_id) meta.agentId = delta.agent_id
-              if (delta.agent) meta.agent = delta.agent
-              const hasMeta = !!(meta.agentId || meta.agent)
-
-              if (hasMeta) {
-                const hasPayload = delta.thinking || delta.tool_call || delta.tool_result || delta.content
-                if (!hasPayload) {
-                  // 纯生命周期事件（无 content）：必须转发以触发 agentRuns upsert
-                  opts.onDelta('', undefined, undefined, undefined, meta)
-                } else {
-                  if (delta.thinking) opts.onDelta('', delta.thinking, undefined, undefined, meta)
-                  if (delta.tool_call) opts.onDelta('', undefined, delta.tool_call, undefined, meta)
-                  if (delta.tool_result) opts.onDelta('', undefined, undefined, delta.tool_result, meta)
-                  if (delta.content) opts.onDelta(delta.content, undefined, undefined, undefined, meta)
-                }
-              } else {
-                // 单代理（非并行）模式：不携带任何路由元信息，保持原始行为
-                if (delta.thinking) opts.onDelta('', delta.thinking)
-                if (delta.tool_call) opts.onDelta('', undefined, delta.tool_call)
-                if (delta.tool_result) opts.onDelta('', undefined, undefined, delta.tool_result)
-                if (delta.content) opts.onDelta(delta.content)
-              }
-            }
-          } catch {
-            /* 跳过无法解析的行 */
-          }
+      if (done) {
+        // 流结束：buffer 中可能还有未完整接收的 SSE 数据（最后一行没有 \n\n）
+        // 强制处理剩余内容，避免最后一个 agent done 事件丢失
+        if (buffer.trim()) {
+          // 模拟一个完整的事件边界，强制解析剩余内容
+          buffer += '\n\n'
+          processBuffer()
         }
+        streamDone = true
+        break
       }
     }
   } catch (e: any) {
     if (e?.name !== 'AbortError') {
       errored = true
       opts.onError?.(String(e?.message || e))
+    } else {
+      streamDone = true
     }
   }
 
-  if (!errored) opts.onDone?.()
+  // 最终安全网：流结束后如果距离最后一个事件不足 50ms，等待一下再触发 onDone
+  // 确保浏览器端 SSE 事件全部处理完毕，避免子 agent 状态卡住
+  if (!errored) {
+    const timeSinceLastEvent = Date.now() - lastEventAt
+    if (timeSinceLastEvent < 50) {
+      await new Promise((r) => setTimeout(r, 50 - timeSinceLastEvent))
+    }
+    opts.onDone?.()
+  }
 }

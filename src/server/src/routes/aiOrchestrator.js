@@ -326,5 +326,8 @@ export async function runOrchestration({
   sendDelta({
     choices: [{ delta: { agent: { id: 'synthesis', name: '综合', status: 'done', kind: 'synthesis' } } }],
   })
+  // 关键修复：synthesis done 事件写入后，等待 IO 事件循环 tick 确保数据进入 socket 缓冲区
+  // 避免 write 被 Nagle 算法合并或延迟导致前端收不到 done 事件
+  await new Promise((r) => setImmediate(r))
   safeFinish()
 }
