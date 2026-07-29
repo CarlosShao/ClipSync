@@ -353,7 +353,11 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
             // delta.agent（生命周期事件）→ upsert agentRuns。
             const meta: StreamDeltaMeta = {}
             if (delta.agent_id) meta.agentId = delta.agent_id
-            if (delta.agent) meta.agent = delta.agent
+            if (delta.agent) {
+              meta.agent = delta.agent
+              // 临时诊断日志：确认后端生命周期事件到达前端
+              console.log('[AI SSE] agent lifecycle', delta.agent)
+            }
             const hasMeta = !!(meta.agentId || meta.agent)
 
             if (hasMeta) {

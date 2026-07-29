@@ -214,8 +214,9 @@ export function useAiChat() {
 
     error.value = ''
     messages.value.push({ role: 'user', content: text })
-    const assistantMsg: ChatMessage = { role: 'assistant', content: '', thinking: '', thinkingActive: true }
-    messages.value.push(assistantMsg)
+    messages.value.push({ role: 'assistant', content: '', thinking: '', thinkingActive: true })
+    // 必须引用 messages 数组里的 reactive proxy，后续 mutations 才能触发 Vue 响应式更新
+    const assistantMsg = messages.value[messages.value.length - 1]
     isStreaming.value = true
 
     // —— 多代理并行模式：子代理运行状态维护 ——
@@ -446,6 +447,8 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
           }
           // 生命周期事件（coordinator/worker/synthesis 状态切换）始终 upsert 到 agentRuns
           if (meta?.agent) {
+            // 临时诊断日志：确认生命周期事件进入状态管理
+            console.log('[useAiChat] upsertAgentRun', meta.agent, 'currentRuns=', assistantMsg.agentRuns?.length || 0)
             upsertAgentRun(meta.agent)
           }
 
