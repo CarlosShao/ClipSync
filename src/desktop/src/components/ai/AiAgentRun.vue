@@ -115,7 +115,7 @@ watch(
 
 <style scoped>
 .ai-agent-run {
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
   border-radius: var(--radius-md);
   background: var(--bg-surface);
@@ -128,7 +128,7 @@ watch(
   border-color: var(--danger, #ef4444);
 }
 .ai-agent-run-head {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;

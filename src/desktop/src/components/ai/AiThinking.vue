@@ -131,16 +131,16 @@ watch(() => props.isStreaming, (v) => {
 // ==================== 折叠按钮文案 ====================
 const label = computed(() => {
   if (!hasContent.value) {
-    return t('ai_thinking_loading') || '正在思考'
+    return t('ai_thinking_loading', '正在思考')
   }
   if (props.isStreaming) {
-    return t('ai_thinking_deep') || '深度思考'
+    return t('ai_thinking_deep', '深度思考')
   }
   const sec = elapsedSeconds.value
   const timeText = sec < 1
-    ? (t('ai_thinking_less_than_sec') || '少于 1 秒')
-    : (t('ai_thinking_sec') || '{n} 秒').replace('{n}', String(sec))
-  return `${t('ai_thinking_deep_done') || '已深度思考'} ${timeText}`
+    ? t('ai_thinking_less_than_sec', '少于 1 秒')
+    : t('ai_thinking_sec', '{n} 秒').replace('{n}', String(sec))
+  return `${t('ai_thinking_deep_done', '已深度思考')} ${timeText}`
 })
 </script>
 
@@ -148,7 +148,7 @@ const label = computed(() => {
   <!-- 阶段 1：loading 占位。未收到任何数据，只显示“正在思考”+ 扫光 -->
   <div v-if="!hasContent && isStreaming" class="ai-thinking-loading">
     <span class="ai-thinking-shimmer-bar"></span>
-    <span class="ai-thinking-loading-text">{{ t('ai_thinking_loading') || '正在思考' }}</span>
+    <span class="ai-thinking-loading-text">{{ t('ai_thinking_loading', '正在思考') }}</span>
   </div>
 
   <!-- 阶段 2/3：有内容后切换为深度思考折叠条 -->
@@ -175,7 +175,7 @@ const label = computed(() => {
 /* ========== 阶段 1：loading 占位 ========== */
 .ai-thinking-loading {
   position: relative;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
@@ -234,7 +234,7 @@ const label = computed(() => {
 
 /* ========== 阶段 2/3：深度思考折叠条 ========== */
 .ai-thinking {
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
   margin-bottom: 6px;
   border-radius: var(--radius-md);
@@ -245,7 +245,7 @@ const label = computed(() => {
 }
 
 .ai-thinking-toggle {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;

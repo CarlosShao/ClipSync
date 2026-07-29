@@ -19,15 +19,15 @@ export function useI18n() {
 
   function t(key: string, fallbackOrParams?: string | Record<string, string | number>): string {
     let val = dict.value[key]
-    if (!val) val = _dicts.en[key] ?? key
+    if (!val) val = _dicts.en[key] || ''
     if (typeof fallbackOrParams === 'string') {
-      if (val === key) val = fallbackOrParams
+      if (!val) val = fallbackOrParams
     } else if (fallbackOrParams) {
       Object.entries(fallbackOrParams).forEach(([k, v]) => {
-        val = val.replace(`{${k}}`, String(v))
+        val = (val || '').replace(`{${k}}`, String(v))
       })
     }
-    return val
+    return val || key
   }
 
   function setLang(lang: Lang) {

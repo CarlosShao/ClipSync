@@ -107,7 +107,7 @@ const steps = computed(() => {
 
 <style scoped>
 .ai-tool-log {
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
   margin-bottom: 6px;
   border-radius: var(--radius-md);
@@ -125,7 +125,7 @@ const steps = computed(() => {
 }
 
 .ai-tool-log-summary {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;

@@ -129,6 +129,9 @@ function roleLabel() {
   justify-content: flex-start;
 }
 .ai-msg-bubble {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   max-width: 96%;
   padding: 10px 12px;
   border-radius: var(--radius-lg, 12px);

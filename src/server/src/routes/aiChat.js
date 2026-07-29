@@ -129,6 +129,9 @@ router.post('/chat', apiLimiter, async (req, res) => {
       }
       try {
         res.write(`data: ${JSON.stringify(obj)}\n\n`)
+        // 强制 flush：SSE 必须逐块到达客户端，避免服务器缓冲导致“一下子蹦出来”。
+        // compression 对 /api/ai/chat 已禁用，flush 可能不存在；存在时立即调用。
+        if (typeof res.flush === 'function') res.flush()
       } catch (e) {
         logger.warn('[AI] sendDelta write skipped (stream already closed):', e.message)
       }
