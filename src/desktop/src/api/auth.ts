@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, type ApiResponse } from './client'
 
 export function login(phone: string, code: string) {
   return api('POST', '/api/auth/login', { phone, code })
@@ -72,4 +72,26 @@ export function disable2FA(code: string) {
 /** 登录挑战：消费 challengeToken，校验动态码后返回正式会话 token */
 export function verify2FALogin(challengeToken: string, code: string) {
   return api('POST', '/api/auth/2fa/verify-login', { challengeToken, code })
+}
+
+// ============================================
+// 当前用户信息（含 RBAC 角色，#217 / #472）
+// ============================================
+
+export interface AuthUser {
+  id: string
+  phone?: string
+  email?: string
+  nickname?: string
+  avatarUrl?: string
+  plan?: string
+  roleKey: string
+  roleLevel: number
+  isAdmin: boolean
+  permissions: string[]
+}
+
+/** 获取当前登录用户信息（含角色与权限键集合） */
+export function getMe(): Promise<ApiResponse<AuthUser>> {
+  return api<AuthUser>('GET', '/api/auth/me')
 }

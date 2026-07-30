@@ -2,12 +2,15 @@
 import { ref, onMounted, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useAiChat } from '@/composables/useAiChat'
+import { useUser } from '@/composables/useUser'
+import { useResizablePanel } from '@/composables/useResizablePanel'
 import Button from '@/components/ui/button/Button.vue'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import AiMessageList from './AiMessageList.vue'
 import AiChatInput from './AiChatInput.vue'
 import AiConversationList from './AiConversationList.vue'
 import AiMemoryPanel from './AiMemoryPanel.vue'
-import { X, Bot, Plus, Settings2, MessageSquare, Workflow, History, Brain } from 'lucide-vue-next'
+import { X, Bot, Plus, MessageSquare, Workflow, History, Brain, ShieldCheck, UserCog, User } from 'lucide-vue-next'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; 'open-settings': [] }>()
@@ -92,10 +95,24 @@ watch(
   }
 )
 
-// 历史面板展开状态（桌面端默认折叠，点击历史按钮展开）
-const showHistory = ref(false)
+// 历史面板：改为 Popover 覆盖层（#216），不占布局宽度
+const historyOpen = ref(false)
 
-onMounted(init)
+// 可拖拽面板宽度（#215）：固定右侧，拖左边缘调宽，持久化到 localStorage
+const { width, startDrag } = useResizablePanel({
+  storageKey: 'ai-sidebar-width',
+  min: 320,
+  max: 760,
+  default: 420,
+})
+
+// 当前用户角色（#217 / RBAC）：用于头部角色徽章
+const { roleKey, isSuperAdmin, isAdmin, fetchUser } = useUser()
+
+onMounted(() => {
+  init()
+  fetchUser()
+})
 
 watch(
   () => props.open,
@@ -103,6 +120,7 @@ watch(
     if (v) {
       loadProviders()
       loadConversations()
+      fetchUser()
     }
   }
 )
@@ -142,31 +160,50 @@ async function onDelete(id: string) {
 </script>
 
 <template>
-  <aside class="ai-panel" :class="{ 'ai-panel--open': open }" :aria-hidden="!open">
-    <AiConversationList
-      v-if="showHistory && hasProviders"
-      :conversations="conversations"
-      :current-id="currentConversationId"
-      :loading="false"
-      @select="onSelectConversation"
-      @new="onNewConversation"
-      @rename="onRename"
-      @delete="onDelete"
-    />
+  <aside
+    class="ai-panel"
+    :class="{ 'ai-panel--open': open }"
+    :aria-hidden="!open"
+    :style="open ? { width: width + 'px', minWidth: width + 'px' } : {}"
+  >
+    <!-- 左侧拖拽手柄（#215） -->
+    <div class="ai-resize-handle" title="拖拽调整宽度" @mousedown="startDrag" />
 
     <div class="ai-main">
       <!-- 顶部栏 -->
       <div class="ai-header">
         <div class="ai-header-left">
-          <Button v-if="hasProviders" variant="ghost" size="icon-sm" :title="t('ai_history') || '历史'" @click="showHistory = !showHistory">
-            <History :size="16" />
-          </Button>
+          <Popover v-model:open="historyOpen">
+            <PopoverTrigger as-child>
+              <Button v-if="hasProviders" variant="ghost" size="icon-sm" :title="t('ai_history') || '历史'">
+                <History :size="16" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent class="ai-history-pop" side="bottom" align="start" :side-offset="6">
+              <AiConversationList
+                :conversations="conversations"
+                :current-id="currentConversationId"
+                :loading="false"
+                @select="(id) => { onSelectConversation(id); historyOpen = false }"
+                @new="onNewConversation"
+                @rename="onRename"
+                @delete="onDelete"
+              />
+            </PopoverContent>
+          </Popover>
           <Button v-if="hasProviders" variant="ghost" size="icon-sm" :title="t('ai_memory') || '记忆'" @click="showMemory = !showMemory">
             <Brain :size="16" />
           </Button>
           <div class="ai-header-title">
             <Bot :size="18" />
             <span>AI</span>
+            <!-- 角色徽章（#217 / RBAC） -->
+            <span v-if="hasProviders" class="ai-role-badge" :class="`ai-role-${roleKey}`">
+              <ShieldCheck v-if="isSuperAdmin" :size="11" />
+              <UserCog v-else-if="isAdmin" :size="11" />
+              <User v-else :size="11" />
+              {{ roleKey }}
+            </span>
           </div>
         </div>
         <div class="ai-header-right">
@@ -244,6 +281,7 @@ async function onDelete(id: string) {
 
 <style scoped>
 .ai-panel {
+  position: relative;
   width: 0;
   min-width: 0;
   background: var(--bg-surface);
@@ -255,13 +293,27 @@ async function onDelete(id: string) {
   flex-shrink: 0;
 }
 
+/* 宽度由 useResizablePanel 通过 inline style 动态设置（#215）；此处仅保留展开基线宽度作为回退 */
 .ai-panel--open {
   width: 420px;
   min-width: 420px;
 }
-.ai-panel--open:has(.ai-conv-panel) {
-  width: 640px;
-  min-width: 640px;
+
+/* 左侧拖拽手柄（#215） */
+.ai-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 6;
+  background: transparent;
+  transition: background 0.12s;
+}
+.ai-resize-handle:hover {
+  background: var(--accent);
+  opacity: 0.4;
 }
 
 .ai-main {
@@ -294,6 +346,37 @@ async function onDelete(id: string) {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+/* 角色徽章（#217 / RBAC） */
+.ai-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+.ai-role-super_admin {
+  color: var(--danger, #ef4444);
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger, #ef4444) 30%, transparent);
+}
+.ai-role-admin {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.ai-role-user {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border-color: var(--border-default);
 }
 
 .ai-header-right {
@@ -357,5 +440,18 @@ async function onDelete(id: string) {
   color: var(--danger, #ef4444);
   background: var(--danger-bg, #fef2f2);
   border-top: 1px solid var(--border-default);
+}
+
+/* 历史 Popover（内容被 teleport 到 body，用 :deep 穿透作用域，#216） */
+:deep(.ai-history-pop) {
+  width: 268px;
+  padding: 0;
+  overflow: hidden;
+}
+:deep(.ai-history-pop .ai-conv-panel) {
+  width: 100%;
+  min-width: 0;
+  border-right: none;
+  border-radius: 0;
 }
 </style>

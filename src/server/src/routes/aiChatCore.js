@@ -36,6 +36,7 @@ export async function runChatLoop({
   apiKey,
   tools,
   userId,
+  role = 'user',
   sendDelta,
   logChunk,
   agentId = null,
@@ -119,7 +120,7 @@ export async function runChatLoop({
     if (response.toolCalls.length > 0) {
       // 真正调用了工具，重置“只说不做”重试计数
       continuationRetries = 0
-      const toolResults = await handleToolCalls(response.toolCalls, userId, sendDelta, agentId)
+      const toolResults = await handleToolCalls(response.toolCalls, userId, sendDelta, agentId, role)
 
       currentMessages.push({
         role: 'assistant',

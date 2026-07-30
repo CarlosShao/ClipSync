@@ -9,6 +9,8 @@ import { getAiContext } from '../utils/aiContext.js'
 import { decrypt } from '../utils/encryption.js'
 import { unlockWithPassword } from '../utils/protectionCrypto.js'
 import { getFeatureDoc, getPrivacyModelDoc, getDeploymentDoc, getArchitectureDoc } from '../utils/aiKnowledge.js'
+import { assertToolAllowed, getToolsForRole } from '../utils/aiSystemPrompt.js'
+import { authenticateToken } from '../middleware/auth.js'
 import { TEXT_PREVIEW_EXTENSIONS } from './media.js'
 
 const router = Router()
@@ -474,9 +476,25 @@ export const READONLY_TOOLS = TOOLS.filter((t) => !WRITE_TOOL_NAMES.has(t.functi
 
 /**
  * 执行工具调用
+ * @param {string} toolName
+ * @param {object} args
+ * @param {string} userId
+ * @param {string} [role] 角色键（'super_admin'|'admin'|'user'），用于敏感工具权限闸门
  */
-async function executeTool(toolName, args, userId) {
+async function executeTool(toolName, args, userId, role) {
   try {
+    // ✅ RBAC（#213 / 第三层安全闸门）：敏感工具执行前再校验一次角色权限。
+    // 即便上游因工具清单未及时收敛而调到了敏感工具，也在此处硬性拦截。
+    const roleCheck = assertToolAllowed(role, toolName)
+    if (!roleCheck.allowed) {
+      logger.warn(`[AI] tool "${toolName}" blocked for role "${role}": missing ${roleCheck.missing.join(',')}`)
+      return {
+        error: 'FORBIDDEN: your role cannot access this tool',
+        code: 'ROLE_FORBIDDEN',
+        missing: roleCheck.missing,
+      }
+    }
+
     switch (toolName) {
       case 'get_clipboard_stats': {
         const ctx = await getAiContext(userId)
@@ -644,9 +662,9 @@ async function executeTool(toolName, args, userId) {
       }
 
       case 'execute_workflow_step': {
-        // 执行工作流步骤
+        // 执行工作流步骤（递归调用，透传 role 以保持权限闸门一致）
         const { tool, params } = args
-        const result = await executeTool(tool, params, userId)
+        const result = await executeTool(tool, params, userId, role)
         return {
           step_id: args.step_id,
           status: 'completed',
@@ -1044,18 +1062,20 @@ async function executeTool(toolName, args, userId) {
   }
 }
 
-// GET /api/ai/tools - 获取可用工具列表
-router.get('/tools', apiLimiter, (req, res) => {
-  res.json({ tools: TOOLS })
+// GET /api/ai/tools - 获取当前角色可用的工具列表（按角色过滤，#213）
+router.get('/tools', apiLimiter, authenticateToken, (req, res) => {
+  const role = req.user.roleKey || 'user'
+  res.json({ tools: getToolsForRole(role, TOOLS) })
 })
 
-// POST /api/ai/tools/execute - 执行工具调用
-router.post('/tools/execute', apiLimiter, async (req, res) => {
+// POST /api/ai/tools/execute - 执行工具调用（带角色权限闸门，#213）
+router.post('/tools/execute', apiLimiter, authenticateToken, async (req, res) => {
   try {
     const { toolName, args } = req.body
     if (!toolName) return res.status(400).json({ error: 'toolName is required' })
     
-    const result = await executeTool(toolName, args || {}, req.userId)
+    const role = req.user.roleKey || 'user'
+    const result = await executeTool(toolName, args || {}, req.userId, role)
     res.json({ result })
   } catch (err) {
     logger.error('Tool execute error:', err)

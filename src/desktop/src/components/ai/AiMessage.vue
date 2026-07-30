@@ -137,6 +137,7 @@ function roleLabel() {
   flex-direction: column;
   align-items: flex-start;
   max-width: 96%;
+  min-width: 0;
   padding: 10px 12px;
   border-radius: var(--radius-lg, 12px);
   font-size: 13px;
@@ -161,6 +162,10 @@ function roleLabel() {
 .ai-msg-content {
   white-space: normal;
   word-break: break-word;
+  /* #218：长表格/长代码/超长无空格内容在气泡内横向滚动，而非把布局撑破 */
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
 }
 .ai-msg.user .ai-msg-content {
   white-space: pre-wrap;

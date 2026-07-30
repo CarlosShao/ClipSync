@@ -10,6 +10,10 @@ export async function authenticateToken(req, res, next) {
       userId: '00000000-0000-0000-0000-000000000001', // 测试用户ID
       phone: '13900999999',
       sessionId: 'test-session-id',
+      // RBAC（#210）：测试用户默认普通角色，避免误开敏感权限
+      roleKey: 'user',
+      roleLevel: 10,
+      isAdmin: false,
     };
     req.userId = req.user.userId;
     return next();
@@ -46,8 +50,10 @@ export async function authenticateToken(req, res, next) {
     // 即便 Redis 黑名单因抖动未命中，只要 user_sessions.is_active=false 就拒绝
     try {
       const userCheck = await pool.query(
-        `SELECT u.is_active AS user_active, s.is_active AS session_active
+        `SELECT u.is_active AS user_active, s.is_active AS session_active,
+                r.role_key, r.level AS role_level, u.is_admin
          FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
          LEFT JOIN user_sessions s ON s.id = $2
          WHERE u.id = $1`,
         [decoded.userId, decoded.jti || null]
@@ -63,9 +69,20 @@ export async function authenticateToken(req, res, next) {
       if (decoded.jti && row.session_active === false) {
         return res.status(401).json({ error: 'Session revoked' });
       }
+      // ✅ RBAC（#210）：将角色信息注入 req.user，供 AI 角色强制链路使用
+      req.user.roleKey = row.role_key || 'user';
+      req.user.roleLevel = row.role_level ?? 10;
+      req.user.isAdmin = Boolean(row.is_admin) || row.role_key === 'super_admin';
     } catch (err) {
       // DB 查询失败：记录告警，但放行（避免误杀正常请求）
       console.warn('[auth] user/session active check failed:', err.message);
+    }
+
+    // 角色信息兜底：若上述查询未附加（异常路径），降级为普通用户
+    if (!req.user.roleKey) {
+      req.user.roleKey = 'user';
+      req.user.roleLevel = 10;
+      req.user.isAdmin = false;
     }
 
     next();
@@ -89,6 +106,10 @@ export function optionalAuth(req, res, next) {
     const decoded = jwt.verify(token, config.jwt.secret);
     req.user = decoded;
     req.userId = decoded.userId;
+    // RBAC（#210）：optionalAuth 不查库，给默认普通角色（下游无 roleKey 时等同）
+    req.user.roleKey = req.user.roleKey || 'user';
+    req.user.roleLevel = req.user.roleLevel ?? 10;
+    req.user.isAdmin = Boolean(req.user.isAdmin) || req.user.roleKey === 'super_admin';
   } catch {
     // Token invalid, continue without auth
   }

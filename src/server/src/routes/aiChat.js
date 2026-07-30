@@ -6,6 +6,11 @@ import { logger } from '../utils/logger.js'
 import { TOOLS } from './aiTools.js'
 import { runChatLoop } from './aiChatCore.js'
 import { runOrchestration } from './aiOrchestrator.js'
+import {
+  buildRoleSystemPrompt,
+  getToolsForRole,
+  enhanceSystemPrompt,
+} from '../utils/aiSystemPrompt.js'
 
 const router = Router()
 
@@ -29,6 +34,25 @@ router.post('/chat', apiLimiter, async (req, res) => {
     const thinkingEnabled = options?.thinking || false
     const thinkingStrength = options?.thinkingStrength || 'medium'
     const isAgentMode = options?.mode === 'agent'
+
+    // ✅ RBAC（#212）：后端角色系统提示词覆盖前端传入的 system 消息。
+    // 角色决定模型能讨论什么、能调哪些工具；覆盖是强制性的，前端提示词不再可信。
+    const role = req.user.roleKey || 'user'
+    const roleBase = buildRoleSystemPrompt(role, req.userId)
+    const systemContent = enhanceSystemPrompt(roleBase, {
+      thinking: thinkingEnabled,
+      thinkingStrength,
+      agentMode: isAgentMode,
+      model: providerRow.model,
+    })
+    // 覆盖 messages 首条（system）；若前端未传 system 消息则插入。
+    if (messages[0] && messages[0].role === 'system') {
+      messages[0].content = systemContent
+    } else {
+      messages.unshift({ role: 'system', content: systemContent })
+    }
+    // 按角色过滤下发给 LLM 的工具集（普通/管理员角色看不到敏感工具）
+    const scopedTools = getToolsForRole(role, TOOLS)
 
     // 模型覆盖：前端可在请求里指定本次使用的模型（多选标签场景）。
     // 校验规则：必须属于该供应商 models 列表，或与已存 model 一致（避免拼错/越权）。
@@ -161,6 +185,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
           providerRow,
           apiKey,
           userId: req.userId,
+          role,
           sendDelta,
           logChunk,
           safeFinish,
@@ -169,13 +194,14 @@ router.post('/chat', apiLimiter, async (req, res) => {
           thinkingStrength,
         })
       } else {
-        // 单代理直答（完整工具集，原有路径，完全保留，零回归）。
+        // 单代理直答（按角色过滤后的工具集）。
         await runChatLoop({
           messages,
           options,
           providerRow,
           apiKey,
-          tools: TOOLS,
+          tools: scopedTools,
+          role,
           userId: req.userId,
           sendDelta,
           logChunk,

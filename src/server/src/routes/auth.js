@@ -1166,8 +1166,10 @@ router.get('/me', authenticateToken, async (req, res) => {
 
     const result = await pool.query(
       `SELECT u.id, u.phone, u.email, u.nickname, u.avatar_url,
-              COALESCE(sp.name, 'Free') AS plan_name
+              COALESCE(sp.name, 'Free') AS plan_name,
+              r.role_key, r.level AS role_level, u.is_admin
        FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id
        LEFT JOIN user_subscriptions us ON u.id = us.user_id AND us.status = 'active'
          AND (us.current_period_end IS NULL OR us.current_period_end > NOW())
        LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
@@ -1180,6 +1182,17 @@ router.get('/me', authenticateToken, async (req, res) => {
     }
 
     const user = result.rows[0];
+
+    // RBAC（#210 / 契约 #50）：返回该用户拥有的权限键集合
+    const permResult = await pool.query(
+      `SELECT p.perm_key
+       FROM role_permissions rp
+       JOIN permissions p ON p.id = rp.permission_id
+       WHERE rp.role_id = (SELECT role_id FROM users WHERE id = $1)`,
+      [userId]
+    );
+    const permissions = permResult.rows.map((row) => row.perm_key);
+
     res.json({
       id: user.id,
       phone: user.phone,
@@ -1187,6 +1200,10 @@ router.get('/me', authenticateToken, async (req, res) => {
       nickname: user.nickname,
       avatarUrl: user.avatar_url,
       plan: user.plan_name,
+      roleKey: user.role_key || 'user',
+      roleLevel: user.role_level ?? 10,
+      isAdmin: Boolean(user.is_admin) || user.role_key === 'super_admin',
+      permissions,
     });
   } catch (err) {
     logger.error('Get profile error:', { error: err.message });

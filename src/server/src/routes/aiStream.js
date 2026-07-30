@@ -116,8 +116,9 @@ const TOOL_EXEC_TIMEOUT_MS = 120_000
  * @param {string} userId   当前用户 id
  * @param {Function} sendDelta 增量下发函数
  * @param {string|null} agentId 多代理模式下所属子代理 id（打在增量上）
+ * @param {string} [role] 角色键，透传给 executeTool 做实工具权限闸门
  */
-export async function handleToolCalls(toolCalls, userId, sendDelta, agentId = null) {
+export async function handleToolCalls(toolCalls, userId, sendDelta, agentId = null, role = 'user') {
   const agentField = agentId ? { agent_id: agentId } : {}
   const settled = await Promise.all(
     toolCalls.map(async (tc) => {
@@ -148,7 +149,7 @@ export async function handleToolCalls(toolCalls, userId, sendDelta, agentId = nu
       let result
       try {
         result = await withTimeout(
-          executeTool(toolName, args, userId),
+          executeTool(toolName, args, userId, role),
           TOOL_EXEC_TIMEOUT_MS,
           `tool ${toolName} timed out after ${TOOL_EXEC_TIMEOUT_MS}ms`,
         )

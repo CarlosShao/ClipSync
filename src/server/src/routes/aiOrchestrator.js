@@ -20,6 +20,7 @@ import { logger } from '../utils/logger.js'
 import { collectToolCallsFromStream } from './aiStream.js'
 import { runChatLoop } from './aiChatCore.js'
 import { TOOLS, READONLY_TOOLS } from './aiTools.js'
+import { getToolsForRole } from '../utils/aiSystemPrompt.js'
 
 const MAX_AGENTS = 4
 
@@ -125,7 +126,9 @@ async function runCoordinatorCall({ messages, providerRow, apiKey, abortSignal, 
  * 并行执行所有子代理（Promise.allSettled 隔离失败）。
  * @returns {Promise<Array<{id,name,status,content,error?}>>}
  */
-async function runWorkers({ agents, messages, providerRow, apiKey, userId, abortSignal, sendDelta, logChunk }) {
+async function runWorkers({ agents, messages, providerRow, apiKey, userId, role = 'user', abortSignal, sendDelta, logChunk }) {
+  // ✅ RBAC（#214）：子代理只配发按角色过滤后的只读工具
+  const scopedReadonly = getToolsForRole(role, READONLY_TOOLS)
   const promises = agents.map((agent) => {
     // 每个子代理独立的 AbortController，根超时时一并中止
     const workerAbort = new AbortController()
@@ -148,7 +151,8 @@ async function runWorkers({ agents, messages, providerRow, apiKey, userId, abort
       options: {},
       providerRow,
       apiKey,
-      tools: READONLY_TOOLS,
+      tools: scopedReadonly,
+      role,
       userId,
       sendDelta: wrappedSend,
       logChunk,
@@ -228,6 +232,7 @@ export async function runOrchestration({
   providerRow,
   apiKey,
   userId,
+  role = 'user',
   sendDelta,
   logChunk,
   safeFinish,
@@ -235,6 +240,10 @@ export async function runOrchestration({
   thinkingEnabled,
   thinkingStrength,
 }) {
+  // ✅ RBAC（#214）：按角色过滤下发给各阶段的工具集
+  const scopedTools = getToolsForRole(role, TOOLS)
+  const scopedReadonly = getToolsForRole(role, READONLY_TOOLS)
+
   // —— 阶段一：协调器 ——
   sendDelta({
     choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'planning', kind: 'coordinator' } } }],
@@ -250,14 +259,14 @@ export async function runOrchestration({
       choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'failed', kind: 'coordinator', error: e.message } } }],
     })
     await runChatLoop({
-      messages, options, providerRow, apiKey, tools: TOOLS, userId,
+      messages, options, providerRow, apiKey, tools: scopedTools, role, userId,
       sendDelta, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength,
     })
     safeFinish()
     return
   }
 
-  // 没有触发 dispatch_agents → 单任务短路，降级为单代理直答（带完整工具集）。
+  // 没有触发 dispatch_agents → 单任务短路，降级为单代理直答（带角色过滤后的工具集）。
   // 协调器本身只挂 dispatch_agents，不挂实际工具；若直接采用协调器文本回答，
   // 它只会说“我来帮你查”却不会真查。因此必须再跑一次单代理工具循环。
   const dispatch = coordinator.toolCalls.find((tc) => tc.function?.name === 'dispatch_agents')
@@ -266,7 +275,7 @@ export async function runOrchestration({
       choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'done', kind: 'coordinator' } } }],
     })
     await runChatLoop({
-      messages, options, providerRow, apiKey, tools: TOOLS, userId,
+      messages, options, providerRow, apiKey, tools: scopedTools, role, userId,
       sendDelta, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength,
     })
     safeFinish()
@@ -295,7 +304,7 @@ export async function runOrchestration({
       choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'done', kind: 'coordinator' } } }],
     })
     await runChatLoop({
-      messages, options, providerRow, apiKey, tools: TOOLS, userId,
+      messages, options, providerRow, apiKey, tools: scopedTools, role, userId,
       sendDelta, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength,
     })
     safeFinish()
@@ -312,7 +321,7 @@ export async function runOrchestration({
 
   // —— 阶段二：并行子代理 ——
   const workerResults = await runWorkers({
-    agents, messages, providerRow, apiKey, userId, abortSignal, sendDelta, logChunk,
+    agents, messages, providerRow, apiKey, userId, role, abortSignal, sendDelta, logChunk,
   })
 
   // —— 阶段三：综合 ——
