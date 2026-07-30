@@ -1036,6 +1036,8 @@
   "ai_orchestration_ask_tip": "Ask mode: direct answer",
   "ai_context_usage": "Context usage {percent}% · {used}/{total} tokens",
   "ai_context_usage_none": "Context usage: no data yet",
+  "ai_cache_hit": "Cache hit {percent}% · {cached}/{prompt} tokens",
+  "ai_remove_image": "Remove image",
   "ai_agent_planning": "Planning",
   "ai_agent_working": "Working",
   "ai_agent_synthesis": "Synthesizing",

@@ -133,8 +133,8 @@ async function onNewConversation() {
   await newConversation({ mode: mode.value, thinkingEnabled: thinkingEnabled.value })
 }
 
-function onSend(text: string) {
-  send(text, { mode: mode.value, thinking: thinkingEnabled.value, thinkingStrength: thinkingStrength.value })
+function onSend(text: string, images?: import('@/api/ai').ChatImage[]) {
+  send(text, { mode: mode.value, thinking: thinkingEnabled.value, thinkingStrength: thinkingStrength.value, images })
 }
 
 function toggleThinking() {

@@ -158,6 +158,46 @@ export function getContextWindow(model) {
 }
 
 /**
+ * 把前端传来的「带图用户消息」规范化为目标协议族能识别的格式。
+ *
+ * 前端统一用 OpenAI 风格的 vision content 数组表达图片：
+ *   { role:'user', content: [ {type:'text', text}, {type:'image_url', image_url:{url:'data:image/png;base64,...'}} ] }
+ *
+ * - OpenAI 兼容族：image_url（data URL）原生支持，原样透传即可。
+ * - Anthropic 族：需要转成 { type:'image', source:{ type:'base64', media_type, data } }，
+ *   并把 text 块保持为 { type:'text', text }。非 data URL 的图片（理论上不会出现）跳过。
+ *
+ * 非 user 消息 / 纯字符串 content 不做任何处理，直接返回。
+ */
+function normalizeVisionMessages(messages, family) {
+  if (family !== 'anthropic') return messages
+  return messages.map((m) => {
+    if (m.role !== 'user' || !Array.isArray(m.content)) return m
+    const content = m.content
+      .map((block) => {
+        if (block.type === 'image_url') {
+          const url = block.image_url?.url || ''
+          const match = url.match(/^data:([^;]+);base64,(.*)$/s)
+          if (match) {
+            return {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: match[1] || 'image/png',
+                data: match[2],
+              },
+            }
+          }
+          return null
+        }
+        return block
+      })
+      .filter(Boolean)
+    return { ...m, content }
+  })
+}
+
+/**
  * 取所有预设（脱敏，仅给前端做下拉用，不含任何密钥）
  */
 export function listPresets() {
@@ -189,6 +229,10 @@ export function buildUpstreamChat(cfg) {
     throw new Error(`Unknown provider: ${provider}`)
   }
 
+  // 把前端传来的带图 user 消息规范化为当前协议族可识别的格式（OpenAI 兼容原样、
+  // Anthropic 转 base64 source）。非 user / 纯文本消息不受影响。
+  const normalizedMessages = normalizeVisionMessages(messages, preset.family)
+
   const resolvedBaseUrl = (baseUrl || preset.defaultBaseUrl || '').replace(/\/+$/, '')
   if (!resolvedBaseUrl) {
     throw new Error('base_url is required for custom provider')
@@ -198,8 +242,8 @@ export function buildUpstreamChat(cfg) {
 
   if (preset.family === 'anthropic') {
     // Anthropic Messages 协议：system 必须独立成字段，不能放在 messages 里
-    const systemMessages = messages.filter((m) => m.role === 'system')
-    const chatMessages = messages.filter((m) => m.role !== 'system')
+    const systemMessages = normalizedMessages.filter((m) => m.role === 'system')
+    const chatMessages = normalizedMessages.filter((m) => m.role !== 'system')
     const headers = {
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
@@ -240,7 +284,7 @@ export function buildUpstreamChat(cfg) {
   }
   const body = {
     model,
-    messages,
+    messages: normalizedMessages,
     stream,
   }
   if (typeof options.temperature === 'number') {

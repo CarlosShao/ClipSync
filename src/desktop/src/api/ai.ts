@@ -25,6 +25,8 @@ export interface AiProviderPreset {
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
+  // 随消息一起发送的截图（data URL）。仅 user 消息使用，用于多模态（vision）提问。
+  images?: ChatImage[]
   thinking?: string // 思考过程
   thinkingStartedAt?: number // 思考开始时间戳（毫秒），用于显示思考秒数
   toolCalls?: ToolCall[] // 工具调用
@@ -64,6 +66,13 @@ export interface AgentRun {
   toolResults?: ToolResult[]
 }
 
+// 随消息发送的截图（粘贴得到）。data 为完整 data URL（含前缀），可直接放入
+// OpenAI 风格 image_url.url，或经后端转换为 Anthropic base64 source。
+export interface ChatImage {
+  mime: string
+  data: string
+}
+
 // 上下文用量（token 计数，由上游 usage 返回）
 export interface ContextUsage {
   promptTokens: number
@@ -71,6 +80,9 @@ export interface ContextUsage {
   totalTokens: number
   contextWindow: number
   percent: number // 0-100，已 clamp
+  // 缓存命中 token 数（prompt_tokens_details.cached_tokens）。
+  // 占 promptTokens 的比例即「缓存命中率」，命中越高越省 token 成本。
+  cacheReadTokens?: number
 }
 
 // SSE 增量附带的元信息（多代理路由用）

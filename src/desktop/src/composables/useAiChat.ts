@@ -1,6 +1,6 @@
 import { ref, shallowRef, computed } from 'vue'
 import { getProviders, getAiContext, streamChat, getSettings, saveSettings, updateProvider } from '@/api/ai'
-import type { AiProvider, ChatMessage, AiContext, AgentRun, StreamDeltaMeta, AiSettings, AiConversation, ContextUsage } from '@/api/ai'
+import type { AiProvider, ChatMessage, AiContext, AgentRun, StreamDeltaMeta, AiSettings, AiConversation, ContextUsage, ChatImage } from '@/api/ai'
 import { buildSystemPrompt } from '@/utils/aiSystemPrompt'
 import { useAiConversations } from './useAiConversations'
 
@@ -12,6 +12,8 @@ interface SendOptions {
   mode?: 'ask' | 'agent'
   thinking?: boolean
   thinkingStrength?: 'low' | 'medium' | 'high'
+  // 随消息一起发送的截图（粘贴得到）。构造上游历史时会转成 vision content 数组。
+  images?: ChatImage[]
 }
 
 // 原生支持 reasoning 的模型关键词
@@ -219,7 +221,7 @@ export function useAiChat() {
     }
 
     error.value = ''
-    messages.value.push({ role: 'user', content: text })
+    messages.value.push({ role: 'user', content: text, images: options.images })
     messages.value.push({ role: 'assistant', content: '', thinking: '', thinkingActive: true })
     // 必须引用 messages 数组里的 reactive proxy，后续 mutations 才能触发 Vue 响应式更新。
     // 注意：若用户在流式进行中途切换历史对话，messages.value 会被替换，但 assistantMsg
@@ -414,6 +416,15 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
         for (const tr of m.toolResults || []) {
           historyMessages.push({ role: 'tool', content: tr.content, tool_call_id: tr.tool_call_id })
         }
+      } else if (m.role === 'user' && m.images && m.images.length) {
+        // 多模态（vision）：把截图转成 OpenAI 风格 image_url content 数组
+        historyMessages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: m.content || '' },
+            ...m.images.map((img) => ({ type: 'image_url', image_url: { url: img.data } })),
+          ],
+        })
       } else {
         historyMessages.push({ role: m.role, content: m.content })
       }

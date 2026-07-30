@@ -189,7 +189,13 @@ function roleLabel() {
       />
 
       <div v-if="message.role === 'assistant'" class="ai-msg-content markdown-body" v-html="renderMarkdown(message.content)"></div>
-      <div v-else class="ai-msg-content">{{ compactBlankLines(message.content) }}</div>
+      <template v-else>
+        <!-- 用户随消息发送的截图缩略图（多模态 vision 提问） -->
+        <div v-if="message.images?.length" class="ai-msg-images">
+          <img v-for="(img, i) in message.images" :key="i" :src="img.data" :alt="img.mime" />
+        </div>
+        <div class="ai-msg-content">{{ compactBlankLines(message.content) }}</div>
+      </template>
     </div>
   </div>
 </template>
@@ -282,6 +288,21 @@ function roleLabel() {
 }
 .ai-msg.user .ai-msg-content {
   white-space: pre-wrap;
+}
+/* 用户消息中的截图缩略图（多模态 vision 提问） */
+.ai-msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.ai-msg-images img {
+  max-width: 160px;
+  max-height: 160px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  object-fit: cover;
+  display: block;
 }
 .ai-msg-content :deep(h1),
 .ai-msg-content :deep(h2),

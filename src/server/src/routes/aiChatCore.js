@@ -103,16 +103,19 @@ export async function runChatLoop({
     // 取本轮 usage 的最新值；前端保留「最近一次」调用，即最能代表当前上下文大小的数值。
     if (response.usage) {
       const ctxWindow = getContextWindow(providerRow.model)
+      const u = response.usage
       sendDelta({
         meta: {
           type: 'usage',
           usage: {
-            promptTokens: response.usage.prompt_tokens || 0,
-            completionTokens: response.usage.completion_tokens || 0,
+            promptTokens: u.prompt_tokens || 0,
+            completionTokens: u.completion_tokens || 0,
             totalTokens:
-              response.usage.total_tokens ||
-              (response.usage.prompt_tokens || 0) + (response.usage.completion_tokens || 0),
+              u.total_tokens || (u.prompt_tokens || 0) + (u.completion_tokens || 0),
             contextWindow: ctxWindow,
+            // 缓存命中：上游 prompt_tokens_details.cached_tokens（OpenAI 兼容协议）。
+            // 命中越高说明越多 prompt 命中了提示缓存（prompt caching），节省 token 成本。
+            cacheReadTokens: u.prompt_tokens_details?.cached_tokens || 0,
           },
         },
       })
