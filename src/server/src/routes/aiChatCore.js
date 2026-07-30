@@ -14,6 +14,18 @@ import { buildUpstreamChat, getPreset } from '../utils/aiProviders.js'
 import { collectToolCallsFromStream, handleToolCalls } from './aiStream.js'
 
 /**
+ * 检测模型是否“只说不做”：文字里表示还要调用工具，但没有实际输出 tool_calls。
+ * 用于 runChatLoop 的安全网，避免模型说完“让我再调用 X”就直接结束流。
+ */
+function looksLikeToolIntent(content) {
+  if (!content || typeof content !== 'string') return false
+  const c = content.toLowerCase()
+  // 中英文常见“我要调用工具”意图表达
+  const intentKeywords = ['调用', 'call', '使用工具', 'use the tool', '使用', 'use', '让我', 'let me', '我要', 'i will', 'i need to', '执行', 'execute']
+  return intentKeywords.some((k) => c.includes(k))
+}
+
+/**
  * 执行一轮完整对话循环。
  * @returns {{ messages: Array, finalContent: string }}
  */
@@ -34,6 +46,9 @@ export async function runChatLoop({
 }) {
   const preset = getPreset(providerRow.provider)
   let currentMessages = [...messages]
+  // 安全网计数器：防止模型“只说要调工具”却不 emit tool_calls 导致任务半途而废
+  let continuationRetries = 0
+  const MAX_CONTINUATION_RETRIES = 1
 
   for (let round = 0; round < maxRounds; round++) {
     const chatOptions = { ...options }
@@ -83,8 +98,27 @@ export async function runChatLoop({
     // 流式发送 thinking 和 content，同时收集 tool_calls
     const response = await collectToolCallsFromStream(reader, decoder, sendDelta, logChunk)
 
+    // 安全网：模型写了"我要调用 X"但最终没有输出 tool_calls。
+    // 追加 system 提醒并再试一轮（限一次），避免任务半途而废。
+    if (
+      response.toolCalls.length === 0 &&
+      tools && tools.length > 0 &&
+      continuationRetries < MAX_CONTINUATION_RETRIES &&
+      looksLikeToolIntent(response.content)
+    ) {
+      continuationRetries++
+      currentMessages.push({ role: 'assistant', content: response.content || '' })
+      currentMessages.push({
+        role: 'system',
+        content: '你刚才的回复表示还需要调用工具，但没有实际输出 tool_calls。如果你确实需要继续调用工具，请立即停止文字解释，直接输出 tool_calls；如果不需要，请直接给出最终答案，不要只说"我要调用"。',
+      })
+      continue
+    }
+
     // 有 tool calls：执行后继续下一轮
     if (response.toolCalls.length > 0) {
+      // 真正调用了工具，重置“只说不做”重试计数
+      continuationRetries = 0
       const toolResults = await handleToolCalls(response.toolCalls, userId, sendDelta, agentId)
 
       currentMessages.push({
