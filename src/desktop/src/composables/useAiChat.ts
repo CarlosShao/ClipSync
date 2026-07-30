@@ -182,6 +182,12 @@ export function useAiChat() {
   }
 
   async function loadConversation(id: string) {
+    // 若当前正在流式生成，先中止，避免旧 assistantMsg proxy 在 messages.value 被替换后继续被改。
+    if (isStreaming.value) {
+      stop()
+      // 给 finally 块一点时间收敛状态，避免竞态
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
     const msgs = await conv.select(id)
     if (msgs) {
       messages.value = msgs
@@ -215,9 +221,14 @@ export function useAiChat() {
     error.value = ''
     messages.value.push({ role: 'user', content: text })
     messages.value.push({ role: 'assistant', content: '', thinking: '', thinkingActive: true })
-    // 必须引用 messages 数组里的 reactive proxy，后续 mutations 才能触发 Vue 响应式更新
+    // 必须引用 messages 数组里的 reactive proxy，后续 mutations 才能触发 Vue 响应式更新。
+    // 注意：若用户在流式进行中途切换历史对话，messages.value 会被替换，但 assistantMsg
+    // 仍指向旧 proxy。因此在 loadConversation 时要先中止当前流，防止旧 proxy 继续被改。
     const assistantMsg = messages.value[messages.value.length - 1]
     isStreaming.value = true
+
+    // 子代理最后更新时间（非响应式 Map，避免每秒级更新触发无关重渲染）
+    const agentLastUpdateAt = new Map<string, number>()
 
     // —— 多代理并行模式：子代理运行状态维护 ——
     function ensureAgentRuns(): AgentRun[] {
@@ -234,8 +245,8 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
   run.name = a.name
   run.status = a.status
   if (a.kind) run.kind = a.kind
-  // 记录最后更新时间，用于 agent 超时看门狗检测
-  ;(run as any)._lastUpdateAt = Date.now()
+  // 记录最后更新时间到非响应式 Map，避免每秒级更新触发无关重渲染
+  agentLastUpdateAt.set(a.id, Date.now())
   // 携带 error 视为失败（后端把 error 放在 failed 事件中）
   if (a.error !== undefined) {
     run.status = 'failed'
@@ -249,7 +260,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
         run = { id, name: id, status: 'working' }
         runs.push(run)
       }
-      ;(run as any)._lastUpdateAt = Date.now()
+      agentLastUpdateAt.set(id, Date.now())
       return run
     }
 
@@ -309,7 +320,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
       const now = Date.now()
       for (const run of assistantMsg.agentRuns) {
         if (run.status === 'planning' || run.status === 'working' || run.status === 'synthesis') {
-          const lastUpdate = run._lastUpdateAt || 0
+          const lastUpdate = agentLastUpdateAt.get(run.id) || 0
           if (!lastUpdate) continue
           const threshold = run.status === 'planning' ? 120_000 : 60_000
           if (now - lastUpdate > threshold) {
@@ -438,17 +449,17 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
         signal: controller.signal,
         onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => {
           lastActivityAt = Date.now()
+          // 非响应式 Map 记录活跃 agent 的最后更新时间，避免直接改 run._lastUpdateAt 触发重渲染
           if (assistantMsg.agentRuns?.length) {
+            const now = Date.now()
             for (const r of assistantMsg.agentRuns) {
               if (r.status === 'planning' || r.status === 'working' || r.status === 'synthesis') {
-                ;(r as any)._lastUpdateAt = Date.now()
+                agentLastUpdateAt.set(r.id, now)
               }
             }
           }
           // 生命周期事件（coordinator/worker/synthesis 状态切换）始终 upsert 到 agentRuns
           if (meta?.agent) {
-            // 临时诊断日志：确认生命周期事件进入状态管理
-            console.log('[useAiChat] upsertAgentRun', meta.agent, 'currentRuns=', assistantMsg.agentRuns?.length || 0)
             upsertAgentRun(meta.agent)
           }
 

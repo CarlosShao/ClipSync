@@ -33,19 +33,6 @@ const isThinkingDone = computed(() =>
 const hasAgentRuns = computed(() => (props.message.agentRuns?.length || 0) > 0)
 const hasToolCalls = computed(() => (props.message.toolCalls?.length || 0) > 0)
 
-// 临时诊断日志：观察 loading / agentRuns / toolCalls 状态变化
-watch(
-  () => ({
-    loading: isLoading.value,
-    runs: props.message.agentRuns?.length || 0,
-    tools: props.message.toolCalls?.length || 0,
-    thinking: props.message.thinking?.length || 0,
-    content: props.message.content?.length || 0,
-  }),
-  (v) => console.log('[AiMessage] state', v),
-  { immediate: true },
-)
-
 // loading 占位：尚未收到任何有效阶段数据（无 thinking、无答案、无工具、无 agent 运行卡片）
 const isLoading = computed(() =>
   isStreamingNow.value &&
