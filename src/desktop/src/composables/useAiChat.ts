@@ -12,7 +12,6 @@ interface SendOptions {
   mode?: 'ask' | 'agent'
   thinking?: boolean
   thinkingStrength?: 'low' | 'medium' | 'high'
-  parallel?: boolean
 }
 
 // 原生支持 reasoning 的模型关键词
@@ -107,7 +106,6 @@ export function useAiChat() {
       defaultMode: settings.value?.defaultMode ?? 'ask',
       thinkingEnabled: settings.value?.thinkingEnabled ?? false,
       thinkingStrength: settings.value?.thinkingStrength ?? 'medium',
-      parallelEnabled: settings.value?.parallelEnabled ?? false,
       ...patch,
     }
     settings.value = next
@@ -443,7 +441,6 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
           mode: options.mode,
           thinking: options.thinking,
           thinkingStrength: options.thinkingStrength,
-          parallel: options.parallel,
           model: selectedModel.value || selectedProvider?.model || undefined,
         },
         signal: controller.signal,

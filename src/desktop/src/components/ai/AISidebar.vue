@@ -59,9 +59,6 @@ const thinkingStrength = ref<'low' | 'medium' | 'high'>(
   (localStorage.getItem('ai-thinking-strength') as 'low' | 'medium' | 'high') || 'medium'
 )
 
-// 并行多代理开关（localStorage 瞬时回退，DB 为准）
-const parallelEnabled = ref(localStorage.getItem('ai-parallel') === 'true')
-
 // DB 偏好加载后：以 DB 为准覆盖本地（仅一次）
 let settingsApplied = false
 watch(
@@ -72,7 +69,6 @@ watch(
       mode.value = s.defaultMode || 'ask'
       thinkingEnabled.value = s.thinkingEnabled || false
       thinkingStrength.value = s.thinkingStrength || 'medium'
-      parallelEnabled.value = s.parallelEnabled || false
     }
   },
   { immediate: true }
@@ -80,17 +76,15 @@ watch(
 
 // 变更时：同时写 localStorage（瞬时回退）与 DB（持久化，满足“入库不丢失”）
 watch(
-  [mode, thinkingEnabled, thinkingStrength, parallelEnabled],
+  [mode, thinkingEnabled, thinkingStrength],
   () => {
     localStorage.setItem('ai-mode', mode.value)
     localStorage.setItem('ai-thinking-enabled', String(thinkingEnabled.value))
     localStorage.setItem('ai-thinking-strength', thinkingStrength.value)
-    localStorage.setItem('ai-parallel', String(parallelEnabled.value))
     persistSettings({
       defaultMode: mode.value,
       thinkingEnabled: thinkingEnabled.value,
       thinkingStrength: thinkingStrength.value,
-      parallelEnabled: parallelEnabled.value,
     })
   }
 )
@@ -139,7 +133,7 @@ async function onNewConversation() {
 }
 
 function onSend(text: string) {
-  send(text, { mode: mode.value, thinking: thinkingEnabled.value, thinkingStrength: thinkingStrength.value, parallel: parallelEnabled.value })
+  send(text, { mode: mode.value, thinking: thinkingEnabled.value, thinkingStrength: thinkingStrength.value })
 }
 
 function toggleThinking() {
@@ -262,7 +256,6 @@ async function onDelete(id: string) {
             :thinking-enabled="thinkingEnabled"
             :thinking-strength="thinkingStrength"
             :mode="mode"
-            :parallel-enabled="parallelEnabled"
             @send="onSend"
             @stop="stop"
             @select-provider="selectProvider"
@@ -270,7 +263,6 @@ async function onDelete(id: string) {
             @toggle-thinking="toggleThinking"
             @set-thinking-strength="setThinkingStrength"
             @set-mode="(m) => mode = m"
-            @toggle-parallel="parallelEnabled = !parallelEnabled"
             @open-settings="emit('open-settings')"
           />
         </template>

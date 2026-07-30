@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import type { AiProvider } from '@/api/ai'
-import { Send, Square, Brain, ChevronDown, Settings2, Boxes } from 'lucide-vue-next'
+import { Send, Square, Brain, ChevronDown, Settings2 } from 'lucide-vue-next'
 
 const props = defineProps<{
   disabled: boolean
@@ -14,7 +15,6 @@ const props = defineProps<{
   thinkingEnabled: boolean
   thinkingStrength: 'low' | 'medium' | 'high'
   mode: 'ask' | 'agent'
-  parallelEnabled: boolean
 }>()
 const emit = defineEmits<{
   send: [text: string]
@@ -24,13 +24,24 @@ const emit = defineEmits<{
   'toggle-thinking': []
   'set-thinking-strength': [strength: 'low' | 'medium' | 'high']
   'set-mode': [mode: 'ask' | 'agent']
-  'toggle-parallel': []
   'open-settings': []
 }>()
 const { t } = useI18n()
 
 const text = ref('')
 const activePopup = ref<string | null>(null)
+
+// 各下拉气泡及其触发按钮的 ref（用于点击外部关闭）
+const thinkingBtnEl = ref<HTMLElement | null>(null)
+const thinkingPopupEl = ref<HTMLElement | null>(null)
+const modeBtnEl = ref<HTMLElement | null>(null)
+const modePopupEl = ref<HTMLElement | null>(null)
+const modelBtnEl = ref<HTMLElement | null>(null)
+const modelPopupEl = ref<HTMLElement | null>(null)
+
+onClickOutside(thinkingPopupEl, () => { if (activePopup.value === 'thinking') activePopup.value = null }, { ignore: [thinkingBtnEl] })
+onClickOutside(modePopupEl, () => { if (activePopup.value === 'mode') activePopup.value = null }, { ignore: [modeBtnEl] })
+onClickOutside(modelPopupEl, () => { if (activePopup.value === 'model') activePopup.value = null }, { ignore: [modelBtnEl] })
 
 const selectedProvider = computed(() => props.providers.find((x) => x.id === props.selectedProviderId))
 
@@ -61,6 +72,13 @@ const inputPlaceholder = computed(() => {
 
 const modeLabel = computed(() => {
   return props.mode === 'ask' ? t('ai_mode_ask') : t('ai_mode_agent')
+})
+
+// 发送按钮旁圆环提示文案（Agent 模式下模型自行决定是否派发子代理）
+const orchestrationTip = computed(() => {
+  return props.mode === 'agent'
+    ? t('ai_orchestration_agent_tip') || 'Agent 模式：模型将自动决定是否派发子代理'
+    : t('ai_orchestration_ask_tip') || 'Ask 模式：直接回答'
 })
 
 function submit() {
@@ -124,11 +142,11 @@ function toggleThinking() {
     <div class="ai-card-bottom">
       <div class="ai-card-actions">
         <!-- 思考模式 -->
-        <button class="ai-tag-btn" :class="{ active: thinkingEnabled }" @click.stop="togglePopup('thinking')">
+        <button ref="thinkingBtnEl" class="ai-tag-btn" :class="{ active: thinkingEnabled }" @click.stop="togglePopup('thinking')">
           <Brain :size="12" />
           <span>{{ thinkingEnabled ? t('ai_strength_' + thinkingStrength) : t('ai_thinking') }}</span>
         </button>
-        <div v-if="activePopup === 'thinking'" class="ai-popup" @click.stop>
+        <div v-if="activePopup === 'thinking'" ref="thinkingPopupEl" class="ai-popup" @click.stop>
           <button :class="{ active: thinkingEnabled && thinkingStrength === 'low' }" @click="setStrength('low')">{{ t('ai_strength_low') }}</button>
           <button :class="{ active: thinkingEnabled && thinkingStrength === 'medium' }" @click="setStrength('medium')">{{ t('ai_strength_medium') }}</button>
           <button :class="{ active: thinkingEnabled && thinkingStrength === 'high' }" @click="setStrength('high')">{{ t('ai_strength_high') }}</button>
@@ -136,27 +154,21 @@ function toggleThinking() {
         </div>
 
         <!-- Ask/Agent（一个按钮，点击选择） -->
-        <button class="ai-tag-btn" @click.stop="togglePopup('mode')">
+        <button ref="modeBtnEl" class="ai-tag-btn" @click.stop="togglePopup('mode')">
           {{ modeLabel }}
           <ChevronDown :size="10" />
         </button>
-        <div v-if="activePopup === 'mode'" class="ai-popup" @click.stop>
+        <div v-if="activePopup === 'mode'" ref="modePopupEl" class="ai-popup" @click.stop>
           <button :class="{ active: mode === 'ask' }" @click="setMode('ask')">{{ t('ai_mode_ask') }}</button>
           <button :class="{ active: mode === 'agent' }" @click="setMode('agent')">{{ t('ai_mode_agent') }}</button>
         </div>
 
-        <!-- 并行多代理（手动开关，默认关闭） -->
-        <button class="ai-tag-btn" :class="{ active: parallelEnabled }" :title="t('ai_parallel_hint')" @click.stop="emit('toggle-parallel')">
-          <Boxes :size="12" />
-          <span>{{ t('ai_parallel') }}</span>
-        </button>
-
         <!-- 模型选择（当前供应商的多模型以标签形式展示） -->
-        <button class="ai-tag-btn" @click.stop="togglePopup('model')">
+        <button ref="modelBtnEl" class="ai-tag-btn" @click.stop="togglePopup('model')">
           <span>{{ providerLabel }}</span>
           <ChevronDown :size="10" />
         </button>
-        <div v-if="activePopup === 'model'" class="ai-popup ai-popup--right ai-popup--models" @click.stop>
+        <div v-if="activePopup === 'model'" ref="modelPopupEl" class="ai-popup ai-popup--right ai-popup--models" @click.stop>
           <div class="ai-popup-title">{{ t('ai_select_model') }}</div>
           <button
             v-for="m in selectedProviderModels"
@@ -175,12 +187,15 @@ function toggleThinking() {
         </div>
       </div>
 
-      <Button v-if="!isStreaming" size="icon" class="ai-send-btn" :disabled="disabled || !text.trim()" @click="submit">
-        <Send :size="16" />
-      </Button>
-      <Button v-else size="icon" variant="outline" class="ai-send-btn" @click="emit('stop')">
-        <Square :size="16" />
-      </Button>
+      <div class="ai-send-area">
+        <div class="ai-orchestration-ring" :class="{ agent: mode === 'agent' }" :title="orchestrationTip" />
+        <Button v-if="!isStreaming" size="icon" class="ai-send-btn" :disabled="disabled || !text.trim()" @click="submit">
+          <Send :size="16" />
+        </Button>
+        <Button v-else size="icon" variant="outline" class="ai-send-btn" @click="emit('stop')">
+          <Square :size="16" />
+        </Button>
+      </div>
     </div>
   </div>
 </template>
@@ -261,6 +276,29 @@ function toggleThinking() {
   background: var(--accent-bg);
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.ai-send-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-orchestration-ring {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border-default);
+  background: transparent;
+  transition: all 0.2s ease;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.ai-orchestration-ring.agent {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .ai-send-btn {

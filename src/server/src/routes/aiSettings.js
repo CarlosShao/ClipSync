@@ -13,7 +13,8 @@ const DEFAULTS = {
   defaultMode: 'ask',
   thinkingEnabled: false,
   thinkingStrength: 'medium',
-  parallelEnabled: false,
+  // parallelEnabled 已废弃：是否派发子代理改由 Agent 模式下的协调器模型自行决定，不再提供手动开关。
+  // DB 列仍保留以保证兼容性，但接口不再读取/返回该字段。
 }
 
 // 合并策略：以「已存值优先、客户端显式传入才覆盖」的方式构造最终写入对象。
@@ -29,7 +30,6 @@ function sanitize(input, existing) {
   if (b.defaultMode === 'ask' || b.defaultMode === 'agent') o.defaultMode = b.defaultMode
   if (typeof b.thinkingEnabled === 'boolean') o.thinkingEnabled = b.thinkingEnabled
   if (['low', 'medium', 'high'].includes(b.thinkingStrength)) o.thinkingStrength = b.thinkingStrength
-  if (typeof b.parallelEnabled === 'boolean') o.parallelEnabled = b.parallelEnabled
   return o
 }
 
@@ -43,7 +43,6 @@ function rowToResponse(row) {
       defaultMode: 'ask',
       thinkingEnabled: false,
       thinkingStrength: 'medium',
-      parallelEnabled: false,
     }
   }
   return {
@@ -53,7 +52,6 @@ function rowToResponse(row) {
     defaultMode: row.default_mode,
     thinkingEnabled: row.thinking_enabled,
     thinkingStrength: row.thinking_strength,
-    parallelEnabled: row.parallel_enabled,
   }
 }
 
@@ -87,7 +85,7 @@ router.put('/', apiLimiter, async (req, res) => {
          parallel_enabled = EXCLUDED.parallel_enabled,
          updated_at = NOW()
        RETURNING *`,
-      [req.userId, s.defaultProviderId, s.defaultModel, JSON.stringify(s.selectedModels), s.defaultMode, s.thinkingEnabled, s.thinkingStrength, s.parallelEnabled]
+      [req.userId, s.defaultProviderId, s.defaultModel, JSON.stringify(s.selectedModels), s.defaultMode, s.thinkingEnabled, s.thinkingStrength, false]
     )
     const row = result.rows[0]
     res.json(rowToResponse(row))

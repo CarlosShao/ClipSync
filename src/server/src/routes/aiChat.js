@@ -176,9 +176,9 @@ router.post('/chat', apiLimiter, async (req, res) => {
     const upstreamTimer = setTimeout(() => upstreamAbort.abort(), 180_000)
 
     try {
-      if (options?.parallel) {
-        // 多代理并行编排：协调器 → 并行子代理（只读工具）→ 综合。
-        // 协调器若不触发 dispatch_agents，会在内部短路为单代理直答（零额外开销）。
+      if (options?.mode === 'agent') {
+        // Agent 模式下由模型自己决定是否派发子代理：
+        // 协调器只挂 dispatch_agents 规划工具；若模型不调用，会在内部短路为单代理直答（零额外开销）。
         await runOrchestration({
           messages,
           options,
@@ -194,7 +194,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
           thinkingStrength,
         })
       } else {
-        // 单代理直答（按角色过滤后的工具集）。
+        // Ask 模式：单代理直答（按角色过滤后的工具集）。
         await runChatLoop({
           messages,
           options,

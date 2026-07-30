@@ -223,7 +223,7 @@ async function runSynthesis({ messages, workerResults, providerRow, apiKey, user
 }
 
 /**
- * 编排入口（由 aiChat.js 在 options.parallel 时调用）。
+ * 编排入口（由 aiChat.js 在 Agent 模式下调用，由协调器模型自行决定是否派发子代理）。
  * 负责协调器/子代理/综合三阶段，并在结束时调用 safeFinish。
  */
 export async function runOrchestration({

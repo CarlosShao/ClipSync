@@ -84,8 +84,6 @@ export interface ChatOptions {
   mode?: 'ask' | 'agent'
   thinking?: boolean
   thinkingStrength?: 'low' | 'medium' | 'high'
-  // 多代理并行编排开关（仅当用户手动开启时触发）
-  parallel?: boolean
   // 本次请求使用的模型（覆盖供应商默认 model，用于多选标签场景）
   model?: string
 }
@@ -127,7 +125,6 @@ export interface AiSettings {
   defaultMode: 'ask' | 'agent'
   thinkingEnabled: boolean
   thinkingStrength: 'low' | 'medium' | 'high'
-  parallelEnabled: boolean
 }
 
 // ===== CRUD =====
