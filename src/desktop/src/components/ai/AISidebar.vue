@@ -25,6 +25,7 @@ const {
   messages,
   isStreaming,
   error,
+  contextUsage,
   hasProviders,
   canSend,
   memoryEnabled,
@@ -256,6 +257,7 @@ async function onDelete(id: string) {
             :thinking-enabled="thinkingEnabled"
             :thinking-strength="thinkingStrength"
             :mode="mode"
+            :context-usage="contextUsage"
             @send="onSend"
             @stop="stop"
             @select-provider="selectProvider"

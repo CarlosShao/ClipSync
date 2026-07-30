@@ -64,6 +64,15 @@ export interface AgentRun {
   toolResults?: ToolResult[]
 }
 
+// 上下文用量（token 计数，由上游 usage 返回）
+export interface ContextUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  contextWindow: number
+  percent: number // 0-100，已 clamp
+}
+
 // SSE 增量附带的元信息（多代理路由用）
 export interface StreamDeltaMeta {
   // 该增量所属的“子代理”id（worker 的 thinking/content/tool 增量携带）
@@ -76,6 +85,8 @@ export interface StreamDeltaMeta {
     kind?: AgentRunKind
     error?: string
   }
+  // token 用量事件（每轮上游调用结束时下发，前端保留最近一次）
+  usage?: ContextUsage
 }
 
 export interface ChatOptions {
@@ -343,6 +354,11 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
             opts.onError?.(parsed.error)
           }
           const delta = parsed?.choices?.[0]?.delta
+          // 顶层 meta 事件（如 token 用量 usage），与 delta 内的 agent 路由元信息相互独立
+          if (parsed.meta) {
+            lastEventAt = Date.now()
+            opts.onDelta('', undefined, undefined, undefined, parsed.meta)
+          }
           if (delta) {
             lastEventAt = Date.now()
             // 多代理路由元信息：delta.agent_id（子代理增量）→ 路由到对应卡片；

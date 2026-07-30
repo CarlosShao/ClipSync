@@ -1025,6 +1025,8 @@
   "ai_mem_cat_other": "其他",
   "ai_orchestration_agent_tip": "Agent 模式：模型将自动决定是否派发子代理",
   "ai_orchestration_ask_tip": "Ask 模式：直接回答",
+  "ai_context_usage": "上下文用量 {percent}% · {used}/{total} tokens",
+  "ai_context_usage_none": "上下文用量：暂无数据",
   "ai_agent_planning": "规划中",
   "ai_agent_working": "进行中",
   "ai_agent_synthesis": "综合中",

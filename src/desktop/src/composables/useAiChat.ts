@@ -1,6 +1,6 @@
 import { ref, shallowRef, computed } from 'vue'
 import { getProviders, getAiContext, streamChat, getSettings, saveSettings, updateProvider } from '@/api/ai'
-import type { AiProvider, ChatMessage, AiContext, AgentRun, StreamDeltaMeta, AiSettings, AiConversation } from '@/api/ai'
+import type { AiProvider, ChatMessage, AiContext, AgentRun, StreamDeltaMeta, AiSettings, AiConversation, ContextUsage } from '@/api/ai'
 import { buildSystemPrompt } from '@/utils/aiSystemPrompt'
 import { useAiConversations } from './useAiConversations'
 
@@ -44,6 +44,8 @@ export function useAiChat() {
   const messages = ref<ChatMessage[]>([])
   const isStreaming = ref(false)
   const error = ref('')
+  // 上下文用量（token 计数，由后端 usage 事件下发；保留最近一次调用，代表当前上下文占用）
+  const contextUsage = ref<ContextUsage | null>(null)
   const abortCtrl = shallowRef<AbortController | null>(null)
   const initialized = ref(false)
   // 长程记忆模式：开启时把用户记忆注入系统提示词，让 AI 跨会话“记得”用户
@@ -224,6 +226,8 @@ export function useAiChat() {
     // 仍指向旧 proxy。因此在 loadConversation 时要先中止当前流，防止旧 proxy 继续被改。
     const assistantMsg = messages.value[messages.value.length - 1]
     isStreaming.value = true
+    // 新一轮对话开始：重置上下文用量，圆环回到 0%
+    contextUsage.value = null
 
     // 子代理最后更新时间（非响应式 Map，避免每秒级更新触发无关重渲染）
     const agentLastUpdateAt = new Map<string, number>()
@@ -446,6 +450,14 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
         signal: controller.signal,
         onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => {
           lastActivityAt = Date.now()
+          // token 用量事件：覆盖为最近一次（最代表当前上下文大小）
+          if (meta?.usage) {
+            const u = meta.usage
+            const percent = u.contextWindow > 0
+              ? Math.min(100, Math.max(0, Math.round((u.totalTokens / u.contextWindow) * 100)))
+              : 0
+            contextUsage.value = { ...u, percent }
+          }
           // 非响应式 Map 记录活跃 agent 的最后更新时间，避免直接改 run._lastUpdateAt 触发重渲染
           if (assistantMsg.agentRuns?.length) {
             const now = Date.now()
@@ -555,6 +567,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
     messages,
     isStreaming,
     error,
+    contextUsage,
     hasProviders,
     canSend,
     memoryEnabled,

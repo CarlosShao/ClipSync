@@ -10,7 +10,7 @@
  * - 通过 agentId 给所有增量打标（多代理路由用），单代理传 null。
  * - 上游异常（含 180s 超时 AbortError）向上抛出，由调用方决定降级策略。
  */
-import { buildUpstreamChat, getPreset } from '../utils/aiProviders.js'
+import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProviders.js'
 import { collectToolCallsFromStream, handleToolCalls } from './aiStream.js'
 
 /**
@@ -98,6 +98,25 @@ export async function runChatLoop({
 
     // 流式发送 thinking 和 content，同时收集 tool_calls
     const response = await collectToolCallsFromStream(reader, decoder, sendDelta, logChunk)
+
+    // 下发 token 用量元信息（前端圆环展示上下文占用百分比）。
+    // 取本轮 usage 的最新值；前端保留「最近一次」调用，即最能代表当前上下文大小的数值。
+    if (response.usage) {
+      const ctxWindow = getContextWindow(providerRow.model)
+      sendDelta({
+        meta: {
+          type: 'usage',
+          usage: {
+            promptTokens: response.usage.prompt_tokens || 0,
+            completionTokens: response.usage.completion_tokens || 0,
+            totalTokens:
+              response.usage.total_tokens ||
+              (response.usage.prompt_tokens || 0) + (response.usage.completion_tokens || 0),
+            contextWindow: ctxWindow,
+          },
+        },
+      })
+    }
 
     // 安全网：模型写了"我要调用 X"但最终没有输出 tool_calls。
     // 追加 system 提醒并再试一轮（限一次），避免任务半途而废。

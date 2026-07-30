@@ -35,6 +35,7 @@ export async function collectToolCallsFromStream(reader, decoder, sendDelta, log
   let content = ''
   let toolCalls = []
   let finishReason = ''
+  let usage = null
   let lastChunkAt = Date.now()
 
   while (true) {
@@ -84,12 +85,14 @@ export async function collectToolCallsFromStream(reader, decoder, sendDelta, log
           }
         }
         if (choice?.finish_reason) finishReason = choice.finish_reason
+        // 顶层 usage（OpenAI 流式在最后一个 chunk 携带）：记录 token 用量供前端展示
+        if (obj.usage) usage = obj.usage
       } catch { /* ignore */ }
     }
   }
 
   toolCalls = toolCalls.filter(tc => tc && tc.function?.name)
-  return { content, toolCalls, finishReason }
+  return { content, toolCalls, finishReason, usage }
 }
 
 /**

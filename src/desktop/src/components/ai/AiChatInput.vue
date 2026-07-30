@@ -5,6 +5,7 @@ import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import type { AiProvider } from '@/api/ai'
 import { Send, Square, Brain, ChevronDown, Settings2 } from 'lucide-vue-next'
+import type { ContextUsage } from '@/api/ai'
 
 const props = defineProps<{
   disabled: boolean
@@ -15,6 +16,7 @@ const props = defineProps<{
   thinkingEnabled: boolean
   thinkingStrength: 'low' | 'medium' | 'high'
   mode: 'ask' | 'agent'
+  contextUsage: ContextUsage | null
 }>()
 const emit = defineEmits<{
   send: [text: string]
@@ -74,11 +76,25 @@ const modeLabel = computed(() => {
   return props.mode === 'ask' ? t('ai_mode_ask') : t('ai_mode_agent')
 })
 
-// 发送按钮旁圆环提示文案（Agent 模式下模型自行决定是否派发子代理）
-const orchestrationTip = computed(() => {
-  return props.mode === 'agent'
-    ? t('ai_orchestration_agent_tip') || 'Agent 模式：模型将自动决定是否派发子代理'
-    : t('ai_orchestration_ask_tip') || 'Ask 模式：直接回答'
+// 发送按钮旁圆环：上下文 token 用量百分比
+const RING_R = 9
+const RING_C = 2 * Math.PI * RING_R
+const usagePercent = computed(() => props.contextUsage?.percent ?? 0)
+const ringDashOffset = computed(() => RING_C * (1 - usagePercent.value / 100))
+const ringColorClass = computed(() => {
+  const p = usagePercent.value
+  if (p >= 90) return 'level-danger'
+  if (p >= 70) return 'level-warn'
+  return 'level-ok'
+})
+const ringLabel = computed(() => (props.contextUsage ? `${usagePercent.value}%` : '–'))
+const usageTip = computed(() => {
+  if (!props.contextUsage) return t('ai_context_usage_none') || '上下文用量：暂无数据'
+  return t('ai_context_usage', {
+    percent: usagePercent.value,
+    used: props.contextUsage.totalTokens,
+    total: props.contextUsage.contextWindow,
+  })
 })
 
 function submit() {
@@ -188,7 +204,26 @@ function toggleThinking() {
       </div>
 
       <div class="ai-send-area">
-        <div class="ai-orchestration-ring" :class="{ agent: mode === 'agent' }" :title="orchestrationTip" />
+        <!-- 上下文 token 用量百分比圆环 -->
+        <svg
+          class="ai-usage-ring"
+          :class="ringColorClass"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          :title="usageTip"
+        >
+          <circle class="ring-track" cx="12" cy="12" :r="RING_R" />
+          <circle
+            class="ring-progress"
+            cx="12"
+            cy="12"
+            :r="RING_R"
+            :stroke-dasharray="RING_C"
+            :stroke-dashoffset="ringDashOffset"
+          />
+          <text class="ring-label" x="12" y="12">{{ ringLabel }}</text>
+        </svg>
         <Button v-if="!isStreaming" size="icon" class="ai-send-btn" :disabled="disabled || !text.trim()" @click="submit">
           <Send :size="16" />
         </Button>
@@ -284,21 +319,44 @@ function toggleThinking() {
   gap: 10px;
 }
 
-.ai-orchestration-ring {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid var(--border-default);
-  background: transparent;
-  transition: all 0.2s ease;
+.ai-usage-ring {
+  display: block;
   cursor: help;
   flex-shrink: 0;
+  overflow: visible;
 }
 
-.ai-orchestration-ring.agent {
-  border-color: var(--accent);
-  background: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+.ring-track {
+  fill: none;
+  stroke: var(--border-default);
+  stroke-width: 3;
+}
+
+.ring-progress {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease;
+}
+
+.ring-progress.level-warn {
+  stroke: #f59e0b;
+}
+
+.ring-progress.level-danger {
+  stroke: #ef4444;
+}
+
+.ring-label {
+  font-size: 7px;
+  font-weight: 600;
+  fill: var(--text-secondary);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
 }
 
 .ai-send-btn {

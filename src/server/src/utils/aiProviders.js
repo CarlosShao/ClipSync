@@ -111,6 +111,53 @@ export function getPreset(provider) {
 }
 
 /**
+ * 常见模型的上下文窗口（token 数）。用于前端展示「上下文用量百分比」圆环。
+ * 命中不到时用 DEFAULT_CONTEXT_WINDOW 兜底（现代模型大多 ≥ 32k）。
+ * 注意：这是近似值，仅作 UI 指示；真实 token 数由上游 usage 返回。
+ */
+const MODEL_CONTEXT_WINDOWS = {
+  'gpt-4o': 128000,
+  'gpt-4o-mini': 128000,
+  'gpt-4-turbo': 128000,
+  'gpt-4': 8192,
+  'gpt-4-32k': 32768,
+  'o1': 200000,
+  'o1-mini': 128000,
+  'o1-preview': 128000,
+  'o3': 200000,
+  'o4-mini': 200000,
+  'deepseek-chat': 64000,
+  'deepseek-reasoner': 64000,
+  'qwen-plus': 32768,
+  'qwen-max': 32768,
+  'qwen-turbo': 32768,
+  'qwen-long': 1000000,
+  'qwq': 32768,
+  'qwen3': 128000,
+  'claude-3-5-sonnet': 200000,
+  'claude-3-7-sonnet': 200000,
+  'claude-3-opus': 200000,
+  'claude-3-haiku': 200000,
+}
+
+const DEFAULT_CONTEXT_WINDOW = 128000
+
+/**
+ * 解析模型上下文窗口。先精确匹配，再前缀匹配（gpt-4o-2024-… → gpt-4o 的 128k）。
+ * @param {string} model 模型标识
+ * @returns {number} 上下文窗口 token 数
+ */
+export function getContextWindow(model) {
+  if (!model) return DEFAULT_CONTEXT_WINDOW
+  const m = String(model).toLowerCase()
+  if (MODEL_CONTEXT_WINDOWS[m]) return MODEL_CONTEXT_WINDOWS[m]
+  for (const key of Object.keys(MODEL_CONTEXT_WINDOWS)) {
+    if (m.startsWith(key)) return MODEL_CONTEXT_WINDOWS[key]
+  }
+  return DEFAULT_CONTEXT_WINDOW
+}
+
+/**
  * 取所有预设（脱敏，仅给前端做下拉用，不含任何密钥）
  */
 export function listPresets() {
@@ -208,6 +255,11 @@ export function buildUpstreamChat(cfg) {
   }
   if (options.tool_choice) {
     body.tool_choice = options.tool_choice
+  }
+  // 请求上游返回 token 用量（OpenAI 兼容协议支持 stream_options.include_usage）。
+  // 流式响应最后一个 chunk 会携带顶层 usage 对象，供前端展示上下文占用百分比。
+  if (stream) {
+    body.stream_options = { include_usage: true }
   }
   return {
     url: `${resolvedBaseUrl}/chat/completions`,
