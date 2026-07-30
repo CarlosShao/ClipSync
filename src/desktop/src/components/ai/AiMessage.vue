@@ -2,10 +2,12 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { Marked } from 'marked'
-import type { ChatMessage } from '@/api/ai'
+import { ChevronRight } from 'lucide-vue-next'
+import type { ChatMessage, AgentRun } from '@/api/ai'
 import AiThinking from './AiThinking.vue'
 import AiToolTimeline from './AiToolTimeline.vue'
-import AiAgentRun from './AiAgentRun.vue'
+import AiAgentSummary from './AiAgentSummary.vue'
+import AiAgentDrawer from './AiAgentDrawer.vue'
 
 const props = defineProps<{ message: ChatMessage; index: number; isStreaming: boolean }>()
 const { t } = useI18n()
@@ -13,9 +15,20 @@ const { t } = useI18n()
 // GFM 已默认开启（表格、删除线、任务列表等）；breaks:false 保持标准 markdown 段落语义。
 const marked = new Marked({ gfm: true, breaks: false })
 const expandedThinking = ref(false)
+// 任务处理过程（思考/工具/子代理）是否折叠；所有任务完成、最终答案输出后自动折叠。
+const collapsed = ref(false)
+// 抽屉中正在查看详情的子代理运行卡片（null 表示未打开）
+const drawerRun = ref<AgentRun | null>(null)
 
 // 当前消息是否处于“正在生成”状态（仅最后一条助手消息为 true）
 const isStreamingNow = computed(() => props.isStreaming && props.index === 0)
+
+// 历史已完成消息默认折叠；正在流式的不折叠。
+if (!isStreamingNow.value) collapsed.value = true
+watch(isStreamingNow, (now, before) => {
+  if (now) collapsed.value = false // 开始流式 → 展开看实时过程
+  else if (before) collapsed.value = true // 流结束 → 自动折叠
+})
 
 // 思考是否正在流式生长：有 thinking 内容且 thinkingActive 仍为 true
 const isThinkingStreaming = computed(() =>
@@ -32,6 +45,10 @@ const isThinkingDone = computed(() =>
 
 const hasAgentRuns = computed(() => (props.message.agentRuns?.length || 0) > 0)
 const hasToolCalls = computed(() => (props.message.toolCalls?.length || 0) > 0)
+const hasThinking = computed(() => (props.message.thinking?.length || 0) > 0)
+
+// 是否存在“任务处理过程”（思考 / 工具 / 子代理），决定是否需要折叠头
+const hasProcess = computed(() => hasThinking.value || hasToolCalls.value || hasAgentRuns.value)
 
 // loading 占位：尚未收到任何有效阶段数据（无 thinking、无答案、无工具、无 agent 运行卡片）
 const isLoading = computed(() =>
@@ -64,6 +81,42 @@ watch(isThinkingStreaming, (now, before) => {
   if (before && !now) expandedThinking.value = true
 })
 
+// 记录思考结束时刻，用于折叠头显示“深度思考 Ns”
+const thinkingEndedAt = ref<number | null>(null)
+watch(
+  () => [props.message.thinkingStartedAt, props.message.thinkingActive],
+  () => {
+    if (
+      props.message.thinkingStartedAt &&
+      props.message.thinkingActive === false &&
+      thinkingEndedAt.value === null
+    ) {
+      thinkingEndedAt.value = Date.now()
+    }
+  },
+)
+
+const thinkingSecs = computed(() => {
+  const s = props.message.thinkingStartedAt
+  if (!s) return 0
+  const end = thinkingEndedAt.value ?? (props.message.thinkingActive !== false ? Date.now() : s)
+  return Math.max(0, Math.floor((end - s) / 1000))
+})
+
+// 折叠头中用于概括处理过程的标签（深度思考 / 工具调用次数 / 子代理数量）
+const processChips = computed<string[]>(() => {
+  const chips: string[] = []
+  if (hasThinking.value) {
+    const sec = thinkingSecs.value
+    chips.push(sec > 0 ? t('ai_process_thinking', { n: sec }) : t('ai_thinking_deep', '深度思考'))
+  }
+  const toolCount = props.message.toolCalls?.length || 0
+  if (toolCount > 0) chips.push(t('ai_process_tools', { n: toolCount }))
+  const agentCount = props.message.agentRuns?.length || 0
+  if (agentCount > 0) chips.push(t('ai_process_agents', { n: agentCount }))
+  return chips
+})
+
 function compactBlankLines(content: string): string {
   if (!content) return ''
   return content.replace(/\n{3,}/g, '\n\n').trim()
@@ -89,32 +142,51 @@ function roleLabel() {
     <div class="ai-msg-bubble">
       <div class="ai-msg-role">{{ roleLabel() }}</div>
 
-      <!-- 阶段 1/2/3：loading 占位 / 深度思考 / 思考完成 -->
-      <AiThinking
-        v-if="message.role === 'assistant' && showThinking"
-        :thinking="message.thinking || ''"
-        :thinking-started-at="message.thinkingStartedAt"
-        :is-streaming="thinkingIsStreaming"
-        :expanded="expandedThinking || isThinkingStreaming"
-        @toggle="expandedThinking = !expandedThinking"
-      />
+      <!-- 折叠态：任务处理过程已完成，收起为一行（点击展开回看） -->
+      <div
+        v-if="message.role === 'assistant' && hasProcess && collapsed"
+        class="ai-process-collapsed"
+        @click="collapsed = false"
+      >
+        <span class="ai-process-collapsed-label">{{ t('ai_process_collapsed') }}</span>
+        <span v-for="chip in processChips" :key="chip" class="ai-process-chip">{{ chip }}</span>
+        <ChevronRight :size="13" class="ai-process-collapsed-chev" />
+      </div>
 
-      <!-- 工具调用日志：仅在思考结束后出现 -->
-      <AiToolTimeline
-        v-if="message.role === 'assistant' && visibleToolCalls.length"
-        :tool-calls="visibleToolCalls"
-        :tool-results="message.toolResults"
-      />
+      <!-- 展开态：思考 / 工具调用 / 子代理执行 -->
+      <template v-else>
+        <!-- 阶段 1/2/3：loading 占位 / 深度思考 / 思考完成 -->
+        <AiThinking
+          v-if="message.role === 'assistant' && showThinking"
+          :thinking="message.thinking || ''"
+          :thinking-started-at="message.thinkingStartedAt"
+          :is-streaming="thinkingIsStreaming"
+          :expanded="expandedThinking || isThinkingStreaming"
+          @toggle="expandedThinking = !expandedThinking"
+        />
 
-      <!-- 多代理并行模式：子代理运行状态卡片，仅在思考结束后出现 -->
-      <template v-if="message.role === 'assistant' && visibleAgentRuns.length">
-        <AiAgentRun
-          v-for="run in visibleAgentRuns"
-          :key="run.id"
-          :run="run"
-          :is-streaming="isStreaming"
+        <!-- 工具调用日志：仅在思考结束后出现（带时间线序号 + 子代理归属） -->
+        <AiToolTimeline
+          v-if="message.role === 'assistant' && visibleToolCalls.length"
+          :tool-calls="visibleToolCalls"
+          :tool-results="message.toolResults"
+        />
+
+        <!-- 多代理并行模式：子代理摘要行（点击展开详情抽屉），仅在思考结束后出现 -->
+        <AiAgentSummary
+          v-if="message.role === 'assistant' && visibleAgentRuns.length"
+          :runs="visibleAgentRuns"
+          @open="drawerRun = $event"
         />
       </template>
+
+      <!-- 子代理执行详情抽屉（点击摘要行打开，❌ 或 ESC 关闭，不影响主流程继续） -->
+      <AiAgentDrawer
+        v-if="drawerRun"
+        :run="drawerRun"
+        :is-streaming="isStreaming"
+        @close="drawerRun = null"
+      />
 
       <div v-if="message.role === 'assistant'" class="ai-msg-content markdown-body" v-html="renderMarkdown(message.content)"></div>
       <div v-else class="ai-msg-content">{{ compactBlankLines(message.content) }}</div>
@@ -159,6 +231,47 @@ function roleLabel() {
   opacity: 0.6;
   margin-bottom: 4px;
 }
+
+/* 折叠态处理过程头：类 WorkBuddy “已完成” 折叠条 */
+.ai-process-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+.ai-process-collapsed:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ai-process-collapsed-label {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.ai-process-chip {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: var(--bg-hover);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.ai-process-collapsed-chev {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
 .ai-msg-content {
   white-space: normal;
   word-break: break-word;

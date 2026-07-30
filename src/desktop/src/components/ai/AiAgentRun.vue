@@ -90,6 +90,7 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
       v-if="run.toolCalls && run.toolCalls.length"
       :tool-calls="run.toolCalls"
       :tool-results="run.toolResults"
+      :agent-name="displayName"
     />
 
     <div v-if="hasContent" class="ai-agent-run-content markdown-body" v-html="renderMarkdown(run.content || '')"></div>

@@ -7,26 +7,22 @@ import { ChevronDown, ChevronRight, CheckCircle2, Loader2 } from 'lucide-vue-nex
 const props = defineProps<{
   toolCalls?: ToolCall[]
   toolResults?: ToolResult[]
+  // 该时间线归属的代理名（子代理卡片内传入，用于把工具调用明确标注为“属于哪个子代理”）
+  agentName?: string
 }>()
 const { t } = useI18n()
 
 const expanded = ref<Set<string>>(new Set())
 
-const TOOL_NAMES: Record<string, string> = {
-  get_clipboard_stats: '获取统计数据',
-  search_clips: '搜索剪贴板',
-  get_clip_details: '获取详情',
-  get_recent_clips: '获取最近记录',
-  analyze_clip_usage: '分析使用模式',
-  create_workflow: '创建工作流',
-  execute_workflow_step: '执行工作流步骤',
-  batch_favorite: '批量收藏',
-  batch_delete: '批量删除',
-  organize_by_type: '按类型整理'
-}
-
+// 完整 i18n 工具名映射：优先 ai_tool_<name> 键；缺失时把 snake_case 人性化显示作为兜底。
 function getToolName(name: string) {
-  return TOOL_NAMES[name] || name
+  const key = 'ai_tool_' + name
+  const val = t(key)
+  if (val && val !== key) return val
+  return name
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
 }
 
 function getResult(id: string): ToolResult | undefined {
@@ -63,11 +59,13 @@ function formatResult(content: string): string {
   }
 }
 
+// 按数组顺序编号（即工具调用被后端派发的先后顺序），形成可视化时间线。
 const steps = computed(() => {
-  return (props.toolCalls || []).map((tc) => ({
+  return (props.toolCalls || []).map((tc, i) => ({
     ...tc,
+    index: i + 1,
     done: isDone(tc.id),
-    result: getResult(tc.id)
+    result: getResult(tc.id),
   }))
 })
 </script>
@@ -78,27 +76,35 @@ const steps = computed(() => {
       v-for="step in steps"
       :key="step.id"
       class="ai-tool-log-line"
-      :class="{ done: step.done }"
+      :class="{ done: step.done, last: step.index === steps.length }"
     >
-      <button class="ai-tool-log-summary" @click="toggle(step.id)">
-        <Loader2 v-if="!step.done" :size="12" class="ai-tool-log-spin" />
-        <CheckCircle2 v-else :size="12" class="ai-tool-log-done" />
-        <span class="ai-tool-log-text">
-          {{ step.done ? (t('ai_tool_called') || '已调用') : (t('ai_tool_calling') || '调用') }}
-          {{ getToolName(step.name) }}
-        </span>
-        <ChevronDown v-if="expanded.has(step.id)" :size="13" />
-        <ChevronRight v-else :size="13" />
-      </button>
+      <div class="ai-tool-log-rail">
+        <span class="ai-tool-log-node">{{ step.index }}</span>
+        <span class="ai-tool-log-connector" />
+      </div>
+      <div class="ai-tool-log-body">
+        <button class="ai-tool-log-summary" @click="toggle(step.id)">
+          <Loader2 v-if="!step.done" :size="12" class="ai-tool-log-spin" />
+          <CheckCircle2 v-else :size="12" class="ai-tool-log-done" />
+          <span class="ai-tool-log-text">
+            {{ step.done ? (t('ai_tool_called') || '已调用') : (t('ai_tool_calling') || '调用') }}
+            {{ getToolName(step.name) }}
+          </span>
+          <span v-if="agentName" class="ai-tool-log-source">{{ agentName }}</span>
+          <span class="ai-tool-log-spacer" />
+          <ChevronDown v-if="expanded.has(step.id)" :size="13" />
+          <ChevronRight v-else :size="13" />
+        </button>
 
-      <div v-if="expanded.has(step.id)" class="ai-tool-log-detail">
-        <div class="ai-tool-log-section">
-          <div class="ai-tool-log-section-title">{{ t('ai_tool_args') || '参数' }}</div>
-          <pre>{{ formatArgs(step.arguments) }}</pre>
-        </div>
-        <div v-if="step.result" class="ai-tool-log-section">
-          <div class="ai-tool-log-section-title">{{ t('ai_tool_result') || '结果' }}</div>
-          <pre>{{ formatResult(step.result.content) }}</pre>
+        <div v-if="expanded.has(step.id)" class="ai-tool-log-detail">
+          <div class="ai-tool-log-section">
+            <div class="ai-tool-log-section-title">{{ t('ai_tool_args') || '参数' }}</div>
+            <pre>{{ formatArgs(step.arguments) }}</pre>
+          </div>
+          <div v-if="step.result" class="ai-tool-log-section">
+            <div class="ai-tool-log-section-title">{{ t('ai_tool_result') || '结果' }}</div>
+            <pre>{{ formatResult(step.result.content) }}</pre>
+          </div>
         </div>
       </div>
     </div>
@@ -118,10 +124,58 @@ const steps = computed(() => {
 }
 
 .ai-tool-log-line {
+  display: flex;
+  align-items: stretch;
   border-bottom: 1px solid var(--border-subtle);
+  /* 新工具调用到达时淡入，强化“按顺序逐个出现”的时序感 */
+  animation: ai-tool-line-in 0.25s ease-out;
 }
 .ai-tool-log-line:last-child {
   border-bottom: none;
+}
+
+.ai-tool-log-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 26px;
+  flex-shrink: 0;
+  padding-top: 9px;
+}
+.ai-tool-log-node {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ai-tool-log-line.done .ai-tool-log-node {
+  background: var(--success, #16a34a);
+  border-color: var(--success, #16a34a);
+  color: #fff;
+}
+.ai-tool-log-connector {
+  flex: 1;
+  width: 1px;
+  background: var(--border-subtle);
+  margin: 3px 0;
+}
+.ai-tool-log-line.last .ai-tool-log-connector {
+  display: none;
+}
+
+.ai-tool-log-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .ai-tool-log-summary {
@@ -129,7 +183,7 @@ const steps = computed(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 12px;
+  padding: 7px 12px 7px 8px;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -155,15 +209,28 @@ const steps = computed(() => {
   color: var(--success, #16a34a);
 }
 .ai-tool-log-text {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.ai-tool-log-source {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+.ai-tool-log-spacer {
+  flex: 1;
+  min-width: 4px;
+}
 
 .ai-tool-log-detail {
-  padding: 8px 12px;
-  border-top: 1px solid var(--border-subtle);
+  padding: 0 12px 8px 0;
 }
 .ai-tool-log-section {
   margin-bottom: 6px;
@@ -192,5 +259,9 @@ const steps = computed(() => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+@keyframes ai-tool-line-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
 }
 </style>
