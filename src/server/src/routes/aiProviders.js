@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import dns from 'dns'
 import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { encrypt, decrypt } from '../utils/encryption.js'
@@ -7,6 +8,61 @@ import { getAiContext } from '../utils/aiContext.js'
 import { logger } from '../utils/logger.js'
 
 const router = Router()
+
+// SSRF 防护：校验自定义供应商 baseUrl，拒绝内网/保留网段
+function isPrivateIp(ip) {
+  if (!ip) return false
+  const v = String(ip).toLowerCase()
+  if (v === '::1' || v === '::' || v === '0.0.0.0') return true
+  // IPv6 link-local / 唯一本地地址
+  if (v.startsWith('fe80') || v.startsWith('fc') || v.startsWith('fd')) return true
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v)
+  if (m) {
+    const p = m.slice(1).map(Number)
+    if (p[0] === 10) return true // 10/8
+    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true // 172.16/12
+    if (p[0] === 192 && p[1] === 168) return true // 192.168/16
+    if (p[0] === 169 && p[1] === 254) return true // 169.254/16 link-local
+    if (p[0] === 127) return true // loopback
+    if (p[0] === 0) return true
+    if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return true // 100.64/10 CGNAT
+  }
+  return false
+}
+
+const BLOCKED_HOSTNAMES = ['localhost', 'metadata.google.internal', 'metadata']
+
+async function validateProviderBaseUrl(input) {
+  if (!input || typeof input !== 'string' || input.trim().length === 0) {
+    return { ok: true } // 空 baseUrl 允许，回退到预设默认地址
+  }
+  let parsed
+  try {
+    parsed = new URL(input.trim())
+  } catch {
+    return { ok: false, error: 'Invalid base URL' }
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { ok: false, error: 'Base URL must use http or https' }
+  }
+  const host = parsed.hostname.toLowerCase()
+  if (BLOCKED_HOSTNAMES.includes(host) || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.svc')) {
+    return { ok: false, error: 'Base URL host is not allowed' }
+  }
+  // 直接是 IP：立即校验
+  if (/^[\d.]+$/.test(host) || host.includes(':')) {
+    if (isPrivateIp(host)) return { ok: false, error: 'Base URL resolves to a blocked internal address' }
+    return { ok: true }
+  }
+  // 主机名：解析后再校验一次，防 DNS rebinding 指向内网
+  try {
+    const { address } = await dns.promises.lookup(host)
+    if (isPrivateIp(address)) return { ok: false, error: 'Base URL resolves to a blocked internal address' }
+  } catch {
+    return { ok: false, error: 'Base URL host cannot be resolved' }
+  }
+  return { ok: true }
+}
 
 // GET /api/ai/providers - 列出当前用户的供应商（不返回密钥明文，仅 hasKey 标记）
 router.get('/providers', apiLimiter, async (req, res) => {
@@ -53,6 +109,11 @@ router.post('/providers', apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Name is required' })
     }
 
+    if (baseUrl) {
+      const vb = await validateProviderBaseUrl(baseUrl)
+      if (!vb.ok) return res.status(400).json({ error: vb.error })
+    }
+
     // models 多选列表：至少选一个模型；model 字段取 models[0]（或显式传入的 model）
     const selectedModels = Array.isArray(models)
       ? models.filter((m) => typeof m === 'string' && m.trim().length > 0)
@@ -60,9 +121,6 @@ router.post('/providers', apiLimiter, async (req, res) => {
     const activeModel = typeof model === 'string' && model.trim().length > 0
       ? model.trim()
       : selectedModels[0] || ''
-    if (!activeModel) {
-      return res.status(400).json({ error: 'At least one model is required' })
-    }
 
     let encryptedKey = null
     if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0) {
@@ -113,6 +171,11 @@ router.put('/providers/:id', apiLimiter, async (req, res) => {
 
     const newName = name != null ? String(name).trim() : cur.name
     const newBaseUrl = baseUrl != null ? (baseUrl || null) : cur.base_url
+
+    if (newBaseUrl) {
+      const vb = await validateProviderBaseUrl(newBaseUrl)
+      if (!vb.ok) return res.status(400).json({ error: vb.error })
+    }
 
     // models 多选列表：客户端显式传入数组时覆盖；同时保证 model 落在 models 内
     const selectedModels = Array.isArray(models)
@@ -191,17 +254,22 @@ router.get('/providers/:id/models', apiLimiter, async (req, res) => {
   }
 })
 
-// POST /api/ai/providers/fetch-models - 未保存供应商也能刷新模型列表（不落地）
+// POST /api/ai/providers/fetch-models - 用已存供应商的加密密钥拉取模型列表（不落地）
+// 安全：不再从请求体接收明文 apiKey，统一按 providerId 取库中加密密钥解密后使用
 router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
   try {
-    const { provider, baseUrl, apiKey } = req.body || {}
-    if (!provider || !getPreset(provider)) {
-      return res.status(400).json({ error: 'Invalid provider' })
+    const { providerId, baseUrl } = req.body || {}
+    if (!providerId) {
+      return res.status(400).json({ error: 'providerId is required', models: [] })
     }
-    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
-      return res.status(400).json({ error: 'API key is required', models: [] })
+    const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found', models: [] })
+    const row = result.rows[0]
+    if (!row.api_key_encrypted) {
+      return res.status(400).json({ error: 'No API key configured', models: [] })
     }
-    const models = await fetchProviderModels({ provider, baseUrl, apiKey: apiKey.trim() })
+    const apiKey = decrypt(row.api_key_encrypted)
+    const models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url || baseUrl, apiKey })
     res.json({ models })
   } catch (err) {
     logger.error('Fetch models (preview) error:', err)

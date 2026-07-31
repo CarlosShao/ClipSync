@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { Marked } from 'marked'
+import { sanitizeHtml } from '@/utils/html'
 import { ChevronRight } from 'lucide-vue-next'
 import type { ChatMessage, AgentRun } from '@/api/ai'
 import AiThinking from './AiThinking.vue'
@@ -126,9 +127,9 @@ function renderMarkdown(content: string): string {
   const compacted = compactBlankLines(content)
   if (!compacted) return ''
   try {
-    return marked.parse(compacted) as string
+    return sanitizeHtml(marked.parse(compacted) as string)
   } catch {
-    return compacted
+    return sanitizeHtml(compacted)
   }
 }
 

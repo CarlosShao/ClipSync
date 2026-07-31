@@ -16,7 +16,6 @@ import {
   deleteProvider,
   testProvider,
   getProviderModels,
-  fetchProviderModels,
 } from '@/api/ai'
 import type { AiProvider, AiProviderPreset } from '@/api/ai'
 
@@ -111,7 +110,7 @@ function toggleModel(m: string) {
 }
 
 // 刷新该供应商可用模型列表（上游 /models）。
-// 已保存供应商走后端解密 key；未保存供应商用表单中的 key/baseUrl 直接拉取（不落地）。
+// 已保存供应商走后端解密 key；未保存供应商先落地（密钥加密入库）再用已存密钥拉取，避免明文 key 出现在请求体。
 async function refreshModels() {
   if (refreshingModels.value) return
   const hasKey = formApiKey.value.trim().length > 0
@@ -126,11 +125,22 @@ async function refreshModels() {
     if (editingId.value) {
       res = await getProviderModels(editingId.value)
     } else {
-      res = await fetchProviderModels({
+      // 未保存：先落地（密钥加密入库），再用已存密钥拉取，避免明文 key 出现在 fetch-models 请求体
+      const createRes = await createProvider({
         provider: formProvider.value,
-        baseUrl: formBaseUrl.value.trim(),
-        apiKey: formApiKey.value.trim(),
+        name: formName.value.trim(),
+        apiKey: formApiKey.value,
+        baseUrl: formBaseUrl.value.trim() || undefined,
+        model: formSelectedModels.value[0] || '',
+        models: formSelectedModels.value,
+        isDefault: formIsDefault.value,
       })
+      if (!createRes.ok) {
+        toast.show(createRes.error || t('ai_save_failed'), 'error')
+        return
+      }
+      editingId.value = createRes.data.id
+      res = await getProviderModels(editingId.value)
     }
     if (res.ok && res.data) {
       const list = res.data.models || []
