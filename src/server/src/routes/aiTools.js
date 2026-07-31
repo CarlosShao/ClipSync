@@ -528,11 +528,14 @@ async function executeTool(toolName, args, userId, role) {
 
       case 'search_clips': {
         const { query, type = 'all', limit = 10 } = args
+        // 服务端文本存于 content_encrypted（加密），可搜索明文在 content_preview；
+        // 直接对 content 列 ILIKE 会因该列不存在而报错，故只搜 content_preview。
+        const safeLimit = Math.min(Math.max(1, Number(limit) || 10), 100)
         let sql = 'SELECT id, content_type, content_preview, created_at FROM clipboard_items WHERE user_id = $1'
         const params = [userId]
-        
+
         if (query) {
-          sql += ' AND (content ILIKE $2 OR content_preview ILIKE $2)'
+          sql += ' AND content_preview ILIKE $2'
           params.push(`%${query}%`)
         }
         if (type && type !== 'all') {
@@ -540,8 +543,8 @@ async function executeTool(toolName, args, userId, role) {
           params.push(type)
         }
         sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`
-        params.push(limit)
-        
+        params.push(safeLimit)
+
         const result = await pool.query(sql, params)
         return { items: result.rows, count: result.rowCount }
       }
@@ -568,14 +571,14 @@ async function executeTool(toolName, args, userId, role) {
         const { limit = 10, type = 'all' } = args
         let sql = 'SELECT id, content_type, content_preview, created_at FROM clipboard_items WHERE user_id = $1'
         const params = [userId]
-        
+
         if (type && type !== 'all') {
           sql += ' AND content_type = $2'
           params.push(type)
         }
         sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`
-        params.push(limit)
-        
+        params.push(Math.min(Math.max(1, Number(limit) || 10), 100))
+
         const result = await pool.query(sql, params)
         return { items: result.rows, count: result.rowCount }
       }
