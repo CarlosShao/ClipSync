@@ -16,6 +16,9 @@ router.get('/', apiLimiter, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT c.id, c.title, c.model, c.mode, c.thinking_enabled, c.created_at, c.updated_at,
+              c.prompt_tokens, c.completion_tokens, c.total_tokens, c.cache_read_tokens,
+              c.cache_write_tokens, c.cache_hit_rate, c.thinking_tokens, c.reply_tokens,
+              c.context_window,
               (SELECT COUNT(*)::int FROM ai_messages m WHERE m.conversation_id = c.id) AS message_count
        FROM ai_conversations c
        WHERE c.user_id = $1
@@ -54,7 +57,10 @@ router.get('/:id', apiLimiter, async (req, res) => {
     if (!isValidUUID(id)) return res.status(400).json({ error: 'Invalid ID' })
 
     const convResult = await pool.query(
-      `SELECT id, title, model, mode, thinking_enabled, created_at, updated_at
+      `SELECT id, title, model, mode, thinking_enabled, created_at, updated_at,
+              prompt_tokens, completion_tokens, total_tokens, cache_read_tokens,
+              cache_write_tokens, cache_hit_rate, thinking_tokens, reply_tokens,
+              context_window
        FROM ai_conversations
        WHERE id = $1 AND user_id = $2`,
       [id, req.userId]
@@ -183,5 +189,62 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
     res.status(500).json({ error: 'Failed to save messages' })
   }
 })
+
+/**
+ * 把单次 SSE 流返回的 token 用量持久化到 ai_conversations。
+ * 供 aiChat.js 在流结束后调用；不暴露为公开 API，避免前端伪造用量。
+ */
+export async function updateConversationUsage(id, userId, usage) {
+  if (!id || !userId || !usage) return
+  if (!isValidUUID(id)) {
+    logger.warn('[updateConversationUsage] invalid conversation id:', id)
+    return
+  }
+
+  const promptTokens = Math.max(0, Number(usage.promptTokens) || 0)
+  const completionTokens = Math.max(0, Number(usage.completionTokens) || 0)
+  const totalTokens = Math.max(0, Number(usage.totalTokens) || promptTokens + completionTokens)
+  const cacheReadTokens = Math.max(0, Number(usage.cacheReadTokens) || 0)
+  const cacheWriteTokens = Math.max(0, Number(usage.cacheWriteTokens) || 0)
+  const thinkingTokens = Math.max(0, Number(usage.thinkingTokens) || 0)
+  const replyTokens = Math.max(0, Number(usage.replyTokens) || Math.max(0, completionTokens - thinkingTokens))
+  const contextWindow = Math.max(0, Number(usage.contextWindow) || 0)
+  // 缓存命中率 = 命中 / 输入总量（近似）
+  const cacheHitRate = promptTokens > 0
+    ? Math.round((cacheReadTokens / promptTokens) * 1000) / 10
+    : 0
+
+  try {
+    await pool.query(
+      `UPDATE ai_conversations
+       SET prompt_tokens = $1,
+           completion_tokens = $2,
+           total_tokens = $3,
+           cache_read_tokens = $4,
+           cache_write_tokens = $5,
+           cache_hit_rate = $6,
+           thinking_tokens = $7,
+           reply_tokens = $8,
+           context_window = $9,
+           updated_at = NOW()
+       WHERE id = $10 AND user_id = $11`,
+      [
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        cacheReadTokens,
+        cacheWriteTokens,
+        cacheHitRate,
+        thinkingTokens,
+        replyTokens,
+        contextWindow,
+        id,
+        userId,
+      ]
+    )
+  } catch (err) {
+    logger.error('[updateConversationUsage] failed:', err)
+  }
+}
 
 export default router

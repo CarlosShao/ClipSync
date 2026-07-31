@@ -110,18 +110,24 @@ export async function runChatLoop({
     if (response.usage) {
       const ctxWindow = getContextWindow(providerRow.model)
       const u = response.usage
+      const promptTokens = u.prompt_tokens || 0
+      const completionTokens = u.completion_tokens || 0
+      const cacheReadTokens = u.prompt_tokens_details?.cached_tokens || u.prompt_tokens_details?.cache_read_tokens || 0
+      const cacheWriteTokens = u.prompt_tokens_details?.cache_written_tokens || u.prompt_tokens_details?.cache_write_tokens || 0
+      const thinkingTokens = u.completion_tokens_details?.reasoning_tokens || 0
       sendDelta({
         meta: {
           type: 'usage',
           usage: {
-            promptTokens: u.prompt_tokens || 0,
-            completionTokens: u.completion_tokens || 0,
-            totalTokens:
-              u.total_tokens || (u.prompt_tokens || 0) + (u.completion_tokens || 0),
+            promptTokens,
+            completionTokens,
+            totalTokens: u.total_tokens || promptTokens + completionTokens,
             contextWindow: ctxWindow,
-            // 缓存命中：上游 prompt_tokens_details.cached_tokens（OpenAI 兼容协议）。
-            // 命中越高说明越多 prompt 命中了提示缓存（prompt caching），节省 token 成本。
-            cacheReadTokens: u.prompt_tokens_details?.cached_tokens || 0,
+            // 缓存命中/写入：OpenAI 兼容协议的 prompt_tokens_details。
+            cacheReadTokens,
+            cacheWriteTokens,
+            thinkingTokens,
+            replyTokens: Math.max(0, completionTokens - thinkingTokens),
           },
         },
       })

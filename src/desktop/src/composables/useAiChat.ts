@@ -83,6 +83,10 @@ export function useAiChat() {
     if (!conv.currentConversationId.value && conv.conversations.value.length > 0) {
       await loadConversation(conv.conversations.value[0].id)
     }
+    // 若当前有历史对话，恢复持久化用量
+    if (!contextUsage.value) {
+      contextUsage.value = conv.currentUsage.value
+    }
   }
 
   // 加载并应用用户 AI 偏好（默认供应商 / 模型 / 模式 / 思考 / 并行）
@@ -184,6 +188,7 @@ export function useAiChat() {
     }
     messages.value = []
     error.value = ''
+    contextUsage.value = null
     return created
   }
 
@@ -198,6 +203,8 @@ export function useAiChat() {
     if (msgs) {
       messages.value = msgs
       error.value = ''
+      // 恢复持久化的上下文用量
+      contextUsage.value = conv.currentUsage.value
       // 同步 provider/model/mode
       const c = conv.currentConversation.value
       if (c?.mode) {
@@ -461,6 +468,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
           thinking: options.thinking,
           thinkingStrength: options.thinkingStrength,
           model: selectedModel.value || selectedProvider?.model || undefined,
+          conversationId: conv.currentConversationId.value,
         },
         signal: controller.signal,
         onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => {

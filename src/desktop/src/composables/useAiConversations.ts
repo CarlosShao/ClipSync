@@ -7,7 +7,25 @@ import {
   deleteConversation,
   saveMessages,
 } from '@/api/ai'
-import type { AiConversation, ChatMessage } from '@/api/ai'
+import type { AiConversation, ChatMessage, ContextUsage } from '@/api/ai'
+
+function mapUsage(conv: AiConversation | null | undefined): ContextUsage | null {
+  if (!conv || !conv.total_tokens) return null
+  const contextWindow = conv.context_window || 0
+  const total = conv.total_tokens || 0
+  return {
+    promptTokens: conv.prompt_tokens || 0,
+    completionTokens: conv.completion_tokens || 0,
+    totalTokens: total,
+    contextWindow,
+    percent: contextWindow > 0 ? Math.min(100, Math.round((total / contextWindow) * 1000) / 10) : 0,
+    cacheReadTokens: conv.cache_read_tokens || 0,
+    cacheWriteTokens: conv.cache_write_tokens || 0,
+    cacheHitRate: conv.cache_hit_rate || 0,
+    thinkingTokens: conv.thinking_tokens || 0,
+    replyTokens: conv.reply_tokens || 0,
+  }
+}
 
 export function useAiConversations() {
   const conversations = ref<AiConversation[]>([])
@@ -17,6 +35,8 @@ export function useAiConversations() {
   const currentConversation = computed(() =>
     conversations.value.find((c) => c.id === currentConversationId.value) || null
   )
+
+  const currentUsage = computed(() => mapUsage(currentConversation.value))
 
   async function loadConversations() {
     loading.value = true
@@ -125,6 +145,7 @@ export function useAiConversations() {
     conversations,
     currentConversationId,
     currentConversation,
+    currentUsage,
     loading,
     loadConversations,
     createNew,

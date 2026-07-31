@@ -80,9 +80,13 @@ export interface ContextUsage {
   totalTokens: number
   contextWindow: number
   percent: number // 0-100，已 clamp
-  // 缓存命中 token 数（prompt_tokens_details.cached_tokens）。
+  // 缓存命中/写入 token 数（prompt_tokens_details.cached_tokens / cache_written_tokens）。
   // 占 promptTokens 的比例即「缓存命中率」，命中越高越省 token 成本。
   cacheReadTokens?: number
+  cacheWriteTokens?: number
+  cacheHitRate?: number
+  thinkingTokens?: number
+  replyTokens?: number
 }
 
 // SSE 增量附带的元信息（多代理路由用）
@@ -109,6 +113,8 @@ export interface ChatOptions {
   thinkingStrength?: 'low' | 'medium' | 'high'
   // 本次请求使用的模型（覆盖供应商默认 model，用于多选标签场景）
   model?: string
+  // 当前对话 id，后端在流结束后把 token 用量持久化到该对话
+  conversationId?: string
 }
 
 export interface AiConversation {
@@ -120,6 +126,16 @@ export interface AiConversation {
   created_at: string
   updated_at: string
   message_count: number
+  // 持久化的 token 用量（#226+）
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  cache_read_tokens?: number
+  cache_write_tokens?: number
+  cache_hit_rate?: number
+  thinking_tokens?: number
+  reply_tokens?: number
+  context_window?: number
 }
 
 export interface AiConversationInput {

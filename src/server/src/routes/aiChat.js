@@ -6,6 +6,7 @@ import { logger } from '../utils/logger.js'
 import { TOOLS } from './aiTools.js'
 import { runChatLoop } from './aiChatCore.js'
 import { runOrchestration } from './aiOrchestrator.js'
+import { updateConversationUsage } from './aiConversations.js'
 import {
   buildRoleSystemPrompt,
   getToolsForRole,
@@ -20,6 +21,7 @@ const router = Router()
 router.post('/chat', apiLimiter, async (req, res) => {
   try {
     const { providerId, messages, options } = req.body || {}
+    const conversationId = options?.conversationId
     if (!providerId) return res.status(400).json({ error: 'providerId is required' })
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'messages is required' })
@@ -175,6 +177,15 @@ router.post('/chat', apiLimiter, async (req, res) => {
     const upstreamAbort = new AbortController()
     const upstreamTimer = setTimeout(() => upstreamAbort.abort(), 180_000)
 
+    // 捕获本次 SSE 流最终下发的 usage 元信息，流结束后持久化到 ai_conversations。
+    let capturedUsage = null
+    const trackedSendDelta = (obj) => {
+      if (obj?.meta?.type === 'usage' && obj.meta.usage) {
+        capturedUsage = obj.meta.usage
+      }
+      sendDelta(obj)
+    }
+
     try {
       if (options?.mode === 'agent') {
         // Agent 模式下由模型自己决定是否派发子代理：
@@ -187,7 +198,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
           apiKey,
           userId: req.userId,
           role,
-          sendDelta,
+          sendDelta: trackedSendDelta,
           logChunk,
           safeFinish,
           abortSignal: upstreamAbort.signal,
@@ -204,7 +215,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
           tools: scopedTools,
           role,
           userId: req.userId,
-          sendDelta,
+          sendDelta: trackedSendDelta,
           logChunk,
           agentId: null,
           abortSignal: upstreamAbort.signal,
@@ -223,6 +234,12 @@ router.post('/chat', apiLimiter, async (req, res) => {
       }
     } finally {
       clearTimeout(upstreamTimer)
+      // 流结束后异步持久化用量；不阻塞响应结束，失败只记日志。
+      if (conversationId && capturedUsage) {
+        updateConversationUsage(conversationId, req.userId, capturedUsage).catch((err) => {
+          logger.warn('[aiChat] persist usage error:', err.message)
+        })
+      }
     }
   } catch (err) {
     logger.error('AI chat proxy error:', err)

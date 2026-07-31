@@ -207,7 +207,14 @@ const usagePanelOpen = ref(false)
 const usageTotalTokens = computed(() => props.contextUsage?.totalTokens ?? 0)
 const usageContextWindow = computed(() => props.contextUsage?.contextWindow ?? 0)
 const usagePromptTokens = computed(() => props.contextUsage?.promptTokens ?? 0)
+const usageCompletionTokens = computed(() => props.contextUsage?.completionTokens ?? 0)
 const usageCacheReadTokens = computed(() => props.contextUsage?.cacheReadTokens ?? 0)
+const usageCacheWriteTokens = computed(() => props.contextUsage?.cacheWriteTokens ?? 0)
+const usageThinkingTokens = computed(() => props.contextUsage?.thinkingTokens ?? 0)
+const usageReplyTokens = computed(() => props.contextUsage?.replyTokens ?? 0)
+const usageCacheMissTokens = computed(() =>
+  Math.max(0, usagePromptTokens.value - usageCacheReadTokens.value - usageCacheWriteTokens.value)
+)
 </script>
 
 <template>
@@ -326,39 +333,66 @@ const usageCacheReadTokens = computed(() => props.contextUsage?.cacheReadTokens 
               {{ t('ai_context_usage_none') || '暂无数据，发起一次对话后将显示上下文用量' }}
             </div>
             <div v-else class="ai-usage-panel-body">
-              <div class="ai-usage-panel-head">
-                <span class="ai-usage-panel-title">{{ t('ai_context_usage_title') || '上下文用量' }}</span>
-                <span class="ai-usage-panel-window">{{ formatTokens(usageContextWindow) }} window</span>
+              <!-- 总计 -->
+              <div class="ai-usage-total-row">
+                <span class="ai-usage-panel-title">{{ t('ai_token_usage_total') || '总计' }}</span>
+                <span class="ai-usage-total-val">{{ formatTokens(usageTotalTokens) }}</span>
               </div>
-              <!-- 大数字百分比 + 进度条 -->
-              <div class="ai-usage-hero">
-                <span class="ai-usage-percent" :class="ringColorClass">{{ usagePercent }}<small>%</small></span>
-                <span class="ai-usage-hero-sub">{{ formatTokens(usageTotalTokens) }} / {{ formatTokens(usageContextWindow) }}</span>
-              </div>
-              <div class="ai-usage-bar">
-                <div class="ai-usage-bar-fill" :class="ringColorClass" :style="{ width: usagePercent + '%' }"></div>
-              </div>
-              <!-- 三栏指标卡 -->
-              <div class="ai-usage-metrics">
-                <div class="ai-usage-metric">
-                  <div class="ai-usage-metric-val">{{ formatTokens(usagePromptTokens) }}</div>
-                  <div class="ai-usage-metric-label">{{ t('ai_prompt_tokens_label') || '输入' }}</div>
+
+              <!-- 输入明细 -->
+              <div class="ai-usage-section">
+                <div class="ai-usage-section-title">
+                  <span class="dot input"></span>
+                  <span>{{ t('ai_token_usage_input') || '输入' }}</span>
+                  <span class="ai-usage-section-val">{{ formatTokens(usagePromptTokens) }}</span>
                 </div>
-                <div class="ai-usage-metric">
-                  <div class="ai-usage-metric-val">{{ formatTokens(props.contextUsage?.completionTokens ?? 0) }}</div>
-                  <div class="ai-usage-metric-label">{{ t('ai_completion_tokens_label') || '输出' }}</div>
+                <div class="ai-usage-detail-row">
+                  <span class="dot hit"></span>
+                  <span>{{ t('ai_token_usage_cache_hit') || '缓存命中' }}</span>
+                  <span>{{ formatTokens(usageCacheReadTokens) }}</span>
                 </div>
-                <div class="ai-usage-metric">
-                  <div class="ai-usage-metric-val" :class="{ 'metric-highlight': cacheHitPercent > 0 }">{{ cacheHitPercent }}%</div>
-                  <div class="ai-usage-metric-label">{{ t('ai_cache_hit_label') || '缓存命中' }}</div>
+                <div class="ai-usage-detail-row">
+                  <span class="dot miss"></span>
+                  <span>{{ t('ai_token_usage_cache_miss') || '缓存未命中' }}</span>
+                  <span>{{ formatTokens(usageCacheMissTokens) }}</span>
+                </div>
+                <div class="ai-usage-detail-row">
+                  <span class="dot write"></span>
+                  <span>{{ t('ai_token_usage_cache_write') || '缓存写入' }}</span>
+                  <span>{{ formatTokens(usageCacheWriteTokens) }}</span>
                 </div>
               </div>
-              <!-- 缓存详情（仅缓存写入 > 0 时展示） -->
-              <div v-if="(contextUsage.cacheReadTokens || 0) > 0 || (contextUsage.cacheWriteTokens || 0) > 0" class="ai-usage-cache-row">
-                <span class="ai-usage-cache-icon">⚡</span>
-                <span v-if="(contextUsage.cacheReadTokens || 0) > 0">{{ t('ai_cache_read_tokens') || '读取' }} {{ formatTokens(usageCacheReadTokens) }}</span>
-                <span v-if="(contextUsage.cacheWriteTokens || 0) > 0" style="margin-left:8px">{{ t('ai_cache_write_tokens') || '写入' }} {{ formatTokens(contextUsage.cacheWriteTokens) }}</span>
+
+              <!-- 输出明细 -->
+              <div class="ai-usage-section">
+                <div class="ai-usage-section-title">
+                  <span class="dot output"></span>
+                  <span>{{ t('ai_token_usage_output') || '输出' }}</span>
+                  <span class="ai-usage-section-val">{{ formatTokens(usageCompletionTokens) }}</span>
+                </div>
+                <div class="ai-usage-detail-row">
+                  <span class="dot thinking"></span>
+                  <span>{{ t('ai_token_usage_thinking') || '思考过程' }}</span>
+                  <span>{{ formatTokens(usageThinkingTokens) }}</span>
+                </div>
+                <div class="ai-usage-detail-row">
+                  <span class="dot reply"></span>
+                  <span>{{ t('ai_token_usage_reply') || '回复内容' }}</span>
+                  <span>{{ formatTokens(usageReplyTokens) }}</span>
+                </div>
               </div>
+
+              <!-- 缓存命中率 -->
+              <div class="ai-usage-hitrate">
+                <div class="ai-usage-hitrate-head">
+                  <span class="ai-usage-hitrate-title">{{ t('ai_token_usage_hit_rate') || '缓存命中率' }}</span>
+                  <span class="ai-usage-hitrate-val">{{ cacheHitPercent }}%</span>
+                </div>
+                <div class="ai-usage-hitrate-bar">
+                  <div class="ai-usage-hitrate-fill" :style="{ width: cacheHitPercent + '%' }"></div>
+                </div>
+              </div>
+
               <!-- 预估费用 -->
               <div v-if="estimatedCost" class="ai-usage-cost-row">
                 <span>{{ t('ai_estimated_cost') || '预估费用' }}</span>
@@ -671,23 +705,12 @@ const usageCacheReadTokens = computed(() => props.contextUsage?.cacheReadTokens 
   z-index: 60;
 }
 
-.ai-usage-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
 .ai-usage-panel-title {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-.ai-usage-panel-window {
-  font-size: 10px;
-  color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
 }
 .ai-usage-panel-empty {
   display: flex;
@@ -701,101 +724,99 @@ const usageCacheReadTokens = computed(() => props.contextUsage?.cacheReadTokens 
 .ai-usage-panel-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
-/* 大数字百分比 + 副标题 */
-.ai-usage-hero {
+.ai-usage-total-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  line-height: 1;
+  align-items: center;
+  justify-content: space-between;
 }
-.ai-usage-hero-sub {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
-.ai-usage-percent {
-  font-size: 28px;
+.ai-usage-total-val {
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
-  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.ai-usage-percent small {
-  font-size: 14px;
+
+.ai-usage-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ai-usage-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
   font-weight: 600;
-  margin-left: 1px;
+  color: var(--text-primary);
 }
-.ai-usage-percent.level-warn {
-  color: #f59e0b;
+.ai-usage-section-val {
+  margin-left: auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
-.ai-usage-percent.level-danger {
-  color: #ef4444;
+.ai-usage-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding-left: 14px;
+}
+.ai-usage-detail-row span:last-child {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
 }
 
-.ai-usage-bar {
-  position: relative;
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.dot.input { background: #60a5fa; }
+.dot.output { background: #a78bfa; }
+.dot.hit { background: #34d399; }
+.dot.miss { background: #f87171; }
+.dot.write { background: #facc15; }
+.dot.thinking { background: #fbbf24; }
+.dot.reply { background: #a78bfa; }
+
+.ai-usage-hitrate {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ai-usage-hitrate-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ai-usage-hitrate-title {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.ai-usage-hitrate-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: #34d399;
+  font-variant-numeric: tabular-nums;
+}
+.ai-usage-hitrate-bar {
   width: 100%;
-  height: 4px;
+  height: 5px;
   background: var(--bg-hover);
   border-radius: 999px;
   overflow: hidden;
 }
-.ai-usage-bar-fill {
+.ai-usage-hitrate-fill {
   height: 100%;
-  background: var(--accent);
+  background: linear-gradient(90deg, #34d399 0%, #facc15 60%, #f87171 100%);
   border-radius: 999px;
-  transition: width 0.4s ease, background 0.3s ease;
-}
-.ai-usage-bar-fill.level-warn {
-  background: #f59e0b;
-}
-.ai-usage-bar-fill.level-danger {
-  background: #ef4444;
-}
-
-/* 三栏指标卡 */
-.ai-usage-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 6px;
-}
-.ai-usage-metric {
-  text-align: center;
-  padding: 6px 2px 4px;
-  border-radius: 6px;
-  background: var(--bg-hover);
-}
-.ai-usage-metric-val {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-}
-.ai-usage-metric-val.metric-highlight {
-  color: #22d3ee;
-}
-.ai-usage-metric-label {
-  font-size: 10px;
-  color: var(--text-tertiary);
-  margin-top: 2px;
-}
-
-/* 缓存详情行 */
-.ai-usage-cache-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--text-secondary);
-  padding: 4px 0;
-}
-.ai-usage-cache-icon {
-  font-size: 12px;
+  transition: width 0.4s ease;
 }
 
 /* 费用行 */
