@@ -1036,7 +1036,7 @@
   "ai_orchestration_agent_tip": "Agent mode: model decides whether to dispatch sub-agents",
   "ai_orchestration_ask_tip": "Ask mode: direct answer",
   "ai_context_usage": "Context usage {percent}% · {used}/{total} tokens",
-  "ai_context_usage_none": "No data yet. Context usage will appear after your first message.",
+  "ai_context_usage_none": "No usage data for this conversation. Stats will appear after the next reply.",
   "ai_context_usage_title": "Context Usage",
   "ai_cache_hit": "Cache hit {percent}% · {cached}/{prompt} tokens",
   "ai_cache_hit_label": "Cache Hit",

@@ -1027,7 +1027,7 @@
   "ai_orchestration_agent_tip": "Agent 模式：模型将自动决定是否派发子代理",
   "ai_orchestration_ask_tip": "Ask 模式：直接回答",
   "ai_context_usage": "上下文用量 {percent}% · {used}/{total} tokens",
-  "ai_context_usage_none": "暂无数据，发起一次对话后将显示上下文用量",
+  "ai_context_usage_none": "历史对话未保留用量，发送新消息后会自动统计",
   "ai_context_usage_title": "上下文用量",
   "ai_cache_hit": "缓存命中 {percent}% · {cached}/{prompt} tokens",
   "ai_cache_hit_label": "缓存命中",

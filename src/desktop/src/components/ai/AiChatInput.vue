@@ -283,7 +283,7 @@ const usageCacheReadTokens = computed(() => props.contextUsage?.cacheReadTokens 
 
       <div class="ai-send-area">
         <!-- 上下文用量：圆环触发 + 点击展开 Cursor 风格面板（百分比 / 用量 / 缓存命中率） -->
-        <Popover v-model:open="usagePanelOpen">
+        <Popover v-model:open="usagePanelOpen" :disabled="!contextUsage">
           <PopoverTrigger as-child>
             <button
               class="ai-usage-ring-btn"
