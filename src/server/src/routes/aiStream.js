@@ -10,6 +10,7 @@
  * agentId 可选：多代理编排时给每个增量打上所属子代理的标识，便于前端路由。
  */
 import { executeTool } from './aiTools.js'
+import logger from '../utils/logger.js'
 
 /**
  * 解析 SSE 事件
@@ -157,7 +158,13 @@ export async function handleToolCalls(toolCalls, userId, sendDelta, agentId = nu
           `tool ${toolName} timed out after ${TOOL_EXEC_TIMEOUT_MS}ms`,
         )
       } catch (err) {
-        result = { error: String(err?.message || err), timedOut: true }
+        // 原始错误仅留档给运维，绝不回传给前端 / LLM，避免泄露 SQL 等内部细节
+        logger.error(`[tool] ${toolName} execution failed:`, err)
+        const timedOut = /timed out/i.test(String(err?.message || ''))
+        result = {
+          error: timedOut ? '工具执行超时，请稍后重试。' : '工具执行失败，请稍后重试或换个问法。',
+          timedOut,
+        }
       }
 
       // 通知前端工具执行结果
