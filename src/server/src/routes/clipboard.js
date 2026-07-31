@@ -8,6 +8,7 @@ import { checkClipboardLimit } from '../middleware/subscriptionCheck.js';
 import { createIdempotencyMiddleware } from '../middleware/idempotency.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+import { runOcrForClip } from '../utils/aiOcr.js';
 
 const router = Router();
 
@@ -86,7 +87,7 @@ router.get('/', apiLimiter, async (req, res) => {
         // tsvector search ranks results by relevance; ILIKE provides fallback for short queries
         if (cleanSearch.length >= 3) {
           // Full-text search with relevance ranking
-          whereClause += ` AND (ci.search_vector @@ to_tsquery('simple', $${paramIndex}) OR ci.content_preview ILIKE $${paramIndex + 1})`;
+          whereClause += ` AND (ci.search_vector @@ to_tsquery('simple', $${paramIndex}) OR ci.content_preview ILIKE $${paramIndex + 1} OR ci.ocr_text ILIKE $${paramIndex + 2})`;
           // Convert search terms: replace spaces with & for AND logic, append :* for prefix matching
           const tsQuery = cleanSearch
             .split(/\s+/)
@@ -95,10 +96,11 @@ router.get('/', apiLimiter, async (req, res) => {
             .join(' & ');
           params.push(tsQuery);
           params.push(`%${cleanSearch}%`);
-          paramIndex += 2;
+          params.push(`%${cleanSearch}%`);
+          paramIndex += 3;
         } else {
           // Short query: use ILIKE only (tsvector needs at least 3 chars for meaningful results)
-          whereClause += ` AND ci.content_preview ILIKE $${paramIndex}`;
+          whereClause += ` AND (ci.content_preview ILIKE $${paramIndex} OR ci.ocr_text ILIKE $${paramIndex})`;
           params.push(`%${cleanSearch}%`);
           paramIndex++;
         }
@@ -154,7 +156,7 @@ router.get('/', apiLimiter, async (req, res) => {
     // Get items
     const limitClause = useLimit ? `LIMIT $${paramIndex} OFFSET $${paramIndex + 1}` : ''
     const itemsResult = await pool.query(
-      `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
+      `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size, ci.ocr_text,
               ci.source_device_id, ci.metadata, ci.is_favorite, ci.favorited_at, ci.expires_at, ci.archived, ci.created_at,
               ci.protection_level,
               d.device_name, d.platform
@@ -171,6 +173,7 @@ router.get('/', apiLimiter, async (req, res) => {
         id: item.id,
         contentType: item.content_type,
         contentPreview: item.content_preview,
+        ocrText: item.ocr_text || '',
         contentSize: item.content_size,
         metadata: item.metadata,
         isFavorite: item.is_favorite,
@@ -233,14 +236,15 @@ router.get('/search', apiLimiter, async (req, res) => {
       .map(w => w + ':*')
       .join(' & ');
 
-    whereClause += ` AND (ci.search_vector @@ to_tsquery('simple', $${paramIndex}) OR ci.content_preview ILIKE $${paramIndex + 1})`;
+    whereClause += ` AND (ci.search_vector @@ to_tsquery('simple', $${paramIndex}) OR ci.content_preview ILIKE $${paramIndex + 1} OR ci.ocr_text ILIKE $${paramIndex + 2})`;
     params.push(tsQuery);
     params.push(`%${cleanSearch}%`);
-    paramIndex += 2;
+    params.push(`%${cleanSearch}%`);
+    paramIndex += 3;
 
     // Get items with relevance ranking
     const itemsResult = await pool.query(
-      `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size,
+      `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size, ci.ocr_text,
               ci.metadata, ci.is_favorite, ci.archived, ci.expires_at, ci.created_at,
               d.device_name, d.platform,
               ts_rank(ci.search_vector, to_tsquery('simple', $${paramIndex - 2})) AS relevance
@@ -264,6 +268,7 @@ router.get('/search', apiLimiter, async (req, res) => {
         id: item.id,
         contentType: item.content_type,
         contentPreview: item.content_preview,
+        ocrText: item.ocr_text || '',
         contentSize: item.content_size,
         metadata: item.metadata,
         isFavorite: item.is_favorite,
@@ -584,6 +589,14 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
     body: `${item.content_type.toUpperCase()} content from ${deviceName}`,
     data: { itemId: item.id, contentType: item.content_type },
   });
+
+  // OCR 预处理：图片剪贴板异步提取图中文字入 ocr_text，供搜索/多模态使用。
+  // 失败（无视觉供应商 / 模型不支持 / 网络 / 超限）一律静默跳过，绝不阻塞剪贴板写入。
+  if (item.content_type === 'image' && contentEncrypted) {
+    runOcrForClip(item.id, req.userId, contentEncrypted).catch((e) => {
+      logger.warn('[OCR] background task error:', { clipId: item.id, error: e.message });
+    });
+  }
 
   res.status(201).json({
     id: item.id,

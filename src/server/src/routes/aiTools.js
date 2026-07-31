@@ -12,6 +12,7 @@ import { getFeatureDoc, getPrivacyModelDoc, getDeploymentDoc, getArchitectureDoc
 import { assertToolAllowed, getToolsForRole } from '../utils/aiSystemPrompt.js'
 import { authenticateToken } from '../middleware/auth.js'
 import { TEXT_PREVIEW_EXTENSIONS } from './media.js'
+import { ocrClipById } from '../utils/aiOcr.js'
 
 const router = Router()
 
@@ -88,6 +89,20 @@ export const TOOLS = [
         type: 'object',
         properties: {
           clip_id: { type: 'string', description: '剪贴板条目ID' }
+        },
+        required: ['clip_id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'ocr_clip_image',
+      description: '对指定的「图片」剪贴板条目做 OCR，提取图中所有文字（需配置支持视觉的 AI 供应商，如 GPT-4o/Claude/Gemini/Qwen-VL）。提取结果会写回该条目并可用于搜索。返回提取到的文字或错误原因。',
+      parameters: {
+        type: 'object',
+        properties: {
+          clip_id: { type: 'string', description: '要 OCR 的图片剪贴板条目 ID' }
         },
         required: ['clip_id']
       }
@@ -466,6 +481,7 @@ export const WRITE_TOOL_NAMES = new Set([
   'execute_workflow_step',
   'batch_favorite',
   'batch_delete',
+  'ocr_clip_image',
 ])
 
 /**
@@ -531,11 +547,12 @@ async function executeTool(toolName, args, userId, role) {
         // 服务端文本存于 content_encrypted（加密），可搜索明文在 content_preview；
         // 直接对 content 列 ILIKE 会因该列不存在而报错，故只搜 content_preview。
         const safeLimit = Math.min(Math.max(1, Number(limit) || 10), 100)
-        let sql = 'SELECT id, content_type, content_preview, created_at FROM clipboard_items WHERE user_id = $1'
+        let sql = 'SELECT id, content_type, content_preview, ocr_text, created_at FROM clipboard_items WHERE user_id = $1'
         const params = [userId]
 
         if (query) {
-          sql += ' AND content_preview ILIKE $2'
+          // 同时搜索图片 OCR 提取出的文字（ocr_text）
+          sql += ' AND (content_preview ILIKE $2 OR ocr_text ILIKE $2)'
           params.push(`%${query}%`)
         }
         if (type && type !== 'all') {
@@ -565,6 +582,12 @@ async function executeTool(toolName, args, userId, role) {
             ? '该条目为高级密码保护，读取明文需提供密码（调用 read_clip_content 并传 password）。'
             : undefined
         }
+      }
+
+      case 'ocr_clip_image': {
+        const { clip_id } = args
+        if (!clip_id) return { error: 'clip_id 必填' }
+        return await ocrClipById(clip_id, userId)
       }
 
       case 'get_recent_clips': {

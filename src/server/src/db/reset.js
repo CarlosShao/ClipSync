@@ -138,7 +138,8 @@ async function resetDatabase() {
       BEGIN
         NEW.search_vector :=
           setweight(to_tsvector('simple', coalesce(NEW.content_type, '')), 'A') ||
-          setweight(to_tsvector('simple', coalesce(NEW.content_preview, '')), 'B');
+          setweight(to_tsvector('simple', coalesce(NEW.content_preview, '')), 'B') ||
+          setweight(to_tsvector('simple', coalesce(NEW.ocr_text, '')), 'C');
         RETURN NEW;
       END
       $$ LANGUAGE plpgsql`

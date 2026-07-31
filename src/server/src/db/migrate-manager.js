@@ -51,11 +51,11 @@ const SCHEMA_VERSIONS = [
       END $$`,
       // Create trigger for auto-updating search_vector
       `CREATE OR REPLACE FUNCTION clipsync_update_search_vector() RETURNS trigger AS $$ BEGIN
-        NEW.search_vector := setweight(to_tsvector('simple', coalesce(NEW.content_type, '')), 'A') || setweight(to_tsvector('simple', coalesce(NEW.content_preview, '')), 'B');
+        NEW.search_vector := setweight(to_tsvector('simple', coalesce(NEW.content_type, '')), 'A') || setweight(to_tsvector('simple', coalesce(NEW.content_preview, '')), 'B') || setweight(to_tsvector('simple', coalesce(NEW.ocr_text, '')), 'C');
         RETURN NEW;
       END $$ LANGUAGE plpgsql`,
       `DROP TRIGGER IF EXISTS clipsync_search_vector_update ON clipboard_items`,
-      `CREATE TRIGGER clipsync_search_vector_update BEFORE INSERT OR UPDATE OF content_preview, content_type ON clipboard_items FOR EACH ROW EXECUTE FUNCTION clipsync_update_search_vector()`,
+      `CREATE TRIGGER clipsync_search_vector_update BEFORE INSERT OR UPDATE OF content_preview, content_type, ocr_text ON clipboard_items FOR EACH ROW EXECUTE FUNCTION clipsync_update_search_vector()`,
       // GIN index for search_vector
       `CREATE INDEX IF NOT EXISTS idx_clipboard_search ON clipboard_items USING GIN(search_vector)`,
     ],
@@ -245,6 +245,40 @@ const SCHEMA_VERSIONS = [
       `CREATE INDEX IF NOT EXISTS idx_user_sessions_is_active ON user_sessions(is_active)`,
     ],
   },
+  {
+    version: 8,
+    description: 'Add ocr_text to clipboard_items and include it in search_vector (OCR preprocessing for images, #224)',
+    migrations: [
+      // 1) 新增可搜索的文字层列（图片 OCR 提取结果）
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'clipboard_items' AND column_name = 'ocr_text') THEN
+          ALTER TABLE clipboard_items ADD COLUMN ocr_text TEXT DEFAULT NULL;
+        END IF;
+      END $$`,
+
+      // 2) 触发器函数纳入 ocr_text（权重 C），CREATE OR REPLACE 幂等
+      `CREATE OR REPLACE FUNCTION clipsync_update_search_vector() RETURNS trigger AS $$
+      BEGIN
+        NEW.search_vector :=
+          setweight(to_tsvector('simple', coalesce(NEW.content_type, '')), 'A') ||
+          setweight(to_tsvector('simple', coalesce(NEW.content_preview, '')), 'B') ||
+          setweight(to_tsvector('simple', coalesce(NEW.ocr_text, '')), 'C');
+        RETURN NEW;
+      END
+      $$ LANGUAGE plpgsql`,
+
+      // 3) 重建触发器，把 ocr_text 纳入触发列（否则仅更新 ocr_text 不会刷新 search_vector）
+      `DROP TRIGGER IF EXISTS clipsync_search_vector_update ON clipboard_items`,
+      `CREATE TRIGGER clipsync_search_vector_update BEFORE INSERT OR UPDATE OF content_preview, content_type, ocr_text ON clipboard_items FOR EACH ROW EXECUTE FUNCTION clipsync_update_search_vector()`,
+
+      // 4) 回填：把已有（当前为空）ocr_text 纳入 search_vector；列为 NULL 时等价于补空，无副作用
+      `UPDATE clipboard_items
+       SET search_vector = setweight(to_tsvector('simple', coalesce(content_type, '')), 'A') ||
+                           setweight(to_tsvector('simple', coalesce(content_preview, '')), 'B') ||
+                           setweight(to_tsvector('simple', coalesce(ocr_text, '')), 'C')
+       WHERE ocr_text IS NOT NULL`,
+    ],
+  },
 ];
 
 // Create schema_versions tracking table if not exists
@@ -329,8 +363,9 @@ async function backfillSearchVector() {
   const result = await pool.query(`
     UPDATE clipboard_items
     SET search_vector = setweight(to_tsvector('simple', coalesce(content_type, '')), 'A') ||
-                        setweight(to_tsvector('simple', coalesce(content_preview, '')), 'B')
-    WHERE search_vector IS NULL
+                        setweight(to_tsvector('simple', coalesce(content_preview, '')), 'B') ||
+                        setweight(to_tsvector('simple', coalesce(ocr_text, '')), 'C')
+    WHERE search_vector IS NULL OR ocr_text IS NOT NULL
   `);
   logger.info(`Backfill completed: ${result.rowCount} rows updated`);
   return result.rowCount;
