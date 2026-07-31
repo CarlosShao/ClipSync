@@ -178,7 +178,8 @@ router.post('/chat', apiLimiter, async (req, res) => {
     try {
       if (options?.mode === 'agent') {
         // Agent 模式下由模型自己决定是否派发子代理：
-        // 协调器只挂 dispatch_agents 规划工具；若模型不调用，会在内部短路为单代理直答（零额外开销）。
+        // 协调器同时挂 dispatch_agents + 业务工具。单任务时直接调工具取数并自闭环回答（单次请求）；
+        // 多任务时调用 dispatch_agents 触发并行子代理编排。
         await runOrchestration({
           messages,
           options,

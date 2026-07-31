@@ -289,6 +289,12 @@ onMounted(load)
     </div>
 
     <div class="ai-form">
+      <!-- 协议限制说明：当前仅支持 OpenAI 兼容格式，避免用户选错 Anthropic 等非 OpenAI 服务 -->
+      <div class="ai-protocol-hint">
+        <span class="ai-protocol-hint-icon">i</span>
+        <span>{{ t('ai_provider_protocol_hint') }}</span>
+      </div>
+
       <div class="ai-field">
         <label class="ai-label">{{ t('ai_provider_label') }}</label>
         <CustomSelect :model-value="formProvider" @update:model-value="onProviderChange">
@@ -581,5 +587,35 @@ onMounted(load)
   display: flex;
   gap: 10px;
   margin-top: 8px;
+}
+
+/* 协议格式限制说明：醒目蓝/灰底色，避免用户选错非 OpenAI 协议的供应商 */
+.ai-protocol-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.ai-protocol-hint-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-bg, #fff);
+  font-size: 11px;
+  font-weight: 700;
+  font-style: italic;
+  margin-top: 1px;
 }
 </style>

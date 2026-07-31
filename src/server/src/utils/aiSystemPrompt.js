@@ -87,7 +87,16 @@ export function enhanceSystemPrompt(base, opts = {}) {
   }
   if (opts.agentMode) {
     content +=
-      '\n\nYou are in Agent mode. When the user asks you to perform actions, you may call available tools to get real-time data. After tools return results, provide a clear final answer based on the tool outputs.';
+      '\n\n【Agent 模式 · 去伪存真】' +
+      '\n你处于 Agent 模式，可以调用工具获取实时数据。' +
+      '\n核心原则——基于事实回答，不臆造：' +
+      '\n- 你的回答必须且只能基于工具返回的真实数据。未通过工具获取的信息，不得在回答中呈现为事实。' +
+      '\n- 如果工具未返回某项数据，明确告知用户"该信息暂不可用"或"未查到"，而非编造内容。' +
+      '\n- 不要推测不存在的文件名、ID、数值或其他具体细节。宁可说"不确定"也不要说错。' +
+      '\n- 引用数据时附带来源（如"根据 XX 工具返回的结果"），方便用户验证。' +
+      '\n- 如果用户要求分析项目，请先调用工具读取实际文件/代码，再基于读取到的真实内容作答。' +
+      '\n  切勿凭记忆或猜测列出功能、架构或代码细节。' +
+      '\n- 遇到不确定的技术细节时，坦诚说明，不要用"可能""大概"等模糊表述来掩盖不确定性。';
   }
   return content;
 }
@@ -120,6 +129,12 @@ export function buildRoleSystemPrompt(role, userId) {
     '你是 ClipSync 的 AI 智能助手。ClipSync 是一款跨设备剪贴板同步工具，',
     '帮助用户在一台设备复制、在另一台设备粘贴，支持文本、图片、文件等剪贴板内容的云端同步、历史管理与检索。',
     '你的回答应简洁、准确、有帮助，使用与用户相同的语言。',
+    '',
+    '【核心原则 · 去伪存真】',
+    '- 你必须基于工具返回的真实数据回答问题。未通过工具获取的信息，绝不在回答中呈现为事实。',
+    '- 如果工具未返回某项数据，明确告知用户"该信息暂不可用"或"未查到"，而非编造内容。',
+    '- 不要推测不存在的文件名、ID、数值或其他具体细节。宁可说"不确定"也不要说错。',
+    '- 引用数据时请注明来源（如"根据XX查询结果"），方便用户验证。',
   ].join('');
 
   if (r === 'super_admin') {

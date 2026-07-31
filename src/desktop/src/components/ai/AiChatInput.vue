@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import type { AiProvider } from '@/api/ai'
 import { Send, Square, Brain, ChevronDown, Settings2 } from 'lucide-vue-next'
 import type { ContextUsage, ChatImage } from '@/api/ai'
@@ -79,9 +80,9 @@ const modeLabel = computed(() => {
 })
 
 // 发送按钮旁圆环：外环=上下文 token 用量百分比；内环=缓存命中率。
-const RING_R = 9 // 外环半径
+const RING_R = 10 // 外环半径
 const RING_C = 2 * Math.PI * RING_R
-const RING_R_INNER = 5.5 // 内环半径（缓存命中率）
+const RING_R_INNER = 6.5 // 内环半径（缓存命中率）
 const RING_C_INNER = 2 * Math.PI * RING_R_INNER
 
 const usagePercent = computed(() => props.contextUsage?.percent ?? 0)
@@ -109,6 +110,17 @@ const usageTip = computed(() => {
     `${t('ai_context_usage', { percent: usagePercent.value, used: props.contextUsage.totalTokens, total: props.contextUsage.contextWindow })}（外环）\n` +
     `${t('ai_cache_hit', { percent: cacheHitPercent.value, cached: props.contextUsage.cacheReadTokens || 0, prompt: props.contextUsage.promptTokens })}（内环）`
   )
+})
+
+// 预估费用（基于 OpenAI 官方定价 $2.5/M input, $10/M output 作基准估算）
+const estimatedCost = computed(() => {
+  const c = props.contextUsage
+  if (!c) return null
+  const inputCost = (c.promptTokens / 1_000_000) * 2.5
+  const outputCost = (c.completionTokens / 1_000_000) * 10
+  const total = inputCost + outputCost
+  if (total < 0.01) return '<$0.01'
+  return '$' + total.toFixed(3)
 })
 
 function submit() {
@@ -181,6 +193,21 @@ function toggleThinking() {
   emit('toggle-thinking')
   closePopups()
 }
+
+// 把 token 数格式化为人类可读：192000 -> "192.0K"，57256 -> "57.3K"，2_500_000 -> "2.5M"
+function formatTokens(n: number): string {
+  if (!n) return '0'
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
+  return String(n)
+}
+
+// 上下文用量浮层开关
+const usagePanelOpen = ref(false)
+const usageTotalTokens = computed(() => props.contextUsage?.totalTokens ?? 0)
+const usageContextWindow = computed(() => props.contextUsage?.contextWindow ?? 0)
+const usagePromptTokens = computed(() => props.contextUsage?.promptTokens ?? 0)
+const usageCacheReadTokens = computed(() => props.contextUsage?.cacheReadTokens ?? 0)
 </script>
 
 <template>
@@ -255,36 +282,91 @@ function toggleThinking() {
       </div>
 
       <div class="ai-send-area">
-        <!-- 双环统计：外环=上下文 token 用量，内环=缓存命中率；hover 看明细 -->
-        <div class="ai-usage-ring-wrap" :title="usageTip">
-          <svg
-            class="ai-usage-ring"
-            :class="ringColorClass"
-            width="30"
-            height="30"
-            viewBox="0 0 30 30"
-          >
-            <circle class="ring-track" cx="15" cy="15" :r="RING_R" />
-            <circle
-              class="ring-progress"
-              cx="15"
-              cy="15"
-              :r="RING_R"
-              :stroke-dasharray="RING_C"
-              :stroke-dashoffset="ringDashOffset"
-            />
-            <circle class="ring-track-inner" cx="15" cy="15" :r="RING_R_INNER" />
-            <circle
-              class="ring-progress-inner"
-              cx="15"
-              cy="15"
-              :r="RING_R_INNER"
-              :stroke-dasharray="RING_C_INNER"
-              :stroke-dashoffset="ringDashOffsetInner"
-            />
-            <text class="ring-label" x="15" y="15">{{ ringLabel }}</text>
-          </svg>
-        </div>
+        <!-- 上下文用量：圆环触发 + 点击展开 Cursor 风格面板（百分比 / 用量 / 缓存命中率） -->
+        <Popover v-model:open="usagePanelOpen">
+          <PopoverTrigger as-child>
+            <button
+              class="ai-usage-ring-btn"
+              :class="ringColorClass"
+              :title="usageTip"
+              :aria-label="t('ai_context_usage_title') || '上下文用量'"
+            >
+              <svg
+                class="ai-usage-ring"
+                :class="ringColorClass"
+                width="30"
+                height="30"
+                viewBox="0 0 30 30"
+              >
+                <circle class="ring-track" cx="15" cy="15" :r="RING_R" />
+                <circle
+                  class="ring-progress"
+                  cx="15"
+                  cy="15"
+                  :r="RING_R"
+                  :stroke-dasharray="RING_C"
+                  :stroke-dashoffset="ringDashOffset"
+                />
+                <circle class="ring-track-inner" cx="15" cy="15" :r="RING_R_INNER" />
+                <circle
+                  class="ring-progress-inner"
+                  cx="15"
+                  cy="15"
+                  :r="RING_R_INNER"
+                  :stroke-dasharray="RING_C_INNER"
+                  :stroke-dashoffset="ringDashOffsetInner"
+                />
+                <text class="ring-label" x="15" y="15">{{ ringLabel }}</text>
+              </svg>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent class="ai-usage-panel" side="top" align="end" :side-offset="8">
+            <div v-if="!contextUsage" class="ai-usage-panel-empty">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.3;margin-bottom:4px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              {{ t('ai_context_usage_none') || '暂无数据，发起一次对话后将显示上下文用量' }}
+            </div>
+            <div v-else class="ai-usage-panel-body">
+              <div class="ai-usage-panel-head">
+                <span class="ai-usage-panel-title">{{ t('ai_context_usage_title') || '上下文用量' }}</span>
+                <span class="ai-usage-panel-window">{{ formatTokens(usageContextWindow) }} window</span>
+              </div>
+              <!-- 大数字百分比 + 进度条 -->
+              <div class="ai-usage-hero">
+                <span class="ai-usage-percent" :class="ringColorClass">{{ usagePercent }}<small>%</small></span>
+                <span class="ai-usage-hero-sub">{{ formatTokens(usageTotalTokens) }} / {{ formatTokens(usageContextWindow) }}</span>
+              </div>
+              <div class="ai-usage-bar">
+                <div class="ai-usage-bar-fill" :class="ringColorClass" :style="{ width: usagePercent + '%' }"></div>
+              </div>
+              <!-- 三栏指标卡 -->
+              <div class="ai-usage-metrics">
+                <div class="ai-usage-metric">
+                  <div class="ai-usage-metric-val">{{ formatTokens(usagePromptTokens) }}</div>
+                  <div class="ai-usage-metric-label">{{ t('ai_prompt_tokens_label') || '输入' }}</div>
+                </div>
+                <div class="ai-usage-metric">
+                  <div class="ai-usage-metric-val">{{ formatTokens(props.contextUsage?.completionTokens ?? 0) }}</div>
+                  <div class="ai-usage-metric-label">{{ t('ai_completion_tokens_label') || '输出' }}</div>
+                </div>
+                <div class="ai-usage-metric">
+                  <div class="ai-usage-metric-val" :class="{ 'metric-highlight': cacheHitPercent > 0 }">{{ cacheHitPercent }}%</div>
+                  <div class="ai-usage-metric-label">{{ t('ai_cache_hit_label') || '缓存命中' }}</div>
+                </div>
+              </div>
+              <!-- 缓存详情（仅缓存写入 > 0 时展示） -->
+              <div v-if="(contextUsage.cacheReadTokens || 0) > 0 || (contextUsage.cacheWriteTokens || 0) > 0" class="ai-usage-cache-row">
+                <span class="ai-usage-cache-icon">⚡</span>
+                <span v-if="(contextUsage.cacheReadTokens || 0) > 0">{{ t('ai_cache_read_tokens') || '读取' }} {{ formatTokens(usageCacheReadTokens) }}</span>
+                <span v-if="(contextUsage.cacheWriteTokens || 0) > 0" style="margin-left:8px">{{ t('ai_cache_write_tokens') || '写入' }} {{ formatTokens(contextUsage.cacheWriteTokens) }}</span>
+              </div>
+              <!-- 预估费用 -->
+              <div v-if="estimatedCost" class="ai-usage-cost-row">
+                <span>{{ t('ai_estimated_cost') || '预估费用' }}</span>
+                <span class="ai-usage-cost-val">{{ estimatedCost }}</span>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
         <Button v-if="!isStreaming" size="icon" class="ai-send-btn" :disabled="disabled || (!text.trim() && pastedImages.length === 0)" @click="submit">
           <Send :size="16" />
         </Button>
@@ -559,5 +641,176 @@ function toggleThinking() {
 .ai-popup-divider {
   border-top: 1px solid var(--border-subtle) !important;
   color: var(--text-secondary) !important;
+}
+
+/* 上下文用量浮层（Cursor 风格）：点击圆环触发 */
+.ai-usage-ring-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: transform 0.15s ease;
+}
+.ai-usage-ring-btn:hover {
+  transform: scale(1.06);
+}
+
+::deep(.ai-usage-panel) {
+  width: 280px;
+  padding: 14px 16px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  z-index: 60;
+}
+
+.ai-usage-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.ai-usage-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ai-usage-panel-window {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.ai-usage-panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 12px 0 8px;
+  text-align: center;
+}
+.ai-usage-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 大数字百分比 + 副标题 */
+.ai-usage-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  line-height: 1;
+}
+.ai-usage-hero-sub {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-usage-percent {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.ai-usage-percent small {
+  font-size: 14px;
+  font-weight: 600;
+  margin-left: 1px;
+}
+.ai-usage-percent.level-warn {
+  color: #f59e0b;
+}
+.ai-usage-percent.level-danger {
+  color: #ef4444;
+}
+
+.ai-usage-bar {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  background: var(--bg-hover);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.ai-usage-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.4s ease, background 0.3s ease;
+}
+.ai-usage-bar-fill.level-warn {
+  background: #f59e0b;
+}
+.ai-usage-bar-fill.level-danger {
+  background: #ef4444;
+}
+
+/* 三栏指标卡 */
+.ai-usage-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+.ai-usage-metric {
+  text-align: center;
+  padding: 6px 2px 4px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+}
+.ai-usage-metric-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.ai-usage-metric-val.metric-highlight {
+  color: #22d3ee;
+}
+.ai-usage-metric-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* 缓存详情行 */
+.ai-usage-cache-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+.ai-usage-cache-icon {
+  font-size: 12px;
+}
+
+/* 费用行 */
+.ai-usage-cost-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+.ai-usage-cost-val {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 </style>

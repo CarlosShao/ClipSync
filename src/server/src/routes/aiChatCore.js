@@ -14,6 +14,31 @@ import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProvi
 import { collectToolCallsFromStream, handleToolCalls } from './aiStream.js'
 
 /**
+ * 打开上游 SSE 流并复用统一的错误处理（超时 / 状态码）。
+ * 抽出供 runChatLoop 与多代理协调器共用，避免两套 fetch 逻辑漂移。
+ * @returns {{ reader: ReadableStreamDefaultReader, decoder: TextDecoder }}
+ */
+export async function openUpstreamStream(upstream, abortSignal, label = 'Upstream') {
+  let upstreamRes
+  try {
+    upstreamRes = await fetch(upstream.url, {
+      method: 'POST',
+      headers: { ...upstream.headers, Accept: 'text/event-stream' },
+      body: JSON.stringify(upstream.body),
+      signal: abortSignal,
+    })
+  } catch (fetchErr) {
+    if (fetchErr?.name === 'AbortError') throw new Error('UPSTREAM_TIMEOUT')
+    throw fetchErr
+  }
+  if (!upstreamRes.ok || !upstreamRes.body) {
+    const text = await upstreamRes.text().catch(() => '')
+    throw new Error(`${label} error: ${upstreamRes.status} ${text.slice(0, 1500)}`)
+  }
+  return { reader: upstreamRes.body.getReader(), decoder: new TextDecoder() }
+}
+
+/**
  * 检测模型是否“只说不做”：文字里表示还要调用工具，但没有实际输出 tool_calls。
  * 用于 runChatLoop 的安全网，避免模型说完“让我再调用 X”就直接结束流。
  */
@@ -75,26 +100,7 @@ export async function runChatLoop({
       options: chatOptions,
     })
 
-    let upstreamRes
-    try {
-      upstreamRes = await fetch(upstream.url, {
-        method: 'POST',
-        headers: { ...upstream.headers, Accept: 'text/event-stream' },
-        body: JSON.stringify(upstream.body),
-        signal: abortSignal,
-      })
-    } catch (fetchErr) {
-      if (fetchErr?.name === 'AbortError') throw new Error('UPSTREAM_TIMEOUT')
-      throw fetchErr
-    }
-
-    if (!upstreamRes.ok || !upstreamRes.body) {
-      const text = await upstreamRes.text().catch(() => '')
-      throw new Error(`Upstream error: ${upstreamRes.status} ${text.slice(0, 1500)}`)
-    }
-
-    const reader = upstreamRes.body.getReader()
-    const decoder = new TextDecoder()
+    const { reader, decoder } = await openUpstreamStream(upstream, abortSignal, 'Upstream')
 
     // 流式发送 thinking 和 content，同时收集 tool_calls
     const response = await collectToolCallsFromStream(reader, decoder, sendDelta, logChunk)
