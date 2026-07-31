@@ -79,6 +79,10 @@ export function useAiChat() {
     initialized.value = true
     await Promise.all([loadProviders(), conv.loadConversations()])
     await loadSettings()
+    // 打开 AI 面板时自动加载最近一条对话，避免"已有几轮对话却显示暂无数据"
+    if (!conv.currentConversationId.value && conv.conversations.value.length > 0) {
+      await loadConversation(conv.conversations.value[0].id)
+    }
   }
 
   // 加载并应用用户 AI 偏好（默认供应商 / 模型 / 模式 / 思考 / 并行）

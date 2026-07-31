@@ -180,7 +180,6 @@ async function onDelete(id: string) {
                 :current-id="currentConversationId"
                 :loading="false"
                 @select="(id) => { onSelectConversation(id); historyOpen = false }"
-                @new="onNewConversation"
                 @rename="onRename"
                 @delete="onDelete"
               />

@@ -3,7 +3,7 @@ import { ref, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import type { AiConversation } from '@/api/ai'
-import { MessageSquare, Plus, Trash2, Check, X, Pencil } from 'lucide-vue-next'
+import { MessageSquare, Trash2, Check, X, Pencil } from 'lucide-vue-next'
 
 const props = defineProps<{
   conversations: AiConversation[]
@@ -13,7 +13,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [id: string]
-  new: []
   delete: [id: string]
   rename: [id: string, title: string]
 }>()
@@ -55,9 +54,6 @@ function cancelRename() {
   <div class="ai-conv-panel">
     <div class="ai-conv-header">
       <span class="ai-conv-title">{{ t('ai_history') || '历史对话' }}</span>
-      <Button variant="ghost" size="icon-sm" :title="t('ai_new_chat') || '新对话'" @click="emit('new')">
-        <Plus :size="15" />
-      </Button>
     </div>
 
     <div v-if="loading" class="ai-conv-empty">{{ t('loading') || '加载中...' }}</div>
@@ -124,9 +120,8 @@ function cancelRename() {
 
 <style scoped>
 .ai-conv-panel {
-  width: 220px;
-  min-width: 220px;
-  border-right: 1px solid var(--border-default);
+  width: 100%;
+  min-width: 0;
   background: var(--bg-surface);
   display: flex;
   flex-direction: column;
