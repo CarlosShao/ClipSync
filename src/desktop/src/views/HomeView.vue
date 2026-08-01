@@ -235,6 +235,9 @@ onMounted(async () => {
   ;(window as any).__toggleTheme = () => {
     toggleMode()
   }
+  ;(window as any).__toggleAiPanel = () => {
+    aiSidebarOpen.value = !aiSidebarOpen.value
+  }
 
   // Re-apply user's saved global shortcuts (Rust hardcodes defaults at startup,
   // so without this the user's customization is lost after a restart).

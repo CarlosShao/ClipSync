@@ -1602,6 +1602,30 @@ pub fn run() {
                         Err(e) => eprintln!("[Setup] Failed to parse '{}': {}", candidate, e),
                     }
                 }
+
+            // ── AI Panel: toggle AI sidebar (eval frontend __toggleAiPanel) ──
+            let ai_candidates: Vec<&str> = vec!["Ctrl+Shift+A", "Ctrl+Alt+A", "Alt+Shift+A", "Ctrl+Shift+B"];
+            for (i, candidate) in ai_candidates.iter().enumerate() {
+                match candidate.parse::<Shortcut>() {
+                    Ok(sc) => {
+                        match handle.global_shortcut().on_shortcut(sc, |app, _shortcut, _event| {
+                            eprintln!("[GlobalShortcut:ai] Triggered → toggle AI panel");
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.eval("if(window.__toggleAiPanel) window.__toggleAiPanel()");
+                            }
+                        }) {
+                            Ok(()) => {
+                                println!("[Setup] ✅ ai_panel registered: {}{}", candidate, if i > 0 { " (fallback)" } else { "" });
+                                break;
+                            }
+                            Err(e) => {
+                                eprintln!("[Setup] ai_panel '{}' failed: {}", candidate, e);
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("[Setup] Failed to parse '{}': {}", candidate, e),
+                }
+            }
             }
 
             // 剪贴板监控：原生 Rust 线程轮询，通过 Tauri 事件推送到前端
