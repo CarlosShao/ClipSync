@@ -314,6 +314,14 @@ const SCHEMA_VERSIONS = [
       END $$`,
     ],
   },
+  {
+    version: 10,
+    description: 'Image content hash for cross-copy dedup and AI duplicate detection (#225)',
+    migrations: [
+      `ALTER TABLE clipboard_items ADD COLUMN IF NOT EXISTS image_hash VARCHAR(64);`,
+      `CREATE INDEX IF NOT EXISTS idx_clipboard_user_image_hash ON clipboard_items (user_id, image_hash) WHERE image_hash IS NOT NULL;`,
+    ],
+  },
 ];
 
 // Create schema_versions tracking table if not exists

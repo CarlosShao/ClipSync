@@ -9,6 +9,7 @@ import { createIdempotencyMiddleware } from '../middleware/idempotency.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { runOcrForClip } from '../utils/aiOcr.js';
+import { hashImageStored } from '../utils/imageHash.js';
 
 const router = Router();
 
@@ -467,6 +468,11 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
     // 非文件类型按密文哈希去重；文件类型用路径去重（content_hash 留空）
     const isFile = detectedType === 'file';
     const contentHash = isFile ? null : crypto.createHash('sha256').update(contentEncrypted).digest('hex');
+    // 图片：额外计算「明文图片内容哈希」用于跨复制去重（密文哈希因随机 IV 不稳定，同图不同哈希）
+    let imageHash = null;
+    if (detectedType === 'image') {
+      imageHash = await hashImageStored(contentEncrypted);
+    }
     srcDeviceId = sourceDeviceId;
 
     // Verify device belongs to user
@@ -510,6 +516,17 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
         [req.userId, contentHash]
       );
       if (dup.rows.length > 0) existing = dup.rows[0];
+      // 图片：密文哈希随机 IV 不稳定，必须用明文图片内容哈希二次比对去重
+      if (!existing && detectedType === 'image' && imageHash) {
+        const idup = await client.query(
+          `SELECT id, created_at FROM clipboard_items
+           WHERE user_id = $1 AND content_type = 'image' AND image_hash = $2
+             AND created_at > NOW() - INTERVAL '5 minutes'
+           LIMIT 1`,
+          [req.userId, imageHash]
+        );
+        if (idup.rows.length > 0) existing = idup.rows[0];
+      }
     }
 
     if (existing) {
@@ -527,10 +544,10 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
     }
 
     const result = await client.query(
-      `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata, content_hash, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata, content_hash, image_hash, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id, content_type, content_preview, content_size, is_favorite, expires_at, created_at`,
-      [req.userId, sourceDeviceId, detectedType, contentEncrypted, cleanPreview, contentSize || 0, JSON.stringify(metadata || {}), contentHash, expiresAt || null]
+      [req.userId, sourceDeviceId, detectedType, contentEncrypted, cleanPreview, contentSize || 0, JSON.stringify(metadata || {}), contentHash, imageHash, expiresAt || null]
     );
 
     item = result.rows[0];

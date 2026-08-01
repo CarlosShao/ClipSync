@@ -12,6 +12,7 @@ import {
   getToolsForRole,
   enhanceSystemPrompt,
 } from '../utils/aiSystemPrompt.js'
+import { extractImageDataUrls, hashImageDataUrl } from '../utils/imageHash.js'
 
 const router = Router()
 
@@ -55,6 +56,40 @@ router.post('/chat', apiLimiter, async (req, res) => {
     }
     // 按角色过滤下发给 LLM 的工具集（普通/管理员角色看不到敏感工具）
     const scopedTools = getToolsForRole(role, TOOLS)
+
+    // 图片历史重复检测（#225）：扫描用户消息中的图片，按明文内容哈希比对剪贴板历史。
+    // 命中则注入系统提示让 AI 在回答开头友善提示「该图片已存在于历史」，并下发 meta 事件供前端提示。
+    let duplicateImageMeta = null
+    try {
+      const imageUrls = extractImageDataUrls(messages)
+      for (const url of imageUrls) {
+        const h = hashImageDataUrl(url)
+        if (!h) continue
+        const dup = await pool.query(
+          `SELECT id, created_at, content_preview FROM clipboard_items
+           WHERE user_id = $1 AND image_hash = $2 AND image_hash IS NOT NULL
+           ORDER BY created_at ASC LIMIT 1`,
+          [req.userId, h]
+        )
+        if (dup.rows.length > 0) {
+          const row = dup.rows[0]
+          duplicateImageMeta = {
+            imageHash: h,
+            existingId: row.id,
+            createdAt: row.created_at,
+            preview: row.content_preview,
+          }
+          const when = row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : ''
+          const hint = `\n\n[系统提示] 用户刚刚发送的图片，与 TA 剪贴板历史中已有的图片内容完全相同（最早记录于 ${when}）。请在回答开头用一句话友善地提示用户：这张图片已经在 TA 的历史剪贴板中存在了，无需重复保存。`
+          systemContent += hint
+          const sysMsg = messages.find((m) => m.role === 'system')
+          if (sysMsg) sysMsg.content = systemContent
+          break
+        }
+      }
+    } catch (e) {
+      logger.warn('[AI] duplicate image detection skipped:', e.message)
+    }
 
     // 模型覆盖：前端可在请求里指定本次使用的模型（多选标签场景）。
     // 校验规则：必须属于该供应商 models 列表，或与已存 model 一致（避免拼错/越权）。
@@ -184,6 +219,11 @@ router.post('/chat', apiLimiter, async (req, res) => {
         capturedUsage = obj.meta.usage
       }
       sendDelta(obj)
+    }
+
+    // 图片重复检测提示事件（#225）：供前端展示「该图片已在历史剪贴板中」
+    if (duplicateImageMeta) {
+      sendDelta({ meta: { type: 'duplicate_image', duplicate: duplicateImageMeta } })
     }
 
     try {
