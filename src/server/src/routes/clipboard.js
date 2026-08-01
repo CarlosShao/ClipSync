@@ -468,10 +468,17 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
     // 非文件类型按密文哈希去重；文件类型用路径去重（content_hash 留空）
     const isFile = detectedType === 'file';
     const contentHash = isFile ? null : crypto.createHash('sha256').update(contentEncrypted).digest('hex');
-    // 图片：额外计算「明文图片内容哈希」用于跨复制去重（密文哈希因随机 IV 不稳定，同图不同哈希）
+    // 图片：额外计算「明文图片内容哈希」用于跨复制去重 + AI 重复感知。
+    // 优先使用桌面端上传的「原始字节 SHA-256」(imageHash)，它与 AI 聊天里粘贴的
+    // 同一张原图哈希一致；否则回退到服务端对上传体(可能已 resize)计算哈希。
     let imageHash = null;
     if (detectedType === 'image') {
-      imageHash = await hashImageStored(contentEncrypted);
+      const provided = req.body.imageHash;
+      if (typeof provided === 'string' && /^[a-f0-9]{64}$/i.test(provided)) {
+        imageHash = provided.toLowerCase();
+      } else {
+        imageHash = await hashImageStored(contentEncrypted);
+      }
     }
     srcDeviceId = sourceDeviceId;
 

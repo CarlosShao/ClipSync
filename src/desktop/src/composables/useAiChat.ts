@@ -48,6 +48,13 @@ export function useAiChat() {
   const error = ref('')
   // 上下文用量（token 计数，由后端 usage 事件下发；保留最近一次调用，代表当前上下文占用）
   const contextUsage = ref<ContextUsage | null>(null)
+  // 图片重复感知（#225）：后端检测到本次发送的图片已存在于剪贴板历史时下发，前端展示提示横幅
+  const duplicateImageNotice = ref<{
+    imageHash: string
+    existingId: string
+    createdAt: string
+    preview: string
+  } | null>(null)
   const abortCtrl = shallowRef<AbortController | null>(null)
   const initialized = ref(false)
   // 长程记忆模式：开启时把用户记忆注入系统提示词，让 AI 跨会话“记得”用户
@@ -216,6 +223,8 @@ export function useAiChat() {
   async function send(content: string, options: SendOptions = {}) {
     const text = content.trim()
     if (!text || isStreaming.value) return
+    // 新一轮发送：清空上一次的图片重复提示
+    duplicateImageNotice.value = null
     if (!selectedProviderId.value) {
       error.value = 'ai_no_provider_selected'
       return
@@ -495,6 +504,17 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
             upsertAgentRun(meta.agent)
           }
 
+          // 图片重复感知（#225）：本次发送的图片已在 TA 的剪贴板历史中存在，展示提示横幅
+          const mm = meta as any
+          if (mm?.type === 'duplicate_image') {
+            duplicateImageNotice.value = {
+              imageHash: mm.imageHash,
+              existingId: mm.existingId,
+              createdAt: mm.createdAt,
+              preview: mm.preview,
+            }
+          }
+
           // 有 agentId 的增量属于某个子代理 → 路由到对应卡片；否则归到主气泡
           const target: AgentRun | null = meta?.agentId ? getOrCreateAgentRun(meta.agentId) : null
 
@@ -591,6 +611,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
     isStreaming,
     error,
     contextUsage,
+    duplicateImageNotice,
     hasProviders,
     canSend,
     memoryEnabled,

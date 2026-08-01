@@ -74,6 +74,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
         if (dup.rows.length > 0) {
           const row = dup.rows[0]
           duplicateImageMeta = {
+            type: 'duplicate_image',
             imageHash: h,
             existingId: row.id,
             createdAt: row.created_at,

@@ -10,7 +10,7 @@ import AiMessageList from './AiMessageList.vue'
 import AiChatInput from './AiChatInput.vue'
 import AiConversationList from './AiConversationList.vue'
 import AiMemoryPanel from './AiMemoryPanel.vue'
-import { X, Bot, Plus, MessageSquare, Workflow, History, Brain, ShieldCheck, UserCog, User } from 'lucide-vue-next'
+import { X, Bot, Plus, MessageSquare, Workflow, History, Brain, ShieldCheck, UserCog, User, CopyCheck } from 'lucide-vue-next'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; 'open-settings': [] }>()
@@ -26,6 +26,7 @@ const {
   isStreaming,
   error,
   contextUsage,
+  duplicateImageNotice,
   hasProviders,
   canSend,
   memoryEnabled,
@@ -152,6 +153,16 @@ async function onRename(id: string, title: string) {
 async function onDelete(id: string) {
   await deleteConversation(id)
 }
+
+// 图片重复感知（#225）：把后端下发的记录时间格式化为本地可读字符串
+function formatDupTime(iso?: string): string {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString('zh-CN')
+  } catch {
+    return ''
+  }
+}
 </script>
 
 <template>
@@ -244,6 +255,17 @@ async function onDelete(id: string) {
           </div>
 
           <AiMessageList :messages="messages" :is-streaming="isStreaming" />
+
+          <!-- 图片重复感知（#225）：本次发送的图片已在历史剪贴板中存在 -->
+          <div v-if="duplicateImageNotice" class="ai-dup-image-bar">
+            <CopyCheck :size="15" class="ai-dup-image-icon" />
+            <span class="ai-dup-image-text">
+              这张图片已在你的历史剪贴板中存在（最早记录于 {{ formatDupTime(duplicateImageNotice.createdAt) }}），无需重复保存。
+            </span>
+            <Button variant="ghost" size="icon-sm" :title="t('close_btn')" @click="duplicateImageNotice = null">
+              <X :size="14" />
+            </Button>
+          </div>
 
           <div v-if="error" class="ai-error-bar">{{ error }}</div>
 
@@ -433,6 +455,28 @@ async function onDelete(id: string) {
   color: var(--danger, #ef4444);
   background: var(--danger-bg, #fef2f2);
   border-top: 1px solid var(--border-default);
+}
+
+/* 图片重复感知横幅（#225） */
+.ai-dup-image-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-top: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+.ai-dup-image-bar .ai-dup-image-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.ai-dup-image-bar .ai-dup-image-text {
+  flex: 1;
+  min-width: 0;
 }
 
 /* 历史 Popover（内容被 teleport 到 body，用 :deep 穿透作用域，#216） */

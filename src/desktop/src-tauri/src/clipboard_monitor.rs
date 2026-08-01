@@ -27,6 +27,20 @@ pub fn request_stop_monitor() {
     }
 }
 
+/// Echo guard for TEXT (and text-encoded image data URLs) that ClipSync itself
+/// writes to the clipboard (paste / sync from another device / copy-to-clipboard
+/// buttons). When ClipSync writes content X, the OS fires a clipboard-change
+/// notification that the monitor would otherwise treat as an *external* copy and
+/// pop the AI summary float for our own write. We stash the content here right
+/// before writing; the monitor consumes & clears it on the next matching change.
+static IGNORE_NEXT: Mutex<Option<String>> = Mutex::new(None);
+
+/// Tell the monitor to ignore the next clipboard change equal to `content`.
+/// Called from `set_clipboard_content` (and friends) before/around the write.
+pub fn ignore_next_clipboard(content: &str) {
+    *IGNORE_NEXT.lock().unwrap() = Some(content.to_string());
+}
+
 /// Monitors clipboard changes and emits `clipboard-changed` events.
 ///
 /// ARCHITECTURE (2026-07-11, rewritten to fix "consecutive screenshots only
@@ -176,17 +190,34 @@ fn handle_content(
 ) {
     match content {
         ClipContent::Text(text) => {
+            // Echo guard: if this text equals what ClipSync itself just wrote to the
+            // clipboard (paste / sync / copy button), skip it so we don't pop a summary
+            // for our own write. Consume the guard on match.
+            {
+                let mut ig = IGNORE_NEXT.lock().unwrap();
+                if let Some(ignored) = ig.take() {
+                    if ignored == text {
+                        eprintln!("[ClipMon] TEXT: echo of own write ({} chars), skip", text.len());
+                        state.last_text = text.clone();
+                        state.last_change_time = Instant::now();
+                        return;
+                    } else {
+                        // Not our write after all — restore the guard and continue normally.
+                        *ig = Some(ignored);
+                    }
+                }
+            }
+
+            // Genuinely new external text → emit so the AI summary float can pop up.
+            // `last_text` dedupes consecutive identical copies (e.g. copy X twice).
             if !text.is_empty() && text != state.last_text {
                 state.last_text = text.clone();
                 state.last_change_time = Instant::now();
-            } else if !state.last_text.is_empty() && state.last_change_time.elapsed() >= Duration::from_millis(500) {
-                let content_to_sync = state.last_text.clone();
-                state.last_text.clear();
-                eprintln!("[ClipMon] TEXT: {} chars", content_to_sync.len());
+                eprintln!("[ClipMon] TEXT: {} chars, emit", text.len());
                 let _ = app.emit(
                     "clipboard-changed",
                     serde_json::json!({
-                        "content": content_to_sync,
+                        "content": text,
                         "timestamp": chrono::Utc::now().to_rfc3339(),
                     }),
                 );

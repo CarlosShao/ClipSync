@@ -239,6 +239,22 @@ onMounted(async () => {
   ;(window as any).__toggleAiPanel = () => {
     aiSidebarOpen.value = !aiSidebarOpen.value
   }
+  ;(window as any).__isAiPanelOpen = () => aiSidebarOpen.value
+
+  // Also explicitly ask Rust to register the AI panel shortcut. This is a fallback in case
+  // the Rust setup registration was not rebuilt (Tauri HMR does not recompile Rust).
+  const aiShortcuts = ['Ctrl+Shift+A', 'Ctrl+Alt+A', 'Alt+Shift+A', 'Ctrl+Shift+B']
+  let registeredAiShortcut = ''
+  for (const sc of aiShortcuts) {
+    try {
+      await tauri.registerShortcut(sc)
+      registeredAiShortcut = sc
+      console.log('[Home] AI panel shortcut registered:', sc)
+      break
+    } catch (e) {
+      console.warn('[Home] Failed to register AI shortcut', sc, e)
+    }
+  }
 
   // Re-apply user's saved global shortcuts (Rust hardcodes defaults at startup,
   // so without this the user's customization is lost after a restart).

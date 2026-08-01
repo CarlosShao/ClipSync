@@ -201,6 +201,10 @@ fn get_clipboard_content() -> Result<String, String> {
 
 #[tauri::command]
 fn set_clipboard_content(content: String) -> Result<(), String> {
+    // Tell the monitor to ignore the change we're about to make (paste / sync /
+    // copy button), so it doesn't pop the AI summary float for our own write.
+    clipboard_monitor::ignore_next_clipboard(&content);
+
     use clipboard_win::raw;
     raw::open().map_err(|e| format!("open: {}", e))?;
     // CF_UNICODETEXT (format 13) 要求 UTF-16LE 编码，且必须以双字节 null 结尾
@@ -895,12 +899,6 @@ fn register_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), Stri
         let shortcut_clone = shortcut.clone();
         eprintln!("[Shortcut] Registering custom shortcut: '{}'", shortcut_clone);
 
-        handle.global_shortcut().unregister_all().map_err(|e| {
-            eprintln!("[Shortcut] unregister_all failed: {}", e);
-            e.to_string()
-        })?;
-
-        // Tauri v2: parse shortcut string, then register (handler is global via app.listen)
         let shortcut_obj: Shortcut = shortcut_clone
             .parse()
             .map_err(|e| {
@@ -908,17 +906,20 @@ fn register_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), Stri
                 format!("Invalid shortcut '{}': {}", shortcut_clone, e)
             })?;
 
-        handle.global_shortcut().register(shortcut_obj).map_err(|e| {
-            eprintln!("[Shortcut] register failed for '{}': {}", shortcut_clone, e);
+        // Use on_shortcut() with a per-shortcut closure so the handler actually fires.
+        // The eval-based toggle expects window.__toggleAiPanel to exist in the main webview.
+        let sc_label = shortcut_clone.clone();
+        handle.global_shortcut().on_shortcut(shortcut_obj, move |app, _sc, _event| {
+            eprintln!("[GlobalShortcut:custom] '{}' triggered → toggle AI panel", sc_label);
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.eval("if(window.__toggleAiPanel) window.__toggleAiPanel()");
+            }
+        }).map_err(|e| {
+            eprintln!("[Shortcut] on_shortcut failed for '{}': {}", shortcut_clone, e);
             e.to_string()
         })?;
 
         eprintln!("[Shortcut] ✅ Successfully registered: '{}'", shortcut_clone);
-
-        if let Some(state) = app.try_state::<AppState>() {
-            let mut config = state.config.lock().unwrap();
-            config.quick_paste_shortcut = Some(shortcut);
-        }
     }
     Ok(())
 }

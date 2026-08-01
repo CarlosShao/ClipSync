@@ -20,6 +20,31 @@ export function simpleHash(s: string): string {
   return hash.toString(36)
 }
 
+/**
+ * SHA-256 hex of the *decoded bytes* of a data URL. Used as the canonical
+ * image dedup key so it matches the same image pasted into the AI chat
+ * (which also hashes the original bytes on the server). We hash the ORIGINAL
+ * data URL, not the resized upload payload, otherwise the two sides would
+ * never match and "this image is already in your clipboard" detection breaks.
+ */
+export async function sha256DataUrl(dataUrl: string): Promise<string | null> {
+  const comma = dataUrl.indexOf(',')
+  if (comma < 0) return null
+  const b64 = dataUrl.slice(comma + 1)
+  try {
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const digest = await crypto.subtle.digest('SHA-256', bytes)
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+  } catch (e) {
+    logger.warn('[clipboardUpload] sha256DataUrl failed', e)
+    return null
+  }
+}
+
 /** Try API call; on network failure, enqueue for later sync. */
 export async function apiOrEnqueue(
   method: string,
@@ -231,13 +256,17 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
     console.warn('[Clipboard] uploadImageToServer: no deviceId, dropping image')
     return
   }
-  const uploadPayload = {
+  // Hash the ORIGINAL image bytes (not the resized upload) so server-side
+  // duplicate detection matches the same image when pasted into the AI chat.
+  const imageHash = await sha256DataUrl(dataUrl)
+  const uploadPayload: any = {
     contentType: 'image',
     contentEncrypted: resized,
     sourceDeviceId: deviceId,
     mimeType: 'image/png',
     size: base64?.length || 0,
     contentPreview: `[Image ${base64?.length || 0} bytes]`,
+    imageHash,
   }
   const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
   if (res.ok && res.data?.id) {
