@@ -12,7 +12,7 @@ import {
   getToolsForRole,
   enhanceSystemPrompt,
 } from '../utils/aiSystemPrompt.js'
-import { extractImageDataUrls, hashImageDataUrl } from '../utils/imageHash.js'
+import { extractImageHashes, hashImageDataUrl } from '../utils/imageHash.js'
 
 const router = Router()
 
@@ -61,9 +61,9 @@ router.post('/chat', apiLimiter, async (req, res) => {
     // 命中则注入系统提示让 AI 在回答开头友善提示「该图片已存在于历史」，并下发 meta 事件供前端提示。
     let duplicateImageMeta = null
     try {
-      const imageUrls = extractImageDataUrls(messages)
-      for (const url of imageUrls) {
-        const h = hashImageDataUrl(url)
+      const imageEntries = extractImageHashes(messages)
+      for (const entry of imageEntries) {
+        const h = entry.hash || hashImageDataUrl(entry.url)
         if (!h) continue
         const dup = await pool.query(
           `SELECT id, created_at, content_preview FROM clipboard_items
@@ -224,7 +224,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
 
     // 图片重复检测提示事件（#225）：供前端展示「该图片已在历史剪贴板中」
     if (duplicateImageMeta) {
-      sendDelta({ meta: { type: 'duplicate_image', duplicate: duplicateImageMeta } })
+      sendDelta({ meta: duplicateImageMeta })
     }
 
     try {

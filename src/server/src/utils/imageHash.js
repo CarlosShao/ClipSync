@@ -55,24 +55,43 @@ export function hashImageDataUrl(dataUrl) {
 }
 
 /**
- * 从 AI 消息数组中提取所有图片 data URL。
- * 兼容 OpenAI 多模态 content 数组（[{type:'image_url',image_url:{url}}]）与字符串内嵌 data URL。
+ * 从 AI 消息数组中提取所有图片 data URL，以及前端可能提供的原图哈希。
+ * 兼容 OpenAI 多模态 content 数组、前端 images 数组与字符串内嵌 data URL。
+ * 返回 { url, hash? }[]；hash 为空时由调用方自行计算。
  */
-export function extractImageDataUrls(messages) {
-  const urls = [];
+export function extractImageHashes(messages) {
+  const out = [];
   for (const msg of messages || []) {
-    const c = msg && msg.content;
+    if (!msg || msg.role !== 'user') continue;
+
+    // 前端多模态消息里的 images 数组（AiChatInput 粘贴的截图）
+    if (Array.isArray(msg.images)) {
+      for (const img of msg.images) {
+        if (img && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
+          out.push({ url: img.data, hash: img.hash || msg.imageHash || null });
+        }
+      }
+    }
+
+    // OpenAI 风格 content 数组 / 字符串内嵌 data URL
+    const c = msg.content;
     if (Array.isArray(c)) {
       for (const part of c) {
         if (part && part.type === 'image_url' && typeof part.image_url?.url === 'string') {
-          urls.push(part.image_url.url);
+          out.push({ url: part.image_url.url, hash: msg.imageHash || null });
         }
       }
     } else if (typeof c === 'string') {
       const re = /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g;
       const found = c.match(re);
-      if (found) urls.push(...found);
+      if (found) {
+        for (const url of found) out.push({ url, hash: msg.imageHash || null });
+      }
     }
   }
-  return urls;
+  return out;
+}
+
+export function extractImageDataUrls(messages) {
+  return extractImageHashes(messages).map((entry) => entry.url);
 }

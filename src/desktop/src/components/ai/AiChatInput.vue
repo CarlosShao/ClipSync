@@ -7,6 +7,7 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import type { AiProvider } from '@/api/ai'
 import { Send, Square, Brain, ChevronDown, Settings2 } from 'lucide-vue-next'
 import type { ContextUsage, ChatImage } from '@/api/ai'
+import { sha256DataUrl } from '@/utils/hash'
 
 const props = defineProps<{
   disabled: boolean
@@ -151,10 +152,11 @@ function onPaste(e: ClipboardEvent) {
     const file = it.getAsFile()
     if (!file) continue
     const reader = new FileReader()
-    reader.onload = () => {
+    reader.onload = async () => {
       const dataUrl = reader.result as string
       if (typeof dataUrl === 'string' && dataUrl.startsWith('data:')) {
-        pastedImages.value.push({ mime: file.type, data: dataUrl })
+        const hash = await sha256DataUrl(dataUrl)
+        pastedImages.value.push({ mime: file.type, data: dataUrl, hash: hash || undefined })
       }
     }
     reader.readAsDataURL(file)

@@ -411,6 +411,7 @@
   "sk_quick_paste": "Quick Paste Panel",
   "sk_copy_clip": "Copy selected clip",
   "sk_toggle_window": "Show/Hide window",
+  "sk_ai_panel": "Toggle AI panel",
   "sk_paste_plain": "Paste as plain text",
   "sk_delete_clip": "Delete selected clip",
   "sk_search": "Search clips",

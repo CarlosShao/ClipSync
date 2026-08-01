@@ -18,6 +18,8 @@ export const useConfigStore = defineStore('config', () => {
     device_id: null,
     user_id: null,
     quick_paste_shortcut: 'Ctrl+Shift+V',
+    toggle_window_shortcut: 'Ctrl+Alt+Space',
+    toggle_ai_panel_shortcut: 'Ctrl+Shift+A',
   })
 
   const user = ref({ name: '', email: '', phone: '', plan: 'Free' as string })

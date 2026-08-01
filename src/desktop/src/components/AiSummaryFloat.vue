@@ -51,7 +51,7 @@ async function summarize(content: string) {
       error.value = res.error || '摘要失败'
     }
   } catch (e: any) {
-    logger.error('[AiSummaryFloat]', e)
+    console.error('[AiSummaryFloat]', e)
     error.value = e?.message || '摘要失败'
   } finally {
     loading.value = false
@@ -90,7 +90,7 @@ onUnmounted(() => {
         v-if="visible"
         class="ai-summary-float pointer-events-auto"
       >
-        <div class="flex items-start justify-between gap-2">
+        <div class="flex items-start justify-between gap-2 shrink-0">
           <div class="flex items-center gap-1.5 text-xs font-medium text-primary">
             <Sparkles class="w-3.5 h-3.5" />
             <span>AI 摘要</span>
@@ -102,10 +102,10 @@ onUnmounted(() => {
             <X class="w-3.5 h-3.5" />
           </button>
         </div>
-        <div class="mt-2 text-xs text-muted-foreground line-clamp-2">
+        <div class="float-preview mt-2 text-xs text-muted-foreground">
           {{ preview }}
         </div>
-        <div class="mt-2 text-sm leading-relaxed text-foreground">
+        <div class="float-summary mt-2 text-sm leading-relaxed text-foreground">
           <span v-if="loading" class="text-muted-foreground">正在生成摘要...</span>
           <span v-else-if="error" class="text-destructive text-xs">{{ error }}</span>
           <span v-else>{{ summary }}</span>
@@ -122,12 +122,36 @@ onUnmounted(() => {
   right: 24px;
   width: 320px;
   max-width: calc(100vw - 48px);
-  background: hsl(var(--background));
+  max-height: 260px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: hsl(var(--background) / 0.98);
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
   padding: 14px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
   z-index: 9999;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.float-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.float-summary {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 .summary-float-enter-active,

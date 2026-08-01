@@ -13,11 +13,12 @@ const emit = defineEmits<{ back: [] }>()
 const DEFAULT_SHORTCUTS = {
   quickPaste: ['Ctrl', 'Shift', 'V'],
   toggleWindow: ['Ctrl', 'Alt', 'Space'],
+  toggleAiPanel: ['Ctrl', 'Shift', 'A'],
   copyClip: ['Enter'],
   deleteClip: ['Delete'],
   search: ['Ctrl', 'F'],
 }
-const GLOBAL_IDS = ['quickPaste', 'toggleWindow']
+const GLOBAL_IDS = ['quickPaste', 'toggleWindow', 'toggleAiPanel']
 const STORAGE_KEY = 'clipsync-custom-shortcuts'
 type ShortcutId = keyof typeof DEFAULT_SHORTCUTS
 
@@ -40,6 +41,7 @@ const recorderEl = ref<HTMLElement | null>(null)
 const shortcutList = [
   { id: 'quickPaste' as ShortcutId, label: 'sk_quick_paste', global: true },
   { id: 'toggleWindow' as ShortcutId, label: 'sk_toggle_window', global: true },
+  { id: 'toggleAiPanel' as ShortcutId, label: 'sk_ai_panel', global: true },
   { id: 'copyClip' as ShortcutId, label: 'sk_copy_clip', global: false },
   { id: 'deleteClip' as ShortcutId, label: 'sk_delete_clip', global: false },
   { id: 'search' as ShortcutId, label: 'sk_search', global: false },

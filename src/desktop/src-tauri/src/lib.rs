@@ -23,6 +23,7 @@ pub struct AppConfig {
     pub user_id: Option<String>,
     pub quick_paste_shortcut: Option<String>,
     pub toggle_window_shortcut: Option<String>,
+    pub toggle_ai_panel_shortcut: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -34,6 +35,7 @@ impl Default for AppConfig {
             user_id: None,
             quick_paste_shortcut: Some("Ctrl+Shift+V".to_string()),
             toggle_window_shortcut: Some("Ctrl+Alt+Space".to_string()),
+            toggle_ai_panel_shortcut: Some("Ctrl+Shift+A".to_string()),
         }
     }
 }
@@ -45,6 +47,8 @@ pub struct AppState {
     pub last_qp_toggle: Arc<Mutex<Instant>>,
     /// Last time ToggleWindow was toggled (for debouncing key-repeat)
     pub last_tw_toggle: Arc<Mutex<Instant>>,
+    /// Last time AI panel was toggled (for debouncing key-repeat)
+    pub last_ai_toggle: Arc<Mutex<Instant>>,
 }
 
 // 系统托盘菜单命令
@@ -96,6 +100,7 @@ fn update_config(state: tauri::State<AppState>, config: AppConfig) {
     cfg.server_url = config.server_url;
     cfg.quick_paste_shortcut = config.quick_paste_shortcut;
     cfg.toggle_window_shortcut = config.toggle_window_shortcut;
+    cfg.toggle_ai_panel_shortcut = config.toggle_ai_panel_shortcut;
 }
 
 /// 清除认证/身份状态（前端 logout 调用）。与 update_config 分离，
@@ -1051,11 +1056,43 @@ fn set_global_shortcuts(app: tauri::AppHandle, shortcuts: HashMap<String, String
             }
         }
 
+        // ── Toggle AI Panel ──
+        if let Some(ai) = shortcuts.get("toggleAiPanel") {
+            let cands: Vec<&str> = vec![ai.as_str(), "Ctrl+Shift+A", "Ctrl+Alt+A", "Alt+Shift+A"];
+            for (i, candidate) in cands.iter().enumerate() {
+                if let Ok(sc) = candidate.parse::<Shortcut>() {
+                    match handle.global_shortcut().on_shortcut(sc, |app_h, _shortcut, _event| {
+                        let should_fire = if let Some(s) = app_h.try_state::<AppState>() {
+                            let mut last = s.last_ai_toggle.lock().unwrap();
+                            if last.elapsed() < std::time::Duration::from_millis(500) {
+                                false
+                            } else {
+                                *last = Instant::now();
+                                true
+                            }
+                        } else {
+                            true
+                        };
+                        if !should_fire { return; }
+
+                        eprintln!("[setGS:ai] Triggered → toggle AI panel");
+                        if let Some(w) = app_h.get_webview_window("main") {
+                            let _ = w.eval("if (window.__toggleAiPanel) window.__toggleAiPanel()");
+                        }
+                    }) {
+                        Ok(()) => { println!("[setGS] ✅ toggleAiPanel='{}'{}", candidate, if i > 0 { " (fb)" } else { "" }); break; }
+                        Err(e) => { if i == 0 { eprintln!("[setGS] AI primary failed: {}", e); } }
+                    }
+                }
+            }
+        }
+
         // Persist to config
         if let Some(state) = app.try_state::<AppState>() {
             let mut cfg = state.config.lock().unwrap();
             cfg.quick_paste_shortcut = shortcuts.get("quickPaste").cloned();
             cfg.toggle_window_shortcut = shortcuts.get("toggleWindow").cloned();
+            cfg.toggle_ai_panel_shortcut = shortcuts.get("toggleAiPanel").cloned();
         }
     }
     Ok(())
@@ -1434,6 +1471,7 @@ pub fn run() {
         is_monitoring: Arc::new(AtomicBool::new(false)),
         last_qp_toggle: Arc::new(Mutex::new(Instant::now() - std::time::Duration::from_secs(10))),
         last_tw_toggle: Arc::new(Mutex::new(Instant::now() - std::time::Duration::from_secs(10))),
+        last_ai_toggle: Arc::new(Mutex::new(Instant::now() - std::time::Duration::from_secs(10))),
     };
 
     tauri::Builder::default()
@@ -1515,8 +1553,10 @@ pub fn run() {
                     .unwrap_or_else(|| "Ctrl+Shift+V".to_string());
                 let tw_str = cfg.toggle_window_shortcut
                     .unwrap_or_else(|| "Ctrl+Alt+Space".to_string());
+                let ai_str = cfg.toggle_ai_panel_shortcut
+                    .unwrap_or_else(|| "Ctrl+Shift+A".to_string());
 
-                eprintln!("[Setup] Registering global shortcuts: qp='{}' tw='{}'", qp_str, tw_str);
+                eprintln!("[Setup] Registering global shortcuts: qp='{}' tw='{}' ai='{}'", qp_str, tw_str, ai_str);
 
                 // ── QuickPaste: show/hide independent floating popup ──
                 let qp_candidates: Vec<&str> = if qp_str.to_lowercase().contains("shift+v") {
@@ -1605,14 +1645,27 @@ pub fn run() {
                 }
 
             // ── AI Panel: toggle AI sidebar (eval frontend __toggleAiPanel) ──
-            let ai_candidates: Vec<&str> = vec!["Ctrl+Shift+A", "Ctrl+Alt+A", "Alt+Shift+A", "Ctrl+Shift+B"];
+            let ai_candidates: Vec<&str> = vec![&ai_str, "Ctrl+Shift+A", "Ctrl+Alt+A", "Alt+Shift+A"];
             for (i, candidate) in ai_candidates.iter().enumerate() {
                 match candidate.parse::<Shortcut>() {
                     Ok(sc) => {
                         match handle.global_shortcut().on_shortcut(sc, |app, _shortcut, _event| {
+                            let should_fire = if let Some(s) = app.try_state::<AppState>() {
+                                let mut last = s.last_ai_toggle.lock().unwrap();
+                                if last.elapsed() < std::time::Duration::from_millis(500) {
+                                    false
+                                } else {
+                                    *last = Instant::now();
+                                    true
+                                }
+                            } else {
+                                true
+                            };
+                            if !should_fire { return; }
+
                             eprintln!("[GlobalShortcut:ai] Triggered → toggle AI panel");
                             if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.eval("if(window.__toggleAiPanel) window.__toggleAiPanel()");
+                                let _ = window.eval("if (window.__toggleAiPanel) window.__toggleAiPanel()");
                             }
                         }) {
                             Ok(()) => {

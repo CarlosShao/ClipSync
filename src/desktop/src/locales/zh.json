@@ -667,6 +667,7 @@
   "sk_quick_paste": "快速粘贴面板",
   "sk_copy_clip": "复制所选",
   "sk_toggle_window": "显隐主窗口",
+  "sk_ai_panel": "打开/关闭 AI 面板",
   "sk_paste_plain": "纯文本粘贴",
   "sk_delete_clip": "删除所选",
   "sk_search": "搜索剪贴板",

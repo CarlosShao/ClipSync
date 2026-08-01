@@ -241,32 +241,24 @@ onMounted(async () => {
   }
   ;(window as any).__isAiPanelOpen = () => aiSidebarOpen.value
 
-  // Also explicitly ask Rust to register the AI panel shortcut. This is a fallback in case
-  // the Rust setup registration was not rebuilt (Tauri HMR does not recompile Rust).
-  const aiShortcuts = ['Ctrl+Shift+A', 'Ctrl+Alt+A', 'Alt+Shift+A', 'Ctrl+Shift+B']
-  let registeredAiShortcut = ''
-  for (const sc of aiShortcuts) {
-    try {
-      await tauri.registerShortcut(sc)
-      registeredAiShortcut = sc
-      console.log('[Home] AI panel shortcut registered:', sc)
-      break
-    } catch (e) {
-      console.warn('[Home] Failed to register AI shortcut', sc, e)
-    }
-  }
-
-  // Re-apply user's saved global shortcuts (Rust hardcodes defaults at startup,
-  // so without this the user's customization is lost after a restart).
+  // 恢复全局快捷键（快速粘贴 / 显隐主窗口 / AI 面板）。
+  // Rust setup 启动时也会注册默认值，这里把用户自定义或默认值整体重设一次，
+  // 避免 HMR 未重编 Rust 时用了旧二进制里的默认快捷键。
   try {
     const saved = JSON.parse(localStorage.getItem('clipsync-custom-shortcuts') || '{}')
+    const defaultGlobals: Record<string, string[]> = {
+      quickPaste: ['Ctrl', 'Shift', 'V'],
+      toggleWindow: ['Ctrl', 'Alt', 'Space'],
+      toggleAiPanel: ['Ctrl', 'Shift', 'A'],
+    }
     const globalMap: Record<string, string> = {}
-    for (const gid of ['quickPaste', 'toggleWindow']) {
-      const ks = saved[gid]
+    for (const gid of Object.keys(defaultGlobals)) {
+      const ks = saved[gid] || defaultGlobals[gid]
       if (Array.isArray(ks) && ks.length) globalMap[gid] = ks.join('+')
     }
-    if (Object.keys(globalMap).length)
+    if (Object.keys(globalMap).length) {
       tauri.setGlobalShortcuts(globalMap).catch((e) => console.warn('[Home] setGlobalShortcuts failed:', e))
+    }
   } catch (e) {
     console.warn('[Home] shortcut restore failed:', e)
   }

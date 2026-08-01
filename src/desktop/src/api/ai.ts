@@ -27,6 +27,8 @@ export interface ChatMessage {
   content: string
   // 随消息一起发送的截图（data URL）。仅 user 消息使用，用于多模态（vision）提问。
   images?: ChatImage[]
+  /** 当消息包含图片时，前端提供的原图 SHA-256，供后端重复检测直接使用 */
+  imageHash?: string
   thinking?: string // 思考过程
   thinkingStartedAt?: number // 思考开始时间戳（毫秒），用于显示思考秒数
   toolCalls?: ToolCall[] // 工具调用
@@ -71,6 +73,8 @@ export interface AgentRun {
 export interface ChatImage {
   mime: string
   data: string
+  /** 原始 data URL 字节的 SHA-256，用于与服务端剪贴板图片哈希比对 */
+  hash?: string
 }
 
 // 上下文用量（token 计数，由上游 usage 返回）

@@ -4,6 +4,8 @@ export interface AppConfig {
   device_id: string | null
   user_id: string | null
   quick_paste_shortcut: string | null
+  toggle_window_shortcut: string | null
+  toggle_ai_panel_shortcut: string | null
 }
 
 export type ThemeStyle = 'vercel' | 'clipsync' | 'notion' | 'linear' | 'apple' | 'raycast' | 'arc'

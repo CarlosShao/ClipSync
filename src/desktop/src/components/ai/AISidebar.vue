@@ -465,18 +465,26 @@ function formatDupTime(iso?: string): string {
   padding: 8px 12px;
   font-size: 12px;
   line-height: 1.4;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border-top: 1px solid var(--border-default);
+  color: hsl(210 90% 25%);
+  background: hsl(210 80% 92%);
+  border-top: 1px solid hsl(210 70% 85%);
   flex-shrink: 0;
 }
 .ai-dup-image-bar .ai-dup-image-icon {
   flex-shrink: 0;
-  color: var(--accent);
+  color: hsl(210 90% 35%);
 }
 .ai-dup-image-bar .ai-dup-image-text {
   flex: 1;
   min-width: 0;
+}
+.dark .ai-dup-image-bar {
+  color: hsl(210 80% 85%);
+  background: hsl(210 60% 20%);
+  border-top-color: hsl(210 50% 30%);
+}
+.dark .ai-dup-image-bar .ai-dup-image-icon {
+  color: hsl(210 80% 60%);
 }
 
 /* 历史 Popover（内容被 teleport 到 body，用 :deep 穿透作用域，#216） */

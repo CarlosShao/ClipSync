@@ -241,7 +241,12 @@ export function useAiChat() {
     }
 
     error.value = ''
-    messages.value.push({ role: 'user', content: text, images: options.images })
+    messages.value.push({
+      role: 'user',
+      content: text,
+      images: options.images,
+      imageHash: options.images?.[0]?.hash,
+    })
     messages.value.push({ role: 'assistant', content: '', thinking: '', thinkingActive: true })
     // 必须引用 messages 数组里的 reactive proxy，后续 mutations 才能触发 Vue 响应式更新。
     // 注意：若用户在流式进行中途切换历史对话，messages.value 会被替换，但 assistantMsg
@@ -444,6 +449,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
             { type: 'text', text: m.content || '' },
             ...m.images.map((img) => ({ type: 'image_url', image_url: { url: img.data } })),
           ],
+          imageHash: m.images[0]?.hash,
         })
       } else {
         historyMessages.push({ role: m.role, content: m.content })
