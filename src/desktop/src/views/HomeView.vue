@@ -24,6 +24,7 @@ import QuickPastePanel from '@/components/QuickPastePanel.vue'
 const SettingsDialog = defineAsyncComponent(() => import('@/components/settings/settings-dialog/SettingsDialog.vue'))
 // AI 侧边栏非首屏，异步加载
 const AISidebar = defineAsyncComponent(() => import('@/components/ai/AISidebar.vue'))
+const AiSummaryFloat = defineAsyncComponent(() => import('@/components/AiSummaryFloat.vue'))
 const ProfileView = defineAsyncComponent(() => import('@/components/settings/ProfileView.vue'))
 const DevicesView = defineAsyncComponent(() => import('@/components/settings/DevicesView.vue'))
 const SubscriptionView = defineAsyncComponent(() => import('@/components/settings/SubscriptionView.vue'))
@@ -505,6 +506,9 @@ function confirmAction() {
   </div>
 
   <QuickPastePanel :open="showQuickPaste" @close="showQuickPaste = false" />
+
+  <!-- 复制剪贴板后 AI 摘要浮窗 -->
+  <AiSummaryFloat />
 
   <ModalManager
     v-if="modalManagerActive"

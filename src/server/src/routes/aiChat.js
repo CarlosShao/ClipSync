@@ -291,4 +291,42 @@ router.post('/chat', apiLimiter, async (req, res) => {
   }
 })
 
+// POST /api/ai/summarize - 轻量剪贴板内容摘要（非流式，供桌面复制后 AI 摘要浮窗使用）
+router.post('/summarize', apiLimiter, async (req, res) => {
+  try {
+    const { providerId, content } = req.body || {}
+    if (!providerId) return res.status(400).json({ error: 'providerId is required' })
+    if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content is required' })
+
+    const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found' })
+    const providerRow = result.rows[0]
+    if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
+
+    const apiKey = decrypt(providerRow.api_key_encrypted)
+    const MAX_SUMMARY_INPUT = 4000
+    const truncated = content.slice(0, MAX_SUMMARY_INPUT)
+    const messages = [
+      { role: 'system', content: '你是一位剪贴板内容摘要助手。请用一句话（不超过 80 字）总结用户提供的文本。只返回摘要文本，不要解释、不要前缀、不要 markdown。' },
+      { role: 'user', content: truncated },
+    ]
+
+    const { finalContent } = await runChatLoop({
+      messages,
+      options: { temperature: 0.3, max_tokens: 120 },
+      providerRow,
+      apiKey,
+      tools: [],
+      userId: req.userId,
+      sendDelta: () => {},
+      role: 'user',
+    })
+
+    return res.json({ summary: (finalContent || '').trim().slice(0, 200) })
+  } catch (err) {
+    logger.error('[AI] summarize error:', err)
+    res.status(500).json({ error: 'Summary failed', detail: err.message })
+  }
+})
+
 export default router

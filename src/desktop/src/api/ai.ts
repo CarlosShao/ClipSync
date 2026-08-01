@@ -463,3 +463,12 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
     opts.onDone?.()
   }
 }
+
+// 剪贴板 AI 摘要浮窗：轻量非流式摘要
+export interface SummarizeResult {
+  summary: string
+}
+
+export function summarizeClipboard(params: { providerId: string; content: string }) {
+  return api<SummarizeResult>('POST', '/api/ai/summarize', params)
+}
