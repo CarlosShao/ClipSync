@@ -135,7 +135,7 @@ async function refreshModels() {
         models: formSelectedModels.value,
         isDefault: formIsDefault.value,
       })
-      if (!createRes.ok) {
+      if (!createRes.ok || !createRes.data?.id) {
         toast.show(createRes.error || t('ai_save_failed'), 'error')
         return
       }
