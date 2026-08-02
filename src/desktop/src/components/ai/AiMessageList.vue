@@ -72,10 +72,10 @@ watch(
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 10px 12px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   /* 明确显示滚动条，避免 WebView 默认隐藏导致用户以为无法滚动 */
   scrollbar-width: thin;
   scrollbar-color: var(--border-default) transparent;
