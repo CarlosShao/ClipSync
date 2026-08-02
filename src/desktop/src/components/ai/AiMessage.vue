@@ -217,7 +217,7 @@ function roleLabel() {
   align-items: flex-start;
   max-width: 96%;
   min-width: 0;
-  padding: 12px 16px;
+  padding: 16px 20px;
   border-radius: var(--radius-lg, 12px);
   font-size: 13px;
   line-height: 1.55;
@@ -236,7 +236,7 @@ function roleLabel() {
   font-size: 11px;
   font-weight: 600;
   opacity: 0.6;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 
 /* 折叠态处理过程头：类 WorkBuddy “已完成” 折叠条 */
@@ -246,8 +246,8 @@ function roleLabel() {
   gap: 8px;
   flex-wrap: wrap;
   width: 100%;
-  padding: 6px 12px;
-  margin-bottom: 6px;
+  padding: 10px 16px;
+  margin-bottom: 10px;
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -294,8 +294,8 @@ function roleLabel() {
 .ai-msg-images {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 .ai-msg-images img {
   max-width: 160px;
@@ -309,19 +309,19 @@ function roleLabel() {
 .ai-msg-content :deep(h2),
 .ai-msg-content :deep(h3),
 .ai-msg-content :deep(h4) {
-  margin: 5px 0 2px;
+  margin: 10px 0 4px;
   font-weight: 600;
 }
 .ai-msg-content :deep(h1) { font-size: 15px; }
 .ai-msg-content :deep(h2) { font-size: 14px; }
 .ai-msg-content :deep(h3) { font-size: 13px; }
-.ai-msg-content :deep(p) { margin: 1px 0; }
+.ai-msg-content :deep(p) { margin: 6px 0; }
 .ai-msg-content :deep(ul),
 .ai-msg-content :deep(ol) {
-  padding-left: 18px;
-  margin: 2px 0;
+  padding-left: 20px;
+  margin: 6px 0;
 }
-.ai-msg-content :deep(li) { margin: 1px 0; }
+.ai-msg-content :deep(li) { margin: 3px 0; }
 .ai-msg-content :deep(li > p) { margin: 0; }
 .ai-msg-content :deep(code) {
   background: rgba(0,0,0,0.06);
@@ -334,9 +334,9 @@ function roleLabel() {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
-  padding: 8px;
+  padding: 12px;
   overflow-x: auto;
-  margin: 4px 0;
+  margin: 8px 0;
 }
 .ai-msg-content :deep(pre code) {
   background: none;
@@ -347,9 +347,9 @@ function roleLabel() {
 .ai-msg-content :deep(blockquote) {
   border-left: 3px solid var(--accent);
   background: var(--accent-bg);
-  padding: 8px 12px;
+  padding: 12px 16px;
   border-radius: var(--radius-sm);
-  margin: 6px 0;
+  margin: 10px 0;
   color: var(--text-secondary);
 }
 .ai-msg-content :deep(table) {
@@ -360,7 +360,7 @@ function roleLabel() {
 }
 .ai-msg-content :deep(th),
 .ai-msg-content :deep(td) {
-  padding: 4px 8px;
+  padding: 6px 10px;
   border: 1px solid var(--border-subtle);
   text-align: left;
 }
