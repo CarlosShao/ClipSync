@@ -217,7 +217,7 @@ function roleLabel() {
   align-items: flex-start;
   max-width: 96%;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 12px 16px;
   border-radius: var(--radius-lg, 12px);
   font-size: 13px;
   line-height: 1.55;
@@ -346,8 +346,10 @@ function roleLabel() {
 .ai-msg-content :deep(a) { color: var(--accent); }
 .ai-msg-content :deep(blockquote) {
   border-left: 3px solid var(--accent);
-  padding-left: 8px;
-  margin: 4px 0;
+  background: var(--accent-bg);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  margin: 6px 0;
   color: var(--text-secondary);
 }
 .ai-msg-content :deep(table) {

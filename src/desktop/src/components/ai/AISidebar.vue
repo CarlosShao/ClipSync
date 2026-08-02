@@ -462,9 +462,9 @@ function formatDupTime(iso?: string): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
   color: hsl(210 90% 25%);
   background: hsl(210 80% 92%);
   border-top: 1px solid hsl(210 70% 85%);

@@ -65,11 +65,16 @@ export function extractImageHashes(messages) {
     if (!msg || msg.role !== 'user') continue;
 
     // 前端多模态消息里的 images 数组（AiChatInput 粘贴的截图）
+    // 注意：前端 images[].data 是裸 base64，需要根据 mime 拼接成 data URL。
     if (Array.isArray(msg.images)) {
       for (const img of msg.images) {
-        if (img && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
-          out.push({ url: img.data, hash: img.hash || msg.imageHash || null });
+        if (!img || typeof img.data !== 'string') continue;
+        let url = img.data;
+        if (!url.startsWith('data:image/')) {
+          const mime = img.mime || 'image/png';
+          url = `data:${mime};base64,${img.data}`;
         }
+        out.push({ url, hash: img.hash || msg.imageHash || null });
       }
     }
 
