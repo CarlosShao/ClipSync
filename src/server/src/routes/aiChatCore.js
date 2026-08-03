@@ -13,6 +13,52 @@
 import logger from '../utils/logger.js'
 import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProviders.js'
 import { collectToolCallsFromStream, handleToolCalls } from './aiStream.js'
+import { pool } from '../db/pool.js'
+
+/**
+ * 读取指定对话最近的"上下文自动压缩摘要"。
+ * 用于 runChatLoop 入口将之前压缩的要点重新注入到 system 之后，让 AI 在后续轮次中
+ * 无感延续记忆（即使前端 messages 已被前端过滤掉 system 角色）。
+ * @returns {Promise<string|null>}
+ */
+export async function fetchLatestContextSummary(conversationId) {
+  if (!conversationId) return null
+  try {
+    const res = await pool.query(
+      `SELECT content FROM ai_messages
+       WHERE conversation_id = $1 AND role = 'system'
+         AND COALESCE(metadata->>'is_context_summary','false') = 'true'
+       ORDER BY created_at DESC LIMIT 1`,
+      [conversationId],
+    )
+    return res.rows[0]?.content || null
+  } catch (e) {
+    logger.warn('[AI] fetchLatestContextSummary failed:', e.message)
+    return null
+  }
+}
+
+/**
+ * 持久化上下文压缩摘要到 ai_messages。
+ * 供 compressConversationHistory 在摘要生成后调用，使下次进入对话时仍能"无感"接上。
+ * 这里刻意写 role='system' + metadata.is_context_summary=true 双重标记，
+ * 让前端 messages 保存路径（全量替换）能够保留这条摘要而不被误删。
+ * @returns {Promise<boolean>} 是否成功
+ */
+export async function persistContextSummary(conversationId, summary) {
+  if (!conversationId || !summary) return false
+  try {
+    await pool.query(
+      `INSERT INTO ai_messages (conversation_id, role, content, metadata)
+       VALUES ($1, 'system', $2, $3::jsonb)`,
+      [conversationId, summary, JSON.stringify({ is_context_summary: true })],
+    )
+    return true
+  } catch (e) {
+    logger.warn('[AI] persistContextSummary failed:', e.message)
+    return false
+  }
+}
 
 /**
  * 打开上游 SSE 流并复用统一的错误处理（超时 / 状态码）。
@@ -98,7 +144,7 @@ function estimateMessagesTokens(messages) {
  * @returns {{ messages: Array, removed: number, summaryTokens: number, estimatedTokens: number }|null}
  */
 async function compressConversationHistory(messages, opts) {
-  const { providerRow, apiKey, userId, abortSignal, role } = opts
+  const { providerRow, apiKey, userId, abortSignal, role, conversationId } = opts
   const systemIdx = messages.findIndex((m) => m.role === 'system')
   const systemMsg = systemIdx >= 0 ? messages[systemIdx] : null
   const rest = systemIdx >= 0 ? messages.slice(systemIdx + 1) : messages.slice()
@@ -150,6 +196,17 @@ async function compressConversationHistory(messages, opts) {
     return null
   }
   if (!summary) return null
+  // 持久化摘要到 ai_messages，让下次进入对话时仍能"无感延续记忆"
+  if (conversationId) {
+    try {
+      await persistContextSummary(
+        conversationId,
+        `【历史对话压缩摘要 · 时间 ${new Date().toISOString()}】\n${summary}`,
+      )
+    } catch (e) {
+      logger.warn('[AI] persistContextSummary skipped:', e.message)
+    }
+  }
 
   const note = `【历史对话压缩摘要】以下为较早对话的压缩要点（完整原文已不再保留）：\n${summary}`
   // 合并进 tail 的第一条 user 消息，避免连续 user 消息（兼容 Anthropic 交替规则）
@@ -197,6 +254,7 @@ export async function runChatLoop({
   thinkingEnabled = false,
   thinkingStrength = 'medium',
   allowCompress = true,
+  conversationId = null,
 }) {
   const preset = getPreset(providerRow.provider)
   let currentMessages = [...messages]
@@ -205,6 +263,19 @@ export async function runChatLoop({
   const MAX_CONTINUATION_RETRIES = 1
   // 上一轮真实 prompt token 数（来自上游 usage）；用于估计当前上下文占用、决定是否压缩。
   let lastPromptTokens = 0
+
+  // ===== 把上一次自动压缩的摘要注入到对话开头（system 之后）=====
+  // 实现"无感延续记忆"：之前压缩留下的摘要会持续生效，避免下一轮再次触发压缩
+  // （把刚刚写入的摘要再压缩一次），也避免用户感觉 AI "忘了"先前的上下文。
+  const priorSummary = await fetchLatestContextSummary(conversationId)
+  if (priorSummary) {
+    const anchorIndex = currentMessages.findIndex((m) => m.role === 'system')
+    const note = `【先前对话要点摘要（来自自动压缩，请把它当作历史延续记忆，不再重新压缩）】\n${priorSummary}`
+    const summaryMsg = { role: 'system', content: note }
+    if (anchorIndex >= 0) currentMessages.splice(anchorIndex + 1, 0, summaryMsg)
+    else currentMessages.unshift(summaryMsg)
+  }
+
 
   for (let round = 0; round < maxRounds; round++) {
     const chatOptions = { ...options }
@@ -228,10 +299,14 @@ export async function runChatLoop({
     if (allowCompress !== false) {
       const ctxWindow = getContextWindow(providerRow.model, providerRow.context_window)
       const estTokens = lastPromptTokens > 0 ? lastPromptTokens : estimateMessagesTokens(currentMessages)
-      if (estTokens > Math.floor(ctxWindow * CONTEXT_COMPRESS_THRESHOLD)) {
+      // 已经注入的前置摘要视作"已压缩"状态，不再次触发压缩（避免重复摘要）
+      const hasPriorSummary = currentMessages.some(
+        (m) => m.role === 'system' && typeof m.content === 'string' && m.content.includes('先前对话要点摘要（来自自动压缩'),
+      )
+      if (estTokens > Math.floor(ctxWindow * CONTEXT_COMPRESS_THRESHOLD) && !hasPriorSummary) {
         try {
           const res = await compressConversationHistory(currentMessages, {
-            providerRow, apiKey, userId, abortSignal, role,
+            providerRow, apiKey, userId, abortSignal, role, conversationId,
           })
           if (res) {
             currentMessages = res.messages

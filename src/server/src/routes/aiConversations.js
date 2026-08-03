@@ -68,7 +68,7 @@ router.get('/:id', apiLimiter, async (req, res) => {
     if (convResult.rowCount === 0) return res.status(404).json({ error: 'Conversation not found' })
 
     const msgResult = await pool.query(
-      `SELECT id, role, content, thinking, tool_calls, tool_results, created_at
+      `SELECT id, role, content, thinking, tool_calls, tool_results, metadata, created_at
        FROM ai_messages
        WHERE conversation_id = $1
        ORDER BY created_at ASC`,
@@ -84,6 +84,7 @@ router.get('/:id', apiLimiter, async (req, res) => {
         thinking: m.thinking,
         toolCalls: m.tool_calls || [],
         toolResults: m.tool_results || [],
+        metadata: m.metadata || {},
       })),
     })
   } catch (err) {
@@ -150,18 +151,25 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
     if (convCheck.rowCount === 0) return res.status(404).json({ error: 'Conversation not found' })
 
     // 用“替换”语义保存消息：先清空该对话的现有消息，再全量插入。
-    // 这样前端可以安全地每次发送整个 messages 数组，而不会出现重复条目。
+    // 但角色为 system 且 metadata.is_context_summary=true 的"自动压缩摘要"行
+    // 不属于前端要管理的内容，必须保留——否则下次进入对话时上一次压缩的要点
+    // 就被下一次 saveCurrent 覆盖，破坏"无感延续记忆"。
     await pool.query('BEGIN')
     try {
-      await pool.query('DELETE FROM ai_messages WHERE conversation_id = $1', [id])
+      await pool.query(
+        `DELETE FROM ai_messages
+         WHERE conversation_id = $1
+           AND COALESCE(metadata->>'is_context_summary', 'false') <> 'true'`,
+        [id],
+      )
 
       const inserted = []
       for (const m of messages) {
         if (!m || !m.role) continue
         const result = await pool.query(
-          `INSERT INTO ai_messages (conversation_id, role, content, thinking, tool_calls, tool_results)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING id, role, content, thinking, tool_calls, tool_results, created_at`,
+          `INSERT INTO ai_messages (conversation_id, role, content, thinking, tool_calls, tool_results, metadata)
+           VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::jsonb, '{}'::jsonb))
+           RETURNING id, role, content, thinking, tool_calls, tool_results, metadata, created_at`,
           [
             id,
             m.role,
@@ -169,6 +177,7 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
             m.thinking || null,
             Array.isArray(m.toolCalls) ? JSON.stringify(m.toolCalls) : '[]',
             Array.isArray(m.toolResults) ? JSON.stringify(m.toolResults) : '[]',
+            typeof m.metadata === 'object' && m.metadata ? JSON.stringify(m.metadata) : null,
           ]
         )
         inserted.push(result.rows[0])

@@ -14,7 +14,7 @@ import { X, Bot, Plus, MessageSquare, Workflow, History, Brain, ShieldCheck, Use
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; 'open-settings': [] }>()
-const { t } = useI18n()
+const { t, currentLang } = useI18n()
 
 const {
   providers,
@@ -159,7 +159,7 @@ async function onDelete(id: string) {
 function formatDupTime(iso?: string): string {
   if (!iso) return ''
   try {
-    return new Date(iso).toLocaleString('zh-CN')
+    return new Date(iso).toLocaleString(currentLang.value === 'en' ? 'en-US' : 'zh-CN')
   } catch {
     return ''
   }
@@ -260,9 +260,7 @@ function formatDupTime(iso?: string): string {
           <!-- 图片重复感知（#225）：本次发送的图片已在历史剪贴板中存在 -->
           <div v-if="duplicateImageNotice" class="ai-dup-image-bar">
             <CopyCheck :size="15" class="ai-dup-image-icon" />
-            <span class="ai-dup-image-text">
-              这张图片已在你的历史剪贴板中存在（最早记录于 {{ formatDupTime(duplicateImageNotice.createdAt) }}），无需重复保存。
-            </span>
+            <span class="ai-dup-image-text">{{ t('ai_dup_image_notice', { earliestTime: formatDupTime(duplicateImageNotice.createdAt) }) }}</span>
             <Button variant="ghost" size="icon-sm" :title="t('close_btn')" @click="duplicateImageNotice = null">
               <X :size="14" />
             </Button>
@@ -271,9 +269,7 @@ function formatDupTime(iso?: string): string {
           <!-- 上下文自动压缩提示：后端在上下文逼近上限时自动压缩较早历史 -->
           <div v-if="contextCompressedNotice" class="ai-dup-image-bar ai-compress-bar">
             <CopyCheck :size="15" class="ai-dup-image-icon" />
-            <span class="ai-dup-image-text">
-              上下文已接近上限（压缩前约 {{ contextCompressedNotice.percentBefore }}%），已自动压缩较早的 {{ contextCompressedNotice.removedMessages }} 条历史对话为要点摘要，仅保留最近内容与系统提示。
-            </span>
+            <span class="ai-dup-image-text">{{ t('ai_context_compress_notice', { percentBefore: contextCompressedNotice.percentBefore, removedMessages: contextCompressedNotice.removedMessages }) }}</span>
             <Button variant="ghost" size="icon-sm" :title="t('close_btn')" @click="contextCompressedNotice = null">
               <X :size="14" />
             </Button>

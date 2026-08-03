@@ -58,6 +58,9 @@ data/
 
 # WorkBuddy (local workspace data, not project code)
 .workbuddy/
+
+# CodeBuddy (local workspace data, not project code)
+.codebuddy/
 NUL
 
 # Upload chunks

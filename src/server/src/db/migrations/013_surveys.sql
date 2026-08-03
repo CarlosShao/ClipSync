@@ -8,6 +8,6 @@ CREATE TABLE IF NOT EXISTS surveys (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_surveys_user_id ON surveys(user_id);
-CREATE INDEX idx_surveys_type ON surveys(type);
-CREATE INDEX idx_surveys_created_at ON surveys(created_at);
+CREATE INDEX IF NOT EXISTS idx_surveys_user_id ON surveys(user_id);
+CREATE INDEX IF NOT EXISTS idx_surveys_type ON surveys(type);
+CREATE INDEX IF NOT EXISTS idx_surveys_created_at ON surveys(created_at);

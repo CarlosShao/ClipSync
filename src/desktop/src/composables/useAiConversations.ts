@@ -83,14 +83,18 @@ export function useAiConversations() {
     const res = await getConversation(id)
     if (!res.ok) return null
     const msgs = res.data?.messages || []
-    // 恢复时把 JSON 数组字段映射回 camelCase
-    return msgs.map((m: any) => ({
-      role: m.role,
-      content: m.content || '',
-      thinking: m.thinking || undefined,
-      toolCalls: m.tool_calls || m.toolCalls || undefined,
-      toolResults: m.tool_results || m.toolResults || undefined,
-    })) as ChatMessage[]
+    // 恢复时把 JSON 数组字段映射回 camelCase；
+    // 过滤掉后端写入的"上下文压缩摘要"（role='system' AND metadata.is_context_summary=true），
+    // 对用户保持 UI 上的"无感"，但后端 runChatLoop 会在下次入口自动注入到 prompt 头部。
+    return msgs
+      .filter((m: any) => !(m.role === 'system' && m.metadata?.is_context_summary === true))
+      .map((m: any) => ({
+        role: m.role,
+        content: m.content || '',
+        thinking: m.thinking || undefined,
+        toolCalls: m.tool_calls || m.toolCalls || undefined,
+        toolResults: m.tool_results || m.toolResults || undefined,
+      })) as ChatMessage[]
   }
 
   async function rename(id: string, title: string) {
