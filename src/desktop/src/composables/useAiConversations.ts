@@ -6,6 +6,8 @@ import {
   updateConversation,
   deleteConversation,
   saveMessages,
+  compactConversation,
+  type CompactResult,
 } from '@/api/ai'
 import type { AiConversation, ChatMessage, ContextUsage } from '@/api/ai'
 
@@ -118,6 +120,18 @@ export function useAiConversations() {
     return res.ok
   }
 
+  /**
+   * 手动压缩当前对话的上下文历史（/compact 命令触发）。
+   * 调后端 POST /api/ai/conversations/:id/compact，成功后新摘要已写入 ai_messages
+   * （前端 UI 看不到），下次发消息时 runChatLoop 入口会自动注入。
+   * @returns {Promise<CompactResult>}
+   */
+  async function compact(id: string, opts?: { providerId?: string }) {
+    if (!id) return { ok: false, reason: 'not_found', error: 'no conversation' }
+    const res = await compactConversation(id, opts || {})
+    return res.ok && res.data ? res.data : { ok: false, reason: 'failed', error: res.error || 'compact failed' }
+  }
+
   async function saveCurrent(messages: ChatMessage[]) {
     if (!currentConversationId.value) return
     const toSave = messages.filter((m) => m.role !== 'system')
@@ -158,5 +172,6 @@ export function useAiConversations() {
     remove,
     saveCurrent,
     setCurrent,
+    compact,
   }
 }

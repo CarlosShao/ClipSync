@@ -10,7 +10,7 @@ import AiMessageList from './AiMessageList.vue'
 import AiChatInput from './AiChatInput.vue'
 import AiConversationList from './AiConversationList.vue'
 import AiMemoryPanel from './AiMemoryPanel.vue'
-import { X, Bot, Plus, MessageSquare, Workflow, History, Brain, ShieldCheck, UserCog, User, CopyCheck } from 'lucide-vue-next'
+import { X, Bot, Plus, MessageSquare, Workflow, History, Brain, ShieldCheck, UserCog, User, CopyCheck, Package } from 'lucide-vue-next'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; 'open-settings': [] }>()
@@ -213,6 +213,15 @@ function formatDupTime(iso?: string): string {
           </div>
         </div>
         <div class="ai-header-right">
+          <Button
+            v-if="hasProviders && currentConversationId && !isStreaming && messages.length >= 2"
+            variant="ghost"
+            size="icon-sm"
+            :title="t('ai_compact_tooltip') || '压缩上下文 (/compact)'"
+            @click="manualCompact"
+          >
+            <Package :size="15" />
+          </Button>
           <Button v-if="hasProviders" variant="ghost" size="icon-sm" :title="t('ai_new_chat') || '新对话'" @click="onNewConversation">
             <Plus :size="15" />
           </Button>
@@ -287,6 +296,7 @@ function formatDupTime(iso?: string): string {
             :thinking-strength="thinkingStrength"
             :mode="mode"
             :context-usage="contextUsage"
+            :provider-supports-cache="providerSupportsCache"
             @send="onSend"
             @stop="stop"
             @select-provider="selectProvider"

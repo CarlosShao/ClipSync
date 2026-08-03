@@ -3,6 +3,7 @@ import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { logger } from '../utils/logger.js'
 import { isValidUUID } from '../validation/validator.js'
+import { decrypt } from '../utils/encryption.js'
 
 const router = Router()
 
@@ -130,6 +131,105 @@ router.delete('/:id', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('Delete AI conversation error:', err)
     res.status(500).json({ error: 'Failed to delete conversation' })
+  }
+})
+
+// POST /api/ai/conversations/:id/compact - 手动压缩指定对话的上下文历史
+// 由前端 /compact 命令触发；后端会：
+//   1) 加载该对话的 messages（过滤掉已有的"自动压缩摘要"行）
+//   2) 用 LLM 生成新的更精炼摘要
+//   3) 持久化到 ai_messages (role=system, metadata.is_context_summary=true)
+//   4) 返回压缩前后 token 估算与摘要预览
+// 客户端收到结果后只需展示"已压缩 N 条历史，节省约 M tokens"提示，不需要再保存 messages。
+router.post('/:id/compact', apiLimiter, async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!isValidUUID(id)) return res.status(400).json({ error: 'Invalid ID' })
+
+    // 1. 验证对话归属当前用户（ai_conversations 没有 system_prompt 列，
+    //    system 消息存在 ai_messages 表里）
+    const convRes = await pool.query(
+      `SELECT id, provider_id FROM ai_conversations
+       WHERE id = $1 AND user_id = $2 LIMIT 1`,
+      [id, req.userId],
+    )
+    if (convRes.rowCount === 0) {
+      return res.status(404).json({ ok: false, reason: 'not_found', error: 'Conversation not found' })
+    }
+    const conv = convRes.rows[0]
+
+    // 2. 解析供应商与 API key（与 chat 路径相同的解析顺序：
+    //    body.providerId > conversation.provider_id > 用户默认供应商）
+    const requestedProviderId = req.body?.providerId
+    let providerRow = null
+    if (requestedProviderId && isValidUUID(requestedProviderId)) {
+      const r = await pool.query(
+        `SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [requestedProviderId, req.userId],
+      )
+      if (r.rowCount) providerRow = r.rows[0]
+    }
+    if (!providerRow && conv.provider_id) {
+      const r = await pool.query(
+        `SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [conv.provider_id, req.userId],
+      )
+      if (r.rowCount) providerRow = r.rows[0]
+    }
+    if (!providerRow) {
+      const r = await pool.query(
+        `SELECT * FROM ai_providers WHERE user_id = $1 ORDER BY is_default DESC, created_at ASC LIMIT 1`,
+        [req.userId],
+      )
+      if (r.rowCount) providerRow = r.rows[0]
+    }
+    if (!providerRow) {
+      return res.status(400).json({ ok: false, reason: 'no_provider', error: '未配置 AI 供应商' })
+    }
+    const apiKey = providerRow.api_key_encrypted ? decrypt(providerRow.api_key_encrypted) : ''
+    if (!apiKey) {
+      return res.status(400).json({ ok: false, reason: 'no_key', error: '供应商未配置 API key' })
+    }
+
+    // 3. 调用 manualCompactConversation（核心压缩 + 持久化）
+    const { manualCompactConversation } = await import('./aiChatCore.js')
+    const result = await manualCompactConversation({
+      conversationId: id,
+      userId: req.userId,
+      providerRow,
+      apiKey,
+      role: req.role || 'user',
+    })
+
+    if (!result.ok) {
+      if (result.reason === 'too_short') {
+        return res.json({ ok: false, reason: 'too_short', error: result.message })
+      }
+      return res.status(400).json(result)
+    }
+
+    // 4. 取出最新持久化的摘要预览（首行），回给前端展示
+    const summaryRes = await pool.query(
+      `SELECT content FROM ai_messages
+       WHERE conversation_id = $1 AND role = 'system'
+         AND COALESCE(metadata->>'is_context_summary','false') = 'true'
+       ORDER BY created_at DESC LIMIT 1`,
+      [id],
+    )
+    const summaryText = summaryRes.rows[0]?.content || ''
+    res.json({
+      ok: true,
+      removed: result.removed,
+      summaryTokens: result.summaryTokens,
+      beforeTokens: result.beforeTokens,
+      afterTokens: result.afterTokens,
+      savedTokens: Math.max(0, result.beforeTokens - result.afterTokens),
+      summaryPreview: summaryText.slice(0, 600),
+      summaryLength: summaryText.length,
+    })
+  } catch (err) {
+    logger.error('Manual compact conversation error:', err)
+    res.status(500).json({ ok: false, reason: 'failed', error: err.message || 'Failed to compact conversation' })
   }
 })
 

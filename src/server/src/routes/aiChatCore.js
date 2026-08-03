@@ -61,6 +61,84 @@ export async function persistContextSummary(conversationId, summary) {
 }
 
 /**
+ * 手动压缩指定对话（由用户 /compact 命令触发）。
+ * 加载该对话的全量历史，过滤掉之前自动注入的"上下文压缩摘要"行（避免重复摘要），
+ * 重新构造 messages 数组并复用 compressConversationHistory 的核心压缩逻辑。
+ * 成功后把新摘要持久化到 ai_messages（role=system, metadata.is_context_summary=true）。
+ *
+ * @param {string} conversationId
+ * @param {string} userId
+ * @param {object} providerRow  - 该对话绑定的 AI 供应商（用于调 LLM 生成摘要）
+ * @param {string} apiKey       - 供应商 API key（明文，已解密）
+ * @param {string} role         - 'user' | 'admin' | 'super_admin'
+ * @returns {Promise<
+ *   | { ok: true, removed: number, summaryTokens: number, beforeTokens: number, afterTokens: number, summary: string }
+ *   | { ok: false, reason: 'too_short' | 'not_found' | 'no_provider' | 'no_key' | 'failed', message?: string }
+ * >}
+ */
+export async function manualCompactConversation({ conversationId, userId, providerRow, apiKey, role }) {
+  if (!conversationId) return { ok: false, reason: 'not_found', message: 'conversationId required' }
+  if (!providerRow) return { ok: false, reason: 'no_provider', message: '未选择供应商' }
+  if (!apiKey) return { ok: false, reason: 'no_key', message: '供应商未配置 API key' }
+
+  // 1. 加载该对话的 ownership（system_prompt 存在 messages 表中 role='system' 行，
+  //    ai_conversations 没有此列 —— 不在此读取）。
+  const convRes = await pool.query(
+    `SELECT id, user_id FROM ai_conversations WHERE id = $1 LIMIT 1`,
+    [conversationId],
+  )
+  if (convRes.rowCount === 0 || convRes.rows[0].user_id !== userId) {
+    return { ok: false, reason: 'not_found', message: '对话不存在或不属于当前用户' }
+  }
+  const msgRes = await pool.query(
+    `SELECT id, role, content, thinking, tool_calls, tool_results, metadata
+     FROM ai_messages
+     WHERE conversation_id = $1
+       AND COALESCE(metadata->>'is_context_summary', 'false') <> 'true'
+     ORDER BY created_at ASC`,
+    [conversationId],
+  )
+
+  // 2. 重建 messages 数组（与前端 useAiConversations.select 行为一致）
+  const messages = msgRes.rows.map((m) => ({
+    role: m.role,
+    content: m.content || '',
+    thinking: m.thinking || undefined,
+    toolCalls: m.tool_calls || [],
+    toolResults: m.tool_results || [],
+  }))
+
+  if (messages.length < 6) {
+    return { ok: false, reason: 'too_short', message: '当前对话历史太短，无需压缩' }
+  }
+
+  // 3. 估算压缩前 token 数
+  const beforeTokens = estimateMessagesTokens(messages)
+
+  // 4. 复用核心压缩逻辑（只生成摘要，不替换 messages：返回的 messages 数组用户也用不到）
+  const res = await compressConversationHistory(messages, {
+    providerRow,
+    apiKey,
+    userId,
+    abortSignal: undefined,
+    role: role || 'user',
+    conversationId, // 内部会 persistContextSummary 把新摘要写进 ai_messages
+  })
+  if (!res) {
+    return { ok: false, reason: 'failed', message: '模型未能生成摘要（可能上游异常）' }
+  }
+
+  return {
+    ok: true,
+    removed: res.removed,
+    summaryTokens: res.summaryTokens,
+    beforeTokens,
+    afterTokens: res.estimatedTokens,
+    summary: typeof res.messages === 'string' ? res.messages : '', // 备用：通常为空数组，留作未来拓展
+  }
+}
+
+/**
  * 打开上游 SSE 流并复用统一的错误处理（超时 / 状态码）。
  * 抽出供 runChatLoop 与多代理协调器共用，避免两套 fetch 逻辑漂移。
  * @returns {{ reader: ReadableStreamDefaultReader, decoder: TextDecoder }}

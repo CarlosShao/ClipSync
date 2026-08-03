@@ -19,6 +19,9 @@ const props = defineProps<{
   thinkingStrength: 'low' | 'medium' | 'high'
   mode: 'ask' | 'agent'
   contextUsage: ContextUsage | null
+  // 当前选中的供应商在协议层是否支持 prompt cache（由 useAiChat 给出）。
+  // 用于区分"供应商不支持"（显示「未启用/N/A」）与"支持但还没命中"（显示 0%）。
+  providerSupportsCache?: boolean
 }>()
 const emit = defineEmits<{
   send: [text: string, images?: ChatImage[]]
@@ -104,12 +107,37 @@ const cacheHitPercent = computed(() => {
   return Math.min(100, Math.round((cached / c.promptTokens) * 100))
 })
 const ringDashOffsetInner = computed(() => RING_C_INNER * (1 - cacheHitPercent.value / 100))
-// 缓存是否生效：上游返回过缓存读/写 token 即视为该供应商支持 prompt caching；
-// 二者均为 0 时（供应商不支持或首轮尚未写入）展示「未启用」而非误导性的 0%。
-const cacheSupported = computed(() => {
-  const c = props.contextUsage
-  if (!c) return false
-  return (c.cacheReadTokens || 0) > 0 || (c.cacheWriteTokens || 0) > 0
+// 缓存是否生效：必须以"协议层是否支持 prompt cache"为前提（由 useAiChat 的
+// providerSupportsCache 提供），而不是仅看 usage 是否有 cache 字段——否则
+// 像 mimo / MiniMax / Hunyuan / LongCat 这种协议层不返回 cache 字段的供应商，
+// 永远会显示「未启用」误导用户"自己没启用什么"。
+// 判定：
+//   - providerSupportsCache === false  → 协议层不支持 → 显示「未启用」(短提示符)
+//   - providerSupportsCache === true   + 尚未产生 cache token → 显示 0%
+//   - providerSupportsCache === true   + 有 cacheReadTokens/cacheWriteTokens → 显示真实命中率
+const cacheAvailable = computed(() => {
+  if (props.providerSupportsCache === false) return false
+  // 协议层支持 → 视为已启用（即使 0 也属正常"未命中"）
+  return true
+})
+// 兼容旧名（保留外层 `cacheSupported` 引用）：当协议层支持即视为"启用"，与 cache 字段是否非 0 无关。
+const cacheSupported = cacheAvailable
+// 缓存面板右上的"缓存命中率"显示文案：
+//   - 协议层不支持（providerSupportsCache === false）→ 显示"未启用"并配 explanation 提示当前供应商不返回 cache 字段
+//   - 协议层支持（默认情况）→ 0% 或实际命中率
+const cacheHitRateDisplay = computed(() => {
+  if (!cacheAvailable.value) return t('ai_cache_not_enabled') || '未启用'
+  return `${cacheHitPercent.value}%`
+})
+// 缓存面板 hover 提示：解释"未启用"的真实原因
+const cacheStatusTip = computed(() => {
+  if (!cacheAvailable.value) {
+    return t('ai_cache_not_supported') || '缓存未启用：当前供应商或请求未命中 prompt 缓存'
+  }
+  if (cacheHitPercent.value > 0) {
+    return t('ai_cache_hit', { percent: cacheHitPercent.value, cached: props.contextUsage?.cacheReadTokens || 0, prompt: props.contextUsage?.promptTokens || 0 })
+  }
+  return t('ai_cache_zero_yet') || '当前供应商支持 prompt 缓存，但本次请求尚未命中（0%）'
 })
 
 const usageTip = computed(() => {
@@ -392,10 +420,10 @@ const usageCacheMissTokens = computed(() =>
               </div>
 
               <!-- 缓存命中率 -->
-              <div class="ai-usage-hitrate">
+              <div class="ai-usage-hitrate" :title="cacheStatusTip">
                 <div class="ai-usage-hitrate-head">
                   <span class="ai-usage-hitrate-title">{{ t('ai_token_usage_hit_rate') || '缓存命中率' }}</span>
-                  <span class="ai-usage-hitrate-val">{{ cacheSupported ? cacheHitPercent + '%' : (t('ai_cache_not_enabled') || '未启用') }}</span>
+                  <span class="ai-usage-hitrate-val">{{ cacheHitRateDisplay }}</span>
                 </div>
                 <div class="ai-usage-hitrate-bar">
                   <div class="ai-usage-hitrate-fill" :style="{ width: cacheHitPercent + '%' }"></div>

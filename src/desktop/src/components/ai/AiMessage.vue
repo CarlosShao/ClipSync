@@ -190,6 +190,37 @@ function roleLabel() {
       />
 
       <div v-if="message.role === 'assistant'" class="ai-msg-content markdown-body" v-html="renderMarkdown(message.content)"></div>
+      <template v-else-if="message.role === 'system'">
+        <!-- 手动 /compact 命令结果横幅：success / loading / too_short / failed 四种 -->
+        <div
+          v-if="message.systemMeta?.kind?.startsWith('compact_')"
+          class="ai-msg-system-card"
+          :class="`ai-msg-system-card--${message.systemMeta?.kind}`"
+        >
+          <template v-if="message.systemMeta?.kind === 'compact_loading'">
+            <span class="ai-msg-system-icon">⟳</span>
+            <span>{{ t('ai_compact_loading') || '正在压缩上下文…' }}</span>
+          </template>
+          <template v-else-if="message.systemMeta?.kind === 'compact_success'">
+            <span class="ai-msg-system-icon">✓</span>
+            <span>{{ t('ai_compact_success', { removed: message.systemMeta.removed, savedTokens: message.systemMeta.savedTokens }) }}</span>
+            <details v-if="message.systemMeta.summaryPreview" class="ai-msg-system-preview">
+              <summary>{{ t('ai_compact_view_summary') || '查看压缩摘要' }}</summary>
+              <pre>{{ message.systemMeta.summaryPreview }}{{ message.systemMeta.summaryPreview.length >= 600 ? '\n…' : '' }}</pre>
+            </details>
+          </template>
+          <template v-else-if="message.systemMeta?.kind === 'compact_too_short'">
+            <span class="ai-msg-system-icon">·</span>
+            <span>{{ t('ai_compact_too_short') }}</span>
+          </template>
+          <template v-else>
+            <span class="ai-msg-system-icon">✕</span>
+            <span>{{ message.content }}</span>
+          </template>
+        </div>
+        <!-- 其它 system 消息：保留原文（多为上游"自动压缩"提示横幅） -->
+        <div v-else class="ai-msg-content">{{ compactBlankLines(message.content) }}</div>
+      </template>
       <template v-else>
         <!-- 用户随消息发送的截图缩略图（多模态 vision 提问） -->
         <div v-if="message.images?.length" class="ai-msg-images">
@@ -210,6 +241,67 @@ function roleLabel() {
 }
 .ai-msg.assistant {
   justify-content: flex-start;
+}
+/* /compact 命令的 system 消息横幅：success / loading / too_short / failed
+   状态用左侧色条 + 不同背景色区分，让用户清楚看到"刚才发生了什么"。 */
+.ai-msg.system {
+  justify-content: center;
+  margin: 4px 0;
+}
+.ai-msg-system-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ai-border, rgba(127,127,127,0.18));
+  background: var(--ai-system-bg, rgba(127,127,127,0.06));
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ai-fg-muted, #6b7280);
+  max-width: 96%;
+}
+.ai-msg-system-card--compact_loading {
+  border-left: 3px solid #3b82f6;
+  background: rgba(59, 130, 246, 0.06);
+}
+.ai-msg-system-card--compact_success {
+  border-left: 3px solid #10b981;
+  background: rgba(16, 185, 129, 0.06);
+  color: var(--ai-fg, inherit);
+}
+.ai-msg-system-card--compact_too_short {
+  border-left: 3px solid #94a3b8;
+}
+.ai-msg-system-card--compact_failed {
+  border-left: 3px solid #ef4444;
+  background: rgba(239, 68, 68, 0.06);
+  color: #b91c1c;
+}
+.ai-msg-system-icon {
+  display: inline-block;
+  margin-right: 6px;
+  font-weight: 600;
+}
+.ai-msg-system-preview {
+  margin-top: 4px;
+  font-size: 11.5px;
+}
+.ai-msg-system-preview summary {
+  cursor: pointer;
+  color: var(--accent);
+  user-select: none;
+}
+.ai-msg-system-preview pre {
+  margin: 6px 0 0 0;
+  padding: 8px 10px;
+  background: var(--ai-bg-soft, rgba(127,127,127,0.06));
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ai-fg, inherit);
 }
 .ai-msg-bubble {
   display: flex;

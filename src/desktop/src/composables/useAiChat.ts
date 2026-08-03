@@ -77,6 +77,12 @@ export function useAiChat() {
 
   const hasProviders = computed(() => providers.value.length > 0)
   const canSend = computed(() => !!selectedProviderId.value && !isStreaming.value)
+  // 当前选中的供应商在协议层是否支持 prompt cache。
+  // 用于 UI 区分"供应商不支持"（显示「未启用/N/A」而不是 0%）与"支持但还没命中"。
+  const providerSupportsCache = computed(() => {
+    const p = providers.value.find((x) => x.id === selectedProviderId.value)
+    return !!p?.supports_cache
+  })
 
   async function loadProviders() {
     const res = await getProviders()
@@ -237,6 +243,14 @@ export function useAiChat() {
     contextCompressedNotice.value = null
     if (!selectedProviderId.value) {
       error.value = 'ai_no_provider_selected'
+      return
+    }
+
+    // ===== 斜杠命令拦截：/compact (压缩上下文) =====
+    // 直接当作客户端命令处理，不发 LLM；调用后端压缩接口，结果以"系统消息"
+    // 形式 push 到当前对话 UI，让用户看见刚才发生了什么。
+    if (text === '/compact' || text === '/压缩' || text.startsWith('/compact ') || text.startsWith('/压缩 ')) {
+      await manualCompact()
       return
     }
 
@@ -628,6 +642,96 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
     conv.setCurrent('')
   }
 
+  /**
+   * 手动压缩当前对话的上下文历史（/compact 命令的内部实现 + 也供 UI 按钮直接调用）。
+   * 流程：
+   *  1) 若无当前对话 → 提示"请先选中一个对话"
+   *  2) 显示一个 user 消息 "/compact" + 一个 system 消息 "正在压缩…"
+   *  3) 调后端 POST /api/ai/conversations/:id/compact
+   *  4) 把"正在压缩"那条 system 消息替换为成功/失败说明
+   *  5) 触发上下文用量刷新（圆环更新）
+   */
+  async function manualCompact() {
+    if (isStreaming.value) {
+      error.value = 'ai_streaming_busy'
+      return
+    }
+    if (!conv.currentConversationId.value) {
+      // 没有对话就提示一下，不自动创建（避免污染对话列表）
+      error.value = 'ai_compact_no_active'
+      return
+    }
+    // 让 UI 立刻看到"用户在执行 /compact"
+    messages.value.push({ role: 'user', content: '/compact' })
+    const loadingIdx = messages.value.length
+    messages.value.push({ role: 'system', content: 'ai_compact_loading' })
+    error.value = ''
+    isStreaming.value = true // 锁住 input，避免用户在压缩时继续输入
+    try {
+      const res = await conv.compact(conv.currentConversationId.value, {
+        providerId: selectedProviderId.value,
+      })
+      if (res.ok) {
+        // 替换"正在压缩"那行 system 消息为成功摘要
+        const removed = res.removed || 0
+        const saved = res.savedTokens || 0
+        const summaryTokens = res.summaryTokens || 0
+        const after = res.afterTokens || 0
+        messages.value[loadingIdx] = {
+          role: 'system',
+          content: `ai_compact_success:${removed}:${saved}`,
+          systemMeta: {
+            kind: 'compact_success',
+            removed,
+            savedTokens: saved,
+            summaryTokens,
+            afterTokens: after,
+            summaryPreview: res.summaryPreview || '',
+          },
+        }
+        // 刷新上下文用量（用估算后值）—— 让圆环/面板立即显示压缩效果
+        const conv2 = conv.currentConversation.value
+        if (conv2) {
+          const cw = conv2.context_window || 0
+          if (cw > 0) {
+            contextUsage.value = {
+              promptTokens: after,
+              completionTokens: conv2.completion_tokens || 0,
+              totalTokens: after + (conv2.completion_tokens || 0),
+              contextWindow: cw,
+              percent: Math.min(100, Math.round((after / cw) * 1000) / 10),
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              cacheHitRate: 0,
+              thinkingTokens: conv2.thinking_tokens || 0,
+              replyTokens: conv2.reply_tokens || 0,
+            }
+          }
+        }
+      } else if (res.reason === 'too_short') {
+        messages.value[loadingIdx] = {
+          role: 'system',
+          content: 'ai_compact_too_short',
+          systemMeta: { kind: 'compact_too_short' },
+        }
+      } else {
+        messages.value[loadingIdx] = {
+          role: 'system',
+          content: res.error || 'compact failed',
+          systemMeta: { kind: 'compact_failed', reason: res.reason || 'failed' },
+        }
+      }
+    } catch (e) {
+      messages.value[loadingIdx] = {
+        role: 'system',
+        content: e instanceof Error ? e.message : 'compact failed',
+        systemMeta: { kind: 'compact_failed' },
+      }
+    } finally {
+      isStreaming.value = false
+    }
+  }
+
   return {
     providers,
     selectedProviderId,
@@ -642,6 +746,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
     contextCompressedNotice,
     hasProviders,
     canSend,
+    providerSupportsCache,
     memoryEnabled,
     setMemoryEnabled,
     init,
@@ -651,6 +756,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
     send,
     stop,
     clear,
+    manualCompact,
     // 会话相关
     conversations: conv.conversations,
     currentConversationId: conv.currentConversationId,

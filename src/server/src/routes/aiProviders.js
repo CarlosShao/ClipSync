@@ -75,7 +75,13 @@ router.get('/providers', apiLimiter, async (req, res) => {
        ORDER BY is_default DESC, created_at ASC`,
       [req.userId]
     )
-    res.json({ items: result.rows, count: result.rowCount })
+    // 给每个供应商附加协议层能力标志（如 supportsCache），让前端能区分
+    // "供应商不支持 cache" 与 "支持但本次 0%" 两种显示状态。
+    const items = result.rows.map((row) => ({
+      ...row,
+      supports_cache: getPreset(row.provider)?.supportsCache === true,
+    }))
+    res.json({ items, count: result.rowCount })
   } catch (err) {
     logger.error('List AI providers error:', err)
     res.status(500).json({ error: 'Failed to list AI providers' })

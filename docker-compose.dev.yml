@@ -100,6 +100,9 @@ services:
 
       # 临时关闭限流（测试图片同步时使用，测试完删除）
       DISABLE_RATE_LIMIT: "true"
+
+      # /compact 等长任务需要更长的响应超时（默认 30s 太短，50+ 条消息压缩会超）
+      REQUEST_TIMEOUT: "180000"
     ports:
       - "${API_PORT:-3001}:3001"
     volumes:

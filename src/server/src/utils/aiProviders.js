@@ -28,6 +28,7 @@ export const PROVIDER_PRESETS = {
     authHeader: 'Authorization',
     defaultBaseUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4o',
+    supportsCache: true,
   },
   anthropic: {
     provider: 'anthropic',
@@ -36,6 +37,7 @@ export const PROVIDER_PRESETS = {
     authHeader: 'x-api-key',
     defaultBaseUrl: 'https://api.anthropic.com/v1',
     defaultModel: 'claude-3-5-sonnet-latest',
+    supportsCache: true,
   },
   deepseek: {
     provider: 'deepseek',
@@ -44,6 +46,7 @@ export const PROVIDER_PRESETS = {
     authHeader: 'Authorization',
     defaultBaseUrl: 'https://api.deepseek.com/v1',
     defaultModel: 'deepseek-chat',
+    supportsCache: false,
   },
   qwen: {
     provider: 'qwen',
@@ -52,6 +55,7 @@ export const PROVIDER_PRESETS = {
     authHeader: 'Authorization',
     defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     defaultModel: 'qwen-plus',
+    supportsCache: true,
   },
   hunyuan: {
     provider: 'hunyuan',
@@ -60,6 +64,7 @@ export const PROVIDER_PRESETS = {
     authHeader: 'Authorization',
     defaultBaseUrl: 'https://api.hunyuan.cloud.tencent.com/v1',
     defaultModel: 'hunyuan-turbo',
+    supportsCache: false,
   },
   mimo: {
     provider: 'mimo',
@@ -68,6 +73,7 @@ export const PROVIDER_PRESETS = {
     authHeader: 'api-key',
     defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
     defaultModel: 'mimo-v2.5-pro',
+    supportsCache: false,
   },
   minimax: {
     provider: 'minimax',
@@ -76,6 +82,7 @@ export const PROVIDER_PRESETS = {
     authHeader: 'Authorization',
     defaultBaseUrl: 'https://api.minimaxi.com/v1',
     defaultModel: 'MiniMax-M3',
+    supportsCache: false,
   },
   stepfun: {
     provider: 'stepfun',
@@ -84,6 +91,7 @@ export const PROVIDER_PRESETS = {
     authHeader: 'Authorization',
     defaultBaseUrl: 'https://api.stepfun.com/step_plan/v1',
     defaultModel: 'step-3.7-flash',
+    supportsCache: false,
   },
   longcat: {
     provider: 'longcat',
@@ -92,6 +100,7 @@ export const PROVIDER_PRESETS = {
     authHeader: 'Authorization',
     defaultBaseUrl: 'https://api.longcat.chat/openai',
     defaultModel: 'LongCat-Flash-Chat',
+    supportsCache: false,
   },
   custom: {
     provider: 'custom',
@@ -100,6 +109,7 @@ export const PROVIDER_PRESETS = {
     authHeader: 'Authorization',
     defaultBaseUrl: '',
     defaultModel: '',
+    supportsCache: false, // 未知，保守按不支持处理；如供应商支持可由前端 UI 显式声明
   },
 }
 
@@ -108,6 +118,20 @@ export const PROVIDER_PRESETS = {
  */
 export function getPreset(provider) {
   return PROVIDER_PRESETS[provider]
+}
+
+/**
+ * 该供应商是否在协议层支持 prompt cache 字段。
+ * - true：上游会返回 cache_creation_input_tokens / cache_read_input_tokens
+ *   （Anthropic 协议）/ prompt_tokens_details.cached_tokens（OpenAI 协议）等字段；
+ *   圆环 / 面板应显示真实命中率。
+ * - false：上游根本没有 cache 字段，UI 应显示"未启用 / N/A"而不是 0% 误导。
+ * 命中不到时默认按 false 处理（保守），避免在不支持的供应商上"装作有缓存"。
+ */
+export function providerSupportsCache(provider) {
+  const preset = PROVIDER_PRESETS[provider]
+  if (!preset) return false
+  return preset.supportsCache === true
 }
 
 /**

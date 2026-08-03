@@ -13,6 +13,10 @@ export interface AiProvider {
   updated_at: string
   has_key: boolean
   context_window?: number | null // 模型上下文窗口（token 数）；非空时优先级高于内置表
+  // 协议层是否支持 prompt cache（由后端 aiProviders.js 给出）。
+  // - true：上游会返回 cache_read/cache_write tokens，应展示真实命中率
+  // - false：上游没有 cache 字段，UI 应显示"未启用 / N/A"而不是 0% 误导
+  supports_cache?: boolean
 }
 
 export interface AiProviderPreset {
@@ -276,6 +280,27 @@ export function updateConversation(id: string, title: string) {
 
 export function deleteConversation(id: string) {
   return api<{ deleted: boolean }>('DELETE', `/api/ai/conversations/${id}`)
+}
+
+// 手动压缩指定对话的上下文历史（前端 /compact 命令触发）。
+// 后端会：加载 messages → LLM 生成摘要 → 持久化到 ai_messages → 返回压缩结果。
+export interface CompactResult {
+  ok: boolean
+  reason?: 'too_short' | 'not_found' | 'no_provider' | 'no_key' | 'failed'
+  error?: string
+  removed?: number // 被压缩掉的消息条数
+  summaryTokens?: number // 新摘要占用的估算 token
+  beforeTokens?: number // 压缩前总估算 token
+  afterTokens?: number // 压缩后总估算 token（含新摘要）
+  savedTokens?: number // 节省的 token（before - after）
+  summaryPreview?: string // 新摘要的前 600 字符
+  summaryLength?: number // 新摘要的完整字符数
+}
+export function compactConversation(
+  id: string,
+  body?: { providerId?: string },
+) {
+  return api<CompactResult>('POST', `/api/ai/conversations/${id}/compact`, body || {})
 }
 
 export function saveMessages(id: string, messages: ChatMessage[]) {
