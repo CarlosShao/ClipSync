@@ -68,7 +68,7 @@ async function validateProviderBaseUrl(input) {
 router.get('/providers', apiLimiter, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, provider, name, base_url, model, models, is_default, created_at, updated_at,
+      `SELECT id, provider, name, base_url, model, models, is_default, context_window, created_at, updated_at,
               (api_key_encrypted IS NOT NULL AND api_key_encrypted <> '') AS has_key
        FROM ai_providers
        WHERE user_id = $1
@@ -101,7 +101,7 @@ router.get('/context', apiLimiter, async (req, res) => {
 // POST /api/ai/providers - 新建供应商
 router.post('/providers', apiLimiter, async (req, res) => {
   try {
-    const { provider, name, apiKey, baseUrl, model, models, isDefault } = req.body || {}
+    const { provider, name, apiKey, baseUrl, model, models, isDefault, contextWindow } = req.body || {}
     if (!provider || !getPreset(provider)) {
       return res.status(400).json({ error: 'Invalid provider' })
     }
@@ -129,6 +129,10 @@ router.post('/providers', apiLimiter, async (req, res) => {
 
     const wantDefault = isDefault === true
     const modelsJson = JSON.stringify(selectedModels)
+    const parsedCtx = (() => {
+      const n = typeof contextWindow === 'number' ? contextWindow : parseInt(contextWindow, 10)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+    })()
 
     const client = await pool.connect()
     try {
@@ -137,11 +141,11 @@ router.post('/providers', apiLimiter, async (req, res) => {
         await client.query('UPDATE ai_providers SET is_default = FALSE WHERE user_id = $1', [req.userId])
       }
       const result = await client.query(
-        `INSERT INTO ai_providers (user_id, provider, name, api_key_encrypted, base_url, model, models, is_default)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
-         RETURNING id, provider, name, base_url, model, models, is_default, created_at, updated_at,
+        `INSERT INTO ai_providers (user_id, provider, name, api_key_encrypted, base_url, model, models, is_default, context_window)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
+         RETURNING id, provider, name, base_url, model, models, is_default, context_window, created_at, updated_at,
                    (api_key_encrypted IS NOT NULL AND api_key_encrypted <> '') AS has_key`,
-        [req.userId, provider, name.trim(), encryptedKey, baseUrl || null, activeModel, modelsJson, wantDefault]
+        [req.userId, provider, name.trim(), encryptedKey, baseUrl || null, activeModel, modelsJson, wantDefault, parsedCtx]
       )
       await client.query('COMMIT')
       res.status(201).json(result.rows[0])
@@ -161,7 +165,7 @@ router.post('/providers', apiLimiter, async (req, res) => {
 router.put('/providers/:id', apiLimiter, async (req, res) => {
   try {
     const id = req.params.id
-    const { name, apiKey, baseUrl, model, models, isDefault } = req.body || {}
+    const { name, apiKey, baseUrl, model, models, isDefault, contextWindow } = req.body || {}
 
     const existing = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [id, req.userId])
     if (existing.rowCount === 0) {
@@ -193,6 +197,12 @@ router.put('/providers/:id', apiLimiter, async (req, res) => {
     }
 
     const wantDefault = isDefault === true ? true : (isDefault === false ? false : cur.is_default)
+    const newContextWindow = contextWindow !== undefined
+      ? (() => {
+          const n = typeof contextWindow === 'number' ? contextWindow : parseInt(contextWindow, 10)
+          return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+        })()
+      : cur.context_window
 
     const client = await pool.connect()
     try {
@@ -204,11 +214,11 @@ router.put('/providers/:id', apiLimiter, async (req, res) => {
         `UPDATE ai_providers
          SET name = $3, api_key_encrypted = $4, base_url = $5, model = $6,
              models = COALESCE($8::jsonb, models),
-             is_default = $7, updated_at = NOW()
+             is_default = $7, context_window = $9, updated_at = NOW()
          WHERE id = $1 AND user_id = $2
-         RETURNING id, provider, name, base_url, model, models, is_default, created_at, updated_at,
+         RETURNING id, provider, name, base_url, model, models, is_default, context_window, created_at, updated_at,
                    (api_key_encrypted IS NOT NULL AND api_key_encrypted <> '') AS has_key`,
-        [id, req.userId, newName, encryptedKey, newBaseUrl, newModel, wantDefault, modelsJson]
+        [id, req.userId, newName, encryptedKey, newBaseUrl, newModel, wantDefault, modelsJson, newContextWindow]
       )
       await client.query('COMMIT')
       res.json(result.rows[0])

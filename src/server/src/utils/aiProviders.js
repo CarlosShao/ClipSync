@@ -115,44 +115,145 @@ export function getPreset(provider) {
  * 命中不到时用 DEFAULT_CONTEXT_WINDOW 兜底（现代模型大多 ≥ 32k）。
  * 注意：这是近似值，仅作 UI 指示；真实 token 数由上游 usage 返回。
  */
+// 真实模型的上下文窗口（token 数）。用于前端「上下文用量百分比」圆环，必须与模型实际一致。
+// 精确匹配优先；带 `*` 的键用于前缀匹配（如 gpt-4o-2024-… → gpt-4o 的 128k）。
+// 注意：这是各模型的官方上下文窗口，仅作 UI 指示；单次真实 token 数仍由上游 usage 返回。
 const MODEL_CONTEXT_WINDOWS = {
+  // ===== OpenAI =====
   'gpt-4o': 128000,
+  'gpt-4o*': 128000,
   'gpt-4o-mini': 128000,
   'gpt-4-turbo': 128000,
   'gpt-4': 8192,
   'gpt-4-32k': 32768,
+  'gpt-3.5-turbo': 16385,
+  'gpt-4.1': 1047576,
+  'gpt-4.1*': 1047576,
+  'gpt-4.1-mini': 1047576,
+  'gpt-4.1-nano': 1047576,
+  'gpt-5': 272000,
+  'gpt-5*': 272000,
   'o1': 200000,
   'o1-mini': 128000,
   'o1-preview': 128000,
   'o3': 200000,
+  'o3-mini': 200000,
   'o4-mini': 200000,
+  'chatgpt-4o-latest': 128000,
+
+  // ===== Anthropic =====
+  'claude-3-5-sonnet': 200000,
+  'claude-3-5-sonnet*': 200000,
+  'claude-3-5-haiku': 200000,
+  'claude-3-5-haiku*': 200000,
+  'claude-3-opus': 200000,
+  'claude-3-opus*': 200000,
+  'claude-3-haiku': 200000,
+  'claude-3-haiku*': 200000,
+  'claude-3-sonnet': 200000,
+  'claude-3-7-sonnet': 200000,
+  'claude-3-7-sonnet*': 200000,
+  'claude-sonnet-4': 200000,
+  'claude-sonnet-4*': 200000,
+  'claude-opus-4': 200000,
+  'claude-opus-4*': 200000,
+
+  // ===== Google Gemini（OpenAI 兼容网关） =====
+  'gemini-1.5-pro': 2000000,
+  'gemini-1.5-pro*': 2000000,
+  'gemini-1.5-flash': 1000000,
+  'gemini-1.5-flash*': 1000000,
+  'gemini-2.0-flash': 1000000,
+  'gemini-2.0-flash*': 1000000,
+  'gemini-2.5-pro': 1000000,
+  'gemini-2.5-pro*': 1000000,
+  'gemini-2.5-flash': 1000000,
+  'gemini-2.5-flash*': 1000000,
+
+  // ===== DeepSeek =====
   'deepseek-chat': 64000,
   'deepseek-reasoner': 64000,
-  'qwen-plus': 32768,
+  'deepseek-coder': 128000,
+  'deepseek-*': 64000,
+
+  // ===== 阿里 Qwen / 通义 =====
+  'qwen-plus': 131072,
   'qwen-max': 32768,
-  'qwen-turbo': 32768,
-  'qwen-long': 1000000,
+  'qwen-max-longcontext': 1000000,
+  'qwen-turbo': 131072,
+  'qwen-long': 10000000,
+  'qwen2.5-7b-instruct': 32768,
+  'qwen2.5-14b-instruct': 32768,
+  'qwen2.5-32b-instruct': 32768,
+  'qwen2.5-72b-instruct': 32768,
+  'qwen2.5*': 131072,
+  'qwen3': 131072,
+  'qwen3*': 131072,
   'qwq': 32768,
-  'qwen3': 128000,
-  'claude-3-5-sonnet': 200000,
-  'claude-3-7-sonnet': 200000,
-  'claude-3-opus': 200000,
-  'claude-3-haiku': 200000,
+  'qwq*': 32768,
+
+  // ===== Moonshot / Kimi =====
+  'moonshot-v1-8k': 8192,
+  'moonshot-v1-32k': 32768,
+  'moonshot-v1-128k': 131072,
+  'moonshot-v1*': 131072,
+  'kimi-k2': 256000,
+  'kimi-*': 256000,
+
+  // ===== 智谱 GLM =====
+  'glm-4': 128000,
+  'glm-4*': 128000,
+  'glm-4-long': 1000000,
+  'glm-4.5': 128000,
+  'glm-4.5*': 128000,
+
+  // ===== MiniMax =====
+  'abab6.5': 245760,
+  'abab6.5s': 200000,
+  'abab5.5': 245760,
+  'minimax-01': 4000000,
+  'minimax-text-01': 4000000,
+  'minimax*': 200000,
+
+  // ===== 阶跃 StepFun =====
+  'step-1': 32768,
+  'step-2': 32768,
+  'step-1v': 32768,
+  'step*': 32768,
+
+  // ===== 百川 Baichuan =====
+  'baichuan4': 32768,
+  'baichuan3-turbo': 32768,
+  'baichuan*': 32768,
 }
 
 const DEFAULT_CONTEXT_WINDOW = 128000
 
 /**
- * 解析模型上下文窗口。先精确匹配，再前缀匹配（gpt-4o-2024-… → gpt-4o 的 128k）。
+ * 解析模型上下文窗口（token 数）。解析优先级：
+ *   1. override（provider 上用户明确配置的 context_window，最权威）
+ *   2. 精确匹配模型名 → 前缀匹配（带 `*` 的键）
+ *   3. 从模型名解析 "128k" / "200k" / "1m" 等上下文标记
+ *   4. DEFAULT_CONTEXT_WINDOW 兜底
  * @param {string} model 模型标识
+ * @param {number} [override] provider 级显式上下文窗口（用户配置，最权威）
  * @returns {number} 上下文窗口 token 数
  */
-export function getContextWindow(model) {
+export function getContextWindow(model, override) {
+  if (typeof override === 'number' && override > 0) return Math.floor(override)
   if (!model) return DEFAULT_CONTEXT_WINDOW
   const m = String(model).toLowerCase()
   if (MODEL_CONTEXT_WINDOWS[m]) return MODEL_CONTEXT_WINDOWS[m]
   for (const key of Object.keys(MODEL_CONTEXT_WINDOWS)) {
-    if (m.startsWith(key)) return MODEL_CONTEXT_WINDOWS[key]
+    if (key.endsWith('*') && m.startsWith(key.slice(0, -1))) {
+      return MODEL_CONTEXT_WINDOWS[key]
+    }
+  }
+  const nameMatch = m.match(/(\d+)\s*(k|m)\b/)
+  if (nameMatch) {
+    const n = parseInt(nameMatch[1], 10)
+    const unit = nameMatch[2] === 'k' ? 1000 : 1000000
+    return n * unit
   }
   return DEFAULT_CONTEXT_WINDOW
 }
@@ -260,7 +361,10 @@ export function buildUpstreamChat(cfg) {
       body.thinking = { type: 'enabled', budget_tokens: options.thinkingBudget || 4096 }
     }
     if (systemMessages.length > 0) {
-      body.system = systemMessages.map((m) => m.content).join('\n\n')
+      body.system = [{ type: 'text', text: systemMessages.map((m) => m.content).join('\n\n') }]
+      // 开启 prompt caching：稳定的 system 前缀标记为可缓存，后续请求命中缓存后上游会返回
+      // cache_read_input_tokens，前端「缓存命中率」才是真实数据（而非恒为 0）。
+      body.system[0].cache_control = { type: 'ephemeral' }
     }
     if (typeof options.temperature === 'number') {
       body.temperature = options.temperature

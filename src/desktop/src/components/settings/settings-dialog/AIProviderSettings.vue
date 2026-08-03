@@ -36,6 +36,7 @@ const formSelectedModels = ref<string[]>([])
 // 上游刷新得到的完整模型列表（用于点选）
 const formModels = ref<string[]>([])
 const formIsDefault = ref(false)
+const formContextWindow = ref<number | null>(null)
 const saving = ref(false)
 const refreshingModels = ref(false)
 const formError = ref('')
@@ -85,6 +86,7 @@ function resetForm() {
   formSelectedModels.value = []
   formModels.value = []
   formIsDefault.value = false
+  formContextWindow.value = null
   formError.value = ''
 }
 
@@ -97,6 +99,7 @@ function startEdit(p: AiProvider) {
   formSelectedModels.value = Array.isArray(p.models) && p.models.length > 0 ? [...p.models] : [p.model]
   formModels.value = Array.isArray(p.models) ? [...p.models] : []
   formIsDefault.value = p.is_default
+  formContextWindow.value = p.context_window ?? null
   formError.value = ''
 }
 
@@ -134,6 +137,7 @@ async function refreshModels() {
         model: formSelectedModels.value[0] || '',
         models: formSelectedModels.value,
         isDefault: formIsDefault.value,
+        contextWindow: formContextWindow.value ? Number(formContextWindow.value) : null,
       })
       if (!createRes.ok || !createRes.data?.id) {
         toast.show(createRes.error || t('ai_save_failed'), 'error')
@@ -187,6 +191,7 @@ async function save() {
       model: formSelectedModels.value[0],
       models: formSelectedModels.value,
       isDefault: formIsDefault.value,
+      contextWindow: formContextWindow.value ? Number(formContextWindow.value) : null,
     }
     const res = editingId.value
       ? await updateProvider(editingId.value, payload)
@@ -394,6 +399,18 @@ onMounted(load)
             <RefreshCw v-if="!refreshingModels" :size="12" />
             {{ refreshingModels ? t('ai_refreshing') : t('ai_refresh_models') }}
           </Button>
+        </div>
+      </div>
+
+      <div class="ai-field">
+        <label class="ai-label">上下文窗口 (tokens)</label>
+        <Input
+          v-model="formContextWindow"
+          type="number"
+          :placeholder="`自动按模型：${formSelectedModels[0] || '?'}`"
+        />
+        <div class="sg-hint">
+          留空则按内置模型表自动识别（切换模型时总量随之变化）。自定义/未知模型请填真实上下文窗口，如 128000 / 200000 / 1000000。
         </div>
       </div>
 

@@ -55,6 +55,15 @@ export function useAiChat() {
     createdAt: string
     preview: string
   } | null>(null)
+  // 上下文自动压缩提示：上下文占满阈值后后端自动压缩历史，下发事件用于展示提示横幅
+  const contextCompressedNotice = ref<{
+    removedMessages: number
+    summaryTokens: number
+    beforeTokens: number
+    contextWindow: number
+    percentBefore: number
+    at: number
+  } | null>(null)
   const abortCtrl = shallowRef<AbortController | null>(null)
   const initialized = ref(false)
   // 长程记忆模式：开启时把用户记忆注入系统提示词，让 AI 跨会话“记得”用户
@@ -223,8 +232,9 @@ export function useAiChat() {
   async function send(content: string, options: SendOptions = {}) {
     const text = content.trim()
     if (!text || isStreaming.value) return
-    // 新一轮发送：清空上一次的图片重复提示
+    // 新一轮发送：清空上一次的图片重复提示与上下文压缩提示
     duplicateImageNotice.value = null
+    contextCompressedNotice.value = null
     if (!selectedProviderId.value) {
       error.value = 'ai_no_provider_selected'
       return
@@ -520,6 +530,17 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
               preview: mm.preview,
             }
           }
+          // 上下文自动压缩（上下文管理）：后端在上下文逼近上限时自动压缩较早历史，下发事件展示横幅
+          if (mm?.type === 'context_compressed') {
+            contextCompressedNotice.value = {
+              removedMessages: mm.removedMessages,
+              summaryTokens: mm.summaryTokens || 0,
+              beforeTokens: mm.beforeTokens || 0,
+              contextWindow: mm.contextWindow || 0,
+              percentBefore: mm.percentBefore || 0,
+              at: Date.now(),
+            }
+          }
 
           // 有 agentId 的增量属于某个子代理 → 路由到对应卡片；否则归到主气泡
           const target: AgentRun | null = meta?.agentId ? getOrCreateAgentRun(meta.agentId) : null
@@ -618,6 +639,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
     error,
     contextUsage,
     duplicateImageNotice,
+    contextCompressedNotice,
     hasProviders,
     canSend,
     memoryEnabled,

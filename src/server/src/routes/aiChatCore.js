@@ -10,6 +10,7 @@
  * - 通过 agentId 给所有增量打标（多代理路由用），单代理传 null。
  * - 上游异常（含 180s 超时 AbortError）向上抛出，由调用方决定降级策略。
  */
+import logger from '../utils/logger.js'
 import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProviders.js'
 import { collectToolCallsFromStream, handleToolCalls } from './aiStream.js'
 
@@ -51,6 +52,132 @@ function looksLikeToolIntent(content) {
 }
 
 /**
+ * 上下文自动压缩相关常量与工具。
+ * 当上下文占用逼近模型窗口上限时，把较早的历史对话压缩成一份极简摘要，
+ * 仅保留 system 提示与最近几轮，避免超出上下文窗口（与主流 agent 工具行为一致）。
+ */
+const CONTEXT_COMPRESS_THRESHOLD = 0.8 // 占用 ≥ 80% 触发压缩
+const CONTEXT_COMPRESS_KEEP_RECENT = 2 // 至少保留最近 2 个 user 轮次（含其后的 assistant/tool 交换）不压缩
+
+/**
+ * 粗略估算单条消息内容的 token 数（无 tokenizer 依赖）。
+ * 中文按 ~1.6 字符/token，英文/符号按 ~4 字符/token；图片按固定开销估算。
+ */
+function estimateTokensOfContent(content) {
+  if (!content) return 0
+  if (typeof content === 'string') {
+    const cjk = (content.match(/[㐀-䶿一-鿿豈-﫿　-〿＀-￯]/g) || []).length
+    const latin = content.length - cjk
+    return Math.ceil(cjk / 1.6 + latin / 4)
+  }
+  if (Array.isArray(content)) {
+    let t = 0
+    for (const part of content) {
+      if (part.type === 'text') t += estimateTokensOfContent(part.text || '')
+      else if (part.type === 'image_url') t += 800 // 一张截图粗略估算
+      else t += 50
+    }
+    return t
+  }
+  return 0
+}
+
+/** 估算整段 messages 的 token 数（含每条消息的结构开销）。 */
+function estimateMessagesTokens(messages) {
+  if (!Array.isArray(messages)) return 0
+  let t = 0
+  for (const m of messages) t += estimateTokensOfContent(m.content)
+  return t + messages.length * 4
+}
+
+/**
+ * 把较早的对话历史压缩为一份极简中文摘要，返回替换后的 messages。
+ * - system 提示原样保留；
+ * - 最近若干 user 轮次及其之后的所有消息原样保留（保证 tool_calls/tool 配对完整、不丢失最新请求）；
+ * - 二者之间的较早历史交给模型压缩成摘要，并合并进 tail 的第一条 user 消息（避免 Anthropic 连续同角色报错）。
+ * @returns {{ messages: Array, removed: number, summaryTokens: number, estimatedTokens: number }|null}
+ */
+async function compressConversationHistory(messages, opts) {
+  const { providerRow, apiKey, userId, abortSignal, role } = opts
+  const systemIdx = messages.findIndex((m) => m.role === 'system')
+  const systemMsg = systemIdx >= 0 ? messages[systemIdx] : null
+  const rest = systemIdx >= 0 ? messages.slice(systemIdx + 1) : messages.slice()
+  if (rest.length < 6) return null // 历史过短，不值得压缩
+
+  // 收集所有 user 消息位置，至少保留最近 CONTEXT_COMPRESS_KEEP_RECENT 个 user 轮次
+  const userPositions = []
+  for (let i = 0; i < rest.length; i++) if (rest[i].role === 'user') userPositions.push(i)
+  if (userPositions.length === 0) return null
+  const keepFrom = userPositions[Math.max(0, userPositions.length - CONTEXT_COMPRESS_KEEP_RECENT)]
+  const tail = rest.slice(keepFrom)
+  const toSummarize = rest.slice(0, keepFrom)
+  if (toSummarize.length < 2) return null
+
+  const transcript = toSummarize
+    .map((m) => {
+      let txt = ''
+      if (typeof m.content === 'string') txt = m.content
+      else if (Array.isArray(m.content)) txt = m.content.map((p) => (p.type === 'text' ? p.text : p.type === 'image_url' ? '[图片]' : '')).join('')
+      const label = m.role === 'user' ? '用户' : m.role === 'assistant' ? '助手' : m.role === 'tool' ? '工具结果' : m.role
+      return `【${label}】\n${txt}`
+    })
+    .join('\n\n')
+
+  const summarySystem = '你是一个对话历史压缩器。请把给定的较早对话记录压缩为一份极简的中文结构化摘要，只保留关键事实、用户意图、已完成的操作、重要结论与待办，删除寒暄与冗余。用要点列表输出，不超过 500 字。只输出摘要正文，不要任何前缀或解释。'
+  let summary = ''
+  try {
+    const r = await runChatLoop({
+      messages: [
+        { role: 'system', content: summarySystem },
+        { role: 'user', content: `=== 需要压缩的较早对话 ===\n${transcript}` },
+      ],
+      // 注意：runChatLoop 始终走流式解析（openUpstreamStream 固定按 SSE 读取），
+      // 因此不要传 stream:false（否则上游返回单条 JSON，SSE 解析器拿不到 content）。
+      options: { temperature: 0, max_tokens: 700 },
+      providerRow,
+      apiKey,
+      tools: [],
+      userId,
+      role: role || 'user',
+      sendDelta: () => {},
+      abortSignal,
+      maxRounds: 1,
+      allowCompress: false,
+    })
+    summary = typeof r.finalContent === 'string' ? r.finalContent.trim() : ''
+  } catch (e) {
+    logger.warn('[AI] context auto-compress summarization failed:', e.message)
+    return null
+  }
+  if (!summary) return null
+
+  const note = `【历史对话压缩摘要】以下为较早对话的压缩要点（完整原文已不再保留）：\n${summary}`
+  // 合并进 tail 的第一条 user 消息，避免连续 user 消息（兼容 Anthropic 交替规则）
+  const newTail = tail.slice()
+  if (newTail.length && newTail[0].role === 'user') {
+    const first = newTail[0]
+    if (typeof first.content === 'string') {
+      newTail[0] = { ...first, content: `${note}\n\n${first.content}` }
+    } else if (Array.isArray(first.content)) {
+      newTail[0] = { ...first, content: [{ type: 'text', text: note }, ...first.content] }
+    } else {
+      newTail.unshift({ role: 'user', content: note })
+    }
+  } else {
+    newTail.unshift({ role: 'user', content: note })
+  }
+  const newMessages = []
+  if (systemMsg) newMessages.push(systemMsg)
+  newMessages.push(...newTail)
+  return {
+    messages: newMessages,
+    removed: toSummarize.length,
+    summaryTokens: estimateTokensOfContent(note),
+    estimatedTokens: estimateMessagesTokens(newMessages),
+  }
+}
+
+/**
  * 执行一轮完整对话循环。
  * @returns {{ messages: Array, finalContent: string }}
  */
@@ -69,12 +196,15 @@ export async function runChatLoop({
   maxRounds = 5,
   thinkingEnabled = false,
   thinkingStrength = 'medium',
+  allowCompress = true,
 }) {
   const preset = getPreset(providerRow.provider)
   let currentMessages = [...messages]
   // 安全网计数器：防止模型“只说要调工具”却不 emit tool_calls 导致任务半途而废
   let continuationRetries = 0
   const MAX_CONTINUATION_RETRIES = 1
+  // 上一轮真实 prompt token 数（来自上游 usage）；用于估计当前上下文占用、决定是否压缩。
+  let lastPromptTokens = 0
 
   for (let round = 0; round < maxRounds; round++) {
     const chatOptions = { ...options }
@@ -89,6 +219,40 @@ export async function runChatLoop({
     if (tools && tools.length) {
       chatOptions.tools = tools
       chatOptions.tool_choice = 'auto'
+    }
+
+    // ===== 上下文自动压缩门控 =====
+    // 当估计占用 ≥ 上下文窗口的 CONTEXT_COMPRESS_THRESHOLD 时，把较早历史压缩成摘要，
+    // 仅保留 system 与最近几轮（与主流 agent 工具行为一致）。优先用上一轮真实 prompt_tokens
+    // 估计；首轮用内容估算兜底。
+    if (allowCompress !== false) {
+      const ctxWindow = getContextWindow(providerRow.model, providerRow.context_window)
+      const estTokens = lastPromptTokens > 0 ? lastPromptTokens : estimateMessagesTokens(currentMessages)
+      if (estTokens > Math.floor(ctxWindow * CONTEXT_COMPRESS_THRESHOLD)) {
+        try {
+          const res = await compressConversationHistory(currentMessages, {
+            providerRow, apiKey, userId, abortSignal, role,
+          })
+          if (res) {
+            currentMessages = res.messages
+            lastPromptTokens = res.estimatedTokens
+            if (sendDelta) {
+              sendDelta({
+                meta: {
+                  type: 'context_compressed',
+                  removedMessages: res.removed,
+                  summaryTokens: res.summaryTokens,
+                  beforeTokens: estTokens,
+                  contextWindow: ctxWindow,
+                  percentBefore: Math.round((estTokens / ctxWindow) * 100),
+                },
+              })
+            }
+          }
+        } catch (e) {
+          logger.warn('[AI] context auto-compress skipped:', e.message)
+        }
+      }
     }
 
     const upstream = buildUpstreamChat({
@@ -108,9 +272,10 @@ export async function runChatLoop({
     // 下发 token 用量元信息（前端圆环展示上下文占用百分比）。
     // 取本轮 usage 的最新值；前端保留「最近一次」调用，即最能代表当前上下文大小的数值。
     if (response.usage) {
-      const ctxWindow = getContextWindow(providerRow.model)
+      const ctxWindow = getContextWindow(providerRow.model, providerRow.context_window)
       const u = response.usage
       const promptTokens = u.prompt_tokens || 0
+      lastPromptTokens = promptTokens // 记录真实 prompt token，供下一轮压缩估计使用
       const completionTokens = u.completion_tokens || 0
       const cacheReadTokens = u.prompt_tokens_details?.cached_tokens || u.prompt_tokens_details?.cache_read_tokens || 0
       const cacheWriteTokens = u.prompt_tokens_details?.cache_written_tokens || u.prompt_tokens_details?.cache_write_tokens || 0

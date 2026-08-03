@@ -104,12 +104,19 @@ const cacheHitPercent = computed(() => {
   return Math.min(100, Math.round((cached / c.promptTokens) * 100))
 })
 const ringDashOffsetInner = computed(() => RING_C_INNER * (1 - cacheHitPercent.value / 100))
+// 缓存是否生效：上游返回过缓存读/写 token 即视为该供应商支持 prompt caching；
+// 二者均为 0 时（供应商不支持或首轮尚未写入）展示「未启用」而非误导性的 0%。
+const cacheSupported = computed(() => {
+  const c = props.contextUsage
+  if (!c) return false
+  return (c.cacheReadTokens || 0) > 0 || (c.cacheWriteTokens || 0) > 0
+})
 
 const usageTip = computed(() => {
   if (!props.contextUsage) return t('ai_context_usage_none') || '上下文用量：暂无数据'
   return (
     `${t('ai_context_usage', { percent: usagePercent.value, used: props.contextUsage.totalTokens, total: props.contextUsage.contextWindow })}（外环）\n` +
-    `${t('ai_cache_hit', { percent: cacheHitPercent.value, cached: props.contextUsage.cacheReadTokens || 0, prompt: props.contextUsage.promptTokens })}（内环）`
+    `${cacheSupported.value ? t('ai_cache_hit', { percent: cacheHitPercent.value, cached: props.contextUsage.cacheReadTokens || 0, prompt: props.contextUsage.promptTokens }) : (t('ai_cache_not_supported') || '缓存未启用：该供应商/请求暂未命中 prompt 缓存')}（内环）`
   )
 })
 
@@ -388,7 +395,7 @@ const usageCacheMissTokens = computed(() =>
               <div class="ai-usage-hitrate">
                 <div class="ai-usage-hitrate-head">
                   <span class="ai-usage-hitrate-title">{{ t('ai_token_usage_hit_rate') || '缓存命中率' }}</span>
-                  <span class="ai-usage-hitrate-val">{{ cacheHitPercent }}%</span>
+                  <span class="ai-usage-hitrate-val">{{ cacheSupported ? cacheHitPercent + '%' : (t('ai_cache_not_enabled') || '未启用') }}</span>
                 </div>
                 <div class="ai-usage-hitrate-bar">
                   <div class="ai-usage-hitrate-fill" :style="{ width: cacheHitPercent + '%' }"></div>

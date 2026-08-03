@@ -138,7 +138,7 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
 
     // 下发 token 用量元信息（与 runChatLoop 同格式），由编排层聚合后统一下发，保持主气泡圆环更新
     if (resp.usage) {
-      const ctxWindow = getContextWindow(providerRow.model)
+      const ctxWindow = getContextWindow(providerRow.model, providerRow.context_window)
       const u = resp.usage
       const promptTokens = u.prompt_tokens || 0
       const completionTokens = u.completion_tokens || 0

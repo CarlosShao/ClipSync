@@ -12,6 +12,7 @@ export interface AiProvider {
   created_at: string
   updated_at: string
   has_key: boolean
+  context_window?: number | null // 模型上下文窗口（token 数）；非空时优先级高于内置表
 }
 
 export interface AiProviderPreset {
@@ -158,6 +159,7 @@ export interface AiProviderInput {
   model: string
   models?: string[]
   isDefault?: boolean
+  contextWindow?: number | null
 }
 
 // AI 用户偏好（入库持久化）
