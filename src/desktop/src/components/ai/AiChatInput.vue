@@ -697,7 +697,7 @@ const usageCacheMissTokens = computed(() =>
   transform: scale(1.06);
 }
 
-::deep(.ai-usage-panel) {
+:deep(.ai-usage-panel) {
   width: 280px;
   padding: 18px 22px 16px;
   background: var(--bg-surface);
