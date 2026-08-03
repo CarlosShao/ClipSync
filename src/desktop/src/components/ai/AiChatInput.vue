@@ -699,10 +699,10 @@ const usageCacheMissTokens = computed(() =>
 
 ::deep(.ai-usage-panel) {
   width: 280px;
-  padding: 14px 16px 12px;
+  padding: 18px 22px 16px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
   z-index: 60;
 }
@@ -726,7 +726,7 @@ const usageCacheMissTokens = computed(() =>
 .ai-usage-panel-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .ai-usage-total-row {
@@ -744,7 +744,7 @@ const usageCacheMissTokens = computed(() =>
 .ai-usage-section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .ai-usage-section-title {
   display: flex;
@@ -765,7 +765,7 @@ const usageCacheMissTokens = computed(() =>
   gap: 6px;
   font-size: 11px;
   color: var(--text-secondary);
-  padding-left: 14px;
+  padding-left: 16px;
 }
 .ai-usage-detail-row span:last-child {
   margin-left: auto;
