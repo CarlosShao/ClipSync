@@ -696,10 +696,14 @@ const usageCacheMissTokens = computed(() =>
 .ai-usage-ring-btn:hover {
   transform: scale(1.06);
 }
+</style>
 
-:deep(.ai-usage-panel) {
+<style>
+/* 上下文用量浮层（Cursor 风格）：点击圆环触发。
+   注意：PopoverContent 通过 Portal 渲染到 body，必须在全局样式中定义。 */
+.ai-usage-panel {
   width: 280px;
-  padding: 18px 22px 16px;
+  padding: 18px 22px 16px !important;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: 12px;
