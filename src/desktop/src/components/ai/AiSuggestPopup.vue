@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { getProviders, suggestClipboard, type ClipSuggestion } from '@/api/ai'
-import { Sparkles, X, Heart, Archive, Trash2, Loader2, Tag } from 'lucide-vue-next'
+import {
+  getProviders,
+  suggestClipboard,
+  similarityCheck,
+  type ClipSuggestion,
+  type DuplicateHit,
+  type SimilarityCandidate,
+} from '@/api/ai'
+import { Sparkles, X, Heart, Archive, Trash2, Loader2, Tag, CopyX } from 'lucide-vue-next'
 
 /**
  * AiSuggestPopup — 主动建议（#230）：选中剪贴板内容后，AI 主动给出
- * "是否值得收藏 / 建议分类 / 建议清理"的结构化建议，并提供一键操作。
+ * "是否值得收藏 / 建议分类 / 建议清理 / 智能标签"的结构化建议，并提供一键操作。
+ * 同时做语义相似度检测（#236）：提示与已有条目的重复关系。
  */
 const props = defineProps<{
   open: boolean
@@ -14,6 +22,8 @@ const props = defineProps<{
   content: string
   /** 现有收藏夹名称列表（用于建议分类） */
   collections?: string[]
+  /** 语义重复检测候选（#236）：最近文本条目的 id+文本 */
+  candidates?: SimilarityCandidate[]
 }>()
 const emit = defineEmits<{
   close: []
@@ -32,6 +42,9 @@ const loading = ref(false)
 const error = ref('')
 const suggestion = ref<ClipSuggestion | null>(null)
 const providerId = ref('')
+// 语义相似度检测结果（#236）
+const duplicates = ref<DuplicateHit[]>([])
+const dupChecking = ref(false)
 
 async function ensureProvider() {
   if (providerId.value) return
@@ -39,6 +52,29 @@ async function ensureProvider() {
   if (res.ok && res.data?.items?.length) {
     const p = res.data.items.find((x) => x.is_default) || res.data.items[0]
     providerId.value = p.id
+  }
+}
+
+// 语义重复检测（#236）：与候选条目比对，结果单独展示
+async function checkDuplicates(text: string) {
+  const cands = (props.candidates || []).slice(0, 10)
+  if (!cands.length || !providerId.value) return
+  dupChecking.value = true
+  duplicates.value = []
+  try {
+    const res = await similarityCheck({
+      providerId: providerId.value,
+      content: text,
+      candidates: cands,
+    })
+    if (res.ok && res.data?.duplicates?.length) {
+      duplicates.value = res.data.duplicates
+    }
+  } catch {
+    // 相似度检测失败不阻塞建议
+    duplicates.value = []
+  } finally {
+    dupChecking.value = false
   }
 }
 
@@ -53,6 +89,8 @@ async function analyze() {
   loading.value = true
   error.value = ''
   suggestion.value = null
+  // 并行：建议 + 相似度检测
+  checkDuplicates(text)
   try {
     const res = await suggestClipboard({
       providerId: providerId.value,
@@ -142,6 +180,26 @@ function applyTags() {
         <!-- 错误 -->
         <div v-else-if="error" class="ai-suggest-body ai-suggest-error">
           <span>{{ error }}</span>
+        </div>
+
+        <!-- 语义相似度检测（#236）：提示与已有条目重复 -->
+        <div v-else-if="dupChecking" class="ai-suggest-body ai-suggest-dup-row">
+          <Loader2 :size="13" class="animate-spin" />
+          <span>{{ t('ai_suggest_dup_checking') || '正在检测重复内容…' }}</span>
+        </div>
+        <div v-else-if="duplicates.length" class="ai-suggest-body ai-suggest-dup">
+          <div class="ai-suggest-dup-head">
+            <CopyX :size="13" class="ai-suggest-dup-icon" />
+            <span class="ai-suggest-dup-title">
+              {{ t('ai_suggest_dup_found', { n: duplicates.length }) || `发现 ${duplicates.length} 条可能重复的条目` }}
+            </span>
+          </div>
+          <div v-for="d in duplicates" :key="d.id" class="ai-suggest-dup-item">
+            <span class="ai-suggest-dup-degree" :class="d.degree === 'high' ? 'ai-suggest-dup-degree--high' : ''">
+              {{ d.degree === 'high' ? (t('ai_suggest_dup_high') || '高') : (t('ai_suggest_dup_medium') || '中') }}
+            </span>
+            <span class="ai-suggest-dup-reason">{{ d.reason }}</span>
+          </div>
         </div>
 
         <!-- 建议内容 -->
@@ -239,6 +297,52 @@ function applyTags() {
 }
 .ai-suggest-error {
   color: var(--danger, #ef4444);
+}
+.ai-suggest-dup {
+  border-left: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.06);
+  border-radius: 6px;
+}
+.ai-suggest-dup-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+.ai-suggest-dup-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: #b45309;
+}
+.ai-suggest-dup-icon { flex-shrink: 0; }
+.ai-suggest-dup-title { font-size: 12px; }
+.ai-suggest-dup-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.ai-suggest-dup-degree {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+.ai-suggest-dup-degree--high {
+  background: rgba(245, 158, 11, 0.18);
+  color: #b45309;
+}
+.ai-suggest-dup-reason {
+  line-height: 1.5;
+  word-break: break-word;
 }
 .ai-suggest-row {
   display: flex;

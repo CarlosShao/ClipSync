@@ -118,6 +118,8 @@ function toggleFilterPanel() {
 const suggestOpen = ref(false)
 const suggestContent = ref('')
 const suggestCollectionNames = ref<string[]>([])
+// 语义相似度检测候选（#236）
+const suggestCandidates = ref<import('@/api/ai').SimilarityCandidate[]>([])
 // 当前被建议的条目（用于一键收藏/归档/清理）
 const suggestItem = ref<ClipItem | null>(null)
 
@@ -138,6 +140,11 @@ function openAiSuggest() {
   } catch {
     suggestCollectionNames.value = []
   }
+  // 语义重复检测候选（#236）：最近 10 条非当前文本条目
+  suggestCandidates.value = clip.items.value
+    .filter((i) => i.type === 'text' && i.id !== suggestItem.value?.id && (i.content || i.preview || '').trim())
+    .slice(0, 10)
+    .map((i) => ({ id: i.id, text: (i.content || i.preview || '').slice(0, 200) }))
   suggestOpen.value = true
 }
 
@@ -413,6 +420,7 @@ watch(
       :open="suggestOpen"
       :content="suggestContent"
       :collections="suggestCollectionNames"
+      :candidates="suggestCandidates"
       @close="onSuggestClose"
       @apply-favorite="onSuggestFavorite"
       @apply-archive="onSuggestArchive"

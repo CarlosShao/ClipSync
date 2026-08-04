@@ -331,6 +331,92 @@ router.post('/summarize', apiLimiter, async (req, res) => {
   }
 })
 
+// POST /api/ai/similarity - 语义相似度检测（任务 #236）：
+// 判断一段内容与候选条目中哪些"语义重复"（改写/同义/部分重叠），
+// 输出命中列表 + 原因。非流式，供前端选中条目后提示重复。
+router.post('/similarity', apiLimiter, async (req, res) => {
+  try {
+    const { providerId, content, candidates = [] } = req.body || {}
+    if (!providerId) return res.status(400).json({ error: 'providerId is required' })
+    if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content is required' })
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      return res.json({ duplicates: [], checked: 0 })
+    }
+    // 最多比对 10 条候选，避免一次调用消耗过多 token
+    const limited = candidates
+      .filter((c) => c && typeof c.id === 'string' && typeof c.text === 'string' && c.text.trim())
+      .slice(0, 10)
+      .map((c) => ({ id: c.id.slice(0, 64), text: c.text.slice(0, 200) }))
+    if (limited.length === 0) return res.json({ duplicates: [], checked: 0 })
+
+    const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found' })
+    const providerRow = result.rows[0]
+    if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
+
+    const apiKey = decrypt(providerRow.api_key_encrypted)
+    const truncated = content.slice(0, 4000)
+
+    const messages = [
+      {
+        role: 'system',
+        content:
+          '你是剪贴板管理助手，负责判断新复制的内容是否与已有剪贴板条目"语义重复"。' +
+          '请以 JSON 数组输出（不要 markdown 代码块、不要多余文字）：\n' +
+          '[{"id": "<候选id>", "reason": "<一句话说明为什么重复>", "degree": "high"|"medium"}]\n' +
+          '判断规则：\n' +
+          '- 语义重复：意思相同或高度相近（包括改写、同义、翻译、内容大段重合），即使文字不完全一样\n' +
+          '- 只输出确实重复的候选；不重复则不输出该条\n' +
+          '- degree: high(基本同一内容) / medium(部分重叠或相关)' +
+          '\n候选条目如下（id: 文本）：\n' +
+          limited.map((c) => `${c.id}: ${c.text}`).join('\n'),
+      },
+      { role: 'user', content: truncated },
+    ]
+
+    const { finalContent } = await runChatLoop({
+      messages,
+      options: { temperature: 0.1, max_tokens: 300 },
+      providerRow,
+      apiKey,
+      tools: [],
+      userId: req.userId,
+      sendDelta: () => {},
+      role: 'user',
+    })
+
+    const raw = (finalContent || '').trim()
+    let jsonStr = raw
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
+    if (fenced) jsonStr = fenced[1].trim()
+    else {
+      const arrStart = raw.indexOf('[')
+      const arrEnd = raw.lastIndexOf(']')
+      if (arrStart >= 0 && arrEnd > arrStart) jsonStr = raw.slice(arrStart, arrEnd + 1)
+    }
+    let list = null
+    try {
+      list = JSON.parse(jsonStr)
+    } catch {
+      list = null
+    }
+    const validIds = new Set(limited.map((c) => c.id))
+    const duplicates = Array.isArray(list)
+      ? list
+          .filter((d) => d && typeof d.id === 'string' && validIds.has(d.id))
+          .map((d) => ({
+            id: d.id,
+            reason: String(d.reason || '').slice(0, 200),
+            degree: d.degree === 'high' ? 'high' : 'medium',
+          }))
+      : []
+    return res.json({ duplicates, checked: limited.length })
+  } catch (err) {
+    logger.error('[AI] similarity error:', err)
+    res.status(500).json({ error: 'Similarity check failed', detail: err.message })
+  }
+})
+
 // POST /api/ai/suggest - 主动建议（任务 #230）：根据剪贴板内容给出"是否值得收藏 /
 // 建议分类 / 建议清理"的结构化建议。非流式，供前端选中条目后展示 AI 建议。
 router.post('/suggest', apiLimiter, async (req, res) => {

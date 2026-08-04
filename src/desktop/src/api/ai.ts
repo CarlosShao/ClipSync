@@ -535,6 +535,25 @@ export function suggestClipboard(params: { providerId: string; content: string; 
   return api<SuggestResult>('POST', '/api/ai/suggest', params)
 }
 
+// 语义相似度检测（#236）：判断内容与候选条目哪些语义重复
+export interface SimilarityCandidate {
+  id: string
+  text: string
+}
+export interface DuplicateHit {
+  id: string
+  reason: string
+  degree: 'high' | 'medium'
+}
+export interface SimilarityResult {
+  duplicates: DuplicateHit[]
+  checked: number
+}
+
+export function similarityCheck(params: { providerId: string; content: string; candidates: SimilarityCandidate[] }) {
+  return api<SimilarityResult>('POST', '/api/ai/similarity', params)
+}
+
 // 聊天历史关键词搜索（#231）：在会话列表提供历史消息搜索，返回命中的对话+片段+位置
 export interface ConversationSearchHit {
   conversationId: string
