@@ -10,6 +10,7 @@ import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { runOcrForClip } from '../utils/aiOcr.js';
 import { hashImageStored } from '../utils/imageHash.js';
+import { runWorkflowRulesForItem } from '../services/workflowEngine.js';
 
 const router = Router();
 
@@ -438,6 +439,9 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
   let deviceName = 'Unknown device';
   let srcDeviceId = null;
   let shouldBroadcast = false;
+  // 供提交后副作用区使用的数据（工作流规则引擎需要 preview/metadata）
+  let savedPreview = '';
+  let savedMetadata = {};
   try {
     const { sourceDeviceId, contentType, contentEncrypted, contentPreview, contentSize, metadata, expiresAt } = req.body;
 
@@ -464,6 +468,9 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
 
     // 清理预览内容 — 只做截断，不做 HTML 转义（contentPreview 用于前端展示，非 HTML 执行）
     const cleanPreview = contentPreview ? String(contentPreview).substring(0, 5000) : '';
+    // 保存到外层，供提交后副作用区（工作流规则引擎 #237）使用
+    savedPreview = cleanPreview;
+    savedMetadata = metadata || {};
 
     // 非文件类型按密文哈希去重；文件类型用路径去重（content_hash 留空）
     const isFile = detectedType === 'file';
@@ -621,6 +628,18 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
       logger.warn('[OCR] background task error:', { clipId: item.id, error: e.message });
     });
   }
+
+  // 工作流规则引擎（任务 #237）：「当…时自动…」。异步执行，失败静默，不阻塞写入。
+  // 规则动作可能修改 is_favorite/archived/metadata，故在响应体组装后、返回前并行触发；
+  // 前端通过 broadcast 事件（new_clipboard）刷新列表，动作结果随下次拉取可见。
+  runWorkflowRulesForItem(req.userId, {
+    id: item.id,
+    contentType: item.content_type,
+    preview: savedPreview,
+    metadata: savedMetadata,
+  }).catch((e) => {
+    logger.warn('[Workflow] background engine error:', { clipId: item.id, error: e.message });
+  });
 
   res.status(201).json({
     id: item.id,

@@ -47,6 +47,7 @@ import searchHistoryRoutes from './routes/searchHistory.js';
 import aiProvidersRoutes from './routes/aiProviders.js';
 import aiChatRoutes from './routes/aiChat.js';
 import aiConversationsRoutes from './routes/aiConversations.js';
+import workflowRulesRoutes from './routes/workflowRules.js';
 import aiMemoriesRoutes from './routes/aiMemories.js';
 import aiSettingsRoutes from './routes/aiSettings.js';
 import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
@@ -442,6 +443,12 @@ app.use('/api/ai/conversations', authenticateToken, apiLimiter, csrfProtection, 
   req.userId = req.user.userId;
   next();
 }, aiConversationsRoutes);
+
+// 工作流规则引擎路由（任务 #237）：「当…时自动…」
+app.use('/api/workflow-rules', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, workflowRulesRoutes);
 
 // AI 长程记忆路由（单独子路径，避免与 /api/ai/conversations 的 / 与 /:id 冲突）
 app.use('/api/ai/memories', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
