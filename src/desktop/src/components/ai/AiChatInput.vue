@@ -5,7 +5,7 @@ import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import type { AiProvider } from '@/api/ai'
-import { Send, Square, Brain, ChevronDown, Settings2 } from 'lucide-vue-next'
+import { Send, Square, Brain, ChevronDown, Settings2, ListChecks, Languages, AlignLeft, HelpCircle } from 'lucide-vue-next'
 import type { ContextUsage, ChatImage } from '@/api/ai'
 import { sha256DataUrl } from '@/utils/hash'
 
@@ -37,6 +37,32 @@ const { t } = useI18n()
 
 const text = ref('')
 const activePopup = ref<string | null>(null)
+// 快捷指令：总结/翻译/格式化/解释。点击后把对应 prompt 填入输入框并发送。
+// 若输入框已有内容，则在末尾追加该指令（避免覆盖用户已写的内容）。
+const QUICK_ACTIONS = [
+  { key: 'summarize', icon: 'ListChecks', labelKey: 'ai_quick_summarize', promptKey: 'ai_quick_summarize_prompt' },
+  { key: 'translate', icon: 'Languages', labelKey: 'ai_quick_translate', promptKey: 'ai_quick_translate_prompt' },
+  { key: 'format', icon: 'AlignLeft', labelKey: 'ai_quick_format', promptKey: 'ai_quick_format_prompt' },
+  { key: 'explain', icon: 'HelpCircle', labelKey: 'ai_quick_explain', promptKey: 'ai_quick_explain_prompt' },
+] as const
+type QuickActionKey = (typeof QUICK_ACTIONS)[number]['key']
+// 动态解析 lucide 图标组件
+const QUICK_ICONS: Record<QuickActionKey, any> = {
+  summarize: ListChecks,
+  translate: Languages,
+  format: AlignLeft,
+  explain: HelpCircle,
+}
+const quickCanUse = computed(() => !props.disabled && !props.isStreaming && props.providers.length > 0 && !!props.selectedProviderId)
+function runQuickAction(action: (typeof QUICK_ACTIONS)[number]) {
+  if (!quickCanUse.value) return
+  const prompt = t(action.promptKey) || ''
+  if (!prompt) return
+  // 已有输入 → 追加换行指令；否则直接填入指令
+  const value = text.value.trim()
+  text.value = value ? `${value}\n\n${prompt}` : prompt
+  submit()
+}
 // 粘贴进输入框的截图（仅图片，不处理任意文件上传）
 const pastedImages = ref<ChatImage[]>([])
 
@@ -256,6 +282,20 @@ const usageCacheMissTokens = computed(() =>
 
 <template>
   <div class="ai-input-card" @click="closePopups">
+    <!-- 快捷指令行：总结/翻译/格式化/解释（一键填入对应 prompt 并发送） -->
+    <div class="ai-quick-actions">
+      <button
+        v-for="a in QUICK_ACTIONS"
+        :key="a.key"
+        class="ai-quick-btn"
+        :disabled="!quickCanUse"
+        @click="runQuickAction(a)"
+      >
+        <component :is="QUICK_ICONS[a.key]" :size="12" />
+        <span>{{ t(a.labelKey) }}</span>
+      </button>
+    </div>
+
     <!-- 文本输入区 -->
     <textarea
       v-model="text"
@@ -468,6 +508,36 @@ const usageCacheMissTokens = computed(() =>
 
 .ai-input-card:focus-within {
   border-color: var(--accent);
+}
+
+.ai-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 0;
+  flex-wrap: wrap;
+}
+.ai-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ai-quick-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.ai-quick-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .ai-textarea {
