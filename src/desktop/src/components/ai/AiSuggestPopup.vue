@@ -2,7 +2,7 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { getProviders, suggestClipboard, type ClipSuggestion } from '@/api/ai'
-import { Sparkles, X, Heart, Archive, Trash2, Loader2 } from 'lucide-vue-next'
+import { Sparkles, X, Heart, Archive, Trash2, Loader2, Tag } from 'lucide-vue-next'
 
 /**
  * AiSuggestPopup — 主动建议（#230）：选中剪贴板内容后，AI 主动给出
@@ -23,6 +23,8 @@ const emit = defineEmits<{
   'apply-archive': []
   /** 一键清理（删除） */
   'apply-cleanup': []
+  /** 应用智能标签（#235） */
+  'apply-tags': [tags: string[]]
 }>()
 const { t } = useI18n()
 
@@ -110,6 +112,11 @@ function applyAction() {
 function applyFavorite() {
   emit('apply-favorite')
 }
+
+function applyTags() {
+  if (!suggestion.value?.suggested_tags?.length) return
+  emit('apply-tags', suggestion.value.suggested_tags)
+}
 </script>
 
 <template>
@@ -170,6 +177,20 @@ function applyFavorite() {
               @click="applyAction"
             >
               {{ actionLabel }}
+            </button>
+          </div>
+
+          <!-- 智能标签（#235）：AI 推荐标签，一键应用 -->
+          <div v-if="suggestion.suggested_tags?.length" class="ai-suggest-row">
+            <Tag :size="13" class="ai-suggest-action-icon" />
+            <div class="ai-suggest-row-text">
+              <span class="ai-suggest-row-label">{{ t('ai_suggest_tags_label') || '推荐标签' }}</span>
+              <div class="ai-suggest-tags">
+                <span v-for="tag in suggestion.suggested_tags" :key="tag" class="ai-suggest-tag-chip">#{{ tag }}</span>
+              </div>
+            </div>
+            <button class="ai-suggest-btn ai-suggest-btn--primary" @click="applyTags">
+              <Tag :size="12" /> {{ t('ai_suggest_btn_tags') || '应用' }}
             </button>
           </div>
         </div>
@@ -273,4 +294,18 @@ function applyFavorite() {
   color: var(--danger, #ef4444);
 }
 .ai-suggest-btn--danger:hover { background: rgba(239, 68, 68, 0.08); }
+.ai-suggest-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ai-suggest-tag-chip {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
 </style>

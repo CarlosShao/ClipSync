@@ -359,13 +359,14 @@ router.post('/suggest', apiLimiter, async (req, res) => {
         content:
           '你是剪贴板管理助手，负责给用户剪贴板中的一段内容给出管理建议。' +
           '请以 JSON 对象输出（不要 markdown 代码块、不要多余文字），格式如下：\n' +
-          '{"worth_favorite": boolean, "reason": string, "suggested_collection": string|null, "action": "keep"|"archive"|"cleanup", "action_reason": string}\n' +
+          '{"worth_favorite": boolean, "reason": string, "suggested_collection": string|null, "action": "keep"|"archive"|"cleanup", "action_reason": string, "suggested_tags": string[]}\n' +
           '字段说明：\n' +
           '- worth_favorite: 内容是否值得收藏（重要、常用、可复用、有价值）\n' +
           '- reason: 一句话说明收藏/不收藏的理由\n' +
           '- suggested_collection: 若值得收藏，建议归入哪个收藏夹（从提供的收藏夹列表选，没有合适则 null）\n' +
-          '- action: 建议动作 keep(保留) / archive(归档) / cleanup(清理——临时性、一次性、敏感或过期内容)\n' +
-          '- action_reason: 建议动作的一句话理由' +
+          '- action: 建议动作 keep(保留) / archive(归档) / cleanup(清理——临时性、一次性、敏感或过期内容）\n' +
+          '- action_reason: 建议动作的一句话理由\n' +
+          '- suggested_tags: 推荐 2-5 个简洁中文标签（用于给该内容打标签，如 工作/代码/网址/密码/灵感 等，避免与内容本身重复的长句）' +
           collectionHint,
       },
       { role: 'user', content: truncated },
@@ -412,6 +413,13 @@ router.post('/suggest', apiLimiter, async (req, res) => {
       suggested_collection: typeof suggestion.suggested_collection === 'string' && suggestion.suggested_collection.trim() ? suggestion.suggested_collection.trim().slice(0, 60) : null,
       action: ['keep', 'archive', 'cleanup'].includes(suggestion.action) ? suggestion.action : 'keep',
       action_reason: String(suggestion.action_reason || '').slice(0, 300),
+      // 智能标签（#235）：推荐 2-5 个简洁标签
+      suggested_tags: Array.isArray(suggestion.suggested_tags)
+        ? suggestion.suggested_tags
+            .filter((x) => typeof x === 'string' && x.trim())
+            .map((x) => x.trim().slice(0, 20))
+            .slice(0, 5)
+        : [],
     }
     return res.json({ suggestion: clean, raw: undefined })
   } catch (err) {

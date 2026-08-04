@@ -521,6 +521,8 @@ export interface ClipSuggestion {
   suggested_collection: string | null
   action: 'keep' | 'archive' | 'cleanup'
   action_reason: string
+  /** 智能标签（#235）：推荐 2-5 个简洁标签 */
+  suggested_tags: string[]
 }
 
 export interface SuggestResult {

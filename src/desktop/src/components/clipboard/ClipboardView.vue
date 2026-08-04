@@ -27,6 +27,7 @@ import ClipboardFilterPanel from '@/components/clipboard/ClipboardFilterPanel.vu
 import ClipboardTableRow from '@/components/clipboard/ClipboardTableRow.vue'
 import ClipboardContextMenu from '@/components/clipboard/ClipboardContextMenu.vue'
 import AiSuggestPopup from '@/components/ai/AiSuggestPopup.vue'
+import { api } from '@/api/client'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -165,6 +166,24 @@ function onSuggestCleanup() {
   // 复用单条删除流程（含确认框 + 敏感条目保护），避免绕过安全校验
   onSuggestClose()
   ops.handleSingleDelete(item)
+}
+
+// 应用 AI 推荐的标签（#235）：PUT /api/clipboard/:id 写 metadata.tags，并同步本地 item
+async function onSuggestTags(tags: string[]) {
+  if (!suggestItem.value || !tags.length) return
+  const item = suggestItem.value
+  const ok = await api('PUT', `/api/clipboard/${item.id}`, { metadata: { tags } })
+  if (ok.ok) {
+    // 同步本地 ClipItem（tags 存于 metadata，ClipItem 从 metadata 读 tags）
+    if (item.metadata) item.metadata.tags = tags
+    else item.metadata = { tags }
+    // 如果列表从 metadata 重建 tags 字段，也同步
+    ;(item as any).tags = tags
+    toast.show(t('ai_suggest_tags_applied', { n: tags.length }) || `已应用 ${tags.length} 个标签`, 'success')
+    onSuggestClose()
+  } else {
+    toast.show(ok.error || '应用标签失败', 'error')
+  }
 }
 
 const filteredItems = computed(() => clip.filteredItems.value)
@@ -398,6 +417,7 @@ watch(
       @apply-favorite="onSuggestFavorite"
       @apply-archive="onSuggestArchive"
       @apply-cleanup="onSuggestCleanup"
+      @apply-tags="onSuggestTags"
     />
   </div>
 </template>
