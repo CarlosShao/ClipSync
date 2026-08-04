@@ -36,7 +36,8 @@ const formSelectedModels = ref<string[]>([])
 // 上游刷新得到的完整模型列表（用于点选）
 const formModels = ref<string[]>([])
 const formIsDefault = ref(false)
-const formContextWindow = ref<number | null>(null)
+// 上下文窗口用字符串承载（兼容 type=number 的 Input v-model），提交时再转 number
+const formContextWindow = ref<string>('')
 const saving = ref(false)
 const refreshingModels = ref(false)
 const formError = ref('')
@@ -86,7 +87,7 @@ function resetForm() {
   formSelectedModels.value = []
   formModels.value = []
   formIsDefault.value = false
-  formContextWindow.value = null
+  formContextWindow.value = ''
   formError.value = ''
 }
 
@@ -99,7 +100,7 @@ function startEdit(p: AiProvider) {
   formSelectedModels.value = Array.isArray(p.models) && p.models.length > 0 ? [...p.models] : [p.model]
   formModels.value = Array.isArray(p.models) ? [...p.models] : []
   formIsDefault.value = p.is_default
-  formContextWindow.value = p.context_window ?? null
+  formContextWindow.value = p.context_window != null ? String(p.context_window) : ''
   formError.value = ''
 }
 
