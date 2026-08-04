@@ -55,15 +55,29 @@ export function useAiChat() {
     createdAt: string
     preview: string
   } | null>(null)
-  // 上下文自动压缩提示：上下文占满阈值后后端自动压缩历史，下发事件用于展示提示横幅
-  const contextCompressedNotice = ref<{
-    removedMessages: number
-    summaryTokens: number
-    beforeTokens: number
-    contextWindow: number
-    percentBefore: number
-    at: number
+  // 上下文压缩进度提示（手动 /compact 与后端自动压缩共用）：
+  // 分割线样式，压缩中文字带扫光动画；完成后自动消失。
+  const compressProgress = ref<{
+    status: 'compressing' | 'done' | 'too_short' | 'failed'
+    source: 'manual' | 'auto'
+    removed?: number
+    savedTokens?: number
+    error?: string
   } | null>(null)
+  let compressProgressTimer: number | undefined
+  function setCompressProgress(p: typeof compressProgress.value) {
+    compressProgress.value = p
+    if (compressProgressTimer) {
+      window.clearTimeout(compressProgressTimer)
+      compressProgressTimer = undefined
+    }
+    // 终态提示停留 5 秒后自动消失（压缩中状态由事件驱动结束）
+    if (p && p.status !== 'compressing') {
+      compressProgressTimer = window.setTimeout(() => {
+        compressProgress.value = null
+      }, 5000)
+    }
+  }
   const abortCtrl = shallowRef<AbortController | null>(null)
   const initialized = ref(false)
   // 长程记忆模式：开启时把用户记忆注入系统提示词，让 AI 跨会话“记得”用户
@@ -240,7 +254,7 @@ export function useAiChat() {
     if (!text || isStreaming.value) return
     // 新一轮发送：清空上一次的图片重复提示与上下文压缩提示
     duplicateImageNotice.value = null
-    contextCompressedNotice.value = null
+    compressProgress.value = null
     if (!selectedProviderId.value) {
       error.value = 'ai_no_provider_selected'
       return
@@ -544,16 +558,19 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
               preview: mm.preview,
             }
           }
-          // 上下文自动压缩（上下文管理）：后端在上下文逼近上限时自动压缩较早历史，下发事件展示横幅
+          // 上下文自动压缩（上下文管理）：后端在上下文逼近上限时自动压缩较早历史。
+          // 压缩期间下发 context_compress_started（显示"上下文压缩中"扫光分割线），
+          // 压缩完成后下发 context_compressed（切换为"压缩已完成"）。任务本身不中断。
+          if (mm?.type === 'context_compress_started') {
+            setCompressProgress({ status: 'compressing', source: 'auto' })
+          }
           if (mm?.type === 'context_compressed') {
-            contextCompressedNotice.value = {
-              removedMessages: mm.removedMessages,
-              summaryTokens: mm.summaryTokens || 0,
-              beforeTokens: mm.beforeTokens || 0,
-              contextWindow: mm.contextWindow || 0,
-              percentBefore: mm.percentBefore || 0,
-              at: Date.now(),
-            }
+            setCompressProgress({
+              status: 'done',
+              source: 'auto',
+              removed: mm.removedMessages || 0,
+              savedTokens: (mm.beforeTokens || 0) - (mm.afterTokens || 0),
+            })
           }
 
           // 有 agentId 的增量属于某个子代理 → 路由到对应卡片；否则归到主气泡
@@ -661,34 +678,23 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
       error.value = 'ai_compact_no_active'
       return
     }
-    // 让 UI 立刻看到"用户在执行 /compact"
-    messages.value.push({ role: 'user', content: '/compact' })
-    const loadingIdx = messages.value.length
-    messages.value.push({ role: 'system', content: 'ai_compact_loading' })
     error.value = ''
-    isStreaming.value = true // 锁住 input，避免用户在压缩时继续输入
+    // 分割线提示：压缩中（扫光动画）
+    setCompressProgress({ status: 'compressing', source: 'manual' })
     try {
       const res = await conv.compact(conv.currentConversationId.value, {
         providerId: selectedProviderId.value,
       })
       if (res.ok) {
-        // 替换"正在压缩"那行 system 消息为成功摘要
         const removed = res.removed || 0
         const saved = res.savedTokens || 0
-        const summaryTokens = res.summaryTokens || 0
         const after = res.afterTokens || 0
-        messages.value[loadingIdx] = {
-          role: 'system',
-          content: `ai_compact_success:${removed}:${saved}`,
-          systemMeta: {
-            kind: 'compact_success',
-            removed,
-            savedTokens: saved,
-            summaryTokens,
-            afterTokens: after,
-            summaryPreview: res.summaryPreview || '',
-          },
-        }
+        setCompressProgress({
+          status: 'done',
+          source: 'manual',
+          removed,
+          savedTokens: saved,
+        })
         // 刷新上下文用量（用估算后值）—— 让圆环/面板立即显示压缩效果
         const conv2 = conv.currentConversation.value
         if (conv2) {
@@ -709,26 +715,12 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
           }
         }
       } else if (res.reason === 'too_short') {
-        messages.value[loadingIdx] = {
-          role: 'system',
-          content: 'ai_compact_too_short',
-          systemMeta: { kind: 'compact_too_short' },
-        }
+        setCompressProgress({ status: 'too_short', source: 'manual' })
       } else {
-        messages.value[loadingIdx] = {
-          role: 'system',
-          content: res.error || 'compact failed',
-          systemMeta: { kind: 'compact_failed', reason: res.reason || 'failed' },
-        }
+        setCompressProgress({ status: 'failed', source: 'manual', error: res.error || 'compact failed' })
       }
     } catch (e) {
-      messages.value[loadingIdx] = {
-        role: 'system',
-        content: e instanceof Error ? e.message : 'compact failed',
-        systemMeta: { kind: 'compact_failed' },
-      }
-    } finally {
-      isStreaming.value = false
+      setCompressProgress({ status: 'failed', source: 'manual', error: e instanceof Error ? e.message : 'compact failed' })
     }
   }
 
@@ -743,7 +735,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
     error,
     contextUsage,
     duplicateImageNotice,
-    contextCompressedNotice,
+    compressProgress,
     hasProviders,
     canSend,
     providerSupportsCache,

@@ -354,8 +354,19 @@ export async function runChatLoop({
     else currentMessages.unshift(summaryMsg)
   }
 
+  // ===== 异步自动压缩状态 =====
+  // 上下文超限时，压缩在后台进行（不阻塞当前流式输出，用户任务"无感"继续，类似 WorkBuddy）；
+  // 压缩完成后，把压缩后的 messages 应用到后续轮次。
+  let compressInFlight = false
+  let compressResult = null // { messages, estimatedTokens, removed, summaryTokens }
 
   for (let round = 0; round < maxRounds; round++) {
+    // 若上一轮触发的后台压缩已完成，则应用压缩结果（缩小上下文继续后续轮次）
+    if (compressResult) {
+      currentMessages = compressResult.messages
+      lastPromptTokens = compressResult.estimatedTokens
+      compressResult = null
+    }
     const chatOptions = { ...options }
 
     // thinking 支持：仅 Anthropic 协议需要显式 thinking 参数（OpenAI 兼容族由 reasoning_content 自动下发）
@@ -370,11 +381,14 @@ export async function runChatLoop({
       chatOptions.tool_choice = 'auto'
     }
 
-    // ===== 上下文自动压缩门控 =====
+    // ===== 上下文自动压缩门控（异步，不阻塞当前任务）=====
     // 当估计占用 ≥ 上下文窗口的 CONTEXT_COMPRESS_THRESHOLD 时，把较早历史压缩成摘要，
     // 仅保留 system 与最近几轮（与主流 agent 工具行为一致）。优先用上一轮真实 prompt_tokens
     // 估计；首轮用内容估算兜底。
-    if (allowCompress !== false) {
+    //
+    // 关键行为：压缩在后台异步执行（不 await），当前轮次继续按原 messages 流式输出，
+    // 用户任务"无感"继续；压缩完成后把结果应用到后续轮次（见 for 循环开头）。
+    if (allowCompress !== false && !compressInFlight) {
       const ctxWindow = getContextWindow(providerRow.model, providerRow.context_window)
       const estTokens = lastPromptTokens > 0 ? lastPromptTokens : estimateMessagesTokens(currentMessages)
       // 已经注入的前置摘要视作"已压缩"状态，不再次触发压缩（避免重复摘要）
@@ -382,29 +396,47 @@ export async function runChatLoop({
         (m) => m.role === 'system' && typeof m.content === 'string' && m.content.includes('先前对话要点摘要（来自自动压缩'),
       )
       if (estTokens > Math.floor(ctxWindow * CONTEXT_COMPRESS_THRESHOLD) && !hasPriorSummary) {
-        try {
-          const res = await compressConversationHistory(currentMessages, {
-            providerRow, apiKey, userId, abortSignal, role, conversationId,
+        compressInFlight = true
+        // 通知前端显示"上下文压缩中"过渡提示（分割线 + 扫光动画）
+        if (sendDelta) {
+          sendDelta({
+            meta: {
+              type: 'context_compress_started',
+              beforeTokens: estTokens,
+              contextWindow: ctxWindow,
+              percentBefore: Math.round((estTokens / ctxWindow) * 100),
+            },
           })
-          if (res) {
-            currentMessages = res.messages
-            lastPromptTokens = res.estimatedTokens
-            if (sendDelta) {
-              sendDelta({
-                meta: {
-                  type: 'context_compressed',
-                  removedMessages: res.removed,
-                  summaryTokens: res.summaryTokens,
-                  beforeTokens: estTokens,
-                  contextWindow: ctxWindow,
-                  percentBefore: Math.round((estTokens / ctxWindow) * 100),
-                },
-              })
-            }
-          }
-        } catch (e) {
-          logger.warn('[AI] context auto-compress skipped:', e.message)
         }
+        // 快照当前 messages（避免压缩期间 currentMessages 被工具结果继续追加导致数据错乱）
+        const snapshot = currentMessages.map((m) => ({ ...m, tool_calls: m.tool_calls ? [...m.tool_calls] : m.tool_calls }))
+        // 后台执行：不 await，任务继续流式输出
+        compressConversationHistory(snapshot, {
+          providerRow, apiKey, userId, abortSignal, role, conversationId,
+        })
+          .then((res) => {
+            compressInFlight = false
+            if (res) {
+              compressResult = res
+              if (sendDelta) {
+                sendDelta({
+                  meta: {
+                    type: 'context_compressed',
+                    removedMessages: res.removed,
+                    summaryTokens: res.summaryTokens,
+                    beforeTokens: estTokens,
+                    afterTokens: res.estimatedTokens,
+                    contextWindow: ctxWindow,
+                    percentBefore: Math.round((estTokens / ctxWindow) * 100),
+                  },
+                })
+              }
+            }
+          })
+          .catch((e) => {
+            compressInFlight = false
+            logger.warn('[AI] context auto-compress skipped:', e.message)
+          })
       }
     }
 

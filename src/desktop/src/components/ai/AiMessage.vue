@@ -203,7 +203,7 @@ function roleLabel() {
           </template>
           <template v-else-if="message.systemMeta?.kind === 'compact_success'">
             <span class="ai-msg-system-icon">✓</span>
-            <span>{{ t('ai_compact_success', { removed: message.systemMeta.removed, savedTokens: message.systemMeta.savedTokens }) }}</span>
+            <span>{{ t('ai_compact_success', { removed: message.systemMeta.removed ?? 0, savedTokens: message.systemMeta.savedTokens ?? 0 }) }}</span>
             <details v-if="message.systemMeta.summaryPreview" class="ai-msg-system-preview">
               <summary>{{ t('ai_compact_view_summary') || '查看压缩摘要' }}</summary>
               <pre>{{ message.systemMeta.summaryPreview }}{{ message.systemMeta.summaryPreview.length >= 600 ? '\n…' : '' }}</pre>

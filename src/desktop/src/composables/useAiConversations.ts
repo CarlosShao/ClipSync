@@ -126,10 +126,11 @@ export function useAiConversations() {
    * （前端 UI 看不到），下次发消息时 runChatLoop 入口会自动注入。
    * @returns {Promise<CompactResult>}
    */
-  async function compact(id: string, opts?: { providerId?: string }) {
+  async function compact(id: string, opts?: { providerId?: string }): Promise<CompactResult> {
     if (!id) return { ok: false, reason: 'not_found', error: 'no conversation' }
     const res = await compactConversation(id, opts || {})
-    return res.ok && res.data ? res.data : { ok: false, reason: 'failed', error: res.error || 'compact failed' }
+    if (res.ok && res.data) return res.data
+    return { ok: false, reason: 'failed', error: res.error || 'compact failed' }
   }
 
   async function saveCurrent(messages: ChatMessage[]) {

@@ -42,6 +42,16 @@ export interface ChatMessage {
   tool_call_id?: string // tool 角色消息关联的调用 id
   isError?: boolean // 标记该助手消息是否因出错而生成（不进入上游历史）
   agentRuns?: AgentRun[] // 多代理并行模式：本次回答中各子代理的运行状态卡片
+  /** 前端内部附带的 system 消息元信息（如手动压缩命令的 loading/成功卡片） */
+  systemMeta?: {
+    kind?: string
+    removed?: number
+    savedTokens?: number
+    summaryTokens?: number
+    afterTokens?: number
+    summaryPreview?: string
+    reason?: string
+  }
 }
 
 export interface ToolCall {

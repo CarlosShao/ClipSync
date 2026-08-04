@@ -10,6 +10,7 @@ import AiMessageList from './AiMessageList.vue'
 import AiChatInput from './AiChatInput.vue'
 import AiConversationList from './AiConversationList.vue'
 import AiMemoryPanel from './AiMemoryPanel.vue'
+import AiCompressProgress from './AiCompressProgress.vue'
 import { X, Bot, Plus, MessageSquare, Workflow, History, Brain, ShieldCheck, UserCog, User, CopyCheck, Package } from 'lucide-vue-next'
 
 const props = defineProps<{ open: boolean }>()
@@ -27,9 +28,11 @@ const {
   error,
   contextUsage,
   duplicateImageNotice,
-  contextCompressedNotice,
+  compressProgress,
   hasProviders,
   canSend,
+  providerSupportsCache,
+  manualCompact,
   memoryEnabled,
   setMemoryEnabled,
   init,
@@ -275,14 +278,8 @@ function formatDupTime(iso?: string): string {
             </Button>
           </div>
 
-          <!-- 上下文自动压缩提示：后端在上下文逼近上限时自动压缩较早历史 -->
-          <div v-if="contextCompressedNotice" class="ai-dup-image-bar ai-compress-bar">
-            <CopyCheck :size="15" class="ai-dup-image-icon" />
-            <span class="ai-dup-image-text">{{ t('ai_context_compress_notice', { percentBefore: contextCompressedNotice.percentBefore, removedMessages: contextCompressedNotice.removedMessages }) }}</span>
-            <Button variant="ghost" size="icon-sm" :title="t('close_btn')" @click="contextCompressedNotice = null">
-              <X :size="14" />
-            </Button>
-          </div>
+          <!-- 上下文压缩进度：手动 /compact 与后端自动压缩共用（分割线 + 扫光动画） -->
+          <AiCompressProgress v-if="compressProgress" :progress="compressProgress" />
 
           <div v-if="error" class="ai-error-bar">{{ error }}</div>
 
