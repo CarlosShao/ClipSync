@@ -102,6 +102,15 @@ watch(
 // 历史面板：改为 Popover 覆盖层（#216），不占布局宽度
 const historyOpen = ref(false)
 
+// 历史消息搜索定位（#231）：打开对话后滚动并高亮到命中消息
+const msgListRef = ref<InstanceType<typeof AiMessageList> | null>(null)
+function onLocateMessage(hit: import('@/api/ai').ConversationSearchHit) {
+  // 等对话加载完成后再定位（select 已触发 loadConversation）
+  setTimeout(() => {
+    msgListRef.value?.scrollToPos(hit.posInConv, hit.snippet.slice(0, 40))
+  }, 150)
+}
+
 // 可拖拽面板宽度（#215）：固定右侧，拖左边缘调宽，持久化到 localStorage
 const { width, startDrag } = useResizablePanel({
   storageKey: 'ai-sidebar-width',
@@ -227,6 +236,7 @@ function formatDupTime(iso?: string): string {
                 @select="(id) => { onSelectConversation(id); historyOpen = false }"
                 @rename="onRename"
                 @delete="onDelete"
+                @locate="onLocateMessage"
               />
             </PopoverContent>
           </Popover>
@@ -297,7 +307,7 @@ function formatDupTime(iso?: string): string {
             </div>
           </div>
 
-          <AiMessageList :messages="messages" :is-streaming="isStreaming" />
+          <AiMessageList ref="msgListRef" :messages="messages" :is-streaming="isStreaming" />
 
           <!-- 图片重复感知（#225）：本次发送的图片已在历史剪贴板中存在 -->
           <div v-if="duplicateImageNotice" class="ai-dup-image-bar">

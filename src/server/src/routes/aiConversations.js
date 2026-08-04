@@ -34,6 +34,68 @@ router.get('/', apiLimiter, async (req, res) => {
   }
 })
 
+// GET /api/ai/conversations/search?q=xxx - 在当前用户所有对话中搜索历史消息片段（#231）
+// 排除 system 角色与"上下文压缩摘要"（metadata.is_context_summary=true），
+// 返回命中的对话 + 匹配片段 + 消息在对话中的位置索引（用于前端定位跳转）。
+router.get('/search', apiLimiter, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim()
+    if (!q) return res.json({ items: [], count: 0 })
+    if (q.length > 100) return res.status(400).json({ error: 'Query too long' })
+    const like = `%${q.replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`
+    const result = await pool.query(
+      `WITH ranked AS (
+         SELECT
+           c.id AS conversation_id,
+           c.title AS conversation_title,
+           m.id AS message_id,
+           m.role,
+           m.content,
+           m.created_at AS message_created_at,
+           ROW_NUMBER() OVER (PARTITION BY c.id ORDER BY m.created_at ASC) AS pos_in_conv,
+           (SELECT COUNT(*)::int FROM ai_messages mm WHERE mm.conversation_id = c.id) AS total_in_conv
+         FROM ai_messages m
+         JOIN ai_conversations c ON c.id = m.conversation_id
+         WHERE c.user_id = $1
+           AND m.role <> 'system'
+           AND COALESCE(m.metadata->>'is_context_summary', 'false') <> 'true'
+           AND m.content ILIKE $2 ESCAPE '\\'
+       )
+       SELECT
+         conversation_id, conversation_title, message_id, role, content, pos_in_conv, total_in_conv, message_created_at
+       FROM ranked
+       ORDER BY message_created_at DESC
+       LIMIT 50`,
+      [req.userId, like]
+    )
+    // 生成片段：截取关键词附近 ±60 字符，高亮关键词（前端处理高亮）
+    const items = result.rows.map((r) => {
+      const idx = r.content.toLowerCase().indexOf(q.toLowerCase())
+      let snippet = r.content
+      if (idx >= 0) {
+        const start = Math.max(0, idx - 60)
+        const end = Math.min(r.content.length, idx + q.length + 60)
+        snippet = r.content.slice(start, end)
+      }
+      return {
+        conversationId: r.conversation_id,
+        conversationTitle: r.conversation_title,
+        messageId: r.message_id,
+        role: r.role,
+        snippet: snippet.length > 180 ? `${snippet.slice(0, 180)}…` : snippet,
+        snippetStart: idx >= 0 ? Math.max(0, idx - 60) : 0,
+        posInConv: r.pos_in_conv,
+        totalInConv: r.total_in_conv,
+        messageCreatedAt: r.message_created_at,
+      }
+    })
+    res.json({ items, count: items.length, query: q })
+  } catch (err) {
+    logger.error('Search AI conversations error:', err)
+    res.status(500).json({ error: 'Failed to search conversations' })
+  }
+})
+
 // POST /api/ai/conversations - 创建新对话
 router.post('/', apiLimiter, async (req, res) => {
   try {

@@ -2,8 +2,9 @@
 import { ref, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
-import type { AiConversation } from '@/api/ai'
-import { MessageSquare, Trash2, Check, X, Pencil } from 'lucide-vue-next'
+import type { AiConversation, ConversationSearchHit } from '@/api/ai'
+import { searchConversationHistory } from '@/api/ai'
+import { MessageSquare, Trash2, Check, X, Pencil, Search, XCircle, MessageSquareText } from 'lucide-vue-next'
 
 const props = defineProps<{
   conversations: AiConversation[]
@@ -15,6 +16,8 @@ const emit = defineEmits<{
   select: [id: string]
   delete: [id: string]
   rename: [id: string, title: string]
+  /** 命中搜索片段后：打开该对话并定位到对应消息片段 */
+  locate: [hit: ConversationSearchHit]
 }>()
 
 const { t } = useI18n()
@@ -31,6 +34,64 @@ function formatTime(iso: string) {
     return `${pad(d.getHours())}:${pad(d.getMinutes())}`
   }
   return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+// === 历史消息关键词搜索（#231）===
+const searchQuery = ref('')
+const searching = ref(false)
+const searchError = ref('')
+const searchHits = ref<ConversationSearchHit[]>([])
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+async function runSearch(q: string) {
+  const keyword = q.trim()
+  if (!keyword) {
+    searchHits.value = []
+    searchError.value = ''
+    return
+  }
+  searching.value = true
+  searchError.value = ''
+  try {
+    const res = await searchConversationHistory(keyword)
+    if (res.ok && res.data) {
+      searchHits.value = res.data.items || []
+    } else {
+      searchHits.value = []
+      searchError.value = res.error || '搜索失败'
+    }
+  } catch (e: any) {
+    searchHits.value = []
+    searchError.value = e?.message || '搜索失败'
+  } finally {
+    searching.value = false
+  }
+}
+
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => runSearch(searchQuery.value), 350)
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+  searchHits.value = []
+  searchError.value = ''
+  if (searchTimer) clearTimeout(searchTimer)
+}
+
+function onHitClick(hit: ConversationSearchHit) {
+  emit('select', hit.conversationId)
+  // 定位到消息片段（父级滚动到对应消息）
+  emit('locate', hit)
+}
+
+// 高亮片段中的关键词
+function highlightSnippet(snippet: string, keyword: string): string {
+  const k = keyword.trim()
+  if (!k) return snippet
+  const esc = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return snippet.replace(new RegExp(`(${esc})`, 'gi'), '\u0001$1\u0002')
 }
 
 function startRename(conv: AiConversation) {
@@ -56,12 +117,56 @@ function cancelRename() {
       <span class="ai-conv-title">{{ t('ai_history') || '历史对话' }}</span>
     </div>
 
-    <div v-if="loading" class="ai-conv-empty">{{ t('loading') || '加载中...' }}</div>
-    <div v-else-if="!conversations.length" class="ai-conv-empty">
-      {{ t('ai_no_history') || '暂无历史对话' }}
+    <!-- 搜索框（#231） -->
+    <div class="ai-conv-search">
+      <Search :size="13" class="ai-conv-search-icon" />
+      <input
+        v-model="searchQuery"
+        class="ai-conv-search-input"
+        :placeholder="t('ai_search_placeholder') || '搜索历史消息…'"
+        @input="onSearchInput"
+        @keydown.enter="runSearch(searchQuery)"
+      />
+      <button v-if="searchQuery" class="ai-conv-search-clear" @click="clearSearch">
+        <XCircle :size="13" />
+      </button>
     </div>
 
-    <div v-else class="ai-conv-list">
+    <!-- 搜索模式：命中列表 -->
+    <template v-if="searchQuery.trim()">
+      <div v-if="searching" class="ai-conv-empty">{{ t('ai_searching') || '搜索中…' }}</div>
+      <div v-else-if="searchError" class="ai-conv-empty ai-conv-empty--error">{{ searchError }}</div>
+      <div v-else-if="!searchHits.length" class="ai-conv-empty">{{ t('ai_search_empty') || '没有找到匹配的消息' }}</div>
+      <div v-else class="ai-conv-list">
+        <div
+          v-for="(hit, i) in searchHits"
+          :key="hit.messageId || i"
+          class="ai-conv-hit"
+          :class="{ active: hit.conversationId === currentId }"
+          @click="onHitClick(hit)"
+        >
+          <MessageSquareText :size="13" class="ai-conv-hit-icon" />
+          <div class="ai-conv-hit-body">
+            <div class="ai-conv-hit-head">
+              <span class="ai-conv-hit-title">{{ hit.conversationTitle }}</span>
+              <span class="ai-conv-hit-meta">
+                {{ t('ai_search_pos', { pos: hit.posInConv, total: hit.totalInConv }) || `第 ${hit.posInConv}/${hit.totalInConv} 条` }}
+              </span>
+            </div>
+            <span v-html="highlightSnippet(hit.snippet, searchQuery).replace(/\u0001/g, '<mark class=\'ai-conv-hit-mark\'>').replace(/\u0002/g, '</mark>')" class="ai-conv-hit-snippet" />
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- 正常列表 -->
+    <template v-else>
+      <div v-if="loading" class="ai-conv-empty">{{ t('loading') || '加载中...' }}</div>
+      <div v-else-if="!conversations.length" class="ai-conv-empty">
+        {{ t('ai_no_history') || '暂无历史对话' }}
+      </div>
+
+      <div v-else class="ai-conv-list">
       <div
         v-for="conv in conversations"
         :key="conv.id"
@@ -115,6 +220,7 @@ function cancelRename() {
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
@@ -145,6 +251,110 @@ function cancelRename() {
   font-size: 12px;
   color: var(--text-secondary);
   text-align: center;
+}
+.ai-conv-empty--error {
+  color: var(--danger, #ef4444);
+}
+.ai-conv-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 4px;
+  flex-shrink: 0;
+}
+.ai-conv-search-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.ai-conv-search-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.ai-conv-search-input:focus {
+  border-color: var(--accent);
+}
+.ai-conv-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  color: var(--text-tertiary);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.ai-conv-search-clear:hover {
+  color: var(--text-primary);
+}
+.ai-conv-hit {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.12s;
+  margin-bottom: 2px;
+}
+.ai-conv-hit:hover {
+  background: var(--bg-hover);
+}
+.ai-conv-hit.active {
+  background: var(--accent-bg);
+}
+.ai-conv-hit-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.ai-conv-hit-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ai-conv-hit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ai-conv-hit-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ai-conv-hit-meta {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.ai-conv-hit-snippet {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.ai-conv-hit-mark {
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
 }
 .ai-conv-list {
   flex: 1;

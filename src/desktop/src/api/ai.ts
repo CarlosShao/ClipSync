@@ -532,3 +532,26 @@ export interface SuggestResult {
 export function suggestClipboard(params: { providerId: string; content: string; collections?: string[] }) {
   return api<SuggestResult>('POST', '/api/ai/suggest', params)
 }
+
+// 聊天历史关键词搜索（#231）：在会话列表提供历史消息搜索，返回命中的对话+片段+位置
+export interface ConversationSearchHit {
+  conversationId: string
+  conversationTitle: string
+  messageId: string
+  role: 'user' | 'assistant'
+  snippet: string
+  snippetStart: number
+  posInConv: number
+  totalInConv: number
+  messageCreatedAt: string
+}
+
+export interface ConversationSearchResult {
+  items: ConversationSearchHit[]
+  count: number
+  query: string
+}
+
+export function searchConversationHistory(q: string) {
+  return api<ConversationSearchResult>('GET', `/api/ai/conversations/search?q=${encodeURIComponent(q)}`)
+}

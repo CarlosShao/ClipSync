@@ -49,6 +49,42 @@ watch(
   () => props.messages,
   () => scrollToBottom(true),
 )
+
+// 定位到指定消息（#231 历史搜索）：按对话内位置索引滚动到该条消息并高亮。
+// 通过内容匹配（pos 是数据库里的序号，前端 messages 可能已被过滤），
+// 找不到时尝试滚到中间位置。
+const locateMarkId = ref<string | null>(null)
+function scrollToPos(pos: number, highlightText?: string) {
+  nextTick(() => {
+    const el = scrollRef.value
+    if (!el) return
+    // 优先按文本定位（前端消息可能被过滤/重组）
+    let targetIndex = -1
+    if (highlightText) {
+      const idx = props.messages.findIndex((m) => m.content && m.content.includes(highlightText))
+      targetIndex = idx
+    }
+    if (targetIndex < 0) {
+      // 退化为按位置估算：pos 是 DB 里升序序号，前端消息通常也是升序
+      const ratio = props.messages.length ? Math.min(0.9, Math.max(0.05, (pos - 1) / Math.max(1, props.messages.length))) : 0
+      el.scrollTop = Math.round(ratio * (el.scrollHeight - el.clientHeight))
+      return
+    }
+    const child = el.children[targetIndex] as HTMLElement | undefined
+    if (child) {
+      el.scrollTop = child.offsetTop - el.clientHeight / 2
+      // 高亮闪烁
+      locateMarkId.value = String(targetIndex)
+      setTimeout(() => {
+        if (locateMarkId.value === String(targetIndex)) locateMarkId.value = null
+      }, 2000)
+    }
+  })
+}
+function isLocateMarked(index: number): boolean {
+  return locateMarkId.value === String(index)
+}
+defineExpose({ scrollToPos })
 </script>
 
 <template>
@@ -62,6 +98,7 @@ watch(
       :message="m"
       :index="messages.length - 1 - i"
       :is-streaming="isStreaming"
+      :class="isLocateMarked(i) ? 'ai-msg-locate-mark' : undefined"
     />
   </div>
 </template>
@@ -96,5 +133,13 @@ watch(
   font-size: 13px;
   text-align: center;
   padding: 24px;
+}
+/* 历史搜索定位高亮闪烁（#231） */
+.ai-msg-locate-mark {
+  animation: ai-msg-locate-flash 2s ease;
+}
+@keyframes ai-msg-locate-flash {
+  0%, 60% { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; background: var(--accent-bg); }
+  100% { outline: transparent; }
 }
 </style>
