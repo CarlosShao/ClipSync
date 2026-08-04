@@ -13,6 +13,17 @@ import AiAgentDrawer from './AiAgentDrawer.vue'
 const props = defineProps<{ message: ChatMessage; index: number; isStreaming: boolean }>()
 const { t } = useI18n()
 
+// 上下文感知标记（#229）：剥离注入到 user 消息的"当前页面"上下文，保持 UI 干净
+const VIEW_CTX_OPEN = '\u2404VIEWCTX\u2404'
+const VIEW_CTX_CLOSE = '\u2404/VIEWCTX\u2404'
+function stripViewContext(content: string): string {
+  if (!content || !content.includes(VIEW_CTX_OPEN)) return content
+  const start = content.indexOf(VIEW_CTX_OPEN)
+  const end = content.indexOf(VIEW_CTX_CLOSE)
+  if (start >= 0 && end > start) return content.slice(0, start) + content.slice(end + VIEW_CTX_CLOSE.length)
+  return content
+}
+
 // GFM 已默认开启（表格、删除线、任务列表等）；breaks:false 保持标准 markdown 段落语义。
 const marked = new Marked({ gfm: true, breaks: false })
 const expandedThinking = ref(false)
@@ -226,7 +237,7 @@ function roleLabel() {
         <div v-if="message.images?.length" class="ai-msg-images">
           <img v-for="(img, i) in message.images" :key="i" :src="img.data" :alt="img.mime" />
         </div>
-        <div class="ai-msg-content">{{ compactBlankLines(message.content) }}</div>
+        <div class="ai-msg-content">{{ compactBlankLines(stripViewContext(message.content)) }}</div>
       </template>
     </div>
   </div>

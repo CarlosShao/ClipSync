@@ -509,8 +509,8 @@ function confirmAction() {
       <SubscriptionView v-else-if="currentSub === 'subscription'" @open-modal="openModal" />
     </main>
 
-    <!-- AI 面板（右侧展开/折叠） -->
-    <AISidebar :open="aiSidebarOpen" @close="aiSidebarOpen = false" @open-settings="openAiSettings" />
+    <!-- AI 面板（右侧展开/折叠）：view 传入当前页面上下文，AI 回答可感知用户所在页面（#229） -->
+    <AISidebar :open="aiSidebarOpen" :view="currentSub" @close="aiSidebarOpen = false" @open-settings="openAiSettings" />
   </div>
 
   <QuickPastePanel :open="showQuickPaste" @close="showQuickPaste = false" />

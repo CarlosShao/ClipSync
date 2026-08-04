@@ -14,7 +14,14 @@ interface SendOptions {
   thinkingStrength?: 'low' | 'medium' | 'high'
   // 随消息一起发送的截图（粘贴得到）。构造上游历史时会转成 vision content 数组。
   images?: ChatImage[]
+  // 上下文感知（任务 #229）：当前页面/视图上下文，注入到 user 消息开头让 AI 感知。
+  // 用不可见标记包裹，前端渲染 user 消息时剥离，避免打扰用户。
+  viewContext?: string
 }
+
+// 上下文感知标记：包裹注入的"当前页面"上下文，前端渲染时剥离。
+const VIEW_CTX_OPEN = '\u2404VIEWCTX\u2404'
+const VIEW_CTX_CLOSE = '\u2404/VIEWCTX\u2404'
 
 // 原生支持 reasoning 的模型关键词
 const NATIVE_REASONING_KEYWORDS = [
@@ -249,6 +256,15 @@ export function useAiChat() {
     }
   }
 
+  // 渲染时剥离上下文感知标记（#229）：把注入的"当前页面"上下文从 user 消息 UI 中去掉。
+  function stripViewContext(content: string): string {
+    if (!content || !content.includes(VIEW_CTX_OPEN)) return content
+    const start = content.indexOf(VIEW_CTX_OPEN)
+    const end = content.indexOf(VIEW_CTX_CLOSE)
+    if (start >= 0 && end > start) return content.slice(0, start) + content.slice(end + VIEW_CTX_CLOSE.length)
+    return content
+  }
+
   async function send(content: string, options: SendOptions = {}) {
     const text = content.trim()
     if (!text || isStreaming.value) return
@@ -279,9 +295,12 @@ export function useAiChat() {
     }
 
     error.value = ''
+    // 上下文感知（#229）：把当前页面/收藏夹上下文注入到 user 消息开头。
+    // 用不可见标记包裹，上游 LLM 能看到，前端渲染时剥离（见 AiMessageList/AiMessage）。
+    const userContent = options.viewContext ? `${VIEW_CTX_OPEN}${options.viewContext}${VIEW_CTX_CLOSE}${text}` : text
     messages.value.push({
       role: 'user',
-      content: text,
+      content: userContent,
       images: options.images,
       imageHash: options.images?.[0]?.hash,
     })
@@ -749,6 +768,7 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
     stop,
     clear,
     manualCompact,
+    stripViewContext,
     // 会话相关
     conversations: conv.conversations,
     currentConversationId: conv.currentConversationId,

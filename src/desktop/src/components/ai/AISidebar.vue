@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useAiChat } from '@/composables/useAiChat'
 import { useUser } from '@/composables/useUser'
@@ -13,7 +13,11 @@ import AiMemoryPanel from './AiMemoryPanel.vue'
 import AiCompressProgress from './AiCompressProgress.vue'
 import { X, Bot, Plus, MessageSquare, Workflow, History, Brain, ShieldCheck, UserCog, User, CopyCheck, Package } from 'lucide-vue-next'
 
-const props = defineProps<{ open: boolean }>()
+const props = defineProps<{
+  open: boolean
+  /** 当前页面/视图上下文（#229）：由 HomeView 传入 currentSub，注入 AI 请求让模型感知用户所在页面 */
+  view?: string
+}>()
 const emit = defineEmits<{ close: []; 'open-settings': [] }>()
 const { t, currentLang } = useI18n()
 
@@ -138,8 +142,34 @@ async function onNewConversation() {
   await newConversation({ mode: mode.value, thinkingEnabled: thinkingEnabled.value })
 }
 
+// 当前视图 → 注入给 AI 的上下文提示（#229 上下文感知）。
+// 让模型知道用户此刻正在浏览哪个页面，回答更贴合场景。
+const VIEW_CONTEXT_KEYS: Record<string, string> = {
+  clipboard: 'ai_ctx_view_clipboard',
+  archive: 'ai_ctx_view_archive',
+  favorites: 'ai_ctx_view_favorites',
+  templates: 'ai_ctx_view_templates',
+  devices: 'ai_ctx_view_devices',
+  profile: 'ai_ctx_view_profile',
+  notifications: 'ai_ctx_view_notifications',
+  subscription: 'ai_ctx_view_subscription',
+}
+const viewContextText = computed(() => {
+  const v = props.view
+  if (!v) return undefined
+  const key = VIEW_CONTEXT_KEYS[v]
+  if (key) return t(key)
+  return t('ai_ctx_view_other', { view: v })
+})
+
 function onSend(text: string, images?: import('@/api/ai').ChatImage[]) {
-  send(text, { mode: mode.value, thinking: thinkingEnabled.value, thinkingStrength: thinkingStrength.value, images })
+  send(text, {
+    mode: mode.value,
+    thinking: thinkingEnabled.value,
+    thinkingStrength: thinkingStrength.value,
+    images,
+    viewContext: viewContextText.value,
+  })
 }
 
 function toggleThinking() {
