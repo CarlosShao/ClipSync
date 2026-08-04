@@ -10,6 +10,7 @@ import SubscriptionSettings from './SubscriptionSettings.vue'
 import TemplateVarsSettings from './TemplateVarsSettings.vue'
 import AboutView from './AboutView.vue'
 import AIProviderSettings from './AIProviderSettings.vue'
+import WorkflowRuleSettings from './WorkflowRuleSettings.vue'
 import ShortcutsSettings from './ShortcutsSettings.vue'
 import ThemeSubPage from './sub-pages/ThemeSubPage.vue'
 import ShortcutsSubPage from './sub-pages/ShortcutsSubPage.vue'
@@ -221,7 +222,8 @@ onUnmounted(() => {
               <DataSettings v-else-if="activeCategory === 'data'" @open-sub-page="handleOpenSubPage" />
               <SubscriptionSettings v-else-if="activeCategory === 'subscription'" @open-sub-page="handleOpenSubPage" />
               <TemplateVarsSettings v-else-if="activeCategory === 'variables'" />
-              <AIProviderSettings v-else-if="activeCategory === 'ai'" />
+              <AIProviderSettings v-if="activeCategory === 'ai'" />
+              <WorkflowRuleSettings v-if="activeCategory === 'ai'" />
               <AboutView v-else-if="activeCategory === 'about'" />
             </template>
           </div>
