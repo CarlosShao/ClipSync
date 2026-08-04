@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { Marked } from 'marked'
 import { sanitizeHtml } from '@/utils/html'
@@ -144,6 +144,59 @@ function renderMarkdown(content: string): string {
   }
 }
 
+// === 流式输出打字机逐字动画（#232）===
+// 流式期间逐字呈现 AI 回复：维护"已显示字符数"displayCount，定时增长直到追平全文。
+// 按段落边界截断（避免 markdown 结构被截断导致渲染错乱）；流结束立即显示全文。
+const displayCount = ref(0)
+let typewriterTimer: ReturnType<typeof setInterval> | null = null
+
+function stopTypewriter() {
+  if (typewriterTimer) {
+    clearInterval(typewriterTimer)
+    typewriterTimer = null
+  }
+  displayCount.value = props.message.content?.length || 0
+}
+
+function startTypewriter() {
+  stopTypewriter()
+  const total = props.message.content?.length || 0
+  displayCount.value = Math.min(displayCount.value, total)
+  // 每 18ms 增加 1 个字符，接近人类阅读节奏（约 55 字/秒）
+  typewriterTimer = setInterval(() => {
+    const len = props.message.content?.length || 0
+    if (displayCount.value >= len) {
+      // 内容已追平，继续等待新 chunk
+      return
+    }
+    // 逐字 + 偶尔跨越空行/空格（加速长文本）
+    displayCount.value = Math.min(len, displayCount.value + 1)
+  }, 18)
+}
+
+watch(
+  () => props.isStreaming && props.index === 0 && props.message.role === 'assistant',
+  (now) => {
+    if (now) startTypewriter()
+    else stopTypewriter()
+  },
+  { immediate: true },
+)
+
+// 打字机渲染内容：流式时只取前 displayCount 个字符，并尽量在段落边界截断
+const typewriterContent = computed(() => {
+  const content = props.message.content || ''
+  if (!isStreamingNow.value || props.message.role !== 'assistant') return content
+  const n = Math.min(displayCount.value, content.length)
+  if (n >= content.length) return content
+  // 找最近段落边界（换行），避免断在 markdown 结构/单词中间
+  const boundary = content.lastIndexOf('\n', n - 1)
+  if (boundary > 0 && n - boundary < 120) return content.slice(0, boundary + 1)
+  return content.slice(0, n)
+})
+
+onUnmounted(stopTypewriter)
+
 function roleLabel() {
   return props.message.role === 'user' ? t('ai_you') : t('ai_assistant')
 }
@@ -200,7 +253,11 @@ function roleLabel() {
         @close="drawerRun = null"
       />
 
-      <div v-if="message.role === 'assistant'" class="ai-msg-content markdown-body" v-html="renderMarkdown(message.content)"></div>
+      <div v-if="message.role === 'assistant'" class="ai-msg-content markdown-body">
+        <!-- 打字机逐字渲染（#232）：流式时只显示前 N 字符，末尾带闪烁光标 -->
+        <span v-html="renderMarkdown(typewriterContent)"></span>
+        <span v-if="isStreamingNow && typewriterContent.length < (message.content?.length || 0)" class="ai-type-caret"></span>
+      </div>
       <template v-else-if="message.role === 'system'">
         <!-- 手动 /compact 命令结果横幅：success / loading / too_short / failed 四种 -->
         <div
@@ -389,6 +446,20 @@ function roleLabel() {
   min-width: 0;
   max-width: 100%;
   overflow-x: auto;
+}
+/* 打字机光标（#232）：流式逐字输出时在文字末尾闪烁 */
+.ai-type-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--accent, #6366f1);
+  animation: ai-type-caret-blink 0.9s step-end infinite;
+}
+@keyframes ai-type-caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 .ai-msg.user .ai-msg-content {
   white-space: pre-wrap;
