@@ -513,3 +513,22 @@ export interface SummarizeResult {
 export function summarizeClipboard(params: { providerId: string; content: string }) {
   return api<SummarizeResult>('POST', '/api/ai/summarize', params)
 }
+
+// 主动建议（#230）：根据剪贴板内容给出收藏/分类/清理建议
+export interface ClipSuggestion {
+  worth_favorite: boolean
+  reason: string
+  suggested_collection: string | null
+  action: 'keep' | 'archive' | 'cleanup'
+  action_reason: string
+}
+
+export interface SuggestResult {
+  suggestion: ClipSuggestion | null
+  raw?: string
+  error?: string
+}
+
+export function suggestClipboard(params: { providerId: string; content: string; collections?: string[] }) {
+  return api<SuggestResult>('POST', '/api/ai/suggest', params)
+}

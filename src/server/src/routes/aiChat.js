@@ -331,4 +331,93 @@ router.post('/summarize', apiLimiter, async (req, res) => {
   }
 })
 
+// POST /api/ai/suggest - 主动建议（任务 #230）：根据剪贴板内容给出"是否值得收藏 /
+// 建议分类 / 建议清理"的结构化建议。非流式，供前端选中条目后展示 AI 建议。
+router.post('/suggest', apiLimiter, async (req, res) => {
+  try {
+    const { providerId, content, collections = [] } = req.body || {}
+    if (!providerId) return res.status(400).json({ error: 'providerId is required' })
+    if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content is required' })
+
+    const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found' })
+    const providerRow = result.rows[0]
+    if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
+
+    const apiKey = decrypt(providerRow.api_key_encrypted)
+    const MAX_SUGGEST_INPUT = 4000
+    const truncated = content.slice(0, MAX_SUGGEST_INPUT)
+    const collectionNames = Array.isArray(collections) ? collections.filter((x) => typeof x === 'string' && x.trim()).slice(0, 30) : []
+    const collectionHint = collectionNames.length
+      ? `\n现有收藏夹：${collectionNames.join('、')}（若建议分类，请从这些中选择最匹配的）`
+      : ''
+
+    // 要求 AI 输出严格 JSON，便于前端解析成建议卡片
+    const messages = [
+      {
+        role: 'system',
+        content:
+          '你是剪贴板管理助手，负责给用户剪贴板中的一段内容给出管理建议。' +
+          '请以 JSON 对象输出（不要 markdown 代码块、不要多余文字），格式如下：\n' +
+          '{"worth_favorite": boolean, "reason": string, "suggested_collection": string|null, "action": "keep"|"archive"|"cleanup", "action_reason": string}\n' +
+          '字段说明：\n' +
+          '- worth_favorite: 内容是否值得收藏（重要、常用、可复用、有价值）\n' +
+          '- reason: 一句话说明收藏/不收藏的理由\n' +
+          '- suggested_collection: 若值得收藏，建议归入哪个收藏夹（从提供的收藏夹列表选，没有合适则 null）\n' +
+          '- action: 建议动作 keep(保留) / archive(归档) / cleanup(清理——临时性、一次性、敏感或过期内容)\n' +
+          '- action_reason: 建议动作的一句话理由' +
+          collectionHint,
+      },
+      { role: 'user', content: truncated },
+    ]
+
+    const { finalContent } = await runChatLoop({
+      messages,
+      options: { temperature: 0.2, max_tokens: 300 },
+      providerRow,
+      apiKey,
+      tools: [],
+      userId: req.userId,
+      sendDelta: () => {},
+      role: 'user',
+    })
+
+    // 容错解析：AI 可能带 markdown 包裹或前后多余文字
+    const raw = (finalContent || '').trim()
+    let jsonStr = raw
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
+    if (fenced) jsonStr = fenced[1].trim()
+    else {
+      const braceStart = raw.indexOf('{')
+      const braceEnd = raw.lastIndexOf('}')
+      if (braceStart >= 0 && braceEnd > braceStart) jsonStr = raw.slice(braceStart, braceEnd + 1)
+    }
+    let suggestion
+    try {
+      suggestion = JSON.parse(jsonStr)
+    } catch {
+      suggestion = null
+    }
+    if (!suggestion || typeof suggestion !== 'object') {
+      return res.json({
+        suggestion: null,
+        raw,
+        error: 'AI 未返回结构化建议',
+      })
+    }
+    // 归一化字段
+    const clean = {
+      worth_favorite: Boolean(suggestion.worth_favorite),
+      reason: String(suggestion.reason || '').slice(0, 300),
+      suggested_collection: typeof suggestion.suggested_collection === 'string' && suggestion.suggested_collection.trim() ? suggestion.suggested_collection.trim().slice(0, 60) : null,
+      action: ['keep', 'archive', 'cleanup'].includes(suggestion.action) ? suggestion.action : 'keep',
+      action_reason: String(suggestion.action_reason || '').slice(0, 300),
+    }
+    return res.json({ suggestion: clean, raw: undefined })
+  } catch (err) {
+    logger.error('[AI] suggest error:', err)
+    res.status(500).json({ error: 'Suggestion failed', detail: err.message })
+  }
+})
+
 export default router

@@ -26,6 +26,7 @@ import ClipboardFilterBar from '@/components/clipboard/ClipboardFilterBar.vue'
 import ClipboardFilterPanel from '@/components/clipboard/ClipboardFilterPanel.vue'
 import ClipboardTableRow from '@/components/clipboard/ClipboardTableRow.vue'
 import ClipboardContextMenu from '@/components/clipboard/ClipboardContextMenu.vue'
+import AiSuggestPopup from '@/components/ai/AiSuggestPopup.vue'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -112,6 +113,60 @@ function toggleFilterPanel() {
   showFilterPanel.value = !showFilterPanel.value
 }
 
+// === AI 主动建议（#230）：选中文本条目后，AI 给出收藏/分类/清理建议 ===
+const suggestOpen = ref(false)
+const suggestContent = ref('')
+const suggestCollectionNames = ref<string[]>([])
+// 当前被建议的条目（用于一键收藏/归档/清理）
+const suggestItem = ref<ClipItem | null>(null)
+
+function openAiSuggest() {
+  const selected = clip.items.value.filter((i) => i.selected && i.type === 'text' && (i.content || '').trim())
+  if (selected.length === 0) {
+    toast.show(t('ai_suggest_no_text'), 'error')
+    return
+  }
+  // 只分析第一条选中的文本条目（避免一次调用消耗过多 token）
+  suggestItem.value = selected[0]
+  suggestContent.value = (selected[0].content || selected[0].preview || '').slice(0, 4000)
+  // 收藏夹名称（供 AI 建议分类时选择）
+  try {
+    const favs = localStorage.getItem('clipsync-favorites') || '[]'
+    const arr = JSON.parse(favs)
+    suggestCollectionNames.value = Array.isArray(arr) ? arr.map((f: any) => (typeof f === 'string' ? f : f?.name)).filter(Boolean) : []
+  } catch {
+    suggestCollectionNames.value = []
+  }
+  suggestOpen.value = true
+}
+
+function onSuggestClose() {
+  suggestOpen.value = false
+  suggestItem.value = null
+}
+
+async function onSuggestFavorite() {
+  if (!suggestItem.value) return
+  await clip.toggleFavorite(suggestItem.value)
+  toast.show(t('favorited_toast'), 'success')
+  onSuggestClose()
+}
+
+async function onSuggestArchive() {
+  if (!suggestItem.value) return
+  const ok = await clip.archiveItem(suggestItem.value)
+  toast.show(ok ? t('archived_toast') : t('archive_fail'), ok ? 'success' : 'error')
+  onSuggestClose()
+}
+
+function onSuggestCleanup() {
+  if (!suggestItem.value) return
+  const item = suggestItem.value
+  // 复用单条删除流程（含确认框 + 敏感条目保护），避免绕过安全校验
+  onSuggestClose()
+  ops.handleSingleDelete(item)
+}
+
 const filteredItems = computed(() => clip.filteredItems.value)
 const isLoading = computed(() => clip.loading.value)
 const totalItems = computed(() => clip.totalItems.value)
@@ -159,6 +214,7 @@ watch(
       @toggle-filter-panel="toggleFilterPanel"
       @batch-delete="ops.handleBatchDelete"
       @batch-unarchive="ops.handleBatchUnarchive"
+      @batch-ai-suggest="openAiSuggest"
     />
 
     <ClipboardFilterPanel :open="showFilterPanel" @close="showFilterPanel = false" />
@@ -331,6 +387,17 @@ watch(
       @open-protection="openProtectionDialog"
       @archive-toggle="ops.onArchiveToggle"
       @delete="ops.handleSingleDelete"
+    />
+
+    <!-- AI 主动建议（#230）：选中文本条目后给出收藏/分类/清理建议 -->
+    <AiSuggestPopup
+      :open="suggestOpen"
+      :content="suggestContent"
+      :collections="suggestCollectionNames"
+      @close="onSuggestClose"
+      @apply-favorite="onSuggestFavorite"
+      @apply-archive="onSuggestArchive"
+      @apply-cleanup="onSuggestCleanup"
     />
   </div>
 </template>
