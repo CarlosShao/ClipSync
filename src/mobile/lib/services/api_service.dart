@@ -3,10 +3,10 @@ import 'package:http/http.dart' as http;
 import '../models/device.dart';
 import '../models/session.dart';
 import 'cache_service.dart';
+import 'server_config.dart';
 
 class ApiService {
-  // TODO: Update this to your server URL
-  static const String baseUrl = 'http://localhost:3000';
+  static String get baseUrl => ServerConfig.baseUrl;
 
   Map<String, String> _headers(String token) {
     return {

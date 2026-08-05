@@ -1,10 +1,11 @@
-import 'package:http/htter.dart' as http;
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/subscription_plan.dart';
+import 'server_config.dart';
 
 /// 订阅 API 服务
 class SubscriptionApiService {
-  static const String _baseUrl = 'http://localhost:3001/api';
+  static String get _baseUrl => '${ServerConfig.baseUrl}/api';
   
   /// 获取套餐列表
   static Future<List<SubscriptionPlan>> getPlans() async {
@@ -31,7 +32,7 @@ class SubscriptionApiService {
   }
   
   /// 获取当前订阅
-  static Future<Map<String, dynamic>? getCurrentSubscription(String token) async {
+  static Future<Map<String, dynamic>?> getCurrentSubscription(String token) async {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/subscriptions/current'),
@@ -212,7 +213,7 @@ class SubscriptionApiService {
         maxStorageMB: 500,
         hasOcr: true,
         hasPrioritySync: true,
-        hasAiCategories: true,
+        hasAICategories: true,
         isActive: true,
         paywallFeature1: '优先客服支持',
         paywallFeature2: '高级 Markdown 预览',
@@ -232,7 +233,7 @@ class SubscriptionApiService {
         maxStorageMB: 9999,
         hasOcr: true,
         hasPrioritySync: true,
-        hasAiCategories: true,
+        hasAICategories: true,
         hasTeamSharing: true,
         isActive: true,
         paywallFeature1: '团队共享剪贴板',

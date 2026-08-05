@@ -104,6 +104,7 @@ const historyOpen = ref(false)
 
 // 历史消息搜索定位（#231）：打开对话后滚动并高亮到命中消息
 const msgListRef = ref<InstanceType<typeof AiMessageList> | null>(null)
+const chatInputRef = ref<InstanceType<typeof AiChatInput> | null>(null)
 function onLocateMessage(hit: import('@/api/ai').ConversationSearchHit) {
   // 等对话加载完成后再定位（select 已触发 loadConversation）
   setTimeout(() => {
@@ -179,6 +180,24 @@ function onSend(text: string, images?: import('@/api/ai').ChatImage[]) {
     images,
     viewContext: viewContextText.value,
   })
+}
+
+// 快捷指令（总结/翻译/格式化/解释）：不在输入框写入 prompt，仅告诉 send() 走哪个 instruction。
+// useAiChat.send() 会自动在 user 消息之前注入一条隐藏 system 消息（systemMeta.kind='quick_action_xxx'）。
+function onQuickAction(action: 'summarize' | 'translate' | 'format' | 'explain', text: string, images?: import('@/api/ai').ChatImage[]) {
+  send(text, {
+    mode: mode.value,
+    thinking: thinkingEnabled.value,
+    thinkingStrength: thinkingStrength.value,
+    images,
+    viewContext: viewContextText.value,
+    quickAction: action,
+  })
+}
+
+// 历史用户消息「重新编辑」：把消息内容填回输入框并聚焦，让用户继续修改后重发。
+function onReedit(content: string) {
+  chatInputRef.value?.setDraft(content)
 }
 
 function toggleThinking() {
@@ -324,6 +343,7 @@ function formatDupTime(iso?: string): string {
           <div v-if="error" class="ai-error-bar">{{ error }}</div>
 
           <AiChatInput
+            ref="chatInputRef"
             :disabled="!canSend"
             :is-streaming="isStreaming"
             :providers="providers"
@@ -335,6 +355,8 @@ function formatDupTime(iso?: string): string {
             :context-usage="contextUsage"
             :provider-supports-cache="providerSupportsCache"
             @send="onSend"
+            @quick-action="onQuickAction"
+            @reedit="onReedit"
             @stop="stop"
             @select-provider="selectProvider"
             @select-model="selectModel"

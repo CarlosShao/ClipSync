@@ -14,6 +14,7 @@ import 'theme/app_theme.dart';
 import 'utils/performance.dart';
 import 'services/cache_service.dart';
 import 'services/error_report_service.dart';
+import 'services/server_config.dart';
 // Temporarily disabled - localization
 // import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
@@ -33,6 +34,9 @@ void main() async {
     maxDiskCacheSize: 50 * 1024 * 1024, // 50MB
     defaultTTL: const Duration(hours: 1),
   );
+
+  // 加载后端地址配置（读取 SharedPreferences 的 server_url，未设置用平台默认）
+  await ServerConfig.load();
   
   // 延迟初始化错误报告服务（不阻塞启动）
   _initializeErrorReporting();

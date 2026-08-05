@@ -3,7 +3,7 @@ import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { Marked } from 'marked'
 import { sanitizeHtml } from '@/utils/html'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight, Copy, Pencil } from 'lucide-vue-next'
 import type { ChatMessage, AgentRun } from '@/api/ai'
 import AiThinking from './AiThinking.vue'
 import AiToolTimeline from './AiToolTimeline.vue'
@@ -11,7 +11,25 @@ import AiAgentSummary from './AiAgentSummary.vue'
 import AiAgentDrawer from './AiAgentDrawer.vue'
 
 const props = defineProps<{ message: ChatMessage; index: number; isStreaming: boolean }>()
+const emit = defineEmits<{ reedit: [content: string] }>()
 const { t } = useI18n()
+
+// 历史用户消息上的 hover 操作条（复制 / 重新编辑）。仅 user 消息显示。
+const userActionsVisible = ref(false)
+async function copyUserContent() {
+  const text = stripViewContext(props.message.content || '').trim()
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    // 剪贴板不可用时静默失败，不阻断交互
+  }
+}
+function reeditUserContent() {
+  const text = stripViewContext(props.message.content || '').trim()
+  if (!text) return
+  emit('reedit', text)
+}
 
 // 上下文感知标记（#229）：剥离注入到 user 消息的"当前页面"上下文，保持 UI 干净
 const VIEW_CTX_OPEN = '\u2404VIEWCTX\u2404'
@@ -200,6 +218,21 @@ onUnmounted(stopTypewriter)
 function roleLabel() {
   return props.message.role === 'user' ? t('ai_you') : t('ai_assistant')
 }
+
+// 快捷指令：解析 systemMeta.kind='quick_action_<x>' → 标签/图标，但不暴露完整 prompt。
+const QUICK_ACTIONS_KIND_META: Record<string, { icon: string; i18nKey: string }> = {
+  quick_action_summarize: { icon: '📝', i18nKey: 'ai_quick_applied_summarize' },
+  quick_action_translate: { icon: '🌐', i18nKey: 'ai_quick_applied_translate' },
+  quick_action_format: { icon: '🧹', i18nKey: 'ai_quick_applied_format' },
+  quick_action_explain: { icon: '💡', i18nKey: 'ai_quick_applied_explain' },
+}
+const quickActionKind = computed(() => {
+  const kind = props.message.systemMeta?.kind
+  return kind && kind.startsWith('quick_action_') ? kind : null
+})
+const quickActionMeta = computed(() => (quickActionKind.value ? QUICK_ACTIONS_KIND_META[quickActionKind.value] : null))
+const quickActionIcon = computed(() => quickActionMeta.value?.icon ?? '·')
+const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMeta.value.i18nKey) : ''))
 </script>
 
 <template>
@@ -259,6 +292,14 @@ function roleLabel() {
         <span v-if="isStreamingNow && typewriterContent.length < (message.content?.length || 0)" class="ai-type-caret"></span>
       </div>
       <template v-else-if="message.role === 'system'">
+        <!-- 快捷指令（总结/翻译/格式化/解释）：仅显示"已应用指令"标签，完整 prompt 不暴露给用户 -->
+        <div
+          v-if="quickActionKind"
+          class="ai-msg-system-card ai-msg-system-card--quick-action"
+        >
+          <span class="ai-msg-system-icon">{{ quickActionIcon }}</span>
+          <span>{{ quickActionLabel }}</span>
+        </div>
         <!-- 手动 /compact 命令结果横幅：success / loading / too_short / failed 四种 -->
         <div
           v-if="message.systemMeta?.kind?.startsWith('compact_')"
@@ -290,11 +331,26 @@ function roleLabel() {
         <div v-else class="ai-msg-content">{{ compactBlankLines(message.content) }}</div>
       </template>
       <template v-else>
-        <!-- 用户随消息发送的截图缩略图（多模态 vision 提问） -->
-        <div v-if="message.images?.length" class="ai-msg-images">
-          <img v-for="(img, i) in message.images" :key="i" :src="img.data" :alt="img.mime" />
+        <!-- 用户消息：hover 显示「复制 / 重新编辑」操作条（右上角） -->
+        <div
+          class="ai-msg-user-body"
+          @mouseenter="userActionsVisible = true"
+          @mouseleave="userActionsVisible = false"
+        >
+          <!-- 用户随消息发送的截图缩略图（多模态 vision 提问） -->
+          <div v-if="message.images?.length" class="ai-msg-images">
+            <img v-for="(img, i) in message.images" :key="i" :src="img.data" :alt="img.mime" />
+          </div>
+          <div class="ai-msg-content">{{ compactBlankLines(stripViewContext(message.content)) }}</div>
+          <div class="ai-msg-actions" :class="{ visible: userActionsVisible }">
+            <button class="ai-msg-action-btn" :title="t('ai_copy')" @click="copyUserContent">
+              <Copy :size="13" />
+            </button>
+            <button class="ai-msg-action-btn" :title="t('ai_reedit')" @click="reeditUserContent">
+              <Pencil :size="13" />
+            </button>
+          </div>
         </div>
-        <div class="ai-msg-content">{{ compactBlankLines(stripViewContext(message.content)) }}</div>
       </template>
     </div>
   </div>
@@ -306,6 +362,53 @@ function roleLabel() {
 }
 .ai-msg.user {
   justify-content: flex-end;
+}
+/* 历史用户消息操作条容器：相对定位，让「复制 / 重新编辑」按钮悬浮在气泡右上角 */
+.ai-msg-user-body {
+  position: relative;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ai-msg-actions {
+  position: absolute;
+  top: -10px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-elevated, #fff);
+  border: 1px solid var(--border-default, #e2e8f0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 5;
+}
+.ai-msg-actions.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.ai-msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #64748b);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ai-msg-action-btn:hover {
+  background: var(--accent-bg, rgba(99, 102, 241, 0.1));
+  color: var(--accent, #6366f1);
 }
 .ai-msg.assistant {
   justify-content: flex-start;
@@ -345,6 +448,13 @@ function roleLabel() {
   border-left: 3px solid #ef4444;
   background: rgba(239, 68, 68, 0.06);
   color: #b91c1c;
+}
+.ai-msg-system-card--quick-action {
+  border-left: 3px solid #8b5cf6;
+  background: rgba(139, 92, 246, 0.07);
+  color: var(--ai-fg, inherit);
+  font-size: 12px;
+  padding: 4px 10px;
 }
 .ai-msg-system-icon {
   display: inline-block;

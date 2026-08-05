@@ -76,24 +76,31 @@ const steps = computed(() => {
       v-for="step in steps"
       :key="step.id"
       class="ai-tool-log-line"
-      :class="{ done: step.done, last: step.index === steps.length }"
+      :class="[step.done ? 'done' : 'running', { last: step.index === steps.length }]"
     >
       <div class="ai-tool-log-rail">
-        <span class="ai-tool-log-node">{{ step.index }}</span>
+        <span class="ai-tool-log-node">
+          <CheckCircle2 v-if="step.done" :size="12" class="ai-tool-log-done" />
+          <span v-else class="ai-tool-log-num">{{ step.index }}</span>
+        </span>
         <span class="ai-tool-log-connector" />
       </div>
       <div class="ai-tool-log-body">
         <button class="ai-tool-log-summary" @click="toggle(step.id)">
-          <Loader2 v-if="!step.done" :size="12" class="ai-tool-log-spin" />
-          <CheckCircle2 v-else :size="12" class="ai-tool-log-done" />
+          <span class="ai-tool-log-icon">
+            <Loader2 v-if="!step.done" :size="13" class="ai-tool-log-spin" />
+          </span>
           <span class="ai-tool-log-text">
-            {{ step.done ? (t('ai_tool_called') || '已调用') : (t('ai_tool_calling') || '调用') }}
-            {{ getToolName(step.name) }}
+            <span class="ai-tool-log-action">{{ step.done ? (t('ai_tool_called') || '已调用') : (t('ai_tool_calling') || '调用') }}</span>
+            <span class="ai-tool-log-name">{{ getToolName(step.name) }}</span>
           </span>
           <span v-if="agentName" class="ai-tool-log-source">{{ agentName }}</span>
           <span class="ai-tool-log-spacer" />
-          <ChevronDown v-if="expanded.has(step.id)" :size="13" />
-          <ChevronRight v-else :size="13" />
+          <span class="ai-tool-log-status" :class="step.done ? 'ok' : 'run'">
+            {{ step.done ? (t('ai_tool_done') || '完成') : (t('ai_tool_running') || '进行中') }}
+          </span>
+          <ChevronDown v-if="expanded.has(step.id)" :size="13" class="ai-tool-log-chev" />
+          <ChevronRight v-else :size="13" class="ai-tool-log-chev" />
         </button>
 
         <div v-if="expanded.has(step.id)" class="ai-tool-log-detail">
@@ -112,49 +119,48 @@ const steps = computed(() => {
 </template>
 
 <style scoped>
+/* 时间线整体：卡片化容器 + 柔和阴影 */
 .ai-tool-log {
   display: flex;
   flex-direction: column;
-  margin-bottom: 6px;
-  border-radius: var(--radius-md);
+  margin: 8px 0;
+  border-radius: 12px;
   overflow: hidden;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface, #fff);
+  border: 1px solid var(--border-subtle, rgba(15, 23, 42, 0.08));
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
   max-width: 100%;
 }
 
 .ai-tool-log-line {
   display: flex;
   align-items: stretch;
-  border-bottom: 1px solid var(--border-subtle);
   /* 新工具调用到达时淡入，强化“按顺序逐个出现”的时序感 */
   animation: ai-tool-line-in 0.25s ease-out;
-}
-.ai-tool-log-line:last-child {
-  border-bottom: none;
 }
 
 .ai-tool-log-rail {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 26px;
+  width: 30px;
   flex-shrink: 0;
-  padding-top: 9px;
+  padding-top: 11px;
 }
 .ai-tool-log-node {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: var(--bg-hover);
-  border: 1px solid var(--border-subtle);
+  background: var(--bg-hover, rgba(15, 23, 42, 0.05));
+  border: 1.5px solid var(--border-subtle, rgba(15, 23, 42, 0.15));
   font-size: 10px;
   font-weight: 700;
-  color: var(--text-tertiary);
+  color: var(--text-tertiary, #94a3b8);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  z-index: 1;
 }
 .ai-tool-log-line.done .ai-tool-log-node {
   background: var(--success, #16a34a);
@@ -163,9 +169,10 @@ const steps = computed(() => {
 }
 .ai-tool-log-connector {
   flex: 1;
-  width: 1px;
-  background: var(--border-subtle);
+  width: 2px;
+  background: linear-gradient(180deg, var(--border-subtle, rgba(15, 23, 42, 0.15)), rgba(15, 23, 42, 0.05));
   margin: 3px 0;
+  border-radius: 2px;
 }
 .ai-tool-log-line.last .ai-tool-log-connector {
   display: none;
@@ -176,6 +183,7 @@ const steps = computed(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  padding: 6px 0;
 }
 
 .ai-tool-log-summary {
@@ -183,29 +191,32 @@ const steps = computed(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 12px 7px 8px;
+  padding: 6px 12px 6px 6px;
   background: transparent;
   border: none;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text-secondary, #475569);
   text-align: left;
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 }
 .ai-tool-log-summary:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--bg-hover, rgba(99, 102, 241, 0.06));
 }
 
+.ai-tool-log-icon {
+  display: inline-flex;
+  width: 16px;
+  justify-content: center;
+}
 .ai-tool-log-spin {
-  flex-shrink: 0;
-  color: var(--accent);
+  color: var(--accent, #6366f1);
   animation: spin 1s linear infinite;
 }
 .ai-tool-log-done {
-  flex-shrink: 0;
   color: var(--success, #16a34a);
 }
 .ai-tool-log-text {
@@ -213,24 +224,55 @@ const steps = computed(() => {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.ai-tool-log-action {
+  color: var(--text-tertiary, #94a3b8);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.ai-tool-log-name {
+  font-weight: 600;
+  color: var(--text-primary, #0f172a);
 }
 .ai-tool-log-source {
   flex-shrink: 0;
   font-size: 10px;
   font-weight: 600;
-  color: var(--accent);
-  background: var(--accent-bg);
+  color: var(--accent, #6366f1);
+  background: var(--accent-bg, rgba(99, 102, 241, 0.12));
   border-radius: 999px;
   padding: 1px 7px;
   white-space: nowrap;
+}
+.ai-tool-log-status {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.ai-tool-log-status.run {
+  color: var(--accent, #6366f1);
+  background: var(--accent-bg, rgba(99, 102, 241, 0.12));
+}
+.ai-tool-log-status.ok {
+  color: var(--success, #16a34a);
+  background: rgba(22, 163, 74, 0.1);
 }
 .ai-tool-log-spacer {
   flex: 1;
   min-width: 4px;
 }
+.ai-tool-log-chev {
+  color: var(--text-tertiary, #94a3b8);
+  flex-shrink: 0;
+}
 
 .ai-tool-log-detail {
-  padding: 0 12px 8px 0;
+  padding: 0 12px 8px 6px;
 }
 .ai-tool-log-section {
   margin-bottom: 6px;
@@ -240,21 +282,23 @@ const steps = computed(() => {
 }
 .ai-tool-log-section-title {
   font-size: 11px;
-  color: var(--text-tertiary);
+  font-weight: 600;
+  color: var(--text-tertiary, #94a3b8);
   margin-bottom: 2px;
 }
 .ai-tool-log-section pre {
   margin: 0;
-  padding: 6px 8px;
-  background: var(--bg-hover);
-  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  background: var(--bg-hover, rgba(15, 23, 42, 0.04));
+  border: 1px solid var(--border-subtle, rgba(15, 23, 42, 0.08));
+  border-radius: 8px;
   font-size: 11px;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 160px;
+  max-height: 180px;
   overflow-y: auto;
-  color: var(--text-secondary);
+  color: var(--text-secondary, #475569);
 }
 
 @keyframes spin {

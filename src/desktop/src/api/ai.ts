@@ -81,6 +81,11 @@ export interface AgentRun {
   content?: string
   toolCalls?: ToolCall[]
   toolResults?: ToolResult[]
+  // 子代理并行卡片展示用：本轮任务的简要目标，以及它用到的工具名列表
+  objective?: string
+  tools?: string[]
+  // 协调代理下的子代理列表（用于嵌套展示，可选）
+  subagentRuns?: AgentRun[]
 }
 
 // 随消息发送的截图（粘贴得到）。data 为完整 data URL（含前缀），可直接放入

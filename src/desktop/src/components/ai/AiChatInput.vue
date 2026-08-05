@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
@@ -25,6 +25,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   send: [text: string, images?: ChatImage[]]
+  'quick-action': [action: 'summarize' | 'translate' | 'format' | 'explain', text: string, images?: ChatImage[]]
   stop: []
   'select-provider': [id: string]
   'select-model': [model: string]
@@ -36,9 +37,12 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const text = ref('')
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const activePopup = ref<string | null>(null)
-// 快捷指令：总结/翻译/格式化/解释。点击后把对应 prompt 填入输入框并发送。
-// 若输入框已有内容，则在末尾追加该指令（避免覆盖用户已写的内容）。
+// 快捷指令：总结/翻译/格式化/解释。点击后把对应 instruction 通过独立的
+// quick-action 事件外抛：上层的 useAiChat.send() 会自动在 user 消息前注入一条
+// 隐藏的 system 消息（systemMeta.kind='quick_action_xxx'），模型能感知意图但
+// 输入框中**不会**看到 prompt 文本——更接近用户对"一键命令"的预期。
 const QUICK_ACTIONS = [
   { key: 'summarize', icon: 'ListChecks', labelKey: 'ai_quick_summarize', promptKey: 'ai_quick_summarize_prompt' },
   { key: 'translate', icon: 'Languages', labelKey: 'ai_quick_translate', promptKey: 'ai_quick_translate_prompt' },
@@ -56,12 +60,16 @@ const QUICK_ICONS: Record<QuickActionKey, any> = {
 const quickCanUse = computed(() => !props.disabled && !props.isStreaming && props.providers.length > 0 && !!props.selectedProviderId)
 function runQuickAction(action: (typeof QUICK_ACTIONS)[number]) {
   if (!quickCanUse.value) return
-  const prompt = t(action.promptKey) || ''
-  if (!prompt) return
-  // 已有输入 → 追加换行指令；否则直接填入指令
-  const value = text.value.trim()
-  text.value = value ? `${value}\n\n${prompt}` : prompt
-  submit()
+  // 关键：不再把 prompt 写入 text.value。直接把"原始输入"作为 user 消息发送，
+  // 由上层 useAiChat 包装一层 system 指令。输入框保持用户原文本（或空白）。
+  const original = text.value
+  const hasImages = pastedImages.value.length > 0
+  // 即使输入框为空，也允许使用快捷指令（让 AI 直接对"空白文本"做总结/翻译，
+  // 通常这种场景下用户其实是想让 AI 进入某种"工具模式"）。这里依然走原 send 路径。
+  emit('quick-action', action.key, original, hasImages ? [...pastedImages.value] : undefined)
+  // 快捷指令触发后清空输入框与截图，与普通发送一致
+  text.value = ''
+  pastedImages.value = []
 }
 // 粘贴进输入框的截图（仅图片，不处理任意文件上传）
 const pastedImages = ref<ChatImage[]>([])
@@ -110,9 +118,10 @@ const modeLabel = computed(() => {
 })
 
 // 发送按钮旁圆环：外环=上下文 token 用量百分比；内环=缓存命中率。
-const RING_R = 10 // 外环半径
+// 注：viewBox=30×30。外环半径 9（留出 5.5 的环带）；内环半径 5（让外环内壁与文字之间有明显间隙）。
+const RING_R = 9
 const RING_C = 2 * Math.PI * RING_R
-const RING_R_INNER = 6.5 // 内环半径（缓存命中率）
+const RING_R_INNER = 5
 const RING_C_INNER = 2 * Math.PI * RING_R_INNER
 
 const usagePercent = computed(() => props.contextUsage?.percent ?? 0)
@@ -278,6 +287,20 @@ const usageReplyTokens = computed(() => props.contextUsage?.replyTokens ?? 0)
 const usageCacheMissTokens = computed(() =>
   Math.max(0, usagePromptTokens.value - usageCacheReadTokens.value - usageCacheWriteTokens.value)
 )
+// 历史消息「重新编辑」：把内容填回输入框并聚焦、光标移到末尾。
+function setDraft(content: string) {
+  text.value = content
+  nextTick(() => {
+    const el = textareaRef.value
+    if (el) {
+      el.focus()
+      const len = el.value.length
+      el.setSelectionRange(len, len)
+    }
+  })
+}
+
+defineExpose({ setDraft })
 </script>
 
 <template>
@@ -298,6 +321,7 @@ const usageCacheMissTokens = computed(() =>
 
     <!-- 文本输入区 -->
     <textarea
+      ref="textareaRef"
       v-model="text"
       class="ai-textarea"
       :placeholder="inputPlaceholder"
@@ -400,7 +424,8 @@ const usageCacheMissTokens = computed(() =>
                   :stroke-dasharray="RING_C_INNER"
                   :stroke-dashoffset="ringDashOffsetInner"
                 />
-                <text class="ring-label" x="15" y="15">{{ ringLabel }}</text>
+                <!-- 数字标签：故意 y=18（偏下一点），让百分比字符整体居于环内可视中心，且与外圈、内圈都有明显留白 -->
+                <text class="ring-label" x="15" y="18">{{ ringLabel }}</text>
               </svg>
             </button>
           </PopoverTrigger>
@@ -617,13 +642,13 @@ const usageCacheMissTokens = computed(() =>
 .ring-track {
   fill: none;
   stroke: var(--border-default);
-  stroke-width: 3;
+  stroke-width: 2.5;
 }
 
 .ring-progress {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 3;
+  stroke-width: 2.5;
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
@@ -642,13 +667,13 @@ const usageCacheMissTokens = computed(() =>
 .ring-track-inner {
   fill: none;
   stroke: var(--border-default);
-  stroke-width: 2.5;
+  stroke-width: 1.5;
 }
 
 .ring-progress-inner {
   fill: none;
   stroke: #22d3ee;
-  stroke-width: 2.5;
+  stroke-width: 1.5;
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
@@ -656,12 +681,18 @@ const usageCacheMissTokens = computed(() =>
 }
 
 .ring-label {
-  font-size: 7px;
+  /* 字号从 7→6，dominant-baseline 改 middle（与 central 等价但跨浏览器一致性更好），
+     加 letter-spacing 收紧，避免「100%」字符撑到外圈边缘造成视觉重叠。
+     y=18（viewBox 中心 15 之下 3），让数字在双环之间稍微偏下，留出与外圈上沿的明显呼吸空间。*/
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 6px;
   font-weight: 600;
+  letter-spacing: -0.3px;
   fill: var(--text-secondary);
   text-anchor: middle;
-  dominant-baseline: central;
+  dominant-baseline: middle;
   pointer-events: none;
+  user-select: none;
 }
 
 /* 粘贴截图预览 */

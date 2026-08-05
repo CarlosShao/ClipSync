@@ -245,7 +245,7 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
       );
     }
 
-    final planName = _currentSubscription!.planName;
+    final planName = _currentSubscription!.planName ?? '付费版';
     final status = _currentSubscription!.status;
     final isActive = status == 'active';
     final endDate = _currentSubscription!.currentPeriodEnd;

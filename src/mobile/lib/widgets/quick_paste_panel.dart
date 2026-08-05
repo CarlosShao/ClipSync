@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/clipboard_item.dart';
 import '../providers/clipboard_provider.dart';
+import '../services/server_config.dart';
 import 'package:provider/provider.dart';
 
 /// 快速粘贴面板
@@ -266,7 +267,7 @@ class _QuickPastePanelState extends State<QuickPastePanel> {
     if (contentType.startsWith('image/')) {
       // 图片预览
       final previewUrl = item.id != null
-          ? 'http://localhost:3001/api/media/${item.id}/preview'
+          ? '${ServerConfig.baseUrl}/api/media/${item.id}/preview'
           : null;
       if (previewUrl != null) {
         return Image.network(

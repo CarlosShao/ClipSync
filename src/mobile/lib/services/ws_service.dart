@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'server_config.dart';
 
 class WsService {
   WebSocketChannel? _channel;
@@ -31,7 +32,7 @@ class WsService {
   void _connect() {
     if (_token == null) return;
 
-    final uri = Uri.parse('ws://localhost:3000/ws?token=$_token');
+    final uri = Uri.parse('${ServerConfig.wsUrl}/ws?token=$_token');
     _channel = WebSocketChannel.connect(uri);
 
     _channel!.stream.listen(

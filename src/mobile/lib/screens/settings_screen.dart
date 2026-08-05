@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../providers/settings_provider.dart';
 import '../providers/clipboard_provider.dart';
+import '../services/server_config.dart';
 import 'notification_settings_screen.dart';
 import 'subscription_management_screen.dart';
 import 'package:provider/provider.dart';
@@ -42,7 +43,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _serverUrlController.text = prefs.getString('server_url') ?? 'http://localhost:3001';
+      _serverUrlController.text = prefs.getString('server_url') ?? ServerConfig.baseUrl;
       _autoStart = prefs.getBool('auto_start') ?? false;
       _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
       _themeMode = prefs.getString('theme_mode') ?? 'system';
@@ -54,7 +55,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveServerUrl() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('server_url', _serverUrlController.text);
+    final url = _serverUrlController.text.trim();
+    if (url.isEmpty) return;
+    await prefs.setString('server_url', url);
+    // 同步内存配置，后续请求立即生效（无需重启 App）
+    ServerConfig.setBaseUrl(url);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('服务器地址已保存')),

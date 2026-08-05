@@ -3,12 +3,13 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import 'server_config.dart';
 
 /// 通知 API 服务
 class NotificationApiService {
   final String baseUrl;
 
-  NotificationApiService({this.baseUrl = 'http://localhost:3000'});
+  NotificationApiService({String? baseUrl}) : baseUrl = baseUrl ?? ServerConfig.baseUrl;
 
   /// 获取通知偏好
   Future<Map<String, dynamic>> getNotificationPreferences(String token) async {

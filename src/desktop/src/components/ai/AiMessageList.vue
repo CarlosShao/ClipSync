@@ -5,6 +5,7 @@ import type { ChatMessage } from '@/api/ai'
 import AiMessage from './AiMessage.vue'
 
 const props = defineProps<{ messages: ChatMessage[]; isStreaming: boolean }>()
+const emit = defineEmits<{ reedit: [content: string] }>()
 const { t } = useI18n()
 
 const scrollRef = ref<HTMLElement | null>(null)
@@ -99,6 +100,7 @@ defineExpose({ scrollToPos })
       :index="messages.length - 1 - i"
       :is-streaming="isStreaming"
       :class="isLocateMarked(i) ? 'ai-msg-locate-mark' : undefined"
+      @reedit="(c: string) => emit('reedit', c)"
     />
   </div>
 </template>
