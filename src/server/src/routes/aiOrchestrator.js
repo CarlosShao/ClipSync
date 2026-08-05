@@ -60,9 +60,30 @@ const DISPATCH_AGENTS_TOOL = {
 }
 
 const COORDINATOR_SYSTEM = `你是一个任务编排协调器（Coordinator）。
-你的职责是：判断用户请求的处理方式。
-- 如果请求可以被拆解为多个彼此独立、无依赖的子任务，调用 dispatch_agents 规划 2~4 个子代理并行执行。
-- 如果任务是单一连贯任务（一轮对话、单个工具调用即可完成、或各子任务强依赖），【不要调用 dispatch_agents】，直接调用合适的工具获取真实数据，并给出最终回答。
+
+## 核心原则：默认不派发子代理
+
+**绝大多数用户问题都是简单问题，应该直接回答，不要派发子代理。**
+
+### 必须派发子代理的唯一情况（同时满足以下 ALL 条件）：
+1. 用户明确要求"同时"处理多个独立事项（如"帮我查收藏夹、设备和统计"）
+2. 各子任务之间完全无依赖（一个任务的结果不影响另一个）
+3. 单个任务无法通过一次工具调用完成
+
+### 不要派发子代理的情况（满足任一即禁止）：
+- ❌ 简单问答（"什么是XXX"、"为什么XXX"、"如何XXX"）
+- ❌ 单一查询（"查一下我的收藏夹"）
+- ❌ 需要深度思考的问题（分析、推理、判断）
+- ❌ 各子任务之间有依赖关系
+- ❌ 用户只问了一个问题
+- ❌ 可以通过一次工具调用完成
+
+### 判断流程（严格按顺序）：
+1. 用户是否只问了一个问题？ → 是 → 直接回答，不派发
+2. 问题是否需要深度思考/推理？ → 是 → 直接回答，不派发
+3. 用户是否明确要求"同时"处理多个独立事项？ → 否 → 直接回答，不派发
+4. 各子任务是否完全无依赖？ → 否 → 直接回答，不派发
+5. 只有以上全部通过 → 才考虑派发子代理
 
 【去伪存真 · 强制要求】
 - 你的所有回答必须且只能基于工具返回的真实数据。未通过工具获取的信息，绝不在回答中呈现为事实。
@@ -206,7 +227,7 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
 
 /**
  * 并行执行所有子代理（Promise.allSettled 隔离失败）。
- * @returns {Promise<Array<{id,name,status,content,error?}>>}
+ * @returns {Promise<Array<{id,name,objective,tools,status,content,error?,duration?}>>}
  */
 async function runWorkers({ agents, messages, providerRow, apiKey, userId, role = 'user', abortSignal, sendDelta, logChunk, thinkingEnabled, thinkingStrength }) {
   // ✅ RBAC（#214）：子代理只配发按角色过滤后的只读工具
@@ -216,6 +237,9 @@ async function runWorkers({ agents, messages, providerRow, apiKey, userId, role 
     const workerAbort = new AbortController()
     const onRoot = () => workerAbort.abort()
     abortSignal.addEventListener('abort', onRoot)
+
+    // 记录执行开始时间
+    const startedAt = Date.now()
 
     // 给该子代理的所有增量打上 agent_id（已带 agent_id / agent 生命周期事件的跳过）
     const wrappedSend = (obj) => {
@@ -244,32 +268,35 @@ async function runWorkers({ agents, messages, providerRow, apiKey, userId, role 
       })
 
     sendDelta({
-      choices: [{ delta: { agent: { id: agent.id, name: agent.name, status: 'working', kind: 'worker' } } }],
+      choices: [{ delta: { agent: { id: agent.id, name: agent.name, objective: agent.objective, status: 'working', kind: 'worker' } } }],
     })
 
     return runOne()
       .then((r) => {
+        const duration = Date.now() - startedAt
         sendDelta({
-          choices: [{ delta: { agent: { id: agent.id, name: agent.name, status: 'done', kind: 'worker' } } }],
+          choices: [{ delta: { agent: { id: agent.id, name: agent.name, objective: agent.objective, status: 'done', kind: 'worker', duration } } }],
         })
-        return { id: agent.id, name: agent.name, status: 'done', content: r.finalContent }
+        return { id: agent.id, name: agent.name, objective: agent.objective, tools: [], status: 'done', content: r.finalContent, duration }
       })
       .catch((err) => {
         // #8：子代理失败有限重试一次（避免偶发上游抖动导致整段不可用）
         logger.warn(`[AI][orchestrator] worker ${agent.id} failed, retrying once:`, err.message)
         return runOne()
           .then((r) => {
+            const duration = Date.now() - startedAt
             sendDelta({
-              choices: [{ delta: { agent: { id: agent.id, name: agent.name, status: 'done', kind: 'worker' } } }],
+              choices: [{ delta: { agent: { id: agent.id, name: agent.name, objective: agent.objective, status: 'done', kind: 'worker', duration } } }],
             })
-            return { id: agent.id, name: agent.name, status: 'done', content: r.finalContent }
+            return { id: agent.id, name: agent.name, objective: agent.objective, tools: [], status: 'done', content: r.finalContent, duration }
           })
           .catch((err2) => {
+            const duration = Date.now() - startedAt
             const msg = String(err2?.message || err2)
             sendDelta({
-              choices: [{ delta: { agent: { id: agent.id, name: agent.name, status: 'failed', kind: 'worker', error: msg } } }],
+              choices: [{ delta: { agent: { id: agent.id, name: agent.name, objective: agent.objective, status: 'failed', kind: 'worker', error: msg, duration } } }],
             })
-            return { id: agent.id, name: agent.name, status: 'failed', content: '', error: msg }
+            return { id: agent.id, name: agent.name, objective: agent.objective, tools: [], status: 'failed', content: '', error: msg, duration }
           })
       })
       .finally(() => {
@@ -352,6 +379,16 @@ export async function runOrchestration({
       if (!aggregatedUsage || (u.totalTokens || 0) > (aggregatedUsage.totalTokens || 0)) aggregatedUsage = u
       return
     }
+
+    const delta = obj?.choices?.delta || obj?.choices?.[0]?.delta
+    // 过滤协调器和综合的生命周期事件（planning/done/failed等内部概念）
+    // 但保留工具调用(content/tool_call/tool_result)给用户看
+    if (delta?.agent?.kind === 'coordinator' || delta?.agent?.kind === 'synthesis') {
+      // 只过滤纯生命周期事件，不过滤工具调用和内容
+      if (!delta?.content && !delta?.tool_call && !delta?.tool_result && !delta?.thinking) {
+        return
+      }
+    }
     sendDelta(obj)
   }
   const flushUsage = () => {
@@ -365,9 +402,7 @@ export async function runOrchestration({
   }
 
   // —— 阶段一：协调器 ——
-  sendDeltaWrapped({
-    choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'planning', kind: 'coordinator' } } }],
-  })
+  // 注意：协调器事件已被 sendDeltaWrapped 过滤，不会发送到前端
 
   let coordinator
   try {
@@ -386,10 +421,8 @@ export async function runOrchestration({
     })
   } catch (e) {
     // 协调器失败：降级为单代理直答（完整工具集）
-    logger.warn('[AI][orchestrator] coordinator failed, fallback to single chat:', e.message)
-    sendDeltaWrapped({
-      choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'failed', kind: 'coordinator', error: e.message } } }],
-    })
+    const causeInfo = e?.cause ? { code: e.cause.code, message: e.cause.message, syscall: e.cause.syscall } : null
+    logger.warn('[AI][orchestrator] coordinator failed, fallback to single chat:', e.message, '| cause:', causeInfo)
     await runChatLoop({
       messages, options, providerRow, apiKey, tools: scopedTools, role, userId,
       sendDelta: sendDeltaWrapped, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength,
@@ -401,9 +434,6 @@ export async function runOrchestration({
 
   // #1：单任务已在协调器内自闭环（runCoordinator 已流式下发主气泡回答），无需再跑单代理循环。
   if (!coordinator.isDispatch) {
-    sendDeltaWrapped({
-      choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'done', kind: 'coordinator' } } }],
-    })
     flushUsage()
     safeFinish()
     return
@@ -429,9 +459,6 @@ export async function runOrchestration({
 
   if (agents.length === 0) {
     // 协调器调用了 dispatch_agents 但解析不出合法子代理 → 同样降级为单代理直答
-    sendDeltaWrapped({
-      choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'done', kind: 'coordinator' } } }],
-    })
     await runChatLoop({
       messages, options, providerRow, apiKey, tools: scopedTools, role, userId,
       sendDelta: sendDeltaWrapped, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength,
@@ -443,21 +470,13 @@ export async function runOrchestration({
 
   logger.info(`[AI][orchestrator] dispatching ${agents.length} agents: ${agents.map((a) => a.id).join(', ')}`)
 
-  // 协调器已完成规划（已成功拆解并下发子代理），显式标记 done，
-  // 否则协调器卡片会永远停留在"规划中"转圈（前端 spinner 只看 status）。
-  sendDeltaWrapped({
-    choices: [{ delta: { agent: { id: 'coordinator', name: '协调器', status: 'done', kind: 'coordinator' } } }],
-  })
-
   // —— 阶段二：并行子代理 ——
   const workerResults = await runWorkers({
     agents, messages, providerRow, apiKey, userId, role, abortSignal, sendDelta: sendDeltaWrapped, logChunk, thinkingEnabled, thinkingStrength,
   })
 
   // —— 阶段三：综合 ——
-  sendDeltaWrapped({
-    choices: [{ delta: { agent: { id: 'synthesis', name: '综合', status: 'working', kind: 'synthesis' } } }],
-  })
+  // 注意：综合事件已被 sendDeltaWrapped 过滤，不会发送到前端
   try {
     await runSynthesis({ messages, workerResults, providerRow, apiKey, userId, abortSignal, sendDelta: sendDeltaWrapped, logChunk })
   } catch (e) {
@@ -467,9 +486,6 @@ export async function runOrchestration({
       .join('\n\n')
     sendDeltaWrapped({ choices: [{ delta: { content: fallback } }] })
   }
-  sendDeltaWrapped({
-    choices: [{ delta: { agent: { id: 'synthesis', name: '综合', status: 'done', kind: 'synthesis' } } }],
-  })
   // #9：去掉脆弱的 setImmediate 补丁——safeFinish 已通过 write 回调 + setNoDelay 保证 DONE 进入 socket 缓冲区，
   // 此处无需再等待 IO tick（反而可能引入不确定行为）。
   flushUsage()
