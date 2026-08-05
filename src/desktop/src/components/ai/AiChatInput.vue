@@ -298,6 +298,14 @@ function selectProvider(id: string) {
   emit('select-provider', id)
   closePopups()
 }
+function selectModel(m: string) {
+  emit('select-model', m)
+  closePopups()
+}
+function openProviderSettings() {
+  emit('open-settings')
+  closePopups()
+}
 
 function setMode(m: 'ask' | 'agent') {
   emit('set-mode', m)
@@ -445,10 +453,7 @@ defineExpose({ setDraft })
             v-for="m in selectedProviderModels"
             :key="m"
             :class="{ active: (selectedModel || selectedProvider?.model) === m }"
-            @click="
-              emit('select-model', m)
-              closePopups()
-            "
+            @click="selectModel(m)"
           >
             {{ m }}
           </button>
@@ -463,10 +468,7 @@ defineExpose({ setDraft })
           </button>
           <button
             class="ai-popup-divider"
-            @click="
-              emit('open-settings')
-              closePopups()
-            "
+            @click="openProviderSettings"
           >
             {{ t('ai_manage') }}
           </button>
