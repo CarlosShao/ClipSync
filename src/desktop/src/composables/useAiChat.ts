@@ -1,7 +1,17 @@
 import { ref, shallowRef, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { getProviders, getAiContext, streamChat, getSettings, saveSettings, updateProvider } from '@/api/ai'
-import type { AiProvider, ChatMessage, AiContext, AgentRun, StreamDeltaMeta, AiSettings, AiConversation, ContextUsage, ChatImage } from '@/api/ai'
+import type {
+  AiProvider,
+  ChatMessage,
+  AiContext,
+  AgentRun,
+  StreamDeltaMeta,
+  AiSettings,
+  AiConversation,
+  ContextUsage,
+  ChatImage,
+} from '@/api/ai'
 import { buildSystemPrompt } from '@/utils/aiSystemPrompt'
 import { useAiConversations } from './useAiConversations'
 
@@ -18,15 +28,19 @@ interface SendOptions {
   // 上下文感知（任务 #229）：当前页面/视图上下文，注入到 user 消息开头让 AI 感知。
   // 用不可见标记包裹，前端渲染 user 消息时剥离，避免打扰用户。
   viewContext?: string
-  // 快捷指令（总结/翻译/格式化/解释）：不污染输入框，仅在内部 inject 一条隐藏
+  // 快捷指令（总结/翻译/格式化/解释/优化）：不污染输入框，仅在内部 inject 一条隐藏
   // 的 system 消息（systemMeta.kind='quick_action_<action>'）作为模型指令上下文。
   // 前端 AiMessage.vue 不会渲染该 system 消息，UI 上看不到 prompt 文本。
-  quickAction?: 'summarize' | 'translate' | 'format' | 'explain'
+  quickAction?: 'summarize' | 'translate' | 'format' | 'explain' | 'optimize'
 }
 
 // 上下文感知标记：包裹注入的"当前页面"上下文，前端渲染时剥离。
 const VIEW_CTX_OPEN = '\u2404VIEWCTX\u2404'
 const VIEW_CTX_CLOSE = '\u2404/VIEWCTX\u2404'
+// 快捷指令用户内容标记：包裹真正的用户输入文本，指令型 system 消息
+// 借此向 LLM 明确"只对这块内容做处理"，渲染时同样剥离。
+const USER_INPUT_OPEN = '\u2404USERINPUT\u2404'
+const USER_INPUT_CLOSE = '\u2404/USERINPUT\u2404'
 
 // 原生支持 reasoning 的模型关键词
 const NATIVE_REASONING_KEYWORDS = [
@@ -301,19 +315,37 @@ export function useAiChat() {
     }
 
     error.value = ''
-    if (options.quickAction) {
-      const prompt = t(`ai_quick_${options.quickAction}_prompt`) || ''
-      if (prompt) messages.value.push({ role: 'system', content: prompt, systemMeta: { kind: `quick_action_${options.quickAction}` } })
-    }
+    // 快捷指令（总结/翻译/格式化/解释）：用不可见标记包裹真正要处理的文本，
+    // 让 LLM 明确"只对 ␄USERINPUT␄...␄/USERINPUT␄ 之间的内容做操作"，
+    // 并把指令 system 消息放在 user 消息之后（"最近一条指令优先"），
+    // 避免被 system 提示里关于 ClipSync 应用的全局说明抢走注意力。
+    const wrappedText = options.quickAction ? `${USER_INPUT_OPEN}${text}${USER_INPUT_CLOSE}` : text
     // 上下文感知（#229）：把当前页面/收藏夹上下文注入到 user 消息开头。
     // 用不可见标记包裹，上游 LLM 能看到，前端渲染时剥离（见 AiMessageList/AiMessage）。
-    const userContent = options.viewContext ? `${VIEW_CTX_OPEN}${options.viewContext}${VIEW_CTX_CLOSE}${text}` : text
+    const userContent = options.viewContext
+      ? `${VIEW_CTX_OPEN}${options.viewContext}${VIEW_CTX_CLOSE}${wrappedText}`
+      : wrappedText
     messages.value.push({
       role: 'user',
       content: userContent,
       images: options.images,
       imageHash: options.images?.[0]?.hash,
     })
+    if (options.quickAction) {
+      let prompt = t(`ai_quick_${options.quickAction}_prompt`) || ''
+      // 翻译指令占位符 {{lang}} → 依据文本实际语种决定目标语种。
+      if (options.quickAction === 'translate' && prompt.includes('{{lang}}')) {
+        const isChinese = /[\u4e00-\u9fa5]/.test(text)
+        const targetLang = isChinese ? 'English' : '中文'
+        prompt = prompt.split('{{lang}}').join(targetLang)
+      }
+      if (prompt)
+        messages.value.push({
+          role: 'system',
+          content: prompt,
+          systemMeta: { kind: `quick_action_${options.quickAction}` },
+        })
+    }
     messages.value.push({ role: 'assistant', content: '', thinking: '', thinkingActive: true })
     // 必须引用 messages 数组里的 reactive proxy，后续 mutations 才能触发 Vue 响应式更新。
     // 注意：若用户在流式进行中途切换历史对话，messages.value 会被替换，但 assistantMsg
@@ -331,24 +363,24 @@ export function useAiChat() {
       if (!assistantMsg.agentRuns) assistantMsg.agentRuns = []
       return assistantMsg.agentRuns
     }
-function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
-  const runs = ensureAgentRuns()
-  let run = runs.find((r) => r.id === a.id)
-  if (!run) {
-    run = { id: a.id, name: a.name, status: a.status, kind: a.kind }
-    runs.push(run)
-  }
-  run.name = a.name
-  run.status = a.status
-  if (a.kind) run.kind = a.kind
-  // 记录最后更新时间到非响应式 Map，避免每秒级更新触发无关重渲染
-  agentLastUpdateAt.set(a.id, Date.now())
-  // 携带 error 视为失败（后端把 error 放在 failed 事件中）
-  if (a.error !== undefined) {
-    run.status = 'failed'
-    run.error = a.error
-  }
-}
+    function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
+      const runs = ensureAgentRuns()
+      let run = runs.find((r) => r.id === a.id)
+      if (!run) {
+        run = { id: a.id, name: a.name, status: a.status, kind: a.kind }
+        runs.push(run)
+      }
+      run.name = a.name
+      run.status = a.status
+      if (a.kind) run.kind = a.kind
+      // 记录最后更新时间到非响应式 Map，避免每秒级更新触发无关重渲染
+      agentLastUpdateAt.set(a.id, Date.now())
+      // 携带 error 视为失败（后端把 error 放在 failed 事件中）
+      if (a.error !== undefined) {
+        run.status = 'failed'
+        run.error = a.error
+      }
+    }
     function getOrCreateAgentRun(id: string): AgentRun {
       const runs = ensureAgentRuns()
       let run = runs.find((r) => r.id === id)
@@ -558,9 +590,8 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
           // token 用量事件：覆盖为最近一次（最代表当前上下文大小）
           if (meta?.usage) {
             const u = meta.usage
-            const percent = u.contextWindow > 0
-              ? Math.min(100, Math.max(0, Math.round((u.totalTokens / u.contextWindow) * 100)))
-              : 0
+            const percent =
+              u.contextWindow > 0 ? Math.min(100, Math.max(0, Math.round((u.totalTokens / u.contextWindow) * 100))) : 0
             contextUsage.value = { ...u, percent }
           }
           // 非响应式 Map 记录活跃 agent 的最后更新时间，避免直接改 run._lastUpdateAt 触发重渲染
@@ -749,7 +780,11 @@ function upsertAgentRun(a: NonNullable<StreamDeltaMeta['agent']>) {
         setCompressProgress({ status: 'failed', source: 'manual', error: res.error || 'compact failed' })
       }
     } catch (e) {
-      setCompressProgress({ status: 'failed', source: 'manual', error: e instanceof Error ? e.message : 'compact failed' })
+      setCompressProgress({
+        status: 'failed',
+        source: 'manual',
+        error: e instanceof Error ? e.message : 'compact failed',
+      })
     }
   }
 

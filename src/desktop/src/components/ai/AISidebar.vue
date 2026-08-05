@@ -11,7 +11,20 @@ import AiChatInput from './AiChatInput.vue'
 import AiConversationList from './AiConversationList.vue'
 import AiMemoryPanel from './AiMemoryPanel.vue'
 import AiCompressProgress from './AiCompressProgress.vue'
-import { X, Bot, Plus, MessageSquare, Workflow, History, Brain, ShieldCheck, UserCog, User, CopyCheck, Package } from 'lucide-vue-next'
+import {
+  X,
+  Bot,
+  Plus,
+  MessageSquare,
+  Workflow,
+  History,
+  Brain,
+  ShieldCheck,
+  UserCog,
+  User,
+  CopyCheck,
+  Package,
+} from 'lucide-vue-next'
 
 const props = defineProps<{
   open: boolean
@@ -66,7 +79,7 @@ const mode = ref<'ask' | 'agent'>((localStorage.getItem('ai-mode') as 'ask' | 'a
 // 思考模式（localStorage 瞬时回退，DB 为准）
 const thinkingEnabled = ref(localStorage.getItem('ai-thinking-enabled') === 'true')
 const thinkingStrength = ref<'low' | 'medium' | 'high'>(
-  (localStorage.getItem('ai-thinking-strength') as 'low' | 'medium' | 'high') || 'medium'
+  (localStorage.getItem('ai-thinking-strength') as 'low' | 'medium' | 'high') || 'medium',
 )
 
 // DB 偏好加载后：以 DB 为准覆盖本地（仅一次）
@@ -81,23 +94,20 @@ watch(
       thinkingStrength.value = s.thinkingStrength || 'medium'
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 // 变更时：同时写 localStorage（瞬时回退）与 DB（持久化，满足“入库不丢失”）
-watch(
-  [mode, thinkingEnabled, thinkingStrength],
-  () => {
-    localStorage.setItem('ai-mode', mode.value)
-    localStorage.setItem('ai-thinking-enabled', String(thinkingEnabled.value))
-    localStorage.setItem('ai-thinking-strength', thinkingStrength.value)
-    persistSettings({
-      defaultMode: mode.value,
-      thinkingEnabled: thinkingEnabled.value,
-      thinkingStrength: thinkingStrength.value,
-    })
-  }
-)
+watch([mode, thinkingEnabled, thinkingStrength], () => {
+  localStorage.setItem('ai-mode', mode.value)
+  localStorage.setItem('ai-thinking-enabled', String(thinkingEnabled.value))
+  localStorage.setItem('ai-thinking-strength', thinkingStrength.value)
+  persistSettings({
+    defaultMode: mode.value,
+    thinkingEnabled: thinkingEnabled.value,
+    thinkingStrength: thinkingStrength.value,
+  })
+})
 
 // 历史面板：改为 Popover 覆盖层（#216），不占布局宽度
 const historyOpen = ref(false)
@@ -136,7 +146,7 @@ watch(
       loadConversations()
       fetchUser()
     }
-  }
+  },
 )
 
 // 切换对话时同步模式/思考开关
@@ -182,9 +192,13 @@ function onSend(text: string, images?: import('@/api/ai').ChatImage[]) {
   })
 }
 
-// 快捷指令（总结/翻译/格式化/解释）：不在输入框写入 prompt，仅告诉 send() 走哪个 instruction。
+// 快捷指令（总结/翻译/格式化/解释/优化）：不在输入框写入 prompt，仅告诉 send() 走哪个 instruction。
 // useAiChat.send() 会自动在 user 消息之前注入一条隐藏 system 消息（systemMeta.kind='quick_action_xxx'）。
-function onQuickAction(action: 'summarize' | 'translate' | 'format' | 'explain', text: string, images?: import('@/api/ai').ChatImage[]) {
+function onQuickAction(
+  action: 'summarize' | 'translate' | 'format' | 'explain' | 'optimize',
+  text: string,
+  images?: import('@/api/ai').ChatImage[],
+) {
   send(text, {
     mode: mode.value,
     thinking: thinkingEnabled.value,
@@ -252,14 +266,25 @@ function formatDupTime(iso?: string): string {
                 :conversations="conversations"
                 :current-id="currentConversationId"
                 :loading="false"
-                @select="(id) => { onSelectConversation(id); historyOpen = false }"
+                @select="
+                  (id) => {
+                    onSelectConversation(id)
+                    historyOpen = false
+                  }
+                "
                 @rename="onRename"
                 @delete="onDelete"
                 @locate="onLocateMessage"
               />
             </PopoverContent>
           </Popover>
-          <Button v-if="hasProviders" variant="ghost" size="icon-sm" :title="t('ai_memory') || '记忆'" @click="showMemory = !showMemory">
+          <Button
+            v-if="hasProviders"
+            variant="ghost"
+            size="icon-sm"
+            :title="t('ai_memory') || '记忆'"
+            @click="showMemory = !showMemory"
+          >
             <Brain :size="16" />
           </Button>
           <div class="ai-header-title">
@@ -284,7 +309,13 @@ function formatDupTime(iso?: string): string {
           >
             <Package :size="15" />
           </Button>
-          <Button v-if="hasProviders" variant="ghost" size="icon-sm" :title="t('ai_new_chat') || '新对话'" @click="onNewConversation">
+          <Button
+            v-if="hasProviders"
+            variant="ghost"
+            size="icon-sm"
+            :title="t('ai_new_chat') || '新对话'"
+            @click="onNewConversation"
+          >
             <Plus :size="15" />
           </Button>
           <Button v-if="messages.length" variant="ghost" size="icon-sm" :title="t('ai_clear')" @click="clear">
@@ -331,7 +362,9 @@ function formatDupTime(iso?: string): string {
           <!-- 图片重复感知（#225）：本次发送的图片已在历史剪贴板中存在 -->
           <div v-if="duplicateImageNotice" class="ai-dup-image-bar">
             <CopyCheck :size="15" class="ai-dup-image-icon" />
-            <span class="ai-dup-image-text">{{ t('ai_dup_image_notice', { earliestTime: formatDupTime(duplicateImageNotice.createdAt) }) }}</span>
+            <span class="ai-dup-image-text">{{
+              t('ai_dup_image_notice', { earliestTime: formatDupTime(duplicateImageNotice.createdAt) })
+            }}</span>
             <Button variant="ghost" size="icon-sm" :title="t('close_btn')" @click="duplicateImageNotice = null">
               <X :size="14" />
             </Button>
@@ -356,13 +389,14 @@ function formatDupTime(iso?: string): string {
             :provider-supports-cache="providerSupportsCache"
             @send="onSend"
             @quick-action="onQuickAction"
+            @optimize-prompt="(text, images) => onQuickAction('optimize', text, images)"
             @reedit="onReedit"
             @stop="stop"
             @select-provider="selectProvider"
             @select-model="selectModel"
             @toggle-thinking="toggleThinking"
             @set-thinking-strength="setThinkingStrength"
-            @set-mode="(m) => mode = m"
+            @set-mode="(m) => (mode = m)"
             @open-settings="emit('open-settings')"
           />
         </template>
@@ -381,7 +415,9 @@ function formatDupTime(iso?: string): string {
   display: flex;
   flex-direction: row;
   overflow: hidden;
-  transition: width 0.22s ease, min-width 0.22s ease;
+  transition:
+    width 0.22s ease,
+    min-width 0.22s ease;
   flex-shrink: 0;
 }
 

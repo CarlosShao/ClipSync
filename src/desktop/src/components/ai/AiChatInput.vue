@@ -5,7 +5,18 @@ import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import type { AiProvider } from '@/api/ai'
-import { Send, Square, Brain, ChevronDown, Settings2, ListChecks, Languages, AlignLeft, HelpCircle } from 'lucide-vue-next'
+import {
+  Send,
+  Square,
+  Brain,
+  ChevronDown,
+  Settings2,
+  ListChecks,
+  Languages,
+  AlignLeft,
+  HelpCircle,
+  Sparkles,
+} from 'lucide-vue-next'
 import type { ContextUsage, ChatImage } from '@/api/ai'
 import { sha256DataUrl } from '@/utils/hash'
 
@@ -26,6 +37,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   send: [text: string, images?: ChatImage[]]
   'quick-action': [action: 'summarize' | 'translate' | 'format' | 'explain', text: string, images?: ChatImage[]]
+  'optimize-prompt': [text: string, images?: ChatImage[]]
   stop: []
   'select-provider': [id: string]
   'select-model': [model: string]
@@ -57,7 +69,9 @@ const QUICK_ICONS: Record<QuickActionKey, any> = {
   format: AlignLeft,
   explain: HelpCircle,
 }
-const quickCanUse = computed(() => !props.disabled && !props.isStreaming && props.providers.length > 0 && !!props.selectedProviderId)
+const quickCanUse = computed(
+  () => !props.disabled && !props.isStreaming && props.providers.length > 0 && !!props.selectedProviderId,
+)
 function runQuickAction(action: (typeof QUICK_ACTIONS)[number]) {
   if (!quickCanUse.value) return
   // 关键：不再把 prompt 写入 text.value。直接把"原始输入"作为 user 消息发送，
@@ -71,6 +85,19 @@ function runQuickAction(action: (typeof QUICK_ACTIONS)[number]) {
   text.value = ''
   pastedImages.value = []
 }
+
+// 提示词优化：把当前输入框内容发出去，让上层用专门的 system 指令（quick_action_optimize）重写/润色。
+// 优化结果回到对话流里展示，用户可一键回填到输入框继续编辑发送。
+const optimizeCanUse = computed(
+  () => !props.disabled && !props.isStreaming && props.providers.length > 0 && !!props.selectedProviderId,
+)
+function runOptimizePrompt() {
+  if (!optimizeCanUse.value) return
+  const original = text.value
+  const hasImages = pastedImages.value.length > 0
+  // 即便输入框为空也允许：相当于让 AI 帮忙起手。
+  emit('optimize-prompt', original, hasImages ? [...pastedImages.value] : undefined)
+}
 // 粘贴进输入框的截图（仅图片，不处理任意文件上传）
 const pastedImages = ref<ChatImage[]>([])
 
@@ -82,9 +109,27 @@ const modePopupEl = ref<HTMLElement | null>(null)
 const modelBtnEl = ref<HTMLElement | null>(null)
 const modelPopupEl = ref<HTMLElement | null>(null)
 
-onClickOutside(thinkingPopupEl, () => { if (activePopup.value === 'thinking') activePopup.value = null }, { ignore: [thinkingBtnEl] })
-onClickOutside(modePopupEl, () => { if (activePopup.value === 'mode') activePopup.value = null }, { ignore: [modeBtnEl] })
-onClickOutside(modelPopupEl, () => { if (activePopup.value === 'model') activePopup.value = null }, { ignore: [modelBtnEl] })
+onClickOutside(
+  thinkingPopupEl,
+  () => {
+    if (activePopup.value === 'thinking') activePopup.value = null
+  },
+  { ignore: [thinkingBtnEl] },
+)
+onClickOutside(
+  modePopupEl,
+  () => {
+    if (activePopup.value === 'mode') activePopup.value = null
+  },
+  { ignore: [modeBtnEl] },
+)
+onClickOutside(
+  modelPopupEl,
+  () => {
+    if (activePopup.value === 'model') activePopup.value = null
+  },
+  { ignore: [modelBtnEl] },
+)
 
 const selectedProvider = computed(() => props.providers.find((x) => x.id === props.selectedProviderId))
 
@@ -170,7 +215,11 @@ const cacheStatusTip = computed(() => {
     return t('ai_cache_not_supported') || '缓存未启用：当前供应商或请求未命中 prompt 缓存'
   }
   if (cacheHitPercent.value > 0) {
-    return t('ai_cache_hit', { percent: cacheHitPercent.value, cached: props.contextUsage?.cacheReadTokens || 0, prompt: props.contextUsage?.promptTokens || 0 })
+    return t('ai_cache_hit', {
+      percent: cacheHitPercent.value,
+      cached: props.contextUsage?.cacheReadTokens || 0,
+      prompt: props.contextUsage?.promptTokens || 0,
+    })
   }
   return t('ai_cache_zero_yet') || '当前供应商支持 prompt 缓存，但本次请求尚未命中（0%）'
 })
@@ -179,7 +228,7 @@ const usageTip = computed(() => {
   if (!props.contextUsage) return t('ai_context_usage_none') || '上下文用量：暂无数据'
   return (
     `${t('ai_context_usage', { percent: usagePercent.value, used: props.contextUsage.totalTokens, total: props.contextUsage.contextWindow })}（外环）\n` +
-    `${cacheSupported.value ? t('ai_cache_hit', { percent: cacheHitPercent.value, cached: props.contextUsage.cacheReadTokens || 0, prompt: props.contextUsage.promptTokens }) : (t('ai_cache_not_supported') || '缓存未启用：该供应商/请求暂未命中 prompt 缓存')}（内环）`
+    `${cacheSupported.value ? t('ai_cache_hit', { percent: cacheHitPercent.value, cached: props.contextUsage.cacheReadTokens || 0, prompt: props.contextUsage.promptTokens }) : t('ai_cache_not_supported') || '缓存未启用：该供应商/请求暂未命中 prompt 缓存'}（内环）`
   )
 })
 
@@ -285,7 +334,7 @@ const usageCacheWriteTokens = computed(() => props.contextUsage?.cacheWriteToken
 const usageThinkingTokens = computed(() => props.contextUsage?.thinkingTokens ?? 0)
 const usageReplyTokens = computed(() => props.contextUsage?.replyTokens ?? 0)
 const usageCacheMissTokens = computed(() =>
-  Math.max(0, usagePromptTokens.value - usageCacheReadTokens.value - usageCacheWriteTokens.value)
+  Math.max(0, usagePromptTokens.value - usageCacheReadTokens.value - usageCacheWriteTokens.value),
 )
 // 历史消息「重新编辑」：把内容填回输入框并聚焦、光标移到末尾。
 function setDraft(content: string) {
@@ -336,7 +385,9 @@ defineExpose({ setDraft })
     <div v-if="pastedImages.length" class="ai-paste-previews">
       <div v-for="(img, idx) in pastedImages" :key="idx" class="ai-paste-thumb">
         <img :src="img.data" :alt="img.mime" />
-        <button class="ai-paste-remove" :title="t('ai_remove_image') || '移除'" @click="removePastedImage(idx)">×</button>
+        <button class="ai-paste-remove" :title="t('ai_remove_image') || '移除'" @click="removePastedImage(idx)">
+          ×
+        </button>
       </div>
     </div>
 
@@ -344,15 +395,28 @@ defineExpose({ setDraft })
     <div class="ai-card-bottom">
       <div class="ai-card-actions">
         <!-- 思考模式 -->
-        <button ref="thinkingBtnEl" class="ai-tag-btn" :class="{ active: thinkingEnabled }" @click.stop="togglePopup('thinking')">
+        <button
+          ref="thinkingBtnEl"
+          class="ai-tag-btn"
+          :class="{ active: thinkingEnabled }"
+          @click.stop="togglePopup('thinking')"
+        >
           <Brain :size="12" />
           <span>{{ thinkingEnabled ? t('ai_strength_' + thinkingStrength) : t('ai_thinking') }}</span>
         </button>
         <div v-if="activePopup === 'thinking'" ref="thinkingPopupEl" class="ai-popup" @click.stop>
-          <button :class="{ active: thinkingEnabled && thinkingStrength === 'low' }" @click="setStrength('low')">{{ t('ai_strength_low') }}</button>
-          <button :class="{ active: thinkingEnabled && thinkingStrength === 'medium' }" @click="setStrength('medium')">{{ t('ai_strength_medium') }}</button>
-          <button :class="{ active: thinkingEnabled && thinkingStrength === 'high' }" @click="setStrength('high')">{{ t('ai_strength_high') }}</button>
-          <button class="ai-popup-divider" @click="toggleThinking">{{ thinkingEnabled ? t('ai_thinking_off') : t('ai_thinking_on') }}</button>
+          <button :class="{ active: thinkingEnabled && thinkingStrength === 'low' }" @click="setStrength('low')">
+            {{ t('ai_strength_low') }}
+          </button>
+          <button :class="{ active: thinkingEnabled && thinkingStrength === 'medium' }" @click="setStrength('medium')">
+            {{ t('ai_strength_medium') }}
+          </button>
+          <button :class="{ active: thinkingEnabled && thinkingStrength === 'high' }" @click="setStrength('high')">
+            {{ t('ai_strength_high') }}
+          </button>
+          <button class="ai-popup-divider" @click="toggleThinking">
+            {{ thinkingEnabled ? t('ai_thinking_off') : t('ai_thinking_on') }}
+          </button>
         </div>
 
         <!-- Ask/Agent（一个按钮，点击选择） -->
@@ -370,26 +434,57 @@ defineExpose({ setDraft })
           <span>{{ providerLabel }}</span>
           <ChevronDown :size="10" />
         </button>
-        <div v-if="activePopup === 'model'" ref="modelPopupEl" class="ai-popup ai-popup--right ai-popup--models" @click.stop>
+        <div
+          v-if="activePopup === 'model'"
+          ref="modelPopupEl"
+          class="ai-popup ai-popup--right ai-popup--models"
+          @click.stop
+        >
           <div class="ai-popup-title">{{ t('ai_select_model') }}</div>
           <button
             v-for="m in selectedProviderModels"
             :key="m"
             :class="{ active: (selectedModel || selectedProvider?.model) === m }"
-            @click="emit('select-model', m); closePopups()"
-          >{{ m }}</button>
+            @click="
+              emit('select-model', m)
+              closePopups()
+            "
+          >
+            {{ m }}
+          </button>
           <div class="ai-popup-title ai-popup-title--sub">{{ t('ai_switch_provider') }}</div>
           <button
             v-for="p in providers"
             :key="p.id"
             :class="{ active: selectedProviderId === p.id }"
             @click="selectProvider(p.id)"
-          >{{ p.name }}</button>
-          <button class="ai-popup-divider" @click="emit('open-settings'); closePopups()">{{ t('ai_manage') }}</button>
+          >
+            {{ p.name }}
+          </button>
+          <button
+            class="ai-popup-divider"
+            @click="
+              emit('open-settings')
+              closePopups()
+            "
+          >
+            {{ t('ai_manage') }}
+          </button>
         </div>
       </div>
 
       <div class="ai-send-area">
+        <!-- 提示词优化：把输入框文本交给 AI 润色/补全，结果作为新一轮 AI 回复回填到输入框 -->
+        <button
+          class="ai-optimize-btn"
+          :class="{ disabled: !optimizeCanUse }"
+          :title="t('ai_optimize_prompt_tooltip') || '提示词优化：让 AI 润色当前输入内容'"
+          :aria-label="t('ai_optimize_prompt_tooltip') || '提示词优化'"
+          :disabled="!optimizeCanUse"
+          @click="runOptimizePrompt"
+        >
+          <Sparkles :size="15" />
+        </button>
         <!-- 上下文用量：圆环触发 + 点击展开 Cursor 风格面板（百分比 / 用量 / 缓存命中率） -->
         <Popover v-model:open="usagePanelOpen" :disabled="!contextUsage">
           <PopoverTrigger as-child>
@@ -399,13 +494,7 @@ defineExpose({ setDraft })
               :title="usageTip"
               :aria-label="t('ai_context_usage_title') || '上下文用量'"
             >
-              <svg
-                class="ai-usage-ring"
-                :class="ringColorClass"
-                width="30"
-                height="30"
-                viewBox="0 0 30 30"
-              >
+              <svg class="ai-usage-ring" :class="ringColorClass" width="30" height="30" viewBox="0 0 30 30">
                 <circle class="ring-track" cx="15" cy="15" :r="RING_R" />
                 <circle
                   class="ring-progress"
@@ -431,7 +520,18 @@ defineExpose({ setDraft })
           </PopoverTrigger>
           <PopoverContent class="ai-usage-panel" side="top" align="end" :side-offset="8">
             <div v-if="!contextUsage" class="ai-usage-panel-empty">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.3;margin-bottom:4px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                style="opacity: 0.3; margin-bottom: 4px"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
+              </svg>
               {{ t('ai_context_usage_none') || '暂无数据，发起一次对话后将显示上下文用量' }}
             </div>
             <div v-else class="ai-usage-panel-body">
@@ -503,7 +603,13 @@ defineExpose({ setDraft })
             </div>
           </PopoverContent>
         </Popover>
-        <Button v-if="!isStreaming" size="icon" class="ai-send-btn" :disabled="disabled || (!text.trim() && pastedImages.length === 0)" @click="submit">
+        <Button
+          v-if="!isStreaming"
+          size="icon"
+          class="ai-send-btn"
+          :disabled="disabled || (!text.trim() && pastedImages.length === 0)"
+          @click="submit"
+        >
           <Send :size="16" />
         </Button>
         <Button v-else size="icon" variant="outline" class="ai-send-btn" @click="emit('stop')">
@@ -652,7 +758,9 @@ defineExpose({ setDraft })
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
-  transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease;
+  transition:
+    stroke-dashoffset 0.4s ease,
+    stroke 0.3s ease;
 }
 
 .ring-progress.level-warn {
@@ -677,14 +785,22 @@ defineExpose({ setDraft })
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
-  transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease;
+  transition:
+    stroke-dashoffset 0.4s ease,
+    stroke 0.3s ease;
 }
 
 .ring-label {
   /* 字号从 7→6，dominant-baseline 改 middle（与 central 等价但跨浏览器一致性更好），
      加 letter-spacing 收紧，避免「100%」字符撑到外圈边缘造成视觉重叠。
      y=18（viewBox 中心 15 之下 3），让数字在双环之间稍微偏下，留出与外圈上沿的明显呼吸空间。*/
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
   font-size: 6px;
   font-weight: 600;
   letter-spacing: -0.3px;
@@ -832,6 +948,31 @@ defineExpose({ setDraft })
 .ai-usage-ring-btn:hover {
   transform: scale(1.06);
 }
+/* 提示词优化按钮：紧贴圆环左侧，hover 出现主题色光晕，禁用态灰显 */
+.ai-optimize-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ai-fg-muted, #6b7280);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.ai-optimize-btn:hover:not(.disabled) {
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.25);
+  transform: scale(1.08);
+}
+.ai-optimize-btn.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
 </style>
 
 <style>
@@ -919,13 +1060,27 @@ defineExpose({ setDraft })
   border-radius: 2px;
   flex-shrink: 0;
 }
-.dot.input { background: #60a5fa; }
-.dot.output { background: #a78bfa; }
-.dot.hit { background: #34d399; }
-.dot.miss { background: #f87171; }
-.dot.write { background: #facc15; }
-.dot.thinking { background: #fbbf24; }
-.dot.reply { background: #a78bfa; }
+.dot.input {
+  background: #60a5fa;
+}
+.dot.output {
+  background: #a78bfa;
+}
+.dot.hit {
+  background: #34d399;
+}
+.dot.miss {
+  background: #f87171;
+}
+.dot.write {
+  background: #facc15;
+}
+.dot.thinking {
+  background: #fbbf24;
+}
+.dot.reply {
+  background: #a78bfa;
+}
 
 .ai-usage-hitrate {
   display: flex;

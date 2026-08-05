@@ -3,7 +3,7 @@ import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { Marked } from 'marked'
 import { sanitizeHtml } from '@/utils/html'
-import { ChevronRight, Copy, Pencil } from 'lucide-vue-next'
+import { ChevronRight, Copy, Pencil, ListChecks, Languages, AlignLeft, HelpCircle, Sparkles } from 'lucide-vue-next'
 import type { ChatMessage, AgentRun } from '@/api/ai'
 import AiThinking from './AiThinking.vue'
 import AiToolTimeline from './AiToolTimeline.vue'
@@ -16,8 +16,25 @@ const { t } = useI18n()
 
 // 历史用户消息上的 hover 操作条（复制 / 重新编辑）。仅 user 消息显示。
 const userActionsVisible = ref(false)
+let hideActionsTimer: ReturnType<typeof setTimeout> | null = null
+// 给「气泡 → 操作条」鼠标移动路径留 150ms 缓冲，避免快速划出时按钮被收起
+// （虽然现在操作条已经移到了气泡内部、右下角悬浮，按理鼠标不会离开父容器，
+// 但保留这个容错能消除边角抖动 / 滚动导致的偶发隐藏）
+function scheduleHideActions() {
+  if (hideActionsTimer) clearTimeout(hideActionsTimer)
+  hideActionsTimer = setTimeout(() => {
+    userActionsVisible.value = false
+  }, 150)
+}
+function cancelHideActions() {
+  if (hideActionsTimer) {
+    clearTimeout(hideActionsTimer)
+    hideActionsTimer = null
+  }
+  userActionsVisible.value = true
+}
 async function copyUserContent() {
-  const text = stripViewContext(props.message.content || '').trim()
+  const text = stripUserInputMarkers(stripViewContext(props.message.content || '')).trim()
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
@@ -26,7 +43,7 @@ async function copyUserContent() {
   }
 }
 function reeditUserContent() {
-  const text = stripViewContext(props.message.content || '').trim()
+  const text = stripUserInputMarkers(stripViewContext(props.message.content || '')).trim()
   if (!text) return
   emit('reedit', text)
 }
@@ -34,12 +51,26 @@ function reeditUserContent() {
 // 上下文感知标记（#229）：剥离注入到 user 消息的"当前页面"上下文，保持 UI 干净
 const VIEW_CTX_OPEN = '\u2404VIEWCTX\u2404'
 const VIEW_CTX_CLOSE = '\u2404/VIEWCTX\u2404'
+// 快捷指令用户内容标记：剥离 LLM 看到的 ␄USERINPUT␄...␄/USERINPUT␄ 边界
+const USER_INPUT_OPEN = '\u2404USERINPUT\u2404'
+const USER_INPUT_CLOSE = '\u2404/USERINPUT\u2404'
 function stripViewContext(content: string): string {
   if (!content || !content.includes(VIEW_CTX_OPEN)) return content
   const start = content.indexOf(VIEW_CTX_OPEN)
   const end = content.indexOf(VIEW_CTX_CLOSE)
   if (start >= 0 && end > start) return content.slice(0, start) + content.slice(end + VIEW_CTX_CLOSE.length)
   return content
+}
+function stripUserInputMarkers(content: string): string {
+  if (!content) return content
+  let out = content
+  while (out.includes(USER_INPUT_OPEN) && out.includes(USER_INPUT_CLOSE)) {
+    const s = out.indexOf(USER_INPUT_OPEN)
+    const e = out.indexOf(USER_INPUT_CLOSE, s)
+    if (s < 0 || e < 0) break
+    out = out.slice(0, s) + out.slice(s + USER_INPUT_OPEN.length, e) + out.slice(e + USER_INPUT_CLOSE.length)
+  }
+  return out
 }
 
 // GFM 已默认开启（表格、删除线、任务列表等）；breaks:false 保持标准 markdown 段落语义。
@@ -56,21 +87,19 @@ const isStreamingNow = computed(() => props.isStreaming && props.index === 0)
 // 历史已完成消息默认折叠；正在流式的不折叠。
 if (!isStreamingNow.value) collapsed.value = true
 watch(isStreamingNow, (now, before) => {
-  if (now) collapsed.value = false // 开始流式 → 展开看实时过程
+  if (now)
+    collapsed.value = false // 开始流式 → 展开看实时过程
   else if (before) collapsed.value = true // 流结束 → 自动折叠
 })
 
 // 思考是否正在流式生长：有 thinking 内容且 thinkingActive 仍为 true
-const isThinkingStreaming = computed(() =>
-  isStreamingNow.value &&
-  (props.message.thinking?.length || 0) > 0 &&
-  props.message.thinkingActive !== false,
+const isThinkingStreaming = computed(
+  () => isStreamingNow.value && (props.message.thinking?.length || 0) > 0 && props.message.thinkingActive !== false,
 )
 
 // 思考是否已结束：有内容，但已经停止（工具开始 / 答案开始 / 流结束）
-const isThinkingDone = computed(() =>
-  (props.message.thinking?.length || 0) > 0 &&
-  (!isStreamingNow.value || props.message.thinkingActive === false),
+const isThinkingDone = computed(
+  () => (props.message.thinking?.length || 0) > 0 && (!isStreamingNow.value || props.message.thinkingActive === false),
 )
 
 const hasAgentRuns = computed(() => (props.message.agentRuns?.length || 0) > 0)
@@ -81,13 +110,14 @@ const hasThinking = computed(() => (props.message.thinking?.length || 0) > 0)
 const hasProcess = computed(() => hasThinking.value || hasToolCalls.value || hasAgentRuns.value)
 
 // loading 占位：尚未收到任何有效阶段数据（无 thinking、无答案、无工具、无 agent 运行卡片）
-const isLoading = computed(() =>
-  isStreamingNow.value &&
-  !isThinkingStreaming.value &&
-  !isThinkingDone.value &&
-  !hasAgentRuns.value &&
-  !hasToolCalls.value &&
-  (props.message.content?.trim().length || 0) === 0,
+const isLoading = computed(
+  () =>
+    isStreamingNow.value &&
+    !isThinkingStreaming.value &&
+    !isThinkingDone.value &&
+    !hasAgentRuns.value &&
+    !hasToolCalls.value &&
+    (props.message.content?.trim().length || 0) === 0,
 )
 
 // 当主消息有全局 thinking 流正在展开时，暂时隐藏 agentRuns；否则立即展示 Agent 运行卡片
@@ -116,11 +146,7 @@ const thinkingEndedAt = ref<number | null>(null)
 watch(
   () => [props.message.thinkingStartedAt, props.message.thinkingActive],
   () => {
-    if (
-      props.message.thinkingStartedAt &&
-      props.message.thinkingActive === false &&
-      thinkingEndedAt.value === null
-    ) {
+    if (props.message.thinkingStartedAt && props.message.thinkingActive === false && thinkingEndedAt.value === null) {
       thinkingEndedAt.value = Date.now()
     }
   },
@@ -220,18 +246,19 @@ function roleLabel() {
 }
 
 // 快捷指令：解析 systemMeta.kind='quick_action_<x>' → 标签/图标，但不暴露完整 prompt。
-const QUICK_ACTIONS_KIND_META: Record<string, { icon: string; i18nKey: string }> = {
-  quick_action_summarize: { icon: '📝', i18nKey: 'ai_quick_applied_summarize' },
-  quick_action_translate: { icon: '🌐', i18nKey: 'ai_quick_applied_translate' },
-  quick_action_format: { icon: '🧹', i18nKey: 'ai_quick_applied_format' },
-  quick_action_explain: { icon: '💡', i18nKey: 'ai_quick_applied_explain' },
+const QUICK_ACTIONS_KIND_META: Record<string, { icon: any; i18nKey: string }> = {
+  quick_action_summarize: { icon: ListChecks, i18nKey: 'ai_quick_applied_summarize' },
+  quick_action_translate: { icon: Languages, i18nKey: 'ai_quick_applied_translate' },
+  quick_action_format: { icon: AlignLeft, i18nKey: 'ai_quick_applied_format' },
+  quick_action_explain: { icon: HelpCircle, i18nKey: 'ai_quick_applied_explain' },
+  quick_action_optimize: { icon: Sparkles, i18nKey: 'ai_quick_applied_optimize' },
 }
 const quickActionKind = computed(() => {
   const kind = props.message.systemMeta?.kind
   return kind && kind.startsWith('quick_action_') ? kind : null
 })
 const quickActionMeta = computed(() => (quickActionKind.value ? QUICK_ACTIONS_KIND_META[quickActionKind.value] : null))
-const quickActionIcon = computed(() => quickActionMeta.value?.icon ?? '·')
+const quickActionIcon = computed(() => quickActionMeta.value?.icon ?? null)
 const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMeta.value.i18nKey) : ''))
 </script>
 
@@ -279,25 +306,20 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
       </template>
 
       <!-- 子代理执行详情抽屉（点击摘要行打开，❌ 或 ESC 关闭，不影响主流程继续） -->
-      <AiAgentDrawer
-        v-if="drawerRun"
-        :run="drawerRun"
-        :is-streaming="isStreaming"
-        @close="drawerRun = null"
-      />
+      <AiAgentDrawer v-if="drawerRun" :run="drawerRun" :is-streaming="isStreaming" @close="drawerRun = null" />
 
       <div v-if="message.role === 'assistant'" class="ai-msg-content markdown-body">
         <!-- 打字机逐字渲染（#232）：流式时只显示前 N 字符，末尾带闪烁光标 -->
         <span v-html="renderMarkdown(typewriterContent)"></span>
-        <span v-if="isStreamingNow && typewriterContent.length < (message.content?.length || 0)" class="ai-type-caret"></span>
+        <span
+          v-if="isStreamingNow && typewriterContent.length < (message.content?.length || 0)"
+          class="ai-type-caret"
+        ></span>
       </div>
       <template v-else-if="message.role === 'system'">
         <!-- 快捷指令（总结/翻译/格式化/解释）：仅显示"已应用指令"标签，完整 prompt 不暴露给用户 -->
-        <div
-          v-if="quickActionKind"
-          class="ai-msg-system-card ai-msg-system-card--quick-action"
-        >
-          <span class="ai-msg-system-icon">{{ quickActionIcon }}</span>
+        <div v-if="quickActionKind" class="ai-msg-system-card ai-msg-system-card--quick-action">
+          <component :is="quickActionIcon" v-if="quickActionIcon" class="ai-msg-system-icon-svg" />
           <span>{{ quickActionLabel }}</span>
         </div>
         <!-- 手动 /compact 命令结果横幅：success / loading / too_short / failed 四种 -->
@@ -312,10 +334,17 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
           </template>
           <template v-else-if="message.systemMeta?.kind === 'compact_success'">
             <span class="ai-msg-system-icon">✓</span>
-            <span>{{ t('ai_compact_success', { removed: message.systemMeta.removed ?? 0, savedTokens: message.systemMeta.savedTokens ?? 0 }) }}</span>
+            <span>{{
+              t('ai_compact_success', {
+                removed: message.systemMeta.removed ?? 0,
+                savedTokens: message.systemMeta.savedTokens ?? 0,
+              })
+            }}</span>
             <details v-if="message.systemMeta.summaryPreview" class="ai-msg-system-preview">
               <summary>{{ t('ai_compact_view_summary') || '查看压缩摘要' }}</summary>
-              <pre>{{ message.systemMeta.summaryPreview }}{{ message.systemMeta.summaryPreview.length >= 600 ? '\n…' : '' }}</pre>
+              <pre
+                >{{ message.systemMeta.summaryPreview
+                }}{{ message.systemMeta.summaryPreview.length >= 600 ? '\n…' : '' }}</pre>
             </details>
           </template>
           <template v-else-if="message.systemMeta?.kind === 'compact_too_short'">
@@ -331,22 +360,20 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
         <div v-else class="ai-msg-content">{{ compactBlankLines(message.content) }}</div>
       </template>
       <template v-else>
-        <!-- 用户消息：hover 显示「复制 / 重新编辑」操作条（右上角） -->
-        <div
-          class="ai-msg-user-body"
-          @mouseenter="userActionsVisible = true"
-          @mouseleave="userActionsVisible = false"
-        >
+        <!-- 用户消息：hover 显示「复制 / 重新编辑」操作条（右下角，位于气泡内） -->
+        <div class="ai-msg-user-body" @mouseenter="userActionsVisible = true" @mouseleave="scheduleHideActions">
           <!-- 用户随消息发送的截图缩略图（多模态 vision 提问） -->
           <div v-if="message.images?.length" class="ai-msg-images">
             <img v-for="(img, i) in message.images" :key="i" :src="img.data" :alt="img.mime" />
           </div>
-          <div class="ai-msg-content">{{ compactBlankLines(stripViewContext(message.content)) }}</div>
-          <div class="ai-msg-actions" :class="{ visible: userActionsVisible }">
-            <button class="ai-msg-action-btn" :title="t('ai_copy')" @click="copyUserContent">
+          <div class="ai-msg-content">
+            {{ compactBlankLines(stripUserInputMarkers(stripViewContext(message.content))) }}
+          </div>
+          <div class="ai-msg-actions" :class="{ visible: userActionsVisible }" @mouseenter="cancelHideActions">
+            <button class="ai-msg-action-btn" :title="t('ai_copy')" @click.stop="copyUserContent">
               <Copy :size="13" />
             </button>
-            <button class="ai-msg-action-btn" :title="t('ai_reedit')" @click="reeditUserContent">
+            <button class="ai-msg-action-btn" :title="t('ai_reedit')" @click.stop="reeditUserContent">
               <Pencil :size="13" />
             </button>
           </div>
@@ -363,18 +390,19 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
 .ai-msg.user {
   justify-content: flex-end;
 }
-/* 历史用户消息操作条容器：相对定位，让「复制 / 重新编辑」按钮悬浮在气泡右上角 */
+/* 历史用户消息操作条容器：相对定位，让「复制 / 重新编辑」按钮悬浮在气泡右下角 */
 .ai-msg-user-body {
   position: relative;
   max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding-bottom: 2px; /* 给右下角悬浮按钮预留内边距，避免贴到文字边 */
 }
 .ai-msg-actions {
   position: absolute;
-  top: -10px;
   right: 6px;
+  bottom: 4px;
   display: flex;
   gap: 4px;
   padding: 2px;
@@ -385,7 +413,9 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   opacity: 0;
   transform: translateY(4px);
   pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
   z-index: 5;
 }
 .ai-msg-actions.visible {
@@ -404,7 +434,9 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   background: transparent;
   color: var(--text-secondary, #64748b);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 .ai-msg-action-btn:hover {
   background: var(--accent-bg, rgba(99, 102, 241, 0.1));
@@ -425,8 +457,8 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   gap: 6px;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid var(--ai-border, rgba(127,127,127,0.18));
-  background: var(--ai-system-bg, rgba(127,127,127,0.06));
+  border: 1px solid var(--ai-border, rgba(127, 127, 127, 0.18));
+  background: var(--ai-system-bg, rgba(127, 127, 127, 0.06));
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--ai-fg-muted, #6b7280);
@@ -455,11 +487,20 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   color: var(--ai-fg, inherit);
   font-size: 12px;
   padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .ai-msg-system-icon {
   display: inline-block;
   margin-right: 6px;
   font-weight: 600;
+}
+.ai-msg-system-icon-svg {
+  width: 14px;
+  height: 14px;
+  color: #8b5cf6;
+  flex-shrink: 0;
 }
 .ai-msg-system-preview {
   margin-top: 4px;
@@ -473,7 +514,7 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
 .ai-msg-system-preview pre {
   margin: 6px 0 0 0;
   padding: 8px 10px;
-  background: var(--ai-bg-soft, rgba(127,127,127,0.06));
+  background: var(--ai-bg-soft, rgba(127, 127, 127, 0.06));
   border-radius: 6px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -524,7 +565,9 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   cursor: pointer;
   font-size: 12px;
   color: var(--text-secondary);
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 .ai-process-collapsed:hover {
   background: var(--bg-hover);
@@ -568,8 +611,13 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   animation: ai-type-caret-blink 0.9s step-end infinite;
 }
 @keyframes ai-type-caret-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 .ai-msg.user .ai-msg-content {
   white-space: pre-wrap;
@@ -596,19 +644,31 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   margin: 10px 0 4px;
   font-weight: 600;
 }
-.ai-msg-content :deep(h1) { font-size: 15px; }
-.ai-msg-content :deep(h2) { font-size: 14px; }
-.ai-msg-content :deep(h3) { font-size: 13px; }
-.ai-msg-content :deep(p) { margin: 6px 0; }
+.ai-msg-content :deep(h1) {
+  font-size: 15px;
+}
+.ai-msg-content :deep(h2) {
+  font-size: 14px;
+}
+.ai-msg-content :deep(h3) {
+  font-size: 13px;
+}
+.ai-msg-content :deep(p) {
+  margin: 6px 0;
+}
 .ai-msg-content :deep(ul),
 .ai-msg-content :deep(ol) {
   padding-left: 20px;
   margin: 6px 0;
 }
-.ai-msg-content :deep(li) { margin: 3px 0; }
-.ai-msg-content :deep(li > p) { margin: 0; }
+.ai-msg-content :deep(li) {
+  margin: 3px 0;
+}
+.ai-msg-content :deep(li > p) {
+  margin: 0;
+}
 .ai-msg-content :deep(code) {
-  background: rgba(0,0,0,0.06);
+  background: rgba(0, 0, 0, 0.06);
   padding: 1px 4px;
   border-radius: 3px;
   font-family: var(--font-mono, monospace);
@@ -626,8 +686,12 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   background: none;
   padding: 0;
 }
-.ai-msg-content :deep(strong) { font-weight: 600; }
-.ai-msg-content :deep(a) { color: var(--accent); }
+.ai-msg-content :deep(strong) {
+  font-weight: 600;
+}
+.ai-msg-content :deep(a) {
+  color: var(--accent);
+}
 .ai-msg-content :deep(blockquote) {
   border-left: 3px solid var(--accent);
   background: var(--accent-bg);
