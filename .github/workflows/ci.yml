@@ -135,65 +135,86 @@ jobs:
         run: npm test -- --reporter=verbose
         continue-on-error: true
 
-  # ============ 3. Docker Build（必须通过，否则 workflow 失败）============
-  build:
-    name: "Docker Build"
-    runs-on: ubuntu-latest
-    needs: [lint, test]   # test 失败 continue-on-error，这里仍跑
-    # 只有 master push 才构建
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    steps:
-      - uses: actions/checkout@v4
+  # Docker Build 已删除：你用单台服务器本地 docker compose 部署，GH 打镜像无用
+  # 如未来需要恢复，把下面的注释解开，并改 deploy 的 needs 加 build
+  # build:
+  #   name: "Docker Build"
+  #   runs-on: ubuntu-latest
+  #   needs: [lint, test]
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Set up Docker Buildx
+  #       uses: docker/setup-buildx-action@v3
+  #     - name: Build server image
+  #       uses: docker/build-push-action@v5
+  #       with:
+  #         context: ./src/server
+  #         file: ./src/server/Dockerfile
+  #         push: false
+  #         tags: clipsync-server:ci-${{ github.sha }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build server image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./src/server
-          file: ./src/server/Dockerfile
-          push: false
-          tags: clipsync-server:ci-${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ============ 4. Deploy（可选，没配 secrets 自动跳过）============
+  # ============ 部署策略说明 ============
+  # 触发方式：手动触发（GitHub 网页点 Run workflow 按钮）
+  # 原因：服务器已就绪但首次建议手动验证，再考虑 push 自动触发。
   deploy:
     name: "Deploy to Server"
     runs-on: ubuntu-latest
-    needs: [lint, test, build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    # secrets 没配就跳过；不会报错
+    needs: [lint, test]
+    # 只在手动点 "Run workflow" 按钮时触发；push/PR 不会动服务器
+    if: github.event_name == 'workflow_dispatch'
+    # 失败不阻塞（SSH 抽风可以手动看日志）
     continue-on-error: true
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
     steps:
-      - name: Skip if secrets not configured
+      - name: 检查 Secret 是否配置
         run: |
-          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
-            echo "⚠️ DEPLOY_HOST / DEPLOY_SSH_KEY 未配置，跳过部署"
-            echo "DEPLOY_SKIPPED=true" >> $GITHUB_ENV
-            exit 0
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "❌ Secrets 未配齐。请在仓库 Settings → Secrets 添加 DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY"
+            exit 1
           fi
+          echo "✅ Secrets 已就绪，准备部署到 $DEPLOY_USER@$DEPLOY_HOST"
 
-      - name: Setup SSH
-        if: env.DEPLOY_SKIPPED != 'true'
+      - name: 配置 SSH（ed25519）
         run: |
           mkdir -p ~/.ssh
-          echo "$DEPLOY_SSH_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts 2>/dev/null
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "✅ SSH 客户端已配置"
 
-      - name: Deploy
-        if: env.DEPLOY_SKIPPED != 'true'
+      - name: 部署到服务器
         run: |
-          ssh $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
+              "$DEPLOY_USER@$DEPLOY_HOST" << 'REMOTE_EOF'
             set -e
-            cd ~/clipsync
-            git pull origin master
-            docker compose -f docker-compose.prod.yml up -d --build
-            echo "✅ 部署完成: $(date)"
-          EOF
+            echo "==> 进入项目目录"
+            cd ~/clipsync || cd /root/clipsync || cd ~/CodeBuddy/clipsync || { echo "❌ 找不到项目目录"; exit 1; }
+            pwd
+
+            echo "==> 记录当前版本（用于万一回滚）"
+            git log -1 --oneline > .last_deploy_commit 2>/dev/null || true
+
+            echo "==> 拉取最新代码"
+            git fetch origin master
+            git reset --hard origin/master
+
+            echo "==> 重启后端（按文件存在情况自动挑 compose 配置）"
+            if [ -f docker-compose.prod.yml ]; then
+              docker compose -f docker-compose.prod.yml restart backend || true
+            elif [ -f docker-compose.dev.yml ]; then
+              docker compose -f docker-compose.dev.yml restart backend || true
+            else
+              docker compose restart backend || true
+            fi
+            echo "✅ 后端已重启"
+
+            sleep 5
+            echo "==> 服务状态快照"
+            docker compose ps || true
+            docker compose logs --tail=20 backend || true
+            echo "🎉 部署完成：$(date)"
+          REMOTE_EOF
