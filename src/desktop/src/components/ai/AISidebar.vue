@@ -357,7 +357,12 @@ function formatDupTime(iso?: string): string {
             </div>
           </div>
 
-          <AiMessageList ref="msgListRef" :messages="messages" :is-streaming="isStreaming" />
+          <AiMessageList
+            ref="msgListRef"
+            :messages="messages"
+            :is-streaming="isStreaming"
+            @reedit="onReedit"
+          />
 
           <!-- 图片重复感知（#225）：本次发送的图片已在历史剪贴板中存在 -->
           <div v-if="duplicateImageNotice" class="ai-dup-image-bar">
@@ -389,7 +394,6 @@ function formatDupTime(iso?: string): string {
             :provider-supports-cache="providerSupportsCache"
             @send="onSend"
             @quick-action="onQuickAction"
-            @optimize-prompt="(text, images) => onQuickAction('optimize', text, images)"
             @reedit="onReedit"
             @stop="stop"
             @select-provider="selectProvider"

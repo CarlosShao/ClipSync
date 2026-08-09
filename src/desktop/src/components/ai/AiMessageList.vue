@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import type { ChatMessage } from '@/api/ai'
 import AiMessage from './AiMessage.vue'
@@ -12,7 +12,6 @@ const scrollRef = ref<HTMLElement | null>(null)
 const userScrolledUp = ref(false)
 
 function isNearBottom(el: HTMLElement) {
-  // 距离底部 80px 内视为“已在底部”
   return el.scrollHeight - el.scrollTop - el.clientHeight < 80
 }
 
@@ -32,41 +31,23 @@ function onScroll() {
   userScrolledUp.value = !isNearBottom(el)
 }
 
-watch(
-  () => props.messages.length,
-  () => scrollToBottom(),
-)
-watch(
-  () => (props.messages[props.messages.length - 1]?.content || ''),
-  () => scrollToBottom(),
-)
-watch(
-  () => (props.messages[props.messages.length - 1]?.thinking || ''),
-  () => scrollToBottom(),
-)
-// 切换对话（messages 引用整体被替换）时强制滚到底部，确保打开历史对话看到最新消息，
-// 而不是停留在旧位置导致“上一条记录滚不上去/看不到”。
-watch(
-  () => props.messages,
-  () => scrollToBottom(true),
-)
+watch(() => props.messages.length, () => scrollToBottom())
+watch(() => (props.messages[props.messages.length - 1]?.content || ''), () => scrollToBottom())
+watch(() => (props.messages[props.messages.length - 1]?.thinking || ''), () => scrollToBottom())
+watch(() => props.messages, () => scrollToBottom(true))
 
-// 定位到指定消息（#231 历史搜索）：按对话内位置索引滚动到该条消息并高亮。
-// 通过内容匹配（pos 是数据库里的序号，前端 messages 可能已被过滤），
-// 找不到时尝试滚到中间位置。
+// 定位到指定消息（#231 历史搜索）
 const locateMarkId = ref<string | null>(null)
 function scrollToPos(pos: number, highlightText?: string) {
   nextTick(() => {
     const el = scrollRef.value
     if (!el) return
-    // 优先按文本定位（前端消息可能被过滤/重组）
     let targetIndex = -1
     if (highlightText) {
       const idx = props.messages.findIndex((m) => m.content && m.content.includes(highlightText))
       targetIndex = idx
     }
     if (targetIndex < 0) {
-      // 退化为按位置估算：pos 是 DB 里升序序号，前端消息通常也是升序
       const ratio = props.messages.length ? Math.min(0.9, Math.max(0.05, (pos - 1) / Math.max(1, props.messages.length))) : 0
       el.scrollTop = Math.round(ratio * (el.scrollHeight - el.clientHeight))
       return
@@ -74,7 +55,6 @@ function scrollToPos(pos: number, highlightText?: string) {
     const child = el.children[targetIndex] as HTMLElement | undefined
     if (child) {
       el.scrollTop = child.offsetTop - el.clientHeight / 2
-      // 高亮闪烁
       locateMarkId.value = String(targetIndex)
       setTimeout(() => {
         if (locateMarkId.value === String(targetIndex)) locateMarkId.value = null
@@ -85,6 +65,25 @@ function scrollToPos(pos: number, highlightText?: string) {
 function isLocateMarked(index: number): boolean {
   return locateMarkId.value === String(index)
 }
+
+// 判断消息是否是最新消息（最后一条 assistant 消息）
+function isLatestMessage(index: number): boolean {
+  // 找到最后一条 assistant 消息的索引
+  let lastAssistantIdx = -1
+  for (let i = props.messages.length - 1; i >= 0; i--) {
+    if (props.messages[i].role === 'assistant') {
+      lastAssistantIdx = i
+      break
+    }
+  }
+  return index === lastAssistantIdx
+}
+
+// 判断消息是否是当前流式消息
+function isStreamingMessage(index: number): boolean {
+  return props.isStreaming && isLatestMessage(index)
+}
+
 defineExpose({ scrollToPos })
 </script>
 
@@ -97,8 +96,9 @@ defineExpose({ scrollToPos })
       v-for="(m, i) in messages"
       :key="i"
       :message="m"
-      :index="messages.length - 1 - i"
-      :is-streaming="isStreaming"
+      :index="i"
+      :is-streaming="isStreamingMessage(i)"
+      :is-latest="isLatestMessage(i)"
       :class="isLocateMarked(i) ? 'ai-msg-locate-mark' : undefined"
       @reedit="(c: string) => emit('reedit', c)"
     />
@@ -115,7 +115,6 @@ defineExpose({ scrollToPos })
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* 明确显示滚动条，避免 WebView 默认隐藏导致用户以为无法滚动 */
   scrollbar-width: thin;
   scrollbar-color: var(--border-default) transparent;
 }

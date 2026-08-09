@@ -30,6 +30,14 @@ export interface AiProviderPreset {
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
+  /**
+   * 消息原始创建时间（ISO 字符串，来自 DB 的 created_at）。
+   * 后端 saveMessages 用"全量替换"语义（DELETE + 重插），若不加这个字段，重插时
+   * created_at 会被刷成同一次 NOW()，导致 GET 按 created_at ASC 排序失效（全相同），
+   * 消息顺序退化为随机 UUID，聊天区就出现"消息乱序/凭空冒出"的现象。
+   * 因此：select() 加载时保留它，saveCurrent 保存时带回后端，重插后顺序稳定。
+   */
+  createdAt?: string
   // 随消息一起发送的截图（data URL）。仅 user 消息使用，用于多模态（vision）提问。
   images?: ChatImage[]
   /** 当消息包含图片时，前端提供的原图 SHA-256，供后端重复检测直接使用 */
@@ -84,6 +92,8 @@ export interface AgentRun {
   // 子代理并行卡片展示用：本轮任务的简要目标，以及它用到的工具名列表
   objective?: string
   tools?: string[]
+  // 执行耗时（毫秒）
+  duration?: number
   // 协调代理下的子代理列表（用于嵌套展示，可选）
   subagentRuns?: AgentRun[]
 }
@@ -238,6 +248,90 @@ export interface AiMemoryInput {
 
 export function getAiContext() {
   return api<{ context: AiContext }>('GET', '/api/ai/context')
+}
+
+/**
+ * 流式「提示词改写」：不进入对话历史，不下发 SSE error 流式推送。
+ * 解析规则与 streamChat 一致：当后端写 `data: {"error":"..."}` 时，前端 onError 拿到异常信息并展示。
+ * 设计目标：行为对齐 WorkBuddy 的 Sparkles 图标 —— 点一下，AI 润色当前输入，结果覆盖回输入框。
+ */
+export async function streamRefactorPrompt(opts: {
+  providerId: string
+  content: string
+  onDelta: (text: string) => void
+  onError?: (msg: string, detail?: string) => void
+  onDone?: () => void
+  signal?: AbortSignal
+}): Promise<void> {
+  const config = useConfigStore()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const token = config.config.token
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const csrf = await getCsrfToken()
+  if (csrf) headers['X-CSRF-Token'] = csrf
+
+  let res: Response
+  try {
+    res = await fetch(`${config.serverUrl}/api/ai/refactor-prompt`, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: JSON.stringify({ providerId: opts.providerId, content: opts.content }),
+      signal: opts.signal,
+    })
+  } catch (e: any) {
+    if (e?.name === 'AbortError') return
+    opts.onError?.(String(e?.message || e))
+    return
+  }
+
+  if (!res.ok || !res.body) {
+    let msg = `HTTP ${res.status}`
+    let detail: string | undefined
+    try {
+      const j = await res.json()
+      msg = j?.error || j?.message || msg
+      detail = j?.detail
+    } catch { /* ignore */ }
+    opts.onError?.(msg, detail)
+    return
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let idx
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      const raw = buffer.slice(0, idx)
+      buffer = buffer.slice(idx + 2)
+      const dataLines = raw
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(5).trim())
+      for (const data of dataLines) {
+        if (!data) continue
+        if (data === '[DONE]') continue
+        try {
+          const parsed = JSON.parse(data)
+          if (parsed?.error) {
+            opts.onError?.(parsed.error, parsed.detail)
+            return
+          }
+          const delta = parsed?.choices?.[0]?.delta
+          if (delta?.content && typeof delta.content === 'string') {
+            opts.onDelta(delta.content)
+          }
+        } catch (e) {
+          console.warn('[streamRefactorPrompt] bad SSE chunk:', data, e)
+        }
+      }
+    }
+  }
+  opts.onDone?.()
 }
 
 export function createProvider(input: AiProviderInput) {

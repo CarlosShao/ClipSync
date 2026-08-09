@@ -134,7 +134,7 @@ router.get('/:id', apiLimiter, async (req, res) => {
       `SELECT id, role, content, thinking, tool_calls, tool_results, metadata, created_at
        FROM ai_messages
        WHERE conversation_id = $1
-       ORDER BY created_at ASC`,
+       ORDER BY created_at ASC, id ASC`,
       [id]
     )
 
@@ -328,9 +328,14 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
       const inserted = []
       for (const m of messages) {
         if (!m || !m.role) continue
+        // 保留前端传来的原始 created_at（若有），避免全量重插把所有消息的
+        // created_at 刷成同一次 NOW() —— 那会导致 GET 按 created_at 排序失效，
+        // 消息顺序退化为随机 UUID，聊天区出现"历史消息乱序 / 凭空冒出"。
+        // 前端 select() 已把 DB 的 created_at 存到 createdAt 字段随消息带回。
+        const ts = m.createdAt || m.created_at || null
         const result = await pool.query(
-          `INSERT INTO ai_messages (conversation_id, role, content, thinking, tool_calls, tool_results, metadata)
-           VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::jsonb, '{}'::jsonb))
+          `INSERT INTO ai_messages (conversation_id, role, content, thinking, tool_calls, tool_results, metadata, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::jsonb, '{}'::jsonb), $8)
            RETURNING id, role, content, thinking, tool_calls, tool_results, metadata, created_at`,
           [
             id,
@@ -340,6 +345,7 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
             Array.isArray(m.toolCalls) ? JSON.stringify(m.toolCalls) : '[]',
             Array.isArray(m.toolResults) ? JSON.stringify(m.toolResults) : '[]',
             typeof m.metadata === 'object' && m.metadata ? JSON.stringify(m.metadata) : null,
+            ts, // 若为 null，created_at 会用数据库默认 NOW()
           ]
         )
         inserted.push(result.rows[0])

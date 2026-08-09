@@ -96,6 +96,8 @@ export function useAiConversations() {
         thinking: m.thinking || undefined,
         toolCalls: m.tool_calls || m.toolCalls || undefined,
         toolResults: m.tool_results || m.toolResults || undefined,
+        // 保留原始 created_at，供 saveMessages 全量重插后仍能稳定按时间排序
+        createdAt: m.created_at || m.createdAt || undefined,
       })) as ChatMessage[]
   }
 

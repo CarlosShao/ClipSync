@@ -272,6 +272,20 @@ router.post('/chat', apiLimiter, async (req, res) => {
       if (!res.headersSent) {
         res.status(500).json({ error: 'AI chat failed', detail: streamErr.message })
       } else {
+        // 把上游异常透传给前端，不要闷掉 —— 上游 LLM 抛 fetch failed / 401 / 429 / 5xx 时，
+        // 前端 useAiChat 见到 SSE data: {"error":"..."} 会把消息展示给用户，
+        // 并把最后一条 assistant 设 isError=true（红框）。这是产品可见性。
+        // 解包 Node 内置 fetch 抛的 TypeError("fetch failed")，从 e.cause 拿到具体 errno。
+        const upstreamCause = streamErr?.cause
+          ? { code: streamErr.cause.code, message: streamErr.cause.message, syscall: streamErr.cause.syscall }
+          : null
+        const errPayload = {
+          error: streamErr.message || 'AI chat failed',
+          detail: upstreamCause ? `[cause] ${upstreamCause.syscall || ''} ${upstreamCause.code || ''} ${upstreamCause.message || ''}`.trim() : undefined,
+        }
+        try {
+          if (!res.writableEnded) res.write(`data: ${JSON.stringify(errPayload)}\n\n`)
+        } catch { /* ignore */ }
         safeFinish()
       }
     } finally {
@@ -414,6 +428,141 @@ router.post('/similarity', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('[AI] similarity error:', err)
     res.status(500).json({ error: 'Similarity check failed', detail: err.message })
+  }
+})
+
+/**
+ * POST /api/ai/refactor-prompt
+ * 提示词改写（不进入对话历史，不发起对话）。行为对齐 WorkBuddy：点 Sparkles 图标
+ * → 调 LLM 优化输入框里的草稿 → 把结果覆盖回去，让用户手工复核再发。
+ *
+ * Body: { providerId, content }
+ * Res: SSE 流（每条 delta 推送优化后的文本）；流结束返回 refactored 全文。
+ * 失败同样把 fetch failed 等上游异常透传到 SSE data: {"error":...}，前端用 onError 渲染。
+ */
+router.post('/refactor-prompt', apiLimiter, async (req, res) => {
+  try {
+    const { providerId, content } = req.body || {}
+    if (!providerId) return res.status(400).json({ error: 'providerId is required' })
+    if (!content || typeof content !== 'string' || !content.trim()) {
+      return res.status(400).json({ error: 'content is required' })
+    }
+
+    // 用 providerId 查对应 ai_providers 行（带 user_id 隔离）
+    const providerRowRes = await pool.query(
+      'SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2',
+      [providerId, req.userId]
+    )
+    if (providerRowRes.rowCount === 0) {
+      return res.status(404).json({ error: 'provider not found' })
+    }
+    const providerRow = providerRowRes.rows[0]
+    if (!providerRow.api_key_encrypted) {
+      return res.status(400).json({ error: 'Provider has no API key' })
+    }
+    const apiKey = decrypt(providerRow.api_key_encrypted)
+    const role = req.user.roleKey || 'user'
+
+    // SSE 响应头（与 /chat 一致）
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders?.()
+
+    // 客户端断开时立刻停止 LLM
+    const upstreamAbort = new AbortController()
+    req.on('close', () => {
+      try { upstreamAbort.abort() } catch { /* ignore */ }
+    })
+
+    const refactorSystem =
+      '你是一名「提示词改写助手」。请对用户的草稿做语义化润色与结构化表达，让意图更清晰、语气更专业。' +
+      '约束：①不要凭空新增用户没说过的事实；②不要回答问题本身，只改写提示词；' +
+      '③输出语言与用户输入保持一致；④若草稿很短（<8 字），可以原样返回；' +
+      '⑤只返回改写后的提示词文本，不要任何前缀（"改写后："/"优化后："之类）、不要任何解释、不要包裹 markdown 代码块。'
+    const refactorMessages = [
+      { role: 'system', content: refactorSystem },
+      { role: 'user', content: content.trim() },
+    ]
+
+    let finalText = ''
+    let sentError = false
+    const safeFinish = () => {
+      if (res.writableEnded) return
+      try {
+        res.write('data: [DONE]\n\n')
+        res.end()
+      } catch { /* ignore */ }
+    }
+
+    try {
+      await runChatLoop({
+        messages: refactorMessages,
+        options: {
+          temperature: 0.4,
+          max_tokens: 2000,
+          abortSignal: upstreamAbort.signal,
+          model: providerRow.model,
+        },
+      providerRow,
+      apiKey,
+      userId: req.userId,
+      role,
+      sendDelta: (obj) => {
+        // runChatLoop → aiStream.collectToolCallsFromStream 调 sendDelta 传 OpenAI 风格对象：
+        //   { choices: [{ delta: { content: 'xxx' } }] }    —— 流式文本 delta
+        //   { meta: { type: 'usage', usage: {...} } }         —— 元信息（不关心）
+        //   { meta: { type: 'context_compress_started', ... } } —— 压缩事件（refactor 不应触发，但兜底也不消费）
+        // 我们只把 content 文本 delta 转成 SSE 推给前端；同时累积 finalText 供后端日志和兜底用。
+        // Bug 修复：之前的实现是 `if (typeof text === 'string')` 永远为 false，导致
+        // 前端 streamRefactorPrompt 永远收不到 delta、输入框看不到变化。
+        const delta = obj?.choices?.[0]?.delta
+        const piece = delta?.content
+        if (typeof piece === 'string' && piece.length) {
+          finalText += piece
+          try {
+            if (!res.writableEnded) {
+              // 直接透传 OpenAI 风格对象，前端用 `delta?.content` 拿增量
+              res.write(`data: ${JSON.stringify(obj)}\n\n`)
+            }
+          } catch { /* ignore */ }
+        }
+      },
+    })
+    safeFinish()
+    } catch (streamErr) {
+      // 把上游异常透传给前端（如 mimo 抛 fetch failed / 401 / 429）— 不要闷掉
+      logger.error('[AI][refactor-prompt] stream error:', streamErr)
+      const upstreamCause = streamErr?.cause
+        ? { code: streamErr.cause.code, message: streamErr.cause.message, syscall: streamErr.cause.syscall }
+        : null
+      const detailMsg = upstreamCause
+        ? `[cause] ${upstreamCause.syscall || ''} ${upstreamCause.code || ''} ${upstreamCause.message || ''}`.trim()
+        : undefined
+      try {
+        if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ error: streamErr.message || 'refactor failed', detail: detailMsg })}\n\n`)
+        }
+      } catch { /* ignore */ }
+      sentError = true
+      safeFinish()
+    }
+
+    // 给日志留个尾，方便回溯
+    logger.info('[AI][refactor-prompt] done:', { length: content.length, outLen: finalText.length, errored: sentError })
+  } catch (err) {
+    logger.error('[AI] refactor-prompt error:', err)
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'refactor failed', detail: err.message })
+    } else {
+      try {
+        if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ error: err.message || 'refactor failed' })}\n\n`)
+        }
+      } catch { /* ignore */ }
+      try { res.end() } catch { /* ignore */ }
+    }
   }
 })
 

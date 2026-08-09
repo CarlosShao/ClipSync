@@ -320,16 +320,23 @@ export function useAiChat() {
     // 并把指令 system 消息放在 user 消息之后（"最近一条指令优先"），
     // 避免被 system 提示里关于 ClipSync 应用的全局说明抢走注意力。
     const wrappedText = options.quickAction ? `${USER_INPUT_OPEN}${text}${USER_INPUT_CLOSE}` : text
-    // 上下文感知（#229）：把当前页面/收藏夹上下文注入到 user 消息开头。
-    // 用不可见标记包裹，上游 LLM 能看到，前端渲染时剥离（见 AiMessageList/AiMessage）。
-    const userContent = options.viewContext
-      ? `${VIEW_CTX_OPEN}${options.viewContext}${VIEW_CTX_CLOSE}${wrappedText}`
-      : wrappedText
+    const nowTs = new Date().toISOString()
+    // 上下文感知（#229）：改为独立的隐藏 system 消息，避免与用户问题混淆。
+    // 之前 prepend 到 user 消息开头会导致模型把上下文当成问题来回答。
+    if (options.viewContext) {
+      messages.value.push({
+        role: 'system',
+        content: options.viewContext,
+        systemMeta: { kind: 'view_context' },
+        createdAt: nowTs,
+      })
+    }
     messages.value.push({
       role: 'user',
-      content: userContent,
+      content: wrappedText,
       images: options.images,
       imageHash: options.images?.[0]?.hash,
+      createdAt: nowTs,
     })
     if (options.quickAction) {
       let prompt = t(`ai_quick_${options.quickAction}_prompt`) || ''
@@ -346,7 +353,7 @@ export function useAiChat() {
           systemMeta: { kind: `quick_action_${options.quickAction}` },
         })
     }
-    messages.value.push({ role: 'assistant', content: '', thinking: '', thinkingActive: true })
+    messages.value.push({ role: 'assistant', content: '', thinking: '', thinkingActive: true, createdAt: nowTs })
     // 必须引用 messages 数组里的 reactive proxy，后续 mutations 才能触发 Vue 响应式更新。
     // 注意：若用户在流式进行中途切换历史对话，messages.value 会被替换，但 assistantMsg
     // 仍指向旧 proxy。因此在 loadConversation 时要先中止当前流，防止旧 proxy 继续被改。

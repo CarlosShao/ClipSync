@@ -5,6 +5,7 @@ import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import type { AiProvider } from '@/api/ai'
+import { streamRefactorPrompt } from '@/api/ai'
 import {
   Send,
   Square,
@@ -37,7 +38,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   send: [text: string, images?: ChatImage[]]
   'quick-action': [action: 'summarize' | 'translate' | 'format' | 'explain', text: string, images?: ChatImage[]]
-  'optimize-prompt': [text: string, images?: ChatImage[]]
   stop: []
   'select-provider': [id: string]
   'select-model': [model: string]
@@ -86,17 +86,58 @@ function runQuickAction(action: (typeof QUICK_ACTIONS)[number]) {
   pastedImages.value = []
 }
 
-// 提示词优化：把当前输入框内容发出去，让上层用专门的 system 指令（quick_action_optimize）重写/润色。
-// 优化结果回到对话流里展示，用户可一键回填到输入框继续编辑发送。
+// 提示词优化：行为对齐 WorkBuddy —— 点 Sparkles 图标，AI 润色当前输入内容，结果覆盖回输入框。
+// 不进入对话历史、不发起对话、不污染 messages；当前 AI 回复中时可中止。
 const optimizeCanUse = computed(
   () => !props.disabled && !props.isStreaming && props.providers.length > 0 && !!props.selectedProviderId,
 )
-function runOptimizePrompt() {
-  if (!optimizeCanUse.value) return
+// 优化进度状态：idle → loading → done/error；用于按钮的旋转动画/小红点
+const optimizeState = ref<'idle' | 'loading' | 'error'>('idle')
+const optimizeErrorText = ref<string>('')
+// 用户取消（AbortController）
+const optimizeAbort = ref<AbortController | null>(null)
+async function runOptimizePrompt() {
+  if (!optimizeCanUse.value || optimizeState.value === 'loading') return
   const original = text.value
-  const hasImages = pastedImages.value.length > 0
-  // 即便输入框为空也允许：相当于让 AI 帮忙起手。
-  emit('optimize-prompt', original, hasImages ? [...pastedImages.value] : undefined)
+  const providerId = props.selectedProviderId
+  const ctrl = new AbortController()
+  optimizeAbort.value = ctrl
+  optimizeState.value = 'loading'
+  optimizeErrorText.value = ''
+  try {
+    let accumulated = ''
+    await streamRefactorPrompt({
+      providerId,
+      content: original,
+      signal: ctrl.signal,
+      onDelta: (chunk) => {
+        accumulated += chunk
+        // 用 ref 同步避免关闭旧 chunk 导致渲染抖动
+        text.value = accumulated
+      },
+      onError: (msg, detail) => {
+        optimizeState.value = 'error'
+        optimizeErrorText.value = detail ? `${msg}（${detail}）` : msg
+      },
+      onDone: () => {
+        optimizeState.value = 'idle'
+      },
+    })
+    optimizeState.value = 'idle'
+  } catch (e: any) {
+    if (e?.name !== 'AbortError') {
+      optimizeState.value = 'error'
+      optimizeErrorText.value = String(e?.message || e)
+    } else {
+      optimizeState.value = 'idle'
+    }
+  } finally {
+    optimizeAbort.value = null
+  }
+}
+function cancelOptimizePrompt() {
+  optimizeAbort.value?.abort()
+  optimizeState.value = 'idle'
 }
 // 粘贴进输入框的截图（仅图片，不处理任意文件上传）
 const pastedImages = ref<ChatImage[]>([])
@@ -162,12 +203,12 @@ const modeLabel = computed(() => {
   return props.mode === 'ask' ? t('ai_mode_ask') : t('ai_mode_agent')
 })
 
-// 发送按钮旁圆环：外环=上下文 token 用量百分比；内环=缓存命中率。
-// 注：viewBox=30×30。外环半径 9（留出 5.5 的环带）；内环半径 5（让外环内壁与文字之间有明显间隙）。
-const RING_R = 9
+// 发送按钮旁圆环：单环设计 = 上下文 token 用量百分比。
+// viewBox=40×40，外环半径 14（留出足够环带和文字空间）。
+const RING_R = 14
 const RING_C = 2 * Math.PI * RING_R
-const RING_R_INNER = 5
-const RING_C_INNER = 2 * Math.PI * RING_R_INNER
+const RING_SIZE = 40
+const RING_CENTER = RING_SIZE / 2
 
 const usagePercent = computed(() => props.contextUsage?.percent ?? 0)
 const ringDashOffset = computed(() => RING_C * (1 - usagePercent.value / 100))
@@ -177,7 +218,7 @@ const ringColorClass = computed(() => {
   if (p >= 70) return 'level-warn'
   return 'level-ok'
 })
-const ringLabel = computed(() => (props.contextUsage ? `${usagePercent.value}%` : '–'))
+const ringLabel = computed(() => (props.contextUsage ? `${usagePercent.value}` : '–'))
 
 // 缓存命中率 = 命中缓存的 prompt token / 总 prompt token
 const cacheHitPercent = computed(() => {
@@ -186,7 +227,6 @@ const cacheHitPercent = computed(() => {
   const cached = c.cacheReadTokens || 0
   return Math.min(100, Math.round((cached / c.promptTokens) * 100))
 })
-const ringDashOffsetInner = computed(() => RING_C_INNER * (1 - cacheHitPercent.value / 100))
 // 缓存是否生效：必须以"协议层是否支持 prompt cache"为前提（由 useAiChat 的
 // providerSupportsCache 提供），而不是仅看 usage 是否有 cache 字段——否则
 // 像 mimo / MiniMax / Hunyuan / LongCat 这种协议层不返回 cache 字段的供应商，
@@ -212,7 +252,7 @@ const cacheHitRateDisplay = computed(() => {
 // 缓存面板 hover 提示：解释"未启用"的真实原因
 const cacheStatusTip = computed(() => {
   if (!cacheAvailable.value) {
-    return t('ai_cache_not_supported') || '缓存未启用：当前供应商或请求未命中 prompt 缓存'
+    return t('ai_cache_not_supported') || '当前供应商（如 MiMo、DeepSeek、MiniMax 等）的 API 协议不支持 prompt 缓存功能，因此无法统计缓存命中率。这是供应商协议限制，非配置问题。'
   }
   if (cacheHitPercent.value > 0) {
     return t('ai_cache_hit', {
@@ -226,10 +266,11 @@ const cacheStatusTip = computed(() => {
 
 const usageTip = computed(() => {
   if (!props.contextUsage) return t('ai_context_usage_none') || '上下文用量：暂无数据'
-  return (
-    `${t('ai_context_usage', { percent: usagePercent.value, used: props.contextUsage.totalTokens, total: props.contextUsage.contextWindow })}（外环）\n` +
-    `${cacheSupported.value ? t('ai_cache_hit', { percent: cacheHitPercent.value, cached: props.contextUsage.cacheReadTokens || 0, prompt: props.contextUsage.promptTokens }) : t('ai_cache_not_supported') || '缓存未启用：该供应商/请求暂未命中 prompt 缓存'}（内环）`
-  )
+  const usageText = `${t('ai_context_usage', { percent: usagePercent.value, used: props.contextUsage.totalTokens, total: props.contextUsage.contextWindow })}`
+  if (cacheSupported.value) {
+    return `${usageText}\n缓存命中率：${cacheHitPercent.value}%`
+  }
+  return `${usageText}\n缓存：当前供应商协议不支持 prompt 缓存`
 })
 
 // 预估费用（基于 OpenAI 官方定价 $2.5/M input, $10/M output 作基准估算）
@@ -476,16 +517,27 @@ defineExpose({ setDraft })
       </div>
 
       <div class="ai-send-area">
-        <!-- 提示词优化：把输入框文本交给 AI 润色/补全，结果作为新一轮 AI 回复回填到输入框 -->
+        <!-- 提示词优化：行为对齐 WorkBuddy —— AI 润色当前输入，结果覆盖回输入框（不进入对话历史） -->
         <button
           class="ai-optimize-btn"
-          :class="{ disabled: !optimizeCanUse }"
+          :class="{ disabled: !optimizeCanUse, loading: optimizeState === 'loading', errored: optimizeState === 'error' }"
           :title="t('ai_optimize_prompt_tooltip') || '提示词优化：让 AI 润色当前输入内容'"
           :aria-label="t('ai_optimize_prompt_tooltip') || '提示词优化'"
-          :disabled="!optimizeCanUse"
+          :disabled="!optimizeCanUse || optimizeState === 'loading'"
           @click="runOptimizePrompt"
         >
           <Sparkles :size="15" />
+          <!-- 加载中：旋转遮罩；错误：角上红点；点击遮罩可中止 -->
+          <span
+            v-if="optimizeState === 'loading' || optimizeState === 'error'"
+            class="ai-optimize-status"
+            :class="optimizeState"
+            :title="optimizeState === 'loading' ? (t('ai_optimize_cancel') || '点击取消') : (optimizeErrorText || (t('ai_optimize_failed') || '优化失败：未知原因'))"
+            @click.stop="optimizeState === 'loading' ? cancelOptimizePrompt() : (optimizeState = 'idle', optimizeErrorText = '')"
+          >
+            <span v-if="optimizeState === 'loading'" class="ai-optimize-spinner" aria-hidden="true"></span>
+            <span v-else class="ai-optimize-errdot" aria-hidden="true">!</span>
+          </span>
         </button>
         <!-- 上下文用量：圆环触发 + 点击展开 Cursor 风格面板（百分比 / 用量 / 缓存命中率） -->
         <Popover v-model:open="usagePanelOpen" :disabled="!contextUsage">
@@ -496,27 +548,18 @@ defineExpose({ setDraft })
               :title="usageTip"
               :aria-label="t('ai_context_usage_title') || '上下文用量'"
             >
-              <svg class="ai-usage-ring" :class="ringColorClass" width="30" height="30" viewBox="0 0 30 30">
-                <circle class="ring-track" cx="15" cy="15" :r="RING_R" />
+              <svg class="ai-usage-ring" :class="ringColorClass" :width="RING_SIZE" :height="RING_SIZE" :viewBox="`0 0 ${RING_SIZE} ${RING_SIZE}`">
+                <circle class="ring-track" :cx="RING_CENTER" :cy="RING_CENTER" :r="RING_R" />
                 <circle
                   class="ring-progress"
-                  cx="15"
-                  cy="15"
+                  :cx="RING_CENTER"
+                  :cy="RING_CENTER"
                   :r="RING_R"
                   :stroke-dasharray="RING_C"
                   :stroke-dashoffset="ringDashOffset"
                 />
-                <circle class="ring-track-inner" cx="15" cy="15" :r="RING_R_INNER" />
-                <circle
-                  class="ring-progress-inner"
-                  cx="15"
-                  cy="15"
-                  :r="RING_R_INNER"
-                  :stroke-dasharray="RING_C_INNER"
-                  :stroke-dashoffset="ringDashOffsetInner"
-                />
-                <!-- 数字标签：故意 y=18（偏下一点），让百分比字符整体居于环内可视中心，且与外圈、内圈都有明显留白 -->
-                <text class="ring-label" x="15" y="18">{{ ringLabel }}</text>
+                <!-- 百分比文字：居中显示，清晰可读 -->
+                <text class="ring-label" :x="RING_CENTER" :y="RING_CENTER" dominant-baseline="central">{{ ringLabel }}<tspan class="ring-label-pct" font-size="0.6em">%</tspan></text>
               </svg>
             </button>
           </PopoverTrigger>
@@ -633,7 +676,7 @@ defineExpose({ setDraft })
 .ai-input-card {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  background: var(--bg-input, var(--bg-hover));
+  background: var(--bg-surface);
   padding: 0;
   overflow: visible;
   transition: border-color 0.15s;
@@ -750,13 +793,14 @@ defineExpose({ setDraft })
 .ring-track {
   fill: none;
   stroke: var(--border-default);
-  stroke-width: 2.5;
+  stroke-width: 3;
+  opacity: 0.4;
 }
 
 .ring-progress {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 2.5;
+  stroke-width: 3;
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
@@ -773,29 +817,7 @@ defineExpose({ setDraft })
   stroke: #ef4444;
 }
 
-/* 内环：缓存命中率（固定青蓝色，与外环上下文用量区分） */
-.ring-track-inner {
-  fill: none;
-  stroke: var(--border-default);
-  stroke-width: 1.5;
-}
-
-.ring-progress-inner {
-  fill: none;
-  stroke: #22d3ee;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  transform: rotate(-90deg);
-  transform-origin: 50% 50%;
-  transition:
-    stroke-dashoffset 0.4s ease,
-    stroke 0.3s ease;
-}
-
 .ring-label {
-  /* 字号从 7→6，dominant-baseline 改 middle（与 central 等价但跨浏览器一致性更好），
-     加 letter-spacing 收紧，避免「100%」字符撑到外圈边缘造成视觉重叠。
-     y=18（viewBox 中心 15 之下 3），让数字在双环之间稍微偏下，留出与外圈上沿的明显呼吸空间。*/
   font-family:
     ui-sans-serif,
     system-ui,
@@ -803,14 +825,19 @@ defineExpose({ setDraft })
     'Helvetica Neue',
     Arial,
     sans-serif;
-  font-size: 6px;
-  font-weight: 600;
-  letter-spacing: -0.3px;
-  fill: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  fill: var(--text-primary);
   text-anchor: middle;
-  dominant-baseline: middle;
+  dominant-baseline: central;
   pointer-events: none;
   user-select: none;
+}
+
+.ring-label-pct {
+  font-size: 7px;
+  font-weight: 500;
+  fill: var(--text-secondary);
 }
 
 /* 粘贴截图预览 */
@@ -937,7 +964,7 @@ defineExpose({ setDraft })
 .ai-usage-ring-btn {
   background: transparent;
   border: none;
-  padding: 0;
+  padding: 2px;
   margin: 0;
   cursor: pointer;
   line-height: 0;
@@ -948,7 +975,7 @@ defineExpose({ setDraft })
   transition: transform 0.15s ease;
 }
 .ai-usage-ring-btn:hover {
-  transform: scale(1.06);
+  transform: scale(1.08);
 }
 /* 提示词优化按钮：紧贴圆环左侧，hover 出现主题色光晕，禁用态灰显 */
 .ai-optimize-btn {
@@ -974,6 +1001,61 @@ defineExpose({ setDraft })
 .ai-optimize-btn.disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+.ai-optimize-btn.loading {
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.08);
+  border-color: rgba(139, 92, 246, 0.25);
+  cursor: progress;
+}
+.ai-optimize-btn.errored {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.06);
+}
+/* 角上状态指示：loading 旋转遮罩 / error 小红点；点击遮罩可中止 / 清除错误 */
+.ai-optimize-status {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+.ai-optimize-status.loading {
+  background: #8b5cf6;
+  border: 1px solid #fff;
+}
+.ai-optimize-status.errored {
+  background: #ef4444;
+  border: 1px solid #fff;
+}
+.ai-optimize-spinner {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid #fff;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ai-optimize-spin 0.8s linear infinite;
+}
+.ai-optimize-errdot {
+  font-size: 10px;
+  font-weight: 800;
+}
+@keyframes ai-optimize-spin {
+  to { transform: rotate(360deg); }
+}
+.ai-optimize-btn {
+  position: relative;
 }
 </style>
 
