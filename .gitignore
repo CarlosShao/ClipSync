@@ -38,10 +38,27 @@ npm-debug.log*
 src/desktop/src-tauri/target/
 src/desktop/src-tauri/Cargo.lock
 
+# Rust (clipboard-dump 工具)
+clipboard-dump/target/
+
 # Flutter
 build/
 .dart_tool/
 .flutter-plugins-dependencies
+
+# Android (Gradle)
+src/mobile/android/.gradle/
+src/mobile/android/.idea/
+src/mobile/android/.cxx/
+src/mobile/android/app/build/
+src/mobile/android/app/.cxx/
+src/mobile/android/local.properties
+src/mobile/android/.kotlin/
+src/mobile/android/captures/
+src/mobile/android/**/build/
+# Android devtools 本地配置 + 内存 dump
+src/mobile/**/devtools_options.yaml
+*.hprof
 
 # Test coverage
 coverage/
@@ -70,3 +87,25 @@ NUL
 # Upload chunks
 src/server/uploads/
 uploads/
+
+# Test output & local reports
+test-output/
+
+# 误入的散落文件
+bream
+
+# 用户数据导出备份
+backups/users_data_*.csv
+backups/*.sql.backup
+
+# iOS / Xcode 临时产物（移动端将来用得到）
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+.build/
+DerivedData/
