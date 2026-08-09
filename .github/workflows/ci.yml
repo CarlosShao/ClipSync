@@ -187,38 +187,62 @@ jobs:
           echo "✅ SSH 客户端已配置"
 
       - name: 部署到服务器
+        env:
+          DEPLOY_PROJECT_DIR: ${{ secrets.DEPLOY_PROJECT_DIR }}
         run: |
           ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
               "$DEPLOY_USER@$DEPLOY_HOST" << 'REMOTE_EOF'
             set -e
 
-            # 路径探测：你的服务器首次 SSH 时看到的是 /root/CodeBuddy
-            # 按以下顺序找，找到哪个用哪个
-            PROJECT_DIR=""
-            for candidate in "/root/CodeBuddy" "/root/CodeBuddy/clipsync" "/root/clipsync" "/home/$USER/clipsync" "/home/clipsync"; do
-              if [ -d "$candidate" ] && [ -d "$candidate/.git" ]; then
-                PROJECT_DIR="$candidate"
-                echo "==> 找到项目目录: $PROJECT_DIR"
-                break
+            echo "==> 当前 SSH 用户: $(whoami)"
+            echo "==> 当前 HOME: $HOME"
+            echo "==> Secrets.DEPLOY_PROJECT_DIR: '$DEPLOY_PROJECT_DIR'"
+            echo "==> 探测以下路径（标记 Y 表示存在）："
+            for d in "$DEPLOY_PROJECT_DIR" "/root/CodeBuddy" "/root/CodeBuddy/clipsync" "/root/clipsync" "/root/Clipboard" "/home/$(whoami)/clipsync"; do
+              if [ -n "$d" ]; then
+                echo "    [$([ -d "$d" ] && echo Y || echo N).$([ -d "$d/.git" ] && echo Y || echo N)] $d"
               fi
             done
 
-            # 兜底：找任何名字含 clipsync 的目录
+            echo "==> 兜底：全盘搜 .git 目录（最远 5 层）"
+            find /root /home /opt /srv /var/www -maxdepth 5 -type d -name ".git" 2>/dev/null | head -10 || true
+
+            # 路径探测
+            PROJECT_DIR=""
+
+            # 1) 优先：Secrets.DEPLOY_PROJECT_DIR（你手动指定，最稳）
+            if [ -n "$DEPLOY_PROJECT_DIR" ] && [ -d "$DEPLOY_PROJECT_DIR" ]; then
+              PROJECT_DIR="$DEPLOY_PROJECT_DIR"
+              echo "==> 使用 DEPLOY_PROJECT_DIR: $PROJECT_DIR"
+            fi
+
+            # 2) 固定候选（含 .git 校验）
             if [ -z "$PROJECT_DIR" ]; then
-              FOUND=$(find /root /home /opt -maxdepth 4 -type d -name "ClipSync" -o -name "clipsync" 2>/dev/null | head -1)
+              for candidate in "/root/CodeBuddy" "/root/CodeBuddy/clipsync" "/root/clipsync" "/root/Clipboard" "/home/$(whoami)/clipsync" "/opt/clipsync" "/srv/clipsync"; do
+                if [ -d "$candidate" ] && [ -d "$candidate/.git" ]; then
+                  PROJECT_DIR="$candidate"
+                  echo "==> 候选命中: $PROJECT_DIR"
+                  break
+                fi
+              done
+            fi
+
+            # 3) 兜底：找任何 .git 父目录
+            if [ -z "$PROJECT_DIR" ]; then
+              FOUND=$(find /root /home /opt /srv -maxdepth 5 -type d -name ".git" 2>/dev/null | head -1)
               if [ -n "$FOUND" ]; then
-                PROJECT_DIR="$FOUND"
-                echo "==> 兜底找到: $PROJECT_DIR"
+                PROJECT_DIR=$(dirname "$FOUND")
+                echo "==> .git 兜底命中: $PROJECT_DIR"
               fi
             fi
 
             if [ -z "$PROJECT_DIR" ]; then
-              echo "❌ 找不到项目目录，退出。请先在服务器手动跑 pwd 看看项目在哪。"
+              echo "❌ 实在找不到项目目录。请在仓库 Settings → Secrets 添加 DEPLOY_PROJECT_DIR=绝对路径，例如 /root/CodeBuddy"
               exit 1
             fi
 
             cd "$PROJECT_DIR"
-            pwd
+            echo "==> 当前目录: $(pwd)"
             ls -la docker-compose*.yml 2>/dev/null || echo "⚠️ 当前目录没有 docker-compose 文件"
 
             echo "==> 记录当前版本（用于万一回滚）"
@@ -242,5 +266,5 @@ jobs:
             echo "==> 服务状态快照"
             docker compose ps || true
             docker compose logs --tail=20 backend || true
-            echo "🎉 部署完成：$(date)"
+            echo "🎉 部署完成: $(date)"
           REMOTE_EOF
