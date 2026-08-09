@@ -191,9 +191,35 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
               "$DEPLOY_USER@$DEPLOY_HOST" << 'REMOTE_EOF'
             set -e
-            echo "==> 进入项目目录"
-            cd ~/clipsync || cd /root/clipsync || cd ~/CodeBuddy/clipsync || { echo "❌ 找不到项目目录"; exit 1; }
+
+            # 路径探测：你的服务器首次 SSH 时看到的是 /root/CodeBuddy
+            # 按以下顺序找，找到哪个用哪个
+            PROJECT_DIR=""
+            for candidate in "/root/CodeBuddy" "/root/CodeBuddy/clipsync" "/root/clipsync" "/home/$USER/clipsync" "/home/clipsync"; do
+              if [ -d "$candidate" ] && [ -d "$candidate/.git" ]; then
+                PROJECT_DIR="$candidate"
+                echo "==> 找到项目目录: $PROJECT_DIR"
+                break
+              fi
+            done
+
+            # 兜底：找任何名字含 clipsync 的目录
+            if [ -z "$PROJECT_DIR" ]; then
+              FOUND=$(find /root /home /opt -maxdepth 4 -type d -name "ClipSync" -o -name "clipsync" 2>/dev/null | head -1)
+              if [ -n "$FOUND" ]; then
+                PROJECT_DIR="$FOUND"
+                echo "==> 兜底找到: $PROJECT_DIR"
+              fi
+            fi
+
+            if [ -z "$PROJECT_DIR" ]; then
+              echo "❌ 找不到项目目录，退出。请先在服务器手动跑 pwd 看看项目在哪。"
+              exit 1
+            fi
+
+            cd "$PROJECT_DIR"
             pwd
+            ls -la docker-compose*.yml 2>/dev/null || echo "⚠️ 当前目录没有 docker-compose 文件"
 
             echo "==> 记录当前版本（用于万一回滚）"
             git log -1 --oneline > .last_deploy_commit 2>/dev/null || true
