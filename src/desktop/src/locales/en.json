@@ -373,6 +373,8 @@
   "batch_none": "No items selected",
   "batch_deleted": "Deleted {n} items",
   "batch_del_fail": "Batch delete failed: ",
+  "batch_deleting": "Deleting {n} items…",
+  "batch_delete_limit": "Maximum {n} items per batch. Please delete in smaller batches.",
   "confirm_batch_delete": "Are you sure you want to delete {n} items?",
   "rate_limit_warn": "Too many requests, please wait and try again.",
   "confirm_title": "Confirm",

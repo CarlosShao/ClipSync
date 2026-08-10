@@ -910,8 +910,9 @@ router.delete('/', apiLimiter, async (req, res) => {
     }
 
     // 限制批量删除数量
-    if (ids.length > 100) {
-      return res.status(400).json({ error: 'Maximum 100 items per batch delete' });
+    const BATCH_DELETE_LIMIT = 500
+    if (ids.length > BATCH_DELETE_LIMIT) {
+      return res.status(400).json({ error: `Maximum ${BATCH_DELETE_LIMIT} items per batch delete`, code: 'BATCH_DELETE_EXCEEDED' });
     }
 
     // 验证所有ID格式

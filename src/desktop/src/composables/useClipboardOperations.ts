@@ -43,11 +43,18 @@ export function useClipboardOperations(
         confirmVariant: 'destructive',
         onConfirm: async () => {
           try {
+            toast.show(t('batch_deleting', { n: count }), 'info')
             await clip.batchDelete()
             await clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
             toast.show(t('batch_deleted', { n: count }), 'success')
           } catch (err: any) {
-            toast.show(err.message || t('del_fail'), 'error')
+            const msg = err.message || ''
+            // 翻译后端结构化错误码，避免用户看到英文原始信息
+            if (msg.includes('BATCH_DELETE_EXCEEDED') || msg.includes('Maximum')) {
+              toast.show(t('batch_delete_limit', { n: 500 }), 'warning')
+            } else {
+              toast.show(msg || t('del_fail'), 'error')
+            }
           }
         },
       })
@@ -69,11 +76,17 @@ export function useClipboardOperations(
         try {
           const favItems = clip.items.value.filter((i) => i.selected && (i as any).isFavorite)
           for (const fi of favItems) clip.toggleFavorite(fi)
+          toast.show(t('batch_deleting', { n: count }), 'loading')
           await clip.batchDelete()
           await clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
           toast.show(t('batch_deleted', { n: count }), 'success')
         } catch (err: any) {
-          toast.show(err.message || t('del_fail'), 'error')
+          const msg = err.message || ''
+          if (msg.includes('BATCH_DELETE_EXCEEDED') || msg.includes('Maximum')) {
+            toast.show(t('batch_delete_limit', { n: 500 }), 'warning')
+          } else {
+            toast.show(msg || t('del_fail'), 'error')
+          }
         }
       },
       onSecondary: async () => {
