@@ -460,6 +460,13 @@ watch(
   border-spacing: 0;
   width: 100%;
 }
+/* shadcn-vue Table 组件内部用 <div class="... overflow-auto"> 包裹 <table>，
+   这个 overflow-auto 创建了一个新的包含块，切断了 thead sticky 相对
+   .clipboard-view 滚动容器的定位上下文，导致表头 sticky 完全失效。
+   必须把这个包裹 div 的 overflow 改为 visible，让 sticky 回到正确的滚动容器。 */
+.clipboard-view :deep(.overflow-auto) {
+  overflow: visible !important;
+}
 .clipboard-view :deep(thead) {
   position: sticky;
   top: 0;
