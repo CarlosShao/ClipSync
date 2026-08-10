@@ -285,14 +285,16 @@ export function clearAdvancedFilters() {
 // 图片异步加载队列（防并发 + 防竞态 + 429 保护）
 let imageLoadVersion = 0
 let imageLoadPaused = false // 429 时暂停队列，避免无效重试堆积
+const IMAGE_CONCURRENCY = 6 // 并发数：浏览器同域名通常 6 连接，与之一致
 export async function loadImagesFromQueue(queue: ClipItem[]) {
+  if (!queue.length) return
   const version = ++imageLoadVersion // 每次新加载递增，旧回调自动失效
   imageLoadPaused = false
-  const DELAY = 800 // 每个请求间隔 800ms，避免触发 429
-  for (let idx = 0; idx < queue.length; idx++) {
-    // 版本检查：如果又有新的 loadClipboardItems 调用，放弃旧队列
+
+  // 用信号量控制并发：同时最多 IMAGE_CONCURRENCY 个请求在飞，
+  // 替代原来串行 800ms 间隔的方案（50 张图需 40s+，用户体验差）。
+  async function loadImage(item: ClipItem): Promise<void> {
     if (version !== imageLoadVersion || imageLoadPaused) return
-    const item = queue[idx]
     try {
       const fullRes = await api('GET', `/api/clipboard/${item.id}`)
       if (version !== imageLoadVersion || imageLoadPaused) return // 竞态检查
@@ -342,9 +344,13 @@ export async function loadImagesFromQueue(queue: ClipItem[]) {
     } catch (e) {
       console.warn(`[Clipboard] Image fetch error ${item.id}:`, e)
     }
+  }
+
+  // 并发池：分批执行，每批最多 IMAGE_CONCURRENCY 个，一批完成后再启动下一批。
+  // 这样既保证并发速度（6 张同时飞），又避免一次性全发导致 429/内存暴涨。
+  for (let i = 0; i < queue.length; i += IMAGE_CONCURRENCY) {
     if (version !== imageLoadVersion || imageLoadPaused) return
-    if (idx < queue.length - 1) {
-      await new Promise((r) => setTimeout(r, DELAY))
-    }
+    const batch = queue.slice(i, i + IMAGE_CONCURRENCY)
+    await Promise.all(batch.map(loadImage))
   }
 }
