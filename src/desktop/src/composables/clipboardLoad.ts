@@ -17,6 +17,7 @@ import {
   type ClipItem,
 } from './clipboardState'
 import { getCachedContent, cacheContent } from './clipboardCache'
+import { simpleHash } from './clipboardUpload'
 import { setItemPreview, releaseRemovedObjectUrls } from './clipboardObjectUrls'
 
 // 设备列表（用于筛选下拉），懒加载 + 内存缓存，避免每次打开筛选面板都打 /api/devices
@@ -71,8 +72,14 @@ export async function loadClipboardItems(opts?: {
         mainTotalItems.value = totalItems.value
       }
       const serverIds = new Set(res.data.items.map((i: any) => i.id))
-      // Build set of server content previews for dedup
-      const serverContentPreviews = new Set(res.data.items.map((i: any) => (i.contentPreview || '').slice(0, 100)))
+      // 整表刷新时，本地乐观项可能与本次服务端返回的同一条目重复（乐观项先插入，
+      // 服务端结果随后到达）。靠“100 字符前缀字符串比对”极易失配（后端截断/规范化
+      // 文本内容、换行空格差异），导致同一条文本在列表里出现两次——表现为“同步了两
+      // 次 / 闪一下”。改用内容 hash 做稳定去重：本地完整内容与服务器 preview 取 hash
+      // 比对，命中即丢弃本地乐观项，只保留服务端那一条。短文本 simpleHash 秒算无性能问题。
+      const serverContentHashes = new Set(
+        res.data.items.map((i: any) => simpleHash(i.contentPreview || i.content || '')),
+      )
       // 整表刷新时只保留本地乐观更新项（临时 ID），避免切换分类/收藏夹后旧分类的服务器条目
       // 因为不在新分类第一页而被残留到列表最前面，导致“切到全部后链接/收藏数据置顶”的错乱。
       const localWithContent = items.value.filter((i) => {
@@ -87,9 +94,11 @@ export async function loadClipboardItems(opts?: {
         if (!i.content || !i.content.trim()) return false
         // File items with local-/file- prefix are optimistic updates — always replace with server data
         if (i.type === 'file' && (i.id.startsWith('local-') || i.id.startsWith('file-'))) return false
-        // Check if this local item matches a server item by content preview
-        const localPreview = i.content.slice(0, 100)
-        if (serverContentPreviews.has(localPreview)) return false
+        // Check if this local item matches a server item by content hash.
+        // 本地乐观项 content 是完整文本，而服务端 contentPreview 通常截断到前 5000，
+        // 故本地也只取前 5000 再算 hash，保证长文本也能正确命中去重。
+        const localHash = simpleHash((i.content || '').slice(0, 5000))
+        if (serverContentHashes.has(localHash)) return false
         return true
       })
       const serverItems = res.data.items.map((i: any) => {

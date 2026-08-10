@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClipSync 列表动效对比演示</title>
+  <style>
+    :root {
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --dur-normal: 200ms;
+      --bg-base: #fafafa;
+      --bg-surface: #ffffff;
+      --bg-hover: #f5f5f5;
+      --bg-active: #eeeeee;
+      --border-default: #e5e5e5;
+      --border-subtle: #f0f0f0;
+      --text-primary: #111111;
+      --text-secondary: #666666;
+      --text-tertiary: #999999;
+      --accent: #6366f1;
+      --accent-light: rgba(99, 102, 241, 0.08);
+      --radius-md: 10px;
+      --radius-sm: 6px;
+      --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+      background: #f0f0f3;
+      color: var(--text-primary);
+      padding: 32px;
+      line-height: 1.5;
+    }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    .sub { color: var(--text-secondary); font-size: 13px; margin-bottom: 24px; }
+    .section { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 14px; padding: 20px 24px; margin-bottom: 20px; }
+    .section h2 { font-size: 15px; margin-bottom: 4px; }
+    .section .desc { font-size: 12px; color: var(--text-tertiary); margin-bottom: 14px; }
+    .speed-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .speed-btn {
+      padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border-default);
+      background: var(--bg-hover); color: var(--text-secondary); cursor: pointer;
+      font-size: 12px;
+    }
+    .speed-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: var(--radius-md);
+      background: var(--accent); color: #fff; border: 0; cursor: pointer;
+      font-size: 13px; font-weight: 500;
+    }
+    .btn:active { transform: scale(0.97); }
+
+    /* 模拟表格行 */
+    .row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px; border-bottom: 1px solid var(--border-subtle);
+      position: relative;
+    }
+    .row .check { width: 16px; height: 16px; border: 1.5px solid var(--text-tertiary); border-radius: 4px; flex-shrink: 0; }
+    .row .content { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg-hover); color: var(--text-secondary); }
+    .row .time { font-size: 12px; color: var(--text-tertiary); }
+
+    /* 动效 1：纯 opacity 淡入（当前 ClipSync 方案，速度可调） */
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .anim-fade .row.enter { animation: fadeIn var(--fade-dur, var(--dur-normal)) var(--ease-out) both; }
+
+    /* 动效 2：左侧 accent 条展开 */
+    @keyframes accentBar { from { width: 0; opacity: 0; } to { width: 3px; opacity: 1; } }
+    .anim-accent .row::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--accent); border-radius: 0 3px 3px 0; opacity: 0;
+    }
+    .anim-accent .row.enter::before { animation: accentBar var(--dur-normal) var(--ease-out) both; }
+
+    /* 动效 3：整行上浮淡入（位移加大到 14px，慢放时更明显） */
+    @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+    .anim-rise .row.enter { animation: riseIn var(--fade-dur, var(--dur-normal)) var(--ease-out) both; }
+
+    /* 动效 4：高度展开（类似折叠面板） */
+    @keyframes heightIn { from { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; } to { opacity: 1; max-height: 60px; padding-top: 10px; padding-bottom: 10px; } }
+    .anim-height .row.enter { animation: heightIn var(--dur-normal) var(--ease-out) both; overflow: hidden; }
+
+    /* 动效 5：内容下沉式（单元格 padding-top 从大变小，视觉=上浮但 <tr> 上不抖） */
+    @keyframes contentSink { from { opacity: 0; padding-top: 22px; } to { opacity: 1; padding-top: 10px; } }
+    .anim-sink .row.enter { animation: contentSink var(--fade-dur, var(--dur-normal)) var(--ease-out) both; }
+
+    /* 动效 6：左侧滑入（整行 margin-left 从正到 0，推入感，<tr> 上不抖） */
+    @keyframes slideInLeft { from { opacity: 0; margin-left: 16px; } to { opacity: 1; margin-left: 0; } }
+    .anim-slide .row.enter { animation: slideInLeft var(--fade-dur, var(--dur-normal)) var(--ease-out) both; }
+
+    /* 动效 7：背景扫光（高亮层从左扫到右，复用你们 AI 思考的扫光语言） */
+    .anim-sweep .row { overflow: hidden; }
+    .anim-sweep .row.enter::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(100deg, transparent 20%, var(--accent-light) 50%, transparent 80%);
+      animation: sweep 0.9s var(--ease-out) both;
+    }
+    @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+    /* 动效 8：缩放浮现（scale 98%→100%，仅 demo 参考，<tr> 上会抖不落地） */
+    @keyframes scaleIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+    .anim-scale .row.enter { animation: scaleIn var(--fade-dur, var(--dur-normal)) var(--ease-out) both; }
+  </style>
+</head>
+<body>
+  <h1>ClipSync 列表动效对比演示</h1>
+  <p class="sub">点击每个区块的「添加一行」按钮，观察新行进入的方式。对比哪种是你想要的。</p>
+
+  <div class="section anim-fade">
+    <h2>① 纯淡入（opacity · 速度可调）</h2>
+    <p class="desc">当前 ClipSync 采用的方案。新行从透明渐变到不透明，无任何位移。点下方按钮切换淡入速度感受一下。</p>
+    <div class="speed-bar" id="speedBar">
+      <button class="speed-btn" data-dur="200" onclick="setSpeed(this, 200)">200ms（当前）</button>
+      <button class="speed-btn" data-dur="350" onclick="setSpeed(this, 350)">350ms</button>
+      <button class="speed-btn" data-dur="500" onclick="setSpeed(this, 500)">500ms</button>
+      <button class="speed-btn" data-dur="700" onclick="setSpeed(this, 700)">700ms</button>
+      <button class="speed-btn" data-dur="900" onclick="setSpeed(this, 900)">900ms</button>
+      <button class="speed-btn" data-dur="1200" onclick="setSpeed(this, 1200)">1200ms</button>
+    </div>
+    <button class="btn" onclick="addRow(this, 'fade')">添加一行</button>
+    <div class="list"></div>
+  </div>
+
+  <div class="section anim-accent">
+    <h2>② 左侧 accent 条展开</h2>
+    <p class="desc">新行出现时，左侧出现一条强调色竖条从无到有的展开感（参考 Linear / Notion 选中态）。</p>
+    <button class="btn" onclick="addRow(this, 'accent')">添加一行</button>
+    <div class="list"></div>
+  </div>
+
+  <div class="section anim-rise">
+    <h2>③ 整行上浮淡入</h2>
+    <p class="desc">新行从下方 8px 处轻微上浮 + 淡入。注意：在真实表格 &lt;tr&gt; 上这个方案曾出现抖动。</p>
+    <button class="btn" onclick="addRow(this, 'rise')">添加一行</button>
+    <div class="list"></div>
+  </div>
+
+  <div class="section anim-height">
+    <h2>④ 高度展开</h2>
+    <p class="desc">新行从高度 0 展开到完整高度 + 淡入，类似折叠面板展开（macOS 列表常用）。</p>
+    <button class="btn" onclick="addRow(this, 'height')">添加一行</button>
+    <div class="list"></div>
+  </div>
+
+  <div class="section anim-sink">
+    <h2>⑤ 内容下沉式（上浮感的"不抖版"）</h2>
+    <p class="desc">单元格内容从下方"升"上来落位。视觉等同 ③ 上浮，但用 padding 实现，真实表格行上不会抖。</p>
+    <button class="btn" onclick="addRow(this, 'sink')">添加一行</button>
+    <div class="list"></div>
+  </div>
+
+  <div class="section anim-slide">
+    <h2>⑥ 左侧滑入（推入感）</h2>
+    <p class="desc">新行从右侧轻微"推"入到原位，带方向感。用 margin 实现，不抖。</p>
+    <button class="btn" onclick="addRow(this, 'slide')">添加一行</button>
+    <div class="list"></div>
+  </div>
+
+  <div class="section anim-sweep">
+    <h2>⑦ 背景扫光（复用 AI 思考扫光语言）</h2>
+    <p class="desc">新行出现时一层高亮从左扫到右，和你们 AI 思考加载的扫光是同一套视觉语言，品牌统一。</p>
+    <button class="btn" onclick="addRow(this, 'sweep')">添加一行</button>
+    <div class="list"></div>
+  </div>
+
+  <div class="section anim-scale">
+    <h2>⑧ 缩放浮现（仅参考，不落地）</h2>
+    <p class="desc">行从 98% 缩放到 100% + 淡入。视觉最"软"，但在真实 &lt;tr&gt; 上会抖，仅作对比参考。</p>
+    <button class="btn" onclick="addRow(this, 'scale')">添加一行</button>
+    <div class="list"></div>
+  </div>
+
+  <script>
+    let counter = 0;
+    function setSpeed(btn, dur) {
+      document.querySelectorAll('#speedBar .speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.documentElement.style.setProperty('--fade-dur', dur + 'ms');
+    }
+    // 默认选中 700ms，打开即可感受明显位移
+    setSpeed(document.querySelector('#speedBar .speed-btn[data-dur="700"]'), 700);
+    const samples = [
+      { content: 'https://github.com/clipsync/clipsync', badge: 'link', time: '2m' },
+      { content: 'const x = await api.getClipboard()', badge: 'code', time: '5m' },
+      { content: '会议纪要：Q3 产品规划讨论要点整理', badge: 'text', time: '12m' },
+      { content: 'C:\\Users\\swq\\Pictures\\screenshot.png', badge: 'file', time: '1h' },
+    ];
+    function addRow(btn, type) {
+      const list = btn.parentElement.querySelector('.list');
+      const item = samples[counter % samples.length];
+      counter++;
+      const row = document.createElement('div');
+      row.className = 'row enter';
+      row.innerHTML = `
+        <div class="check"></div>
+        <div class="content">${item.content}</div>
+        <div class="badge">${item.badge}</div>
+        <div class="time">${item.time}</div>
+      `;
+      list.prepend(row);
+      row.addEventListener('animationend', () => row.classList.remove('enter'), { once: true });
+    }
+  </script>
+</body>
+</html>

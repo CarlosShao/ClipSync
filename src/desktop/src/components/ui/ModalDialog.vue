@@ -107,15 +107,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: fadeIn 0.12s ease;
+  animation: modalFadeIn var(--dur-normal) var(--ease-out) both;
 }
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .modal-panel {
   width: 90vw;
@@ -123,19 +119,19 @@ onUnmounted(() => {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-modal);
-  animation: slideUp 0.15s ease;
+  animation: modalSlideUp var(--dur-slow) var(--ease-out) both;
   max-height: 85vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-@keyframes slideUp {
+@keyframes modalSlideUp {
   from {
-    transform: translateY(10px);
+    transform: translateY(10px) scale(0.98);
     opacity: 0;
   }
   to {
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
     opacity: 1;
   }
 }
@@ -177,7 +173,7 @@ onUnmounted(() => {
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .btn-icon:hover {
   background: var(--bg-hover);
