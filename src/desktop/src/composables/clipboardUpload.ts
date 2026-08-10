@@ -5,7 +5,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { enqueue } from '@/utils/offlineQueue'
 import { logger } from '@/utils/logger'
-import { items, recentUploadHashes, HASH_TTL, type ClipItem } from './clipboardState'
+import { items, recentUploadHashes, HASH_TTL, totalItems, mainTotalItems, currentView, type ClipItem } from './clipboardState'
 import { cacheContent } from './clipboardCache'
 
 const { t } = useI18n()
@@ -180,6 +180,10 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
   // 立即添加到本地列表（乐观更新）
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   items.value.unshift({ id: localId, type, content, source: 'Desktop', timestamp: Date.now(), selected: false })
+  // 同步即时更新顶部计数：乐观插入即 +1（刷新时 loadClipboardItems 会用服务器真实
+  // total 重设，自动纠正，不会重复计数）。否则同步后数字要等刷新/加载更多才变化。
+  totalItems.value += 1
+  if (currentView !== 'archive') mainTotalItems.value += 1
   // 获取设备ID
   const deviceId = await ensureDeviceId()
   if (!deviceId) {
@@ -206,16 +210,20 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
       }
       return
     }
-    // 上传失败：从本地列表移除乐观项，避免残留脏数据
+    // 上传失败：从本地列表移除乐观项，避免残留脏数据，并回滚计数
     items.value = items.value.filter((i) => i.id !== localId)
+    totalItems.value = Math.max(0, totalItems.value - 1)
+    if (currentView.value !== 'archive') mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
     if (res.status === 413) {
       toast.show(t('text_too_large', { n: Math.round(MAX_TEXT_UPLOAD_SIZE / 1024 / 1024) }), 'warning')
     } else {
       toast.show(t('text_upload_failed') + (res.error ? `: ${res.error}` : ''), 'error')
     }
   } catch (e: any) {
-    // 网络/未知异常：同样移除乐观项并提示
+    // 网络/未知异常：同样移除乐观项并提示，回滚计数
     items.value = items.value.filter((i) => i.id !== localId)
+    totalItems.value = Math.max(0, totalItems.value - 1)
+    if (currentView.value !== 'archive') mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
     toast.show(t('text_upload_failed') + (e?.message ? `: ${e.message}` : ''), 'error')
   }
 }
@@ -243,6 +251,8 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
     timestamp: Date.now(),
     selected: false,
   })
+  totalItems.value += 1
+  if (currentView.value !== 'archive') mainTotalItems.value += 1
   const deviceId = await ensureDeviceId()
   if (!deviceId) {
     console.warn('[Clipboard] uploadImageToServer: no deviceId, dropping image')
@@ -314,6 +324,8 @@ export async function uploadFileToServer(payload: string) {
     timestamp: Date.now(),
     selected: false,
   })
+  totalItems.value += 1
+  if (currentView.value !== 'archive') mainTotalItems.value += 1
 
   const deviceId = await ensureDeviceId()
   if (!deviceId) {
