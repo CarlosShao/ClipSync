@@ -1,4 +1,5 @@
 import { useConfigStore } from '@/stores/configStore'
+import { useSonner } from '@/composables/useSonner'
 
 const CSRF_STORAGE_KEY = 'clipsync-csrf'
 let csrfToken: string | null = null
@@ -94,6 +95,8 @@ export async function api<T = any>(method: string, path: string, body?: any): Pr
   const BASE_DELAYS = [1000, 2000] // ms
   const MAX_RETRY_DELAY = 5000 // cap at 5 seconds
   let lastRetryAfter: number | undefined
+  // 防抖：同一限流窗口内只弹一次倒计时 toast（多个并发请求共享）
+  let rateLimitToastShown = false
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -113,6 +116,11 @@ export async function api<T = any>(method: string, path: string, body?: any): Pr
         console.warn(
           `[API] 429 on ${method} ${path} (attempt ${attempt + 1}/${MAX_RETRIES}), retrying after ${delay}ms`,
         )
+        // 第一次 429 就立即弹倒计时 toast，不等重试耗尽
+        if (!rateLimitToastShown && retryAfterSec && retryAfterSec > 0) {
+          rateLimitToastShown = true
+          useSonner().rateLimited(retryAfterSec)
+        }
         await new Promise((r) => setTimeout(r, delay))
         continue
       }
