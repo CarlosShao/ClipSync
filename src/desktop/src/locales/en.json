@@ -445,6 +445,8 @@
   "notif_cat_update": "Updates",
   "notif_cat_device": "Devices",
   "notif_cat_security": "Security",
+  "notif_sync_title": "New content synced",
+  "notif_sync_body": "{type} content from {device}",
   "notif_welcome_t": "Welcome to ClipSync Pro!",
   "notif_welcome_b": "Your Pro subscription is now active. Enjoy unlimited devices and history.",
   "notif_renew_t": "Subscription renews soon",

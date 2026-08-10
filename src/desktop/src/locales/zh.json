@@ -701,6 +701,8 @@
   "notif_cat_update": "更新",
   "notif_cat_device": "设备",
   "notif_cat_security": "安全",
+  "notif_sync_title": "新内容已同步",
+  "notif_sync_body": "{type} 内容来自 {device}",
   "notif_welcome_t": "欢迎使用 ClipSync 专业版！",
   "notif_welcome_b": "您的专业版订阅已激活，享受无限设备与无限历史记录。",
   "notif_renew_t": "订阅即将续费",

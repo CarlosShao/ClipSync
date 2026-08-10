@@ -62,6 +62,22 @@ function timeAgo(ts: number): string {
   if (diff < 86400000) return Math.floor(diff / 3600000) + t('h_ago')
   return Math.floor(diff / 86400000) + t('d_ago')
 }
+
+/** 对后端硬编码的英文通知做 i18n 替换 */
+function translateNotif(title: string, body: string): { title: string; body: string } {
+  // sync_complete 类型通知（后端 clipboard.js 发出的）
+  if (title === 'New content synced') {
+    const m = body.match(/^(\w+) content from (.+)$/)
+    if (m) {
+      return {
+        title: t('notif_sync_title'),
+        body: t('notif_sync_body', { type: m[1], device: m[2] }),
+      }
+    }
+    return { title: t('notif_sync_title'), body }
+  }
+  return { title, body }
+}
 </script>
 
 <template>
@@ -105,8 +121,8 @@ function timeAgo(ts: number): string {
               <span class="notif-cat">{{ t(catOf(n).labelKey) }}</span>
               <span class="notif-time">{{ timeAgo(n.time) }}</span>
             </div>
-            <div class="notif-item-title">{{ n.title }}</div>
-            <div class="notif-item-desc">{{ n.body }}</div>
+            <div class="notif-item-title">{{ translateNotif(n.title, n.body || '').title }}</div>
+            <div class="notif-item-desc">{{ translateNotif(n.title, n.body || '').body }}</div>
           </div>
           <div v-if="!n.read" class="notif-dot" />
         </div>
