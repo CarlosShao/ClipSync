@@ -42,14 +42,15 @@ export function useClipboardOperations(
         confirmText: t('delete_permanent_btn'),
         confirmVariant: 'destructive',
         onConfirm: async () => {
+          const loadingId = toast.loading(t('batch_deleting', { n: count }))
           try {
-            toast.show(t('batch_deleting', { n: count }), 'info')
             await clip.batchDelete()
             await clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
+            toast.dismiss(loadingId)
             toast.show(t('batch_deleted', { n: count }), 'success')
           } catch (err: any) {
+            toast.dismiss(loadingId)
             const msg = err.message || ''
-            // 翻译后端结构化错误码，避免用户看到英文原始信息
             if (msg.includes('BATCH_DELETE_EXCEEDED') || msg.includes('Maximum')) {
               toast.show(t('batch_delete_limit', { n: 500 }), 'warning')
             } else {
@@ -73,14 +74,16 @@ export function useClipboardOperations(
       secondaryText: t('archive_instead_btn'),
       secondaryVariant: 'default',
       onConfirm: async () => {
+        const loadingId = toast.loading(t('batch_deleting', { n: count }))
         try {
           const favItems = clip.items.value.filter((i) => i.selected && (i as any).isFavorite)
           for (const fi of favItems) clip.toggleFavorite(fi)
-          toast.show(t('batch_deleting', { n: count }), 'loading')
           await clip.batchDelete()
           await clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
+          toast.dismiss(loadingId)
           toast.show(t('batch_deleted', { n: count }), 'success')
         } catch (err: any) {
+          toast.dismiss(loadingId)
           const msg = err.message || ''
           if (msg.includes('BATCH_DELETE_EXCEEDED') || msg.includes('Maximum')) {
             toast.show(t('batch_delete_limit', { n: 500 }), 'warning')
