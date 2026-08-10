@@ -200,9 +200,13 @@ export async function loadClipboardItems(opts?: {
         (i: ClipItem) => i.type === 'image' && !i.preview && !getCachedContent(i.id) && i.id,
       )
       loadImagesFromQueue(imageQueue)
+      return true
     } else {
-      return
+      return false
     }
+  } catch (e: any) {
+    console.warn(`[Clipboard] loadClipboardItems error: page=${page}`, e?.message || e)
+    return false
   } finally {
     if (append) loadingMore.value = false
     else loading.value = false
@@ -212,8 +216,12 @@ export async function loadClipboardItems(opts?: {
 export async function loadMore() {
   if (loadingMore.value || !hasMore.value) return
   const next = currentPage.value + 1
-  await loadClipboardItems({ page: next, append: true })
+  // 无论成功失败都推进页码，避免卡在某一页反复重试同一个失败请求
+  const ok = await loadClipboardItems({ page: next, append: true })
   currentPage.value = next
+  if (!ok) {
+    console.warn(`[Clipboard] loadMore page ${next} failed, page advanced anyway to avoid stall`)
+  }
 }
 
 // === 高级搜索：设备列表（用于筛选下拉）===

@@ -623,7 +623,7 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
 
   // OCR 预处理：图片剪贴板异步提取图中文字入 ocr_text，供搜索/多模态使用。
   // 失败（无视觉供应商 / 模型不支持 / 网络 / 超限）一律静默跳过，绝不阻塞剪贴板写入。
-  if (item.content_type === 'image' && contentEncrypted) {
+  if (item.content_type === 'image' && typeof contentEncrypted !== 'undefined' && contentEncrypted) {
     runOcrForClip(item.id, req.userId, contentEncrypted).catch((e) => {
       logger.warn('[OCR] background task error:', { clipId: item.id, error: e.message });
     });
