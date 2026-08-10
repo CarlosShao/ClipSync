@@ -1,6 +1,7 @@
 // === 剪贴板数据加载（分页拉取 / 图片异步队列 / 设备列表 / 条目更新） ===
 import { api, apiBlob } from '@/api/client'
-import { logger } from '@/utils/logger'
+import { logger }from '@/utils/logger'
+import { useSonner } from './useSonner'
 import {
   items,
   loading,
@@ -59,12 +60,22 @@ export async function loadClipboardItems(opts?: {
   const advParamStr = advParts.length > 0 ? `&${advParts.join('&')}` : ''
   const q = searchQuery.value.trim()
   const searchParam = q ? `&search=${encodeURIComponent(q)}` : ''
+  console.log(`[Clipboard] loadClipboardItems: page=${page}, append=${append}, limit=${limit}`)
   try {
     const res = await api(
       'GET',
       `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}${viewParam}${searchParam}`,
     )
+    console.log(`[Clipboard] loadClipboardItems response: ok=${res.ok}, status=${res.status}, items count=${Array.isArray(res.data?.items) ? res.data.items.length : 'N/A'}`)
     if (res.ok && Array.isArray(res.data?.items)) {
+      // 后端返回空数组 = 没更多数据了。用实际条目数修正 totalItems，
+      // 避免 pagination.total 虚高导致 hasMore 永远为 true、加载更多按钮卡住。
+      if (res.data.items.length === 0 && append) {
+        console.warn(`[Clipboard] page ${page} returned 0 items, correcting totalItems from ${totalItems.value} to ${items.value.length}`)
+        totalItems.value = items.value.length
+        if (view !== 'archive') mainTotalItems.value = totalItems.value
+        return true
+      }
       totalItems.value = res.data?.pagination?.total ?? res.data.items.length
       // 仅在主视图（all）更新侧边栏计数，归档视图不覆盖主视图总数
       if (view !== 'archive') {
@@ -202,6 +213,13 @@ export async function loadClipboardItems(opts?: {
       loadImagesFromQueue(imageQueue)
       return true
     } else {
+      // 429 限流 / 网络错误等：给用户友好提示
+      const { show: showToast } = useSonner()
+      if (res.status === 429) {
+        showToast('请求过于频繁，请稍后再试', 'warning', 4000)
+      } else if (res.status >= 500) {
+        showToast(`服务器错误 (${res.status})`, 'error')
+      }
       return false
     }
   } catch (e: any) {
@@ -214,13 +232,25 @@ export async function loadClipboardItems(opts?: {
 }
 
 export async function loadMore() {
-  if (loadingMore.value || !hasMore.value) return
+  console.log(`[Clipboard] loadMore called: loadingMore=${loadingMore.value}, hasMore=${hasMore.value}, currentPage=${currentPage.value}`)
+  if (loadingMore.value || !hasMore.value) {
+    console.warn(`[Clipboard] loadMore blocked: loadingMore=${loadingMore.value}, hasMore=${hasMore.value}`)
+    return
+  }
   const next = currentPage.value + 1
+  console.log(`[Clipboard] loadMore requesting page ${next}...`)
   // 无论成功失败都推进页码，避免卡在某一页反复重试同一个失败请求
-  const ok = await loadClipboardItems({ page: next, append: true })
-  currentPage.value = next
-  if (!ok) {
-    console.warn(`[Clipboard] loadMore page ${next} failed, page advanced anyway to avoid stall`)
+  try {
+    const ok = await loadClipboardItems({ page: next, append: true })
+    currentPage.value = next
+    if (!ok) {
+      console.warn(`[Clipboard] loadMore page ${next} failed, page advanced anyway to avoid stall`)
+    } else {
+      console.log(`[Clipboard] loadMore page ${next} succeeded, items now: ${items.value.length}/${totalItems.value}`)
+    }
+  } catch (e) {
+    console.error(`[Clipboard] loadMore page ${next} threw exception:`, e)
+    currentPage.value = next
   }
 }
 
