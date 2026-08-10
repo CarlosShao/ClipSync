@@ -49,23 +49,12 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const display = useClipItemDisplay()
-import { ref } from 'vue'
-
-// 入场动画：挂载时播放一次（rowFade + 单元格扫光），animationend 后必须把
-// showEnter 置 false 移除 row-enter，否则该 <tr> 永久挂着动画 class，任何会让
-// 组件重新挂载的列表刷新（unshift / 整表 items 替换）都会让动画再次重播，表现为
-// “闪一下 / 图片扫光残留”。动画层播完即彻底消失，不残留不重播。
-const showEnter = ref(true)
-function onEnterAnimationEnd() {
-  showEnter.value = false
-}
 </script>
 
 <template>
   <TableRow
     :data-state="item.selected ? 'selected' : undefined"
-    :class="{ focused, 'row-enter': showEnter }"
-    @animationend="onEnterAnimationEnd"
+    :class="{ focused }"
     @mouseenter="emit('focus')"
     @click="emit('focus')"
     @dblclick="emit('dblclick', item)"
@@ -252,58 +241,6 @@ function onEnterAnimationEnd() {
 </template>
 
 <style scoped>
-/* 列表行流入动画：左侧轻微滑入（margin 实现，<tr> 上不抖），仅挂载时由 JS 加 class，animationend 后移除 */
-/* 列表行流入：整体淡入 + 扫光层（扫光挂在单元格内部 block 上，<tr> 上不抖） */
-.row-enter {
-  animation: rowFade 500ms var(--ease-out) both;
-}
-@keyframes rowFade {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-/* 主内容单元格作为扫光裁切容器 */
-.cell-content-inner {
-  position: relative;
-  overflow: hidden;
-}
-/* 新行挂载时一层高亮从左扫到右（复用 AI 思考扫光语言）。
-   文本/链接/代码单元格内容可能很长，若整片 1100ms 扫光会显得"顿一下"，
-   故这类长内容单元格用更短（500ms）更窄（左侧 40%）的扫光，轻盈不抢戏；
-   图片缩略图仍走下方 1100ms 全宽扫光（区域小，无感）。 */
-.row-enter .cell-content-inner::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    100deg,
-    transparent 25%,
-    var(--accent-light) 50%,
-    transparent 75%
-  );
-  transform: translateX(-100%);
-  animation: rowSweep 500ms var(--ease-out) both;
-  pointer-events: none;
-}
-/* 图片单元格（缩略图小，全宽 1100ms 更从容）单独覆盖回慢速 */
-.row-enter .cell-img-preview::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    100deg,
-    transparent 25%,
-    var(--accent-light) 50%,
-    transparent 75%
-  );
-  transform: translateX(-100%);
-  animation: rowSweep 1100ms var(--ease-out) both;
-  pointer-events: none;
-  border-radius: var(--radius-sm);
-}
-@keyframes rowSweep {
-  from { transform: translateX(-100%); }
-  to   { transform: translateX(100%); }
-}
 /* Cell styles */
 .cell-content {
   overflow: hidden;
@@ -510,7 +447,7 @@ function onEnterAnimationEnd() {
   white-space: nowrap;
 }
 
-/* Action buttons (always visible, subtle reveal on row hover) */
+/* Action buttons (always visible) */
 .cell-actions {
   display: flex;
   align-items: center;
@@ -518,27 +455,16 @@ function onEnterAnimationEnd() {
   justify-content: flex-end;
 }
 .cell-actions .btn-action-hide {
-  opacity: 0.55;
+  opacity: 1;
   color: var(--text-tertiary);
   border-radius: var(--radius-sm);
-  transform: translateY(1px);
   transition:
-    background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    opacity var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
-}
-/* 整行 hover 或聚焦时，操作按钮浮现到完全可见 */
-:deep(tr):hover .cell-actions .btn-action-hide,
-:deep(tr.focused) .cell-actions .btn-action-hide {
-  opacity: 1;
-  transform: translateY(0);
+    background 0.15s ease,
+    color 0.15s ease;
 }
 .cell-actions .btn-action-hide:hover {
   background: var(--bg-active);
   color: var(--text-primary);
-  opacity: 1;
-  transform: translateY(0);
 }
 .cell-actions .btn-action-hide.danger {
   color: var(--danger);
