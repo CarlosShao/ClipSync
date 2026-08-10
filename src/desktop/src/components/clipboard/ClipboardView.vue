@@ -460,6 +460,11 @@ watch(
   border-spacing: 0;
   width: 100%;
 }
+.clipboard-view :deep(thead) {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+}
 .clipboard-view :deep(thead tr) {
   border-bottom: 1px solid var(--border-default);
 }
@@ -472,7 +477,7 @@ watch(
   background: var(--bg-surface);
   position: sticky;
   top: 0;
-  z-index: var(--z-base);
+  z-index: var(--z-sticky);
 }
 .clipboard-view :deep(tbody tr) {
   border-bottom: 1px solid var(--border-subtle);
