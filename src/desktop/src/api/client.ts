@@ -73,6 +73,8 @@ export interface ApiResponse<T = any> {
   data?: T
   error?: string
   status: number
+  /** 429 限流时后端 Retry-After 头解析出的剩余秒数（真实限流结束时间） */
+  retryAfter?: number
 }
 
 export async function api<T = any>(method: string, path: string, body?: any): Promise<ApiResponse<T>> {
@@ -91,6 +93,7 @@ export async function api<T = any>(method: string, path: string, body?: any): Pr
   const MAX_RETRIES = 2
   const BASE_DELAYS = [1000, 2000] // ms
   const MAX_RETRY_DELAY = 5000 // cap at 5 seconds
+  let lastRetryAfter: number | undefined
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -103,6 +106,8 @@ export async function api<T = any>(method: string, path: string, body?: any): Pr
 
       if (res.status === 429 && attempt < MAX_RETRIES) {
         const retryAfter = res.headers.get('Retry-After')
+        const retryAfterSec = retryAfter ? parseInt(retryAfter, 10) : undefined
+        if (retryAfterSec && retryAfterSec > 0) lastRetryAfter = retryAfterSec
         const serverDelay = retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAYS[attempt]
         const delay = Math.min(serverDelay, MAX_RETRY_DELAY)
         console.warn(
@@ -134,8 +139,8 @@ export async function api<T = any>(method: string, path: string, body?: any): Pr
     }
   }
 
-  // 重试耗尽
-  return { ok: false, status: 429, error: 'Too many requests after retries, please wait and try again.' }
+  // 重试耗尽（429 仍受限）
+  return { ok: false, status: 429, error: 'Too many requests after retries, please wait and try again.', retryAfter: lastRetryAfter }
 }
 
 /**

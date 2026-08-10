@@ -6,6 +6,12 @@ export interface SonnerToast {
   loading(message: string): string | number
   /** 关闭指定 id 的 toast（通常用于关闭 loading） */
   dismiss(id?: string | number): void
+  /**
+   * 限流倒计时提示：显示「限流中，N 秒后重试」并每秒递减。
+   * 倒计时结束后自动关闭（duration 0 表示交给内部定时器控制）。
+   * @returns toast id（可用于手动 dismiss）
+   */
+  rateLimited(seconds: number): string | number
 }
 
 export function useSonner(): SonnerToast {
@@ -30,5 +36,22 @@ export function useSonner(): SonnerToast {
     else toast.dismiss()
   }
 
-  return { show, loading, dismiss }
+  function rateLimited(seconds: number): string | number {
+    const initial = Math.max(1, Math.ceil(seconds))
+    let remaining = initial
+    // 持续显示，由内部定时器消失
+    const id = toast.warning(`限流中，请 ${remaining} 秒后重试`, { duration: Infinity })
+    const timer = setInterval(() => {
+      remaining -= 1
+      if (remaining <= 0) {
+        clearInterval(timer)
+        toast.dismiss(id)
+        return
+      }
+      toast.warning(`限流中，请 ${remaining} 秒后重试`, { id, duration: Infinity })
+    }, 1000)
+    return id
+  }
+
+  return { show, loading, dismiss, rateLimited }
 }

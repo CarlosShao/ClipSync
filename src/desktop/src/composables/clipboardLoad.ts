@@ -214,9 +214,14 @@ export async function loadClipboardItems(opts?: {
       return true
     } else {
       // 429 限流 / 网络错误等：给用户友好提示
-      const { show: showToast } = useSonner()
+      const { show: showToast, rateLimited } = useSonner()
       if (res.status === 429) {
-        showToast('请求过于频繁，请稍后再试', 'warning', 4000)
+        // 真实对应限流结束时间的倒计时提示
+        if (res.retryAfter && res.retryAfter > 0) {
+          rateLimited(res.retryAfter)
+        } else {
+          showToast('请求过于频繁，请稍后再试', 'warning', 4000)
+        }
       } else if (res.status >= 500) {
         showToast(`服务器错误 (${res.status})`, 'error')
       }
