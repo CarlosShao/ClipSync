@@ -118,7 +118,7 @@ export function useClipboardOperations(
     }
   }
 
-  function handleSingleDelete(item: ClipItem) {
+  function handleSingleDelete(item: ClipItem, onDeleted?: () => void) {
     const isFav = (item as any).isFavorite
 
     if (isArchive.value) {
@@ -133,6 +133,7 @@ export function useClipboardOperations(
             await clip.deleteSingle(item)
             await clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
             toast.show(t('deleted'), 'success')
+            onDeleted?.()
           } catch (err: any) {
             toast.show(err.message || t('del_fail'), 'error')
           }
@@ -155,6 +156,7 @@ export function useClipboardOperations(
           await clip.deleteSingle(item)
           await clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
           toast.show(t('deleted'), 'success')
+          onDeleted?.()
         } catch (err: any) {
           toast.show(err.message || t('del_fail'), 'error')
         }

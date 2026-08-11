@@ -624,13 +624,37 @@ export interface ClipSuggestion {
   suggested_tags: string[]
 }
 
-export interface SuggestResult {
+/** 批量建议返回的"一条 item 的结果"（id 用于前端按 id 命中对应 ClipItem） */
+export interface ClipSuggestionItem {
+  id: string
   suggestion: ClipSuggestion | null
+}
+
+export interface SuggestResult {
+  /** 单条模式：返回单条建议 */
+  suggestion?: ClipSuggestion | null
+  /** 批量模式：返回 N 条建议，按后端输入顺序 */
+  suggestions?: ClipSuggestionItem[]
   raw?: string
   error?: string
 }
 
+export interface SuggestBatchItem {
+  id: string
+  content: string
+}
+
+/** 单条建议（向后兼容） */
 export function suggestClipboard(params: { providerId: string; content: string; collections?: string[] }) {
+  return api<SuggestResult>('POST', '/api/ai/suggest', params)
+}
+
+/** 批量建议（方案 A）：一次拿 N 条建议，AI 一次返回数组，效率更高 */
+export function suggestClipboardBatch(params: {
+  providerId: string
+  items: SuggestBatchItem[]
+  collections?: string[]
+}) {
   return api<SuggestResult>('POST', '/api/ai/suggest', params)
 }
 

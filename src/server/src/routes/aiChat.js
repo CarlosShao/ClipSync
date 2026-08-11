@@ -568,11 +568,31 @@ router.post('/refactor-prompt', apiLimiter, async (req, res) => {
 
 // POST /api/ai/suggest - 主动建议（任务 #230）：根据剪贴板内容给出"是否值得收藏 /
 // 建议分类 / 建议清理"的结构化建议。非流式，供前端选中条目后展示 AI 建议。
+//
+// 支持两种调用形态：
+//   - 单条：{ providerId, content, collections }            → 返回 { suggestion }
+//   - 批量：{ providerId, items: [{id, content}], collections } → 返回 { suggestions: [{id, suggestion}, ...] }
+//
+// 批量场景：用户勾选 N 条文本后一次性获取所有条目的建议，避免单条接口串行慢。
+// AI 一次返回 N 个建议的 JSON 数组（按 items 顺序），前端展示为列表。
 router.post('/suggest', apiLimiter, async (req, res) => {
   try {
-    const { providerId, content, collections = [] } = req.body || {}
+    const { providerId, content, collections = [], items } = req.body || {}
     if (!providerId) return res.status(400).json({ error: 'providerId is required' })
-    if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content is required' })
+
+    const collectionNames = Array.isArray(collections) ? collections.filter((x) => typeof x === 'string' && x.trim()).slice(0, 30) : []
+    const collectionHint = collectionNames.length
+      ? `\n现有收藏夹：${collectionNames.join('、')}（若建议分类，请从这些中选择最匹配的）`
+      : ''
+
+    // === 形态分发 ===
+    const isBatch = Array.isArray(items) && items.length > 0
+    if (!isBatch) {
+      if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content is required' })
+    } else if (items.length > 20) {
+      // 上限 20 条，避免一次 LLM 调用 input 过大；超出截断并提示
+      return res.status(400).json({ error: '批量建议最多 20 条，请减少勾选数' })
+    }
 
     const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
     if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found' })
@@ -581,35 +601,102 @@ router.post('/suggest', apiLimiter, async (req, res) => {
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
     const MAX_SUGGEST_INPUT = 4000
-    const truncated = content.slice(0, MAX_SUGGEST_INPUT)
-    const collectionNames = Array.isArray(collections) ? collections.filter((x) => typeof x === 'string' && x.trim()).slice(0, 30) : []
-    const collectionHint = collectionNames.length
-      ? `\n现有收藏夹：${collectionNames.join('、')}（若建议分类，请从这些中选择最匹配的）`
-      : ''
 
-    // 要求 AI 输出严格 JSON，便于前端解析成建议卡片
-    const messages = [
-      {
-        role: 'system',
-        content:
-          '你是剪贴板管理助手，负责给用户剪贴板中的一段内容给出管理建议。' +
-          '请以 JSON 对象输出（不要 markdown 代码块、不要多余文字），格式如下：\n' +
-          '{"worth_favorite": boolean, "reason": string, "suggested_collection": string|null, "action": "keep"|"archive"|"cleanup", "action_reason": string, "suggested_tags": string[]}\n' +
-          '字段说明：\n' +
-          '- worth_favorite: 内容是否值得收藏（重要、常用、可复用、有价值）\n' +
-          '- reason: 一句话说明收藏/不收藏的理由\n' +
-          '- suggested_collection: 若值得收藏，建议归入哪个收藏夹（从提供的收藏夹列表选，没有合适则 null）\n' +
-          '- action: 建议动作 keep(保留) / archive(归档) / cleanup(清理——临时性、一次性、敏感或过期内容）\n' +
-          '- action_reason: 建议动作的一句话理由\n' +
-          '- suggested_tags: 推荐 2-5 个简洁中文标签（用于给该内容打标签，如 工作/代码/网址/密码/灵感 等，避免与内容本身重复的长句）' +
-          collectionHint,
-      },
-      { role: 'user', content: truncated },
-    ]
+    // 归一化一条输入（裁剪 / 校验）
+    const normalize = (s) => (typeof s === 'string' ? s.slice(0, MAX_SUGGEST_INPUT) : '')
+
+    let messages
+    let returnShape // { kind: 'single' | 'batch', parsed: fn }
+
+    if (isBatch) {
+      const cleanedItems = items
+        .filter((it) => it && typeof it.id === 'string' && it.id && typeof it.content === 'string' && it.content.trim())
+        .slice(0, 20)
+        .map((it) => ({ id: it.id, content: normalize(it.content) }))
+
+      if (cleanedItems.length === 0) {
+        return res.status(400).json({ error: 'items 不能为空' })
+      }
+
+      // 给 AI 一个"索引 → 内容预览"对照表（不传全文，避免拼 prompt 超长）
+      const itemListForPrompt = cleanedItems
+        .map((it, i) => {
+          const preview = (it.content || '').slice(0, 120).replace(/\s+/g, ' ')
+          return `[${i}] id=${it.id} 预览：${preview}`
+        })
+        .join('\n')
+
+      messages = [
+        {
+          role: 'system',
+          content:
+            '你是剪贴板管理助手，负责给用户剪贴板中的多条内容分别给出管理建议。' +
+            `本批共 ${cleanedItems.length} 条，编号 0-${cleanedItems.length - 1}。` +
+            '请严格以 JSON 数组输出（不要 markdown 代码块、不要多余文字），顺序与输入对应：\n' +
+            '[{"index": 0, "worth_favorite": boolean, "reason": string, "suggested_collection": string|null, "action": "keep"|"archive"|"cleanup", "action_reason": string, "suggested_tags": string[]}, ...]\n' +
+            '字段说明：\n' +
+            '- index: 对应输入的编号\n' +
+            '- worth_favorite: 内容是否值得收藏（重要、常用、可复用、有价值）\n' +
+            '- reason: 一句话说明收藏/不收藏的理由\n' +
+            '- suggested_collection: 若值得收藏，建议归入哪个收藏夹（从提供的收藏夹列表选，没有合适则 null）\n' +
+            '- action: 建议动作 keep(保留) / archive(归档) / cleanup(清理——临时性、一次性、敏感或过期内容）\n' +
+            '- action_reason: 建议动作的一句话理由\n' +
+            '- suggested_tags: 推荐 2-5 个简洁中文标签（用于给该内容打标签，如 工作/代码/网址/密码/灵感 等）\n' +
+            '允许某条返回 null（表示对该条无法给出建议），但数组长度必须等于输入条数。' +
+            collectionHint,
+        },
+        {
+          role: 'user',
+          content: `请对以下 ${cleanedItems.length} 条剪贴板内容分别给出建议（按编号顺序输出）：\n${itemListForPrompt}`,
+        },
+      ]
+
+      returnShape = {
+        kind: 'batch',
+        parsed: (arr, raw) => {
+          const map = new Map()
+          if (Array.isArray(arr)) {
+            arr.forEach((row) => {
+              const idx = Number(row?.index)
+              if (Number.isInteger(idx) && idx >= 0 && idx < cleanedItems.length) {
+                map.set(cleanedItems[idx].id, cleanSuggestion(row))
+              }
+            })
+          }
+          // 按 items 顺序输出，未命中的给 null
+          return cleanedItems.map((it) => ({ id: it.id, suggestion: map.get(it.id) || null }))
+        },
+      }
+    } else {
+      const truncated = normalize(content)
+      messages = [
+        {
+          role: 'system',
+          content:
+            '你是剪贴板管理助手，负责给用户剪贴板中的一段内容给出管理建议。' +
+            '请以 JSON 对象输出（不要 markdown 代码块、不要多余文字），格式如下：\n' +
+            '{"worth_favorite": boolean, "reason": string, "suggested_collection": string|null, "action": "keep"|"archive"|"cleanup", "action_reason": string, "suggested_tags": string[]}\n' +
+            '字段说明：\n' +
+            '- worth_favorite: 内容是否值得收藏（重要、常用、可复用、有价值）\n' +
+            '- reason: 一句话说明收藏/不收藏的理由\n' +
+            '- suggested_collection: 若值得收藏，建议归入哪个收藏夹（从提供的收藏夹列表选，没有合适则 null）\n' +
+            '- action: 建议动作 keep(保留) / archive(归档) / cleanup(清理——临时性、一次性、敏感或过期内容）\n' +
+            '- action_reason: 建议动作的一句话理由\n' +
+            '- suggested_tags: 推荐 2-5 个简洁中文标签（用于给该内容打标签，如 工作/代码/网址/密码/灵感 等，避免与内容本身重复的长句）' +
+            collectionHint,
+        },
+        { role: 'user', content: truncated },
+      ]
+
+      returnShape = {
+        kind: 'single',
+        parsed: (obj) => cleanSuggestion(obj),
+      }
+    }
 
     const { finalContent } = await runChatLoop({
       messages,
-      options: { temperature: 0.2, max_tokens: 300 },
+      options: { temperature: 0.2, max_tokens: isBatch ? 300 * Math.max(1, items.length) : 300 },
       providerRow,
       apiKey,
       tools: [],
@@ -624,43 +711,57 @@ router.post('/suggest', apiLimiter, async (req, res) => {
     const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
     if (fenced) jsonStr = fenced[1].trim()
     else {
-      const braceStart = raw.indexOf('{')
-      const braceEnd = raw.lastIndexOf('}')
-      if (braceStart >= 0 && braceEnd > braceStart) jsonStr = raw.slice(braceStart, braceEnd + 1)
+      const first = jsonStr[0]
+      if (first === '[') {
+        const start = jsonStr.indexOf('[')
+        const end = jsonStr.lastIndexOf(']')
+        if (start >= 0 && end > start) jsonStr = jsonStr.slice(start, end + 1)
+      } else {
+        const start = jsonStr.indexOf('{')
+        const end = jsonStr.lastIndexOf('}')
+        if (start >= 0 && end > start) jsonStr = jsonStr.slice(start, end + 1)
+      }
     }
-    let suggestion
+    let parsed
     try {
-      suggestion = JSON.parse(jsonStr)
+      parsed = JSON.parse(jsonStr)
     } catch {
-      suggestion = null
+      parsed = null
     }
-    if (!suggestion || typeof suggestion !== 'object') {
-      return res.json({
-        suggestion: null,
-        raw,
-        error: 'AI 未返回结构化建议',
-      })
+    if (!parsed) {
+      return res.json(returnShape.kind === 'batch'
+        ? { suggestions: [], raw, error: 'AI 未返回结构化建议' }
+        : { suggestion: null, raw, error: 'AI 未返回结构化建议' })
     }
-    // 归一化字段
-    const clean = {
-      worth_favorite: Boolean(suggestion.worth_favorite),
-      reason: String(suggestion.reason || '').slice(0, 300),
-      suggested_collection: typeof suggestion.suggested_collection === 'string' && suggestion.suggested_collection.trim() ? suggestion.suggested_collection.trim().slice(0, 60) : null,
-      action: ['keep', 'archive', 'cleanup'].includes(suggestion.action) ? suggestion.action : 'keep',
-      action_reason: String(suggestion.action_reason || '').slice(0, 300),
-      // 智能标签（#235）：推荐 2-5 个简洁标签
-      suggested_tags: Array.isArray(suggestion.suggested_tags)
-        ? suggestion.suggested_tags
-            .filter((x) => typeof x === 'string' && x.trim())
-            .map((x) => x.trim().slice(0, 20))
-            .slice(0, 5)
-        : [],
+    if (returnShape.kind === 'batch') {
+      return res.json({ suggestions: returnShape.parsed(parsed, raw), raw: undefined })
     }
-    return res.json({ suggestion: clean, raw: undefined })
+    return res.json({ suggestion: returnShape.parsed(parsed), raw: undefined })
   } catch (err) {
     logger.error('[AI] suggest error:', err)
     res.status(500).json({ error: 'Suggestion failed', detail: err.message })
   }
 })
+
+// 归一化建议字段（单条 / 批量共用）
+function cleanSuggestion(s) {
+  if (!s || typeof s !== 'object') return null
+  return {
+    worth_favorite: Boolean(s.worth_favorite),
+    reason: String(s.reason || '').slice(0, 300),
+    suggested_collection:
+      typeof s.suggested_collection === 'string' && s.suggested_collection.trim()
+        ? s.suggested_collection.trim().slice(0, 60)
+        : null,
+    action: ['keep', 'archive', 'cleanup'].includes(s.action) ? s.action : 'keep',
+    action_reason: String(s.action_reason || '').slice(0, 300),
+    suggested_tags: Array.isArray(s.suggested_tags)
+      ? s.suggested_tags
+          .filter((x) => typeof x === 'string' && x.trim())
+          .map((x) => x.trim().slice(0, 20))
+          .slice(0, 5)
+      : [],
+  }
+}
 
 export default router

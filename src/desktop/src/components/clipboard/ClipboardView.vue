@@ -114,14 +114,14 @@ function toggleFilterPanel() {
   showFilterPanel.value = !showFilterPanel.value
 }
 
-// === AI 主动建议（#230）：选中文本条目后，AI 给出收藏/分类/清理建议 ===
+// === AI 主动建议（#230 方案 A 批量）：选中文本条目后，AI 一次给出 N 条建议 ===
 const suggestOpen = ref(false)
-const suggestContent = ref('')
+const suggestItems = ref<{ id: string; content: string; preview?: string }[]>([])
 const suggestCollectionNames = ref<string[]>([])
 // 语义相似度检测候选（#236）
 const suggestCandidates = ref<import('@/api/ai').SimilarityCandidate[]>([])
-// 当前被建议的条目（用于一键收藏/归档/清理）
-const suggestItem = ref<ClipItem | null>(null)
+// 弹窗 ref（用于标记某条已应用）
+const popupRef = ref<InstanceType<typeof import('@/components/ai/AiSuggestPopup.vue').default> | null>(null)
 
 function openAiSuggest() {
   const selected = clip.items.value.filter((i) => i.selected && i.type === 'text' && (i.content || '').trim())
@@ -129,15 +129,12 @@ function openAiSuggest() {
     toast.show(t('ai_suggest_no_text'), 'error')
     return
   }
-  // ⚠️ 当前仅支持单条分析（弹窗是单卡片 UI，AI 一次只给一条建议）。
-  //   多选时只分析第一条并提示用户，避免静默吞掉其他条目的意图。
-  //   批量建议需配合专门的批量 UI（v2 待办），目前禁用多选触发。
-  if (selected.length > 1) {
-    toast.show(t('ai_suggest_single_only') || 'AI 建议暂只支持单条文本，请只勾选 1 条', 'error')
-    return
-  }
-  suggestItem.value = selected[0]
-  suggestContent.value = (selected[0].content || selected[0].preview || '').slice(0, 4000)
+  // 批量建议：支持 N 条（N≤20，后端硬限），弹窗是列表卡片
+  suggestItems.value = selected.map((i) => ({
+    id: i.id,
+    content: (i.content || i.preview || '').slice(0, 4000),
+    preview: i.preview || (i.content || '').slice(0, 120),
+  }))
   // 收藏夹名称（供 AI 建议分类时选择）
   try {
     const favs = localStorage.getItem('clipsync-favorites') || '[]'
@@ -146,9 +143,10 @@ function openAiSuggest() {
   } catch {
     suggestCollectionNames.value = []
   }
-  // 语义重复检测候选（#236）：最近 10 条非当前文本条目
+  // 语义重复检测候选（#236）：最近 10 条非当前批文本条目
+  const batchIds = new Set(suggestItems.value.map((x) => x.id))
   suggestCandidates.value = clip.items.value
-    .filter((i) => i.type === 'text' && i.id !== suggestItem.value?.id && (i.content || i.preview || '').trim())
+    .filter((i) => i.type === 'text' && !batchIds.has(i.id) && (i.content || i.preview || '').trim())
     .slice(0, 10)
     .map((i) => ({ id: i.id, text: (i.content || i.preview || '').slice(0, 200) }))
   suggestOpen.value = true
@@ -156,44 +154,53 @@ function openAiSuggest() {
 
 function onSuggestClose() {
   suggestOpen.value = false
-  suggestItem.value = null
+  // 不立刻清空 suggestItems，让关闭动画期间 popup 还能用
+  setTimeout(() => {
+    suggestItems.value = []
+  }, 200)
 }
 
-async function onSuggestFavorite() {
-  if (!suggestItem.value) return
-  await clip.toggleFavorite(suggestItem.value)
+function findItem(id: string): ClipItem | undefined {
+  return clip.items.value.find((i) => i.id === id)
+}
+
+async function onSuggestFavorite(itemId: string) {
+  const item = findItem(itemId)
+  if (!item) return
+  await clip.toggleFavorite(item)
   toast.show(t('clip_favorited'), 'success')
-  onSuggestClose()
+  popupRef.value?.markApplied(itemId, 'favorited')
 }
 
-async function onSuggestArchive() {
-  if (!suggestItem.value) return
-  const ok = await clip.archiveItem(suggestItem.value)
+async function onSuggestArchive(itemId: string) {
+  const item = findItem(itemId)
+  if (!item) return
+  const ok = await clip.archiveItem(item)
   toast.show(ok ? t('archived_toast') : t('archive_fail'), ok ? 'success' : 'error')
-  onSuggestClose()
+  if (ok) popupRef.value?.markApplied(itemId, 'archived')
 }
 
-function onSuggestCleanup() {
-  if (!suggestItem.value) return
-  const item = suggestItem.value
-  // 复用单条删除流程（含确认框 + 敏感条目保护），避免绕过安全校验
-  onSuggestClose()
-  ops.handleSingleDelete(item)
+function onSuggestCleanup(itemId: string) {
+  const item = findItem(itemId)
+  if (!item) return
+  // 复用单条删除流程（含确认框 + 敏感条目保护），弹窗保持打开，删除完成后标记
+  ops.handleSingleDelete(item, () => {
+    // 删除成功的回调（由 ops.handleSingleDelete 触发）；标记已应用
+    popupRef.value?.markApplied(itemId, 'cleaned')
+  })
 }
 
 // 应用 AI 推荐的标签（#235）：PUT /api/clipboard/:id 写 metadata.tags，并同步本地 item
-async function onSuggestTags(tags: string[]) {
-  if (!suggestItem.value || !tags.length) return
-  const item = suggestItem.value
+async function onSuggestTags(itemId: string, tags: string[]) {
+  const item = findItem(itemId)
+  if (!item || !tags.length) return
   const ok = await api('PUT', `/api/clipboard/${item.id}`, { metadata: { tags } })
   if (ok.ok) {
-    // 同步本地 ClipItem（tags 存于 metadata，ClipItem 从 metadata 读 tags）
     if (item.metadata) item.metadata.tags = tags
     else item.metadata = { tags }
-    // 如果列表从 metadata 重建 tags 字段，也同步
     ;(item as any).tags = tags
     toast.show(t('ai_suggest_tags_applied', { n: tags.length }) || `已应用 ${tags.length} 个标签`, 'success')
-    onSuggestClose()
+    popupRef.value?.markApplied(itemId, 'tags', tags)
   } else {
     toast.show(ok.error || '应用标签失败', 'error')
   }
@@ -421,10 +428,11 @@ watch(
       @delete="ops.handleSingleDelete"
     />
 
-    <!-- AI 主动建议（#230）：选中文本条目后给出收藏/分类/清理建议 -->
+    <!-- AI 主动建议（#230 批量）：选中文本条目后给出收藏/分类/清理建议 -->
     <AiSuggestPopup
+      ref="popupRef"
       :open="suggestOpen"
-      :content="suggestContent"
+      :items="suggestItems"
       :collections="suggestCollectionNames"
       :candidates="suggestCandidates"
       @close="onSuggestClose"
