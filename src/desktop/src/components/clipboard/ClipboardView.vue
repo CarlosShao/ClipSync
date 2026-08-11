@@ -129,7 +129,13 @@ function openAiSuggest() {
     toast.show(t('ai_suggest_no_text'), 'error')
     return
   }
-  // 只分析第一条选中的文本条目（避免一次调用消耗过多 token）
+  // ⚠️ 当前仅支持单条分析（弹窗是单卡片 UI，AI 一次只给一条建议）。
+  //   多选时只分析第一条并提示用户，避免静默吞掉其他条目的意图。
+  //   批量建议需配合专门的批量 UI（v2 待办），目前禁用多选触发。
+  if (selected.length > 1) {
+    toast.show(t('ai_suggest_single_only') || 'AI 建议暂只支持单条文本，请只勾选 1 条', 'error')
+    return
+  }
   suggestItem.value = selected[0]
   suggestContent.value = (selected[0].content || selected[0].preview || '').slice(0, 4000)
   // 收藏夹名称（供 AI 建议分类时选择）
@@ -156,7 +162,7 @@ function onSuggestClose() {
 async function onSuggestFavorite() {
   if (!suggestItem.value) return
   await clip.toggleFavorite(suggestItem.value)
-  toast.show(t('favorited_toast'), 'success')
+  toast.show(t('clip_favorited'), 'success')
   onSuggestClose()
 }
 

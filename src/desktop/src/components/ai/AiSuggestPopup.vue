@@ -109,20 +109,35 @@ async function analyze() {
   }
 }
 
-// 打开即开始分析
+// 打开即开始分析。
+// ⚠️ 关掉弹窗只关 open，suggestion/loading/duplicates 不能保留——
+//   否则用户关弹窗→选别的条目→再开，会看到上轮建议。
+//   必须在 open 由 false → true 时强制重置，再走 analyze。
 let timer: ReturnType<typeof setTimeout> | null = null
 watch(
   () => props.open,
-  (open) => {
-    if (open && !suggestion.value && !loading.value) {
-      timer = setTimeout(analyze, 60)
+  (open, prev) => {
+    if (open) {
+      // 关闭→打开：强制清掉上轮结果，触发新一轮分析
+      if (!prev) {
+        suggestion.value = null
+        loading.value = false
+        duplicates.value = []
+        dupChecking.value = false
+        error.value = ''
+        if (timer) clearTimeout(timer)
+        timer = setTimeout(analyze, 60)
+      }
+    } else {
+      // 关闭时清掉定时器
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
     }
   },
   { immediate: true },
 )
-onUnmounted(() => {
-  if (timer) clearTimeout(timer)
-})
 
 const actionLabel = computed(() => {
   if (!suggestion.value) return ''
@@ -299,8 +314,8 @@ function applyTags() {
   color: var(--danger, #ef4444);
 }
 .ai-suggest-dup {
-  border-left: 3px solid #f59e0b;
-  background: rgba(245, 158, 11, 0.06);
+  border-left: 3px solid var(--warning, #f59e0b);
+  background: color-mix(in srgb, var(--warning, #f59e0b) 6%, transparent);
   border-radius: 6px;
 }
 .ai-suggest-dup-row {
@@ -315,7 +330,7 @@ function applyTags() {
   align-items: center;
   gap: 6px;
   font-weight: 600;
-  color: #b45309;
+  color: var(--warning, #b45309);
 }
 .ai-suggest-dup-icon { flex-shrink: 0; }
 .ai-suggest-dup-title { font-size: 12px; }
@@ -337,8 +352,8 @@ function applyTags() {
   margin-top: 1px;
 }
 .ai-suggest-dup-degree--high {
-  background: rgba(245, 158, 11, 0.18);
-  color: #b45309;
+  background: color-mix(in srgb, var(--warning, #f59e0b) 18%, transparent);
+  color: var(--warning, #b45309);
 }
 .ai-suggest-dup-reason {
   line-height: 1.5;
@@ -370,7 +385,7 @@ function applyTags() {
   color: var(--accent);
   font-size: 11.5px;
 }
-.ai-suggest-fav-yes { color: #f43f5e; }
+.ai-suggest-fav-yes { color: var(--danger, #f43f5e); }
 .ai-suggest-fav-no { color: var(--text-tertiary); }
 .ai-suggest-action-icon { color: var(--text-secondary); flex-shrink: 0; margin-top: 1px; }
 .ai-suggest-btn {

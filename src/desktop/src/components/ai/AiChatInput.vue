@@ -993,9 +993,9 @@ defineExpose({ setDraft })
   flex-shrink: 0;
 }
 .ai-optimize-btn:hover:not(.disabled) {
-  color: #8b5cf6;
-  background: rgba(139, 92, 246, 0.1);
-  border-color: rgba(139, 92, 246, 0.25);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   transform: scale(1.08);
 }
 .ai-optimize-btn.disabled {
@@ -1003,9 +1003,9 @@ defineExpose({ setDraft })
   cursor: not-allowed;
 }
 .ai-optimize-btn.loading {
-  color: #8b5cf6;
-  background: rgba(139, 92, 246, 0.08);
-  border-color: rgba(139, 92, 246, 0.25);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   cursor: progress;
 }
 .ai-optimize-btn.errored {
@@ -1032,8 +1032,8 @@ defineExpose({ setDraft })
   z-index: 2;
 }
 .ai-optimize-status.loading {
-  background: #8b5cf6;
-  border: 1px solid #fff;
+  background: var(--accent);
+  border: 1px solid var(--bg-surface, #fff);
 }
 .ai-optimize-status.errored {
   background: #ef4444;

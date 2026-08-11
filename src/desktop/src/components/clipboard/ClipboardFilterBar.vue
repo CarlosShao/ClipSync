@@ -140,36 +140,39 @@ function clearSearch() {
     </Button>
     <Button
       v-if="selectedCount > 0 && !isArchive"
-      variant="ghost"
-      size="icon-sm"
+      variant="outline"
+      size="sm"
       class="batch-suggest-btn"
       :title="t('ai_suggest_btn_batch')"
       @click="emit('batch-ai-suggest')"
     >
-      <Sparkles :size="15" />
-      <span style="margin-left: 2px; font-size: 11px">{{ selectedCount }}</span>
+      <Sparkles :size="14" />
+      <span>{{ t('ai_suggest_btn_batch') || 'AI 建议' }}</span>
+      <span class="batch-count">{{ selectedCount }}</span>
     </Button>
     <Button
       v-if="selectedCount > 0 && !isArchive"
-      variant="ghost"
-      size="icon-sm"
+      variant="outline"
+      size="sm"
       class="batch-del-btn"
       :title="t('batch_delete_selected_btn')"
       @click="emit('batch-delete')"
     >
-      <Trash2 :size="15" />
-      <span style="margin-left: 2px; font-size: 11px">{{ selectedCount }}</span>
+      <Trash2 :size="14" />
+      <span>{{ t('batch_delete_short') || '删除' }}</span>
+      <span class="batch-count">{{ selectedCount }}</span>
     </Button>
     <Button
       v-if="selectedCount > 0 && isArchive"
-      variant="ghost"
-      size="icon-sm"
+      variant="outline"
+      size="sm"
       class="batch-restore-btn"
       :title="t('unarchive_selected_btn')"
       @click="emit('batch-unarchive')"
     >
-      <ArchiveRestore :size="15" />
-      <span style="margin-left: 2px; font-size: 11px">{{ selectedCount }}</span>
+      <ArchiveRestore :size="14" />
+      <span>{{ t('unarchive_selected_btn') || '恢复' }}</span>
+      <span class="batch-count">{{ selectedCount }}</span>
     </Button>
     <Button
       v-if="selectedCount > 0 && isArchive"
@@ -179,7 +182,7 @@ function clearSearch() {
       :title="t('batch_delete_selected_btn')"
       @click="emit('batch-delete')"
     >
-      <Trash2 :size="15" />
+      <Trash2 :size="14" />
     </Button>
   </div>
 </template>
@@ -286,10 +289,55 @@ function clearSearch() {
 }
 
 /* Batch delete button */
+.batch-suggest-btn,
+.batch-del-btn,
+.batch-restore-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 32px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.batch-suggest-btn:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.batch-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: var(--bg-active);
+  color: var(--text-primary);
+  margin-left: 2px;
+}
+.batch-suggest-btn .batch-count {
+  background: var(--accent);
+  color: var(--accent-foreground, #fff);
+}
 .batch-del-btn {
   color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger, #ef4444) 35%, var(--border-default));
 }
 .batch-del-btn:hover {
   background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.batch-del-btn .batch-count {
+  background: var(--danger);
+  color: #fff;
+}
+.batch-restore-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-default);
 }
 </style>

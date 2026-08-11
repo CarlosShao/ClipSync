@@ -331,8 +331,8 @@ function formatDuration(ms: number): string {
   gap: 8px;
 }
 .ai-msg.user .ai-msg-bubble {
-  background: var(--bg-brand, #4B3FE3);
-  color: var(--text-onbrand, #fff);
+  background: var(--accent);
+  color: var(--accent-foreground, #fff);
   border-bottom-right-radius: 4px;
 }
 .ai-msg.assistant .ai-msg-bubble {
@@ -388,7 +388,7 @@ function formatDuration(ms: number): string {
 }
 .ai-msg-action-btn:hover {
   background: var(--bg-overlay-l1, rgba(115,115,115,0.08));
-  color: var(--bg-brand, #4B3FE3);
+  color: var(--accent);
 }
 
 /* ============ 折叠态处理过程 ============ */
@@ -462,11 +462,11 @@ function formatDuration(ms: number): string {
   z-index: 1;
 }
 .ai-timeline-node-icon--thinking {
-  border-color: var(--bg-brand, #4B3FE3);
-  color: var(--bg-brand, #4B3FE3);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .ai-timeline-node-icon--thinking.is-streaming {
-  background: var(--bg-brand, #4B3FE3);
+  background: var(--accent);
   color: #fff;
 }
 .ai-timeline-node-icon--tool {
@@ -479,8 +479,8 @@ function formatDuration(ms: number): string {
   color: #fff;
 }
 .ai-timeline-node-icon--working {
-  border-color: var(--bg-brand, #4B3FE3);
-  background: var(--bg-brand, #4B3FE3);
+  border-color: var(--accent);
+  background: var(--accent);
   color: #fff;
 }
 .ai-timeline-node-icon--failed {
@@ -497,7 +497,7 @@ function formatDuration(ms: number): string {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--bg-brand, #4B3FE3);
+  background: var(--accent);
   animation: loading-pulse 1.4s ease-in-out infinite;
 }
 @keyframes loading-pulse {
@@ -568,7 +568,7 @@ function formatDuration(ms: number): string {
 .ai-timeline-node-badge.badge-done { background: rgba(0,185,131,0.1); color: #00B983; }
 .ai-timeline-node-badge.badge-working,
 .ai-timeline-node-badge.badge-planning,
-.ai-timeline-node-badge.badge-synthesis { background: rgba(75,63,227,0.1); color: var(--bg-brand, #4B3FE3); }
+.ai-timeline-node-badge.badge-synthesis { background: rgba(75,63,227,0.1); color: var(--accent); }
 .ai-timeline-node-badge.badge-failed { background: rgba(255,107,69,0.1); color: #FF6B45; }
 .ai-timeline-node-objective {
   font-size: 11px;
@@ -595,7 +595,7 @@ function formatDuration(ms: number): string {
   font-family: var(--font-family-mono, ui-monospace, monospace);
   background: var(--bg-base-secondary, #F5F5F5);
   border-radius: 6px;
-  border-left: 2px solid var(--bg-brand, #4B3FE3);
+  border-left: 2px solid var(--accent);
 }
 
 /* 旋转动画 */
@@ -634,7 +634,7 @@ function formatDuration(ms: number): string {
   border-radius: 4px;
   font-family: var(--font-family-mono, ui-monospace, monospace);
   font-size: 12px;
-  color: var(--bg-brand, #4B3FE3);
+  color: var(--accent);
 }
 .ai-msg-content :deep(pre) {
   background: var(--bg-base-secondary, #F5F5F5);
@@ -650,9 +650,9 @@ function formatDuration(ms: number): string {
   color: var(--text-default, #171717);
 }
 .ai-msg-content :deep(strong) { font-weight: 600; }
-.ai-msg-content :deep(a) { color: var(--bg-brand, #4B3FE3); }
+.ai-msg-content :deep(a) { color: var(--accent); }
 .ai-msg-content :deep(blockquote) {
-  border-left: 3px solid var(--bg-brand, #4B3FE3);
+  border-left: 3px solid var(--accent);
   background: var(--bg-overlay-l1, rgba(115,115,115,0.08));
   padding: 8px 14px;
   border-radius: 6px;
@@ -681,7 +681,7 @@ function formatDuration(ms: number): string {
   height: 1.2em;
   margin-left: 1px;
   vertical-align: text-bottom;
-  background: var(--bg-brand, #4B3FE3);
+  background: var(--accent);
   border-radius: 1px;
   animation: caret-pulse 1.2s ease-in-out infinite;
 }
@@ -705,19 +705,19 @@ function formatDuration(ms: number): string {
   color: var(--text-secondary, #404040);
   max-width: 96%;
 }
-.ai-msg-system-card--compact_loading { border-left: 3px solid var(--bg-brand, #4B3FE3); }
+.ai-msg-system-card--compact_loading { border-left: 3px solid var(--accent); }
 .ai-msg-system-card--compact_success { border-left: 3px solid #00B983; }
 .ai-msg-system-card--compact_too_short { border-left: 3px solid var(--text-tertiary, #737373); }
 .ai-msg-system-card--compact_failed { border-left: 3px solid #FF6B45; }
 .ai-msg-system-card--quick-action {
-  border-left: 3px solid var(--bg-brand, #4B3FE3);
+  border-left: 3px solid var(--accent);
   background: var(--bg-overlay-l1, rgba(115,115,115,0.08));
   flex-direction: row;
   align-items: center;
   gap: 6px;
 }
 .ai-msg-system-icon { display: inline-block; margin-right: 6px; font-weight: 600; }
-.ai-msg-system-icon-svg { width: 14px; height: 14px; color: var(--bg-brand, #4B3FE3); flex-shrink: 0; }
+.ai-msg-system-icon-svg { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
 
 /* 用户消息截图 */
 .ai-msg-images { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
