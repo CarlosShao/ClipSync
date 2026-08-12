@@ -42,8 +42,8 @@ const props = defineProps<{
   items: SuggestInputItem[]
   /** 现有收藏夹名称 */
   collections?: string[]
-  /** 语义相似度检测候选（#236）：最近 N 条非当前条目的 id+文本 */
-  candidates?: SimilarityCandidate[] // 兼容旧 API，新版本不再使用
+  /** 语义相似度检测候选（#236）——已废弃，保留字段兼容旧调用方 */
+  candidates?: { id: string; text: string }[]
 }>()
 const emit = defineEmits<{
   close: []

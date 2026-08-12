@@ -183,7 +183,7 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
   // 同步即时更新顶部计数：乐观插入即 +1（刷新时 loadClipboardItems 会用服务器真实
   // total 重设，自动纠正，不会重复计数）。否则同步后数字要等刷新/加载更多才变化。
   totalItems.value += 1
-  if (currentView !== 'archive') mainTotalItems.value += 1
+  if (currentView.value !== 'archive') mainTotalItems.value += 1
   // 获取设备ID
   const deviceId = await ensureDeviceId()
   if (!deviceId) {
