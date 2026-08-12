@@ -1111,6 +1111,7 @@
   "ai_suggest_applied_tags": "{n} tags applied",
   "ai_suggest_collapse_all": "Collapse all",
   "ai_suggest_expand_all": "Expand all",
+  "ai_suggest_already_favorited_hint": "This item is already in your favorites.",
   "ai_suggest_foot_hint": "Click a row to expand. Applied actions are auto-marked so you can keep going.",
   "ai_suggest_empty": "No suggestions",
   "ai_suggest_dup_found_n": "Found {n} possibly duplicate items",

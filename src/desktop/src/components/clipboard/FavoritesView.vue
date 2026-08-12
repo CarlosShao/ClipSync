@@ -658,17 +658,28 @@ async function handleDeleteCollection(id: string) {
   const name = node?.name || t('this_collection')
   const childCount = (node?.children || []).length
   const itemCount = node?.item_count || 0
-  const msg = childCount > 0
-    ? t('confirm_delete_collection_with_children', {
-        name,
-        children: childCount,
-        items: itemCount,
-      }) || `确认删除收藏夹「${name}」及其下 ${childCount} 个子收藏夹（共 ${itemCount} 项）？`
-    : t('confirm_delete_collection', { name, items: itemCount }) || `确认删除收藏夹「${name}」（共 ${itemCount} 项）？`
+  let msg: string
+  if (childCount > 0) {
+    const translated = t('confirm_delete_collection_with_children', { name, children: childCount, items: itemCount })
+    // i18n t() 在 key 找不到时返回字面 key 字符串，所以检查是否等于 key 本身
+    msg = translated && translated !== 'confirm_delete_collection_with_children'
+      ? translated
+      : `确认删除收藏夹「${name}」及其下 ${childCount} 个子收藏夹（共 ${itemCount} 项）？`
+  } else {
+    const translated = t('confirm_delete_collection', { name, items: itemCount })
+    msg = translated && translated !== 'confirm_delete_collection'
+      ? translated
+      : `确认删除收藏夹「${name}」（共 ${itemCount} 项）？`
+  }
   pendingDeleteCollectionId.value = id
   pendingDeleteCollectionMessage.value = msg
   showCollectionDeleteConfirm.value = true
 }
+
+const confirmTitleFallback = computed(() => {
+  const v = t('confirm_delete_collection_title')
+  return v && v !== 'confirm_delete_collection_title' ? v : '删除收藏夹'
+})
 
 async function doDeleteCollection() {
   const id = pendingDeleteCollectionId.value
@@ -1741,7 +1752,7 @@ function cancelEditTags() {
   <!-- 删除收藏夹（防止误删父级） -->
   <ConfirmDialog
     v-model:open="showCollectionDeleteConfirm"
-    :title="t('confirm_delete_collection_title') || '删除收藏夹'"
+    :title="confirmTitleFallback"
     :message="pendingDeleteCollectionMessage"
     :confirm-text="t('delete_btn')"
     :cancel-text="t('cancel_btn')"

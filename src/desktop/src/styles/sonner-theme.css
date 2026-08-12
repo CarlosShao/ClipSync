@@ -16,12 +16,19 @@
  *   --bg-hover / --bg-active / --border-default
  */
 
-/* ============ 通用 toast 容器（所有类型） ============ */
+/* ============ 通用 toast 容器（所有类型） ============
+   注意：sonner leave 动画会从左滑出，**不再**用 ::before 伪元素画左侧色条（之前 ::before 设 background
+   在 leave 时残影导致"绿斑/蓝斑快速闪过"）。改为 li 自身 background 渐变，所有色直接放容器。 */
 [data-sonner-toast][data-rich-colors='true'] {
   background: var(--bg-surface) !important;
   color: var(--text-primary) !important;
   border: 1px solid var(--border-default) !important;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.06) !important;
+  /* 关闭 ::before 残留： */
+  background-image: none !important;
+}
+[data-sonner-toast][data-rich-colors='true']::before {
+  display: none !important;
 }
 [data-sonner-toast][data-rich-colors='true'] [data-title] {
   color: var(--text-primary) !important;
@@ -40,78 +47,65 @@
   color: var(--text-primary) !important;
 }
 
-/* ============ success：项目 --success ============ */
+/* ============ success：左侧 4px 边条 + title 着色 ============ */
 [data-sonner-toast][data-type='success'][data-rich-colors='true'] {
   background: var(--success-bg, var(--bg-surface)) !important;
   border-color: color-mix(in srgb, var(--success) 35%, var(--border-default)) !important;
+  border-left: 4px solid var(--success) !important;
 }
 [data-sonner-toast][data-type='success'][data-rich-colors='true'] [data-title] {
   color: var(--success) !important;
-}
-[data-sonner-toast][data-type='success'][data-rich-colors='true'] [data-description] {
-  color: var(--text-secondary) !important;
-}
-[data-sonner-toast][data-type='success'][data-rich-colors='true']::before {
-  background: var(--success) !important;
 }
 [data-sonner-toast][data-type='success'][data-rich-colors='true'] [data-icon] {
   color: var(--success) !important;
   background: color-mix(in srgb, var(--success) 18%, transparent) !important;
 }
 
-/* ============ info：项目 --info ============ */
+/* ============ info ============ */
 [data-sonner-toast][data-type='info'][data-rich-colors='true'] {
   background: var(--info-bg, var(--bg-surface)) !important;
   border-color: color-mix(in srgb, var(--info) 35%, var(--border-default)) !important;
+  border-left: 4px solid var(--info) !important;
 }
 [data-sonner-toast][data-type='info'][data-rich-colors='true'] [data-title] {
   color: var(--info) !important;
-}
-[data-sonner-toast][data-type='info'][data-rich-colors='true'] [data-description] {
-  color: var(--text-secondary) !important;
-}
-[data-sonner-toast][data-type='info'][data-rich-colors='true']::before {
-  background: var(--info) !important;
 }
 [data-sonner-toast][data-type='info'][data-rich-colors='true'] [data-icon] {
   color: var(--info) !important;
   background: color-mix(in srgb, var(--info) 18%, transparent) !important;
 }
 
-/* ============ warning：项目 --warning ============ */
+/* ============ warning ============ */
 [data-sonner-toast][data-type='warning'][data-rich-colors='true'] {
   background: var(--warning-bg, var(--bg-surface)) !important;
   border-color: color-mix(in srgb, var(--warning) 35%, var(--border-default)) !important;
+  border-left: 4px solid var(--warning) !important;
 }
 [data-sonner-toast][data-type='warning'][data-rich-colors='true'] [data-title] {
   color: var(--warning) !important;
-}
-[data-sonner-toast][data-type='warning'][data-rich-colors='true'] [data-description] {
-  color: var(--text-secondary) !important;
-}
-[data-sonner-toast][data-type='warning'][data-rich-colors='true']::before {
-  background: var(--warning) !important;
 }
 [data-sonner-toast][data-type='warning'][data-rich-colors='true'] [data-icon] {
   color: var(--warning) !important;
   background: color-mix(in srgb, var(--warning) 18%, transparent) !important;
 }
 
-/* ============ error：项目 --danger ============ */
+/* ============ error ============ */
 [data-sonner-toast][data-type='error'][data-rich-colors='true'] {
   background: var(--danger-bg, var(--bg-surface)) !important;
   border-color: color-mix(in srgb, var(--danger) 35%, var(--border-default)) !important;
+  border-left: 4px solid var(--danger) !important;
 }
 [data-sonner-toast][data-type='error'][data-rich-colors='true'] [data-title] {
   color: var(--danger) !important;
 }
-[data-sonner-toast][data-type='error'][data-rich-colors='true'] [data-description] {
-  color: var(--text-secondary) !important;
-}
-[data-sonner-toast][data-type='error'][data-rich-colors='true']::before {
-  background: var(--danger) !important;
-}
 [data-sonner-toast][data-type='error'][data-rich-colors='true'] [data-icon] {
   color: var(--danger) !important;
   background: color-mix(in srgb, var(--danger) 18%, transparent) !important;
+}
+
+/* ============ Leave 动画不残留背景 ============ */
+[data-sonner-toast][data-rich-colors='true'][data-removed='true'] {
+  /* sonner leave 阶段清掉背景，避免绿斑/蓝斑 */
+  background: transparent !important;
+  border-color: transparent !important;
 }

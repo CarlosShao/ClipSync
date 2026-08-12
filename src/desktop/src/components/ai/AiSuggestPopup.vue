@@ -58,6 +58,17 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 
+/**
+ * 集中处理 i18n key 找不到的情况。
+ * useI18n t() 在 key 缺失时返回 key 字面字符串（不是 undefined/''），所以 `t(k) || fallback` 永远不会触发 fallback。
+ * 必须显式判断「返回值等于 key」才走 fallback。
+ */
+function tf(key: string, fallback: string, params?: Record<string, any>): string {
+  const v = t(key, params as any)
+  if (typeof v === 'string' && v && v !== key) return v
+  return fallback
+}
+
 const loading = ref(false)
 const error = ref('')
 /** key = itemId；value = 该条的建议 */
@@ -115,12 +126,12 @@ async function analyze() {
   if (loading.value) return
   await ensureProvider()
   if (!providerId.value) {
-    error.value = t('ai_suggest_no_provider') || '请先在设置中添加 AI 供应商'
+    error.value = tf('ai_suggest_no_provider', '请先在设置中添加 AI 供应商')
     return
   }
   const texts: SuggestBatchItem[] = props.items.map((it) => ({ id: it.id, content: it.content || '', isFavorite: !!it.isFavorite }))
   if (texts.length === 0) {
-    error.value = t('ai_suggest_no_text') || '请先选中一条文本内容'
+    error.value = tf('ai_suggest_no_text', '请先选中一条文本内容')
     return
   }
   loading.value = true
@@ -150,10 +161,7 @@ watch(
         loading.value = false
         error.value = ''
         applied.value = {}
-        // 默认全部展开（避免再点一次才能看到完整建议/标签）
-        expanded.value = {}
-        props.items.forEach((it) => (expanded.value[it.id] = true))
-        allExpanded.value = true
+        expandAll()
         if (timer) clearTimeout(timer)
         timer = setTimeout(analyze, 60)
       }
@@ -164,6 +172,21 @@ watch(
   },
   { immediate: true },
 )
+
+// 当 props.items 变化（即使 open 没变化）也重置展开态
+watch(
+  () => props.items.map((it) => it.id).join('|'),
+  () => {
+    if (props.open) expandAll()
+  },
+)
+
+function expandAll() {
+  const next: Record<string, boolean> = {}
+  props.items.forEach((it) => (next[it.id] = true))
+  expanded.value = next
+  allExpanded.value = true
+}
 onUnmounted(() => {
   if (timer) clearTimeout(timer)
 })
@@ -216,17 +239,17 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
         <div class="ai-suggest-head">
           <div class="ai-suggest-title">
             <Sparkles class="w-4 h-4 ai-suggest-title-icon" />
-            <span>{{ t('ai_suggest_title') || 'AI 建议' }}</span>
+            <span>{{ tf('ai_suggest_title', 'AI 建议') }}</span>
             <span class="ai-suggest-counter">
               <template v-if="loading">
                 <Loader2 :size="11" class="animate-spin" />
-                <span>{{ t('ai_suggest_loading') || '分析中…' }}</span>
+                <span>{{ tf('ai_suggest_loading', '分析中…') }}</span>
               </template>
               <template v-else>
                 <span>{{ suggestedCount }}/{{ totalCount }}</span>
                 <template v-if="appliedCount > 0">
                   <span class="ai-suggest-counter-sep">·</span>
-                  <span class="ai-suggest-counter-applied">{{ t('ai_suggest_applied_n', { n: appliedCount }) || `已应用 ${appliedCount}` }}</span>
+                  <span class="ai-suggest-counter-applied">{{ tf('ai_suggest_applied_n', `已应用 ${appliedCount}`, { n: appliedCount }) }}</span>
                 </template>
               </template>
             </span>
@@ -235,13 +258,13 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
             <button
               v-if="hasAnySuggestion && !loading"
               class="ai-suggest-icon-btn"
-              :title="allExpanded ? (t('ai_suggest_collapse_all') || '全部收起') : (t('ai_suggest_expand_all') || '全部展开')"
+              :title="allExpanded ? tf('ai_suggest_collapse_all', '全部收起') : tf('ai_suggest_expand_all', '全部展开')"
               @click="toggleAll"
             >
               <ChevronDown v-if="!allExpanded" :size="14" />
               <ChevronUp v-else :size="14" />
             </button>
-            <button class="ai-suggest-icon-btn" :title="t('cancel_btn') || '关闭'" @click="emit('close')">
+            <button class="ai-suggest-icon-btn" :title="tf('cancel_btn', '关闭')" @click="emit('close')">
               <X :size="14" />
             </button>
           </div>
@@ -250,7 +273,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
         <!-- Loading -->
         <div v-if="loading" class="ai-suggest-status">
           <Loader2 class="w-4 h-4 animate-spin ai-suggest-status-icon" />
-          <span>{{ t('ai_suggest_loading') || 'AI 正在分析 N 条内容…' }}</span>
+          <span>{{ tf('ai_suggest_loading', 'AI 正在分析 N 条内容…') }}</span>
         </div>
 
         <!-- Error -->
@@ -284,7 +307,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                   class="ai-suggest-card-pill ai-suggest-card-pill--fav-existed"
                 >
                   <Heart :size="11" fill="currentColor" />
-                  <span>{{ t('ai_suggest_applied_fav') || '已收藏' }}</span>
+                  <span>{{ tf('ai_suggest_applied_fav', '已收藏') }}</span>
                 </span>
                 <span
                   v-else-if="suggestions[input.id]"
@@ -292,7 +315,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                   :class="suggestions[input.id].worth_favorite ? 'ai-suggest-card-pill--fav' : 'ai-suggest-card-pill--neutral'"
                 >
                   <Heart :size="11" />
-                  <span>{{ suggestions[input.id].worth_favorite ? (t('ai_suggest_fav_yes') || '建议收藏') : (t('ai_suggest_fav_no') || '不收藏') }}</span>
+                  <span>{{ suggestions[input.id].worth_favorite ? tf('ai_suggest_fav_yes', '建议收藏') : tf('ai_suggest_fav_no', '不收藏') }}</span>
                 </span>
                 <span
                   v-if="suggestions[input.id]"
@@ -309,10 +332,10 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                   <span>
                     {{
                       suggestions[input.id].action === 'cleanup'
-                        ? (t('ai_suggest_btn_cleanup') || '清理')
+                        ? tf('ai_suggest_btn_cleanup', '清理')
                         : suggestions[input.id].action === 'archive'
-                          ? (t('ai_suggest_btn_archive') || '归档')
-                          : (t('ai_suggest_btn_keep') || '保留')
+                          ? tf('ai_suggest_btn_archive', '归档')
+                          : tf('ai_suggest_btn_keep', '保留')
                     }}
                   </span>
                 </span>
@@ -321,7 +344,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                   class="ai-suggest-card-applied"
                 >
                   <Check :size="11" />
-                  <span>{{ t('ai_suggest_applied') || '已应用' }}</span>
+                  <span>{{ tf('ai_suggest_applied', '已应用') }}</span>
                 </span>
               </div>
               <component :is="expanded[input.id] ? ChevronUp : ChevronDown" :size="14" class="ai-suggest-card-chevron" />
@@ -334,14 +357,14 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                 <Heart :size="13" :class="suggestions[input.id].worth_favorite ? 'ai-suggest-fav-yes' : 'ai-suggest-fav-no'" />
                 <div class="ai-suggest-row-text">
                   <span class="ai-suggest-row-label">
-                    {{ suggestions[input.id].worth_favorite ? (t('ai_suggest_fav_yes') || '建议收藏') : (t('ai_suggest_fav_no') || '不值得收藏') }}
+                    {{ suggestions[input.id].worth_favorite ? tf('ai_suggest_fav_yes', '建议收藏') : tf('ai_suggest_fav_no', '不值得收藏') }}
                   </span>
                   <span class="ai-suggest-row-reason">{{ suggestions[input.id].reason }}</span>
                   <span
                     v-if="suggestions[input.id].worth_favorite && suggestions[input.id].suggested_collection"
                     class="ai-suggest-row-collection"
                   >
-                    {{ t('ai_suggest_collection_hint', { name: suggestions[input.id].suggested_collection }) || `建议归入「${suggestions[input.id].suggested_collection}」` }}
+                    {{ tf('ai_suggest_collection_hint', `建议归入「${suggestions[input.id].suggested_collection}」`, { name: suggestions[input.id].suggested_collection }) }}
                   </span>
                 </div>
                 <button
@@ -350,7 +373,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                   @click="onFavorite(input.id)"
                 >
                   <Heart :size="12" />
-                  <span>{{ t('ai_suggest_btn_favorite') || '收藏' }}</span>
+                  <span>{{ tf('ai_suggest_btn_favorite', '收藏') }}</span>
                 </button>
                 <span v-else-if="applied[input.id]?.favorited" class="ai-suggest-applied-tag">
                   <Check :size="12" />
@@ -361,8 +384,8 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
               <div v-else-if="input.isFavorite" class="ai-suggest-row">
                 <Heart :size="13" class="ai-suggest-fav-yes" :fill="'currentColor'" />
                 <div class="ai-suggest-row-text">
-                  <span class="ai-suggest-row-label">{{ t('ai_suggest_applied_fav') || '已收藏' }}</span>
-                  <span class="ai-suggest-row-reason">{{ t('ai_suggest_already_favorited_hint') || '该条目已加入收藏，无需重复操作' }}</span>
+                  <span class="ai-suggest-row-label">{{ tf('ai_suggest_applied_fav', '已收藏') }}</span>
+                  <span class="ai-suggest-row-reason">{{ tf('ai_suggest_already_favorited_hint', '该条目已加入收藏，无需重复操作') }}</span>
                 </div>
               </div>
 
@@ -377,10 +400,10 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                   <span class="ai-suggest-row-label">
                     {{
                       suggestions[input.id].action === 'cleanup'
-                        ? (t('ai_suggest_btn_cleanup') || '清理')
+                        ? tf('ai_suggest_btn_cleanup', '清理')
                         : suggestions[input.id].action === 'archive'
-                          ? (t('ai_suggest_btn_archive') || '归档')
-                          : (t('ai_suggest_btn_keep') || '保留')
+                          ? tf('ai_suggest_btn_archive', '归档')
+                          : tf('ai_suggest_btn_keep', '保留')
                     }}
                   </span>
                   <span class="ai-suggest-row-reason">{{ suggestions[input.id].action_reason }}</span>
@@ -391,7 +414,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                   @click="onArchive(input.id)"
                 >
                   <Archive :size="12" />
-                  <span>{{ t('ai_suggest_btn_archive') || '归档' }}</span>
+                  <span>{{ tf('ai_suggest_btn_archive', '归档') }}</span>
                 </button>
                 <button
                   v-else-if="suggestions[input.id].action === 'cleanup' && !applied[input.id]?.cleaned"
@@ -399,11 +422,11 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                   @click="onCleanup(input.id)"
                 >
                   <Trash2 :size="12" />
-                  <span>{{ t('ai_suggest_btn_cleanup') || '清理' }}</span>
+                  <span>{{ tf('ai_suggest_btn_cleanup', '清理') }}</span>
                 </button>
                 <span v-else-if="applied[input.id]?.archived || applied[input.id]?.cleaned" class="ai-suggest-applied-tag">
                   <Check :size="12" />
-                  <span>{{ applied[input.id]?.archived ? (t('ai_suggest_applied_archive') || '已归档') : (t('ai_suggest_applied_cleanup') || '已清理') }}</span>
+                  <span>{{ applied[input.id]?.archived ? tf('ai_suggest_applied_archive', '已归档') : tf('ai_suggest_applied_cleanup', '已清理') }}</span>
                 </span>
               </div>
 
@@ -414,7 +437,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
               >
                 <Tag :size="13" class="ai-suggest-action-icon" />
                 <div class="ai-suggest-row-text">
-                  <span class="ai-suggest-row-label">{{ t('ai_suggest_tags_label') || '推荐标签' }}</span>
+                  <span class="ai-suggest-row-label">{{ tf('ai_suggest_tags_label', '推荐标签') }}</span>
                   <div class="ai-suggest-tags">
                     <span
                       v-for="tag in suggestions[input.id].suggested_tags"
@@ -432,11 +455,11 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                   @click="onTags(input.id, suggestions[input.id].suggested_tags)"
                 >
                   <Tag :size="12" />
-                  <span>{{ t('ai_suggest_btn_tags') || '应用' }}</span>
+                  <span>{{ tf('ai_suggest_btn_tags', '应用') }}</span>
                 </button>
                 <span v-else class="ai-suggest-applied-tag">
                   <Check :size="12" />
-                  <span>{{ t('ai_suggest_applied_tags', { n: applied[input.id]?.tags?.length || 0 }) || `已应用 ${applied[input.id]?.tags?.length} 个标签` }}</span>
+                  <span>{{ tf('ai_suggest_applied_tags', `已应用 ${applied[input.id]?.tags?.length} 个标签`, { n: applied[input.id]?.tags?.length || 0 }) }}</span>
                 </span>
               </div>
             </div>
@@ -445,12 +468,12 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
 
         <!-- Empty -->
         <div v-else class="ai-suggest-status">
-          <span>{{ t('ai_suggest_empty') || '无可用建议' }}</span>
+          <span>{{ tf('ai_suggest_empty', '无可用建议') }}</span>
         </div>
 
         <!-- Footer hint -->
         <div v-if="hasAnySuggestion && !loading" class="ai-suggest-foot">
-          <span>{{ t('ai_suggest_foot_hint') || '点击行展开详情；操作后自动标记已应用，可继续处理下一条' }}</span>
+          <span>{{ tf('ai_suggest_foot_hint', '点击行展开详情；操作后自动标记已应用，可继续处理下一条') }}</span>
         </div>
       </div>
     </Transition>
@@ -464,8 +487,9 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
   right: 20px;
   width: 440px;
   max-width: calc(100vw - 40px);
-  /* 5+ 条全部展开需要更大空间；位置在右下，最大允许占屏幕 90% 高 + 1000px 上限 */
-  max-height: min(90vh, 1000px);
+  /* 5+ 条全部展开需要更大空间；弹窗顶部空间 ≈ 88+40=128px，屏幕减去顶部空间 = 92vh 给 body 留够。
+     同时给 overflow 留余地避免完全顶到屏幕边缘。 */
+  max-height: calc(100vh - 128px);
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: 14px;

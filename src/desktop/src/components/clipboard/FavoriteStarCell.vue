@@ -12,6 +12,13 @@ const props = defineProps<{ item: ClipItem }>()
 const { t } = useI18n()
 const fav = useFavoritePopover()
 
+/** t() 在 key 缺失时返回 key 字面字符串；这里显式判断保证 fallback 生效。 */
+function tf(key: string, fallback: string, params?: Record<string, any>): string {
+  const v = t(key, params as any)
+  if (typeof v === 'string' && v && v !== key) return v
+  return fallback
+}
+
 // 新建子收藏夹时，用户可指定父级。
 // 顶级 = 'root'；其它值 = 已存在的收藏夹 id。
 const newCollectionParent = ref<string>('root')
@@ -104,21 +111,71 @@ function confirmCreate(itemId: string) {
         </div>
       </template>
     </div>
-    <!-- Dropdown: shown when collections exist -->
-    <div v-if="fav.addToColItemId.value === item.id && fav.collections.value.length > 0" class="add-col-dropdown">
-      <div class="add-col-dropdown-title">收藏到</div>
-      <Button
-        v-for="node in fav.collectionTreeNodes.value"
-        :key="node.id"
-        variant="ghost"
-        size="sm"
-        class="add-col-option w-full justify-start"
-        :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }"
-        @click="fav.addToCollection(node.id, item.id)"
-      >
-        <component :is="fav.collectionIconMap[node.icon] || Folder" :size="14" />
-        <span>{{ node.name }}</span>
-      </Button>
+    <!-- Dropdown: shown when collections exist (旧 add-col-dropdown 路径)
+         改为内嵌 + 新建收藏夹入口，与 fav-popover 体验一致 -->
+    <div
+      v-if="fav.addToColItemId.value === item.id"
+      class="fav-popover"
+      :class="{ 'fav-popover--flipped': fav.favPopoverFlipped.value }"
+      @click.stop
+      @mouseenter="fav.onFavPopoverEnter"
+      @mouseleave="fav.onFavPopoverLeave"
+    >
+      <div class="fav-popover-msg">{{ tf('fav_popper_msg', '已加入收藏，要移到某个收藏夹吗？') }}</div>
+      <div class="fav-popover-cols">
+        <Button
+          v-for="node in fav.collectionTreeNodes.value"
+          :key="node.id"
+          variant="ghost"
+          size="sm"
+          class="fav-popover-col w-full justify-start"
+          :style="{ paddingLeft: (node.depth - 2) * 16 + 8 + 'px' }"
+          @click="fav.addToCollection(node.id, item.id)"
+        >
+          <component :is="fav.collectionIconMap[node.icon] || Folder" :size="14" />
+          <span>{{ node.name }}</span>
+        </Button>
+      </div>
+      <template v-if="!fav.showFavNewInput.value">
+        <Button
+          variant="outline"
+          size="sm"
+          class="w-full justify-start gap-1"
+          @click="startCreate"
+        >
+          <Plus :size="12" /> {{ tf('fav_new_col', '新建收藏夹') }}
+        </Button>
+      </template>
+      <template v-else>
+        <div class="fav-new-parent">
+          <span class="fav-new-parent-label">
+            <FolderPlus :size="11" />
+            {{ tf('fav_new_col_parent_label', '建在') }}
+          </span>
+          <select v-model="newCollectionParent" class="fav-new-parent-select">
+            <option value="root">{{ tf('fav_new_col_parent_root', '顶级') }}</option>
+            <option v-for="node in fav.collectionTreeNodes.value" :key="node.id" :value="node.id">
+              {{ '— '.repeat(Math.max(0, node.depth - 2)) }}{{ node.name }}
+            </option>
+          </select>
+        </div>
+        <div class="flex items-center gap-1">
+          <Input
+            v-model="fav.favNewName.value"
+            class="h-8 flex-1 px-2 text-xs"
+            :placeholder="tf('fav_new_col_placeholder', '收藏夹名')"
+            maxlength="100"
+            @keydown.enter="confirmCreate(item.id)"
+            @keydown.esc="fav.dismissFavPopover()"
+          />
+          <Button variant="default" size="icon-sm" :title="tf('confirm_t', '确认')" @click="confirmCreate(item.id)"
+            ><Check :size="12"
+          /></Button>
+          <Button variant="ghost" size="icon-sm" :title="tf('fav_cancel', '取消')" @click="fav.dismissFavPopover()"
+            ><X :size="12"
+          /></Button>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -184,8 +241,12 @@ function confirmCreate(itemId: string) {
   box-shadow: var(--shadow-modal);
   padding: 10px 12px;
   z-index: var(--z-dropdown);
-  min-width: 200px;
-  max-width: 280px;
+  min-width: 220px;
+  max-width: 300px;
+  /* 限制 popover 总高度 + 内部 cols 滚动；确保底部"+ 新建收藏夹"按钮始终可见 */
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
   animation: favPopIn 0.2s ease;
 }
 .fav-popover--flipped {
@@ -205,6 +266,18 @@ function confirmCreate(itemId: string) {
   flex-direction: column;
   gap: 4px;
   margin-bottom: 8px;
+  overflow-y: auto;
+  /* flex 子项必须配 min-height: 0，否则滚动条不出现 */
+  min-height: 0;
+  flex: 0 1 auto;
+  scrollbar-width: thin;
+}
+.fav-popover-cols::-webkit-scrollbar {
+  width: 6px;
+}
+.fav-popover-cols::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-tertiary) 40%, transparent);
+  border-radius: 999px;
 }
 .fav-popover-col {
   display: flex;

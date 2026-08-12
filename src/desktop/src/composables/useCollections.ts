@@ -327,10 +327,23 @@ export function useCollections() {
   }
 
   async function deleteCollection(id: string) {
+    // 后端会级联删除目标及所有后代（ltree path <@）。
+    // 前端必须在 flatCollections 里删掉**目标 + 所有后代**，否则子节点变成"孤儿"被 buildTree 当顶级渲染。
+    const targetNode = findNodeById(tree.value, id)
+    const targetPath = targetNode?.path
     await deleteFavoriteCollection(id)
-    flatCollections.value = flatCollections.value.filter((c) => c.id !== id)
+    if (targetPath) {
+      const prefix = targetPath + '.'
+      flatCollections.value = flatCollections.value.filter(
+        (c) => c.id !== id && !c.path.startsWith(prefix),
+      )
+    } else {
+      flatCollections.value = flatCollections.value.filter((c) => c.id !== id)
+    }
     if (activeNodeId.value === id) activeNodeId.value = null
     closeCtxMenu()
+    // 跨组件同步事件：剪贴板筛选下拉也刷新
+    window.dispatchEvent(new CustomEvent('clipsync:collections-updated', { detail: { reason: 'delete', id } }))
   }
 
   async function moveCollection(id: string, parentId: string | null) {

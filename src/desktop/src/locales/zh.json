@@ -1102,6 +1102,7 @@
   "ai_suggest_applied_tags": "已应用 {n} 个标签",
   "ai_suggest_collapse_all": "全部收起",
   "ai_suggest_expand_all": "全部展开",
+  "ai_suggest_already_favorited_hint": "该条目已加入收藏，无需重复操作",
   "ai_suggest_foot_hint": "点击行展开详情；操作后自动标记已应用，可继续处理下一条",
   "ai_suggest_empty": "无可用建议",
   "ai_suggest_dup_found_n": "发现 {n} 条可能重复的条目",
