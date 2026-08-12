@@ -468,7 +468,7 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
                 </button>
                 <span v-else class="ai-suggest-applied-tag">
                   <Check :size="12" />
-                  <span>{{ t('ai_suggest_applied_tags') || `已应用 ${applied[input.id]?.tags?.length} 个标签` }}</span>
+                  <span>{{ t('ai_suggest_applied_tags', { n: applied[input.id]?.tags?.length || 0 }) || `已应用 ${applied[input.id]?.tags?.length} 个标签` }}</span>
                 </span>
               </div>
             </div>
@@ -496,7 +496,7 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
   right: 20px;
   width: 420px;
   max-width: calc(100vw - 40px);
-  max-height: min(78vh, 720px);
+  max-height: min(86vh, 820px);
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: 14px;
@@ -572,6 +572,7 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
 /* ============ Body ============ */
 .ai-suggest-body {
   flex: 1;
+  min-height: 0; /* flex 子项不写 min-height: 0 会撑破父容器，导致 overflow 滚动条不出现 */
   padding: 10px 12px;
   display: flex;
   flex-direction: column;

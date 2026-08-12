@@ -137,6 +137,16 @@ async function loadCollections() {
   if (data) collections.value = data.collections
 }
 
+// 跨组件同步：收藏页（useCollections.createCollection）新建/重命名/删除收藏夹后，
+// 广播事件；这里监听并 reload，确保剪贴板筛选下拉不显示过期列表。
+const COLLECTIONS_UPDATED_EVENT = 'clipsync:collections-updated'
+if (typeof window !== 'undefined' && !(window as any).__clipsyncCollectionsSyncInited) {
+  ;(window as any).__clipsyncCollectionsSyncInited = true
+  window.addEventListener(COLLECTIONS_UPDATED_EVENT, () => {
+    loadCollections()
+  })
+}
+
 function showFavPopover(itemId: string) {
   if (favPopoverTimer) clearTimeout(favPopoverTimer)
   favPopoverItemId.value = itemId
@@ -192,6 +202,8 @@ async function createAndMove(itemId: string) {
       await addCollectionItem(data.collection.id, itemId)
       toast.show(t('clip_col_created'), 'success')
       await loadCollections()
+      // 通知收藏页侧树刷新
+      window.dispatchEvent(new CustomEvent('clipsync:collections-updated', { detail: { reason: 'create-from-popover', id: data.collection.id } }))
     } else {
       toast.show(t('fav_create_fail'), 'error')
     }
@@ -236,7 +248,8 @@ function handleDocClickForCollections(e: MouseEvent) {
     const target = e.target as HTMLElement
     if (!target.closest('.add-col-wrap')) {
       addToColItemId.value = null
-      toast.show(t('clip_favorited'), 'info')
+      // 收藏动作的成功提示走 success（绿），与 clip_favorited / toggleFavorite 的视觉一致
+      toast.show(t('clip_favorited'), 'success')
     }
   }
 }

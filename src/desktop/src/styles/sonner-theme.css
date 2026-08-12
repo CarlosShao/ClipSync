@@ -1,0 +1,117 @@
+/*
+ * Sonner toast 主题覆盖
+ * ------------------------------------------------------------------
+ * vue-sonner 默认 rich-colors 模式使用 sonner 内置的 success / info /
+ * warning / error 色卡，跟项目 7 套主题的 --success / --info / --warning /
+ * --danger 完全脱钩。这里把所有 toast 类型绑到项目 token，颜色随主题
+ * 自动切换（深浅主题、vercel/clipsync/notion/linear/apple/raycast/arc）。
+ *
+ * 选择器使用 sonner 在 rich-colors 模式下渲染的真实 attribute：
+ *   <li data-sonner-toast data-type="success" data-rich-colors="true">
+ *
+ * 主题 token 一览（来自 src/desktop/src/styles/globals.css 各主题块）：
+ *   --success / --success-bg / --info / --info-bg
+ *   --warning / --warning-bg / --danger / --danger-bg
+ *   --bg-surface / --text-primary / --text-secondary / --text-tertiary
+ *   --bg-hover / --bg-active / --border-default
+ */
+
+/* ============ 通用 toast 容器（所有类型） ============ */
+[data-sonner-toast][data-rich-colors='true'] {
+  background: var(--bg-surface) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.06) !important;
+}
+[data-sonner-toast][data-rich-colors='true'] [data-title] {
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+}
+[data-sonner-toast][data-rich-colors='true'] [data-description] {
+  color: var(--text-secondary) !important;
+}
+[data-sonner-toast][data-rich-colors='true'] [data-close-button] {
+  background: var(--bg-hover) !important;
+  color: var(--text-tertiary) !important;
+  border-color: var(--border-default) !important;
+}
+[data-sonner-toast][data-rich-colors='true'] [data-close-button]:hover {
+  background: var(--bg-active) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ============ success：项目 --success ============ */
+[data-sonner-toast][data-type='success'][data-rich-colors='true'] {
+  background: var(--success-bg, var(--bg-surface)) !important;
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border-default)) !important;
+}
+[data-sonner-toast][data-type='success'][data-rich-colors='true'] [data-title] {
+  color: var(--success) !important;
+}
+[data-sonner-toast][data-type='success'][data-rich-colors='true'] [data-description] {
+  color: var(--text-secondary) !important;
+}
+[data-sonner-toast][data-type='success'][data-rich-colors='true']::before {
+  background: var(--success) !important;
+}
+[data-sonner-toast][data-type='success'][data-rich-colors='true'] [data-icon] {
+  color: var(--success) !important;
+  background: color-mix(in srgb, var(--success) 18%, transparent) !important;
+}
+
+/* ============ info：项目 --info ============ */
+[data-sonner-toast][data-type='info'][data-rich-colors='true'] {
+  background: var(--info-bg, var(--bg-surface)) !important;
+  border-color: color-mix(in srgb, var(--info) 35%, var(--border-default)) !important;
+}
+[data-sonner-toast][data-type='info'][data-rich-colors='true'] [data-title] {
+  color: var(--info) !important;
+}
+[data-sonner-toast][data-type='info'][data-rich-colors='true'] [data-description] {
+  color: var(--text-secondary) !important;
+}
+[data-sonner-toast][data-type='info'][data-rich-colors='true']::before {
+  background: var(--info) !important;
+}
+[data-sonner-toast][data-type='info'][data-rich-colors='true'] [data-icon] {
+  color: var(--info) !important;
+  background: color-mix(in srgb, var(--info) 18%, transparent) !important;
+}
+
+/* ============ warning：项目 --warning ============ */
+[data-sonner-toast][data-type='warning'][data-rich-colors='true'] {
+  background: var(--warning-bg, var(--bg-surface)) !important;
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border-default)) !important;
+}
+[data-sonner-toast][data-type='warning'][data-rich-colors='true'] [data-title] {
+  color: var(--warning) !important;
+}
+[data-sonner-toast][data-type='warning'][data-rich-colors='true'] [data-description] {
+  color: var(--text-secondary) !important;
+}
+[data-sonner-toast][data-type='warning'][data-rich-colors='true']::before {
+  background: var(--warning) !important;
+}
+[data-sonner-toast][data-type='warning'][data-rich-colors='true'] [data-icon] {
+  color: var(--warning) !important;
+  background: color-mix(in srgb, var(--warning) 18%, transparent) !important;
+}
+
+/* ============ error：项目 --danger ============ */
+[data-sonner-toast][data-type='error'][data-rich-colors='true'] {
+  background: var(--danger-bg, var(--bg-surface)) !important;
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border-default)) !important;
+}
+[data-sonner-toast][data-type='error'][data-rich-colors='true'] [data-title] {
+  color: var(--danger) !important;
+}
+[data-sonner-toast][data-type='error'][data-rich-colors='true'] [data-description] {
+  color: var(--text-secondary) !important;
+}
+[data-sonner-toast][data-type='error'][data-rich-colors='true']::before {
+  background: var(--danger) !important;
+}
+[data-sonner-toast][data-type='error'][data-rich-colors='true'] [data-icon] {
+  color: var(--danger) !important;
+  background: color-mix(in srgb, var(--danger) 18%, transparent) !important;
+}

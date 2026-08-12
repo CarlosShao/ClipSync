@@ -293,16 +293,31 @@ export function useCollections() {
   async function createCollection(name: string, icon: string, parentId?: string) {
     const data = await createFavoriteCollection(name, icon, parentId)
     if (data?.collection) {
-      // 后端已将现有收藏夹 sort_order +1，前端同步偏移以保持本地顺序一致
-      flatCollections.value = flatCollections.value.map((c) => ({ ...c, sort_order: (c.sort_order || 0) + 1 }))
-      flatCollections.value = [data.collection, ...flatCollections.value]
+      // 收藏夹树结构由 flatCollections 派生（computed buildTree）。
+      // 仅 push 新节点到 flatCollections 并标记 parent 展开，可能因为后端 path 缓存与前端
+      // 不一致导致 buildTree 计算的父子关系错位、新节点不显示。
+      // 安全做法：直接从后端重新拉一次，让 tree 跟后端真相源对齐。
+      const res = await getFavoriteCollections()
+      if (res?.collections) {
+        flatCollections.value = res.collections
+        // 保留用户已展开的路径（不重置 expandedPaths）
+        if (expandedPaths.value.size === 0) {
+          expandToDepth(tree.value, 2)
+          syncExpandedState(tree.value, expandedPaths.value)
+        }
+      }
       if (parentId) {
+        // 拉完后再次展开 parent，确保用户看到新建的子节点
         const parent = findNodeById(tree.value, parentId)
         if (parent) {
           parent.expanded = true
           expandedPaths.value.add(parent.path)
+          expandedPaths.value = new Set(expandedPaths.value)
         }
       }
+      // 通知其它使用收藏夹列表的组件（如剪贴板的筛选下拉）也重新拉取
+      // 跨 composable 单例同步，避免剪贴板看不到刚在收藏页新建的子目录
+      window.dispatchEvent(new CustomEvent('clipsync:collections-updated', { detail: { reason: 'create', id: data.collection.id } }))
     }
     return data
   }
