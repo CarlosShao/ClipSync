@@ -612,17 +612,18 @@ router.post('/suggest', apiLimiter, async (req, res) => {
       const cleanedItems = items
         .filter((it) => it && typeof it.id === 'string' && it.id && typeof it.content === 'string' && it.content.trim())
         .slice(0, 20)
-        .map((it) => ({ id: it.id, content: normalize(it.content) }))
+        .map((it) => ({ id: it.id, content: normalize(it.content), isFavorite: !!it.isFavorite }))
 
       if (cleanedItems.length === 0) {
         return res.status(400).json({ error: 'items 不能为空' })
       }
 
-      // 给 AI 一个"索引 → 内容预览"对照表（不传全文，避免拼 prompt 超长）
+      // 给 AI 一个"索引 → 内容预览 + 已收藏标记"对照表（不传全文，避免拼 prompt 超长）
       const itemListForPrompt = cleanedItems
         .map((it, i) => {
           const preview = (it.content || '').slice(0, 120).replace(/\s+/g, ' ')
-          return `[${i}] id=${it.id} 预览：${preview}`
+          const favMark = it.isFavorite ? ' [已收藏]' : ''
+          return `[${i}] id=${it.id}${favMark} 预览：${preview}`
         })
         .join('\n')
 
@@ -636,12 +637,12 @@ router.post('/suggest', apiLimiter, async (req, res) => {
             '[{"index": 0, "worth_favorite": boolean, "reason": string, "suggested_collection": string|null, "action": "keep"|"archive"|"cleanup", "action_reason": string, "suggested_tags": string[]}, ...]\n' +
             '字段说明：\n' +
             '- index: 对应输入的编号\n' +
-            '- worth_favorite: 内容是否值得收藏（重要、常用、可复用、有价值）\n' +
+            '- worth_favorite: 内容是否值得收藏（重要、常用、可复用、有价值）。**已被标记为 [已收藏] 的条目必须返回 false**。\n' +
             '- reason: 一句话说明收藏/不收藏的理由\n' +
             '- suggested_collection: 若值得收藏，建议归入哪个收藏夹（从提供的收藏夹列表选，没有合适则 null）\n' +
             '- action: 建议动作 keep(保留) / archive(归档) / cleanup(清理——临时性、一次性、敏感或过期内容）\n' +
             '- action_reason: 建议动作的一句话理由\n' +
-            '- suggested_tags: 推荐 2-5 个简洁中文标签（用于给该内容打标签，如 工作/代码/网址/密码/灵感 等）\n' +
+            '- suggested_tags: **仅在 worth_favorite=true 时推荐 2-5 个简洁标签**；worth_favorite=false 时返回空数组 []。\n' +
             '允许某条返回 null（表示对该条无法给出建议），但数组长度必须等于输入条数。' +
             collectionHint,
         },
@@ -746,16 +747,19 @@ router.post('/suggest', apiLimiter, async (req, res) => {
 // 归一化建议字段（单条 / 批量共用）
 function cleanSuggestion(s) {
   if (!s || typeof s !== 'object') return null
+  const worthFav = Boolean(s.worth_favorite)
   return {
-    worth_favorite: Boolean(s.worth_favorite),
+    worth_favorite: worthFav,
     reason: String(s.reason || '').slice(0, 300),
     suggested_collection:
-      typeof s.suggested_collection === 'string' && s.suggested_collection.trim()
+      worthFav && typeof s.suggested_collection === 'string' && s.suggested_collection.trim()
         ? s.suggested_collection.trim().slice(0, 60)
         : null,
     action: ['keep', 'archive', 'cleanup'].includes(s.action) ? s.action : 'keep',
     action_reason: String(s.action_reason || '').slice(0, 300),
-    suggested_tags: Array.isArray(s.suggested_tags)
+    // 防御性归一化：worth_favorite=false 时，suggested_tags 强制清空
+    // （不应该给"不值得收藏"的内容推荐标签）
+    suggested_tags: worthFav && Array.isArray(s.suggested_tags)
       ? s.suggested_tags
           .filter((x) => typeof x === 'string' && x.trim())
           .map((x) => x.trim().slice(0, 20))

@@ -1,15 +1,29 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useFavoritePopover } from '@/composables/useFavoritePopover'
 import type { ClipItem } from '@/composables/useClipboard'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
-import { Star, Plus, Check, X, Folder } from 'lucide-vue-next'
+import { Star, Plus, Check, X, Folder, FolderPlus } from 'lucide-vue-next'
 
 const props = defineProps<{ item: ClipItem }>()
 
 const { t } = useI18n()
 const fav = useFavoritePopover()
+
+// 新建子收藏夹时，用户可指定父级。
+// 顶级 = 'root'；其它值 = 已存在的收藏夹 id。
+const newCollectionParent = ref<string>('root')
+
+function startCreate() {
+  newCollectionParent.value = 'root'
+  fav.showFavNewInput.value = true
+}
+function confirmCreate(itemId: string) {
+  const parent = newCollectionParent.value === 'root' ? undefined : newCollectionParent.value
+  fav.createAndMove(itemId, parent)
+}
 </script>
 
 <template>
@@ -53,22 +67,35 @@ const fav = useFavoritePopover()
           variant="outline"
           size="sm"
           class="w-full justify-start gap-1"
-          @click="fav.showFavNewInput.value = true"
+          @click="startCreate"
         >
           <Plus :size="12" /> {{ t('fav_new_col') }}
         </Button>
       </template>
       <template v-else>
+        <!-- 父级下拉：用户可决定新建在顶级还是某个已有收藏夹下 -->
+        <div class="fav-new-parent">
+          <span class="fav-new-parent-label">
+            <FolderPlus :size="11" />
+            {{ t('fav_new_col_parent_label') || '建在' }}
+          </span>
+          <select v-model="newCollectionParent" class="fav-new-parent-select">
+            <option value="root">{{ t('fav_new_col_parent_root') || '顶级' }}</option>
+            <option v-for="node in fav.collectionTreeNodes.value" :key="node.id" :value="node.id">
+              {{ '— '.repeat(Math.max(0, node.depth - 2)) }}{{ node.name }}
+            </option>
+          </select>
+        </div>
         <div class="flex items-center gap-1">
           <Input
             v-model="fav.favNewName.value"
             class="h-8 flex-1 px-2 text-xs"
             :placeholder="t('fav_new_col_placeholder')"
             maxlength="100"
-            @keydown.enter="fav.createAndMove(item.id)"
+            @keydown.enter="confirmCreate(item.id)"
             @keydown.esc="fav.dismissFavPopover()"
           />
-          <Button variant="default" size="icon-sm" :title="t('confirm_t')" @click="fav.createAndMove(item.id)"
+          <Button variant="default" size="icon-sm" :title="t('confirm_t')" @click="confirmCreate(item.id)"
             ><Check :size="12"
           /></Button>
           <Button variant="ghost" size="icon-sm" :title="t('fav_cancel')" @click="fav.dismissFavPopover()"
@@ -198,6 +225,38 @@ const fav = useFavoritePopover()
 .fav-popover-col:hover {
   background: var(--accent-bg);
   color: var(--accent);
+}
+/* 新建收藏夹的父级下拉 */
+.fav-new-parent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  background: var(--bg-hover);
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+.fav-new-parent-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.fav-new-parent-select {
+  flex: 1;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.fav-new-parent-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 /* fav-popover 内的操作按钮已统一改用 shadcn Button / Input 组件 */
 

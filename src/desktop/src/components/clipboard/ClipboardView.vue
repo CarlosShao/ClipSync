@@ -134,6 +134,8 @@ function openAiSuggest() {
     id: i.id,
     content: (i.content || i.preview || '').slice(0, 4000),
     preview: i.preview || (i.content || '').slice(0, 120),
+    // 已收藏条目不再走"建议收藏"按钮（弹窗里隐藏该按钮 + 后端 system prompt 也跳过）
+    isFavorite: !!(i as any).isFavorite,
   }))
   // 收藏夹名称（供 AI 建议分类时选择）
   try {

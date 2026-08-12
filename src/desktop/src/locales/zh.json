@@ -724,6 +724,8 @@
   "fav_favorited": "已收藏",
   "fav_unfavorited": "已取消收藏",
   "fav_confirm_create": "还没有收藏夹，是否现在创建一个？",
+  "fav_new_col_parent_label": "建在",
+  "fav_new_col_parent_root": "顶级",
   "fav_btn_create": "创建",
   "fav_all": "全部收藏",
   "fav_new_col": "新建收藏夹",

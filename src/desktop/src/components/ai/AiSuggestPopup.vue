@@ -4,12 +4,9 @@ import { useI18n } from '@/composables/useI18n'
 import {
   getProviders,
   suggestClipboardBatch,
-  similarityCheck,
   type ClipSuggestion,
   type ClipSuggestionItem,
   type SuggestBatchItem,
-  type DuplicateHit,
-  type SimilarityCandidate,
 } from '@/api/ai'
 import {
   Sparkles,
@@ -19,7 +16,6 @@ import {
   Trash2,
   Loader2,
   Tag,
-  CopyX,
   Check,
   ChevronDown,
   ChevronUp,
@@ -36,6 +32,8 @@ import {
 interface SuggestInputItem extends SuggestBatchItem {
   /** 前端用来定位 ClipItem + 预览 */
   preview?: string
+  /** 当前条目是否已收藏（用于跳过"建议收藏"按钮） */
+  isFavorite?: boolean
 }
 
 const props = defineProps<{
@@ -45,7 +43,7 @@ const props = defineProps<{
   /** 现有收藏夹名称 */
   collections?: string[]
   /** 语义相似度检测候选（#236）：最近 N 条非当前条目的 id+文本 */
-  candidates?: SimilarityCandidate[]
+  candidates?: SimilarityCandidate[] // 兼容旧 API，新版本不再使用
 }>()
 const emit = defineEmits<{
   close: []
@@ -65,9 +63,6 @@ const error = ref('')
 /** key = itemId；value = 该条的建议 */
 const suggestions = ref<Record<string, ClipSuggestion>>({})
 const providerId = ref('')
-// 相似度检测：[{itemId, hits[]}]
-const duplicatesMap = ref<Record<string, DuplicateHit[]>>({})
-const dupChecking = ref(false)
 // 已应用的标记（itemId -> 哪些操作已用）
 interface AppliedMap {
   favorited?: boolean
@@ -78,7 +73,7 @@ interface AppliedMap {
 const applied = ref<Record<string, AppliedMap>>({})
 // 每行的展开/折叠状态
 const expanded = ref<Record<string, boolean>>({})
-const allExpanded = ref(false)
+const allExpanded = ref(true) // 默认全部展开，避免"还要手动展开才能看到完整建议"
 
 // 全局统计
 const totalCount = computed(() => props.items.length)
@@ -116,30 +111,6 @@ async function runBatch(texts: SuggestBatchItem[]) {
   }
 }
 
-async function checkDuplicates(texts: SuggestBatchItem[]) {
-  const cands = (props.candidates || []).slice(0, 10)
-  if (!cands.length || !providerId.value || texts.length === 0) return
-  dupChecking.value = true
-  duplicatesMap.value = {}
-  try {
-    // 只对前 1 条做相似度检测（保持原 #236 体验：避免 N 次串行调用）
-    // 如果以后要做"每条都对所有候选比对"，可改为 Promise.all
-    const target = texts[0]
-    const res = await similarityCheck({
-      providerId: providerId.value,
-      content: target.content,
-      candidates: cands,
-    })
-    if (res.ok && res.data?.duplicates?.length) {
-      duplicatesMap.value[target.id] = res.data.duplicates
-    }
-  } catch {
-    duplicatesMap.value = {}
-  } finally {
-    dupChecking.value = false
-  }
-}
-
 async function analyze() {
   if (loading.value) return
   await ensureProvider()
@@ -147,7 +118,7 @@ async function analyze() {
     error.value = t('ai_suggest_no_provider') || '请先在设置中添加 AI 供应商'
     return
   }
-  const texts: SuggestBatchItem[] = props.items.map((it) => ({ id: it.id, content: it.content || '' }))
+  const texts: SuggestBatchItem[] = props.items.map((it) => ({ id: it.id, content: it.content || '', isFavorite: !!it.isFavorite }))
   if (texts.length === 0) {
     error.value = t('ai_suggest_no_text') || '请先选中一条文本内容'
     return
@@ -155,11 +126,10 @@ async function analyze() {
   loading.value = true
   error.value = ''
   suggestions.value = {}
-  duplicatesMap.value = {}
   applied.value = {}
   expanded.value = {}
-  // 并行：批量建议 + 相似度检测
-  checkDuplicates(texts)
+  // 只跑一次 AI 批量建议；不再做整批的相似度检测（之前只对第一条做，对批处理意义不大
+  // 且每次重开弹窗都重跑导致"AI 建议重复"的体验问题）。
   try {
     await runBatch(texts)
   } catch (e: any) {
@@ -178,12 +148,12 @@ watch(
       if (!prev) {
         suggestions.value = {}
         loading.value = false
-        duplicatesMap.value = {}
-        dupChecking.value = false
         error.value = ''
         applied.value = {}
+        // 默认全部展开（避免再点一次才能看到完整建议/标签）
         expanded.value = {}
-        allExpanded.value = false
+        props.items.forEach((it) => (expanded.value[it.id] = true))
+        allExpanded.value = true
         if (timer) clearTimeout(timer)
         timer = setTimeout(analyze, 60)
       }
@@ -235,7 +205,7 @@ defineExpose({
 })
 
 const hasAnySuggestion = computed(() => Object.keys(suggestions.value).length > 0)
-const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
+const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #230 验收）：批量场景无意义且每次重开会"重复 AI 建议"。
 </script>
 
 <template>
@@ -291,28 +261,7 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
         <!-- Body: list of suggestion cards -->
         <div v-else-if="hasAnySuggestion" class="ai-suggest-body">
           <!-- 整批维度的相似度检测 -->
-          <div v-if="dupChecking" class="ai-suggest-dup-row">
-            <Loader2 :size="13" class="animate-spin" />
-            <span>{{ t('ai_suggest_dup_checking') || '正在检测重复内容…' }}</span>
-          </div>
-          <div v-else-if="duplicateEntries.length" class="ai-suggest-dup">
-            <div class="ai-suggest-dup-head">
-              <CopyX :size="13" />
-              <span>
-                {{ t('ai_suggest_dup_found_n', { n: duplicateEntries.reduce((s, [, h]) => s + h.length, 0) }) || `发现 ${duplicateEntries.reduce((s, [, h]) => s + h.length, 0)} 条可能重复的条目` }}
-              </span>
-            </div>
-            <div v-for="[itemId, hits] in duplicateEntries" :key="itemId" class="ai-suggest-dup-list">
-              <div v-for="h in hits" :key="h.id" class="ai-suggest-dup-item">
-                <span class="ai-suggest-dup-degree" :class="h.degree === 'high' ? 'ai-suggest-dup-degree--high' : ''">
-                  {{ h.degree === 'high' ? (t('ai_suggest_dup_high') || '高') : (t('ai_suggest_dup_medium') || '中') }}
-                </span>
-                <span class="ai-suggest-dup-reason">{{ h.reason }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 一行一条建议 -->
+          <!-- 整批维度相似度检测已移除（#230 验收）：批量场景对批处理无意义、且每次重开都重跑浪费 token。 -->
           <div
             v-for="input in props.items"
             :key="input.id"
@@ -329,8 +278,16 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
                 </span>
               </div>
               <div class="ai-suggest-card-tags">
+                <!-- 收藏状态 pill：已收藏→"已收藏"，未收藏→AI 建议（值得 / 不值得） -->
                 <span
-                  v-if="suggestions[input.id]"
+                  v-if="input.isFavorite"
+                  class="ai-suggest-card-pill ai-suggest-card-pill--fav-existed"
+                >
+                  <Heart :size="11" fill="currentColor" />
+                  <span>{{ t('ai_suggest_applied_fav') || '已收藏' }}</span>
+                </span>
+                <span
+                  v-else-if="suggestions[input.id]"
                   class="ai-suggest-card-pill"
                   :class="suggestions[input.id].worth_favorite ? 'ai-suggest-card-pill--fav' : 'ai-suggest-card-pill--neutral'"
                 >
@@ -372,8 +329,8 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
 
             <!-- 展开：详情 + 操作 -->
             <div v-if="expanded[input.id]" class="ai-suggest-card-body">
-              <!-- 收藏建议行 -->
-              <div v-if="suggestions[input.id]" class="ai-suggest-row">
+              <!-- 收藏建议行：已收藏的条目跳过整行（已收藏没必要再建议收藏） -->
+              <div v-if="!input.isFavorite && suggestions[input.id]" class="ai-suggest-row">
                 <Heart :size="13" :class="suggestions[input.id].worth_favorite ? 'ai-suggest-fav-yes' : 'ai-suggest-fav-no'" />
                 <div class="ai-suggest-row-text">
                   <span class="ai-suggest-row-label">
@@ -399,6 +356,14 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
                   <Check :size="12" />
                   <span>{{ t('ai_suggest_applied_fav') || '已收藏' }}</span>
                 </span>
+              </div>
+              <!-- 已收藏条目：显示一个静态标识行，避免出现"建议收藏"按钮的奇怪行为 -->
+              <div v-else-if="input.isFavorite" class="ai-suggest-row">
+                <Heart :size="13" class="ai-suggest-fav-yes" :fill="'currentColor'" />
+                <div class="ai-suggest-row-text">
+                  <span class="ai-suggest-row-label">{{ t('ai_suggest_applied_fav') || '已收藏' }}</span>
+                  <span class="ai-suggest-row-reason">{{ t('ai_suggest_already_favorited_hint') || '该条目已加入收藏，无需重复操作' }}</span>
+                </div>
               </div>
 
               <!-- 动作建议行 -->
@@ -442,8 +407,11 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
                 </span>
               </div>
 
-              <!-- 标签建议行 -->
-              <div v-if="suggestions[input.id]?.suggested_tags?.length" class="ai-suggest-row">
+              <!-- 标签建议行：仅在「值得收藏」时显示（不值得收藏的条目打标签无意义） -->
+              <div
+                v-if="suggestions[input.id]?.worth_favorite && suggestions[input.id]?.suggested_tags?.length"
+                class="ai-suggest-row"
+              >
                 <Tag :size="13" class="ai-suggest-action-icon" />
                 <div class="ai-suggest-row-text">
                   <span class="ai-suggest-row-label">{{ t('ai_suggest_tags_label') || '推荐标签' }}</span>
@@ -494,9 +462,10 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
   position: fixed;
   bottom: 88px;
   right: 20px;
-  width: 420px;
+  width: 440px;
   max-width: calc(100vw - 40px);
-  max-height: min(86vh, 820px);
+  /* 5+ 条全部展开需要更大空间；位置在右下，最大允许占屏幕 90% 高 + 1000px 上限 */
+  max-height: min(90vh, 1000px);
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: 14px;
@@ -578,7 +547,24 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
+  overflow-x: hidden;
   background: var(--bg-surface);
+  /* 自定义滚动条：Windows 上很多浏览器默认滚动条太细不明显 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
+}
+.ai-suggest-body::-webkit-scrollbar {
+  width: 8px;
+}
+.ai-suggest-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ai-suggest-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-tertiary) 35%, transparent);
+  border-radius: 999px;
+}
+.ai-suggest-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
 }
 
 .ai-suggest-status {
@@ -595,63 +581,6 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
 }
 .ai-suggest-status--error {
   color: var(--danger, #ef4444);
-}
-
-/* ============ 整批相似度检测 ============ */
-.ai-suggest-dup-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  padding: 8px 12px;
-  background: var(--bg-hover);
-  border-radius: 8px;
-}
-.ai-suggest-dup {
-  border-left: 3px solid var(--warning, #f59e0b);
-  background: color-mix(in srgb, var(--warning, #f59e0b) 6%, transparent);
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 12px;
-}
-.ai-suggest-dup-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  color: var(--warning, #b45309);
-  margin-bottom: 4px;
-}
-.ai-suggest-dup-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.ai-suggest-dup-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--text-secondary);
-}
-.ai-suggest-dup-degree {
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--bg-hover);
-  color: var(--text-tertiary);
-  margin-top: 1px;
-}
-.ai-suggest-dup-degree--high {
-  background: color-mix(in srgb, var(--warning, #f59e0b) 18%, transparent);
-  color: var(--warning, #b45309);
-}
-.ai-suggest-dup-reason {
-  line-height: 1.5;
-  word-break: break-word;
 }
 
 /* ============ 一条建议卡片 ============ */
@@ -732,6 +661,12 @@ const duplicateEntries = computed(() => Object.entries(duplicatesMap.value))
 .ai-suggest-card-pill--neutral {
   background: var(--bg-hover);
   color: var(--text-tertiary);
+}
+.ai-suggest-card-pill--fav-existed {
+  /* 已收藏条目：固定标识，与"AI 建议收藏"区分开 */
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-weight: 600;
 }
 .ai-suggest-card-applied {
   display: inline-flex;

@@ -174,6 +174,11 @@ const showTagDeleteConfirm = ref(false)
 const pendingDeleteTag = ref('')
 const pendingDeleteTagMessage = ref('')
 
+// 删除收藏夹前的二次确认（防止误删父级）
+const showCollectionDeleteConfirm = ref(false)
+const pendingDeleteCollectionId = ref('')
+const pendingDeleteCollectionMessage = ref('')
+
 // Debounce helper
 function debounce<T extends (...args: any[]) => any>(fn: T, ms: number): T {
   let timer: any
@@ -547,7 +552,7 @@ async function handleUnfavorite(item: ClipItem) {
   }
   clip.toggleFavorite(item)
   selectedIds.value.delete(item.id)
-  toast.show(t('unfavorite'), 'info')
+  toast.show(t('fav_unfavorited') || '已取消收藏', 'info')
 }
 function toggleSort() {
   if (sortBy.value === 'time') sortBy.value = 'type'
@@ -648,8 +653,35 @@ async function pickAndMove(colId: string) {
   clearPickMode()
 }
 async function handleDeleteCollection(id: string) {
-  await collections.deleteCollection(id)
-  toast.show(t('fav_deleted'), 'info')
+  // 找到要删的节点，构造二次确认消息
+  const node = collections.findNodeById(id)
+  const name = node?.name || t('this_collection')
+  const childCount = (node?.children || []).length
+  const itemCount = node?.item_count || 0
+  const msg = childCount > 0
+    ? t('confirm_delete_collection_with_children', {
+        name,
+        children: childCount,
+        items: itemCount,
+      }) || `确认删除收藏夹「${name}」及其下 ${childCount} 个子收藏夹（共 ${itemCount} 项）？`
+    : t('confirm_delete_collection', { name, items: itemCount }) || `确认删除收藏夹「${name}」（共 ${itemCount} 项）？`
+  pendingDeleteCollectionId.value = id
+  pendingDeleteCollectionMessage.value = msg
+  showCollectionDeleteConfirm.value = true
+}
+
+async function doDeleteCollection() {
+  const id = pendingDeleteCollectionId.value
+  if (!id) return
+  try {
+    await collections.deleteCollection(id)
+    toast.show(t('fav_deleted'), 'info')
+  } catch (e: any) {
+    toast.show(e?.message || t('del_fail'), 'error')
+  } finally {
+    pendingDeleteCollectionId.value = ''
+    showCollectionDeleteConfirm.value = false
+  }
 }
 async function selectCollection(id: string | null) {
   collections.selectNode(id)
@@ -867,6 +899,12 @@ function handleClickOutside(e: Event) {
 }
 onMounted(() => {
   document.addEventListener('mousedown', handleClickOutside)
+  // 监听 useCollections 的右键删除请求：弹确认框后真正删
+  const onDeleteReq = (e: Event) => {
+    const id = (e as CustomEvent).detail?.id
+    if (id) handleDeleteCollection(id)
+  }
+  window.addEventListener('clipsync:collection-delete-requested', onDeleteReq)
   collections.loadCollections().catch((e: any) => {
     toast.show(e.message || t('fav_load_fail'), 'error')
   })
@@ -1001,7 +1039,7 @@ function cancelEditTags() {
             {{ node.name }}
           </span>
           <span class="fav-tree-count">{{ (node.children || []).length + node.item_count }}</span>
-          <button class="fav-tree-del" :title="t('delete')" @click.stop="collections.deleteCollection(node.id)">
+          <button class="fav-tree-del" :title="t('delete')" @click.stop="handleDeleteCollection(node.id)">
             ×
           </button>
           <!-- Flyout: show direct children on hover -->
@@ -1698,6 +1736,17 @@ function cancelEditTags() {
     :cancel-text="t('cancel_btn')"
     confirm-variant="destructive"
     @confirm="doDeleteTag"
+  />
+
+  <!-- 删除收藏夹（防止误删父级） -->
+  <ConfirmDialog
+    v-model:open="showCollectionDeleteConfirm"
+    :title="t('confirm_delete_collection_title') || '删除收藏夹'"
+    :message="pendingDeleteCollectionMessage"
+    :confirm-text="t('delete_btn')"
+    :cancel-text="t('cancel_btn')"
+    confirm-variant="destructive"
+    @confirm="doDeleteCollection"
   />
 
   <!-- 统一保护级别对话框 -->

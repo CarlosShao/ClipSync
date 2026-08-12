@@ -642,6 +642,8 @@ export interface SuggestResult {
 export interface SuggestBatchItem {
   id: string
   content: string
+  /** 当前条目是否已收藏（后端 system prompt 据此跳过"建议收藏"） */
+  isFavorite?: boolean
 }
 
 /** 单条建议（向后兼容） */

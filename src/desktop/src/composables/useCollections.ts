@@ -181,6 +181,10 @@ export function useCollections() {
     }
     return null
   }
+  // 暴露成命名导出，组件（如 FavoritesView）无需构造整个 composable 实例即可查询 tree
+  function _findNodeById(id: string): CollectionNode | null {
+    return findNodeById(tree.value, id)
+  }
 
   function findNodeByPath(nodes: CollectionNode[], path: string): CollectionNode | null {
     for (const node of nodes) {
@@ -422,10 +426,13 @@ export function useCollections() {
   }
 
   async function ctxDelete() {
-    if (ctxMenuNodeId.value) {
-      await deleteCollection(ctxMenuNodeId.value)
-    }
+    // 不直接删：发全局事件，让宿主组件（FavoritesView 等）弹二次确认框后真正删除。
+    // 避免误删父级目录。
+    const id = ctxMenuNodeId.value
     closeCtxMenu()
+    if (id) {
+      window.dispatchEvent(new CustomEvent('clipsync:collection-delete-requested', { detail: { id } }))
+    }
   }
 
   async function confirmRename() {
@@ -744,5 +751,6 @@ export function useCollections() {
     onDragOverBottom,
     onDragLeaveBottom,
     onDropBottom,
+    findNodeById: _findNodeById,
   }
 }

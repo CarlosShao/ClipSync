@@ -191,12 +191,13 @@ async function pickCollection(itemId: string, colId: string) {
   }
   dismissFavPopover()
 }
-async function createAndMove(itemId: string) {
+async function createAndMove(itemId: string, parentId?: string) {
   if (creatingCollection) return
   if (!favNewName.value.trim()) return
   creatingCollection = true
   try {
-    const data = await createFavoriteCollection(favNewName.value.trim(), 'folder')
+    // parentId 可选：传了就建子级；不传或 'root' 都建顶级
+    const data = await createFavoriteCollection(favNewName.value.trim(), 'folder', parentId && parentId !== 'root' ? parentId : undefined)
     if (data?.collection) {
       collections.value.push(data.collection)
       await addCollectionItem(data.collection.id, itemId)

@@ -468,6 +468,8 @@
   "fav_favorited": "Favorited",
   "fav_unfavorited": "Unfavorited",
   "fav_confirm_create": "No collections yet. Create one?",
+  "fav_new_col_parent_label": "Place in",
+  "fav_new_col_parent_root": "Top level",
   "fav_btn_create": "Create",
   "fav_all": "All Favorites",
   "fav_new_col": "New Collection",
