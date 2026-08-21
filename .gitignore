@@ -85,12 +85,24 @@ data/
 # Agent runtime / workspace identity files (not project code)
 .openclaw/
 .scratch/
+.codebuddy/
+.codegraph/
+.hermes/
+.meituan-catpaw/
+.omo/
+.opencode/
+.reasonix/
+.uploads/
+.workbuddy/
+.zcode/
 AGENTS.md
 SOUL.md
 USER.md
 TOOLS.md
 HEARTBEAT.md
 IDENTITY.md
+DEV_NOTES.md
+tmp_tsc237.log
 
 # Local exploration / prototype artifacts (not project source)
 documents/
