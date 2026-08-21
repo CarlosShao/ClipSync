@@ -27,6 +27,7 @@ import mediaRoutes from './routes/media.js';
 import syncRoutes from './routes/sync.js';
 import { startCleanupScheduler } from './db/cleanup.js';
 import pool from './db/pool.js';
+import migrate from './db/migrate.js';
 import { csrfProtection, handleGetCsrfToken } from './middleware/csrf.js';
 import chunkedUploadRoutes from './routes/chunked-upload.js';
 import versionRoutes from './routes/versions.js';
@@ -526,10 +527,20 @@ if (isClusteredPrimary) {
 }
 
 if (!isClusteredPrimary) {
-  if (process.env.NODE_ENV !== 'test') {
-    wss = setupWebSocket(server);
+  (async () => {
+    try {
+      logger.info('[migration] Running database migrations before starting server...');
+      await migrate();
+      logger.info('[migration] Database migrations completed successfully');
+    } catch (err) {
+      logger.error('[migration] Database migration failed:', { error: err.message, stack: err.stack });
+      process.exit(1);
+    }
 
-  server.listen(config.port, config.host, () => {
+    if (process.env.NODE_ENV !== 'test') {
+      wss = setupWebSocket(server);
+
+      server.listen(config.port, config.host, () => {
     logger.info('ClipSync Server started', {
       version: '0.3.0',
       host: config.host,
@@ -556,7 +567,8 @@ if (!isClusteredPrimary) {
       enableQueryMonitoring();
     }
   });
-}
+    }
+  })();
 }
 
 // ============================================
