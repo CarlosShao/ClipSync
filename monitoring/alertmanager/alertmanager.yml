@@ -1,16 +1,12 @@
 # Alertmanager 配置文件
-# 告警通知到钉钉/企业微信/Slack
+# 告警通知到飞书群（自定义机器人 Webhook）
+#
+# 说明：Alertmanager 的 webhook 格式与飞书机器人接口格式不同，
+# 需要经过本地转发服务 alertmanager-webhook-feishu 转换后再发给飞书。
+# 转发服务由 docker-compose.monitoring.yml 中的 feishu-webhook 服务提供。
+# 飞书机器人 Webhook / 签名密钥在 compose 的环境变量里配置。
 
 global:
-  # 钉钉 Webhook（需替换为实际 URL）
-  # wechat_api_url: 'https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN'
-
-  # 企业微信 Webhook（需替换为实际 URL）
-  # wecom_api_url: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY'
-
-  # Slack Webhook（需替换为实际 URL）
-  # slack_api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
-
   # 邮件配置（需配置 SMTP）
   smtp_smarthost: 'smtp.gmail.com:587'
   smtp_from: 'clipsync-alert@example.com'
@@ -50,6 +46,10 @@ receivers:
             描述: {{ .Annotations.description }}
             时间: {{ .StartsAt }}
           {{ end }}
+    # 飞书群通知（经转发服务转换）
+    webhook_configs:
+      - url: 'http://feishu-webhook:8060'
+        send_resolved: true
 
   - name: 'critical-receiver'
     email_configs:
@@ -61,10 +61,10 @@ receivers:
             描述: {{ .Annotations.description }}
             时间: {{ .StartsAt }}
           {{ end }}
-    # 钉钉通知（取消注释后启用）
-    # webhook_configs:
-    #   - url: 'https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN'
-    #     send_resolved: true
+    # 飞书群通知（经转发服务转换）
+    webhook_configs:
+      - url: 'http://feishu-webhook:8060'
+        send_resolved: true
 
   - name: 'warning-receiver'
     email_configs:
@@ -76,6 +76,10 @@ receivers:
             描述: {{ .Annotations.description }}
             时间: {{ .StartsAt }}
           {{ end }}
+    # 飞书群通知（经转发服务转换）
+    webhook_configs:
+      - url: 'http://feishu-webhook:8060'
+        send_resolved: true
 
 # 抑制规则（可选）
 inhibit_rules:

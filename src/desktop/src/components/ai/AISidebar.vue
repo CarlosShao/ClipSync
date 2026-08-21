@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useAiChat } from '@/composables/useAiChat'
 import { useUser } from '@/composables/useUser'
@@ -148,6 +148,12 @@ watch(
     }
   },
 )
+
+// 监听 settings 保存/删除 provider 后的全局事件，刷新本地列表
+// 否则 AI 侧边栏常驻打开时，新增/修改的 provider 不会立刻出现在下拉里（只能刷新页面）
+const onProvidersChanged = () => loadProviders()
+onMounted(() => window.addEventListener('clipsync:ai-providers-changed', onProvidersChanged))
+onBeforeUnmount(() => window.removeEventListener('clipsync:ai-providers-changed', onProvidersChanged))
 
 // 切换对话时同步模式/思考开关
 async function onSelectConversation(id: string) {

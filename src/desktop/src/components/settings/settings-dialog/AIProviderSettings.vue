@@ -199,6 +199,9 @@ async function save() {
       : await createProvider(payload)
     if (res.ok) {
       toast.show(t('ai_saved'), 'success')
+      // 通知 AI 侧边栏等其他消费方刷新 provider 列表
+      //（AI 侧边栏默认只在 open=true 切换时 loadProviders，常驻打开时不刷新）
+      window.dispatchEvent(new CustomEvent('clipsync:ai-providers-changed'))
       await load()
       resetForm()
     } else {
@@ -216,6 +219,7 @@ async function remove(id: string) {
   if (res.ok) {
     toast.show(t('ai_deleted'), 'success')
     if (confirmingDeleteId.value === id) confirmingDeleteId.value = null
+    window.dispatchEvent(new CustomEvent('clipsync:ai-providers-changed'))
     await load()
   } else {
     toast.show(res.error || t('ai_delete_failed'), 'error')

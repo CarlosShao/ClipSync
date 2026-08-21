@@ -204,7 +204,7 @@ const steps = computed(() => {
   transition: background 0.15s, color 0.15s;
 }
 .ai-tool-log-summary:hover {
-  background: var(--bg-hover, rgba(99, 102, 241, 0.06));
+  background: var(--bg-hover, rgba(115, 115, 115, 0.06));
 }
 
 .ai-tool-log-icon {
@@ -213,7 +213,7 @@ const steps = computed(() => {
   justify-content: center;
 }
 .ai-tool-log-spin {
-  color: var(--accent, #6366f1);
+  color: var(--accent, #475569);
   animation: spin 1s linear infinite;
 }
 .ai-tool-log-done {
@@ -241,8 +241,8 @@ const steps = computed(() => {
   flex-shrink: 0;
   font-size: 10px;
   font-weight: 600;
-  color: var(--accent, #6366f1);
-  background: var(--accent-bg, rgba(99, 102, 241, 0.12));
+  color: var(--accent, #475569);
+  background: var(--accent-bg, rgba(115, 115, 115, 0.12));
   border-radius: 999px;
   padding: 1px 7px;
   white-space: nowrap;
@@ -255,8 +255,8 @@ const steps = computed(() => {
   border-radius: 999px;
 }
 .ai-tool-log-status.run {
-  color: var(--accent, #6366f1);
-  background: var(--accent-bg, rgba(99, 102, 241, 0.12));
+  color: var(--accent, #475569);
+  background: var(--accent-bg, rgba(115, 115, 115, 0.12));
 }
 .ai-tool-log-status.ok {
   color: var(--success, #16a34a);

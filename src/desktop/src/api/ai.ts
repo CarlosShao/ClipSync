@@ -28,6 +28,7 @@ export interface AiProviderPreset {
 }
 
 export interface ChatMessage {
+  id?: string // 消息 id（部分场景由后端下发，用于调试/去重）
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
   /**
@@ -71,6 +72,7 @@ export interface ToolCall {
 export interface ToolResult {
   tool_call_id: string
   content: string
+  name?: string // 工具名（部分实现只在 result 下发，无 toolCalls 时用此兜底展示）
 }
 
 // 多代理并行模式：子代理运行状态

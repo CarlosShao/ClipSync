@@ -970,6 +970,7 @@
   "ai_thinking_done": "Thought for",
   "ai_thinking_progress": "Thinking",
   "ai_no_thinking": "No thinking",
+  "ai_waiting": "Thinking...",
   "ai_thinking_loading": "Thinking",
   "ai_thinking_deep": "Deep thinking",
   "ai_thinking_deep_done": "Deep thought",

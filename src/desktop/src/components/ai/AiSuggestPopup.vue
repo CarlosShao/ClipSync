@@ -679,8 +679,8 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
   color: var(--warning, #b45309);
 }
 .ai-suggest-card-pill--archive {
-  background: color-mix(in srgb, var(--info, #6366f1) 14%, transparent);
-  color: var(--info, #6366f1);
+  background: color-mix(in srgb, var(--info, #475569) 14%, transparent);
+  color: var(--info, #475569);
 }
 .ai-suggest-card-pill--neutral {
   background: var(--bg-hover);

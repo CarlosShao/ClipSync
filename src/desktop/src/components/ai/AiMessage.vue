@@ -3,8 +3,10 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { Marked } from 'marked'
 import { sanitizeHtml } from '@/utils/html'
-import { ChevronRight, ChevronDown, Copy, Pencil, ListChecks, Languages, AlignLeft, HelpCircle, Sparkles, CheckCircle2, Loader2, XCircle, Terminal, Brain, Wrench, Bot } from 'lucide-vue-next'
+import { ChevronRight, ChevronDown, Copy, Pencil, ListChecks, Languages, AlignLeft, HelpCircle, Sparkles, CheckCircle2, Loader2, XCircle, Bot } from 'lucide-vue-next'
 import type { ChatMessage, AgentRun } from '@/api/ai'
+import AiWaiting from './AiWaiting.vue'
+import AiThinkingOrb from './AiThinkingOrb.vue'
 
 const props = defineProps<{ message: ChatMessage; index: number; isStreaming: boolean; isLatest: boolean }>()
 const emit = defineEmits<{ reedit: [content: string] }>()
@@ -83,18 +85,42 @@ const expandedThinking = ref(false)
 const collapsed = ref(false)
 const isStreamingNow = computed(() => props.isStreaming)
 
+// 字段存在性
 const hasAgentRuns = computed(() => (props.message.agentRuns?.length || 0) > 0)
 const hasToolCalls = computed(() => (props.message.toolCalls?.length || 0) > 0)
 const hasThinking = computed(() => (props.message.thinking?.length || 0) > 0)
+const hasContent = computed(() => (props.message.content?.length || 0) > 0)
 const hasProcess = computed(() => hasThinking.value || hasToolCalls.value || hasAgentRuns.value)
+
+// ===== 消息生命周期状态机（assistant 消息）=====
+// 注意：thinkingActive===false 表示工具已开始调用 → 思考阶段已结束
+// 1. 加载态：流式刚开始，助手消息还没收到任何数据
+const isLoading = computed(() => isStreamingNow.value && !hasThinking.value && !hasContent.value && !hasToolCalls.value)
+// 2. 思考进行中：收到思考 token，且思考阶段尚未结束
+const isThinkingPhase = computed(() => isStreamingNow.value && hasThinking.value && props.message.thinkingActive !== false)
+// 3. 思考已结束，正在处理（出答案 / 跑工具）但流式未结束
+const isProcessing = computed(() => isStreamingNow.value && !isThinkingPhase.value && (hasContent.value || hasToolCalls.value || hasThinking.value))
+// 4. 任务完成（流关闭 + 有答案）
+const isFinished = computed(() => !isStreamingNow.value && hasContent.value)
+
+// 思考已完成（非流式 或 思考阶段已结束）：orb → breathing、shimmer 停
+const thinkingDone = computed(() => hasThinking.value && !isThinkingPhase.value)
 
 function runActive(run: AgentRun): boolean {
   return run.status === 'planning' || run.status === 'working' || run.status === 'synthesis'
 }
 
-// 折叠逻辑
-if (props.index === 0) { collapsed.value = false } else { collapsed.value = true }
-watch(isStreamingNow, (now) => { if (now) collapsed.value = false })
+// 折叠逻辑：所有消息默认展开（process 相关组件就是给用户看的）
+// 折叠条只在用户主动点击 collapse 后才出现；不再根据 index 强制折叠
+collapsed.value = false
+const userCollapsed = ref(false) // 用户主动折叠的标记
+watch(isStreamingNow, (now) => {
+  if (now) {
+    // 流式开始 → 自动展开并清掉用户折叠
+    expandedThinking.value = false
+    userCollapsed.value = false
+  }
+})
 
 // 思考计时
 const thinkingEndedAt = ref<number | null>(null)
@@ -117,17 +143,95 @@ const streamingContent = computed(() => {
   return content
 })
 
-// 可见工具/代理
+// 可见工具/代理：思考阶段只显示思考面板，工具/代理在思考结束后才显示
 const visibleAgentRuns = computed(() => {
-  if (isThinkingStreaming.value) return []
   return props.message.agentRuns || []
 })
+// 工具调用：toolCalls 优先；缺失时从 toolResults 兜底（有些实现只下发 result 不下发 call）
 const visibleToolCalls = computed(() => {
-  return props.message.toolCalls || []
+  const calls = props.message.toolCalls || []
+  if (calls.length) return calls
+  const results = props.message.toolResults || []
+  return results.map((r) => ({
+    id: r.tool_call_id,
+    name: r.name || 'tool',
+    arguments: '',
+  }))
 })
-const isThinkingStreaming = computed(() => isStreamingNow.value && (props.message.thinking?.length || 0) > 0 && props.message.thinkingActive !== false)
-// 流式开始但还没收到任何数据（思考/内容/工具）
-const isLoadingState = computed(() => isStreamingNow.value && !hasThinking.value && !props.message.content && !props.message.toolCalls?.length)
+
+// 工具调用状态：每个工具调用是否已收到结果
+function toolDone(toolId: string): boolean {
+  if (!isStreamingNow.value) return true // 流结束 → 全部完成
+  return (props.message.toolResults || []).some((r) => r.tool_call_id === toolId)
+}
+function toolIcon(toolId: string) {
+  return toolDone(toolId) ? CheckCircle2 : Loader2
+}
+
+// 工具 orb 状态：按工具名关键字映射（skill 第十一章状态表）
+const TOOL_ORB_STATE: Array<[RegExp, string]> = [
+  [/search|query|find|lookup|检索|搜索|查/i, 'searching'],
+  [/connect|api|http|fetch|get_|post_|request|调用|请求/i, 'connecting'],
+  [/solve|calc|compute|分析|计算|解析/i, 'solving'],
+  [/dedup|merge|group|聚合|合并|去重/i, 'weaving'],
+  [/write|create|insert|save|写入|创建|生成|新增/i, 'composing'],
+  [/plan|architect|拆解|规划|架构|设计/i, 'shaping'],
+]
+function toolOrbState(name: string): string {
+  const key = name || ''
+  for (const [re, st] of TOOL_ORB_STATE) {
+    if (re.test(key)) return st
+  }
+  return 'working'
+}
+// 工具是否失败：流结束后无该工具结果则视为失败（由父级传入，这里用 toolResults 兜底）
+function toolFailed(toolId: string): boolean {
+  if (isStreamingNow.value) return false
+  const calls = props.message.toolCalls || []
+  const results = props.message.toolResults || []
+  // 若流已结束且该工具无对应结果 → 失败
+  return calls.some((c) => c.id === toolId) && !results.some((r) => r.tool_call_id === toolId)
+}
+
+// 调试：把所有 assistant 消息的关键字段打出来供排查（仅当字段变化时）
+watch(() => props.message, () => {
+  if (props.message.role === 'assistant' && props.message.id) {
+    console.log('[AiMessage] message', {
+      id: props.message.id,
+      hasThinking: hasThinking.value,
+      hasContent: hasContent.value,
+      hasToolCalls: Boolean((props.message.toolCalls || []).length),
+      toolCallsCount: (props.message.toolCalls || []).length,
+      toolResultsCount: (props.message.toolResults || []).length,
+      hasAgentRuns: hasAgentRuns.value,
+      agentRunsCount: (props.message.agentRuns || []).length,
+      isStreaming: isStreamingNow.value,
+      thinkingActive: props.message.thinkingActive,
+    })
+  }
+}, { deep: false })
+
+// 思考面板标题：进行中「深度思考」 vs 完成「深度思考 · Ns」
+const thinkingPanelTitle = computed(() => {
+  if (thinkingSecs.value > 0) return `深度思考 · ${thinkingSecs.value}s`
+  return '深度思考'
+})
+
+// 折叠标签
+const collapsedLabel = computed(() => {
+  if (isFinished.value) return '处理完成'
+  if (thinkingSecs.value > 0) return `思考 ${thinkingSecs.value}s`
+  if (isProcessing.value) return '处理中'
+  return '查看思考过程'
+})
+// 折叠条里各步骤的摘要
+const processSummary = computed(() => {
+  const parts: string[] = []
+  if (thinkingSecs.value > 0) parts.push(`思考 ${thinkingSecs.value}s`)
+  if (hasToolCalls.value) parts.push(`${visibleToolCalls.value.length} 个工具`)
+  if (hasAgentRuns.value) parts.push(`${visibleAgentRuns.value.length} 个代理`)
+  return parts.join(' · ')
+})
 
 // 快捷指令
 const QUICK_ACTIONS_KIND_META: Record<string, { icon: any; i18nKey: string }> = {
@@ -157,6 +261,25 @@ function formatDuration(ms: number): string {
   const min = Math.floor(sec / 60)
   const remain = sec % 60
   return `${min}m ${remain}s`
+}
+
+// 工具调用 arguments 字段是 JSON 字符串，解析为对象以便展示
+function parseToolArgs(raw: string): Record<string, any> {
+  if (!raw) return {}
+  try {
+    const obj = JSON.parse(raw)
+    return obj && typeof obj === 'object' ? obj : { value: String(obj) }
+  } catch {
+    return { raw }
+  }
+}
+
+// 子代理图标：按 status 决定
+function runIcon(run: AgentRun) {
+  if (run.status === 'done') return CheckCircle2
+  if (run.status === 'failed') return XCircle
+  if (runActive(run)) return Loader2
+  return Bot
 }
 </script>
 
@@ -206,93 +329,91 @@ function formatDuration(ms: number): string {
       <div v-else class="ai-msg-content">{{ compactBlankLines(message.content) }}</div>
     </template>
 
-    <!-- 助手消息 - Trae 时间线风格 -->
+    <!-- 助手消息 - 按状态机渲染组件（对齐 demo agent-ui-clipsync.html） -->
     <template v-else>
       <div class="ai-msg-bubble">
-        <!-- 折叠态 -->
-        <div v-if="hasProcess && collapsed" class="ai-process-collapsed" @click="collapsed = false">
-          <span class="ai-process-collapsed-label">{{ t('ai_process_collapsed') }}</span>
-          <span class="ai-process-chip">{{ thinkingSecs > 0 ? `思考 ${thinkingSecs}s` : '处理完成' }}</span>
+
+        <!-- 折叠态：仅在用户主动折叠 + 有处理过程 + 非流式时显示 -->
+        <div v-if="userCollapsed && hasProcess && !isStreamingNow" class="ai-process-collapsed" @click="userCollapsed = false">
+          <span class="ai-process-collapsed-label">{{ collapsedLabel }}</span>
+          <span v-if="processSummary" class="ai-process-chip">{{ processSummary }}</span>
           <ChevronRight :size="13" class="ai-process-collapsed-chev" />
         </div>
 
-        <!-- 展开态：垂直时间线 -->
+        <!-- 展开态：按状态机依次渲染 -->
         <template v-else>
-          <div class="ai-timeline">
-            <!-- 垂直线 -->
-            <div class="ai-timeline-line"></div>
 
-            <!-- 思考中加载状态（流式开始但还没收到数据时） -->
-            <div v-if="isLoadingState" class="ai-timeline-node ai-timeline-node--loading">
-              <div class="ai-timeline-node-icon ai-timeline-node-icon--loading">
-                <span class="ai-timeline-loading-pulse"></span>
-              </div>
-              <div class="ai-timeline-node-content">
-                <div class="ai-timeline-node-head ai-timeline-node-head--static">
-                  <span class="ai-timeline-node-title">思考中...</span>
-                </div>
-              </div>
+          <!-- 状态 1：等待加载（首字前）—— AiWaiting：orb + 「正在思考中」shimmer -->
+          <AiWaiting v-if="isLoading" class="ai-waiting-block" />
+
+          <!-- 状态 2：深度思考面板（左 orb + 标题 + markdown 思考过程） -->
+          <div v-if="hasThinking" class="ai-think-panel">
+            <div class="ai-think-head" @click="expandedThinking = !expandedThinking">
+              <AiThinkingOrb
+                class="ai-think-orb"
+                :state="isThinkingPhase ? 'composing' : 'breathing'"
+                :size="24"
+              />
+              <span
+                class="ai-think-title"
+                :class="{ paused: thinkingDone }"
+                :data-text="thinkingPanelTitle"
+              >{{ thinkingPanelTitle }}</span>
+              <ChevronRight v-if="!expandedThinking" :size="13" class="ai-think-chev" />
+              <ChevronDown v-else :size="13" class="ai-think-chev" />
             </div>
-
-            <!-- 思考过程节点 -->
-            <div v-if="hasThinking" class="ai-timeline-node">
-              <div class="ai-timeline-node-icon ai-timeline-node-icon--thinking" :class="{ 'is-streaming': isThinkingStreaming }">
-                <Brain v-if="!isThinkingStreaming" :size="12" />
-                <span v-else class="ai-timeline-pulse"></span>
-              </div>
-              <div class="ai-timeline-node-content">
-                <button class="ai-timeline-node-head" @click="expandedThinking = !expandedThinking">
-                  <span class="ai-timeline-node-title">思考过程</span>
-                  <span v-if="thinkingSecs > 0" class="ai-timeline-node-time">{{ thinkingSecs }}s</span>
-                  <ChevronRight v-if="!expandedThinking" :size="12" class="ai-timeline-node-chev" />
-                  <ChevronDown v-else :size="12" class="ai-timeline-node-chev" />
-                </button>
-                <div v-if="expandedThinking" class="ai-timeline-node-body">
-                  <pre class="ai-timeline-pre">{{ message.thinking }}</pre>
-                </div>
-              </div>
-            </div>
-
-            <!-- 工具调用节点 -->
-            <div v-for="(tc, i) in visibleToolCalls" :key="`tc-${i}`" class="ai-timeline-node">
-              <div class="ai-timeline-node-icon ai-timeline-node-icon--tool">
-                <Wrench :size="12" />
-              </div>
-              <div class="ai-timeline-node-content">
-                <div class="ai-timeline-node-head ai-timeline-node-head--static">
-                  <span class="ai-timeline-node-title">{{ tc.name }}</span>
-                  <span class="ai-timeline-node-badge">tool</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- 子代理节点 -->
-            <div v-for="run in visibleAgentRuns" :key="run.id" class="ai-timeline-node">
-              <div class="ai-timeline-node-icon" :class="{
-                'ai-timeline-node-icon--done': run.status === 'done',
-                'ai-timeline-node-icon--working': runActive(run),
-                'ai-timeline-node-icon--failed': run.status === 'failed'
-              }">
-                <CheckCircle2 v-if="run.status === 'done'" :size="12" />
-                <Loader2 v-else-if="runActive(run)" :size="12" class="ai-timeline-spin" />
-                <XCircle v-else-if="run.status === 'failed'" :size="12" />
-                <Bot v-else :size="12" />
-              </div>
-              <div class="ai-timeline-node-content">
-                <div class="ai-timeline-node-head ai-timeline-node-head--static">
-                  <span class="ai-timeline-node-title">{{ run.name }}</span>
-                  <span v-if="run.objective" class="ai-timeline-node-objective">{{ run.objective }}</span>
-                  <span v-if="run.duration" class="ai-timeline-node-time">{{ formatDuration(run.duration) }}</span>
-                  <span class="ai-timeline-node-badge" :class="`badge-${run.status}`">{{ run.status }}</span>
-                </div>
-              </div>
+            <div class="ai-think-body" :class="{ collapsed: !expandedThinking }">
+              <pre class="ai-think-md">{{ message.thinking }}</pre>
             </div>
           </div>
 
-          <!-- 主要内容输出 -->
-          <div v-if="message.content" class="ai-msg-content markdown-body">
+          <!-- 状态 3：工具调用（左 orb 按工具类型 + 状态标签三态） -->
+          <template v-if="!isThinkingPhase">
+            <div v-for="(tc, i) in visibleToolCalls" :key="`tc-${i}`" class="ai-tool-card" :class="{ 'ai-tool-card--done': toolDone(tc.id), 'ai-tool-card--err': toolFailed(tc.id) }">
+              <div class="ai-tool-inner">
+                <div class="ai-tool-row">
+                  <AiThinkingOrb
+                    class="ai-tool-orb"
+                    :state="toolDone(tc.id) ? 'breathing' : (toolOrbState(tc.name) as any)"
+                    :size="18"
+                  />
+                  <span class="ai-tool-name">{{ tc.name }}</span>
+                  <span
+                    class="ai-tool-st"
+                    :class="toolFailed(tc.id) ? 'err' : (toolDone(tc.id) ? 'ok' : 'running')"
+                  >
+                    <span v-if="!toolDone(tc.id) && !toolFailed(tc.id)" class="ai-tool-spin"></span>
+                    {{ toolFailed(tc.id) ? '失败 ✕' : (toolDone(tc.id) ? '✓ 成功' : '运行中') }}
+                  </span>
+                </div>
+                <div v-if="tc.arguments" class="ai-tool-args">
+                  <div v-for="(val, key) in parseToolArgs(tc.arguments)" :key="key" class="ai-tool-arg">
+                    <span class="ai-tool-k">{{ key }}:</span>
+                    <span class="ai-tool-v">{{ val }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- 状态 3：子代理 / 工作流步骤（思考阶段结束后才显示） -->
+          <div v-if="!isThinkingPhase && visibleAgentRuns.length" class="ai-wf-table">
+            <div v-for="(run, i) in visibleAgentRuns" :key="run.id"
+                 class="ai-wf-row" :class="{ active: runActive(run), done: run.status === 'done', failed: run.status === 'failed' }">
+              <span class="ai-wf-n">{{ String(i + 1).padStart(2, '0') }}</span>
+              <span class="ai-wf-name">
+                <component :is="runIcon(run)" :size="12" class="ai-wf-icon" :class="{ 'ai-wf-spin': runActive(run) }" />
+                {{ run.name }}
+              </span>
+              <span class="ai-wf-meta">{{ run.duration ? formatDuration(run.duration) : (runActive(run) ? 'running' : run.status) }}</span>
+              <div class="ai-wf-bar"><i :style="{ width: run.status === 'done' ? '100%' : (runActive(run) ? '60%' : '0%') }"></i></div>
+            </div>
+          </div>
+
+          <!-- 主要内容输出（答案区） -->
+          <div v-if="hasContent || (isStreamingNow && hasContent)" class="ai-msg-content markdown-body">
             <span v-html="renderMarkdown(streamingContent)"></span>
-            <span v-if="isStreamingNow" class="ai-stream-caret"></span>
+            <span v-if="isStreamingNow && !hasToolCalls" class="ai-stream-caret"></span>
           </div>
         </template>
       </div>
@@ -353,26 +474,20 @@ function formatDuration(ms: number): string {
 .ai-msg-actions--user {
   position: absolute;
   right: 0;
-  bottom: 0;
-  display: inline-flex;
+  bottom: -2px;
+  display: none;
   gap: 4px;
   padding: 2px;
   border-radius: 8px;
   background: var(--bg-base-default, #fff);
   border: 1px solid var(--border-neutral-l1, rgba(115,115,115,0.12));
-  opacity: 0;
-  transform: translateY(2px);
-  pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
   z-index: 5;
+  transition: opacity 0.15s ease;
 }
-.ai-msg.user:hover .ai-msg-actions--user,
-.ai-msg-actions--user:hover {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
+.ai-msg.user:hover .ai-msg-actions--user {
+  display: inline-flex;
 }
-.ai-msg.user .ai-msg-user-body { padding-bottom: 30px; }
+.ai-msg.user .ai-msg-user-body { padding-bottom: 0; }
 .ai-msg-action-btn {
   display: inline-flex;
   align-items: center;
@@ -419,192 +534,243 @@ function formatDuration(ms: number): string {
 }
 .ai-process-collapsed-chev { margin-left: auto; color: var(--text-tertiary, #737373); }
 
-/* ============ 垂直时间线 ============ */
-.ai-timeline {
-  position: relative;
-  padding-left: 28px;
-  margin-bottom: 8px;
-}
-.ai-timeline-line {
-  position: absolute;
-  left: 10px;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--border-neutral-l1, rgba(115,115,115,0.12));
-  border-radius: 1px;
-}
-
-/* 时间线节点 */
-.ai-timeline-node {
-  position: relative;
-  margin-bottom: 12px;
-}
-.ai-timeline-node:last-child {
-  margin-bottom: 0;
-}
-
-/* 节点图标 */
-.ai-timeline-node-icon {
-  position: absolute;
-  left: -28px;
-  top: 0;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-base-default, #fff);
-  border: 2px solid var(--border-neutral-l1, rgba(115,115,115,0.12));
-  color: var(--icon-secondary, #404040);
+/* 用户主动折叠按钮（展开时显示） */
+.ai-collapse-btn {
   font-size: 11px;
-  z-index: 1;
-}
-.ai-timeline-node-icon--thinking {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.ai-timeline-node-icon--thinking.is-streaming {
-  background: var(--accent);
-  color: #fff;
-}
-.ai-timeline-node-icon--tool {
-  border-color: var(--text-tertiary, #737373);
-  color: var(--text-tertiary, #737373);
-}
-.ai-timeline-node-icon--done {
-  border-color: #00B983;
-  background: #00B983;
-  color: #fff;
-}
-.ai-timeline-node-icon--working {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
-}
-.ai-timeline-node-icon--failed {
-  border-color: #FF6B45;
-  background: #FF6B45;
-  color: #fff;
-}
-.ai-timeline-node-icon--loading {
-  border-color: var(--border-neutral-l1, rgba(115,115,115,0.12));
-  background: var(--bg-base-default, #fff);
-}
-.ai-timeline-loading-pulse {
-  display: block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: loading-pulse 1.4s ease-in-out infinite;
-}
-@keyframes loading-pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.4;
-    transform: scale(0.75);
-  }
-}
-
-/* 脉冲动画 */
-.ai-timeline-pulse {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #fff;
-  animation: timeline-pulse 1.2s ease-in-out infinite;
-}
-@keyframes timeline-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.7); }
-}
-
-/* 节点内容 */
-.ai-timeline-node-content {
-  flex: 1;
-}
-.ai-timeline-node-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 0;
-  background: transparent;
-  border: none;
+  color: var(--text-secondary, #404040);
   cursor: pointer;
-  text-align: left;
+  margin-top: 6px;
+  padding: 4px 0;
+  display: inline-block;
+  transition: color .15s;
 }
-.ai-timeline-node-head--static {
-  cursor: default;
+.ai-collapse-btn:hover { color: var(--text-default, #171717); }
+
+/* ================================================================
+   agent-workflow-ui skill 基准（对齐 demo agent-workflow-demo）
+   - waiting: AiWaiting（orb + 「正在思考中」字内 shimmer）
+   - think-panel: 左 orb + 「深度思考」标题 shimmer + markdown 思考过程
+   - tool-card: 左 orb（按工具类型）+ 状态标签三态
+   - wf-table: 工作流极简表格行 + 进度条
+   ================================================================ */
+
+/* ---- 等待加载（AiWaiting 容器）---- */
+.ai-waiting-block {
+  margin: 2px 0 0;
 }
-.ai-timeline-node-title {
+
+/* ---- 深度思考面板 ---- */
+.ai-think-panel {
+  margin: 8px 0 0;
+  overflow: hidden;
+}
+.ai-think-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px;
+  cursor: pointer;
+  user-select: none;
+}
+.ai-think-orb {
+  flex-shrink: 0;
+  display: block;
+}
+.ai-think-title {
+  position: relative;
+  display: inline-block;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text-default, #171717);
+  font-weight: 600;
+  color: var(--text-secondary, #404040);
+  overflow: visible;
 }
-.ai-timeline-node-time {
-  font-size: 11px;
-  color: var(--text-tertiary, #737373);
-  font-variant-numeric: tabular-nums;
+/* 字内笔画间 shimmer：与 demo 原版一致
+   （transparent 基色 + mix-blend-mode: screen/multiply → 文字永不消失，只有高光带在字内流动）
+   ⚠️ 必须用 background-image 而不是 background 简写——简写会清掉 background-clip:text
+   ⚠️ 不要改回 currentColor/text-fill-color:transparent 写法——无 mix-blend-mode 时渐变未覆盖的文字会变透明，看起来像"横扫整个 box" */
+.ai-think-title::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 35%,
+    rgba(255, 255, 255, 0.85) 50%,
+    transparent 65%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: ai-think-shimmer 2.5s ease-in-out infinite;
+  mix-blend-mode: screen;
 }
-.ai-timeline-node-chev {
+html.light .ai-think-title::after {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 35%,
+    rgba(24, 24, 27, 0.85) 50%,
+    transparent 65%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  mix-blend-mode: multiply;
+}
+/* 思考完成 → shimmer 停止 */
+.ai-think-title.paused::after {
+  animation: none;
+  background-position: 100% 0;
+}
+@keyframes ai-think-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -20% 0; }
+}
+.ai-think-chev {
   color: var(--text-tertiary, #737373);
   margin-left: auto;
+  flex-shrink: 0;
 }
-.ai-timeline-node-badge {
-  font-size: 10px;
-  font-weight: 500;
-  padding: 1px 6px;
-  border-radius: 999px;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  background: var(--bg-overlay-l1, rgba(115,115,115,0.08));
-  color: var(--text-secondary, #404040);
-}
-.ai-timeline-node-badge.badge-done { background: rgba(0,185,131,0.1); color: #00B983; }
-.ai-timeline-node-badge.badge-working,
-.ai-timeline-node-badge.badge-planning,
-.ai-timeline-node-badge.badge-synthesis { background: rgba(75,63,227,0.1); color: var(--accent); }
-.ai-timeline-node-badge.badge-failed { background: rgba(255,107,69,0.1); color: #FF6B45; }
-.ai-timeline-node-objective {
-  font-size: 11px;
-  color: var(--text-tertiary, #737373);
-  flex: 1;
+/* 思考内容：markdown 样式（左竖线 + 等宽） */
+.ai-think-body {
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  transition: opacity 0.25s ease;
+  /* 思考内容可能上千字，不要 max-height 截断（外层消息容器自带滚动） */
+  max-height: none;
+  opacity: 1;
+  padding-top: 8px;
+  padding-left: 4px;
 }
-
-/* 节点展开内容 */
-.ai-timeline-node-body {
-  margin-top: 8px;
-  padding-left: 0;
+.ai-think-body.collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
 }
-.ai-timeline-pre {
-  margin: 0;
-  padding: 10px 12px;
+.ai-think-md {
   font-size: 12.5px;
-  line-height: 1.6;
   color: var(--text-secondary, #404040);
+  line-height: 1.7;
+  border-left: 2px solid var(--border-neutral-l1, rgba(115,115,115,0.25));
+  padding: 4px 0 4px 12px;
+  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: var(--font-family-mono, ui-monospace, monospace);
-  background: var(--bg-base-secondary, #F5F5F5);
-  border-radius: 6px;
-  border-left: 2px solid var(--accent);
+  font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  background: transparent;
 }
 
-/* 旋转动画 */
-.ai-timeline-spin {
-  animation: timeline-spin 1s linear infinite;
+/* ---- 工具调用卡片（左 orb + 状态标签三态）---- */
+.ai-tool-card {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--text-secondary, #404040);
+  background: var(--bg-base-secondary, #f9fafb);
+  border: 1px solid var(--border-neutral-l1, rgba(115,115,115,0.16));
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.2s;
 }
-@keyframes timeline-spin {
-  to { transform: rotate(360deg); }
+.ai-tool-card--done { border-left: 2px solid rgba(0,185,131,0.5); }
+.ai-tool-card--err { border-color: rgba(255,107,69,0.6); border-left: 2px solid rgba(255,107,69,0.6); }
+.ai-tool-inner { padding: 8px 11px; }
+.ai-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+.ai-tool-orb {
+  flex-shrink: 0;
+  display: block;
+}
+.ai-tool-name {
+  font-weight: 600;
+  color: var(--text-default, #171717);
+}
+.ai-tool-st {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+  transition: background 0.2s, color 0.2s;
+}
+.ai-tool-st.running { color: var(--accent, #3b82f6); background: var(--accent-bg, rgba(59,130,246,.12)); }
+.ai-tool-st.ok { color: #00B983; background: rgba(0,185,131,.1); }
+.ai-tool-st.err { color: #FF6B45; background: rgba(255,107,69,.1); }
+.ai-tool-spin {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  animation: ai-tool-spin .7s linear infinite;
+}
+@keyframes ai-tool-spin { to { transform: rotate(360deg); } }
+.ai-tool-args { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.ai-tool-arg { display: flex; gap: 6px; font-family: var(--font-family-mono, ui-monospace, monospace); }
+.ai-tool-k { color: var(--text-tertiary, #737373); }
+.ai-tool-v { color: var(--text-default, #171717); word-break: break-all; }
+
+/* ---- 工作流表格（demo wf 风格）---- */
+.ai-wf-table {
+  border: 1px solid var(--border-neutral-l1, rgba(115,115,115,0.18));
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 6px 0 14px;
+}
+.ai-wf-row {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 13px;
+  font-size: 13px;
+  border-top: 1px solid var(--border-neutral-l1, rgba(115,115,115,0.10));
+  position: relative;
+  transition: background .3s;
+}
+.ai-wf-row:first-child { border-top: 0; }
+.ai-wf-n {
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-tertiary, #737373);
+  transition: color .3s;
+}
+.ai-think-done-icon { color: var(--text-secondary, #475569); flex-shrink: 0; }
+.ai-wf-meta {
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-tertiary, #737373);
+  text-align: right;
+}
+.ai-wf-bar {
+  position: absolute;
+  left: 13px; right: 13px; bottom: 0;
+  height: 1px;
+  background: var(--border-neutral-l1, rgba(115,115,115,0.20));
+  overflow: hidden;
+}
+.ai-wf-bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--text-secondary, #404040);
+  transition: width .25s linear;
+}
+.ai-wf-row.active { background: var(--bg-base-secondary, #f9fafb); }
+.ai-wf-row.active .ai-wf-name { color: var(--text-default, #171717); }
+.ai-wf-row.active .ai-wf-n { color: var(--text-secondary, #404040); }
+.ai-wf-row.done .ai-wf-name { color: var(--text-secondary, #404040); }
+.ai-wf-row.done .ai-wf-bar > i { width: 100% !important; }
+.ai-wf-row.failed .ai-wf-name { color: #FF6B45; }
 
 /* ============ 主要内容 ============ */
 .ai-msg-content {
@@ -674,14 +840,14 @@ function formatDuration(ms: number): string {
 .ai-msg-content :deep(th) { background: var(--bg-base-secondary, #F5F5F5); font-weight: 600; }
 .ai-msg-content :deep(tr:nth-child(2n)) { background: var(--bg-base-secondary, #F5F5F5); }
 
-/* 流式光标 */
+/* 流式光标：中性灰 */
 .ai-stream-caret {
   display: inline-block;
   width: 2px;
   height: 1.2em;
   margin-left: 1px;
   vertical-align: text-bottom;
-  background: var(--accent);
+  background: var(--text-secondary, #404040);
   border-radius: 1px;
   animation: caret-pulse 1.2s ease-in-out infinite;
 }

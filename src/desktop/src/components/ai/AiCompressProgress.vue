@@ -121,7 +121,7 @@ const detail = computed(() => {
     var(--text-tertiary, #94a3b8) 0%,
     var(--text-tertiary, #94a3b8) 20%,
     var(--text-primary, #0f172a) 45%,
-    var(--accent, #6366f1) 50%,
+    var(--text-secondary, #475569) 50%,
     var(--text-primary, #0f172a) 55%,
     var(--text-tertiary, #94a3b8) 80%,
     var(--text-tertiary, #94a3b8) 100%
