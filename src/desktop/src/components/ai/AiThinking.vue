@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { ChevronDown, ChevronRight, CheckCircle2 } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import AiThinkingOrb from './AiThinkingOrb.vue'
 
 /**
- * AiThinking — AI 思考过程面板
+ * AiThinking — AI 思考过程面板（按 agent-workflow-ui skill 基准改造）
  *
- * 阶段 1（loading 占位）：尚未收到任何数据时，显示“正在思考”轻量提示条，
- *                        文字带从左到右扫光动画。
- * 阶段 2（深度思考）：收到 thinking 内容后，切换为深色折叠条；
- *                    “深度思考”四字同样带扫光，点击展开看 reasoning。
- * 阶段 3（完成）：思考结束 → 对勾 + “已深度思考(N秒)”。
+ * 结构：
+ *   [ThinkingOrb(composing 繁忙丝带 / breathing 完成圆环)] 深度思考(shimmer)
+ *   思考过程 markdown（逐字打字机出现，点击标题展开/收起）
+ *
+ * 三阶段：
+ *   阶段1 运行中：orb=composing，思考内容逐字出现，标题 shimmer 流动
+ *   阶段2 完成：orb→breathing，标题 shimmer 停止（paused class）
+ *   阶段3 进入下一阶段：thinking 组件不消失不收起，始终可点击展开
  */
 
 const props = defineProps<{
@@ -128,220 +132,211 @@ watch(() => props.isStreaming, (v) => {
   }
 })
 
-// ==================== 折叠按钮文案 ====================
+// ==================== 标题 ====================
+// 进行中：「深度思考」；完成：`深度思考 · {n}s`（保持可点击入口形态，不做"已思考 Xs"摘要）
 const label = computed(() => {
   if (!hasContent.value) {
-    return t('ai_thinking_loading', '正在思考')
-  }
-  if (props.isStreaming) {
-    return t('ai_thinking_deep', '深度思考')
+    return t('ai_thinking_loading', '正在思考中')
   }
   const sec = elapsedSeconds.value
-  const timeText = sec < 1
-    ? t('ai_thinking_less_than_sec', '少于 1 秒')
-    : t('ai_thinking_sec', '{n} 秒').replace('{n}', String(sec))
-  return `${t('ai_thinking_deep_done', '已深度思考')} ${timeText}`
+  if (sec < 1) return t('ai_thinking_deep', '深度思考')
+  return `${t('ai_thinking_deep', '深度思考')} · ${t('ai_thinking_sec', '{n} 秒').replace('{n}', String(sec))}`
 })
-// 头部右侧的耗时文案（思考中显示实时秒数，结束后显示总耗时）
+
+// 耗时（头部右侧）
 const timeText = computed(() => {
   const sec = elapsedSeconds.value
-  if (sec < 1) return t('ai_thinking_less_than_sec', '少于 1 秒')
+  if (sec < 1) return ''
   return t('ai_thinking_sec', '{n} 秒').replace('{n}', String(sec))
 })
 </script>
 
 <template>
-  <!-- 阶段 1：loading 占位。未收到任何数据，只显示“正在思考”在文字表面的扫光 -->
-  <div v-if="!hasContent && isStreaming" class="ai-thinking-card ai-thinking-card--loading">
-    <span class="ai-thinking-spinner" />
-    <span class="ai-thinking-loading-text">{{ t('ai_thinking_loading', '正在思考') }}</span>
+  <!-- 阶段 1：加载态（无 thinking 内容时）—— orb + 「正在思考中」 -->
+  <div v-if="!hasContent && isStreaming" class="ai-think-loading">
+    <AiThinkingOrb class="ai-think-orb" state="composing" :size="16" :speed="1.4" />
+    <span class="ai-think-loading-text">{{ t('ai_thinking_loading', '正在思考中') }}</span>
   </div>
 
-  <!-- 阶段 2/3：有内容后切换为深度思考卡片 -->
-  <div v-else-if="hasContent" class="ai-thinking-card" :class="{ streaming: isStreaming }">
-    <button
-      class="ai-thinking-head"
-      :class="{ active: expanded }"
-      @click="emit('toggle')"
-    >
-      <span class="ai-thinking-brain">
-        <CheckCircle2 v-if="!isStreaming" :size="13" class="ai-thinking-done-icon" />
-        <span v-else class="ai-thinking-pulse-dot" />
-      </span>
-      <span class="ai-thinking-title">{{ t('ai_thinking_deep', '深度思考') }}</span>
-      <span class="ai-thinking-time">{{ timeText }}</span>
-      <span class="ai-thinking-spacer" />
-      <ChevronDown v-if="expanded" :size="14" class="ai-thinking-chev" />
-      <ChevronRight v-else :size="14" class="ai-thinking-chev" />
-    </button>
+  <!-- 阶段 2/3：深度思考面板 -->
+  <div v-else-if="hasContent" class="ai-think">
+    <div class="ai-think-head" @click="emit('toggle')">
+      <!-- 左 orb：进行中=composing 繁忙丝带；完成=breathing 圆环 -->
+      <AiThinkingOrb
+        class="ai-think-orb"
+        :state="isStreaming ? 'composing' : 'breathing'"
+        :size="24"
+      />
+      <span
+        class="ai-think-title"
+        :class="{ paused: !isStreaming }"
+        :data-text="label"
+      >{{ label }}</span>
+      <span v-if="timeText && isStreaming" class="ai-think-time">{{ timeText }}</span>
+      <ChevronRight v-if="!expanded" :size="13" class="ai-think-chev" />
+      <ChevronDown v-else :size="13" class="ai-think-chev" />
+    </div>
 
-    <div v-if="expanded" ref="contentRef" class="ai-thinking-body">
-      <pre class="ai-thinking-pre">{{ displayThinking }}</pre>
+    <!-- 思考内容：markdown 样式（左竖线 + 浅底 + 等宽），默认展开 -->
+    <div class="ai-think-body" :class="{ collapsed: !expanded }">
+      <pre ref="contentRef" class="ai-think-md">{{ displayThinking }}</pre>
+      <span class="ai-think-caret" v-if="isStreaming && displayThinking.length < (props.thinking?.length || 0)"></span>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* ============ 通用卡片 ============ */
-.ai-thinking-card {
+/* ============ 阶段 1：加载态（无思考内容时） ============ */
+.ai-think-loading {
   display: flex;
-  flex-direction: column;
-  margin: 8px 0;
-  border-radius: 12px;
-  background: var(--bg-surface, #fff);
-  border: 1px solid var(--border-subtle, rgba(15, 23, 42, 0.08));
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
-  overflow: hidden;
-  max-width: 100%;
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
-}
-.ai-thinking-card:hover {
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
-}
-/* 思考中卡片左侧加一道 accent 竖条，呼应“进行中的工作流” */
-.ai-thinking-card.streaming {
-  border-left: 3px solid var(--accent, #6366f1);
-}
-
-/* ============ loading 卡片 ============ */
-.ai-thinking-card--loading {
-  flex-direction: row;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
+  height: 28px;
+  padding: 0 2px;
+  margin: 4px 0;
+  user-select: none;
 }
-.ai-thinking-spinner {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid var(--border-default, #e2e8f0);
-  border-top-color: var(--accent, #6366f1);
-  animation: ai-think-spin 0.8s linear infinite;
+.ai-think-orb {
   flex-shrink: 0;
+  display: block;
 }
-.ai-thinking-loading-text {
-  position: relative;
-  font-size: 13px;
-  font-weight: 600;
-  display: inline-block;
-  background: linear-gradient(
-    90deg,
-    var(--text-tertiary, #94a3b8) 0%,
-    var(--text-tertiary, #94a3b8) 20%,
-    var(--text-primary, #0f172a) 45%,
-    var(--accent, #6366f1) 50%,
-    var(--text-primary, #0f172a) 55%,
-    var(--text-tertiary, #94a3b8) 80%,
-    var(--text-tertiary, #94a3b8) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: ai-thinking-shimmer-text 1.6s linear infinite;
+.ai-think-loading-text {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-secondary, #52525b);
 }
 
-/* ============ 头部 ============ */
-.ai-thinking-head {
+/* ============ 阶段 2/3：深度思考面板 ============ */
+.ai-think {
+  margin: 8px 0 0;
+  overflow: hidden;
+}
+.ai-think-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: transparent;
-  border: none;
+  gap: 10px;
+  padding: 4px 2px;
   cursor: pointer;
+  user-select: none;
+}
+.ai-think-title {
+  position: relative;
+  display: inline-block;
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-secondary, #475569);
-  text-align: left;
-  width: 100%;
-  transition: background 0.15s ease, color 0.15s ease;
+  color: var(--text-secondary, #52525b);
 }
-.ai-thinking-head:hover,
-.ai-thinking-head.active {
-  background: var(--bg-hover, rgba(99, 102, 241, 0.06));
-  color: var(--text-primary, #0f172a);
+/* 字内笔画间 shimmer：与 demo 原版一致
+   （transparent 基色 + mix-blend-mode: screen/multiply → 文字永不消失，只有高光带在字内流动）
+   ⚠️ 必须用 background-image 而不是 background 简写——简写会清掉 background-clip:text */
+.ai-think-title::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 35%,
+    rgba(255, 255, 255, 0.85) 50%,
+    transparent 65%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: ai-think-shimmer 2.5s ease-in-out infinite;
+  mix-blend-mode: screen;
 }
-.ai-thinking-brain {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: rgba(99, 102, 241, 0.12);
-  color: var(--accent, #6366f1);
-  flex-shrink: 0;
+html.light .ai-think-title::after {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 35%,
+    rgba(24, 24, 27, 0.85) 50%,
+    transparent 65%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  mix-blend-mode: multiply;
 }
-.ai-thinking-pulse-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent, #6366f1);
-  box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5);
-  animation: ai-thinking-pulse 1.4s ease-in-out infinite;
+/* 思考完成 → shimmer 停止（明确"思考完毕"反馈） */
+.ai-think-title.paused::after {
+  animation: none;
+  background-position: 100% 0;
 }
-.ai-thinking-done-icon {
-  color: var(--success, #16a34a);
+@keyframes ai-think-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -20% 0;
+  }
 }
-.ai-thinking-title {
-  white-space: nowrap;
-}
-.ai-thinking-time {
+.ai-think-time {
   font-size: 11px;
   font-weight: 500;
   color: var(--text-tertiary, #94a3b8);
-  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-.ai-thinking-spacer {
-  flex: 1;
-  min-width: 8px;
-}
-.ai-thinking-chev {
+.ai-think-chev {
   color: var(--text-tertiary, #94a3b8);
+  margin-left: auto;
   flex-shrink: 0;
 }
 
-/* ============ 内容区 ============ */
-.ai-thinking-body {
-  position: relative;
-  padding: 4px 14px 14px 16px;
-  border-top: 1px solid var(--border-subtle, rgba(15, 23, 42, 0.06));
-  max-height: 320px;
-  overflow-y: auto;
+/* 思考内容：markdown 样式（左竖线 + 浅底 + 等宽）
+   不要 max-height 截断：思考可能上千字，外层消息容器自带滚动；截断会让用户看不到结尾 */
+.ai-think-body {
+  transition: opacity 0.25s ease;
+  max-height: none;
+  opacity: 1;
+  padding-top: 8px;
+  padding-left: 4px;
 }
-/* 左侧 accent 竖条，强调“思考过程”的层次感 */
-.ai-thinking-body::before {
-  content: '';
-  position: absolute;
-  left: 7px;
-  top: 4px;
-  bottom: 14px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, rgba(99, 102, 241, 0.35), rgba(99, 102, 241, 0.08));
+.ai-think-body.collapsed {
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  padding-top: 0;
+  padding-left: 0;
+  transition: max-height 0.3s ease-in-out, opacity 0.25s ease, padding 0.2s ease;
+  padding-top: 0;
 }
-.ai-thinking-pre {
-  margin: 0;
-  padding: 8px 0 0 10px;
+.ai-think-md {
   font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--text-secondary, #475569);
+  color: var(--text-secondary, #52525b);
+  line-height: 1.7;
+  border-left: 2px solid var(--border-neutral-l1, rgba(115,115,115,0.25));
+  padding: 4px 0 4px 12px;
+  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  background: transparent;
 }
-
-@keyframes ai-thinking-shimmer-text {
-  0% { background-position: 180% 0; }
-  100% { background-position: -180% 0; }
+/* 思考中打字机光标 */
+.ai-think-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: var(--text-secondary, #52525b);
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  animation: ai-think-blink 1s step-end infinite;
 }
-@keyframes ai-think-spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+@keyframes ai-think-blink {
+  50% {
+    opacity: 0;
+  }
 }
-@keyframes ai-thinking-pulse {
-  0%, 100% { opacity: 0.5; box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
-  50% { opacity: 1; box-shadow: 0 0 0 5px rgba(99, 102, 241, 0); }
+@media (prefers-reduced-motion: reduce) {
+  .ai-think-title::after,
+  .ai-think-caret {
+    animation: none;
+  }
 }
 </style>

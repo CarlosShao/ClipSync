@@ -41,10 +41,32 @@ services:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
       - '--web.external-url=http://localhost:9093'
+    depends_on:
+      - feishu-webhook
     networks:
       - clipsync-monitoring-net
     labels:
       - "com.clipsync.service=alertmanager"
+      - "com.clipsync.env=monitoring"
+
+  # 飞书告警转发服务：把 Alertmanager 的 webhook 报文转换为飞书机器人格式
+  # 需在飞书群 -> 设置 -> 群机器人 -> 添加自定义机器人，获取 Webhook URL。
+  # 若机器人开启了"签名校验"，把密钥填到 FEISHU_SECRET。
+  feishu-webhook:
+    image: lxt507/alertmanager-webhook-feishu:latest
+    container_name: clipsync-feishu-webhook
+    restart: unless-stopped
+    ports:
+      - "8060:8060"
+    environment:
+      # 替换为你的飞书自定义机器人 Webhook（含 https://open.feishu.cn/open-apis/bot/v2/hook/ 前缀）
+      FEISHU_WEBHOOK_URL: "<FEISHU_WEBHOOK_URL>"
+      # 机器人开启签名校验时填写密钥；未开启则留空
+      FEISHU_SECRET: ""
+    networks:
+      - clipsync-monitoring-net
+    labels:
+      - "com.clipsync.service=feishu-webhook"
       - "com.clipsync.env=monitoring"
 
   # Blackbox Exporter（HTTP/SSL/TCP 探测）

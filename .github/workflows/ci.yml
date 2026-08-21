@@ -19,11 +19,19 @@ concurrency:
 
 env:
   NODE_VERSION: '22'
+  # 飞书自定义机器人 Webhook（在飞书群里添加自定义机器人获取，取 sign 前的完整 URL）
+  # 在 GitHub 仓库 Settings → Secrets 添加 FEISHU_WEBHOOK_URL
+  FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
 
 # ============ 通知策略 ============
 # 默认 GitHub 会给所有失败 workflow 发邮件。
 # 我们想：lint 和 build 失败发邮件；tests 失败不发（避免"没修代码"也被骚扰）。
-# 用下面的 jobs.<id>.steps 显式控制：
+# 用下面的 jobs.<id>.steps 显式控制。
+# 另加：构建/部署结果同步推送到飞书群（自定义机器人 Webhook）。
+
+# ============ 飞书通知辅助 ============
+# 复用：`${{ fromJSON(env.FEISHU_NOTIFY).run }}` 语法在 GitHub Actions 中不可用，
+# 这里用 shell 函数 + 环境变量实现，避免跨步骤共享复杂 JSON。
 
 jobs:
   # ============ 1. Lint（必须通过）============
@@ -46,6 +54,18 @@ jobs:
       - name: Lint
         working-directory: src/server
         run: npx eslint src/ --ext .js --max-warnings=0 || true
+
+      - name: 通知飞书 Lint 结果
+        if: env.FEISHU_WEBHOOK_URL != '' && always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          curl -s -X POST "$FEISHU_WEBHOOK_URL" -H 'Content-Type: application/json' -d '{
+            "msg_type": "text",
+            "content": {
+              "text": "🔍 [ClipSync CI] Lint ${{ env.JOB_STATUS }}\n仓库: ${{ github.repository }}\n提交: ${{ github.sha }}\n分支: ${{ github.ref_name }}\n运行: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+          }' || true
 
   # ============ 2. Tests（失败不阻塞、仅警告）============
   test:
@@ -134,6 +154,18 @@ jobs:
         working-directory: src/server
         run: npm test -- --reporter=verbose
         continue-on-error: true
+
+      - name: 通知飞书 Tests 结果
+        if: env.FEISHU_WEBHOOK_URL != '' && always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          curl -s -X POST "$FEISHU_WEBHOOK_URL" -H 'Content-Type: application/json' -d '{
+            "msg_type": "text",
+            "content": {
+              "text": "🧪 [ClipSync CI] Tests ${{ env.JOB_STATUS }}\n仓库: ${{ github.repository }}\n提交: ${{ github.sha }}\n分支: ${{ github.ref_name }}\n运行: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+          }' || true
 
   # Docker Build 已删除：你用单台服务器本地 docker compose 部署，GH 打镜像无用
   # 如未来需要恢复，把下面的注释解开，并改 deploy 的 needs 加 build
@@ -268,3 +300,15 @@ jobs:
             docker compose logs --tail=20 backend || true
             echo "🎉 部署完成: $(date)"
           REMOTE_EOF
+
+      - name: 通知飞书 部署结果
+        if: env.FEISHU_WEBHOOK_URL != '' && always()
+        env:
+          DEPLOY_STATUS: ${{ job.status }}
+        run: |
+          curl -s -X POST "$FEISHU_WEBHOOK_URL" -H 'Content-Type: application/json' -d '{
+            "msg_type": "text",
+            "content": {
+              "text": "🚀 [ClipSync CI] 部署 ${{ env.DEPLOY_STATUS }}\n仓库: ${{ github.repository }}\n提交: ${{ github.sha }}\n目标: ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}\n运行: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+          }' || true

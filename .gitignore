@@ -82,6 +82,20 @@ data/
 # omo (local AI tool run state, not project code)
 .omo/
 
+# Agent runtime / workspace identity files (not project code)
+.openclaw/
+.scratch/
+AGENTS.md
+SOUL.md
+USER.md
+TOOLS.md
+HEARTBEAT.md
+IDENTITY.md
+
+# Local exploration / prototype artifacts (not project source)
+documents/
+ui-prototype/
+
 NUL
 
 # Upload chunks

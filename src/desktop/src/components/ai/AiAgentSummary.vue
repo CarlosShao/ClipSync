@@ -128,7 +128,7 @@ const failCount = computed(() => props.runs.filter((r) => r.status === 'failed')
   background: var(--bg-hover, rgba(15, 23, 42, 0.03));
 }
 .ai-agent-summary-icon {
-  color: var(--accent, #6366f1);
+  color: var(--accent, #475569);
   flex-shrink: 0;
 }
 .ai-agent-summary-title {
@@ -145,7 +145,7 @@ const failCount = computed(() => props.runs.filter((r) => r.status === 'failed')
   border-radius: 999px;
   white-space: nowrap;
 }
-.cnt-run { color: var(--accent, #6366f1); background: var(--accent-bg, rgba(99, 102, 241, 0.12)); }
+.cnt-run { color: var(--accent, #475569); background: var(--accent-bg, rgba(115, 115, 115, 0.12)); }
 .cnt-done { color: var(--success, #16a34a); background: rgba(22, 163, 74, 0.1); }
 .cnt-fail { color: var(--danger, #ef4444); background: rgba(239, 68, 68, 0.1); }
 .ai-agent-summary-spacer { flex: 1; min-width: 4px; }
@@ -164,8 +164,8 @@ const failCount = computed(() => props.runs.filter((r) => r.status === 'failed')
   flex-shrink: 0;
 }
 .ai-agent-summary-open:hover {
-  background: var(--accent-bg, rgba(99, 102, 241, 0.12));
-  color: var(--accent, #6366f1);
+  background: var(--accent-bg, rgba(115, 115, 115, 0.12));
+  color: var(--accent, #475569);
 }
 
 /* 并行卡片网格：子代理像参考图中的区块一样平铺 */
@@ -191,7 +191,7 @@ const failCount = computed(() => props.runs.filter((r) => r.status === 'failed')
 .ai-agent-card.status-working,
 .ai-agent-card.status-planning,
 .ai-agent-card.status-synthesis {
-  border-left: 3px solid var(--accent, #6366f1);
+  border-left: 3px solid var(--accent, #475569);
 }
 .ai-agent-card.status-done {
   border-left: 3px solid var(--success, #16a34a);
@@ -216,7 +216,7 @@ const failCount = computed(() => props.runs.filter((r) => r.status === 'failed')
   flex-shrink: 0;
 }
 .ai-agent-card-spin {
-  color: var(--accent, #6366f1);
+  color: var(--accent, #475569);
   animation: spin 1s linear infinite;
 }
 .ai-agent-card-ok { color: var(--success, #16a34a); }
@@ -240,7 +240,7 @@ const failCount = computed(() => props.runs.filter((r) => r.status === 'failed')
   background: var(--bg-hover, rgba(15, 23, 42, 0.05));
   white-space: nowrap;
 }
-.stage-working, .stage-planning, .stage-synthesis { color: var(--accent, #6366f1); background: var(--accent-bg, rgba(99, 102, 241, 0.12)); }
+.stage-working, .stage-planning, .stage-synthesis { color: var(--accent, #475569); background: var(--accent-bg, rgba(115, 115, 115, 0.12)); }
 .stage-done { color: var(--success, #16a34a); background: rgba(22, 163, 74, 0.1); }
 .stage-failed { color: var(--danger, #ef4444); background: rgba(239, 68, 68, 0.1); }
 .ai-agent-card-chev {
@@ -290,8 +290,8 @@ const failCount = computed(() => props.runs.filter((r) => r.status === 'failed')
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 6px;
-  color: var(--accent, #6366f1);
-  background: var(--accent-bg, rgba(99, 102, 241, 0.1));
+  color: var(--accent, #475569);
+  background: var(--accent-bg, rgba(115, 115, 115, 0.1));
   white-space: nowrap;
 }
 @keyframes spin {
