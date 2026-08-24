@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { Marked } from 'marked'
 import { sanitizeHtml } from '@/utils/html'
 import type { AgentRun } from '@/api/ai'
-import AiThinking from './AiThinking.vue'
+import AiThinkingCollapse from './AiThinkingCollapse.vue'
 import AiToolTimeline from './AiToolTimeline.vue'
-import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { Loader2, CheckCircle2, XCircle } from 'lucide-vue-next'
 
 const props = defineProps<{ run: AgentRun; isStreaming: boolean }>()
 const { t } = useI18n()
@@ -17,10 +17,6 @@ const expandedThinking = ref(false)
 // 该卡片自身是否处于“进行中”（仅此卡片还活着且状态为 planning/working/synthesis 时）
 const runActive = computed(() => props.run.status === 'planning' || props.run.status === 'working' || props.run.status === 'synthesis')
 const isStreamingNow = computed(() => props.isStreaming && runActive.value)
-
-watch(isStreamingNow, (now, before) => {
-  if (before && !now) expandedThinking.value = true
-})
 
 const statusText = computed(() => {
   switch (props.run.status) {
@@ -42,9 +38,9 @@ const statusText = computed(() => {
 // 卡片标题：按 kind 翻译成用户友好的中文，避免“协调器”这类看不懂的名字。
 // coordinator → 任务规划；synthesis → 整合答案；worker 尽量保留后端给的角色名。
 const displayName = computed(() => {
-  if (props.run.kind === 'coordinator') return t('ai_agent_coordinator_label') || '任务规划'
-  if (props.run.kind === 'synthesis') return t('ai_agent_synthesis_label') || '整合答案'
-  return props.run.name || (t('ai_agent_worker_label') || '子代理')
+  if (props.run.kind === 'coordinator') return t('ai_agent_coordinator_label', '任务规划')
+  if (props.run.kind === 'synthesis') return t('ai_agent_synthesis_label', '整合答案')
+  return props.run.name || t('ai_agent_worker_label', '子代理')
 })
 
 function compactBlankLines(content: string): string {
@@ -78,7 +74,7 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
       <span v-if="run.error" class="ai-agent-run-err-text" :title="run.error">{{ run.error }}</span>
     </div>
 
-    <AiThinking
+    <AiThinkingCollapse
       v-if="hasThinking"
       :thinking="run.thinking || ''"
       :thinking-started-at="run.thinkingStartedAt"
@@ -110,7 +106,7 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
   overflow: hidden;
 }
 .ai-agent-run.status-failed {
-  border-color: var(--danger, #ef4444);
+  border-color: var(--danger);
 }
 .ai-agent-run-head {
   display: flex;
@@ -126,10 +122,10 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
   animation: spin 1s linear infinite;
 }
 .ai-agent-run-ok {
-  color: var(--success, #16a34a);
+  color: var(--success);
 }
 .ai-agent-run-err {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
 }
 .ai-agent-run-name {
   flex: 1;
@@ -143,7 +139,7 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
   font-weight: 400;
 }
 .ai-agent-run-err-text {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
   font-weight: 400;
   font-size: 11px;
   overflow: hidden;

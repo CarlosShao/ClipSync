@@ -29,7 +29,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKey, true))
           <span class="ai-agent-drawer-title">{{ t('ai_subagent_drawer_title') }}</span>
           <button
             class="ai-agent-drawer-close"
-            :aria-label="t('ai_subagent_close') || '关闭'"
+            :aria-label="t('ai_subagent_close', '关闭')"
             @click="emit('close')"
           >
             <X :size="16" />
@@ -47,10 +47,11 @@ onUnmounted(() => document.removeEventListener('keydown', onKey, true))
 .ai-agent-drawer-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-drawer);
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 半透明遮罩：rgba(0,0,0,.45) 为刻意的遮蔽强度，跨主题保持一致（非 token 化对象） */
   background: rgba(0, 0, 0, 0.45);
   padding: 24px;
   animation: ai-drawer-fade 0.15s ease-out;
@@ -61,10 +62,10 @@ onUnmounted(() => document.removeEventListener('keydown', onKey, true))
   width: 100%;
   max-width: 460px;
   max-height: 80vh;
-  background: var(--bg-surface, #fff);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg, 12px);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 .ai-agent-drawer-head {
@@ -104,5 +105,11 @@ onUnmounted(() => document.removeEventListener('keydown', onKey, true))
 @keyframes ai-drawer-fade {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* 键盘可达性：focus-visible 高亮（--accent token） */
+.ai-agent-drawer-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 </style>

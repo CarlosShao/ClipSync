@@ -5,6 +5,8 @@ interface ResizableOptions {
   min: number
   max: number
   default: number
+  /** 反转拖拽方向：右侧固定面板（拖左缘、左移变宽）用默认方向；左侧固定面板（拖右缘、右移变宽）传 true */
+  invert?: boolean
 }
 
 /**
@@ -21,7 +23,7 @@ export function useResizablePanel(opts: ResizableOptions) {
 
   function onMove(e: MouseEvent) {
     if (!dragging) return
-    const delta = startX - e.clientX // 左移 clientX 减小 → delta 正 → 变宽
+    const delta = opts.invert ? e.clientX - startX : startX - e.clientX // 左移 clientX 减小 → delta 正 → 变宽（invert 时相反）
     let w = startW + delta
     w = Math.max(opts.min, Math.min(opts.max, w))
     width.value = w

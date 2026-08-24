@@ -1,20 +1,40 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import {
-  getMemories,
-  createMemory,
-  updateMemory,
-  deleteMemory,
-  type AiMemory,
-} from '@/api/ai'
+import { getMemories, createMemory, updateMemory, deleteMemory, type AiMemory } from '@/api/ai'
 import Button from '@/components/ui/button/Button.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
-import { X, Plus, Trash2, Pencil } from 'lucide-vue-next'
+import { X, Plus, Trash2, Pencil, ChevronRight } from 'lucide-vue-next'
 
-const props = defineProps<{ open: boolean; memoryEnabled: boolean }>()
-const emit = defineEmits<{ close: []; 'update:memoryEnabled': [boolean] }>()
+/**
+ * AiMemoryPanel — 长程记忆面板（UI-E 两态复用）。
+ *
+ * variant='peek'  ：Inspector 内速览态——紧凑列表（最近 N 条 + 开关状态摘要），
+ *                   无增删改操作；点击条目或「管理记忆」上抛 open-manage 由宿主
+ *                   （AiChatPanel）打开完整管理弹层。
+ * variant='manage'：独立管理弹层态——完整增删改 + 长程记忆开关（原有能力不变）。
+ *
+ * 同一组件、同一数据源（getMemories），仅按 variant 切换渲染密度与操作集。
+ */
+const props = withDefaults(
+  defineProps<{
+    open?: boolean
+    memoryEnabled?: boolean
+    variant?: 'manage' | 'peek'
+    /** peek 态最多展示的记忆条数 */
+    peekLimit?: number
+  }>(),
+  {
+    open: true,
+    memoryEnabled: false,
+    variant: 'manage',
+    peekLimit: 5,
+  },
+)
+const emit = defineEmits<{ close: []; 'update:memoryEnabled': [boolean]; 'open-manage': [] }>()
 const { t } = useI18n()
+
+const isPeek = computed(() => props.variant === 'peek')
 
 const items = ref<AiMemory[]>([])
 const loading = ref(false)
@@ -37,6 +57,11 @@ const categoryOptions: { value: AiMemory['category']; label: string }[] = [
 function catLabel(c: string): string {
   return categoryOptions.find((o) => o.value === c)?.label || c
 }
+
+// peek 态：仅展示最近 N 条（updatedAt 倒序）
+const peekItems = computed(() =>
+  [...items.value].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, props.peekLimit),
+)
 
 async function load() {
   loading.value = true
@@ -113,7 +138,36 @@ function onToggleMemory(v: boolean) {
 </script>
 
 <template>
-  <div class="ai-memory">
+  <!-- ===== 速览态（Inspector 内）：紧凑列表，无增删改 ===== -->
+  <div v-if="isPeek" class="ai-memory-peek">
+    <div class="ai-memory-peek-status" @click="emit('open-manage')">
+      <span class="ai-memory-peek-dot" :class="memoryEnabled ? 'on' : 'off'" />
+      <span class="ai-memory-peek-text">
+        {{ memoryEnabled ? t('ai_memory_on', '长程记忆已开启') : t('ai_memory_off', '长程记忆已关闭') }}
+        <template v-if="items.length"> · {{ items.length }}</template>
+      </span>
+      <ChevronRight :size="13" class="ai-memory-peek-arrow" />
+    </div>
+
+    <div v-if="loading" class="ai-memory-peek-hint">{{ t('loading', '加载中…') }}</div>
+    <div v-else-if="error" class="ai-memory-peek-hint ai-memory-peek-hint--err">{{ error }}</div>
+    <div v-else-if="peekItems.length === 0" class="ai-memory-peek-hint">
+      {{ t('ai_memory_empty', '暂无记忆') }}
+    </div>
+    <ul v-else class="ai-memory-peek-list">
+      <li v-for="m in peekItems" :key="m.id" class="ai-memory-peek-item" @click="emit('open-manage')">
+        <span class="ai-memory-cat">{{ catLabel(m.category) }}</span>
+        <span class="ai-memory-peek-title">{{ m.title }}</span>
+      </li>
+    </ul>
+
+    <button class="ai-memory-peek-manage" @click="emit('open-manage')">
+      {{ t('ai_memory_manage', '管理记忆') }}
+    </button>
+  </div>
+
+  <!-- ===== 管理弹层态：完整增删改（原有能力） ===== -->
+  <div v-else class="ai-memory">
     <!-- 头部 -->
     <div class="ai-memory-header">
       <div class="ai-memory-title">
@@ -137,9 +191,14 @@ function onToggleMemory(v: boolean) {
 
     <!-- 列表 -->
     <div class="ai-memory-list">
-      <div v-if="loading" class="ai-memory-loading">{{ t('loading') || '加载中…' }}</div>
+      <div v-if="loading" class="ai-memory-loading">{{ t('loading', '加载中…') }}</div>
       <div v-else-if="items.length === 0" class="ai-memory-empty">{{ t('ai_memory_empty') }}</div>
-      <div v-for="m in items" :key="m.id" class="ai-memory-item" :class="{ 'ai-memory-item--edit': editingId === m.id }">
+      <div
+        v-for="m in items"
+        :key="m.id"
+        class="ai-memory-item"
+        :class="{ 'ai-memory-item--edit': editingId === m.id }"
+      >
         <div class="ai-memory-item-head">
           <span class="ai-memory-cat">{{ catLabel(m.category) }}</span>
           <div class="ai-memory-item-actions">
@@ -177,6 +236,104 @@ function onToggleMemory(v: boolean) {
 </template>
 
 <style scoped>
+/* ===== 速览态（Inspector 内紧凑形态） ===== */
+.ai-memory-peek {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ai-memory-peek-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.ai-memory-peek-status:hover {
+  opacity: 0.8;
+}
+.ai-memory-peek-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+.ai-memory-peek-dot.on {
+  background: var(--success);
+}
+.ai-memory-peek-dot.off {
+  background: var(--text-tertiary);
+}
+.ai-memory-peek-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ai-memory-peek-arrow {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.ai-memory-peek-hint {
+  padding: 8px 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.ai-memory-peek-hint--err {
+  color: var(--danger);
+}
+.ai-memory-peek-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ai-memory-peek-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.ai-memory-peek-item:hover {
+  background: var(--bg-hover);
+}
+.ai-memory-peek-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ai-memory-peek-manage {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--accent);
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.ai-memory-peek-manage:hover {
+  opacity: 0.8;
+}
+
+/* ===== 管理弹层态（原有样式） ===== */
 .ai-memory {
   flex: 1;
   min-width: 0;
@@ -220,8 +377,7 @@ function onToggleMemory(v: boolean) {
 .ai-memory-error {
   padding: 8px 12px;
   font-size: 12px;
-  color: var(--danger, #ef4444);
-  background: var(--danger-bg, #fef2f2);
+  color: var(--danger);
 }
 .ai-memory-list {
   flex: 1;
@@ -259,6 +415,7 @@ function onToggleMemory(v: boolean) {
   border-radius: 4px;
   background: var(--accent-bg);
   color: var(--accent);
+  flex-shrink: 0;
 }
 .ai-memory-item-actions {
   display: flex;

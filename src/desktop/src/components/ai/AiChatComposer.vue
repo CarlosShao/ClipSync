@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, type Component } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import AiUsageMeter from './AiUsageMeter.vue'
 import type { AiProvider } from '@/api/ai'
 import { streamRefactorPrompt } from '@/api/ai'
 import {
@@ -11,7 +12,6 @@ import {
   Square,
   Brain,
   ChevronDown,
-  Settings2,
   ListChecks,
   Languages,
   AlignLeft,
@@ -21,6 +21,18 @@ import {
 import type { ContextUsage, ChatImage } from '@/api/ai'
 import { sha256DataUrl } from '@/utils/hash'
 
+/**
+ * AiChatComposer — 聊天输入区（UI-C，由旧 AiChatInput 重构而来；UI-F 起为唯一输入组件）
+ *
+ * 保留全部既有能力：Enter 发送 / Shift+Enter 换行、粘贴图片预览、快捷指令、
+ * 思考强度 / 模式 / 模型 Popover、上下文用量环（触发点 + 详情面板；面板后续包迁
+ * Inspector）。
+ *
+ * 提示词优化增强（UI-C）：
+ *   - 流式覆盖前备份原文；失败 / 取消 / 空结果自动回滚；
+ *   - 空输入不发请求；
+ *   - 组件卸载时 abort 进行中的请求。
+ */
 const props = defineProps<{
   disabled: boolean
   isStreaming: boolean
@@ -63,7 +75,7 @@ const QUICK_ACTIONS = [
 ] as const
 type QuickActionKey = (typeof QUICK_ACTIONS)[number]['key']
 // 动态解析 lucide 图标组件
-const QUICK_ICONS: Record<QuickActionKey, any> = {
+const QUICK_ICONS: Record<QuickActionKey, Component> = {
   summarize: ListChecks,
   translate: Languages,
   format: AlignLeft,
@@ -88,6 +100,7 @@ function runQuickAction(action: (typeof QUICK_ACTIONS)[number]) {
 
 // 提示词优化：行为对齐 WorkBuddy —— 点 Sparkles 图标，AI 润色当前输入内容，结果覆盖回输入框。
 // 不进入对话历史、不发起对话、不污染 messages；当前 AI 回复中时可中止。
+// UI-C 增强：流式覆盖前备份原文，失败/取消/空结果回滚；空输入不发请求；卸载 abort。
 const optimizeCanUse = computed(
   () => !props.disabled && !props.isStreaming && props.providers.length > 0 && !!props.selectedProviderId,
 )
@@ -96,9 +109,14 @@ const optimizeState = ref<'idle' | 'loading' | 'error'>('idle')
 const optimizeErrorText = ref<string>('')
 // 用户取消（AbortController）
 const optimizeAbort = ref<AbortController | null>(null)
+// 流式覆盖前的原文备份（失败/取消回滚用；null 表示当前没有进行中的优化）
+const optimizeBackup = ref<string | null>(null)
 async function runOptimizePrompt() {
   if (!optimizeCanUse.value || optimizeState.value === 'loading') return
   const original = text.value
+  // 空输入不发请求
+  if (!original.trim()) return
+  optimizeBackup.value = original
   const providerId = props.selectedProviderId
   const ctrl = new AbortController()
   optimizeAbort.value = ctrl
@@ -106,6 +124,7 @@ async function runOptimizePrompt() {
   optimizeErrorText.value = ''
   try {
     let accumulated = ''
+    let errored = false
     await streamRefactorPrompt({
       providerId,
       content: original,
@@ -116,14 +135,22 @@ async function runOptimizePrompt() {
         text.value = accumulated
       },
       onError: (msg, detail) => {
+        errored = true
         optimizeState.value = 'error'
         optimizeErrorText.value = detail ? `${msg}（${detail}）` : msg
+        // 失败回滚：流式可能已覆盖部分原文
+        text.value = optimizeBackup.value ?? original
       },
       onDone: () => {
         optimizeState.value = 'idle'
       },
     })
-    optimizeState.value = 'idle'
+    // onError 后 promise 正常 resolve：保留 error 态供用户查看，不覆盖回 idle
+    if (!errored) optimizeState.value = 'idle'
+    // 空结果视为失败：回滚原文，避免输入框被清空
+    if (!accumulated.trim()) {
+      text.value = optimizeBackup.value ?? original
+    }
   } catch (e: any) {
     if (e?.name !== 'AbortError') {
       optimizeState.value = 'error'
@@ -131,14 +158,23 @@ async function runOptimizePrompt() {
     } else {
       optimizeState.value = 'idle'
     }
+    // 失败/取消统一回滚原文
+    text.value = optimizeBackup.value ?? original
   } finally {
+    optimizeBackup.value = null
     optimizeAbort.value = null
   }
 }
 function cancelOptimizePrompt() {
   optimizeAbort.value?.abort()
   optimizeState.value = 'idle'
+  // 取消立即回滚（catch 分支的 AbortError 兜底会再执行一次，幂等）
+  if (optimizeBackup.value !== null) text.value = optimizeBackup.value
 }
+// 组件卸载时中止进行中的优化请求，避免卸载后继续写 text.value
+onBeforeUnmount(() => {
+  optimizeAbort.value?.abort()
+})
 // 粘贴进输入框的截图（仅图片，不处理任意文件上传）
 const pastedImages = ref<ChatImage[]>([])
 
@@ -191,23 +227,22 @@ const selectedProviderModels = computed<string[]>(() => {
 
 const inputPlaceholder = computed(() => {
   if (props.providers.length === 0 || !props.selectedProviderId) {
-    return t('ai_input_disabled') || '请先添加供应商'
+    return t('ai_input_disabled', '请先添加供应商')
   }
   if (props.isStreaming) {
-    return t('ai_input_streaming') || 'AI 回答中...'
+    return t('ai_input_streaming', 'AI 回答中...')
   }
-  return t('ai_input_ph') || '输入消息，Enter 发送，Shift+Enter 换行'
+  return t('ai_input_ph', '输入消息，Enter 发送，Shift+Enter 换行')
 })
 
 const modeLabel = computed(() => {
   return props.mode === 'ask' ? t('ai_mode_ask') : t('ai_mode_agent')
 })
 
-// 发送按钮旁圆环：单环设计 = 上下文 token 用量百分比。
-// viewBox=40×40，外环半径 14（留出足够环带和文字空间）。
-const RING_R = 14
+// 发送按钮旁圆环：小型 token 用量指示器（仅颜色状态，不显示百分比数字）
+const RING_R = 8
 const RING_C = 2 * Math.PI * RING_R
-const RING_SIZE = 40
+const RING_SIZE = 24
 const RING_CENTER = RING_SIZE / 2
 
 const usagePercent = computed(() => props.contextUsage?.percent ?? 0)
@@ -218,7 +253,6 @@ const ringColorClass = computed(() => {
   if (p >= 70) return 'level-warn'
   return 'level-ok'
 })
-const ringLabel = computed(() => (props.contextUsage ? `${usagePercent.value}` : '–'))
 
 // 缓存命中率 = 命中缓存的 prompt token / 总 prompt token
 const cacheHitPercent = computed(() => {
@@ -231,63 +265,25 @@ const cacheHitPercent = computed(() => {
 // providerSupportsCache 提供），而不是仅看 usage 是否有 cache 字段——否则
 // 像 mimo / MiniMax / Hunyuan / LongCat 这种协议层不返回 cache 字段的供应商，
 // 永远会显示「未启用」误导用户"自己没启用什么"。
-// 判定：
-//   - providerSupportsCache === false  → 协议层不支持 → 显示「未启用」(短提示符)
-//   - providerSupportsCache === true   + 尚未产生 cache token → 显示 0%
-//   - providerSupportsCache === true   + 有 cacheReadTokens/cacheWriteTokens → 显示真实命中率
 const cacheAvailable = computed(() => {
   if (props.providerSupportsCache === false) return false
   // 协议层支持 → 视为已启用（即使 0 也属正常"未命中"）
   return true
 })
-// 兼容旧名（保留外层 `cacheSupported` 引用）：当协议层支持即视为"启用"，与 cache 字段是否非 0 无关。
-const cacheSupported = cacheAvailable
-// 缓存面板右上的"缓存命中率"显示文案：
-//   - 协议层不支持（providerSupportsCache === false）→ 显示"未启用"并配 explanation 提示当前供应商不返回 cache 字段
-//   - 协议层支持（默认情况）→ 0% 或实际命中率
-const cacheHitRateDisplay = computed(() => {
-  if (!cacheAvailable.value) return t('ai_cache_not_enabled') || '未启用'
-  return `${cacheHitPercent.value}%`
-})
-// 缓存面板 hover 提示：解释"未启用"的真实原因
-const cacheStatusTip = computed(() => {
-  if (!cacheAvailable.value) {
-    return t('ai_cache_not_supported') || '当前供应商（如 MiMo、DeepSeek、MiniMax 等）的 API 协议不支持 prompt 缓存功能，因此无法统计缓存命中率。这是供应商协议限制，非配置问题。'
-  }
-  if (cacheHitPercent.value > 0) {
-    return t('ai_cache_hit', {
-      percent: cacheHitPercent.value,
-      cached: props.contextUsage?.cacheReadTokens || 0,
-      prompt: props.contextUsage?.promptTokens || 0,
-    })
-  }
-  return t('ai_cache_zero_yet') || '当前供应商支持 prompt 缓存，但本次请求尚未命中（0%）'
-})
 
 const usageTip = computed(() => {
-  if (!props.contextUsage) return t('ai_context_usage_none') || '上下文用量：暂无数据'
+  if (!props.contextUsage) return t('ai_context_usage_none', '上下文用量：暂无数据')
   const usageText = `${t('ai_context_usage', { percent: usagePercent.value, used: props.contextUsage.totalTokens, total: props.contextUsage.contextWindow })}`
-  if (cacheSupported.value) {
+  if (cacheAvailable.value) {
     return `${usageText}\n缓存命中率：${cacheHitPercent.value}%`
   }
   return `${usageText}\n缓存：当前供应商协议不支持 prompt 缓存`
 })
 
-// 预估费用（基于 OpenAI 官方定价 $2.5/M input, $10/M output 作基准估算）
-const estimatedCost = computed(() => {
-  const c = props.contextUsage
-  if (!c) return null
-  const inputCost = (c.promptTokens / 1_000_000) * 2.5
-  const outputCost = (c.completionTokens / 1_000_000) * 10
-  const total = inputCost + outputCost
-  if (total < 0.01) return '<$0.01'
-  return '$' + total.toFixed(3)
-})
-
 function submit() {
   const value = text.value.trim()
-  // 文本或截图任一非空即可发送（允许只发截图）
-  if ((!value && pastedImages.value.length === 0) || props.disabled) return
+  // 增加 isStreaming 检查：防止流式进行中重复发送
+  if (props.isStreaming || (!value && pastedImages.value.length === 0) || props.disabled) return
   emit('send', value, pastedImages.value.length ? [...pastedImages.value] : undefined)
   text.value = ''
   pastedImages.value = []
@@ -365,26 +361,10 @@ function toggleThinking() {
 }
 
 // 把 token 数格式化为人类可读：192000 -> "192.0K"，57256 -> "57.3K"，2_500_000 -> "2.5M"
-function formatTokens(n: number): string {
-  if (!n) return '0'
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
-  return String(n)
-}
+// （明细/费用展示已迁移 AiUsageMeter，此处保留触发环 tooltip 所需的最小计算）
 
 // 上下文用量浮层开关
 const usagePanelOpen = ref(false)
-const usageTotalTokens = computed(() => props.contextUsage?.totalTokens ?? 0)
-const usageContextWindow = computed(() => props.contextUsage?.contextWindow ?? 0)
-const usagePromptTokens = computed(() => props.contextUsage?.promptTokens ?? 0)
-const usageCompletionTokens = computed(() => props.contextUsage?.completionTokens ?? 0)
-const usageCacheReadTokens = computed(() => props.contextUsage?.cacheReadTokens ?? 0)
-const usageCacheWriteTokens = computed(() => props.contextUsage?.cacheWriteTokens ?? 0)
-const usageThinkingTokens = computed(() => props.contextUsage?.thinkingTokens ?? 0)
-const usageReplyTokens = computed(() => props.contextUsage?.replyTokens ?? 0)
-const usageCacheMissTokens = computed(() =>
-  Math.max(0, usagePromptTokens.value - usageCacheReadTokens.value - usageCacheWriteTokens.value),
-)
 // 历史消息「重新编辑」：把内容填回输入框并聚焦、光标移到末尾。
 function setDraft(content: string) {
   text.value = content
@@ -434,7 +414,7 @@ defineExpose({ setDraft })
     <div v-if="pastedImages.length" class="ai-paste-previews">
       <div v-for="(img, idx) in pastedImages" :key="idx" class="ai-paste-thumb">
         <img :src="img.data" :alt="img.mime" />
-        <button class="ai-paste-remove" :title="t('ai_remove_image') || '移除'" @click="removePastedImage(idx)">
+        <button class="ai-paste-remove" :title="t('ai_remove_image', '移除')" @click="removePastedImage(idx)">
           ×
         </button>
       </div>
@@ -507,10 +487,7 @@ defineExpose({ setDraft })
           >
             {{ p.name }}
           </button>
-          <button
-            class="ai-popup-divider"
-            @click="openProviderSettings"
-          >
+          <button class="ai-popup-divider" @click="openProviderSettings">
             {{ t('ai_manage') }}
           </button>
         </div>
@@ -520,9 +497,13 @@ defineExpose({ setDraft })
         <!-- 提示词优化：行为对齐 WorkBuddy —— AI 润色当前输入，结果覆盖回输入框（不进入对话历史） -->
         <button
           class="ai-optimize-btn"
-          :class="{ disabled: !optimizeCanUse, loading: optimizeState === 'loading', errored: optimizeState === 'error' }"
-          :title="t('ai_optimize_prompt_tooltip') || '提示词优化：让 AI 润色当前输入内容'"
-          :aria-label="t('ai_optimize_prompt_tooltip') || '提示词优化'"
+          :class="{
+            disabled: !optimizeCanUse,
+            loading: optimizeState === 'loading',
+            errored: optimizeState === 'error',
+          }"
+          :title="t('ai_optimize_prompt_tooltip', '提示词优化：让 AI 润色当前输入内容')"
+          :aria-label="t('ai_optimize_prompt_tooltip', '提示词优化')"
           :disabled="!optimizeCanUse || optimizeState === 'loading'"
           @click="runOptimizePrompt"
         >
@@ -532,8 +513,23 @@ defineExpose({ setDraft })
             v-if="optimizeState === 'loading' || optimizeState === 'error'"
             class="ai-optimize-status"
             :class="optimizeState"
-            :title="optimizeState === 'loading' ? (t('ai_optimize_cancel') || '点击取消') : (optimizeErrorText || (t('ai_optimize_failed') || '优化失败：未知原因'))"
-            @click.stop="optimizeState === 'loading' ? cancelOptimizePrompt() : (optimizeState = 'idle', optimizeErrorText = '')"
+            role="button"
+            tabindex="0"
+            :title="
+              optimizeState === 'loading'
+                ? t('ai_optimize_cancel', '点击取消')
+                : optimizeErrorText || t('ai_optimize_failed', '优化失败：未知原因')
+            "
+            @click.stop="
+              optimizeState === 'loading'
+                ? cancelOptimizePrompt()
+                : ((optimizeState = 'idle'), (optimizeErrorText = ''))
+            "
+            @keydown.enter.stop="
+              optimizeState === 'loading'
+                ? cancelOptimizePrompt()
+                : ((optimizeState = 'idle'), (optimizeErrorText = ''))
+            "
           >
             <span v-if="optimizeState === 'loading'" class="ai-optimize-spinner" aria-hidden="true"></span>
             <span v-else class="ai-optimize-errdot" aria-hidden="true">!</span>
@@ -546,9 +542,15 @@ defineExpose({ setDraft })
               class="ai-usage-ring-btn"
               :class="ringColorClass"
               :title="usageTip"
-              :aria-label="t('ai_context_usage_title') || '上下文用量'"
+              :aria-label="t('ai_context_usage_title', '上下文用量')"
             >
-              <svg class="ai-usage-ring" :class="ringColorClass" :width="RING_SIZE" :height="RING_SIZE" :viewBox="`0 0 ${RING_SIZE} ${RING_SIZE}`">
+              <svg
+                class="ai-usage-ring"
+                :class="ringColorClass"
+                :width="RING_SIZE"
+                :height="RING_SIZE"
+                :viewBox="`0 0 ${RING_SIZE} ${RING_SIZE}`"
+              >
                 <circle class="ring-track" :cx="RING_CENTER" :cy="RING_CENTER" :r="RING_R" />
                 <circle
                   class="ring-progress"
@@ -559,93 +561,20 @@ defineExpose({ setDraft })
                   :stroke-dashoffset="ringDashOffset"
                 />
                 <!-- 百分比文字：居中显示，清晰可读 -->
-                <text class="ring-label" :x="RING_CENTER" :y="RING_CENTER" dominant-baseline="central">{{ ringLabel }}<tspan class="ring-label-pct" font-size="0.6em">%</tspan></text>
+                <text class="ring-label" :x="RING_CENTER" :y="RING_CENTER" dominant-baseline="central">
+                  {{ ringLabel }}
+                  <tspan class="ring-label-pct" font-size="0.6em">%</tspan>
+                </text>
               </svg>
             </button>
           </PopoverTrigger>
           <PopoverContent class="ai-usage-panel" side="top" align="end" :side-offset="8">
-            <div v-if="!contextUsage" class="ai-usage-panel-empty">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                style="opacity: 0.3; margin-bottom: 4px"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 6v6l4 2" />
-              </svg>
-              {{ t('ai_context_usage_none') || '暂无数据，发起一次对话后将显示上下文用量' }}
-            </div>
-            <div v-else class="ai-usage-panel-body">
-              <!-- 总计 -->
-              <div class="ai-usage-total-row">
-                <span class="ai-usage-panel-title">{{ t('ai_token_usage_total') || '总计' }}</span>
-                <span class="ai-usage-total-val">{{ formatTokens(usageTotalTokens) }}</span>
-              </div>
-
-              <!-- 输入明细 -->
-              <div class="ai-usage-section">
-                <div class="ai-usage-section-title">
-                  <span class="dot input"></span>
-                  <span>{{ t('ai_token_usage_input') || '输入' }}</span>
-                  <span class="ai-usage-section-val">{{ formatTokens(usagePromptTokens) }}</span>
-                </div>
-                <div class="ai-usage-detail-row">
-                  <span class="dot hit"></span>
-                  <span>{{ t('ai_token_usage_cache_hit') || '缓存命中' }}</span>
-                  <span>{{ formatTokens(usageCacheReadTokens) }}</span>
-                </div>
-                <div class="ai-usage-detail-row">
-                  <span class="dot miss"></span>
-                  <span>{{ t('ai_token_usage_cache_miss') || '缓存未命中' }}</span>
-                  <span>{{ formatTokens(usageCacheMissTokens) }}</span>
-                </div>
-                <div class="ai-usage-detail-row">
-                  <span class="dot write"></span>
-                  <span>{{ t('ai_token_usage_cache_write') || '缓存写入' }}</span>
-                  <span>{{ formatTokens(usageCacheWriteTokens) }}</span>
-                </div>
-              </div>
-
-              <!-- 输出明细 -->
-              <div class="ai-usage-section">
-                <div class="ai-usage-section-title">
-                  <span class="dot output"></span>
-                  <span>{{ t('ai_token_usage_output') || '输出' }}</span>
-                  <span class="ai-usage-section-val">{{ formatTokens(usageCompletionTokens) }}</span>
-                </div>
-                <div class="ai-usage-detail-row">
-                  <span class="dot thinking"></span>
-                  <span>{{ t('ai_token_usage_thinking') || '思考过程' }}</span>
-                  <span>{{ formatTokens(usageThinkingTokens) }}</span>
-                </div>
-                <div class="ai-usage-detail-row">
-                  <span class="dot reply"></span>
-                  <span>{{ t('ai_token_usage_reply') || '回复内容' }}</span>
-                  <span>{{ formatTokens(usageReplyTokens) }}</span>
-                </div>
-              </div>
-
-              <!-- 缓存命中率 -->
-              <div class="ai-usage-hitrate" :title="cacheStatusTip">
-                <div class="ai-usage-hitrate-head">
-                  <span class="ai-usage-hitrate-title">{{ t('ai_token_usage_hit_rate') || '缓存命中率' }}</span>
-                  <span class="ai-usage-hitrate-val">{{ cacheHitRateDisplay }}</span>
-                </div>
-                <div class="ai-usage-hitrate-bar">
-                  <div class="ai-usage-hitrate-fill" :style="{ width: cacheHitPercent + '%' }"></div>
-                </div>
-              </div>
-
-              <!-- 预估费用 -->
-              <div v-if="estimatedCost" class="ai-usage-cost-row">
-                <span>{{ t('ai_estimated_cost') || '预估费用' }}</span>
-                <span class="ai-usage-cost-val">{{ estimatedCost }}</span>
-              </div>
-            </div>
+            <!-- UI-E：面板内容替换为 AiUsageMeter 紧凑态（明细/命中率/费用统一出口） -->
+            <AiUsageMeter
+              variant="compact"
+              :context-usage="contextUsage"
+              :provider-supports-cache="providerSupportsCache"
+            />
           </PopoverContent>
         </Popover>
         <Button
@@ -667,19 +596,13 @@ defineExpose({ setDraft })
 
 <style scoped>
 .ai-input-card {
-  border-top: 1px solid var(--border-default);
-  padding: 12px 14px 14px;
-  background: var(--bg-surface);
-  flex-shrink: 0;
-}
-
-.ai-input-card {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   padding: 0;
   overflow: visible;
   transition: border-color 0.15s;
+  flex-shrink: 0;
 }
 
 .ai-input-card:focus-within {
@@ -779,12 +702,6 @@ defineExpose({ setDraft })
   gap: 10px;
 }
 
-.ai-usage-ring-wrap {
-  cursor: help;
-  flex-shrink: 0;
-  line-height: 0;
-}
-
 .ai-usage-ring {
   display: block;
   overflow: visible;
@@ -810,11 +727,11 @@ defineExpose({ setDraft })
 }
 
 .ring-progress.level-warn {
-  stroke: #f59e0b;
+  stroke: var(--warning);
 }
 
 .ring-progress.level-danger {
-  stroke: #ef4444;
+  stroke: var(--danger);
 }
 
 .ring-label {
@@ -876,7 +793,7 @@ defineExpose({ setDraft })
   border: none;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  color: rgb(255 255 255);
   font-size: 12px;
   cursor: pointer;
   padding: 0;
@@ -904,7 +821,7 @@ defineExpose({ setDraft })
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-dropdown);
   overflow: hidden;
-  z-index: 50;
+  z-index: var(--z-index-50);
 }
 
 .ai-popup--right {
@@ -979,6 +896,7 @@ defineExpose({ setDraft })
 }
 /* 提示词优化按钮：紧贴圆环左侧，hover 出现主题色光晕，禁用态灰显 */
 .ai-optimize-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -987,7 +905,7 @@ defineExpose({ setDraft })
   border-radius: 50%;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--ai-fg-muted, #6b7280);
+  color: var(--text-tertiary);
   cursor: pointer;
   transition: all 0.15s ease;
   flex-shrink: 0;
@@ -1009,9 +927,9 @@ defineExpose({ setDraft })
   cursor: progress;
 }
 .ai-optimize-btn.errored {
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.3);
-  background: rgba(239, 68, 68, 0.06);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
 }
 /* 角上状态指示：loading 旋转遮罩 / error 小红点；点击遮罩可中止 / 清除错误 */
 .ai-optimize-status {
@@ -1024,25 +942,25 @@ defineExpose({ setDraft })
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: rgb(255 255 255);
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
-  z-index: 2;
+  z-index: var(--z-index-10);
 }
 .ai-optimize-status.loading {
   background: var(--accent);
-  border: 1px solid var(--bg-surface, #fff);
+  border: 1px solid var(--bg-surface);
 }
 .ai-optimize-status.errored {
-  background: #ef4444;
-  border: 1px solid #fff;
+  background: var(--danger);
+  border: 1px solid var(--bg-surface);
 }
 .ai-optimize-spinner {
   width: 8px;
   height: 8px;
-  border: 1.5px solid #fff;
+  border: 1.5px solid rgb(255 255 255);
   border-top-color: transparent;
   border-radius: 50%;
   animation: ai-optimize-spin 0.8s linear infinite;
@@ -1052,167 +970,40 @@ defineExpose({ setDraft })
   font-weight: 800;
 }
 @keyframes ai-optimize-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
-.ai-optimize-btn {
-  position: relative;
+@media (prefers-reduced-motion: reduce) {
+  .ai-optimize-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+/* 键盘可达性：focus-visible 高亮（--accent token） */
+.ai-quick-btn:focus-visible,
+.ai-tag-btn:focus-visible,
+.ai-popup button:focus-visible,
+.ai-paste-remove:focus-visible,
+.ai-optimize-btn:focus-visible,
+.ai-optimize-status:focus-visible,
+.ai-usage-ring-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 </style>
 
 <style>
-/* 上下文用量浮层（Cursor 风格）：点击圆环触发。
-   注意：PopoverContent 通过 Portal 渲染到 body，必须在全局样式中定义。 */
+/* 上下文用量浮层容器（Cursor 风格）：点击圆环触发。
+   注意：PopoverContent 通过 Portal 渲染到 body，必须在全局样式中定义；
+   面板内部内容（明细/命中率/费用）已迁移至 AiUsageMeter（UI-E）。 */
 .ai-usage-panel {
   width: 280px;
-  padding: 18px 22px 16px !important;
+  padding: 14px 16px 12px !important;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
-  z-index: 60;
-}
-
-.ai-usage-panel-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.ai-usage-panel-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-size: 12px;
-  color: var(--text-tertiary);
-  padding: 12px 0 8px;
-  text-align: center;
-}
-.ai-usage-panel-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.ai-usage-total-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.ai-usage-total-val {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.ai-usage-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.ai-usage-section-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.ai-usage-section-val {
-  margin-left: auto;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.ai-usage-detail-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-secondary);
-  padding-left: 16px;
-}
-.ai-usage-detail-row span:last-child {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-.dot.input {
-  background: #60a5fa;
-}
-.dot.output {
-  background: #a78bfa;
-}
-.dot.hit {
-  background: #34d399;
-}
-.dot.miss {
-  background: #f87171;
-}
-.dot.write {
-  background: #facc15;
-}
-.dot.thinking {
-  background: #fbbf24;
-}
-.dot.reply {
-  background: #a78bfa;
-}
-
-.ai-usage-hitrate {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.ai-usage-hitrate-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.ai-usage-hitrate-title {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-.ai-usage-hitrate-val {
-  font-size: 12px;
-  font-weight: 700;
-  color: #34d399;
-  font-variant-numeric: tabular-nums;
-}
-.ai-usage-hitrate-bar {
-  width: 100%;
-  height: 5px;
-  background: var(--bg-hover);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.ai-usage-hitrate-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #34d399 0%, #facc15 60%, #f87171 100%);
-  border-radius: 999px;
-  transition: width 0.4s ease;
-}
-
-/* 费用行 */
-.ai-usage-cost-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--text-tertiary);
-  padding-top: 4px;
-  border-top: 1px solid var(--border-subtle);
-}
-.ai-usage-cost-val {
-  font-weight: 600;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-index-60);
 }
 </style>

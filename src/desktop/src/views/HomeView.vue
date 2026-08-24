@@ -22,8 +22,8 @@ import QuickPastePanel from '@/components/QuickPastePanel.vue'
 // 设置类页面非首屏，改为异步加载，避免初始化时全部解析进内存
 // SettingsView archived to backups/old-settings-v1/ — replaced by SettingsDialog (settings-dialog/)
 const SettingsDialog = defineAsyncComponent(() => import('@/components/settings/settings-dialog/SettingsDialog.vue'))
-// AI 侧边栏非首屏，异步加载
-const AISidebar = defineAsyncComponent(() => import('@/components/ai/AISidebar.vue'))
+// AI 聊天面板非首屏，异步加载
+const AiChatPanel = defineAsyncComponent(() => import('@/components/ai/AiChatPanel.vue'))
 const AiSummaryFloat = defineAsyncComponent(() => import('@/components/AiSummaryFloat.vue'))
 const ProfileView = defineAsyncComponent(() => import('@/components/settings/ProfileView.vue'))
 const DevicesView = defineAsyncComponent(() => import('@/components/settings/DevicesView.vue'))
@@ -510,7 +510,7 @@ function confirmAction() {
     </main>
 
     <!-- AI 面板（右侧展开/折叠）：view 传入当前页面上下文，AI 回答可感知用户所在页面（#229） -->
-    <AISidebar :open="aiSidebarOpen" :view="currentSub" @close="aiSidebarOpen = false" @open-settings="openAiSettings" />
+    <AiChatPanel :open="aiSidebarOpen" :view="currentSub" @close="aiSidebarOpen = false" @open-settings="openAiSettings" />
   </div>
 
   <QuickPastePanel :open="showQuickPaste" @close="showQuickPaste = false" />

@@ -462,6 +462,13 @@ export function deleteMemory(id: string) {
   return api<{ deleted: boolean }>('DELETE', `/api/ai/memories/${id}`)
 }
 
+// ===== 工具确认门控（UI-E，对接后端 Package C）=====
+// SSE meta.type==='confirm_tool_action' 弹出确认卡后，用户批准/拒绝回调此接口。
+// 后端未就绪时返回 404 属预期：卡片显示错误并允许重试，不阻塞组件。
+export function approveAiChatTool(body: { requestId: string; allow: boolean }) {
+  return api<{ ok: boolean }>('POST', '/api/ai/chat/approve', body)
+}
+
 // ===== SSE 流式聊天 =====
 
 export interface StreamChatOptions {

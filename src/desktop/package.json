@@ -10,6 +10,7 @@
     "tauri": "tauri",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "lint:style": "stylelint \"src/components/ai/**/*.{vue,css}\"",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
@@ -51,7 +52,9 @@
     "eslint-plugin-prettier": "^5.5.6",
     "eslint-plugin-vue": "^10.10.0",
     "globals": "^17.7.0",
+    "postcss-html": "^2.0.0",
     "prettier": "^3.9.6",
+    "stylelint": "^17.14.1",
     "tailwindcss": "^4",
     "typescript": "~5.4.0",
     "typescript-eslint": "^8.65.0",
