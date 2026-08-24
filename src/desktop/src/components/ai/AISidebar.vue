@@ -46,6 +46,9 @@ const {
   contextUsage,
   duplicateImageNotice,
   compressProgress,
+  pendingConfirm,
+  approving,
+  approve,
   hasProviders,
   canSend,
   providerSupportsCache,
@@ -245,6 +248,24 @@ function formatDupTime(iso?: string): string {
     return ''
   }
 }
+
+// 破坏性工具确认门控（Agent-C）：这些工具触发确认卡片时以红色强调（破坏性强），
+// 其余写工具以安全色强调。清单与后端 WRITE_TOOL_NAMES/破坏性登记保持一致。
+const DESTRUCTIVE_TOOLS = new Set(['destroy_clips'])
+const isDestructiveConfirm = computed(() => {
+  return !!pendingConfirm.value && DESTRUCTIVE_TOOLS.has(pendingConfirm.value.tool)
+})
+// 确认卡片工具名：优先 i18n 键，缺失时把 snake_case 人性化作为兜底。
+function confirmToolName(tool?: string): string {
+  if (!tool) return ''
+  const key = 'ai_tool_' + tool
+  const val = t(key)
+  if (val && val !== key) return val
+  return tool
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
 </script>
 
 <template>
@@ -367,6 +388,7 @@ function formatDupTime(iso?: string): string {
             ref="msgListRef"
             :messages="messages"
             :is-streaming="isStreaming"
+            :confirm-tool="pendingConfirm?.tool ?? null"
             @reedit="onReedit"
           />
 
@@ -383,6 +405,46 @@ function formatDupTime(iso?: string): string {
 
           <!-- 上下文压缩进度：手动 /compact 与后端自动压缩共用（分割线 + 扫光动画） -->
           <AiCompressProgress v-if="compressProgress" :progress="compressProgress" />
+
+          <!-- 破坏性工具确认门控（Agent-C）：模型请求"需确认"工具时弹确认卡片等待放行 -->
+          <div
+            v-if="pendingConfirm"
+            class="ai-confirm-card"
+            :class="{ 'ai-confirm-card--destructive': isDestructiveConfirm }"
+          >
+            <div class="ai-confirm-head">
+              <ShieldCheck :size="14" class="ai-confirm-icon" />
+              <span class="ai-confirm-title">{{ t('ai_confirm_title') || '需要确认的操作' }}</span>
+              <span v-if="isDestructiveConfirm" class="ai-confirm-badge">
+                {{ t('ai_confirm_destructive') || '破坏性' }}
+              </span>
+            </div>
+            <div class="ai-confirm-tool-row">
+              <span class="ai-confirm-label">{{ t('ai_confirm_tool') || '工具' }}</span>
+              <span class="ai-confirm-tool-name">{{ confirmToolName(pendingConfirm.tool) }}</span>
+            </div>
+            <div v-if="pendingConfirm.argsSummary" class="ai-confirm-summary">
+              <span class="ai-confirm-label">{{ t('ai_confirm_args') || '参数摘要' }}</span>
+              <span class="ai-confirm-value">{{ pendingConfirm.argsSummary }}</span>
+            </div>
+            <div class="ai-confirm-impact">
+              <span class="ai-confirm-label">{{ t('ai_confirm_impact') || '影响' }}</span>
+              <span class="ai-confirm-value">{{ pendingConfirm.impact || '-' }}</span>
+            </div>
+            <div class="ai-confirm-actions">
+              <Button
+                variant="ghost"
+                class="ai-confirm-deny"
+                :disabled="approving"
+                @click="approve(false)"
+              >
+                {{ t('ai_confirm_deny') || '拒绝' }}
+              </Button>
+              <Button class="ai-confirm-allow" :disabled="approving" @click="approve(true)">
+                {{ approving ? (t('ai_confirm_approving') || '处理中…') : (t('ai_confirm_allow') || '允许') }}
+              </Button>
+            </div>
+          </div>
 
           <div v-if="error" class="ai-error-bar">{{ error }}</div>
 
@@ -578,6 +640,97 @@ function formatDupTime(iso?: string): string {
   color: var(--danger, #ef4444);
   background: var(--danger-bg, #fef2f2);
   border-top: 1px solid var(--border-default);
+}
+
+/* 破坏性工具确认卡片（Agent-C 门控）：文案与按钮用安全色/危险色区分 */
+.ai-confirm-card {
+  margin: 0 14px 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--accent);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: ai-confirm-in 0.22s ease-out;
+  flex-shrink: 0;
+}
+.ai-confirm-card--destructive {
+  border-left-color: var(--danger, #ef4444);
+}
+.ai-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-confirm-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.ai-confirm-card--destructive .ai-confirm-icon {
+  color: var(--danger, #ef4444);
+}
+.ai-confirm-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+.ai-confirm-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--danger, #ef4444);
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 30%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.ai-confirm-tool-row,
+.ai-confirm-summary,
+.ai-confirm-impact {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  line-height: 1.5;
+}
+.ai-confirm-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  min-width: 56px;
+}
+.ai-confirm-tool-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ai-confirm-value {
+  word-break: break-word;
+}
+.ai-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+.ai-confirm-allow {
+  color: #fff;
+  background: var(--accent);
+}
+.ai-confirm-allow:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.ai-confirm-deny {
+  color: var(--danger, #ef4444);
+  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 40%, transparent);
+}
+@keyframes ai-confirm-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
 }
 
 /* 图片重复感知横幅（#225） */

@@ -207,7 +207,7 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
         } catch {
           /* ignore */
         }
-        const result = await executeTool(tc.function.name, args, userId, role)
+        const result = await executeTool(tc.function.name, args, userId, role, undefined, { sendDelta })
         wrappedSend({
           choices: [
             { delta: { tool_result: { tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(result) } } },

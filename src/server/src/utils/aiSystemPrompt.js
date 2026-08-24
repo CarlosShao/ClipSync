@@ -57,6 +57,9 @@ const levels = {
     'archive_items',
     'unarchive_items',
     'update_clip_meta',
+    // Agent-C：批量收藏/批量软删除为 L1 操作级（batch_delete 默认软删除=archive 语义）
+    'batch_favorite',
+    'batch_delete',
   ],
   L2: [
     // Agent 写工具面（Agent-B）：L2 管理级写能力
@@ -64,6 +67,8 @@ const levels = {
     'create_template',
     'update_template',
     'create_shared_link',
+    // Agent-C：物理删除为 L2 管理级破坏性动作（需确认门控）
+    'destroy_clips',
   ],
   L3: [
     // 敏感读（安全 / 受保护条目 / 部署 / 架构源码），仅超管可用

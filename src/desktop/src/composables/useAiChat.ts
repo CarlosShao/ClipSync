@@ -1,6 +1,6 @@
 import { ref, shallowRef, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { getProviders, streamChat, getSettings, saveSettings, updateProvider } from '@/api/ai'
+import { getProviders, streamChat, getSettings, saveSettings, updateProvider, approveToolAction } from '@/api/ai'
 import type {
   AiProvider,
   ChatMessage,
@@ -85,6 +85,17 @@ export function useAiChat() {
     savedTokens?: number
     error?: string
   } | null>(null)
+  // 破坏性工具确认门控（Agent-C）：后端在"需确认"工具触发时下发 confirm_tool_action，
+  // 前端据此渲染确认卡片；用户允许/拒绝后调用 POST /api/ai/chat/approve 放行或拒绝。
+  // 由于后端确认门控并发上限为 1，这里只保留最近一个待确认请求。
+  const pendingConfirm = ref<{
+    requestId: string
+    tool: string
+    argsSummary: string
+    impact: string
+  } | null>(null)
+  // 当前正在向后端提交确认结果（避免连点导致重复请求）
+  const approving = ref(false)
   let compressProgressTimer: number | undefined
   function setCompressProgress(p: typeof compressProgress.value) {
     compressProgress.value = p
@@ -232,6 +243,7 @@ export function useAiChat() {
     messages.value = []
     error.value = ''
     contextUsage.value = null
+    pendingConfirm.value = null
     return created
   }
 
@@ -571,6 +583,16 @@ export function useAiChat() {
               preview: mm.preview,
             }
           }
+          // 破坏性工具确认门控（Agent-C）：后端请求用户放行，弹确认卡片等待允许/拒绝。
+          if (mm?.type === 'confirm_tool_action') {
+            pendingConfirm.value = {
+              requestId: mm.requestId,
+              tool: mm.tool,
+              argsSummary: mm.argsSummary,
+              impact: mm.impact,
+            }
+            approving.value = false
+          }
           // 上下文自动压缩（上下文管理）：后端在上下文逼近上限时自动压缩较早历史。
           // 压缩期间下发 context_compress_started（显示"上下文压缩中"扫光分割线），
           // 压缩完成后下发 context_compressed（切换为"压缩已完成"）。任务本身不中断。
@@ -656,8 +678,26 @@ export function useAiChat() {
       abortCtrl.value = null
       // 收敛所有残留的非终态 agent 卡片（含上一条挂掉的并行请求残留），避免永久转圈
       settleAgentRuns()
+      // 流结束：清掉可能残留的确认卡片（后端超时/断流已清对应 pending）
+      pendingConfirm.value = null
+      approving.value = false
       // 保存当前对话的消息（不等待，失败静默）
       conv.saveCurrent(messages.value).catch(() => {})
+    }
+  }
+
+  // 破坏性工具确认门控：允许/拒绝待确认的破坏性工具执行。
+  // 允许 → 后端执行并把 tool_result 回传 LLM；拒绝 → 不执行并以 REJECTED_BY_USER 回传。
+  async function approve(allow: boolean) {
+    if (!pendingConfirm.value || approving.value) return
+    const req = pendingConfirm.value
+    approving.value = true
+    const res = await approveToolAction(req.requestId, allow)
+    // 无论成功与否都收起确认卡片，避免卡片滞留（后端已按其状态继续推进流）
+    pendingConfirm.value = null
+    approving.value = false
+    if (!res.ok) {
+      error.value = res.error || 'ai_approve_failed'
     }
   }
 
@@ -669,6 +709,7 @@ export function useAiChat() {
     if (isStreaming.value) stop()
     messages.value = []
     error.value = ''
+    pendingConfirm.value = null
     conv.setCurrent('')
   }
 
@@ -753,6 +794,9 @@ export function useAiChat() {
     contextUsage,
     duplicateImageNotice,
     compressProgress,
+    pendingConfirm,
+    approving,
+    approve,
     hasProviders,
     canSend,
     providerSupportsCache,

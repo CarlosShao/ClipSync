@@ -4,11 +4,18 @@ import { useI18n } from '@/composables/useI18n'
 import { Marked } from 'marked'
 import { sanitizeHtml } from '@/utils/html'
 import { ChevronRight, ChevronDown, Copy, Pencil, ListChecks, Languages, AlignLeft, HelpCircle, Sparkles, CheckCircle2, Loader2, XCircle, Bot } from 'lucide-vue-next'
-import type { ChatMessage, AgentRun } from '@/api/ai'
+import type { ChatMessage, AgentRun, ToolCall } from '@/api/ai'
 import AiWaiting from './AiWaiting.vue'
 import AiThinkingOrb from './AiThinkingOrb.vue'
 
-const props = defineProps<{ message: ChatMessage; index: number; isStreaming: boolean; isLatest: boolean }>()
+const props = defineProps<{
+  message: ChatMessage
+  index: number
+  isStreaming: boolean
+  isLatest: boolean
+  // 破坏性工具确认门控：当前正在等待确认的工具名（对应工具卡片显示“等待确认”态）
+  confirmTool?: string | null
+}>()
 const emit = defineEmits<{ reedit: [content: string] }>()
 const { t } = useI18n()
 
@@ -193,6 +200,76 @@ function toolFailed(toolId: string): boolean {
   return calls.some((c) => c.id === toolId) && !results.some((r) => r.tool_call_id === toolId)
 }
 
+// ===== 破坏性工具确认门控 + 写操作结果标注 =====
+// 需确认后执行的破坏性工具（清单与后端破坏性登记保持一致，当前仅 destroy_clips）
+const DESTRUCTIVE_TOOLS = new Set(['destroy_clips'])
+function isDestructiveTool(name: string) {
+  return DESTRUCTIVE_TOOLS.has(name)
+}
+// 该工具当前是否正等待用户确认（时间线“等待确认”态；仅流式悬挂且无结果时）
+function awaitingConfirm(tc: ToolCall): boolean {
+  return props.confirmTool === tc.name && !toolDone(tc.id)
+}
+
+// 写操作成功/失败后的时间线标注（依据 Agent-B 交付的 tool_result 结构）：
+//  write_clip → { id, contentType, contentSize, note }        → “已写入剪贴板”
+//  tag_items → { success, tagged, tags }                     → “已打标签 N 个”
+//  archive_items → { success, archived }                     → “已归档 N 条”
+//  unarchive_items → { success, unarchived? }                → “已取消归档 N 条”
+//  batch_favorite → { success, favorited? }                  → “已收藏 N 条”
+//  destroy_clips → { success, deleted }                      → “已删除 N 条”（破坏性红色）
+//  create_collection / create_template / update_template / create_shared_link
+// 失败统一返回 { error }（含拒绝 REJECTED_BY_USER）→ 红色“失败/已拒绝”
+function resultAnnotation(name: string, content?: string): { text: string; ok: boolean } | null {
+  if (!content) return null
+  let parsed: any = null
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    parsed = content
+  }
+  const isObj = parsed && typeof parsed === 'object'
+  // 明确失败：含 error 字段（拒绝标记 REJECTED_BY_USER）或 success === false
+  if (isObj && ('error' in parsed)) {
+    const rejected = parsed.error === 'REJECTED_BY_USER'
+    return { text: rejected ? (t('ai_rejected_by_user') || '已拒绝') : (t('ai_tool_result_error') || '失败'), ok: false }
+  }
+  if (isObj && parsed.success === false) {
+    return { text: parsed.error || (t('ai_tool_result_error') || '失败'), ok: false }
+  }
+  const count = (k: unknown): number => (typeof k === 'number' ? k : 0)
+  switch (name) {
+    case 'write_clip':
+      return { text: t('ai_result_apply') || '已写入剪贴板', ok: true }
+    case 'tag_items':
+      return { text: t('ai_result_tag_items', { count: isObj ? count(parsed.tags?.length) : 0 }), ok: true }
+    case 'archive_items':
+      return { text: t('ai_result_archive_items', { count: isObj ? count(parsed.archived) : 0 }), ok: true }
+    case 'unarchive_items':
+      return { text: t('ai_result_unarchive_items', { count: isObj ? count(parsed.unarchived ?? parsed.archived) : 0 }), ok: true }
+    case 'batch_favorite':
+      return { text: t('ai_result_favorite_items', { count: isObj ? count(parsed.updated ?? parsed.favorited ?? parsed.tagged) : 0 }), ok: true }
+    case 'destroy_clips':
+      return { text: t('ai_result_destroy_clips', { count: isObj ? count(parsed.permanentlyDeleted ?? parsed.deleted ?? parsed.destroyed) : 0 }), ok: true }
+    case 'create_collection':
+      return { text: t('ai_result_create_collection'), ok: true }
+    case 'create_template':
+      return { text: t('ai_result_create_template'), ok: true }
+    case 'update_template':
+      return { text: t('ai_result_update_template'), ok: true }
+    case 'create_shared_link':
+      return { text: t('ai_result_create_shared_link'), ok: true }
+    default:
+      return null
+  }
+}
+// 某工具对应的结果标注（供模板调用）
+function toolAnnotation(tc: { id: string; name: string }): { text: string; ok: boolean } | null {
+  if (!toolDone(tc.id)) return null
+  const r = (props.message.toolResults || []).find((x) => x.tool_call_id === tc.id)
+  return r ? resultAnnotation(tc.name, r.content) : null
+}
+
 // 调试：把所有 assistant 消息的关键字段打出来供排查（仅当字段变化时）
 watch(() => props.message, () => {
   if (props.message.role === 'assistant' && props.message.id) {
@@ -369,7 +446,7 @@ function runIcon(run: AgentRun) {
 
           <!-- 状态 3：工具调用（左 orb 按工具类型 + 状态标签三态） -->
           <template v-if="!isThinkingPhase">
-            <div v-for="(tc, i) in visibleToolCalls" :key="`tc-${i}`" class="ai-tool-card" :class="{ 'ai-tool-card--done': toolDone(tc.id), 'ai-tool-card--err': toolFailed(tc.id) }">
+            <div v-for="(tc, i) in visibleToolCalls" :key="`tc-${i}`" class="ai-tool-card" :class="{ 'ai-tool-card--done': toolDone(tc.id), 'ai-tool-card--err': toolFailed(tc.id), 'ai-tool-card--confirm': awaitingConfirm(tc), 'ai-tool-card--destructive': isDestructiveTool(tc.name) }">
               <div class="ai-tool-inner">
                 <div class="ai-tool-row">
                   <AiThinkingOrb
@@ -380,11 +457,15 @@ function runIcon(run: AgentRun) {
                   <span class="ai-tool-name">{{ tc.name }}</span>
                   <span
                     class="ai-tool-st"
-                    :class="toolFailed(tc.id) ? 'err' : (toolDone(tc.id) ? 'ok' : 'running')"
+                    :class="toolFailed(tc.id) ? 'err' : (awaitingConfirm(tc) ? 'confirm' : (toolDone(tc.id) ? 'ok' : 'running'))"
                   >
                     <span v-if="!toolDone(tc.id) && !toolFailed(tc.id)" class="ai-tool-spin"></span>
-                    {{ toolFailed(tc.id) ? '失败 ✕' : (toolDone(tc.id) ? '✓ 成功' : '运行中') }}
+                    {{ toolFailed(tc.id) ? '失败 ✕' : (awaitingConfirm(tc) ? (t('ai_confirm_waiting') || '等待确认') : (toolDone(tc.id) ? '✓ 成功' : '运行中')) }}
                   </span>
+                </div>
+                <div v-if="toolAnnotation(tc)" class="ai-tool-annotation" :class="{ err: !toolAnnotation(tc)!.ok }">
+                  <span v-if="!toolAnnotation(tc)!.ok">!</span>
+                  {{ toolAnnotation(tc)!.text }}
                 </div>
                 <div v-if="tc.arguments" class="ai-tool-args">
                   <div v-for="(val, key) in parseToolArgs(tc.arguments)" :key="key" class="ai-tool-arg">
@@ -677,6 +758,8 @@ html.light .ai-think-title::after {
 }
 .ai-tool-card--done { border-left: 2px solid rgba(0,185,131,0.5); }
 .ai-tool-card--err { border-color: rgba(255,107,69,0.6); border-left: 2px solid rgba(255,107,69,0.6); }
+.ai-tool-card--confirm { border-color: rgba(245,158,11,0.5); border-left: 2px solid rgba(245,158,11,0.6); }
+.ai-tool-card--destructive { border-color: rgba(239,68,68,0.45); border-left: 2px solid rgba(239,68,68,0.55); }
 .ai-tool-inner { padding: 8px 11px; }
 .ai-tool-row {
   display: flex;
@@ -705,6 +788,7 @@ html.light .ai-think-title::after {
 .ai-tool-st.running { color: var(--accent, #3b82f6); background: var(--accent-bg, rgba(59,130,246,.12)); }
 .ai-tool-st.ok { color: #00B983; background: rgba(0,185,131,.1); }
 .ai-tool-st.err { color: #FF6B45; background: rgba(255,107,69,.1); }
+.ai-tool-st.confirm { color: #d97706; background: rgba(245,158,11,.12); }
 .ai-tool-spin {
   width: 10px;
   height: 10px;
@@ -715,6 +799,21 @@ html.light .ai-think-title::after {
 }
 @keyframes ai-tool-spin { to { transform: rotate(360deg); } }
 .ai-tool-args { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+/* 写操作结果标注（时间线） */
+.ai-tool-annotation {
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-style: italic;
+  color: #00B983;
+  background: rgba(0,185,131,.08);
+}
+.ai-tool-annotation.err {
+  color: #FF6B45;
+  background: rgba(255,107,69,.08);
+}
 .ai-tool-arg { display: flex; gap: 6px; font-family: var(--font-family-mono, ui-monospace, monospace); }
 .ai-tool-k { color: var(--text-tertiary, #737373); }
 .ai-tool-v { color: var(--text-default, #171717); word-break: break-all; }

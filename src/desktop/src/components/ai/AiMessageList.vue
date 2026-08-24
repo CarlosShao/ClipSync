@@ -4,7 +4,12 @@ import { useI18n } from '@/composables/useI18n'
 import type { ChatMessage } from '@/api/ai'
 import AiMessage from './AiMessage.vue'
 
-const props = defineProps<{ messages: ChatMessage[]; isStreaming: boolean }>()
+const props = defineProps<{
+  messages: ChatMessage[]
+  isStreaming: boolean
+  // 破坏性工具确认门控：当前正在等待确认的工具名（用于时间线“等待确认”态标注）
+  confirmTool?: string | null
+}>()
 const emit = defineEmits<{ reedit: [content: string] }>()
 const { t } = useI18n()
 
@@ -99,6 +104,7 @@ defineExpose({ scrollToPos })
       :index="i"
       :is-streaming="isStreamingMessage(i)"
       :is-latest="isLatestMessage(i)"
+      :confirm-tool="confirmTool ?? null"
       :class="isLocateMarked(i) ? 'ai-msg-locate-mark' : undefined"
       @reedit="(c: string) => emit('reedit', c)"
     />

@@ -383,11 +383,25 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'batch_delete',
-      description: '批量删除指定的剪贴板条目',
+      description: '批量归档指定的剪贴板条目（软删除：archived=true，条目从主列表隐藏，可从归档恢复）。注意：这是软删除，不会物理抹除数据。若用户确属要永久删除，请改用 destroy_clips（需在确认后执行）。',
       parameters: {
         type: 'object',
         properties: {
-          clip_ids: { type: 'array', items: { type: 'string' }, description: '要删除的条目ID列表' }
+          clip_ids: { type: 'array', items: { type: 'string' }, description: '要软删除/归档的条目ID列表' }
+        },
+        required: ['clip_ids']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'destroy_clips',
+      description: '批量永久物理删除剪贴板条目（DELETE FROM 数据库，不可恢复）。属破坏性操作，执行前必须获得用户明确确认（前端会弹出确认卡片）。单次最多 50 条，超过需分批调用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          clip_ids: { type: 'array', items: { type: 'string' }, description: '要永久删除的条目ID列表（最多50）' }
         },
         required: ['clip_ids']
       }
@@ -586,6 +600,7 @@ export const WRITE_TOOL_NAMES = new Set([
   'create_shared_link',
   'batch_favorite',
   'batch_delete',
+  'destroy_clips',
   'ocr_clip_image',
 ])
 
@@ -594,6 +609,172 @@ export const WRITE_TOOL_NAMES = new Set([
  * 与 TOOLS 同步维护——新增写入类工具时必须加入 WRITE_TOOL_NAMES，否则会被误判为只读。
  */
 export const READONLY_TOOLS = TOOLS.filter((t) => !WRITE_TOOL_NAMES.has(t.function.name))
+
+// ============ Agent-C：破坏性操作确认门控 ============
+// 需用户在前端明确确认后才能执行的破坏性工具集合（写工具先按此协议演进）。
+// 命中集合的工具不会直接被 executeToolInner 执行，而是：
+//   1) 登记全局 pendingRequests（requestId → entry）；
+//   2) 通过 SSE 下发 confirm_tool_action 事件等用户确认；
+//   3) 批准后执行并写审计；拒绝/超时/断流则返回 REJECTED_BY_USER。
+export const DESTRUCTIVE_CONFIRM_NEEDED = new Set(['destroy_clips'])
+
+// 确认超时（与 handleToolCalls 的 TOOL_EXEC_TIMEOUT_MS 对齐，避免挂死上游流）。
+const CONFIRM_TIMEOUT_MS = 120_000
+
+// 全局待确认请求表：requestId → { requestId, tool, args, userId, role, settle, timer, settled }
+// 并发上限 1：同一时刻只允许一个待确认的破坏性请求（详情见 runConfirmGate）。
+const pendingRequests = new Map()
+
+// args 摘要脱敏：content/password/apiKey/token 等不做全文透传，仅给受控摘要，避免明文落 SSE。
+function getArgsSummary(args) {
+  if (!args || typeof args !== 'object') return {}
+  const SENSITIVE_KEYS = ['content', 'password', 'apikey', 'token', 'secret']
+  const out = {}
+  for (const [k, v] of Object.entries(args)) {
+    if (SENSITIVE_KEYS.includes(String(k).toLowerCase())) {
+      const s = String(v ?? '')
+      out[k] = s.length > 40 ? `${s.slice(0, 40)}…(${s.length}字)` : s
+    } else {
+      out[k] = v
+    }
+  }
+  return out
+}
+
+// 破坏性动作影响描述：供确认卡片展示。
+function getImpact(toolName, args) {
+  const n = Array.isArray(args?.clip_ids) ? args.clip_ids.length : 0
+  if (toolName === 'destroy_clips') {
+    return `将永久物理删除 ${n} 条剪贴板条目，该操作不可恢复。`
+  }
+  return undefined
+}
+
+/**
+ * 执行破坏性工具所需的「确认门控」。
+ * 返回 Promise<{ approved: boolean, requestId: string, result?: any }>：
+ *  - 批准后 resolve({ approved:true, requestId, result })（result 由 approve 入口执行 Inner 后回填）；
+ *  - 拒绝/超时/断流 resolve({ approved:false, requestId })。
+ */
+async function runConfirmGate(toolName, args, userId, role, requestId, opts = {}) {
+  const sendDelta = opts.sendDelta
+  const rid = requestId || uuidv4()
+
+  // 并发上限 1：已有待确认的破坏性请求时，明确拒绝新请求（避免两个确认卡片竞争）。
+  // 说明：pendingRequests.size 只在「进入等待态」前判断；本函数被 Promise.all 并行调用时，
+  // 后到的请求看到 pending 非空即拒绝，从而保证同一时刻最多一个等待中的确认。
+  if (pendingRequests.size > 0) {
+    logger.warn('[AI] destructive confirm rejected: pending request already exists')
+    return {
+      approved: false,
+      requestId: rid,
+      result: {
+        error: 'CONCURRENT_CONFIRM_REQUEST',
+        message: '已有待确认的破坏性操作，请先在前端确认或等待其超时，再发起新的破坏性请求。',
+      },
+    }
+  }
+
+  const entry = {
+    requestId: rid,
+    tool: toolName,
+    args,
+    userId,
+    role,
+    settled: false,
+    timer: null,
+    settle: () => {}, // 占位，下方赋值
+  }
+  const onReqClose = () => entry.settle({ approved: false, requestId: rid })
+
+  return new Promise((resolveOuter) => {
+    // 统一结算：置位、销毁定时器、移除 req close 监听、从 Map 移除、resolve 外层 Promise。
+    entry.settle = (outcome) => {
+      if (entry.settled) return
+      entry.settled = true
+      clearTimeout(entry.timer)
+      if (opts.req && typeof opts.req.removeListener === 'function') {
+        opts.req.removeListener('close', onReqClose)
+      }
+      pendingRequests.delete(rid)
+      resolveOuter(outcome)
+    }
+    entry.timer = setTimeout(() => {
+      logger.warn('[AI] destructive confirm timed out:', rid)
+      entry.settle({ approved: false, requestId: rid })
+    }, CONFIRM_TIMEOUT_MS)
+
+    pendingRequests.set(rid, entry)
+
+    // 无 SSE 通道（如 summarize/suggest 等非流式入口）时直接拒绝，不进入等待。
+    if (!sendDelta) {
+      entry.settle({ approved: false, requestId: rid })
+      return
+    }
+
+    // 下发 SSE 确认事件供前端渲染确认卡片。
+    sendDelta({
+      meta: {
+        type: 'confirm_tool_action',
+        requestId: rid,
+        tool: toolName,
+        argsSummary: getArgsSummary(args),
+        impact: getImpact(toolName, args),
+      },
+    })
+
+    // 客户端断开时清空对应 pending，不残留。
+    if (opts.req && typeof opts.req.on === 'function') {
+      opts.req.on('close', onReqClose)
+    }
+  })
+}
+
+/**
+ * 确认入口（POST /api/ai/chat/approve 调用）：
+ * 校验 requestId 归属（userId 隔离，禁止跨用户审批）。
+ *  - allow=false：拒绝，向等待中的 executeTool 结算 REJECTED_BY_USER。
+ *  - allow=true：执行 Inner（破坏性工具实做），结果作为 final 返回，并同时结算给 executeTool 做审计。
+ * @returns {{ accepted, notFound?, expired?, final? }}
+ */
+export async function approveToolRequest(requestId, userId, allow) {
+  const entry = pendingRequests.get(requestId)
+  if (!entry || entry.userId !== userId) {
+    return { accepted: false, notFound: true }
+  }
+  if (entry.settled) {
+    return { accepted: false, expired: true }
+  }
+  if (allow !== true) {
+    entry.settle({ approved: false, requestId })
+    return { accepted: false }
+  }
+  // 批准：先将该请求从全局 Map 移除，防止并发第二次 approve 重复执行 Inner
+  // （并发第二请求将因 get() 返回 undefined 而收到 notFound）。
+  // 随后执行 Inner 并把结果经 entry.settle 结算给等待中的 executeTool（含审计）。
+  clearTimeout(entry.timer)
+  pendingRequests.delete(requestId)
+  try {
+    const result = await executeToolInner(entry.tool, entry.args, userId, entry.role)
+    entry.settle({ approved: true, requestId, result })
+    return { accepted: true, final: result }
+  } catch (err) {
+    logger.error('[AI] approve execution failed:', err.message)
+    entry.settle({ approved: true, requestId, result: { error: err.message } })
+    return { accepted: true, final: { error: err.message } }
+  }
+}
+
+/**
+ * 供 SSE 流关闭（safeFinish / req close）时清理该用户残留的 pending 项。
+ */
+export function cancelPendingForUser(userId) {
+  for (const [rid, e] of pendingRequests) {
+    if (e.userId === userId && !e.settled) {
+      e.settle({ approved: false, requestId: rid })
+    }
+  }
+}
 
 /**
  * 执行工具调用（实际执行体）
@@ -748,15 +929,39 @@ async function executeToolInner(toolName, args, userId, role) {
       }
 
       case 'batch_delete': {
+        // Agent-C：默认软删除（归档语义），不再物理 DELETE —— 可恢复，避免误删不可挽回。
+        // 用户确需物理抹除时改用 destroy_clips（L2 + 确认门控）。
         const { clip_ids } = args
         if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
           return { error: 'clip_ids is required and must be an array' }
         }
         const result = await pool.query(
+          'UPDATE clipboard_items SET archived = true, updated_at = NOW() WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+          [clip_ids, userId]
+        )
+        return { success: true, archived: result.rowCount, note: '已软删除（归档），可在归档列表中恢复。如需永久物理删除请启用 destroy_clips。' }
+      }
+
+      case 'destroy_clips': {
+        // Agent-C：物理删除（破坏性，L2+）。clip_ids 上限 50，超出明确拒绝并提示分批。
+        // 权限闸门已由 executeToolInner 顶部 assertToolAllowed 校验（L2 起），此处做上限校验。
+        const { clip_ids } = args
+        if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
+          return { error: 'clip_ids is required and must be an array' }
+        }
+        if (clip_ids.length > 50) {
+          return {
+            error: 'DESTROY_BATCH_TOO_LARGE',
+            message: `一次最多永久删除 50 条，你传了 ${clip_ids.length} 条；请分批（每批 ≤50）调用。`,
+            received: clip_ids.length,
+            maxPerBatch: 50,
+          }
+        }
+        const result = await pool.query(
           'DELETE FROM clipboard_items WHERE id = ANY($1) AND user_id = $2 RETURNING id',
           [clip_ids, userId]
         )
-        return { success: true, deleted: result.rowCount }
+        return { success: true, permanentlyDeleted: result.rowCount }
       }
 
       case 'organize_by_type': {
@@ -1374,17 +1579,36 @@ async function executeToolInner(toolName, args, userId, role) {
  * 执行工具调用（审计包装器，对外导出名保持 executeTool 不变）
  * 对 executeToolInner 做计时 + 成功/失败路径均写审计，语义与原先完全一致：
  * 返回 { error: ... } 的对象原样透传、异常仍向上抛出，调用方无需改动。
+ * Agent-C 叠加：对 DESTRUCTIVE_CONFIRM_NEEDED 集合内的破坏性工具先走确认门控
+ * （SSE 确认卡片 → approve 入口），批准后才执行 Inner 并审计；拒绝/超时/断流返回 REJECTED_BY_USER。
  * @param {string} toolName
  * @param {object} args
  * @param {string} userId
  * @param {string} [role] 角色键
- * @param {string} [requestId] 关联 requestId（Agent-C 确认门控透传），无则内部生成
+ * @param {string} [requestId] 关联 requestId（确认门控透传），无则内部生成
+ * @param {object} [opts] { sendDelta, req } SSE 通道与请求对象（确认事件下发 / 断流清理用）
  */
-async function executeTool(toolName, args, userId, role, requestId) {
+async function executeTool(toolName, args, userId, role, requestId, opts = {}) {
   const start = Date.now()
   let result
+  // 破坏性工具确认门控生成的 requestId → 审计与 confirm 事件同 requestId 可追溯。
+  let confirmRequestId = requestId
   try {
-    result = await executeToolInner(toolName, args, userId, role)
+    if (DESTRUCTIVE_CONFIRM_NEEDED.has(toolName)) {
+      const gate = await runConfirmGate(toolName, args, userId, role, requestId, opts)
+      confirmRequestId = gate.requestId
+      if (gate.approved && gate.result !== undefined) {
+        // 批准后 approve 入口已执行 Inner，结果回填到这里；沿用门控 requestId 写审计。
+        result = gate.result
+      } else {
+        // 拒绝 / 超时 / 断流 / 并发被拒：返回 REJECTED_BY_USER（并发场景带更明确错误）。
+        result = (gate.result && gate.result.error === 'CONCURRENT_CONFIRM_REQUEST')
+          ? gate.result
+          : { error: 'REJECTED_BY_USER' }
+      }
+    } else {
+      result = await executeToolInner(toolName, args, userId, role)
+    }
   } catch (err) {
     await logToolAudit({
       userId,
@@ -1394,7 +1618,7 @@ async function executeTool(toolName, args, userId, role, requestId) {
       resultSummary: null,
       ok: false,
       durationMs: Date.now() - start,
-      requestId,
+      requestId: confirmRequestId,
     })
     throw err // 不改变既有语义：异常仍向上抛出
   }
@@ -1408,7 +1632,7 @@ async function executeTool(toolName, args, userId, role, requestId) {
     resultSummary: result,
     ok,
     durationMs: Date.now() - start,
-    requestId,
+    requestId: confirmRequestId,
   })
   return result
 }

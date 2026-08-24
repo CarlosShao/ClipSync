@@ -139,6 +139,14 @@ export interface StreamDeltaMeta {
   }
   // token 用量事件（每轮上游调用结束时下发，前端保留最近一次）
   usage?: ContextUsage
+  // 破坏性工具确认门控（Agent-C 契约）：meta.type === 'confirm_tool_action' 时，
+  // 后端请求用户对模型请求的破坏性/写操作放行，前端据此渲染确认卡片。
+  // requestId 随 POST /api/ai/chat/approve 回传，用于将确认结果关联到对应待办。
+  type?: 'confirm_tool_action'
+  requestId?: string
+  tool?: string
+  argsSummary?: string
+  impact?: string
 }
 
 export interface ChatOptions {
@@ -418,6 +426,21 @@ export function compactConversation(
 
 export function saveMessages(id: string, messages: ChatMessage[]) {
   return api<{ messages: ChatMessage[] }>('POST', `/api/ai/conversations/${id}/messages`, { messages })
+}
+
+// ===== 破坏性工具确认门控（Agent-C 契约） =====
+// 模型请求"需确认"的破坏性/写工具时，后端先下发 { meta: { type:'confirm_tool_action',
+// requestId, tool, argsSummary, impact } } 悬停等待用户放行，前端据此弹确认卡片。
+// 用户允许/拒绝后调用本接口：allow=true 执行并把 tool_result 回传 LLM；
+// allow=false 不执行并以 REJECTED_BY_USER 回传；final 为后端回传的最终结果（可选）。
+
+export interface ApproveResult {
+  accepted: boolean
+  final?: string
+}
+
+export function approveToolAction(requestId: string, allow: boolean) {
+  return api<ApproveResult>('POST', '/api/ai/chat/approve', { requestId, allow })
 }
 
 // ===== 长程记忆（记忆管理） =====

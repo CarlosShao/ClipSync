@@ -9,6 +9,8 @@ const props = defineProps<{
   toolResults?: ToolResult[]
   // 该时间线归属的代理名（子代理卡片内传入，用于把工具调用明确标注为“属于哪个子代理”）
   agentName?: string
+  // 破坏性工具确认门控：当前正在等待确认的工具名（用于“等待确认”态标注）
+  confirmTool?: string | null
 }>()
 const { t } = useI18n()
 
@@ -59,6 +61,57 @@ function formatResult(content: string): string {
   }
 }
 
+// ===== 破坏性工具确认门控 + 写操作结果标注 =====
+const DESTRUCTIVE_TOOLS = new Set(['destroy_clips'])
+function isDestructiveTool(name: string) {
+  return DESTRUCTIVE_TOOLS.has(name)
+}
+function awaitingConfirm(id: string, name: string): boolean {
+  return props.confirmTool === name && !isDone(id)
+}
+function stepAnnotation(name: string, content?: string): { text: string; ok: boolean } | null {
+  if (!content) return null
+  let parsed: any = null
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    parsed = content
+  }
+  const isObj = parsed && typeof parsed === 'object'
+  if (isObj && 'error' in parsed) {
+    const rejected = parsed.error === 'REJECTED_BY_USER'
+    return { text: rejected ? (t('ai_rejected_by_user') || '已拒绝') : (t('ai_tool_result_error') || '失败'), ok: false }
+  }
+  if (isObj && parsed.success === false) {
+    return { text: parsed.error || (t('ai_tool_result_error') || '失败'), ok: false }
+  }
+  const count = (k: unknown): number => (typeof k === 'number' ? k : 0)
+  switch (name) {
+    case 'write_clip':
+      return { text: t('ai_result_apply') || '已写入剪贴板', ok: true }
+    case 'tag_items':
+      return { text: t('ai_result_tag_items', { count: isObj ? count(parsed.tags?.length) : 0 }), ok: true }
+    case 'archive_items':
+      return { text: t('ai_result_archive_items', { count: isObj ? count(parsed.archived) : 0 }), ok: true }
+    case 'unarchive_items':
+      return { text: t('ai_result_unarchive_items', { count: isObj ? count(parsed.unarchived ?? parsed.archived) : 0 }), ok: true }
+    case 'batch_favorite':
+      return { text: t('ai_result_favorite_items', { count: isObj ? count(parsed.updated ?? parsed.favorited ?? parsed.tagged) : 0 }), ok: true }
+    case 'destroy_clips':
+      return { text: t('ai_result_destroy_clips', { count: isObj ? count(parsed.permanentlyDeleted ?? parsed.deleted ?? parsed.destroyed) : 0 }), ok: true }
+    case 'create_collection':
+      return { text: t('ai_result_create_collection'), ok: true }
+    case 'create_template':
+      return { text: t('ai_result_create_template'), ok: true }
+    case 'update_template':
+      return { text: t('ai_result_update_template'), ok: true }
+    case 'create_shared_link':
+      return { text: t('ai_result_create_shared_link'), ok: true }
+    default:
+      return null
+  }
+}
+
 // 按数组顺序编号（即工具调用被后端派发的先后顺序），形成可视化时间线。
 const steps = computed(() => {
   return (props.toolCalls || []).map((tc, i) => ({
@@ -73,11 +126,14 @@ const steps = computed(() => {
 <template>
   <div v-if="steps.length > 0" class="ai-tool-log">
     <div
-      v-for="step in steps"
-      :key="step.id"
-      class="ai-tool-log-line"
-      :class="[step.done ? 'done' : 'running', { last: step.index === steps.length }]"
-    >
+        v-for="step in steps"
+        :key="step.id"
+        class="ai-tool-log-line"
+        :class="[
+          step.done ? 'done' : 'running',
+          { last: step.index === steps.length, confirm: awaitingConfirm(step.id, step.name), destructive: isDestructiveTool(step.name) },
+        ]"
+      >
       <div class="ai-tool-log-rail">
         <span class="ai-tool-log-node">
           <CheckCircle2 v-if="step.done" :size="12" class="ai-tool-log-done" />
@@ -93,15 +149,29 @@ const steps = computed(() => {
           <span class="ai-tool-log-text">
             <span class="ai-tool-log-action">{{ step.done ? (t('ai_tool_called') || '已调用') : (t('ai_tool_calling') || '调用') }}</span>
             <span class="ai-tool-log-name">{{ getToolName(step.name) }}</span>
+            <span v-if="isDestructiveTool(step.name)" class="ai-tool-log-destructive">
+              {{ t('ai_confirm_destructive') || '破坏性' }}
+            </span>
           </span>
           <span v-if="agentName" class="ai-tool-log-source">{{ agentName }}</span>
           <span class="ai-tool-log-spacer" />
-          <span class="ai-tool-log-status" :class="step.done ? 'ok' : 'run'">
-            {{ step.done ? (t('ai_tool_done') || '完成') : (t('ai_tool_running') || '进行中') }}
+          <span
+            class="ai-tool-log-status"
+            :class="awaitingConfirm(step.id, step.name) ? 'confirm' : (step.done ? 'ok' : 'run')"
+          >
+            {{ awaitingConfirm(step.id, step.name)
+                ? (t('ai_confirm_waiting') || '等待确认')
+                : (step.done ? (t('ai_tool_done') || '完成') : (t('ai_tool_running') || '进行中')) }}
           </span>
           <ChevronDown v-if="expanded.has(step.id)" :size="13" class="ai-tool-log-chev" />
           <ChevronRight v-else :size="13" class="ai-tool-log-chev" />
         </button>
+
+        <div v-if="stepAnnotation(step.name, step.result?.content)" class="ai-tool-log-annotation"
+             :class="{ err: !stepAnnotation(step.name, step.result?.content)!.ok }">
+          <span v-if="!stepAnnotation(step.name, step.result?.content)!.ok">!</span>
+          {{ stepAnnotation(step.name, step.result?.content)!.text }}
+        </div>
 
         <div v-if="expanded.has(step.id)" class="ai-tool-log-detail">
           <div class="ai-tool-log-section">
@@ -166,6 +236,16 @@ const steps = computed(() => {
   background: var(--success, #16a34a);
   border-color: var(--success, #16a34a);
   color: #fff;
+}
+/* 等待确认（破坏性门控）节点用琥珀色，破坏性工具左缘标红 */
+.ai-tool-log-line.confirm .ai-tool-log-node {
+  background: rgba(245, 158, 11, 0.85);
+  border-color: rgba(245, 158, 11, 0.85);
+  color: #fff;
+}
+.ai-tool-log-line.destructive .ai-tool-log-body {
+  border-left: 2px solid rgba(239, 68, 68, 0.45);
+  padding-left: 6px;
 }
 .ai-tool-log-connector {
   flex: 1;
@@ -247,6 +327,17 @@ const steps = computed(() => {
   padding: 1px 7px;
   white-space: nowrap;
 }
+.ai-tool-log-destructive {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--danger, #ef4444);
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 30%, transparent);
+  border-radius: 999px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
 .ai-tool-log-status {
   flex-shrink: 0;
   font-size: 10px;
@@ -261,6 +352,24 @@ const steps = computed(() => {
 .ai-tool-log-status.ok {
   color: var(--success, #16a34a);
   background: rgba(22, 163, 74, 0.1);
+}
+.ai-tool-log-status.confirm {
+  color: #d97706;
+  background: rgba(245, 158, 11, 0.12);
+}
+.ai-tool-log-annotation {
+  margin: 2px 12px 6px 38px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-style: italic;
+  color: var(--success, #16a34a);
+  background: rgba(22, 163, 74, 0.08);
+}
+.ai-tool-log-annotation.err {
+  color: #FF6B45;
+  background: rgba(255, 107, 69, 0.08);
 }
 .ai-tool-log-spacer {
   flex: 1;

@@ -153,7 +153,7 @@ export async function handleToolCalls(toolCalls, userId, sendDelta, agentId = nu
       let result
       try {
         result = await withTimeout(
-          executeTool(toolName, args, userId, role),
+          executeTool(toolName, args, userId, role, undefined, { sendDelta }),
           TOOL_EXEC_TIMEOUT_MS,
           `tool ${toolName} timed out after ${TOOL_EXEC_TIMEOUT_MS}ms`,
         )

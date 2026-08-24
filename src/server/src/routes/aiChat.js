@@ -3,7 +3,7 @@ import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { decrypt } from '../utils/encryption.js'
 import { logger } from '../utils/logger.js'
-import { TOOLS } from './aiTools.js'
+import { TOOLS, approveToolRequest, cancelPendingForUser } from './aiTools.js'
 import { runChatLoop } from './aiChatCore.js'
 import { runOrchestration } from './aiOrchestrator.js'
 import { updateConversationUsage } from './aiConversations.js'
@@ -113,6 +113,9 @@ router.post('/chat', apiLimiter, async (req, res) => {
     // 禁用 Nagle：确保每个增量块立刻发到 socket，杜绝攒批导致“一次性蹦出”
     res.socket?.setNoDelay?.(true)
 
+    // Agent-C：客户端断开时清空该用户残留的待确认破坏性请求，不残留 pending。
+    req.on('close', () => cancelPendingForUser(req.userId))
+
     const streamStartAt = Date.now()
     let chunkCount = 0
     let thinkingChunks = 0
@@ -128,6 +131,9 @@ router.post('/chat', apiLimiter, async (req, res) => {
     // 这直接对应"思考卡在小半程 → 突然一下全出来"的现象：连接中途崩溃后客户端只能延迟 reconcile 状态。
     const safeFinish = () => {
       if (res.writableEnded) return
+      // Agent-C：流结束（含正常结束/异常）时清掉该用户残留的待确认破坏性请求，
+      // 避免 SSE 已断开仍残留 pending（确认卡片已无发送通道）。
+      cancelPendingForUser(req.userId)
       try {
         // 先收敛残留非终态 agent：避免前端卡片永久转圈
         for (const [id, status] of agentLifecycle) {
@@ -766,5 +772,38 @@ function cleanSuggestion(s) {
       : [],
   }
 }
+
+/**
+ * POST /api/ai/chat/approve —— 破坏性操作确认入口（Agent-C）
+ * 由前端在收到 confirm_tool_action SSE 事件后调用。已在路由挂载层受 authenticateToken + csrfProtection 保护。
+ *
+ * Body: { requestId, allow }
+ *  - allow=true  → 批准：执行被确认的破坏性工具（destroy_clips），返回 { accepted: true, final }
+ *  - allow=false → 拒绝：不执行，向等待中的 executeTool 结算 REJECTED_BY_USER，返回 { accepted: false }
+ *
+ * 归属校验：pending 项记录 userId，仅该用户自身能审批其请求（禁跨用户）。
+ */
+router.post('/chat/approve', apiLimiter, async (req, res) => {
+  try {
+    const { requestId, allow } = req.body || {}
+    if (!requestId || typeof requestId !== 'string') {
+      return res.status(400).json({ error: 'requestId is required' })
+    }
+    const out = await approveToolRequest(requestId, req.userId, allow === true)
+    if (out.notFound) {
+      return res.status(404).json({ accepted: false, error: 'NOT_FOUND', message: '该确认请求不存在或不属于当前用户，可能已处理或已超时。' })
+    }
+    if (out.expired) {
+      return res.status(409).json({ accepted: false, error: 'EXPIRED', message: '该确认请求已处理或已超时。' })
+    }
+    if (out.accepted) {
+      return res.json({ accepted: true, final: out.final })
+    }
+    return res.json({ accepted: false, error: 'REJECTED' })
+  } catch (err) {
+    logger.error('[AI] approve error:', err)
+    res.status(500).json({ error: 'Approve failed', detail: err.message })
+  }
+})
 
 export default router
