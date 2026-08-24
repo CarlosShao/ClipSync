@@ -1,11 +1,26 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, computed } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import type { ChatMessage } from '@/api/ai'
 import AiMessage from './AiMessage.vue'
+import AiErrorBar from './AiErrorBar.vue'
+import AiDuplicateNotice from './AiDuplicateNotice.vue'
 
-const props = defineProps<{ messages: ChatMessage[]; isStreaming: boolean }>()
-const emit = defineEmits<{ reedit: [content: string] }>()
+/**
+ * UI-C：顶部区域挂载原子状态组件（错误条 / 图片重复横幅）。
+ * error / duplicateNotice 均为可选 props——AISidebar 等既有宿主未传入时不渲染，
+ * 新 Shell（UI-B）接入时传入即可，不产生重复展示。
+ */
+const props = defineProps<{
+  messages: ChatMessage[]
+  isStreaming: boolean
+  error?: string
+  duplicateNotice?: { createdAt?: string } | null
+}>()
+const emit = defineEmits<{
+  reedit: [content: string]
+  'dismiss-duplicate': []
+}>()
 const { t } = useI18n()
 
 const scrollRef = ref<HTMLElement | null>(null)
@@ -31,10 +46,22 @@ function onScroll() {
   userScrolledUp.value = !isNearBottom(el)
 }
 
-watch(() => props.messages.length, () => scrollToBottom())
-watch(() => (props.messages[props.messages.length - 1]?.content || ''), () => scrollToBottom())
-watch(() => (props.messages[props.messages.length - 1]?.thinking || ''), () => scrollToBottom())
-watch(() => props.messages, () => scrollToBottom(true))
+watch(
+  () => props.messages.length,
+  () => scrollToBottom(),
+)
+watch(
+  () => props.messages[props.messages.length - 1]?.content || '',
+  () => scrollToBottom(),
+)
+watch(
+  () => props.messages[props.messages.length - 1]?.thinking || '',
+  () => scrollToBottom(),
+)
+watch(
+  () => props.messages,
+  () => scrollToBottom(true),
+)
 
 // 定位到指定消息（#231 历史搜索）
 const locateMarkId = ref<string | null>(null)
@@ -48,7 +75,9 @@ function scrollToPos(pos: number, highlightText?: string) {
       targetIndex = idx
     }
     if (targetIndex < 0) {
-      const ratio = props.messages.length ? Math.min(0.9, Math.max(0.05, (pos - 1) / Math.max(1, props.messages.length))) : 0
+      const ratio = props.messages.length
+        ? Math.min(0.9, Math.max(0.05, (pos - 1) / Math.max(1, props.messages.length)))
+        : 0
       el.scrollTop = Math.round(ratio * (el.scrollHeight - el.clientHeight))
       return
     }
@@ -89,6 +118,9 @@ defineExpose({ scrollToPos })
 
 <template>
   <div ref="scrollRef" class="ai-msg-list" @scroll="onScroll">
+    <!-- 顶部原子状态区（UI-C）：错误条 / 图片重复横幅 -->
+    <AiErrorBar v-if="error" :message="error" />
+    <AiDuplicateNotice v-if="duplicateNotice" :notice="duplicateNotice" @dismiss="emit('dismiss-duplicate')" />
     <div v-if="messages.length === 0" class="ai-msg-empty">
       {{ t('ai_chat_empty') }}
     </div>
@@ -140,7 +172,15 @@ defineExpose({ scrollToPos })
   animation: ai-msg-locate-flash 2s ease;
 }
 @keyframes ai-msg-locate-flash {
-  0%, 60% { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; background: var(--accent-bg); }
-  100% { outline: transparent; }
+  0%,
+  60% {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: 8px;
+    background: var(--accent-bg);
+  }
+  100% {
+    outline: transparent;
+  }
 }
 </style>
