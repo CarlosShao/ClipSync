@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { Marked } from 'marked'
 import { sanitizeHtml } from '@/utils/html'
 import type { AgentRun } from '@/api/ai'
-import AiThinking from './AiThinking.vue'
+import AiThinkingCollapse from './AiThinkingCollapse.vue'
 import AiToolTimeline from './AiToolTimeline.vue'
-import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { Loader2, CheckCircle2, XCircle } from 'lucide-vue-next'
 
 const props = defineProps<{ run: AgentRun; isStreaming: boolean }>()
 const { t } = useI18n()
@@ -17,10 +17,6 @@ const expandedThinking = ref(false)
 // 该卡片自身是否处于“进行中”（仅此卡片还活着且状态为 planning/working/synthesis 时）
 const runActive = computed(() => props.run.status === 'planning' || props.run.status === 'working' || props.run.status === 'synthesis')
 const isStreamingNow = computed(() => props.isStreaming && runActive.value)
-
-watch(isStreamingNow, (now, before) => {
-  if (before && !now) expandedThinking.value = true
-})
 
 const statusText = computed(() => {
   switch (props.run.status) {
@@ -78,7 +74,7 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
       <span v-if="run.error" class="ai-agent-run-err-text" :title="run.error">{{ run.error }}</span>
     </div>
 
-    <AiThinking
+    <AiThinkingCollapse
       v-if="hasThinking"
       :thinking="run.thinking || ''"
       :thinking-started-at="run.thinkingStartedAt"

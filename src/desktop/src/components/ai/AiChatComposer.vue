@@ -4,6 +4,7 @@ import { onClickOutside } from '@vueuse/core'
 import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import AiUsageMeter from './AiUsageMeter.vue'
 import type { AiProvider } from '@/api/ai'
 import { streamRefactorPrompt } from '@/api/ai'
 import {
@@ -271,27 +272,6 @@ const cacheAvailable = computed(() => {
   // 协议层支持 → 视为已启用（即使 0 也属正常"未命中"）
   return true
 })
-const cacheHitRateDisplay = computed(() => {
-  if (!cacheAvailable.value) return t('ai_cache_not_enabled') || '未启用'
-  return `${cacheHitPercent.value}%`
-})
-// 缓存面板 hover 提示：解释"未启用"的真实原因
-const cacheStatusTip = computed(() => {
-  if (!cacheAvailable.value) {
-    return (
-      t('ai_cache_not_supported') ||
-      '当前供应商（如 MiMo、DeepSeek、MiniMax 等）的 API 协议不支持 prompt 缓存功能，因此无法统计缓存命中率。这是供应商协议限制，非配置问题。'
-    )
-  }
-  if (cacheHitPercent.value > 0) {
-    return t('ai_cache_hit', {
-      percent: cacheHitPercent.value,
-      cached: props.contextUsage?.cacheReadTokens || 0,
-      prompt: props.contextUsage?.promptTokens || 0,
-    })
-  }
-  return t('ai_cache_zero_yet') || '当前供应商支持 prompt 缓存，但本次请求尚未命中（0%）'
-})
 
 const usageTip = computed(() => {
   if (!props.contextUsage) return t('ai_context_usage_none') || '上下文用量：暂无数据'
@@ -300,17 +280,6 @@ const usageTip = computed(() => {
     return `${usageText}\n缓存命中率：${cacheHitPercent.value}%`
   }
   return `${usageText}\n缓存：当前供应商协议不支持 prompt 缓存`
-})
-
-// 预估费用（基于 OpenAI 官方定价 $2.5/M input, $10/M output 作基准估算）
-const estimatedCost = computed(() => {
-  const c = props.contextUsage
-  if (!c) return null
-  const inputCost = (c.promptTokens / 1_000_000) * 2.5
-  const outputCost = (c.completionTokens / 1_000_000) * 10
-  const total = inputCost + outputCost
-  if (total < 0.01) return '<$0.01'
-  return '$' + total.toFixed(3)
 })
 
 function submit() {
@@ -394,25 +363,10 @@ function toggleThinking() {
 }
 
 // 把 token 数格式化为人类可读：192000 -> "192.0K"，57256 -> "57.3K"，2_500_000 -> "2.5M"
-function formatTokens(n: number): string {
-  if (!n) return '0'
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
-  return String(n)
-}
+// （明细/费用展示已迁移 AiUsageMeter，此处保留触发环 tooltip 所需的最小计算）
 
 // 上下文用量浮层开关
 const usagePanelOpen = ref(false)
-const usageTotalTokens = computed(() => props.contextUsage?.totalTokens ?? 0)
-const usagePromptTokens = computed(() => props.contextUsage?.promptTokens ?? 0)
-const usageCompletionTokens = computed(() => props.contextUsage?.completionTokens ?? 0)
-const usageCacheReadTokens = computed(() => props.contextUsage?.cacheReadTokens ?? 0)
-const usageCacheWriteTokens = computed(() => props.contextUsage?.cacheWriteTokens ?? 0)
-const usageThinkingTokens = computed(() => props.contextUsage?.thinkingTokens ?? 0)
-const usageReplyTokens = computed(() => props.contextUsage?.replyTokens ?? 0)
-const usageCacheMissTokens = computed(() =>
-  Math.max(0, usagePromptTokens.value - usageCacheReadTokens.value - usageCacheWriteTokens.value),
-)
 // 历史消息「重新编辑」：把内容填回输入框并聚焦、光标移到末尾。
 function setDraft(content: string) {
   text.value = content
@@ -610,88 +564,12 @@ defineExpose({ setDraft })
             </button>
           </PopoverTrigger>
           <PopoverContent class="ai-usage-panel" side="top" align="end" :side-offset="8">
-            <div v-if="!contextUsage" class="ai-usage-panel-empty">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                style="opacity: 0.3; margin-bottom: 4px"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 6v6l4 2" />
-              </svg>
-              {{ t('ai_context_usage_none') || '暂无数据，发起一次对话后将显示上下文用量' }}
-            </div>
-            <div v-else class="ai-usage-panel-body">
-              <!-- 总计 -->
-              <div class="ai-usage-total-row">
-                <span class="ai-usage-panel-title">{{ t('ai_token_usage_total') || '总计' }}</span>
-                <span class="ai-usage-total-val">{{ formatTokens(usageTotalTokens) }}</span>
-              </div>
-
-              <!-- 输入明细 -->
-              <div class="ai-usage-section">
-                <div class="ai-usage-section-title">
-                  <span class="dot input"></span>
-                  <span>{{ t('ai_token_usage_input') || '输入' }}</span>
-                  <span class="ai-usage-section-val">{{ formatTokens(usagePromptTokens) }}</span>
-                </div>
-                <div class="ai-usage-detail-row">
-                  <span class="dot hit"></span>
-                  <span>{{ t('ai_token_usage_cache_hit') || '缓存命中' }}</span>
-                  <span>{{ formatTokens(usageCacheReadTokens) }}</span>
-                </div>
-                <div class="ai-usage-detail-row">
-                  <span class="dot miss"></span>
-                  <span>{{ t('ai_token_usage_cache_miss') || '缓存未命中' }}</span>
-                  <span>{{ formatTokens(usageCacheMissTokens) }}</span>
-                </div>
-                <div class="ai-usage-detail-row">
-                  <span class="dot write"></span>
-                  <span>{{ t('ai_token_usage_cache_write') || '缓存写入' }}</span>
-                  <span>{{ formatTokens(usageCacheWriteTokens) }}</span>
-                </div>
-              </div>
-
-              <!-- 输出明细 -->
-              <div class="ai-usage-section">
-                <div class="ai-usage-section-title">
-                  <span class="dot output"></span>
-                  <span>{{ t('ai_token_usage_output') || '输出' }}</span>
-                  <span class="ai-usage-section-val">{{ formatTokens(usageCompletionTokens) }}</span>
-                </div>
-                <div class="ai-usage-detail-row">
-                  <span class="dot thinking"></span>
-                  <span>{{ t('ai_token_usage_thinking') || '思考过程' }}</span>
-                  <span>{{ formatTokens(usageThinkingTokens) }}</span>
-                </div>
-                <div class="ai-usage-detail-row">
-                  <span class="dot reply"></span>
-                  <span>{{ t('ai_token_usage_reply') || '回复内容' }}</span>
-                  <span>{{ formatTokens(usageReplyTokens) }}</span>
-                </div>
-              </div>
-
-              <!-- 缓存命中率 -->
-              <div class="ai-usage-hitrate" :title="cacheStatusTip">
-                <div class="ai-usage-hitrate-head">
-                  <span class="ai-usage-hitrate-title">{{ t('ai_token_usage_hit_rate') || '缓存命中率' }}</span>
-                  <span class="ai-usage-hitrate-val">{{ cacheHitRateDisplay }}</span>
-                </div>
-                <div class="ai-usage-hitrate-bar">
-                  <div class="ai-usage-hitrate-fill" :style="{ width: cacheHitPercent + '%' }"></div>
-                </div>
-              </div>
-
-              <!-- 预估费用 -->
-              <div v-if="estimatedCost" class="ai-usage-cost-row">
-                <span>{{ t('ai_estimated_cost') || '预估费用' }}</span>
-                <span class="ai-usage-cost-val">{{ estimatedCost }}</span>
-              </div>
-            </div>
+            <!-- UI-E：面板内容替换为 AiUsageMeter 紧凑态（明细/命中率/费用统一出口） -->
+            <AiUsageMeter
+              variant="compact"
+              :context-usage="contextUsage"
+              :provider-supports-cache="providerSupportsCache"
+            />
           </PopoverContent>
         </Popover>
         <Button
@@ -1099,159 +977,16 @@ defineExpose({ setDraft })
 </style>
 
 <style>
-/* 上下文用量浮层（Cursor 风格）：点击圆环触发。
-   注意：PopoverContent 通过 Portal 渲染到 body，必须在全局样式中定义。 */
+/* 上下文用量浮层容器（Cursor 风格）：点击圆环触发。
+   注意：PopoverContent 通过 Portal 渲染到 body，必须在全局样式中定义；
+   面板内部内容（明细/命中率/费用）已迁移至 AiUsageMeter（UI-E）。 */
 .ai-usage-panel {
   width: 280px;
-  padding: 18px 22px 16px !important;
+  padding: 14px 16px 12px !important;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   z-index: var(--z-index-60);
-}
-
-.ai-usage-panel-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.ai-usage-panel-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-size: 12px;
-  color: var(--text-tertiary);
-  padding: 12px 0 8px;
-  text-align: center;
-}
-.ai-usage-panel-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.ai-usage-total-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.ai-usage-total-val {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.ai-usage-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.ai-usage-section-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.ai-usage-section-val {
-  margin-left: auto;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.ai-usage-detail-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-secondary);
-  padding-left: 16px;
-}
-.ai-usage-detail-row span:last-child {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-.dot.input {
-  background: var(--info);
-}
-.dot.output {
-  background: var(--accent);
-}
-.dot.hit {
-  background: var(--success);
-}
-.dot.miss {
-  background: var(--danger);
-}
-.dot.write {
-  background: var(--warning);
-}
-.dot.thinking {
-  background: var(--warning);
-}
-.dot.reply {
-  background: var(--accent);
-}
-
-.ai-usage-hitrate {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.ai-usage-hitrate-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.ai-usage-hitrate-title {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-.ai-usage-hitrate-val {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--success);
-  font-variant-numeric: tabular-nums;
-}
-.ai-usage-hitrate-bar {
-  width: 100%;
-  height: 5px;
-  background: var(--bg-hover);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.ai-usage-hitrate-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--success) 0%, var(--warning) 60%, var(--danger) 100%);
-  border-radius: 999px;
-  transition: width 0.4s ease;
-}
-
-/* 费用行 */
-.ai-usage-cost-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--text-tertiary);
-  padding-top: 4px;
-  border-top: 1px solid var(--border-subtle);
-}
-.ai-usage-cost-val {
-  font-weight: 600;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
 }
 </style>

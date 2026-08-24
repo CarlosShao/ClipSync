@@ -2,10 +2,23 @@
 import { ref, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import type { ToolCall, ToolResult } from '@/api/ai'
-import { ChevronDown, ChevronRight, CheckCircle2, Loader2 } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, CheckCircle2, Loader2, Hourglass } from 'lucide-vue-next'
+
+/**
+ * AiToolTimeline — 工具调用时间线（UI-D 重构）
+ *
+ * - 工具名：i18n key `ai_tool_<name>` 优先；缺失时把 snake/kebab 名转人类可读兜底
+ * - 写操作标注：写动词命中 → 中性「写」标签（不硬编码工具名）
+ * - 破坏性动作：删除/覆盖/危险关键词命中 → 红色「危险」标签（--danger token）
+ * - 等待确认：tool_call 带 `pendingConfirm` 标记 → warning 态展示（纯 UI，
+ *   confirm 事件流转归 UI-E 的 AiConfirmCard，本组件只做展示态）
+ */
+
+/** 展示态扩展：协议 ToolCall 之外的可选 UI 标记（结构兼容，可直接传 ToolCall[]） */
+type TimelineToolCall = ToolCall & { pendingConfirm?: boolean }
 
 const props = defineProps<{
-  toolCalls?: ToolCall[]
+  toolCalls?: TimelineToolCall[]
   toolResults?: ToolResult[]
   // 该时间线归属的代理名（子代理卡片内传入，用于把工具调用明确标注为“属于哪个子代理”）
   agentName?: string
@@ -14,17 +27,27 @@ const { t } = useI18n()
 
 const expanded = ref<Set<string>>(new Set())
 
-// 完整 i18n 工具名映射：优先 ai_tool_<name> 键；缺失时把 snake_case 人性化显示作为兜底。
+// ==================== 工具名：i18n 优先 + snake/kebab 人性化兜底 ====================
 function getToolName(name: string) {
   const key = 'ai_tool_' + name
   const val = t(key)
   if (val && val !== key) return val
   return name
-    .split('_')
+    .split(/[_-]+/)
+    .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
 }
 
+// ==================== 写操作 / 破坏性动作检测（仅按名称关键词，不硬编码工具名） ====================
+const DANGER_RE = /(delete|remove|drop|truncate|wipe|purge|unlink|rmdir|clear|overwrite|destroy|reset)/i
+const WRITE_RE =
+  /(save|create|update|insert|write|add|set|rename|move|toggle|favorite|organize|execute|batch|send|upload|patch|put|post|delete|remove|modify|edit)/i
+
+const isDangerous = (name: string) => DANGER_RE.test(name)
+const isWrite = (name: string) => !isDangerous(name) && WRITE_RE.test(name)
+
+// ==================== 结果/展开 ====================
 function getResult(id: string): ToolResult | undefined {
   return props.toolResults?.find((r) => r.tool_call_id === id)
 }
@@ -66,6 +89,8 @@ const steps = computed(() => {
     index: i + 1,
     done: isDone(tc.id),
     result: getResult(tc.id),
+    dangerous: isDangerous(tc.name),
+    write: isWrite(tc.name),
   }))
 })
 </script>
@@ -88,16 +113,27 @@ const steps = computed(() => {
       <div class="ai-tool-log-body">
         <button class="ai-tool-log-summary" @click="toggle(step.id)">
           <span class="ai-tool-log-icon">
-            <Loader2 v-if="!step.done" :size="13" class="ai-tool-log-spin" />
+            <Loader2 v-if="!step.done && !step.pendingConfirm" :size="13" class="ai-tool-log-spin" />
+            <Hourglass v-else-if="step.pendingConfirm" :size="13" class="ai-tool-log-wait" />
           </span>
           <span class="ai-tool-log-text">
-            <span class="ai-tool-log-action">{{ step.done ? (t('ai_tool_called') || '已调用') : (t('ai_tool_calling') || '调用') }}</span>
+            <span class="ai-tool-log-action">{{
+              step.done ? t('ai_tool_called', '已调用') : t('ai_tool_calling', '调用')
+            }}</span>
             <span class="ai-tool-log-name">{{ getToolName(step.name) }}</span>
+            <!-- 破坏性动作：红色标签（--danger token） -->
+            <span v-if="step.dangerous" class="ai-tool-log-flag danger">{{ t('ai_tool_danger', '危险') }}</span>
+            <!-- 写操作标注：中性标签 -->
+            <span v-else-if="step.write" class="ai-tool-log-flag write">{{ t('ai_tool_write', '写') }}</span>
           </span>
           <span v-if="agentName" class="ai-tool-log-source">{{ agentName }}</span>
           <span class="ai-tool-log-spacer" />
-          <span class="ai-tool-log-status" :class="step.done ? 'ok' : 'run'">
-            {{ step.done ? (t('ai_tool_done') || '完成') : (t('ai_tool_running') || '进行中') }}
+          <!-- 等待确认：warning 态（纯展示；confirm 事件流转归 UI-E） -->
+          <span v-if="step.pendingConfirm" class="ai-tool-log-status wait">
+            {{ t('ai_tool_pending_confirm', '等待确认') }}
+          </span>
+          <span v-else class="ai-tool-log-status" :class="step.done ? 'ok' : 'run'">
+            {{ step.done ? t('ai_tool_done', '完成') : t('ai_tool_running', '进行中') }}
           </span>
           <ChevronDown v-if="expanded.has(step.id)" :size="13" class="ai-tool-log-chev" />
           <ChevronRight v-else :size="13" class="ai-tool-log-chev" />
@@ -105,11 +141,11 @@ const steps = computed(() => {
 
         <div v-if="expanded.has(step.id)" class="ai-tool-log-detail">
           <div class="ai-tool-log-section">
-            <div class="ai-tool-log-section-title">{{ t('ai_tool_args') || '参数' }}</div>
+            <div class="ai-tool-log-section-title">{{ t('ai_tool_args', '参数') }}</div>
             <pre>{{ formatArgs(step.arguments) }}</pre>
           </div>
           <div v-if="step.result" class="ai-tool-log-section">
-            <div class="ai-tool-log-section-title">{{ t('ai_tool_result') || '结果' }}</div>
+            <div class="ai-tool-log-section-title">{{ t('ai_tool_result', '结果') }}</div>
             <pre>{{ formatResult(step.result.content) }}</pre>
           </div>
         </div>
@@ -124,11 +160,11 @@ const steps = computed(() => {
   display: flex;
   flex-direction: column;
   margin: 8px 0;
-  border-radius: 12px;
+  border-radius: var(--radius-md, 10px);
   overflow: hidden;
-  background: var(--bg-surface, #fff);
-  border: 1px solid var(--border-subtle, rgba(15, 23, 42, 0.08));
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle, var(--border-default));
+  box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.05));
   max-width: 100%;
 }
 
@@ -151,26 +187,25 @@ const steps = computed(() => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--bg-hover, rgba(15, 23, 42, 0.05));
-  border: 1.5px solid var(--border-subtle, rgba(15, 23, 42, 0.15));
+  background: var(--bg-hover);
+  border: 1.5px solid var(--border-subtle, var(--border-default));
   font-size: 10px;
   font-weight: 700;
-  color: var(--text-tertiary, #94a3b8);
+  color: var(--text-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  z-index: 1;
 }
 .ai-tool-log-line.done .ai-tool-log-node {
-  background: var(--success, #16a34a);
-  border-color: var(--success, #16a34a);
-  color: #fff;
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--accent-foreground, var(--bg-surface));
 }
 .ai-tool-log-connector {
   flex: 1;
   width: 2px;
-  background: linear-gradient(180deg, var(--border-subtle, rgba(15, 23, 42, 0.15)), rgba(15, 23, 42, 0.05));
+  background: linear-gradient(180deg, var(--border-subtle, var(--border-default)), rgba(var(--accent-rgb), 0.05));
   margin: 3px 0;
   border-radius: 2px;
 }
@@ -198,13 +233,15 @@ const steps = computed(() => {
   cursor: pointer;
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--text-secondary, #475569);
+  color: var(--text-secondary);
   text-align: left;
   white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 .ai-tool-log-summary:hover {
-  background: var(--bg-hover, rgba(115, 115, 115, 0.06));
+  background: var(--bg-hover);
 }
 
 .ai-tool-log-icon {
@@ -213,11 +250,14 @@ const steps = computed(() => {
   justify-content: center;
 }
 .ai-tool-log-spin {
-  color: var(--accent, #475569);
-  animation: spin 1s linear infinite;
+  color: var(--accent);
+  animation: ai-tool-rotate 1s linear infinite;
+}
+.ai-tool-log-wait {
+  color: var(--warning);
 }
 .ai-tool-log-done {
-  color: var(--success, #16a34a);
+  color: var(--success);
 }
 .ai-tool-log-text {
   flex: 0 1 auto;
@@ -229,20 +269,37 @@ const steps = computed(() => {
   gap: 5px;
 }
 .ai-tool-log-action {
-  color: var(--text-tertiary, #94a3b8);
+  color: var(--text-tertiary);
   font-weight: 500;
   flex-shrink: 0;
 }
 .ai-tool-log-name {
   font-weight: 600;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-primary);
+}
+/* 写操作 / 破坏性动作标注 */
+.ai-tool-log-flag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ai-tool-log-flag.write {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+.ai-tool-log-flag.danger {
+  color: var(--danger);
+  background: var(--danger-bg);
 }
 .ai-tool-log-source {
   flex-shrink: 0;
   font-size: 10px;
   font-weight: 600;
-  color: var(--accent, #475569);
-  background: var(--accent-bg, rgba(115, 115, 115, 0.12));
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
   border-radius: 999px;
   padding: 1px 7px;
   white-space: nowrap;
@@ -255,19 +312,23 @@ const steps = computed(() => {
   border-radius: 999px;
 }
 .ai-tool-log-status.run {
-  color: var(--accent, #475569);
-  background: var(--accent-bg, rgba(115, 115, 115, 0.12));
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
 }
 .ai-tool-log-status.ok {
-  color: var(--success, #16a34a);
-  background: rgba(22, 163, 74, 0.1);
+  color: var(--success);
+  background: var(--success-bg);
+}
+.ai-tool-log-status.wait {
+  color: var(--warning);
+  background: var(--warning-bg);
 }
 .ai-tool-log-spacer {
   flex: 1;
   min-width: 4px;
 }
 .ai-tool-log-chev {
-  color: var(--text-tertiary, #94a3b8);
+  color: var(--text-tertiary);
   flex-shrink: 0;
 }
 
@@ -283,29 +344,43 @@ const steps = computed(() => {
 .ai-tool-log-section-title {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-tertiary, #94a3b8);
+  color: var(--text-tertiary);
   margin-bottom: 2px;
 }
 .ai-tool-log-section pre {
   margin: 0;
   padding: 7px 9px;
-  background: var(--bg-hover, rgba(15, 23, 42, 0.04));
-  border: 1px solid var(--border-subtle, rgba(15, 23, 42, 0.08));
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle, var(--border-default));
   border-radius: 8px;
   font-size: 11px;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 180px;
   overflow-y: auto;
-  color: var(--text-secondary, #475569);
+  color: var(--text-secondary);
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+@keyframes ai-tool-rotate {
+  to {
+    transform: rotate(360deg);
+  }
 }
 @keyframes ai-tool-line-in {
-  from { opacity: 0; transform: translateY(-3px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-tool-log-line,
+  .ai-tool-log-spin {
+    animation: none;
+  }
 }
 </style>

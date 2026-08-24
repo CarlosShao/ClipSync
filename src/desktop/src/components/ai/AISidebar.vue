@@ -12,7 +12,7 @@ import AiInspector from './AiInspector.vue'
 import AiMessageList from './AiMessageList.vue'
 import AiChatInput from './AiChatInput.vue'
 import AiMemoryPanel from './AiMemoryPanel.vue'
-import AiCompressProgress from './AiCompressProgress.vue'
+import AiUsageMeter from './AiUsageMeter.vue'
 import {
   X,
   Bot,
@@ -206,6 +206,12 @@ const viewContextText = computed(() => {
 })
 
 function onSend(text: string, images?: import('@/api/ai').ChatImage[]) {
+  // UI-E 确认门控转发接缝：useAiChat 协议层（归后端 Package F）目前未暴露 onMeta
+  // 钩子，SSE meta.type==='confirm_tool_action' 无法透传到本壳。待协议层暴露后，
+  // 在 send 的 meta 回调处加一行 feedConfirmMeta(meta)（来自 useAiChatUi）即可，
+  // 确认状态机与渲染（AiConfirmCard）已全部就绪。现阶段可用
+  // useAiChatUi().openConfirm({ requestId, tool, argsSummary, impact }) 或
+  // feedConfirmMeta({ type: 'confirm_tool_action', ... }) mock 测试（见 AiConfirmCard.vue 注释）。
   send(text, {
     mode: mode.value,
     thinking: thinkingEnabled.value,
@@ -387,8 +393,8 @@ function formatDupTime(iso?: string): string {
             </Button>
           </div>
 
-          <!-- 上下文压缩进度：手动 /compact 与后端自动压缩共用（分割线 + 扫光动画） -->
-          <AiCompressProgress v-if="compressProgress" :progress="compressProgress" />
+          <!-- 上下文压缩进度：手动 /compact 与后端自动压缩共用（能力已并入 AiUsageMeter，UI-E） -->
+          <AiUsageMeter v-if="compressProgress" variant="compress" :compress="compressProgress" />
 
           <div v-if="error" class="ai-error-bar">{{ error }}</div>
 

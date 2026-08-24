@@ -1,45 +1,23 @@
 <script setup lang="ts">
 import { ref, computed, watch, type Component } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import {
-  ChevronRight,
-  ChevronDown,
-  Copy,
-  Pencil,
-  ListChecks,
-  Languages,
-  AlignLeft,
-  HelpCircle,
-  Sparkles,
-  CheckCircle2,
-  Loader2,
-  XCircle,
-  Bot,
-} from 'lucide-vue-next'
+import { ChevronDown, Copy, Pencil, ListChecks, Languages, AlignLeft, HelpCircle, Sparkles } from 'lucide-vue-next'
 import type { ChatMessage, AgentRun } from '@/api/ai'
-import AiWaiting from './AiWaiting.vue'
-import AiThinkingOrb from './AiThinkingOrb.vue'
+import AiThinkingCollapse from './AiThinkingCollapse.vue'
+import AiAgentCards from './AiAgentCards.vue'
+import AiAgentDrawer from './AiAgentDrawer.vue'
 import AiStreamText from './AiStreamText.vue'
 import AiProcessChips from './AiProcessChips.vue'
 import AiToolTimeline from './AiToolTimeline.vue'
 
 /**
- * AiMessage — 单条消息渲染（UI-C 重构）
+ * AiMessage — 单条消息渲染（UI-C 重构，UI-D 过程可视化接入）
  *
  * 统一「过程折叠」结构（assistant 消息）：
  *   折叠态：AiProcessChips（思考 Ns / 工具 N 次 / 子代理 N 个，点击展开）
- *   展开态：ThinkingCollapse 插入位（①） → 工具时间线（②） → 子代理卡片插入位（③） → 内容
- *
- * 流式内容渲染改用 AiStreamText（Markdown 节流：≥100ms 或 ≥200 字符才 parse 一次，
- * 终态强制刷新），替代原先的逐 token 全量重渲。
- *
- * 【UI-D 插入位说明】
- *   ① 思考折叠：当前为过渡实现（AiWaiting + 内联思考面板），UI-D 交付
- *      AiThinkingCollapse.vue（合并 AiThinking/AiWaiting，删除 orbs-js）后整体替换。
- *   ② 工具时间线：已接入 AiToolTimeline.vue；UI-D 重构该组件（写操作标注/
- *      破坏性标签/等待确认态）时保持 toolCalls/toolResults props 契约即可。
- *   ③ 子代理卡片：当前为内联 wf-table，UI-D 交付 AiAgentCards.vue（合并
- *      AiAgentSummary）后替换本区块。
+ *   展开态：① AiThinkingCollapse（loading 扫光/深度思考折叠面板）→ ② AiToolTimeline
+ *           （写操作标注/破坏性标签/等待确认态）→ ③ AiAgentCards（子代理卡片网格，
+ *           点击打开 AiAgentDrawer）→ 内容（AiStreamText 节流渲染 Markdown）
  */
 const props = defineProps<{ message: ChatMessage; index: number; isStreaming: boolean; isLatest: boolean }>()
 const emit = defineEmits<{ reedit: [content: string] }>()
@@ -133,12 +111,8 @@ const isThinkingPhase = computed(
   () => isStreamingNow.value && hasThinking.value && props.message.thinkingActive !== false,
 )
 
-// 思考已完成（非流式 或 思考阶段已结束）：orb → breathing、shimmer 停
-const thinkingDone = computed(() => hasThinking.value && !isThinkingPhase.value)
-
-function runActive(run: AgentRun): boolean {
-  return run.status === 'planning' || run.status === 'working' || run.status === 'synthesis'
-}
+// 子代理详情抽屉（UI-D：AiAgentCards 点击卡片 → 此处打开 AiAgentDrawer）
+const agentDrawerRun = ref<AgentRun | null>(null)
 
 // ===== 过程折叠（UI-C 统一结构）=====
 // 默认展开；流式结束后可点「收起」进入折叠态（AiProcessChips），点 chips 行展开。
@@ -187,12 +161,6 @@ const visibleToolCalls = computed(() => {
   }))
 })
 
-// 思考面板标题：进行中「深度思考」 vs 完成「深度思考 · Ns」
-const thinkingPanelTitle = computed(() => {
-  if (thinkingSecs.value > 0) return `深度思考 · ${thinkingSecs.value}s`
-  return '深度思考'
-})
-
 // 快捷指令
 const QUICK_ACTIONS_KIND_META: Record<string, { icon: Component; i18nKey: string }> = {
   quick_action_summarize: { icon: ListChecks, i18nKey: 'ai_quick_applied_summarize' },
@@ -208,24 +176,6 @@ const quickActionKind = computed(() => {
 const quickActionMeta = computed(() => (quickActionKind.value ? QUICK_ACTIONS_KIND_META[quickActionKind.value] : null))
 const quickActionIcon = computed(() => quickActionMeta.value?.icon ?? null)
 const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMeta.value.i18nKey) : ''))
-
-// 格式化耗时
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  const sec = Math.floor(ms / 1000)
-  if (sec < 60) return `${sec}s`
-  const min = Math.floor(sec / 60)
-  const remain = sec % 60
-  return `${min}m ${remain}s`
-}
-
-// 子代理图标：按 status 决定
-function runIcon(run: AgentRun) {
-  if (run.status === 'done') return CheckCircle2
-  if (run.status === 'failed') return XCircle
-  if (runActive(run)) return Loader2
-  return Bot
-}
 </script>
 
 <template>
@@ -313,58 +263,38 @@ function runIcon(run: AgentRun) {
             <span>{{ t('ai_process_collapse', '收起过程') }}</span>
           </button>
 
-          <!-- 【UI-D 插入位 ①】ThinkingCollapse：以下等待态 + 思考面板为过渡实现，
-               UI-D 交付 AiThinkingCollapse.vue（合并 AiThinking/AiWaiting）后整体替换 -->
-          <!-- 状态 1：等待加载（首字前）—— AiWaiting：orb + 「正在思考中」shimmer -->
-          <AiWaiting v-if="isLoading" class="ai-waiting-block" />
+          <!-- 【UI-D 插入位 ①】AiThinkingCollapse：loading 扫光（首字前）→ 深度思考面板
+               （流式中扫光+计时+打字机；完成后折叠为「深度思考 Ns」摘要行） -->
+          <AiThinkingCollapse
+            v-if="isLoading || hasThinking"
+            :thinking="message.thinking || ''"
+            :thinking-started-at="message.thinkingStartedAt"
+            :is-streaming="isThinkingPhase || isLoading"
+            :expanded="expandedThinking"
+            @toggle="expandedThinking = !expandedThinking"
+          />
 
-          <!-- 状态 2：深度思考面板（左 orb + 标题 + 思考过程） -->
-          <div v-if="hasThinking" class="ai-think-panel">
-            <div class="ai-think-head" @click="expandedThinking = !expandedThinking">
-              <AiThinkingOrb class="ai-think-orb" :state="isThinkingPhase ? 'composing' : 'breathing'" :size="24" />
-              <span class="ai-think-title" :class="{ paused: thinkingDone }" :data-text="thinkingPanelTitle">{{
-                thinkingPanelTitle
-              }}</span>
-              <ChevronRight v-if="!expandedThinking" :size="13" class="ai-think-chev" />
-              <ChevronDown v-else :size="13" class="ai-think-chev" />
-            </div>
-            <div class="ai-think-body" :class="{ collapsed: !expandedThinking }">
-              <pre class="ai-think-md">{{ message.thinking }}</pre>
-            </div>
-          </div>
-
-          <!-- 【UI-D 插入位 ②】工具时间线：已接入 AiToolTimeline；
-               UI-D 重构该组件（写操作标注/破坏性标签/确认态）时保持 props 契约 -->
-          <!-- 状态 3：工具调用时间线（思考阶段结束后显示） -->
+          <!-- 【UI-D 插入位 ②】AiToolTimeline：工具时间线（写操作标注/破坏性标签/等待确认态） -->
           <AiToolTimeline
             v-if="!isThinkingPhase && visibleToolCalls.length"
             :tool-calls="visibleToolCalls"
             :tool-results="message.toolResults"
           />
 
-          <!-- 【UI-D 插入位 ③】子代理卡片：以下 wf-table 为过渡实现，
-               UI-D 交付 AiAgentCards.vue（合并 AiAgentSummary）后替换本区块 -->
-          <!-- 状态 3：子代理 / 工作流步骤（思考阶段结束后才显示） -->
-          <div v-if="!isThinkingPhase && visibleAgentRuns.length" class="ai-wf-table">
-            <div
-              v-for="(run, i) in visibleAgentRuns"
-              :key="run.id"
-              class="ai-wf-row"
-              :class="{ active: runActive(run), done: run.status === 'done', failed: run.status === 'failed' }"
-            >
-              <span class="ai-wf-n">{{ String(i + 1).padStart(2, '0') }}</span>
-              <span class="ai-wf-name">
-                <component :is="runIcon(run)" :size="12" class="ai-wf-icon" :class="{ 'ai-wf-spin': runActive(run) }" />
-                {{ run.name }}
-              </span>
-              <span class="ai-wf-meta">{{
-                run.duration ? formatDuration(run.duration) : runActive(run) ? 'running' : run.status
-              }}</span>
-              <div class="ai-wf-bar">
-                <i :style="{ width: run.status === 'done' ? '100%' : runActive(run) ? '60%' : '0%' }"></i>
-              </div>
-            </div>
-          </div>
+          <!-- 【UI-D 插入位 ③】AiAgentCards：子代理并行卡片网格（点击卡片打开详情抽屉） -->
+          <AiAgentCards
+            v-if="!isThinkingPhase && visibleAgentRuns.length"
+            :runs="visibleAgentRuns"
+            @open="agentDrawerRun = $event"
+          />
+
+          <!-- 子代理详情抽屉（保持原 AiAgentDrawer 打开链路） -->
+          <AiAgentDrawer
+            v-if="agentDrawerRun"
+            :run="agentDrawerRun"
+            :is-streaming="isStreamingNow"
+            @close="agentDrawerRun = null"
+          />
 
           <!-- 主要内容输出（答案区）：AiStreamText 节流渲染 Markdown（≥100ms/≥200 字符） -->
           <div v-if="hasContent" class="ai-msg-content markdown-body">
@@ -489,195 +419,6 @@ function runIcon(run: AgentRun) {
   color: var(--text-secondary);
 }
 
-/* ================================================================
-   agent-workflow-ui skill 基准（对齐 demo agent-workflow-demo）
-   - waiting: AiWaiting（orb + 「正在思考中」字内 shimmer）
-   - think-panel: 左 orb + 「深度思考」标题 shimmer + 思考过程
-   - wf-table: 工作流极简表格行 + 进度条
-   ================================================================ */
-
-/* ---- 等待加载（AiWaiting 容器）---- */
-.ai-waiting-block {
-  margin: 2px 0 0;
-}
-
-/* ---- 深度思考面板 ---- */
-.ai-think-panel {
-  margin: 8px 0 0;
-  overflow: hidden;
-}
-.ai-think-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 2px;
-  cursor: pointer;
-  user-select: none;
-}
-.ai-think-orb {
-  flex-shrink: 0;
-  display: block;
-}
-.ai-think-title {
-  position: relative;
-  display: inline-block;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  overflow: visible;
-}
-/* 字内笔画间 shimmer：与 demo 原版一致
-   （transparent 基色 + mix-blend-mode: screen/multiply → 文字永不消失，只有高光带在字内流动）
-   ⚠️ 必须用 background-image 而不是 background 简写——简写会清掉 background-clip:text
-   ⚠️ 不要改回 currentColor/text-fill-color:transparent 写法——无 mix-blend-mode 时渐变未覆盖的文字会变透明，看起来像"横扫整个 box" */
-.ai-think-title::after {
-  content: attr(data-text);
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    transparent 35%,
-    rgba(255, 255, 255, 0.85) 50%,
-    transparent 65%,
-    transparent 100%
-  );
-  background-size: 220% 100%;
-  background-position: 100% 0;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  animation: ai-think-shimmer 2.5s ease-in-out infinite;
-  mix-blend-mode: screen;
-}
-html.light .ai-think-title::after {
-  background-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    transparent 35%,
-    rgba(24, 24, 27, 0.85) 50%,
-    transparent 65%,
-    transparent 100%
-  );
-  background-size: 220% 100%;
-  mix-blend-mode: multiply;
-}
-/* 思考完成 → shimmer 停止 */
-.ai-think-title.paused::after {
-  animation: none;
-  background-position: 100% 0;
-}
-@keyframes ai-think-shimmer {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: -20% 0;
-  }
-}
-.ai-think-chev {
-  color: var(--text-tertiary);
-  margin-left: auto;
-  flex-shrink: 0;
-}
-/* 思考内容：markdown 样式（左竖线 + 等宽） */
-.ai-think-body {
-  overflow: hidden;
-  transition: opacity 0.25s ease;
-  /* 思考内容可能上千字，不要 max-height 截断（外层消息容器自带滚动） */
-  max-height: none;
-  opacity: 1;
-  padding-top: 8px;
-  padding-left: 4px;
-}
-.ai-think-body.collapsed {
-  max-height: 0;
-  opacity: 0;
-  padding-top: 0;
-}
-.ai-think-md {
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  line-height: 1.7;
-  border-left: 2px solid var(--border-neutral-l1, var(--border-default));
-  padding: 4px 0 4px 12px;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  background: transparent;
-}
-
-/* ---- 工作流表格（demo wf 风格；UI-D 插入位 ③ 过渡实现）---- */
-.ai-wf-table {
-  border: 1px solid var(--border-neutral-l1, var(--border-default));
-  border-radius: 10px;
-  overflow: hidden;
-  margin: 6px 0 14px;
-}
-.ai-wf-row {
-  display: grid;
-  grid-template-columns: 26px 1fr auto;
-  gap: 12px;
-  align-items: baseline;
-  padding: 8px 13px;
-  font-size: 13px;
-  border-top: 1px solid var(--border-neutral-l1, var(--border-default));
-  position: relative;
-  transition: background 0.3s;
-}
-.ai-wf-row:first-child {
-  border-top: 0;
-}
-.ai-wf-n {
-  font-family: var(--font-family-mono, ui-monospace, monospace);
-  font-size: 11px;
-  color: var(--text-tertiary);
-  transition: color 0.3s;
-}
-.ai-wf-meta {
-  font-family: var(--font-family-mono, ui-monospace, monospace);
-  font-size: 11px;
-  color: var(--text-tertiary);
-  text-align: right;
-}
-.ai-wf-bar {
-  position: absolute;
-  left: 13px;
-  right: 13px;
-  bottom: 0;
-  height: 1px;
-  background: var(--border-neutral-l1, var(--border-default));
-  overflow: hidden;
-}
-.ai-wf-bar > i {
-  display: block;
-  height: 100%;
-  width: 0;
-  background: var(--text-secondary);
-  transition: width 0.25s linear;
-}
-.ai-wf-row.active {
-  background: var(--bg-base-secondary, var(--bg-hover));
-}
-.ai-wf-row.active .ai-wf-name {
-  color: var(--text-default, var(--text-primary));
-}
-.ai-wf-row.active .ai-wf-n {
-  color: var(--text-secondary);
-}
-.ai-wf-row.done .ai-wf-name {
-  color: var(--text-secondary);
-}
-.ai-wf-row.done .ai-wf-bar > i {
-  width: 100% !important;
-}
-.ai-wf-row.failed .ai-wf-name {
-  color: var(--danger);
-}
-
 /* ============ 主要内容 ============ */
 .ai-msg-content {
   white-space: normal;
@@ -796,7 +537,6 @@ html.light .ai-think-title::after {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ai-think-title::after,
   .ai-stream-caret {
     animation: none;
   }

@@ -27,6 +27,9 @@ export interface AiConfirmRequest {
 }
 export type AiConfirmPhase = 'idle' | 'pending' | 'approved' | 'denied' | 'timeout'
 
+/** 确认卡自动超时时长（契约：120s 未决 → 自动转超时态） */
+export const CONFIRM_TIMEOUT_MS = 120_000
+
 const NAV_COLLAPSED_KEY = 'ai-nav-rail-collapsed'
 const INSPECTOR_OPEN_KEY = 'ai-inspector-open'
 
@@ -39,9 +42,20 @@ const inspectorOpen = ref(localStorage.getItem(INSPECTOR_OPEN_KEY) !== '0')
 /** 用户本会话内显式切换过 Inspector（切换过则尊重用户，断点变化不再自动调整） */
 let inspectorTouched = false
 
-// 确认卡 UI 占位（UI-B 只承载状态，不做渲染/回调逻辑）
+// 确认卡 UI 状态（UI-E 补全：状态机 + 120s 超时定时器 + SSE meta 事件接入）
 const confirmRequest = ref<AiConfirmRequest | null>(null)
 const confirmPhase = ref<AiConfirmPhase>('idle')
+/** 确认卡超时截止时间戳（ms，null = 无进行中的倒计时）；卡片据此渲染剩余秒数 */
+const confirmExpiresAt = ref<number | null>(null)
+let confirmTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearConfirmTimer() {
+  if (confirmTimer !== null) {
+    clearTimeout(confirmTimer)
+    confirmTimer = null
+  }
+  confirmExpiresAt.value = null
+}
 
 function currentBreakpoint(w: number): AiShellBreakpoint {
   if (w >= 1440) return 'xl'
@@ -114,17 +128,59 @@ export function useAiChatUi() {
     if (inspectorOpen.value) toggleInspector()
   }
 
-  // ---- 确认卡 UI 状态占位（UI-E 接线用，UI-B 不消费）----
+  // ---- 确认卡状态机（UI-E 补全，保持 UI-B 既有导出名向后兼容）----
+  // 状态迁移：idle --openConfirm--> pending --settleConfirm--> approved/denied/timeout
+  //   - pending 持续 CONFIRM_TIMEOUT_MS(120s) 未决 → 定时器自动 settle 为 timeout
+  //   - 首个终态获胜：进入终态后忽略迟到的 settle（如超时后批准请求才返回），
+  //     避免 UI 在终态间闪烁；resetConfirm 才会回到 idle
   function openConfirm(req: AiConfirmRequest) {
     confirmRequest.value = req
     confirmPhase.value = 'pending'
+    clearConfirmTimer()
+    confirmExpiresAt.value = Date.now() + CONFIRM_TIMEOUT_MS
+    confirmTimer = setTimeout(() => {
+      if (confirmPhase.value === 'pending') settleConfirm('timeout')
+    }, CONFIRM_TIMEOUT_MS)
   }
   function settleConfirm(phase: 'approved' | 'denied' | 'timeout') {
+    if (confirmPhase.value !== 'pending') return
     confirmPhase.value = phase
+    clearConfirmTimer()
   }
   function resetConfirm() {
+    clearConfirmTimer()
     confirmRequest.value = null
     confirmPhase.value = 'idle'
+  }
+  /** 关闭已结算（approved/denied/timeout）的确认卡；pending 态不可关闭 */
+  function dismissConfirm() {
+    if (confirmPhase.value === 'pending') return
+    resetConfirm()
+  }
+  /**
+   * SSE meta 事件接入点（UI-E）。AISidebar / 协议层把含确认事件的 meta 原样
+   * 交给此函数即可，识别与归一化在这里完成（useAiChat.ts 协议层无需改动）：
+   *   - meta.type === 'confirm_tool_action' → openConfirm（字段 requestId/tool/argsSummary/impact）
+   *   - meta.type === 'confirm_resolved'    → settleConfirm（meta.allow ? approved : denied）
+   *     // TODO(backend Package C)：resolved 事件字段名以最终契约为准
+   * 后端未就绪时的 mock 测试方式见 AiConfirmCard.vue 顶部注释。
+   */
+  function feedConfirmMeta(meta: unknown) {
+    if (!meta || typeof meta !== 'object') return
+    const m = meta as Record<string, unknown>
+    if (m.type === 'confirm_tool_action') {
+      const requestId = String(m.requestId ?? m.request_id ?? '')
+      const tool = String(m.tool ?? '')
+      if (!requestId || !tool) return
+      openConfirm({
+        requestId,
+        tool,
+        argsSummary: m.argsSummary != null ? String(m.argsSummary) : undefined,
+        impact: m.impact != null ? String(m.impact) : undefined,
+      })
+    } else if (m.type === 'confirm_resolved') {
+      settleConfirm(m.allow ? 'approved' : 'denied')
+    }
   }
 
   return {
@@ -142,11 +198,14 @@ export function useAiChatUi() {
     toggleInspector,
     openInspector,
     closeInspector,
-    // 确认卡占位
+    // 确认卡状态机（UI-B 既有导出名不变；confirmExpiresAt/dismissConfirm/feedConfirmMeta 为 UI-E 新增）
     confirmRequest,
     confirmPhase,
+    confirmExpiresAt,
     openConfirm,
     settleConfirm,
     resetConfirm,
+    dismissConfirm,
+    feedConfirmMeta,
   }
 }

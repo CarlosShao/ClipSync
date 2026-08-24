@@ -5,6 +5,7 @@ import type { ChatMessage } from '@/api/ai'
 import AiMessage from './AiMessage.vue'
 import AiErrorBar from './AiErrorBar.vue'
 import AiDuplicateNotice from './AiDuplicateNotice.vue'
+import AiConfirmCard from './AiConfirmCard.vue'
 
 /**
  * UI-C：顶部区域挂载原子状态组件（错误条 / 图片重复横幅）。
@@ -118,7 +119,8 @@ defineExpose({ scrollToPos })
 
 <template>
   <div ref="scrollRef" class="ai-msg-list" @scroll="onScroll">
-    <!-- 顶部原子状态区（UI-C）：错误条 / 图片重复横幅 -->
+    <!-- 顶部原子状态区（UI-C）：错误条 / 图片重复横幅；UI-E：工具确认门控卡片（自读 useAiChatUi 单例状态） -->
+    <AiConfirmCard />
     <AiErrorBar v-if="error" :message="error" />
     <AiDuplicateNotice v-if="duplicateNotice" :notice="duplicateNotice" @dismiss="emit('dismiss-duplicate')" />
     <div v-if="messages.length === 0" class="ai-msg-empty">

@@ -4,14 +4,17 @@ import { useI18n } from '@/composables/useI18n'
 import { useAiChatUi } from '@/composables/useAiChatUi'
 import { useResizablePanel } from '@/composables/useResizablePanel'
 import type { ContextUsage } from '@/api/ai'
-import { Gauge, Database, Bot, Brain, X } from 'lucide-vue-next'
+import AiUsageMeter from './AiUsageMeter.vue'
+import AiMemoryPanel from './AiMemoryPanel.vue'
+import { Gauge, Bot, Brain, X } from 'lucide-vue-next'
 
 /**
- * AI Shell 右侧 Inspector（UI-B）。
+ * AI Shell 右侧 Inspector（UI-B；UI-E 接入内容组件）。
  * xl（≥1440）行内展开；lg（1100–1439）折叠为浮层（可呼出）；数据由 contextUsage 驱动（props 传入）。
- * 区块：token 用量环（自绘，参考 AiChatInput 用量环实现）/ 缓存命中 / 子代理总览（占位）/ 记忆速览（占位）。
+ * 区块：token 用量/缓存命中/费用（AiUsageMeter full 态，UI-E）/ 子代理总览（占位）/
+ *       记忆速览（AiMemoryPanel peek 态，UI-E）。
  */
-const props = defineProps<{
+defineProps<{
   contextUsage: ContextUsage | null
   /** 协议层是否支持 prompt cache（与 AiChatInput 判定一致：不支持时显示「未启用」而非 0%） */
   providerSupportsCache?: boolean
@@ -34,42 +37,6 @@ const { width, startDrag } = useResizablePanel({
 })
 
 const isOverlay = computed(() => inspectorMode.value === 'overlay')
-
-// === token 用量环（自绘单环 = 上下文占用百分比）===
-const RING_R = 26
-const RING_C = 2 * Math.PI * RING_R
-const RING_SIZE = 64
-const RING_CENTER = RING_SIZE / 2
-
-const usagePercent = computed(() => props.contextUsage?.percent ?? 0)
-const ringDashOffset = computed(() => RING_C * (1 - usagePercent.value / 100))
-const ringLevel = computed(() => {
-  const p = usagePercent.value
-  if (p >= 90) return 'level-danger'
-  if (p >= 70) return 'level-warn'
-  return 'level-ok'
-})
-const ringLabel = computed(() => (props.contextUsage ? `${usagePercent.value}` : '–'))
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k'
-  return String(n)
-}
-
-// === 缓存命中（判定逻辑与 AiChatInput 一致）===
-const cacheHitPercent = computed(() => {
-  const c = props.contextUsage
-  if (!c || !c.promptTokens) return 0
-  const cached = c.cacheReadTokens || 0
-  return Math.min(100, Math.round((cached / c.promptTokens) * 100))
-})
-const cacheAvailable = computed(() => props.providerSupportsCache !== false)
-const cacheHitRateText = computed(() => {
-  if (!cacheAvailable.value) return t('ai_cache_not_enabled') || '未启用'
-  if (!props.contextUsage) return '–'
-  return `${cacheHitPercent.value}%`
-})
 </script>
 
 <template>
@@ -85,79 +52,13 @@ const cacheHitRateText = computed(() => {
     </div>
 
     <div class="ai-insp-body">
-      <!-- token 用量环 -->
+      <!-- token 用量 + 缓存命中 + 费用估算（UI-E：自绘环区块替换为 AiUsageMeter） -->
       <section class="ai-insp-section">
         <h4 class="ai-insp-sec-title">
           <Gauge :size="13" />
           {{ t('ai_context_usage_title') || '上下文用量' }}
         </h4>
-        <div class="ai-insp-ring-row">
-          <svg
-            class="ai-insp-ring"
-            :class="ringLevel"
-            :width="RING_SIZE"
-            :height="RING_SIZE"
-            :viewBox="`0 0 ${RING_SIZE} ${RING_SIZE}`"
-            role="img"
-            :aria-label="t('ai_context_usage_title') || '上下文用量'"
-          >
-            <circle class="ring-track" :cx="RING_CENTER" :cy="RING_CENTER" :r="RING_R" />
-            <circle
-              class="ring-progress"
-              :cx="RING_CENTER"
-              :cy="RING_CENTER"
-              :r="RING_R"
-              :stroke-dasharray="RING_C"
-              :stroke-dashoffset="ringDashOffset"
-            />
-            <text class="ring-label" :x="RING_CENTER" :y="RING_CENTER" dominant-baseline="central">
-              {{ ringLabel }}
-              <tspan class="ring-label-pct" font-size="0.6em">%</tspan>
-            </text>
-          </svg>
-          <dl class="ai-insp-stats">
-            <div class="ai-insp-stat">
-              <dt>{{ t('ai_usage_total') || '总量' }}</dt>
-              <dd>
-                {{ contextUsage ? formatTokens(contextUsage.totalTokens) : '–' }} /
-                {{ contextUsage ? formatTokens(contextUsage.contextWindow) : '–' }}
-              </dd>
-            </div>
-            <div class="ai-insp-stat">
-              <dt>{{ t('ai_usage_prompt') || '输入' }}</dt>
-              <dd>{{ contextUsage?.promptTokens != null ? formatTokens(contextUsage.promptTokens) : '–' }}</dd>
-            </div>
-            <div class="ai-insp-stat">
-              <dt>{{ t('ai_usage_completion') || '输出' }}</dt>
-              <dd>{{ contextUsage?.completionTokens != null ? formatTokens(contextUsage.completionTokens) : '–' }}</dd>
-            </div>
-            <div v-if="contextUsage?.thinkingTokens" class="ai-insp-stat">
-              <dt>{{ t('ai_usage_thinking') || '思考' }}</dt>
-              <dd>{{ formatTokens(contextUsage.thinkingTokens) }}</dd>
-            </div>
-          </dl>
-        </div>
-      </section>
-
-      <!-- 缓存命中 -->
-      <section class="ai-insp-section">
-        <h4 class="ai-insp-sec-title">
-          <Database :size="13" />
-          {{ t('ai_cache_hit_title') || '缓存命中' }}
-        </h4>
-        <div class="ai-insp-stat-row">
-          <span class="ai-insp-stat-value">{{ cacheHitRateText }}</span>
-          <span class="ai-insp-stat-hint">
-            {{
-              cacheAvailable
-                ? t('ai_cache_hit_hint') || '命中越高越省 token 成本'
-                : t('ai_cache_not_supported_hint') || '当前供应商协议不支持 prompt 缓存'
-            }}
-          </span>
-        </div>
-        <div v-if="cacheAvailable && contextUsage" class="ai-insp-bar">
-          <div class="ai-insp-bar-fill" :style="{ transform: `scaleX(${cacheHitPercent / 100})` }" />
-        </div>
+        <AiUsageMeter variant="full" :context-usage="contextUsage" :provider-supports-cache="providerSupportsCache" />
       </section>
 
       <!-- 子代理总览（占位：内容由后续包填充） -->
@@ -171,18 +72,13 @@ const cacheHitRateText = computed(() => {
         </div>
       </section>
 
-      <!-- 记忆速览（占位：内容由后续包填充） -->
+      <!-- 记忆速览（UI-E：占位替换为 AiMemoryPanel peek 态，点击进入管理弹层） -->
       <section class="ai-insp-section">
         <h4 class="ai-insp-sec-title">
           <Brain :size="13" />
           {{ t('ai_memory') || '记忆' }}
         </h4>
-        <div class="ai-insp-placeholder ai-insp-placeholder--action" @click="emit('open-memory')">
-          <span>
-            {{ memoryEnabled ? t('ai_memory_on') || '长程记忆已开启' : t('ai_memory_off') || '长程记忆已关闭' }}
-          </span>
-          <span class="ai-insp-placeholder-link">{{ t('ai_memory_manage') || '管理记忆' }}</span>
-        </div>
+        <AiMemoryPanel variant="peek" :memory-enabled="memoryEnabled" @open-manage="emit('open-memory')" />
       </section>
     </div>
   </div>
@@ -300,105 +196,7 @@ const cacheHitRateText = computed(() => {
   color: var(--text-secondary);
 }
 
-/* 用量环 */
-.ai-insp-ring-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.ai-insp-ring {
-  flex-shrink: 0;
-}
-.ai-insp-ring .ring-track {
-  fill: none;
-  stroke: var(--border-default);
-  stroke-width: 5;
-}
-.ai-insp-ring .ring-progress {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 5;
-  stroke-linecap: round;
-  transform: rotate(-90deg);
-  transform-origin: center;
-  transition: stroke-dashoffset 0.3s ease;
-}
-.ai-insp-ring .ring-label {
-  font-size: 13px;
-  font-weight: 600;
-  fill: var(--text-primary);
-  text-anchor: middle;
-}
-.ai-insp-ring .ring-label-pct {
-  fill: var(--text-tertiary);
-}
-.ai-insp-ring.level-ok {
-  color: var(--accent);
-}
-.ai-insp-ring.level-warn {
-  color: var(--warning);
-}
-.ai-insp-ring.level-danger {
-  color: var(--danger);
-}
-
-.ai-insp-stats {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-}
-.ai-insp-stat {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-.ai-insp-stat dt {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-.ai-insp-stat dd {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-}
-
-/* 缓存命中 */
-.ai-insp-stat-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-.ai-insp-stat-value {
-  font-size: var(--text-base);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-}
-.ai-insp-stat-hint {
-  font-size: var(--text-2xs);
-  color: var(--text-tertiary);
-  text-align: right;
-}
-.ai-insp-bar {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--bg-hover);
-  overflow: hidden;
-}
-.ai-insp-bar-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-  transform-origin: left center;
-  transform: scaleX(0);
-  transition: transform 0.3s ease;
-}
+/* 用量环 / 缓存命中 / 记忆速览样式已随区块迁入 AiUsageMeter.vue 与 AiMemoryPanel.vue（UI-E） */
 
 /* 占位区块 */
 .ai-insp-placeholder {
@@ -408,24 +206,6 @@ const cacheHitRateText = computed(() => {
   text-align: center;
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-md);
-}
-.ai-insp-placeholder--action {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.12s;
-}
-.ai-insp-placeholder--action:hover {
-  border-color: var(--accent);
-}
-.ai-insp-placeholder-link {
-  flex-shrink: 0;
-  font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--accent);
 }
 
 /* 尊重系统「减少动态效果」设置 */
