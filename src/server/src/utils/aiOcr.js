@@ -1,6 +1,6 @@
 import { pool } from '../db/pool.js'
 import { decrypt } from './encryption.js'
-import { buildUpstreamChat } from './aiProviders.js'
+import { buildUpstreamChat, safeUpstreamFetch } from './aiProviders.js'
 import logger from './logger.js'
 import fs from 'fs/promises'
 import path from 'path'
@@ -92,7 +92,7 @@ export async function ocrImage({ providerRow, apiKey, dataUrl, mime = 'image/png
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 30000)
   try {
-    const res = await fetch(upstream.url, {
+    const res = await safeUpstreamFetch(upstream.url, {
       method: 'POST',
       headers: upstream.headers,
       body: JSON.stringify(upstream.body),

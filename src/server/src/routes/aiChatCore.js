@@ -11,7 +11,7 @@
  * - 上游异常（含 180s 超时 AbortError）向上抛出，由调用方决定降级策略。
  */
 import logger from '../utils/logger.js'
-import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProviders.js'
+import { buildUpstreamChat, getPreset, getContextWindow, safeUpstreamFetch } from '../utils/aiProviders.js'
 import { collectToolCallsFromStream, handleToolCalls } from './aiStream.js'
 import { pool } from '../db/pool.js'
 
@@ -146,7 +146,7 @@ export async function manualCompactConversation({ conversationId, userId, provid
 export async function openUpstreamStream(upstream, abortSignal, label = 'Upstream') {
   let upstreamRes
   try {
-    upstreamRes = await fetch(upstream.url, {
+    upstreamRes = await safeUpstreamFetch(upstream.url, {
       method: 'POST',
       headers: { ...upstream.headers, Accept: 'text/event-stream' },
       body: JSON.stringify(upstream.body),

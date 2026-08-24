@@ -239,11 +239,10 @@ const modeLabel = computed(() => {
   return props.mode === 'ask' ? t('ai_mode_ask') : t('ai_mode_agent')
 })
 
-// 发送按钮旁圆环：单环设计 = 上下文 token 用量百分比。
-// viewBox=40×40，外环半径 14（留出足够环带和文字空间）。
-const RING_R = 14
+// 发送按钮旁圆环：小型 token 用量指示器（仅颜色状态，不显示百分比数字）
+const RING_R = 8
 const RING_C = 2 * Math.PI * RING_R
-const RING_SIZE = 40
+const RING_SIZE = 24
 const RING_CENTER = RING_SIZE / 2
 
 const usagePercent = computed(() => props.contextUsage?.percent ?? 0)
@@ -254,7 +253,6 @@ const ringColorClass = computed(() => {
   if (p >= 70) return 'level-warn'
   return 'level-ok'
 })
-const ringLabel = computed(() => (props.contextUsage ? `${usagePercent.value}` : '–'))
 
 // 缓存命中率 = 命中缓存的 prompt token / 总 prompt token
 const cacheHitPercent = computed(() => {
@@ -284,8 +282,8 @@ const usageTip = computed(() => {
 
 function submit() {
   const value = text.value.trim()
-  // 文本或截图任一非空即可发送（允许只发截图）
-  if ((!value && pastedImages.value.length === 0) || props.disabled) return
+  // 增加 isStreaming 检查：防止流式进行中重复发送
+  if (props.isStreaming || (!value && pastedImages.value.length === 0) || props.disabled) return
   emit('send', value, pastedImages.value.length ? [...pastedImages.value] : undefined)
   text.value = ''
   pastedImages.value = []
