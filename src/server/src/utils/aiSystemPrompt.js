@@ -10,6 +10,15 @@
 //   3) 敏感工具执行前再校验一次（assertToolAllowed）
 // =============================================
 
+import pool from '../db/pool.js'
+import { getAiContext } from './aiContext.js'
+import {
+  getFeatureDoc,
+  getPrivacyModelDoc,
+  getDeploymentDoc,
+  getArchitectureDoc,
+} from './aiKnowledge.js'
+
 // ============ RBACv2：四级 × 四维权限矩阵 ============
 // 四级（由低到高，高等级继承低等级的全部能力）：
 //   L0 只读 / L1 操作 / L2 管理 / L3 超管 / L4 Agent 服务
@@ -41,8 +50,21 @@ const LEVEL_RANK = { L0: 0, L1: 1, L2: 2, L3: 3, L4: 4 };
 // 新工具登记位：向对应等级数组追加工具名即可（Agent-B 等后续在此补充）。
 const levels = {
   L0: [],
-  L1: [],
-  L2: [],
+  L1: [
+    // Agent 写工具面（Agent-B）：L1 操作级写能力
+    'write_clip',
+    'tag_items',
+    'archive_items',
+    'unarchive_items',
+    'update_clip_meta',
+  ],
+  L2: [
+    // Agent 写工具面（Agent-B）：L2 管理级写能力
+    'create_collection',
+    'create_template',
+    'update_template',
+    'create_shared_link',
+  ],
   L3: [
     // 敏感读（安全 / 受保护条目 / 部署 / 架构源码），仅超管可用
     'get_security_overview',
@@ -237,8 +259,112 @@ export function buildRoleSystemPrompt(role, userId) {
     .join('\n');
 }
 
+// ============ 统一上下文组装（Agent-F）============
+// buildSystemPrompt(userId, role, opts)：把「角色提示词 + 产品知识 + 脱敏统计 +
+// 按开关的记忆 + thinking/Agent 增强」组装为完整 system 消息，替代仅覆盖角色提示词的现状。
+// 关键约束：普通用户/管理员的 prompt 绝不含 DB schema/表名/字段名/源码细节；记忆注入尊重 memoryEnabled。
+// ==================================================
+
+// 产品知识精简段：从 aiKnowledge 抽取公开产品能力，绝不含 DB schema。
+// 仅超级管理员（L3）额外附加完整内部文档（功能/隐私加密/部署/架构）。
+function buildProductKnowledge(role) {
+  const safe = [
+    '## ClipSync 产品能力（面向用户）',
+    'ClipSync 是一款跨设备剪贴板同步工具，帮助你在一个设备复制，在另一个设备粘贴。',
+    '支持文本、图片、文件、链接、代码等剪贴板内容的云端同步、历史管理与检索。',
+    '核心能力：跨设备实时同步；重要条目标记收藏并按收藏夹分类管理；文本快捷模板（含变量一键替换）；',
+    '将条目生成加密共享链接供他人访问；扫码/配对码多设备配对；免费/Pro/企业三档订阅（限制设备数、历史条数、单文件大小、总存储）；',
+    '账号两步验证(2FA) 与条目密码保护（PIN 或高级密码）。',
+  ].join('\n')
+  if (role === 'super_admin') {
+    return [
+      safe,
+      '',
+      '--- 内部实现文档（仅限超级管理员查看）---',
+      getFeatureDoc(),
+      getPrivacyModelDoc(),
+      getDeploymentDoc(),
+      getArchitectureDoc(),
+    ].join('\n\n')
+  }
+  return safe
+}
+
+// 脱敏统计段：仅暴露聚合计数与订阅套餐，不注入任何用户正文内容。
+function buildStatsSegment(ctx) {
+  if (!ctx) return ''
+  const s = ctx.stats || {}
+  const lines = ['## 当前用户实时上下文（脱敏统计）']
+  lines.push(
+    `- 剪贴板总条数：${s.total || 0}（文本 ${s.textCount || 0} / 图片 ${s.imageCount || 0} / 文件 ${s.fileCount || 0} / 链接 ${s.linkCount || 0} / 代码 ${s.codeCount || 0}）`,
+  )
+  lines.push(`- 收藏 ${s.favoriteItemsCount || 0} 条；归档 ${s.archivedCount || 0} 条`)
+  if (ctx.collections) lines.push(`- 收藏夹 ${ctx.collections.collectionsCount || 0} 个（含 ${ctx.collections.collectionItemsCount || 0} 个收藏项）`)
+  if (ctx.tags) lines.push(`- 标签 ${ctx.tags.tagsCount || 0} 个`)
+  if (ctx.devices) lines.push(`- 设备 ${ctx.devices.devicesCount || 0} 台（在线 ${ctx.devices.onlineDevicesCount || 0}）`)
+  if (ctx.templates) lines.push(`- 模板 ${ctx.templates.templatesCount || 0} 个；模板变量 ${ctx.templates.variablesCount || 0} 个`)
+  if (ctx.sharedLinks) lines.push(`- 共享链接 ${ctx.sharedLinks.sharedLinksCount || 0} 个`)
+  if (ctx.subscription) {
+    lines.push(
+      `- 订阅套餐：${ctx.subscription.displayName || ctx.subscription.plan_name || '未知'}` +
+        `（设备上限 ${ctx.subscription.maxDevices || ctx.subscription.max_devices || 0}，条目上限 ${ctx.subscription.maxClipboardItems || ctx.subscription.max_clipboard_items || 0}，单文件 ${ctx.subscription.maxFileSizeMb || ctx.subscription.max_file_size_mb || 0}MB）`,
+    )
+  }
+  return lines.join('\n')
+}
+
+// 记忆段：把当前用户的长程记忆以安全格式注入（均为该用户自己的记忆）。
+function buildMemorySegment(memories) {
+  if (!memories || memories.length === 0) return ''
+  return [
+    '## 用户长期记忆（跨会话）',
+    '以下是关于该用户长期积累的记忆，涵盖其偏好、项目事实与历史反馈。回答时结合这些背景作答，让用户感受到你“记得”他。',
+    ...memories.map((m) => `- [${m.category}] ${m.title}：${m.content}`),
+  ].join('\n')
+}
+
+// 读取用户记忆开关（memory_enabled，持久化在 ai_settings）。参数化 SQL，按 user_id 隔离。
+// 未迁移/读取失败时静默降级为「关闭记忆」，不阻断对话。
+async function getMemoryEnabled(userId) {
+  try {
+    const result = await pool.query(
+      'SELECT memory_enabled FROM ai_settings WHERE user_id = $1',
+      [userId],
+    )
+    if (result.rows.length > 0) return result.rows[0].memory_enabled === true
+  } catch (err) {
+    /* ai_settings 尚未迁移 memory_enabled 时忽略，默认关闭 */
+  }
+  return false
+}
+
+// 统一组装完整 system 提示词（Agent-F）
+export async function buildSystemPrompt(userId, role, opts = {}) {
+  const parts = [
+    buildRoleSystemPrompt(role, userId),
+    buildProductKnowledge(role),
+  ]
+  const ctx = await getAiContext(userId)
+  const stats = buildStatsSegment(ctx)
+  if (stats) parts.push(stats)
+  // 记忆注入尊重用户开关：开启才把记忆加入上下文
+  if (await getMemoryEnabled(userId)) {
+    const mem = buildMemorySegment(ctx.memories)
+    if (mem) parts.push(mem)
+  }
+  const base = parts.filter(Boolean).join('\n\n')
+  // thinking / Agent 增强复用既有逻辑，确保行为不回退
+  return enhanceSystemPrompt(base, {
+    thinking: !!opts.thinking,
+    thinkingStrength: opts.thinkingStrength,
+    agentMode: !!opts.agentMode,
+    model: opts.model,
+  })
+}
+
 export default {
   getToolsForRole,
   assertToolAllowed,
   buildRoleSystemPrompt,
+  buildSystemPrompt,
 };

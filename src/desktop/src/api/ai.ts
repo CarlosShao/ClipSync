@@ -201,6 +201,8 @@ export interface AiSettings {
   defaultMode: 'ask' | 'agent'
   thinkingEnabled: boolean
   thinkingStrength: 'low' | 'medium' | 'high'
+  // 长程记忆开关：是否把用户记忆注入 AI system prompt（服务端读 ai_settings，前端持久化）
+  memoryEnabled: boolean
 }
 
 // ===== CRUD =====

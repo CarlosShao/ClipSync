@@ -8,9 +8,8 @@ import { runChatLoop } from './aiChatCore.js'
 import { runOrchestration } from './aiOrchestrator.js'
 import { updateConversationUsage } from './aiConversations.js'
 import {
-  buildRoleSystemPrompt,
+  buildSystemPrompt,
   getToolsForRole,
-  enhanceSystemPrompt,
 } from '../utils/aiSystemPrompt.js'
 import { extractImageHashes, hashImageDataUrl } from '../utils/imageHash.js'
 
@@ -38,11 +37,11 @@ router.post('/chat', apiLimiter, async (req, res) => {
     const thinkingStrength = options?.thinkingStrength || 'medium'
     const isAgentMode = options?.mode === 'agent'
 
-    // ✅ RBAC（#212）：后端角色系统提示词覆盖前端传入的 system 消息。
-    // 角色决定模型能讨论什么、能调哪些工具；覆盖是强制性的，前端提示词不再可信。
+    // ✅ RBAC（#212/#Agent-F）：后端统一组装完整 system 提示词，覆盖前端传入的 system 消息。
+    // 组成：角色提示词 + 产品知识 + 脱敏统计 + 按开关的记忆 + thinking/Agent 增强（见 buildSystemPrompt）。
+    // 覆盖是强制性的，前端提示词不再可信。
     const role = req.user.roleKey || 'user'
-    const roleBase = buildRoleSystemPrompt(role, req.userId)
-    const systemContent = enhanceSystemPrompt(roleBase, {
+    const systemContent = await buildSystemPrompt(req.userId, role, {
       thinking: thinkingEnabled,
       thinkingStrength,
       agentMode: isAgentMode,

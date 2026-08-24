@@ -1,10 +1,9 @@
 import { ref, shallowRef, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { getProviders, getAiContext, streamChat, getSettings, saveSettings, updateProvider } from '@/api/ai'
+import { getProviders, streamChat, getSettings, saveSettings, updateProvider } from '@/api/ai'
 import type {
   AiProvider,
   ChatMessage,
-  AiContext,
   AgentRun,
   StreamDeltaMeta,
   AiSettings,
@@ -12,12 +11,7 @@ import type {
   ContextUsage,
   ChatImage,
 } from '@/api/ai'
-import { buildSystemPrompt } from '@/utils/aiSystemPrompt'
 import { useAiConversations } from './useAiConversations'
-
-let cachedContext: AiContext | null = null
-let contextFetchedAt = 0
-const CONTEXT_TTL_MS = 30_000
 
 interface SendOptions {
   mode?: 'ask' | 'agent'
@@ -107,11 +101,12 @@ export function useAiChat() {
   }
   const abortCtrl = shallowRef<AbortController | null>(null)
   const initialized = ref(false)
-  // 长程记忆模式：开启时把用户记忆注入系统提示词，让 AI 跨会话“记得”用户
-  const memoryEnabled = ref(localStorage.getItem('clipsync-ai-memory') !== '0')
+  // 长程记忆模式：开启时把用户记忆注入系统提示词，让 AI 跨会话“记得”用户。
+  // 开关持久化在服务端 ai_settings，服务端据此决定是否注入记忆；这里仅保留前端 UI 状态。
+  const memoryEnabled = ref(false)
   function setMemoryEnabled(v: boolean) {
     memoryEnabled.value = v
-    localStorage.setItem('clipsync-ai-memory', v ? '1' : '0')
+    persistSettings({ memoryEnabled: v })
   }
 
   const conv = useAiConversations()
@@ -158,6 +153,7 @@ export function useAiChat() {
       const res = await getSettings()
       if (res.ok && res.data) {
         settings.value = res.data
+        memoryEnabled.value = res.data.memoryEnabled ?? false
         if (res.data.defaultProviderId) {
           const p = providers.value.find((x) => x.id === res.data!.defaultProviderId)
           if (p) {
@@ -181,27 +177,11 @@ export function useAiChat() {
       defaultMode: settings.value?.defaultMode ?? 'ask',
       thinkingEnabled: settings.value?.thinkingEnabled ?? false,
       thinkingStrength: settings.value?.thinkingStrength ?? 'medium',
+      memoryEnabled: memoryEnabled.value,
       ...patch,
     }
     settings.value = next
     saveSettings(next).catch(() => {})
-  }
-
-  async function fetchContext(): Promise<AiContext | null> {
-    try {
-      if (cachedContext && Date.now() - contextFetchedAt < CONTEXT_TTL_MS) {
-        return cachedContext
-      }
-      const res = await getAiContext()
-      if (res.ok && res.data?.context) {
-        cachedContext = res.data.context
-        contextFetchedAt = Date.now()
-        return cachedContext
-      }
-    } catch {
-      /* ignore */
-    }
-    return cachedContext
   }
 
   function selectProvider(id: string) {
@@ -507,29 +487,12 @@ export function useAiChat() {
       return { textDelta, thinkingDelta }
     }
 
-    // 从后端获取完整、真实的 ClipSync 上下文
-    const ctx = await fetchContext()
-    const ctxData = ctx
-      ? {
-          total: ctx.stats.total,
-          favoriteItemsCount: ctx.stats.favoriteItemsCount,
-          collectionsCount: ctx.collections.collectionsCount,
-          devicesCount: ctx.devices.devicesCount,
-          templatesCount: ctx.templates.templatesCount,
-          sharedLinksCount: ctx.sharedLinks.sharedLinksCount,
-          recentItems: ctx.recentItems
-            .map((i) => `- [${i.type}] ${i.preview}${i.preview.length >= 120 ? '...' : ''}${i.isFavorite ? ' ⭐' : ''}`)
-            .join('\n'),
-          memories: (ctx.memories || []).map((m) => ({ category: m.category, title: m.title, content: m.content })),
-          memoryEnabled: memoryEnabled.value,
-        }
-      : undefined
-
+    // 系统提示词由服务端统一组装（buildSystemPrompt），前端只发送业务消息，
+    // 不再从本地拼装上下文知识库。
     const selectedProvider = providers.value.find((p) => p.id === selectedProviderId.value)
     const modelName = selectedModel.value || selectedProvider?.model || ''
     const nativeReasoning = isNativeReasoningModel(modelName)
 
-    const systemPrompt = buildSystemPrompt(ctxData)
     // 构造上游历史：保留工具调用结构（转换为 OpenAI 嵌套格式），确保多轮 Agent 上下文正确
     const historyMessages: any[] = []
     for (const m of messages.value.slice(0, -1)) {
@@ -561,24 +524,7 @@ export function useAiChat() {
         historyMessages.push({ role: m.role, content: m.content })
       }
     }
-    const history: any[] = [{ role: 'system', content: systemPrompt }, ...historyMessages]
-
-    if (options.thinking) {
-      const strengthMap = {
-        low: 'Think step by step briefly.',
-        medium: 'Think step by step with moderate detail.',
-        high: 'Think step by step with thorough analysis.',
-      }
-      history[0].content += `\n\n${strengthMap[options.thinkingStrength || 'medium']}`
-
-      if (!nativeReasoning) {
-        history[0].content += `\n\nWhen you need to think before answering, put your step-by-step reasoning inside <think>...</think> tags. Only the final answer should appear outside the tags. Keep the reasoning concise.`
-      }
-    }
-
-    if (options.mode === 'agent') {
-      history[0].content += `\n\nYou are in Agent mode. When the user asks you to perform actions, you may call available tools to get real-time data. After tools return results, provide a clear final answer based on the tool outputs.`
-    }
+    const history: any[] = [...historyMessages]
 
     try {
       await streamChat({

@@ -66,7 +66,7 @@ export async function logAuditEvent(params) {
  * authorization / access_code 等，大小写不敏感，支持嵌套）值替换为 '***'。
  * 用于工具审计的参数/结果摘要，防止密钥等明文落库。
  */
-const SENSITIVE_KEY_RE = /password|passwd|api[_-]?key|secret|token|authorization|access_code|credential/i
+const SENSITIVE_KEY_RE = /password|passwd|api[_-]?key|secret|token|authorization|access_code|credential|content|text|body|plain/i
 
 function deepSanitize(value, depth = 0) {
   if (depth > 10) return typeof value === 'string' ? `[truncated:${value.length}]` : value

@@ -1,12 +1,15 @@
 import { Router } from 'express'
 import path from 'path'
+import crypto from 'crypto'
 import fs from 'fs/promises'
 import { fileURLToPath } from 'url'
+import { v4 as uuidv4 } from 'uuid'
 import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { logger } from '../utils/logger.js'
 import { getAiContext } from '../utils/aiContext.js'
-import { decrypt } from '../utils/encryption.js'
+import { decrypt, encrypt } from '../utils/encryption.js'
+import { logToolAudit } from '../utils/audit.js'
 import { getFeatureDoc, getPrivacyModelDoc, getDeploymentDoc, getArchitectureDoc } from '../utils/aiKnowledge.js'
 import { assertToolAllowed, getToolsForRole } from '../utils/aiSystemPrompt.js'
 import { authenticateToken } from '../middleware/auth.js'
@@ -223,46 +226,142 @@ export const TOOLS = [
       }
     }
   },
-  // Agent 工作流工具
+  // ============ 大管家 Agent 写工具面（真实落库，user_id 硬隔离）============
   {
     type: 'function',
     function: {
-      name: 'create_workflow',
-      description: '创建工作流，定义多步骤任务',
+      name: 'write_clip',
+      description: '把一段文本/链接/代码内容写入用户的剪贴板（前端加密存储，内容落库为 content_encrypted，可搜索明文放 content_preview）。适合用户说“帮我记一下/存进剪贴板/生成并保存”。',
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: '工作流名称' },
-          steps: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                action: { type: 'string', description: '要执行的动作' },
-                tool: { type: 'string', description: '要调用的工具名称' },
-                params: { type: 'object', description: '工具参数' }
-              }
-            },
-            description: '工作流步骤列表'
-          }
+          content: { type: 'string', description: '要写入剪贴板的内容正文' },
+          content_type: { type: 'string', enum: ['text', 'link', 'code'], description: '内容类型，默认 text' },
+          label: { type: 'string', description: '可选：条目标题/标签名，写入 metadata' },
+          tags: { type: 'array', items: { type: 'string' }, description: '可选：附加给该条目的标签列表' }
         },
-        required: ['name', 'steps']
+        required: ['content']
       }
     }
   },
   {
     type: 'function',
     function: {
-      name: 'execute_workflow_step',
-      description: '执行工作流中的单个步骤',
+      name: 'tag_items',
+      description: '批量给指定的剪贴板条目打标签。覆盖整组标签，若需要保留原标签请先调用 get_clip_meta 查看现有标签。',
       parameters: {
         type: 'object',
         properties: {
-          step_id: { type: 'string', description: '步骤ID' },
-          tool: { type: 'string', description: '要调用的工具名称' },
-          params: { type: 'object', description: '工具参数' }
+          clip_ids: { type: 'array', items: { type: 'string' }, description: '要打标签的条目ID列表' },
+          tags: { type: 'array', items: { type: 'string' }, description: '要设置的标签列表（覆盖）' }
         },
-        required: ['step_id', 'tool']
+        required: ['clip_ids', 'tags']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'archive_items',
+      description: '批量归档指定的剪贴板条目（软删除：archived=true，条目从主列表隐藏）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          clip_ids: { type: 'array', items: { type: 'string' }, description: '要归档的条目ID列表' }
+        },
+        required: ['clip_ids']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'unarchive_items',
+      description: '批量取消归档指定的剪贴板条目（archived=false，恢复到主列表）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          clip_ids: { type: 'array', items: { type: 'string' }, description: '要恢复的条目ID列表' }
+        },
+        required: ['clip_ids']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_clip_meta',
+      description: '更新某条剪贴板条目的元数据（标签 tags、label 标题等）。仅更新传入字段，不会改动内容正文。',
+      parameters: {
+        type: 'object',
+        properties: {
+          clip_id: { type: 'string', description: '要更新的条目ID' },
+          tags: { type: 'array', items: { type: 'string' }, description: '可选：覆盖标签列表' },
+          label: { type: 'string', description: '可选：覆盖标题/label' }
+        },
+        required: ['clip_id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_collection',
+      description: '创建一个新的收藏夹。创建后可通过 batch_favorite 收藏条目，但归档/取消归档不影响收藏夹归属。',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: '收藏夹名称' },
+          icon: { type: 'string', description: '可选：表情图标，默认 📁' }
+        },
+        required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_template',
+      description: '创建一个快速粘贴模板（可含 {{变量}} 占位符，变量在应用内解析）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: '模板名称' },
+          content: { type: 'string', description: '模板内容' }
+        },
+        required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_template',
+      description: '更新一个已存在的快速粘贴模板的 name 与/或 content。',
+      parameters: {
+        type: 'object',
+        properties: {
+          template_id: { type: 'string', description: '模板ID' },
+          name: { type: 'string', description: '可选：新模板名称' },
+          content: { type: 'string', description: '可选：新模板内容' }
+        },
+        required: ['template_id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_shared_link',
+      description: '创建一个对外共享链接，把一段内容分享给他人（内容加密存储，支持过期时间）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: '要共享的内容' },
+          title: { type: 'string', description: '可选：链接标题' },
+          expires_in_hours: { type: 'number', description: '可选：过期小时数，不传则永不过期' }
+        },
+        required: ['content']
       }
     }
   },
@@ -476,8 +575,15 @@ export const TOOLS = [
  */
 export const WRITE_TOOL_NAMES = new Set([
   'save_memory',
-  'create_workflow',
-  'execute_workflow_step',
+  'write_clip',
+  'tag_items',
+  'archive_items',
+  'unarchive_items',
+  'update_clip_meta',
+  'create_collection',
+  'create_template',
+  'update_template',
+  'create_shared_link',
   'batch_favorite',
   'batch_delete',
   'ocr_clip_image',
@@ -674,26 +780,205 @@ async function executeToolInner(toolName, args, userId, role) {
         }
       }
 
-      case 'create_workflow': {
-        // 工作流创建（简化版，返回工作流定义）
+      case 'write_clip': {
+        const { content, content_type = 'text', label, tags } = args
+        if (typeof content !== 'string' || !content.trim()) {
+          return { error: 'content is required' }
+        }
+        const allowedTypes = ['text', 'link', 'code']
+        const ctype = allowedTypes.includes(content_type) ? content_type : 'text'
+
+        // 加密正文入库，preview 只放前 200 字符可搜索明文
+        const contentEncrypted = encrypt(String(content))
+        const preview = String(content).slice(0, 200)
+        const meta = { ...(label ? { label: String(label).slice(0, 200) } : {}) }
+        if (Array.isArray(tags)) {
+          meta.tags = [...new Set(tags.map((t) => String(t).trim().slice(0, 30)))].filter(Boolean).slice(0, 10)
+        }
+
+        // source_device_id 置 null（AI 通道无发起设备；依赖 034 迁移解除 NOT NULL）
+        const result = await pool.query(
+          `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata)
+           VALUES ($1, NULL, $2, $3, $4, $5, $6)
+           RETURNING id, content_type, content_preview, content_size, created_at`,
+          [userId, ctype, contentEncrypted, preview, Buffer.byteLength(String(content)), JSON.stringify(meta)]
+        )
+        const r = result.rows[0]
         return {
-          workflow: {
-            id: `wf-${Date.now()}`,
-            name: args.name,
-            steps: args.steps,
-            status: 'created'
-          }
+          id: r.id,
+          contentType: r.content_type,
+          contentSize: r.content_size,
+          createdAt: r.created_at,
+          note: '已写入你的剪贴板，可在应用内查看/搜索。'
         }
       }
 
-      case 'execute_workflow_step': {
-        // 执行工作流步骤（递归调用，透传 role 以保持权限闸门一致）
-        const { tool, params } = args
-        const result = await executeTool(tool, params, userId, role)
+      case 'tag_items': {
+        const { clip_ids, tags } = args
+        if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
+          return { error: 'clip_ids is required and must be an array' }
+        }
+        if (!Array.isArray(tags) || tags.length === 0) {
+          return { error: 'tags is required and must be an array' }
+        }
+        const cleanTags = [...new Set(tags.map((t) => String(t).trim().slice(0, 30)))].filter(Boolean).slice(0, 10)
+        if (cleanTags.length === 0) return { error: 'tags must not be empty' }
+        const result = await pool.query(
+          `UPDATE clipboard_items
+           SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{tags}', $1::jsonb)
+           WHERE id = ANY($2) AND user_id = $3
+           RETURNING id`,
+          [JSON.stringify(cleanTags), clip_ids, userId]
+        )
+        return { success: true, tagged: result.rowCount, tags: cleanTags }
+      }
+
+      case 'archive_items': {
+        const { clip_ids } = args
+        if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
+          return { error: 'clip_ids is required and must be an array' }
+        }
+        const result = await pool.query(
+          'UPDATE clipboard_items SET archived = true, updated_at = NOW() WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+          [clip_ids, userId]
+        )
+        return { success: true, archived: result.rowCount }
+      }
+
+      case 'unarchive_items': {
+        const { clip_ids } = args
+        if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
+          return { error: 'clip_ids is required and must be an array' }
+        }
+        const result = await pool.query(
+          'UPDATE clipboard_items SET archived = false, updated_at = NOW() WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+          [clip_ids, userId]
+        )
+        return { success: true, unarchived: result.rowCount }
+      }
+
+      case 'update_clip_meta': {
+        const { clip_id, tags, label } = args
+        if (!clip_id) return { error: 'clip_id is required' }
+        if (tags === undefined && label === undefined) {
+          return { error: 'tags 或 label 至少提供一个要更新的字段' }
+        }
+        const current = await pool.query(
+          'SELECT metadata FROM clipboard_items WHERE id = $1 AND user_id = $2',
+          [clip_id, userId]
+        )
+        if (current.rowCount === 0) return { error: '未找到该条目' }
+        const meta = (() => {
+          const raw = current.rows[0].metadata
+          if (typeof raw === 'string') { try { return JSON.parse(raw) || {} } catch { return {} } }
+          return raw || {}
+        })()
+        if (tags !== undefined) {
+          meta.tags = [...new Set(tags.map((t) => String(t).trim().slice(0, 30)))].filter(Boolean).slice(0, 10)
+        }
+        if (label !== undefined) {
+          if (label === null || label === '') delete meta.label
+          else meta.label = String(label).slice(0, 200)
+        }
+        await pool.query(
+          'UPDATE clipboard_items SET metadata = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+          [meta, clip_id, userId]
+        )
+        return { success: true, id: clip_id, tags: meta.tags || [], label: meta.label || undefined }
+      }
+
+      case 'create_collection': {
+        const { name, icon } = args
+        if (!name || !String(name).trim()) {
+          return { error: 'name is required' }
+        }
+        const cleanName = String(name).trim().slice(0, 100)
+        const cleanIcon = (String(icon || '📁')).slice(0, 10)
+        const maxOrder = await pool.query(
+          'SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM favorite_collections WHERE user_id = $1',
+          [userId]
+        )
+        const path = `root.${uuidv4()}`
+        const result = await pool.query(
+          `INSERT INTO favorite_collections (user_id, name, icon, sort_order, path)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, name, icon, sort_order, created_at`,
+          [userId, cleanName, cleanIcon, (maxOrder.rows[0].max_order || 0) + 1, path]
+        )
+        return { collection: result.rows[0] }
+      }
+
+      case 'create_template': {
+        const { name, content } = args
+        if (!name || !String(name).trim()) {
+          return { error: 'name is required' }
+        }
+        const safeName = String(name).trim().slice(0, 200)
+        const safeContent = typeof content === 'string' ? content : ''
+        const result = await pool.query(
+          `INSERT INTO clipboard_templates (user_id, name, content)
+           VALUES ($1, $2, $3)
+           RETURNING id, name, content, created_at, updated_at`,
+          [userId, safeName, safeContent]
+        )
+        return { template: result.rows[0] }
+      }
+
+      case 'update_template': {
+        const { template_id, name, content } = args
+        if (!template_id) return { error: 'template_id is required' }
+        const fields = []
+        const params = []
+        let idx = 1
+        if (typeof name === 'string' && name.trim()) {
+          fields.push(`name = $${idx++}`)
+          params.push(name.trim().slice(0, 200))
+        }
+        if (typeof content === 'string') {
+          fields.push(`content = $${idx++}`)
+          params.push(content)
+        }
+        if (fields.length === 0) return { error: 'name 或 content 至少提供一个要更新的字段' }
+        fields.push('updated_at = NOW()')
+        params.push(userId, template_id)
+        const result = await pool.query(
+          `UPDATE clipboard_templates
+           SET ${fields.join(', ')}
+           WHERE user_id = $${idx} AND id = $${idx + 1}::uuid
+           RETURNING id, name, content, created_at, updated_at`,
+          params
+        )
+        if (result.rowCount === 0) return { error: 'Template not found' }
+        return { template: result.rows[0] }
+      }
+
+      case 'create_shared_link': {
+        const { content, title, expires_in_hours } = args
+        if (typeof content !== 'string' || !content.trim()) {
+          return { error: 'content is required' }
+        }
+        const token = crypto.randomBytes(10).toString('hex')
+        const contentEncrypted = encrypt(String(content))
+        const preview = String(content).slice(0, 200)
+        const safeTitle = typeof title === 'string' ? title.slice(0, 200) : null
+        let expiresAt = null
+        if (typeof expires_in_hours === 'number' && expires_in_hours > 0) {
+          expiresAt = new Date(Date.now() + expires_in_hours * 3600 * 1000).toISOString()
+        }
+        const result = await pool.query(
+          `INSERT INTO shared_links (user_id, token, title, content_encrypted, content_preview, content_type, expires_at)
+           VALUES ($1, $2, $3, $4, $5, 'text', $6)
+           RETURNING id, title, content_type, expires_at, created_at`,
+          [userId, token, safeTitle, contentEncrypted, preview, expiresAt]
+        )
+        const r = result.rows[0]
         return {
-          step_id: args.step_id,
-          status: 'completed',
-          result
+          id: r.id,
+          title: r.title,
+          contentType: r.content_type,
+          expiresAt: r.expires_at,
+          createdAt: r.created_at,
+          note: '共享链接已创建，访问地址请在应用「共享链接」列表中查看（链接访问凭证不会在此展示）。'
         }
       }
 
@@ -738,8 +1023,9 @@ async function executeToolInner(toolName, args, userId, role) {
       }
 
       case 'get_templates': {
+        // clipboard_templates 真实列为 name/content，无 content_preview/shortcut
         const result = await pool.query(
-          `SELECT id, name, content_preview, shortcut, created_at
+          `SELECT id, name, content, created_at, updated_at
            FROM clipboard_templates
            WHERE user_id = $1
            ORDER BY updated_at DESC`,
@@ -749,8 +1035,9 @@ async function executeToolInner(toolName, args, userId, role) {
       }
 
       case 'get_shared_links': {
+        // 只返回非敏感字段：token 即访问凭证（等同 access_code），绝不回传明文
         const result = await pool.query(
-          `SELECT id, item_id, access_code, expires_at, created_at
+          `SELECT id, title, content_preview, content_type, views, expires_at, created_at
            FROM shared_links
            WHERE user_id = $1
            ORDER BY created_at DESC`,
