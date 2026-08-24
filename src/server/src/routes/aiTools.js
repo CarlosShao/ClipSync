@@ -1103,7 +1103,8 @@ async function executeToolInner(toolName, args, userId, role) {
           'SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM favorite_collections WHERE user_id = $1',
           [userId]
         )
-        const path = `root.${uuidv4()}`
+        // path 为 ltree 列，标签不允许连字符：uuid 要去掉 '-'（对照 favorites.js 同款写法）
+        const path = `root.${uuidv4().replace(/-/g, '_')}`
         const result = await pool.query(
           `INSERT INTO favorite_collections (user_id, name, icon, sort_order, path)
            VALUES ($1, $2, $3, $4, $5)

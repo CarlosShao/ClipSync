@@ -7,6 +7,7 @@ export default defineConfig({
     include: ['tests/**/*.test.js'],
     // 强制顺序执行，避免并行导致数据库干扰
     pool: 'threads',
+    fileParallelism: false,
     minThreads: 1,
     maxThreads: 1,
     // 在模块加载前设置 NODE_ENV=test，确保 index.js 中的监听守卫生效

@@ -338,7 +338,7 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
         const ts = m.createdAt || m.created_at || null
         const result = await pool.query(
           `INSERT INTO ai_messages (conversation_id, role, content, thinking, tool_calls, tool_results, metadata, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::jsonb, '{}'::jsonb), $8)
+           VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::jsonb, '{}'::jsonb), COALESCE($8, NOW()))
            RETURNING id, role, content, thinking, tool_calls, tool_results, metadata, created_at`,
           [
             id,
