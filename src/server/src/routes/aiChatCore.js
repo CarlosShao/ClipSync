@@ -11,7 +11,7 @@
  * - 上游异常（含 180s 超时 AbortError）向上抛出，由调用方决定降级策略。
  */
 import logger from '../utils/logger.js'
-import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProviders.js'
+import { buildUpstreamChat, getPreset, getContextWindow, safeUpstreamFetch } from '../utils/aiProviders.js'
 import { collectToolCallsFromStream, handleToolCalls } from './aiStream.js'
 import { pool } from '../db/pool.js'
 
