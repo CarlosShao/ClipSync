@@ -10,39 +10,87 @@
 //   3) 敏感工具执行前再校验一次（assertToolAllowed）
 // =============================================
 
-// 角色 -> 拥有的权限键集合
-// super_admin 拥有全部 8 个权限；admin/user 仅基础平台权限（无敏感 AI 权限）
-const ROLE_PERMISSIONS = {
-  super_admin: [
-    'ai.view_database_schema',
-    'ai.view_deployment',
-    'ai.view_security_data',
-    'ai.view_source_code',
-    'ai.access_other_user_data',
-    'ai.explain_internal',
-    'platform.use_ai',
-    'platform.manage_own_data',
-  ],
-  admin: ['platform.use_ai', 'platform.manage_own_data'],
-  user: ['platform.use_ai', 'platform.manage_own_data'],
+// ============ RBACv2：四级 × 四维权限矩阵 ============
+// 四级（由低到高，高等级继承低等级的全部能力）：
+//   L0 只读 / L1 操作 / L2 管理 / L3 超管 / L4 Agent 服务
+// 四维（工具可能涉及的能力维度，供分级与审计参考）：
+//   read / write / destructive / cross_user
+// 角色映射：user→L1、admin→L2、super_admin→L3；未知角色降级 L1；L4 不参与角色映射。
+// ====================================================
+
+// 角色 -> 等级键（L4 为 Agent 服务专用等级，不参与角色映射）
+const ROLE_TO_LEVEL = {
+  user: 'L1',
+  admin: 'L2',
+  super_admin: 'L3',
 };
 
-// 敏感工具 -> 所需的权限键（任一缺失即禁止）
-const TOOL_PERMISSION_REQUIREMENTS = {
-  get_security_overview: ['ai.view_security_data'],
-  get_protected_clips: ['ai.view_security_data'],
-  explain_deployment: ['ai.view_deployment'],
-  get_project_architecture: ['ai.view_source_code', 'ai.view_database_schema', 'ai.explain_internal'],
+// 维度 -> 所需最低等级（保留四维口径，供权限审计/后续扩展）
+const DIMENSION_MIN_LEVEL = {
+  read: 'L0',
+  write: 'L1',
+  destructive: 'L2',
+  cross_user: 'L3',
+};
+
+// 等级键 -> 数值（越大权限越高，用于继承比较）
+const LEVEL_RANK = { L0: 0, L1: 1, L2: 2, L3: 3, L4: 4 };
+
+// 工具登记矩阵：列出各等级下可用的工具。
+// 工具按其「所需最低等级」登记：出现在 levels[Ln] 表示最低需要 Ln 级权限。
+// 新工具登记位：向对应等级数组追加工具名即可（Agent-B 等后续在此补充）。
+const levels = {
+  L0: [],
+  L1: [],
+  L2: [],
+  L3: [
+    // 敏感读（安全 / 受保护条目 / 部署 / 架构源码），仅超管可用
+    'get_security_overview',
+    'get_protected_clips',
+    'explain_deployment',
+    'get_project_architecture',
+  ],
+  L4: [],
 };
 
 // 角色降级兜底：未知角色一律按普通用户处理（最小权限）
 function normalizeRole(role) {
-  if (role && ROLE_PERMISSIONS[role]) return role;
+  if (role && ROLE_TO_LEVEL[role]) return role;
   return 'user';
 }
 
-function permissionsForRole(role) {
-  return new Set(ROLE_PERMISSIONS[normalizeRole(role)]);
+// 角色 -> 等级键；未知角色降级 L1
+function levelKeyForRole(role) {
+  if (role && ROLE_TO_LEVEL[role]) return ROLE_TO_LEVEL[role];
+  return 'L1';
+}
+
+// 返回工具所属等级键；未登记的工具视为 L0（只读，全开放）。
+// args 暂不参与分级，预留给需要按参数细分级别的工具（如 Agent-C 的 destroy_clips）。
+export function getToolLevel(tool, args) {
+  const name = typeof tool === 'string' ? tool : (tool && (tool.function ? tool.function.name : tool.name));
+  if (!name) return 'L0';
+  for (const lv of Object.keys(LEVEL_RANK)) {
+    if (levels[lv] && levels[lv].includes(name)) return lv;
+  }
+  return 'L0';
+}
+
+// 指定等级（levelKey）是否允许该工具
+export function isToolAllowedForLevel(tool, levelKey) {
+  const granted = LEVEL_RANK[levelKey];
+  const required = LEVEL_RANK[getToolLevel(tool)];
+  if (granted == null || required == null) return false;
+  return granted >= required;
+}
+
+// 角色等级距工具所需等级还缺失的能力维度（用于 missing 提示）
+function missingDimensions(grantedKey, requiredKey) {
+  const granted = LEVEL_RANK[grantedKey] != null ? LEVEL_RANK[grantedKey] : 0;
+  const required = LEVEL_RANK[requiredKey] != null ? LEVEL_RANK[requiredKey] : 0;
+  return Object.keys(DIMENSION_MIN_LEVEL).filter(
+    (dim) => LEVEL_RANK[DIMENSION_MIN_LEVEL[dim]] > granted && LEVEL_RANK[DIMENSION_MIN_LEVEL[dim]] <= required,
+  );
 }
 
 // 原生推理模型关键字（与前端 useAiChat.ts 保持一致）：这类模型自带推理能力，
@@ -101,25 +149,30 @@ export function enhanceSystemPrompt(base, opts = {}) {
   return content;
 }
 
-// 按角色过滤工具集：无敏感要求的工具对所有角色开放；敏感工具需对应权限齐全
+// 按角色过滤工具集：低于工具所需等级的工具被剔除；结果每个工具带 level 标签
 export function getToolsForRole(role, tools) {
-  const allowed = permissionsForRole(role);
-  return (tools || []).filter((t) => {
-    const name = t && (t.function ? t.function.name : t.name);
-    const reqs = name ? TOOL_PERMISSION_REQUIREMENTS[name] : null;
-    if (!reqs || reqs.length === 0) return true; // 普通工具全开放
-    return reqs.every((p) => allowed.has(p));
-  });
+  const levelKey = levelKeyForRole(role);
+  return (tools || [])
+    .map((t) => {
+      const name = t && (t.function ? t.function.name : t.name);
+      return { tool: t, name, level: getToolLevel(name) };
+    })
+    .filter(({ name }) => isToolAllowedForLevel(name, levelKey))
+    .map(({ tool, level }) => ({ ...tool, level }));
 }
 
-// 执行前权限校验：返回 { allowed: boolean, missing: string[] }
+// 执行前权限校验：返回 { allowed: boolean, missing: string[], level: string }
 export function assertToolAllowed(role, toolName) {
-  const allowed = permissionsForRole(role);
-  const reqs = TOOL_PERMISSION_REQUIREMENTS[toolName];
-  if (!reqs || reqs.length === 0) return { allowed: true, missing: [] };
-  const missing = reqs.filter((p) => !allowed.has(p));
-  if (missing.length > 0) return { allowed: false, missing };
-  return { allowed: true, missing: [] };
+  const levelKey = levelKeyForRole(role);
+  const required = getToolLevel(toolName);
+  if (!isToolAllowedForLevel(toolName, levelKey)) {
+    return {
+      allowed: false,
+      missing: missingDimensions(levelKey, required),
+      level: required,
+    };
+  }
+  return { allowed: true, missing: [], level: levelKey };
 }
 
 // 角色专属系统提示词（覆盖前端传入的提示词）

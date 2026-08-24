@@ -11,6 +11,91 @@
  */
 
 import { logger } from './logger.js'
+import dns from 'node:dns'
+
+/**
+ * 协议族：
+ * - 'openai'：OpenAI Chat Completions 兼容协议（OpenAI / DeepSeek / Qwen / Hunyuan /
+ *   MiMo / MiniMax / StepFun / LongCat / 自定义均属此类）
+ * - 'anthropic'：Anthropic Messages 协议（请求/响应结构不同，需单独处理）
+ *
+ * authHeader：默认 Authorization；MiMo 等部分平台需要 api-key 头。
+ */
+
+// ==================== SSRF 防护（上游 fetch 统一入口） ====================
+// 供 chat / models / test / ocr 复用：URL 解析 + 协议/主机校验防内网 SSRF +
+// 禁跟随重定向 + 超时。避免各调用点各自裸 fetch 造成"忘了校验"的漂移。
+
+/** 是否为私网 / 保留网段 IP（IPv4 与常见 IPv6 链路本地/唯一本地地址） */
+export function isPrivateIp(ip) {
+  if (!ip) return false
+  const v = String(ip).toLowerCase()
+  if (v === '::1' || v === '::' || v === '0.0.0.0') return true
+  // IPv6 link-local / 唯一本地地址
+  if (v.startsWith('fe80') || v.startsWith('fc') || v.startsWith('fd')) return true
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v)
+  if (m) {
+    const p = m.slice(1).map(Number)
+    if (p[0] === 10) return true // 10/8
+    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true // 172.16/12
+    if (p[0] === 192 && p[1] === 168) return true // 192.168/16
+    if (p[0] === 169 && p[1] === 254) return true // 169.254/16 link-local
+    if (p[0] === 127) return true // loopback
+    if (p[0] === 0) return true
+    if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return true // 100.64/10 CGNAT
+  }
+  return false
+}
+
+/** 明文禁用的上游主机名（本机回环别名 / 云元数据端点） */
+export const BLOCKED_HOSTNAMES = ['localhost', 'metadata.google.internal', 'metadata']
+
+/** 校验上游 URL：协议必须 http/https，且主机不得指向内网/保留网段。非法时抛错。 */
+export async function assertSafeUpstreamUrl(input) {
+  let parsed
+  try {
+    parsed = new URL(input)
+  } catch {
+    throw new Error('Invalid upstream URL')
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Upstream URL must use http or https')
+  }
+  const host = parsed.hostname.toLowerCase()
+  if (BLOCKED_HOSTNAMES.includes(host) || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.svc')) {
+    throw new Error('Upstream URL host is not allowed')
+  }
+  if (/^[\d.]+$/.test(host) || host.includes(':')) {
+    if (isPrivateIp(host)) throw new Error('Upstream URL resolves to a blocked internal address')
+    return
+  }
+  // 主机名：解析后再校验一次，防 DNS rebinding 指向内网
+  try {
+    const { address } = await dns.promises.lookup(host)
+    if (isPrivateIp(address)) throw new Error('Upstream URL resolves to a blocked internal address')
+  } catch {
+    // 解析失败交给 fetch 自行报错
+  }
+}
+
+/**
+ * 安全的上游 fetch：URL 校验（协议 + 防内网 SSRF）+ 禁跟随重定向 + 超时。
+ * 供 chat / models / test / ocr 统一复用，避免各调用点裸 fetch 遗漏校验。
+ *
+ * @param {string} url 上游请求地址
+ * @param {RequestInit} [options] fetch 选项（method/headers/body/signal…）
+ * @param {object} [opts]
+ * @param {number} [opts.timeoutMs] 默认超时，默认 10000ms；options.signal 存在时优先用信号量
+ * @returns {Promise<Response>}
+ */
+export async function safeUpstreamFetch(url, options = {}, { timeoutMs = 10000 } = {}) {
+  await assertSafeUpstreamUrl(url)
+  return fetch(url, {
+    ...options,
+    redirect: 'manual',
+    signal: options.signal || AbortSignal.timeout(timeoutMs),
+  })
+}
 
 /**
  * 协议族：
@@ -475,7 +560,7 @@ export async function fetchProviderModels(cfg) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 8000)
   try {
-    const res = await fetch(`${resolvedBaseUrl}/models`, { headers, signal: ctrl.signal })
+    const res = await safeUpstreamFetch(`${resolvedBaseUrl}/models`, { headers, signal: ctrl.signal })
     if (!res.ok) throw new Error(`models endpoint status ${res.status}`)
     const json = await res.json()
     const list = Array.isArray(json?.data)

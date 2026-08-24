@@ -1,36 +1,21 @@
 import { Router } from 'express'
-import dns from 'dns'
+import dns from 'node:dns'
 import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { encrypt, decrypt } from '../utils/encryption.js'
-import { listPresets, getPreset, buildUpstreamChat, fetchProviderModels } from '../utils/aiProviders.js'
+import {
+  listPresets,
+  getPreset,
+  buildUpstreamChat,
+  fetchProviderModels,
+  isPrivateIp,
+  BLOCKED_HOSTNAMES,
+  safeUpstreamFetch,
+} from '../utils/aiProviders.js'
 import { getAiContext } from '../utils/aiContext.js'
 import { logger } from '../utils/logger.js'
 
 const router = Router()
-
-// SSRF 防护：校验自定义供应商 baseUrl，拒绝内网/保留网段
-function isPrivateIp(ip) {
-  if (!ip) return false
-  const v = String(ip).toLowerCase()
-  if (v === '::1' || v === '::' || v === '0.0.0.0') return true
-  // IPv6 link-local / 唯一本地地址
-  if (v.startsWith('fe80') || v.startsWith('fc') || v.startsWith('fd')) return true
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v)
-  if (m) {
-    const p = m.slice(1).map(Number)
-    if (p[0] === 10) return true // 10/8
-    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true // 172.16/12
-    if (p[0] === 192 && p[1] === 168) return true // 192.168/16
-    if (p[0] === 169 && p[1] === 254) return true // 169.254/16 link-local
-    if (p[0] === 127) return true // loopback
-    if (p[0] === 0) return true
-    if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return true // 100.64/10 CGNAT
-  }
-  return false
-}
-
-const BLOCKED_HOSTNAMES = ['localhost', 'metadata.google.internal', 'metadata']
 
 async function validateProviderBaseUrl(input) {
   if (!input || typeof input !== 'string' || input.trim().length === 0) {
@@ -271,10 +256,11 @@ router.get('/providers/:id/models', apiLimiter, async (req, res) => {
 })
 
 // POST /api/ai/providers/fetch-models - 用已存供应商的加密密钥拉取模型列表（不落地）
-// 安全：不再从请求体接收明文 apiKey，统一按 providerId 取库中加密密钥解密后使用
+// 安全：不再从请求体接收明文 apiKey，统一按 providerId 取库中加密密钥解密后使用；
+// 且不再采信请求体 baseUrl，只使用库中 base_url（body baseUrl 被忽略，防止借此打内网）。
 router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
   try {
-    const { providerId, baseUrl } = req.body || {}
+    const { providerId } = req.body || {}
     if (!providerId) {
       return res.status(400).json({ error: 'providerId is required', models: [] })
     }
@@ -285,8 +271,9 @@ router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'No API key configured', models: [] })
     }
     const apiKey = decrypt(row.api_key_encrypted)
-    const models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url || baseUrl, apiKey })
-    res.json({ models })
+    // 只使用库中 base_url；不再采信请求体的 baseUrl 字段（校验无效，提示客户端忽略）。
+    const models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url, apiKey })
+    res.json({ models, note: 'baseUrl 字段被忽略，仅使用该供应商已配置的 base_url' })
   } catch (err) {
     logger.error('Fetch models (preview) error:', err)
     res.status(500).json({ error: 'Failed to fetch provider models' })
@@ -325,7 +312,7 @@ router.post('/providers/:id/test', apiLimiter, async (req, res) => {
       options: { maxTokens: 8, stream: false },
     })
 
-    const upstreamRes = await fetch(upstream.url, {
+    const upstreamRes = await safeUpstreamFetch(upstream.url, {
       method: 'POST',
       headers: upstream.headers,
       body: JSON.stringify(upstream.body),

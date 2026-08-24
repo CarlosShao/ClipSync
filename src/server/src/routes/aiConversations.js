@@ -328,6 +328,9 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
       const inserted = []
       for (const m of messages) {
         if (!m || !m.role) continue
+        // ephemeral 标记（仅当轮生效、不持久化）：一次注入上下文、不落库的消息，
+        // 直接跳过不 INSERT，也不计入 inserted（GET 历史不会返回该消息）。
+        if (m.ephemeral === true) continue
         // 保留前端传来的原始 created_at（若有），避免全量重插把所有消息的
         // created_at 刷成同一次 NOW() —— 那会导致 GET 按 created_at 排序失效，
         // 消息顺序退化为随机 UUID，聊天区出现"历史消息乱序 / 凭空冒出"。

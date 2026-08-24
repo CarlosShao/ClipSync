@@ -92,7 +92,7 @@ export async function ocrImage({ providerRow, apiKey, dataUrl, mime = 'image/png
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 30000)
   try {
-    const res = await fetch(upstream.url, {
+    const res = await safeUpstreamFetch(upstream.url, {
       method: 'POST',
       headers: upstream.headers,
       body: JSON.stringify(upstream.body),

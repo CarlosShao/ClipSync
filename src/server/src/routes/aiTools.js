@@ -7,7 +7,6 @@ import { apiLimiter } from '../middleware/rateLimiter.js'
 import { logger } from '../utils/logger.js'
 import { getAiContext } from '../utils/aiContext.js'
 import { decrypt } from '../utils/encryption.js'
-import { unlockWithPassword } from '../utils/protectionCrypto.js'
 import { getFeatureDoc, getPrivacyModelDoc, getDeploymentDoc, getArchitectureDoc } from '../utils/aiKnowledge.js'
 import { assertToolAllowed, getToolsForRole } from '../utils/aiSystemPrompt.js'
 import { authenticateToken } from '../middleware/auth.js'
@@ -491,13 +490,13 @@ export const WRITE_TOOL_NAMES = new Set([
 export const READONLY_TOOLS = TOOLS.filter((t) => !WRITE_TOOL_NAMES.has(t.function.name))
 
 /**
- * 执行工具调用
+ * 执行工具调用（实际执行体）
  * @param {string} toolName
  * @param {object} args
  * @param {string} userId
  * @param {string} [role] 角色键（'super_admin'|'admin'|'user'），用于敏感工具权限闸门
  */
-async function executeTool(toolName, args, userId, role) {
+async function executeToolInner(toolName, args, userId, role) {
   try {
     // ✅ RBAC（#213 / 第三层安全闸门）：敏感工具执行前再校验一次角色权限。
     // 即便上游因工具清单未及时收敛而调到了敏感工具，也在此处硬性拦截。
@@ -922,20 +921,16 @@ async function executeTool(toolName, args, userId, role) {
           }
         }
 
-        // 高级密码保护：必须密码
+        // 高级密码保护：AI 通道一律拒绝返回明文，即使提供了 password 也不解密。
+        // 明文只允许用户在 ClipSync 应用内凭密码查看，绝不出现在聊天/工具通道。
+        // password 参数保留在 schema 中仅作兼容，此处硬性忽略其值，绝不调用 unlockWithPassword。
         if (item.protection_level === 'advanced') {
-          if (!password) {
-            return {
-              error: '需要密码',
-              reason: '该条目启用了高级密码保护（独立 DEK 加密），服务端无密码无法还原明文。请在询问时提供密码，或使用恢复密钥。',
-              protectionLevel: 'advanced'
-            }
+          return {
+            error: '该条目受高级密码保护，无法在此读取',
+            reason: 'advanced_protected',
+            protectionLevel: 'advanced',
+            hint: '该条目启用了高级密码保护（独立 DEK 加密）。出于隐私安全，AI 通道无法也不应获取其明文，即使提供密码也不会解密。请在 ClipSync 应用内查看这条内容，或使用恢复密钥。'
           }
-          const plain = unlockWithPassword(item.content_encrypted, item.wrapped_dek_password, password, item.protection_salt)
-          if (plain === null) {
-            return { error: '密码错误', reason: '提供的解锁密码不正确，无法解密该条目。' }
-          }
-          return { contentType: type, protectionLevel: 'advanced', decryptedWithPassword: true, content: plain.slice(0, 50000) }
         }
 
         // none / pin：主密钥可解密
@@ -1088,26 +1083,48 @@ async function executeTool(toolName, args, userId, role) {
   }
 }
 
-// GET /api/ai/tools - 获取当前角色可用的工具列表（按角色过滤，#213）
-router.get('/tools', apiLimiter, authenticateToken, (req, res) => {
-  const role = req.user.roleKey || 'user'
-  res.json({ tools: getToolsForRole(role, TOOLS) })
-})
-
-// POST /api/ai/tools/execute - 执行工具调用（带角色权限闸门，#213）
-router.post('/tools/execute', apiLimiter, authenticateToken, async (req, res) => {
+/**
+ * 执行工具调用（审计包装器，对外导出名保持 executeTool 不变）
+ * 对 executeToolInner 做计时 + 成功/失败路径均写审计，语义与原先完全一致：
+ * 返回 { error: ... } 的对象原样透传、异常仍向上抛出，调用方无需改动。
+ * @param {string} toolName
+ * @param {object} args
+ * @param {string} userId
+ * @param {string} [role] 角色键
+ * @param {string} [requestId] 关联 requestId（Agent-C 确认门控透传），无则内部生成
+ */
+async function executeTool(toolName, args, userId, role, requestId) {
+  const start = Date.now()
+  let result
   try {
-    const { toolName, args } = req.body
-    if (!toolName) return res.status(400).json({ error: 'toolName is required' })
-    
-    const role = req.user.roleKey || 'user'
-    const result = await executeTool(toolName, args || {}, req.userId, role)
-    res.json({ result })
+    result = await executeToolInner(toolName, args, userId, role)
   } catch (err) {
-    logger.error('Tool execute error:', err)
-    res.status(500).json({ error: err.message })
+    await logToolAudit({
+      userId,
+      role,
+      tool: toolName,
+      argsSummary: args,
+      resultSummary: null,
+      ok: false,
+      durationMs: Date.now() - start,
+      requestId,
+    })
+    throw err // 不改变既有语义：异常仍向上抛出
   }
-})
+  // ok 由 result 是否含 error 字段判定（executeToolInner 成功返回不带 error，失败返回 { error }）
+  const ok = !(result && typeof result === 'object' && 'error' in result)
+  await logToolAudit({
+    userId,
+    role,
+    tool: toolName,
+    argsSummary: args,
+    resultSummary: result,
+    ok,
+    durationMs: Date.now() - start,
+    requestId,
+  })
+  return result
+}
 
 export { executeTool }
 export default router

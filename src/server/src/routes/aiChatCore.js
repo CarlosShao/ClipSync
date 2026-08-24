@@ -146,7 +146,7 @@ export async function manualCompactConversation({ conversationId, userId, provid
 export async function openUpstreamStream(upstream, abortSignal, label = 'Upstream') {
   let upstreamRes
   try {
-    upstreamRes = await fetch(upstream.url, {
+    upstreamRes = await safeUpstreamFetch(upstream.url, {
       method: 'POST',
       headers: { ...upstream.headers, Accept: 'text/event-stream' },
       body: JSON.stringify(upstream.body),

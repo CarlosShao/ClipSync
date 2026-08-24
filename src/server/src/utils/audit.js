@@ -9,6 +9,7 @@
  */
 
 import pool from '../db/pool.js';
+import { randomUUID } from 'node:crypto';
 import { logger } from './logger.js';
 
 /**
@@ -56,6 +57,65 @@ export async function logAuditEvent(params) {
     );
   } catch (err) {
     logger.error('Failed to log audit event', { error: err.message, action });
+    // 审计日志失败不阻塞主流程
+  }
+}
+
+/**
+ * 深度脱敏：把对象/数组里的敏感键（password / apiKey / secret / token /
+ * authorization / access_code 等，大小写不敏感，支持嵌套）值替换为 '***'。
+ * 用于工具审计的参数/结果摘要，防止密钥等明文落库。
+ */
+const SENSITIVE_KEY_RE = /password|passwd|api[_-]?key|secret|token|authorization|access_code|credential/i
+
+function deepSanitize(value, depth = 0) {
+  if (depth > 10) return typeof value === 'string' ? `[truncated:${value.length}]` : value
+  if (value === null || value === undefined) return value
+  if (Array.isArray(value)) return value.map((v) => deepSanitize(v, depth + 1))
+  if (typeof value === 'object') {
+    const out = {}
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = SENSITIVE_KEY_RE.test(k) ? '***' : deepSanitize(v, depth + 1)
+    }
+    return out
+  }
+  return value
+}
+
+/**
+ * 记录一次 AI 工具调用审计（成功/失败均记录）。
+ * - action = 'ai_tool_call'；status 按 ok 映射 success / failure。
+ * - argsSummary / resultSummary 写入前深度脱敏（含 password/apiKey/token 等键打码）。
+ * - 审计写入失败不阻塞主流程（try/catch 风格与 logAuditEvent 一致）。
+ * - requestId 优先取传入值，否则用 crypto.randomUUID() 生成。
+ * @param {Object} params
+ * @param {string} [params.userId]
+ * @param {string} [params.role]
+ * @param {string} params.tool 工具名
+ * @param {*} [params.argsSummary]
+ * @param {*} [params.resultSummary]
+ * @param {boolean} params.ok 是否成功
+ * @param {number} [params.durationMs] 执行耗时（毫秒）
+ * @param {string} [params.requestId]
+ */
+export async function logToolAudit({ userId, role, tool, argsSummary, resultSummary, ok, durationMs, requestId }) {
+  const status = ok ? 'success' : 'failure'
+  try {
+    const details = {
+      tool,
+      role,
+      args: deepSanitize(argsSummary),
+      result: deepSanitize(resultSummary),
+      durationMs: typeof durationMs === 'number' ? durationMs : 0,
+      requestId: requestId || randomUUID(),
+    }
+    await pool.query(
+      `INSERT INTO audit_logs (user_id, action, details, status)
+       VALUES ($1, $2, $3, $4)`,
+      [userId || null, 'ai_tool_call', JSON.stringify(details), status]
+    )
+  } catch (err) {
+    logger.error('Failed to log tool audit', { error: err.message, tool })
     // 审计日志失败不阻塞主流程
   }
 }
