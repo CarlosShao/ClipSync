@@ -5,7 +5,7 @@ import { ref, computed } from 'vue'
  *
  * 与 useAiChat.ts（协议层）完全分离：这里只承载布局形态（断点/折叠/开关）与
  * 确认卡 UI 状态占位，不碰任何 SSE 协议字段。
- * 状态为模块级单例：AiPanel / AiNavRail / AiInspector / AISidebar 共享同一份。
+ * 状态为模块级单例：AiPanel / AiNavRail / AiInspector / AiChatPanel 共享同一份。
  *
  * 断点四档（视口媒体查询驱动，CSS 侧另有容器查询做内容自适应）：
  *   xl ≥1440        三栏全展开（Inspector 行内）
@@ -158,7 +158,7 @@ export function useAiChatUi() {
     resetConfirm()
   }
   /**
-   * SSE meta 事件接入点（UI-E）。AISidebar / 协议层把含确认事件的 meta 原样
+   * SSE meta 事件接入点（UI-E）。AiChatPanel / 协议层把含确认事件的 meta 原样
    * 交给此函数即可，识别与归一化在这里完成（useAiChat.ts 协议层无需改动）：
    *   - meta.type === 'confirm_tool_action' → openConfirm（字段 requestId/tool/argsSummary/impact）
    *   - meta.type === 'confirm_resolved'    → settleConfirm（meta.allow ? approved : denied）

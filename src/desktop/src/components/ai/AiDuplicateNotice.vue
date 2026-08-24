@@ -7,7 +7,7 @@ import { CopyCheck, X } from 'lucide-vue-next'
 /**
  * AiDuplicateNotice — 图片重复横幅原子组件（UI-C）
  *
- * 参考 AISidebar.vue 既有横幅实现自建（AISidebar 归并行代理 UI-B 改造，此处不动它）；
+ * 参考旧 AISidebar.vue 既有横幅实现自建（历史注：UI-C 时期 AISidebar 归并行代理 UI-B 改造）；
  * 原实现的 hsl() 硬编码色替换为语义 token（--accent / --accent-bg）。
  * notice 结构与 useAiChat.duplicateImageNotice 对齐（只读消费，不新增字段）。
  */

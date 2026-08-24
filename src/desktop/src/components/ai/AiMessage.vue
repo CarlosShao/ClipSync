@@ -218,7 +218,7 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
         :class="`ai-msg-system-card--${message.systemMeta?.kind}`"
       >
         <template v-if="message.systemMeta?.kind === 'compact_loading'">
-          <span class="ai-msg-system-icon">⟳</span><span>{{ t('ai_compact_loading') || '正在压缩上下文…' }}</span>
+          <span class="ai-msg-system-icon">⟳</span><span>{{ t('ai_compact_loading', '正在压缩上下文…') }}</span>
         </template>
         <template v-else-if="message.systemMeta?.kind === 'compact_success'">
           <span class="ai-msg-system-icon">✓</span>

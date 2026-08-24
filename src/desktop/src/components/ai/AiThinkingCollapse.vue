@@ -361,4 +361,10 @@ html.light .ai-tc-title::after {
     animation: none;
   }
 }
+
+/* 键盘可达性：focus-visible 高亮（--accent token） */
+.ai-tc-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 </style>

@@ -16,7 +16,7 @@ import { Database, CheckCircle2, AlertTriangle } from 'lucide-vue-next'
  * variant：
  *   - 'full'    Inspector 完整态：环 + 总量/输入/输出统计 + 缓存 + 费用（+ compress 传入时追加压缩进度）
  *   - 'compact' Composer 触发点弹出面板紧凑态：环 + 输入/输出明细 + 缓存 + 费用
- *   - 'compress' 仅压缩进度分割线（AISidebar 消息流底部，替代 AiCompressProgress）
+ *   - 'compress' 仅压缩进度分割线（AiChatPanel 消息流底部，替代 AiCompressProgress）
  */
 const props = withDefaults(
   defineProps<{
@@ -132,7 +132,7 @@ const compressDetail = computed(() => {
 </script>
 
 <template>
-  <!-- compress 独立形态：分割线样式（AISidebar 底部，替代 AiCompressProgress） -->
+  <!-- compress 独立形态：分割线样式（AiChatPanel 底部，替代 AiCompressProgress） -->
   <div v-if="isCompressOnly && compressState" class="ai-um-compress" :class="`ai-um-compress--${compressState.status}`">
     <span class="ai-um-compress-line" />
     <span class="ai-um-compress-center">

@@ -10,7 +10,7 @@ import AiPanel from './AiPanel.vue'
 import AiNavRail from './AiNavRail.vue'
 import AiInspector from './AiInspector.vue'
 import AiMessageList from './AiMessageList.vue'
-import AiChatInput from './AiChatInput.vue'
+import AiChatComposer from './AiChatComposer.vue'
 import AiMemoryPanel from './AiMemoryPanel.vue'
 import AiUsageMeter from './AiUsageMeter.vue'
 import {
@@ -30,10 +30,10 @@ import {
 } from 'lucide-vue-next'
 
 /**
- * AI 侧边栏（宿主薄壳，UI-B 重构）。
+ * AiChatPanel — AI 聊天面板（正式编排宿主，UI-F 由过渡壳 AISidebar 更名整合）。
  * 对宿主（HomeView/App.vue）契约不变：props { open, view } / emits { close, open-settings }。
- * 内部渲染 AiPanel 三栏 Shell（Nav=AiNavRail / Canvas=消息流+AiChatInput / Detail=AiInspector），
- * 业务编排（useAiChat 协议层调用）仍集中在本壳，布局状态归 useAiChatUi。
+ * 内部渲染 AiPanel 三栏 Shell（Nav=AiNavRail / Canvas=消息流+AiChatComposer / Detail=AiInspector），
+ * 业务编排（useAiChat 协议层调用）集中在本宿主，布局状态归 useAiChatUi。
  */
 const props = defineProps<{
   open: boolean
@@ -122,7 +122,7 @@ watch([mode, thinkingEnabled, thinkingStrength], () => {
 
 // 历史消息搜索定位（#231）：打开对话后滚动并高亮到命中消息（搜索已迁入 AiNavRail）
 const msgListRef = ref<InstanceType<typeof AiMessageList> | null>(null)
-const chatInputRef = ref<InstanceType<typeof AiChatInput> | null>(null)
+const chatInputRef = ref<InstanceType<typeof AiChatComposer> | null>(null)
 function onLocateMessage(hit: import('@/api/ai').ConversationSearchHit) {
   // 等对话加载完成后再定位（select 已触发 loadConversation）
   setTimeout(() => {
@@ -159,7 +159,7 @@ watch(
 )
 
 // 监听 settings 保存/删除 provider 后的全局事件，刷新本地列表
-// 否则 AI 侧边栏常驻打开时，新增/修改的 provider 不会立刻出现在下拉里（只能刷新页面）
+// 否则 AI 面板常驻打开时，新增/修改的 provider 不会立刻出现在下拉里（只能刷新页面）
 const onProvidersChanged = () => loadProviders()
 onMounted(() => window.addEventListener('clipsync:ai-providers-changed', onProvidersChanged))
 onBeforeUnmount(() => window.removeEventListener('clipsync:ai-providers-changed', onProvidersChanged))
@@ -285,7 +285,7 @@ function formatDupTime(iso?: string): string {
       <!-- 无供应商提示 -->
       <div v-else-if="!hasProviders" class="ai-no-providers">
         <Bot :size="48" class="ai-no-providers-icon" />
-        <h3>{{ t('ai_no_providers_title') || 'No AI Provider' }}</h3>
+        <h3>{{ t('ai_no_providers_title', 'No AI Provider') }}</h3>
         <p>{{ t('ai_no_providers_hint') }}</p>
         <Button class="ai-setup-btn" @click="emit('open-settings')">
           <Plus :size="14" />
@@ -318,7 +318,7 @@ function formatDupTime(iso?: string): string {
                 v-if="breakpoint === 'sm'"
                 variant="ghost"
                 size="icon-sm"
-                :title="t('ai_nav_open') || '打开导航栏'"
+                :title="t('ai_nav_open', '打开导航栏')"
                 @click="setNavOverlayOpen(true)"
               >
                 <PanelLeft :size="16" />
@@ -339,7 +339,7 @@ function formatDupTime(iso?: string): string {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                :title="t('ai_inspector_toggle') || 'Inspector'"
+                :title="t('ai_inspector_toggle', 'Inspector')"
                 @click="toggleInspector()"
               >
                 <PanelRight :size="15" />
@@ -348,18 +348,18 @@ function formatDupTime(iso?: string): string {
                 v-if="currentConversationId && !isStreaming && messages.length >= 2"
                 variant="ghost"
                 size="icon-sm"
-                :title="t('ai_compact_tooltip') || '压缩上下文 (/compact)'"
+                :title="t('ai_compact_tooltip', '压缩上下文 (/compact)')"
                 @click="manualCompact"
               >
                 <Package :size="15" />
               </Button>
-              <Button variant="ghost" size="icon-sm" :title="t('ai_new_chat') || '新对话'" @click="onNewConversation">
+              <Button variant="ghost" size="icon-sm" :title="t('ai_new_chat', '新对话')" @click="onNewConversation">
                 <Plus :size="15" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon-sm"
-                :title="t('ai_memory') || '记忆'"
+                :title="t('ai_memory', '记忆')"
                 @click="showMemory = !showMemory"
               >
                 <Brain :size="15" />
@@ -376,7 +376,7 @@ function formatDupTime(iso?: string): string {
           <div v-if="mode === 'agent'" class="ai-workflow-bar">
             <div class="ai-workflow-info">
               <Workflow :size="14" />
-              <span>{{ t('ai_workflow_active') || 'Workflow Mode Active' }}</span>
+              <span>{{ t('ai_workflow_active', 'Workflow Mode Active') }}</span>
             </div>
           </div>
 
@@ -398,7 +398,7 @@ function formatDupTime(iso?: string): string {
 
           <div v-if="error" class="ai-error-bar">{{ error }}</div>
 
-          <AiChatInput
+          <AiChatComposer
             ref="chatInputRef"
             :disabled="!canSend"
             :is-streaming="isStreaming"

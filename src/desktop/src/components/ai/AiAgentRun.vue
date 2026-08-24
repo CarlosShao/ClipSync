@@ -38,9 +38,9 @@ const statusText = computed(() => {
 // 卡片标题：按 kind 翻译成用户友好的中文，避免“协调器”这类看不懂的名字。
 // coordinator → 任务规划；synthesis → 整合答案；worker 尽量保留后端给的角色名。
 const displayName = computed(() => {
-  if (props.run.kind === 'coordinator') return t('ai_agent_coordinator_label') || '任务规划'
-  if (props.run.kind === 'synthesis') return t('ai_agent_synthesis_label') || '整合答案'
-  return props.run.name || (t('ai_agent_worker_label') || '子代理')
+  if (props.run.kind === 'coordinator') return t('ai_agent_coordinator_label', '任务规划')
+  if (props.run.kind === 'synthesis') return t('ai_agent_synthesis_label', '整合答案')
+  return props.run.name || t('ai_agent_worker_label', '子代理')
 })
 
 function compactBlankLines(content: string): string {
@@ -106,7 +106,7 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
   overflow: hidden;
 }
 .ai-agent-run.status-failed {
-  border-color: var(--danger, #ef4444);
+  border-color: var(--danger);
 }
 .ai-agent-run-head {
   display: flex;
@@ -122,10 +122,10 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
   animation: spin 1s linear infinite;
 }
 .ai-agent-run-ok {
-  color: var(--success, #16a34a);
+  color: var(--success);
 }
 .ai-agent-run-err {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
 }
 .ai-agent-run-name {
   flex: 1;
@@ -139,7 +139,7 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
   font-weight: 400;
 }
 .ai-agent-run-err-text {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
   font-weight: 400;
   font-size: 11px;
   overflow: hidden;

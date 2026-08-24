@@ -16,7 +16,7 @@ import { Gauge, Bot, Brain, X } from 'lucide-vue-next'
  */
 defineProps<{
   contextUsage: ContextUsage | null
-  /** 协议层是否支持 prompt cache（与 AiChatInput 判定一致：不支持时显示「未启用」而非 0%） */
+  /** 协议层是否支持 prompt cache（与 AiChatComposer 判定一致：不支持时显示「未启用」而非 0%） */
   providerSupportsCache?: boolean
   memoryEnabled?: boolean
 }>()
@@ -45,7 +45,7 @@ const isOverlay = computed(() => inspectorMode.value === 'overlay')
     <div v-if="!isOverlay" class="ai-insp-resize" title="拖拽调整宽度" @mousedown="startDrag" />
 
     <div class="ai-insp-head">
-      <span class="ai-insp-title">{{ t('ai_inspector_title') || 'Inspector' }}</span>
+      <span class="ai-insp-title">{{ t('ai_inspector_title', 'Inspector') }}</span>
       <button class="ai-insp-close" :title="t('close_btn')" @click="closeInspector()">
         <X :size="15" />
       </button>
@@ -56,7 +56,7 @@ const isOverlay = computed(() => inspectorMode.value === 'overlay')
       <section class="ai-insp-section">
         <h4 class="ai-insp-sec-title">
           <Gauge :size="13" />
-          {{ t('ai_context_usage_title') || '上下文用量' }}
+          {{ t('ai_context_usage_title', '上下文用量') }}
         </h4>
         <AiUsageMeter variant="full" :context-usage="contextUsage" :provider-supports-cache="providerSupportsCache" />
       </section>
@@ -65,10 +65,10 @@ const isOverlay = computed(() => inspectorMode.value === 'overlay')
       <section class="ai-insp-section">
         <h4 class="ai-insp-sec-title">
           <Bot :size="13" />
-          {{ t('ai_subagents_title') || '子代理' }}
+          {{ t('ai_subagents_title', '子代理') }}
         </h4>
         <div class="ai-insp-placeholder">
-          {{ t('ai_subagents_empty') || '暂无运行中的子代理' }}
+          {{ t('ai_subagents_empty', '暂无运行中的子代理') }}
         </div>
       </section>
 
@@ -76,7 +76,7 @@ const isOverlay = computed(() => inspectorMode.value === 'overlay')
       <section class="ai-insp-section">
         <h4 class="ai-insp-sec-title">
           <Brain :size="13" />
-          {{ t('ai_memory') || '记忆' }}
+          {{ t('ai_memory', '记忆') }}
         </h4>
         <AiMemoryPanel variant="peek" :memory-enabled="memoryEnabled" @open-manage="emit('open-memory')" />
       </section>
@@ -213,5 +213,11 @@ const isOverlay = computed(() => inspectorMode.value === 'overlay')
   .ai-insp--overlay {
     animation: none;
   }
+}
+
+/* 键盘可达性：focus-visible 高亮（--accent token） */
+.ai-insp-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 </style>

@@ -100,4 +100,10 @@ const hasAny = computed(() => secs.value > 0 || toolCount.value > 0 || agentCoun
 .ai-chip-chev.open {
   transform: rotate(90deg);
 }
+
+/* 键盘可达性：focus-visible 高亮（--accent token） */
+.ai-process-chips:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 </style>

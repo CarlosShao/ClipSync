@@ -4,7 +4,7 @@ import { useAiChatUi } from '@/composables/useAiChatUi'
 
 /**
  * AI 三栏 Shell 容器（UI-B）：Nav 会话栏 + Canvas 聊天主区 + Detail Inspector。
- * 纯布局组件，不承载业务/协议状态（数据与事件由插槽父级 AISidebar 编排）。
+ * 纯布局组件，不承载业务/协议状态（数据与事件由插槽父级 AiChatPanel 编排）。
  *
  * 插槽契约：
  *   #nav     → AiNavRail（会话导航，形态由 useAiChatUi 驱动）

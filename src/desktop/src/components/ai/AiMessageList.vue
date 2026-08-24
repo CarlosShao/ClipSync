@@ -9,7 +9,7 @@ import AiConfirmCard from './AiConfirmCard.vue'
 
 /**
  * UI-C：顶部区域挂载原子状态组件（错误条 / 图片重复横幅）。
- * error / duplicateNotice 均为可选 props——AISidebar 等既有宿主未传入时不渲染，
+ * error / duplicateNotice 均为可选 props——AiChatPanel 等宿主未传入时不渲染，
  * 新 Shell（UI-B）接入时传入即可，不产生重复展示。
  */
 const props = defineProps<{

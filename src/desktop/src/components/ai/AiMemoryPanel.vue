@@ -11,7 +11,7 @@ import { X, Plus, Trash2, Pencil, ChevronRight } from 'lucide-vue-next'
  *
  * variant='peek'  ：Inspector 内速览态——紧凑列表（最近 N 条 + 开关状态摘要），
  *                   无增删改操作；点击条目或「管理记忆」上抛 open-manage 由宿主
- *                   （AISidebar）打开完整管理弹层。
+ *                   （AiChatPanel）打开完整管理弹层。
  * variant='manage'：独立管理弹层态——完整增删改 + 长程记忆开关（原有能力不变）。
  *
  * 同一组件、同一数据源（getMemories），仅按 variant 切换渲染密度与操作集。
@@ -191,7 +191,7 @@ function onToggleMemory(v: boolean) {
 
     <!-- 列表 -->
     <div class="ai-memory-list">
-      <div v-if="loading" class="ai-memory-loading">{{ t('loading') || '加载中…' }}</div>
+      <div v-if="loading" class="ai-memory-loading">{{ t('loading', '加载中…') }}</div>
       <div v-else-if="items.length === 0" class="ai-memory-empty">{{ t('ai_memory_empty') }}</div>
       <div
         v-for="m in items"

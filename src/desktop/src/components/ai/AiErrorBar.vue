@@ -2,7 +2,7 @@
 /**
  * AiErrorBar — 错误条原子组件（UI-C）
  *
- * 参考 AISidebar.vue 既有错误条实现自建（AISidebar 归并行代理 UI-B 改造，此处不动它）。
+ * 参考旧 AISidebar.vue 既有错误条实现自建（历史注：UI-C 时期 AISidebar 归并行代理 UI-B 改造）。
  * 样式全部走语义 token（--danger / --danger-bg），供 AiMessageList 顶部区域与
  * 后续新 Shell 复用。
  */

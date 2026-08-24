@@ -22,11 +22,11 @@ import type { ContextUsage, ChatImage } from '@/api/ai'
 import { sha256DataUrl } from '@/utils/hash'
 
 /**
- * AiChatComposer — 聊天输入区（UI-C，由 AiChatInput.vue 重构而来）
+ * AiChatComposer — 聊天输入区（UI-C，由旧 AiChatInput 重构而来；UI-F 起为唯一输入组件）
  *
  * 保留全部既有能力：Enter 发送 / Shift+Enter 换行、粘贴图片预览、快捷指令、
  * 思考强度 / 模式 / 模型 Popover、上下文用量环（触发点 + 详情面板；面板后续包迁
- * Inspector）。AiChatInput.vue 已改为转发薄壳，兼容并行代理对旧名的引用。
+ * Inspector）。
  *
  * 提示词优化增强（UI-C）：
  *   - 流式覆盖前备份原文；失败 / 取消 / 空结果自动回滚；
@@ -227,12 +227,12 @@ const selectedProviderModels = computed<string[]>(() => {
 
 const inputPlaceholder = computed(() => {
   if (props.providers.length === 0 || !props.selectedProviderId) {
-    return t('ai_input_disabled') || '请先添加供应商'
+    return t('ai_input_disabled', '请先添加供应商')
   }
   if (props.isStreaming) {
-    return t('ai_input_streaming') || 'AI 回答中...'
+    return t('ai_input_streaming', 'AI 回答中...')
   }
-  return t('ai_input_ph') || '输入消息，Enter 发送，Shift+Enter 换行'
+  return t('ai_input_ph', '输入消息，Enter 发送，Shift+Enter 换行')
 })
 
 const modeLabel = computed(() => {
@@ -274,7 +274,7 @@ const cacheAvailable = computed(() => {
 })
 
 const usageTip = computed(() => {
-  if (!props.contextUsage) return t('ai_context_usage_none') || '上下文用量：暂无数据'
+  if (!props.contextUsage) return t('ai_context_usage_none', '上下文用量：暂无数据')
   const usageText = `${t('ai_context_usage', { percent: usagePercent.value, used: props.contextUsage.totalTokens, total: props.contextUsage.contextWindow })}`
   if (cacheAvailable.value) {
     return `${usageText}\n缓存命中率：${cacheHitPercent.value}%`
@@ -416,7 +416,7 @@ defineExpose({ setDraft })
     <div v-if="pastedImages.length" class="ai-paste-previews">
       <div v-for="(img, idx) in pastedImages" :key="idx" class="ai-paste-thumb">
         <img :src="img.data" :alt="img.mime" />
-        <button class="ai-paste-remove" :title="t('ai_remove_image') || '移除'" @click="removePastedImage(idx)">
+        <button class="ai-paste-remove" :title="t('ai_remove_image', '移除')" @click="removePastedImage(idx)">
           ×
         </button>
       </div>
@@ -504,8 +504,8 @@ defineExpose({ setDraft })
             loading: optimizeState === 'loading',
             errored: optimizeState === 'error',
           }"
-          :title="t('ai_optimize_prompt_tooltip') || '提示词优化：让 AI 润色当前输入内容'"
-          :aria-label="t('ai_optimize_prompt_tooltip') || '提示词优化'"
+          :title="t('ai_optimize_prompt_tooltip', '提示词优化：让 AI 润色当前输入内容')"
+          :aria-label="t('ai_optimize_prompt_tooltip', '提示词优化')"
           :disabled="!optimizeCanUse || optimizeState === 'loading'"
           @click="runOptimizePrompt"
         >
@@ -515,12 +515,19 @@ defineExpose({ setDraft })
             v-if="optimizeState === 'loading' || optimizeState === 'error'"
             class="ai-optimize-status"
             :class="optimizeState"
+            role="button"
+            tabindex="0"
             :title="
               optimizeState === 'loading'
-                ? t('ai_optimize_cancel') || '点击取消'
-                : optimizeErrorText || t('ai_optimize_failed') || '优化失败：未知原因'
+                ? t('ai_optimize_cancel', '点击取消')
+                : optimizeErrorText || t('ai_optimize_failed', '优化失败：未知原因')
             "
             @click.stop="
+              optimizeState === 'loading'
+                ? cancelOptimizePrompt()
+                : ((optimizeState = 'idle'), (optimizeErrorText = ''))
+            "
+            @keydown.enter.stop="
               optimizeState === 'loading'
                 ? cancelOptimizePrompt()
                 : ((optimizeState = 'idle'), (optimizeErrorText = ''))
@@ -537,7 +544,7 @@ defineExpose({ setDraft })
               class="ai-usage-ring-btn"
               :class="ringColorClass"
               :title="usageTip"
-              :aria-label="t('ai_context_usage_title') || '上下文用量'"
+              :aria-label="t('ai_context_usage_title', '上下文用量')"
             >
               <svg
                 class="ai-usage-ring"
@@ -973,6 +980,18 @@ defineExpose({ setDraft })
   .ai-optimize-spinner {
     animation-duration: 2.4s;
   }
+}
+
+/* 键盘可达性：focus-visible 高亮（--accent token） */
+.ai-quick-btn:focus-visible,
+.ai-tag-btn:focus-visible,
+.ai-popup button:focus-visible,
+.ai-paste-remove:focus-visible,
+.ai-optimize-btn:focus-visible,
+.ai-optimize-status:focus-visible,
+.ai-usage-ring-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 </style>
 

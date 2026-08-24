@@ -28,7 +28,7 @@ import {
  *   expanded — 行内 260px（可拖宽 200–360px，持久化 key 与旧 ai-sidebar-width 区分）
  *   icon     — 行内 48px 图标列（md 档自动降级 / 用户手动收起）
  *   overlay  — 浮层完整形态（sm 档唯一形态；icon 档可呼出）
- * 会话列表/搜索/重命名逻辑自 AiConversationList.vue 迁入（旧文件保留，收尾包清理）。
+ * 会话列表/搜索/重命名逻辑自旧 AiConversationList.vue 迁入（原文件已在 UI-F 收尾时删除）。
  */
 defineProps<{
   conversations: AiConversation[]
@@ -84,11 +84,11 @@ async function runSearch(q: string) {
       searchHits.value = res.data.items || []
     } else {
       searchHits.value = []
-      searchError.value = res.error || t('ai_search_failed') || '搜索失败'
+      searchError.value = res.error || t('ai_search_failed', '搜索失败')
     }
   } catch (e) {
     searchHits.value = []
-    searchError.value = e instanceof Error ? e.message : t('ai_search_failed') || '搜索失败'
+    searchError.value = e instanceof Error ? e.message : t('ai_search_failed', '搜索失败')
   } finally {
     searching.value = false
   }
@@ -190,9 +190,9 @@ function onDockFromFloat() {
     <template v-if="isFullUi">
       <!-- 顶部：新建 + 指令行搜索 -->
       <div class="ai-nav-top">
-        <button class="ai-nav-new" :title="t('ai_new_chat') || '新对话'" @click="emit('new-chat')">
+        <button class="ai-nav-new" :title="t('ai_new_chat', '新对话')" @click="emit('new-chat')">
           <Plus :size="14" />
-          <span>{{ t('ai_new_chat') || '新对话' }}</span>
+          <span>{{ t('ai_new_chat', '新对话') }}</span>
         </button>
         <div class="ai-nav-cmd">
           <span class="ai-nav-cmd-prefix" aria-hidden="true">&gt;</span>
@@ -200,7 +200,7 @@ function onDockFromFloat() {
             v-model="searchQuery"
             class="ai-nav-cmd-input"
             type="text"
-            :placeholder="t('ai_search_placeholder') || '搜索历史消息…'"
+            :placeholder="t('ai_search_placeholder', '搜索历史消息…')"
             @input="onSearchInput"
             @keydown.enter="runSearch(searchQuery)"
           />
@@ -214,10 +214,10 @@ function onDockFromFloat() {
       <div class="ai-nav-body">
         <!-- 搜索命中模式 -->
         <template v-if="searchQuery.trim()">
-          <div v-if="searching" class="ai-nav-empty">{{ t('ai_searching') || '搜索中…' }}</div>
+          <div v-if="searching" class="ai-nav-empty">{{ t('ai_searching', '搜索中…') }}</div>
           <div v-else-if="searchError" class="ai-nav-empty ai-nav-empty--error">{{ searchError }}</div>
           <div v-else-if="!searchHits.length" class="ai-nav-empty">
-            {{ t('ai_search_empty') || '没有找到匹配的消息' }}
+            {{ t('ai_search_empty', '没有找到匹配的消息') }}
           </div>
           <div v-else class="ai-nav-scroll">
             <div
@@ -225,7 +225,10 @@ function onDockFromFloat() {
               :key="hit.messageId || i"
               class="ai-nav-hit"
               :class="{ active: hit.conversationId === currentId }"
+              role="button"
+              tabindex="0"
               @click="onHitClick(hit)"
+              @keydown.enter="onHitClick(hit)"
             >
               <MessageSquareText :size="13" class="ai-nav-hit-icon" />
               <div class="ai-nav-hit-body">
@@ -234,7 +237,7 @@ function onDockFromFloat() {
                   <span class="ai-nav-hit-meta">
                     {{
                       t('ai_search_pos', { pos: hit.posInConv, total: hit.totalInConv }) ||
-                      `第 ${hit.posInConv}/${hit.totalInConv} 条`
+                      `${hit.posInConv}/${hit.totalInConv}`
                     }}
                   </span>
                 </div>
@@ -254,9 +257,9 @@ function onDockFromFloat() {
 
         <!-- 会话列表模式 -->
         <template v-else>
-          <div v-if="loading" class="ai-nav-empty">{{ t('loading') || '加载中...' }}</div>
+          <div v-if="loading" class="ai-nav-empty">{{ t('loading', '加载中...') }}</div>
           <div v-else-if="!conversations.length" class="ai-nav-empty">
-            {{ t('ai_no_history') || '暂无历史对话' }}
+            {{ t('ai_no_history', '暂无历史对话') }}
           </div>
           <div v-else class="ai-nav-scroll">
             <div
@@ -264,7 +267,10 @@ function onDockFromFloat() {
               :key="conv.id"
               class="ai-nav-conv"
               :class="{ active: conv.id === currentId }"
+              role="button"
+              tabindex="0"
               @click="onSelect(conv.id)"
+              @keydown.enter="onSelect(conv.id)"
             >
               <MessageSquare :size="14" class="ai-nav-conv-icon" />
               <div class="ai-nav-conv-info">
@@ -288,7 +294,7 @@ function onDockFromFloat() {
                       {{ conv.mode === 'agent' ? 'Agent' : 'Ask' }}
                     </span>
                     {{ formatTime(conv.updated_at) }} · {{ conv.message_count }}
-                    {{ t('ai_messages') || '条消息' }}
+                    {{ t('ai_messages', '条消息') }}
                   </span>
                 </template>
               </div>
@@ -296,7 +302,7 @@ function onDockFromFloat() {
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  :title="t('ai_rename') || '重命名'"
+                  :title="t('ai_rename', '重命名')"
                   @click.stop="startRename(conv)"
                 >
                   <Pencil :size="12" />
@@ -304,7 +310,7 @@ function onDockFromFloat() {
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  :title="t('ai_delete') || '删除'"
+                  :title="t('ai_delete', '删除')"
                   @click.stop="emit('delete', conv.id)"
                 >
                   <Trash2 :size="12" />
@@ -325,23 +331,23 @@ function onDockFromFloat() {
 
       <!-- 底部：记忆 / 设置 / 形态切换 -->
       <div class="ai-nav-foot">
-        <button class="ai-nav-foot-btn" :title="t('ai_memory') || '记忆'" @click="emit('open-memory')">
+        <button class="ai-nav-foot-btn" :title="t('ai_memory', '记忆')" @click="emit('open-memory')">
           <Brain :size="15" />
         </button>
-        <button class="ai-nav-foot-btn" :title="t('ai_settings') || 'AI 设置'" @click="emit('open-settings')">
+        <button class="ai-nav-foot-btn" :title="t('ai_settings', 'AI 设置')" @click="emit('open-settings')">
           <Settings :size="15" />
         </button>
         <span class="ai-nav-foot-spacer" />
         <button
           v-if="!isFloat"
           class="ai-nav-foot-btn"
-          :title="t('ai_nav_collapse') || '收起导航栏'"
+          :title="t('ai_nav_collapse', '收起导航栏')"
           @click="toggleNavRail()"
         >
           <PanelLeftClose :size="15" />
         </button>
         <template v-else>
-          <button class="ai-nav-foot-btn" :title="t('ai_nav_dock') || '停靠导航栏'" @click="onDockFromFloat">
+          <button class="ai-nav-foot-btn" :title="t('ai_nav_dock', '停靠导航栏')" @click="onDockFromFloat">
             <PanelLeftOpen :size="15" />
           </button>
           <button class="ai-nav-foot-btn" :title="t('close_btn')" @click="setNavOverlayOpen(false)">
@@ -354,12 +360,12 @@ function onDockFromFloat() {
     <!-- icon-rail 形态（48px） -->
     <template v-else>
       <div class="ai-nav-rail">
-        <button class="ai-nav-rail-btn" :title="t('ai_new_chat') || '新对话'" @click="emit('new-chat')">
+        <button class="ai-nav-rail-btn" :title="t('ai_new_chat', '新对话')" @click="emit('new-chat')">
           <Plus :size="16" />
         </button>
         <button
           class="ai-nav-rail-btn"
-          :title="t('ai_search_placeholder') || '搜索历史消息…'"
+          :title="t('ai_search_placeholder', '搜索历史消息…')"
           @click="onExpandFromIcon"
         >
           <Search :size="16" />
@@ -377,13 +383,13 @@ function onDockFromFloat() {
           </button>
         </div>
         <div class="ai-nav-rail-foot">
-          <button class="ai-nav-rail-btn" :title="t('ai_memory') || '记忆'" @click="emit('open-memory')">
+          <button class="ai-nav-rail-btn" :title="t('ai_memory', '记忆')" @click="emit('open-memory')">
             <Brain :size="16" />
           </button>
-          <button class="ai-nav-rail-btn" :title="t('ai_settings') || 'AI 设置'" @click="emit('open-settings')">
+          <button class="ai-nav-rail-btn" :title="t('ai_settings', 'AI 设置')" @click="emit('open-settings')">
             <Settings :size="16" />
           </button>
-          <button class="ai-nav-rail-btn" :title="t('ai_nav_expand') || '展开导航栏'" @click="onExpandFromIcon">
+          <button class="ai-nav-rail-btn" :title="t('ai_nav_expand', '展开导航栏')" @click="onExpandFromIcon">
             <PanelLeftOpen :size="16" />
           </button>
         </div>
@@ -809,6 +815,20 @@ function onDockFromFloat() {
   .ai-nav-conv-actions {
     display: none;
   }
+}
+
+/* ---- 键盘可达性：focus-visible 高亮（--accent token） ---- */
+.ai-nav-new:focus-visible,
+.ai-nav-cmd-clear:focus-visible,
+.ai-nav-foot-btn:focus-visible,
+.ai-nav-rail-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ai-nav-hit:focus-visible,
+.ai-nav-conv:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* 尊重系统「减少动态效果」设置 */

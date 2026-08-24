@@ -271,7 +271,7 @@ export function useAiChat() {
       // 同步 provider/model/mode
       const c = conv.currentConversation.value
       if (c?.mode) {
-        // 通过事件通知上层（AISidebar）同步模式，这里不直接修改 props
+        // 通过事件通知上层（AiChatPanel）同步模式，这里不直接修改 props
       }
     }
   }

@@ -9,7 +9,7 @@ import { ShieldAlert, CheckCircle2, XCircle, Clock, X, Loader2 } from 'lucide-vu
  * AiConfirmCard — 工具确认门控卡片（UI-E，对接后端 Package C）。
  *
  * 数据源：useAiChatUi 确认状态机（confirmRequest/confirmPhase/confirmExpiresAt）。
- * SSE 事件由 AISidebar 侧转发到 useAiChatUi.feedConfirmMeta（见 AISidebar.vue 注释）。
+ * SSE 事件由 AiChatPanel 侧转发到 useAiChatUi.feedConfirmMeta（见 AiChatPanel.vue 注释）。
  *
  * 状态机：
  *   pending（进行中，120s 倒计时，超时由 useAiChatUi 定时器自动转 timeout）
@@ -20,7 +20,7 @@ import { ShieldAlert, CheckCircle2, XCircle, Clock, X, Loader2 } from 'lucide-vu
  *   请求失败（后端未就绪 404 属预期）：卡片内显示错误 + 重试按钮，不崩组件、不 settle。
  *
  * Mock 测试方式（后端未就绪时，无需真实 SSE）：
- *   1. 临时在任意已挂载组件（如 AISidebar onMounted）或单测中执行：
+ *   1. 临时在任意已挂载组件（如 AiChatPanel onMounted）或单测中执行：
  *      const { feedConfirmMeta } = useAiChatUi()
  *      feedConfirmMeta({
  *        type: 'confirm_tool_action',
@@ -417,5 +417,13 @@ const settledLabel = computed(() => {
   .ai-confirm-spin {
     animation-duration: 2.4s;
   }
+}
+
+/* 键盘可达性：focus-visible 高亮（--accent token） */
+.ai-confirm-close:focus-visible,
+.ai-confirm-retry:focus-visible,
+.ai-confirm-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 </style>

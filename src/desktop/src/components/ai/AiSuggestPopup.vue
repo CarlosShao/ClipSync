@@ -377,7 +377,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                 </button>
                 <span v-else-if="applied[input.id]?.favorited" class="ai-suggest-applied-tag">
                   <Check :size="12" />
-                  <span>{{ t('ai_suggest_applied_fav') || '已收藏' }}</span>
+                  <span>{{ t('ai_suggest_applied_fav', '已收藏') }}</span>
                 </span>
               </div>
               <!-- 已收藏条目：显示一个静态标识行，避免出现"建议收藏"按钮的奇怪行为 -->
@@ -494,7 +494,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
   border: 1px solid var(--border-default);
   border-radius: 14px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.06);
-  z-index: 120;
+  z-index: calc(var(--z-overlay) + 20);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -536,7 +536,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
   opacity: 0.5;
 }
 .ai-suggest-counter-applied {
-  color: var(--success, #10b981);
+  color: var(--success);
   font-weight: 600;
 }
 .ai-suggest-head-actions {
@@ -604,7 +604,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
   color: var(--accent);
 }
 .ai-suggest-status--error {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
 }
 
 /* ============ 一条建议卡片 ============ */
@@ -623,8 +623,8 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
 }
 .ai-suggest-card--applied {
   opacity: 0.72;
-  background: color-mix(in srgb, var(--success, #10b981) 4%, var(--bg-surface));
-  border-color: color-mix(in srgb, var(--success, #10b981) 18%, var(--border-default));
+  background: color-mix(in srgb, var(--success) 4%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--success) 18%, var(--border-default));
 }
 
 .ai-suggest-card-head {
@@ -671,16 +671,16 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
   white-space: nowrap;
 }
 .ai-suggest-card-pill--fav {
-  background: color-mix(in srgb, var(--danger, #f43f5e) 14%, transparent);
-  color: var(--danger, #f43f5e);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
 }
 .ai-suggest-card-pill--warn {
-  background: color-mix(in srgb, var(--warning, #f59e0b) 14%, transparent);
-  color: var(--warning, #b45309);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
 }
 .ai-suggest-card-pill--archive {
-  background: color-mix(in srgb, var(--info, #475569) 14%, transparent);
-  color: var(--info, #475569);
+  background: color-mix(in srgb, var(--info) 14%, transparent);
+  color: var(--info);
 }
 .ai-suggest-card-pill--neutral {
   background: var(--bg-hover);
@@ -700,8 +700,8 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
   font-size: 10.5px;
   font-weight: 600;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--success, #10b981) 14%, transparent);
-  color: var(--success, #059669);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
 }
 .ai-suggest-card-chevron {
   flex-shrink: 0;
@@ -744,7 +744,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
   font-size: 11.5px;
   margin-top: 2px;
 }
-.ai-suggest-fav-yes { color: var(--danger, #f43f5e); }
+.ai-suggest-fav-yes { color: var(--danger); }
 .ai-suggest-fav-no { color: var(--text-tertiary); }
 .ai-suggest-action-icon {
   color: var(--text-secondary);
@@ -773,15 +773,15 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
 .ai-suggest-btn--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent-foreground, #fff);
+  color: var(--accent-foreground);
 }
 .ai-suggest-btn--primary:hover {
-  background: var(--accent-hover, var(--accent));
+  background: var(--accent-hover);
   filter: brightness(1.05);
 }
 .ai-suggest-btn--danger {
-  border-color: var(--danger, #ef4444);
-  color: var(--danger, #ef4444);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 .ai-suggest-btn--danger:hover {
   background: var(--danger-bg);
@@ -796,8 +796,8 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
   border-radius: 6px;
   font-size: 11.5px;
   font-weight: 600;
-  background: color-mix(in srgb, var(--success, #10b981) 14%, transparent);
-  color: var(--success, #059669);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
 }
 
 .ai-suggest-tags {
@@ -816,8 +816,8 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
   white-space: nowrap;
 }
 .ai-suggest-tag-chip--applied {
-  background: color-mix(in srgb, var(--success, #10b981) 18%, var(--accent-bg));
-  color: var(--success, #059669);
+  background: color-mix(in srgb, var(--success) 18%, var(--accent-bg));
+  color: var(--success);
 }
 
 /* ============ Footer ============ */
