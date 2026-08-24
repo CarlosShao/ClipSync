@@ -47,6 +47,7 @@
   --z-index-30: 30;
   --z-index-40: 40;
   --z-index-50: 50;
+  --z-index-60: 60;
   --z-index-999: 999;
   --z-index-1000: 1000;
   --z-index-9999: 9999;
@@ -74,9 +75,10 @@ html.theme-vercel.light {
   --border-focus: #000000;
   --text-primary: #111111;
   --text-secondary: #666666;
-  --text-tertiary: #999999;
+  --text-tertiary: #727272;
   --text-inverse: #ffffff;
   --accent: #111111;
+  --accent-rgb: 17 17 17;
   --accent-hover: #333333;
   --accent-light: rgba(0, 0, 0, 0.06);
   --accent-bg: #f5f5f5;
@@ -115,9 +117,10 @@ html.theme-vercel.dark {
   --border-focus: #555555;
   --text-primary: #f5f5f5;
   --text-secondary: #a0a0a0;
-  --text-tertiary: #666666;
+  --text-tertiary: #7a7a7a;
   --text-inverse: #000000;
   --accent: #f5f5f5;
+  --accent-rgb: 245 245 245;
   --accent-hover: #ffffff;
   --accent-light: rgba(255, 255, 255, 0.06);
   --accent-bg: #1e1e1e;
@@ -151,9 +154,10 @@ html.theme-clipsync.light {
   --border-focus: #6366f1;
   --text-primary: #1e1b4b;
   --text-secondary: #5b54b0;
-  --text-tertiary: #938ec5;
+  --text-tertiary: #7069b2;
   --text-inverse: #ffffff;
   --accent: #6366f1;
+  --accent-rgb: 99 102 241;
   --accent-hover: #4f46e5;
   --accent-light: rgba(99, 102, 241, 0.08);
   --accent-bg: #eeedff;
@@ -192,9 +196,10 @@ html.theme-clipsync.dark {
   --border-focus: #818cf8;
   --text-primary: #ede9fe;
   --text-secondary: #a5b4fc;
-  --text-tertiary: #6366f1;
+  --text-tertiary: #676af1;
   --text-inverse: #0c0a1d;
   --accent: #818cf8;
+  --accent-rgb: 129 140 248;
   --accent-hover: #a5b4fc;
   --accent-light: rgba(129, 140, 248, 0.1);
   --accent-bg: #1e1b4b;
@@ -228,9 +233,10 @@ html.theme-notion.light {
   --border-focus: #2383e2;
   --text-primary: #37352f;
   --text-secondary: #787774;
-  --text-tertiary: #9b9a97;
+  --text-tertiary: #777572;
   --text-inverse: #ffffff;
   --accent: #2383e2;
+  --accent-rgb: 35 131 226;
   --accent-hover: #1a6ec2;
   --accent-light: rgba(35, 131, 226, 0.07);
   --accent-bg: #ebf4ff;
@@ -269,9 +275,10 @@ html.theme-notion.dark {
   --border-focus: #4aa3df;
   --text-primary: #ececec;
   --text-secondary: #9b9a97;
-  --text-tertiary: #6b6b6b;
+  --text-tertiary: #828282;
   --text-inverse: #191919;
   --accent: #4aa3df;
+  --accent-rgb: 74 163 223;
   --accent-hover: #6db8e8;
   --accent-light: rgba(74, 163, 223, 0.1);
   --accent-bg: #232b33;
@@ -305,9 +312,10 @@ html.theme-linear {
   --border-focus: #818cf8;
   --text-primary: #fafafa;
   --text-secondary: #a1a1aa;
-  --text-tertiary: #71717a;
+  --text-tertiary: #787881;
   --text-inverse: #080808;
   --accent: #818cf8;
+  --accent-rgb: 129 140 248;
   --accent-hover: #a5b4fc;
   --accent-light: rgba(129, 140, 248, 0.1);
   --accent-bg: #1e1b4b;
@@ -347,9 +355,10 @@ html.theme-apple.light {
   --border-focus: #007aff;
   --text-primary: #1d1d1f;
   --text-secondary: #6e6e73;
-  --text-tertiary: #aeaeb2;
+  --text-tertiary: #6f6f75;
   --text-inverse: #ffffff;
   --accent: #007aff;
+  --accent-rgb: 0 122 255;
   --accent-hover: #0056cc;
   --accent-light: rgba(0, 122, 255, 0.08);
   --accent-bg: #e5f1ff;
@@ -388,9 +397,10 @@ html.theme-apple.dark {
   --border-focus: #0a84ff;
   --text-primary: #f5f5f7;
   --text-secondary: #98989d;
-  --text-tertiary: #636366;
+  --text-tertiary: #848487;
   --text-inverse: #1c1c1e;
   --accent: #0a84ff;
+  --accent-rgb: 10 132 255;
   --accent-hover: #409cff;
   --accent-light: rgba(10, 132, 255, 0.12);
   --accent-bg: #1c2d42;
@@ -427,6 +437,7 @@ html.theme-raycast {
   --text-tertiary: #9c9c9d;
   --text-inverse: #07080a;
   --accent: #f9f9f9;
+  --accent-rgb: 249 249 249;
   --accent-hover: #ffffff;
   --accent-light: rgba(255, 255, 255, 0.05);
   --accent-bg: #18191b;
@@ -466,9 +477,10 @@ html.theme-arc.light {
   --border-focus: #7c3aed;
   --text-primary: #1a1a2e;
   --text-secondary: #5b5b6e;
-  --text-tertiary: #9393ab;
+  --text-tertiary: #727292;
   --text-inverse: #ffffff;
   --accent: #7c3aed;
+  --accent-rgb: 124 58 237;
   --accent-hover: #6d28d9;
   --accent-light: rgba(124, 58, 237, 0.07);
   --accent-bg: #f3eeff;
@@ -511,9 +523,10 @@ html.theme-arc.dark {
   --border-focus: #a78bfa;
   --text-primary: #f0eefa;
   --text-secondary: #a5a0c4;
-  --text-tertiary: #6b658e;
+  --text-tertiary: #7e799f;
   --text-inverse: #12101e;
   --accent: #a78bfa;
+  --accent-rgb: 167 139 250;
   --accent-hover: #c4b5fd;
   --accent-light: rgba(167, 139, 250, 0.1);
   --accent-bg: #211e3e;
@@ -590,6 +603,30 @@ html.dark {
   --z-toast: 9200;
   --z-tooltip: 9300;
   --z-max: 9999;
+  /* Extra z-index ladder entries (reuse @theme inline --z-index-* steps;
+     literal fallbacks mirror the ladder in case theme vars are tree-shaken) */
+  --z-confirm: var(--z-index-60, 60);
+  --z-rail: var(--z-index-30, 30);
+  /* Typography ladder (S5) — compact desktop scale for AI surfaces */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  /* Shadow ladder (S7) — light-mode base; dark themes override below.
+     Legacy --shadow-dropdown stays per-theme as a compat alias. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+/* Dark surfaces need deeper shadows (S7). linear/raycast are dark-only
+   themes without a .dark class, so they are listed explicitly. */
+html.dark,
+html.theme-linear,
+html.theme-raycast {
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
 
 /* ============================================================
@@ -723,4 +760,26 @@ button.inline-flex:not([class*='rounded-full']):not([class*='size-']) {
 button.inline-flex:not([class*='rounded-full']):not([class*='size-'])[class*='h-10'] {
   padding-left: 20px !important;
   padding-right: 20px !important;
+}
+
+/* ============================================================
+   REDUCED MOTION FALLBACK (S8)
+   Users with prefers-reduced-motion get instant final states for
+   every AI component animation (elements + pseudo-elements whose
+   class list starts with an `ai-` token). 0.01ms instead of `none`
+   keeps animation-fill-mode: forwards end states intact.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  [class^='ai-'],
+  [class*=' ai-'],
+  [class^='ai-']::before,
+  [class^='ai-']::after,
+  [class*=' ai-']::before,
+  [class*=' ai-']::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
 }
