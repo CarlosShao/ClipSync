@@ -38,7 +38,10 @@ if (process.env.PORT) envOverrides.port = parseInt(process.env.PORT, 10);
 if (process.env.HOST) envOverrides.host = process.env.HOST;
 if (process.env.LOG_LEVEL) envOverrides.logLevel = process.env.LOG_LEVEL;
 
-if (process.env.DB_HOST || process.env.DB_PORT || process.env.DB_NAME || process.env.DB_USER || process.env.DB_PASSWORD) {
+// 测试环境强制使用 testConfig 的独立测试库（clipsync_test），
+// 避免 .env 中的 DB_NAME=clipsync_dev 等覆盖把整套测试拉到共享 dev 库，
+// 造成用例间数据污染与随机失败。其余环境保持原有 env 覆盖行为。
+if (nodeEnv !== 'test' && (process.env.DB_HOST || process.env.DB_PORT || process.env.DB_NAME || process.env.DB_USER || process.env.DB_PASSWORD)) {
   envOverrides.db = {};
   if (process.env.DB_HOST) envOverrides.db.host = process.env.DB_HOST;
   if (process.env.DB_PORT) envOverrides.db.port = parseInt(process.env.DB_PORT, 10);
