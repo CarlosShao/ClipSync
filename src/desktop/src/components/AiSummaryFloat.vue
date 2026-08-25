@@ -40,7 +40,11 @@ async function ensureProvider() {
 
 async function summarize(content: string) {
   await ensureProvider()
-  if (!providerId.value) return
+  if (!providerId.value) {
+    // 无可用 provider 时静默关闭浮窗
+    close()
+    return
+  }
   loading.value = true
   error.value = ''
   try {
@@ -48,11 +52,13 @@ async function summarize(content: string) {
     if (res.ok && res.data?.summary) {
       summary.value = res.data.summary
     } else {
-      error.value = res.error || '摘要失败'
+      // 摘要失败 → 静默关闭浮窗，不显示错误打扰用户
+      close()
     }
   } catch (e: any) {
-    console.error('[AiSummaryFloat]', e)
-    error.value = e?.message || '摘要失败'
+    console.warn('[AiSummaryFloat] summarize failed:', e?.message || e)
+    // 网络/服务端异常 → 静默关闭浮窗
+    close()
   } finally {
     loading.value = false
   }
@@ -107,7 +113,6 @@ onUnmounted(() => {
         </div>
         <div class="float-summary mt-2 text-sm leading-relaxed text-foreground">
           <span v-if="loading" class="text-muted-foreground">正在生成摘要...</span>
-          <span v-else-if="error" class="text-destructive text-xs">{{ error }}</span>
           <span v-else>{{ summary }}</span>
         </div>
       </div>

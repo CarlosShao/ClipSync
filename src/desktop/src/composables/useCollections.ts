@@ -767,3 +767,25 @@ export function useCollections() {
     findNodeById: _findNodeById,
   }
 }
+
+// ============ AI 数据刷新事件监听 ============
+// 当 AI Agent 执行收藏夹相关工具后，自动刷新收藏夹数据实现无感更新
+import { onAiDataRefresh } from './useAiDataRefresh'
+
+if (typeof window !== 'undefined' && !(window as any).__collectionsAiRefreshInited) {
+  ;(window as any).__collectionsAiRefreshInited = true
+  
+  onAiDataRefresh((event) => {
+    if (event.type === 'collections') {
+      // 静默刷新收藏夹数据
+      const data = getFavoriteCollections().catch(() => null)
+      if (data?.collections) {
+        // 找到 useCollections 的实例并刷新
+        // 这里通过 window 事件通知已有实例
+        window.dispatchEvent(new CustomEvent('clipsync:collections-updated', { 
+          detail: { reason: 'ai-tool', tool: event.toolName } 
+        }))
+      }
+    }
+  })
+}

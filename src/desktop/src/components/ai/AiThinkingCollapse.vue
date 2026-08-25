@@ -175,27 +175,30 @@ const timeText = computed(() => {
 <style scoped>
 /* ============ 态 1：loading（首字前） ============ */
 .ai-tc-loading {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
-  height: 28px;
-  margin: 4px 0;
-  padding: 0 2px;
+  gap: 4px;
+  height: 18px;
+  margin: 1px 0;
+  padding: 0;
   user-select: none;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
 }
 .ai-tc-spin {
   flex-shrink: 0;
   color: var(--text-tertiary);
   animation: ai-tc-rotate 1s linear infinite;
+  width: 11px;
+  height: 11px;
 }
-/* 扫光标题：transparent 基色 + mix-blend-mode → 文字常显，只有高光带在字内流动
-   ⚠️ 必须用 background-image 而非 background 简写——简写会清掉 background-clip:text */
+/* 扫光标题 */
 .ai-tc-shimmer {
   position: relative;
   display: inline-block;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-tertiary);
 }
 .ai-tc-shimmer::after {
   content: attr(data-text);
@@ -205,59 +208,64 @@ const timeText = computed(() => {
   background-image: linear-gradient(
     90deg,
     transparent 0%,
-    transparent 35%,
-    color-mix(in srgb, var(--text-primary) 85%, transparent) 50%,
-    transparent 65%,
+    transparent 30%,
+    color-mix(in srgb, var(--accent) 60%, transparent) 50%,
+    transparent 70%,
     transparent 100%
   );
-  background-size: 220% 100%;
+  background-size: 200% 100%;
   background-position: 100% 0;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  animation: ai-tc-sweep 2.5s ease-in-out infinite;
+  animation: ai-tc-sweep 2s ease-in-out infinite;
   mix-blend-mode: screen;
 }
 html.light .ai-tc-shimmer::after {
   mix-blend-mode: multiply;
 }
 @keyframes ai-tc-sweep {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: -20% 0;
-  }
+  0% { background-position: 100% 0; }
+  100% { background-position: -50% 0; }
 }
 
-/* ============ 态 2/3：深度思考面板 ============ */
+/* ============ 态 2/3：深度思考面板（行内 flow 风格） ============ */
 .ai-tc {
-  margin: 8px 0 0;
+  margin: 1px 0;
   overflow: hidden;
 }
 .ai-tc-head {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 4px;
   width: 100%;
-  padding: 4px 2px;
+  padding: 1px 2px;
   border: none;
   background: transparent;
   cursor: pointer;
   user-select: none;
   text-align: left;
   font: inherit;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  border-radius: 3px;
+  transition: background 0.1s ease;
+}
+.ai-tc-head:hover {
+  background: var(--bg-hover);
 }
 .ai-tc-done {
   flex-shrink: 0;
   color: var(--success);
+  width: 11px;
+  height: 11px;
 }
 .ai-tc-title {
   position: relative;
   display: inline-block;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 400;
   color: var(--text-secondary);
 }
 .ai-tc-title::after {
@@ -268,65 +276,68 @@ html.light .ai-tc-shimmer::after {
   background-image: linear-gradient(
     90deg,
     transparent 0%,
-    transparent 35%,
-    color-mix(in srgb, var(--text-primary) 85%, transparent) 50%,
-    transparent 65%,
+    transparent 30%,
+    color-mix(in srgb, var(--accent) 60%, transparent) 50%,
+    transparent 70%,
     transparent 100%
   );
-  background-size: 220% 100%;
+  background-size: 200% 100%;
   background-position: 100% 0;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  animation: ai-tc-sweep 2.5s ease-in-out infinite;
+  animation: ai-tc-sweep 2s ease-in-out infinite;
   mix-blend-mode: screen;
 }
 html.light .ai-tc-title::after {
   mix-blend-mode: multiply;
 }
-/* 思考完成 → 扫光停止（明确「思考完毕」反馈） */
+/* 思考完成 → 扫光停止 */
 .ai-tc-title.paused::after {
   animation: none;
   background-position: 100% 0;
 }
 .ai-tc-time {
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 400;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+  margin-left: 2px;
 }
 .ai-tc-chev {
   color: var(--text-tertiary);
   margin-left: auto;
   flex-shrink: 0;
+  width: 10px;
+  height: 10px;
 }
 
-/* 思考正文：左竖线 + 等宽；不截断 max-height（外层消息容器自带滚动） */
+/* 思考正文：行内 flow 风格 */
 .ai-tc-body {
-  transition: opacity 0.25s ease;
+  transition: all 0.15s ease;
   max-height: none;
   opacity: 1;
-  padding-top: 8px;
-  padding-left: 4px;
+  padding: 2px 0 2px 16px;
+  position: relative;
 }
 .ai-tc-body.collapsed {
   opacity: 0;
   max-height: 0;
   overflow: hidden;
   padding-top: 0;
+  padding-bottom: 0;
   padding-left: 0;
   transition:
-    max-height 0.3s ease-in-out,
-    opacity 0.25s ease,
-    padding 0.2s ease;
+    max-height 0.2s ease-in-out,
+    opacity 0.15s ease,
+    padding 0.15s ease;
 }
 .ai-tc-md {
-  font-size: 12.5px;
+  font-size: 11.5px;
   color: var(--text-secondary);
-  line-height: 1.7;
-  border-left: 2px solid var(--border-neutral-l1, var(--border-default));
-  padding: 4px 0 4px 12px;
+  line-height: 1.55;
+  padding: 0;
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
@@ -337,21 +348,17 @@ html.light .ai-tc-title::after {
 .ai-tc-caret {
   display: inline-block;
   width: 2px;
-  height: 1.1em;
+  height: 1em;
   background: var(--text-secondary);
   vertical-align: text-bottom;
   margin-left: 1px;
-  animation: ai-tc-blink 1s step-end infinite;
+  animation: ai-tc-blink 0.8s step-end infinite;
 }
 @keyframes ai-tc-blink {
-  50% {
-    opacity: 0;
-  }
+  50% { opacity: 0; }
 }
 @keyframes ai-tc-rotate {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
   .ai-tc-shimmer::after,
@@ -362,9 +369,10 @@ html.light .ai-tc-title::after {
   }
 }
 
-/* 键盘可达性：focus-visible 高亮（--accent token） */
+/* 键盘可达性 */
 .ai-tc-head:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 3px;
 }
 </style>

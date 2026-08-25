@@ -163,11 +163,13 @@ const settledLabel = computed(() => {
         {{ t('ai_confirm_expires_in', { s: remainingSec }) || `${remainingSec}s` }}
       </span>
       <button class="ai-confirm-btn ai-confirm-btn--deny" :disabled="submitting" @click="submit(false)">
-        <Loader2 v-if="submitting && lastAllow === false" :size="13" class="ai-confirm-spin" />
+        <Loader2 v-if="submitting && lastAllow === false" :size="14" class="ai-confirm-spin" />
+        <XCircle v-else :size="14" />
         {{ t('ai_confirm_deny', '拒绝') }}
       </button>
       <button class="ai-confirm-btn ai-confirm-btn--approve" :disabled="submitting" @click="submit(true)">
-        <Loader2 v-if="submitting && lastAllow === true" :size="13" class="ai-confirm-spin" />
+        <Loader2 v-if="submitting && lastAllow === true" :size="14" class="ai-confirm-spin" />
+        <CheckCircle2 v-else :size="14" />
         {{ t('ai_confirm_approve', '批准') }}
       </button>
     </div>
@@ -356,16 +358,22 @@ const settledLabel = computed(() => {
 .ai-confirm-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
-  padding: 4px 14px;
-  border-radius: var(--radius-sm);
+  padding: 6px 18px;
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
+  line-height: 1;
+  min-width: 72px;
   transition:
-    opacity 0.12s,
-    transform 0.12s;
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.1s ease;
 }
 .ai-confirm-btn:disabled {
   opacity: 0.55;
@@ -374,15 +382,29 @@ const settledLabel = computed(() => {
 .ai-confirm-btn:not(:disabled):active {
   transform: scale(0.97);
 }
+.ai-confirm-btn:not(:disabled):hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
 .ai-confirm-btn--approve {
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 45%, transparent);
-  background: color-mix(in srgb, var(--success) 10%, transparent);
+  color: #fff;
+  background: var(--success);
+  border-color: var(--success);
+}
+.ai-confirm-btn--approve:not(:disabled):hover {
+  background: color-mix(in srgb, var(--success) 88%, #000);
+  border-color: color-mix(in srgb, var(--success) 88%, #000);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--success) 35%, transparent);
 }
 .ai-confirm-btn--deny {
   color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
-  background: transparent;
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.ai-confirm-btn--deny:not(:disabled):hover {
+  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--danger) 35%, transparent);
 }
 .ai-confirm-spin {
   animation: ai-confirm-spin 0.8s linear infinite;

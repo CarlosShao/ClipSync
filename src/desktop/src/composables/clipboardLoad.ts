@@ -397,3 +397,18 @@ export async function loadImagesFromQueue(queue: ClipItem[]) {
     await Promise.all(batch.map(loadImage))
   }
 }
+
+// ============ AI 数据刷新事件监听 ============
+// 当 AI Agent 执行剪贴板相关工具后，自动刷新数据实现无感更新
+import { onAiDataRefresh } from './useAiDataRefresh'
+
+if (typeof window !== 'undefined' && !(window as any).__clipboardAiRefreshInited) {
+  ;(window as any).__clipboardAiRefreshInited = true
+  
+  onAiDataRefresh((event) => {
+    if (event.type === 'clipboard') {
+      // 静默刷新剪贴板数据（不带 loading 状态，实现无感刷新）
+      loadClipboardItems({ page: 1, append: false }).catch(() => {})
+    }
+  })
+}

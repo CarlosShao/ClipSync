@@ -178,17 +178,25 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
   }
 
   // 立即添加到本地列表（乐观更新）
+  // 归档视图下跳过乐观插入：新条目未归档，不应出现在归档列表中
+  const isArchiveView = currentView.value === 'archive'
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-  items.value.unshift({ id: localId, type, content, source: 'Desktop', timestamp: Date.now(), selected: false })
-  // 同步即时更新顶部计数：乐观插入即 +1（刷新时 loadClipboardItems 会用服务器真实
-  // total 重设，自动纠正，不会重复计数）。否则同步后数字要等刷新/加载更多才变化。
-  totalItems.value += 1
-  if (currentView.value !== 'archive') mainTotalItems.value += 1
+  if (!isArchiveView) {
+    items.value.unshift({ id: localId, type, content, source: 'Desktop', timestamp: Date.now(), selected: false })
+    // 同步即时更新顶部计数：乐观插入即 +1（刷新时 loadClipboardItems 会用服务器真实
+    // total 重设，自动纠正，不会重复计数）。否则同步后数字要等刷新/加载更多才变化。
+    totalItems.value += 1
+    mainTotalItems.value += 1
+  }
   // 获取设备ID
   const deviceId = await ensureDeviceId()
   if (!deviceId) {
     console.warn('[Clipboard] uploadToServer: no deviceId, dropping text')
-    items.value = items.value.filter((i) => i.id !== localId)
+    if (!isArchiveView) {
+      items.value = items.value.filter((i) => i.id !== localId)
+      totalItems.value = Math.max(0, totalItems.value - 1)
+      mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+    }
     return
   }
   const uploadPayload = {
@@ -211,9 +219,11 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
       return
     }
     // 上传失败：从本地列表移除乐观项，避免残留脏数据，并回滚计数
-    items.value = items.value.filter((i) => i.id !== localId)
-    totalItems.value = Math.max(0, totalItems.value - 1)
-    if (currentView.value !== 'archive') mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+    if (!isArchiveView) {
+      items.value = items.value.filter((i) => i.id !== localId)
+      totalItems.value = Math.max(0, totalItems.value - 1)
+      mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+    }
     if (res.status === 413) {
       toast.show(t('text_too_large', { n: Math.round(MAX_TEXT_UPLOAD_SIZE / 1024 / 1024) }), 'warning')
     } else {
@@ -221,9 +231,11 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
     }
   } catch (e: any) {
     // 网络/未知异常：同样移除乐观项并提示，回滚计数
-    items.value = items.value.filter((i) => i.id !== localId)
-    totalItems.value = Math.max(0, totalItems.value - 1)
-    if (currentView.value !== 'archive') mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+    if (!isArchiveView) {
+      items.value = items.value.filter((i) => i.id !== localId)
+      totalItems.value = Math.max(0, totalItems.value - 1)
+      mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+    }
     toast.show(t('text_upload_failed') + (e?.message ? `: ${e.message}` : ''), 'error')
   }
 }
@@ -240,22 +252,33 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
   // Resize large images (>1080p) before upload to save bandwidth
   const resized = await resizeImageIfNeeded(dataUrl)
   const base64 = resized.split(',')[1]
-  // 乐观更新
+
+  // 归档视图下跳过乐观插入：新条目未归档，不应出现在归档列表中
+  const isArchiveView = currentView.value === 'archive'
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-  items.value.unshift({
-    id: localId,
-    type: 'image',
-    content: resized,
-    preview: resized,
-    source: 'Desktop',
-    timestamp: Date.now(),
-    selected: false,
-  })
-  totalItems.value += 1
-  if (currentView.value !== 'archive') mainTotalItems.value += 1
+  if (!isArchiveView) {
+    // 乐观更新
+    items.value.unshift({
+      id: localId,
+      type: 'image',
+      content: resized,
+      preview: resized,
+      source: 'Desktop',
+      timestamp: Date.now(),
+      selected: false,
+    })
+    totalItems.value += 1
+    mainTotalItems.value += 1
+  }
+
   const deviceId = await ensureDeviceId()
   if (!deviceId) {
     console.warn('[Clipboard] uploadImageToServer: no deviceId, dropping image')
+    if (!isArchiveView) {
+      items.value = items.value.filter((i) => i.id !== localId)
+      totalItems.value = Math.max(0, totalItems.value - 1)
+      mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+    }
     return
   }
   // Hash the ORIGINAL image bytes (not the resized upload) so server-side
@@ -277,6 +300,13 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
       localItem.id = res.data.id
       cacheContent(res.data.id, dataUrl)
     }
+    return
+  }
+  // 上传失败：从本地列表移除乐观项，避免残留脏数据，并回滚计数
+  if (!isArchiveView) {
+    items.value = items.value.filter((i) => i.id !== localId)
+    totalItems.value = Math.max(0, totalItems.value - 1)
+    mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
   }
 }
 
@@ -310,26 +340,35 @@ export async function uploadFileToServer(payload: string) {
     /* file not readable (binary, permission, etc.) — keep path array */
   }
 
-  // 乐观更新
+  // 归档视图下跳过乐观插入：新条目未归档，不应出现在归档列表中
+  const isArchiveView = currentView.value === 'archive'
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-  items.value.unshift({
-    id: localId,
-    type: 'file',
-    content: JSON.stringify({
-      name: fileName,
-      size: `${(fileContent.length / 1024).toFixed(1)} KB`,
-      type: 'text/plain',
-    }),
-    source: 'Desktop',
-    timestamp: Date.now(),
-    selected: false,
-  })
-  totalItems.value += 1
-  if (currentView.value !== 'archive') mainTotalItems.value += 1
+  if (!isArchiveView) {
+    // 乐观更新
+    items.value.unshift({
+      id: localId,
+      type: 'file',
+      content: JSON.stringify({
+        name: fileName,
+        size: `${(fileContent.length / 1024).toFixed(1)} KB`,
+        type: 'text/plain',
+      }),
+      source: 'Desktop',
+      timestamp: Date.now(),
+      selected: false,
+    })
+    totalItems.value += 1
+    mainTotalItems.value += 1
+  }
 
   const deviceId = await ensureDeviceId()
   if (!deviceId) {
     console.warn('[Clipboard] uploadFileToServer: no deviceId, dropping file')
+    if (!isArchiveView) {
+      items.value = items.value.filter((i) => i.id !== localId)
+      totalItems.value = Math.max(0, totalItems.value - 1)
+      mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+    }
     return
   }
   const uploadPayload = {
@@ -355,5 +394,12 @@ export async function uploadFileToServer(payload: string) {
         cacheContent(res.data.id, fileContent)
       }
     }
+    return
+  }
+  // 上传失败：从本地列表移除乐观项，避免残留脏数据，并回滚计数
+  if (!isArchiveView) {
+    items.value = items.value.filter((i) => i.id !== localId)
+    totalItems.value = Math.max(0, totalItems.value - 1)
+    mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
   }
 }

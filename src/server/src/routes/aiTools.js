@@ -263,11 +263,11 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'archive_items',
-      description: '批量归档指定的剪贴板条目（软删除：archived=true，条目从主列表隐藏）。',
+      description: '批量归档指定的剪贴板条目（软删除：archived=true，条目从主列表隐藏）。重要：当搜索匹配到多条结果时，必须先将所有匹配条目列出展示给用户，等待用户明确指定要归档的条目后再调用本工具。禁止直接归档所有匹配项。',
       parameters: {
         type: 'object',
         properties: {
-          clip_ids: { type: 'array', items: { type: 'string' }, description: '要归档的条目ID列表' }
+          clip_ids: { type: 'array', items: { type: 'string' }, description: '要归档的条目ID列表（仅包含用户明确指定的条目）' }
         },
         required: ['clip_ids']
       }
@@ -277,7 +277,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'unarchive_items',
-      description: '批量取消归档指定的剪贴板条目（archived=false，恢复到主列表）。',
+      description: '批量取消归档指定的剪贴板条目（archived=false，恢复到主列表）。重要：当搜索匹配到多条结果时，必须先列出所有匹配条目并等待用户确认。',
       parameters: {
         type: 'object',
         properties: {
@@ -397,11 +397,11 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'destroy_clips',
-      description: '批量永久物理删除剪贴板条目（DELETE FROM 数据库，不可恢复）。属破坏性操作，执行前必须获得用户明确确认（前端会弹出确认卡片）。单次最多 50 条，超过需分批调用。',
+      description: '批量永久物理删除剪贴板条目（DELETE FROM 数据库，不可恢复）。属破坏性操作，执行前必须获得用户明确确认（前端会弹出确认卡片）。单次最多 50 条，超过需分批调用。重要：调用前必须先用 search_clips 或 get_clip_details 确认条目确实存在于当前用户下。若 permanentlyDeleted 为 0，说明 ID 不存在或不属于当前用户。',
       parameters: {
         type: 'object',
         properties: {
-          clip_ids: { type: 'array', items: { type: 'string' }, description: '要永久删除的条目ID列表（最多50）' }
+          clip_ids: { type: 'array', items: { type: 'string' }, description: '要永久删除的条目ID列表（最多50）。必须是 search_clips 返回的有效 ID。' }
         },
         required: ['clip_ids']
       }
@@ -646,6 +646,12 @@ function getImpact(toolName, args) {
   const n = Array.isArray(args?.clip_ids) ? args.clip_ids.length : 0
   if (toolName === 'destroy_clips') {
     return `将永久物理删除 ${n} 条剪贴板条目，该操作不可恢复。`
+  }
+  if (toolName === 'archive_items' && n > 1) {
+    return `将归档 ${n} 条剪贴板条目。若只需归档部分条目，请先取消并明确指定。`
+  }
+  if (toolName === 'unarchive_items' && n > 1) {
+    return `将从归档中恢复 ${n} 条剪贴板条目。`
   }
   return undefined
 }
@@ -935,11 +941,26 @@ async function executeToolInner(toolName, args, userId, role) {
         if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
           return { error: 'clip_ids is required and must be an array' }
         }
-        const result = await pool.query(
-          'UPDATE clipboard_items SET archived = true, updated_at = NOW() WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+        const existCheck = await pool.query(
+          'SELECT id FROM clipboard_items WHERE id = ANY($1) AND user_id = $2',
           [clip_ids, userId]
         )
-        return { success: true, archived: result.rowCount, note: '已软删除（归档），可在归档列表中恢复。如需永久物理删除请启用 destroy_clips。' }
+        const foundIds = existCheck.rows.map((r) => r.id)
+        const missingIds = clip_ids.filter((id) => !foundIds.includes(id))
+        if (foundIds.length === 0) {
+          return { error: 'NOT_FOUND', message: `指定的 ${clip_ids.length} 个条目均不存在于当前用户下。`, requested_ids: clip_ids }
+        }
+        const result = await pool.query(
+          'UPDATE clipboard_items SET archived = true, updated_at = NOW() WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+          [foundIds, userId]
+        )
+        return {
+          success: true,
+          archived: result.rowCount,
+          notFound: missingIds.length > 0 ? missingIds.length : 0,
+          missing_ids: missingIds.length > 0 ? missingIds : undefined,
+          note: '已软删除（归档），可在归档列表中恢复。如需永久物理删除请启用 destroy_clips。',
+        }
       }
 
       case 'destroy_clips': {
@@ -957,11 +978,34 @@ async function executeToolInner(toolName, args, userId, role) {
             maxPerBatch: 50,
           }
         }
-        const result = await pool.query(
-          'DELETE FROM clipboard_items WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+        // 先检查哪些 ID 实际存在（含 archived 状态），以便诊断"未找到"问题
+        const existCheck = await pool.query(
+          'SELECT id, archived FROM clipboard_items WHERE id = ANY($1) AND user_id = $2',
           [clip_ids, userId]
         )
-        return { success: true, permanentlyDeleted: result.rowCount }
+        const foundIds = existCheck.rows.map((r) => r.id)
+        const missingIds = clip_ids.filter((id) => !foundIds.includes(id))
+
+        if (foundIds.length === 0) {
+          return {
+            error: 'NOT_FOUND',
+            message: `指定的 ${clip_ids.length} 个条目 ID 在当前用户下均不存在。请确认 ID 是否正确，或条目是否属于当前用户。`,
+            requested_ids: clip_ids,
+            found: 0,
+          }
+        }
+
+        // 只删除存在的条目
+        const result = await pool.query(
+          'DELETE FROM clipboard_items WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+          [foundIds, userId]
+        )
+        return {
+          success: true,
+          permanentlyDeleted: result.rowCount,
+          notFound: missingIds.length > 0 ? missingIds.length : 0,
+          missing_ids: missingIds.length > 0 ? missingIds : undefined,
+        }
       }
 
       case 'organize_by_type': {
@@ -1043,11 +1087,26 @@ async function executeToolInner(toolName, args, userId, role) {
         if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
           return { error: 'clip_ids is required and must be an array' }
         }
-        const result = await pool.query(
-          'UPDATE clipboard_items SET archived = true, updated_at = NOW() WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+        // 先检查存在性，返回未找到的 ID 以便 AI 诊断
+        const existCheck = await pool.query(
+          'SELECT id FROM clipboard_items WHERE id = ANY($1) AND user_id = $2',
           [clip_ids, userId]
         )
-        return { success: true, archived: result.rowCount }
+        const foundIds = existCheck.rows.map((r) => r.id)
+        const missingIds = clip_ids.filter((id) => !foundIds.includes(id))
+        if (foundIds.length === 0) {
+          return { error: 'NOT_FOUND', message: `指定的 ${clip_ids.length} 个条目均不存在于当前用户下。`, requested_ids: clip_ids }
+        }
+        const result = await pool.query(
+          'UPDATE clipboard_items SET archived = true, updated_at = NOW() WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+          [foundIds, userId]
+        )
+        return {
+          success: true,
+          archived: result.rowCount,
+          notFound: missingIds.length > 0 ? missingIds.length : 0,
+          missing_ids: missingIds.length > 0 ? missingIds : undefined,
+        }
       }
 
       case 'unarchive_items': {
@@ -1055,11 +1114,25 @@ async function executeToolInner(toolName, args, userId, role) {
         if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
           return { error: 'clip_ids is required and must be an array' }
         }
-        const result = await pool.query(
-          'UPDATE clipboard_items SET archived = false, updated_at = NOW() WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+        const existCheck = await pool.query(
+          'SELECT id FROM clipboard_items WHERE id = ANY($1) AND user_id = $2',
           [clip_ids, userId]
         )
-        return { success: true, unarchived: result.rowCount }
+        const foundIds = existCheck.rows.map((r) => r.id)
+        const missingIds = clip_ids.filter((id) => !foundIds.includes(id))
+        if (foundIds.length === 0) {
+          return { error: 'NOT_FOUND', message: `指定的 ${clip_ids.length} 个条目均不存在于当前用户下。`, requested_ids: clip_ids }
+        }
+        const result = await pool.query(
+          'UPDATE clipboard_items SET archived = false, updated_at = NOW() WHERE id = ANY($1) AND user_id = $2 RETURNING id',
+          [foundIds, userId]
+        )
+        return {
+          success: true,
+          unarchived: result.rowCount,
+          notFound: missingIds.length > 0 ? missingIds.length : 0,
+          missing_ids: missingIds.length > 0 ? missingIds : undefined,
+        }
       }
 
       case 'update_clip_meta': {
@@ -1595,7 +1668,13 @@ async function executeTool(toolName, args, userId, role, requestId, opts = {}) {
   // 破坏性工具确认门控生成的 requestId → 审计与 confirm 事件同 requestId 可追溯。
   let confirmRequestId = requestId
   try {
-    if (DESTRUCTIVE_CONFIRM_NEEDED.has(toolName)) {
+    // 确认门控：
+    //   1) DESTRUCTIVE_CONFIRM_NEEDED 集合内的工具（如 destroy_clips）
+    //   2) archive_items / unarchive_items 操作多条（>1）时，需用户确认
+    const needsConfirm = DESTRUCTIVE_CONFIRM_NEEDED.has(toolName)
+      || ((toolName === 'archive_items' || toolName === 'unarchive_items')
+          && Array.isArray(args?.clip_ids) && args.clip_ids.length > 1)
+    if (needsConfirm) {
       const gate = await runConfirmGate(toolName, args, userId, role, requestId, opts)
       confirmRequestId = gate.requestId
       if (gate.approved && gate.result !== undefined) {

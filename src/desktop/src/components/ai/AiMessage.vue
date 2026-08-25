@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, type Component } from 'vue'
+import { ref, computed, watch, onUnmounted, type Component } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { ChevronDown, Copy, Pencil, ListChecks, Languages, AlignLeft, HelpCircle, Sparkles } from 'lucide-vue-next'
 import type { ChatMessage, AgentRun, ToolCall } from '@/api/ai'
@@ -122,14 +122,64 @@ const isThinkingPhase = computed(
 const agentDrawerRun = ref<AgentRun | null>(null)
 
 // ===== 过程折叠（UI-C 统一结构）=====
-// 默认展开；流式结束后可点「收起」进入折叠态（AiProcessChips），点 chips 行展开。
-// 流式开始时自动展开并清除用户折叠标记。
+// 流式中：默认展开过程；流式结束后：自动折叠过程，显示分割线，只展示总结
+// 用户也可以手动展开/折叠
 const userCollapsed = ref(false)
-watch(isStreamingNow, (now) => {
+
+// ===== 任务总耗时计时 =====
+const taskStartedAt = ref<number | null>(null)
+const taskDurationMs = ref(0)
+let taskTimer: number | null = null
+
+function startTaskTimer() {
+  stopTaskTimer()
+  taskStartedAt.value = Date.now()
+  taskDurationMs.value = 0
+  taskTimer = window.setInterval(() => {
+    if (taskStartedAt.value) {
+      taskDurationMs.value = Date.now() - taskStartedAt.value
+    }
+  }, 200)
+}
+
+function stopTaskTimer() {
+  if (taskTimer !== null) {
+    window.clearInterval(taskTimer)
+    taskTimer = null
+  }
+}
+
+watch(isStreamingNow, (now, wasStreaming) => {
   if (now) {
+    // 开始流式：展开过程，启动计时
     expandedThinking.value = false
     userCollapsed.value = false
+    startTaskTimer()
+  } else if (wasStreaming) {
+    // 流式结束：自动折叠过程，停止计时
+    stopTaskTimer()
+    if (taskStartedAt.value) {
+      taskDurationMs.value = Date.now() - taskStartedAt.value
+    }
+    userCollapsed.value = true
   }
+})
+
+// 格式化耗时显示：3m 59s 或 1h 5m 23s
+const taskDurationText = computed(() => {
+  const ms = taskDurationMs.value
+  const totalSec = Math.floor(ms / 1000)
+  const hours = Math.floor(totalSec / 3600)
+  const mins = Math.floor((totalSec % 3600) / 60)
+  const secs = totalSec % 60
+  if (hours > 0) return `${hours}h ${mins}m ${secs}s`
+  if (mins > 0) return `${mins}m ${secs}s`
+  return `${secs}s`
+})
+
+// 组件卸载时清理计时器
+onUnmounted(() => {
+  stopTaskTimer()
 })
 
 // 思考计时
@@ -266,54 +316,57 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
     <!-- 助手消息 - 统一「过程折叠」结构：折叠 chips ←→ 展开（思考 → 时间线 → 子代理 → 内容） -->
     <template v-else>
       <div class="ai-msg-bubble">
-        <!-- 折叠态：过程统计 chips 行（点击展开；与展开态「收起过程」按钮联动） -->
-        <AiProcessChips
-          v-if="userCollapsed && hasProcess && !isStreamingNow"
-          :message="message"
-          :thinking-secs="thinkingSecs"
-          @toggle="userCollapsed = false"
-        />
-
-        <!-- 展开态：按状态机依次渲染 -->
-        <template v-else>
-          <!-- 展开态收起入口：流式结束后出现，点击进入折叠 chips 态 -->
-          <button
-            v-if="hasProcess && !isStreamingNow"
-            type="button"
-            class="ai-process-collapse-btn"
-            @click="userCollapsed = true"
-          >
-            <ChevronDown :size="12" />
-            <span>{{ t('ai_process_collapse', '收起过程') }}</span>
-          </button>
-
-          <!-- 【UI-D 插入位 ①】AiThinkingCollapse：loading 扫光（首字前）→ 深度思考面板
-               （流式中扫光+计时+打字机；完成后折叠为「深度思考 Ns」摘要行） -->
-          <AiThinkingCollapse
-            v-if="isLoading || hasThinking"
-            :thinking="message.thinking || ''"
-            :thinking-started-at="message.thinkingStartedAt"
-            :is-streaming="isThinkingPhase || isLoading"
-            :expanded="expandedThinking"
-            @toggle="expandedThinking = !expandedThinking"
+        <!-- ===== 过程区域（折叠/展开） ===== -->
+        <template v-if="hasProcess">
+          <!-- 折叠态：过程统计 chips 行（含任务总耗时） -->
+          <AiProcessChips
+            v-if="userCollapsed && !isStreamingNow"
+            :message="message"
+            :thinking-secs="thinkingSecs"
+            :task-duration-text="taskDurationText"
+            @toggle="userCollapsed = false"
           />
 
-          <!-- 【UI-D 插入位 ②】AiToolTimeline：工具时间线（写操作标注/破坏性标签/等待确认态） -->
-          <AiToolTimeline
-            v-if="!isThinkingPhase && visibleToolCalls.length"
-            :tool-calls="visibleToolCalls"
-            :tool-results="message.toolResults"
-            :confirm-tool="confirmTool ?? null"
-          />
+          <!-- 展开态：按状态机依次渲染 -->
+          <template v-else>
+            <!-- 展开态收起入口：流式结束后出现 -->
+            <button
+              v-if="!isStreamingNow"
+              type="button"
+              class="ai-process-collapse-btn"
+              @click="userCollapsed = true"
+            >
+              <ChevronDown :size="12" />
+              <span>{{ t('ai_process_collapse', '收起过程') }}</span>
+            </button>
 
-          <!-- 【UI-D 插入位 ③】AiAgentCards：子代理并行卡片网格（点击卡片打开详情抽屉） -->
-          <AiAgentCards
-            v-if="!isThinkingPhase && visibleAgentRuns.length"
-            :runs="visibleAgentRuns"
-            @open="agentDrawerRun = $event"
-          />
+            <!-- 思考过程 -->
+            <AiThinkingCollapse
+              v-if="isLoading || hasThinking"
+              :thinking="message.thinking || ''"
+              :thinking-started-at="message.thinkingStartedAt"
+              :is-streaming="isThinkingPhase || isLoading"
+              :expanded="expandedThinking"
+              @toggle="expandedThinking = !expandedThinking"
+            />
 
-          <!-- 子代理详情抽屉（保持原 AiAgentDrawer 打开链路） -->
+            <!-- 工具时间线 -->
+            <AiToolTimeline
+              v-if="!isThinkingPhase && visibleToolCalls.length"
+              :tool-calls="visibleToolCalls"
+              :tool-results="message.toolResults"
+              :confirm-tool="confirmTool ?? null"
+            />
+
+            <!-- 子代理 -->
+            <AiAgentCards
+              v-if="!isThinkingPhase && visibleAgentRuns.length"
+              :runs="visibleAgentRuns"
+              @open="agentDrawerRun = $event"
+            />
+          </template>
+
+          <!-- 子代理详情抽屉 -->
           <AiAgentDrawer
             v-if="agentDrawerRun"
             :run="agentDrawerRun"
@@ -321,12 +374,17 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
             @close="agentDrawerRun = null"
           />
 
-          <!-- 主要内容输出（答案区）：AiStreamText 节流渲染 Markdown（≥100ms/≥200 字符） -->
-          <div v-if="hasContent" class="ai-msg-content markdown-body">
-            <AiStreamText :text="streamingContent" :done="!isStreamingNow" />
-            <span v-if="isStreamingNow && !hasToolCalls" class="ai-stream-caret"></span>
+          <!-- 分割线：过程与总结之间 -->
+          <div v-if="hasContent && !isStreamingNow" class="ai-process-divider">
+            <span class="ai-divider-line"></span>
           </div>
         </template>
+
+        <!-- ===== 总结内容 ===== -->
+        <div v-if="hasContent" class="ai-msg-content markdown-body">
+          <AiStreamText :text="streamingContent" :done="!isStreamingNow" />
+          <span v-if="isStreamingNow && !hasToolCalls" class="ai-stream-caret"></span>
+        </div>
       </div>
     </template>
   </div>
@@ -337,6 +395,7 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
 .ai-msg {
   display: flex;
   position: relative;
+  margin: 1px 0;
 }
 .ai-msg.user {
   justify-content: flex-end;
@@ -346,7 +405,7 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
 }
 .ai-msg.system {
   justify-content: center;
-  margin: 4px 0;
+  margin: 2px 0;
 }
 
 /* ============ 气泡 ============ */
@@ -356,22 +415,23 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   align-items: flex-start;
   max-width: 96%;
   min-width: 0;
-  padding: 12px 16px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 1.6;
-  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  gap: 3px;
 }
 .ai-msg.user .ai-msg-bubble {
   background: var(--accent);
   color: var(--accent-foreground, rgb(255 255 255));
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: 3px;
 }
 .ai-msg.assistant .ai-msg-bubble {
   background: transparent;
   color: var(--text-default, var(--text-primary));
-  padding-left: 0;
-  padding-right: 0;
+  padding: 0;
+  gap: 2px;
+  width: 100%;
 }
 
 /* ============ 用户消息 ============ */
@@ -380,7 +440,7 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   max-width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 .ai-msg-actions--user {
   position: absolute;
@@ -389,7 +449,7 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   display: none;
   gap: 4px;
   padding: 2px;
-  border-radius: 8px;
+  border-radius: 5px;
   background: var(--bg-base-default, var(--bg-surface));
   border: 1px solid var(--border-neutral-l1, var(--border-default));
   z-index: var(--z-index-10);
@@ -405,10 +465,10 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -421,27 +481,39 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   color: var(--accent);
 }
 
-/* ============ 过程折叠（UI-C 统一结构） ============ */
-/* 展开态收起入口 */
+/* ============ 过程折叠（行内 flow 风格） ============ */
 .ai-process-collapse-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   align-self: flex-start;
-  padding: 2px 8px;
+  padding: 1px 2px;
   border: none;
-  border-radius: 999px;
+  border-radius: 3px;
   background: transparent;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  transition: all 0.1s ease;
 }
 .ai-process-collapse-btn:hover {
   background: var(--bg-hover);
   color: var(--text-secondary);
+}
+
+/* ============ 过程与总结分割线 ============ */
+.ai-process-divider {
+  display: flex;
+  align-items: center;
+  margin: 4px 0;
+  gap: 8px;
+}
+
+.ai-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle, var(--border-default));
+  opacity: 0.5;
 }
 
 /* ============ 主要内容 ============ */
@@ -451,6 +523,8 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   min-width: 0;
   max-width: 100%;
   overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
 }
 .ai-msg.user .ai-msg-content {
   white-space: pre-wrap;

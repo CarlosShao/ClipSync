@@ -329,11 +329,8 @@ function onDockFromFloat() {
         </template>
       </div>
 
-      <!-- 底部：记忆 / 设置 / 形态切换 -->
+      <!-- 底部：设置 / 形态切换（记忆入口已移至聊天页右上角） -->
       <div class="ai-nav-foot">
-        <button class="ai-nav-foot-btn" :title="t('ai_memory', '记忆')" @click="emit('open-memory')">
-          <Brain :size="15" />
-        </button>
         <button class="ai-nav-foot-btn" :title="t('ai_settings', 'AI 设置')" @click="emit('open-settings')">
           <Settings :size="15" />
         </button>
@@ -383,9 +380,6 @@ function onDockFromFloat() {
           </button>
         </div>
         <div class="ai-nav-rail-foot">
-          <button class="ai-nav-rail-btn" :title="t('ai_memory', '记忆')" @click="emit('open-memory')">
-            <Brain :size="16" />
-          </button>
           <button class="ai-nav-rail-btn" :title="t('ai_settings', 'AI 设置')" @click="emit('open-settings')">
             <Settings :size="16" />
           </button>

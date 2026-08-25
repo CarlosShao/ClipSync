@@ -170,9 +170,20 @@ export async function openUpstreamStream(upstream, abortSignal, label = 'Upstrea
 function looksLikeToolIntent(content) {
   if (!content || typeof content !== 'string') return false
   const c = content.toLowerCase()
-  // 中英文常见“我要调用工具”意图表达
+  // 中英文常见"我要调用工具"意图表达
   const intentKeywords = ['调用', 'call', '使用工具', 'use the tool', '使用', 'use', '让我', 'let me', '我要', 'i will', 'i need to', '执行', 'execute']
   return intentKeywords.some((k) => c.includes(k))
+}
+
+/**
+ * 检测模型的回复是否包含 <think> 标签（ReAct 范式要求）。
+ * 如果有工具调用但没有 think，说明模型跳过了推理步骤，需要重试。
+ */
+function hasThoughtTag(content) {
+  if (!content || typeof content !== 'string') return false
+  // 支持 <think>、<thinking>、<reasoning> 等常见标签
+  const thoughtPatterns = [/<think>[\s\S]*?<\/think>/i, /<thinking>[\s\S]*?<\/thinking>/i, /<reasoning>[\s\S]*?<\/reasoning>/i]
+  return thoughtPatterns.some((p) => p.test(content))
 }
 
 /**
@@ -500,9 +511,22 @@ export async function runChatLoop({
       continue
     }
 
-    // 有 tool calls：执行后继续下一轮
+    // 有 tool calls：先检查是否有 think 标签（ReAct 范式要求）
     if (response.toolCalls.length > 0) {
-      // 真正调用了工具，重置“只说不做”重试计数
+      // 如果有工具调用但没有 think，要求模型补充推理过程
+      if (!hasThoughtTag(response.content)) {
+        continuationRetries++
+        // 超过重试次数或已经重试过，直接执行（避免无限循环）
+        if (continuationRetries < MAX_CONTINUATION_RETRIES + 2) {
+          currentMessages.push({ role: 'assistant', content: response.content || '' })
+          currentMessages.push({
+            role: 'system',
+            content: '【ReAct 格式要求】你刚才调用了工具但没有输出 <think> 标签。请补充你的推理过程：说明你要做什么、为什么要这样做，然后再输出工具调用。格式示例：<think>我需要查询剪贴板统计信息来回答用户的问题</think>',
+          })
+          continue
+        }
+      }
+      // 真正调用了工具，重置"只说不做"重试计数
       continuationRetries = 0
       const toolResults = await handleToolCalls(response.toolCalls, userId, sendDelta, agentId, role)
 

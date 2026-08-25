@@ -12,6 +12,7 @@ import type {
   ChatImage,
 } from '@/api/ai'
 import { useAiConversations } from './useAiConversations'
+import { triggerRefreshAfterTool } from './useAiDataRefresh'
 
 interface SendOptions {
   mode?: 'ask' | 'agent'
@@ -312,7 +313,12 @@ export function useAiChat() {
     // 并把指令 system 消息放在 user 消息之后（"最近一条指令优先"），
     // 避免被 system 提示里关于 ClipSync 应用的全局说明抢走注意力。
     const wrappedText = options.quickAction ? `${USER_INPUT_OPEN}${text}${USER_INPUT_CLOSE}` : text
-    const nowTs = new Date().toISOString()
+    const now = new Date()
+    const nowTs = now.toISOString()
+    // 关键修复：给每条消息分配递增的 created_at，确保后端 ORDER BY created_at ASC 排序稳定
+    // （全量替换语义下 created_at 相同时排序依赖 DB 自增 id，可能导致消息乱序）
+    const tUser = new Date(now.getTime() + 1).toISOString()
+    const tAssistant = new Date(now.getTime() + 2).toISOString()
     // 上下文感知（#229）：改为独立的隐藏 system 消息，避免与用户问题混淆。
     // 之前 prepend 到 user 消息开头会导致模型把上下文当成问题来回答。
     if (options.viewContext) {
@@ -328,7 +334,7 @@ export function useAiChat() {
       content: wrappedText,
       images: options.images,
       imageHash: options.images?.[0]?.hash,
-      createdAt: nowTs,
+      createdAt: tUser,
     })
     if (options.quickAction) {
       let prompt = t(`ai_quick_${options.quickAction}_prompt`) || ''
@@ -345,11 +351,13 @@ export function useAiChat() {
           systemMeta: { kind: `quick_action_${options.quickAction}` },
         })
     }
-    messages.value.push({ role: 'assistant', content: '', thinking: '', thinkingActive: true, createdAt: nowTs })
+    messages.value.push({ role: 'assistant', content: '', thinking: '', thinkingActive: true, createdAt: tAssistant })
     // 必须引用 messages 数组里的 reactive proxy，后续 mutations 才能触发 Vue 响应式更新。
     // 注意：若用户在流式进行中途切换历史对话，messages.value 会被替换，但 assistantMsg
     // 仍指向旧 proxy。因此在 loadConversation 时要先中止当前流，防止旧 proxy 继续被改。
     const assistantMsg = messages.value[messages.value.length - 1]
+    // 智能标题：如果这是新对话的首条消息，用用户消息内容自动生成标题
+    const isFirstMessageInNewConv = !conv.currentConversation.value?.message_count || conv.currentConversation.value.message_count === 0
     isStreaming.value = true
     // 新一轮对话开始：重置上下文用量，圆环回到 0%
     contextUsage.value = null
@@ -461,11 +469,15 @@ export function useAiChat() {
       }
     }, 5_000)
 
-    // 用于从 <think>...</think> 中提取思考过程。
+    // 用于从 <think>...</think> 和 <Thought>...</Thought> 中提取思考过程。
+    // 支持两种标签：
+    //   1. <think> 标签：模型原生思考（如 deepseek-r1 等）
+    //   2. <Thought> 标签：ReAct 范式的强制思考过程
     const thinkState = {
       raw: '',
       pos: 0,
       inThink: false,
+      currentTag: '' as '' | 'think' | 'Thought',
     }
     function processThinkContent(delta: string): { textDelta: string; thinkingDelta: string } {
       thinkState.raw += delta
@@ -474,25 +486,53 @@ export function useAiChat() {
 
       while (true) {
         if (!thinkState.inThink) {
-          const idx = thinkState.raw.indexOf('<think>', thinkState.pos)
+          // 同时搜索 <think> 和 <Thought> 标签
+          const thinkIdx = thinkState.raw.indexOf('<think>', thinkState.pos)
+          const thoughtIdx = thinkState.raw.indexOf('<Thought>', thinkState.pos)
+
+          let idx = -1
+          let tag: 'think' | 'Thought' = 'think'
+
+          if (thinkIdx !== -1 && thoughtIdx !== -1) {
+            // 取最先出现的
+            if (thinkIdx < thoughtIdx) {
+              idx = thinkIdx
+              tag = 'think'
+            } else {
+              idx = thoughtIdx
+              tag = 'Thought'
+            }
+          } else if (thinkIdx !== -1) {
+            idx = thinkIdx
+            tag = 'think'
+          } else if (thoughtIdx !== -1) {
+            idx = thoughtIdx
+            tag = 'Thought'
+          }
+
           if (idx === -1) {
             textDelta += thinkState.raw.slice(thinkState.pos)
             thinkState.pos = thinkState.raw.length
             break
           }
           textDelta += thinkState.raw.slice(thinkState.pos, idx)
-          thinkState.pos = idx + 7
+          thinkState.pos = idx + (tag === 'think' ? 7 : 10)
           thinkState.inThink = true
+          thinkState.currentTag = tag
         } else {
-          const idx = thinkState.raw.indexOf('</think>', thinkState.pos)
+          // 根据当前标签搜索对应的结束标签
+          const closeTag = thinkState.currentTag === 'think' ? '</think>' : '</Thought>'
+          const closeLen = closeTag.length
+          const idx = thinkState.raw.indexOf(closeTag, thinkState.pos)
           if (idx === -1) {
             thinkingDelta += thinkState.raw.slice(thinkState.pos)
             thinkState.pos = thinkState.raw.length
             break
           }
           thinkingDelta += thinkState.raw.slice(thinkState.pos, idx)
-          thinkState.pos = idx + 8
+          thinkState.pos = idx + closeLen
           thinkState.inThink = false
+          thinkState.currentTag = ''
         }
       }
 
@@ -654,6 +694,16 @@ export function useAiChat() {
             } else {
               bucket.toolResults.push(toolResult)
             }
+            
+            // 工具执行完成后触发数据刷新（实现无感刷新）
+            // 找到对应的 toolCall 获取工具名称
+            const toolCall = bucket.toolCalls?.find((tc) => tc.id === toolResult.tool_call_id)
+            if (toolCall) {
+              // 延迟 300ms 触发，等待后端数据落盘完成
+              setTimeout(() => {
+                triggerRefreshAfterTool(toolCall.name, toolResult.content)
+              }, 300)
+            }
           }
         },
         onError: (msg) => {
@@ -683,6 +733,14 @@ export function useAiChat() {
       approving.value = false
       // 保存当前对话的消息（不等待，失败静默）
       conv.saveCurrent(messages.value).catch(() => {})
+      // 智能标题：新对话首条消息 → 用用户消息内容自动命名（截取前 20 字符）
+      if (isFirstMessageInNewConv) {
+        const userMsg = messages.value.find((m) => m.role === 'user')
+        if (userMsg?.content) {
+          const title = userMsg.content.replace(/[\u2404].*?[\u2404]/g, '').trim().slice(0, 20) || '新对话'
+          conv.rename(conv.currentConversationId.value, title).catch(() => {})
+        }
+      }
     }
   }
 

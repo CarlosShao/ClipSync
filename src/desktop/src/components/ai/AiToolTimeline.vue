@@ -2,34 +2,28 @@
 import { ref, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import type { ToolCall, ToolResult } from '@/api/ai'
-import { ChevronDown, ChevronRight, CheckCircle2, Loader2, Hourglass } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, CheckCircle2, Loader2, Terminal, FileText, Database, Search } from 'lucide-vue-next'
 
 /**
- * AiToolTimeline — 工具调用时间线（UI-D 重构）
- *
- * - 工具名：i18n key `ai_tool_<name>` 优先；缺失时把 snake/kebab 名转人类可读兜底
- * - 写操作标注：写动词命中 → 中性「写」标签（不硬编码工具名）
- * - 破坏性动作：删除/覆盖/危险关键词命中 → 红色「危险」标签（--danger token）
- * - 等待确认：tool_call 带 `pendingConfirm` 标记 → warning 态展示（纯 UI，
- *   confirm 事件流转归 UI-E 的 AiConfirmCard，本组件只做展示态）
+ * AiToolTimeline — 工具调用时间线
+ * 
+ * 行内 flow 风格，参考 MiniMax Code / Trae Work：
+ *   <> 已调用 获取剪贴板元数据 完成
+ *   <> 已调用 读取剪贴板元数据 完成
  */
 
-/** 展示态扩展：协议 ToolCall 之外的可选 UI 标记（结构兼容，可直接传 ToolCall[]） */
 type TimelineToolCall = ToolCall & { pendingConfirm?: boolean }
 
 const props = defineProps<{
   toolCalls?: TimelineToolCall[]
   toolResults?: ToolResult[]
-  // 该时间线归属的代理名（子代理卡片内传入，用于把工具调用明确标注为“属于哪个子代理”）
   agentName?: string
-  // 破坏性工具确认门控：当前正在等待确认的工具名（用于“等待确认”态标注）
   confirmTool?: string | null
 }>()
 const { t } = useI18n()
 
 const expanded = ref<Set<string>>(new Set())
 
-// ==================== 工具名：i18n 优先 + snake/kebab 人性化兜底 ====================
 function getToolName(name: string) {
   const key = 'ai_tool_' + name
   const val = t(key)
@@ -41,15 +35,12 @@ function getToolName(name: string) {
     .join(' ')
 }
 
-// ==================== 写操作 / 破坏性动作检测（仅按名称关键词，不硬编码工具名） ====================
 const DANGER_RE = /(delete|remove|drop|truncate|wipe|purge|unlink|rmdir|clear|overwrite|destroy|reset)/i
-const WRITE_RE =
-  /(save|create|update|insert|write|add|set|rename|move|toggle|favorite|organize|execute|batch|send|upload|patch|put|post|delete|remove|modify|edit)/i
+const WRITE_RE = /(save|create|update|insert|write|add|set|rename|move|toggle|favorite|organize|execute|batch|send|upload|patch|put|post|delete|remove|modify|edit)/i
 
 const isDangerous = (name: string) => DANGER_RE.test(name)
 const isWrite = (name: string) => !isDangerous(name) && WRITE_RE.test(name)
 
-// ==================== 结果/展开 ====================
 function getResult(id: string): ToolResult | undefined {
   return props.toolResults?.find((r) => r.tool_call_id === id)
 }
@@ -84,14 +75,29 @@ function formatResult(content: string): string {
   }
 }
 
-// ===== 破坏性工具确认门控 + 写操作结果标注 =====
 const DESTRUCTIVE_TOOLS = new Set(['destroy_clips'])
 function isDestructiveTool(name: string) {
   return DESTRUCTIVE_TOOLS.has(name)
 }
+
 function awaitingConfirm(id: string, name: string): boolean {
   return props.confirmTool === name && !isDone(id)
 }
+
+function getToolIcon(name: string) {
+  // 根据工具类型选择图标
+  if (name.includes('terminal') || name.includes('execute') || name.includes('batch')) {
+    return Terminal
+  }
+  if (name.includes('search') || name.includes('get_')) {
+    return Search
+  }
+  if (name.includes('write') || name.includes('create') || name.includes('update')) {
+    return FileText
+  }
+  return Database
+}
+
 function stepAnnotation(name: string, content?: string): { text: string; ok: boolean } | null {
   if (!content) return null
   let parsed: any = null
@@ -135,7 +141,6 @@ function stepAnnotation(name: string, content?: string): { text: string; ok: boo
   }
 }
 
-// 按数组顺序编号（即工具调用被后端派发的先后顺序），形成可视化时间线。
 const steps = computed(() => {
   return (props.toolCalls || []).map((tc, i) => ({
     ...tc,
@@ -149,350 +154,289 @@ const steps = computed(() => {
 </script>
 
 <template>
-  <div v-if="steps.length > 0" class="ai-tool-log">
-    <div
-        v-for="step in steps"
-        :key="step.id"
-        class="ai-tool-log-line"
-        :class="[
-          step.done ? 'done' : 'running',
-          { last: step.index === steps.length, confirm: awaitingConfirm(step.id, step.name), destructive: isDestructiveTool(step.name) },
-        ]"
-      >
-      <div class="ai-tool-log-rail">
-        <span class="ai-tool-log-node">
-          <CheckCircle2 v-if="step.done" :size="12" class="ai-tool-log-done" />
-          <span v-else class="ai-tool-log-num">{{ step.index }}</span>
-        </span>
-        <span class="ai-tool-log-connector" />
-      </div>
-      <div class="ai-tool-log-body">
-        <button class="ai-tool-log-summary" @click="toggle(step.id)">
-          <span class="ai-tool-log-icon">
-            <Loader2 v-if="!step.done && !step.pendingConfirm" :size="13" class="ai-tool-log-spin" />
-            <Hourglass v-else-if="step.pendingConfirm" :size="13" class="ai-tool-log-wait" />
+  <!-- 行内 flow 风格：工具调用列表 -->
+  <div v-if="steps.length > 0" class="ai-tools-flow">
+    <template v-for="step in steps" :key="step.id">
+      <!-- 行内工具调用条目 -->
+      <div class="ai-tool-item" :class="{ done: step.done, running: !step.done, error: step.result && stepAnnotation(step.name, step.result.content)?.ok === false }">
+        <button class="ai-tool-row" @click="toggle(step.id)">
+          <!-- 状态图标 -->
+          <span class="ai-tool-state">
+            <CheckCircle2 v-if="step.done" :size="12" class="state-done" />
+            <Loader2 v-else :size="12" class="state-running" />
           </span>
-          <span class="ai-tool-log-text">
-            <span class="ai-tool-log-action">{{
-              step.done ? t('ai_tool_called', '已调用') : t('ai_tool_calling', '调用')
-            }}</span>
-            <span class="ai-tool-log-name">{{ getToolName(step.name) }}</span>
-            <!-- 破坏性动作：红色标签 -->
-            <span v-if="isDestructiveTool(step.name)" class="ai-tool-log-destructive">
-              {{ t('ai_confirm_destructive') || '破坏性' }}
-            </span>
-            <!-- 写操作标注：中性标签 -->
-            <span v-else-if="step.write" class="ai-tool-log-flag write">{{ t('ai_tool_write', '写') }}</span>
+          
+          <!-- 工具标识 -->
+          <span class="ai-tool-bracket"><component :is="getToolIcon(step.name)" :size="11" /></span>
+          
+          <!-- 文字描述 -->
+          <span class="ai-tool-text">
+            <span class="ai-tool-action">{{ step.done ? '已调用' : '调用' }}</span>
+            <span class="ai-tool-name">{{ getToolName(step.name) }}</span>
+            <span v-if="isDestructiveTool(step.name)" class="ai-tool-tag destructive">危险</span>
+            <span v-else-if="step.write" class="ai-tool-tag write">写</span>
           </span>
-          <span v-if="agentName" class="ai-tool-log-source">{{ agentName }}</span>
-          <span class="ai-tool-log-spacer" />
-          <!-- 等待确认：warning 态 -->
-          <span
-            v-if="awaitingConfirm(step.id, step.name)"
-            class="ai-tool-log-status confirm"
-          >
-            {{ t('ai_confirm_waiting') || '等待确认' }}
+          
+          <!-- 状态文字 -->
+          <span class="ai-tool-status" :class="{ done: step.done, confirm: awaitingConfirm(step.id, step.name) }">
+            {{ awaitingConfirm(step.id, step.name) ? '等待确认' : (step.done ? '完成' : '进行中') }}
           </span>
-          <span v-else class="ai-tool-log-status" :class="step.done ? 'ok' : 'run'">
-            {{ step.done ? t('ai_tool_done', '完成') : t('ai_tool_running', '进行中') }}
-          </span>
-          <ChevronDown v-if="expanded.has(step.id)" :size="13" class="ai-tool-log-chev" />
-          <ChevronRight v-else :size="13" class="ai-tool-log-chev" />
+          
+          <!-- 展开箭头 -->
+          <ChevronDown v-if="expanded.has(step.id)" :size="11" class="ai-tool-chev" />
+          <ChevronRight v-else :size="11" class="ai-tool-chev" />
         </button>
-
-        <div v-if="stepAnnotation(step.name, step.result?.content)" class="ai-tool-log-annotation"
-             :class="{ err: !stepAnnotation(step.name, step.result?.content)!.ok }">
-          <span v-if="!stepAnnotation(step.name, step.result?.content)!.ok">!</span>
-          {{ stepAnnotation(step.name, step.result?.content)!.text }}
+        
+        <!-- 结果摘要行 -->
+        <div v-if="stepAnnotation(step.name, step.result?.content)" class="ai-tool-result-line"
+             :class="{ error: !stepAnnotation(step.name, step.result?.content)!.ok }">
+          <span class="ai-tool-result-icon">{{ stepAnnotation(step.name, step.result?.content)!.ok ? '✓' : '!' }}</span>
+          <span>{{ stepAnnotation(step.name, step.result?.content)!.text }}</span>
         </div>
-
-        <div v-if="expanded.has(step.id)" class="ai-tool-log-detail">
-          <div class="ai-tool-log-section">
-            <div class="ai-tool-log-section-title">{{ t('ai_tool_args', '参数') }}</div>
+        
+        <!-- 展开详情 -->
+        <div v-if="expanded.has(step.id)" class="ai-tool-detail">
+          <div v-if="step.arguments && step.arguments !== '{}'" class="ai-tool-detail-section">
+            <div class="ai-tool-detail-label">参数</div>
             <pre>{{ formatArgs(step.arguments) }}</pre>
           </div>
-          <div v-if="step.result" class="ai-tool-log-section">
-            <div class="ai-tool-log-section-title">{{ t('ai_tool_result', '结果') }}</div>
+          <div v-if="step.result" class="ai-tool-detail-section">
+            <div class="ai-tool-detail-label">结果</div>
             <pre>{{ formatResult(step.result.content) }}</pre>
           </div>
         </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
-/* 时间线整体：卡片化容器 + 柔和阴影 */
-.ai-tool-log {
+/* ============ 行内 flow 风格 ============ */
+.ai-tools-flow {
   display: flex;
   flex-direction: column;
-  margin: 8px 0;
-  border-radius: var(--radius-md, 10px);
-  overflow: hidden;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle, var(--border-default));
-  box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.05));
-  max-width: 100%;
-}
-
-.ai-tool-log-line {
-  display: flex;
-  align-items: stretch;
-  /* 新工具调用到达时淡入，强化“按顺序逐个出现”的时序感 */
-  animation: ai-tool-line-in 0.25s ease-out;
-}
-
-.ai-tool-log-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 30px;
-  flex-shrink: 0;
-  padding-top: 11px;
-}
-.ai-tool-log-node {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--bg-hover);
-  border: 1.5px solid var(--border-subtle, var(--border-default));
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-tertiary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.ai-tool-log-line.done .ai-tool-log-node {
-  background: var(--success);
-  border-color: var(--success);
-  color: var(--accent-foreground, var(--bg-surface));
-}
-/* 等待确认（破坏性门控）节点用琥珀色，破坏性工具左缘标红 */
-.ai-tool-log-line.confirm .ai-tool-log-node {
-  background: rgba(245, 158, 11, 0.85);
-  border-color: rgba(245, 158, 11, 0.85);
-  color: #fff;
-}
-.ai-tool-log-line.destructive .ai-tool-log-body {
-  border-left: 2px solid rgba(239, 68, 68, 0.45);
-  padding-left: 6px;
-}
-.ai-tool-log-connector {
-  flex: 1;
-  width: 2px;
-  background: linear-gradient(180deg, var(--border-subtle, var(--border-default)), rgba(var(--accent-rgb), 0.05));
-  margin: 3px 0;
-  border-radius: 2px;
-}
-.ai-tool-log-line.last .ai-tool-log-connector {
-  display: none;
-}
-
-.ai-tool-log-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 6px 0;
-}
-
-.ai-tool-log-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 12px 6px 6px;
-  background: transparent;
+  gap: 1px;
+  margin: 2px 0;
+  padding: 0;
   border: none;
-  border-radius: 8px;
+  background: transparent;
+}
+
+.ai-tool-item {
+  display: block;
+  animation: fade-in 0.2s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 行按钮 */
+.ai-tool-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
   cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--text-secondary);
   text-align: left;
-  white-space: nowrap;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  border-radius: 4px;
+  transition: background 0.12s ease;
 }
-.ai-tool-log-summary:hover {
+
+.ai-tool-row:hover {
   background: var(--bg-hover);
 }
 
-.ai-tool-log-icon {
+/* 状态图标 */
+.ai-tool-state {
   display: inline-flex;
-  width: 16px;
+  align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
-.ai-tool-log-spin {
-  color: var(--accent);
-  animation: ai-tool-rotate 1s linear infinite;
-}
-.ai-tool-log-wait {
-  color: var(--warning);
-}
-.ai-tool-log-done {
+
+.state-done {
   color: var(--success);
 }
-.ai-tool-log-text {
+
+.state-running {
+  color: var(--accent);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 工具标识括号 */
+.ai-tool-bracket {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
+}
+
+/* 文字描述 */
+.ai-tool-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
 }
-.ai-tool-log-action {
+
+.ai-tool-action {
   color: var(--text-tertiary);
-  font-weight: 500;
-  flex-shrink: 0;
+  font-weight: 400;
+  font-size: 11.5px;
 }
-.ai-tool-log-name {
-  font-weight: 600;
+
+.ai-tool-name {
   color: var(--text-primary);
+  font-weight: 500;
+  font-size: 12px;
 }
-/* 写操作 / 破坏性动作标注 */
-.ai-tool-log-flag {
-  flex-shrink: 0;
+
+/* 标签 */
+.ai-tool-tag {
   font-size: 10px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 999px;
-  white-space: nowrap;
+  font-weight: 500;
+  padding: 0 4px;
+  border-radius: 3px;
+  line-height: 14px;
 }
-.ai-tool-log-flag.write {
+
+.ai-tool-tag.write {
   color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.12);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-.ai-tool-log-flag.danger {
-  color: var(--danger);
-  background: var(--danger-bg);
+
+.ai-tool-tag.destructive {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
 }
-.ai-tool-log-source {
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.12);
-  border-radius: 999px;
-  padding: 1px 7px;
-  white-space: nowrap;
-}
-.ai-tool-log-destructive {
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--danger, #ef4444);
-  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 30%, transparent);
-  border-radius: 999px;
-  padding: 0 6px;
-  white-space: nowrap;
-}
-.ai-tool-log-status {
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 7px;
-  border-radius: 999px;
-}
-.ai-tool-log-status.run {
-  color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.12);
-}
-.ai-tool-log-status.ok {
-  color: var(--success);
-  background: var(--success-bg);
-}
-.ai-tool-log-status.wait {
-  color: var(--warning);
-  background: var(--warning-bg);
-}
-.ai-tool-log-status.confirm {
-  color: #d97706;
-  background: rgba(245, 158, 11, 0.12);
-}
-.ai-tool-log-annotation {
-  margin: 2px 12px 6px 38px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  font-style: italic;
-  color: var(--success, #16a34a);
-  background: rgba(22, 163, 74, 0.08);
-}
-.ai-tool-log-annotation.err {
-  color: #FF6B45;
-  background: rgba(255, 107, 69, 0.08);
-}
-.ai-tool-log-spacer {
-  flex: 1;
-  min-width: 4px;
-}
-.ai-tool-log-chev {
+
+/* 状态 */
+.ai-tool-status {
   color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  margin-left: auto;
   flex-shrink: 0;
 }
 
-.ai-tool-log-detail {
-  padding: 0 12px 8px 6px;
+.ai-tool-status.done {
+  color: var(--success);
 }
-.ai-tool-log-section {
-  margin-bottom: 6px;
+
+.ai-tool-status.confirm {
+  color: #f59e0b;
 }
-.ai-tool-log-section:last-child {
+
+/* 展开箭头 */
+.ai-tool-chev {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  margin-left: 2px;
+  width: 10px;
+  height: 10px;
+}
+
+/* 结果摘要行 */
+.ai-tool-result-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 22px;
+  font-size: 11.5px;
+  color: var(--success);
+  line-height: 1.4;
+}
+
+.ai-tool-result-line.error {
+  color: #ef4444;
+}
+
+.ai-tool-result-icon {
+  font-weight: 600;
+}
+
+/* 展开详情 */
+.ai-tool-detail {
+  padding: 4px 4px 4px 22px;
+  animation: detail-in 0.15s ease-out;
+}
+
+@keyframes detail-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ai-tool-detail-section {
+  margin-bottom: 4px;
+}
+
+.ai-tool-detail-section:last-child {
   margin-bottom: 0;
 }
-.ai-tool-log-section-title {
-  font-size: 11px;
-  font-weight: 600;
+
+.ai-tool-detail-label {
+  font-size: 10.5px;
+  font-weight: 500;
   color: var(--text-tertiary);
   margin-bottom: 2px;
 }
-.ai-tool-log-section pre {
+
+.ai-tool-detail-section pre {
   margin: 0;
-  padding: 7px 9px;
+  padding: 6px 8px;
   background: var(--bg-hover);
-  border: 1px solid var(--border-subtle, var(--border-default));
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 11px;
-  font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-family-mono, ui-monospace, monospace);
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 180px;
+  max-height: 160px;
   overflow-y: auto;
   color: var(--text-secondary);
+  line-height: 1.5;
 }
 
-@keyframes ai-tool-rotate {
-  to {
-    transform: rotate(360deg);
-  }
+.ai-tool-detail-section pre::-webkit-scrollbar {
+  width: 4px;
 }
-@keyframes ai-tool-line-in {
-  from {
-    opacity: 0;
-    transform: translateY(-3px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+
+.ai-tool-detail-section pre::-webkit-scrollbar-thumb {
+  background: var(--border-subtle, var(--border-default));
+  border-radius: 2px;
 }
+
+/* 错误态 */
+.ai-tool-item.error .ai-tool-name {
+  color: #ef4444;
+}
+
+/* 键盘可达性 */
+.ai-tool-row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ai-tool-log-line,
-  .ai-tool-log-spin {
+  .state-running,
+  .ai-tool-item,
+  .ai-tool-detail {
     animation: none;
   }
-}
-
-/* 键盘可达性：focus-visible 高亮（--accent token） */
-.ai-tool-log-summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 </style>

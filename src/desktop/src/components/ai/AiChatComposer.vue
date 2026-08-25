@@ -552,19 +552,13 @@ defineExpose({ setDraft })
                 :viewBox="`0 0 ${RING_SIZE} ${RING_SIZE}`"
               >
                 <circle class="ring-track" :cx="RING_CENTER" :cy="RING_CENTER" :r="RING_R" />
-                <circle
-                  class="ring-progress"
+                <circle class="ring-progress"
                   :cx="RING_CENTER"
                   :cy="RING_CENTER"
                   :r="RING_R"
                   :stroke-dasharray="RING_C"
                   :stroke-dashoffset="ringDashOffset"
                 />
-                <!-- 百分比文字：居中显示，清晰可读 -->
-                <text class="ring-label" :x="RING_CENTER" :y="RING_CENTER" dominant-baseline="central">
-                  {{ ringLabel }}
-                  <tspan class="ring-label-pct" font-size="0.6em">%</tspan>
-                </text>
               </svg>
             </button>
           </PopoverTrigger>
