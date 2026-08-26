@@ -366,13 +366,15 @@ async function submitAllAnswers() {
 </template>
 
 <style scoped>
+/* 内嵌于工具时间线（flow 风格）：视觉令牌与 ai-diff-card 一致 */
 .ai-ask-card {
-  margin: 10px 0 2px 0;
-  border-radius: 10px;
-  background: var(--surface-bg-alt, rgba(0, 0, 0, 0.02));
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+  margin: 6px 0 8px 0;
+  border-radius: 8px;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   overflow: hidden;
-  font-size: 13px;
+  font-size: 12px;
   width: 100%;
 }
 
@@ -406,7 +408,7 @@ async function submitAllAnswers() {
 }
 
 .ai-ask-card__interactive {
-  padding: 12px 14px;
+  padding: 10px 12px;
 }
 
 .ai-ask-card__head {

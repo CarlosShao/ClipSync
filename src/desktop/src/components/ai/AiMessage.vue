@@ -9,7 +9,6 @@ import AiAgentDrawer from './AiAgentDrawer.vue'
 import AiStreamText from './AiStreamText.vue'
 import AiProcessChips from './AiProcessChips.vue'
 import AiToolTimeline from './AiToolTimeline.vue'
-import AiAskUserCard from './AiAskUserCard.vue'
 
 /**
  * AiMessage — 单条消息渲染（UI-C 重构，UI-D 过程可视化接入）
@@ -195,8 +194,8 @@ watch(isStreamingNow, (now, wasStreaming) => {
     if (taskStartedAt.value) {
       taskDurationMs.value = Date.now() - taskStartedAt.value
     }
-    // 如果消息包含 ask_user 交互卡片，绝不自动折叠，保持卡片展开等待用户选择
-    if (!askUserStep.value) {
+    // ask_user 交互卡片仍等待作答时绝不自动折叠，保持过程流中的卡片展开可见
+    if (!pendingAskUser.value) {
       userCollapsed.value = true
     }
   }
@@ -286,14 +285,17 @@ function getToolsForSegment(si: number) {
   return []
 }
 
-// 交互式提问卡片（ask_user 专属，永远展示在消息底部/文本正文下方）
+// 交互式提问卡片（ask_user）：内嵌渲染在 AiToolTimeline 过程流中调用发生的位置，
+// 这里仅跟踪其"待作答"状态，供过程面板自动折叠豁免使用
 const askUserStep = computed(() => {
   const calls = visibleToolCalls.value || []
   return calls.find((tc) => tc.name === 'ask_user') || null
 })
-const askUserResult = computed(() => {
-  if (!askUserStep.value) return null
-  return props.message.toolResults?.find((tr) => tr.tool_call_id === askUserStep.value?.id) || null
+// 待作答 = 存在 ask_user 调用且尚未收到对应 tool_result
+const pendingAskUser = computed(() => {
+  const s = askUserStep.value
+  if (!s) return false
+  return !props.message.toolResults?.some((tr) => tr.tool_call_id === s.id)
 })
 
 // 调试：把所有 assistant 消息的关键字段打出来供排查（仅当字段变化时）
@@ -407,9 +409,9 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
 
           <!-- 展开态：按状态机依次渲染 -->
           <template v-else>
-            <!-- 展开态收起入口：流式结束后出现 -->
+            <!-- 展开态收起入口：流式结束后出现（ask_user 待作答时不显示，避免误折叠藏起卡片） -->
             <button
-              v-if="!isStreamingNow"
+              v-if="!isStreamingNow && !pendingAskUser"
               type="button"
               class="ai-process-collapse-btn"
               @click="userCollapsed = true"
@@ -477,13 +479,6 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
           <AiStreamText :text="streamingContent" :done="!isStreamingNow" />
           <span v-if="isStreamingNow && !hasToolCalls" class="ai-stream-caret"></span>
         </div>
-
-        <!-- ===== 交互式问卷卡片（ask_user 专属，永远展示在消息最底部/文本下方） ===== -->
-        <AiAskUserCard
-          v-if="askUserStep"
-          :step="askUserStep"
-          :tool-result="askUserResult"
-        />
       </div>
     </template>
   </div>

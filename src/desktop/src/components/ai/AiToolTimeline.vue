@@ -3,6 +3,7 @@ import { ref, computed, inject } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import type { ToolCall, ToolResult } from '@/api/ai'
 import { ChevronDown, ChevronRight, ChevronLeft, CheckCircle2, Loader2, Terminal, FileText, Database, Search, HelpCircle, PenLine, Send } from 'lucide-vue-next'
+import AiAskUserCard from './AiAskUserCard.vue'
 
 /**
  * AiToolTimeline — 工具调用时间线
@@ -130,7 +131,20 @@ function getDiffArgs(step: any) {
 
 function stepAnnotation(name: string, content?: string): { text: string; ok: boolean } | null {
   if (name === 'ask_user') {
-    return { text: '已在下方展示多元交互选项卡片', ok: true }
+    // 等待作答中不显示结果行（交互卡片就展开在下方）；完成后收敛为用户选择的摘要
+    if (!content) return null
+    try {
+      const parsed = typeof content === 'object' ? content : JSON.parse(content)
+      if (parsed?.status === 'timeout') return { text: '等待用户选择超时，未作答', ok: false }
+      if (parsed?.status === 'cancelled') return { text: '连接已断开，未作答', ok: false }
+      const resp = String(parsed?.user_response || '')
+      const lines = resp.split('\n').map((l: string) => l.trim()).filter(Boolean)
+      const meaningful = lines.filter((l: string) => l !== '我已做出选择：' && !l.startsWith('【补充说明'))
+      const summary = (meaningful[0] || '').replace(/^\d+\.\s*/, '').replace(/【[^】]*】[:：]?\s*/, '')
+      return { text: summary ? `已选择：${summary.slice(0, 60)}${summary.length > 60 ? '…' : ''}` : '已收到用户选择', ok: true }
+    } catch {
+      return { text: '已收到用户选择', ok: true }
+    }
   }
   if (!content) return null
   let parsed: any = null
@@ -196,6 +210,14 @@ const steps = computed(() => {
     write: isWrite(tc.name),
   }))
 })
+
+// 行状态文字：ask_user 等待作答时显示"等待选择"而非"进行中"
+function statusText(step: { id: string; name: string; done: boolean }): string {
+  if (awaitingConfirm(step.id, step.name)) return '等待确认'
+  if (step.done) return '完成'
+  if (step.name === 'ask_user') return '等待选择'
+  return '进行中'
+}
 </script>
 
 <template>
@@ -224,7 +246,7 @@ const steps = computed(() => {
           
           <!-- 状态文字 -->
           <span class="ai-tool-status" :class="{ done: step.done, confirm: awaitingConfirm(step.id, step.name) }">
-            {{ awaitingConfirm(step.id, step.name) ? '等待确认' : (step.done ? '完成' : '进行中') }}
+            {{ statusText(step) }}
           </span>
           
           <!-- 展开箭头 -->
@@ -238,6 +260,14 @@ const steps = computed(() => {
           <span class="ai-tool-result-icon">{{ stepAnnotation(step.name, step.result?.content)!.ok ? '✓' : '!' }}</span>
           <span>{{ stepAnnotation(step.name, step.result?.content)!.text }}</span>
         </div>
+
+        <!-- 交互式选择卡片（ask_user）：内嵌在过程流中调用发生的位置，
+             等待作答时保持展开；完成后收敛为上方一行"已选择：…"摘要 -->
+        <AiAskUserCard
+          v-if="step.name === 'ask_user' && !step.done"
+          :step="step"
+          :tool-result="step.result"
+        />
         
 
 
