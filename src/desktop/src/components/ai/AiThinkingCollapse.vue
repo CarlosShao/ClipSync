@@ -47,6 +47,17 @@ let timer: number | undefined
 // ==================== 思考文本直接绑定 ====================
 const displayThinking = computed(() => props.thinking || '')
 
+// ==================== 单行跑马灯（live 且未展开时） ====================
+// 取思考文本尾部（最新生成的内容），压平为单行，随流式持续刷新。
+// 参考 ZCode/Cursor 的"思考中…"横排样式：占位一行、体感在飞速输出。
+const TICKER_CHARS = 140
+const tickerText = computed(() => {
+  const raw = (props.thinking || '').replace(/\s+/g, ' ').trimEnd()
+  if (!raw) return ''
+  return raw.length > TICKER_CHARS ? raw.slice(-TICKER_CHARS) : raw
+})
+const showTicker = computed(() => live.value && hasContent.value && !props.expanded)
+
 function startTimer() {
   if (timer) return
   timer = window.setInterval(() => {
@@ -84,12 +95,12 @@ watch(live, (v) => {
 })
 
 // ==================== 标题 ====================
-// loading：「正在思考中」；live：「深度思考」 + 右侧「· N 秒」；done：折叠摘要「深度思考 Ns」
+// loading：「正在思考中」；live：「思考中」 + 右侧「· N 秒」；done：折叠摘要「深度思考 Ns」
 const label = computed(() => {
   if (!hasContent.value) return t('ai_thinking_loading', '正在思考中')
   const sec = elapsedSeconds.value
   if (live.value) {
-    return t('ai_thinking_deep', '深度思考')
+    return t('ai_thinking_progress', '思考中')
   }
   if (sec < 1) return t('ai_thinking_deep', '深度思考')
   return t('ai_process_thinking', '深度思考 {n}s').replace('{n}', String(sec))
@@ -118,6 +129,8 @@ const timeText = computed(() => {
       <CheckCircle2 v-else :size="15" class="ai-tc-done" />
       <span class="ai-tc-title" :class="{ paused: !live }" :data-text="label">{{ label }}</span>
       <span v-if="timeText" class="ai-tc-time">{{ timeText }}</span>
+      <!-- 单行跑马灯：live 且未展开时，头部横排滚动展示最新思考内容（尾部对齐，超出部分从左侧裁剪） -->
+      <span v-if="showTicker" class="ai-tc-ticker"><span class="ai-tc-ticker-text">{{ tickerText }}</span></span>
       <ChevronRight v-if="!expanded" :size="13" class="ai-tc-chev" />
       <ChevronDown v-else :size="13" class="ai-tc-chev" />
     </button>
@@ -261,6 +274,24 @@ html.light .ai-tc-title::after {
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
   margin-left: 2px;
+}
+/* 单行跑马灯：flex-end 让尾部（最新内容）始终贴右可见，超出宽度从左侧裁剪；
+   左侧渐隐遮罩让截断看起来是有意的淡出而不是生硬切断 */
+.ai-tc-ticker {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  justify-content: flex-end;
+  margin-left: 8px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px);
+  mask-image: linear-gradient(90deg, transparent 0, #000 28px);
+}
+.ai-tc-ticker-text {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-tertiary);
 }
 .ai-tc-chev {
   color: var(--text-tertiary);

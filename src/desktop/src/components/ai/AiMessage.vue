@@ -108,10 +108,8 @@ function isThinkingExpanded(index: number): boolean {
   if (expandedSegments.value[index] !== undefined) {
     return expandedSegments.value[index]
   }
-  const seg = thinkingSegments.value[index]
-  if (isStreamingNow.value && (seg?.isLive || (isThinkingPhase.value && index === thinkingSegments.value.length - 1))) {
-    return true
-  }
+  // 默认收起：直播中的思考以头部单行跑马灯展示（占位一行、体感飞速输出），
+  // 点击头部才展开全文正文。若沿用"直播默认展开"，长思考会把消息撑得过长。
   return false
 }
 
