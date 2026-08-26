@@ -29,24 +29,43 @@ let lastRenderedLen = 0
 let flushTimer: number | undefined
 let rafId: number | undefined
 
-function compactBlankLines(content: string): string {
-  if (!content) return ''
-  return content.replace(/\n{3,}/g, '\n\n').trim()
+function fixIncompleteMarkdown(raw: string): string {
+  if (!raw) return ''
+  // 压缩连续多余空行，但不强制 trim 掉末尾换行符（避免打字流式时高度持续跳动）
+  let text = raw.replace(/\n{3,}/g, '\n\n')
+  
+  // 1. 自动闭合流式中的未闭合代码块（避免在段落 p 与 pre 之间高频跳变）
+  const backtickMatches = text.match(/```/g)
+  if (backtickMatches && backtickMatches.length % 2 === 1) {
+    text += '\n```'
+  }
+
+  // 2. 自动修补流式中的表格结构
+  // 如果最后一行处于表格内（以 | 开头且未以 | 结尾），临时补齐一个尾部 |，使 marked 稳定将其识别为表格行而非普通段落 <p>
+  const lines = text.split('\n')
+  if (lines.length > 1) {
+    const lastLine = lines[lines.length - 1]
+    if (lastLine.trim().startsWith('|') && !lastLine.trim().endsWith('|')) {
+      text += ' |'
+    }
+  }
+
+  return text
 }
 
 function doRender() {
   const raw = props.text || ''
   lastRenderAt = Date.now()
   lastRenderedLen = raw.length
-  const compacted = compactBlankLines(raw)
-  if (!compacted) {
+  if (!raw) {
     html.value = ''
     return
   }
+  const prepared = fixIncompleteMarkdown(raw)
   try {
-    html.value = sanitizeHtml(marked.parse(compacted) as string)
+    html.value = sanitizeHtml(marked.parse(prepared) as string)
   } catch {
-    html.value = sanitizeHtml(compacted)
+    html.value = sanitizeHtml(prepared)
   }
 }
 

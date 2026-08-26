@@ -38,8 +38,8 @@ const breakpoint = ref<AiShellBreakpoint>('lg')
 const navRailCollapsed = ref(localStorage.getItem(NAV_COLLAPSED_KEY) === '1')
 /** NavRail 浮层呼出（icon/overlay 档位下呼出完整形态；不持久化） */
 const navOverlayOpen = ref(false)
-const inspectorOpen = ref(localStorage.getItem(INSPECTOR_OPEN_KEY) !== '0')
-/** 用户本会话内显式切换过 Inspector（切换过则尊重用户，断点变化不再自动调整） */
+const inspectorOpen = ref(localStorage.getItem(INSPECTOR_OPEN_KEY) === '1')
+/** 用户本会话内显式切换过 Inspector */
 let inspectorTouched = false
 
 // 确认卡 UI 状态（UI-E 补全：状态机 + 120s 超时定时器 + SSE meta 事件接入）
@@ -68,15 +68,6 @@ function applyBreakpoint() {
   const bp = currentBreakpoint(window.innerWidth)
   if (bp === breakpoint.value) return
   breakpoint.value = bp
-  // 断点变化时自动调整 Inspector 默认形态：仅 xl 行内展开，其余档位收起。
-  // 用户显式切换过（inspectorTouched）则完全尊重用户选择。
-  if (!inspectorTouched) {
-    const want = bp === 'xl'
-    if (inspectorOpen.value !== want) {
-      inspectorOpen.value = want
-      localStorage.setItem(INSPECTOR_OPEN_KEY, want ? '1' : '0')
-    }
-  }
   // 进入 sm 档时关闭残留的 Nav 浮层
   if (bp === 'sm') navOverlayOpen.value = false
 }

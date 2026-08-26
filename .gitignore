@@ -79,6 +79,9 @@ data/
 # CodeBuddy (local workspace data, not project code)
 .codebuddy/
 
+# commandcode (local AI tool state, not project code)
+.commandcode/
+
 # omo (local AI tool run state, not project code)
 .omo/
 

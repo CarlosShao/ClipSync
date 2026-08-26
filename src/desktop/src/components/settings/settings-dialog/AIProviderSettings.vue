@@ -17,7 +17,7 @@ import {
   testProvider,
   getProviderModels,
 } from '@/api/ai'
-import type { AiProvider, AiProviderPreset } from '@/api/ai'
+import type { AiProvider, AiProviderPreset, AiApiFormat } from '@/api/ai'
 
 const { t } = useI18n()
 const toast = useSonner()
@@ -38,6 +38,8 @@ const formModels = ref<string[]>([])
 const formIsDefault = ref(false)
 // 上下文窗口用字符串承载（兼容 type=number 的 Input v-model），提交时再转 number
 const formContextWindow = ref<string>('')
+// 自定义供应商的多协议格式（OpenAI 兼容 / Anthropic 兼容 / OpenAI Responses）
+const formApiFormat = ref<AiApiFormat>('openai')
 const saving = ref(false)
 const refreshingModels = ref(false)
 const formError = ref('')
@@ -48,6 +50,9 @@ const formProviderLabel = computed(() => {
   const p = presets.value.find((x) => x.provider === formProvider.value)
   return p?.label || formProvider.value
 })
+
+// 是否自定义供应商：Custom 支持多协议（OpenAI 兼容 / Anthropic 兼容 / OpenAI Responses）
+const isCustom = computed(() => formProvider.value === 'custom')
 
 function presetLabel(provider: string) {
   const p = presets.value.find((x) => x.provider === provider)
@@ -88,6 +93,7 @@ function resetForm() {
   formModels.value = []
   formIsDefault.value = false
   formContextWindow.value = ''
+  formApiFormat.value = 'openai'
   formError.value = ''
 }
 
@@ -101,6 +107,8 @@ function startEdit(p: AiProvider) {
   formModels.value = Array.isArray(p.models) ? [...p.models] : []
   formIsDefault.value = p.is_default
   formContextWindow.value = p.context_window != null ? String(p.context_window) : ''
+  // 回显自定义供应商的协议格式（历史数据无 api_format 时默认 openai）
+  formApiFormat.value = (p.api_format as AiApiFormat) || 'openai'
   formError.value = ''
 }
 
@@ -139,6 +147,7 @@ async function refreshModels() {
         models: formSelectedModels.value,
         isDefault: formIsDefault.value,
         contextWindow: formContextWindow.value ? Number(formContextWindow.value) : null,
+        apiFormat: isCustom.value ? formApiFormat.value : undefined,
       })
       if (!createRes.ok || !createRes.data?.id) {
         toast.show(createRes.error || t('ai_save_failed'), 'error')
@@ -193,6 +202,7 @@ async function save() {
       models: formSelectedModels.value,
       isDefault: formIsDefault.value,
       contextWindow: formContextWindow.value ? Number(formContextWindow.value) : null,
+      apiFormat: isCustom.value ? formApiFormat.value : undefined,
     }
     const res = editingId.value
       ? await updateProvider(editingId.value, payload)
@@ -309,10 +319,10 @@ onMounted(load)
     </div>
 
     <div class="ai-form">
-      <!-- 协议限制说明：当前仅支持 OpenAI 兼容格式，避免用户选错 Anthropic 等非 OpenAI 服务 -->
+      <!-- 兼容格式说明：Custom 供应商支持三种 API 协议 -->
       <div class="ai-protocol-hint">
         <span class="ai-protocol-hint-icon">i</span>
-        <span>{{ t('ai_provider_protocol_hint') }}</span>
+        <span>{{ t('ai_format_guide') }}</span>
       </div>
 
       <div class="ai-field">
@@ -331,6 +341,26 @@ onMounted(load)
             </CustomSelectOption>
           </template>
         </CustomSelect>
+      </div>
+
+      <!-- 自定义供应商：多协议格式（OpenAI 兼容 / Anthropic 兼容 / OpenAI Responses） -->
+      <div v-if="isCustom" class="ai-field">
+        <label class="ai-label">{{ t('ai_custom_format_label') }}</label>
+        <CustomSelect :model-value="formApiFormat" @update:model-value="(v: string) => (formApiFormat = v as AiApiFormat)">
+          {{ t(`ai_custom_format_${formApiFormat}`) }}
+          <template #options>
+            <CustomSelectOption
+              v-for="fmt in (['openai', 'anthropic', 'responses'] as AiApiFormat[])"
+              :key="fmt"
+              :value="fmt"
+              :selected="formApiFormat === fmt"
+              @select="(v: string) => (formApiFormat = v as AiApiFormat)"
+            >
+              {{ t(`ai_custom_format_${fmt}`) }}
+            </CustomSelectOption>
+          </template>
+        </CustomSelect>
+        <div class="ai-format-hint">{{ t(`ai_custom_format_hint_${formApiFormat}`) }}</div>
       </div>
 
       <div class="ai-field">
@@ -649,5 +679,14 @@ onMounted(load)
   font-weight: 700;
   font-style: italic;
   margin-top: 1px;
+}
+
+/* 兼容格式说明：位于格式下拉下方 */
+.ai-format-hint {
+  margin-top: 6px;
+  padding-left: 2px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
 }
 </style>

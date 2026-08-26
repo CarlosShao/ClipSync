@@ -114,29 +114,47 @@ function writeLog(level, message, meta = {}) {
 
 /**
  * 日志器
+ *
+ * 兼容两种调用形态：
+ *   1. logger.info(message, { key: value })          —— 结构化 meta 对象（推荐）
+ *   2. logger.info('[tag]', arg1, arg2, ...)         —— console.log 式多参（自动拼接，便于 DEBUG 输出）
  */
+function normalizeArgs(args) {
+  const [first, ...rest] = args
+  // 只有单个参数，或第二个参数是纯对象、而剩余参数为空：按结构化 meta 处理
+  if (rest.length <= 1 && rest[0] && typeof rest[0] === 'object' && !Array.isArray(rest[0])) {
+    return { message: first, meta: rest[0] }
+  }
+  // 多参 console.log 式：拼接 message，meta 为空
+  return { message: args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '), meta: {} }
+}
+
 export const logger = {
-  debug(message, meta = {}) {
+  debug(...args) {
     if (currentLevel <= LOG_LEVELS.debug) {
-      writeLog('debug', message, meta);
+      const { message, meta } = normalizeArgs(args)
+      writeLog('debug', message, meta)
     }
   },
 
-  info(message, meta = {}) {
+  info(...args) {
     if (currentLevel <= LOG_LEVELS.info) {
-      writeLog('info', message, meta);
+      const { message, meta } = normalizeArgs(args)
+      writeLog('info', message, meta)
     }
   },
 
-  warn(message, meta = {}) {
+  warn(...args) {
     if (currentLevel <= LOG_LEVELS.warn) {
-      writeLog('warn', message, meta);
+      const { message, meta } = normalizeArgs(args)
+      writeLog('warn', message, meta)
     }
   },
 
-  error(message, meta = {}) {
+  error(...args) {
     if (currentLevel <= LOG_LEVELS.error) {
-      writeLog('error', message, meta);
+      const { message, meta } = normalizeArgs(args)
+      writeLog('error', message, meta)
     }
   },
 };

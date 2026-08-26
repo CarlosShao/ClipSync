@@ -12,6 +12,7 @@
 
 import { logger } from './logger.js'
 import dns from 'node:dns'
+import { convertMessagesForAnthropic } from './messageConverter.js'
 
 /**
  * 协议族：
@@ -174,9 +175,25 @@ export const PROVIDER_PRESETS = {
     label: 'StepFun (阶跃星辰)',
     family: 'openai',
     authHeader: 'Authorization',
-    defaultBaseUrl: 'https://api.stepfun.com/step_plan/v1',
+    // 官方主推标准通道（开放平台 key，OpenAI 兼容，GET /models 可用）。
+    // Step Plan 订阅专用通道为 https://api.stepfun.com/step_plan/v1（需 Step Plan key），
+    // 有需求的用户可在表单里手动覆盖 baseUrl。
+    defaultBaseUrl: 'https://api.stepfun.com/v1',
     defaultModel: 'step-3.7-flash',
     supportsCache: false,
+  },
+  // Step Explore：阶跃星辰面向 Agent/Coding 的新模型，申请制开通，
+  // 仅支持 Anthropic Messages 协议（Step Plan 通道），认证为 Authorization: Bearer，
+  // 推理强度用 output_config.effort（不是原生 anthropic 的 thinking 块）。
+  'stepfun-anthropic': {
+    provider: 'stepfun-anthropic',
+    label: 'StepFun Explore (阶跃星辰 · Anthropic)',
+    family: 'anthropic',
+    authHeader: 'Authorization',
+    defaultBaseUrl: 'https://api.stepfun.com/step_plan/v1',
+    defaultModel: 'step-explore',
+    supportsCache: false,
+    anthropicEffortField: 'output_config',
   },
   longcat: {
     provider: 'longcat',
@@ -189,13 +206,32 @@ export const PROVIDER_PRESETS = {
   },
   custom: {
     provider: 'custom',
-    label: 'Custom (OpenAI 兼容)',
+    label: 'Custom',
     family: 'openai',
     authHeader: 'Authorization',
     defaultBaseUrl: '',
     defaultModel: '',
     supportsCache: false, // 未知，保守按不支持处理；如供应商支持可由前端 UI 显式声明
   },
+}
+
+/**
+ * 解析供应商实际使用的协议族。
+ *
+ * - 非 custom 预设：固定取预设内置 family（openai / anthropic）。
+ * - custom 预设：取用户显式配置的 apiFormat（openai / anthropic / responses），
+ *   未配置时默认为 'openai'（兼容历史表单 / 老数据）。
+ *
+ * @param {string} provider 供应商标识（PROVIDER_PRESETS 的 key）
+ * @param {string} [apiFormat] 用户配置的兼容格式（仅 custom 生效）
+ * @returns {'openai'|'anthropic'|'responses'}
+ */
+export function resolveFamily(provider, apiFormat) {
+  const preset = getPreset(provider)
+  if (!preset || provider !== 'custom') {
+    return preset?.family === 'anthropic' ? 'anthropic' : 'openai'
+  }
+  return ['openai', 'anthropic', 'responses'].includes(apiFormat) ? apiFormat : 'openai'
 }
 
 /**
@@ -329,6 +365,7 @@ const MODEL_CONTEXT_WINDOWS = {
   'step-2': 32768,
   'step-1v': 32768,
   'step*': 32768,
+  'step-explore': 1000000, // Step Explore：申请制开通，最高 1M token 上下文
 
   // ===== 百川 Baichuan =====
   'baichuan4': 32768,
@@ -408,6 +445,69 @@ function normalizeVisionMessages(messages, family) {
 }
 
 /**
+ * 把 OpenAI 风格消息数组转换为 OpenAI Responses API 的 input 数组。
+ *
+ * 前端 / 多轮循环内部统一使用 OpenAI 风格消息（role: user/assistant/tool），
+ * Responses 协议走独立的 input 结构，这里做无损映射：
+ * - assistant 的文本内容 → { type:'message', role:'assistant', content:[{type:'output_text',text}] }
+ * - assistant 的 tool_calls 数组 → 逐条 { type:'function_call', call_id, name, arguments }
+ * - role:'tool' 消息 → { type:'function_call_output', call_id, output }
+ * - user 消息 → { type:'message', role:'user', content }（图片块转 input_image）
+ * - system 消息被跳过（调用方负责提取到 instructions）
+ *
+ * @param {Array} messages OpenAI 风格的消息数组
+ * @returns {Array} Responses 协议的 input 项数组
+ */
+export function messagesToResponsesInput(messages) {
+  const input = []
+  for (const m of messages || []) {
+    if (!m || m.role === 'system') continue
+    if (m.role === 'assistant') {
+      const text = typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((b) => (b?.type === 'text' ? b.text : '')).join('') : ''
+      if (text) {
+        input.push({
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text }],
+        })
+      }
+      if (Array.isArray(m.tool_calls)) {
+        for (const tc of m.tool_calls) {
+          if (!tc || !tc.function?.name) continue
+          input.push({
+            type: 'function_call',
+            call_id: tc.id,
+            name: tc.function.name,
+            arguments: tc.function.arguments || '',
+          })
+        }
+      }
+      continue
+    }
+    if (m.role === 'tool') {
+      const output = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')
+      input.push({
+        type: 'function_call_output',
+        call_id: m.tool_call_id,
+        output,
+      })
+      continue
+    }
+    // user 消息（含可能的图片块）
+    let content = m.content
+    if (Array.isArray(m.content)) {
+      content = m.content.map((b) => {
+        if (!b || b.type === 'text') return { type: 'input_text', text: b?.text ?? '' }
+        if (b.type === 'image_url') return { type: 'input_image', image_url: b.image_url?.url }
+        return { type: 'input_text', text: '' }
+      })
+    }
+    input.push({ type: 'message', role: 'user', content })
+  }
+  return input
+}
+
+/**
  * 取所有预设（脱敏，仅给前端做下拉用，不含任何密钥）
  */
 export function listPresets() {
@@ -424,40 +524,55 @@ export function listPresets() {
  * 构造上游聊天请求。
  *
  * @param {object} cfg
- * @param {string} cfg.provider   供应商标识（对应 PROVIDER_PRESETS 的 key）
- * @param {string} [cfg.baseUrl]  用户自定义 base_url（覆盖预设默认值）
- * @param {string} cfg.model      模型标识
- * @param {string} cfg.apiKey     已解密的明文密钥
- * @param {Array}  cfg.messages   对话消息 [{ role, content }]
- * @param {object} [cfg.options]  { maxTokens, temperature }
+ * @param {string} cfg.provider      供应商标识（对应 PROVIDER_PRESETS 的 key）
+ * @param {string} [cfg.baseUrl]     用户自定义 base_url（覆盖预设默认值）
+ * @param {string} cfg.model         模型标识
+ * @param {string} cfg.apiKey        已解密的明文密钥
+ * @param {Array}  cfg.messages      对话消息 [{ role, content }]
+ * @param {string} [cfg.apiFormat]   兼容格式（仅 custom 生效：openai/anthropic/responses）
+ * @param {object} [cfg.options]     { maxTokens, temperature }
  * @returns {{ url: string, headers: object, body: object, family: string }}
  */
 export function buildUpstreamChat(cfg) {
-  const { provider, baseUrl, model, apiKey, messages, options = {} } = cfg
+  const { provider, baseUrl, model, apiKey, messages, options = {}, apiFormat } = cfg
   const preset = getPreset(provider)
   if (!preset) {
     throw new Error(`Unknown provider: ${provider}`)
   }
+  const family = resolveFamily(provider, apiFormat)
 
-  // 把前端传来的带图 user 消息规范化为当前协议族可识别的格式（OpenAI 兼容原样、
-  // Anthropic 转 base64 source）。非 user / 纯文本消息不受影响。
-  const normalizedMessages = normalizeVisionMessages(messages, preset.family)
-
-  const resolvedBaseUrl = (baseUrl || preset.defaultBaseUrl || '').replace(/\/+$/, '')
+  let resolvedBaseUrl = (baseUrl || preset.defaultBaseUrl || '').replace(/\/+$/, '')
   if (!resolvedBaseUrl) {
     throw new Error('base_url is required for custom provider')
+  }
+  // Step Fun Step Plan 通道 URL 规范化：
+  // 用户可能配置 https://api.stepfun.com/step_plan（按 Anthropic SDK 习惯写法），
+  // 但实际上完整路径需带 /v1（如 /step_plan/v1/messages），这里自动补全避免 404。
+  if (/api\.stepfun\.com\/step_plan$/.test(resolvedBaseUrl)) {
+    resolvedBaseUrl = `${resolvedBaseUrl}/v1`
   }
 
   const stream = options.stream !== false
 
-  if (preset.family === 'anthropic') {
-    // Anthropic Messages 协议：system 必须独立成字段，不能放在 messages 里
-    const systemMessages = normalizedMessages.filter((m) => m.role === 'system')
+  if (family === 'anthropic') {
+    // 把前端传来的带图 user 消息规范化为 Anthropic 可识别的 base64 source
+    const visionNormalized = normalizeVisionMessages(messages, 'anthropic')
+    // Anthropic Messages 协议：system 必须独立成字段，从输入 messages 中提取
+    const systemMessages = (messages || []).filter((m) => m && m.role === 'system')
+    const normalizedMessages = convertMessagesForAnthropic(visionNormalized)
     const chatMessages = normalizedMessages.filter((m) => m.role !== 'system')
-    const headers = {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+    // 认证头按预设配置：原生 Anthropic 用 x-api-key；
+    // StepFun Explore 等第 3 方 Anthropic 兼容网关用 Authorization: Bearer（见 step-explore 官方文档）。
+    // custom + anthropic 无法预知目标网关的认证方式，双头发送（x-api-key 为 Anthropic 原生标准、
+    // Authorization 为兼容网关常用），服务端按需识别其中一个。
+    const headers = { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' }
+    if (preset.provider === 'custom') {
+      headers['x-api-key'] = apiKey
+      headers.Authorization = `Bearer ${apiKey}`
+    } else if (preset.authHeader === 'Authorization') {
+      headers.Authorization = `Bearer ${apiKey}`
+    } else {
+      headers['x-api-key'] = apiKey
     }
     const body = {
       model,
@@ -465,18 +580,82 @@ export function buildUpstreamChat(cfg) {
       max_tokens: options.maxTokens || 1024,
       stream,
     }
-    // Anthropic 原生 thinking 参数（OpenAI 兼容族不支持该字段，由 reasoning_content 自动下发）
+    // 原生 Anthropic thinking 参数（OpenAI 兼容族不支持该字段，由 reasoning_content 自动下发）
     if (options.thinking) {
-      body.thinking = { type: 'enabled', budget_tokens: options.thinkingBudget || 4096 }
+      const isStepExploreModel = /step-explore/i.test(model)
+      // Step Explore 文档明确说明不支持 thinking 参数，也不支持 output_config。
+      // 对于使用 custom 供应商 + step-explore 模型的场景，跳过 thinking 字段。
+      if (isStepExploreModel) {
+        // 不发送 thinking 或 output_config
+      } else if (preset.anthropicEffortField === 'output_config') {
+        // 其他自定义 Anthropic 网关：推理强度字段为 output_config.effort（low/medium/high）
+        const effort =
+          options.thinkingStrength || options.thinkingEffort ||
+          (options.thinkingBudget > 8192 ? 'high' : options.thinkingBudget < 2048 ? 'low' : 'medium')
+        body.output_config = { effort }
+      } else {
+        body.thinking = { type: 'enabled', budget_tokens: options.thinkingBudget || 4096 }
+      }
     }
     if (systemMessages.length > 0) {
       body.system = [{ type: 'text', text: systemMessages.map((m) => m.content).join('\n\n') }]
-      // 开启 prompt caching：稳定的 system 前缀标记为可缓存，后续请求命中缓存后上游会返回
-      // cache_read_input_tokens，前端「缓存命中率」才是真实数据（而非恒为 0）。
-      body.system[0].cache_control = { type: 'ephemeral' }
+      // Step Explore 文档未列出 cache_control 字段，传了可能报 Unsupported parameter。
+      // 对于使用 custom 供应商 + step-explore 模型的场景，也跳过 cache_control。
+      const isStepExploreModel = /step-explore/i.test(model)
+      if (preset.supportsCache !== false && !isStepExploreModel) {
+        body.system[0].cache_control = { type: 'ephemeral' }
+      }
     }
     if (typeof options.temperature === 'number') {
       body.temperature = options.temperature
+    }
+    // 工具定义（Anthropic Messages 协议：tools 数组放在顶层，与 model/messages 同级）
+    // OpenAI 格式 { type: "function", function: { name, description, parameters } }
+    //  → Anthropic 格式 { name, description, input_schema }
+    if (options.tools && options.tools.length > 0) {
+      const convertedTools = options.tools.map((t) => {
+        const fn = t.function || {}
+        const params = fn.parameters || {}
+        const schema = {
+          type: 'object',
+          properties: params.properties || {},
+        }
+        const required = params.required
+        if (Array.isArray(required) && required.length > 0) schema.required = required
+        return {
+          name: fn.name || t.name,
+          description: fn.description || t.description || '',
+          input_schema: schema,
+        }
+      })
+      const deleteTool = convertedTools.find(t => t.name === 'delete_collection')
+      logger.info('[buildUpstreamChat] anthropic tools count:', convertedTools.length, 'has delete_collection:', !!deleteTool, 'delete_collection schema:', deleteTool ? JSON.stringify(deleteTool.input_schema).substring(0, 200) : 'N/A')
+      body.tools = convertedTools
+      // tool_choice: auto / tool / { type: 'tool_use', name: 'xxx' } / 'none'
+      if (options.tool_choice) {
+        const tc = options.tool_choice
+        if (typeof tc === 'string') {
+          body.tool_choice = tc === 'auto' ? 'auto' : tc === 'none' ? 'none' : tc === 'required' ? 'any' : tc
+        } else if (tc?.type === 'function') {
+          body.tool_choice = { type: 'tool_use', name: tc.function?.name || '' }
+        } else {
+          body.tool_choice = tc
+        }
+      } else {
+        body.tool_choice = 'auto'
+      }
+    }
+    // DEBUG: 记录 Anthropic 请求体（脱敏），排查 Step Explore 工具调用失败原因
+    if (family === 'anthropic') {
+      const logBody = { ...body }
+      if (logBody.system) logBody.system = '[SYSTEM_PROMPT_OMITTED]'
+      if (Array.isArray(logBody.messages)) {
+        logBody.messages = logBody.messages.map((m) => ({
+          role: m.role,
+          content_blocks: Array.isArray(m.content) ? m.content.map((b) => ({ type: b.type, len: (b.text || b.input || '').toString().length })) : typeof m.content === 'string' ? m.content.length : typeof m.content
+        }))
+      }
+      logger.info('[buildUpstreamChat] anthropic request body:', JSON.stringify(logBody).substring(0, 800))
     }
     return {
       url: `${resolvedBaseUrl}/messages`,
@@ -486,7 +665,44 @@ export function buildUpstreamChat(cfg) {
     }
   }
 
+  if (family === 'responses') {
+    // OpenAI Responses 协议：输入走独立 input 结构（可由 OpenAI 风格消息无损转换），
+    // system 提取到 instructions。认证为 Authorization: Bearer。
+    const systemMessages = (messages || []).filter((m) => m.role === 'system')
+    const input = messagesToResponsesInput(messages)
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    }
+    const body = {
+      model,
+      input,
+      stream,
+      max_output_tokens: options.maxTokens || 1024,
+    }
+    if (typeof options.temperature === 'number') {
+      body.temperature = options.temperature
+    }
+    if (systemMessages.length > 0) {
+      body.instructions = systemMessages.map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n\n')
+    }
+    // 工具定义
+    if (options.tools) {
+      body.tools = options.tools
+    }
+    if (options.tool_choice) {
+      body.tool_choice = options.tool_choice
+    }
+    return {
+      url: `${resolvedBaseUrl}/responses`,
+      headers,
+      body,
+      family: 'responses',
+    }
+  }
+
   // OpenAI 兼容协议
+  const normalizedMessages = normalizeVisionMessages(messages, 'openai')
   const authHeader = preset.authHeader || 'Authorization'
   const headers = { 'Content-Type': 'application/json' }
   if (authHeader === 'Authorization') {
@@ -529,15 +745,16 @@ export function buildUpstreamChat(cfg) {
 /**
  * 向上游拉取该供应商可用的模型列表（用于「一个配置支持多模型」的标签展示）。
  *
- * - OpenAI 兼容族：GET {baseUrl}/models，解析 data[].id
+ * - OpenAI 兼容族：GET {baseUrl}/models，解析 data[].id（Authorization: Bearer）
  * - Anthropic 族：GET {baseUrl}/models（需 x-api-key + anthropic-version），解析 data[].id
+ * - Responses 族：GET {baseUrl}/models，Authorization: Bearer
  * - 任何失败（无密钥 / 网络 / 鉴权）均回退到预设 defaultModel，保证至少有 1 个标签可点。
  *
- * @param {object} cfg { provider, baseUrl, apiKey }
+ * @param {object} cfg { provider, baseUrl, apiKey, apiFormat }
  * @returns {Promise<string[]>} 模型标识数组
  */
 export async function fetchProviderModels(cfg) {
-  const { provider, baseUrl, apiKey } = cfg || {}
+  const { provider, baseUrl, apiKey, apiFormat } = cfg || {}
   const preset = getPreset(provider)
   if (!preset) return []
   const resolvedBaseUrl = (baseUrl || preset.defaultBaseUrl || '').replace(/\/+$/, '')
@@ -546,15 +763,25 @@ export async function fetchProviderModels(cfg) {
     return preset.defaultModel ? [preset.defaultModel] : []
   }
 
-  const authHeader = preset.authHeader || 'Authorization'
+  const family = resolveFamily(provider, apiFormat)
   const headers = {}
-  if (authHeader === 'Authorization') {
-    headers.Authorization = `Bearer ${apiKey}`
+  if (family === 'anthropic') {
+    if (preset.provider === 'custom') {
+      headers['x-api-key'] = apiKey
+      headers.Authorization = `Bearer ${apiKey}`
+    } else if (preset.authHeader === 'Authorization') {
+      headers.Authorization = `Bearer ${apiKey}`
+    } else {
+      headers['x-api-key'] = apiKey
+      headers['anthropic-version'] = '2023-06-01'
+    }
   } else {
-    headers[authHeader] = apiKey
-  }
-  if (preset.family === 'anthropic') {
-    headers['anthropic-version'] = '2023-06-01'
+    const authHeader = preset.authHeader || 'Authorization'
+    if (authHeader === 'Authorization') {
+      headers.Authorization = `Bearer ${apiKey}`
+    } else {
+      headers[authHeader] = apiKey
+    }
   }
 
   const ctrl = new AbortController()
@@ -580,8 +807,10 @@ export async function fetchProviderModels(cfg) {
 export default {
   PROVIDER_PRESETS,
   getPreset,
+  resolveFamily,
   listPresets,
   buildUpstreamChat,
+  messagesToResponsesInput,
   fetchProviderModels,
   safeUpstreamFetch,
 }

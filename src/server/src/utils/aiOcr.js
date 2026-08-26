@@ -1,7 +1,7 @@
 import { pool } from '../db/pool.js'
 import { decrypt } from './encryption.js'
 import { buildUpstreamChat, safeUpstreamFetch } from './aiProviders.js'
-import logger from './logger.js'
+import { logger } from './logger.js'
 import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'

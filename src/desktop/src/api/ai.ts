@@ -13,6 +13,9 @@ export interface AiProvider {
   updated_at: string
   has_key: boolean
   context_window?: number | null // 模型上下文窗口（token 数）；非空时优先级高于内置表
+  // 供应商 API 多协议格式（仅自定义供应商使用）：openai / anthropic / responses。
+  // 后端 aiProviders.js 存取 ai_provider.api_format，默认 openai。
+  api_format?: AiApiFormat
   // 协议层是否支持 prompt cache（由后端 aiProviders.js 给出）。
   // - true：上游会返回 cache_read/cache_write tokens，应展示真实命中率
   // - false：上游没有 cache 字段，UI 应显示"未启用 / N/A"而不是 0% 误导
@@ -25,6 +28,18 @@ export interface AiProviderPreset {
   family: string
   defaultBaseUrl: string
   defaultModel: string
+}
+
+// 自定义供应商的 API 多协议格式（与后端 ai_providers.api_format 枚举一致）
+export type AiApiFormat = 'openai' | 'anthropic' | 'responses'
+
+export interface ThinkingSegment {
+  id?: string
+  text: string
+  startedAt?: number
+  endedAt?: number
+  closed?: boolean
+  isLive?: boolean
 }
 
 export interface ChatMessage {
@@ -45,6 +60,8 @@ export interface ChatMessage {
   imageHash?: string
   thinking?: string // 思考过程
   thinkingStartedAt?: number // 思考开始时间戳（毫秒），用于显示思考秒数
+  /** 多轮思考分段：工具调用前后的思考各自独立成段，渲染时分开展示 */
+  thinkingSegments?: ThinkingSegment[]
   toolCalls?: ToolCall[] // 工具调用
   toolResults?: ToolResult[] // 工具结果
   thinkingActive?: boolean // 思考阶段是否仍在进行：工具开始调用后视为结束（用于前端正确显示“思考完成”而非一直“思考中”）
@@ -67,6 +84,7 @@ export interface ToolCall {
   id: string
   name: string
   arguments: string
+  segIndex?: number // 关联所属的思考段索引（用于按轮次时序交替渲染）
 }
 
 export interface ToolResult {
@@ -88,6 +106,7 @@ export interface AgentRun {
   thinking?: string
   thinkingStartedAt?: number
   thinkingActive?: boolean
+  thinkingSegments?: ThinkingSegment[]
   content?: string
   toolCalls?: ToolCall[]
   toolResults?: ToolResult[]
@@ -199,6 +218,8 @@ export interface AiProviderInput {
   models?: string[]
   isDefault?: boolean
   contextWindow?: number | null
+  // 自定义供应商的多协议格式（openai/anthropic/responses）；非 custom 时忽略
+  apiFormat?: AiApiFormat
 }
 
 // AI 用户偏好（入库持久化）
@@ -467,6 +488,11 @@ export function deleteMemory(id: string) {
 // 后端未就绪时返回 404 属预期：卡片显示错误并允许重试，不阻塞组件。
 export function approveAiChatTool(body: { requestId: string; allow: boolean }) {
   return api<{ ok: boolean }>('POST', '/api/ai/chat/approve', body)
+}
+
+// ===== ask_user 交互卡片作答（人类在回路选择）=====
+export function respondAiChatAskUser(body: { requestId: string; userResponse: string }) {
+  return api<{ accepted: boolean }>('POST', '/api/ai/chat/respond_ask_user', body)
 }
 
 // ===== SSE 流式聊天 =====

@@ -111,7 +111,8 @@ afterAll(async () => {
 describe('权限矩阵（L0-L3）', () => {
   const L0 = 'get_clipboard_stats'
   const L1 = 'write_clip'
-  const L2 = 'create_collection'
+  // RBAC 收敛后 create_collection 已降至 L1；L2 示例改用真实的管理级工具 list_all_devices。
+  const L2 = 'list_all_devices'
   const L3 = 'get_security_overview'
 
   it('isToolAllowedForLevel 应正确判定各等级工具', () => {
@@ -276,7 +277,7 @@ describe('destroy_clips 确认门控', () => {
       'destroy_clips',
       { clip_ids: [cid] },
       u1,
-      'admin',
+      'super_admin',
       reqId,
       { sendDelta: () => {} }
     )
@@ -299,7 +300,7 @@ describe('destroy_clips 确认门控', () => {
       'destroy_clips',
       { clip_ids: [cid] },
       u1,
-      'admin',
+      'super_admin',
       reqId,
       { sendDelta: () => {} }
     )
@@ -323,7 +324,7 @@ describe('destroy_clips 确认门控', () => {
       'destroy_clips',
       { clip_ids: [cid] },
       u1,
-      'admin',
+      'super_admin',
       reqId,
       { sendDelta: () => {} }
     )
@@ -350,7 +351,7 @@ describe('destroy_clips 确认门控', () => {
       'destroy_clips',
       { clip_ids: [cid] },
       u1,
-      'admin',
+      'super_admin',
       reqId,
       { sendDelta: () => {} }
     )
@@ -367,7 +368,7 @@ describe('destroy_clips 确认门控', () => {
       'destroy_clips',
       { clip_ids: [cid] },
       u1,
-      'admin',
+      'super_admin',
       reqId2,
       { sendDelta: () => {} }
     )
@@ -386,11 +387,11 @@ describe('destroy_clips 确认门控', () => {
     const c1 = await insertClip(u1, 'destroy-concurrent-1')
     const c2 = await insertClip(u1, 'destroy-concurrent-2')
     const reqId1 = uuidv4()
-    const p1 = executeTool('destroy_clips', { clip_ids: [c1] }, u1, 'admin', reqId1, { sendDelta: () => {} })
+    const p1 = executeTool('destroy_clips', { clip_ids: [c1] }, u1, 'super_admin', reqId1, { sendDelta: () => {} })
     await tick()
 
     // 第二个破坏性请求：pending 非空 → 直接被拒
-    const p2 = executeTool('destroy_clips', { clip_ids: [c2] }, u1, 'admin', uuidv4(), { sendDelta: () => {} })
+    const p2 = executeTool('destroy_clips', { clip_ids: [c2] }, u1, 'super_admin', uuidv4(), { sendDelta: () => {} })
     const final2 = await p2
     expect(final2.error).toBe('CONCURRENT_CONFIRM_REQUEST')
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted, type Component } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, type Component } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { ChevronDown, Copy, Pencil, ListChecks, Languages, AlignLeft, HelpCircle, Sparkles } from 'lucide-vue-next'
 import type { ChatMessage, AgentRun, ToolCall } from '@/api/ai'
@@ -9,6 +9,7 @@ import AiAgentDrawer from './AiAgentDrawer.vue'
 import AiStreamText from './AiStreamText.vue'
 import AiProcessChips from './AiProcessChips.vue'
 import AiToolTimeline from './AiToolTimeline.vue'
+import AiAskUserCard from './AiAskUserCard.vue'
 
 /**
  * AiMessage — 单条消息渲染（UI-C 重构，UI-D 过程可视化接入）
@@ -97,8 +98,23 @@ function compactBlankLines(content: string): string {
 }
 
 // 状态计算
-const expandedThinking = ref(false)
 const isStreamingNow = computed(() => props.isStreaming)
+
+// 思考折叠状态管理：支持多段各自独立展开/折叠
+const expandedSegments = ref<Record<number, boolean>>({})
+function toggleThinking(index: number) {
+  expandedSegments.value[index] = !isThinkingExpanded(index)
+}
+function isThinkingExpanded(index: number): boolean {
+  if (expandedSegments.value[index] !== undefined) {
+    return expandedSegments.value[index]
+  }
+  const seg = thinkingSegments.value[index]
+  if (isStreamingNow.value && (seg?.isLive || (isThinkingPhase.value && index === thinkingSegments.value.length - 1))) {
+    return true
+  }
+  return false
+}
 
 // 字段存在性
 const hasAgentRuns = computed(() => (props.message.agentRuns?.length || 0) > 0)
@@ -106,6 +122,13 @@ const hasToolCalls = computed(
   () => (props.message.toolCalls?.length || 0) > 0 || (props.message.toolResults?.length || 0) > 0,
 )
 const hasThinking = computed(() => (props.message.thinking?.length || 0) > 0)
+// 多轮思考分段（工具调用前后的思考各自成段）；无分段时退化为 [全量] 单段
+const thinkingSegments = computed(() => {
+  const segs = props.message.thinkingSegments
+  if (segs && segs.length > 0) return segs
+  const t = props.message.thinking
+  return t ? [{ text: t, startedAt: props.message.thinkingStartedAt }] : []
+})
 const hasContent = computed(() => (props.message.content?.length || 0) > 0)
 const hasProcess = computed(() => hasThinking.value || hasToolCalls.value || hasAgentRuns.value)
 
@@ -117,6 +140,17 @@ const isLoading = computed(() => isStreamingNow.value && !hasThinking.value && !
 const isThinkingPhase = computed(
   () => isStreamingNow.value && hasThinking.value && props.message.thinkingActive !== false,
 )
+// 判断当前是否正有活跃思考段在流式输出（包含多轮思考的最新段）
+const hasLiveThinkingSegment = computed(() => {
+  if (!isStreamingNow.value) return false
+  if (props.message.thinkingActive === false) return false
+  const segs = props.message.thinkingSegments
+  if (segs && segs.length > 0) {
+    const last = segs[segs.length - 1]
+    return last?.isLive !== false
+  }
+  return isThinkingPhase.value
+})
 
 // 子代理详情抽屉（UI-D：AiAgentCards 点击卡片 → 此处打开 AiAgentDrawer）
 const agentDrawerRun = ref<AgentRun | null>(null)
@@ -152,7 +186,7 @@ function stopTaskTimer() {
 watch(isStreamingNow, (now, wasStreaming) => {
   if (now) {
     // 开始流式：展开过程，启动计时
-    expandedThinking.value = false
+    expandedSegments.value = {}
     userCollapsed.value = false
     startTaskTimer()
   } else if (wasStreaming) {
@@ -161,14 +195,29 @@ watch(isStreamingNow, (now, wasStreaming) => {
     if (taskStartedAt.value) {
       taskDurationMs.value = Date.now() - taskStartedAt.value
     }
-    userCollapsed.value = true
+    // 如果消息包含 ask_user 交互卡片，绝不自动折叠，保持卡片展开等待用户选择
+    if (!askUserStep.value) {
+      userCollapsed.value = true
+    }
+  }
+})
+
+onMounted(() => {
+  if (isStreamingNow.value) {
+    startTaskTimer()
   }
 })
 
 // 格式化耗时显示：3m 59s 或 1h 5m 23s
 const taskDurationText = computed(() => {
-  const ms = taskDurationMs.value
+  let ms = taskDurationMs.value
+  // 如果当前组件未在流式中记录到耗时（如历史消息重载或流式结束立即挂载），回退到思考耗时
+  if (ms <= 0 && thinkingSecs.value > 0) {
+    ms = thinkingSecs.value * 1000
+  }
+  if (ms <= 0) return ''
   const totalSec = Math.floor(ms / 1000)
+  if (totalSec <= 0) return '1s'
   const hours = Math.floor(totalSec / 3600)
   const mins = Math.floor((totalSec % 3600) / 60)
   const secs = totalSec % 60
@@ -216,6 +265,35 @@ const visibleToolCalls = computed(() => {
     name: r.name || 'tool',
     arguments: '',
   }))
+})
+
+// 多段思考与工具调用匹配：返回紧随思考段 si 执行的工具调用列表
+function getToolsForSegment(si: number) {
+  if (!visibleToolCalls.value.length) return []
+  // 单段思考或无分段：所有工具关联到第 0 段
+  if (thinkingSegments.value.length <= 1) {
+    return si === 0 ? visibleToolCalls.value : []
+  }
+  // 多段思考：按 segIndex 精确匹配属于该思考段紧随其后执行的工具
+  const matched = visibleToolCalls.value.filter((tc: any) => tc.segIndex === si)
+  if (matched.length > 0) return matched
+
+  // 兜底逻辑：如果所有 toolCalls 都没有 segIndex（如历史旧数据），挂在第 0 段
+  const hasAnySegIndex = visibleToolCalls.value.some((tc: any) => typeof tc.segIndex === 'number')
+  if (!hasAnySegIndex && si === 0) {
+    return visibleToolCalls.value
+  }
+  return []
+}
+
+// 交互式提问卡片（ask_user 专属，永远展示在消息底部/文本正文下方）
+const askUserStep = computed(() => {
+  const calls = visibleToolCalls.value || []
+  return calls.find((tc) => tc.name === 'ask_user') || null
+})
+const askUserResult = computed(() => {
+  if (!askUserStep.value) return null
+  return props.message.toolResults?.find((tr) => tr.tool_call_id === askUserStep.value?.id) || null
 })
 
 // 调试：把所有 assistant 消息的关键字段打出来供排查（仅当字段变化时）
@@ -340,27 +418,41 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
               <span>{{ t('ai_process_collapse', '收起过程') }}</span>
             </button>
 
-            <!-- 思考过程 -->
-            <AiThinkingCollapse
-              v-if="isLoading || hasThinking"
-              :thinking="message.thinking || ''"
-              :thinking-started-at="message.thinkingStartedAt"
-              :is-streaming="isThinkingPhase || isLoading"
-              :expanded="expandedThinking"
-              @toggle="expandedThinking = !expandedThinking"
-            />
+            <!-- 思考过程与工具时间线：按执行轮次时序交替渲染 -->
+            <template v-if="thinkingSegments.length > 0">
+              <template v-for="(seg, si) in thinkingSegments" :key="`think-${si}-${seg.id || ''}`">
+                <AiThinkingCollapse
+                  v-if="isLoading || hasThinking"
+                  :thinking="seg.text"
+                  :thinking-started-at="seg.startedAt ?? message.thinkingStartedAt"
+                  :is-streaming="isStreamingNow && (seg.isLive ?? (isThinkingPhase && si === thinkingSegments.length - 1))"
+                  :expanded="isThinkingExpanded(si)"
+                  @toggle="toggleThinking(si)"
+                />
+                <!-- 该思考段紧随其后执行的工具调用 -->
+                <AiToolTimeline
+                  v-if="getToolsForSegment(si).length"
+                  :tool-calls="getToolsForSegment(si)"
+                  :tool-results="message.toolResults"
+                  :confirm-tool="confirmTool ?? null"
+                />
+                <!-- 多段思考：段间插入细分隔线，避免两段粘连 -->
+                <div v-if="thinkingSegments.length > 1 && si < thinkingSegments.length - 1" class="ai-think-seg-gap"></div>
+              </template>
+            </template>
 
-            <!-- 工具时间线 -->
-            <AiToolTimeline
-              v-if="!isThinkingPhase && visibleToolCalls.length"
-              :tool-calls="visibleToolCalls"
-              :tool-results="message.toolResults"
-              :confirm-tool="confirmTool ?? null"
-            />
+            <!-- 无思考段时的纯工具调用（兜底） -->
+            <template v-else-if="visibleToolCalls.length">
+              <AiToolTimeline
+                :tool-calls="visibleToolCalls"
+                :tool-results="message.toolResults"
+                :confirm-tool="confirmTool ?? null"
+              />
+            </template>
 
             <!-- 子代理 -->
             <AiAgentCards
-              v-if="!isThinkingPhase && visibleAgentRuns.length"
+              v-if="visibleAgentRuns.length"
               :runs="visibleAgentRuns"
               @open="agentDrawerRun = $event"
             />
@@ -381,10 +473,17 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
         </template>
 
         <!-- ===== 总结内容 ===== -->
-        <div v-if="hasContent" class="ai-msg-content markdown-body">
+        <div v-if="hasContent && (!isStreamingNow || !hasLiveThinkingSegment)" class="ai-msg-content markdown-body">
           <AiStreamText :text="streamingContent" :done="!isStreamingNow" />
           <span v-if="isStreamingNow && !hasToolCalls" class="ai-stream-caret"></span>
         </div>
+
+        <!-- ===== 交互式问卷卡片（ask_user 专属，永远展示在消息最底部/文本下方） ===== -->
+        <AiAskUserCard
+          v-if="askUserStep"
+          :step="askUserStep"
+          :tool-result="askUserResult"
+        />
       </div>
     </template>
   </div>

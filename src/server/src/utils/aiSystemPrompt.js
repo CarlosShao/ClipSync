@@ -51,6 +51,13 @@ const LEVEL_RANK = { L0: 0, L1: 1, L2: 2, L3: 3, L4: 4 };
 const levels = {
   L0: [],
   L1: [
+    // 交互式用户选择与预览工具
+    'ask_user',
+    'show_diff_preview',
+    // 智能分析与批量操作工具
+    'find_duplicates',
+    'batch_move_to_collection',
+    'export_data',
     // Agent 写工具面（Agent-B）：L1 操作级写能力
     'write_clip',
     'tag_items',
@@ -60,15 +67,66 @@ const levels = {
     // Agent-C：批量收藏/批量软删除为 L1 操作级（batch_delete 默认软删除=archive 语义）
     'batch_favorite',
     'batch_delete',
-  ],
-  L2: [
-    // Agent 写工具面（Agent-B）：L2 管理级写能力
+    // RBAC 收敛：以下工具由 L2/未登记收敛到 L1（L1 用户可用的常规操作级能力）
+    'save_memory',
+    'ocr_clip_image',
+    'read_clip_content',
+    'organize_by_type',
     'create_collection',
+    'create_sub_collection',
     'create_template',
     'update_template',
     'create_shared_link',
-    // Agent-C：物理删除为 L2 管理级破坏性动作（需确认门控）
-    'destroy_clips',
+    // W1-C 工具域 A（18 个）：收藏夹 / 条目 / 标签 / 剪贴板 / 保护 / 媒体，L1 常规操作级
+    'delete_collection',
+    'update_collection',
+    'move_collection',
+    'reorder_collections',
+    'get_collection_items',
+    'add_item_to_collection',
+    'remove_item_from_collection',
+    'update_collection_tags',
+    'delete_tag',
+    'update_clip',
+    'mark_sensitive',
+    'mark_clip_used',
+    'get_frequent_clips',
+    'set_item_protection',
+    'remove_item_protection',
+    'get_protection_status',
+    'upload_image',
+    'upload_file',
+    // W2-D 工具域 B（23 个）：模板 / 共享链接 / 设备 / 通知 / 会话 / 版本 / 工作流 / 模板变量 / 账号 / 订阅 / 调查，L1 常规操作级（运维 get_slow_queries 在 L3）
+    'delete_template',
+    'delete_shared_link',
+    'update_device',
+    'unpair_own_device',
+    'get_notification_preferences',
+    'update_notification_preferences',
+    'mark_notification_read',
+    'list_my_sessions',
+    'terminate_session',
+    'get_version_history',
+    'restore_version',
+    'get_workflow_rules',
+    'create_workflow_rule',
+    'update_workflow_rule',
+    'delete_workflow_rule',
+    'upsert_template_variables',
+    'delete_template_variable',
+    'get_profile',
+    'update_profile',
+    'get_subscription_plans',
+    'cancel_subscription',
+    'resume_subscription',
+    'submit_survey',
+  ],
+  L2: [
+    // 管理级工具（L1 常规能力收敛后 L2 仅保留真正的管理/破坏性动作）
+    // （物理删除 destroy_clips 移至 L3）
+    // RBAC 管理域（feature/ai-rbac-backend）：设备管理为 L2 管理级
+    'list_all_devices',
+    'unpair_device',
   ],
   L3: [
     // 敏感读（安全 / 受保护条目 / 部署 / 架构源码），仅超管可用
@@ -76,6 +134,23 @@ const levels = {
     'get_protected_clips',
     'explain_deployment',
     'get_project_architecture',
+    // Agent-C：物理删除为 L3 超管级破坏性动作（需确认门控）
+    'destroy_clips',
+    // RBAC 管理域（feature/ai-rbac-backend）：用户管理 + 系统设置 + 订阅均为 L3 超管级
+    'list_users',
+    'create_user',
+    'update_user_role',
+    'delete_user',
+    'reset_user_password',
+    'disable_user',
+    'get_system_config',
+    'update_system_config',
+    'toggle_feature',
+    'get_audit_logs',
+    'upgrade_subscription',
+    'downgrade_subscription',
+    // W2-D 工具域 B：运维慢查询，仅超管可见（L3）
+    'get_slow_queries',
   ],
   L4: [],
 };
@@ -86,8 +161,15 @@ function normalizeRole(role) {
   return 'user';
 }
 
-// 角色 -> 等级键；未知角色降级 L1
-function levelKeyForRole(role) {
+// 角色 -> 等级键
+// 优先按传入的 roleLevel 数值映射（>=100→'L3'、>=50→'L2'、其余→'L1'）；
+// 无 roleLevel 时回退 ROLE_TO_LEVEL[roleKey]；都无则 'L1'（最小权限兜底）。
+function levelKeyForRole(role, roleLevel) {
+  if (roleLevel != null) {
+    if (roleLevel >= 100) return 'L3';
+    if (roleLevel >= 50) return 'L2';
+    return 'L1';
+  }
   if (role && ROLE_TO_LEVEL[role]) return ROLE_TO_LEVEL[role];
   return 'L1';
 }
@@ -177,8 +259,8 @@ export function enhanceSystemPrompt(base, opts = {}) {
 }
 
 // 按角色过滤工具集：低于工具所需等级的工具被剔除；结果每个工具带 level 标签
-export function getToolsForRole(role, tools) {
-  const levelKey = levelKeyForRole(role);
+export function getToolsForRole(role, tools, roleLevel) {
+  const levelKey = levelKeyForRole(role, roleLevel);
   return (tools || [])
     .map((t) => {
       const name = t && (t.function ? t.function.name : t.name);
@@ -189,8 +271,8 @@ export function getToolsForRole(role, tools) {
 }
 
 // 执行前权限校验：返回 { allowed: boolean, missing: string[], level: string }
-export function assertToolAllowed(role, toolName) {
-  const levelKey = levelKeyForRole(role);
+export function assertToolAllowed(role, toolName, roleLevel) {
+  const levelKey = levelKeyForRole(role, roleLevel);
   const required = getToolLevel(toolName);
   if (!isToolAllowedForLevel(toolName, levelKey)) {
     return {
@@ -235,7 +317,35 @@ export function buildRoleSystemPrompt(role, userId) {
     '[此时输出第二个 write_clip 工具调用]',
     '<think>两条数据都已创建完成，可以告知用户结果。</think>',
     '[此时输出最终文字回答]',
-  ].join('');
+    '',
+    '【操作必须调用工具 · 禁止只说不做】',
+    '- 当用户请求「执行 / 创建 / 删除 / 修改 / 更新 / 收藏 / 标记 / 上传 / 移动 / 排序 / 保护」等任何会产生实际效果的操作时，你必须调用对应工具来真正执行，绝不能只回复「好的，我来…」这类文字而不调用工具。',
+    '- 遇到删除、修改等操作（如"删除收藏夹 test8 和 test9"或"删除剪贴板条目"），若你尚未掌握具体 UUID/ID，必须首先调用 get_collections / get_ai_context / search_clips 等只读查询工具检索获取准确的 collection_id 或 clip_ids，随后再调用 delete_collection / batch_delete / destroy_clips 等工具真正执行操作。严禁凭空臆造 UUID！',
+    '- 在没有实际发出 tool_call 并获得 tool_result 成功返回前，严禁在文本中向用户宣称「已成功删除」或虚构删除结果汇总表格。',
+    '- 「说了」不等于「做了」。没有对应的 tool_call 且执行成功，就不算完成了用户的诉求。',
+    '- 如果用户连续追问，但你此前仍没有调用工具，说明遗漏了操作：本消息你必须先调用对应工具执行，再汇报结果。普通信息查询（查看/统计/搜索/解释）按需调用只读工具，操作类诉求则必须调写工具。',
+    '- 若不确定该用哪个工具，先说明计划并选择最匹配的工具执行，而不是用文字敷衍。',
+    '- 你能使用的工具见工具清单；找不到合适工具时，明确告知「我没有可执行该操作的对应工具」，而不是假装已执行。',
+    '',
+    '【交互式选择工具规则 · 严禁纯文本伪造卡片】',
+    '- 当用户要求你提供选项供其选择（例如"给我选项让我做出选择去删除"、"列出选项让我选"）、或者面临多个候选目标需要用户决策时，你必须调用 `ask_user` 工具在界面上弹出结构化的交互选择卡片供用户直接点击，绝不能在纯文本中罗列选项等待用户打字！',
+    '- 严禁在纯文本中宣称「已在应用内弹出交互式选项卡片」「现在用交互卡片让你选择」「下面用交互卡片让你选择」或「请在前端点击选择」却不发出 `ask_user` 工具调用！每次提供选项必须真正发出 `ask_user` tool_call。',
+    '- 严禁在纯文本中写下等待性话术然后停止，前端绝不会根据你输出的文本自动生成卡片，卡片必须由你调用 `ask_user` 函数生成！',
+    '- 流程规范：先调用只读查询工具（如 get_collections / search_clips 等）获取所有候选项，紧接着在下一轮立即调用 `ask_user` 工具，把选项以数组形式传入（如 options: ["只删除 test3.1", "只删除 test3.2", "全部删除 (test3.1 + test3.2)", "取消"]）。',
+    '- 如果用户要求你替他执行（如"你帮我选"、"继续上面的操作"），你应该直接根据上下文调用具体业务工具（如 delete_collection）执行操作，严禁在文本中重复空转或罗列选项。',
+    '- 在修改模板或条目正文前，如涉及大幅度内容重构，可优先调用 `show_diff_preview` 生成变更对比卡片供用户审阅。',
+    '- 当用户要求查重、清理重复剪贴板时，主动调用 `find_duplicates` 扫描重复记录并配合 `ask_user` 协助用户一键去重。',
+    '- 当用户要求将多条内容归类/移动到某个收藏夹时，优先调用 `batch_move_to_collection` 进行一次性批量移动。',
+    '- 当用户要求导出数据或生成报告时，调用 `export_data` 生成结构化导出内容（Markdown/JSON/CSV/Text）。',
+    '',
+    '【工具返回错误时的处理】',
+    '- 工具返回 `{ error, code }` 表示失败。根据错误码决定下一步：',
+    '  · 参数类错误（INVALID_* / MISSING_* / *_REQUIRED）：自行修正参数后重试一次；',
+    '  · 未找到类错误（*_NOT_FOUND）：先调用只读工具（如 get_collections / get_clip_meta / search_clips）核实真实 ID，再重试；',
+    '  · 权限类错误（ROLE_FORBIDDEN / FORBIDDEN）：不要硬试，如实告知用户你无权执行该操作；',
+    '  · 并发/确认类（CONCURRENT_CONFIRM_REQUEST / REJECTED_BY_USER）：向用户说明需先处理已有的待确认操作或等待其超时；',
+    '  · 其它持久性错误：如实把错误反馈给用户，并给出可操作的下一步建议，而不是重复空转或把失败描述成成功。',
+  ].join('\n');
 
   if (r === 'super_admin') {
     return [

@@ -94,6 +94,7 @@ export function useAiConversations() {
         role: m.role,
         content: m.content || '',
         thinking: m.thinking || undefined,
+        thinkingSegments: m.thinkingSegments || m.metadata?.thinkingSegments || undefined,
         toolCalls: m.tool_calls || m.toolCalls || undefined,
         toolResults: m.tool_results || m.toolResults || undefined,
         // 保留原始 created_at，供 saveMessages 全量重插后仍能稳定按时间排序

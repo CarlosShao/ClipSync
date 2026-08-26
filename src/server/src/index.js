@@ -11,6 +11,7 @@ import { getRedisClient } from './middleware/rateLimiter.js';
 import config from './config.js';
 import { setupWebSocket, gracefulShutdown as gracefulShutdownWs } from './ws/server.js';
 import { authenticateToken } from './middleware/auth.js';
+import superAdminAudit from './middleware/superAdminAudit.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { metricsMiddleware, getMetrics, getPrometheusMetrics } from './middleware/metrics.js';
 import { requestLogger, errorLogger, logger } from './utils/logger.js';
@@ -434,7 +435,7 @@ app.use('/api/search-history', authenticateToken, apiLimiter, csrfProtection, (r
 // 注意：aiProviders/aiChat 路由内部自带 /providers、/chat 前缀，故挂在 /api/ai 即可；
 // 而 aiConversationsRoutes 内部以根 / 定义（list=GET /、create=POST /、detail=GET /:id…），
 // 必须挂在 /api/ai/conversations 才能与前端调用的 /api/ai/conversations 对齐，否则全部 404。
-app.use('/api/ai', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+app.use('/api/ai', authenticateToken, apiLimiter, csrfProtection, superAdminAudit, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, aiProvidersRoutes, aiChatRoutes);

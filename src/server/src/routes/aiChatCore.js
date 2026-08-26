@@ -10,9 +10,10 @@
  * - 通过 agentId 给所有增量打标（多代理路由用），单代理传 null。
  * - 上游异常（含 180s 超时 AbortError）向上抛出，由调用方决定降级策略。
  */
-import logger from '../utils/logger.js'
-import { buildUpstreamChat, getPreset, getContextWindow, safeUpstreamFetch } from '../utils/aiProviders.js'
-import { collectToolCallsFromStream, handleToolCalls } from './aiStream.js'
+import { logger } from '../utils/logger.js'
+import { buildUpstreamChat, resolveFamily, getContextWindow, safeUpstreamFetch } from '../utils/aiProviders.js'
+import { convertMessagesForAnthropic } from '../utils/messageConverter.js'
+import { collectToolCallsFromStream, collectToolCallsFromResponsesStream, collectToolCallsFromAnthropicStream, handleToolCalls } from './aiStream.js'
 import { pool } from '../db/pool.js'
 
 /**
@@ -141,38 +142,81 @@ export async function manualCompactConversation({ conversationId, userId, provid
 /**
  * 打开上游 SSE 流并复用统一的错误处理（超时 / 状态码）。
  * 抽出供 runChatLoop 与多代理协调器共用，避免两套 fetch 逻辑漂移。
- * @returns {{ reader: ReadableStreamDefaultReader, decoder: TextDecoder }}
+ *
+ * 超时语义：每个上游调用独立计时（timeoutMs），与外部 abortSignal 关联：
+ * - 外部 abortSignal 中断（前端断开/整体取消）→ 立即中止本次调用
+ * - timeoutMs 到期（覆盖 fetch + 流读取全程）→ 抛 UPSTREAM_TIMEOUT
+ * 返回 { reader, decoder, cleanup }：调用方读完整流后必须调用 cleanup()
+ * 释放 per-call 定时器，避免“等待用户确认”等轮次间隙被算入下一次超时。
+ *
+ * @param timeoutMs 单次上游调用（fetch+读流）的超时毫秒数，默认 180s
+ * @returns {{ reader: ReadableStreamDefaultReader, decoder: TextDecoder, cleanup: Function }}
  */
-export async function openUpstreamStream(upstream, abortSignal, label = 'Upstream') {
+export async function openUpstreamStream(upstream, abortSignal, label = 'Upstream', timeoutMs = 180_000) {
+  const perCallCtrl = new AbortController()
+  // 外部中断并联：前端断开 / 请求整体取消时，立即中止本次调用
+  const onOuterAbort = () => perCallCtrl.abort()
+  if (abortSignal?.aborted) perCallCtrl.abort()
+  else abortSignal?.addEventListener?.('abort', onOuterAbort)
+  const perCallTimer = setTimeout(() => perCallCtrl.abort(), timeoutMs)
+  // 读流阶段由调用方显式调用，确保 per-call 计时覆盖到流读取结束
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    clearTimeout(perCallTimer)
+    abortSignal?.removeEventListener?.('abort', onOuterAbort)
+  }
+
   let upstreamRes
   try {
     upstreamRes = await safeUpstreamFetch(upstream.url, {
       method: 'POST',
       headers: { ...upstream.headers, Accept: 'text/event-stream' },
       body: JSON.stringify(upstream.body),
-      signal: abortSignal,
+      signal: perCallCtrl.signal,
     })
   } catch (fetchErr) {
+    release()
     if (fetchErr?.name === 'AbortError') throw new Error('UPSTREAM_TIMEOUT')
     throw fetchErr
   }
   if (!upstreamRes.ok || !upstreamRes.body) {
+    release()
     const text = await upstreamRes.text().catch(() => '')
     throw new Error(`${label} error: ${upstreamRes.status} ${text.slice(0, 1500)}`)
   }
-  return { reader: upstreamRes.body.getReader(), decoder: new TextDecoder() }
+  return { reader: upstreamRes.body.getReader(), decoder: new TextDecoder(), cleanup: release }
 }
 
 /**
- * 检测模型是否“只说不做”：文字里表示还要调用工具，但没有实际输出 tool_calls。
- * 用于 runChatLoop 的安全网，避免模型说完“让我再调用 X”就直接结束流。
+ * 检测模型是否"只说不做"：文字里表示还要调用工具，但没有实际输出 tool_calls。
+ * 用于 runChatLoop 的安全网，避免模型说完"让我再调用 X"就直接结束流。
+ * 导出给 aiOrchestrator.js 等其他模块使用。
  */
-function looksLikeToolIntent(content) {
+export function looksLikeToolIntent(content) {
   if (!content || typeof content !== 'string') return false
   const c = content.toLowerCase()
-  // 中英文常见"我要调用工具"意图表达
-  const intentKeywords = ['调用', 'call', '使用工具', 'use the tool', '使用', 'use', '让我', 'let me', '我要', 'i will', 'i need to', '执行', 'execute']
-  return intentKeywords.some((k) => c.includes(k))
+
+  // 1. 如果包含交互卡片相关的伪承诺（无论什么前后缀），直接判定为有未发出的卡片意图
+  if (/(?:交互|选项|选择)卡片/i.test(c)) return true
+
+  // 2. 如果包含让用户选择/挑选/确认要操作的目标（如"让你选择要删除"、"请选择要删除"、"请在下方选择"）
+  if (/(?:让你|供你|请你|请您|请|由你|由您)?(?:在下方|从中)?(?:选择|挑选|勾选)(?:要|需)?(?:删除|操作|执行|处理)/i.test(c)) return true
+  if (/(?:请|请您)?(?:做出|进行|完成)(?:选择|确认)[：:]?/i.test(c)) return true
+  if (/请选择[：:]/i.test(c)) return true
+
+  // 3. 排除纯过去时态的成功汇报（但如果包含卡片/选择词，上述 1、2 已经拦截）
+  const completedPhrases = ['已成功', '已创建', '已删除', '已完成', '已查询', '已更新', 'successfully created', 'successfully deleted', 'has been', 'have been', '已为您']
+  if (completedPhrases.some((p) => c.includes(p)) && !c.includes('弹出') && !c.includes('点击选择') && !c.includes('卡片') && !c.includes('选择')) return false
+
+  // 4. 将来时工具调用意图
+  const strictIntentPatterns = [
+    /(?:让我|我来|准备|将要|需要|正在|现在|下面)(?:为你|为您|用)?(?:调用|使用|执行|通过|发起|弹出)\s*([a-z0-9_]+|工具|接口|函数|操作|卡片)/i,
+    /(?:请在前端点击选择|你选好后告诉我，我立即执行)/i,
+    /(?:let me|i will|i need to|i'm going to)\s+(?:call|use|execute)\s+(?:the\s+)?([a-z0-9_]+|tool|function|api)/i,
+  ]
+  return strictIntentPatterns.some((p) => p.test(c))
 }
 
 /**
@@ -345,11 +389,13 @@ export async function runChatLoop({
   allowCompress = true,
   conversationId = null,
 }) {
-  const preset = getPreset(providerRow.provider)
+  // 协议族：custom 供应商按 api_format 决定（openai/anthropic/responses），预设走内置 family。
+  // 后续 buildUpstreamChat 用同一口径决定请求结构，这里决定用哪个流式解析器与 thinking 参数。
+  const family = resolveFamily(providerRow.provider, providerRow.api_format)
   let currentMessages = [...messages]
-  // 安全网计数器：防止模型“只说要调工具”却不 emit tool_calls 导致任务半途而废
+  // 安全网计数器：防止模型"只说要调工具"却不 emit tool_calls 导致任务半途而废
   let continuationRetries = 0
-  const MAX_CONTINUATION_RETRIES = 1
+  const MAX_CONTINUATION_RETRIES = 2
   // 上一轮真实 prompt token 数（来自上游 usage）；用于估计当前上下文占用、决定是否压缩。
   let lastPromptTokens = 0
 
@@ -381,15 +427,25 @@ export async function runChatLoop({
     const chatOptions = { ...options }
 
     // thinking 支持：仅 Anthropic 协议需要显式 thinking 参数（OpenAI 兼容族由 reasoning_content 自动下发）
-    if (thinkingEnabled && preset?.family === 'anthropic') {
+    if (thinkingEnabled && family === 'anthropic') {
       chatOptions.thinking = true
+      chatOptions.thinkingStrength = thinkingStrength
       chatOptions.thinkingBudget = thinkingStrength === 'low' ? 1024 : thinkingStrength === 'high' ? 8192 : 4096
     }
 
     // 工具集：传入非空才挂工具 + tool_choice=auto；synthesis 传 [] 即物理禁用工具。
+    // 安全网重试机制：随着 continuationRetries 增加，tool_choice 逐步强制化，倒逼模型真的输出 tool_calls：
+    //   0 次 → auto（按默认策略）
+    //   1 次 → auto，但追加 system 提醒（见下方安全网逻辑）
+    //   2 次 → required/any，强制模型必须调用工具
     if (tools && tools.length) {
       chatOptions.tools = tools
-      chatOptions.tool_choice = 'auto'
+      if (continuationRetries >= 2) {
+        chatOptions.tool_choice = family === 'anthropic' ? 'any' : 'required'
+        logger.info('[AI] safety net: forcing tool_choice', chatOptions.tool_choice, 'continuationRetries=', continuationRetries)
+      } else {
+        chatOptions.tool_choice = 'auto'
+      }
     }
 
     // ===== 上下文自动压缩门控（异步，不阻塞当前任务）=====
@@ -458,12 +514,27 @@ export async function runChatLoop({
       apiKey,
       messages: currentMessages,
       options: chatOptions,
+      apiFormat: providerRow.api_format,
     })
 
-    const { reader, decoder } = await openUpstreamStream(upstream, abortSignal, 'Upstream')
+    const { reader, decoder, cleanup: releaseRound } = await openUpstreamStream(upstream, abortSignal, 'Upstream')
 
-    // 流式发送 thinking 和 content，同时收集 tool_calls
-    const response = await collectToolCallsFromStream(reader, decoder, sendDelta, logChunk)
+    // 流式发送 thinking 和 content，同时收集 tool_calls。
+    // Responses 协议走专用解析器（output_text / reasoning_summary_text / function_call_arguments / completed）
+    // Anthropic Messages 协议（step-explore 等兼容网关）走独立解析器（message_* / content_block_* 事件）
+    let response
+    try {
+      if (family === 'responses') {
+        response = await collectToolCallsFromResponsesStream(reader, decoder, sendDelta, logChunk)
+      } else if (family === 'anthropic') {
+        response = await collectToolCallsFromAnthropicStream(reader, decoder, sendDelta, logChunk)
+      } else {
+        response = await collectToolCallsFromStream(reader, decoder, sendDelta, logChunk)
+      }
+    } finally {
+      // 读完本轮流后立即释放 per-call 定时器：工具执行 / 等待用户确认的间隙不计入超时
+      if (typeof releaseRound === 'function') releaseRound()
+    }
 
     // 下发 token 用量元信息（前端圆环展示上下文占用百分比）。
     // 取本轮 usage 的最新值；前端保留「最近一次」调用，即最能代表当前上下文大小的数值。
@@ -494,14 +565,20 @@ export async function runChatLoop({
       })
     }
 
-    // 安全网：模型写了"我要调用 X"但最终没有输出 tool_calls。
-    // 追加 system 提醒并再试一轮（限一次），避免任务半途而废。
+    // 安全网：首轮（尚未调用过任何工具）模型在正文中写了"让我调用工具"等将来意图却未发出 tool_calls 时触发提醒。
+    // 注意：
+    // 1. 如果已执行过工具（round > 0），则当前轮次为工具结果汇报与总结，绝不触发"只说不做"拦截；
+    // 2. 不检查 response.thinking，因为思维链中本就会讨论历史行为与操作推演。
+    const contentHasIntent = round === 0 && looksLikeToolIntent(response.content)
     if (
       response.toolCalls.length === 0 &&
       tools && tools.length > 0 &&
       continuationRetries < MAX_CONTINUATION_RETRIES &&
-      looksLikeToolIntent(response.content)
+      contentHasIntent
     ) {
+      logger.info('[AI] safety net triggered: tool intent detected in content but no tool_calls.',
+        'content_has_intent:', contentHasIntent,
+        'content_snippet:', (response.content || '').substring(0, 100))
       continuationRetries++
       currentMessages.push({ role: 'assistant', content: response.content || '' })
       currentMessages.push({
@@ -511,21 +588,8 @@ export async function runChatLoop({
       continue
     }
 
-    // 有 tool calls：先检查是否有 think 标签（ReAct 范式要求）
+    // 有 tool calls：直接执行工具调用（包含破坏性确认门控与审计）
     if (response.toolCalls.length > 0) {
-      // 如果有工具调用但没有 think，要求模型补充推理过程
-      if (!hasThoughtTag(response.content)) {
-        continuationRetries++
-        // 超过重试次数或已经重试过，直接执行（避免无限循环）
-        if (continuationRetries < MAX_CONTINUATION_RETRIES + 2) {
-          currentMessages.push({ role: 'assistant', content: response.content || '' })
-          currentMessages.push({
-            role: 'system',
-            content: '【ReAct 格式要求】你刚才调用了工具但没有输出 <think> 标签。请补充你的推理过程：说明你要做什么、为什么要这样做，然后再输出工具调用。格式示例：<think>我需要查询剪贴板统计信息来回答用户的问题</think>',
-          })
-          continue
-        }
-      }
       // 真正调用了工具，重置"只说不做"重试计数
       continuationRetries = 0
       const toolResults = await handleToolCalls(response.toolCalls, userId, sendDelta, agentId, role)
@@ -543,6 +607,7 @@ export async function runChatLoop({
         })),
       })
       currentMessages.push(...toolResults)
+
       continue
     }
 

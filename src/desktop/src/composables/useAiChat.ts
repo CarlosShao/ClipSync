@@ -67,6 +67,9 @@ export function useAiChat() {
   const settings = ref<AiSettings | null>(null) // 用户 AI 偏好（DB 持久化）
   const messages = ref<ChatMessage[]>([])
   const isStreaming = ref(false)
+  // 流健康检查：记录最后一次活动时间，超时强制重置 isStreaming
+  const streamLastActivityAt = ref(0)
+  const STREAM_HEALTH_TIMEOUT = 120_000 // 120秒无活动则视为卡死
   const error = ref('')
   // 上下文用量（token 计数，由后端 usage 事件下发；保留最近一次调用，代表当前上下文占用）
   const contextUsage = ref<ContextUsage | null>(null)
@@ -95,6 +98,9 @@ export function useAiChat() {
     argsSummary: string
     impact: string
   } | null>(null)
+  // 当前会话内免确认白名单（工具名集合或始终允许全部）
+  const sessionAllowedTools = ref<Set<string>>(new Set())
+  const sessionAlwaysAllowAll = ref(false)
   // 当前正在向后端提交确认结果（避免连点导致重复请求）
   const approving = ref(false)
   let compressProgressTimer: number | undefined
@@ -280,7 +286,17 @@ export function useAiChat() {
 
   async function send(content: string, options: SendOptions = {}) {
     const text = content.trim()
-    if (!text || isStreaming.value) return
+    // 健康检查：如果 isStreaming 卡住超过 30 秒，强制重置（防止异常断流后无法发送）
+    if (isStreaming.value) {
+      if (Date.now() - streamLastActivityAt.value > STREAM_HEALTH_TIMEOUT) {
+        console.warn('[useAiChat] isStreaming stuck for >30s, forcing reset')
+        isStreaming.value = false
+        abortCtrl.value?.abort()
+      } else {
+        return
+      }
+    }
+    if (!text) return
     // 新一轮发送：清空上一次的图片重复提示与上下文压缩提示
     duplicateImageNotice.value = null
     compressProgress.value = null
@@ -356,9 +372,149 @@ export function useAiChat() {
     // 注意：若用户在流式进行中途切换历史对话，messages.value 会被替换，但 assistantMsg
     // 仍指向旧 proxy。因此在 loadConversation 时要先中止当前流，防止旧 proxy 继续被改。
     const assistantMsg = messages.value[messages.value.length - 1]
+
+    // ===== 思考 → 文本 的时序缓冲（解决“思考还没完正文抢着输出”）=====
+    // 当 thinking 仍在活跃输出时，text 增量先暂存到 textBuffer，
+    // 直到 thinking 静默 THINKING_SILENCE_MS 毫秒后再统一 flush 到 content 显示，
+    // 从而在视觉上实现“先完整思考、再输出正文”的节奏。
+    const THINKING_SILENCE_MS = 600
+    // 每个 bucket（主气泡 / 子代理 run）对应一个缓冲单元
+    interface TextBufferSlot {
+      buffer: string
+      lastThinkingAt: number
+      flushTimer: number | null
+    }
+    const bufferByBucket = new WeakMap<object, TextBufferSlot>()
+    function getOrCreateSlot(bucket: object): TextBufferSlot {
+      let s = bufferByBucket.get(bucket)
+      if (!s) {
+        s = { buffer: '', lastThinkingAt: 0, flushTimer: null }
+        bufferByBucket.set(bucket, s)
+      }
+      return s
+    }
+    // 思考增量到达 → 记录心跳时间；若之前挂了 flushTimer 则取消（思考还在继续，不要释放文本）
+    function markThinkingHeartbeat(bucket: object) {
+      const slot = getOrCreateSlot(bucket)
+      slot.lastThinkingAt = Date.now()
+      if (slot.flushTimer !== null) {
+        window.clearTimeout(slot.flushTimer)
+        slot.flushTimer = null
+      }
+    }
+    // 判断当前思考是否处于活跃期：thinkingActive=true 且 最近收到过思考增量
+    function isThinkingStillLive(bucket: any): boolean {
+      if (bucket.thinkingActive === false) return false
+      const slot = bufferByBucket.get(bucket)
+      if (!slot) return false
+      return Date.now() - slot.lastThinkingAt < 1200
+    }
+    // 把 text 增量追加到 bucket.content；若思考仍在活跃则先存 buffer 挂定时释放
+    function appendTextDelta(bucket: any, delta: string) {
+      if (!delta) return
+      const slot = getOrCreateSlot(bucket)
+      if (isThinkingStillLive(bucket)) {
+        // 思考仍在活跃输出 → 先缓冲，等静默期后再一次性显示
+        slot.buffer += delta
+        if (slot.flushTimer === null) {
+          slot.flushTimer = window.setTimeout(() => {
+            slot.flushTimer = null
+            // 思考静默期结束且无新思考 token：标记思考结束、封段并释放正文
+            if (bucket.thinkingActive !== false) {
+              bucket.thinkingActive = false
+              sealThinkingSegment(bucket)
+            }
+            flushTextBuffer(bucket)
+          }, 1250)
+        }
+      } else {
+        // 思考已暂停/结束 → 确保 buffer 释放并追加
+        flushTextBuffer(bucket)
+        ;(bucket as any).content = (bucket.content || '') + delta
+      }
+    }
+    // 强制立刻释放缓冲（工具调用时/流结束时必须调用，避免内容卡在 buffer 里丢失）
+    function flushTextBuffer(bucket: any) {
+      const slot = bufferByBucket.get(bucket)
+      if (!slot || !slot.buffer) return
+      if (slot.flushTimer !== null) {
+        window.clearTimeout(slot.flushTimer)
+        slot.flushTimer = null
+      }
+      ;(bucket as any).content = (bucket.content || '') + slot.buffer
+      slot.buffer = ''
+    }
+    // 对所有已知 bucket 统一 flush（用于 onDone / onError 兜底清理）
+    function flushAllTextBuffers() {
+      flushTextBuffer(assistantMsg)
+      for (const run of assistantMsg.agentRuns || []) flushTextBuffer(run)
+    }
+
+    // ===== 多轮思考分段管理（解决"调工具前的思考"与"工具执行/拒绝后的思考"混在一段或丢失）=====
+    // 约定：工具调用（tool_call 到达）时把当前思考段"封段"（closed: true, isLive: false, endedAt: now），
+    // 之后新一轮 thinking 增量（如工具执行后的总结或第二阶段思考）开一个新段。
+    // 渲染时（AiMessage.vue）按 segments 逐段独立展示，段间自然分隔。
+    // 为兼容旧字段，仍同步维护 bucket.thinking（全量拼接串，供 AiProcessChips 总秒数等使用）。
+    function appendThinkingDelta(bucket: any, delta: string, startedAtNow: number) {
+      if (!delta) return
+      // 兼容字段：全量拼接（保持历史行为，供 chips / 摘要用）
+      bucket.thinking = (bucket.thinking || '') + delta
+      // 段管理
+      if (!bucket.thinkingSegments) bucket.thinkingSegments = []
+      const segs: any[] = bucket.thinkingSegments
+      const last = segs[segs.length - 1]
+      if (last && last.closed !== true) {
+        last.text += delta
+        last.isLive = true
+      } else {
+        segs.push({
+          id: 'think-seg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+          text: delta,
+          startedAt: startedAtNow,
+          closed: false,
+          isLive: true,
+        })
+      }
+      // 若主动切段过（thinkingActive 曾是 false 又变 true），记录新一轮起始时间
+      bucket.thinkingStartedAt ??= startedAtNow
+      bucket.thinkingActive = true
+    }
+    // 封段：工具调用开始时调用，标记当前段结束，后续 thinking 开新段
+    function sealThinkingSegment(bucket: any) {
+      if (!bucket || !bucket.thinkingSegments || bucket.thinkingSegments.length === 0) return
+      const segs: any[] = bucket.thinkingSegments
+      const last = segs[segs.length - 1]
+      if (last && last.closed !== true) {
+        last.closed = true
+        last.isLive = false
+        if (!last.endedAt) last.endedAt = Date.now()
+      }
+    }
+    function sealAllThinkingSegments() {
+      sealThinkingSegment(assistantMsg)
+      if (assistantMsg.thinkingSegments) {
+        for (const seg of assistantMsg.thinkingSegments) {
+          seg.closed = true
+          seg.isLive = false
+          if (!seg.endedAt) seg.endedAt = Date.now()
+        }
+      }
+      for (const run of assistantMsg.agentRuns || []) {
+        sealThinkingSegment(run)
+        if (run.thinkingSegments) {
+          for (const seg of run.thinkingSegments) {
+            seg.closed = true
+            seg.isLive = false
+            if (!seg.endedAt) seg.endedAt = Date.now()
+          }
+        }
+      }
+    }
+
     // 智能标题：如果这是新对话的首条消息，用用户消息内容自动生成标题
     const isFirstMessageInNewConv = !conv.currentConversation.value?.message_count || conv.currentConversation.value.message_count === 0
     isStreaming.value = true
+    streamLastActivityAt.value = Date.now() // 健康检查：记录流开始时间
     // 新一轮对话开始：重置上下文用量，圆环回到 0%
     contextUsage.value = null
 
@@ -479,7 +635,9 @@ export function useAiChat() {
       inThink: false,
       currentTag: '' as '' | 'think' | 'Thought',
     }
-    function processThinkContent(delta: string): { textDelta: string; thinkingDelta: string } {
+    const MAX_TAG_PREFIX_LEN = 12
+
+    function processThinkContent(delta: string, isFinal = false): { textDelta: string; thinkingDelta: string } {
       thinkState.raw += delta
       let textDelta = ''
       let thinkingDelta = ''
@@ -511,8 +669,12 @@ export function useAiChat() {
           }
 
           if (idx === -1) {
-            textDelta += thinkState.raw.slice(thinkState.pos)
-            thinkState.pos = thinkState.raw.length
+            // 未找到开启标签：如果不是最后终结块，保留末尾至多 MAX_TAG_PREFIX_LEN 个字符，防拆包漏判
+            const safeEnd = isFinal ? thinkState.raw.length : Math.max(thinkState.pos, thinkState.raw.length - MAX_TAG_PREFIX_LEN)
+            if (safeEnd > thinkState.pos) {
+              textDelta += thinkState.raw.slice(thinkState.pos, safeEnd)
+              thinkState.pos = safeEnd
+            }
             break
           }
           textDelta += thinkState.raw.slice(thinkState.pos, idx)
@@ -525,8 +687,12 @@ export function useAiChat() {
           const closeLen = closeTag.length
           const idx = thinkState.raw.indexOf(closeTag, thinkState.pos)
           if (idx === -1) {
-            thinkingDelta += thinkState.raw.slice(thinkState.pos)
-            thinkState.pos = thinkState.raw.length
+            // 未找到结束标签：如果不是最后终结块，保留末尾至多 MAX_TAG_PREFIX_LEN 个字符
+            const safeEnd = isFinal ? thinkState.raw.length : Math.max(thinkState.pos, thinkState.raw.length - MAX_TAG_PREFIX_LEN)
+            if (safeEnd > thinkState.pos) {
+              thinkingDelta += thinkState.raw.slice(thinkState.pos, safeEnd)
+              thinkState.pos = safeEnd
+            }
             break
           }
           thinkingDelta += thinkState.raw.slice(thinkState.pos, idx)
@@ -592,6 +758,7 @@ export function useAiChat() {
         signal: controller.signal,
         onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => {
           lastActivityAt = Date.now()
+          streamLastActivityAt.value = Date.now() // 健康检查：持续刷新活动时间
           // token 用量事件：覆盖为最近一次（最代表当前上下文大小）
           if (meta?.usage) {
             const u = meta.usage
@@ -625,6 +792,11 @@ export function useAiChat() {
           }
           // 破坏性工具确认门控（Agent-C）：后端请求用户放行，弹确认卡片等待允许/拒绝。
           if (mm?.type === 'confirm_tool_action') {
+            if (sessionAlwaysAllowAll.value || (mm.tool && sessionAllowedTools.value.has(mm.tool))) {
+              // 命中本会话白名单：直接自动批准放行，不弹确认卡片打断用户
+              approveToolAction(mm.requestId, true).catch(() => {})
+              return
+            }
             pendingConfirm.value = {
               requestId: mm.requestId,
               tool: mm.tool,
@@ -653,40 +825,66 @@ export function useAiChat() {
 
           if (thinkingNative) {
             const bucket = target || assistantMsg
-            if (!bucket.thinkingStartedAt) bucket.thinkingStartedAt = Date.now()
-            bucket.thinking = (bucket.thinking || '') + thinkingNative
+            // 多轮流式保护：上一轮工具调用把 thinkingActive=false 了，
+            // 但新的一轮模型又开始输出 thinking（工具执行后的反思/规划），
+            // 需要重新激活思考状态，避免 UI 显示"思考完成"但内容仍在继续写入
+            if (bucket.thinkingActive === false) {
+              bucket.thinkingActive = true
+              bucket.thinkingStartedAt = Date.now()
+            }
+            appendThinkingDelta(bucket, thinkingNative, Date.now())
+            // 思考增量到达 → 更新心跳，推迟后续文本的 flush 时机
+            markThinkingHeartbeat(bucket)
           }
 
           if (d) {
             const res = processThinkContent(d)
             const bucket = target || assistantMsg
-            ;(bucket as any).content = (bucket.content || '') + res.textDelta
+            // 使用时序缓冲：思考活跃时先暂存 text，静默后再统一释放，
+            // 解决“思考折叠面板还在打字，下方正文就抢着出来”的观感问题
+            appendTextDelta(bucket, res.textDelta)
             if (res.thinkingDelta && !nativeReasoning) {
-              if (!bucket.thinkingStartedAt) bucket.thinkingStartedAt = Date.now()
-              bucket.thinking = (bucket.thinking || '') + res.thinkingDelta
+              // 同上：多轮流式保护
+              if (bucket.thinkingActive === false) {
+                bucket.thinkingActive = true
+                bucket.thinkingStartedAt = Date.now()
+              }
+              appendThinkingDelta(bucket, res.thinkingDelta, Date.now())
+              markThinkingHeartbeat(bucket)
             }
-            // 主答案（未路由给子代理）开始输出 → 思考阶段结束，规划态卡片立即收敛
-            if (target === null && res.textDelta) {
-              assistantMsg.thinkingActive = false
-              convergePlanning()
-            }
+            // 注意：不因为开始输出 text 就立即设置 thinkingActive=false
+            // Step Explore 等 Anthropic 协议模型可能交错输出 thinking 和 text blocks，
+            // 过早置为 false 会导致 thinking UI 显示为"思考完成"而实际仍在继续输出。
+            // thinkingActive=false 只在：1) 工具调用时（见下方 toolCall 分支）、2) 流结束 onDone 触发时设置
           }
 
           if (toolCall) {
             // 工具一旦开始调用，对应气泡的思考阶段即视为结束
             const bucket = target || assistantMsg
             bucket.thinkingActive = false
+            // 封段：当前思考（"我要调用工具"的规划）结束，拒绝/结果后的新一轮思考独立成段
+            sealThinkingSegment(bucket)
+            // 工具调用卡片必须立即显示 → 强制释放缓冲中的正文，避免被卡在静默期里
+            flushTextBuffer(bucket)
             if (!bucket.toolCalls) bucket.toolCalls = []
+            // 关联当前所属的思考段索引
+            const currentSegIdx = Math.max(0, (bucket.thinkingSegments?.length || 1) - 1)
+            const tcWithSeg = {
+              ...toolCall,
+              segIndex: (toolCall as any).segIndex ?? currentSegIdx,
+            }
             const existing = bucket.toolCalls.find((tc) => tc.id === toolCall.id)
             if (existing) {
               existing.arguments = (existing.arguments || '') + (toolCall.arguments || '')
+              if ((existing as any).segIndex === undefined) (existing as any).segIndex = currentSegIdx
             } else {
-              bucket.toolCalls.push(toolCall)
+              bucket.toolCalls.push(tcWithSeg)
             }
           }
 
           if (toolResult) {
             const bucket = target || assistantMsg
+            sealThinkingSegment(bucket)
             if (!bucket.toolResults) bucket.toolResults = []
             const existing = bucket.toolResults.find((tr) => tr.tool_call_id === toolResult.tool_call_id)
             if (existing) {
@@ -696,12 +894,23 @@ export function useAiChat() {
             }
             
             // 工具执行完成后触发数据刷新（实现无感刷新）
-            // 找到对应的 toolCall 获取工具名称
-            const toolCall = bucket.toolCalls?.find((tc) => tc.id === toolResult.tool_call_id)
-            if (toolCall) {
+            // 工具名优先取 tool_result 自带的 name（coordinator 路径只发 tool_result、不发
+            // tool_call 事件，此时 toolCalls 里匹配不到对应项）；取不到再回退到 tool_call 匹配。
+            const toolName =
+              toolResult.name ||
+              bucket.toolCalls?.find((tc) => tc.id === toolResult.tool_call_id)?.name
+            if (toolName) {
               // 延迟 300ms 触发，等待后端数据落盘完成
               setTimeout(() => {
-                triggerRefreshAfterTool(toolCall.name, toolResult.content)
+                triggerRefreshAfterTool(toolName, toolResult.content)
+                // 收藏夹工具完成后，额外派发 clipsync:collections-updated 事件
+                // useCollections / collectionStore 都监听此事件，确保双侧同步
+                const collectionTools = ['create_collection', 'create_sub_collection']
+                if (collectionTools.includes(toolName)) {
+                  window.dispatchEvent(new CustomEvent('clipsync:collections-updated', {
+                    detail: { reason: 'ai-tool', tool: toolName }
+                  }))
+                }
               }, 300)
             }
           }
@@ -711,20 +920,47 @@ export function useAiChat() {
           const last = messages.value[messages.value.length - 1]
           if (last && last.role === 'assistant') {
             last.isError = true
+            last.thinkingActive = false
+            for (const run of last.agentRuns || []) run.thinkingActive = false
           }
+          sealAllThinkingSegments()
+          // 出错必须释放缓冲，防止文本卡在静默期定时器里永远不显示
+          flushAllTextBuffers()
         },
         onDone: () => {
           /* 流正常结束，最后统一持久化 */
+          // 确保所有 think 标签 buffer 刷完
+          const rem = processThinkContent('', true)
+          if (rem.textDelta) appendTextDelta(assistantMsg, rem.textDelta)
+          if (rem.thinkingDelta && !nativeReasoning) {
+            appendThinkingDelta(assistantMsg, rem.thinkingDelta, Date.now())
+          }
+
+          // 确保 thinkingActive 在流结束时标记为 false，避免前端 UI 显示"思考中"永不结束
+          assistantMsg.thinkingActive = false
+          for (const run of assistantMsg.agentRuns || []) {
+            run.thinkingActive = false
+          }
+          sealAllThinkingSegments()
+          // 流结束：强制释放所有暂存文本缓冲，确保无内容丢失
+          flushAllTextBuffers()
+          // 流结束也触发一次规划卡片收敛
+          convergePlanning()
         },
       })
     } catch (e: any) {
       error.value = String(e?.message || e)
       const last = messages.value[messages.value.length - 1]
       if (last && last.role === 'assistant') last.isError = true
+      // 异常路径也要 flush，避免 catch 块触发时缓冲还挂着定时器未释放
+      flushAllTextBuffers()
     } finally {
       clearInterval(silenceWatchdog)
       clearInterval(agentTimeoutWatchdog)
+      // finally 在 onError/onDone 之后执行，但如果两者都没走到（例如同步抛错+未注册回调），这里兜底 flush
+      flushAllTextBuffers()
       isStreaming.value = false
+      streamLastActivityAt.value = 0 // 健康检查：重置活动时间
       abortCtrl.value = null
       // 收敛所有残留的非终态 agent 卡片（含上一条挂掉的并行请求残留），避免永久转圈
       settleAgentRuns()
@@ -746,9 +982,17 @@ export function useAiChat() {
 
   // 破坏性工具确认门控：允许/拒绝待确认的破坏性工具执行。
   // 允许 → 后端执行并把 tool_result 回传 LLM；拒绝 → 不执行并以 REJECTED_BY_USER 回传。
-  async function approve(allow: boolean) {
+  // scope: 'once' (仅本次) | 'tool' (本会话始终允许当前工具) | 'all' (本会话始终允许所有操作)
+  async function approve(allow: boolean, scope: 'once' | 'tool' | 'all' = 'once') {
     if (!pendingConfirm.value || approving.value) return
     const req = pendingConfirm.value
+    if (allow) {
+      if (scope === 'tool' && req.tool) {
+        sessionAllowedTools.value.add(req.tool)
+      } else if (scope === 'all') {
+        sessionAlwaysAllowAll.value = true
+      }
+    }
     approving.value = true
     const res = await approveToolAction(req.requestId, allow)
     // 无论成功与否都收起确认卡片，避免卡片滞留（后端已按其状态继续推进流）
@@ -853,6 +1097,8 @@ export function useAiChat() {
     duplicateImageNotice,
     compressProgress,
     pendingConfirm,
+    sessionAllowedTools,
+    sessionAlwaysAllowAll,
     approving,
     approve,
     hasProviders,

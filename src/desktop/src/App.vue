@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, defineAsyncComponent } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
+import { useCollectionStore } from '@/stores/collectionStore'
 import { useTheme } from '@/composables/useTheme'
 import { useI18n } from '@/composables/useI18n'
 import { Toaster } from 'vue-sonner'
@@ -9,6 +10,7 @@ import * as tauri from '@/lib/tauri'
 const QuickPasteStandalone = defineAsyncComponent(() => import('@/views/QuickPasteStandalone.vue'))
 
 const configStore = useConfigStore()
+const collectionStore = useCollectionStore()
 const { currentMode } = useTheme()
 const { setLang } = useI18n()
 
@@ -19,6 +21,11 @@ const isQuickPasteStandalone = ref(typeof window !== 'undefined' && window.locat
 
 onMounted(async () => {
   await configStore.load()
+  // Initialize collection store early so that AI-triggered data refreshes
+  // are captured even when FavoritesView is not mounted (e.g. user on AI page).
+  collectionStore.init().catch((e) => {
+    console.warn('[App] collectionStore.init failed:', e)
+  })
   // Sync titlebar color on mount
   try {
     tauri.setTitlebarMode(currentMode.value === 'dark')

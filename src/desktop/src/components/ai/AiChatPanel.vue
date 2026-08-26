@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, provide } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useAiChat } from '@/composables/useAiChat'
 import { useAiChatUi } from '@/composables/useAiChatUi'
@@ -27,6 +27,12 @@ import {
   Package,
   PanelRight,
   PanelLeft,
+  AlertTriangle,
+  XCircle,
+  CheckCircle2,
+  ChevronDown,
+  Check,
+  ShieldAlert,
 } from 'lucide-vue-next'
 
 /**
@@ -161,11 +167,30 @@ watch(
   },
 )
 
+// 破坏性工具确认下拉菜单状态
+const showConfirmMenu = ref(false)
+watch(pendingConfirm, () => {
+  showConfirmMenu.value = false
+})
+
+function closeConfirmMenu(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target?.closest('.ai-cfm-pop__allow-wrap')) {
+    showConfirmMenu.value = false
+  }
+}
+
 // 监听 settings 保存/删除 provider 后的全局事件，刷新本地列表
 // 否则 AI 面板常驻打开时，新增/修改的 provider 不会立刻出现在下拉里（只能刷新页面）
 const onProvidersChanged = () => loadProviders()
-onMounted(() => window.addEventListener('clipsync:ai-providers-changed', onProvidersChanged))
-onBeforeUnmount(() => window.removeEventListener('clipsync:ai-providers-changed', onProvidersChanged))
+onMounted(() => {
+  window.addEventListener('clipsync:ai-providers-changed', onProvidersChanged)
+  document.addEventListener('click', closeConfirmMenu)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('clipsync:ai-providers-changed', onProvidersChanged)
+  document.removeEventListener('click', closeConfirmMenu)
+})
 
 // 切换对话时同步模式/思考开关
 async function onSelectConversation(id: string) {
@@ -209,12 +234,6 @@ const viewContextText = computed(() => {
 })
 
 function onSend(text: string, images?: import('@/api/ai').ChatImage[]) {
-  // UI-E 确认门控转发接缝：useAiChat 协议层（归后端 Package F）目前未暴露 onMeta
-  // 钩子，SSE meta.type==='confirm_tool_action' 无法透传到本壳。待协议层暴露后，
-  // 在 send 的 meta 回调处加一行 feedConfirmMeta(meta)（来自 useAiChatUi）即可，
-  // 确认状态机与渲染（AiConfirmCard）已全部就绪。现阶段可用
-  // useAiChatUi().openConfirm({ requestId, tool, argsSummary, impact }) 或
-  // feedConfirmMeta({ type: 'confirm_tool_action', ... }) mock 测试（见 AiConfirmCard.vue 注释）。
   send(text, {
     mode: mode.value,
     thinking: thinkingEnabled.value,
@@ -223,6 +242,20 @@ function onSend(text: string, images?: import('@/api/ai').ChatImage[]) {
     viewContext: viewContextText.value,
   })
 }
+
+provide('aiChatSend', onSend)
+
+const onCustomSendMessage = (e: any) => {
+  if (e?.detail?.content) {
+    onSend(e.detail.content)
+  }
+}
+onMounted(() => {
+  window.addEventListener('clipsync:ai-send-message', onCustomSendMessage)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('clipsync:ai-send-message', onCustomSendMessage)
+})
 
 // 快捷指令（总结/翻译/格式化/解释/优化）：不在输入框写入 prompt，仅告诉 send() 走哪个 instruction。
 // useAiChat.send() 会自动在 user 消息之前注入一条隐藏 system 消息（systemMeta.kind='quick_action_xxx'）。
@@ -423,45 +456,110 @@ function confirmToolName(tool?: string): string {
           <!-- 上下文压缩进度：手动 /compact 与后端自动压缩共用（能力已并入 AiUsageMeter，UI-E） -->
           <AiUsageMeter v-if="compressProgress" variant="compress" :compress="compressProgress" />
 
-          <!-- 破坏性工具确认门控（Agent-C）：模型请求"需确认"工具时弹确认卡片等待放行 -->
-          <div
-            v-if="pendingConfirm"
-            class="ai-confirm-card"
-            :class="{ 'ai-confirm-card--destructive': isDestructiveConfirm }"
-          >
-            <div class="ai-confirm-head">
-              <ShieldCheck :size="14" class="ai-confirm-icon" />
-              <span class="ai-confirm-title">{{ t('ai_confirm_title') || '需要确认的操作' }}</span>
-              <span v-if="isDestructiveConfirm" class="ai-confirm-badge">
-                {{ t('ai_confirm_destructive') || '破坏性' }}
-              </span>
+          <!-- 破坏性工具确认门控（Agent-C）：内嵌气泡卡片，参考 Trae 权限请求框样式 -->
+          <Transition name="ai-cfm-pop">
+            <div
+              v-if="pendingConfirm"
+              class="ai-cfm-pop"
+              :class="{ 'ai-cfm-pop--destructive': isDestructiveConfirm }"
+              role="alertdialog"
+              aria-live="assertive"
+            >
+              <!-- 气泡箭头（指向消息区） -->
+              <div class="ai-cfm-pop__arrow" aria-hidden="true"></div>
+
+              <!-- 头部：权限请求标题行 -->
+              <div class="ai-cfm-pop__head">
+                <div class="ai-cfm-pop__title-row">
+                  <span
+                    class="ai-cfm-pop__icon"
+                    :class="{ 'ai-cfm-pop__icon--danger': isDestructiveConfirm }"
+                  >
+                    <ShieldCheck :size="14" />
+                  </span>
+                  <span class="ai-cfm-pop__title">
+                    {{ t('ai_confirm_perm_title', '权限请求') }}：
+                    <code class="ai-cfm-pop__tool-code">{{ confirmToolName(pendingConfirm.tool) }}</code>
+                  </span>
+                  <span v-if="isDestructiveConfirm" class="ai-cfm-pop__danger-tag">
+                    {{ t('ai_confirm_destructive') || '破坏性' }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- 参数/影响单行展示 -->
+              <div class="ai-cfm-pop__body">
+                <div v-if="pendingConfirm.argsSummary" class="ai-cfm-pop__cmd">
+                  {{ pendingConfirm.argsSummary }}
+                </div>
+                <div v-if="pendingConfirm.impact" class="ai-cfm-pop__impact">
+                  <AlertTriangle :size="11" class="ai-cfm-pop__impact-icon" />
+                  <span>{{ pendingConfirm.impact }}</span>
+                </div>
+              </div>
+
+              <!-- 按钮区：拒绝 + 仅本对话下拉 -->
+              <div class="ai-cfm-pop__actions">
+                <button
+                  class="ai-cfm-pop__btn ai-cfm-pop__btn--deny"
+                  :disabled="approving"
+                  @click="approve(false)"
+                >
+                  <XCircle :size="13" />
+                  {{ t('ai_confirm_deny') || '拒绝' }}
+                  <span class="ai-cfm-pop__kbd">Esc</span>
+                </button>
+                <div class="ai-cfm-pop__allow-wrap">
+                  <button
+                    class="ai-cfm-pop__btn ai-cfm-pop__btn--allow"
+                    :disabled="approving"
+                    @click="approve(true, 'once')"
+                  >
+                    <CheckCircle2 :size="13" />
+                    {{ approving ? (t('ai_confirm_approving') || '处理中…') : (t('ai_confirm_once') || '仅本次') }}
+                  </button>
+                  <button
+                    class="ai-cfm-pop__btn-caret"
+                    :disabled="approving"
+                    title="更多选项"
+                    tabindex="0"
+                    @click.stop="showConfirmMenu = !showConfirmMenu"
+                  >
+                    <ChevronDown :size="13" />
+                  </button>
+
+                  <!-- 下拉快捷放行菜单 -->
+                  <div v-if="showConfirmMenu" class="ai-cfm-pop__menu">
+                    <button
+                      type="button"
+                      class="ai-cfm-pop__menu-item"
+                      @click="showConfirmMenu = false; approve(true, 'once')"
+                    >
+                      <Check :size="12" />
+                      <span>{{ t('ai_confirm_once') || '仅本次允许' }}</span>
+                    </button>
+                    <button
+                      v-if="pendingConfirm?.tool"
+                      type="button"
+                      class="ai-cfm-pop__menu-item"
+                      @click="showConfirmMenu = false; approve(true, 'tool')"
+                    >
+                      <ShieldCheck :size="12" />
+                      <span>本会话始终允许 {{ pendingConfirm.tool }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="ai-cfm-pop__menu-item ai-cfm-pop__menu-item--danger"
+                      @click="showConfirmMenu = false; approve(true, 'all')"
+                    >
+                      <ShieldAlert :size="12" />
+                      <span>本会话始终允许所有操作</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="ai-confirm-tool-row">
-              <span class="ai-confirm-label">{{ t('ai_confirm_tool') || '工具' }}</span>
-              <span class="ai-confirm-tool-name">{{ confirmToolName(pendingConfirm.tool) }}</span>
-            </div>
-            <div v-if="pendingConfirm.argsSummary" class="ai-confirm-summary">
-              <span class="ai-confirm-label">{{ t('ai_confirm_args') || '参数摘要' }}</span>
-              <span class="ai-confirm-value">{{ pendingConfirm.argsSummary }}</span>
-            </div>
-            <div class="ai-confirm-impact">
-              <span class="ai-confirm-label">{{ t('ai_confirm_impact') || '影响' }}</span>
-              <span class="ai-confirm-value">{{ pendingConfirm.impact || '-' }}</span>
-            </div>
-            <div class="ai-confirm-actions">
-              <Button
-                variant="ghost"
-                class="ai-confirm-deny"
-                :disabled="approving"
-                @click="approve(false)"
-              >
-                {{ t('ai_confirm_deny') || '拒绝' }}
-              </Button>
-              <Button class="ai-confirm-allow" :disabled="approving" @click="approve(true)">
-                {{ approving ? (t('ai_confirm_approving') || '处理中…') : (t('ai_confirm_allow') || '允许') }}
-              </Button>
-            </div>
-          </div>
+          </Transition>
 
           <div v-if="error" class="ai-error-bar">{{ error }}</div>
 
@@ -668,95 +766,312 @@ function confirmToolName(tool?: string): string {
   border-top: 1px solid var(--border-default);
 }
 
-/* 破坏性工具确认卡片（Agent-C 门控）：文案与按钮用安全色/危险色区分 */
-.ai-confirm-card {
-  margin: 0 14px 10px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-left: 3px solid var(--accent);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
-  font-size: 12.5px;
-  color: var(--text-secondary);
+/* ========== 工具确认气泡卡片（内嵌式，参考 Trae 权限请求框） ========== */
+.ai-cfm-pop {
+  position: relative;
+  margin: 8px 10px 4px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  animation: ai-confirm-in 0.22s ease-out;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.04);
   flex-shrink: 0;
+  z-index: 5;
 }
-.ai-confirm-card--destructive {
-  border-left-color: var(--danger, #ef4444);
+.ai-cfm-pop--destructive {
+  border-color: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--border-subtle));
+  background: color-mix(in srgb, var(--danger, #ef4444) 3%, var(--bg-surface));
 }
-.ai-confirm-head {
+
+/* 气泡箭头：指向消息区（上方） */
+.ai-cfm-pop__arrow {
+  position: absolute;
+  top: -7px;
+  left: 24px;
+  width: 12px;
+  height: 12px;
+  background: inherit;
+  border-left: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border-subtle);
+  transform: rotate(45deg);
+  border-radius: 2px 0 0 0;
+}
+.ai-cfm-pop--destructive .ai-cfm-pop__arrow {
+  border-left-color: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--border-subtle));
+  border-top-color: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--border-subtle));
+}
+
+/* 头部标题行 */
+.ai-cfm-pop__head {
   display: flex;
   align-items: center;
-  gap: 6px;
 }
-.ai-confirm-icon {
+.ai-cfm-pop__title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.ai-cfm-pop__icon {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-.ai-confirm-card--destructive .ai-confirm-icon {
+.ai-cfm-pop__icon--danger {
   color: var(--danger, #ef4444);
+  background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
 }
-.ai-confirm-title {
+.ai-cfm-pop__title {
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--text-primary);
-  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
 }
-.ai-confirm-badge {
+.ai-cfm-pop__tool-code {
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--accent);
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.ai-cfm-pop--destructive .ai-cfm-pop__tool-code {
+  color: var(--danger, #ef4444);
+  background: color-mix(in srgb, var(--danger, #ef4444) 8%, transparent);
+}
+.ai-cfm-pop__danger-tag {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
   color: var(--danger, #ef4444);
-  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 30%, transparent);
-  border-radius: 999px;
-  padding: 1px 7px;
+  background: color-mix(in srgb, var(--danger, #ef4444) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 20%, transparent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  line-height: 1.4;
 }
-.ai-confirm-tool-row,
-.ai-confirm-summary,
-.ai-confirm-impact {
+
+/* 正文：参数 + 影响 */
+.ai-cfm-pop__body {
   display: flex;
-  gap: 6px;
-  align-items: baseline;
-  line-height: 1.5;
-}
-.ai-confirm-label {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  min-width: 56px;
-}
-.ai-confirm-tool-name {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.ai-confirm-value {
-  word-break: break-word;
-}
-.ai-confirm-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 5px;
   margin-top: 2px;
 }
-.ai-confirm-allow {
+.ai-cfm-pop__cmd {
+  font-size: 11.5px;
+  font-family: ui-monospace, monospace;
+  color: var(--text-secondary);
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  word-break: break-all;
+  line-height: 1.5;
+}
+.ai-cfm-pop__impact {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-primary);
+  opacity: 0.92;
+}
+.ai-cfm-pop__impact-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--warning);
+}
+
+/* 按钮区 */
+.ai-cfm-pop__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+.ai-cfm-pop__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease,
+    transform 0.08s ease;
+  white-space: nowrap;
+}
+.ai-cfm-pop__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ai-cfm-pop__btn:not(:disabled):active {
+  transform: scale(0.97);
+}
+.ai-cfm-pop__kbd {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+  line-height: 1.3;
+  margin-left: 2px;
+}
+
+/* 拒绝按钮：次级 */
+.ai-cfm-pop__btn--deny {
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+  background: var(--bg-surface);
+}
+.ai-cfm-pop__btn--deny:not(:disabled):hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+}
+
+/* 允许按钮组合：主按钮 + 下拉箭头 */
+.ai-cfm-pop__allow-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 6px;
+  overflow: visible;
+  border: 1px solid var(--danger, #ef4444);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.ai-cfm-pop__allow-wrap:has(:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ai-cfm-pop__btn--allow {
   color: #fff;
-  background: var(--accent);
+  background: var(--danger, #ef4444);
+  border-color: transparent;
+  border-radius: 5px 0 0 5px;
+  border-right: 1px solid color-mix(in srgb, #fff 18%, transparent);
 }
-.ai-confirm-allow:hover:not(:disabled) {
-  opacity: 0.9;
+.ai-cfm-pop__btn--allow:not(:disabled):hover {
+  background: color-mix(in srgb, var(--danger, #ef4444) 88%, #000);
 }
-.ai-confirm-deny {
+.ai-cfm-pop__btn-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 0 5px 5px 0;
+  background: var(--danger, #ef4444);
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.ai-cfm-pop__btn-caret:not(:disabled):hover {
+  background: color-mix(in srgb, var(--danger, #ef4444) 88%, #000);
+}
+.ai-cfm-pop__btn-caret:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 浮动下拉菜单 */
+.ai-cfm-pop__menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 100;
+}
+.ai-cfm-pop__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary, #1f2937);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  transition: background-color 0.12s, color 0.12s;
+}
+.ai-cfm-pop__menu-item:hover {
+  background: var(--bg-hover, #f3f4f6);
+}
+.ai-cfm-pop__menu-item--danger {
   color: var(--danger, #ef4444);
-  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 40%, transparent);
 }
-@keyframes ai-confirm-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: none; }
+.ai-cfm-pop__menu-item--danger:hover {
+  background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
+}
+
+/* 过渡动画：从下方滑入 */
+.ai-cfm-pop-enter-active,
+.ai-cfm-pop-leave-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.ai-cfm-pop-enter-from,
+.ai-cfm-pop-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-cfm-pop-enter-active,
+  .ai-cfm-pop-leave-active {
+    transition: none;
+  }
+}
+
+/* 键盘可达性 */
+.ai-cfm-pop__btn:focus-visible,
+.ai-cfm-pop__btn-caret:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* 图片重复感知横幅（#225） */

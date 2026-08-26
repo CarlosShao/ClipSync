@@ -10,6 +10,7 @@ import {
   reorderCollections,
 } from '@/api/client'
 import { useSonner } from '@/composables/useSonner'
+import { useCollectionStore } from '@/stores/collectionStore'
 
 export interface CollectionNode {
   id: string
@@ -89,14 +90,28 @@ function expandToDepth(nodes: CollectionNode[], depth: number) {
 
 export function useCollections() {
   const toast = useSonner()
-  const flatCollections = ref<any[]>([])
+  const collectionStore = useCollectionStore()
+
+  // Core state: sourced from the global Pinia store so that data persists
+  // even when FavoritesView is unmounted (e.g. user is on AI page).
+  const flatCollections = computed({
+    get: () => collectionStore.flatCollections,
+    set: (val: any[]) => { collectionStore.flatCollections = val }
+  })
+  const expandedPaths = computed({
+    get: () => collectionStore.expandedPaths,
+    set: (val: Set<string>) => { collectionStore.expandedPaths = val }
+  })
+  const loading = computed({
+    get: () => collectionStore.loading,
+    set: (val: boolean) => { collectionStore.loading = val }
+  })
+
   const activeNodeId = ref<string | null>(null)
-  const expandedPaths = ref<Set<string>>(new Set())
   const collectionItemsMap = ref<Map<string, Set<string>>>(new Map())
   const collectionsLoaded = ref<Set<string>>(new Set())
-  const loading = ref(false)
 
-  // Context menu state
+  // UI state (local to this component instance)
   const ctxMenuNodeId = ref<string | null>(null)
   const ctxMenuPos = ref({ top: 0, left: 0 })
   const ctxMenuVisible = ref(false)
@@ -122,25 +137,10 @@ export function useCollections() {
   const renameValue = ref('')
   const renameConfirmed = ref(false) // guard against blur double-call
 
-  const tree = computed<CollectionNode[]>(() => buildTree(flatCollections.value))
+  const tree = computed<CollectionNode[]>(() => collectionStore.tree)
 
   // Flat list of visible nodes (respects expanded state) for template rendering
-  const visibleNodes = computed<CollectionNode[]>(() => {
-    const result: CollectionNode[] = []
-    function walk(nodes: CollectionNode[] | undefined) {
-      if (!nodes) return
-      for (const node of nodes) {
-        if (!node) continue
-        result.push(node)
-        const children = node.children || []
-        if (children.length > 0 && expandedPaths.value.has(node.path)) {
-          walk(children)
-        }
-      }
-    }
-    walk(tree.value)
-    return result
-  })
+  const visibleNodes = computed<CollectionNode[]>(() => collectionStore.visibleNodes)
 
   // Flat list of all nodes (ignores expanded state) for pickers/dropdowns
   const allNodes = computed<CollectionNode[]>(() => {
@@ -220,19 +220,16 @@ export function useCollections() {
     return (tree.value || []).filter((n) => getParentId(n) === parentId)
   }
 
-  // Auto-expand path when selecting a node deep in the tree
   async function selectNode(id: string | null) {
     if (id) {
-      // 先加载收藏夹内容，再激活筛选，避免 computed 读到空状态
       await loadNodeItems(id)
       const node = findNodeById(tree.value, id)
       if (node) {
         const pathParts = node.path.split('.')
         for (let i = 1; i < pathParts.length; i++) {
           const ancestorPath = pathParts.slice(0, i).join('.')
-          expandedPaths.value.add(ancestorPath)
+          collectionStore.expandPath(ancestorPath)
         }
-        expandedPaths.value = new Set(expandedPaths.value)
       }
     }
     activeNodeId.value = id
@@ -240,42 +237,26 @@ export function useCollections() {
     closeFlyout()
   }
 
-  async function loadCollections() {
-    loading.value = true
-    try {
-      const data = await getFavoriteCollections()
-      if (data?.collections && data.collections.length > 0) {
-        flatCollections.value = data.collections
-        if (expandedPaths.value.size === 0) {
-          expandToDepth(tree.value, 2)
-          syncExpandedState(tree.value, expandedPaths.value)
-        }
-      } else if (data?.collections && data.collections.length === 0) {
-        flatCollections.value = []
-      } else {
-        toast.show('正在修复收藏夹数据...', 'info')
-        const migrated = await migrateHierarchy()
-        if (migrated) {
-          expandedPaths.value = new Set()
-          const retry = await getFavoriteCollections()
-          if (retry?.collections && retry.collections.length > 0) {
-            flatCollections.value = retry.collections
-            expandToDepth(tree.value, 2)
-            syncExpandedState(tree.value, expandedPaths.value)
-            toast.show(`已恢复 ${retry.collections.length} 个收藏夹`, 'success')
-          } else {
-            flatCollections.value = []
-            toast.show('收藏夹为空', 'info')
-          }
-        } else {
-          toast.show('收藏夹迁移失败，请重启后端服务', 'error')
+  // 新建收藏夹刷新后自动展开其父节点路径，确保新子级立即可见。
+  // 遍历所有非根节点（depth>1），把各自父路径加入 expandedPaths。
+  function autoExpandParentPaths(nodes: CollectionNode[]) {
+    let changed = false
+    const walk = (n: CollectionNode) => {
+      if (n.depth > 1) {
+        const parentPath = n.path.split('.').slice(0, -1).join('.')
+        if (parentPath && !expandedPaths.value.has(parentPath)) {
+          expandedPaths.value.add(parentPath)
+          changed = true
         }
       }
-    } catch (e: any) {
-      toast.show(e.message || '加载收藏夹失败', 'error')
-    } finally {
-      loading.value = false
+      n.children.forEach(walk)
     }
+    nodes.forEach(walk)
+    if (changed) expandedPaths.value = new Set(expandedPaths.value)
+  }
+
+  async function loadCollections(opts?: { expandParents?: boolean }) {
+    await collectionStore.loadCollections(opts)
   }
 
   function syncExpandedState(nodes: CollectionNode[], set: Set<string>) {
@@ -286,63 +267,38 @@ export function useCollections() {
   }
 
   function toggleExpand(path: string) {
-    if (expandedPaths.value.has(path)) {
-      expandedPaths.value.delete(path)
-    } else {
-      expandedPaths.value.add(path)
-    }
-    expandedPaths.value = new Set(expandedPaths.value)
+    collectionStore.toggleExpand(path)
   }
 
   async function createCollection(name: string, icon: string, parentId?: string) {
     const data = await createFavoriteCollection(name, icon, parentId)
     if (data?.collection) {
-      // 收藏夹树结构由 flatCollections 派生（computed buildTree）。
-      // 仅 push 新节点到 flatCollections 并标记 parent 展开，可能因为后端 path 缓存与前端
-      // 不一致导致 buildTree 计算的父子关系错位、新节点不显示。
-      // 安全做法：直接从后端重新拉一次，让 tree 跟后端真相源对齐。
       const res = await getFavoriteCollections()
       if (res?.collections) {
-        flatCollections.value = res.collections
-        // 保留用户已展开的路径（不重置 expandedPaths）
+        collectionStore.flatCollections = res.collections
         if (expandedPaths.value.size === 0) {
           expandToDepth(tree.value, 2)
           syncExpandedState(tree.value, expandedPaths.value)
         }
       }
       if (parentId) {
-        // 拉完后再次展开 parent，确保用户看到新建的子节点
         const parent = findNodeById(tree.value, parentId)
         if (parent) {
-          parent.expanded = true
-          expandedPaths.value.add(parent.path)
-          expandedPaths.value = new Set(expandedPaths.value)
+          collectionStore.expandPath(parent.path)
         }
       }
-      // 通知其它使用收藏夹列表的组件（如剪贴板的筛选下拉）也重新拉取
-      // 跨 composable 单例同步，避免剪贴板看不到刚在收藏页新建的子目录
       window.dispatchEvent(new CustomEvent('clipsync:collections-updated', { detail: { reason: 'create', id: data.collection.id } }))
     }
     return data
   }
 
   async function deleteCollection(id: string) {
-    // 后端会级联删除目标及所有后代（ltree path <@）。
-    // 前端必须在 flatCollections 里删掉**目标 + 所有后代**，否则子节点变成"孤儿"被 buildTree 当顶级渲染。
     const targetNode = findNodeById(tree.value, id)
     const targetPath = targetNode?.path
     await deleteFavoriteCollection(id)
-    if (targetPath) {
-      const prefix = targetPath + '.'
-      flatCollections.value = flatCollections.value.filter(
-        (c) => c.id !== id && !c.path.startsWith(prefix),
-      )
-    } else {
-      flatCollections.value = flatCollections.value.filter((c) => c.id !== id)
-    }
+    collectionStore.removeFromTree(id, targetPath)
     if (activeNodeId.value === id) activeNodeId.value = null
     closeCtxMenu()
-    // 跨组件同步事件：剪贴板筛选下拉也刷新
     window.dispatchEvent(new CustomEvent('clipsync:collections-updated', { detail: { reason: 'delete', id } }))
   }
 
@@ -355,7 +311,7 @@ export function useCollections() {
     if (oldPath) {
       const oldPrefix = oldPath + '.'
       const newPrefix = data.collection.path + '.'
-      flatCollections.value = flatCollections.value.map((c) => {
+      const newFlat = flatCollections.value.map((c) => {
         if (c.id === id) {
           return { ...c, path: data.collection.path }
         } else if (c.path.startsWith(oldPrefix)) {
@@ -363,8 +319,8 @@ export function useCollections() {
         }
         return c
       })
+      collectionStore.flatCollections = newFlat
     } else {
-      // If old path not found in tree (e.g. null path), reload to be safe
       await loadCollections()
     }
     closeCtxMenu()
@@ -766,26 +722,4 @@ export function useCollections() {
     onDropBottom,
     findNodeById: _findNodeById,
   }
-}
-
-// ============ AI 数据刷新事件监听 ============
-// 当 AI Agent 执行收藏夹相关工具后，自动刷新收藏夹数据实现无感更新
-import { onAiDataRefresh } from './useAiDataRefresh'
-
-if (typeof window !== 'undefined' && !(window as any).__collectionsAiRefreshInited) {
-  ;(window as any).__collectionsAiRefreshInited = true
-  
-  onAiDataRefresh((event) => {
-    if (event.type === 'collections') {
-      // 静默刷新收藏夹数据
-      const data = getFavoriteCollections().catch(() => null)
-      if (data?.collections) {
-        // 找到 useCollections 的实例并刷新
-        // 这里通过 window 事件通知已有实例
-        window.dispatchEvent(new CustomEvent('clipsync:collections-updated', { 
-          detail: { reason: 'ai-tool', tool: event.toolName } 
-        }))
-      }
-    }
-  })
 }

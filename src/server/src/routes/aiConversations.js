@@ -140,15 +140,19 @@ router.get('/:id', apiLimiter, async (req, res) => {
 
     res.json({
       conversation: convResult.rows[0],
-      messages: msgResult.rows.map((m) => ({
-        ...m,
-        role: m.role,
-        content: m.content,
-        thinking: m.thinking,
-        toolCalls: m.tool_calls || [],
-        toolResults: m.tool_results || [],
-        metadata: m.metadata || {},
-      })),
+      messages: msgResult.rows.map((m) => {
+        const meta = m.metadata || {}
+        return {
+          ...m,
+          role: m.role,
+          content: m.content,
+          thinking: m.thinking,
+          thinkingSegments: meta.thinkingSegments || undefined,
+          toolCalls: m.tool_calls || [],
+          toolResults: m.tool_results || [],
+          metadata: meta,
+        }
+      }),
     })
   } catch (err) {
     logger.error('Get AI conversation error:', err)
@@ -336,6 +340,10 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
         // 消息顺序退化为随机 UUID，聊天区出现"历史消息乱序 / 凭空冒出"。
         // 前端 select() 已把 DB 的 created_at 存到 createdAt 字段随消息带回。
         const ts = m.createdAt || m.created_at || null
+        const meta = {
+          ...(typeof m.metadata === 'object' && m.metadata ? m.metadata : {}),
+          ...(Array.isArray(m.thinkingSegments) && m.thinkingSegments.length > 0 ? { thinkingSegments: m.thinkingSegments } : {}),
+        }
         const result = await pool.query(
           `INSERT INTO ai_messages (conversation_id, role, content, thinking, tool_calls, tool_results, metadata, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::jsonb, '{}'::jsonb), COALESCE($8, NOW()))
@@ -347,7 +355,7 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
             m.thinking || null,
             Array.isArray(m.toolCalls) ? JSON.stringify(m.toolCalls) : '[]',
             Array.isArray(m.toolResults) ? JSON.stringify(m.toolResults) : '[]',
-            typeof m.metadata === 'object' && m.metadata ? JSON.stringify(m.metadata) : null,
+            JSON.stringify(meta),
             ts, // 若为 null，created_at 会用数据库默认 NOW()
           ]
         )

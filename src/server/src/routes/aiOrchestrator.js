@@ -19,8 +19,8 @@
  */
 import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProviders.js'
 import { logger } from '../utils/logger.js'
-import { collectToolCallsFromStream } from './aiStream.js'
-import { runChatLoop, openUpstreamStream } from './aiChatCore.js'
+import { collectToolCallsFromStream, collectToolCallsFromResponsesStream, collectToolCallsFromAnthropicStream } from './aiStream.js'
+import { runChatLoop, openUpstreamStream, looksLikeToolIntent } from './aiChatCore.js'
 import { TOOLS, READONLY_TOOLS, executeTool } from './aiTools.js'
 import { getToolsForRole } from '../utils/aiSystemPrompt.js'
 
@@ -90,6 +90,11 @@ const COORDINATOR_SYSTEM = `你是一个任务编排协调器（Coordinator）�
 - 如果工具未返回某项数据，明确告知用户"该信息暂不可用"，而非编造内容。
 - 不要推测不存在的文件名、ID、数值或其他具体细节。宁可说"不确定"也不要说错。
 - 调用工具后，仅基于工具返回结果回答，不要补充工具未提供的额外信息。
+- 【交互式选择工具规则 · 绝对强制】：
+  1. 当需要用户选择/确认（例如用户要求"删除子目录"、"给我选项让我选"或有多个目标候选项）时，你在通过查询工具（如 get_collections）查出列表后，必须立即调用 ask_user 工具在界面上弹出结构化的交互选择卡片供用户直接点击！
+  2. 严禁在纯文本中输出"现在用交互卡片让你选择"、"下面用交互卡片让你选择"、"请选择要删除的子目录："然后停止！前端绝不会根据文本自动生成卡片，卡片唯一由你发起真实的 ask_user 函数调用（tool_calls）触发！
+  3. 当你需要让用户选择时，直接发出 ask_user 工具调用（例如 options: ["只删除 test2.1", "只删除 test2.2", "全部删除", "取消"]）。
+  4. 绝不能在纯文本中输出等待性话术，必须真正发起工具调用。
 
 注意：子代理只能使用只读工具；写入类操作（收藏/删除/记忆/工作流）由你（协调器）在最后统一执行。调用 dispatch_agents 后停止，不要再作答。`
 
@@ -126,6 +131,9 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
   const coMessages = [{ role: 'system', content: COORDINATOR_SYSTEM }, ...messages]
   const tools = [DISPATCH_AGENTS_TOOL, ...businessTools]
   let currentMessages = coMessages
+  // 安全网计数器：防止协调器模型"只说要调工具"却不 emit tool_calls
+  let continuationRetries = 0
+  const MAX_CONTINUATION_RETRIES = 1
 
   // 透传增量到主气泡，但隐藏 dispatch_agents 元工具（内部规划调用，不应呈现给用户）
   const wrappedSend = (obj) => {
@@ -138,14 +146,23 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
     sendDelta(obj)
   }
 
+  const family = preset?.provider === 'custom'
+    ? (providerRow.api_format === 'anthropic' ? 'anthropic' : providerRow.api_format === 'responses' ? 'responses' : 'openai')
+    : (preset?.family || 'openai')
+
   for (let round = 0; round < 5; round++) {
-    const chatOptions = { tools, tool_choice: 'auto' }
+    const chatOptions = {
+      tools,
+      tool_choice: continuationRetries > 0 ? (family === 'anthropic' ? 'any' : 'required') : 'auto',
+    }
     // 思考支持：与 runChatLoop 对齐，仅 Anthropic 协议需显式 thinking 参数
     if (thinkingEnabled && preset?.family === 'anthropic') {
       chatOptions.thinking = true
+      chatOptions.thinkingStrength = thinkingStrength
       chatOptions.thinkingBudget = thinkingStrength === 'low' ? 1024 : thinkingStrength === 'high' ? 8192 : 4096
     }
 
+    logger.info('[AI][orchestrator] tools count:', tools.length, 'continuationRetries:', continuationRetries, 'tool_choice:', chatOptions.tool_choice)
     const upstream = buildUpstreamChat({
       provider: providerRow.provider,
       baseUrl: providerRow.base_url,
@@ -153,9 +170,21 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
       apiKey,
       messages: currentMessages,
       options: chatOptions,
+      apiFormat: providerRow.api_format,
     })
-    const { reader, decoder } = await openUpstreamStream(upstream, abortSignal, 'Coordinator')
-    const resp = await collectToolCallsFromStream(reader, decoder, wrappedSend, logChunk)
+    const { reader, decoder, cleanup: releaseRound } = await openUpstreamStream(upstream, abortSignal, 'Coordinator')
+    logger.info('[AI][orchestrator] coordinator upstream family:', family, 'provider:', providerRow.provider, 'api_format:', providerRow.api_format)
+    let resp
+    try {
+      resp = family === 'responses'
+        ? await collectToolCallsFromResponsesStream(reader, decoder, wrappedSend, logChunk)
+        : family === 'anthropic'
+          ? await collectToolCallsFromAnthropicStream(reader, decoder, wrappedSend, logChunk)
+          : await collectToolCallsFromStream(reader, decoder, wrappedSend, logChunk)
+    } finally {
+      // 读完本轮流后立即释放 per-call 定时器：等待用户确认的间隙不计入超时
+      if (typeof releaseRound === 'function') releaseRound()
+    }
 
     // 下发 token 用量元信息（与 runChatLoop 同格式），由编排层聚合后统一下发，保持主气泡圆环更新
     if (resp.usage) {
@@ -207,14 +236,43 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
         } catch {
           /* ignore */
         }
-        const result = await executeTool(tc.function.name, args, userId, role, undefined, { sendDelta })
+        const result = await executeTool(tc.function.name, args, userId, role, tc.id, { sendDelta })
         wrappedSend({
           choices: [
             { delta: { tool_result: { tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(result) } } },
           ],
         })
         currentMessages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) })
+        if (abortSignal?.aborted || result?.cancelled) {
+          logger.info('[AI][orchestrator] stream aborted or tool cancelled, stopping coordinator loop')
+          return { isDispatch: false, dispatchArgs: '', content: '' }
+        }
       }
+      continue
+    }
+
+    // 安全网：协调器模型写了"我要调用 X"但没有输出 tool_calls，或只有思考过程却未输出正文/工具
+    const contentHasIntent = looksLikeToolIntent(resp.content)
+    const thinkingHasIntent = looksLikeToolIntent(resp.thinking || '')
+    const emptyContentAfterThinking = Boolean(resp.thinking && (!resp.content || !resp.content.trim()) && resp.toolCalls.length === 0)
+    if (
+      continuationRetries < 2 &&
+      (contentHasIntent || thinkingHasIntent || emptyContentAfterThinking)
+    ) {
+      logger.info('[AI][orchestrator] safety net triggered: tool intent or empty content after thinking.',
+        'content_has_intent:', contentHasIntent,
+        'thinking_has_intent:', thinkingHasIntent,
+        'emptyContentAfterThinking:', emptyContentAfterThinking,
+        'content_snippet:', (resp.content || '').substring(0, 100),
+        'thinking_snippet:', (resp.thinking || '').substring(0, 100))
+      continuationRetries++
+      if (resp.content) {
+        currentMessages.push({ role: 'assistant', content: resp.content || '' })
+      }
+      currentMessages.push({
+        role: 'system',
+        content: '你刚才在思考中准备调用工具，但尚未输出 tool_calls。请立即输出你的 tool_calls（例如 ask_user）！严禁只输出思考过程而不发出工具调用。',
+      })
       continue
     }
 

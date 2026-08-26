@@ -44,54 +44,8 @@ const contentRef = ref<HTMLElement | null>(null)
 const elapsedSeconds = ref(0)
 let timer: number | undefined
 
-// ==================== 渐进式释放（打字机） ====================
-const displayThinking = ref('')
-let rafId: number | undefined
-const CHARS_PER_FRAME = 6
-
-function flushThinking() {
-  const target = props.thinking || ''
-  if (displayThinking.value.length >= target.length) {
-    rafId = undefined
-    return
-  }
-  displayThinking.value = target.slice(0, displayThinking.value.length + CHARS_PER_FRAME)
-  if (live.value && contentRef.value) {
-    contentRef.value.scrollTop = contentRef.value.scrollHeight
-  }
-  rafId = requestAnimationFrame(flushThinking)
-}
-
-function ensureFlush() {
-  const target = props.thinking || ''
-  if (target.length < displayThinking.value.length) displayThinking.value = ''
-  if (displayThinking.value.length < target.length && rafId === undefined) {
-    rafId = requestAnimationFrame(flushThinking)
-  }
-}
-
-watch(
-  () => props.thinking,
-  () => {
-    ensureFlush()
-    if (live.value && contentRef.value) {
-      contentRef.value.scrollTop = contentRef.value.scrollHeight
-    }
-  },
-)
-
-watch(
-  () => props.thinkingStartedAt,
-  () => {
-    displayThinking.value = ''
-    elapsedSeconds.value = 0
-    if (rafId !== undefined) {
-      cancelAnimationFrame(rafId)
-      rafId = undefined
-    }
-    ensureFlush()
-  },
-)
+// ==================== 思考文本直接绑定 ====================
+const displayThinking = computed(() => props.thinking || '')
 
 function startTimer() {
   if (timer) return
@@ -109,41 +63,44 @@ function stopTimer() {
 
 onMounted(() => {
   if (live.value) startTimer()
-  ensureFlush()
 })
 
 onUnmounted(() => {
   stopTimer()
-  if (rafId !== undefined) cancelAnimationFrame(rafId)
 })
+
+watch(
+  () => props.thinkingStartedAt,
+  () => {
+    elapsedSeconds.value = 0
+  },
+)
 
 watch(live, (v) => {
   if (v) startTimer()
   else {
     stopTimer()
-    ensureFlush()
   }
 })
 
 // ==================== 标题 ====================
-// loading：「正在思考中」；live：「深度思考 · Ns」；done：折叠摘要「深度思考 Ns」
+// loading：「正在思考中」；live：「深度思考」 + 右侧「· N 秒」；done：折叠摘要「深度思考 Ns」
 const label = computed(() => {
   if (!hasContent.value) return t('ai_thinking_loading', '正在思考中')
   const sec = elapsedSeconds.value
   if (live.value) {
-    if (sec < 1) return t('ai_thinking_deep', '深度思考')
-    return `${t('ai_thinking_deep', '深度思考')} · ${t('ai_thinking_sec', '{n} 秒').replace('{n}', String(sec))}`
+    return t('ai_thinking_deep', '深度思考')
   }
   if (sec < 1) return t('ai_thinking_deep', '深度思考')
   return t('ai_process_thinking', '深度思考 {n}s').replace('{n}', String(sec))
 })
 
-// 头部右侧耗时（仅 live 时显示，done 态耗时已并入标题）
+// 头部右侧耗时（仅 live 时显示）
 const timeText = computed(() => {
   if (!live.value) return ''
   const sec = elapsedSeconds.value
   if (sec < 1) return ''
-  return t('ai_thinking_sec', '{n} 秒').replace('{n}', String(sec))
+  return `· ${t('ai_thinking_sec', '{n} 秒').replace('{n}', String(sec))}`
 })
 </script>
 
@@ -315,7 +272,6 @@ html.light .ai-tc-title::after {
 
 /* 思考正文：行内 flow 风格 */
 .ai-tc-body {
-  transition: all 0.15s ease;
   max-height: none;
   opacity: 1;
   padding: 2px 0 2px 16px;

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import pool from '../db/pool.js';
 import { authenticateToken } from '../middleware/auth.js';
-import logger from '../utils/logger.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 

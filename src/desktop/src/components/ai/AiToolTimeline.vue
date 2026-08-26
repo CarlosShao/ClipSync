@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, inject } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import type { ToolCall, ToolResult } from '@/api/ai'
-import { ChevronDown, ChevronRight, CheckCircle2, Loader2, Terminal, FileText, Database, Search } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, ChevronLeft, CheckCircle2, Loader2, Terminal, FileText, Database, Search, HelpCircle, PenLine, Send } from 'lucide-vue-next'
 
 /**
  * AiToolTimeline — 工具调用时间线
@@ -21,6 +21,7 @@ const props = defineProps<{
   confirmTool?: string | null
 }>()
 const { t } = useI18n()
+const injectSend = inject<((content: string) => void) | null>('aiChatSend', null)
 
 const expanded = ref<Set<string>>(new Set())
 
@@ -75,7 +76,7 @@ function formatResult(content: string): string {
   }
 }
 
-const DESTRUCTIVE_TOOLS = new Set(['destroy_clips'])
+const DESTRUCTIVE_TOOLS = new Set(['destroy_clips', 'delete_collection', 'batch_delete'])
 function isDestructiveTool(name: string) {
   return DESTRUCTIVE_TOOLS.has(name)
 }
@@ -85,6 +86,9 @@ function awaitingConfirm(id: string, name: string): boolean {
 }
 
 function getToolIcon(name: string) {
+  if (name === 'ask_user') {
+    return HelpCircle
+  }
   // 根据工具类型选择图标
   if (name.includes('terminal') || name.includes('execute') || name.includes('batch')) {
     return Terminal
@@ -98,7 +102,36 @@ function getToolIcon(name: string) {
   return Database
 }
 
+function getDiffArgs(step: any) {
+  let parsed: any = {}
+  if (step?.arguments) {
+    if (typeof step.arguments === 'object' && step.arguments !== null) {
+      parsed = { ...step.arguments }
+    } else if (typeof step.arguments === 'string' && step.arguments.trim()) {
+      try {
+        parsed = JSON.parse(step.arguments)
+      } catch { /* ignore */ }
+    }
+  }
+  if (!parsed.original_content && step?.result?.content) {
+    try {
+      const resObj = typeof step.result.content === 'object' ? step.result.content : JSON.parse(step.result.content)
+      if (resObj && typeof resObj === 'object') {
+        parsed = { ...resObj, ...parsed }
+      }
+    } catch { /* ignore */ }
+  }
+  return {
+    title: parsed.title || '变更对比预览',
+    original_content: parsed.original_content || '',
+    modified_content: parsed.modified_content || '',
+  }
+}
+
 function stepAnnotation(name: string, content?: string): { text: string; ok: boolean } | null {
+  if (name === 'ask_user') {
+    return { text: '已在下方展示多元交互选项卡片', ok: true }
+  }
   if (!content) return null
   let parsed: any = null
   try {
@@ -128,6 +161,18 @@ function stepAnnotation(name: string, content?: string): { text: string; ok: boo
       return { text: t('ai_result_favorite_items', { count: isObj ? count(parsed.updated ?? parsed.favorited ?? parsed.tagged) : 0 }), ok: true }
     case 'destroy_clips':
       return { text: t('ai_result_destroy_clips', { count: isObj ? count(parsed.permanentlyDeleted ?? parsed.deleted ?? parsed.destroyed) : 0 }), ok: true }
+    case 'find_duplicates':
+      return { text: `已扫描发现 ${isObj ? count(parsed.duplicate_groups_count) : 0} 组重复条目（共 ${isObj ? count(parsed.total_duplicate_items) : 0} 条）`, ok: true }
+    case 'batch_move_to_collection':
+      return { text: `已将 ${isObj ? count(parsed.moved_count) : 0} 条数据移入收藏夹「${parsed.collection_name || ''}」`, ok: true }
+    case 'export_data':
+      return { text: `已成功导出 ${isObj ? count(parsed.total_items) : 0} 条数据（${parsed.format || 'markdown'}）`, ok: true }
+    case 'show_diff_preview':
+      return { text: '已生成变更 Diff 对比预览', ok: true }
+    case 'delete_collection':
+      return { text: t('ai_result_delete_collection') || '已删除收藏夹', ok: true }
+    case 'batch_delete':
+      return { text: t('ai_result_batch_delete') || '已批量删除', ok: true }
     case 'create_collection':
       return { text: t('ai_result_create_collection'), ok: true }
     case 'create_template':
@@ -194,6 +239,25 @@ const steps = computed(() => {
           <span>{{ stepAnnotation(step.name, step.result?.content)!.text }}</span>
         </div>
         
+
+
+        <!-- 特殊卡片：show_diff_preview（文本前后差异对比卡片） -->
+        <div v-if="step.name === 'show_diff_preview'" class="ai-diff-card">
+          <div class="ai-diff-card__head">
+            <span class="ai-diff-card__title">{{ getDiffArgs(step).title || '变更对比预览' }}</span>
+          </div>
+          <div class="ai-diff-card__grid">
+            <div class="ai-diff-col original">
+              <div class="ai-diff-col__label">修改前</div>
+              <pre>{{ getDiffArgs(step).original_content }}</pre>
+            </div>
+            <div class="ai-diff-col modified">
+              <div class="ai-diff-col__label">修改后</div>
+              <pre>{{ getDiffArgs(step).modified_content }}</pre>
+            </div>
+          </div>
+        </div>
+
         <!-- 展开详情 -->
         <div v-if="expanded.has(step.id)" class="ai-tool-detail">
           <div v-if="step.arguments && step.arguments !== '{}'" class="ai-tool-detail-section">
@@ -432,11 +496,321 @@ const steps = computed(() => {
   outline-offset: 1px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .state-running,
-  .ai-tool-item,
-  .ai-tool-detail {
-    animation: none;
-  }
+/* 交互选项/问卷卡片（ask_user） */
+.ai-ask-card {
+  margin: 8px 0 10px 0;
+  padding: 14px 16px;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+.ai-ask-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.ai-ask-card__title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+.ai-ask-card__icon {
+  color: var(--accent, #3b82f6);
+  flex-shrink: 0;
+}
+.ai-ask-card__badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.ai-ask-card__step-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--bg-hover, #f3f4f6);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle, #e5e7eb);
+}
+.ai-ask-card__badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
+  color: var(--accent, #3b82f6);
+}
+.ai-ask-card__badge.multi {
+  background: color-mix(in srgb, #8b5cf6 12%, transparent);
+  color: #8b5cf6;
+}
+.ai-ask-card__desc {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  line-height: 1.45;
+  padding-left: 2px;
+}
+.ai-ask-card__options {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.ai-ask-card__opt-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--bg-hover, #f8f9fa);
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  transition: all 0.15s ease;
+}
+.ai-ask-card__opt-btn:hover {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 8%, transparent);
+  border-color: var(--accent, #3b82f6);
+  color: var(--accent, #3b82f6);
+  transform: translateX(2px);
+}
+.ai-ask-card__opt-btn.selected {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
+  border-color: var(--accent, #3b82f6);
+  color: var(--accent, #3b82f6);
+  font-weight: 600;
+}
+.ai-ask-card__opt-btn.other {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.ai-ask-card__other-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.ai-ask-card__other-input-wrap {
+  width: 100%;
+  margin-top: 2px;
+}
+.ai-ask-card__other-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--accent, #3b82f6);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #3b82f6) 20%, transparent);
+}
+.ai-ask-card__opt-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--border-subtle, #e5e7eb);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+.ai-ask-card__opt-index.other {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 20%, transparent);
+  color: var(--accent, #3b82f6);
+}
+.ai-ask-card__opt-btn:hover .ai-ask-card__opt-index,
+.ai-ask-card__opt-btn.selected .ai-ask-card__opt-index {
+  background: var(--accent, #3b82f6);
+  color: #ffffff;
+}
+.ai-ask-card__opt-label {
+  flex: 1;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.ai-ask-card__opt-check {
+  color: var(--accent, #3b82f6);
+  flex-shrink: 0;
+}
+.ai-ask-card__footer {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-subtle, #e5e7eb);
+}
+.ai-ask-card__notes-wrap {
+  margin-bottom: 10px;
+}
+.ai-ask-card__notes-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+.ai-ask-card__notes-input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-hover, #f9fafb);
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+}
+.ai-ask-card__notes-input:focus {
+  border-color: var(--accent, #3b82f6);
+  background: var(--bg-surface, #ffffff);
+}
+.ai-ask-card__nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ai-ask-card__nav-left,
+.ai-ask-card__nav-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-ask-card__nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: var(--bg-hover, #f3f4f6);
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.ai-ask-card__nav-btn:hover {
+  background: var(--border-subtle, #e5e7eb);
+  color: var(--text-primary);
+}
+.ai-ask-card__submit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--accent, #3b82f6);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ai-ask-card__submit-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+.ai-ask-card__submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ai-ask-card__settled {
+  padding: 10px 12px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 8px;
+}
+.ai-ask-card__settled-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--success, #10b981);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.ai-ask-card__settled-icon {
+  flex-shrink: 0;
+}
+.ai-ask-card__settled-body {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  font-family: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Diff 对比卡片（show_diff_preview） */
+.ai-diff-card {
+  margin: 6px 0 8px 0;
+  padding: 10px 12px;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+.ai-diff-card__head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+.ai-diff-card__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.ai-diff-col {
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle, #e5e7eb);
+}
+.ai-diff-col__label {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+}
+.ai-diff-col.original .ai-diff-col__label {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+.ai-diff-col.modified .ai-diff-col__label {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+.ai-diff-col pre {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  font-family: var(--font-family-mono, monospace);
+  background: var(--bg-hover, #f9fafb);
+  max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

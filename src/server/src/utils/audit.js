@@ -69,9 +69,12 @@ export async function logAuditEvent(params) {
 const SENSITIVE_KEY_RE = /password|passwd|api[_-]?key|secret|token|authorization|access_code|credential|content|text|body|plain/i
 
 function deepSanitize(value, depth = 0) {
-  if (depth > 10) return typeof value === 'string' ? `[truncated:${value.length}]` : value
+  if (depth > 5) return typeof value === 'string' ? `[truncated:${value.length}]` : '[deep]'
   if (value === null || value === undefined) return value
-  if (Array.isArray(value)) return value.map((v) => deepSanitize(v, depth + 1))
+  if (Array.isArray(value)) {
+    const list = value.length > 20 ? value.slice(0, 20) : value
+    return list.map((v) => deepSanitize(v, depth + 1))
+  }
   if (typeof value === 'object') {
     const out = {}
     for (const [k, v] of Object.entries(value)) {

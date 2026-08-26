@@ -6,6 +6,7 @@ import { encrypt, decrypt } from '../utils/encryption.js'
 import {
   listPresets,
   getPreset,
+  resolveFamily,
   buildUpstreamChat,
   fetchProviderModels,
   isPrivateIp,
@@ -16,6 +17,24 @@ import { getAiContext } from '../utils/aiContext.js'
 import { logger } from '../utils/logger.js'
 
 const router = Router()
+
+// 兼容格式取值枚举：openai（兼容） / anthropic / responses
+const VALID_API_FORMATS = ['openai', 'anthropic', 'responses']
+
+/**
+ * 归一化 / 校验 apiFormat。
+ * - 未传或空 → 默认 'openai'（兼容历史表单 / 老数据）
+ * - 取值必须在枚举内，否则返回 null（调用方应回 400）
+ * - 仅 custom 供应商可使用 anthropic / responses；非 custom 一律按 'openai' 处理，
+ *   若显式传入非 openai 值视为非法
+ * @returns {string|null} 归一化后的格式，非法返回 null
+ */
+function normalizeApiFormat(raw, isCustom) {
+  if (raw === undefined || raw === null || raw === '') return 'openai'
+  if (!VALID_API_FORMATS.includes(raw)) return null
+  if (!isCustom && raw !== 'openai') return null
+  return raw
+}
 
 async function validateProviderBaseUrl(input) {
   if (!input || typeof input !== 'string' || input.trim().length === 0) {
@@ -53,7 +72,7 @@ async function validateProviderBaseUrl(input) {
 router.get('/providers', apiLimiter, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, provider, name, base_url, model, models, is_default, context_window, created_at, updated_at,
+      `SELECT id, provider, name, base_url, model, models, is_default, context_window, api_format, created_at, updated_at,
               (api_key_encrypted IS NOT NULL AND api_key_encrypted <> '') AS has_key
        FROM ai_providers
        WHERE user_id = $1
@@ -92,12 +111,17 @@ router.get('/context', apiLimiter, async (req, res) => {
 // POST /api/ai/providers - 新建供应商
 router.post('/providers', apiLimiter, async (req, res) => {
   try {
-    const { provider, name, apiKey, baseUrl, model, models, isDefault, contextWindow } = req.body || {}
+    const { provider, name, apiKey, baseUrl, model, models, isDefault, contextWindow, apiFormat } = req.body || {}
     if (!provider || !getPreset(provider)) {
       return res.status(400).json({ error: 'Invalid provider' })
     }
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ error: 'Name is required' })
+    }
+    // apiFormat 校验：仅 custom 可用 anthropic / responses，取值非法回 400
+    const newApiFormat = normalizeApiFormat(apiFormat, provider === 'custom')
+    if (newApiFormat === null) {
+      return res.status(400).json({ error: 'Invalid api_format' })
     }
 
     if (baseUrl) {
@@ -132,11 +156,11 @@ router.post('/providers', apiLimiter, async (req, res) => {
         await client.query('UPDATE ai_providers SET is_default = FALSE WHERE user_id = $1', [req.userId])
       }
       const result = await client.query(
-        `INSERT INTO ai_providers (user_id, provider, name, api_key_encrypted, base_url, model, models, is_default, context_window)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
-         RETURNING id, provider, name, base_url, model, models, is_default, context_window, created_at, updated_at,
+        `INSERT INTO ai_providers (user_id, provider, name, api_key_encrypted, base_url, model, models, is_default, context_window, api_format)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
+         RETURNING id, provider, name, base_url, model, models, is_default, context_window, api_format, created_at, updated_at,
                    (api_key_encrypted IS NOT NULL AND api_key_encrypted <> '') AS has_key`,
-        [req.userId, provider, name.trim(), encryptedKey, baseUrl || null, activeModel, modelsJson, wantDefault, parsedCtx]
+        [req.userId, provider, name.trim(), encryptedKey, baseUrl || null, activeModel, modelsJson, wantDefault, parsedCtx, newApiFormat]
       )
       await client.query('COMMIT')
       res.status(201).json(result.rows[0])
@@ -156,7 +180,7 @@ router.post('/providers', apiLimiter, async (req, res) => {
 router.put('/providers/:id', apiLimiter, async (req, res) => {
   try {
     const id = req.params.id
-    const { name, apiKey, baseUrl, model, models, isDefault, contextWindow } = req.body || {}
+    const { name, apiKey, baseUrl, model, models, isDefault, contextWindow, apiFormat } = req.body || {}
 
     const existing = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [id, req.userId])
     if (existing.rowCount === 0) {
@@ -195,6 +219,14 @@ router.put('/providers/:id', apiLimiter, async (req, res) => {
         })()
       : cur.context_window
 
+    // apiFormat：提供时校验（仅 custom 可用 anthropic / responses，非法回 400）；不提供则保留旧值
+    let newApiFormat = cur.api_format || 'openai'
+    if (apiFormat !== undefined && apiFormat !== null && apiFormat !== '') {
+      const v = normalizeApiFormat(apiFormat, cur.provider === 'custom')
+      if (v === null) return res.status(400).json({ error: 'Invalid api_format' })
+      newApiFormat = v
+    }
+
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -205,11 +237,11 @@ router.put('/providers/:id', apiLimiter, async (req, res) => {
         `UPDATE ai_providers
          SET name = $3, api_key_encrypted = $4, base_url = $5, model = $6,
              models = COALESCE($8::jsonb, models),
-             is_default = $7, context_window = $9, updated_at = NOW()
+             is_default = $7, context_window = $9, api_format = $10, updated_at = NOW()
          WHERE id = $1 AND user_id = $2
-         RETURNING id, provider, name, base_url, model, models, is_default, context_window, created_at, updated_at,
+         RETURNING id, provider, name, base_url, model, models, is_default, context_window, api_format, created_at, updated_at,
                    (api_key_encrypted IS NOT NULL AND api_key_encrypted <> '') AS has_key`,
-        [id, req.userId, newName, encryptedKey, newBaseUrl, newModel, wantDefault, modelsJson, newContextWindow]
+        [id, req.userId, newName, encryptedKey, newBaseUrl, newModel, wantDefault, modelsJson, newContextWindow, newApiFormat]
       )
       await client.query('COMMIT')
       res.json(result.rows[0])
@@ -239,7 +271,7 @@ router.get('/providers/:id/models', apiLimiter, async (req, res) => {
     const apiKey = decrypt(row.api_key_encrypted)
     let models = []
     try {
-      models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url, apiKey })
+      models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url, apiKey, apiFormat: row.api_format })
     } catch (e) {
       logger.warn('Fetch provider models failed:', e.message)
     }
@@ -272,7 +304,7 @@ router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
     }
     const apiKey = decrypt(row.api_key_encrypted)
     // 只使用库中 base_url；不再采信请求体的 baseUrl 字段（校验无效，提示客户端忽略）。
-    const models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url, apiKey })
+    const models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url, apiKey, apiFormat: row.api_format })
     res.json({ models, note: 'baseUrl 字段被忽略，仅使用该供应商已配置的 base_url' })
   } catch (err) {
     logger.error('Fetch models (preview) error:', err)
@@ -310,7 +342,13 @@ router.post('/providers/:id/test', apiLimiter, async (req, res) => {
       apiKey,
       messages: [{ role: 'user', content: 'ping' }],
       options: { maxTokens: 8, stream: false },
+      apiFormat: row.api_format,
     })
+    // Responses 族：用最小请求 {model, input:'ping', stream:false, max_output_tokens:8}，
+    // 直接以字符串 input 探测上游连通性（与结构化转换等价但更贴近官方最小示例）。
+    if (upstream.family === 'responses') {
+      upstream.body.input = 'ping'
+    }
 
     const upstreamRes = await safeUpstreamFetch(upstream.url, {
       method: 'POST',
@@ -322,6 +360,8 @@ router.post('/providers/:id/test', apiLimiter, async (req, res) => {
       const text = await upstreamRes.text().catch(() => '')
       return res.status(502).json({ ok: false, status: upstreamRes.status, detail: text.slice(0, 500) })
     }
+    // 非流式响应（openai：choices[].message；responses：output[].content[].text）
+    // 仅校验 HTTP ok，无需解析 body，故两类协议均可直接通过。
     res.json({ ok: true })
   } catch (err) {
     logger.error('Test AI provider error:', err)

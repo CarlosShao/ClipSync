@@ -5,12 +5,13 @@ import type { ChatMessage } from '@/api/ai'
 import AiMessage from './AiMessage.vue'
 import AiErrorBar from './AiErrorBar.vue'
 import AiDuplicateNotice from './AiDuplicateNotice.vue'
-import AiConfirmCard from './AiConfirmCard.vue'
 
 /**
  * UI-C：顶部区域挂载原子状态组件（错误条 / 图片重复横幅）。
  * error / duplicateNotice 均为可选 props——AiChatPanel 等宿主未传入时不渲染，
  * 新 Shell（UI-B）接入时传入即可，不产生重复展示。
+ * 注：破坏性工具确认 Modal 由宿主 AiChatPanel 统一管理（Teleport 全屏弹层），
+ * 本列表不挂载旧版 AiConfirmCard，避免双弹层。
  */
 const props = defineProps<{
   messages: ChatMessage[]
@@ -27,13 +28,16 @@ const { t } = useI18n()
 
 const scrollRef = ref<HTMLElement | null>(null)
 const userScrolledUp = ref(false)
+let scrollRafId: number | null = null
 
 function isNearBottom(el: HTMLElement) {
-  return el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 120
 }
 
 function scrollToBottom(force = false) {
-  nextTick(() => {
+  if (scrollRafId !== null) return
+  scrollRafId = requestAnimationFrame(() => {
+    scrollRafId = null
     const el = scrollRef.value
     if (!el) return
     if (!force && userScrolledUp.value && !isNearBottom(el)) return
@@ -50,19 +54,15 @@ function onScroll() {
 
 watch(
   () => props.messages.length,
-  () => scrollToBottom(),
-)
-watch(
-  () => props.messages[props.messages.length - 1]?.content || '',
-  () => scrollToBottom(),
-)
-watch(
-  () => props.messages[props.messages.length - 1]?.thinking || '',
-  () => scrollToBottom(),
-)
-watch(
-  () => props.messages,
   () => scrollToBottom(true),
+)
+watch(
+  () => [
+    props.messages[props.messages.length - 1]?.content,
+    props.messages[props.messages.length - 1]?.thinking,
+    props.messages[props.messages.length - 1]?.toolCalls?.length,
+  ],
+  () => scrollToBottom(),
 )
 
 // 定位到指定消息（#231 历史搜索）
@@ -120,8 +120,7 @@ defineExpose({ scrollToPos })
 
 <template>
   <div ref="scrollRef" class="ai-msg-list" @scroll="onScroll">
-    <!-- 顶部原子状态区（UI-C）：错误条 / 图片重复横幅；UI-E：工具确认门控卡片（自读 useAiChatUi 单例状态） -->
-    <AiConfirmCard />
+    <!-- 顶部原子状态区（UI-C）：错误条 / 图片重复横幅；破坏性工具确认 Modal 由 AiChatPanel 统一管理 -->
     <AiErrorBar v-if="error" :message="error" />
     <AiDuplicateNotice v-if="duplicateNotice" :notice="duplicateNotice" @dismiss="emit('dismiss-duplicate')" />
     <div v-if="messages.length === 0" class="ai-msg-empty">

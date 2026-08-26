@@ -1,9 +1,11 @@
 import { Router } from 'express'
+import bcrypt from 'bcryptjs'
 import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { decrypt } from '../utils/encryption.js'
 import { logger } from '../utils/logger.js'
-import { TOOLS, approveToolRequest, cancelPendingForUser } from './aiTools.js'
+import { logAuditEvent } from '../utils/audit.js'
+import { TOOLS, approveToolRequest, respondAskUserRequest, cancelPendingForUser } from './aiTools.js'
 import { runChatLoop } from './aiChatCore.js'
 import { runOrchestration } from './aiOrchestrator.js'
 import { updateConversationUsage } from './aiConversations.js'
@@ -19,6 +21,7 @@ const router = Router()
 
 // POST /api/ai/chat - SSE 流式代理（支持多轮 tool calling + 多代理并行编排）
 router.post('/chat', apiLimiter, async (req, res) => {
+  logger.info('[AI] /chat received', { userId: req.userId, providerId: req.body?.providerId, mode: req.body?.options?.mode, model: req.body?.options?.model, msgCount: (req.body?.messages || []).length })
   try {
     const { providerId, messages, options } = req.body || {}
     const conversationId = options?.conversationId
@@ -113,8 +116,14 @@ router.post('/chat', apiLimiter, async (req, res) => {
     // 禁用 Nagle：确保每个增量块立刻发到 socket，杜绝攒批导致“一次性蹦出”
     res.socket?.setNoDelay?.(true)
 
-    // Agent-C：客户端断开时清空该用户残留的待确认破坏性请求，不残留 pending。
-    req.on('close', () => cancelPendingForUser(req.userId))
+    const upstreamAbort = new AbortController()
+    const upstreamTimer = setTimeout(() => upstreamAbort.abort(), 30 * 60_000)
+
+    // Agent-C：客户端断开时立刻中止上游生成并清空该用户残留的 pending。
+    req.on('close', () => {
+      upstreamAbort.abort()
+      cancelPendingForUser(req.userId)
+    })
 
     const streamStartAt = Date.now()
     let chunkCount = 0
@@ -212,11 +221,6 @@ router.post('/chat', apiLimiter, async (req, res) => {
         logger.info(`[AI][diag] upstream net chunk #${chunkCount} +${sinceLastMs}ms ${bytes}B elapsed=${elapsed}ms (thinking=${thinkingChunks} content=${contentChunks})`)
       }
     }
-
-    // 上游整体超时保护（覆盖连接 + 全部轮次/子代理 + 流读取）：
-    // 避免上游卡死导致后端 reader.read() 永久阻塞、前端一直卡在“思考 N 秒”不动。
-    const upstreamAbort = new AbortController()
-    const upstreamTimer = setTimeout(() => upstreamAbort.abort(), 180_000)
 
     // 捕获本次 SSE 流最终下发的 usage 元信息，流结束后持久化到 ai_conversations。
     let capturedUsage = null
@@ -777,18 +781,54 @@ function cleanSuggestion(s) {
  * POST /api/ai/chat/approve —— 破坏性操作确认入口（Agent-C）
  * 由前端在收到 confirm_tool_action SSE 事件后调用。已在路由挂载层受 authenticateToken + csrfProtection 保护。
  *
- * Body: { requestId, allow }
+ * Body: { requestId, allow, password? }
  *  - allow=true  → 批准：执行被确认的破坏性工具（destroy_clips），返回 { accepted: true, final }
  *  - allow=false → 拒绝：不执行，向等待中的 executeTool 结算 REJECTED_BY_USER，返回 { accepted: false }
+ *  - password    → 可选超管二次验证口令：
+ *      * 前端未启用该能力时（不传 password）保持向后兼容，不强制二次验证，直接走原流程；
+ *      * 超管在确认高权限破坏性操作（如 delete_user / update_role / reset_password 等）被要求二次确认时
+ *        传入 password，后端即强制校验口令一致性，防止已授权会话被他人复用后静默执行高权限动作。
  *
  * 归属校验：pending 项记录 userId，仅该用户自身能审批其请求（禁跨用户）。
  */
 router.post('/chat/approve', apiLimiter, async (req, res) => {
   try {
-    const { requestId, allow } = req.body || {}
+    const { requestId, allow, password } = req.body || {}
     if (!requestId || typeof requestId !== 'string') {
       return res.status(400).json({ error: 'requestId is required' })
     }
+
+    // 超管敏感操作二次验证（可选）：
+    // 仅当请求体携带非空 password 时才强制校验，否则保持原批准流程（向后兼容）。
+    if (typeof password === 'string' && password.length > 0) {
+      try {
+        const userRes = await pool.query(
+          'SELECT password_hash, is_active FROM users WHERE id = $1',
+          [req.userId]
+        )
+        const user = userRes.rows[0]
+        if (!user || user.is_active === false) {
+          return res.status(401).json({ error: 'user_not_found_or_disabled' })
+        }
+        const ok = await bcrypt.compare(password, user.password_hash)
+        if (!ok) {
+          // 二次验证失败：写审计，不执行批准，也不改 pending 状态（用户可重试）。
+          await logAuditEvent({
+            userId: req.userId,
+            action: 'approve_password_verify_failed',
+            resourceType: 'ai_tool_approve',
+            details: { requestId },
+            status: 'failure',
+            errorMessage: '二次验证密码错误',
+          })
+          return res.status(401).json({ error: 'password_verify_failed', message: '二次验证密码错误' })
+        }
+      } catch (verifyErr) {
+        logger.error('[AI] approve password verify error:', verifyErr)
+        return res.status(500).json({ error: 'Approve failed', detail: '二次验证查询失败' })
+      }
+    }
+
     const out = await approveToolRequest(requestId, req.userId, allow === true)
     if (out.notFound) {
       return res.status(404).json({ accepted: false, error: 'NOT_FOUND', message: '该确认请求不存在或不属于当前用户，可能已处理或已超时。' })
@@ -803,6 +843,33 @@ router.post('/chat/approve', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('[AI] approve error:', err)
     res.status(500).json({ error: 'Approve failed', detail: err.message })
+  }
+})
+
+/**
+ * POST /api/ai/chat/respond_ask_user —— 响应 ask_user 交互卡片用户选择
+ * 由前端在用户点击卡片"提交选择"时调用。已在路由挂载层受 authenticateToken + csrfProtection 保护。
+ *
+ * Body: { requestId, userResponse }
+ */
+router.post('/chat/respond_ask_user', apiLimiter, async (req, res) => {
+  try {
+    const { requestId, userResponse } = req.body || {}
+    if (!requestId || typeof requestId !== 'string') {
+      return res.status(400).json({ error: 'requestId is required' })
+    }
+
+    const out = await respondAskUserRequest(requestId, req.userId, userResponse || '')
+    if (out.notFound) {
+      return res.status(404).json({ accepted: false, error: 'NOT_FOUND', message: '该选择请求不存在或不属于当前用户，可能已超时。' })
+    }
+    if (out.expired) {
+      return res.status(409).json({ accepted: false, error: 'EXPIRED', message: '该选择请求已处理或已超时。' })
+    }
+    return res.json({ accepted: true })
+  } catch (err) {
+    logger.error('[AI] respond_ask_user error:', err)
+    res.status(500).json({ error: 'Failed to respond', detail: err.message })
   }
 })
 
