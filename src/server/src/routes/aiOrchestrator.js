@@ -19,9 +19,9 @@
  */
 import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProviders.js'
 import { logger } from '../utils/logger.js'
-import { collectToolCallsFromStream, collectToolCallsFromResponsesStream, collectToolCallsFromAnthropicStream } from './aiStream.js'
+import { collectToolCallsFromStream, collectToolCallsFromResponsesStream, collectToolCallsFromAnthropicStream, handleToolCalls } from './aiStream.js'
 import { runChatLoop, openUpstreamStream, looksLikeToolIntent } from './aiChatCore.js'
-import { TOOLS, READONLY_TOOLS, executeTool } from './aiTools.js'
+import { TOOLS, getWorkerTools } from './aiTools.js'
 import { getToolsForRole } from '../utils/aiSystemPrompt.js'
 
 const MAX_AGENTS = 4
@@ -59,44 +59,17 @@ const DISPATCH_AGENTS_TOOL = {
   },
 }
 
-const COORDINATOR_SYSTEM = `你是一个任务编排协调器（Coordinator）。
+const COORDINATOR_SYSTEM = `你是 ClipSync 的任务编排协调器（Coordinator）。
 
-## 核心原则：默认不派发子代理
+## 决策原则
 
-**绝大多数用户问题都是简单问题，应该直接回答，不要派发子代理。**
+1. 【默认直答】绝大多数问题直接回答；单一查询、深度推理、单问句一律不派发子代理，直接用业务工具完成。
+2. 【派发条件】仅当用户明确要求"同时"处理多个互不依赖的事项、且单一任务无法一次工具调用完成时，调用 dispatch_agents（2~4 个子代理）。派发后停止，不再作答。子代理只有只读工具；写入操作由你（协调器）随后统一执行。
+3. 【需要用户选择时 → ask_user】删除目标、方案二选一、多候选项决策：先用查询工具（get_collections / search_clips 等）拿到真实候选列表，紧接着【立即调用 ask_user】发起界面选择卡片（options 传候选数组，如 ["只删除 test2.1", "只删除 test2.2", "全部删除", "取消"]）。绝不在纯文本中罗列选项或写"请选择"后停止——纯文本不会生成卡片，卡片唯一由 ask_user tool_call 触发。用户的选择会作为工具结果返回给你，据此继续执行。
 
-### 必须派发子代理的唯一情况（同时满足以下 ALL 条件）：
-1. 用户明确要求"同时"处理多个独立事项（如"帮我查收藏夹、设备和统计"）
-2. 各子任务之间完全无依赖（一个任务的结果不影响另一个）
-3. 单个任务无法通过一次工具调用完成
+## 去伪存真
 
-### 不要派发子代理的情况（满足任一即禁止）：
-- ❌ 简单问答（"什么是XXX"、"为什么XXX"、"如何XXX"）
-- ❌ 单一查询（"查一下我的收藏夹"）
-- ❌ 需要深度思考的问题（分析、推理、判断）
-- ❌ 各子任务之间有依赖关系
-- ❌ 用户只问了一个问题
-- ❌ 可以通过一次工具调用完成
-
-### 判断流程（严格按顺序）：
-1. 用户是否只问了一个问题？ → 是 → 直接回答，不派发
-2. 问题是否需要深度思考/推理？ → 是 → 直接回答，不派发
-3. 用户是否明确要求"同时"处理多个独立事项？ → 否 → 直接回答，不派发
-4. 各子任务是否完全无依赖？ → 否 → 直接回答，不派发
-5. 只有以上全部通过 → 才考虑派发子代理
-
-【去伪存真 · 强制要求】
-- 你的所有回答必须且只能基于工具返回的真实数据。未通过工具获取的信息，绝不在回答中呈现为事实。
-- 如果工具未返回某项数据，明确告知用户"该信息暂不可用"，而非编造内容。
-- 不要推测不存在的文件名、ID、数值或其他具体细节。宁可说"不确定"也不要说错。
-- 调用工具后，仅基于工具返回结果回答，不要补充工具未提供的额外信息。
-- 【交互式选择工具规则 · 绝对强制】：
-  1. 当需要用户选择/确认（例如用户要求"删除子目录"、"给我选项让我选"或有多个目标候选项）时，你在通过查询工具（如 get_collections）查出列表后，必须立即调用 ask_user 工具在界面上弹出结构化的交互选择卡片供用户直接点击！
-  2. 严禁在纯文本中输出"现在用交互卡片让你选择"、"下面用交互卡片让你选择"、"请选择要删除的子目录："然后停止！前端绝不会根据文本自动生成卡片，卡片唯一由你发起真实的 ask_user 函数调用（tool_calls）触发！
-  3. 当你需要让用户选择时，直接发出 ask_user 工具调用（例如 options: ["只删除 test2.1", "只删除 test2.2", "全部删除", "取消"]）。
-  4. 绝不能在纯文本中输出等待性话术，必须真正发起工具调用。
-
-注意：子代理只能使用只读工具；写入类操作（收藏/删除/记忆/工作流）由你（协调器）在最后统一执行。调用 dispatch_agents 后停止，不要再作答。`
+- 回答必须且只能基于工具返回的真实数据；工具未返回的数据明确说"暂不可用"，不编造、不推测不存在的 ID/文件名/数值。`
 
 const WORKER_SYSTEM = (agent) => `你是一个并行子代理「${agent.name}」。
 你的专属目标：${agent.objective}
@@ -126,14 +99,15 @@ const SYNTHESIS_SYSTEM = `你是一个结果综合器（Synthesis）。
  * - 多任务：调用 dispatch_agents 返回计划，由 runOrchestration 走并行子代理。
  * 增量直接透传到主气泡（agentId=null）；dispatch_agents 元工具调用被过滤，不向用户暴露。
  */
-async function runCoordinator({ messages, providerRow, apiKey, userId, role, abortSignal, sendDelta, logChunk, thinkingEnabled, thinkingStrength, businessTools }) {
+async function runCoordinator({ messages, providerRow, apiKey, userId, role, req, abortSignal, sendDelta, logChunk, thinkingEnabled, thinkingStrength, businessTools }) {
   const preset = getPreset(providerRow.provider)
   const coMessages = [{ role: 'system', content: COORDINATOR_SYSTEM }, ...messages]
   const tools = [DISPATCH_AGENTS_TOOL, ...businessTools]
   let currentMessages = coMessages
-  // 安全网计数器：防止协调器模型"只说要调工具"却不 emit tool_calls
+  // 安全网计数器：防止协调器模型"只说要调工具"却不 emit tool_calls。
+  // 阶梯与 runChatLoop 对齐：0 次 tool_choice=auto → 1 次 auto + system 提醒 → ≥2 次 required 强制工具调用。
   let continuationRetries = 0
-  const MAX_CONTINUATION_RETRIES = 1
+  const MAX_CONTINUATION_RETRIES = 2
 
   // 透传增量到主气泡，但隐藏 dispatch_agents 元工具（内部规划调用，不应呈现给用户）
   const wrappedSend = (obj) => {
@@ -153,7 +127,7 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
   for (let round = 0; round < 5; round++) {
     const chatOptions = {
       tools,
-      tool_choice: continuationRetries > 0 ? (family === 'anthropic' ? 'any' : 'required') : 'auto',
+      tool_choice: continuationRetries >= 2 ? (family === 'anthropic' ? 'any' : 'required') : 'auto',
     }
     // 思考支持：与 runChatLoop 对齐，仅 Anthropic 协议需显式 thinking 参数
     if (thinkingEnabled && preset?.family === 'anthropic') {
@@ -218,7 +192,8 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
       return { isDispatch: true, dispatchArgs: dispatch.function.arguments || '{}', content: resp.content }
     }
 
-    // 有业务工具调用：执行后继续下一轮（单任务自闭环）
+    // 有业务工具调用：走统一执行管线后继续下一轮（单任务自闭环）。
+    // 管线保证 tool_call 先于执行下发（ask_user 卡片/时间线依赖该时序），结果收敛后发 tool_result。
     if (resp.toolCalls.length > 0) {
       currentMessages.push({
         role: 'assistant',
@@ -229,24 +204,11 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
           function: { name: tc.function.name, arguments: tc.function.arguments },
         })),
       })
-      for (const tc of resp.toolCalls) {
-        let args = {}
-        try {
-          args = JSON.parse(tc.function.arguments || '{}')
-        } catch {
-          /* ignore */
-        }
-        const result = await executeTool(tc.function.name, args, userId, role, tc.id, { sendDelta })
-        wrappedSend({
-          choices: [
-            { delta: { tool_result: { tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(result) } } },
-          ],
-        })
-        currentMessages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) })
-        if (abortSignal?.aborted || result?.cancelled) {
-          logger.info('[AI][orchestrator] stream aborted or tool cancelled, stopping coordinator loop')
-          return { isDispatch: false, dispatchArgs: '', content: '' }
-        }
+      const toolResults = await handleToolCalls(resp.toolCalls, userId, wrappedSend, null, role, { abortSignal, req })
+      currentMessages.push(...toolResults)
+      if (abortSignal?.aborted) {
+        logger.info('[AI][orchestrator] stream aborted, stopping coordinator loop')
+        return { isDispatch: false, dispatchArgs: '', content: '' }
       }
       continue
     }
@@ -256,7 +218,7 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
     const thinkingHasIntent = looksLikeToolIntent(resp.thinking || '')
     const emptyContentAfterThinking = Boolean(resp.thinking && (!resp.content || !resp.content.trim()) && resp.toolCalls.length === 0)
     if (
-      continuationRetries < 2 &&
+      continuationRetries < MAX_CONTINUATION_RETRIES &&
       (contentHasIntent || thinkingHasIntent || emptyContentAfterThinking)
     ) {
       logger.info('[AI][orchestrator] safety net triggered: tool intent or empty content after thinking.',
@@ -288,8 +250,9 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, abo
  * @returns {Promise<Array<{id,name,objective,tools,status,content,error?,duration?}>>}
  */
 async function runWorkers({ agents, messages, providerRow, apiKey, userId, role = 'user', abortSignal, sendDelta, logChunk, thinkingEnabled, thinkingStrength }) {
-  // ✅ RBAC（#214）：子代理只配发按角色过滤后的只读工具
-  const scopedReadonly = getToolsForRole(role, READONLY_TOOLS)
+  // ✅ RBAC（#214）：子代理只配发按角色过滤后的只读工具，且剔除 UI 阻塞型门控工具
+  //（ask_user 卡片只挂在主消息上，子代理调用会形成"等待永不出现的卡片"死锁）
+  const scopedReadonly = getWorkerTools(role)
   const promises = agents.map((agent) => {
     // 每个子代理独立的 AbortController，根超时时一并中止
     const workerAbort = new AbortController()
@@ -416,6 +379,7 @@ export async function runOrchestration({
   apiKey,
   userId,
   role = 'user',
+  req,
   sendDelta,
   logChunk,
   safeFinish,
@@ -424,8 +388,8 @@ export async function runOrchestration({
   thinkingStrength,
 }) {
   // ✅ RBAC（#214）：按角色过滤下发给各阶段的工具集
+  // （子代理工具集在 runWorkers 内经 getWorkerTools 二次收敛，剔除 ask_user 等阻塞型工具）
   const scopedTools = getToolsForRole(role, TOOLS)
-  const scopedReadonly = getToolsForRole(role, READONLY_TOOLS)
 
   // #7：编排层聚合 usage（取上下文峰值），避免多 agent 各自下发 token 用量导致前端圆环抖动。
   // 所有 usage 元信息在此拦截，safeFinish 前统一下发一次。
@@ -470,6 +434,7 @@ export async function runOrchestration({
       apiKey,
       userId,
       role,
+      req,
       abortSignal,
       sendDelta: sendDeltaWrapped,
       logChunk,

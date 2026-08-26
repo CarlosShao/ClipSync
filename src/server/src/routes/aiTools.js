@@ -1671,6 +1671,22 @@ export const WRITE_TOOL_NAMES = new Set([
  */
 export const READONLY_TOOLS = TOOLS.filter((t) => !WRITE_TOOL_NAMES.has(t.function.name))
 
+/**
+ * 子代理禁用工具集合：UI 阻塞型门控工具只允许在主线程（单代理 / 协调器）使用。
+ * ask_user 的交互卡片只渲染在主消息上（AiMessage.askUserStep ← message.toolCalls），
+ * 子代理的增量被路由进独立 agent 卡片——若子代理调用 ask_user，会形成
+ * "门控等待用户 → 用户等卡片 → 卡片永远不会出现"的死锁，直至 5 分钟超时。
+ */
+export const WORKER_BLOCKED_TOOLS = new Set(['ask_user'])
+
+/**
+ * 子代理工具集：角色过滤后的只读工具，再剔除阻塞型门控工具。
+ * 供 aiOrchestrator.runWorkers 使用，保证并行子代理永不触发人类在回路等待。
+ */
+export function getWorkerTools(role) {
+  return getToolsForRole(role, READONLY_TOOLS).filter((t) => !WORKER_BLOCKED_TOOLS.has(t.function.name))
+}
+
 // ============ Agent-C：破坏性操作确认门控 ============
 // 需用户在前端明确确认后才能执行的破坏性工具集合（写工具先按此协议演进）。
 // 命中集合的工具不会直接被 executeToolInner 执行，而是：
@@ -1935,12 +1951,7 @@ export async function runAskUserGate(toolName, args, userId, role, requestId, op
 
     pendingAskUserRequests.set(rid, entry)
 
-    if (!sendDelta) {
-      entry.settle({ user_response: '非流式环境跳过交互卡片', skipped: true })
-      return
-    }
-
-    // 15 秒心跳保活 SSE 流
+    // 15 秒心跳保活 SSE 流（前端据此维持"流活跃"状态，避免被无响应看门狗误杀）
     entry.heartbeat = setInterval(() => {
       try {
         sendDelta({ meta: { type: 'heartbeat', timestamp: Date.now() } })
@@ -1949,7 +1960,7 @@ export async function runAskUserGate(toolName, args, userId, role, requestId, op
       }
     }, 15000)
 
-    // 下发 SSE 交互卡片元数据
+    // 下发 SSE 交互卡片元数据（前端兜底渲染：无同 id tool_call 时合成 ask_user 卡片）
     sendDelta({
       meta: {
         type: 'ask_user_action',
@@ -1959,6 +1970,7 @@ export async function runAskUserGate(toolName, args, userId, role, requestId, op
       },
     })
 
+    // 客户端断开时结算等待（用户关页面/取消流 → 门控立即释放，不残留 5 分钟）
     if (opts.req && typeof opts.req.on === 'function') {
       opts.req.on('close', onReqClose)
     }
@@ -2026,32 +2038,8 @@ async function executeToolInner(toolName, args, userId, role) {
     }
 
     switch (toolName) {
-      case 'ask_user': {
-        let questions = []
-        if (Array.isArray(args.questions) && args.questions.length > 0) {
-          questions = args.questions.map((q) => ({
-            question: q.question || '请做出选择：',
-            options: Array.isArray(q.options) ? q.options : [],
-            is_multi_select: Boolean(q.is_multi_select),
-            context: q.context || '',
-          }))
-        } else {
-          questions = [
-            {
-              question: args.question || '请做出选择：',
-              options: Array.isArray(args.options) ? args.options : [],
-              is_multi_select: Boolean(args.is_multi_select),
-              context: args.context || '',
-            }
-          ]
-        }
-        return {
-          questions,
-          context: args.context || '',
-          status: 'card_rendered',
-          message: '已在前端成功弹出多元交互选择卡片，Agent 工作流已暂停，正在等待用户在界面上完成选择并提交。'
-        }
-      }
+      // 说明：ask_user 不在 executeToolInner 内实现——executeTool 顶部将其拦截进
+      // runAskUserGate（人类在回路门控），此处的 switch 只处理"立即执行型"工具。
 
       case 'find_duplicates': {
         const type = args.type && args.type !== 'all' ? args.type : null
@@ -4616,7 +4604,8 @@ async function executeTool(toolName, args, userId, role, requestId, opts = {}) {
       const gate = await runAskUserGate(toolName, args, userId, role, requestId, opts)
       confirmRequestId = gate.requestId || requestId
       result = {
-        status: 'completed',
+        // 超时/断流必须显式标注，status:'completed' 会误导模型把超时当作用户已作答
+        status: gate.timeout ? 'timeout' : gate.cancelled ? 'cancelled' : 'completed',
         user_response: gate.user_response || '用户已在界面卡片做出选择',
         questions: args.questions || [{ question: args.question, options: args.options }],
       }

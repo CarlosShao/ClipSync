@@ -248,6 +248,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
           apiKey,
           userId: req.userId,
           role,
+          req,
           sendDelta: trackedSendDelta,
           logChunk,
           safeFinish,

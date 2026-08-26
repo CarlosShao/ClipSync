@@ -588,11 +588,11 @@ export async function runChatLoop({
       continue
     }
 
-    // 有 tool calls：直接执行工具调用（包含破坏性确认门控与审计）
+    // 有 tool calls：走统一执行管线（先发 tool_call 再执行后发 result；ask_user 等门控在此阻塞）
     if (response.toolCalls.length > 0) {
       // 真正调用了工具，重置"只说不做"重试计数
       continuationRetries = 0
-      const toolResults = await handleToolCalls(response.toolCalls, userId, sendDelta, agentId, role)
+      const toolResults = await handleToolCalls(response.toolCalls, userId, sendDelta, agentId, role, { abortSignal })
 
       currentMessages.push({
         role: 'assistant',

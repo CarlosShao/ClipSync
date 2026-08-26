@@ -4,7 +4,7 @@
  * 这里只放「与具体编排无关」的底层 SSE 解析 + 单轮工具执行逻辑：
  * - parseSSEEvent：把一段 raw SSE block 解析成 {event, data}
  * - collectToolCallsFromStream：边流式下发 thinking/content，边收集 tool_calls
- * - handleToolCalls：并行执行同一轮内的多个工具，逐个推送 tool_call / tool_result
+ * - handleToolCalls：统一工具执行管线（串行），tool_call → 执行 → tool_result 事件时序契约
  *
  * 所有「增量」都通过调用方传入的 sendDelta 下发，本模块不关心 SSE 连接的开关。
  * agentId 可选：多代理编排时给每个增量打上所属子代理的标识，便于前端路由。
@@ -424,88 +424,111 @@ function withTimeout(promise, ms, msg) {
 
 // 单工具执行超时（必须显著小于 aiChat.js 的 180s 上游整体超时，保证编排能在上游超时前收敛）。
 // 工具多为本地 DB / 内部查询，120s 已极其宽裕；真正卡死时按失败处理而非无限等待。
+// 注意：ask_user 豁免该超时（见 handleToolCalls），否则会在等待用户作答时被误判超时掐断。
 const TOOL_EXEC_TIMEOUT_MS = 120_000
 
 /**
- * 执行同一轮内的多个工具调用（并行，互不依赖，缩短整体延迟）
- * 每个工具完成即向前端推送 tool_call / tool_result 增量，保证时间线实时刷新。
+ * 统一工具执行管线（单代理 / 协调器 / 子代理共用）。
+ *
+ * 事件时序契约（前端渲染依赖，勿改）：
+ *   1) tool_call delta            —— 执行【前】下发。前端时间线立即渲染"调用中"条目；
+ *                                    ask_user 的交互选择卡片也由该事件驱动（AiMessage.askUserStep ← message.toolCalls）。
+ *   2) meta.ask_user_action       —— 仅 ask_user：门控打开时下发，前端兜底合成卡片（已有同 id tool_call 时忽略）。
+ *   3) meta.confirm_tool_action   —— 仅破坏性工具：确认门控卡片（executeTool 内部下发）。
+ *   4) tool_result delta          —— 执行【后】下发，时间线收敛为完成态，结果回传模型上下文。
+ *
+ * 历史教训（ask_user 死锁）：协调器曾绕过本管线直接 executeTool 且不下发 tool_call——
+ * ask_user 在执行期阻塞等待用户点卡片，而卡片恰恰要等 tool_call/tool_result 才渲染，
+ * 形成"服务端等用户 → 用户等卡片 → 卡片等事件"的循环等待。所有路径必须走本管线。
+ *
+ * 执行策略：同一轮内【串行】执行。
+ *   - ask_user / 破坏性确认是 UI 阻塞型交互，必须独占等待（旧并行实现下第二个破坏性
+ *     工具会因 pendingRequests 并发上限被误拒 CONCURRENT_CONFIRM_REQUEST）；
+ *   - 串行保证 tool_result 顺序与模型上下文一致；本地 DB/查询工具耗时极低，延迟损失可忽略。
+ *
+ * 超时策略：普通工具 toolTimeoutMs（默认 120s）兜底；ask_user 豁免——门控自带
+ * 5min 等待计时（ASK_USER_TIMEOUT_MS），在用户作答前掐断属于逻辑错误。
  *
  * @param {Array} toolCalls 已收集好的工具调用列表
  * @param {string} userId   当前用户 id
  * @param {Function} sendDelta 增量下发函数
- * @param {string|null} agentId 多代理模式下所属子代理 id（打在增量上）
+ * @param {string|null} agentId 多代理模式下所属子代理 id（打在增量上），主线程传 null
  * @param {string} [role] 角色键，透传给 executeTool 做实工具权限闸门
+ * @param {object} [opts] { abortSignal, req, toolTimeoutMs } 中断信号 / 断连清理用请求对象 / 超时覆盖（测试用）
  */
-export async function handleToolCalls(toolCalls, userId, sendDelta, agentId = null, role = 'user') {
+export async function handleToolCalls(toolCalls, userId, sendDelta, agentId = null, role = 'user', opts = {}) {
   const agentField = agentId ? { agent_id: agentId } : {}
-  const settled = await Promise.all(
-    toolCalls.map(async (tc) => {
-      if (!tc.function?.name) return null
+  const abortSignal = opts.abortSignal
+  const toolTimeoutMs = opts.toolTimeoutMs ?? TOOL_EXEC_TIMEOUT_MS
+  const results = []
 
-      const toolName = tc.function.name
-      let args = {}
-      try {
-        args = JSON.parse(tc.function.arguments || '{}')
-      } catch { /* ignore */ }
+  for (const tc of toolCalls || []) {
+    if (!tc?.function?.name) continue
+    // 中断（前端断开/整体取消）：不再执行后续工具，已执行结果保持已下发状态
+    if (abortSignal?.aborted) {
+      logger.info(`[tool] ${tc.function.name} skipped: stream aborted before execution`)
+      break
+    }
 
-      // 通知前端正在执行工具
-      sendDelta({
-        choices: [{
-          delta: {
-            tool_call: {
-              id: tc.id,
-              name: toolName,
-              arguments: tc.function.arguments
-            },
-            ...agentField
+    const toolName = tc.function.name
+    let args = {}
+    try {
+      args = JSON.parse(tc.function.arguments || '{}')
+    } catch { /* ignore */ }
+
+    // 1) 先下发 tool_call：时间线"调用中"状态 + ask_user 交互卡片都依赖该事件
+    sendDelta({
+      choices: [{
+        delta: {
+          tool_call: {
+            id: tc.id,
+            name: toolName,
+            arguments: tc.function.arguments
           },
-          index: 0
-        }]
-      })
-
-      // 执行工具（同一轮内并行），带超时保护，避免挂起拖垮整个编排
-      let result
-      try {
-        result = await withTimeout(
-          executeTool(toolName, args, userId, role, tc.id, { sendDelta }),
-          TOOL_EXEC_TIMEOUT_MS,
-          `tool ${toolName} timed out after ${TOOL_EXEC_TIMEOUT_MS}ms`,
-        )
-      } catch (err) {
-        // 原始错误仅留档给运维，绝不回传给前端 / LLM，避免泄露 SQL 等内部细节
-        logger.error(`[tool] ${toolName} execution failed:`, err)
-        const timedOut = /timed out/i.test(String(err?.message || ''))
-        result = {
-          error: timedOut ? '工具执行超时，请稍后重试。' : '工具执行失败，请稍后重试或换个问法。',
-          timedOut,
-        }
-      }
-
-      // 通知前端工具执行结果
-      // 注意：coordinator(单任务自闭环)路径只发送 tool_result、不发 tool_call 事件，
-      // 前端靠 tool_result.name 而非 tool_call 匹配来确定工具名，因此这里必须带上 name。
-      sendDelta({
-        choices: [{
-          delta: {
-            tool_result: {
-              tool_call_id: tc.id,
-              name: toolName,
-              content: JSON.stringify(result)
-            },
-            ...agentField
-          },
-          index: 0
-        }]
-      })
-
-      return {
-        role: 'tool',
-        tool_call_id: tc.id,
-        content: JSON.stringify(result)
-      }
+          ...agentField
+        },
+        index: 0
+      }]
     })
-  )
 
-  // 保持与入参一致的顺序，供下一轮上下文拼接
-  return settled.filter(Boolean)
+    // 2) 执行工具：ask_user 豁免管线超时（门控自带等待计时），其余工具超时兜底
+    let result
+    try {
+      const exec = executeTool(toolName, args, userId, role, tc.id, { sendDelta, req: opts.req })
+      result = toolName === 'ask_user'
+        ? await exec
+        : await withTimeout(exec, toolTimeoutMs, `tool ${toolName} timed out after ${toolTimeoutMs}ms`)
+    } catch (err) {
+      // 原始错误仅留档给运维，绝不回传给前端 / LLM，避免泄露 SQL 等内部细节
+      logger.error(`[tool] ${toolName} execution failed:`, err)
+      const timedOut = /timed out/i.test(String(err?.message || ''))
+      result = {
+        error: timedOut ? '工具执行超时，请稍后重试。' : '工具执行失败，请稍后重试或换个问法。',
+        timedOut,
+      }
+    }
+
+    // 3) 后下发 tool_result：时间线收敛 + 结果回传模型（content 为 JSON 字符串）
+    sendDelta({
+      choices: [{
+        delta: {
+          tool_result: {
+            tool_call_id: tc.id,
+            name: toolName,
+            content: JSON.stringify(result)
+          },
+          ...agentField
+        },
+        index: 0
+      }]
+    })
+
+    results.push({
+      role: 'tool',
+      tool_call_id: tc.id,
+      content: JSON.stringify(result)
+    })
+  }
+
+  return results
 }

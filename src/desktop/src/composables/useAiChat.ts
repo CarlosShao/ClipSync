@@ -823,6 +823,29 @@ export function useAiChat() {
           // 有 agentId 的增量属于某个子代理 → 路由到对应卡片；否则归到主气泡
           const target: AgentRun | null = meta?.agentId ? getOrCreateAgentRun(meta.agentId) : null
 
+          // ask_user 交互卡片兜底（人类在回路）：正常路径由 tool_call 增量驱动卡片渲染，
+          // 此处兜底覆盖 tool_call 缺失/后到的路径（统一管线保证 tool_call 先行，此为双保险）。
+          // 已存在同 id 的 toolCall 时跳过，避免重复累积导致 arguments 拼接两份。
+          if (mm?.type === 'ask_user_action' && mm.requestId) {
+            const askBucket = target || assistantMsg
+            const exists = (askBucket.toolCalls || []).some((tc) => tc.id === mm.requestId)
+            if (!exists) {
+              askBucket.thinkingActive = false
+              sealThinkingSegment(askBucket)
+              flushTextBuffer(askBucket)
+              if (!askBucket.toolCalls) askBucket.toolCalls = []
+              askBucket.toolCalls.push({
+                id: mm.requestId,
+                name: 'ask_user',
+                arguments: JSON.stringify({
+                  questions: Array.isArray(mm.questions) ? mm.questions : [],
+                  context: mm.context || '',
+                }),
+                segIndex: Math.max(0, (askBucket.thinkingSegments?.length || 1) - 1),
+              } as any)
+            }
+          }
+
           if (thinkingNative) {
             const bucket = target || assistantMsg
             // 多轮流式保护：上一轮工具调用把 thinkingActive=false 了，
