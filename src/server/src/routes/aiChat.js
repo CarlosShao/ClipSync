@@ -362,7 +362,7 @@ router.post('/summarize', apiLimiter, async (req, res) => {
 
     const { finalContent } = await runChatLoop({
       messages,
-      options: { temperature: 0.3, max_tokens: 120 },
+      options: { temperature: 0.3, max_tokens: 4096 },
       providerRow,
       apiKey,
       tools: [],
@@ -423,7 +423,7 @@ router.post('/similarity', apiLimiter, async (req, res) => {
 
     const { finalContent } = await runChatLoop({
       messages,
-      options: { temperature: 0.1, max_tokens: 300 },
+      options: { temperature: 0.1, max_tokens: 4096 },
       providerRow,
       apiKey,
       tools: [],
@@ -730,7 +730,7 @@ router.post('/suggest', apiLimiter, async (req, res) => {
 
     const { finalContent } = await runChatLoop({
       messages,
-      options: { temperature: 0.2, max_tokens: isBatch ? 300 * Math.max(1, items.length) : 300 },
+      options: { temperature: 0.2, max_tokens: 4096 },
       providerRow,
       apiKey,
       tools: [],

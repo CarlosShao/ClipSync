@@ -79,7 +79,7 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
       :thinking="run.thinking || ''"
       :thinking-started-at="run.thinkingStartedAt"
       :is-streaming="isStreamingNow && run.thinkingActive !== false"
-      :expanded="expandedThinking || isStreamingNow"
+      :expanded="expandedThinking"
       @toggle="expandedThinking = !expandedThinking"
     />
 

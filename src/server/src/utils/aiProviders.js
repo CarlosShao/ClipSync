@@ -582,7 +582,9 @@ export function buildUpstreamChat(cfg) {
     const body = {
       model,
       messages: chatMessages,
-      max_tokens: resolvedMaxTokens || 1024,
+      // 默认输出上限必须足够大（16384）：前端聊天主流程不传 max_tokens，
+      // 过小（原 1024）会导致深度模型（Step Explore 等）回答被硬截断成半截。
+      max_tokens: resolvedMaxTokens || 16384,
       stream,
     }
     // 原生 Anthropic thinking 参数（OpenAI 兼容族不支持该字段，由 reasoning_content 自动下发）
@@ -687,7 +689,7 @@ export function buildUpstreamChat(cfg) {
       model,
       input,
       stream,
-      max_output_tokens: resolvedMaxTokens || 1024,
+      max_output_tokens: resolvedMaxTokens || 16384,
     }
     if (typeof options.temperature === 'number') {
       body.temperature = options.temperature
@@ -742,9 +744,9 @@ export function buildUpstreamChat(cfg) {
   if (typeof options.temperature === 'number') {
     body.temperature = options.temperature
   }
-  if (resolvedMaxTokens) {
-    body.max_tokens = resolvedMaxTokens
-  }
+  // 与 anthropic / responses 族对齐：聊天主流程前端不传 max_tokens 时也给出兜底默认值，
+  // 避免上游按服务商默认（常仅 1~2K）输出，长回答被 finish_reason=length 硬截断。
+  body.max_tokens = resolvedMaxTokens || 16384
   // 支持工具定义
   if (options.tools) {
     body.tools = options.tools

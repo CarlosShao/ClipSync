@@ -214,15 +214,23 @@ export async function runStream(inp: SendStreamParams) {
     if (inp.ownsStream()) { inp.error.value = String(e?.message || e); const last = inp.messages.value[inp.messages.value.length - 1]; if (last?.role === 'assistant') last.isError = true }
     flushAllTextBuffers(inp.assistantMsg, sealThinkingSegment)
   } finally {
-    clearInterval(silenceWatchdog)
-    agentMgr.stopWatchdog(agentTimeoutWatchdog)
-    flushAllTextBuffers(inp.assistantMsg, sealThinkingSegment)
+    // 收尾状态在前置清理之前置位：即使某个清理函数抛错（如 Illegal invocation），
+    // isStreaming=false 也保证已执行，UI 不会永久停留在"流式中/卡死"。
     inp.isStreaming.value = false
     inp.streamLastActivityAt.value = 0
+    try {
+      clearInterval(silenceWatchdog)
+    } catch { /* ignore */ }
+    try {
+      agentMgr.stopWatchdog(agentTimeoutWatchdog)
+    } catch { /* ignore */ }
+    try {
+      flushAllTextBuffers(inp.assistantMsg, sealThinkingSegment)
+    } catch { /* ignore */ }
     inp.abortCtrl.value = null
     if (streamInterrupted) inp.assistantMsg.interrupted = true
     if (inp.ownsStream()) {
-      agentMgr.settle()
+      try { agentMgr.settle() } catch { /* ignore */ }
       inp.pendingConfirm.value = null
       inp.approving.value = false
       inp.saveCurrent(inp.messages.value)

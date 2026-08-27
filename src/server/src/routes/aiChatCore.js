@@ -368,6 +368,36 @@ async function compressConversationHistory(messages, opts) {
 }
 
 /**
+ * 读取系统全局 AI 输出预算配置 ai_max_tokens（system_configs 表，种子默认 4096）。
+ * 带 60s 内存缓存，避免每次对话都打一次库；解析失败时回退 null（由调用方兜底默认值）。
+ * 该配置可在管理面板/AI 工具中调整，实现"输出长度可配置"而非写死。
+ * @returns {Promise<number|null>}
+ */
+let cachedGlobalMaxTokens = null
+let globalMaxTokensFetchedAt = 0
+const GLOBAL_MAX_TOKENS_CACHE_MS = 60_000
+export async function resolveGlobalMaxTokens() {
+  const now = Date.now()
+  if (cachedGlobalMaxTokens !== null && now - globalMaxTokensFetchedAt < GLOBAL_MAX_TOKENS_CACHE_MS) {
+    return cachedGlobalMaxTokens
+  }
+  try {
+    const res = await pool.query(
+      `SELECT config_value FROM system_configs WHERE config_key = 'ai_max_tokens' LIMIT 1`,
+    )
+    const raw = res.rows[0]?.config_value
+    const num = typeof raw === 'number' ? raw : Number(String(raw ?? '').replace(/"/g, '').trim())
+    cachedGlobalMaxTokens = Number.isFinite(num) && num > 0 ? num : null
+    globalMaxTokensFetchedAt = now
+    return cachedGlobalMaxTokens
+  } catch (e) {
+    logger.warn('[AI] resolveGlobalMaxTokens failed:', e.message)
+    cachedGlobalMaxTokens = null
+    return null
+  }
+}
+
+/**
  * 执行一轮完整对话循环。
  * @returns {{ messages: Array, finalContent: string }}
  */
@@ -434,6 +464,20 @@ export async function runChatLoop({
       compressResult = null
     }
     const chatOptions = { ...options }
+
+    // 输出预算默认值解析（可配置）：
+    // 1) 调用方显式传入 maxTokens/max_tokens → 最高优先级（不覆盖）
+    // 2) 否则读取系统全局配置 ai_max_tokens（管理面板可调）
+    // 3) 仍未配置 → 由 buildUpstreamChat 的硬编码兜底（8192）
+    const callerMaxTokens = Number.isFinite(chatOptions.maxTokens)
+      ? chatOptions.maxTokens
+      : Number.isFinite(chatOptions.max_tokens) ? chatOptions.max_tokens : null
+    if (callerMaxTokens === null) {
+      const globalMaxTokens = await resolveGlobalMaxTokens()
+      if (globalMaxTokens !== null) {
+        chatOptions.maxTokens = globalMaxTokens
+      }
+    }
 
     // thinking 支持：仅 Anthropic 协议需要显式 thinking 参数（OpenAI 兼容族由 reasoning_content 自动下发）
     if (thinkingEnabled && family === 'anthropic') {
@@ -645,6 +689,21 @@ export async function runChatLoop({
       })
       currentMessages.push(...toolResults)
 
+      continue
+    }
+
+    // 无 tool_calls 但 finish_reason=length：答案被输出预算硬截断。
+    // 直接把半截内容当最终答案返回会呈现"主动中断"——回注"继续完成"让模型续写到完整
+    //（重试内保留已输出正文作为上下文起点，模型从断点续写而非重头）。
+    if (response.finishReason === 'length' && truncationRetries < MAX_TRUNCATION_RETRIES) {
+      truncationRetries++
+      logger.warn('[AI] final answer truncated (finish_reason=length), asking model to continue.',
+        'content_len=', (response.content || '').length, 'retry=', truncationRetries)
+      if (response.content) {
+        currentMessages.push({ role: 'assistant', content: response.content })
+      }
+      // 用 role:'user' 回注（与上面 tool_calls 截断防护同理：Anthropic/Responses 会丢弃中途 system）
+      currentMessages.push({ role: 'user', content: '【系统提示】你上一轮回答因达到输出 token 上限被截断（finish_reason=length）' + (response.content ? '，请直接从截断处继续完成回答，不要重复已输出的内容。' : '，请重新完整输出最终回答。') })
       continue
     }
 

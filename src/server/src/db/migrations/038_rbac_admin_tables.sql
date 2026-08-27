@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS feature_flags (
 
 -- ---- system_configs 种子数据 ----
 INSERT INTO system_configs (config_key, config_value, description, category) VALUES
-  ('ai_max_tokens',             '4096'::jsonb,        'AI 单次生成的最大 token 数',        'ai'),
+  ('ai_max_tokens',             '16384'::jsonb,       'AI 单次生成的最大 token 数',        'ai'),
   ('ai_default_provider',       '"openrouter"'::jsonb, 'AI 默认供应商（默认值语义）',        'ai'),
   ('max_collection_depth',      '5'::jsonb,           '收藏层级最大深度',                  'collection'),
   ('enable_audit_log',          'true'::jsonb,        '是否启用审计日志',                  'security'),

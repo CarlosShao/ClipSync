@@ -121,5 +121,9 @@ export function useAgentRuns(deps: AgentRunDeps): AgentRunHandle {
     }, 5_000)
   }
 
-  return { ensure, upsert, getOrCreate, settle, converge, startWatchdog, stopWatchdog: clearInterval }
+  return { ensure, upsert, getOrCreate, settle, converge, startWatchdog, stopWatchdog: clearWatchdog }
+
+  function clearWatchdog(id: number) {
+    clearInterval(id)
+  }
 }

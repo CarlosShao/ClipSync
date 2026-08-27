@@ -15,6 +15,18 @@
  */
 
 /**
+ * 解开 D6b tool_result 信封取回原始 JSON 文本（Anthropic Messages 转换专用）。
+ * Anthropic 原生 tool_result block 已自带结构化边界（type:'tool_result' + tool_use_id），
+ * 若 content 再包一层 <tool_result> 信封，模型会把信封当数据、读不到真实结果
+ * （如"工具已返回子收藏夹，但思考却说 0 items"）。非信封格式原样返回。
+ */
+function unwrapToolResultEnvelope(content) {
+  const s = String(content ?? '')
+  const m = /^<tool_result\b[^>]*>\n([\s\S]*)\n<\/tool_result>$/.exec(s)
+  return m ? m[1] : s
+}
+
+/**
  * 将 OpenAI 格式的消息历史转换为 Anthropic Messages 协议格式。
  *
  * @param {Array} messages OpenAI 格式消息数组
@@ -46,12 +58,14 @@ export function convertMessagesForAnthropic(messages) {
     }
 
     if (role === 'tool') {
-      // OpenAI tool 消息 → Anthropic tool_result block（挂到后续 user 消息里）
+      // OpenAI tool 消息 → Anthropic tool_result block（挂到后续 user 消息里）。
+      // content 解包 D6b 信封：Anthropic 的 tool_result block 已是可信边界，
+      // 再包一层信封会导致模型把封装文本当数据、读不出真实结果（"0 items"问题）。
       if (!pendingToolResults) pendingToolResults = []
       pendingToolResults.push({
         type: 'tool_result',
         tool_use_id: msg.tool_call_id || '',
-        content: msg.content || '',
+        content: unwrapToolResultEnvelope(msg.content),
       })
       continue
     }

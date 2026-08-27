@@ -48,15 +48,45 @@ let timer: number | undefined
 const displayThinking = computed(() => props.thinking || '')
 
 // ==================== 单行跑马灯（live 且未展开时） ====================
-// 取思考文本尾部（最新生成的内容），压平为单行，随流式持续刷新。
-// 参考 ZCode/Cursor 的"思考中…"横排样式：占位一行、体感在飞速输出。
-const TICKER_CHARS = 140
+// 把思考文本压平为单行；超宽时启用双份文本无缝横向滚动（deepseek harness 同款观感），
+// 体感"横着飞速流动、不占纵向位置"。流式期间 ticker 随增量实时刷新。
+const TICKER_CHARS = 320
 const tickerText = computed(() => {
   const raw = (props.thinking || '').replace(/\s+/g, ' ').trimEnd()
   if (!raw) return ''
   return raw.length > TICKER_CHARS ? raw.slice(-TICKER_CHARS) : raw
 })
-const showTicker = computed(() => live.value && hasContent.value && !props.expanded)
+// 跑马灯展示条件：只要有思考文本且头部未展开，即以单行横向滚动展示（不依赖 live）。
+// 修正：live=false（思考流已结束/thinkingActive 静默置 false）时 ticker 也应保留，
+// 与"思考过程单行跑马灯、横着不占位置"的诉求一致；只有点击头部展开正文才收起。
+const showTicker = computed(() => hasContent.value && !props.expanded)
+
+// 滚动判定：ticker 文本宽度超过容器才流动，否则静态展示尾部
+const tickerBoxRef = ref<HTMLElement | null>(null)
+const tickerTextRef = ref<HTMLElement | null>(null)
+const tickerOverflow = ref(false)
+let tickerMeasureTimer: number | undefined
+function measureTickerOverflow() {
+  if (tickerMeasureTimer) window.clearTimeout(tickerMeasureTimer)
+  tickerMeasureTimer = window.setTimeout(() => {
+    const box = tickerBoxRef.value
+    const textEl = tickerTextRef.value
+    if (!box || !textEl) {
+      tickerOverflow.value = false
+      return
+    }
+    // +24 保证即使仅超出一点也有滚动感；双份文本时需按单份宽度计算
+    tickerOverflow.value = textEl.scrollWidth + 24 > box.clientWidth
+  }, 40)
+}
+// 滚动时长随文本长度自适应（字符越多滚得越久，保持速度感一致）
+const tickerDuration = computed(() => {
+  const len = tickerText.value.length || 1
+  const sec = Math.max(5, Math.min(18, Math.round(len / 16)))
+  return `${sec}s`
+})
+watch(tickerText, measureTickerOverflow)
+watch(showTicker, (v) => { if (!v) tickerOverflow.value = false })
 
 function startTimer() {
   if (timer) return
@@ -129,8 +159,13 @@ const timeText = computed(() => {
       <CheckCircle2 v-else :size="15" class="ai-tc-done" />
       <span class="ai-tc-title" :class="{ paused: !live }" :data-text="label">{{ label }}</span>
       <span v-if="timeText" class="ai-tc-time">{{ timeText }}</span>
-      <!-- 单行跑马灯：live 且未展开时，头部横排滚动展示最新思考内容（尾部对齐，超出部分从左侧裁剪） -->
-      <span v-if="showTicker" class="ai-tc-ticker"><span class="ai-tc-ticker-text">{{ tickerText }}</span></span>
+      <!-- 单行跑马灯：live 且未展开时，头部横排展示最新思考；超宽时双份文本无缝横向滚动 -->
+      <span v-if="showTicker" ref="tickerBoxRef" class="ai-tc-ticker" :class="{ 'ai-tc-ticker--flow': tickerOverflow }" :style="tickerOverflow ? { '--ai-ticker-duration': tickerDuration } : undefined">
+        <span class="ai-tc-ticker-track">
+          <span ref="tickerTextRef" class="ai-tc-ticker-text">{{ tickerText }}</span>
+          <span v-if="tickerOverflow" class="ai-tc-ticker-text ai-tc-ticker-text--dup" aria-hidden="true">{{ tickerText }}</span>
+        </span>
+      </span>
       <ChevronRight v-if="!expanded" :size="13" class="ai-tc-chev" />
       <ChevronDown v-else :size="13" class="ai-tc-chev" />
     </button>
@@ -235,6 +270,8 @@ html.light .ai-tc-shimmer::after {
 .ai-tc-title {
   position: relative;
   display: inline-block;
+  flex-shrink: 0; /* 不被右侧 ticker 挤压，避免"深度思考"换行 */
+  white-space: nowrap;
   font-size: 11.5px;
   font-weight: 400;
   color: var(--text-secondary);
@@ -276,23 +313,39 @@ html.light .ai-tc-title::after {
   font-variant-numeric: tabular-nums;
   margin-left: 2px;
 }
-/* 单行跑马灯：flex-end 让尾部（最新内容）始终贴右可见，超出宽度从左侧裁剪；
-   左侧渐隐遮罩让截断看起来是有意的淡出而不是生硬切断 */
+/* 单行跑马灯：占满剩余宽度、单行、溢出隐藏。
+   滚动态：双份文本 track 以 translateX(-50%) 循环，实现无缝横向流动。 */
 .ai-tc-ticker {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  display: flex;
-  justify-content: flex-end;
+  display: block;
   margin-left: 8px;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px);
-  mask-image: linear-gradient(90deg, transparent 0, #000 28px);
+  height: 14px;
+  position: relative;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 92%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 92%, transparent 100%);
+}
+.ai-tc-ticker-track {
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+}
+.ai-tc-ticker--flow .ai-tc-ticker-track {
+  animation: ai-tc-ticker-flow var(--ai-ticker-duration, 8s) linear infinite;
+}
+@keyframes ai-tc-ticker-flow {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 .ai-tc-ticker-text {
   flex-shrink: 0;
   white-space: nowrap;
   font-size: 11px;
   color: var(--text-tertiary);
+}
+.ai-tc-ticker-text--dup {
+  padding-left: 0;
 }
 .ai-tc-chev {
   color: var(--text-tertiary);

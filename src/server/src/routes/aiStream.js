@@ -412,8 +412,10 @@ export async function collectToolCallsFromAnthropicStream(reader, decoder, sendD
           currentBlock = null
         } else if (type === 'message_delta') {
           const u = obj.usage || {}
-          // 工单 A6 解析端：stop_reason='max_tokens' 归一为 OpenAI 风格 finishReason='length'，
-          // 供 runChatLoop 做截断防护（参数被截断的 tool_calls 不执行）。
+          // 归一化结束原因：max_tokens→'length'（真实截断信号，供 runChatLoop 截断续写）、
+          // tool_use→'tool_use'、正常结束（end_turn）→'end_turn'。
+          // 注意：不要把 length 直接吞成 end_turn——那会让被预算硬截断的半截答案
+          // 被当作"正常完成"直接返回，呈现"主动中断"；必须先归一为 length 让下游续写补齐。
           const stopReason = obj.delta?.stop_reason || obj.stop_reason
           anthropicFinishReason = stopReason === 'max_tokens'
             ? 'length'

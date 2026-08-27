@@ -114,6 +114,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .ai-shell-detail--overlay {
   width: 0;
   overflow: visible;
+  /* 与遮罩同层比较：面板容器 z-index 必须高于遮罩（--z-rail），
+     否则 sub-compo 的 z-index 只在它自己的 stacking context 内生效，
+     面板会被遮罩盖住（用户表现为"遮罩阴影出现、面板不显示"）。 */
+  z-index: calc(var(--z-rail) + 2);
 }
 
 /* ---- 浮层遮罩 ---- */
