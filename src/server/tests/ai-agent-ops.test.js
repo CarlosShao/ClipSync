@@ -17,11 +17,18 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import request from 'supertest'
 import { v4 as uuidv4 } from 'uuid'
+import path from 'path'
+import fs from 'fs/promises'
+import { fileURLToPath } from 'url'
 import pool from '../src/db/pool.js'
 import { encrypt } from '../src/utils/encryption.js'
+import { deepSanitize, MAX_AUDIT_STRING_LEN } from '../src/utils/audit.js'
 import { getTestApp, ensureTestUser, cleanupTestData } from './test-helpers.js'
-import { executeTool, approveToolRequest, cancelPendingForUser } from '../src/routes/aiTools.js'
+import { executeTool, approveToolRequest, cancelPendingForUser, WRITE_TOOL_NAMES, getWorkerTools } from '../src/routes/aiTools.js'
 import { assertToolAllowed, getToolsForRole, isToolAllowedForLevel } from '../src/utils/aiSystemPrompt.js'
+
+// B6 落盘目录（与 aiTools.js 的 FILE_DIR 一致：<server>/uploads/files）
+const TEST_FILE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '../uploads/files')
 
 // 测试环境 auth 中间件固定使用的用户 ID（src/middleware/auth.js）。仅用于 ephemeral 消息落库测试。
 const TEST_USER_ID = '00000000-0000-0000-0000-000000000001'
@@ -523,5 +530,228 @@ describe('工具调用审计（audit_logs）', () => {
     expect(rows.rows.length).toBeGreaterThanOrEqual(1)
     // 脱敏后的 args 不应泄露原文密码
     expect(JSON.stringify(rows.rows[0].args)).not.toContain('super-secret-123456')
+  })
+})
+
+// ======================================================================
+// 6. Wave1 代理 B 安全回归（B1 / B2 / B5 / B6 / B8）
+// ======================================================================
+describe('Wave1-B 安全回归（审计脱敏/保护条目隐藏/fail-fast/白名单/批量上限）', () => {
+  let u1
+  beforeAll(async () => {
+    u1 = await createUser(PHONE_U1)
+  })
+
+  it('B1: deepSanitize 敏感键打码（含 recoveryKey/response/base64）+ 字符串统一 1KB 截断', () => {
+    const big = 'x'.repeat(3000)
+    const out = deepSanitize({
+      recoveryKey: 'RK-' + 'y'.repeat(100),
+      'recovery-key': 'RK2',
+      user_response: 'USER_ANSWER_TEXT',
+      base64_image: big,
+      note: big,
+      nested: { password: 'p', apiKey: 'k', keep: 'v' },
+    })
+    expect(out.recoveryKey).toBe('***')
+    expect(out['recovery-key']).toBe('***')
+    expect(out.user_response).toBe('***')
+    expect(out.base64_image).toBe('***')
+    expect(out.nested.password).toBe('***')
+    expect(out.nested.apiKey).toBe('***')
+    expect(out.nested.keep).toBe('v')
+    // 非敏感键长字符串：保留前 1024 字符并追加截断标记，base64 大对象不再整块入库
+    expect(out.note.startsWith(big.slice(0, MAX_AUDIT_STRING_LEN))).toBe(true)
+    expect(out.note.endsWith(`[truncated:${big.length}]`)).toBe(true)
+    expect(out.note.length).toBeLessThan(big.length)
+  })
+
+  it('B1+B2: set_item_protection 审计行不含明文 recoveryKey/content/password，且预览被同步清空', async () => {
+    const cid = await insertClip(u1, 'b1-protected-content')
+    const SECRET = 'TOP_SECRET_B1_CONTENT_XYZ'
+    const r = await executeTool(
+      'set_item_protection',
+      { item_id: cid, level: 'advanced', password: 'pass12345', content: SECRET },
+      u1,
+      'super_admin'
+    )
+    expect(r.success).toBe(true)
+    const rk = r.recoveryKey
+    expect(typeof rk).toBe('string')
+
+    const rows = await pool.query(
+      `SELECT details FROM audit_logs
+       WHERE user_id = $1 AND action = 'ai_tool_call' AND details->>'tool' = 'set_item_protection'
+       ORDER BY created_at DESC LIMIT 3`,
+      [u1]
+    )
+    expect(rows.rows.length).toBeGreaterThanOrEqual(1)
+    const blob = rows.rows.map((x) => JSON.stringify(x.details)).join('\n')
+    expect(blob).not.toContain(rk)
+    expect(blob).not.toContain(SECRET)
+    expect(blob).not.toContain('pass12345')
+    // 标准位打码：result.recoveryKey 已替换为 ***
+    expect(rows.rows[0].details.result.recoveryKey).toBe('***')
+
+    // B2 联动：设置 advanced 保护时 content_preview / ocr_text 同步清空
+    const row = await pool.query(
+      'SELECT protection_level, content_preview, ocr_text FROM clipboard_items WHERE id = $1',
+      [cid]
+    )
+    expect(row.rows[0].protection_level).toBe('advanced')
+    expect(row.rows[0].content_preview).toBe('')
+    expect(row.rows[0].ocr_text).toBeNull()
+  })
+
+  it('B2: 存量高级保护条目在 search/recent/details/collection/context 中不可见原文', async () => {
+    const SECRET = 'B2_LEGACY_PLAINTEXT_QQQ'
+    // 模拟迁移回填前的存量形态：preview 残留明文 + protection_level='advanced'
+    const cid = await insertClip(u1, `${SECRET}-preview`)
+    await pool.query("UPDATE clipboard_items SET protection_level = 'advanced' WHERE id = $1", [cid])
+
+    // search_clips：按秘密关键词搜不到该条
+    const search = await executeTool('search_clips', { query: SECRET }, u1, 'user')
+    expect(Array.isArray(search.items)).toBe(true)
+    expect(search.items.some((i) => i.id === cid)).toBe(false)
+
+    // get_recent_clips：最近列表不含该条
+    const recent = await executeTool('get_recent_clips', { limit: 100 }, u1, 'user')
+    expect((recent.items || []).some((i) => i.id === cid)).toBe(false)
+
+    // get_clip_details：整体不可见（返回 not found）
+    const detail = await executeTool('get_clip_details', { clip_id: cid }, u1, 'user')
+    expect(detail.error).toBeDefined()
+    expect(JSON.stringify(detail)).not.toContain(SECRET)
+
+    // get_collection_items：即使在收藏夹中也不可见
+    const col = await executeTool('create_collection', { name: 'b2-col' }, u1, 'admin')
+    expect(col.collection?.id).toBeTruthy()
+    await executeTool('add_item_to_collection', { collection_id: col.collection.id, item_id: cid }, u1, 'admin')
+    const items = await executeTool('get_collection_items', { collection_id: col.collection.id }, u1, 'user')
+    expect(items.items || []).toHaveLength(0)
+
+    // get_ai_context 的最近条目同样过滤
+    const ctx = await executeTool('get_ai_context', {}, u1, 'user')
+    expect((ctx.recentItems || []).some((i) => i.id === cid)).toBe(false)
+  })
+
+  it('B5: ENCRYPTION_KEY 缺失时 create_user fail-fast，拒绝公开兜底盐且无落库副作用', async () => {
+    const orig = process.env.ENCRYPTION_KEY
+    delete process.env.ENCRYPTION_KEY
+    try {
+      const r = await executeTool(
+        'create_user',
+        { phone: '13800000059', password: 'Secret123', nickname: 'b5-target' },
+        u1,
+        'super_admin'
+      )
+      expect(r.success).toBeUndefined()
+      expect(r.error).toMatch(/ENCRYPTION_KEY/)
+      // fail-fast 发生在任何 INSERT 之前：目标用户未被创建
+      const dup = await pool.query('SELECT id FROM users WHERE phone = $1', ['13800000059'])
+      expect(dup.rows).toHaveLength(0)
+    } finally {
+      if (orig === undefined) delete process.env.ENCRYPTION_KEY
+      else process.env.ENCRYPTION_KEY = orig
+    }
+  })
+
+  it('B6: upload_file 白名单——危险扩展/无扩展名拒绝、MIME 不匹配拒绝、合法文本通过', async () => {
+    const b64 = Buffer.from('hello b6 upload').toString('base64')
+    // 黑名单时代的样本扩展不在白名单 → 一律拒绝
+    for (const name of ['evil.bat', 'run.ps1', 'a.exe']) {
+      const denied = await executeTool('upload_file', { base64: b64, filename: name }, u1, 'super_admin')
+      expect(denied.error).toBe('EXTENSION_NOT_ALLOWED')
+    }
+    // 无扩展名 → 拒绝
+    const noext = await executeTool('upload_file', { base64: b64, filename: 'README' }, u1, 'super_admin')
+    expect(noext.error).toBe('EXTENSION_NOT_ALLOWED')
+    // 声明的 MIME 与扩展名不同类 → 拒绝（防伪装 .txt）
+    const mismatch = await executeTool(
+      'upload_file',
+      { base64: b64, filename: 'a.txt', mime_type: 'application/x-msdownload' },
+      u1,
+      'super_admin'
+    )
+    expect(mismatch.error).toBe('MIME_MISMATCH')
+    // 不再从 MIME 子类型反推扩展名：仅给 mime 不给文件名 → 拒绝
+    const mimeOnly = await executeTool('upload_file', { base64: b64, mime_type: 'application/pdf' }, u1, 'super_admin')
+    expect(mimeOnly.error).toBe('EXTENSION_NOT_ALLOWED')
+
+    // 合法白名单项（.txt + text/plain）真实写盘落库；结束前清理行与文件
+    let createdName = null
+    let createdId = null
+    try {
+      const ok = await executeTool(
+        'upload_file',
+        { base64: b64, filename: 'notes.txt', mime_type: 'text/plain' },
+        u1,
+        'super_admin'
+      )
+      expect(ok.error).toBeUndefined()
+      expect(ok.filename).toMatch(/\.txt$/)
+      createdName = ok.filename
+      createdId = ok.id
+      const saved = await pool.query(
+        'SELECT id FROM clipboard_items WHERE id = $1 AND user_id = $2',
+        [ok.id, u1]
+      )
+      expect(saved.rows).toHaveLength(1)
+      const onDisk = await fs.stat(path.join(TEST_FILE_DIR, ok.filename))
+      expect(onDisk.size).toBeGreaterThan(0)
+    } finally {
+      if (createdId) {
+        await pool.query('DELETE FROM clipboard_items WHERE id = $1 AND user_id = $2', [createdId, u1]).catch(() => {})
+      }
+      if (createdName) {
+        await fs.rm(path.join(TEST_FILE_DIR, createdName), { force: true }).catch(() => {})
+      }
+    }
+  })
+
+  it('B8: clip_ids 超 200 返回 CLIP_IDS_TOO_LARGE（确认门控前置拦截），200 条边界放行', async () => {
+    const ids = Array.from({ length: 201 }, () => uuidv4())
+
+    const fav = await executeTool('batch_favorite', { clip_ids: ids }, u1, 'user')
+    expect(fav.error).toBe('CLIP_IDS_TOO_LARGE')
+
+    const tags = await executeTool('tag_items', { clip_ids: ids, tags: ['b8'] }, u1, 'user')
+    expect(tags.error).toBe('CLIP_IDS_TOO_LARGE')
+
+    const del = await executeTool('batch_delete', { clip_ids: ids }, u1, 'user')
+    expect(del.error).toBe('CLIP_IDS_TOO_LARGE')
+
+    // archive/unarchive 操作多条本会进入确认门控；超限校验必须在门控之前生效
+    const arc = await executeTool('archive_items', { clip_ids: ids }, u1, 'user')
+    expect(arc.error).toBe('CLIP_IDS_TOO_LARGE')
+
+    const unarc = await executeTool('unarchive_items', { clip_ids: ids }, u1, 'user')
+    expect(unarc.error).toBe('CLIP_IDS_TOO_LARGE')
+
+    // 边界：恰好 200 条通过参数校验（不存在的 uuid 仅 updated=0，不算参数错误）
+    const ok200 = await executeTool('batch_favorite', { clip_ids: ids.slice(0, 200) }, u1, 'user')
+    expect(ok200.success).toBe(true)
+  })
+
+  it('B3: batch_move_to_collection 已登记为写工具（子代理只读面不再包含）', async () => {
+    // 集合成员性：写类登记 + 子代理只读工具面排除
+    expect(WRITE_TOOL_NAMES.has('batch_move_to_collection')).toBe(true)
+    const workerNames = getWorkerTools('super_admin').map((t) => t.function.name)
+    expect(workerNames).not.toContain('batch_move_to_collection')
+    // 写入路径真实落库不受影响
+    const col = await executeTool('create_collection', { name: 'b3-col' }, u1, 'admin')
+    expect(col.collection?.id).toBeTruthy()
+    const cid = await insertClip(u1, 'b3-move-content')
+    const moved = await executeTool(
+      'batch_move_to_collection',
+      { collection_id: col.collection.id, item_ids: [cid] },
+      u1,
+      'user'
+    )
+    expect(moved.moved_count).toBe(1)
+    const link = await pool.query(
+      'SELECT 1 FROM favorite_collection_items WHERE collection_id = $1 AND item_id = $2',
+      [col.collection.id, cid]
+    )
+    expect(link.rows).toHaveLength(1)
   })
 })

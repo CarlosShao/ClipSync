@@ -210,9 +210,10 @@ describe('W2-D：17 个管理工具 schema 与等级登记（待实现）', () =
       expect(cu.success).toBe(true)
       const targetId = cu.user.id
 
-      // disable_user（非确认）
+      // disable_user（B7 后纳入确认集）：无 SSE 通道 → REJECTED_BY_USER，账号未被停用
       const dis = await executeTool('disable_user', { user_id: targetId, reason: 'rbac-test' }, actorId, 'super_admin')
-      expect(dis.success).toBe(true)
+      expect(dis.error).toBe('REJECTED_BY_USER')
+      expect(dis.code ?? '').not.toBe('ROLE_FORBIDDEN')
 
       // upgrade_subscription（非确认）
       const ups = await executeTool('upgrade_subscription', { user_id: targetId, plan: 'Free' }, actorId, 'super_admin')
@@ -230,18 +231,20 @@ describe('W2-D：17 个管理工具 schema 与等级登记（待实现）', () =
       const sub = await executeTool('create_sub_collection', { name: 'rbac-sub-c', parent_id: parent.collection.id }, actorId, 'super_admin')
       expect(sub.collection && sub.collection.id).toBeTruthy()
 
-      // 确认门控类（DESTRUCTIVE_CONFIRM_NEEDED 中属于管理面的 7 个）：无 SSE 通道 → REJECTED_BY_USER 而非 FORBIDDEN，
+      // 确认门控类（DESTRUCTIVE_CONFIRM_NEEDED 中属于管理面的 8 个，含 B7 的 disable_user）：
+      // 无 SSE 通道 → REJECTED_BY_USER 而非 FORBIDDEN，
       // 证明超管已通过 RBAC 闸门（否则会返回 code=ROLE_FORBIDDEN）。
       const confirmArgs = {
         update_user_role: { user_id: targetId, role: 'admin' },
         delete_user: { user_id: targetId },
         reset_user_password: { user_id: targetId },
+        disable_user: { user_id: targetId },
         update_system_config: { config_key: 'ai_max_tokens', config_value: 4096 },
         toggle_feature: { flag_key: 'enable_ai_agent', enabled: true },
         unpair_device: { device_id: '00000000-0000-0000-0000-00000000dead' },
         downgrade_subscription: { user_id: targetId, plan: 'Free' },
       }
-      const confirmedMgmt = ['update_user_role', 'delete_user', 'reset_user_password', 'update_system_config', 'toggle_feature', 'unpair_device', 'downgrade_subscription']
+      const confirmedMgmt = ['update_user_role', 'delete_user', 'reset_user_password', 'disable_user', 'update_system_config', 'toggle_feature', 'unpair_device', 'downgrade_subscription']
       for (const name of confirmedMgmt) {
         const r = await executeTool(name, confirmArgs[name], actorId, 'super_admin')
         expect(r.error).toBe('REJECTED_BY_USER')
@@ -276,16 +279,17 @@ describe('W2-E：确认门控核算（待实现）', () => {
       'update_system_config',
       'update_user_role',
       'reset_user_password',
+      'disable_user',
       'delete_collection',
       'unpair_own_device',
       'terminate_session',
       'restore_version',
     ]
-    expect(EXPECTED).toHaveLength(12)
+    expect(EXPECTED).toHaveLength(13)
     for (const name of EXPECTED) {
       expect(DESTRUCTIVE_CONFIRM_NEEDED.has(name)).toBe(true)
     }
     // 精确对齐：确认集合不应含集合外多余工具（防漏登记/多登记）
-    expect(DESTRUCTIVE_CONFIRM_NEEDED.size).toBe(12)
+    expect(DESTRUCTIVE_CONFIRM_NEEDED.size).toBe(13)
   })
 })

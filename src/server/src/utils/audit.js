@@ -63,14 +63,27 @@ export async function logAuditEvent(params) {
 
 /**
  * 深度脱敏：把对象/数组里的敏感键（password / apiKey / secret / token /
- * authorization / access_code 等，大小写不敏感，支持嵌套）值替换为 '***'。
+ * authorization / access_code / recoveryKey / response / base64 等，
+ * 大小写不敏感，支持嵌套）值替换为 '***'。
  * 用于工具审计的参数/结果摘要，防止密钥等明文落库。
  */
-const SENSITIVE_KEY_RE = /password|passwd|api[_-]?key|secret|token|authorization|access_code|credential|content|text|body|plain/i
+const SENSITIVE_KEY_RE = /password|passwd|api[_-]?key|secret|token|authorization|access_code|credential|content|text|body|plain|recovery[_-]?key|recovery|user_response|response|base64/i
 
-function deepSanitize(value, depth = 0) {
+/**
+ * 字符串值统一 1KB 截断：超长字符串（如 base64 大对象、整篇文本）不再整块入库，
+ * 防止审计行膨胀与明文副本扩散。导出仅供回归测试使用。
+ */
+export const MAX_AUDIT_STRING_LEN = 1024
+
+export function deepSanitize(value, depth = 0) {
   if (depth > 5) return typeof value === 'string' ? `[truncated:${value.length}]` : '[deep]'
   if (value === null || value === undefined) return value
+  if (typeof value === 'string') {
+    // B1：所有字符串值统一截断（含已脱敏后的 '***' 等短值不受影响）
+    return value.length > MAX_AUDIT_STRING_LEN
+      ? `${value.slice(0, MAX_AUDIT_STRING_LEN)}[truncated:${value.length}]`
+      : value
+  }
   if (Array.isArray(value)) {
     const list = value.length > 20 ? value.slice(0, 20) : value
     return list.map((v) => deepSanitize(v, depth + 1))

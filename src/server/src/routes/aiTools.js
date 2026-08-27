@@ -44,13 +44,61 @@ async function locateStoredFile(relName, dirs) {
   return null
 }
 
+// ============ B6：upload_file 扩展白名单 ============
+// 黑名单（只拦已知危险扩展）天然滞后，改为白名单制：
+//  1) 不在名单内的扩展一律拒绝；
+//  2) 声明的 mime_type 必须与扩展名同类（前缀/精确匹配），防止「exe 内容伪装 .txt」式绕过。
+// 刻意不含：svg/xhtml（可内嵌脚本）、.htaccess、无扩展名文件与一切可执行/脚本扩展。
+const UPLOAD_FILE_ALLOWED_EXT = new Map([
+  // 图片
+  ['.png', ['image/png']],
+  ['.jpg', ['image/jpeg']],
+  ['.jpeg', ['image/jpeg']],
+  ['.gif', ['image/gif']],
+  ['.webp', ['image/webp']],
+  ['.bmp', ['image/bmp']],
+  ['.ico', ['image/x-icon', 'image/vnd.microsoft.icon', 'image/icon']],
+  // 文本 / 数据 / 配置
+  ['.txt', ['text/']],
+  ['.md', ['text/', 'text/markdown']],
+  ['.csv', ['text/', 'application/csv']],
+  ['.log', ['text/']],
+  ['.json', ['application/json', 'text/json']],
+  ['.xml', ['application/xml', 'text/xml']],
+  ['.yaml', ['application/yaml', 'application/x-yaml', 'text/yaml']],
+  ['.yml', ['application/yaml', 'application/x-yaml', 'text/yaml']],
+  ['.toml', ['text/', 'application/toml']],
+  ['.ini', ['text/']],
+  ['.sql', ['text/', 'application/sql']],
+  // 办公文档 / 归档
+  ['.pdf', ['application/pdf']],
+  ['.doc', ['application/msword']],
+  ['.docx', ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']],
+  ['.xls', ['application/vnd.ms-excel']],
+  ['.xlsx', ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']],
+  ['.ppt', ['application/vnd.ms-powerpoint']],
+  ['.pptx', ['application/vnd.openxmlformats-officedocument.presentationml.presentation']],
+  ['.zip', ['application/zip', 'application/x-zip-compressed']],
+])
+
 // ============ RBAC 管理工具辅助（feature/ai-rbac-backend）============
 // 哈希盐与 auth.js 保持一致（phone_hash / email_hash 计算）
-const HASH_SALT = process.env.ENCRYPTION_KEY?.substring(0, 16) || 'CLIPSYNC_SALT_2026'
+// B5 fail-fast：ENCRYPTION_KEY 缺失时拒绝计算字段哈希。
+// 已删除公开兜底盐 'CLIPSYNC_SALT_2026'——固定公开盐等于允许离线彩虹表反查
+// phone_hash/email_hash，必须视为配置错误而非可降级路径。
+// 盐在每次调用时读取（而非模块加载时固化）：import 本文件永不因配置炸掉，
+// 仅在真正需要哈希的工具（create_user 等）首次调用点抛出明确错误。
+function getFieldSalt() {
+  const salt = process.env.ENCRYPTION_KEY?.substring(0, 16)
+  if (!salt) {
+    throw new Error('[SECURITY] ENCRYPTION_KEY 未配置：拒绝使用公开兜底盐计算字段哈希（B5 fail-fast）')
+  }
+  return salt
+}
 
 function computeFieldHash(value) {
   if (!value) return null
-  return crypto.createHash('sha256').update(String(value) + HASH_SALT).digest('hex')
+  return crypto.createHash('sha256').update(String(value) + getFieldSalt()).digest('hex')
 }
 
 // 手机号脱敏：138****11072
@@ -68,6 +116,25 @@ function maskEmail(e) {
   const at = s.indexOf('@')
   if (at <= 1) return '***' + s.slice(at)
   return s.slice(0, 1) + '***' + s.slice(at - 1)
+}
+
+// B8：批量条目数组参数上限。clip_ids 超过上限直接返回参数错误（不执行任何 SQL），
+// 防止超长数组撑爆 IN 查询/审计行。destroy_clips 有更严的 50 条独立上限，不受此影响。
+const MAX_CLIP_IDS = 200
+
+/**
+ * 校验 clip_ids 数组是否超出单批上限。
+ * @returns {object|null} 超限时返回参数错误对象，否则返回 null
+ */
+function clipIdsLimitError(clip_ids, max = MAX_CLIP_IDS) {
+  if (!Array.isArray(clip_ids) || clip_ids.length <= max) return null
+  return {
+    error: 'CLIP_IDS_TOO_LARGE',
+    code: 'CLIP_IDS_TOO_LARGE',
+    message: `clip_ids 单次最多 ${max} 条，本次传入 ${clip_ids.length} 条；请分批调用（每批 ≤${max}）。`,
+    received: clip_ids.length,
+    maxPerBatch: max,
+  }
 }
 
 // 吊销指定用户全部活跃会话（user_sessions is_active=false + jti 黑名单，与 auth.js 停用逻辑一致）
@@ -1636,6 +1703,8 @@ export const WRITE_TOOL_NAMES = new Set([
   'reorder_collections',
   'add_item_to_collection',
   'remove_item_from_collection',
+  // B3 热修：批量移动也是写操作，缺登记会让子代理拿到"只读"假象并发写收藏夹
+  'batch_move_to_collection',
   'update_collection_tags',
   'delete_tag',
   'update_clip',
@@ -1696,9 +1765,11 @@ export function getWorkerTools(role) {
 export const DESTRUCTIVE_CONFIRM_NEEDED = new Set([
   'destroy_clips',
   // RBAC 管理域破坏性/敏感写（feature/ai-rbac-backend，需用户确认）
+  // B7：disable_user 直接冻结账号并吊销全部会话，属破坏性操作，纳入确认集
   'delete_user',
   'update_user_role',
   'reset_user_password',
+  'disable_user',
   'update_system_config',
   'toggle_feature',
   'unpair_device',
@@ -2302,7 +2373,8 @@ async function executeToolInner(toolName, args, userId, role) {
         // 服务端文本存于 content_encrypted（加密），可搜索明文在 content_preview；
         // 直接对 content 列 ILIKE 会因该列不存在而报错，故只搜 content_preview。
         const safeLimit = Math.min(Math.max(1, Number(limit) || 10), 100)
-        let sql = 'SELECT id, content_type, content_preview, ocr_text, created_at FROM clipboard_items WHERE user_id = $1'
+        // B2：高级密码保护条目不参与搜索（明文预览/OCR 对 AI 隐藏）
+        let sql = "SELECT id, content_type, content_preview, ocr_text, created_at FROM clipboard_items WHERE user_id = $1 AND COALESCE(protection_level, 'none') = 'none'"
         const params = [userId]
 
         if (query) {
@@ -2323,10 +2395,12 @@ async function executeToolInner(toolName, args, userId, role) {
 
       case 'get_clip_details': {
         const { clip_id } = args
+        // B2：高级密码保护条目对 AI 整体不可见（含元数据），防止预览/属性侧信道泄露。
         const result = await pool.query(
           `SELECT id, content_type, content_preview, content_size, is_favorite, archived,
                   protection_level, created_at, source_device_id
-           FROM clipboard_items WHERE id = $1 AND user_id = $2`,
+           FROM clipboard_items
+           WHERE id = $1 AND user_id = $2 AND COALESCE(protection_level, 'none') = 'none'`,
           [clip_id, userId]
         )
         if (result.rowCount === 0) return { error: 'Clip not found' }
@@ -2354,6 +2428,8 @@ async function executeToolInner(toolName, args, userId, role) {
           sql += ' AND content_type = $2'
           params.push(type)
         }
+        // B2：高级密码保护条目不出现在最近列表（不泄露明文预览）
+        sql += ` AND COALESCE(protection_level, 'none') = 'none'`
         sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`
         params.push(Math.min(Math.max(1, Number(limit) || 10), 100))
 
@@ -2390,6 +2466,8 @@ async function executeToolInner(toolName, args, userId, role) {
         if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
           return { error: 'clip_ids is required and must be an array' }
         }
+        const limitErr = clipIdsLimitError(clip_ids)
+        if (limitErr) return limitErr
         const result = await pool.query(
           'UPDATE clipboard_items SET is_favorite = true WHERE id = ANY($1) AND user_id = $2 RETURNING id',
           [clip_ids, userId]
@@ -2404,6 +2482,8 @@ async function executeToolInner(toolName, args, userId, role) {
         if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
           return { error: 'clip_ids is required and must be an array' }
         }
+        const limitErr = clipIdsLimitError(clip_ids)
+        if (limitErr) return limitErr
         const existCheck = await pool.query(
           'SELECT id FROM clipboard_items WHERE id = ANY($1) AND user_id = $2',
           [clip_ids, userId]
@@ -2530,6 +2610,8 @@ async function executeToolInner(toolName, args, userId, role) {
         if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
           return { error: 'clip_ids is required and must be an array' }
         }
+        const limitErr = clipIdsLimitError(clip_ids)
+        if (limitErr) return limitErr
         if (!Array.isArray(tags) || tags.length === 0) {
           return { error: 'tags is required and must be an array' }
         }
@@ -2550,6 +2632,8 @@ async function executeToolInner(toolName, args, userId, role) {
         if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
           return { error: 'clip_ids is required and must be an array' }
         }
+        const limitErr = clipIdsLimitError(clip_ids)
+        if (limitErr) return limitErr
         // 先检查存在性，返回未找到的 ID 以便 AI 诊断
         const existCheck = await pool.query(
           'SELECT id FROM clipboard_items WHERE id = ANY($1) AND user_id = $2',
@@ -2577,6 +2661,8 @@ async function executeToolInner(toolName, args, userId, role) {
         if (!Array.isArray(clip_ids) || clip_ids.length === 0) {
           return { error: 'clip_ids is required and must be an array' }
         }
+        const limitErr = clipIdsLimitError(clip_ids)
+        if (limitErr) return limitErr
         const existCheck = await pool.query(
           'SELECT id FROM clipboard_items WHERE id = ANY($1) AND user_id = $2',
           [clip_ids, userId]
@@ -3694,18 +3780,30 @@ async function executeToolInner(toolName, args, userId, role) {
         const newPath = newParentPath ? `${newParentPath}.${newLeaf}` : `root.${newLeaf}`
         const srcLv = await pool.query('SELECT nlevel($1::ltree) AS n', [srcPath])
         const srcN = srcLv.rows[0].n
-        // 更新自身路径
-        await pool.query(
-          'UPDATE favorite_collections SET path = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
-          [newPath, collection_id, userId]
-        )
-        // 更新所有后代路径：把旧前缀替换为新前缀
-        if (srcN > 0) {
-          await pool.query(
-            `UPDATE favorite_collections SET path = $1 || subpath(path, $2), updated_at = NOW()
-             WHERE path <@ $3 AND id != $4::uuid AND user_id = $5`,
-            [newPath, srcN, srcPath, collection_id, userId]
+        // B4：自身路径与后代路径的两次 UPDATE 必须原子生效——改用专用连接的显式事务，
+        // 失败一起回滚，杜绝「父已移动、子树还挂旧前缀」的悬挂态。
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          // 更新自身路径
+          await client.query(
+            'UPDATE favorite_collections SET path = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+            [newPath, collection_id, userId]
           )
+          // 更新所有后代路径：把旧前缀替换为新前缀
+          if (srcN > 0) {
+            await client.query(
+              `UPDATE favorite_collections SET path = $1 || subpath(path, $2), updated_at = NOW()
+               WHERE path <@ $3 AND id != $4::uuid AND user_id = $5`,
+              [newPath, srcN, srcPath, collection_id, userId]
+            )
+          }
+          await client.query('COMMIT')
+        } catch (e) {
+          await client.query('ROLLBACK').catch(() => {})
+          throw e
+        } finally {
+          client.release()
         }
         const updated = await pool.query(
           'SELECT id, name, icon, sort_order, path, created_at FROM favorite_collections WHERE id = $1',
@@ -3729,18 +3827,23 @@ async function executeToolInner(toolName, args, userId, role) {
         if (check.rows.length !== ids.length) {
           return { error: 'FOREIGN_COLLECTION', code: 'FOREIGN_COLLECTION', message: '部分收藏夹不属于当前用户' }
         }
-        await pool.query('BEGIN')
+        // B4：pool.query('BEGIN') 是伪事务（池化连接下每条语句可能落在不同连接），
+        // 改为专用连接上的显式事务，保证批量 reorder 全部生效或全部不生效。
+        const client = await pool.connect()
         try {
+          await client.query('BEGIN')
           for (const o of pairs) {
-            await pool.query(
+            await client.query(
               'UPDATE favorite_collections SET sort_order = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
               [o.sortOrder, o.id, userId]
             )
           }
-          await pool.query('COMMIT')
+          await client.query('COMMIT')
         } catch (e) {
-          await pool.query('ROLLBACK')
+          await client.query('ROLLBACK').catch(() => {})
           throw e
+        } finally {
+          client.release()
         }
         return { success: true, reordered: pairs.length }
       }
@@ -3758,6 +3861,7 @@ async function executeToolInner(toolName, args, userId, role) {
            JOIN clipboard_items ci ON fci.item_id = ci.id
            LEFT JOIN devices d ON ci.source_device_id = d.id
            WHERE fci.collection_id = $1 AND ci.user_id = $2
+             AND COALESCE(ci.protection_level, 'none') = 'none'
            ORDER BY fci.sort_order`,
           [collection_id, userId]
         )
@@ -4003,10 +4107,13 @@ async function executeToolInner(toolName, args, userId, role) {
           return { error: 'CONTENT_REQUIRED', code: 'CONTENT_REQUIRED', message: 'advanced 保护需要提供被保护内容的明文 content' }
         }
         const data = setupAdvancedProtection(content, String(password))
+        // B2：advanced 保护条目同步清空明文预览与 OCR 文本（与 protection.js /setup 同款），
+        // 防止 search/list/AI 工具从 content_preview / ocr_text 读到受保护原文。
         await pool.query(
           `UPDATE clipboard_items
            SET protection_level = 'advanced', content_encrypted = $1, wrapped_dek_password = $2,
-               wrapped_dek_recovery = $3, protection_salt = $4, protection_iv = $5, updated_at = NOW()
+               wrapped_dek_recovery = $3, protection_salt = $4, protection_iv = $5,
+               content_preview = '', ocr_text = NULL, updated_at = NOW()
            WHERE id = $6 AND user_id = $7`,
           [data.encryptedContent, data.wrappedDEKPassword, data.wrappedDEKRecovery, data.salt, data.iv, item_id, userId]
         )
@@ -4108,14 +4215,30 @@ async function executeToolInner(toolName, args, userId, role) {
         const buf = Buffer.from(base64, 'base64')
         if (buf.length === 0) return { error: 'INVALID_BASE64', code: 'INVALID_BASE64' }
         if (buf.length > 15 * 1024 * 1024) return { error: 'FILE_TOO_LARGE', code: 'FILE_TOO_LARGE', message: '文件大小上限约 15MB' }
+        // B6：白名单制——扩展名必须在名单内，且不再从 mime 子类型反推扩展名；
+        // 声明的 mime_type 与扩展名不同类时拒绝。
         let ext = ''
         if (typeof filename === 'string' && filename) ext = path.extname(filename).toLowerCase()
-        if (!ext && typeof mime_type === 'string' && mime_type) {
-          const sub = mime_type.split('/')[1] || ''
-          ext = sub ? '.' + sub.replace('x-', '') : ''
+        const allowedMimes = UPLOAD_FILE_ALLOWED_EXT.get(ext)
+        if (!ext || !allowedMimes) {
+          return {
+            error: 'EXTENSION_NOT_ALLOWED',
+            code: 'EXTENSION_NOT_ALLOWED',
+            message: `仅允许常用文本/图片/办公文档类型上传，不支持该扩展名：${ext || '(无)'}`,
+          }
         }
-        const blocked = new Set(['.bat', '.cmd', '.ps1', '.vbs', '.wsf', '.sh', '.bash', '.php', '.asp', '.aspx', '.jsp', '.exe', '.dll', '.scr'])
-        if (blocked.has(ext)) return { error: 'EXTENSION_NOT_ALLOWED', code: 'EXTENSION_NOT_ALLOWED', message: '该扩展名不被允许上传' }
+        const declaredMime = typeof mime_type === 'string' ? mime_type.toLowerCase().trim() : ''
+        if (declaredMime) {
+          // ['text/'] 形式按前缀匹配家族，精确项按全等匹配
+          const matched = allowedMimes.some((m) => (m.endsWith('/') ? declaredMime.startsWith(m) : declaredMime === m))
+          if (!matched) {
+            return {
+              error: 'MIME_MISMATCH',
+              code: 'MIME_MISMATCH',
+              message: `声明的 MIME 类型（${declaredMime}）与扩展名 ${ext} 不匹配`,
+            }
+          }
+        }
         const filenameUuid = `${uuidv4()}${ext}`
         const finalPath = path.join(FILE_DIR, filenameUuid)
         await fs.mkdir(FILE_DIR, { recursive: true })
@@ -4610,26 +4733,33 @@ async function executeTool(toolName, args, userId, role, requestId, opts = {}) {
         questions: args.questions || [{ question: args.question, options: args.options }],
       }
     } else {
-      // 确认门控：
-      //   1) DESTRUCTIVE_CONFIRM_NEEDED 集合内的工具（如 destroy_clips）
-      //   2) archive_items / unarchive_items 操作多条（>1）时，需用户确认
-      const needsConfirm = DESTRUCTIVE_CONFIRM_NEEDED.has(toolName)
-        || ((toolName === 'archive_items' || toolName === 'unarchive_items')
-            && Array.isArray(args?.clip_ids) && args.clip_ids.length > 1)
-      if (needsConfirm) {
-        const gate = await runConfirmGate(toolName, args, userId, role, requestId, opts)
-        confirmRequestId = gate.requestId
-        if (gate.approved && gate.result !== undefined) {
-          // 批准后 approve 入口已执行 Inner，结果回填到这里；沿用门控 requestId 写审计。
-          result = gate.result
-        } else {
-          // 拒绝 / 超时 / 断流 / 并发被拒：返回 REJECTED_BY_USER（并发场景带更明确错误）。
-          result = (gate.result && gate.result.error === 'CONCURRENT_CONFIRM_REQUEST')
-            ? gate.result
-            : { error: 'REJECTED_BY_USER' }
-        }
+      // B8：数组参数上限在确认门控之前校验——超限直接返回参数错误，
+      // 不进入等待态（否则 archive_items 201 条会先挂进确认流程才暴露错误）。
+      const limitErr = clipIdsLimitError(args?.clip_ids)
+      if (limitErr) {
+        result = limitErr
       } else {
-        result = await executeToolInner(toolName, args, userId, role)
+        // 确认门控：
+        //   1) DESTRUCTIVE_CONFIRM_NEEDED 集合内的工具（如 destroy_clips）
+        //   2) archive_items / unarchive_items 操作多条（>1）时，需用户确认
+        const needsConfirm = DESTRUCTIVE_CONFIRM_NEEDED.has(toolName)
+          || ((toolName === 'archive_items' || toolName === 'unarchive_items')
+              && Array.isArray(args?.clip_ids) && args.clip_ids.length > 1)
+        if (needsConfirm) {
+          const gate = await runConfirmGate(toolName, args, userId, role, requestId, opts)
+          confirmRequestId = gate.requestId
+          if (gate.approved && gate.result !== undefined) {
+            // 批准后 approve 入口已执行 Inner，结果回填到这里；沿用门控 requestId 写审计。
+            result = gate.result
+          } else {
+            // 拒绝 / 超时 / 断流 / 并发被拒：返回 REJECTED_BY_USER（并发场景带更明确错误）。
+            result = (gate.result && gate.result.error === 'CONCURRENT_CONFIRM_REQUEST')
+              ? gate.result
+              : { error: 'REJECTED_BY_USER' }
+          }
+        } else {
+          result = await executeToolInner(toolName, args, userId, role)
+        }
       }
     }
   } catch (err) {

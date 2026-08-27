@@ -91,12 +91,13 @@ export async function getAiContext(userId) {
       [userId]
     ),
 
-    // 8. 最近 5 条条目预览
+    // 8. 最近 5 条条目预览（B2：高级密码保护条目不进 AI 上下文，防明文预览泄露）
     pool.query(
       `
       SELECT id, content_type, content_preview, is_favorite, created_at
       FROM clipboard_items
       WHERE user_id = $1 AND archived = FALSE
+        AND COALESCE(protection_level, 'none') = 'none'
       ORDER BY created_at DESC
       LIMIT 5
       `,

@@ -81,15 +81,20 @@ router.post('/setup', apiLimiter, async (req, res) => {
       // Set up advanced protection
       const protectionData = setupAdvancedProtection(content, password);
 
-      // Update the database
+      // Update the database.
+      // B2: 同步清空明文预览与 OCR 文本——advanced 保护条目的可搜索明文副本
+      // 只留空串，防止 list/search 界面与 AI 工具从 content_preview 泄露原文。
       await pool.query(
-        `UPDATE clipboard_items 
+        `UPDATE clipboard_items
          SET protection_level = 'advanced',
              content_encrypted = $1,
              wrapped_dek_password = $2,
              wrapped_dek_recovery = $3,
              protection_salt = $4,
-             protection_iv = $5
+             protection_iv = $5,
+             content_preview = '',
+             ocr_text = NULL,
+             updated_at = NOW()
          WHERE id = $6 AND user_id = $7`,
         [
           protectionData.encryptedContent,
