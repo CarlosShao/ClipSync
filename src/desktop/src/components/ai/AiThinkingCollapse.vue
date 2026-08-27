@@ -234,6 +234,8 @@ html.light .ai-tc-shimmer::after {
 .ai-tc-title {
   position: relative;
   display: inline-block;
+  flex-shrink: 0; /* 不被右侧跑马灯挤压：否则"思考中"会被挤窄换行 */
+  white-space: nowrap;
   font-size: 11.5px;
   font-weight: 400;
   color: var(--text-secondary);
@@ -269,6 +271,8 @@ html.light .ai-tc-title::after {
   background-position: 100% 0;
 }
 .ai-tc-time {
+  flex-shrink: 0; /* 不被跑马灯挤压：否则"· N 秒"的"秒"会换行 */
+  white-space: nowrap;
   font-size: 10.5px;
   font-weight: 400;
   color: var(--text-tertiary);
