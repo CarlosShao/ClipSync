@@ -106,11 +106,34 @@ function clearSearch() {
   if (searchTimer) clearTimeout(searchTimer)
 }
 
+// HTML 转义（C3）：snippet 来自历史消息原文，进入 v-html 前必须全文转义
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/** 高亮片段（C3 防注入）：先对 snippet 全文 HTML 转义，再在原文上定位关键词，
+ *  逐段转义后用自产的 <mark> 包裹命中段——最终 v-html 内容不含任何未转义的用户文本。 */
 function highlightSnippet(snippet: string, keyword: string): string {
   const k = keyword.trim()
-  if (!k) return snippet
+  if (!k) return escapeHtml(snippet)
   const esc = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return snippet.replace(new RegExp(`(${esc})`, 'gi'), '\u0001$1\u0002')
+  let out = ''
+  let lastIdx = 0
+  const re = new RegExp(`(${esc})`, 'gi')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(snippet)) !== null) {
+    out += escapeHtml(snippet.slice(lastIdx, m.index))
+    out += `<mark>${escapeHtml(m[0])}</mark>`
+    lastIdx = m.index + m[0].length
+    if (m.index === re.lastIndex) re.lastIndex++ // 空匹配保护，避免死循环
+  }
+  out += escapeHtml(snippet.slice(lastIdx))
+  return out
 }
 
 // === 重命名（迁自 AiConversationList）===
@@ -241,15 +264,8 @@ function onDockFromFloat() {
                     }}
                   </span>
                 </div>
-                <!-- eslint-disable-next-line vue/no-v-html (高亮关键词，输入已转义正则) -->
-                <span
-                  class="ai-nav-hit-snippet"
-                  v-html="
-                    highlightSnippet(hit.snippet, searchQuery)
-                      .replace(/\u0001/g, '<mark>')
-                      .replace(/\u0002/g, '</mark>')
-                  "
-                />
+                <!-- eslint-disable-next-line vue/no-v-html (snippet 全文已 HTML 转义，仅注入自产 <mark>) -->
+                <span class="ai-nav-hit-snippet" v-html="highlightSnippet(hit.snippet, searchQuery)" />
               </div>
             </div>
           </div>

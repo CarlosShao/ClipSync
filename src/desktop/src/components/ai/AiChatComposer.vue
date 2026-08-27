@@ -290,6 +290,9 @@ function submit() {
 }
 
 function onKeydown(e: KeyboardEvent) {
+  // 中文/日文输入法组词中的回车（确认候选词）不是发送意图（C2）：
+  // isComposing 为 true 或 legacy keyCode===229 时直接忽略，避免选词回车误发消息。
+  if (e.isComposing || e.keyCode === 229) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     submit()

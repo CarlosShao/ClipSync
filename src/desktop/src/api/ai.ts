@@ -67,6 +67,8 @@ export interface ChatMessage {
   thinkingActive?: boolean // 思考阶段是否仍在进行：工具开始调用后视为结束（用于前端正确显示“思考完成”而非一直“思考中”）
   tool_call_id?: string // tool 角色消息关联的调用 id
   isError?: boolean // 标记该助手消息是否因出错而生成（不进入上游历史）
+  /** 流中断标记（C5）：用户主动停止/看门狗中止导致本次回答未走完时置 true，UI 据此展示「已停止 · 重新生成」 */
+  interrupted?: boolean
   agentRuns?: AgentRun[] // 多代理并行模式：本次回答中各子代理的运行状态卡片
   /** 前端内部附带的 system 消息元信息（如手动压缩命令的 loading/成功卡片） */
   systemMeta?: {
@@ -505,6 +507,8 @@ export interface StreamChatOptions {
   onDelta: (text: string, thinking?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => void
   onError?: (msg: string) => void
   onDone?: () => void
+  /** 流被中止（AbortError）时回调（C5）：与正常结束 onDone / 出错 onError 三者互斥 */
+  onInterrupt?: () => void
 }
 
 /**
@@ -535,8 +539,11 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
       signal: opts.signal,
     })
   } catch (e: any) {
-    // 网络/中断错误（含 AbortError）
-    if (e?.name === 'AbortError') return
+    // 网络/中断错误（含 AbortError）：中止走 onInterrupt，与正常结束区分开
+    if (e?.name === 'AbortError') {
+      opts.onInterrupt?.()
+      return
+    }
     opts.onError?.(String(e?.message || e))
     return
   }
@@ -558,7 +565,8 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
   const decoder = new TextDecoder()
   let buffer = ''
   let errored = false
-  let streamDone = false
+  // 读取阶段被主动中止（AbortError）→ 走 onInterrupt 而非 onDone
+  let interrupted = false
   // 最后一次收到增量事件的时间戳：用于在流结束时判断是否还有未处理的 agent 事件
   let lastEventAt = Date.now()
 
@@ -640,7 +648,6 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
           buffer += '\n\n'
           processBuffer()
         }
-        streamDone = true
         break
       }
     }
@@ -649,8 +656,15 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
       errored = true
       opts.onError?.(String(e?.message || e))
     } else {
-      streamDone = true
+      // 读取阶段被中止（stop / 看门狗）：标记为中断，不再触发 onDone
+      interrupted = true
     }
+  }
+
+  // 中断路径：明确回调 onInterrupt（此前中止会被误当 onDone 正常收尾）
+  if (interrupted) {
+    opts.onInterrupt?.()
+    return
   }
 
   // 最终安全网：流结束后如果距离最后一个事件不足 50ms，等待一下再触发 onDone

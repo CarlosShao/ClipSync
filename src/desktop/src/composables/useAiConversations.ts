@@ -97,6 +97,8 @@ export function useAiConversations() {
         thinkingSegments: m.thinkingSegments || m.metadata?.thinkingSegments || undefined,
         toolCalls: m.tool_calls || m.toolCalls || undefined,
         toolResults: m.tool_results || m.toolResults || undefined,
+        // 流中断标记（C5）：恢复历史时还原「已停止 · 重新生成」入口
+        interrupted: m.interrupted || undefined,
         // 保留原始 created_at，供 saveMessages 全量重插后仍能稳定按时间排序
         createdAt: m.created_at || m.createdAt || undefined,
       })) as ChatMessage[]

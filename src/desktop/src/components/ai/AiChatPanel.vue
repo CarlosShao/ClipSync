@@ -33,6 +33,8 @@ import {
   ChevronDown,
   Check,
   ShieldAlert,
+  CircleStop,
+  RotateCcw,
 } from 'lucide-vue-next'
 
 /**
@@ -314,6 +316,55 @@ function confirmToolName(tool?: string): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
 }
+
+// 错误码可读化（C4）：前端写入的裸错误码（如 ai_no_provider_selected）走 i18n 映射；
+// 服务器下发的自由文本（如 HTTP 500 详情）查不到键则原样展示。
+function formatError(raw: string): string {
+  if (!raw) return ''
+  const key = raw.trim()
+  const translated = t(key)
+  return translated === key ? raw : translated
+}
+
+// 流中断（C5）：末条助手消息被打上 interrupted 标记且不再流式 → 展示「已停止 · 重新生成」条
+const showInterruptedBar = computed(() => {
+  if (isStreaming.value) return false
+  const last = messages.value[messages.value.length - 1]
+  return !!last?.interrupted
+})
+
+// 重发前剥离内部标记：上下文感知（VIEWCTX）与快捷指令（USERINPUT）包裹标记
+// 会由 send()/onSend 重新生成或本就不该进上游，重发时还原为用户可见原文。
+function stripInternalMarkers(content: string): string {
+  let out = content || ''
+  const VT_OPEN = '\u2404VIEWCTX\u2404'
+  const VT_CLOSE = '\u2404/VIEWCTX\u2404'
+  const UI_OPEN = '\u2404USERINPUT\u2404'
+  const UI_CLOSE = '\u2404/USERINPUT\u2404'
+  while (out.includes(UI_OPEN) && out.includes(UI_CLOSE)) {
+    const s = out.indexOf(UI_OPEN)
+    const e2 = out.indexOf(UI_CLOSE, s)
+    if (s < 0 || e2 < 0) break
+    out = out.slice(0, s) + out.slice(s + UI_OPEN.length, e2) + out.slice(e2 + UI_CLOSE.length)
+  }
+  const vs = out.indexOf(VT_OPEN)
+  const ve = out.indexOf(VT_CLOSE)
+  if (vs >= 0 && ve > vs) out = out.slice(0, vs) + out.slice(ve + VT_CLOSE.length)
+  return out.trim()
+}
+
+// 「已停止 · 重新生成」入口（C5）：点击后重发最后一条用户消息（含其截图）
+function regenerateFromLastUserMessage() {
+  if (isStreaming.value) return
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i]
+    if (m.role !== 'user') continue
+    const text = stripInternalMarkers(m.content || '')
+    if (!text && !(m.images && m.images.length)) return // 空内容兜底：不发送
+    onSend(text, m.images ? [...m.images] : undefined)
+    return
+  }
+}
 </script>
 
 <template>
@@ -561,7 +612,22 @@ function confirmToolName(tool?: string): string {
             </div>
           </Transition>
 
-          <div v-if="error" class="ai-error-bar">{{ error }}</div>
+          <!-- 流中断（C5）：本次回答被用户停止 → 提示条 + 一键重发最后一条用户消息 -->
+          <div v-if="showInterruptedBar" class="ai-interrupt-bar" role="status">
+            <CircleStop :size="14" class="ai-interrupt-icon" />
+            <span class="ai-interrupt-text">{{ t('ai_interrupted', '已停止') }}</span>
+            <button
+              type="button"
+              class="ai-interrupt-regen"
+              :title="t('ai_regenerate_last', '重新生成')"
+              @click="regenerateFromLastUserMessage"
+            >
+              <RotateCcw :size="12" />
+              {{ t('ai_regenerate_last', '重新生成') }}
+            </button>
+          </div>
+
+          <div v-if="error" class="ai-error-bar">{{ formatError(error) }}</div>
 
           <AiChatComposer
             ref="chatInputRef"
@@ -764,6 +830,50 @@ function confirmToolName(tool?: string): string {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
   border-top: 1px solid var(--border-default);
+}
+
+/* 流中断提示条（C5）：「已停止 · 重新生成」 */
+.ai-interrupt-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border-top: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+.ai-interrupt-icon {
+  color: var(--warning);
+  flex-shrink: 0;
+}
+.ai-interrupt-text {
+  flex: 1;
+  min-width: 0;
+}
+.ai-interrupt-regen {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.ai-interrupt-regen:hover {
+  background: var(--accent-bg);
+}
+.ai-interrupt-regen:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ========== 工具确认气泡卡片（内嵌式，参考 Trae 权限请求框） ========== */

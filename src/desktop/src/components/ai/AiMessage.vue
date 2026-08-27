@@ -296,23 +296,6 @@ const pendingAskUser = computed(() => {
   return !props.message.toolResults?.some((tr) => tr.tool_call_id === s.id)
 })
 
-// 调试：把所有 assistant 消息的关键字段打出来供排查（仅当字段变化时）
-watch(() => props.message, () => {
-  if (props.message.role === 'assistant' && props.message.id) {
-    console.log('[AiMessage] message', {
-      id: props.message.id,
-      hasThinking: hasThinking.value,
-      hasContent: hasContent.value,
-      hasToolCalls: Boolean((props.message.toolCalls || []).length),
-      toolCallsCount: (props.message.toolCalls || []).length,
-      toolResultsCount: (props.message.toolResults || []).length,
-      hasAgentRuns: hasAgentRuns.value,
-      agentRunsCount: (props.message.agentRuns || []).length,
-      isStreaming: isStreamingNow.value,
-      thinkingActive: props.message.thinkingActive,
-    })
-  }
-}, { deep: false })
 // 快捷指令
 const QUICK_ACTIONS_KIND_META: Record<string, { icon: Component; i18nKey: string }> = {
   quick_action_summarize: { icon: ListChecks, i18nKey: 'ai_quick_applied_summarize' },

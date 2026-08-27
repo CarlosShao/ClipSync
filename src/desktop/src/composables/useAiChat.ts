@@ -254,12 +254,25 @@ export function useAiChat() {
     return created
   }
 
+  // 中止当前流后等待其收尾（send 的 finally）跑完的确定收敛上限：
+  // 轮询 isStreaming 复位；超时则交由「会话 id 快照比对」兜底丢弃旧流收尾写入。
+  const STREAM_SETTLE_TIMEOUT_MS = 1_500
+  async function waitForStreamSettle() {
+    const deadline = Date.now() + STREAM_SETTLE_TIMEOUT_MS
+    while (isStreaming.value && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    if (isStreaming.value) {
+      console.warn('[useAiChat] previous stream did not settle within timeout, relying on conversation snapshot guard')
+    }
+  }
+
   async function loadConversation(id: string) {
-    // 若当前正在流式生成，先中止，避免旧 assistantMsg proxy 在 messages.value 被替换后继续被改。
+    // 若当前正在流式生成，先中止，再等待流收尾确定收敛（替代原先不可靠的固定 50ms sleep），
+    // 避免旧 assistantMsg proxy 在 messages.value 被替换后仍被 finally 块写入。
     if (isStreaming.value) {
       stop()
-      // 给 finally 块一点时间收敛状态，避免竞态
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      await waitForStreamSettle()
     }
     const msgs = await conv.select(id)
     if (msgs) {
@@ -513,6 +526,17 @@ export function useAiChat() {
 
     // 智能标题：如果这是新对话的首条消息，用用户消息内容自动生成标题
     const isFirstMessageInNewConv = !conv.currentConversation.value?.message_count || conv.currentConversation.value.message_count === 0
+
+    // ===== 会话切换竞态防护（C1）：快照本次流所属的对话 id =====
+    // 流式期间用户可能切到其他历史对话（loadConversation → stop + 换 messages）。
+    // 收尾路径（onError/onDone/finally）在写入任何共享状态（error、用量、确认卡、
+    // saveCurrent、rename、settleAgentRuns 等）前先比对快照：不一致则全部跳过，
+    // 避免旧流的内容/错误写进新对话；对已脱离视图的 assistantMsg 本地 proxy 的写入无害。
+    const thisConversationId = conv.currentConversationId.value
+    const ownsStream = () => conv.currentConversationId.value === thisConversationId
+    // 流中断标记（C5）：stop()/看门狗中止时由 streamChat 的 onInterrupt 置位，finally 中落到消息上
+    let streamInterrupted = false
+
     isStreaming.value = true
     streamLastActivityAt.value = Date.now() // 健康检查：记录流开始时间
     // 新一轮对话开始：重置上下文用量，圆环回到 0%
@@ -759,6 +783,9 @@ export function useAiChat() {
         onDelta: (d, thinkingNative?: string, toolCall?: any, toolResult?: any, meta?: StreamDeltaMeta) => {
           lastActivityAt = Date.now()
           streamLastActivityAt.value = Date.now() // 健康检查：持续刷新活动时间
+          // 会话已切换（C1）：后续增量只允许落到已脱离视图的本地 proxy，
+          // 所有共享状态（用量环/横幅/确认卡/压缩进度等）一律停止更新，防止污染新对话。
+          if (!ownsStream()) return
           // token 用量事件：覆盖为最近一次（最代表当前上下文大小）
           if (meta?.usage) {
             const u = meta.usage
@@ -939,6 +966,8 @@ export function useAiChat() {
           }
         },
         onError: (msg) => {
+          // 会话已切换（C1）：旧流的错误不写入新对话的 error 条与消息列表
+          if (!ownsStream()) return
           error.value = msg
           const last = messages.value[messages.value.length - 1]
           if (last && last.role === 'assistant') {
@@ -949,6 +978,10 @@ export function useAiChat() {
           sealAllThinkingSegments()
           // 出错必须释放缓冲，防止文本卡在静默期定时器里永远不显示
           flushAllTextBuffers()
+        },
+        onInterrupt: () => {
+          // 流被主动中止（stop / 看门狗）（C5）：标记后由 finally 落到末条助手消息上
+          streamInterrupted = true
         },
         onDone: () => {
           /* 流正常结束，最后统一持久化 */
@@ -967,15 +1000,18 @@ export function useAiChat() {
           sealAllThinkingSegments()
           // 流结束：强制释放所有暂存文本缓冲，确保无内容丢失
           flushAllTextBuffers()
-          // 流结束也触发一次规划卡片收敛
-          convergePlanning()
+          // 流结束也触发一次规划卡片收敛（会话已切换时跳过：messages 可能已属于新对话）
+          if (ownsStream()) convergePlanning()
         },
       })
     } catch (e: any) {
-      error.value = String(e?.message || e)
-      const last = messages.value[messages.value.length - 1]
-      if (last && last.role === 'assistant') last.isError = true
-      // 异常路径也要 flush，避免 catch 块触发时缓冲还挂着定时器未释放
+      // 会话已切换（C1）：旧流的异常不写入新对话的 error 条与消息列表
+      if (ownsStream()) {
+        error.value = String(e?.message || e)
+        const last = messages.value[messages.value.length - 1]
+        if (last && last.role === 'assistant') last.isError = true
+      }
+      // 异常路径也要 flush，避免 catch 块触发时缓冲还挂着定时器未释放（写入已脱离视图的 proxy 无害）
       flushAllTextBuffers()
     } finally {
       clearInterval(silenceWatchdog)
@@ -985,21 +1021,30 @@ export function useAiChat() {
       isStreaming.value = false
       streamLastActivityAt.value = 0 // 健康检查：重置活动时间
       abortCtrl.value = null
-      // 收敛所有残留的非终态 agent 卡片（含上一条挂掉的并行请求残留），避免永久转圈
-      settleAgentRuns()
-      // 流结束：清掉可能残留的确认卡片（后端超时/断流已清对应 pending）
-      pendingConfirm.value = null
-      approving.value = false
-      // 保存当前对话的消息（不等待，失败静默）
-      conv.saveCurrent(messages.value).catch(() => {})
-      // 智能标题：新对话首条消息 → 用用户消息内容自动命名（截取前 20 字符）
-      if (isFirstMessageInNewConv) {
-        const userMsg = messages.value.find((m) => m.role === 'user')
-        if (userMsg?.content) {
-          const title = userMsg.content.replace(/[\u2404].*?[\u2404]/g, '').trim().slice(0, 20) || '新对话'
-          conv.rename(conv.currentConversationId.value, title).catch(() => {})
+      // 中断标记（C5）：用户停止/看门狗中止 → 给本次助手消息打 interrupted，
+      // 面板据此展示「已停止 · 重新生成」入口。若会话已切换，此 proxy 已脱离视图，写入无害。
+      if (streamInterrupted) assistantMsg.interrupted = true
+      if (ownsStream()) {
+        // 会话未切换：正常收敛本流的所有共享状态
+        // 收敛所有残留的非终态 agent 卡片（含上一条挂掉的并行请求残留），避免永久转圈
+        settleAgentRuns()
+        // 流结束：清掉可能残留的确认卡片（后端超时/断流已清对应 pending）
+        pendingConfirm.value = null
+        approving.value = false
+        // 保存当前对话的消息（不等待，失败静默）
+        conv.saveCurrent(messages.value).catch(() => {})
+        // 智能标题：新对话首条消息 → 用用户消息内容自动命名（截取前 20 字符）
+        if (isFirstMessageInNewConv) {
+          const userMsg = messages.value.find((m) => m.role === 'user')
+          if (userMsg?.content) {
+            const title = userMsg.content.replace(/[\u2404].*?[\u2404]/g, '').trim().slice(0, 20) || '新对话'
+            conv.rename(conv.currentConversationId.value, title).catch(() => {})
+          }
         }
       }
+      // 会话已切换（C1）：saveCurrent/settle/rename 等共享状态写入全部跳过——
+      // 若为正常收尾（loadConversation 的收敛等待期间跑到这里），currentConversationId
+      // 此刻仍是旧 id，快照比对通过、保存目标正确；若等待超时后才跑完，则丢弃保存，防止串话。
     }
   }
 
