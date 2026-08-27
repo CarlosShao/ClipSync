@@ -144,6 +144,8 @@ export async function collectToolCallsFromResponsesStream(reader, decoder, sendD
   let thinking = ''
   let usage = null
   let lastChunkAt = Date.now()
+  // 工单 A6 解析端：response.completed 时若因 max_output_tokens 截断，归一为 'length'
+  let responsesFinishReason = ''
   // 以 output_index 为键保存 tool_call，保证多工具并行时的顺序与增量累积正确
   const toolMap = new Map()
 
@@ -218,6 +220,10 @@ export async function collectToolCallsFromResponsesStream(reader, decoder, sendD
         } else if (type === 'response.completed') {
           const resp = obj.response || {}
           usage = normalizeResponsesUsage(resp.usage || obj.usage)
+          // 工单 A6 解析端：输出被 max_output_tokens 截断时归一为 'length'，供 runChatLoop 截断防护
+          if (resp.incomplete_details?.reason === 'max_output_tokens') {
+            responsesFinishReason = 'length'
+          }
           completed = true
         }
       } catch { /* ignore */ }
@@ -230,7 +236,7 @@ export async function collectToolCallsFromResponsesStream(reader, decoder, sendD
     .map(([, tc]) => tc)
     .filter((tc) => tc && tc.function?.name)
 
-  return { content, thinking, toolCalls, finishReason: '', usage }
+  return { content, thinking, toolCalls, finishReason: responsesFinishReason, usage }
 }
 
 /**
@@ -263,6 +269,10 @@ export async function collectToolCallsFromAnthropicStream(reader, decoder, sendD
   let currentBlock = null // { type: 'text'|'thinking'|'tool_use', index, toolId?, toolName?, toolInput? }
   // 当前消息里已经登记的 tool_calls（按 index 排序）
   const toolCallsByIndex = new Map()
+  // 工单 A5：协议层 error 事件不再拼进正文，改为记录后统一抛出（走调用方 SSE 错误透传）
+  let streamError = null
+  // 工单 A6 解析端：message_delta.delta.stop_reason 归一后的结束原因
+  let anthropicFinishReason = ''
 
   while (true) {
     const { value, done } = await reader.read()
@@ -297,6 +307,15 @@ export async function collectToolCallsFromAnthropicStream(reader, decoder, sendD
             prompt_tokens: m.usage?.input_tokens || 0,
             completion_tokens: 0,
             total_tokens: 0,
+          }
+          // 工单 A7：message_start 也可能携带缓存字段（官方 API 在此下发），归一到标准位
+          const startCacheRead = m.usage?.cache_read_input_tokens ?? m.usage?.cache_read_tokens
+          const startCacheWrite = m.usage?.cache_creation_input_tokens ?? m.usage?.cache_creation_tokens
+          if (startCacheRead != null || startCacheWrite != null) {
+            usage.prompt_tokens_details = {
+              cached_tokens: startCacheRead ?? 0,
+              cache_written_tokens: startCacheWrite ?? 0,
+            }
           }
         } else if (type === 'content_block_start') {
           const cb = obj.content_block || {}
@@ -366,27 +385,57 @@ export async function collectToolCallsFromAnthropicStream(reader, decoder, sendD
           currentBlock = null
         } else if (type === 'message_delta') {
           const u = obj.usage || {}
+          // 工单 A6 解析端：stop_reason='max_tokens' 归一为 OpenAI 风格 finishReason='length'，
+          // 供 runChatLoop 做截断防护（参数被截断的 tool_calls 不执行）。
+          const stopReason = obj.delta?.stop_reason || obj.stop_reason
+          anthropicFinishReason = stopReason === 'max_tokens'
+            ? 'length'
+            : stopReason === 'tool_use' ? 'tool_use' : 'end_turn'
           if (usage) {
             usage.completion_tokens = u.output_tokens ?? usage.completion_tokens
             usage.total_tokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0)
             if (u.input_tokens) usage.prompt_tokens = u.input_tokens
             if (u.total_tokens) usage.total_tokens = u.total_tokens
-            if (u.cache_read_tokens != null) usage.cacheReadTokens = u.cache_read_tokens
-            if (u.cache_creation_input_tokens != null) usage.cacheCreationTokens = u.cache_creation_input_tokens
+            // 工单 A7：缓存字段归一到 OpenAI 兼容标准位（消费端零改动即可读取）：
+            //   cache_read → prompt_tokens_details.cached_tokens
+            //   cache_creation → prompt_tokens_details.cache_written_tokens
+            const cacheRead = u.cache_read_input_tokens ?? u.cache_read_tokens
+            const cacheWrite = u.cache_creation_input_tokens ?? u.cache_creation_tokens
+            if (cacheRead != null || cacheWrite != null) {
+              usage.prompt_tokens_details = {
+                ...(usage.prompt_tokens_details || {}),
+                cached_tokens: cacheRead ?? usage.prompt_tokens_details?.cached_tokens ?? 0,
+                cache_written_tokens: cacheWrite ?? usage.prompt_tokens_details?.cache_written_tokens ?? 0,
+              }
+              // 旧顶层字段保留（向后兼容），但消费端已不再依赖
+              if (cacheRead != null) usage.cacheReadTokens = cacheRead
+              if (u.cache_creation_input_tokens != null) usage.cacheCreationTokens = u.cache_creation_input_tokens
+            }
           } else {
             usage = {
               prompt_tokens: u.input_tokens || 0,
               completion_tokens: u.output_tokens || 0,
               total_tokens: u.total_tokens || ((u.input_tokens || 0) + (u.output_tokens || 0)),
             }
+            const fallbackCacheRead = u.cache_read_input_tokens ?? u.cache_read_tokens
+            const fallbackCacheWrite = u.cache_creation_input_tokens ?? u.cache_creation_tokens
+            if (fallbackCacheRead != null || fallbackCacheWrite != null) {
+              usage.prompt_tokens_details = {
+                cached_tokens: fallbackCacheRead ?? 0,
+                cache_written_tokens: fallbackCacheWrite ?? 0,
+              }
+            }
           }
         } else if (type === 'message_stop') {
           finished = true
         } else if (type === 'error') {
-          // 协议层错误（Step Fun 网关可能回 4xx/5xx），把 message 作为 content 暴露给前端
-          const msg = obj.message || obj.error || 'upstream error'
-          content += `\n[upstream error: ${msg}]`
-          sendDelta({ choices: [{ delta: { content: `\n[upstream error: ${msg}]` }, index: 0 }] })
+          // 工单 A5：协议层错误（上游/网关回 4xx/5xx 时以 error 事件下发）不再把
+          // `[upstream error:...]` 拼进正文——那会让前端把报错当普通回答渲染（无红框提示）。
+          // 改为记录后抛出，走 aiChat.js 统一 SSE 错误透传。
+          const raw = obj.error ?? obj.message
+          const msg = typeof raw === 'string' && raw ? raw : (raw?.message || 'upstream error')
+          logger.error('[AnthropicStream] upstream error event:', msg)
+          streamError = new Error(`Upstream error: ${msg}`)
           finished = true
         }
       } catch { /* ignore malformed event */ }
@@ -399,15 +448,19 @@ export async function collectToolCallsFromAnthropicStream(reader, decoder, sendD
     .map(([, tc]) => tc)
     .filter((tc) => tc && tc.function?.name)
 
+  // 工单 A5：上游以 error 事件终止 → 抛错，由 aiChatCore.runChatLoop 向上传导，
+  // 最终走 aiChat.js 的 SSE `{"error":...}` 统一透传（前端红框展示）。
+  if (streamError) throw streamError
+
   // DEBUG: 流结束后记录收集到的工具调用情况
   logger.info('[DEBUG-AnthropicStream] stream completed:',
     'content_len=', content.length,
     'thinking_len=', thinking.length,
     'toolCalls_count=', toolCalls.length,
     'tool_names=', toolCalls.map((t) => t.function?.name).join(',') || 'NONE',
-    'finishReason=', toolCalls.length > 0 ? 'tool_use' : 'end_turn')
+    'finishReason=', anthropicFinishReason || (toolCalls.length > 0 ? 'tool_use' : 'end_turn'))
 
-  return { content, thinking, toolCalls, finishReason: toolCalls.length > 0 ? 'tool_use' : 'end_turn', usage }
+  return { content, thinking, toolCalls, finishReason: anthropicFinishReason || (toolCalls.length > 0 ? 'tool_use' : 'end_turn'), usage }
 }
 
 /**

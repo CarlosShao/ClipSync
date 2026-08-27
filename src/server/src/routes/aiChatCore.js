@@ -396,6 +396,9 @@ export async function runChatLoop({
   // 安全网计数器：防止模型"只说要调工具"却不 emit tool_calls 导致任务半途而废
   let continuationRetries = 0
   const MAX_CONTINUATION_RETRIES = 2
+  // 工单 A6：finish_reason=length 截断防护计数器（截断的 tool_calls 参数不可信，不执行并要求重发）
+  let truncationRetries = 0
+  const MAX_TRUNCATION_RETRIES = 2
   // 上一轮真实 prompt token 数（来自上游 usage）；用于估计当前上下文占用、决定是否压缩。
   let lastPromptTokens = 0
 
@@ -416,11 +419,17 @@ export async function runChatLoop({
   // 压缩完成后，把压缩后的 messages 应用到后续轮次。
   let compressInFlight = false
   let compressResult = null // { messages, estimatedTokens, removed, summaryTokens }
+  // 工单 A9：压缩触发时 currentMessages 的长度快照——压缩期间新增的尾部轮次靠它定位并保留
+  let compressSnapshotLength = 0
 
   for (let round = 0; round < maxRounds; round++) {
     // 若上一轮触发的后台压缩已完成，则应用压缩结果（缩小上下文继续后续轮次）
     if (compressResult) {
-      currentMessages = compressResult.messages
+      // 工单 A9：只替换历史前缀——压缩结果对应的是"快照时刻"的 messages；
+      // 压缩异步执行期间新增的尾部轮次（assistant 回复 / tool 结果等）原样保留拼接，
+      // 避免整表替换静默丢弃这些消息导致最新上下文丢失。
+      const appendedAfterSnapshot = currentMessages.slice(compressSnapshotLength)
+      currentMessages = [...compressResult.messages, ...appendedAfterSnapshot]
       lastPromptTokens = compressResult.estimatedTokens
       compressResult = null
     }
@@ -477,6 +486,7 @@ export async function runChatLoop({
         }
         // 快照当前 messages（避免压缩期间 currentMessages 被工具结果继续追加导致数据错乱）
         const snapshot = currentMessages.map((m) => ({ ...m, tool_calls: m.tool_calls ? [...m.tool_calls] : m.tool_calls }))
+        compressSnapshotLength = snapshot.length // 工单 A9：记录快照基线，用于保留压缩期间新增的尾部轮次
         // 后台执行：不 await，任务继续流式输出
         compressConversationHistory(snapshot, {
           providerRow, apiKey, userId, abortSignal, role, conversationId,
@@ -584,6 +594,33 @@ export async function runChatLoop({
       currentMessages.push({
         role: 'system',
         content: '你刚才的回复表示还需要调用工具，但没有实际输出 tool_calls。如果你确实需要继续调用工具，请立即停止文字解释，直接输出 tool_calls；如果不需要，请直接给出最终答案，不要只说"我要调用"。',
+      })
+      continue
+    }
+
+    // ===== 工单 A6：finish_reason=length 截断防护 =====
+    // 输出长度截断时 tool_calls 的 arguments JSON 很可能不完整（被硬截），直接执行会产生
+    // 参数丢失/半截数据的静默错误。此处不执行任何工具，改向模型回注系统提醒要求重新完整输出。
+    if (
+      response.finishReason === 'length' &&
+      response.toolCalls.length > 0 &&
+      truncationRetries < MAX_TRUNCATION_RETRIES
+    ) {
+      truncationRetries++
+      logger.warn('[AI] truncated tool_calls detected (finish_reason=length), skipping execution and asking model to re-emit.',
+        'toolCalls:', response.toolCalls.map((t) => t.function?.name).join(','),
+        'retry=', truncationRetries)
+      // 注意：不能把带 tool_calls 的 assistant 消息入上下文（协议要求每个 tool_call 必须有配对 result），
+      // 只保留可见正文 + 纠正提醒，让模型下一轮重新发起完整调用。
+      // 纠正提醒用 role:'user' 而非 'system'：convertMessagesForAnthropic / messagesToResponsesInput
+      // 都会丢弃中途 system 消息，用 system 回注会导致该防护只在 OpenAI 兼容族生效。
+      // 正文为空时跳过 assistant 消息，避免向 Anthropic 下发空 text 块。
+      if (response.content) {
+        currentMessages.push({ role: 'assistant', content: response.content })
+      }
+      currentMessages.push({
+        role: 'user',
+        content: '【系统提示】你上一轮输出的工具调用因达到输出 token 上限而被截断（finish_reason=length），参数可能不完整，该次调用未被执行。请重新完整输出该工具调用：确保 arguments 是完整合法的 JSON；若参数过长请精简后重试。',
       })
       continue
     }

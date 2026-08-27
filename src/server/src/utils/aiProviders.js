@@ -539,6 +539,11 @@ export function buildUpstreamChat(cfg) {
   if (!preset) {
     throw new Error(`Unknown provider: ${provider}`)
   }
+  // 命名统一（工单 A1）：同时接受 options.maxTokens 与 options.max_tokens，
+  // camelCase 优先（snake_case 兼容旧调用方），彻底消除调用方传参失效问题。
+  const resolvedMaxTokens = Number.isFinite(options.maxTokens)
+    ? options.maxTokens
+    : options.max_tokens
   const family = resolveFamily(provider, apiFormat)
 
   let resolvedBaseUrl = (baseUrl || preset.defaultBaseUrl || '').replace(/\/+$/, '')
@@ -577,7 +582,7 @@ export function buildUpstreamChat(cfg) {
     const body = {
       model,
       messages: chatMessages,
-      max_tokens: options.maxTokens || 1024,
+      max_tokens: resolvedMaxTokens || 1024,
       stream,
     }
     // 原生 Anthropic thinking 参数（OpenAI 兼容族不支持该字段，由 reasoning_content 自动下发）
@@ -594,7 +599,11 @@ export function buildUpstreamChat(cfg) {
           (options.thinkingBudget > 8192 ? 'high' : options.thinkingBudget < 2048 ? 'low' : 'medium')
         body.output_config = { effort }
       } else {
-        body.thinking = { type: 'enabled', budget_tokens: options.thinkingBudget || 4096 }
+        const budgetTokens = options.thinkingBudget || 4096
+        body.thinking = { type: 'enabled', budget_tokens: budgetTokens }
+        // 工单 A2：Anthropic 硬性要求 max_tokens > budget_tokens，否则请求直接 400。
+        // 启用 thinking 时强制 max_tokens ≥ budget_tokens + 2048 的输出余量。
+        body.max_tokens = Math.max(body.max_tokens, budgetTokens + 2048)
       }
     }
     if (systemMessages.length > 0) {
@@ -678,7 +687,7 @@ export function buildUpstreamChat(cfg) {
       model,
       input,
       stream,
-      max_output_tokens: options.maxTokens || 1024,
+      max_output_tokens: resolvedMaxTokens || 1024,
     }
     if (typeof options.temperature === 'number') {
       body.temperature = options.temperature
@@ -686,12 +695,26 @@ export function buildUpstreamChat(cfg) {
     if (systemMessages.length > 0) {
       body.instructions = systemMessages.map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n\n')
     }
-    // 工具定义
+    // 工具定义（工单 A3）：Responses 协议要求扁平结构
+    //   { type:'function', function:{ name, description, parameters } }
+    //   → { type:'function', name, description, parameters }，否则上游 400。
     if (options.tools) {
-      body.tools = options.tools
+      body.tools = options.tools.map((t) => {
+        if (!t || !t.function?.name) return t
+        return {
+          type: 'function',
+          name: t.function.name,
+          description: t.function.description || '',
+          parameters: t.function.parameters || { type: 'object', properties: {} },
+        }
+      })
     }
     if (options.tool_choice) {
-      body.tool_choice = options.tool_choice
+      const tc = options.tool_choice
+      // 兼容 OpenAI 嵌套形态的工具指定：{type:'function',function:{name}} → 扁平 {type:'function',name}
+      body.tool_choice = tc?.type === 'function' && tc.function?.name
+        ? { type: 'function', name: tc.function.name }
+        : tc
     }
     return {
       url: `${resolvedBaseUrl}/responses`,
@@ -719,8 +742,8 @@ export function buildUpstreamChat(cfg) {
   if (typeof options.temperature === 'number') {
     body.temperature = options.temperature
   }
-  if (options.maxTokens) {
-    body.max_tokens = options.maxTokens
+  if (resolvedMaxTokens) {
+    body.max_tokens = resolvedMaxTokens
   }
   // 支持工具定义
   if (options.tools) {

@@ -25,6 +25,23 @@ import { TOOLS, getWorkerTools } from './aiTools.js'
 import { getToolsForRole } from '../utils/aiSystemPrompt.js'
 
 const MAX_AGENTS = 4
+// 工单 A12：子代理注入的主对话历史上限（含其后的 tool 结果配对完整）
+const WORKER_MAX_HISTORY_MESSAGES = 20
+
+/**
+ * 工单 A12：子代理上下文裁剪。
+ * worker 只注入最近 N 条历史（N=WORKER_MAX_HISTORY_MESSAGES），不再复制全量对话：
+ * - 剔除主对话的 system 消息（子代理只用自己的 WORKER_SYSTEM，避免提示词重复注入）；
+ * - 裁剪起点向后滚动跳过头部孤儿 tool 结果（协议要求 tool 消息必须紧跟带 tool_calls 的 assistant），
+ *   保证窗口内 assistant.tool_calls ↔ tool 结果配对完整；
+ * - 图片 base64 等大头载荷随早期消息一起被裁掉，显著降低并行子代理 token 开销。
+ */
+function buildWorkerMessages(messages, agent) {
+  const history = (Array.isArray(messages) ? messages : []).filter((m) => m && m.role !== 'system')
+  let start = Math.max(0, history.length - WORKER_MAX_HISTORY_MESSAGES)
+  while (start < history.length && history[start].role === 'tool') start++
+  return [{ role: 'system', content: WORKER_SYSTEM(agent) }, ...history.slice(start)]
+}
 
 // 协调器专用规划工具（唯一被允许触发的"元工具"）
 const DISPATCH_AGENTS_TOOL = {
@@ -117,6 +134,8 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, req
       return
     }
     if (d.tool_call && d.tool_call.name === 'dispatch_agents') return
+    // A11：混发推迟时为 dispatch 合成的"deferred"工具结果只回注模型，不下发前端时间线
+    if (d.tool_result && d.tool_result.name === 'dispatch_agents') return
     sendDelta(obj)
   }
 
@@ -186,10 +205,46 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, req
       })
     }
 
-    // 触发多任务委派
+    // ===== 触发多任务委派（工单 A11：混发丢弃修复）=====
     const dispatch = resp.toolCalls.find((tc) => tc.function?.name === 'dispatch_agents')
-    if (dispatch) {
+    const businessCalls = resp.toolCalls.filter((tc) => tc.function?.name !== 'dispatch_agents')
+
+    if (dispatch && businessCalls.length === 0) {
+      // 纯 dispatch：解析计划，交由编排层走并行子代理
       return { isDispatch: true, dispatchArgs: dispatch.function.arguments || '{}', content: resp.content }
+    }
+
+    if (dispatch && businessCalls.length > 0) {
+      // 同轮混发（dispatch_agents + 业务工具）：旧实现直接取 dispatch 计划，业务工具调用被
+      // 静默丢弃。修复：先执行业务工具并回填结果；dispatch 计划推迟到下一轮重新判断——
+      // 为 dispatch 的 tool_call 合成一条"deferred"结果回注模型，维持协议 tool_calls↔result 配对，
+      // 让模型消化业务工具结果后自行决定是否再单独发起 dispatch。
+      logger.info('[AI][orchestrator] mixed dispatch deferred: business tools execute first, dispatch decision postponed',
+        'business:', businessCalls.map((t) => t.function?.name).join(','))
+      currentMessages.push({
+        role: 'assistant',
+        content: resp.content || '',
+        tool_calls: resp.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.function.name, arguments: tc.function.arguments },
+        })),
+      })
+      const toolResults = await handleToolCalls(businessCalls, userId, wrappedSend, null, role, { abortSignal, req })
+      toolResults.push({
+        role: 'tool',
+        tool_call_id: dispatch.id,
+        content: JSON.stringify({
+          deferred: true,
+          reason: 'dispatch_agents 与其他业务工具调用出现在同一轮。本轮业务工具已执行、其结果已在上方 tool 结果中返回。请先消化这些结果再重新判断：确需拆分多个独立子任务时，请单独再次调用 dispatch_agents；否则直接回答用户。',
+        }),
+      })
+      currentMessages.push(...toolResults)
+      if (abortSignal?.aborted) {
+        logger.info('[AI][orchestrator] stream aborted, stopping coordinator loop')
+        return { isDispatch: false, dispatchArgs: '', content: '' }
+      }
+      continue
     }
 
     // 有业务工具调用：走统一执行管线后继续下一轮（单任务自闭环）。
@@ -263,22 +318,22 @@ async function runWorkers({ agents, messages, providerRow, apiKey, userId, role 
     const startedAt = Date.now()
 
     // 给该子代理的所有增量打上 agent_id（已带 agent_id / agent 生命周期事件的跳过）
-    const wrappedSend = (obj) => {
+    const wrappedSendBase = (obj) => {
       const d = obj?.choices?.[0]?.delta
       if (d && !d.agent_id && !d.agent) d.agent_id = agent.id
       sendDelta(obj)
     }
 
-    const runOne = () =>
+    const runAttempt = (attemptSend) =>
       runChatLoop({
-        messages: [{ role: 'system', content: WORKER_SYSTEM(agent) }, ...messages],
+        messages: buildWorkerMessages(messages, agent), // 工单 A12：只注入最近 N 条 + 自身 system
         options: {},
         providerRow,
         apiKey,
         tools: scopedReadonly,
         role,
         userId,
-        sendDelta: wrappedSend,
+        sendDelta: attemptSend,
         logChunk,
         agentId: agent.id,
         abortSignal: workerAbort.signal,
@@ -288,37 +343,62 @@ async function runWorkers({ agents, messages, providerRow, apiKey, userId, role 
         thinkingStrength,
       })
 
+    // 工单 A10：每次尝试独立计数——记录该次尝试向下发了多少条增量。
+    // 只有"未向用户下发任何内容"的失败才允许重试，否则重试会把已流式输出的
+    // 内容/工具时间线重复输出一遍。
+    let currentAttempt = null
+    const beginAttempt = () => {
+      let deltaCount = 0
+      const send = (obj) => {
+        deltaCount++
+        wrappedSendBase(obj)
+      }
+      currentAttempt = { getDeltaCount: () => deltaCount }
+      return send
+    }
+
+    const settleDone = (r) => {
+      const duration = Date.now() - startedAt
+      sendDelta({
+        choices: [{ delta: { agent: { id: agent.id, name: agent.name, objective: agent.objective, status: 'done', kind: 'worker', duration } } }],
+      })
+      return { id: agent.id, name: agent.name, objective: agent.objective, tools: [], status: 'done', content: r.finalContent, duration }
+    }
+
+    const settleFailed = (err) => {
+      const duration = Date.now() - startedAt
+      const msg = String(err?.message || err)
+      sendDelta({
+        choices: [{ delta: { agent: { id: agent.id, name: agent.name, objective: agent.objective, status: 'failed', kind: 'worker', error: msg, duration } } }],
+      })
+      return { id: agent.id, name: agent.name, objective: agent.objective, tools: [], status: 'failed', content: '', error: msg, duration }
+    }
+
     sendDelta({
       choices: [{ delta: { agent: { id: agent.id, name: agent.name, objective: agent.objective, status: 'working', kind: 'worker' } } }],
     })
 
-    return runOne()
-      .then((r) => {
-        const duration = Date.now() - startedAt
-        sendDelta({
-          choices: [{ delta: { agent: { id: agent.id, name: agent.name, objective: agent.objective, status: 'done', kind: 'worker', duration } } }],
-        })
-        return { id: agent.id, name: agent.name, objective: agent.objective, tools: [], status: 'done', content: r.finalContent, duration }
-      })
+    return runAttempt(beginAttempt())
+      .then(settleDone)
       .catch((err) => {
-        // #8：子代理失败有限重试一次（避免偶发上游抖动导致整段不可用）
-        logger.warn(`[AI][orchestrator] worker ${agent.id} failed, retrying once:`, err.message)
-        return runOne()
-          .then((r) => {
-            const duration = Date.now() - startedAt
-            sendDelta({
-              choices: [{ delta: { agent: { id: agent.id, name: agent.name, objective: agent.objective, status: 'done', kind: 'worker', duration } } }],
-            })
-            return { id: agent.id, name: agent.name, objective: agent.objective, tools: [], status: 'done', content: r.finalContent, duration }
-          })
-          .catch((err2) => {
-            const duration = Date.now() - startedAt
-            const msg = String(err2?.message || err2)
-            sendDelta({
-              choices: [{ delta: { agent: { id: agent.id, name: agent.name, objective: agent.objective, status: 'failed', kind: 'worker', error: msg, duration } } }],
-            })
-            return { id: agent.id, name: agent.name, objective: agent.objective, tools: [], status: 'failed', content: '', error: msg, duration }
-          })
+        // 工单 A10：子代理重试修正——
+        //   ① abortSignal 已中止 → 绝不重试（重试会顶着已取消的流继续烧上游 token）；
+        //   ② 首轮已下发过任何内容 → 不重试（避免重复输出）；
+        // 仅当首轮完全没发出任何增量时才有限重试一次。
+        const aborted = abortSignal.aborted || workerAbort.signal.aborted
+        const delivered = (currentAttempt?.getDeltaCount() ?? 0) > 0
+        if (aborted) {
+          logger.warn(`[AI][orchestrator] worker ${agent.id} aborted; not retrying`)
+          return settleFailed(err)
+        }
+        if (delivered) {
+          logger.warn(`[AI][orchestrator] worker ${agent.id} failed after streaming ${currentAttempt.getDeltaCount()} deltas; not retrying:`, err.message)
+          return settleFailed(err)
+        }
+        logger.warn(`[AI][orchestrator] worker ${agent.id} failed with no delivered content, retrying once:`, err.message)
+        return runAttempt(beginAttempt())
+          .then(settleDone)
+          .catch(settleFailed)
       })
       .finally(() => {
         abortSignal.removeEventListener('abort', onRoot)

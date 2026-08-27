@@ -98,17 +98,19 @@ export function convertMessagesForAnthropic(messages) {
           } else if (part?.type === 'text') {
             blocks.push({ type: 'text', text: part.text || '' })
           } else if (part?.type === 'image_url') {
+            // OpenAI 风格 data URL → Anthropic base64 source（仅支持内联 data URL）
             const url = part.image_url?.url || ''
-            if (url.startsWith('data:')) {
-              const m = url.match(/^data:([^;]+);base64,(.+)$/)
-              if (m) {
-                blocks.push({ type: 'image', media_type: m[1], data: m[2] })
-              } else {
-                blocks.push({ type: 'image', url })
-              }
-            } else {
-              blocks.push({ type: 'image', url })
+            const m = url.match(/^data:([^;]+);base64,(.*)$/s)
+            if (m) {
+              blocks.push({
+                type: 'image',
+                source: { type: 'base64', media_type: m[1] || 'image/png', data: m[2] },
+              })
             }
+            // 非 data URL 的远程图片 Anthropic 不支持，直接丢弃
+          } else if (part?.type === 'image' && part.source?.type === 'base64') {
+            // 兼容 normalizeVisionMessages 已产出的 {type:'image',source:{type:'base64',...}} 块，原样透传
+            blocks.push({ type: 'image', source: part.source })
           }
         }
       }

@@ -116,11 +116,27 @@ router.post('/chat', apiLimiter, async (req, res) => {
     // 禁用 Nagle：确保每个增量块立刻发到 socket，杜绝攒批导致“一次性蹦出”
     res.socket?.setNoDelay?.(true)
 
+    // 工单 A8：SSE 全局心跳——响应头发出后每 15s 下发一条 SSE 注释行（`: ping`）。
+    // 作用：① 防止代理/LB 把静默连接掐断（等待用户确认卡、长 thinking 时常见）；
+    //      ② 前端 parser 对非 `data:` 行天然忽略，不影响任何事件解析。
+    const HEARTBEAT_INTERVAL_MS = 15_000
+    const heartbeatTimer = setInterval(() => {
+      try {
+        if (!res.writableEnded) {
+          res.write(': ping\n\n')
+          res.flush?.()
+        }
+      } catch { /* 心跳失败不影响主流 */ }
+    }, HEARTBEAT_INTERVAL_MS)
+    // 幂等停止：safeFinish / 连接关闭 / finally 三处兜底调用
+    const stopHeartbeat = () => clearInterval(heartbeatTimer)
+
     const upstreamAbort = new AbortController()
     const upstreamTimer = setTimeout(() => upstreamAbort.abort(), 30 * 60_000)
 
     // Agent-C：客户端断开时立刻中止上游生成并清空该用户残留的 pending。
     req.on('close', () => {
+      stopHeartbeat()
       upstreamAbort.abort()
       cancelPendingForUser(req.userId)
     })
@@ -140,6 +156,8 @@ router.post('/chat', apiLimiter, async (req, res) => {
     // 这直接对应"思考卡在小半程 → 突然一下全出来"的现象：连接中途崩溃后客户端只能延迟 reconcile 状态。
     const safeFinish = () => {
       if (res.writableEnded) return
+      // 工单 A8：流结束（正常/异常）先停心跳，避免 DONE 之后继续写注释行
+      stopHeartbeat()
       // Agent-C：流结束（含正常结束/异常）时清掉该用户残留的待确认破坏性请求，
       // 避免 SSE 已断开仍残留 pending（确认卡片已无发送通道）。
       cancelPendingForUser(req.userId)
@@ -299,6 +317,8 @@ router.post('/chat', apiLimiter, async (req, res) => {
         safeFinish()
       }
     } finally {
+      // 工单 A8：无论成功/异常路径都要清掉全局心跳定时器
+      stopHeartbeat()
       clearTimeout(upstreamTimer)
       // 流结束后异步持久化用量；不阻塞响应结束，失败只记日志。
       if (conversationId && capturedUsage) {
