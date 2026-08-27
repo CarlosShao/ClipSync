@@ -5,13 +5,14 @@ import { apiLimiter } from '../middleware/rateLimiter.js'
 import { decrypt } from '../utils/encryption.js'
 import { logger } from '../utils/logger.js'
 import { logAuditEvent } from '../utils/audit.js'
-import { TOOLS, approveToolRequest, respondAskUserRequest, cancelPendingForUser } from './aiTools.js'
+import { TOOLS, approveToolRequest, respondAskUserRequest, cancelPendingForStream, peekPendingConfirmTool } from './aiTools.js'
 import { runChatLoop } from './aiChatCore.js'
 import { runOrchestration } from './aiOrchestrator.js'
 import { updateConversationUsage } from './aiConversations.js'
 import {
   buildSystemPrompt,
   getToolsForRole,
+  getToolLevel,
 } from '../utils/aiSystemPrompt.js'
 import { extractImageHashes, hashImageDataUrl } from '../utils/imageHash.js'
 
@@ -134,11 +135,13 @@ router.post('/chat', apiLimiter, async (req, res) => {
     const upstreamAbort = new AbortController()
     const upstreamTimer = setTimeout(() => upstreamAbort.abort(), 30 * 60_000)
 
-    // Agent-C：客户端断开时立刻中止上游生成并清空该用户残留的 pending。
+    // Agent-C → 工单 D1：客户端断开时立刻中止上游生成，并只结算「本流」的残留 pending
+    // （pending 按流隔离：双标签页场景 B 流断开不影响 A 流等待中的确认）。
+    // 全量兜底取消（cancelPendingForUser）保留给登出等跨流清理场景。
     req.on('close', () => {
       stopHeartbeat()
       upstreamAbort.abort()
-      cancelPendingForUser(req.userId)
+      cancelPendingForStream({ req, sendDelta: trackedSendDelta })
     })
 
     const streamStartAt = Date.now()
@@ -158,9 +161,9 @@ router.post('/chat', apiLimiter, async (req, res) => {
       if (res.writableEnded) return
       // 工单 A8：流结束（正常/异常）先停心跳，避免 DONE 之后继续写注释行
       stopHeartbeat()
-      // Agent-C：流结束（含正常结束/异常）时清掉该用户残留的待确认破坏性请求，
-      // 避免 SSE 已断开仍残留 pending（确认卡片已无发送通道）。
-      cancelPendingForUser(req.userId)
+      // Agent-C → 工单 D1：流结束（含正常结束/异常）只结算「本流」的残留待确认/待作答请求，
+      // 避免确认卡片已无发送通道却仍残留 pending。跨流的 pending 不受影响（按流隔离）。
+      cancelPendingForStream({ req, sendDelta: trackedSendDelta })
       try {
         // 先收敛残留非终态 agent：避免前端卡片永久转圈
         for (const [id, status] of agentLifecycle) {
@@ -805,10 +808,12 @@ function cleanSuggestion(s) {
  * Body: { requestId, allow, password? }
  *  - allow=true  → 批准：执行被确认的破坏性工具（destroy_clips），返回 { accepted: true, final }
  *  - allow=false → 拒绝：不执行，向等待中的 executeTool 结算 REJECTED_BY_USER，返回 { accepted: false }
- *  - password    → 可选超管二次验证口令：
- *      * 前端未启用该能力时（不传 password）保持向后兼容，不强制二次验证，直接走原流程；
- *      * 超管在确认高权限破坏性操作（如 delete_user / update_role / reset_password 等）被要求二次确认时
- *        传入 password，后端即强制校验口令一致性，防止已授权会话被他人复用后静默执行高权限动作。
+ *  - password    → 二次验证口令：
+ *      · 工单 D5：L3（超管级）破坏性工具（DESTRUCTIVE_CONFIRM_NEEDED 中等级为 L3 的，
+ *        如 destroy_clips / delete_user / update_user_role / reset_user_password / disable_user /
+ *        update_system_config / toggle_feature / unpair_device / downgrade_subscription）
+ *        批准时【必须】携带 password 并通过校验，缺失直接 403 拒绝，不再“可选兼容”；
+ *      · 非 L3 工具保持向后兼容：不传 password 走原流程；传了 password 则照旧强制校验。
  *
  * 归属校验：pending 项记录 userId，仅该用户自身能审批其请求（禁跨用户）。
  */
@@ -819,8 +824,29 @@ router.post('/chat/approve', apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'requestId is required' })
     }
 
-    // 超管敏感操作二次验证（可选）：
-    // 仅当请求体携带非空 password 时才强制校验，否则保持原批准流程（向后兼容）。
+    // 工单 D5：L3 破坏性工具批准必须带二次验证密码。
+    // 先严格按 userId 查 pending 对应工具名（只读、不改门控状态），再按等级矩阵判定。
+    if (allow === true) {
+      const pendingTool = peekPendingConfirmTool(requestId, req.userId)
+      if (pendingTool && getToolLevel(pendingTool) === 'L3' && !(typeof password === 'string' && password.length > 0)) {
+        await logAuditEvent({
+          userId: req.userId,
+          action: 'ai_tool_approve_password_required',
+          resourceType: 'ai_tool_approve',
+          details: { requestId, tool: pendingTool },
+          status: 'failure',
+          errorMessage: 'L3 破坏性操作缺少二次验证密码',
+        })
+        return res.status(403).json({
+          accepted: false,
+          error: 'PASSWORD_REQUIRED',
+          message: '该操作属于超管级（L3）破坏性操作，批准时必须提供二次验证密码。',
+        })
+      }
+    }
+
+    // 超管敏感操作二次验证：
+    // 仅当请求体携带非空 password 时才强制校验；L3 缺密码场景已在上方被 403 拦截。
     if (typeof password === 'string' && password.length > 0) {
       try {
         const userRes = await pool.query(

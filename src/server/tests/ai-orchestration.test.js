@@ -10,12 +10,14 @@
  *    （旧并行实现下第二个破坏性/交互门控会被并发上限误拒）。
  *  4. abortSignal 已中止时不再执行任何工具。
  *  5. 子代理工具集（getWorkerTools）剔除 ask_user（阻塞型门控只允许主线程使用）。
+ *  6. 工单 D6b 契约：SSE 下发前端的 tool_result.content 保持原始 JSON；
+ *    回注模型上下文的 content 用 <tool_result ... untrusted="true"> 信封包裹。
  *
  * 说明：ask_user 路径不触库（审计写失败被 logToolAudit 内部吞掉），可无 DB 运行。
  */
 import { describe, it, expect } from 'vitest'
 import { v4 as uuidv4 } from 'uuid'
-import { handleToolCalls } from '../src/routes/aiStream.js'
+import { handleToolCalls, unwrapToolResultEnvelope } from '../src/routes/aiStream.js'
 import { respondAskUserRequest, getWorkerTools } from '../src/routes/aiTools.js'
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -72,8 +74,17 @@ describe('统一工具执行管线（handleToolCalls）', () => {
     expect(kindsAfter.indexOf('ask_user_action')).toBeLessThan(kindsAfter.indexOf('tool_result'))
     expect(results).toHaveLength(1)
     expect(results[0]).toMatchObject({ role: 'tool', tool_call_id: tc.id })
-    const parsed = JSON.parse(results[0].content)
+    // 工单 D6b：回注模型上下文的 content 用 untrusted 信封包裹；解开信封才是原始 JSON
+    expect(results[0].content).toMatch(/^<tool_result name="ask_user" source="tool" untrusted="true">\n/)
+    expect(results[0].content.endsWith('\n</tool_result>')).toBe(true)
+    const parsed = JSON.parse(unwrapToolResultEnvelope(results[0].content))
     expect(parsed.user_response).toBe('我已做出选择：只删除 B')
+    // 工单 D6b：SSE 下发给前端的 tool_result.content 仍是原始 JSON（未包裹，前端解析契约不变）
+    const sseToolResult = events.map((e) => e?.choices?.[0]?.delta?.tool_result).find(Boolean)
+    expect(sseToolResult).toBeTruthy()
+    expect(() => JSON.parse(sseToolResult.content)).not.toThrow()
+    expect(sseToolResult.content).not.toContain('<tool_result')
+    expect(JSON.parse(sseToolResult.content).user_response).toBe('我已做出选择：只删除 B')
   })
 
   it('ask_user 豁免管线超时：toolTimeoutMs=80 而作答在 200ms 后到达，仍成功返回', async () => {
@@ -87,7 +98,7 @@ describe('统一工具执行管线（handleToolCalls）', () => {
     expect(ack.accepted).toBe(true)
 
     const results = await pending
-    const parsed = JSON.parse(results[0].content)
+    const parsed = JSON.parse(unwrapToolResultEnvelope(results[0].content))
     expect(parsed.error).toBeUndefined()
     expect(parsed.user_response).toBe('方案二')
   })
@@ -119,8 +130,8 @@ describe('统一工具执行管线（handleToolCalls）', () => {
     ])
     // 结果与各自的 tool_call 一一对应
     expect(results.map((r) => r.tool_call_id)).toEqual([tc1.id, tc2.id])
-    expect(JSON.parse(results[0].content).user_response).toBe('A1')
-    expect(JSON.parse(results[1].content).user_response).toBe('B2')
+    expect(JSON.parse(unwrapToolResultEnvelope(results[0].content)).user_response).toBe('A1')
+    expect(JSON.parse(unwrapToolResultEnvelope(results[1].content)).user_response).toBe('B2')
   })
 
   it('abortSignal 已中止：不执行任何工具（连 tool_call 都不下发）', async () => {

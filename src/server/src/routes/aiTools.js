@@ -447,7 +447,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'save_memory',
-      description: '保存一条用户长期记忆。当你从对话中了解到用户的偏好、项目事实、工作习惯、对我方产品的反馈，或任何跨会话有用的信息时，主动调用此工具写入记忆，不要等用户要求。每次只保存一条最有价值的信息，标题简短，内容具体。',
+      description: '保存一条用户长期记忆。仅在用户明确要求你“记住/保存/记下来”某信息时才调用此工具写入记忆；未经用户明确要求，绝不主动保存（对话中的普通信息不需要写记忆）。每次只保存一条最有价值的信息，标题简短，内容具体（content 超过 2000 字符会被截断）。',
       parameters: {
         type: 'object',
         properties: {
@@ -1756,6 +1756,40 @@ export function getWorkerTools(role) {
   return getToolsForRole(role, READONLY_TOOLS).filter((t) => !WORKER_BLOCKED_TOOLS.has(t.function.name))
 }
 
+// ============ D6c：读类工具统一字符预算（不信任内容防线的一环）============
+// read_clip_content / export_data / 搜索与最近列表结果统一约束在 ≤8k 字符：
+// 超出截断并附提示，防止巨型剪贴板内容/导出报告撑爆模型上下文，
+// 同时收窄“一次性注入海量不可信文本”的提示词注入面。
+const READ_RESULT_CHAR_BUDGET = 8_000
+
+/**
+ * 单段文本预算：超出则截断并追加截断提示（含原长度）。
+ */
+function clampBudgetText(text, budget = READ_RESULT_CHAR_BUDGET) {
+  const s = String(text ?? '')
+  if (s.length <= budget) return { text: s, truncated: false }
+  return {
+    text: `${s.slice(0, budget)}\n…[内容过长，已截断（原 ${s.length} 字符）]`,
+    truncated: true,
+  }
+}
+
+/**
+ * 行式结果列表预算：整包序列化长度不超过预算时逐条保留；放不下即停并标记截断。
+ */
+function trimRowsToBudget(rows, budget = READ_RESULT_CHAR_BUDGET) {
+  const list = Array.isArray(rows) ? rows : []
+  const kept = []
+  let acc = 2 // JSON 数组包裹括号的估算开销
+  for (const row of list) {
+    const size = (JSON.stringify(row) || '').length + (kept.length ? 1 : 0)
+    if (acc + size > budget) break
+    kept.push(row)
+    acc += size
+  }
+  return { items: kept, truncated: kept.length < list.length }
+}
+
 // ============ Agent-C：破坏性操作确认门控 ============
 // 需用户在前端明确确认后才能执行的破坏性工具集合（写工具先按此协议演进）。
 // 命中集合的工具不会直接被 executeToolInner 执行，而是：
@@ -1782,12 +1816,62 @@ export const DESTRUCTIVE_CONFIRM_NEEDED = new Set([
   'restore_version',
 ])
 
-// 确认超时（与 handleToolCalls 的 TOOL_EXEC_TIMEOUT_MS 对齐，避免挂死上游流）。
-const CONFIRM_TIMEOUT_MS = 120_000
+// 确认超时（工单 D3：从 120s 收敛到 90s）。必须小于 aiStream.handleToolCalls 的
+// TOOL_EXEC_TIMEOUT_MS（120s）：让“等用户确认”先于管线超时自然到期；即便走到管线
+// 超时，aiStream 的 withTimeout 失败分支也会调 abortPendingConfirm 作废 pending，
+// 迟到的批准只能命中过期墓碑，绝不产生“孤儿执行”。
+const CONFIRM_TIMEOUT_MS = 90_000
 
-// 全局待确认请求表：requestId → { requestId, tool, args, userId, role, settle, timer, settled }
-// 并发上限 1：同一时刻只允许一个待确认的破坏性请求（详情见 runConfirmGate）。
+// 全局待确认请求表：requestId → entry。
+// D1：entry.streamToken 记录归属流标识（req 或 sendDelta 引用）——流结束只结算本流；
+//     cancelPendingForUser 保留作登出兜底（全量清空该用户 pending）。
+// D2：并发上限从「全局 1」改为「per-user 1」，不同用户的确认互不阻塞。
+// D3：任何结局结算后用「墓碑」顶替原条目：迟到的 approve 一律命中 expired，
+//     而不是因条目已被删除被当作 notFound 后再走一次执行（孤儿执行窗口）；墓碑 TTL 自动清理。
 const pendingRequests = new Map()
+const CONFIRM_TOMBSTONE_TTL_MS = 60_000
+
+/**
+ * D1：解析一次 SSE 流的稳定唯一归属标识（引用相等即同一流）。
+ *   - 优先 opts.req：编排链路显式透传请求对象，天然每请求唯一；
+ *   - 其次 opts.sendDelta：runChatLoop 链路里同一个回调闭包贯穿整条流；
+ *   - 都没有则生成随机串（永不匹配，仅防崩溃；无通道的门控本来也不会进入等待态）。
+ */
+function resolveStreamToken(opts = {}) {
+  if (opts.req && typeof opts.req === 'object') return opts.req
+  if (typeof opts.sendDelta === 'function') return opts.sendDelta
+  return `sid:${uuidv4()}`
+}
+
+/**
+ * D2：统计某用户当前处于等待态的确认请求数（跳过已结算与墓碑）。
+ */
+function countActiveConfirmsForUser(userId) {
+  let n = 0
+  for (const e of pendingRequests.values()) {
+    if (!e.settled && !e.tombstone && e.userId === userId) n++
+  }
+  return n
+}
+
+/**
+ * D3：结算后种下过期墓碑——requestId 保持可命中（approve → expired），TTL 后异步清理。
+ */
+function plantConfirmTombstone(rid, srcEntry) {
+  pendingRequests.set(rid, {
+    requestId: rid,
+    tool: srcEntry.tool,
+    userId: srcEntry.userId,
+    settled: true,
+    tombstone: true,
+  })
+  const t = setTimeout(() => {
+    const cur = pendingRequests.get(rid)
+    if (cur && cur.tombstone) pendingRequests.delete(rid)
+  }, CONFIRM_TOMBSTONE_TTL_MS)
+  // 不阻止进程退出（vitest 下定时器不挂测试进程）
+  if (typeof t.unref === 'function') t.unref()
+}
 
 // args 摘要脱敏：content/password/apiKey/token 等不做全文透传，仅给受控摘要，避免明文落 SSE。
 function getArgsSummary(args) {
@@ -1868,11 +1952,10 @@ async function runConfirmGate(toolName, args, userId, role, requestId, opts = {}
     return { approved: false, requestId: rid }
   }
 
-  // 并发上限 1：已有待确认的破坏性请求时，明确拒绝新请求（避免两个确认卡片竞争）。
-  // 说明：pendingRequests.size 只在「进入等待态」前判断；本函数被 Promise.all 并行调用时，
-  // 后到的请求看到 pending 非空即拒绝，从而保证同一时刻最多一个等待中的确认。
-  if (pendingRequests.size > 0) {
-    logger.warn('[AI] destructive confirm rejected: pending request already exists')
+  // D2：并发上限 per-user——同一用户同时只允许一个待确认的破坏性请求（避免同用户
+  // 多张确认卡竞争）；不同用户的确认互不阻塞（旧全局 size>0 会让多标签页互相挤掉）。
+  if (countActiveConfirmsForUser(userId) > 0) {
+    logger.warn('[AI] destructive confirm rejected: user already has a pending confirm', { userId })
     return {
       approved: false,
       requestId: rid,
@@ -1893,10 +1976,13 @@ async function runConfirmGate(toolName, args, userId, role, requestId, opts = {}
     timer: null,
     settle: () => {}, // 占位，下方赋值
   }
+  // D1：登记归属流标识（req 优先，退化为 sendDelta 引用），供 cancelPendingForStream 按流结算
+  entry.streamToken = resolveStreamToken(opts)
   const onReqClose = () => entry.settle({ approved: false, requestId: rid })
 
   return new Promise((resolveOuter) => {
-    // 统一结算：置位、销毁定时器、移除 req close 监听、从 Map 移除、resolve 外层 Promise。
+    // 统一结算：置位、销毁定时器、移除 req close 监听、resolve 外层 Promise，
+    // 并以墓碑顶替原条目（D3：迟到 approve 只能命中 expired）。
     entry.settle = (outcome) => {
       if (entry.settled) return
       entry.settled = true
@@ -1904,8 +1990,8 @@ async function runConfirmGate(toolName, args, userId, role, requestId, opts = {}
       if (opts.req && typeof opts.req.removeListener === 'function') {
         opts.req.removeListener('close', onReqClose)
       }
-      pendingRequests.delete(rid)
       resolveOuter(outcome)
+      plantConfirmTombstone(rid, entry)
     }
     entry.timer = setTimeout(() => {
       logger.warn('[AI] destructive confirm timed out:', rid)
@@ -1943,22 +2029,37 @@ async function runConfirmGate(toolName, args, userId, role, requestId, opts = {}
  * 校验 requestId 归属（userId 隔离，禁止跨用户审批）。
  *  - allow=false：拒绝，向等待中的 executeTool 结算 REJECTED_BY_USER。
  *  - allow=true：执行 Inner（破坏性工具实做），结果作为 final 返回，并同时结算给 executeTool 做审计。
+ * D5：approve/reject 决策各写一条 audit_logs（action='ai_tool_approve'，含 requestId/tool/allow，
+ *     不含明文密码——密码校验在路由层完成，password 不进入本函数）。
  * @returns {{ accepted, notFound?, expired?, final? }}
  */
 export async function approveToolRequest(requestId, userId, allow) {
   const entry = pendingRequests.get(requestId)
-  if (!entry || entry.userId !== userId) {
+  if (!entry || (!entry.tombstone && entry.userId !== userId)) {
     return { accepted: false, notFound: true }
   }
-  if (entry.settled) {
+  // 墓碑（含其它已结算残影）：一律 expired——迟到批准不再触发二次执行
+  if (entry.tombstone || entry.settled) {
     return { accepted: false, expired: true }
+  }
+  // D5：决策审计——批准与拒绝各记一条成功处理的决策行（status=success 表示“决策已记录”）。
+  try {
+    await logAuditEvent({
+      userId,
+      action: 'ai_tool_approve',
+      resourceType: 'ai_tool_approve',
+      details: { requestId, tool: entry.tool, allow: allow === true },
+      status: 'success',
+    })
+  } catch (auditErr) {
+    logger.warn('[AI] approve decision audit failed:', auditErr?.message)
   }
   if (allow !== true) {
     entry.settle({ approved: false, requestId })
     return { accepted: false }
   }
   // 批准：先将该请求从全局 Map 移除，防止并发第二次 approve 重复执行 Inner
-  // （并发第二请求将因 get() 返回 undefined 而收到 notFound）。
+  // （并发第二请求将因 get() 返回 undefined 而收到 notFound；结算后的墓碑则命中 expired）。
   // 随后执行 Inner 并把结果经 entry.settle 结算给等待中的 executeTool（含审计）。
   clearTimeout(entry.timer)
   pendingRequests.delete(requestId)
@@ -2000,6 +2101,8 @@ export async function runAskUserGate(toolName, args, userId, role, requestId, op
     heartbeat: null,
     settle: () => {},
   }
+  // D1：登记归属流标识（与确认门控同一口径），供 cancelPendingForStream 按流结算
+  entry.streamToken = resolveStreamToken(opts)
   const onReqClose = () => entry.settle({ user_response: '用户关闭了连接', cancelled: true })
 
   return new Promise((resolveOuter) => {
@@ -2050,17 +2153,12 @@ export async function runAskUserGate(toolName, args, userId, role, requestId, op
 
 /**
  * 响应 ask_user 用户选择（POST /api/ai/chat/respond_ask_user 调用）：
+ * D4：删除旧实现「requestId 查不到时按 userId 盲扫第一条未结算请求」的回退——
+ * 盲扫会把用户的回答写进另一张卡片（错题卡/串流）。现严格 requestId+userId 匹配，
+ * 匹配不到一律 notFound（HTTP 404），前端提示“该选择请求不存在或已超时”即可重试。
  */
 export async function respondAskUserRequest(requestId, userId, userResponse) {
-  let entry = requestId ? pendingAskUserRequests.get(requestId) : null
-  if (!entry) {
-    for (const [rid, e] of pendingAskUserRequests) {
-      if (e.userId === userId && !e.settled) {
-        entry = e
-        break
-      }
-    }
-  }
+  const entry = requestId ? pendingAskUserRequests.get(requestId) : null
   if (!entry || entry.userId !== userId) {
     return { accepted: false, notFound: true }
   }
@@ -2072,7 +2170,62 @@ export async function respondAskUserRequest(requestId, userId, userResponse) {
 }
 
 /**
+ * D1：按流结算 pending——SSE close/safeFinish 只清「本流」的待确认/待作答请求。
+ * 归属判定与 resolveStreamToken 同口径：streamId 字符串 / req 对象 / sendDelta 引用，
+ * 三类候选任一命中即结算。跨流的 pending 不受影响（双标签页互不干扰）。
+ */
+export function cancelPendingForStream(hints = {}) {
+  const tokens = []
+  if (hints.streamId != null && hints.streamId !== '') tokens.push(`sid:${hints.streamId}`)
+  if (hints.req && typeof hints.req === 'object') tokens.push(hints.req)
+  if (typeof hints.sendDelta === 'function') tokens.push(hints.sendDelta)
+  if (tokens.length === 0) return { settledConfirms: 0, settledAskUsers: 0 }
+
+  let confirms = 0
+  let askUsers = 0
+  for (const [rid, e] of pendingRequests) {
+    if (e.settled || e.tombstone) continue
+    if (!tokens.includes(e.streamToken)) continue
+    e.settle({ approved: false, requestId: rid, cancelled: true })
+    confirms++
+  }
+  for (const [rid, e] of pendingAskUserRequests) {
+    if (e.settled) continue
+    if (!tokens.includes(e.streamToken)) continue
+    e.settle({ user_response: '用户关闭了连接', cancelled: true, requestId: rid })
+    askUsers++
+  }
+  return { settledConfirms: confirms, settledAskUsers: askUsers }
+}
+
+/**
+ * D3：管线超时联动入口（aiStream.handleToolCalls 的 withTimeout 失败分支调用）。
+ * 立刻作废等待中的破坏性确认 pending，使其迟到批准只能命中 expired 墓碑，
+ * 杜绝“管线已报超时、迟到的批准仍孤儿执行 Inner”的窗口。
+ * @returns {boolean} 是否确实作废了一个等待中的确认
+ */
+export function abortPendingConfirm(requestId) {
+  const rid = String(requestId || '')
+  const entry = pendingRequests.get(rid)
+  if (!entry || entry.tombstone || entry.settled) return false
+  entry.settle({ approved: false, requestId: rid, aborted: true })
+  logger.warn('[AI] pending confirm aborted by pipeline timeout:', rid)
+  return true
+}
+
+/**
+ * D5 辅助（供 /chat/approve 路由判断 L3 强制密码）：严格 userId 匹配地查询
+ * 某个等待中确认请求对应的工具名；不存在/非本人返回 null。只读不改状态。
+ */
+export function peekPendingConfirmTool(requestId, userId) {
+  const entry = pendingRequests.get(String(requestId || ''))
+  if (!entry || entry.tombstone || entry.settled || entry.userId !== userId) return null
+  return entry.tool || null
+}
+
+/**
  * 供 SSE 流关闭（safeFinish / req close）时清理该用户残留的 pending 项。
+ * D1 之后保留作「登出等全量兜底」场景——常规断流清理请使用 cancelPendingForStream。
  */
 export function cancelPendingForUser(userId) {
   for (const [rid, e] of pendingRequests) {
@@ -2312,11 +2465,16 @@ async function executeToolInner(toolName, args, userId, role) {
           exportedText = mdSections.join('\n')
         }
 
+        // D6c：导出全文统一字符预算（≤8k），超出截断并显式标注
+        const clamped = clampBudgetText(exportedText)
         return {
           format,
           total_items: rowsData.length,
-          preview_snippet: exportedText.slice(0, 300),
-          exported_text: exportedText,
+          preview_snippet: clamped.text.slice(0, 300),
+          exported_text: clamped.text,
+          ...(clamped.truncated
+            ? { exported_text_truncated: true, note: '导出全文过长，已在 8000 字符处截断；如需更多内容请缩小范围（减少 limit 或按收藏夹/类型过滤）后分批导出。' }
+            : {}),
         }
       }
 
@@ -2390,7 +2548,15 @@ async function executeToolInner(toolName, args, userId, role) {
         params.push(safeLimit)
 
         const result = await pool.query(sql, params)
-        return { items: result.rows, count: result.rowCount }
+        // D6c：搜索结果统一字符预算——整包超限则只保留前若干条并显式标注截断
+        const trimmed = trimRowsToBudget(result.rows)
+        return {
+          items: trimmed.items,
+          count: result.rowCount,
+          ...(trimmed.truncated
+            ? { truncated: true, note: '结果过长，为符合字符预算仅返回前若干条（count 为全部命中数）。可用更精确的关键词或更小的 limit 收敛结果。' }
+            : {}),
+        }
       }
 
       case 'get_clip_details': {
@@ -2434,7 +2600,15 @@ async function executeToolInner(toolName, args, userId, role) {
         params.push(Math.min(Math.max(1, Number(limit) || 10), 100))
 
         const result = await pool.query(sql, params)
-        return { items: result.rows, count: result.rowCount }
+        // D6c：最近列表同样受字符预算约束（preview/OCR 文本可能很长）
+        const trimmed = trimRowsToBudget(result.rows)
+        return {
+          items: trimmed.items,
+          count: result.rowCount,
+          ...(trimmed.truncated
+            ? { truncated: true, note: '结果过长，为符合字符预算仅返回前若干条（count 为全部条数）。' }
+            : {}),
+        }
       }
 
       case 'analyze_clip_usage': {
@@ -2888,13 +3062,21 @@ async function executeToolInner(toolName, args, userId, role) {
         const { category = 'fact', title, content } = args
         if (!title || !content) return { error: 'title and content are required' }
         const cat = ['preference', 'fact', 'project', 'feedback', 'other'].includes(category) ? category : 'fact'
+        // D6d：注入长度截断——记忆正文 ≤2000 字符，防止巨型/恶意文本常驻长期上下文
+        const rawContent = String(content).trim()
+        const cappedContent = rawContent.slice(0, 2000)
         const result = await pool.query(
           `INSERT INTO ai_memories (user_id, category, title, content)
            VALUES ($1, $2, $3, $4)
            RETURNING id, category, title, content, updated_at`,
-          [userId, cat, String(title).trim(), String(content).trim()]
+          [userId, cat, String(title).trim(), cappedContent]
         )
-        return { saved: result.rows[0] }
+        return {
+          saved: result.rows[0],
+          ...(rawContent.length > 2000
+            ? { truncated: true, note: `content 超过 2000 字符上限，已截断保存（原 ${rawContent.length} 字符）。` }
+            : {}),
+        }
       }
 
       // ============ 大管家增强：隐私感知内容读取 ============
@@ -3007,14 +3189,13 @@ async function executeToolInner(toolName, args, userId, role) {
               const buf = await fs.readFile(located.path)
               let content = buf.toString('utf-8')
               if (content.includes('\ufffd')) content = buf.toString('latin1')
-              const limit = 50000
-              const truncated = content.length > limit
-                ? content.slice(0, limit) + `\n…[截断，原文 ${content.length} 字符]`
-                : content
+              // D6c：文本文件正文同样吃统一字符预算（原 50k → 8k），截断显式标注
+              const clipped = clampBudgetText(content)
               return {
                 accessible: true, contentType: 'file', textFile: true,
                 fileName: meta.originalName || item.content_encrypted, extension: ext,
-                sizeBytes: located.size, content: truncated
+                sizeBytes: located.size, content: clipped.text,
+                ...(clipped.truncated ? { contentTruncated: true } : {}),
               }
             } catch { /* 落到下方元数据分支 */ }
           }
@@ -3055,11 +3236,14 @@ async function executeToolInner(toolName, args, userId, role) {
         } catch (e) {
           return { error: '解密失败', reason: e.message }
         }
+        // D6c：明文正文统一字符预算（原 50k → 8k），截断显式标注
+        const clipped = clampBudgetText(String(plain ?? ''))
         return {
           contentType: type,
           protectionLevel: item.protection_level,
           note: item.protection_level === 'pin' ? 'PIN 保护仅控制客户端展示，服务端内容可被解密。' : undefined,
-          content: (plain || '').slice(0, 50000),
+          content: clipped.text,
+          ...(clipped.truncated ? { contentTruncated: true, truncationNote: '内容过长，已在 8000 字符处截断。' } : {}),
           sizeBytes: item.content_size
         }
       }
