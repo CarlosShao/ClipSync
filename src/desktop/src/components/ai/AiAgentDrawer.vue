@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import type { AgentRun } from '@/api/ai'
 import AiAgentRun from './AiAgentRun.vue'
@@ -8,6 +8,13 @@ import { X } from 'lucide-vue-next'
 const props = defineProps<{ run: AgentRun; isStreaming: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
+
+// E4：抽屉打开后焦点移入关闭按钮，键盘用户可直接 Tab 遍历抽屉内容
+const closeBtnRef = ref<HTMLButtonElement | null>(null)
+onMounted(async () => {
+  await nextTick()
+  closeBtnRef.value?.focus()
+})
 
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') {
@@ -28,6 +35,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKey, true))
         <div class="ai-agent-drawer-head">
           <span class="ai-agent-drawer-title">{{ t('ai_subagent_drawer_title') }}</span>
           <button
+            ref="closeBtnRef"
             class="ai-agent-drawer-close"
             :aria-label="t('ai_subagent_close', '关闭')"
             @click="emit('close')"

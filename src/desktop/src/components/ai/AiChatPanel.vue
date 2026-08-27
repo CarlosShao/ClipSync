@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, provide } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, provide } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useAiChat } from '@/composables/useAiChat'
 import { useAiChatUi } from '@/composables/useAiChatUi'
@@ -181,6 +181,26 @@ function closeConfirmMenu(e: MouseEvent) {
     showConfirmMenu.value = false
   }
 }
+
+// 确认卡可达性（E1）：打开时焦点移入卡片本体；pending 态按 Escape → 拒绝。
+// 用捕获阶段确保优先于面板的浮层关闭/Esc 处理器，避免一次按键触发多重语义。
+const cfmCardRef = ref<HTMLElement | null>(null)
+watch(
+  () => !!pendingConfirm.value,
+  async (open) => {
+    if (!open) return
+    await nextTick()
+    cfmCardRef.value?.focus({ preventScroll: true })
+  },
+)
+function onCfmKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || e.isComposing) return
+  if (!pendingConfirm.value || approving.value) return
+  e.stopPropagation()
+  approve(false)
+}
+onMounted(() => document.addEventListener('keydown', onCfmKeydown, true))
+onBeforeUnmount(() => document.removeEventListener('keydown', onCfmKeydown, true))
 
 // 监听 settings 保存/删除 provider 后的全局事件，刷新本地列表
 // 否则 AI 面板常驻打开时，新增/修改的 provider 不会立刻出现在下拉里（只能刷新页面）
@@ -511,10 +531,14 @@ function regenerateFromLastUserMessage() {
           <Transition name="ai-cfm-pop">
             <div
               v-if="pendingConfirm"
+              ref="cfmCardRef"
               class="ai-cfm-pop"
               :class="{ 'ai-cfm-pop--destructive': isDestructiveConfirm }"
               role="alertdialog"
+              aria-modal="true"
               aria-live="assertive"
+              aria-labelledby="ai-cfm-pop-title"
+              tabindex="-1"
             >
               <!-- 气泡箭头（指向消息区） -->
               <div class="ai-cfm-pop__arrow" aria-hidden="true"></div>
@@ -528,7 +552,7 @@ function regenerateFromLastUserMessage() {
                   >
                     <ShieldCheck :size="14" />
                   </span>
-                  <span class="ai-cfm-pop__title">
+                  <span id="ai-cfm-pop-title" class="ai-cfm-pop__title">
                     {{ t('ai_confirm_perm_title', '权限请求') }}：
                     <code class="ai-cfm-pop__tool-code">{{ confirmToolName(pendingConfirm.tool) }}</code>
                   </span>
@@ -894,8 +918,8 @@ function regenerateFromLastUserMessage() {
   z-index: 5;
 }
 .ai-cfm-pop--destructive {
-  border-color: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--border-subtle));
-  background: color-mix(in srgb, var(--danger, #ef4444) 3%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--danger) 22%, var(--border-subtle));
+  background: color-mix(in srgb, var(--danger) 3%, var(--bg-surface));
 }
 
 /* 气泡箭头：指向消息区（上方） */
@@ -912,8 +936,8 @@ function regenerateFromLastUserMessage() {
   border-radius: 2px 0 0 0;
 }
 .ai-cfm-pop--destructive .ai-cfm-pop__arrow {
-  border-left-color: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--border-subtle));
-  border-top-color: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--border-subtle));
+  border-left-color: color-mix(in srgb, var(--danger) 22%, var(--border-subtle));
+  border-top-color: color-mix(in srgb, var(--danger) 22%, var(--border-subtle));
 }
 
 /* 头部标题行 */
@@ -940,8 +964,8 @@ function regenerateFromLastUserMessage() {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .ai-cfm-pop__icon--danger {
-  color: var(--danger, #ef4444);
-  background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 .ai-cfm-pop__title {
   font-size: 12.5px;
@@ -962,16 +986,16 @@ function regenerateFromLastUserMessage() {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .ai-cfm-pop--destructive .ai-cfm-pop__tool-code {
-  color: var(--danger, #ef4444);
-  background: color-mix(in srgb, var(--danger, #ef4444) 8%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 .ai-cfm-pop__danger-tag {
   flex-shrink: 0;
   font-size: 10.5px;
   font-weight: 600;
-  color: var(--danger, #ef4444);
-  background: color-mix(in srgb, var(--danger, #ef4444) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 20%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
   border-radius: 4px;
   padding: 1px 6px;
   line-height: 1.4;
@@ -1077,7 +1101,7 @@ function regenerateFromLastUserMessage() {
   align-items: stretch;
   border-radius: 6px;
   overflow: visible;
-  border: 1px solid var(--danger, #ef4444);
+  border: 1px solid var(--danger);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .ai-cfm-pop__allow-wrap:has(:disabled) {
@@ -1085,14 +1109,16 @@ function regenerateFromLastUserMessage() {
   cursor: not-allowed;
 }
 .ai-cfm-pop__btn--allow {
-  color: #fff;
-  background: var(--danger, #ef4444);
+  color: var(--on-danger);
+  background: var(--danger);
   border-color: transparent;
   border-radius: 5px 0 0 5px;
-  border-right: 1px solid color-mix(in srgb, #fff 18%, transparent);
+  /* 分段按钮分隔线：取当前文字色（= --on-danger）的半透明，避免硬编码白/黑 */
+  border-right: 1px solid color-mix(in srgb, currentColor 18%, transparent);
 }
-.ai-cfm-pop__btn--allow:not(:disabled):hover {
-  background: color-mix(in srgb, var(--danger, #ef4444) 88%, #000);
+.ai-cfm-pop__btn--allow:not(:disabled):hover,
+.ai-cfm-pop__btn-caret:not(:disabled):hover {
+  filter: brightness(0.92);
 }
 .ai-cfm-pop__btn-caret {
   display: inline-flex;
@@ -1102,13 +1128,10 @@ function regenerateFromLastUserMessage() {
   padding: 0 5px;
   border: none;
   border-radius: 0 5px 5px 0;
-  background: var(--danger, #ef4444);
-  color: #fff;
+  background: var(--danger);
+  color: var(--on-danger);
   cursor: pointer;
   transition: background-color 0.12s ease;
-}
-.ai-cfm-pop__btn-caret:not(:disabled):hover {
-  background: color-mix(in srgb, var(--danger, #ef4444) 88%, #000);
 }
 .ai-cfm-pop__btn-caret:disabled {
   opacity: 0.5;
@@ -1121,8 +1144,8 @@ function regenerateFromLastUserMessage() {
   bottom: calc(100% + 6px);
   right: 0;
   min-width: 220px;
-  background: var(--bg-surface, #ffffff);
-  border: 1px solid var(--border-subtle, #e5e7eb);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06);
   padding: 4px;
@@ -1138,7 +1161,7 @@ function regenerateFromLastUserMessage() {
   padding: 7px 10px;
   border: none;
   background: transparent;
-  color: var(--text-primary, #1f2937);
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 500;
   border-radius: 6px;
@@ -1148,13 +1171,13 @@ function regenerateFromLastUserMessage() {
   transition: background-color 0.12s, color 0.12s;
 }
 .ai-cfm-pop__menu-item:hover {
-  background: var(--bg-hover, #f3f4f6);
+  background: var(--bg-hover);
 }
 .ai-cfm-pop__menu-item--danger {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
 }
 .ai-cfm-pop__menu-item--danger:hover {
-  background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 /* 过渡动画：从下方滑入 */
@@ -1178,6 +1201,10 @@ function regenerateFromLastUserMessage() {
 }
 
 /* 键盘可达性 */
+/* 卡片本体接受程序化聚焦（E1 焦点移入），容器自身不画 ring，由内部按钮呈现焦点态 */
+.ai-cfm-pop:focus {
+  outline: none;
+}
 .ai-cfm-pop__btn:focus-visible,
 .ai-cfm-pop__btn-caret:focus-visible {
   outline: 2px solid var(--accent);

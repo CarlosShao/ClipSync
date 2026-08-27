@@ -11,7 +11,7 @@ import type {
   ContextUsage,
   ChatImage,
 } from '@/api/ai'
-import { useAiConversations } from './useAiConversations'
+import { useAiConversations, genMessageId } from './useAiConversations'
 import { triggerRefreshAfterTool } from './useAiDataRefresh'
 
 interface SendOptions {
@@ -352,6 +352,7 @@ export function useAiChat() {
     // 之前 prepend 到 user 消息开头会导致模型把上下文当成问题来回答。
     if (options.viewContext) {
       messages.value.push({
+        id: genMessageId(),
         role: 'system',
         content: options.viewContext,
         systemMeta: { kind: 'view_context' },
@@ -359,6 +360,7 @@ export function useAiChat() {
       })
     }
     messages.value.push({
+      id: genMessageId(),
       role: 'user',
       content: wrappedText,
       images: options.images,
@@ -375,12 +377,13 @@ export function useAiChat() {
       }
       if (prompt)
         messages.value.push({
+          id: genMessageId(),
           role: 'system',
           content: prompt,
           systemMeta: { kind: `quick_action_${options.quickAction}` },
         })
     }
-    messages.value.push({ role: 'assistant', content: '', thinking: '', thinkingActive: true, createdAt: tAssistant })
+    messages.value.push({ id: genMessageId(), role: 'assistant', content: '', thinking: '', thinkingActive: true, createdAt: tAssistant })
     // 必须引用 messages 数组里的 reactive proxy，后续 mutations 才能触发 Vue 响应式更新。
     // 注意：若用户在流式进行中途切换历史对话，messages.value 会被替换，但 assistantMsg
     // 仍指向旧 proxy。因此在 loadConversation 时要先中止当前流，防止旧 proxy 继续被改。

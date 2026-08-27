@@ -517,11 +517,14 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   flex-direction: column;
   gap: 2px;
 }
+/* E4：操作钮常驻 DOM（opacity 隐藏、不可点击），键盘 Tab 聚焦时经
+   :focus-within 显示——display:none 无法被聚焦，故不用原 hover-only 方案 */
 .ai-msg-actions--user {
   position: absolute;
   right: 0;
   bottom: -2px;
-  display: none;
+  opacity: 0;
+  pointer-events: none;
   gap: 4px;
   padding: 2px;
   border-radius: 5px;
@@ -530,8 +533,10 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   z-index: var(--z-index-10);
   transition: opacity 0.15s ease;
 }
-.ai-msg.user:hover .ai-msg-actions--user {
-  display: inline-flex;
+.ai-msg.user:hover .ai-msg-actions--user,
+.ai-msg.user:focus-within .ai-msg-actions--user {
+  opacity: 1;
+  pointer-events: auto;
 }
 .ai-msg.user .ai-msg-user-body {
   padding-bottom: 0;

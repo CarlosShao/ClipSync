@@ -370,8 +370,8 @@ async function submitAllAnswers() {
 .ai-ask-card {
   margin: 6px 0 8px 0;
   border-radius: 8px;
-  background: var(--bg-surface, #ffffff);
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   overflow: hidden;
   font-size: 12px;
@@ -380,8 +380,8 @@ async function submitAllAnswers() {
 
 .ai-ask-card__settled {
   padding: 10px 12px;
-  background: rgba(34, 197, 94, 0.06);
-  border: 1px solid rgba(34, 197, 94, 0.2);
+  background: color-mix(in srgb, var(--success) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
   border-radius: 8px;
 }
 
@@ -390,19 +390,19 @@ async function submitAllAnswers() {
   align-items: center;
   gap: 6px;
   font-weight: 600;
-  color: #16a34a;
+  color: var(--success);
   font-size: 12px;
 }
 
 .ai-ask-card__settled-icon {
-  color: #16a34a;
+  color: var(--success);
 }
 
 .ai-ask-card__settled-body {
   margin: 6px 0 0 0;
   font-family: inherit;
   font-size: 12px;
-  color: var(--text-secondary, #4b5563);
+  color: var(--text-secondary);
   white-space: pre-wrap;
   line-height: 1.5;
 }
@@ -424,12 +424,12 @@ async function submitAllAnswers() {
   align-items: flex-start;
   gap: 6px;
   font-weight: 600;
-  color: var(--text-primary, #111827);
+  color: var(--text-primary);
   flex: 1;
 }
 
 .ai-ask-card__icon {
-  color: #3b82f6;
+  color: var(--info);
   margin-top: 1px;
   flex-shrink: 0;
 }
@@ -449,27 +449,28 @@ async function submitAllAnswers() {
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.05);
-  color: var(--text-secondary, #6b7280);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  color: var(--text-secondary);
 }
 
 .ai-ask-card__badge {
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(59, 130, 246, 0.1);
-  color: #2563eb;
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  color: var(--info);
   font-weight: 500;
 }
 
+/* 多选徽章：原为紫色区分色，收敛为主题强调色（与单选的 info 蓝保持可辨） */
 .ai-ask-card__badge.multi {
-  background: rgba(168, 85, 247, 0.1);
-  color: #9333ea;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
 }
 
 .ai-ask-card__desc {
   font-size: 12px;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   margin-bottom: 10px;
   line-height: 1.45;
   padding-left: 21px;
@@ -489,9 +490,9 @@ async function submitAllAnswers() {
   width: 100%;
   padding: 7px 10px;
   border-radius: 6px;
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
-  color: var(--text-primary, #374151);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
   text-align: left;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -499,14 +500,14 @@ async function submitAllAnswers() {
 }
 
 .ai-ask-card__opt-btn:hover {
-  background: rgba(59, 130, 246, 0.04);
-  border-color: rgba(59, 130, 246, 0.3);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .ai-ask-card__opt-btn.selected {
-  background: rgba(59, 130, 246, 0.08);
-  border-color: #3b82f6;
-  color: #1d4ed8;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
   font-weight: 500;
 }
 
@@ -517,16 +518,16 @@ async function submitAllAnswers() {
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.05);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
   font-size: 10.5px;
   font-weight: 600;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
 .ai-ask-card__opt-btn.selected .ai-ask-card__opt-index {
-  background: #3b82f6;
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 
 .ai-ask-card__opt-label {
@@ -536,7 +537,7 @@ async function submitAllAnswers() {
 }
 
 .ai-ask-card__opt-check {
-  color: #3b82f6;
+  color: var(--accent);
   flex-shrink: 0;
 }
 
@@ -562,22 +563,23 @@ async function submitAllAnswers() {
   padding: 5px 8px;
   font-size: 12px;
   border-radius: 4px;
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.15));
-  background: var(--input-bg, #ffffff);
-  color: var(--text-primary, #111827);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
   outline: none;
 }
 
-.ai-ask-card__other-input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
+.ai-ask-card__other-input:focus,
+.ai-ask-card__notes-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .ai-ask-card__footer {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border-top: 1px dashed var(--border-color, rgba(0, 0, 0, 0.08));
+  border-top: 1px dashed var(--border-default);
   padding-top: 10px;
 }
 
@@ -586,7 +588,7 @@ async function submitAllAnswers() {
   align-items: center;
   gap: 4px;
   font-size: 11.5px;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   margin-bottom: 4px;
 }
 
@@ -595,18 +597,13 @@ async function submitAllAnswers() {
   padding: 6px 8px;
   font-size: 12px;
   border-radius: 6px;
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
-  background: var(--input-bg, #ffffff);
-  color: var(--text-primary, #111827);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
   outline: none;
   resize: vertical;
   min-height: 48px;
   font-family: inherit;
-}
-
-.ai-ask-card__notes-input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
 }
 
 .ai-ask-card__actions {
@@ -628,20 +625,20 @@ async function submitAllAnswers() {
   gap: 4px;
   padding: 4px 8px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  border: 1px solid var(--border-default);
   font-size: 11.5px;
-  color: var(--text-secondary, #4b5563);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .ai-ask-card__nav-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
 }
 
 .ai-ask-card__nav-btn.primary {
-  color: #2563eb;
-  border-color: rgba(37, 99, 235, 0.2);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .ai-ask-card__submit-btn {
@@ -650,8 +647,8 @@ async function submitAllAnswers() {
   gap: 5px;
   padding: 5px 12px;
   border-radius: 6px;
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--accent-foreground);
   font-size: 12px;
   font-weight: 500;
   border: none;
@@ -661,7 +658,7 @@ async function submitAllAnswers() {
 }
 
 .ai-ask-card__submit-btn:hover:not(:disabled) {
-  background: #1d4ed8;
+  filter: brightness(0.92);
 }
 
 .ai-ask-card__submit-btn:disabled {

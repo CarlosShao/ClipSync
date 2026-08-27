@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import type { ChatMessage } from '@/api/ai'
 import AiMessage from './AiMessage.vue'
@@ -10,8 +10,8 @@ import AiDuplicateNotice from './AiDuplicateNotice.vue'
  * UI-C：顶部区域挂载原子状态组件（错误条 / 图片重复横幅）。
  * error / duplicateNotice 均为可选 props——AiChatPanel 等宿主未传入时不渲染，
  * 新 Shell（UI-B）接入时传入即可，不产生重复展示。
- * 注：破坏性工具确认 Modal 由宿主 AiChatPanel 统一管理（Teleport 全屏弹层），
- * 本列表不挂载旧版 AiConfirmCard，避免双弹层。
+ * 注：破坏性工具确认 Modal 由宿主 AiChatPanel 统一管理（内嵌气泡卡片），
+ * 本列表不再挂载任何确认卡，避免双弹层。
  */
 const props = defineProps<{
   messages: ChatMessage[]
@@ -97,17 +97,18 @@ function isLocateMarked(index: number): boolean {
   return locateMarkId.value === String(index)
 }
 
+// E3：最后一条 assistant 消息的索引只随 messages 变化重算一次
+//（原 isLatestMessage 在模板中对每条消息各反向扫一遍数组，O(n²)）
+const lastAssistantIndex = computed(() => {
+  for (let i = props.messages.length - 1; i >= 0; i--) {
+    if (props.messages[i].role === 'assistant') return i
+  }
+  return -1
+})
+
 // 判断消息是否是最新消息（最后一条 assistant 消息）
 function isLatestMessage(index: number): boolean {
-  // 找到最后一条 assistant 消息的索引
-  let lastAssistantIdx = -1
-  for (let i = props.messages.length - 1; i >= 0; i--) {
-    if (props.messages[i].role === 'assistant') {
-      lastAssistantIdx = i
-      break
-    }
-  }
-  return index === lastAssistantIdx
+  return index === lastAssistantIndex.value
 }
 
 // 判断消息是否是当前流式消息
@@ -128,7 +129,7 @@ defineExpose({ scrollToPos })
     </div>
     <AiMessage
       v-for="(m, i) in messages"
-      :key="i"
+      :key="m.id || `idx-${i}`"
       :message="m"
       :index="i"
       :is-streaming="isStreamingMessage(i)"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount } from 'vue'
-import { useAiChatUi } from '@/composables/useAiChatUi'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useAiChatUi, registerShellContainer } from '@/composables/useAiChatUi'
 
 /**
  * AI 三栏 Shell 容器（UI-B）：Nav 会话栏 + Canvas 聊天主区 + Detail Inspector。
@@ -11,10 +11,16 @@ import { useAiChatUi } from '@/composables/useAiChatUi'
  *   #canvas  → 聊天主区（消息流 + Composer，UI-C 交付物挂载点）
  *   #detail  → AiInspector（Inspector 内容，UI-E 后续填充用量/缓存/子代理/记忆）
  *
- * 断点四档（视口媒体查询 + 面板容器查询双驱动，形态由 useAiChatUi.breakpoint 决定）：
+ * 断点四档（E5：由本 Shell 容器宽度经 ResizeObserver 驱动，见 useAiChatUi；
+ * 修复宽窗口 + 拖窄面板时仍按视口断点渲染三栏的问题）：
  *   xl ≥1440 全三栏；lg 1100–1439 Inspector 浮层；md 820–1099 NavRail icon-rail；sm <820 NavRail 浮层。
  */
 const { breakpoint, navOverlayOpen, setNavOverlayOpen, inspectorMode, inspectorOpen, closeInspector } = useAiChatUi()
+
+// E5：把 Shell 根元素注册给 useAiChatUi，断点改由面板容器宽度驱动
+const shellRef = ref<HTMLElement | null>(null)
+onMounted(() => registerShellContainer(shellRef.value))
+onBeforeUnmount(() => registerShellContainer(null))
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
@@ -29,7 +35,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <div class="ai-shell" :data-bp="breakpoint">
+  <div ref="shellRef" class="ai-shell" :data-bp="breakpoint">
     <!-- Nav：md 档保留 48px icon-rail 占位（浮层呼出时画布不跳动）；sm 档完全脱流 -->
     <div class="ai-shell-nav" :class="`ai-shell-nav--${breakpoint}`">
       <slot name="nav" />
@@ -128,7 +134,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
 }
 
-/* ---- 断点降级（媒体查询兜底；主形态由 data-bp + useAiChatUi 驱动） ---- */
+/* ---- 断点降级（媒体查询兜底；主形态由 data-bp + useAiChatUi 容器宽度断点驱动） ---- */
 @media (max-width: 1099px) {
   /* md 及以下：NavRail 降级 icon-rail（48px），Canvas 紧凑化 */
   .ai-shell-canvas {

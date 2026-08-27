@@ -11,6 +11,22 @@ import {
 } from '@/api/ai'
 import type { AiConversation, ChatMessage, ContextUsage } from '@/api/ai'
 
+/**
+ * E3：前端侧稳定消息 id（消息列表 :key 用）。
+ * 后端多数场景不下发消息 id，历史加载映射与本地构造消息时统一兜底生成，
+ * 保证 v-for 渲染在插入/更新时不再按下标错位复用。
+ */
+export function genMessageId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+  } catch {
+    /* fall through */
+  }
+  return `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 function mapUsage(conv: AiConversation | null | undefined): ContextUsage | null {
   if (!conv || !conv.total_tokens) return null
   const contextWindow = conv.context_window || 0
@@ -91,6 +107,8 @@ export function useAiConversations() {
     return msgs
       .filter((m: any) => !(m.role === 'system' && m.metadata?.is_context_summary === true))
       .map((m: any) => ({
+        // E3：后端未下发 id 时兜底生成，供消息列表稳定 :key
+        id: m.id || genMessageId(),
         role: m.role,
         content: m.content || '',
         thinking: m.thinking || undefined,
@@ -140,7 +158,13 @@ export function useAiConversations() {
 
   async function saveCurrent(messages: ChatMessage[]) {
     if (!currentConversationId.value) return
-    const toSave = messages.filter((m) => m.role !== 'system')
+    // E3：剔除前端兜底生成的消息 id，保持 saveMessages 请求体与历史行为一致
+    const toSave = messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => {
+        const { id: _frontendId, ...rest } = m
+        return rest as ChatMessage
+      })
     if (toSave.length === 0) return
     try {
       const res = await saveMessages(currentConversationId.value, toSave)

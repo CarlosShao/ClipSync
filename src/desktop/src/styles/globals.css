@@ -90,6 +90,9 @@ html.theme-vercel.light {
   --warning-bg: #fffbeb;
   --danger: #dc2626;
   --danger-bg: #fef2f2;
+  /* E2：压在 danger 色块上的前景（确认卡「允许」按钮文字）。各主题 danger 均保持
+     与白字足够对比，故在 :root 统一定义一次、全主题继承，无需逐主题覆盖 */
+  --on-danger: #ffffff;
   --info: #2563eb;
   --info-bg: #eff6ff;
   --radius-xs: 4px;

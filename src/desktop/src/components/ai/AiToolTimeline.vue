@@ -225,7 +225,12 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
     <template v-for="step in steps" :key="step.id">
       <!-- 行内工具调用条目 -->
       <div class="ai-tool-item" :class="{ done: step.done, running: !step.done, error: step.result && stepAnnotation(step.name, step.result.content)?.ok === false }">
-        <button class="ai-tool-row" @click="toggle(step.id)">
+        <!-- E4：展开态暴露给辅助技术（aria-expanded），详情面板紧随其后 -->
+        <button
+          class="ai-tool-row"
+          :aria-expanded="expanded.has(step.id)"
+          @click="toggle(step.id)"
+        >
           <!-- 状态图标 -->
           <span class="ai-tool-state">
             <CheckCircle2 v-if="step.done" :size="12" class="state-done" />
@@ -415,8 +420,8 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
 }
 
 .ai-tool-tag.destructive {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.08);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 
 /* 状态 */
@@ -433,7 +438,7 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
 }
 
 .ai-tool-status.confirm {
-  color: #f59e0b;
+  color: var(--warning);
 }
 
 /* 展开箭头 */
@@ -457,7 +462,7 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
 }
 
 .ai-tool-result-line.error {
-  color: #ef4444;
+  color: var(--danger);
 }
 
 .ai-tool-result-icon {
@@ -516,7 +521,7 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
 
 /* 错误态 */
 .ai-tool-item.error .ai-tool-name {
-  color: #ef4444;
+  color: var(--danger);
 }
 
 /* 键盘可达性 */
@@ -529,8 +534,8 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
 .ai-diff-card {
   margin: 6px 0 8px 0;
   padding: 10px 12px;
-  background: var(--bg-surface, #ffffff);
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
@@ -550,7 +555,7 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
   flex-direction: column;
   border-radius: 6px;
   overflow: hidden;
-  border: 1px solid var(--border-subtle, #e5e7eb);
+  border: 1px solid var(--border-subtle);
 }
 .ai-diff-col__label {
   font-size: 11px;
@@ -558,12 +563,12 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
   padding: 4px 8px;
 }
 .ai-diff-col.original .ai-diff-col__label {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
 }
 .ai-diff-col.modified .ai-diff-col__label {
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  color: var(--success);
 }
 .ai-diff-col pre {
   margin: 0;
@@ -571,7 +576,7 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
   font-size: 11px;
   line-height: 1.4;
   font-family: var(--font-family-mono, monospace);
-  background: var(--bg-hover, #f9fafb);
+  background: var(--bg-hover);
   max-height: 140px;
   overflow-y: auto;
   white-space: pre-wrap;

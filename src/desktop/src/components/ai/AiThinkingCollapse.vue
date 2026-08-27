@@ -135,7 +135,8 @@ const timeText = computed(() => {
       <ChevronDown v-else :size="13" class="ai-tc-chev" />
     </button>
 
-    <div class="ai-tc-body" :class="{ collapsed: !expanded }">
+    <!-- E4：折叠态正文加 hidden，彻底移出可访问性树（纯 max-height:0 裁剪仍会被读屏读到） -->
+    <div class="ai-tc-body" :hidden="!expanded">
       <pre ref="contentRef" class="ai-tc-md">{{ displayThinking }}</pre>
       <span v-if="live && displayThinking.length < (props.thinking?.length || 0)" class="ai-tc-caret"></span>
     </div>
@@ -301,24 +302,12 @@ html.light .ai-tc-title::after {
   height: 10px;
 }
 
-/* 思考正文：行内 flow 风格 */
+/* 思考正文：行内 flow 风格（折叠显隐由 hidden 属性承担，见模板 E4 注） */
 .ai-tc-body {
   max-height: none;
   opacity: 1;
   padding: 2px 0 2px 16px;
   position: relative;
-}
-.ai-tc-body.collapsed {
-  opacity: 0;
-  max-height: 0;
-  overflow: hidden;
-  padding-top: 0;
-  padding-bottom: 0;
-  padding-left: 0;
-  transition:
-    max-height 0.2s ease-in-out,
-    opacity 0.15s ease,
-    padding 0.15s ease;
 }
 .ai-tc-md {
   font-size: 11.5px;
