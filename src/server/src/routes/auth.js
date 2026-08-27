@@ -16,8 +16,16 @@ import { sendNotification, detectAndNotifyNewLogin } from '../ws/server.js';
 import crypto from 'crypto';
 
 // 哈希盐（固定值，用于 phone_hash / email_hash 计算）
-// 修改此值后需重新计算所有用户的哈希值
-const HASH_SALT = process.env.ENCRYPTION_KEY?.substring(0, 16) || 'CLIPSYNC_SALT_2026';
+// 修改此值后需重新计算所有用户的哈希值。
+// 安全：禁止公开兜底盐——ENCRYPTION_KEY 缺失时在真正计算哈希的调用点 fail-fast，
+// 避免手机号/邮箱哈希退化为公开盐+SHA256 可离线穷举（与 aiTools.js getFieldSalt 同策略）。
+function getFieldSalt() {
+  const salt = process.env.ENCRYPTION_KEY?.substring(0, 16);
+  if (!salt) {
+    throw new Error('ENCRYPTION_KEY is required for field hashing (phone_hash/email_hash)');
+  }
+  return salt;
+}
 
 /**
  * 计算字段值的 SHA-256 哈希（用于 O(1) 查询）
@@ -25,7 +33,7 @@ const HASH_SALT = process.env.ENCRYPTION_KEY?.substring(0, 16) || 'CLIPSYNC_SALT
  */
 function computeFieldHash(value) {
   if (!value) return null;
-  return crypto.createHash('sha256').update(value + HASH_SALT).digest('hex');
+  return crypto.createHash('sha256').update(value + getFieldSalt()).digest('hex');
 }
 
 const router = Router();
