@@ -479,7 +479,22 @@ function getTypeLabel(type: string): string {
   const m: Record<string, string> = { text: 'TXT', image: 'IMG', link: 'URL', file: 'FILE', code: 'CODE' }
   return m[type] || type.toUpperCase()
 }
+// 与 useClipItemDisplay.isItemVisible 保持一致的可见性判断（含隐私模式自动识别的敏感数据）。
+// 修复：自动识别为敏感的条目此前既未在列表 mask（泄露明文），复制时却要求 PIN 解锁，逻辑矛盾。
+function isItemViewable(item: ClipItem): boolean {
+  if (itemPw.isItemProtected(item)) {
+    if (item.metadata?.protected === true) return itemPw.isUnlocked(item.id)
+    return false
+  }
+  if (privacy.isItemSensitive(item)) return privacy.isPinUnlocked(item.id)
+  return true
+}
+
 function formatContent(item: ClipItem): string {
+  // 敏感数据（手动锁 + 隐私模式自动识别）未解锁时返回掩码，任何直接调用都安全
+  if (privacy.isItemSensitive(item) && !privacy.isPinUnlocked(item.id)) {
+    return t('item_password_mask')
+  }
   if (item.type === 'image') return t('fav_screenshot')
   if (item.type === 'file') {
     try {
@@ -1323,7 +1338,7 @@ function cancelEditTags() {
                       </Teleport>
                     </div>
                   </div>
-                  <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="cell-protected-mask">
+                  <div v-if="!isItemViewable(item)" class="cell-protected-mask">
                     <Lock :size="14" />
                     <span>{{ t('item_protected_mask') }}</span>
                     <Button
@@ -1460,7 +1475,7 @@ function cancelEditTags() {
                     <div v-else class="fav-card-placeholder"><ImageIcon :size="24" /></div>
                   </template>
                   <template v-else-if="item.type === 'link' || detectContentType(item.content) === 'url'">
-                    <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="cell-protected-mask">
+                    <div v-if="!isItemViewable(item)" class="cell-protected-mask">
                       <Lock :size="14" />
                       <span>{{ t('item_protected_mask') }}</span>
                       <Button
@@ -1479,7 +1494,7 @@ function cancelEditTags() {
                     </div>
                   </template>
                   <template v-else-if="item.type === 'file'">
-                    <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="cell-protected-mask">
+                    <div v-if="!isItemViewable(item)" class="cell-protected-mask">
                       <Lock :size="14" />
                       <span>{{ t('item_protected_mask') }}</span>
                       <Button
@@ -1495,7 +1510,7 @@ function cancelEditTags() {
                     </div>
                   </template>
                   <template v-else>
-                    <div v-if="itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id)" class="cell-protected-mask">
+                    <div v-if="!isItemViewable(item)" class="cell-protected-mask">
                       <Lock :size="14" />
                       <span>{{ t('item_protected_mask') }}</span>
                       <Button

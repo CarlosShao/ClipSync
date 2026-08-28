@@ -14,20 +14,24 @@ export function useClipItemDisplay() {
   const configStore = useConfigStore()
 
   // 条目是否对当前用户可见（受保护 → 需解锁 + PIN 超时检查）
+  // 注意：isItemSensitive 同时覆盖「手动锁 metadata.sensitive」与「隐私模式自动识别的敏感数据」，
+  // 二者都必须被 mask，否则自动识别的敏感条目会直接泄露明文（#230 后续 bug）。
   function isItemVisible(item: ClipItem): boolean {
-    if (!itemPw.isItemProtected(item)) return true
-
-    // 高级加密：解锁状态存在 itemPw.unlockedIds 中
-    if ((item as any).metadata?.protected === true) {
-      return itemPw.isUnlocked(item.id)
+    // 高级加密（protected）：解锁状态存在 itemPw.unlockedIds 中
+    if (itemPw.isItemProtected(item)) {
+      if ((item as any).metadata?.protected === true) {
+        return itemPw.isUnlocked(item.id)
+      }
+      return false
     }
 
-    // PIN 保护：解锁状态在 privacy 中（30s 超时）
-    if (item.metadata?.sensitive) {
+    // PIN / 敏感数据（手动锁 metadata.sensitive + 隐私模式自动识别敏感内容）
+    // 用 privacy.isItemSensitive 保持与复制时的解锁判断一致，避免「列表看明文 / 复制要 PIN」矛盾
+    if (privacy.isItemSensitive(item)) {
       return privacy.isPinUnlocked(item.id)
     }
 
-    return false
+    return true
   }
 
   // 展示内容：受保护且可见时返回明文；不可见时显示掩码
