@@ -232,6 +232,8 @@ export interface AiSettings {
   thinkingStrength: 'low' | 'medium' | 'high'
   // 长程记忆开关：是否把用户记忆注入 AI system prompt（服务端读 ai_settings，前端持久化）
   memoryEnabled: boolean
+  // 全局自定义系统提示词：追加到角色/产品知识之后（服务端读 ai_settings，前端持久化）
+  customSystemPrompt?: string
 }
 
 // ===== CRUD =====

@@ -14,7 +14,7 @@ import {
   LogOut,
   Bell,
   Archive,
-  Bot,
+  Sparkles,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useI18n } from '@/composables/useI18n'
@@ -125,13 +125,17 @@ const accountNavItems = computed(() => [
         </button>
       </template>
 
-      <!-- AI Agent entry (opens right-side sidebar, not a route) -->
+      <!-- AI Agent entry: 面板开关而非路由视图。
+           开启态只做弱强调（图标/文字转 accent），不占用“当前视图”的胶囊+左条选中语言，
+           避免与主导航当前项形成双选中。 -->
       <button
-        :class="['sb-item', { active: props.aiOpen }]"
+        class="sb-item sb-item--toggle"
+        :class="{ 'toggle-on': props.aiOpen }"
         :title="isCollapsed ? t('nav_ai') : undefined"
+        :aria-expanded="props.aiOpen"
         @click="emit('open-ai')"
       >
-        <Bot :size="20" :stroke-width="1.8" />
+        <Sparkles :size="18" :stroke-width="1.8" />
         <span v-show="!isCollapsed" class="sb-label">{{ t('nav_ai') }}</span>
       </button>
     </nav>
@@ -668,5 +672,13 @@ const accountNavItems = computed(() => [
 /* ---- Settings Dialog entry ---- */
 .sb-item--new {
   margin-top: 4px;
+}
+/* AI 入口：面板开关语义——开启时仅图标与文字转 accent（无胶囊底、无左侧指示条），
+   与“当前视图”选中态（.sb-item.active）视觉分层，避免双高亮歧义。 */
+.sb-item--toggle.toggle-on {
+  color: var(--accent);
+}
+.sb-item--toggle.toggle-on :deep(svg) {
+  color: var(--accent);
 }
 </style>

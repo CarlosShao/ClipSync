@@ -21,7 +21,7 @@ const props = defineProps<{
   duplicateNotice?: { createdAt?: string } | null
 }>()
 const emit = defineEmits<{
-  reedit: [content: string]
+  reedit: [content: string, message: import('@/api/ai').ChatMessage]
   'dismiss-duplicate': []
 }>()
 const { t } = useI18n()
@@ -135,7 +135,7 @@ defineExpose({ scrollToPos })
       :is-latest="isLatestMessage(i)"
       :confirm-tool="confirmTool ?? null"
       :class="isLocateMarked(i) ? 'ai-msg-locate-mark' : undefined"
-      @reedit="(c: string) => emit('reedit', c)"
+      @reedit="(c: string, m: import('@/api/ai').ChatMessage) => emit('reedit', c, m)"
     />
   </div>
 </template>

@@ -3,6 +3,8 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { api } from '@/api/client'
 import { Plus, Trash2, Power, Pencil, Check, X } from 'lucide-vue-next'
+import CustomSelect from '@/components/ui/select/CustomSelect.vue'
+import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
 
 /**
  * WorkflowRuleSettings — 工作流规则引擎管理（任务 #237）
@@ -196,17 +198,37 @@ onMounted(loadRules)
 
         <label class="wf-field">
           <span class="wf-label">{{ t('wf_content_type') || '内容类型' }}</span>
-          <select v-model="editing.contentType" class="wf-input">
-            <option v-for="ct in CONTENT_TYPES" :key="ct" :value="ct">{{ typeLabel(ct) }}</option>
-          </select>
+          <CustomSelect :model-value="editing!.contentType" @update:model-value="(v: string) => (editing!.contentType = v as WorkflowRule['contentType'])">
+            {{ typeLabel(editing!.contentType as string) }}
+            <template #options>
+              <CustomSelectOption
+                v-for="ct in CONTENT_TYPES"
+                :key="ct"
+                :value="ct"
+                :selected="editing!.contentType === ct"
+                @select="(v: string) => (editing!.contentType = v as WorkflowRule['contentType'])"
+              >{{ typeLabel(ct) }}</CustomSelectOption>
+            </template>
+          </CustomSelect>
         </label>
 
         <label class="wf-field">
           <span class="wf-label">{{ t('wf_match_mode') || '匹配方式' }}</span>
-          <select v-model="editing.matchMode" class="wf-input">
-            <option value="keyword">{{ t('wf_mode_keyword') || '关键词' }}</option>
-            <option value="regex">{{ t('wf_mode_regex') || '正则' }}</option>
-          </select>
+          <CustomSelect :model-value="editing!.matchMode" @update:model-value="(v: string) => (editing!.matchMode = v as WorkflowRule['matchMode'])">
+            {{ editing!.matchMode === 'keyword' ? (t('wf_mode_keyword') || '关键词') : (t('wf_mode_regex') || '正则') }}
+            <template #options>
+              <CustomSelectOption
+                value="keyword"
+                :selected="editing!.matchMode === 'keyword'"
+                @select="(v: string) => (editing!.matchMode = v as WorkflowRule['matchMode'])"
+              >{{ t('wf_mode_keyword') || '关键词' }}</CustomSelectOption>
+              <CustomSelectOption
+                value="regex"
+                :selected="editing!.matchMode === 'regex'"
+                @select="(v: string) => (editing!.matchMode = v as WorkflowRule['matchMode'])"
+              >{{ t('wf_mode_regex') || '正则' }}</CustomSelectOption>
+            </template>
+          </CustomSelect>
         </label>
 
         <label class="wf-field wf-field--full">
@@ -216,9 +238,18 @@ onMounted(loadRules)
 
         <label class="wf-field">
           <span class="wf-label">{{ t('wf_action') || '动作' }}</span>
-          <select v-model="editing.actionType" class="wf-input" @change="syncInputs">
-            <option v-for="a in ACTIONS" :key="a" :value="a">{{ actionLabel(a) }}</option>
-          </select>
+          <CustomSelect :model-value="editing!.actionType" @update:model-value="(v: string) => { editing!.actionType = v as WorkflowRule['actionType']; syncInputs() }">
+            {{ actionLabel(editing!.actionType as string) }}
+            <template #options>
+              <CustomSelectOption
+                v-for="a in ACTIONS"
+                :key="a"
+                :value="a"
+                :selected="editing!.actionType === a"
+                @select="(v: string) => { editing!.actionType = v as WorkflowRule['actionType']; syncInputs() }"
+              >{{ actionLabel(a) }}</CustomSelectOption>
+            </template>
+          </CustomSelect>
         </label>
 
         <label v-if="editing.actionType === 'move_to_collection'" class="wf-field">
@@ -309,6 +340,7 @@ onMounted(loadRules)
 }
 .wf-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .wf-field { display: flex; flex-direction: column; gap: 4px; }
+.wf-field :deep(.custom-select) { width: 100%; }
 .wf-field--full { grid-column: 1 / -1; }
 .wf-label { font-size: 12px; color: var(--text-secondary); }
 .wf-input {

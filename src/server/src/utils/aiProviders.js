@@ -132,7 +132,9 @@ export const PROVIDER_PRESETS = {
     authHeader: 'Authorization',
     defaultBaseUrl: 'https://api.deepseek.com/v1',
     defaultModel: 'deepseek-chat',
-    supportsCache: false,
+    // DeepSeek 官方支持上下文缓存（自动，>256 token 起），usage 返回
+    // prompt_cache_hit_tokens；UI 应按真实命中率展示而非"未启用"。
+    supportsCache: true,
   },
   qwen: {
     provider: 'qwen',
@@ -180,7 +182,9 @@ export const PROVIDER_PRESETS = {
     // 有需求的用户可在表单里手动覆盖 baseUrl。
     defaultBaseUrl: 'https://api.stepfun.com/v1',
     defaultModel: 'step-3.7-flash',
-    supportsCache: false,
+    // 阶跃星辰官方支持 prompt cache（step-3.7-flash 等 >256 token 自动启用，
+    // usage 返回顶层 cached_tokens）。此前硬编码 false 导致前端永远显示「未启用」。
+    supportsCache: true,
   },
   // Step Explore：阶跃星辰面向 Agent/Coding 的新模型，申请制开通，
   // 仅支持 Anthropic Messages 协议（Step Plan 通道），认证为 Authorization: Bearer，

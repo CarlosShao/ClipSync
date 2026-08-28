@@ -5,6 +5,7 @@ import { useAiChat } from '@/composables/useAiChat'
 import { useAiChatUi } from '@/composables/useAiChatUi'
 import { useUser } from '@/composables/useUser'
 import { useResizablePanel } from '@/composables/useResizablePanel'
+import { getSettings } from '@/api/ai'
 import Button from '@/components/ui/button/Button.vue'
 import AiPanel from './AiPanel.vue'
 import AiNavRail from './AiNavRail.vue'
@@ -33,6 +34,7 @@ import {
   ChevronDown,
   Check,
   ShieldAlert,
+  Pencil,
 } from 'lucide-vue-next'
 
 /**
@@ -77,6 +79,7 @@ const {
   send,
   stop,
   clear,
+  truncateFrom,
   conversations,
   currentConversationId,
   currentConversation,
@@ -116,6 +119,26 @@ watch(
   },
   { immediate: true },
 )
+
+// 设置页（SettingsDialog→AI）修改偏好后同步到本面板：以 DB 为准覆盖本地。
+// 广播来自 AIProviderSettings 的 clipsync:ai-settings-changed；memoryEnabled 直接改 ref
+//（避免 setMemoryEnabled 再触发一次冗余持久化），mode/thinking 赋值触发的 watch 会
+// 原样写回同值，幂等无害。
+async function applyExternalAiSettings() {
+  try {
+    const res = await getSettings()
+    if (res.ok && res.data) {
+      mode.value = res.data.defaultMode || 'ask'
+      thinkingEnabled.value = res.data.thinkingEnabled || false
+      thinkingStrength.value = res.data.thinkingStrength || 'medium'
+      memoryEnabled.value = res.data.memoryEnabled ?? false
+    }
+  } catch {
+    /* 忽略，保持当前值 */
+  }
+}
+window.addEventListener('clipsync:ai-settings-changed', applyExternalAiSettings)
+onBeforeUnmount(() => window.removeEventListener('clipsync:ai-settings-changed', applyExternalAiSettings))
 
 // 变更时：同时写 localStorage（瞬时回退）与 DB（持久化，满足“入库不丢失”）
 watch([mode, thinkingEnabled, thinkingStrength], () => {
@@ -234,6 +257,15 @@ const viewContextText = computed(() => {
 })
 
 function onSend(text: string, images?: import('@/api/ai').ChatImage[]) {
+  // 编辑即回滚：发送前先把锚点消息及其后的轮次从上下文中截断并持久化
+  if (pendingEdit.value) {
+    const ok = truncateFrom(pendingEdit.value.createdAt)
+    pendingEdit.value = null
+    if (!ok) {
+      // 锚点失效（会话已切换/消息已被清理）：按普通发送处理，避免误删
+      console.warn('[AiChatPanel] reedit anchor missing, falling back to normal send')
+    }
+  }
   send(text, {
     mode: mode.value,
     thinking: thinkingEnabled.value,
@@ -247,6 +279,8 @@ provide('aiChatSend', onSend)
 
 const onCustomSendMessage = (e: any) => {
   if (e?.detail?.content) {
+    // 外部派发的发送不属于"编辑重发"语义，放弃编辑态
+    pendingEdit.value = null
     onSend(e.detail.content)
   }
 }
@@ -264,6 +298,8 @@ function onQuickAction(
   text: string,
   images?: import('@/api/ai').ChatImage[],
 ) {
+  // 快捷指令不属于"编辑重发"语义，放弃编辑态
+  pendingEdit.value = null
   send(text, {
     mode: mode.value,
     thinking: thinkingEnabled.value,
@@ -274,10 +310,56 @@ function onQuickAction(
   })
 }
 
-// 历史用户消息「重新编辑」：把消息内容填回输入框并聚焦，让用户继续修改后重发。
-function onReedit(content: string) {
+// 历史用户消息「重新编辑」= 编辑即回滚（对齐主流 agent 语义）：
+// 点击编辑只记录锚点并把内容填回输入框（不立即动数据，取消无副作用）；
+// 发送时才真正截断——该消息及其后的所有轮次从上下文中移除，新消息等价于"初次发送"。
+const pendingEdit = ref<{ createdAt: string; content: string } | null>(null)
+
+async function onReedit(content: string, msg?: import('@/api/ai').ChatMessage) {
+  // 流式进行中也允许进入编辑（对齐主流 agent：编辑即停止生成）：
+  // 若有等待确认的工具门控，先拒绝以干净收敛；再中止流并等待状态落定后再进入编辑态。
+  // 截断本身仍延迟到发送时执行（onSend），此刻停止的半截回答会在之后被一并回滚。
+  if (isStreaming.value) {
+    if (pendingConfirm.value) {
+      try {
+        await approve(false)
+      } catch {
+        /* 门控清理失败不阻塞编辑流程 */
+      }
+    }
+    stop()
+    const settled = await new Promise<boolean>((resolve) => {
+      const started = Date.now()
+      const timer = setInterval(() => {
+        if (!isStreaming.value) {
+          clearInterval(timer)
+          resolve(true)
+        } else if (Date.now() - started > 3000) {
+          clearInterval(timer)
+          resolve(false)
+        }
+      }, 50)
+    })
+    if (!settled) {
+      // 流未能在时限内中止：放弃编辑回滚，退化为普通"填入输入框"，避免截断与在途流竞态
+      chatInputRef.value?.setDraft(content)
+      return
+    }
+  }
+  if (msg?.createdAt) {
+    pendingEdit.value = { createdAt: msg.createdAt, content }
+  }
   chatInputRef.value?.setDraft(content)
 }
+
+function cancelReedit() {
+  pendingEdit.value = null
+}
+
+// 切换/新建对话后，编辑锚点不再属于当前时间线，放弃编辑态
+watch(currentConversationId, () => {
+  pendingEdit.value = null
+})
 
 function toggleThinking() {
   thinkingEnabled.value = !thinkingEnabled.value
@@ -563,6 +645,15 @@ function confirmToolName(tool?: string): string {
 
           <div v-if="error" class="ai-error-bar">{{ error }}</div>
 
+          <!-- 编辑即回滚提示条：发送后将截断锚点消息及其后的所有轮次 -->
+          <div v-if="pendingEdit" class="ai-reedit-banner" role="status">
+            <Pencil :size="13" class="ai-reedit-banner-icon" />
+            <span class="ai-reedit-banner-text">{{ t('ai_reedit_banner', '正在编辑历史消息：发送将回滚该消息及其后的所有对话') }}</span>
+            <button type="button" class="ai-reedit-cancel" @click="cancelReedit">
+              {{ t('cancel_btn') }}
+            </button>
+          </div>
+
           <AiChatComposer
             ref="chatInputRef"
             :disabled="!canSend"
@@ -764,6 +855,44 @@ function confirmToolName(tool?: string): string {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
   border-top: 1px solid var(--border-default);
+}
+
+/* ========== 编辑即回滚提示条 ========== */
+.ai-reedit-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px 4px;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: var(--radius-md);
+}
+.ai-reedit-banner-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.ai-reedit-banner-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.5;
+}
+.ai-reedit-cancel {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: background 0.12s ease;
+}
+.ai-reedit-cancel:hover {
+  background: var(--bg-hover);
 }
 
 /* ========== 工具确认气泡卡片（内嵌式，参考 Trae 权限请求框） ========== */

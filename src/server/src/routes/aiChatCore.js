@@ -220,6 +220,42 @@ export function looksLikeToolIntent(content) {
 }
 
 /**
+ * 检测"幻觉式完成"：文本用过去时声称操作已成功完成，但本轮未发出任何 tool_calls。
+ * 与 looksLikeToolIntent（将来时"只说不做"）互补——那道网刻意放行过去时汇报（工具执行后的
+ * 正常总结），因此「零工具调用轮次里的过去时成功声明」成为防护盲区。
+ * 真实案例（2026-08-28）：历史连续两轮批量创建成功后，模型直接复刻成功模板 + 编造 UUID，
+ * 回复"全部创建成功"而实际什么都没执行（ai_messages 该轮 tool_calls=0，audit_logs 无记录）。
+ * 仅应在 round === 0（本循环尚未执行过任何工具）时调用；<think> 内的推演文字不触发。
+ */
+export function looksLikeUnverifiedSuccessClaim(content) {
+  if (!content || typeof content !== 'string') return false
+  const body = content.replace(/<think[\s\S]*?<\/think>/gi, '')
+  return /已成功|全部成功|创建成功|已创建|删除成功|已删除|已完成|已更新|已移动|已归档|已添加|已移入|批量.{0,6}成功|successfully (created|deleted|completed|moved)/i.test(body)
+}
+
+/**
+ * 判断 messages 中最后一条 user 消息是否为操作类请求（含写操作动词）。
+ * 用于抑制"回顾历史操作"类问答的误报（如"test2.1 创建了吗？"——过去时疑问句不是执行指令）。
+ */
+export function lastUserMessageRequestsAction(messages) {
+  if (!Array.isArray(messages)) return false
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m?.role !== 'user') continue
+    const text =
+      typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content.map((p) => p?.text || '').join('')
+          : ''
+    // 疑问句（?/？结尾或句尾疑问助词）视为询问而非指令
+    if (/[?？]/.test(text) || /[吗呢][。.！!]?$/.test(text.trim())) return false
+    return /(创建|新建|添加|删除|移除|移动|归档|收藏|重命名|修改|更新|批量|清理|打标签|设为|开启|关闭|禁用|启用|上传|导入)/.test(text)
+  }
+  return false
+}
+
+/**
  * 检测模型的回复是否包含 <think> 标签（ReAct 范式要求）。
  * 如果有工具调用但没有 think，说明模型跳过了推理步骤，需要重试。
  */
@@ -396,6 +432,9 @@ export async function runChatLoop({
   // 安全网计数器：防止模型"只说要调工具"却不 emit tool_calls 导致任务半途而废
   let continuationRetries = 0
   const MAX_CONTINUATION_RETRIES = 2
+  // 幻觉完成防护：round 0 检测到"零工具调用却声称成功"后置位；若矫正后模型仍未调用工具，
+  // 最终回答会追加显式警告（见循环尾部的返回路径）
+  let correctedHallucination = false
   // 上一轮真实 prompt token 数（来自上游 usage）；用于估计当前上下文占用、决定是否压缩。
   let lastPromptTokens = 0
 
@@ -544,8 +583,26 @@ export async function runChatLoop({
       const promptTokens = u.prompt_tokens || 0
       lastPromptTokens = promptTokens // 记录真实 prompt token，供下一轮压缩估计使用
       const completionTokens = u.completion_tokens || 0
-      const cacheReadTokens = u.prompt_tokens_details?.cached_tokens || u.prompt_tokens_details?.cache_read_tokens || 0
-      const cacheWriteTokens = u.prompt_tokens_details?.cache_written_tokens || u.prompt_tokens_details?.cache_write_tokens || 0
+      // 缓存命中/写入 token：兼容多种厂商返回格式。
+      // - OpenAI 官方：prompt_tokens_details.cached_tokens
+      // - StepFun（阶跃星辰）：顶层 cached_tokens（>256 token 自动缓存）
+      // - DeepSeek：prompt_cache_hit_tokens（prompt_tokens_details 或顶层）
+      // - Anthropic：cache_read_input_tokens（stream 已归一为 usage.cacheReadTokens）
+      const cacheReadTokens0 =
+        u.cacheReadTokens ??
+        u.prompt_tokens_details?.cached_tokens ??
+        u.prompt_tokens_details?.cache_read_tokens ??
+        u.prompt_cache_hit_tokens ??
+        u.cached_tokens ??
+        0
+      const cacheWriteTokens0 =
+        u.cacheCreationTokens ??
+        u.prompt_tokens_details?.cache_written_tokens ??
+        u.prompt_tokens_details?.cache_write_tokens ??
+        u.prompt_tokens_details?.cache_creation_input_tokens ??
+        0
+      const cacheReadTokens = Number(cacheReadTokens0) || 0
+      const cacheWriteTokens = Number(cacheWriteTokens0) || 0
       const thinkingTokens = u.completion_tokens_details?.reasoning_tokens || 0
       sendDelta({
         meta: {
@@ -588,10 +645,37 @@ export async function runChatLoop({
       continue
     }
 
+    // 安全网 2（幻觉完成防护）：round 0（本循环尚未执行过任何工具）时模型却用过去时
+    // 声称"创建成功/已完成"——只能是编造（真实案例见 looksLikeUnverifiedSuccessClaim 注释）。
+    // 处理：注入矫正 system 消息重跑一轮；矫正后模型真的调用工具则照常收敛（flag 复位），
+    // 仍纯文本虚报则最终回答追加"未经工具验证"警告，绝不让幻觉结论无痕落地。
+    const claimsSuccessWithoutTools =
+      round === 0 &&
+      tools && tools.length > 0 &&
+      looksLikeUnverifiedSuccessClaim(response.content) &&
+      lastUserMessageRequestsAction(currentMessages)
+    if (
+      response.toolCalls.length === 0 &&
+      claimsSuccessWithoutTools &&
+      continuationRetries < MAX_CONTINUATION_RETRIES
+    ) {
+      correctedHallucination = true
+      continuationRetries++
+      logger.warn('[AI] hallucinated success claim detected: content claims completion but zero tool_calls.',
+        'content_snippet:', (response.content || '').substring(0, 120))
+      currentMessages.push({ role: 'assistant', content: response.content || '' })
+      currentMessages.push({
+        role: 'system',
+        content: '系统检测：你上一条回复声称操作已成功完成，但本轮没有发生任何工具调用，这属于被禁止的编造行为。请立即实际调用工具执行用户请求；只有在收到工具返回的成功结果后，才允许声称完成。如果确实无法完成，请明确说明失败原因，不要虚构结果。',
+      })
+      continue
+    }
+
     // 有 tool calls：走统一执行管线（先发 tool_call 再执行后发 result；ask_user 等门控在此阻塞）
     if (response.toolCalls.length > 0) {
-      // 真正调用了工具，重置"只说不做"重试计数
+      // 真正调用了工具，重置"只说不做"重试计数，并撤销幻觉完成嫌疑（矫正已生效）
       continuationRetries = 0
+      correctedHallucination = false
       const toolResults = await handleToolCalls(response.toolCalls, userId, sendDelta, agentId, role, { abortSignal })
 
       currentMessages.push({
@@ -611,8 +695,15 @@ export async function runChatLoop({
       continue
     }
 
-    // 无 tool calls：最终回答，退出循环
-    return { messages: currentMessages, finalContent: response.content }
+    // 无 tool calls：最终回答，退出循环。
+    // 若此前因虚报完成触发过矫正且模型至今未真正调用工具，在回答尾部追加显式警告
+    // （确定性文本，不依赖前端改动即可向用户透出风险）。
+    let finalContent = response.content
+    if (correctedHallucination && response.toolCalls.length === 0) {
+      finalContent = `${finalContent || ''}\n\n> ⚠️ 系统提示：本回复声称操作已完成，但未检测到对应的工具调用记录，内容可能不真实，请人工核实后使用。`
+      logger.warn('[AI] unverified success claim persisted after corrective retry')
+    }
+    return { messages: currentMessages, finalContent }
   }
 
   // 达到最大轮次仍未收敛

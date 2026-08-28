@@ -12,6 +12,7 @@
 
 import pool from '../db/pool.js'
 import { getAiContext } from './aiContext.js'
+import { logger } from './logger.js'
 import {
   getFeatureDoc,
   getPrivacyModelDoc,
@@ -323,6 +324,7 @@ export function buildRoleSystemPrompt(role, userId) {
     '- 遇到删除、修改等操作（如"删除收藏夹 test8 和 test9"或"删除剪贴板条目"），若你尚未掌握具体 UUID/ID，必须首先调用 get_collections / get_ai_context / search_clips 等只读查询工具检索获取准确的 collection_id 或 clip_ids，随后再调用 delete_collection / batch_delete / destroy_clips 等工具真正执行操作。严禁凭空臆造 UUID！',
     '- 在没有实际发出 tool_call 并获得 tool_result 成功返回前，严禁在文本中向用户宣称「已成功删除」或虚构删除结果汇总表格。',
     '- 「说了」不等于「做了」。没有对应的 tool_call 且执行成功，就不算完成了用户的诉求。',
+    '- 历史对话中出现过的成功结果（包括名称/ID 表格）只是过去轮次的记录，不代表本轮已执行。同类操作每一轮都必须重新调用工具，严禁把历史结果当作本次成果复述，更严禁参照历史格式编造新的 ID。',
     '- 如果用户连续追问，但你此前仍没有调用工具，说明遗漏了操作：本消息你必须先调用对应工具执行，再汇报结果。普通信息查询（查看/统计/搜索/解释）按需调用只读工具，操作类诉求则必须调写工具。',
     '- 若不确定该用哪个工具，先说明计划并选择最匹配的工具执行，而不是用文字敷衍。',
     '- 你能使用的工具见工具清单；找不到合适工具时，明确告知「我没有可执行该操作的对应工具」，而不是假装已执行。',
@@ -486,6 +488,18 @@ export async function buildSystemPrompt(userId, role, opts = {}) {
   if (await getMemoryEnabled(userId)) {
     const mem = buildMemorySegment(ctx.memories)
     if (mem) parts.push(mem)
+  }
+  // 全局自定义系统提示词（040）：用户可在设置中配置，追加到角色/产品知识/记忆之后、
+  // thinking 增强之前。语义上位于「最接近用户当前诉求」的位置，让自定义诉求优先级高于内置。
+  let custom = ''
+  try {
+    const srow = await pool.query(`SELECT custom_system_prompt FROM ai_settings WHERE user_id = $1`, [userId])
+    custom = (srow.rows[0]?.custom_system_prompt || '').trim()
+  } catch (e) {
+    logger.warn('[AI] load customSystemPrompt failed:', e.message)
+  }
+  if (custom) {
+    parts.push(['## 用户的全局自定义指令（必须遵守，优先级最高）', custom].join('\n'))
   }
   const base = parts.filter(Boolean).join('\n\n')
   // thinking / Agent 增强复用既有逻辑，确保行为不回退

@@ -27,7 +27,7 @@ const props = defineProps<{
   // 破坏性工具确认门控：当前正在等待确认的工具名（用于 AiToolTimeline “等待确认”态标注）
   confirmTool?: string | null
 }>()
-const emit = defineEmits<{ reedit: [content: string] }>()
+const emit = defineEmits<{ reedit: [content: string, message: ChatMessage] }>()
 const { t } = useI18n()
 
 // 用户消息操作
@@ -63,7 +63,8 @@ async function copyUserContent() {
 function reeditUserContent() {
   const text = stripUserInputMarkers(stripViewContext(props.message.content || '')).trim()
   if (!text) return
-  emit('reedit', text)
+  // 带上消息本体（createdAt 作截断锚点），宿主实现"编辑即回滚"语义
+  emit('reedit', text, props.message)
 }
 
 // 上下文标记剥离

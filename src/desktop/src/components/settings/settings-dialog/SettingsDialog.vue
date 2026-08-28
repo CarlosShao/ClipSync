@@ -30,7 +30,7 @@ import {
   CreditCard,
   Variable,
   Info,
-  Bot,
+  Sparkles,
   X,
   ArrowLeft,
 } from 'lucide-vue-next'
@@ -79,7 +79,7 @@ const navItems = computed<NavItem[]>(() => [
   { key: 'data', label: t('sg_data'), icon: Database },
   { key: 'subscription', label: t('sg_sub_bill'), icon: CreditCard },
   { key: 'variables', label: t('sg_tpl_vars'), icon: Variable },
-  { key: 'ai', label: t('sg_ai'), icon: Bot },
+  { key: 'ai', label: t('sg_ai'), icon: Sparkles },
   { key: 'about', label: t('sg_about') || '关于', icon: Info },
 ])
 
@@ -222,8 +222,10 @@ onUnmounted(() => {
               <DataSettings v-else-if="activeCategory === 'data'" @open-sub-page="handleOpenSubPage" />
               <SubscriptionSettings v-else-if="activeCategory === 'subscription'" @open-sub-page="handleOpenSubPage" />
               <TemplateVarsSettings v-else-if="activeCategory === 'variables'" />
-              <AIProviderSettings v-if="activeCategory === 'ai'" />
-              <WorkflowRuleSettings v-if="activeCategory === 'ai'" />
+              <template v-else-if="activeCategory === 'ai'">
+                <AIProviderSettings />
+                <WorkflowRuleSettings />
+              </template>
               <AboutView v-else-if="activeCategory === 'about'" />
             </template>
           </div>

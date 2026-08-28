@@ -284,6 +284,20 @@ export function useAiChat() {
     return content
   }
 
+  // 「重新编辑」= 编辑即回滚（对齐主流 agent 语义）：把指定 createdAt 的消息及其之后的
+  // 所有本地消息移除，并立即全量持久化——saveMessages 是替换语义（删除全部非摘要行再重插），
+  // DB 中的旧轮次随之消失；"上下文压缩摘要"行受后端保护不受影响。
+  // 之后正常 send() 即等价于"回到该消息发送前的状态后初次发送"。
+  // 找不到目标（已切换会话/时间戳不匹配）时返回 false，调用方应放弃本次编辑语义。
+  function truncateFrom(createdAt: string): boolean {
+    if (!createdAt) return false
+    const idx = messages.value.findIndex((m) => m.createdAt === createdAt)
+    if (idx < 0) return false
+    messages.value = messages.value.slice(0, idx)
+    conv.saveCurrent(messages.value)
+    return true
+  }
+
   async function send(content: string, options: SendOptions = {}) {
     const text = content.trim()
     // 健康检查：如果 isStreaming 卡住超过 30 秒，强制重置（防止异常断流后无法发送）
@@ -1136,6 +1150,7 @@ export function useAiChat() {
     send,
     stop,
     clear,
+    truncateFrom,
     manualCompact,
     stripViewContext,
     // 会话相关
