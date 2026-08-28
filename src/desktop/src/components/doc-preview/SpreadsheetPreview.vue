@@ -1,0 +1,146 @@
+<script setup lang="ts">
+// Excel 表格预览：xlsx 库 sheet_to_html 输出的多 sheet 表格，按 sheet 标签切换。
+// 表格 HTML 由 DocPreviewModal 加载 ArrayBuffer 后动态生成并传入；
+// 本组件只负责渲染 + 切换 sheet，不依赖网络。
+
+defineProps<{
+  sheets: { name: string; html: string }[]
+  activeIdx: number
+}>()
+
+const emit = defineEmits<{
+  'update:active-idx': [idx: number]
+}>()
+
+function selectSheet(idx: number) {
+  emit('update:active-idx', idx)
+}
+</script>
+
+<template>
+  <div class="spreadsheet-preview">
+    <div v-if="sheets.length > 1" class="sheet-tabs">
+      <button
+        v-for="(sheet, idx) in sheets"
+        :key="sheet.name"
+        type="button"
+        class="sheet-tab"
+        :class="{ active: idx === activeIdx }"
+        :title="sheet.name"
+        @click="selectSheet(idx)"
+      >
+        {{ sheet.name }}
+      </button>
+    </div>
+    <div v-else-if="sheets.length === 1" class="sheet-tabs sheet-single">
+      <span class="sheet-tab sheet-tab-static">{{ sheets[0].name }}</span>
+    </div>
+
+    <div class="sheet-body">
+      <!-- sheet_to_html 输出的是完整 <table>，以 v-html 注入 -->
+      <div v-if="sheets[activeIdx]" class="sheet-html" v-html="sheets[activeIdx].html" />
+      <div v-else class="sheet-empty">无内容</div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.spreadsheet-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 70vh;
+}
+.sheet-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sheet-single {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.sheet-tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.12s;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sheet-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.sheet-tab.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.sheet-tab-static {
+  cursor: default;
+  background: var(--bg-hover);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.sheet-body {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  min-height: 0;
+}
+.sheet-html {
+  padding: 8px;
+}
+.sheet-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+/* sheet_to_html 生成的 table 没有样式，这里补齐 */
+.sheet-html :deep(table) {
+  border-collapse: collapse;
+  width: max-content;
+  max-width: 100%;
+  font-size: 12px;
+}
+.sheet-html :deep(thead) {
+  background: var(--bg-hover);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.sheet-html :deep(th),
+.sheet-html :deep(td) {
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  text-align: left;
+  white-space: nowrap;
+  max-width: 480px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sheet-html :deep(th) {
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.sheet-html :deep(tr:nth-child(even)) {
+  background: var(--bg-hover);
+}
+.sheet-html :deep(td) {
+  color: var(--text-secondary);
+}
+</style>

@@ -32,7 +32,7 @@ export function renderMarkdown(text: string): string {
 /** Detect file type from filename extension */
 export function detectFileType(
   filename: string,
-): 'markdown' | 'code' | 'text' | 'docx' | 'pptx' | 'pdf' | 'image' | 'unsupported' {
+): 'markdown' | 'code' | 'text' | 'docx' | 'excel' | 'pptx' | 'pdf' | 'image' | 'unsupported' {
   const ext = filename.split('.').pop()?.toLowerCase() || ''
   if (['md', 'markdown', 'mdx', 'rst'].includes(ext)) return 'markdown'
   if (
@@ -101,6 +101,7 @@ export function detectFileType(
     return 'code'
   if (['txt', 'log', 'csv', 'tsv', 'cfg', 'conf', 'properties', 'tex', 'latex', 'org'].includes(ext)) return 'text'
   if (['doc', 'docx', 'pages', 'key', 'numbers', 'odt', 'rtf'].includes(ext)) return 'docx'
+  if (['xls', 'xlsx', 'xlsm', 'xlsb'].includes(ext)) return 'excel'
   if (['ppt', 'pptx'].includes(ext)) return 'pptx'
   if (['pdf', 'epub', 'mobi', 'azw3', 'djvu'].includes(ext)) return 'pdf'
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'tiff', 'avif', 'heic'].includes(ext)) return 'image'
@@ -223,6 +224,75 @@ export function extractToc(markdown: string): TocItem[] {
     }
   }
   return items
+}
+
+/**
+ * Extract TOC from HTML (e.g. mammoth output for .docx) — picks <h1>–<h6> with
+ * existing id or auto-generated id from text content. Used to give docx/word
+ * previews the same left-side TOC that markdown previews already have.
+ */
+export function extractHtmlToc(html: string): TocItem[] {
+  if (!html) return []
+  const items: TocItem[] = []
+  // Match each heading with optional existing id="..." attribute
+  const headingRegex = /<h([1-6])(?:\s+id="([^"]*)")?[^>]*>([\s\S]*?)<\/h\1>/gi
+  const seenIds = new Set<string>()
+  let m: RegExpExecArray | null
+  while ((m = headingRegex.exec(html)) !== null) {
+    const depth = parseInt(m[1], 10)
+    const explicitId = m[2] || ''
+    // Strip nested tags from heading text
+    const rawText = String(m[3]).replace(/<[^>]+>/g, '').trim()
+    if (!rawText) continue
+    let id = explicitId
+    if (!id) {
+      id = rawText
+        .toLowerCase()
+        .replace(/[^\w\u4e00-\u9fff]+/g, '-')
+        .replace(/^-|-$/g, '')
+    }
+    // Ensure unique ids — duplicate (rare) suffixed -1, -2
+    let uniqueId = id
+    let n = 1
+    while (seenIds.has(uniqueId)) uniqueId = `${id}-${n++}`
+    seenIds.add(uniqueId)
+    items.push({ id: uniqueId, text: rawText, depth })
+  }
+  return items
+}
+
+/**
+ * Inject id="..." attributes into heading tags so the extracted TOC can
+ * anchor-jump to them. Uses the SAME id generator as extractHtmlToc, so the
+ * TOC item id always matches an element id in the rendered HTML.
+ * Existing ids are preserved and deduplicated.
+ */
+export function ensureHeadingIds(html: string): string {
+  if (!html) return html
+  const seenIds = new Set<string>()
+  return html.replace(/<h([1-6])(\b[^>]*)>([\s\S]*?)<\/h\1>/gi, (_full, depth, attrs, inner) => {
+    // Already has an id — keep it (and register for dedup)
+    const existing = attrs.match(/\bid="([^"]*)"/i)
+    if (existing && existing[1]) {
+      seenIds.add(existing[1])
+      return _full
+    }
+    // Generate id from the heading text (strip any nested tags)
+    const text = String(inner)
+      .replace(/<[^>]+>/g, '')
+      .trim()
+    let id = text
+      .toLowerCase()
+      .replace(/[^\w\u4e00-\u9fff]+/g, '-')
+      .replace(/^-|-$/g, '')
+    if (!id) id = `heading-${Math.random().toString(36).slice(2, 6)}`
+    // Dedup: append -1, -2...
+    let uniqueId = id
+    let n = 1
+    while (seenIds.has(uniqueId)) uniqueId = `${id}-${n++}`
+    seenIds.add(uniqueId)
+    return `<h${depth} id="${uniqueId}"${attrs}>${inner}</h${depth}>`
+  })
 }
 
 /** Render code with highlight.js */

@@ -17,12 +17,14 @@ import ExpiryPicker from '@/components/clipboard/ExpiryPicker.vue'
 import MarkdownPreview from '@/components/doc-preview/MarkdownPreview.vue'
 import CodePreview from '@/components/doc-preview/CodePreview.vue'
 import DocxPreview from '@/components/doc-preview/DocxPreview.vue'
+import SpreadsheetPreview from '@/components/doc-preview/SpreadsheetPreview.vue'
+import PptxPreview from '@/components/doc-preview/PptxPreview.vue'
 import PdfPreview from '@/components/doc-preview/PdfPreview.vue'
 import ImagePreview from '@/components/doc-preview/ImagePreview.vue'
 import TextPreview from '@/components/doc-preview/TextPreview.vue'
 import { isHtmlContent } from '@/utils/html'
 import { parseTable } from '@/utils/table'
-import { detectFileType, extractToc, type TocItem } from '@/utils/docPreview'
+import { detectFileType, extractToc, extractHtmlToc, ensureHeadingIds, type TocItem } from '@/utils/docPreview'
 import './modal-shared.css'
 
 const props = defineProps<{ previewItem?: any; previewType?: string }>()
@@ -118,7 +120,10 @@ function detectDocType(content: string, filename?: string): string {
     )
       return 'Code'
     if (['txt', 'log', 'csv', 'tsv', 'cfg', 'conf', 'properties', 'tex', 'latex', 'org'].includes(ext)) return 'Text'
-    // Known but unsupported extensions (docx, pdf, image handled separately by detectFileType)
+    // Excel/Word/PPT 各自有专门渲染（xlsx.js / mammoth / jszip），独立类型不再归为 Unsupported
+    if (['xls', 'xlsx', 'xlsm', 'xlsb'].includes(ext)) return 'Excel'
+    if (['ppt', 'pptx'].includes(ext)) return 'PPTX'
+    // 其它真正无渲染能力的格式才落 Unsupported
     if (
       [
         'doc',
@@ -127,10 +132,6 @@ function detectDocType(content: string, filename?: string): string {
         'numbers',
         'odt',
         'rtf',
-        'xls',
-        'xlsx',
-        'ppt',
-        'pptx',
         'zip',
         'rar',
         '7z',
@@ -210,6 +211,7 @@ function formatDocSize(chars: number): string {
 
 // ===== Word (.docx) rendering =====
 const docxHtml = ref('')
+const docxToc = ref<TocItem[]>([])
 const docxLoading = ref(false)
 
 async function renderDocx(arrayBuffer: ArrayBuffer) {
@@ -217,15 +219,82 @@ async function renderDocx(arrayBuffer: ArrayBuffer) {
   try {
     const { default: mammoth } = await import('mammoth')
     const result = await mammoth.convertToHtml({ arrayBuffer })
-    docxHtml.value = result.value || '<p style="color:var(--text-tertiary)">Document is empty</p>'
+    const html = result.value || '<p style="color:var(--text-tertiary)">Document is empty</p>'
+    // mammoth 默认不在 h1-h6 上输出 id，toc 锚点跳转需要先注入 id
+    const htmlWithIds = ensureHeadingIds(html)
+    docxHtml.value = htmlWithIds
+    docxToc.value = extractHtmlToc(htmlWithIds)
     if (result.messages.length > 0) {
       console.warn('[Preview] mammoth messages:', result.messages)
     }
   } catch (e) {
     console.error('[Preview] mammoth error:', e)
     docxHtml.value = '<p style="color:var(--danger)">Failed to render Word document</p>'
+    docxToc.value = []
   }
   docxLoading.value = false
+}
+
+// ===== Excel (.xlsx / .xls) rendering =====
+const excelSheets = ref<{ name: string; html: string }[]>([])
+const activeSheetIdx = ref(0)
+const excelLoading = ref(false)
+
+async function renderExcel(arrayBuffer: ArrayBuffer) {
+  excelLoading.value = true
+  excelSheets.value = []
+  activeSheetIdx.value = 0
+  try {
+    const XLSX = await import('xlsx')
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+    excelSheets.value = workbook.SheetNames.map((name) => {
+      const sheet = workbook.Sheets[name]
+      return { name, html: XLSX.utils.sheet_to_html(sheet, { editable: false }) || '' }
+    })
+  } catch (e) {
+    console.error('[Preview] Excel render error:', e)
+    excelSheets.value = []
+  }
+  excelLoading.value = false
+}
+
+// ===== PowerPoint (.pptx) rendering =====
+const pptxSlides = ref<string[]>([])
+const pptxLoading = ref(false)
+
+async function renderPptx(arrayBuffer: ArrayBuffer) {
+  pptxLoading.value = true
+  pptxSlides.value = []
+  try {
+    const JSZip = (await import('jszip')).default
+    const zip = await JSZip.loadAsync(arrayBuffer)
+    const slideFiles = Object.keys(zip.files)
+      .filter((f) => /ppt\/slides\/slide\d+\.xml$/i.test(f))
+      .sort((a, b) => {
+        const na = parseInt(a.match(/slide(\d+)/i)?.[1] || '0', 10)
+        const nb = parseInt(b.match(/slide(\d+)/i)?.[1] || '0', 10)
+        return na - nb
+      })
+    const slides: string[] = []
+    for (const slideFile of slideFiles) {
+      const xml = await zip.file(slideFile)!.async('text')
+      // 提取 <a:t> 文本节点 → 段落
+      const textMatches = xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || []
+      const lines = textMatches
+        .map((m) => m.replace(/<[^>]+>/g, '').trim())
+        .filter(Boolean)
+      if (lines.length === 0) {
+        slides.push('<p style="color:var(--text-tertiary)">(本页无可提取文本)</p>')
+      } else {
+        slides.push(lines.map((l) => `<p>${l.replace(/</g, '&lt;')}</p>`).join(''))
+      }
+    }
+    pptxSlides.value = slides
+  } catch (e) {
+    console.error('[Preview] PPTX render error:', e)
+    pptxSlides.value = []
+  }
+  pptxLoading.value = false
 }
 
 // ===== PDF rendering =====
@@ -415,11 +484,22 @@ async function loadFileContent(item: any) {
   previewContent.value = ''
   previewToc.value = []
   docxHtml.value = ''
+  docxToc.value = []
+  excelSheets.value = []
+  activeSheetIdx.value = 0
+  pptxSlides.value = []
   pdfPages.value = []
   previewImageDataUrl.value = ''
 
-  // For unsupported types (except image/docx/pdf handled below), show message immediately
-  if (docType === 'Unsupported' && fileType !== 'docx' && fileType !== 'pdf' && fileType !== 'image') {
+  // For unsupported types (except image/docx/excel/pptx/pdf handled below), show message immediately
+  if (
+    docType === 'Unsupported' &&
+    fileType !== 'docx' &&
+    fileType !== 'excel' &&
+    fileType !== 'pptx' &&
+    fileType !== 'pdf' &&
+    fileType !== 'image'
+  ) {
     return
   }
 
@@ -463,7 +543,7 @@ async function loadFileContent(item: any) {
       } catch (e) {
         console.error('[Preview] Image file load error:', e)
       }
-    } else if (fileType === 'docx' || fileType === 'pdf') {
+    } else if (fileType === 'docx' || fileType === 'excel' || fileType === 'pptx' || fileType === 'pdf') {
       // Binary files: try download endpoint first, fallback to Tauri for path-based content
       let loaded = false
       // Check if content_encrypted is a file path (clipboard monitor uploads)
@@ -487,6 +567,8 @@ async function loadFileContent(item: any) {
           if (base64) {
             const arrayBuffer = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)).buffer
             if (fileType === 'docx') await renderDocx(arrayBuffer)
+            else if (fileType === 'excel') await renderExcel(arrayBuffer)
+            else if (fileType === 'pptx') await renderPptx(arrayBuffer)
             else if (fileType === 'pdf') await renderPdf(arrayBuffer)
             loaded = true
           }
@@ -500,6 +582,8 @@ async function loadFileContent(item: any) {
         if (blobRes && blobRes.ok) {
           const arrayBuffer = await blobRes.arrayBuffer()
           if (fileType === 'docx') await renderDocx(arrayBuffer)
+          else if (fileType === 'excel') await renderExcel(arrayBuffer)
+          else if (fileType === 'pptx') await renderPptx(arrayBuffer)
           else if (fileType === 'pdf') await renderPdf(arrayBuffer)
         } else {
           previewContent.value = t('preview_unable')
@@ -711,10 +795,25 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
         :alt="previewFileName"
       />
 
-      <!-- Word (.docx) rendering -->
+      <!-- Word (.docx) rendering with TOC -->
       <DocxPreview
         v-else-if="detectFileType(previewFileName) === 'docx' && docxHtml"
         :html="docxHtml"
+        :toc="docxToc"
+      />
+
+      <!-- Excel (.xlsx / .xls) multi-sheet rendering -->
+      <SpreadsheetPreview
+        v-else-if="detectFileType(previewFileName) === 'excel' && excelSheets.length > 0"
+        :sheets="excelSheets"
+        :active-idx="activeSheetIdx"
+        @update:active-idx="activeSheetIdx = $event"
+      />
+
+      <!-- PowerPoint (.pptx) slide text rendering -->
+      <PptxPreview
+        v-else-if="detectFileType(previewFileName) === 'pptx' && pptxSlides.length > 0"
+        :slides="pptxSlides"
       />
 
       <!-- PDF rendering -->
@@ -724,14 +823,16 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
         :total-pages="pdfTotalPages"
       />
 
-      <!-- PPTX / other unsupported: show raw text content -->
+      <!-- 真正无可渲染能力的格式：显示原始文本或回退提示 -->
       <TextPreview
         v-else-if="
-          detectFileType(previewFileName) === 'pptx' ||
           (detectDocType(previewContent, previewFileName) === 'Unsupported' &&
             detectFileType(previewFileName) !== 'docx' &&
+            detectFileType(previewFileName) !== 'excel' &&
+            detectFileType(previewFileName) !== 'pptx' &&
             detectFileType(previewFileName) !== 'pdf' &&
-            detectFileType(previewFileName) !== 'image')
+            detectFileType(previewFileName) !== 'image') ||
+          (detectFileType(previewFileName) === 'pptx' && pptxSlides.length === 0 && !pptxLoading)
         "
         :content="previewContentLines.join('\n')"
       />
