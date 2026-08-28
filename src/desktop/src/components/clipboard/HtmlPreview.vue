@@ -4,8 +4,18 @@ import { sanitizeHtml } from '@/utils/html'
 import { useI18n } from '@/composables/useI18n'
 
 const { t } = useI18n()
-const props = defineProps<{ content: string }>()
-const html = computed(() => sanitizeHtml(props.content))
+// html = 捕获的富文本片段（Windows "HTML Format"，随条目 metadata.html 上传）。
+// 有捕获片段时优先渲染片段；否则回退为「content 本身是 HTML 源码」的旧嗅探逻辑。
+// 两条路径都必须先过 DOMPurify（sanitizeHtml），禁止裸 v-html。
+const props = defineProps<{ content: string; html?: string | null }>()
+const html = computed(() => {
+  const captured = typeof props.html === 'string' ? props.html.trim() : ''
+  return captured ? sanitizeHtml(captured) : sanitizeHtml(props.content)
+})
+const sourceText = computed(() => {
+  const captured = typeof props.html === 'string' ? props.html.trim() : ''
+  return captured || props.content
+})
 </script>
 
 <template>
@@ -16,7 +26,7 @@ const html = computed(() => sanitizeHtml(props.content))
     </div>
     <div class="html-source-section">
       <div class="html-section-label">{{ t('head_source') }}</div>
-      <pre class="html-source"><code>{{ content }}</code></pre>
+      <pre class="html-source"><code>{{ sourceText }}</code></pre>
     </div>
   </div>
 </template>

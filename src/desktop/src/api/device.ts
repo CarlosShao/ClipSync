@@ -24,6 +24,7 @@ export interface PairingRedeemUser {
 
 export interface PairingRedeemResult {
   token: string
+  refreshToken?: string
   user: PairingRedeemUser
 }
 

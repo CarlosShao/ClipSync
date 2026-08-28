@@ -1,7 +1,10 @@
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import pool from '../db/pool.js';
+import config from '../config.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { getRedisClient } from '../middleware/rateLimiter.js';
+import { blacklistJti } from '../utils/redis-client.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -76,9 +79,12 @@ router.post('/logout', authenticateToken, async (req, res) => {
     );
 
     // 将 token 加入 Redis 黑名单
+    // 修复：此前写入 `blacklist:{sessionId}`，而 isJtiBlacklisted 读取 `bl:{jti}`，键不一致导致黑名单从未生效；
+    // 统一改用 blacklistJti 封装（key: bl:{jti}，TTL = access token 剩余有效期）
     try {
-      const redisClient = await getRedisClient();
-      await redisClient.set(`blacklist:${sessionId}`, 'true', { EX: 86400 }); // 24小时过期
+      const decoded = jwt.decode(req.headers.authorization?.split(' ')[1] || '') || {};
+      const remaining = decoded?.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 86400;
+      await blacklistJti(sessionId, remaining > 0 ? remaining : 3600);
     } catch (redisErr) {
       logger.warn('Redis blacklist failed:', { error: redisErr.message });
     }

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useConfigStore } from '@/stores/configStore'
-import { useTheme, currentMode } from '@/composables/useTheme'
+import { useTheme, resolvedMode } from '@/composables/useTheme'
 import { useI18n } from '@/composables/useI18n'
 import { useClipboard } from '@/composables/useClipboard'
 import { useDevice } from '@/composables/useDevice'
@@ -29,10 +29,9 @@ const ProfileView = defineAsyncComponent(() => import('@/components/settings/Pro
 const DevicesView = defineAsyncComponent(() => import('@/components/settings/DevicesView.vue'))
 const SubscriptionView = defineAsyncComponent(() => import('@/components/settings/SubscriptionView.vue'))
 const NotificationsView = defineAsyncComponent(() => import('@/components/settings/NotificationsView.vue'))
-// ModalManager/DocumentDrawer 携带全套重型库（pdfjs/xlsx/mammoth/highlight.js/jszip/qrcode/jsqr/marked），
+// ModalManager 携带全套重型库（pdfjs/xlsx/mammoth/highlight.js/jszip/qrcode/jsqr/marked），
 // 改为异步 + v-if 门控，仅在真正需要时才加载进内存，避免启动即常驻数十 MB
 const ModalManager = defineAsyncComponent(() => import('@/components/modals/ModalManager.vue'))
-const DocumentDrawer = defineAsyncComponent(() => import('@/components/DocumentDrawer.vue'))
 import OnboardingView from '@/components/OnboardingView.vue'
 import CoachMarks from '@/components/CoachMarks.vue'
 import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
@@ -75,8 +74,6 @@ const showModalType = ref('')
 const showForgotPwd = ref(false)
 const previewItem = ref<any>(null)
 const previewType = ref('')
-const showDrawer = ref(false)
-const drawerItem = ref<any>(null)
 const confirmMessage = ref('')
 let confirmCallback: (() => void) | null = null
 // 门控：仅当有弹窗/忘记密码/预览项时才挂载 ModalManager（否则其重型库常驻内存）
@@ -199,14 +196,15 @@ onMounted(async () => {
   device.loadDevices()
   ws.connect()
   notif.loadHistory()
-  // WebSocket 新剪贴通知 → 刷新列表 + 弹系统通知；通知推送 → 实时插入收件箱
+  // WebSocket 推送（设备注册后后端定向广播）→ 刷新列表 + 弹系统通知；通知推送 → 实时插入收件箱
+  // 事件名与后端广播契约对齐：clipboard.js 广播 new_clipboard / clipboard_updated / clipboard_favorite / clipboard_deleted
   ws.onMessage((data) => {
-    if (data?.type === 'new_clip' || data?.action === 'sync' || data?.event === 'clipboard_update') {
+    if (data?.type === 'new_clipboard') {
       clip.refresh()
       perfFirstDataLoad()
       // Native notification: show what was synced (skip if window is focused)
-      const source = data.clip?.sourceDevice?.name || data.source || ''
-      const preview = data.clip?.contentPreview || data.clip?.content || ''
+      const source = data.item?.sourceDeviceId || ''
+      const preview = data.item?.contentPreview || ''
       const label = source ? `${source}` : t('app_name')
       const text = preview ? String(preview).slice(0, 80) : t('empty_action')
       // Only notify when main window is not focused (avoid redundant alerts)
@@ -215,6 +213,20 @@ onMounted(async () => {
       } catch {
         /* ignore */
       }
+    } else if (
+      data?.type === 'clipboard_updated' ||
+      data?.type === 'clipboard_favorite' ||
+      data?.type === 'clipboard_deleted'
+    ) {
+      clip.refresh()
+    }
+    if (data?.type === 'registered') {
+      // 设备注册成功（含断线重连）：先感知断线窗口内其他设备的删除（墓碑流水），
+      // 再刷新列表补齐新增。失败静默，靠后续手动刷新兜底。
+      clip
+        .syncDeletions()
+        .then(() => clip.refresh())
+        .catch(() => {})
     }
     if (data?.type === 'notification') {
       notif.pushRealtime(data)
@@ -265,7 +277,7 @@ onMounted(async () => {
 
   document.addEventListener('keydown', handleGlobalKeydown)
   try {
-    tauri.setTitlebarMode(currentMode.value === 'dark')
+    tauri.setTitlebarMode(resolvedMode.value === 'dark')
   } catch (e) {
     console.warn('[Home] setTitlebarMode failed:', e)
   }
@@ -326,78 +338,9 @@ function onPreviewText(item: any) {
   previewType.value = 'text'
 }
 function onPreviewFile(item: any) {
-  // Document types open in drawer, others in modal
-  const docExtensions = [
-    'md',
-    'markdown',
-    'mdx',
-    'txt',
-    'log',
-    'json',
-    'yaml',
-    'yml',
-    'xml',
-    'toml',
-    'js',
-    'ts',
-    'jsx',
-    'tsx',
-    'py',
-    'java',
-    'go',
-    'rs',
-    'c',
-    'cpp',
-    'h',
-    'cs',
-    'html',
-    'css',
-    'scss',
-    'less',
-    'sql',
-    'sh',
-    'bash',
-    'rb',
-    'php',
-    'doc',
-    'docx',
-    'xls',
-    'xlsx',
-    'xlsm',
-    'pptx',
-    'pdf',
-    'csv',
-    'tsv',
-    'ini',
-    'env',
-    'vue',
-    'svelte',
-    'dockerfile',
-    'makefile',
-  ]
-  let ext = ''
-  try {
-    const meta = JSON.parse(item.content)
-    if (meta.name) {
-      ext = meta.name.split('.').pop()?.toLowerCase() || ''
-    } else if (Array.isArray(meta) && meta[0]) {
-      // Path array format: ["D:\\path\\to\\file.pptx"]
-      ext = meta[0].split(/[/\\]/).pop()?.split('.').pop()?.toLowerCase() || ''
-    } else if (meta.paths && Array.isArray(meta.paths) && meta.paths[0]) {
-      ext = meta.paths[0].split(/[/\\]/).pop()?.split('.').pop()?.toLowerCase() || ''
-    }
-  } catch {
-    // Plain filename or path string
-    const raw = (item.content || '').split(/[/\\]/).pop() || item.content || ''
-    ext = raw.split('.').pop()?.toLowerCase() || ''
-  }
-  if (docExtensions.includes(ext)) {
-    drawerItem.value = item
-    showDrawer.value = true
-  } else {
-    previewItem.value = item
-    previewType.value = 'file'
-  }
+  // 统一走 DocPreviewModal（ModalManager）预览文件类型内容
+  previewItem.value = item
+  previewType.value = 'file'
 }
 function closePreview() {
   previewItem.value = null
@@ -423,11 +366,6 @@ async function onToggleSensitive(item: any) {
     toast.show(e.message || t('sens_toggle_fail') || '操作失败', 'error')
   }
 }
-function closeDrawer() {
-  showDrawer.value = false
-  drawerItem.value = null
-}
-
 function onOnboardingComplete() {
   showOnboarding.value = false
   // Show coach marks after onboarding completes
@@ -578,8 +516,6 @@ function confirmAction() {
       </div>
     </div>
   </div>
-
-  <DocumentDrawer v-if="showDrawer" :open="showDrawer" :item="drawerItem" @close="closeDrawer" />
 
   <!-- First-run experience -->
   <OnboardingView v-if="showOnboarding" @complete="onOnboardingComplete" />

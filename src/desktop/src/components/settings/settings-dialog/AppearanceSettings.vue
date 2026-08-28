@@ -34,6 +34,16 @@
           <Moon :size="14" />
           <span>{{ t('mode_dark') }}</span>
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          class="mode-seg-btn-shadcn"
+          :class="{ active: currentMode === 'system' }"
+          @click="setMode('system')"
+        >
+          <Monitor :size="14" />
+          <span>{{ tf('mode_system', '跟随系统') }}</span>
+        </Button>
       </div>
     </div>
     <div class="sg-row">
@@ -48,9 +58,9 @@
 import { useI18n } from '@/composables/useI18n'
 import { useTheme, currentMode } from '@/composables/useTheme'
 import Button from '@/components/ui/button/Button.vue'
-import { ChevronRight, Sun, Moon } from 'lucide-vue-next'
+import { ChevronRight, Sun, Moon, Monitor } from 'lucide-vue-next'
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const { setMode } = useTheme()
 
 const emit = defineEmits<{

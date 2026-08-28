@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { AppConfig } from '@/types'
 import * as tauri from '@/lib/tauri'
+import { api, storeRefreshToken } from '@/api/client'
 import { useClipboard } from '@/composables/useClipboard'
 import { clearQueue } from '@/utils/offlineQueue'
 
@@ -85,11 +86,13 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
-  // 统一登录收尾：持久化 token + 注册设备 + 拉取用户资料。供 login(验证码) 与 二维码配对兑换 复用
-  async function completeLogin(authToken: string, userId: string) {
+  // 统一登录收尾：持久化 token + refresh token + 注册设备 + 拉取用户资料。
+  // 供 login(验证码/密码) 与 二维码配对兑换 复用
+  async function completeLogin(authToken: string, userId: string, refreshToken?: string | null) {
     config.value.token = authToken
     config.value.user_id = userId
     localStorage.setItem('clipsync-token', authToken)
+    storeRefreshToken(refreshToken || null)
     await save({ token: authToken, user_id: userId })
     await registerCurrentDevice(authToken)
     // 登录成功后立即拉取用户资料（phone/email/nickname/avatarUrl）
@@ -101,13 +104,17 @@ export const useConfigStore = defineStore('config', () => {
     if (!res || !res.token) {
       throw new Error('Login failed: no token returned')
     }
-    // 兼容两种返回格式: { user: { id } } 或 { user_id }
+    // 兼容两种返回格式: { user: { id } } 或 { user_id }；refreshToken 由 Rust login 命令整体透传后端响应
     const userId = res.user?.id || (res as any).user_id || ''
-    await completeLogin(res.token, userId)
+    await completeLogin(res.token, userId, (res as any).refreshToken)
   }
 
   function logout() {
     localStorage.removeItem('clipsync-token')
+    // 清除 refresh token / csrf / 墓碑同步游标，避免下个账号继承旧凭证与同步点
+    storeRefreshToken(null)
+    localStorage.removeItem('clipsync-csrf')
+    localStorage.removeItem('clipsync-last-sync-at')
     // 清除剪贴板内容缓存与 tab 状态，避免切换账号后旧数据/图片残留内存和磁盘
     localStorage.removeItem('clipsync-content-cache-v2')
     localStorage.removeItem('clipsync-clipboard-filter')
@@ -145,19 +152,15 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   // 注册当前设备到后端（使用正确字段名 deviceName/deviceType/platform，避免前后端不匹配）
+  // 走统一 api()：自动带 Bearer + 超时 + 401 刷新，无需手工拼 fetch
   async function registerCurrentDevice(authToken: string) {
-    const serverUrl = config.value.server_url || ''
     const platform = /Mac/i.test(navigator.userAgent)
       ? 'macos'
       : /Linux/i.test(navigator.userAgent)
         ? 'linux'
         : 'windows'
     try {
-      await fetch(`${serverUrl}/api/devices`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-        body: JSON.stringify({ deviceName: 'Desktop', deviceType: 'desktop', platform }),
-      })
+      await api('POST', '/api/devices', { deviceName: 'Desktop', deviceType: 'desktop', platform })
     } catch {
       /* 设备注册失败不影响登录 */
     }
@@ -208,24 +211,19 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   // 拉取用户资料并填充 user state（phone/email/nickname/avatarUrl/plan）
+  // 走统一 api()：401 时自动刷新重试，刷新失败统一登出
   async function fetchUserProfile() {
     try {
-      const serverUrl = config.value.server_url || ''
-      const token = config.value.token
-      if (!token) return
-      const res = await fetch(`${serverUrl}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) return
-      const data = await res.json()
-      if (data) {
-        user.value.name = data.nickname || user.value.name
-        user.value.email = data.email || user.value.email
-        user.value.phone = data.phone || user.value.phone
-        user.value.plan = data.plan || user.value.plan
-        // avatarUrl 存到 localStorage 供 ProfileView 使用
-        if (data.avatarUrl) localStorage.setItem('clipsync-avatar', data.avatarUrl)
-      }
+      if (!config.value.token) return
+      const res = await api('GET', '/api/auth/me')
+      if (!res.ok || !res.data) return
+      const data = res.data as any
+      user.value.name = data.nickname || user.value.name
+      user.value.email = data.email || user.value.email
+      user.value.phone = data.phone || user.value.phone
+      user.value.plan = data.plan || user.value.plan
+      // avatarUrl 存到 localStorage 供 ProfileView 使用
+      if (data.avatarUrl) localStorage.setItem('clipsync-avatar', data.avatarUrl)
     } catch {
       /* 静默失败，user 保持默认值 */
     }
@@ -233,18 +231,12 @@ export const useConfigStore = defineStore('config', () => {
 
   // 更新用户资料（昵称/头像）→ 同步调 API + 本地 state
   async function updateUserProfile(partial: { displayName?: string; avatarUrl?: string }) {
-    const serverUrl = config.value.server_url || ''
-    const token = config.value.token
-    if (!token) return false
+    if (!config.value.token) return false
     try {
       const body: Record<string, any> = {}
       if (partial.displayName !== undefined) body.nickname = partial.displayName
       if (partial.avatarUrl !== undefined) body.avatarUrl = partial.avatarUrl
-      const res = await fetch(`${serverUrl}/api/auth/profile`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(body),
-      })
+      const res = await api('PUT', '/api/auth/profile', body)
       if (res.ok) {
         if (partial.displayName !== undefined) user.value.name = partial.displayName
         if (partial.avatarUrl !== undefined) {
@@ -260,18 +252,11 @@ export const useConfigStore = defineStore('config', () => {
 
   // 修改密码（已登录状态，需要旧密码 + 新密码）
   async function changePassword(oldPassword: string, newPassword: string): Promise<{ ok: boolean; error?: string }> {
-    const serverUrl = config.value.server_url || ''
-    const token = config.value.token
-    if (!token) return { ok: false, error: 'Not logged in' }
+    if (!config.value.token) return { ok: false, error: 'Not logged in' }
     try {
-      const res = await fetch(`${serverUrl}/api/auth/change-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ oldPassword, newPassword }),
-      })
-      const data = await res.json()
+      const res = await api('POST', '/api/auth/change-password', { oldPassword, newPassword })
       if (res.ok) return { ok: true }
-      return { ok: false, error: data.error || `HTTP ${res.status}` }
+      return { ok: false, error: res.error || `HTTP ${res.status}` }
     } catch (e: any) {
       return { ok: false, error: e.message || 'Network error' }
     }

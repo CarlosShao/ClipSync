@@ -40,4 +40,9 @@ router.beforeEach((to) => {
   return true
 })
 
+// 会话彻底失效（refresh token 刷新失败，由 api/client.ts 广播）→ 跳登录页
+window.addEventListener('clipsync:auth-expired', () => {
+  router.push('/auth')
+})
+
 export default router

@@ -185,6 +185,24 @@ const isTruncated = computed(() => {
   return (previewContent.value?.split('\n').length || 0) > DOC_PREVIEW_MAX_LINES
 })
 
+// 富文本捕获（Windows "HTML Format"）：条目 metadata.html 携带的 HTML 片段。
+// 优先渲染它；没有捕获片段时才回退到「内容恰好是 HTML 源码」的嗅探渲染（isHtmlContent）。
+// metadata 可能是对象（pg jsonb）或 JSON 字符串（旧 API 兼容），两种都处理。
+const previewItemHtml = computed(() => {
+  const meta = props.previewItem?.metadata
+  if (!meta) return ''
+  let obj: any = meta
+  if (typeof meta === 'string') {
+    try {
+      obj = JSON.parse(meta)
+    } catch {
+      return ''
+    }
+  }
+  const html = obj?.html
+  return typeof html === 'string' ? html : ''
+})
+
 function formatDocSize(chars: number): string {
   if (chars < 1024) return `${chars} chars`
   return `${(chars / 1024).toFixed(1)} KB`
@@ -725,10 +743,11 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
         :toc="previewToc"
       />
 
-      <!-- HTML safe preview (DOMPurify sanitized, only when content is rich-text HTML) -->
+      <!-- HTML safe preview (DOMPurify sanitized)：优先渲染捕获的富文本片段 metadata.html，
+           没有捕获片段时回退为「内容恰好是 HTML 源码」的嗅探渲染 -->
       <!-- 必须在 Code 分支之前：detectDocType 会把 HTML 标签识别为 Code，导致 HTML 被当成源码高亮 -->
-      <div v-else-if="isHtmlContent(previewContent)" class="doc-preview html-preview-doc">
-        <HtmlPreview :content="previewContent" />
+      <div v-else-if="isHtmlContent(previewContent) || previewItemHtml" class="doc-preview html-preview-doc">
+        <HtmlPreview :content="previewContent" :html="previewItemHtml" />
       </div>
 
       <!-- Table preview (TSV/CSV/semicolon) -->

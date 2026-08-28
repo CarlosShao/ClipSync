@@ -15,23 +15,26 @@ const npsScore = ref<number | null>(null)
 const feedbackText = ref('')
 const submitting = ref(false)
 
-// Trigger conditions: show after 7 days of usage, max once per 30 days
+// Trigger condition: show once after 7 days of usage — one-time per user lifetime.
+// Once submitted or skipped, the permanent flag (SURVEY_DONE_KEY) is written and the
+// survey never shows again. Legacy SURVEY_KEY records (cooldown era) are migrated
+// to the permanent flag on load so existing users are not re-prompted.
 const SURVEY_KEY = 'clipsync-survey'
-const COOLDOWN = 30 * 24 * 60 * 60 * 1000 // 30 days
+const SURVEY_DONE_KEY = 'clipsync-survey-done'
 const FIRST_USE_KEY = 'clipsync-first-use'
 
 onMounted(() => {
-  const lastSurvey = localStorage.getItem(SURVEY_KEY)
+  // Already completed (submitted or skipped) — never show again.
+  if (localStorage.getItem(SURVEY_DONE_KEY) || localStorage.getItem(SURVEY_KEY)) {
+    localStorage.setItem(SURVEY_DONE_KEY, '1') // migrate legacy cooldown-era record
+    return
+  }
+
   const firstUse = localStorage.getItem(FIRST_USE_KEY)
 
   if (!firstUse) {
     localStorage.setItem(FIRST_USE_KEY, Date.now().toString())
     return
-  }
-
-  if (lastSurvey) {
-    const elapsed = Date.now() - parseInt(lastSurvey)
-    if (elapsed < COOLDOWN) return
   }
 
   // Show after 7 days of first use
@@ -59,6 +62,7 @@ async function submitSurvey() {
       return
     }
     localStorage.setItem(SURVEY_KEY, Date.now().toString())
+    localStorage.setItem(SURVEY_DONE_KEY, '1')
     step.value = 'done'
     setTimeout(() => {
       visible.value = false
@@ -73,6 +77,7 @@ async function submitSurvey() {
 
 function skip() {
   localStorage.setItem(SURVEY_KEY, Date.now().toString())
+  localStorage.setItem(SURVEY_DONE_KEY, '1')
   visible.value = false
   emit('complete')
 }

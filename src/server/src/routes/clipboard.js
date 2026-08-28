@@ -165,7 +165,7 @@ router.get('/', apiLimiter, async (req, res) => {
        FROM clipboard_items ci
        LEFT JOIN devices d ON ci.source_device_id = d.id
        ${whereClause}
-       ORDER BY ci.created_at DESC
+       ORDER BY (COALESCE(ci.metadata->>'pinned', 'false'))::boolean DESC, ci.created_at DESC
        ${limitClause}`,
       useLimit ? [...params, pagination.limit, offset] : params
     );
@@ -326,6 +326,39 @@ router.get('/frequent', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('Frequent items error:', { error: err.message });
     res.status(500).json({ error: 'Failed to get frequent items' });
+  }
+});
+
+// GET /api/clipboard/sync-deletions?since=<ISO> - 断线期间的删除流水（墓碑）
+// 注意：必须声明在 GET /:id 之前，否则 'sync-deletions' 会被 /:id 路径吃掉。
+// 前端在 WS 重连注册成功后调用，把断线窗口内其他设备删除的条目从本地列表移除。
+router.get('/sync-deletions', apiLimiter, async (req, res) => {
+  try {
+    const sinceRaw = req.query.since ? String(req.query.since) : '';
+    const since = sinceRaw ? new Date(sinceRaw) : null;
+    if (!since || isNaN(since.getTime())) {
+      return res.status(400).json({ error: 'Valid since parameter required' });
+    }
+
+    const result = await pool.query(
+      `SELECT item_id, deleted_at FROM clipboard_deletions
+       WHERE user_id = $1 AND deleted_at > $2
+       ORDER BY deleted_at ASC
+       LIMIT 500`,
+      [req.userId, since.toISOString()]
+    );
+
+    res.json({
+      deletions: result.rows.map(r => ({
+        itemId: r.item_id,
+        deletedAt: r.deleted_at,
+      })),
+      hasMore: result.rows.length === 500,
+      serverTime: new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.error('Sync deletions error:', { error: err.message });
+    res.status(500).json({ error: 'Sync deletions failed' });
   }
 });
 
@@ -720,6 +753,36 @@ router.put('/:id/sensitive', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('Toggle sensitive error:', { error: err.message });
     res.status(500).json({ error: 'Failed to toggle sensitive' });
+  }
+});
+
+// PUT /api/clipboard/:id/pinned - 置顶/取消置顶（跨设备，metadata.pinned）
+// 必须声明在 PUT /:id 之前，否则 'pinned' 会被 /:id 路径吃掉。
+router.put('/:id/pinned', apiLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { pinned } = req.body;
+    if (!isValidUUID(id)) return res.status(400).json({ error: 'Invalid ID format' });
+    if (typeof pinned !== 'boolean') return res.status(400).json({ error: 'pinned must be boolean' });
+
+    const result = await pool.query(
+      `UPDATE clipboard_items
+       SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{pinned}', $2::jsonb),
+           updated_at = NOW()
+       WHERE id = $1 AND user_id = $3
+       RETURNING id, metadata`,
+      [id, pinned ? 'true' : 'false', req.userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Clipboard item not found' });
+
+    broadcastToUser(req.userId, {
+      type: 'clipboard_updated',
+      item: { id: result.rows[0].id, metadata: result.rows[0].metadata },
+    });
+    res.json({ id: result.rows[0].id, pinned, metadata: result.rows[0].metadata });
+  } catch (err) {
+    logger.error('Toggle pinned error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to toggle pinned' });
   }
 });
 

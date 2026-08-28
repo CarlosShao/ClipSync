@@ -105,6 +105,11 @@ export function setupWebSocket(server) {
       return;
     }
 
+    // Redis 客户端必须在 CSRF 校验之前获取：
+    // 此前声明位于下方黑名单检查处，CSRF 块引用时触发 TDZ ReferenceError，
+    // 导致任何携带 csrf_token 的连接（含生产环境全部连接）fail-closed 被拒。
+    const redis = await getRedisClient();
+
     // ========== 安全增强 #2.5: WebSocket CSRF 保护 ==========
     const csrfToken = url.searchParams.get('csrf_token');
     if (config.nodeEnv === 'production' || csrfToken) {
@@ -161,7 +166,6 @@ export function setupWebSocket(server) {
     }
 
     // ========== 安全增强 #3: 检查 Token 是否在黑名单中 ==========
-    const redis = await getRedisClient();
     if (redis && decoded.jti) {
       const blacklisted = await redis.get(`bl:${decoded.jti}`);
       if (blacklisted) {
@@ -245,6 +249,16 @@ export function setupWebSocket(server) {
             if (!connections.has(userId)) {
               connections.set(userId, new Map());
             }
+
+            // 重连场景：同一 deviceId 的旧连接若仍挂在广播表中，先移除并关闭，
+            // 避免重连风暴期间旧连接未及时清理而累积到每用户 5 连接上限被误杀（4007）
+            const userConns = connections.get(userId);
+            const oldWs = userConns.get(deviceId);
+            if (oldWs && oldWs !== ws) {
+              userConns.delete(deviceId);
+              try { oldWs.close(4000, 'Replaced by new connection'); } catch { /* ignore */ }
+            }
+
             connections.get(userId).set(deviceId, ws);
 
             // 标记已注册并清除超时计时器

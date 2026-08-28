@@ -23,6 +23,61 @@ import { setItemPreview, releaseRemovedObjectUrls } from './clipboardObjectUrls'
 // 设备列表（用于筛选下拉），懒加载 + 内存缓存，避免每次打开筛选面板都打 /api/devices
 let devicesCache: { id: string; name: string; platform?: string }[] = []
 
+// === 删除感知（墓碑）同步游标 ===
+// 每次成功拉取列表后记录同步点；WS 重连注册成功后用 since 拉取断线窗口内的删除流水，
+// 把其他设备已删除的条目从本地列表移除（新增条目靠 refresh 第一页覆盖，删除只有墓碑能感知）。
+const LAST_SYNC_KEY = 'clipsync-last-sync-at'
+// 5 秒回拨余量：吸收客户端与服务端时钟漂移，宁可墓碑多查不可漏
+const SYNC_OVERLAP_MS = 5000
+
+function touchLastSyncAt() {
+  try {
+    localStorage.setItem(LAST_SYNC_KEY, new Date(Date.now() - SYNC_OVERLAP_MS).toISOString())
+  } catch {
+    /* localStorage 不可用时跳过 */
+  }
+}
+
+export async function syncDeletions(): Promise<{ removed: number } | null> {
+  try {
+    const since = localStorage.getItem(LAST_SYNC_KEY)
+    if (!since) {
+      // 首次（无同步点）：拉一次列表后自然建立游标，无需回溯历史删除
+      touchLastSyncAt()
+      return { removed: 0 }
+    }
+    const res = await api('GET', `/api/clipboard/sync-deletions?since=${encodeURIComponent(since)}`)
+    if (!res.ok || !Array.isArray(res.data?.deletions)) return null
+    const deletedIds = new Set<string>(res.data.deletions.map((d: any) => d.itemId))
+    // 推进游标到服务端时间（服务端为准，避免本地时钟漂移累积）
+    if (res.data?.serverTime) {
+      try {
+        localStorage.setItem(LAST_SYNC_KEY, new Date(new Date(res.data.serverTime).getTime() - SYNC_OVERLAP_MS).toISOString())
+      } catch {
+        /* ignore */
+      }
+    }
+    if (deletedIds.size === 0) return { removed: 0 }
+
+    const before = items.value.length
+    const kept = items.value.filter((i) => !deletedIds.has(i.id))
+    const removed = before - kept.length
+    if (removed > 0) {
+      releaseRemovedObjectUrls(kept)
+      items.value = kept
+      totalItems.value = Math.max(0, totalItems.value - removed)
+      // 仅主视图修正侧边栏计数；归档视图的 totalItems 语义不同，不强行覆盖
+      if (currentView.value !== 'archive') {
+        mainTotalItems.value = Math.max(0, mainTotalItems.value - removed)
+      }
+    }
+    return { removed }
+  } catch (e: any) {
+    console.warn('[Clipboard] syncDeletions failed:', e?.message || e)
+    return null
+  }
+}
+
 export async function loadClipboardItems(opts?: {
   page?: number
   append?: boolean
@@ -68,6 +123,8 @@ export async function loadClipboardItems(opts?: {
     )
     console.log(`[Clipboard] loadClipboardItems response: ok=${res.ok}, status=${res.status}, items count=${Array.isArray(res.data?.items) ? res.data.items.length : 'N/A'}`)
     if (res.ok && Array.isArray(res.data?.items)) {
+      // 成功响应即推进删除感知同步点（含 append 空页分支，均为有效同步时刻）
+      touchLastSyncAt()
       // 后端返回空数组 = 没更多数据了。用实际条目数修正 totalItems，
       // 避免 pagination.total 虚高导致 hasMore 永远为 true、加载更多按钮卡住。
       if (res.data.items.length === 0 && append) {
@@ -170,16 +227,27 @@ export async function loadClipboardItems(opts?: {
           isFavorite: !!i.isFavorite,
           favoritedAt: i.favoritedAt ? new Date(i.favoritedAt).getTime() : undefined,
           metadata: (() => {
-            // 从服务端 protectionLevel 同步元数据标记
-            const meta = i.metadata && typeof i.metadata === 'object' ? { ...i.metadata } : {}
+            // metadata 可能是 JSON 字符串（兼容）或已解析对象（pg jsonb）；统一归一为对象，
+            // 同步服务端 protectionLevel 标记（含富文本捕获的 metadata.html）
+            let meta: any = {}
+            if (typeof i.metadata === 'string') {
+              try {
+                meta = JSON.parse(i.metadata) || {}
+              } catch {
+                /* keep {} */
+              }
+            } else if (i.metadata && typeof i.metadata === 'object') {
+              meta = { ...i.metadata }
+            }
             if (i.protectionLevel === 'advanced') meta.protected = true
             else if (i.protectionLevel === 'pin') meta.sensitive = true
             return meta
           })(),
           contentSize: i.contentSize,
-          // === 高级搜索 / 条目级密码 ===
+          // === 高级搜索 / 条目级密码 / 置顶 ===
           sourceDeviceId: i.sourceDevice?.id || i.sourceDeviceId || undefined,
           tags: i.metadata && Array.isArray(i.metadata.tags) ? i.metadata.tags : undefined,
+          pinned: !!(i.metadata && i.metadata.pinned === true),
           isProtected:
             !!(i.metadata && i.metadata.protected === true) ||
             !!(i.metadata && i.metadata.sensitive === true) ||

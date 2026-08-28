@@ -26,6 +26,8 @@ import deviceRoutes, { pairingRouter } from './routes/device.js';
 import clipboardRoutes from './routes/clipboard.js';
 import mediaRoutes from './routes/media.js';
 import syncRoutes from './routes/sync.js';
+import wsRoutes from './routes/ws.js';
+import authRefreshRoutes from './routes/auth-refresh.js';
 import { startCleanupScheduler } from './db/cleanup.js';
 import pool from './db/pool.js';
 import migrate from './db/migrate.js';
@@ -349,10 +351,14 @@ app.use('/api/auth', authVerifyRoutes);
 app.use('/api/auth', authPasswordRoutes);
 app.use('/api/auth', authProfileRoutes);
 app.use('/api/auth', authSessionRoutes);
+app.use('/api/auth', authRefreshRoutes);
 app.use('/api/auth', twoFactorRoutes);
 // 二维码扫码配对：init 需登录(Bearer)，redeem 匿名(扫码设备无 token) → 独立挂载，不挂全局 authenticateToken/csrf
 // 必须注册在下方认证版 /api/devices 之前，否则匿名 redeem 会被全局 authenticateToken 拦截返回 401
 app.use('/api/devices', apiLimiter, pairingRouter);
+
+// WebSocket CSRF token 签发（GET + Bearer，REST csrf 对 GET 自动放行，无需挂 csrfProtection）
+app.use('/api/ws', authenticateToken, apiLimiter, wsRoutes);
 
 app.use('/api/devices', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, checkDeviceLimit, (req, res, next) => {
   req.userId = req.user.userId;

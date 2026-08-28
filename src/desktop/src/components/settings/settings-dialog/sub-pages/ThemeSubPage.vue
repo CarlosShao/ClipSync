@@ -2,10 +2,10 @@
 import { useI18n } from '@/composables/useI18n'
 import { useTheme } from '@/composables/useTheme'
 import type { ThemeStyle } from '@/types'
-import { Check } from 'lucide-vue-next'
+import { Check, Monitor } from 'lucide-vue-next'
 
-const { t } = useI18n()
-const { currentStyle, allThemes, setStyle } = useTheme()
+const { t, tf } = useI18n()
+const { currentStyle, currentMode, allThemes, setStyle, setMode } = useTheme()
 const emit = defineEmits<{ back: [] }>()
 
 const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string }> = {
@@ -23,6 +23,21 @@ const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string 
   <div>
     <h3 class="sp-title">{{ t('sg_theme') }}</h3>
     <p class="sp-desc">{{ t('sg_theme_h') }}</p>
+    <!-- Follow-system mode: prominent card at the top, same active style as theme cards -->
+    <div
+      class="theme-card mode-card"
+      :class="{ active: currentMode === 'system' }"
+      @click="setMode('system')"
+    >
+      <div class="theme-preview mode-preview">
+        <Monitor :size="18" />
+        <span class="mode-preview-text">{{ tf('mode_system', '跟随系统') }}</span>
+      </div>
+      <div class="theme-name">
+        {{ tf('mode_system_desc', '自动跟随操作系统的亮暗偏好') }}
+        <Check v-if="currentMode === 'system'" :size="14" class="theme-check" />
+      </div>
+    </div>
     <div class="theme-grid">
       <div
         v-for="theme in allThemes"
@@ -71,6 +86,18 @@ const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string 
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 12px;
+}
+.mode-card {
+  margin-bottom: 12px;
+}
+.mode-preview {
+  gap: 8px;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.mode-preview-text {
+  font-size: 13px;
+  font-weight: 600;
 }
 .theme-card {
   border: 2px solid transparent;

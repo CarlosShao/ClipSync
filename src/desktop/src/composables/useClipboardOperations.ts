@@ -118,6 +118,34 @@ export function useClipboardOperations(
     }
   }
 
+  // 批量收藏/取消收藏：目标状态一致化（全部已收藏才取消，否则全部设为收藏）
+  async function handleBatchFavorite() {
+    const selected = clip.items.value.filter((i) => i.selected)
+    if (selected.length === 0) {
+      toast.show(t('batch_none'), 'warning')
+      return
+    }
+    const allFav = selected.every((i) => i.isFavorite)
+    const target = !allFav
+    const loadingId = toast.loading(t('batch_favorite_processing', { n: selected.length }))
+    try {
+      // toggleFavorite 内部乐观更新 + 失败回滚；串行执行避免并发竞态
+      for (const si of selected) {
+        if (si.isFavorite !== target) await clip.toggleFavorite(si)
+      }
+      toast.dismiss(loadingId)
+      toast.show(
+        target
+          ? t('batch_favorited', { n: selected.length })
+          : t('batch_unfavorited', { n: selected.length }),
+        'success',
+      )
+    } catch (err: any) {
+      toast.dismiss(loadingId)
+      toast.show(err.message || t('fav_fail'), 'error')
+    }
+  }
+
   function handleSingleDelete(item: ClipItem, onDeleted?: () => void) {
     const isFav = (item as any).isFavorite
 
@@ -257,6 +285,7 @@ export function useClipboardOperations(
   return {
     handleBatchDelete,
     handleBatchUnarchive,
+    handleBatchFavorite,
     handleSingleDelete,
     handleUnarchive,
     onArchiveToggle,

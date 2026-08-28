@@ -255,6 +255,7 @@ watch(
       @toggle-filter-panel="toggleFilterPanel"
       @batch-delete="ops.handleBatchDelete"
       @batch-unarchive="ops.handleBatchUnarchive"
+      @batch-favorite="ops.handleBatchFavorite"
       @batch-ai-suggest="openAiSuggest"
     />
 

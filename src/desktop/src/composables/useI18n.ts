@@ -30,10 +30,15 @@ export function useI18n() {
     return val || key
   }
 
+  // Fallback-first variant: returns `fallback` instead of the raw key literal when missing
+  function tf(key: string, fallback: string): string {
+    return dict.value[key] || _dicts.en[key] || fallback
+  }
+
   function setLang(lang: Lang) {
     _lang.value = lang
     localStorage.setItem(SAVED_LANG_KEY, lang)
   }
 
-  return { currentLang, t, setLang }
+  return { currentLang, t, tf, setLang }
 }

@@ -3,8 +3,8 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
-import { useTheme, currentMode } from '@/composables/useTheme'
-import { api, prefetchCsrf } from '@/api/client'
+import { useTheme } from '@/composables/useTheme'
+import { api, prefetchCsrf, storeRefreshToken } from '@/api/client'
 import { verify2FALogin } from '@/api/auth'
 import * as tauri from '@/lib/tauri'
 import { Eye, EyeOff, Sun, Moon, ArrowLeft, X } from 'lucide-vue-next'
@@ -18,7 +18,7 @@ const emit = defineEmits<{ (e: 'login-success'): void }>()
 const configStore = useConfigStore()
 const { t } = useI18n()
 const toast = useSonner()
-const { toggleMode } = useTheme()
+const { toggleMode, resolvedMode } = useTheme()
 
 // ===== Auth state =====
 const authView = ref<'login-phone' | 'login-password' | 'register' | 'set-password' | 'login-2fa'>('login-phone')
@@ -192,6 +192,7 @@ async function handleLogin() {
           configStore.config.token = res.data.token
           configStore.config.user_id = res.data.user?.id || ''
           localStorage.setItem('clipsync-token', res.data.token)
+          storeRefreshToken(res.data.refreshToken)
           await prefetchCsrf()
           toast.show(t('login_success'), 'success')
           // 直接导航，不依赖 watch（Pinia reactivity 可能不触发）
@@ -256,6 +257,7 @@ async function handleLogin() {
           configStore.config.token = token
           configStore.config.user_id = userId
           localStorage.setItem('clipsync-token', token)
+          storeRefreshToken(res.data.refreshToken || res.data.data?.refreshToken)
         }
         await prefetchCsrf()
         toast.show(t('login_success'), 'success')
@@ -285,6 +287,7 @@ async function handle2FAVerify() {
       configStore.config.token = res.data.token
       configStore.config.user_id = res.data.user?.id || ''
       localStorage.setItem('clipsync-token', res.data.token)
+      storeRefreshToken(res.data.refreshToken)
       await prefetchCsrf()
       toast.show(t('login_success'), 'success')
       window.location.href = '/app/clipboard'
@@ -552,12 +555,12 @@ const isRegisterView = computed(() => authView.value === 'register')
           variant="ghost"
           size="sm"
           class="theme-pill theme-pill-absolute"
-          :title="currentMode === 'dark' ? t('mode_light') : t('mode_dark')"
+          :title="resolvedMode === 'dark' ? t('mode_light') : t('mode_dark')"
           @click="toggleMode"
         >
-          <Moon v-if="currentMode === 'dark'" :size="14" />
+          <Moon v-if="resolvedMode === 'dark'" :size="14" />
           <Sun v-else :size="14" />
-          <span>{{ currentMode === 'dark' ? t('mode_light') : t('mode_dark') }}</span>
+          <span>{{ resolvedMode === 'dark' ? t('mode_light') : t('mode_dark') }}</span>
         </Button>
         <div class="auth-card">
           <!-- ===== LOGIN ===== -->

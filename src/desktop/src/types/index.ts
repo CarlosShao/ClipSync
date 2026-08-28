@@ -10,7 +10,7 @@ export interface AppConfig {
 
 export type ThemeStyle = 'vercel' | 'clipsync' | 'notion' | 'linear' | 'apple' | 'raycast' | 'arc'
 
-export type ThemeMode = 'light' | 'dark'
+export type ThemeMode = 'light' | 'dark' | 'system'
 
 export interface ClipboardImageInfo {
   available: boolean

@@ -11,7 +11,7 @@ const QuickPasteStandalone = defineAsyncComponent(() => import('@/views/QuickPas
 
 const configStore = useConfigStore()
 const collectionStore = useCollectionStore()
-const { currentMode } = useTheme()
+const { resolvedMode } = useTheme()
 const { setLang } = useI18n()
 
 // Detect standalone QuickPaste mode via URL parameter.
@@ -28,7 +28,7 @@ onMounted(async () => {
   })
   // Sync titlebar color on mount
   try {
-    tauri.setTitlebarMode(currentMode.value === 'dark')
+    tauri.setTitlebarMode(resolvedMode.value === 'dark')
   } catch (e) {
     console.warn('[App] setTitlebarMode failed:', e)
   }

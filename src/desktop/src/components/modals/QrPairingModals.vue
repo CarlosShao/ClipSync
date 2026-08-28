@@ -146,7 +146,7 @@ async function handlePairingToken(raw: string) {
       platform: detectPlatform(),
     })
     if (res.ok && res.data?.token) {
-      await configStore.completeLogin(res.data.token, res.data.user.id)
+      await configStore.completeLogin(res.data.token, res.data.user.id, res.data.refreshToken)
       await device.loadDevices()
       toast.show(t('pair_redeem_success'), 'success')
       stopScan()

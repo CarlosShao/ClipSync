@@ -189,7 +189,7 @@ fn handle_content(
     content: ClipContent,
 ) {
     match content {
-        ClipContent::Text(text) => {
+        ClipContent::Text { text, html } => {
             // Echo guard: if this text equals what ClipSync itself just wrote to the
             // clipboard (paste / sync / copy button), skip it so we don't pop a summary
             // for our own write. Consume the guard on match.
@@ -218,6 +218,7 @@ fn handle_content(
                     "clipboard-changed",
                     serde_json::json!({
                         "content": text,
+                        "html": html,
                         "timestamp": chrono::Utc::now().to_rfc3339(),
                     }),
                 );
@@ -288,7 +289,10 @@ fn handle_content(
 }
 
 enum ClipContent {
-    Text(String),
+    /// Plain text plus optional captured rich text (Windows "HTML Format" fragment).
+    /// HTML capture is an *enhancement* to plain text: `html` is None whenever the
+    /// clipboard has no usable CF_HTML payload, and the text path must never depend on it.
+    Text { text: String, html: Option<String> },
     Files(Vec<String>),
     /// `raw` holds the exact clipboard bytes at detection time; `src` tells the
     /// encoder whether they are PNG already or DIB/BMP that need conversion.
@@ -392,7 +396,10 @@ fn read_clipboard_raw() -> ClipContent {
                         String::from_utf16_lossy(&utf16_chars)
                     }
                 };
-                return ClipContent::Text(text);
+                // HTML Format（富文本增强）：浏览器/Office 复制富文本时与 CF_UNICODETEXT 并存。
+                // 读取失败或缺失都不影响纯文本主流程（html 为 None）。
+                let html = read_clipboard_html_format();
+                return ClipContent::Text { text, html };
             }
             Ok(_) => {}
             Err(e) => eprintln!("[ClipMon] get_string err: {}", e),
@@ -400,6 +407,91 @@ fn read_clipboard_raw() -> ClipContent {
     }
 
     ClipContent::Empty
+}
+
+/// Read the Windows registered clipboard format "HTML Format" (CF_HTML, 49449) and
+/// return the HTML fragment WITHOUT the CF_HTML text header. Returns None whenever
+/// the format is absent or unusable — HTML capture is an enhancement to plain text
+/// and must never break the text path. Must be called while the clipboard is open.
+fn read_clipboard_html_format() -> Option<String> {
+    use clipboard_win::raw;
+
+    let fmt = raw::register_format("HTML Format")?;
+    let code = fmt.get();
+    if !raw::is_format_avail(code) {
+        return None;
+    }
+    let n = raw::size(code)?.get();
+    // Sanity cap: real web copies are far below 8 MiB; refuse absurd allocations.
+    if n == 0 || n > 8 * 1024 * 1024 {
+        return None;
+    }
+    let mut buf = vec![0u8; n];
+    let read = raw::get(code, &mut buf).unwrap_or(0);
+    if read == 0 {
+        return None;
+    }
+    buf.truncate(read);
+    extract_cf_html_fragment(&buf)
+}
+
+/// Parse a CF_HTML payload ("Version:0.9\r\nStartHTML:...\r\n...<html>...") and extract
+/// the fragment between the StartFragment..EndFragment byte offsets, falling back to
+/// StartHTML..EndHTML. Offsets are BYTE positions counted from the start of the whole
+/// payload (header included); the body is UTF-8 from all mainstream producers.
+fn extract_cf_html_fragment(data: &[u8]) -> Option<String> {
+    // The header is short ASCII; only scan the first 4 KiB for field keys.
+    let head = &data[..data.len().min(4096)];
+
+    /// Locate `Key:` in the ASCII header and parse the integer that follows it.
+    fn header_field(head: &[u8], key: &str) -> Option<usize> {
+        let needle = key.as_bytes();
+        if needle.len() + 1 > head.len() {
+            return None;
+        }
+        for i in 0..=(head.len() - needle.len() - 1) {
+            if &head[i..i + needle.len()] == needle && head[i + needle.len()] == b':' {
+                let rest = &head[i + needle.len() + 1..];
+                let digits: Vec<u8> = rest
+                    .iter()
+                    .copied()
+                    .skip_while(|&b| b == b' ')
+                    .take_while(|&b| b.is_ascii_digit())
+                    .collect();
+                if digits.is_empty() {
+                    return None;
+                }
+                return std::str::from_utf8(&digits).ok()?.parse::<usize>().ok();
+            }
+        }
+        None
+    }
+
+    let take = |start: usize, end: usize| -> Option<String> {
+        if start > 0 && start < end && end <= data.len() {
+            let frag = String::from_utf8_lossy(&data[start..end])
+                .trim_matches('\0')
+                .trim()
+                .to_string();
+            if !frag.is_empty() {
+                return Some(frag);
+            }
+        }
+        None
+    };
+
+    // Preferred: the actual selection fragment (excludes the <!--StartFragment--> wrapper).
+    if let Some(frag) = take(
+        header_field(head, "StartFragment").unwrap_or(0),
+        header_field(head, "EndFragment").unwrap_or(0),
+    ) {
+        return Some(frag);
+    }
+    // Fallback: the whole HTML document.
+    take(
+        header_field(head, "StartHTML").unwrap_or(0),
+        header_field(head, "EndHTML").unwrap_or(0),
+    )
 }
 
 struct ClipGuard;

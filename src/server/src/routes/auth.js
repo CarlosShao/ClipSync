@@ -8,6 +8,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { isValidPhone, isValidCode, sanitizeString } from '../validation/validator.js';
 import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter, getRedisClient, createRateLimiter } from '../middleware/rateLimiter.js';
 import { blacklistJti, parseDurationToSeconds } from '../utils/redis-client.js';
+import { issueRefreshToken } from '../utils/refreshToken.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 import { logger } from '../utils/logger.js';
@@ -53,7 +54,10 @@ export async function createSessionAndGenerateToken(user, req) {
     { expiresIn: config.jwt.expiresIn }
   );
 
-  return { token, sessionId };
+  // 签发旋转式 refresh token（默认 30 天），移动端/桌面端借此获得长期会话
+  const refreshToken = await issueRefreshToken(user.id, sessionId);
+
+  return { token, sessionId, refreshToken };
 }
 
 /**

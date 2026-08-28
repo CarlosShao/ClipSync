@@ -50,7 +50,7 @@ import {
 import { releaseRemovedObjectUrls, releaseAllObjectUrls } from './clipboardObjectUrls'
 import { simpleHash, apiOrEnqueue, resizeImageIfNeeded, ensureDeviceId } from './clipboardUpload'
 import { enqueueClipboardTask } from './clipboardQueue'
-import { loadClipboardItems, loadMore, loadDevices, updateItemContent, clearAdvancedFilters } from './clipboardLoad'
+import { loadClipboardItems, loadMore, loadDevices, updateItemContent, clearAdvancedFilters, syncDeletions } from './clipboardLoad'
 
 const { t } = useI18n()
 
@@ -204,7 +204,9 @@ export function useClipboard() {
         if (text && text.trim()) {
           // If this text was just copied from ClipSync UI, skip it
           if (isClipboardChangeFromInternalCopy(payload, undefined)) return
-          enqueueClipboardTask({ type: 'text', payload: text })
+          // 富文本捕获：Rust monitor 读到 "HTML Format" 时在 payload.html 附带片段（旧版无此字段）
+          const html = typeof payload?.html === 'string' && payload.html.trim() ? payload.html : undefined
+          enqueueClipboardTask({ type: 'text', payload: text, html })
         }
       }
     } catch (e) {
@@ -502,6 +504,40 @@ export function useClipboard() {
       ;(item as any).favoritedAt = prevFavAt
       console.warn('[Clipboard] toggleFavorite failed:', res.error)
     }
+  }
+
+  // 置顶/取消置顶（跨设备：metadata.pinned，后端列表查询 pinned 优先排序）。
+  // 乐观更新本地 + 前置排序，失败回滚。仅服务端条目可置顶（本地临时项无后端 id）。
+  async function togglePinned(item: ClipItem): Promise<boolean> {
+    const next = !item.pinned
+    const prev = item.pinned ?? false
+    item.pinned = next
+    if (item.metadata) item.metadata.pinned = next
+    resortPinned()
+    try {
+      const res = await api('PUT', `/api/clipboard/${item.id}/pinned`, { pinned: next })
+      if (!res.ok) {
+        item.pinned = prev
+        if (item.metadata) item.metadata.pinned = prev
+        resortPinned()
+        console.warn('[Clipboard] togglePinned failed:', res.error)
+        return false
+      }
+      return true
+    } catch (e) {
+      item.pinned = prev
+      if (item.metadata) item.metadata.pinned = prev
+      resortPinned()
+      console.warn('[Clipboard] togglePinned error:', e)
+      return false
+    }
+  }
+
+  // 置顶条目前置（保持各自内部相对顺序）
+  function resortPinned() {
+    const pinnedItems = items.value.filter((i) => i.pinned)
+    const rest = items.value.filter((i) => !i.pinned)
+    items.value = [...pinnedItems, ...rest]
   }
 
   /**
@@ -814,6 +850,7 @@ export function useClipboard() {
     batchDelete,
     deleteSingle,
     toggleFavorite,
+    togglePinned,
     archiveItem,
     unarchiveItem,
     setExpiry,
@@ -824,6 +861,7 @@ export function useClipboard() {
     toggleBatch,
     uploadFileItem,
     refresh: loadClipboardItems,
+    syncDeletions,
     resetImages,
     clearContentCache,
     isSensitiveContent,

@@ -7,7 +7,7 @@ import { useSearchHistory } from '@/composables/useSearchHistory'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import SearchHistoryDropdown from './SearchHistoryDropdown.vue'
-import { Search, Filter, Trash2, ArchiveRestore, X, Sparkles } from 'lucide-vue-next'
+import { Search, Filter, Trash2, ArchiveRestore, X, Sparkles, Star } from 'lucide-vue-next'
 
 const props = defineProps<{ isArchive: boolean; showFilterPanel: boolean }>()
 const emit = defineEmits<{
@@ -15,6 +15,7 @@ const emit = defineEmits<{
   'batch-delete': []
   'batch-unarchive': []
   'batch-ai-suggest': []
+  'batch-favorite': []
 }>()
 
 const { t } = useI18n()
@@ -137,6 +138,18 @@ function clearSearch() {
       @click="emit('toggle-filter-panel')"
     >
       <Filter :size="16" />
+    </Button>
+    <Button
+      v-if="selectedCount > 0 && !isArchive"
+      variant="outline"
+      size="sm"
+      class="batch-fav-btn"
+      :title="t('batch_favorite_btn')"
+      @click="emit('batch-favorite')"
+    >
+      <Star :size="14" />
+      <span>{{ t('batch_favorite_btn') || '收藏' }}</span>
+      <span class="batch-count">{{ selectedCount }}</span>
     </Button>
     <Button
       v-if="selectedCount > 0 && !isArchive"

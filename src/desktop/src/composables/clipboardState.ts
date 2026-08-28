@@ -19,6 +19,7 @@ export interface ClipItem {
   isProtected?: boolean
   // === 归档字段 ===
   isArchived?: boolean
+  pinned?: boolean
   // === 用户侧自动过期字段 ===
   expiresAt?: string | null
 }

@@ -14,6 +14,7 @@ import {
   FileText,
   Folder,
   Star,
+  Pin,
   Archive,
   Trash2,
   Lock,
@@ -116,6 +117,22 @@ function actFavorite() {
   }
 }
 
+// 置顶：仅服务端条目可置顶（本地临时项无后端 id）
+async function actPin() {
+  if (props.item) {
+    const isLocal =
+      props.item.id.startsWith('local-') || props.item.id.startsWith('text-') || props.item.id.startsWith('img-')
+    if (isLocal) {
+      toast.show(t('pin_local_hint'), 'warning')
+    } else {
+      const ok = await clip.togglePinned(props.item)
+      if (ok) toast.show(props.item.pinned ? t('pinned') : t('unpinned'), 'success')
+      else toast.show(t('pin_failed'), 'error')
+    }
+    emit('close')
+  }
+}
+
 function actArchiveToggle() {
   if (props.item) {
     emit('archive-toggle', props.item)
@@ -162,6 +179,11 @@ async function ctxApplyExpiry(iso: string | null) {
         <button v-if="!isArchive" type="button" class="ctx-item" @click="actFavorite">
           <Star :size="14" :fill="item!.isFavorite ? 'currentColor' : 'none'" />{{
             item!.isFavorite ? t('unfavorite') : t('favorite')
+          }}
+        </button>
+        <button v-if="!isArchive" type="button" class="ctx-item" @click="actPin">
+          <Pin :size="14" :fill="item!.pinned ? 'currentColor' : 'none'" />{{
+            item!.pinned ? t('unpin_action') : t('pin_action')
           }}
         </button>
         <button type="button" class="ctx-item" @click="actArchiveToggle">

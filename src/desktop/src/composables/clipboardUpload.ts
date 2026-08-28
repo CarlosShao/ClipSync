@@ -102,6 +102,10 @@ export function resizeImageIfNeeded(dataUrl: string, maxPx = 1080): Promise<stri
 // 文本同步大小上限：比后端 express.json 的 10MB 小 1MB 留余量，避免 413 Payload Too Large
 const MAX_TEXT_UPLOAD_SIZE = 9 * 1024 * 1024
 
+// 富文本捕获（Windows "HTML Format"）上限：html 超 2MB 时丢弃只留纯文本，
+// 防止 metadata.html 拖垮请求体（后端 express.json 10MB 上限）与 DB 行体积。
+const CAPTURED_HTML_LIMIT = 2 * 1024 * 1024
+
 const DEVICE_ID_KEY = 'clipsync-device-id'
 
 function guessPlatform(): string {
@@ -165,7 +169,7 @@ export async function ensureDeviceId(): Promise<string | null> {
   return null
 }
 
-export async function uploadToServer(content: string, type: ClipItem['type'] = 'text') {
+export async function uploadToServer(content: string, type: ClipItem['type'] = 'text', html?: string) {
   const hash = simpleHash(content)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) return
   recentUploadHashes.set(hash, Date.now())
@@ -181,8 +185,18 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
   // 归档视图下跳过乐观插入：新条目未归档，不应出现在归档列表中
   const isArchiveView = currentView.value === 'archive'
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  // 富文本增强：捕获到 HTML 片段时随条目放入 metadata.html（超限丢弃，只留纯文本）
+  const keptHtml = html && html.length > 0 && html.length <= CAPTURED_HTML_LIMIT ? html : undefined
   if (!isArchiveView) {
-    items.value.unshift({ id: localId, type, content, source: 'Desktop', timestamp: Date.now(), selected: false })
+    items.value.unshift({
+      id: localId,
+      type,
+      content,
+      source: 'Desktop',
+      timestamp: Date.now(),
+      selected: false,
+      ...(keptHtml ? { metadata: { html: keptHtml } } : {}),
+    })
     // 同步即时更新顶部计数：乐观插入即 +1（刷新时 loadClipboardItems 会用服务器真实
     // total 重设，自动纠正，不会重复计数）。否则同步后数字要等刷新/加载更多才变化。
     totalItems.value += 1
@@ -199,7 +213,7 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
     }
     return
   }
-  const uploadPayload = {
+  const uploadPayload: Record<string, any> = {
     content,
     contentEncrypted: content,
     sourceDeviceId: deviceId,
@@ -207,6 +221,7 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
     contentPreview: content.slice(0, 5000),
     contentSize: content.length,
   }
+  if (keptHtml) uploadPayload.metadata = { html: keptHtml }
   try {
     const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
     // 上传成功后：用服务器返回的 id 替换本地临时 id，并缓存内容

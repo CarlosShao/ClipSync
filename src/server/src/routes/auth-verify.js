@@ -6,6 +6,7 @@ import config from '../config.js';
 import { isValidPhone, isValidCode, sanitizeString } from '../validation/validator.js';
 import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed } from '../middleware/rateLimiter.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
+import { issueRefreshToken } from '../utils/refreshToken.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -31,7 +32,9 @@ async function createSessionAndGenerateToken(user, req) {
     { expiresIn: config.jwt.expiresIn }
   );
 
-  return { token, sessionId };
+  const refreshToken = await issueRefreshToken(user.id, sessionId);
+
+  return { token, sessionId, refreshToken };
 }
 
 // 发送验证码（手机：MVP 固定 888888）

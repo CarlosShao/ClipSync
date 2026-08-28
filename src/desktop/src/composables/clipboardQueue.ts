@@ -11,6 +11,8 @@ import { logger } from '@/utils/logger'
 interface ClipboardTask {
   type: 'file' | 'image' | 'text'
   payload: any
+  /** 富文本捕获（可选，仅 text）：Windows "HTML Format" 解析出的 HTML 片段 */
+  html?: string
 }
 
 const clipboardQueue: ClipboardTask[] = []
@@ -87,7 +89,7 @@ async function processClipboardQueue() {
             continue
           }
           if (!items.value.some((i) => (i.type === 'text' || i.type === 'link') && i.content === text)) {
-            await uploadToServer(text, itemType)
+            await uploadToServer(text, itemType, task.html)
           } else {
             logger.debug('[Clipboard] queue: skip text already exists')
           }
