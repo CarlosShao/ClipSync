@@ -97,26 +97,6 @@
       <Switch :model-value="configStore.frosted" @update:model-value="configStore.setFrosted($event)" />
     </div>
 
-    <!-- 表面透明度（毛玻璃开启时可见） -->
-    <div v-if="configStore.frosted" class="sg-row">
-      <div class="sg-label">
-        <div class="sg-name">{{ t('ap_surface_transparency') }}</div>
-        <div class="sg-hint">{{ t('ap_surface_transparency_h') }}</div>
-      </div>
-      <div class="ap-slider-wrap">
-        <input
-          type="range"
-          class="ap-slider"
-          min="0"
-          max="60"
-          step="5"
-          :value="configStore.surfaceTransparency"
-          @input="configStore.setSurfaceTransparency(Number(($event.target as HTMLInputElement).value))"
-        />
-        <span class="ap-slider-val">{{ configStore.surfaceTransparency }}%</span>
-      </div>
-    </div>
-
     <!-- 自定义背景图片 -->
     <div class="sg-row">
       <div class="sg-label">
@@ -180,7 +160,7 @@ const FONT_FAMILIES = [
 ]
 
 /** 背景图降采样：长边 ≤1920、JPEG 0.85，控制 localStorage 占用。
- *  选图后自动开启毛玻璃（不开启时主表面全不透明，背景图完全透不出来） */
+ *  设置后即为"壁纸透传"模式（全窗口半透明显示壁纸，清晰不虚化） */
 function handleBgFile(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
@@ -199,7 +179,6 @@ function handleBgFile(e: Event) {
       if (!ctx) return
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
       configStore.setBgImage(canvas.toDataURL('image/jpeg', 0.85))
-      if (!configStore.frosted) configStore.setFrosted(true)
     }
     img.src = reader.result as string
   }

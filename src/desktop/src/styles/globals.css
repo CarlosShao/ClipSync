@@ -764,14 +764,9 @@ html.theme-raycast.light {
       'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* 背景图层（设置→外观→背景图片）：压暗渐变叠在图片上保证内容可读。
-       --app-bg-image / --app-bg-dim 由 configStore.applyAppearance 写入 */
+    /* 自定义壁纸（设置→外观）由 configStore 注入 <style id="clipsync-bg-style">：
+       压暗渐变 + 背景图。这里只声明铺排方式；透传程度交由表面变量控制 */
     background-color: var(--bg-base);
-    background-image: linear-gradient(
-        rgba(0, 0, 0, var(--app-bg-dim, 0)),
-        rgba(0, 0, 0, var(--app-bg-dim, 0))
-      ),
-      var(--app-bg-image, none);
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -779,11 +774,11 @@ html.theme-raycast.light {
     color: var(--text-primary);
   }
 
-  /* 毛玻璃（设置→外观）：表面在 configStore 里被置为半透明后，
-     #app 的 backdrop-filter 把底下的背景图虚化，形成磨砂观感 */
+  /* 磨砂（设置→外观）：在壁纸透传的基础上给全窗口叠加虚化质感；
+     没有壁纸时透出的是纯色底，效果有限 —— 建议搭配背景图使用 */
   html.frosted #app {
-    backdrop-filter: blur(16px) saturate(1.05);
-    -webkit-backdrop-filter: blur(16px) saturate(1.05);
+    backdrop-filter: blur(18px) saturate(1.05);
+    -webkit-backdrop-filter: blur(18px) saturate(1.05);
   }
 }
 
