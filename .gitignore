@@ -139,3 +139,7 @@ xcuserdata/
 .build/
 DerivedData/
 .worktrees/
+
+# stylelint / 子代理排查时的临时输出产物
+.stylelint-out.json
+.*-out.json
