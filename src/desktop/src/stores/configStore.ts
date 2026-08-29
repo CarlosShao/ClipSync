@@ -47,6 +47,11 @@ export const useConfigStore = defineStore('config', () => {
       // （旧版本持久化的文件）时才回落默认值；空字符串 = 用户主动清空 = 未连接。
       if (c.server_url == null) {
         config.value.server_url = isDev ? '' : DEFAULT_SERVER_URL
+      } else if (isDev && (!c.server_url || c.server_url === DEFAULT_SERVER_URL)) {
+        // dev 补充：Rust 端 AppConfig::default() 会给出 http://localhost:3001，
+        // 它与"用户显式保存的值"无法区分。dev 下默认值/空值一律走 Vite proxy（同源，
+        // 避免 1420→3001 跨域预检被 CORS 拦截）；仅当用户配置了其它地址时才直连。
+        config.value.server_url = ''
       }
       const auto = await tauri.isAutostartEnabled().catch(() => false)
       autostart.value = auto

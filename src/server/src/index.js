@@ -110,7 +110,7 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-csrf-token', 'x-csrf-token-v2'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-csrf-token', 'x-csrf-token-v2', 'Idempotency-Key', 'x-request-id'],
   // 开发环境用短缓存，避免改了配置后浏览器还缓存旧的失败结果
   maxAge: config.nodeEnv === 'development' ? 10 : 86400,
 };
