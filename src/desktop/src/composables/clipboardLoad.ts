@@ -376,29 +376,11 @@ export async function loadDevices(): Promise<{ id: string; name: string; platfor
   return devicesCache
 }
 
-// 本地临时 id（未拿到服务端 UUID）没有版本可言，后端会 400，直接跳过
-const LOCAL_ID_PREFIX_RE = /^(local-|text-|img-|file-|browser-)/
-
-/**
- * 覆盖条目内容前记录一份版本快照（fire-and-forget）。
- * 本地只有预览内容时也能记：宁可记一份截断快照，也别让版本历史永远空着。
- */
-function snapshotVersionBeforeUpdate(itemId: string) {
-  if (LOCAL_ID_PREFIX_RE.test(itemId)) return
-  const current = items.value.find((i) => i.id === itemId)
-  const snapshot = current?.content || ''
-  void api('POST', '/api/versions', {
-    clipboardItemId: itemId,
-    contentEncrypted: snapshot,
-    contentPreview: snapshot.slice(0, 5000),
-    contentSize: snapshot.length,
-    changeDescription: 'Auto snapshot before content update',
-  }).catch((e: any) => {
-    console.warn('[Clipboard] version snapshot failed:', e?.message || e)
-  })
-}
-
 // === 条目级内容更新（标签 / 条目级密码 protection 标记 / 内容本身）===
+// 版本快照**不在这里做**：服务端 `PUT /api/clipboard/:id` 在真正 UPDATE 之前已经
+// SELECT 出旧 content_encrypted 并调 createVersion() 落版本，失败静默。
+// 前端不要再补一份 —— 两者抓的都是"更新前的旧内容"，同时开会产生内容重复的两条版本。
+// 服务端方案还额外覆盖移动端/网页端的内容变更，前端快照只覆盖桌面端。
 // 后端 PUT /api/clipboard/:id 做浅合并：只接受 metadata 白名单字段
 // (protected/protectedAt/tags) 与可选的 content/contentPreview/contentSize。
 export async function updateItemContent(
@@ -411,11 +393,6 @@ export async function updateItemContent(
   },
 ): Promise<boolean> {
   try {
-    // 内容即将被覆盖 → 先落一个版本快照（B9 / 决策 D4）。
-    // 服务端版本 API 一直都在（GET /api/versions/:id、POST /api/versions/restore/:id），
-    // 缺的从来都是「写入方」：不写版本，版本历史入口点开必然是空的假入口。
-    // 只覆盖内容时才记版本（改标签/保护标记不产生版本）；失败静默，绝不阻塞主更新。
-    if (payload.content !== undefined) snapshotVersionBeforeUpdate(itemId)
     const res = await api('PUT', `/api/clipboard/${itemId}`, payload)
     if (!res.ok) {
       console.warn('[Clipboard] updateItemContent failed:', res.status, res.error)

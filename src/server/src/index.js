@@ -29,6 +29,7 @@ import syncRoutes from './routes/sync.js';
 import wsRoutes from './routes/ws.js';
 import authRefreshRoutes from './routes/auth-refresh.js';
 import { startCleanupScheduler } from './db/cleanup.js';
+import { startVersionCleanupScheduler } from './utils/versionManager.js';
 import pool from './db/pool.js';
 import migrate from './db/migrate.js';
 import { csrfProtection, handleGetCsrfToken } from './middleware/csrf.js';
@@ -568,6 +569,10 @@ if (!isClusteredPrimary) {
 
     // Start periodic cleanup of expired items
     startCleanupScheduler();
+
+    // 版本历史自动清理：服务端已在 PUT /api/clipboard/:id 覆盖前自动落版本，
+    // 若无人清理 file_versions 会随每次内容变更无上限膨胀（autoCleanupInterval 此前零引用）
+    startVersionCleanupScheduler();
 
     // 启用查询性能监控（非生产环境或明确启用时）
     if (config.nodeEnv !== 'production' || process.env.ENABLE_QUERY_MONITORING === 'true') {

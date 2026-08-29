@@ -10,6 +10,7 @@
  */
 
 import pool from '../db/pool.js';
+import { logger } from './logger.js';
 
 /**
  * 版本管理配置
@@ -199,6 +200,40 @@ export async function restoreVersion(versionId, userId) {
 
     const version = versionResult.rows[0];
 
+    // 恢复前先为「当前内容」落一版快照：下面的 UPDATE 会把当前内容直接覆盖掉。
+    // 原实现只在覆盖后记一版「被恢复进去的旧内容」，导致恢复前的当前内容
+    // 没有任何版本记录、被永久覆盖丢失（恢复就不可逆了）。
+    const beforeRestore = await client.query(
+      `SELECT content_encrypted, content_preview, content_size, metadata, source_device_id
+       FROM clipboard_items WHERE id = $1 AND user_id = $2`,
+      [version.clipboard_item_id, userId]
+    );
+    const prevContent = beforeRestore.rows[0];
+    if (prevContent && prevContent.content_encrypted != null) {
+      const maxBefore = await client.query(
+        'SELECT COALESCE(MAX(version_number), 0) as max_version FROM file_versions WHERE clipboard_item_id = $1',
+        [version.clipboard_item_id]
+      );
+      await client.query(
+        `INSERT INTO file_versions (
+          clipboard_item_id, user_id, version_number,
+          content_encrypted, content_preview, content_size,
+          metadata, source_device_id, change_description
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          version.clipboard_item_id,
+          userId,
+          maxBefore.rows[0].max_version + 1,
+          prevContent.content_encrypted,
+          prevContent.content_preview,
+          prevContent.content_size,
+          prevContent.metadata,
+          prevContent.source_device_id,
+          `Auto snapshot before restore to version ${version.version_number}`,
+        ]
+      );
+    }
+
     // 更新剪贴板项为版本内容
     const updateResult = await client.query(
       `UPDATE clipboard_items
@@ -329,6 +364,39 @@ export async function getVersionStats(userId) {
   return result.rows[0];
 }
 
+/**
+ * 启动版本自动清理调度器（应用启动时调用一次）。
+ *
+ * 背景：服务端已在 `PUT /api/clipboard/:id` 覆盖内容前自动落版本快照，
+ * 从此每次内容变更都会往 file_versions 写一行。而 cleanupOldVersions /
+ * limitVersionsPerItem 此前只挂在手动端点 `POST /api/versions/cleanup` 上，
+ * VERSION_CONFIG.autoCleanupInterval 全仓库零引用 —— 表会无上限膨胀。
+ * 本函数把这个配置真正用起来（默认每 1h 跑一次：超 90 天的、以及每条目超 50 版的）。
+ *
+ * 注意：测试环境不要调用，否则 setInterval 会挂住 jest 进程。
+ */
+export function startVersionCleanupScheduler() {
+  const runCleanup = async () => {
+    try {
+      const byAge = await cleanupOldVersions();
+      const byCount = await limitVersionsPerItem();
+      if (byAge || byCount) {
+        logger.info('[Versions] auto cleanup done', { byAge, byCount });
+      }
+    } catch (err) {
+      // 清理是附属能力，失败绝不能影响主流程
+      logger.error('[Versions] auto cleanup failed (non-fatal):', { error: err.message });
+    }
+  };
+
+  // 启动时先跑一次，避免长期未重启的实例积攒历史脏数据
+  runCleanup();
+  const timer = setInterval(runCleanup, VERSION_CONFIG.autoCleanupInterval);
+  // 不阻止进程退出
+  if (typeof timer.unref === 'function') timer.unref();
+  return timer;
+}
+
 export default {
   createVersion,
   getVersionHistory,
@@ -337,5 +405,6 @@ export default {
   cleanupOldVersions,
   limitVersionsPerItem,
   getVersionStats,
+  startVersionCleanupScheduler,
   VERSION_CONFIG,
 };
