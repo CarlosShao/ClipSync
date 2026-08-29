@@ -768,7 +768,11 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
   position: relative;
   width: 0;
   min-width: 0;
-  background: var(--bg-surface);
+  /* AI 模块毛玻璃：主题色柔和渐变（tabbit 风格）叠在表面底色上 */
+  background:
+    linear-gradient(195deg, color-mix(in srgb, var(--accent) 9%, transparent) 0%, transparent 45%),
+    linear-gradient(320deg, color-mix(in srgb, var(--accent) 5%, transparent) 0%, transparent 35%),
+    var(--bg-surface);
   border-left: 1px solid var(--border-default);
   display: flex;
   flex-direction: row;

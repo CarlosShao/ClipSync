@@ -87,66 +87,19 @@
         </button>
       </div>
     </div>
-
-    <!-- 毛玻璃效果 -->
-    <div class="sg-row">
-      <div class="sg-label">
-        <div class="sg-name">{{ t('ap_frosted') }}</div>
-        <div class="sg-hint">{{ t('ap_frosted_h') }}</div>
-      </div>
-      <Switch :model-value="configStore.frosted" @update:model-value="configStore.setFrosted($event)" />
-    </div>
-
-    <!-- 自定义背景图片 -->
-    <div class="sg-row">
-      <div class="sg-label">
-        <div class="sg-name">{{ t('ap_bg_image') }}</div>
-        <div class="sg-hint">{{ t('ap_bg_image_h') }}</div>
-      </div>
-      <div class="ap-bg-actions">
-        <input ref="bgFileRef" type="file" accept="image/*" class="ap-file-hidden" @change="handleBgFile" />
-        <Button variant="outline" size="sm" @click="bgFileRef?.click()">{{ t('ap_bg_choose') }}</Button>
-        <Button v-if="configStore.bgImage" variant="ghost" size="sm" @click="configStore.setBgImage('')">
-          {{ t('ap_bg_clear') }}
-        </Button>
-      </div>
-    </div>
-
-    <!-- 背景压暗（设置了背景图时可见） -->
-    <div v-if="configStore.bgImage" class="sg-row">
-      <div class="sg-label">
-        <div class="sg-name">{{ t('ap_bg_dim') }}</div>
-        <div class="sg-hint">{{ t('ap_bg_dim_h') }}</div>
-      </div>
-      <div class="ap-slider-wrap">
-        <input
-          type="range"
-          class="ap-slider"
-          min="0"
-          max="60"
-          step="5"
-          :value="configStore.bgDim"
-          @input="configStore.setBgDim(Number(($event.target as HTMLInputElement).value))"
-        />
-        <span class="ap-slider-val">{{ configStore.bgDim }}%</span>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useTheme, currentMode } from '@/composables/useTheme'
 import { useConfigStore } from '@/stores/configStore'
 import Button from '@/components/ui/button/Button.vue'
-import Switch from '@/components/ui/switch/Switch.vue'
 import { ChevronRight, Sun, Moon, Monitor } from 'lucide-vue-next'
 
 const { t, tf } = useI18n()
 const { setMode } = useTheme()
 const configStore = useConfigStore()
-const bgFileRef = ref<HTMLInputElement | null>(null)
 
 const emit = defineEmits<{
   'open-sub-page': [page: string]
@@ -158,32 +111,6 @@ const FONT_FAMILIES = [
   { v: 'serif', key: 'font_serif', preview: 'font-family: Georgia, "Noto Serif SC", serif' },
   { v: 'kai', key: 'font_kai', preview: 'font-family: "KaiTi", "STKaiti", serif' },
 ]
-
-/** 背景图降采样：长边 ≤1920、JPEG 0.85，控制 localStorage 占用。
- *  设置后即为"壁纸透传"模式（全窗口半透明显示壁纸，清晰不虚化） */
-function handleBgFile(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file || !file.type.startsWith('image/')) return
-  const reader = new FileReader()
-  reader.onload = () => {
-    const img = new Image()
-    img.onload = () => {
-      const MAX = 1920
-      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.round(img.width * scale)
-      canvas.height = Math.round(img.height * scale)
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-      configStore.setBgImage(canvas.toDataURL('image/jpeg', 0.85))
-    }
-    img.src = reader.result as string
-  }
-  reader.readAsDataURL(file)
-}
 </script>
 
 <style scoped>
