@@ -82,10 +82,18 @@ function selectPaymentMethod(_method: string) {
       </div>
     </div>
     <div class="pay-methods">
-      <Button variant="outline" class="w-full justify-start payment-option" @click="selectPaymentMethod('wechat')">
+      <Button
+        variant="outline"
+        class="w-full justify-start payment-option"
+        @click="selectPaymentMethod('wechat')"
+      >
         <MessageCircle class="pay-icon pay-icon--wechat" /> <span>{{ t('pay_wechat') }}</span>
       </Button>
-      <Button variant="outline" class="w-full justify-start payment-option" @click="selectPaymentMethod('alipay')">
+      <Button
+        variant="outline"
+        class="w-full justify-start payment-option"
+        @click="selectPaymentMethod('alipay')"
+      >
         <Landmark class="pay-icon pay-icon--alipay" /> <span>{{ t('pay_alipay') }}</span>
       </Button>
     </div>

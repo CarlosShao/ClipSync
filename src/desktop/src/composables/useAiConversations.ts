@@ -34,8 +34,8 @@ export function useAiConversations() {
   const currentConversationId = ref<string>('')
   const loading = ref(false)
 
-  const currentConversation = computed(
-    () => conversations.value.find((c) => c.id === currentConversationId.value) || null,
+  const currentConversation = computed(() =>
+    conversations.value.find((c) => c.id === currentConversationId.value) || null
   )
 
   const currentUsage = computed(() => mapUsage(currentConversation.value))

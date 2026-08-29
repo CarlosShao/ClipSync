@@ -280,7 +280,9 @@ async function renderPptx(arrayBuffer: ArrayBuffer) {
       const xml = await zip.file(slideFile)!.async('text')
       // 提取 <a:t> 文本节点 → 段落
       const textMatches = xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || []
-      const lines = textMatches.map((m) => m.replace(/<[^>]+>/g, '').trim()).filter(Boolean)
+      const lines = textMatches
+        .map((m) => m.replace(/<[^>]+>/g, '').trim())
+        .filter(Boolean)
       if (lines.length === 0) {
         slides.push('<p style="color:var(--text-tertiary)">(本页无可提取文本)</p>')
       } else {
@@ -794,7 +796,11 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
       />
 
       <!-- Word (.docx) rendering with TOC -->
-      <DocxPreview v-else-if="detectFileType(previewFileName) === 'docx' && docxHtml" :html="docxHtml" :toc="docxToc" />
+      <DocxPreview
+        v-else-if="detectFileType(previewFileName) === 'docx' && docxHtml"
+        :html="docxHtml"
+        :toc="docxToc"
+      />
 
       <!-- Excel (.xlsx / .xls) multi-sheet rendering -->
       <SpreadsheetPreview
@@ -933,7 +939,7 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
 .doc-mask-overlay {
   position: absolute;
   inset: 0;
-  z-index: var(--z-sticky);
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;

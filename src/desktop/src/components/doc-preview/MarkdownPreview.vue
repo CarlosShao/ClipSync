@@ -70,9 +70,7 @@ function scrollToHeading(id: string) {
   text-decoration: none;
   padding: 3px 14px;
   cursor: pointer;
-  transition:
-    color 0.15s,
-    background 0.15s;
+  transition: color 0.15s, background 0.15s;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -82,24 +80,12 @@ function scrollToHeading(id: string) {
   color: var(--accent);
   background: var(--bg-hover);
 }
-.markdown-toc-depth-1 {
-  font-weight: 600;
-  padding-left: 14px;
-}
-.markdown-toc-depth-2 {
-  padding-left: 24px;
-}
-.markdown-toc-depth-3 {
-  padding-left: 34px;
-  font-size: 11px;
-}
+.markdown-toc-depth-1 { font-weight: 600; padding-left: 14px; }
+.markdown-toc-depth-2 { padding-left: 24px; }
+.markdown-toc-depth-3 { padding-left: 34px; font-size: 11px; }
 .markdown-toc-depth-4,
 .markdown-toc-depth-5,
-.markdown-toc-depth-6 {
-  padding-left: 44px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
+.markdown-toc-depth-6 { padding-left: 44px; font-size: 11px; color: var(--text-tertiary); }
 .markdown-preview-content {
   flex: 1;
   overflow-y: auto;

@@ -130,9 +130,7 @@ const timeText = computed(() => {
       <span class="ai-tc-title" :class="{ paused: !live }" :data-text="label">{{ label }}</span>
       <span v-if="timeText" class="ai-tc-time">{{ timeText }}</span>
       <!-- 单行跑马灯：live 且未展开时，头部横排滚动展示最新思考内容（尾部对齐，超出部分从左侧裁剪） -->
-      <span v-if="showTicker" class="ai-tc-ticker"
-        ><span class="ai-tc-ticker-text">{{ tickerText }}</span></span
-      >
+      <span v-if="showTicker" class="ai-tc-ticker"><span class="ai-tc-ticker-text">{{ tickerText }}</span></span>
       <ChevronRight v-if="!expanded" :size="13" class="ai-tc-chev" />
       <ChevronDown v-else :size="13" class="ai-tc-chev" />
     </button>
@@ -198,12 +196,8 @@ html.light .ai-tc-shimmer::after {
   mix-blend-mode: multiply;
 }
 @keyframes ai-tc-sweep {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: -50% 0;
-  }
+  0% { background-position: 100% 0; }
+  100% { background-position: -50% 0; }
 }
 
 /* ============ 态 2/3：深度思考面板（行内 flow 风格） ============ */
@@ -353,14 +347,10 @@ html.light .ai-tc-title::after {
   animation: ai-tc-blink 0.8s step-end infinite;
 }
 @keyframes ai-tc-blink {
-  50% {
-    opacity: 0;
-  }
+  50% { opacity: 0; }
 }
 @keyframes ai-tc-rotate {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
   .ai-tc-shimmer::after,

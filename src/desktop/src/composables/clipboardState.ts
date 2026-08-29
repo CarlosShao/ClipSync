@@ -84,7 +84,9 @@ function effectiveHistoryCap(): number {
 // 达到本地上限后不再显示"加载更多"：否则按钮点了会 append 一页再被裁掉，
 // 表现为"点了没反应"。
 export const hasMore = computed(
-  () => totalItems.value > 0 && items.value.length < Math.min(totalItems.value, effectiveHistoryCap()),
+  () =>
+    totalItems.value > 0 &&
+    items.value.length < Math.min(totalItems.value, effectiveHistoryCap()),
 )
 
 // === 高级搜索筛选（device / date range）===

@@ -414,7 +414,9 @@ defineExpose({ setDraft })
     <div v-if="pastedImages.length" class="ai-paste-previews">
       <div v-for="(img, idx) in pastedImages" :key="idx" class="ai-paste-thumb">
         <img :src="img.data" :alt="img.mime" />
-        <button class="ai-paste-remove" :title="t('ai_remove_image', '移除')" @click="removePastedImage(idx)">×</button>
+        <button class="ai-paste-remove" :title="t('ai_remove_image', '移除')" @click="removePastedImage(idx)">
+          ×
+        </button>
       </div>
     </div>
 
@@ -550,8 +552,7 @@ defineExpose({ setDraft })
                 :viewBox="`0 0 ${RING_SIZE} ${RING_SIZE}`"
               >
                 <circle class="ring-track" :cx="RING_CENTER" :cy="RING_CENTER" :r="RING_R" />
-                <circle
-                  class="ring-progress"
+                <circle class="ring-progress"
                   :cx="RING_CENTER"
                   :cy="RING_CENTER"
                   :r="RING_R"

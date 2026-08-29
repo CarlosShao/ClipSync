@@ -70,7 +70,12 @@ function confirmCreate(itemId: string) {
         </Button>
       </div>
       <template v-if="!fav.showFavNewInput.value">
-        <Button variant="outline" size="sm" class="w-full justify-start gap-1" @click="startCreate">
+        <Button
+          variant="outline"
+          size="sm"
+          class="w-full justify-start gap-1"
+          @click="startCreate"
+        >
           <Plus :size="12" /> {{ t('fav_new_col') }}
         </Button>
       </template>
@@ -132,7 +137,12 @@ function confirmCreate(itemId: string) {
         </Button>
       </div>
       <template v-if="!fav.showFavNewInput.value">
-        <Button variant="outline" size="sm" class="w-full justify-start gap-1" @click="startCreate">
+        <Button
+          variant="outline"
+          size="sm"
+          class="w-full justify-start gap-1"
+          @click="startCreate"
+        >
           <Plus :size="12" /> {{ tf('fav_new_col', '新建收藏夹') }}
         </Button>
       </template>

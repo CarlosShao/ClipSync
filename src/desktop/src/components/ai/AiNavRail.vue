@@ -360,7 +360,11 @@ function onDockFromFloat() {
         <button class="ai-nav-rail-btn" :title="t('ai_new_chat', '新对话')" @click="emit('new-chat')">
           <Plus :size="16" />
         </button>
-        <button class="ai-nav-rail-btn" :title="t('ai_search_placeholder', '搜索历史消息…')" @click="onExpandFromIcon">
+        <button
+          class="ai-nav-rail-btn"
+          :title="t('ai_search_placeholder', '搜索历史消息…')"
+          @click="onExpandFromIcon"
+        >
           <Search :size="16" />
         </button>
         <div class="ai-nav-rail-convs">

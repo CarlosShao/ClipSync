@@ -418,7 +418,9 @@ export function useClipboard() {
       const isServerItem = !isLocalItemId(item.id)
       const recordUseIfServer = () => {
         if (!isServerItem) return
-        recordUse(item.id).catch((e: any) => console.warn('[Clipboard] record use failed:', e?.message || e))
+        recordUse(item.id).catch((e: any) =>
+          console.warn('[Clipboard] record use failed:', e?.message || e),
+        )
       }
 
       if (item.type === 'file') {

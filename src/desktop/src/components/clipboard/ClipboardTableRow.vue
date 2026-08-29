@@ -57,7 +57,9 @@ const display = useClipItemDisplay()
 const LOCAL_ID_PREFIX_RE = /^(local-|text-|img-|file-|browser-)/
 const isServerItem = computed(() => !LOCAL_ID_PREFIX_RE.test(props.item.id))
 // 「仅本机」标记（B7 / 决策 D3）：文件字节未随条目上传，对端无法还原
-const isLocalOnlyFile = computed(() => props.item.type === 'file' && props.item.metadata?.localOnly === true)
+const isLocalOnlyFile = computed(
+  () => props.item.type === 'file' && props.item.metadata?.localOnly === true,
+)
 
 // 键盘 ↑↓ 移动焦点行时必须把它滚进可视区，否则焦点跑到视口外，
 // 用户看到的是"高亮消失"，按 Enter 复制的是看不见的条目。
@@ -249,7 +251,12 @@ watch(
                 <Lock :size="14" />{{ t('protection_set') }}
               </button>
               <!-- 版本历史：仅服务端条目有历史（本地临时 id 会打到 400），故对临时项隐藏 -->
-              <button v-if="isServerItem" type="button" class="more-item" @click="emit('version-history', item)">
+              <button
+                v-if="isServerItem"
+                type="button"
+                class="more-item"
+                @click="emit('version-history', item)"
+              >
                 <History :size="14" />{{ t('modal_versions') }}
               </button>
               <button type="button" class="more-item" @click="emit('archive-toggle', item)">

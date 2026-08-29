@@ -55,8 +55,7 @@ function applyCustom() {
     customDate.value.getDate(),
     hh || 0,
     mm || 0,
-    0,
-    0,
+    0, 0
   )
   emit('select', dt.toISOString())
   customOpen.value = false
@@ -76,14 +75,7 @@ function applyCustom() {
           <button type="button" class="expiry-custom-btn">{{ t('exp_custom') }}</button>
         </PopoverTrigger>
         <PopoverContent class="w-auto p-0 z-[9999]" align="start" @interact-outside.prevent>
-          <div
-            class="expiry-calendar-wrap"
-            @click.stop
-            @pointerdown.stop
-            @pointerup.stop
-            @pointerdown.capture.stop
-            @pointerup.capture.stop
-          >
+          <div class="expiry-calendar-wrap" @click.stop @pointerdown.stop @pointerup.stop @pointerdown.capture.stop @pointerup.capture.stop>
             <PrettyCalendar :model-value="customDate" @update:model-value="onDateChange" @pointerdown.capture.stop />
             <div class="expiry-time-row">
               <label class="expiry-time-label">{{ t('exp_time') }}</label>
@@ -188,11 +180,6 @@ function applyCustom() {
   cursor: pointer;
   transition: opacity 0.15s;
 }
-.expiry-apply-btn:hover {
-  opacity: 0.9;
-}
-.expiry-apply-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.expiry-apply-btn:hover { opacity: 0.9; }
+.expiry-apply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

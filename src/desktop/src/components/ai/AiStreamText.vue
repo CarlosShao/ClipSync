@@ -33,7 +33,7 @@ function fixIncompleteMarkdown(raw: string): string {
   if (!raw) return ''
   // 压缩连续多余空行，但不强制 trim 掉末尾换行符（避免打字流式时高度持续跳动）
   let text = raw.replace(/\n{3,}/g, '\n\n')
-
+  
   // 1. 自动闭合流式中的未闭合代码块（避免在段落 p 与 pre 之间高频跳变）
   const backtickMatches = text.match(/```/g)
   if (backtickMatches && backtickMatches.length % 2 === 1) {

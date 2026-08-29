@@ -305,7 +305,13 @@ async function handleChangePassword() {
       </div>
       <div class="pwd-field">
         <label class="pwd-label">{{ t('pwd_new') }}</label>
-        <Input v-model="pwdNew" type="password" class="sg-input--block" :placeholder="t('pwd_new_ph')" minlength="8" />
+        <Input
+          v-model="pwdNew"
+          type="password"
+          class="sg-input--block"
+          :placeholder="t('pwd_new_ph')"
+          minlength="8"
+        />
       </div>
       <div class="pwd-field">
         <label class="pwd-label">{{ t('pwd_confirm') }}</label>

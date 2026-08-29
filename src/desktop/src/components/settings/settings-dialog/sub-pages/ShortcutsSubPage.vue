@@ -77,7 +77,10 @@ function findDuplicateGlobal(id: string, keys: string[]): string | null {
 }
 
 /** 把 Rust 逐项回传的注册结果反映到 UI 上 */
-function applyShortcutReport(report: Record<string, tauri.ShortcutRegistration> | undefined, changedStr: string) {
+function applyShortcutReport(
+  report: Record<string, tauri.ShortcutRegistration> | undefined,
+  changedStr: string,
+) {
   const fallbacks: string[] = []
   const failures: string[] = []
   for (const [id, r] of Object.entries(report || {})) {

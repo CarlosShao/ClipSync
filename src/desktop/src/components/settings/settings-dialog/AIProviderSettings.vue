@@ -236,17 +236,17 @@ async function refreshModels() {
     } else {
       // 未保存表单：不再隐式 createProvider 落库（否则"刷新模型"会悄悄写入一条配置），
       // 改为明确提示用户先保存。保存后 editingId 就绪，再点刷新即可拉取模型列表。
-      toast.show(t('ai_refresh_models_need_save', '请先保存该供应商配置，再刷新模型列表'), 'info')
+      toast.show(
+        t('ai_refresh_models_need_save', '请先保存该供应商配置，再刷新模型列表'),
+        'info',
+      )
       return
     }
     if (res.ok && res.data) {
       const list = res.data.models || []
       formModels.value = list
       // 把当前已选但不在新列表里的模型合并进去，避免用户先手工输入后被刷新清空
-      const selected = new Set([
-        ...formSelectedModels.value,
-        ...list.filter((m) => formSelectedModels.value.includes(m)),
-      ])
+      const selected = new Set([...formSelectedModels.value, ...list.filter((m) => formSelectedModels.value.includes(m))])
       // 若当前未选任何模型，默认勾选第一个
       if (selected.size === 0 && list.length > 0) {
         selected.add(list[0])
@@ -290,7 +290,9 @@ async function save() {
       contextWindow: formContextWindow.value ? Number(formContextWindow.value) : null,
       apiFormat: isCustom.value ? formApiFormat.value : undefined,
     }
-    const res = editingId.value ? await updateProvider(editingId.value, payload) : await createProvider(payload)
+    const res = editingId.value
+      ? await updateProvider(editingId.value, payload)
+      : await createProvider(payload)
     if (res.ok) {
       toast.show(t('ai_saved'), 'success')
       // 通知 AI 侧边栏等其他消费方刷新 provider 列表
@@ -374,12 +376,7 @@ onMounted(() => {
             <div class="ai-prov-meta">
               {{ presetLabel(p.provider) }} ·
               <template v-if="Array.isArray(p.models) && p.models.length > 1">
-                {{
-                  tf('ai_provider_models_count', `${p.models[0]} 等 ${p.models.length} 个模型`, {
-                    first: p.models[0],
-                    n: p.models.length,
-                  })
-                }}
+                {{ tf('ai_provider_models_count', `${p.models[0]} 等 ${p.models.length} 个模型`, { first: p.models[0], n: p.models.length }) }}
               </template>
               <template v-else>{{ p.model }}</template>
             </div>
@@ -408,12 +405,7 @@ onMounted(() => {
               <Trash2 :size="16" />
             </button>
             <template v-else>
-              <button
-                type="button"
-                class="ai-card-btn ai-card-btn--confirm"
-                :title="t('ai_confirm_delete')"
-                @click="remove(p.id)"
-              >
+              <button type="button" class="ai-card-btn ai-card-btn--confirm" :title="t('ai_confirm_delete')" @click="remove(p.id)">
                 <Check :size="16" />
               </button>
               <button type="button" class="ai-card-btn" :title="t('cancel_btn')" @click="confirmingDeleteId = null">
@@ -456,14 +448,11 @@ onMounted(() => {
         <!-- 自定义供应商：多协议格式（OpenAI 兼容 / Anthropic 兼容 / OpenAI Responses） -->
         <div v-if="isCustom" class="ai-field">
           <label class="ai-label">{{ t('ai_custom_format_label') }}</label>
-          <CustomSelect
-            :model-value="formApiFormat"
-            @update:model-value="(v: string) => (formApiFormat = v as AiApiFormat)"
-          >
+          <CustomSelect :model-value="formApiFormat" @update:model-value="(v: string) => (formApiFormat = v as AiApiFormat)">
             {{ t(`ai_custom_format_${formApiFormat}`) }}
             <template #options>
               <CustomSelectOption
-                v-for="fmt in ['openai', 'anthropic', 'responses'] as AiApiFormat[]"
+                v-for="fmt in (['openai', 'anthropic', 'responses'] as AiApiFormat[])"
                 :key="fmt"
                 :value="fmt"
                 :selected="formApiFormat === fmt"
@@ -517,7 +506,8 @@ onMounted(() => {
             v-model="formSelectedModels[formSelectedModels.length - 1]"
             :placeholder="t('ai_model_ph')"
             @keydown.enter.prevent="
-              ($event.target as HTMLInputElement)?.value && toggleModel(($event.target as HTMLInputElement).value)
+              ($event.target as HTMLInputElement)?.value &&
+                toggleModel(($event.target as HTMLInputElement).value)
             "
           />
           <div v-if="formModels.length" class="ai-models">
@@ -554,19 +544,10 @@ onMounted(() => {
           <Input
             v-model="formContextWindow"
             type="number"
-            :placeholder="
-              tf('ai_context_window_ph', `自动按模型：${formSelectedModels[0] || '?'}`, {
-                model: formSelectedModels[0] || '?',
-              })
-            "
+            :placeholder="tf('ai_context_window_ph', `自动按模型：${formSelectedModels[0] || '?'}`, { model: formSelectedModels[0] || '?' })"
           />
           <div class="sg-hint">
-            {{
-              t(
-                'ai_context_window_hint',
-                '留空则按内置模型表自动识别（切换模型时总量随之变化）。自定义/未知模型请填真实上下文窗口，如 128000 / 200000 / 1000000。',
-              )
-            }}
+            {{ t('ai_context_window_hint', '留空则按内置模型表自动识别（切换模型时总量随之变化）。自定义/未知模型请填真实上下文窗口，如 128000 / 200000 / 1000000。') }}
           </div>
         </div>
 
@@ -581,9 +562,7 @@ onMounted(() => {
         <div v-if="formError" class="ai-error">{{ formError }}</div>
 
         <div class="ai-form-actions">
-          <Button class="min-w-[100px]" :disabled="saving" @click="save">{{
-            saving ? t('ai_saving') : t('ai_save')
-          }}</Button>
+          <Button class="min-w-[100px]" :disabled="saving" @click="save">{{ saving ? t('ai_saving') : t('ai_save') }}</Button>
           <Button variant="outline" class="min-w-[100px]" @click="resetForm()">{{ t('cancel_btn') }}</Button>
         </div>
       </div>
@@ -607,36 +586,21 @@ onMounted(() => {
           <div class="ai-pref-control">
             <CustomSelect
               :model-value="prefMode"
-              @update:model-value="
-                (v: string) => {
-                  prefMode = v as 'ask' | 'agent'
-                  savePrefs({ defaultMode: prefMode })
-                }
-              "
+              @update:model-value="(v: string) => { prefMode = v as 'ask' | 'agent'; savePrefs({ defaultMode: prefMode }) }"
             >
               {{ prefMode === 'agent' ? t('ai_mode_agent') : t('ai_mode_ask') }}
               <template #options>
                 <CustomSelectOption
                   value="ask"
                   :selected="prefMode === 'ask'"
-                  @select="
-                    (v: string) => {
-                      prefMode = v as 'ask' | 'agent'
-                      savePrefs({ defaultMode: prefMode })
-                    }
-                  "
+                  @select="(v: string) => { prefMode = v as 'ask' | 'agent'; savePrefs({ defaultMode: prefMode }) }"
                 >
                   {{ t('ai_mode_ask') }}
                 </CustomSelectOption>
                 <CustomSelectOption
                   value="agent"
                   :selected="prefMode === 'agent'"
-                  @select="
-                    (v: string) => {
-                      prefMode = v as 'ask' | 'agent'
-                      savePrefs({ defaultMode: prefMode })
-                    }
-                  "
+                  @select="(v: string) => { prefMode = v as 'ask' | 'agent'; savePrefs({ defaultMode: prefMode }) }"
                 >
                   {{ t('ai_mode_agent') }}
                 </CustomSelectOption>
@@ -649,18 +613,11 @@ onMounted(() => {
         <div class="ai-pref-row">
           <div class="ai-pref-text">
             <div class="ai-pref-name">{{ t('ai_thinking') }}</div>
-            <div class="ai-pref-hint">
-              {{ t('ai_prefs_thinking_h', '开启后模型会先思考再回答，复杂任务效果更好。') }}
-            </div>
+            <div class="ai-pref-hint">{{ t('ai_prefs_thinking_h', '开启后模型会先思考再回答，复杂任务效果更好。') }}</div>
           </div>
           <Switch
             :model-value="prefThinking"
-            @update:model-value="
-              (v: boolean) => {
-                prefThinking = v
-                savePrefs({ thinkingEnabled: v })
-              }
-            "
+            @update:model-value="(v: boolean) => { prefThinking = v; savePrefs({ thinkingEnabled: v }) }"
           />
         </div>
         <div v-if="prefThinking" class="ai-pref-row ai-pref-row--sub">
@@ -670,26 +627,16 @@ onMounted(() => {
           <div class="ai-pref-control">
             <CustomSelect
               :model-value="prefThinkingStrength"
-              @update:model-value="
-                (v: string) => {
-                  prefThinkingStrength = v as 'low' | 'medium' | 'high'
-                  savePrefs({ thinkingStrength: prefThinkingStrength })
-                }
-              "
+              @update:model-value="(v: string) => { prefThinkingStrength = v as 'low' | 'medium' | 'high'; savePrefs({ thinkingStrength: prefThinkingStrength }) }"
             >
               {{ t(`ai_thinking_strength_${prefThinkingStrength}`, strengthFallback[prefThinkingStrength]) }}
               <template #options>
                 <CustomSelectOption
-                  v-for="s in ['low', 'medium', 'high'] as const"
+                  v-for="s in (['low', 'medium', 'high'] as const)"
                   :key="s"
                   :value="s"
                   :selected="prefThinkingStrength === s"
-                  @select="
-                    (v: string) => {
-                      prefThinkingStrength = v as 'low' | 'medium' | 'high'
-                      savePrefs({ thinkingStrength: prefThinkingStrength })
-                    }
-                  "
+                  @select="(v: string) => { prefThinkingStrength = v as 'low' | 'medium' | 'high'; savePrefs({ thinkingStrength: prefThinkingStrength }) }"
                 >
                   {{ t(`ai_thinking_strength_${s}`, strengthFallback[s]) }}
                 </CustomSelectOption>
@@ -706,12 +653,7 @@ onMounted(() => {
           </div>
           <Switch
             :model-value="prefMemory"
-            @update:model-value="
-              (v: boolean) => {
-                prefMemory = v
-                savePrefs({ memoryEnabled: v })
-              }
-            "
+            @update:model-value="(v: boolean) => { prefMemory = v; savePrefs({ memoryEnabled: v }) }"
           />
         </div>
 
@@ -720,12 +662,7 @@ onMounted(() => {
           <div class="ai-pref-text">
             <div class="ai-pref-name">{{ t('ai_auto_summary_title', '复制后自动 AI 摘要') }}</div>
             <div class="ai-pref-hint">
-              {{
-                t(
-                  'ai_auto_summary_hint',
-                  '开启后每次复制文本会自动调用大模型生成摘要并弹出浮窗；相同内容 10 分钟内只调用一次。关闭时不产生任何模型调用。',
-                )
-              }}
+              {{ t('ai_auto_summary_hint', '开启后每次复制文本会自动调用大模型生成摘要并弹出浮窗；相同内容 10 分钟内只调用一次。关闭时不产生任何模型调用。') }}
             </div>
           </div>
           <Switch :model-value="autoSummaryOnCopy" @update:model-value="setAutoSummaryOnCopy" />
@@ -739,12 +676,7 @@ onMounted(() => {
         <div class="ai-section-head-text">
           <div class="ai-section-title">{{ t('ai_system_prompt', '全局系统提示词') }}</div>
           <div class="ai-section-hint">
-            {{
-              t(
-                'ai_system_prompt_h',
-                '可选。配置后注入到每次 AI 对话的角色/产品知识之后，用于定义全局行为偏好、语气或人设。留空则不注入。',
-              )
-            }}
+            {{ t('ai_system_prompt_h', '可选。配置后注入到每次 AI 对话的角色/产品知识之后，用于定义全局行为偏好、语气或人设。留空则不注入。') }}
           </div>
         </div>
       </div>
@@ -753,12 +685,7 @@ onMounted(() => {
           v-model="customPrompt"
           class="ai-prompt-ta"
           rows="6"
-          :placeholder="
-            t(
-              'ai_system_prompt_ph',
-              '例如：你叫 Clip，是用户的跨设备剪贴板助手；回答保持简洁友好，重要结论用中文输出。',
-            )
-          "
+          :placeholder="t('ai_system_prompt_ph', '例如：你叫 Clip，是用户的跨设备剪贴板助手；回答保持简洁友好，重要结论用中文输出。')"
         />
         <div class="ai-prompt-foot">
           <span class="ai-prompt-count">{{ customPrompt.length }} {{ t('ai_prompt_chars', '字符') }}</span>
@@ -934,9 +861,7 @@ onMounted(() => {
   animation: ai-card-testing 0.9s linear infinite;
 }
 @keyframes ai-card-testing {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 .ai-badge {
   display: inline-block;

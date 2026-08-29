@@ -197,22 +197,14 @@ async function createAndMove(itemId: string, parentId?: string) {
   creatingCollection = true
   try {
     // parentId 可选：传了就建子级；不传或 'root' 都建顶级
-    const data = await createFavoriteCollection(
-      favNewName.value.trim(),
-      'folder',
-      parentId && parentId !== 'root' ? parentId : undefined,
-    )
+    const data = await createFavoriteCollection(favNewName.value.trim(), 'folder', parentId && parentId !== 'root' ? parentId : undefined)
     if (data?.collection) {
       collections.value.push(data.collection)
       await addCollectionItem(data.collection.id, itemId)
       toast.show(t('clip_col_created'), 'success')
       await loadCollections()
       // 通知收藏页侧树刷新
-      window.dispatchEvent(
-        new CustomEvent('clipsync:collections-updated', {
-          detail: { reason: 'create-from-popover', id: data.collection.id },
-        }),
-      )
+      window.dispatchEvent(new CustomEvent('clipsync:collections-updated', { detail: { reason: 'create-from-popover', id: data.collection.id } }))
     } else {
       toast.show(t('fav_create_fail'), 'error')
     }

@@ -120,7 +120,7 @@ function selectSheet(idx: number) {
   background: var(--bg-hover);
   position: sticky;
   top: 0;
-  z-index: var(--z-sticky);
+  z-index: 1;
 }
 .sheet-html :deep(th),
 .sheet-html :deep(td) {

@@ -15,9 +15,7 @@ const marked = new Marked({ gfm: true, breaks: false })
 const expandedThinking = ref(false)
 
 // 该卡片自身是否处于“进行中”（仅此卡片还活着且状态为 planning/working/synthesis 时）
-const runActive = computed(
-  () => props.run.status === 'planning' || props.run.status === 'working' || props.run.status === 'synthesis',
-)
+const runActive = computed(() => props.run.status === 'planning' || props.run.status === 'working' || props.run.status === 'synthesis')
 const isStreamingNow = computed(() => props.isStreaming && runActive.value)
 
 const statusText = computed(() => {
@@ -62,6 +60,7 @@ function renderMarkdown(content: string): string {
 
 const hasThinking = computed(() => (props.run.thinking?.length || 0) > 0)
 const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
+
 </script>
 
 <template>
@@ -163,31 +162,19 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
   margin: 4px 0 2px;
   font-weight: 600;
 }
-.ai-agent-run-content :deep(h1) {
-  font-size: 13px;
-}
-.ai-agent-run-content :deep(h2) {
-  font-size: 13px;
-}
-.ai-agent-run-content :deep(h3) {
-  font-size: 12px;
-}
-.ai-agent-run-content :deep(p) {
-  margin: 1px 0;
-}
+.ai-agent-run-content :deep(h1) { font-size: 13px; }
+.ai-agent-run-content :deep(h2) { font-size: 13px; }
+.ai-agent-run-content :deep(h3) { font-size: 12px; }
+.ai-agent-run-content :deep(p) { margin: 1px 0; }
 .ai-agent-run-content :deep(ul),
 .ai-agent-run-content :deep(ol) {
   padding-left: 18px;
   margin: 2px 0;
 }
-.ai-agent-run-content :deep(li) {
-  margin: 1px 0;
-}
-.ai-agent-run-content :deep(li > p) {
-  margin: 0;
-}
+.ai-agent-run-content :deep(li) { margin: 1px 0; }
+.ai-agent-run-content :deep(li > p) { margin: 0; }
 .ai-agent-run-content :deep(code) {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(0,0,0,0.06);
   padding: 1px 4px;
   border-radius: 3px;
   font-family: var(--font-mono, monospace);
@@ -205,9 +192,7 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
   background: none;
   padding: 0;
 }
-.ai-agent-run-content :deep(strong) {
-  font-weight: 600;
-}
+.ai-agent-run-content :deep(strong) { font-weight: 600; }
 .ai-agent-run-content :deep(blockquote) {
   border-left: 3px solid var(--accent);
   padding-left: 8px;
@@ -215,8 +200,6 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
   color: var(--text-secondary);
 }
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 </style>

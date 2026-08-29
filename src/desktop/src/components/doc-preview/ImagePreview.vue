@@ -51,8 +51,7 @@ const {
         class="ml-1"
         title="重置"
         @click="resetImgZoom"
-        >1:1</Button
-      >
+      >1:1</Button>
     </div>
     <div
       class="image-zoom-area"

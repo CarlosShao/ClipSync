@@ -9,7 +9,18 @@ import {
   type ClipSuggestionItem,
   type SuggestBatchItem,
 } from '@/api/ai'
-import { Sparkles, X, Heart, Archive, Trash2, Loader2, Tag, Check, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import {
+  Sparkles,
+  X,
+  Heart,
+  Archive,
+  Trash2,
+  Loader2,
+  Tag,
+  Check,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-vue-next'
 
 /**
  * AiSuggestPopup — 主动建议（#230 升级为方案 A 批量）：
@@ -72,10 +83,7 @@ const allExpanded = ref(true) // 默认全部展开，避免"还要手动展开�
 const totalCount = computed(() => props.items.length)
 const suggestedCount = computed(() => Object.keys(suggestions.value).length)
 const appliedCount = computed(() =>
-  Object.values(applied.value).reduce(
-    (n, m) => n + (m.favorited || m.archived || m.cleaned || (m.tags && m.tags.length) ? 1 : 0),
-    0,
-  ),
+  Object.values(applied.value).reduce((n, m) => n + (m.favorited || m.archived || m.cleaned || (m.tags && m.tags.length) ? 1 : 0), 0),
 )
 
 async function ensureProvider() {
@@ -114,11 +122,7 @@ async function analyze() {
     error.value = tf('ai_suggest_no_provider', '请先在设置中添加 AI 供应商')
     return
   }
-  const texts: SuggestBatchItem[] = props.items.map((it) => ({
-    id: it.id,
-    content: it.content || '',
-    isFavorite: !!it.isFavorite,
-  }))
+  const texts: SuggestBatchItem[] = props.items.map((it) => ({ id: it.id, content: it.content || '', isFavorite: !!it.isFavorite }))
   if (texts.length === 0) {
     error.value = tf('ai_suggest_no_text', '请先选中一条文本内容')
     return
@@ -252,9 +256,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
                 <span>{{ suggestedCount }}/{{ totalCount }}</span>
                 <template v-if="appliedCount > 0">
                   <span class="ai-suggest-counter-sep">·</span>
-                  <span class="ai-suggest-counter-applied">{{
-                    tf('ai_suggest_applied_n', `已应用 ${appliedCount}`, { n: appliedCount })
-                  }}</span>
+                  <span class="ai-suggest-counter-applied">{{ tf('ai_suggest_applied_n', `已应用 ${appliedCount}`, { n: appliedCount }) }}</span>
                 </template>
               </template>
             </span>
@@ -294,11 +296,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
             class="ai-suggest-card"
             :class="{
               'ai-suggest-card--collapsed': !expanded[input.id],
-              'ai-suggest-card--applied':
-                applied[input.id]?.favorited ||
-                applied[input.id]?.archived ||
-                applied[input.id]?.cleaned ||
-                (applied[input.id]?.tags && applied[input.id].tags!.length),
+              'ai-suggest-card--applied': applied[input.id]?.favorited || applied[input.id]?.archived || applied[input.id]?.cleaned || (applied[input.id]?.tags && applied[input.id].tags!.length),
             }"
           >
             <button class="ai-suggest-card-head" @click="toggleExpanded(input.id)">
@@ -309,23 +307,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
               </div>
               <div class="ai-suggest-card-tags">
                 <!-- 收藏状态 pill：已收藏→"已收藏"，未收藏→AI 建议（值得 / 不值得） -->
-                <span v-if="input.isFavorite" class="ai-suggest-card-pill ai-suggest-card-pill--fav-existed">
+                <span
+                  v-if="input.isFavorite"
+                  class="ai-suggest-card-pill ai-suggest-card-pill--fav-existed"
+                >
                   <Heart :size="11" fill="currentColor" />
                   <span>{{ tf('ai_suggest_applied_fav', '已收藏') }}</span>
                 </span>
                 <span
                   v-else-if="suggestions[input.id]"
                   class="ai-suggest-card-pill"
-                  :class="
-                    suggestions[input.id].worth_favorite ? 'ai-suggest-card-pill--fav' : 'ai-suggest-card-pill--neutral'
-                  "
+                  :class="suggestions[input.id].worth_favorite ? 'ai-suggest-card-pill--fav' : 'ai-suggest-card-pill--neutral'"
                 >
                   <Heart :size="11" />
-                  <span>{{
-                    suggestions[input.id].worth_favorite
-                      ? tf('ai_suggest_fav_yes', '建议收藏')
-                      : tf('ai_suggest_fav_no', '不收藏')
-                  }}</span>
+                  <span>{{ suggestions[input.id].worth_favorite ? tf('ai_suggest_fav_yes', '建议收藏') : tf('ai_suggest_fav_no', '不收藏') }}</span>
                 </span>
                 <span
                   v-if="suggestions[input.id]"
@@ -336,13 +331,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
                   }"
                 >
                   <component
-                    :is="
-                      suggestions[input.id].action === 'cleanup'
-                        ? Trash2
-                        : suggestions[input.id].action === 'archive'
-                          ? Archive
-                          : Sparkles
-                    "
+                    :is="suggestions[input.id].action === 'cleanup' ? Trash2 : suggestions[input.id].action === 'archive' ? Archive : Sparkles"
                     :size="11"
                   />
                   <span>
@@ -356,51 +345,31 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
                   </span>
                 </span>
                 <span
-                  v-if="
-                    applied[input.id]?.favorited ||
-                    applied[input.id]?.archived ||
-                    applied[input.id]?.cleaned ||
-                    (applied[input.id]?.tags && applied[input.id].tags!.length)
-                  "
+                  v-if="applied[input.id]?.favorited || applied[input.id]?.archived || applied[input.id]?.cleaned || (applied[input.id]?.tags && applied[input.id].tags!.length)"
                   class="ai-suggest-card-applied"
                 >
                   <Check :size="11" />
                   <span>{{ tf('ai_suggest_applied', '已应用') }}</span>
                 </span>
               </div>
-              <component
-                :is="expanded[input.id] ? ChevronUp : ChevronDown"
-                :size="14"
-                class="ai-suggest-card-chevron"
-              />
+              <component :is="expanded[input.id] ? ChevronUp : ChevronDown" :size="14" class="ai-suggest-card-chevron" />
             </button>
 
             <!-- 展开：详情 + 操作 -->
             <div v-if="expanded[input.id]" class="ai-suggest-card-body">
               <!-- 收藏建议行：已收藏的条目跳过整行（已收藏没必要再建议收藏） -->
               <div v-if="!input.isFavorite && suggestions[input.id]" class="ai-suggest-row">
-                <Heart
-                  :size="13"
-                  :class="suggestions[input.id].worth_favorite ? 'ai-suggest-fav-yes' : 'ai-suggest-fav-no'"
-                />
+                <Heart :size="13" :class="suggestions[input.id].worth_favorite ? 'ai-suggest-fav-yes' : 'ai-suggest-fav-no'" />
                 <div class="ai-suggest-row-text">
                   <span class="ai-suggest-row-label">
-                    {{
-                      suggestions[input.id].worth_favorite
-                        ? tf('ai_suggest_fav_yes', '建议收藏')
-                        : tf('ai_suggest_fav_no', '不值得收藏')
-                    }}
+                    {{ suggestions[input.id].worth_favorite ? tf('ai_suggest_fav_yes', '建议收藏') : tf('ai_suggest_fav_no', '不值得收藏') }}
                   </span>
                   <span class="ai-suggest-row-reason">{{ suggestions[input.id].reason }}</span>
                   <span
                     v-if="suggestions[input.id].worth_favorite && suggestions[input.id].suggested_collection"
                     class="ai-suggest-row-collection"
                   >
-                    {{
-                      tf('ai_suggest_collection_hint', `建议归入「${suggestions[input.id].suggested_collection}」`, {
-                        name: suggestions[input.id].suggested_collection || '',
-                      })
-                    }}
+                    {{ tf('ai_suggest_collection_hint', `建议归入「${suggestions[input.id].suggested_collection}」`, { name: suggestions[input.id].suggested_collection || '' }) }}
                   </span>
                 </div>
                 <button
@@ -421,22 +390,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
                 <Heart :size="13" class="ai-suggest-fav-yes" :fill="'currentColor'" />
                 <div class="ai-suggest-row-text">
                   <span class="ai-suggest-row-label">{{ tf('ai_suggest_applied_fav', '已收藏') }}</span>
-                  <span class="ai-suggest-row-reason">{{
-                    tf('ai_suggest_already_favorited_hint', '该条目已加入收藏，无需重复操作')
-                  }}</span>
+                  <span class="ai-suggest-row-reason">{{ tf('ai_suggest_already_favorited_hint', '该条目已加入收藏，无需重复操作') }}</span>
                 </div>
               </div>
 
               <!-- 动作建议行 -->
               <div v-if="suggestions[input.id]" class="ai-suggest-row">
                 <component
-                  :is="
-                    suggestions[input.id].action === 'cleanup'
-                      ? Trash2
-                      : suggestions[input.id].action === 'archive'
-                        ? Archive
-                        : Sparkles
-                  "
+                  :is="suggestions[input.id].action === 'cleanup' ? Trash2 : suggestions[input.id].action === 'archive' ? Archive : Sparkles"
                   :size="13"
                   class="ai-suggest-action-icon"
                 />
@@ -468,16 +429,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
                   <Trash2 :size="12" />
                   <span>{{ tf('ai_suggest_btn_cleanup', '清理') }}</span>
                 </button>
-                <span
-                  v-else-if="applied[input.id]?.archived || applied[input.id]?.cleaned"
-                  class="ai-suggest-applied-tag"
-                >
+                <span v-else-if="applied[input.id]?.archived || applied[input.id]?.cleaned" class="ai-suggest-applied-tag">
                   <Check :size="12" />
-                  <span>{{
-                    applied[input.id]?.archived
-                      ? tf('ai_suggest_applied_archive', '已归档')
-                      : tf('ai_suggest_applied_cleanup', '已清理')
-                  }}</span>
+                  <span>{{ applied[input.id]?.archived ? tf('ai_suggest_applied_archive', '已归档') : tf('ai_suggest_applied_cleanup', '已清理') }}</span>
                 </span>
               </div>
 
@@ -510,11 +464,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
                 </button>
                 <span v-else class="ai-suggest-applied-tag">
                   <Check :size="12" />
-                  <span>{{
-                    tf('ai_suggest_applied_tags', `已应用 ${applied[input.id]?.tags?.length} 个标签`, {
-                      n: applied[input.id]?.tags?.length || 0,
-                    })
-                  }}</span>
+                  <span>{{ tf('ai_suggest_applied_tags', `已应用 ${applied[input.id]?.tags?.length} 个标签`, { n: applied[input.id]?.tags?.length || 0 }) }}</span>
                 </span>
               </div>
             </div>
@@ -548,9 +498,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: 14px;
-  box-shadow:
-    0 16px 40px rgba(0, 0, 0, 0.22),
-    0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.06);
   z-index: calc(var(--z-overlay) + 20);
   display: flex;
   flex-direction: column;
@@ -612,9 +560,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
   border-radius: 6px;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 .ai-suggest-icon-btn:hover {
   background: var(--bg-active);
@@ -672,9 +618,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
   overflow: hidden;
-  transition:
-    border-color 0.15s,
-    opacity 0.2s;
+  transition: border-color 0.15s, opacity 0.2s;
 }
 .ai-suggest-card:hover {
   border-color: color-mix(in srgb, var(--accent) 25%, var(--border-default));
@@ -805,12 +749,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
   font-size: 11.5px;
   margin-top: 2px;
 }
-.ai-suggest-fav-yes {
-  color: var(--danger);
-}
-.ai-suggest-fav-no {
-  color: var(--text-tertiary);
-}
+.ai-suggest-fav-yes { color: var(--danger); }
+.ai-suggest-fav-no { color: var(--text-tertiary); }
 .ai-suggest-action-icon {
   color: var(--text-secondary);
   flex-shrink: 0;
@@ -898,9 +838,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, tru
 /* ============ Transition ============ */
 .suggest-float-enter-active,
 .suggest-float-leave-active {
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 .suggest-float-enter-from,
 .suggest-float-leave-to {

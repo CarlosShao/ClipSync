@@ -23,9 +23,7 @@
   background: var(--bg-surface) !important;
   color: var(--text-primary) !important;
   border: 1px solid var(--border-default) !important;
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.18),
-    0 2px 6px rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.06) !important;
   /* 关闭 ::before 残留： */
   background-image: none !important;
 }

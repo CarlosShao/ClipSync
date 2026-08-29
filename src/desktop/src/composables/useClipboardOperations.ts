@@ -135,7 +135,9 @@ export function useClipboardOperations(
       }
       toast.dismiss(loadingId)
       toast.show(
-        target ? t('batch_favorited', { n: selected.length }) : t('batch_unfavorited', { n: selected.length }),
+        target
+          ? t('batch_favorited', { n: selected.length })
+          : t('batch_unfavorited', { n: selected.length }),
         'success',
       )
     } catch (err: any) {

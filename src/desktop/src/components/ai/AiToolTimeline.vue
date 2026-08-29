@@ -2,25 +2,12 @@
 import { ref, computed, inject } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import type { ToolCall, ToolResult } from '@/api/ai'
-import {
-  ChevronDown,
-  ChevronRight,
-  ChevronLeft,
-  CheckCircle2,
-  Loader2,
-  Terminal,
-  FileText,
-  Database,
-  Search,
-  HelpCircle,
-  PenLine,
-  Send,
-} from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, ChevronLeft, CheckCircle2, Loader2, Terminal, FileText, Database, Search, HelpCircle, PenLine, Send } from 'lucide-vue-next'
 import AiAskUserCard from './AiAskUserCard.vue'
 
 /**
  * AiToolTimeline — 工具调用时间线
- *
+ * 
  * 行内 flow 风格，参考 MiniMax Code / Trae Work：
  *   <> 已调用 获取剪贴板元数据 完成
  *   <> 已调用 读取剪贴板元数据 完成
@@ -51,8 +38,7 @@ function getToolName(name: string) {
 }
 
 const DANGER_RE = /(delete|remove|drop|truncate|wipe|purge|unlink|rmdir|clear|overwrite|destroy|reset)/i
-const WRITE_RE =
-  /(save|create|update|insert|write|add|set|rename|move|toggle|favorite|organize|execute|batch|send|upload|patch|put|post|delete|remove|modify|edit)/i
+const WRITE_RE = /(save|create|update|insert|write|add|set|rename|move|toggle|favorite|organize|execute|batch|send|upload|patch|put|post|delete|remove|modify|edit)/i
 
 const isDangerous = (name: string) => DANGER_RE.test(name)
 const isWrite = (name: string) => !isDangerous(name) && WRITE_RE.test(name)
@@ -125,9 +111,7 @@ function getDiffArgs(step: any) {
     } else if (typeof step.arguments === 'string' && step.arguments.trim()) {
       try {
         parsed = JSON.parse(step.arguments)
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     }
   }
   if (!parsed.original_content && step?.result?.content) {
@@ -136,9 +120,7 @@ function getDiffArgs(step: any) {
       if (resObj && typeof resObj === 'object') {
         parsed = { ...resObj, ...parsed }
       }
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }
   return {
     title: parsed.title || tf('ai_diff_preview_title', '变更对比预览'),
@@ -156,10 +138,7 @@ function stepAnnotation(name: string, content?: string): { text: string; ok: boo
       if (parsed?.status === 'timeout') return { text: tf('ai_ask_timeout', '等待用户选择超时，未作答'), ok: false }
       if (parsed?.status === 'cancelled') return { text: tf('ai_ask_disconnected', '连接已断开，未作答'), ok: false }
       const resp = String(parsed?.user_response || '')
-      const lines = resp
-        .split('\n')
-        .map((l: string) => l.trim())
-        .filter(Boolean)
+      const lines = resp.split('\n').map((l: string) => l.trim()).filter(Boolean)
       const meaningful = lines.filter((l: string) => l !== '我已做出选择：' && !l.startsWith('【补充说明'))
       const summary = (meaningful[0] || '').replace(/^\d+\.\s*/, '').replace(/【[^】]*】[:：]?\s*/, '')
       if (!summary) return { text: tf('ai_ask_received', '已收到用户选择'), ok: true }
@@ -193,24 +172,11 @@ function stepAnnotation(name: string, content?: string): { text: string; ok: boo
     case 'archive_items':
       return { text: t('ai_result_archive_items', { count: isObj ? count(parsed.archived) : 0 }), ok: true }
     case 'unarchive_items':
-      return {
-        text: t('ai_result_unarchive_items', { count: isObj ? count(parsed.unarchived ?? parsed.archived) : 0 }),
-        ok: true,
-      }
+      return { text: t('ai_result_unarchive_items', { count: isObj ? count(parsed.unarchived ?? parsed.archived) : 0 }), ok: true }
     case 'batch_favorite':
-      return {
-        text: t('ai_result_favorite_items', {
-          count: isObj ? count(parsed.updated ?? parsed.favorited ?? parsed.tagged) : 0,
-        }),
-        ok: true,
-      }
+      return { text: t('ai_result_favorite_items', { count: isObj ? count(parsed.updated ?? parsed.favorited ?? parsed.tagged) : 0 }), ok: true }
     case 'destroy_clips':
-      return {
-        text: t('ai_result_destroy_clips', {
-          count: isObj ? count(parsed.permanentlyDeleted ?? parsed.deleted ?? parsed.destroyed) : 0,
-        }),
-        ok: true,
-      }
+      return { text: t('ai_result_destroy_clips', { count: isObj ? count(parsed.permanentlyDeleted ?? parsed.deleted ?? parsed.destroyed) : 0 }), ok: true }
     case 'find_duplicates':
       return {
         text: tf('ai_result_duplicates', '已扫描发现 {groups} 组重复条目（共 {items} 条）', {
@@ -279,66 +245,56 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
   <div v-if="steps.length > 0" class="ai-tools-flow">
     <template v-for="step in steps" :key="step.id">
       <!-- 行内工具调用条目 -->
-      <div
-        class="ai-tool-item"
-        :class="{
-          done: step.done,
-          running: !step.done,
-          error: step.result && stepAnnotation(step.name, step.result.content)?.ok === false,
-        }"
-      >
+      <div class="ai-tool-item" :class="{ done: step.done, running: !step.done, error: step.result && stepAnnotation(step.name, step.result.content)?.ok === false }">
         <button class="ai-tool-row" @click="toggle(step.id)">
           <!-- 状态图标 -->
           <span class="ai-tool-state">
             <CheckCircle2 v-if="step.done" :size="12" class="state-done" />
             <Loader2 v-else :size="12" class="state-running" />
           </span>
-
+          
           <!-- 工具标识 -->
           <span class="ai-tool-bracket"><component :is="getToolIcon(step.name)" :size="11" /></span>
-
+          
           <!-- 文字描述 -->
           <span class="ai-tool-text">
-            <span class="ai-tool-action">{{
-              step.done ? tf('ai_tool_action_done', '已调用') : tf('ai_tool_action_calling', '调用')
-            }}</span>
+            <span class="ai-tool-action">{{ step.done ? tf('ai_tool_action_done', '已调用') : tf('ai_tool_action_calling', '调用') }}</span>
             <span class="ai-tool-name">{{ getToolName(step.name) }}</span>
-            <span v-if="isDestructiveTool(step.name)" class="ai-tool-tag destructive">{{
-              tf('ai_tool_tag_destructive', '危险')
-            }}</span>
+            <span v-if="isDestructiveTool(step.name)" class="ai-tool-tag destructive">{{ tf('ai_tool_tag_destructive', '危险') }}</span>
             <span v-else-if="step.write" class="ai-tool-tag write">{{ tf('ai_tool_tag_write', '写') }}</span>
           </span>
-
+          
           <!-- 状态文字 -->
           <span class="ai-tool-status" :class="{ done: step.done, confirm: awaitingConfirm(step.id, step.name) }">
             {{ statusText(step) }}
           </span>
-
+          
           <!-- 展开箭头 -->
           <ChevronDown v-if="expanded.has(step.id)" :size="11" class="ai-tool-chev" />
           <ChevronRight v-else :size="11" class="ai-tool-chev" />
         </button>
-
+        
         <!-- 结果摘要行 -->
-        <div
-          v-if="stepAnnotation(step.name, step.result?.content)"
-          class="ai-tool-result-line"
-          :class="{ error: !stepAnnotation(step.name, step.result?.content)!.ok }"
-        >
+        <div v-if="stepAnnotation(step.name, step.result?.content)" class="ai-tool-result-line"
+             :class="{ error: !stepAnnotation(step.name, step.result?.content)!.ok }">
           <span class="ai-tool-result-icon">{{ stepAnnotation(step.name, step.result?.content)!.ok ? '✓' : '!' }}</span>
           <span>{{ stepAnnotation(step.name, step.result?.content)!.text }}</span>
         </div>
 
         <!-- 交互式选择卡片（ask_user）：内嵌在过程流中调用发生的位置，
              等待作答时保持展开；完成后收敛为上方一行"已选择：…"摘要 -->
-        <AiAskUserCard v-if="step.name === 'ask_user' && !step.done" :step="step" :tool-result="step.result" />
+        <AiAskUserCard
+          v-if="step.name === 'ask_user' && !step.done"
+          :step="step"
+          :tool-result="step.result"
+        />
+        
+
 
         <!-- 特殊卡片：show_diff_preview（文本前后差异对比卡片） -->
         <div v-if="step.name === 'show_diff_preview'" class="ai-diff-card">
           <div class="ai-diff-card__head">
-            <span class="ai-diff-card__title">{{
-              getDiffArgs(step).title || tf('ai_diff_preview_title', '变更对比预览')
-            }}</span>
+            <span class="ai-diff-card__title">{{ getDiffArgs(step).title || tf('ai_diff_preview_title', '变更对比预览') }}</span>
           </div>
           <div class="ai-diff-card__grid">
             <div class="ai-diff-col original">
@@ -386,14 +342,8 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
 }
 
 @keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* 行按钮 */
@@ -436,9 +386,7 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
 /* 工具标识括号 */
@@ -544,14 +492,8 @@ function statusText(step: { id: string; name: string; done: boolean }): string {
 }
 
 @keyframes detail-in {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .ai-tool-detail-section {

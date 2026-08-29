@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch, reactive, ref, onMounted, onBeforeUnmount } from 'vue'
+import { watch, reactive, ref, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useTheme } from '@/composables/useTheme'
@@ -103,31 +103,6 @@ watch(
   },
   { immediate: true },
 )
-
-// ===== C8①：Esc 栈式关闭 =====
-// 弹窗可能叠开（最典型：忘记密码浮在 showModalType 弹窗之上）。以前每个弹窗各自监听 Esc，
-// 同一次按键会被多处消费，出现"按一次全关"或"关错层"。这里在 window 捕获阶段统一仲裁：
-// 按栈顶优先逐层关闭（预览 > 忘记密码 > showModalType 弹窗），并中断事件传播，
-// 避免下层 ModalDialog/ForgotPasswordModal 的 document 监听被同一次按键再次触发。
-function isPreviewOpen(): boolean {
-  return !!props.previewItem
-}
-function onEscapeStackedClose(e: KeyboardEvent) {
-  if (e.key !== 'Escape') return
-  if (isPreviewOpen()) {
-    emit('close-preview')
-  } else if (props.showForgotPwd) {
-    emit('close-forgot-pwd')
-  } else if (props.showModalType) {
-    emit('close-modal')
-  } else {
-    return
-  }
-  e.stopPropagation()
-  e.preventDefault()
-}
-window.addEventListener('keydown', onEscapeStackedClose, true)
-onBeforeUnmount(() => window.removeEventListener('keydown', onEscapeStackedClose, true))
 </script>
 
 <template>

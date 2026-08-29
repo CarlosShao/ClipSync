@@ -242,9 +242,7 @@ export function extractHtmlToc(html: string): TocItem[] {
     const depth = parseInt(m[1], 10)
     const explicitId = m[2] || ''
     // Strip nested tags from heading text
-    const rawText = String(m[3])
-      .replace(/<[^>]+>/g, '')
-      .trim()
+    const rawText = String(m[3]).replace(/<[^>]+>/g, '').trim()
     if (!rawText) continue
     let id = explicitId
     if (!id) {
