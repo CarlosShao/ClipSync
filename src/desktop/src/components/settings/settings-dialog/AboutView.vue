@@ -29,6 +29,8 @@ onMounted(async () => {
 
 function errMessage(e: unknown, fallbackKey: string): string {
   const raw = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
+  // Rust 侧约定标记（lib.rs check_for_updates），映射为本地化文案而非透传中文
+  if (raw === 'UPDATER_NOT_CONFIGURED') return t('sg_update_not_configured')
   return raw || t(fallbackKey)
 }
 

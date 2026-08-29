@@ -26,13 +26,15 @@ const sh = useSearchHistory()
 const showHistory = ref(false)
 
 // Filter options for segmented control
-const filterOptions = [
-  { value: 'all', label: t('tab_all') },
-  { value: 'text', label: t('tab_text') },
-  { value: 'images', label: t('tab_images') },
-  { value: 'links', label: t('tab_links') },
-  { value: 'files', label: t('tab_files') },
-] as const
+// 必须是 computed：t() 在渲染期求值才能随语言切换即时更新，
+// 普通数组会在组件挂载时冻结当前语言（EN 环境显示中文 tab 的根因）
+const filterOptions = computed(() => [
+  { value: 'all' as const, label: t('tab_all') },
+  { value: 'text' as const, label: t('tab_text') },
+  { value: 'images' as const, label: t('tab_images') },
+  { value: 'links' as const, label: t('tab_links') },
+  { value: 'files' as const, label: t('tab_files') },
+])
 
 const activeFilter = computed(() => clip.activeFilter.value)
 const selectedCount = computed(() => clip.selectedCount.value)

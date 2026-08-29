@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { ChevronDown, Check } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 
@@ -14,10 +14,25 @@ const emit = defineEmits<{
 }>()
 
 const open = ref(false)
+const dropUp = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 
-function toggle() {
+// 展开前测一下上下方空间：下方放不下且上方更宽裕时朝上弹，
+// 避免在对话框底部把菜单挤出容器/撑出滚动条
+async function toggle() {
   open.value = !open.value
+  if (open.value) {
+    dropUp.value = false
+    await nextTick()
+    const anchor = dropdownRef.value
+    const menu = anchor?.querySelector('.custom-select-dropdown') as HTMLElement | null
+    if (!anchor || !menu) return
+    const rect = anchor.getBoundingClientRect()
+    const need = Math.min(menu.scrollHeight, 240) + 8
+    const below = window.innerHeight - rect.bottom
+    const above = rect.top
+    dropUp.value = below < need && above > below
+  }
 }
 function select(value: string) {
   emit('update:modelValue', value)
@@ -62,7 +77,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
       <span class="custom-select-trigger-text"><slot /></span>
       <ChevronDown class="custom-select-chevron" :class="{ open: open }" />
     </button>
-    <div v-if="open" class="custom-select-dropdown">
+    <div v-if="open" class="custom-select-dropdown" :class="{ 'custom-select-dropdown--up': dropUp }">
       <slot name="options" />
     </div>
   </div>
@@ -136,13 +151,34 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
   min-width: 100%;
   width: max-content;
   max-width: min(420px, 80vw);
+  /* 超高菜单内部滚动，绝不撑破宿主容器（否则对话框会被顶出滚动条） */
+  max-height: 240px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-dropdown);
   z-index: var(--z-dropdown);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   animation: selectSlideIn 0.15s ease;
+}
+
+/* 下方空间不足时朝上弹（toggle() 里测量后追加） */
+.custom-select-dropdown--up {
+  top: auto;
+  bottom: calc(100% + 6px);
+  animation: selectSlideInUp 0.15s ease;
+}
+
+@keyframes selectSlideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes selectSlideIn {

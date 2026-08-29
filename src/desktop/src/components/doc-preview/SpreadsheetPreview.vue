@@ -112,28 +112,39 @@ function selectSheet(idx: number) {
   color: var(--text-tertiary);
   font-size: 13px;
 }
-/* sheet_to_html 生成的 table 没有样式，这里补齐 */
+/* sheet_to_html 生成的 table 没有样式，这里补齐。
+   ⚠️ 必须用 border-collapse: separate —— Chromium 里 collapse 会让
+   thead/th 的 position: sticky 静默失效（表头不吸顶的根因）。
+   配合 border-spacing: 0 + 单边单元格边框保持与 collapse 相近的观感 */
 .sheet-html :deep(table) {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: max-content;
   max-width: 100%;
   font-size: 12px;
 }
 .sheet-html :deep(thead) {
-  background: var(--bg-hover);
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
 }
 .sheet-html :deep(th),
 .sheet-html :deep(td) {
-  border: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
   padding: 4px 10px;
   text-align: left;
   white-space: nowrap;
   max-width: 480px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.sheet-html :deep(tr) :deep(th:first-child),
+.sheet-html :deep(tr) :deep(td:first-child) {
+  border-left: 1px solid var(--border-subtle);
+}
+.sheet-html :deep(thead th) {
+  border-top: 1px solid var(--border-subtle);
 }
 .sheet-html :deep(th) {
   font-weight: 600;
