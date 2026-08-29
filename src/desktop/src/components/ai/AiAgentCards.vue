@@ -15,8 +15,7 @@ const props = defineProps<{ runs: AgentRun[] }>()
 const emit = defineEmits<{ open: [run: AgentRun] }>()
 const { t } = useI18n()
 
-const runActive = (run: AgentRun) =>
-  run.status === 'planning' || run.status === 'working' || run.status === 'synthesis'
+const runActive = (run: AgentRun) => run.status === 'planning' || run.status === 'working' || run.status === 'synthesis'
 
 // 与 AiAgentRun 一致的友好别名：coordinator/synthesis 翻译，worker 保留角色名
 function displayName(run: AgentRun): string {
@@ -63,7 +62,9 @@ const failCount = computed(() => props.runs.filter((r) => r.status === 'failed')
     <!-- 头部：派出计数 + 运行/完成/失败统计 -->
     <div class="ai-agent-cards-head">
       <Users :size="14" class="ai-agent-cards-icon" />
-      <span class="ai-agent-cards-title">{{ t('ai_subagents_dispatched', '已派出 {n} 个子代理').replace('{n}', String(runs.length)) }}</span>
+      <span class="ai-agent-cards-title">{{
+        t('ai_subagents_dispatched', '已派出 {n} 个子代理').replace('{n}', String(runs.length))
+      }}</span>
       <span class="ai-agent-cards-counts">
         <span v-if="activeCount" class="cnt cnt-run">{{ activeCount }} ⟳</span>
         <span v-if="doneCount" class="cnt cnt-done">{{ doneCount }} ✓</span>

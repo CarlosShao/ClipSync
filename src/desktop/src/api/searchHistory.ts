@@ -8,10 +8,7 @@ export interface SearchHistoryItem {
 }
 
 export function getSearchHistory(limit = 20) {
-  return api<{ items: SearchHistoryItem[]; count: number }>(
-    'GET',
-    `/api/search-history?limit=${limit}`,
-  )
+  return api<{ items: SearchHistoryItem[]; count: number }>('GET', `/api/search-history?limit=${limit}`)
 }
 
 export function recordSearch(keyword: string) {

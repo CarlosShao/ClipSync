@@ -263,7 +263,14 @@ export interface AiContext {
   templates: { templatesCount: number; variablesCount: number }
   sharedLinks: { sharedLinksCount: number }
   recentItems: Array<{ id: string; type: string; preview: string; isFavorite: boolean; createdAt: string }>
-  subscription: { planName: string; displayName: string; maxDevices: number; maxClipboardItems: number; maxFileSizeMb: number; maxStorageMb: number } | null
+  subscription: {
+    planName: string
+    displayName: string
+    maxDevices: number
+    maxClipboardItems: number
+    maxFileSizeMb: number
+    maxStorageMb: number
+  } | null
   memories: AiMemory[]
 }
 
@@ -327,7 +334,9 @@ export async function streamRefactorPrompt(opts: {
       const j = await res.json()
       msg = j?.error || j?.message || msg
       detail = j?.detail
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     opts.onError?.(msg, detail)
     return
   }
@@ -440,10 +449,7 @@ export interface CompactResult {
   summaryPreview?: string // 新摘要的前 600 字符
   summaryLength?: number // 新摘要的完整字符数
 }
-export function compactConversation(
-  id: string,
-  body?: { providerId?: string },
-) {
+export function compactConversation(id: string, body?: { providerId?: string }) {
   return api<CompactResult>('POST', `/api/ai/conversations/${id}/compact`, body || {})
 }
 
@@ -569,7 +575,7 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
         .map((l) => l.slice(5).trim())
       for (const data of dataLines) {
         if (!data) continue
-        if (data === '[DONE]') continue  // [DONE] 仅标记结束，不触发回调
+        if (data === '[DONE]') continue // [DONE] 仅标记结束，不触发回调
         try {
           const parsed = JSON.parse(data)
           if (parsed.error) {
@@ -664,10 +670,7 @@ export interface SummarizeResult {
   summary: string
 }
 
-export function summarizeClipboard(
-  params: { providerId: string; content: string },
-  opts?: { signal?: AbortSignal },
-) {
+export function summarizeClipboard(params: { providerId: string; content: string }, opts?: { signal?: AbortSignal }) {
   return api<SummarizeResult>('POST', '/api/ai/summarize', params, opts)
 }
 

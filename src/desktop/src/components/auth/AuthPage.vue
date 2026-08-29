@@ -1536,7 +1536,7 @@ const isRegisterView = computed(() => authView.value === 'register')
   position: absolute;
   top: 20px;
   right: 20px;
-  z-index: 10;
+  z-index: var(--z-sticky);
 }
 .theme-pill {
   display: inline-flex;
@@ -1614,7 +1614,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 .sp-step.completed .sp-step-num {
   border-color: var(--success);
   background: var(--success);
-  color: #fff;
+  color: var(--scrim-foreground);
 }
 .sp-step-line {
   width: 32px;
@@ -1626,7 +1626,10 @@ const isRegisterView = computed(() => authView.value === 'register')
   background: var(--success);
 }
 
-/* ===== Right panel ===== */
+/* ===== Right panel =====
+   登录页右侧是固定的品牌宣传面板（深蓝/靛紫渐变），刻意不随明暗主题变化：
+   它是营销视觉，不是功能表面，套主题 token 会在浅色主题下丢失品牌感。 */
+/* stylelint-disable color-no-hex */
 .auth-right {
   position: relative;
   display: flex;
@@ -1659,12 +1662,13 @@ const isRegisterView = computed(() => authView.value === 'register')
 }
 .auth-right-content {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-sticky);
   text-align: center;
   padding: 48px 40px;
-  color: #fff;
+  color: var(--scrim-foreground);
   max-width: 380px;
 }
+/* stylelint-enable color-no-hex */
 .quote-text {
   font-size: 20px;
   font-weight: 500;
@@ -1686,7 +1690,7 @@ const isRegisterView = computed(() => authView.value === 'register')
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
 }
 .modal-box {
   position: relative;

@@ -526,7 +526,8 @@ export function useAiChat() {
     }
 
     // 智能标题：如果这是新对话的首条消息，用用户消息内容自动生成标题
-    const isFirstMessageInNewConv = !conv.currentConversation.value?.message_count || conv.currentConversation.value.message_count === 0
+    const isFirstMessageInNewConv =
+      !conv.currentConversation.value?.message_count || conv.currentConversation.value.message_count === 0
     isStreaming.value = true
     streamLastActivityAt.value = Date.now() // 健康检查：记录流开始时间
     // 新一轮对话开始：重置上下文用量，圆环回到 0%
@@ -684,7 +685,9 @@ export function useAiChat() {
 
           if (idx === -1) {
             // 未找到开启标签：如果不是最后终结块，保留末尾至多 MAX_TAG_PREFIX_LEN 个字符，防拆包漏判
-            const safeEnd = isFinal ? thinkState.raw.length : Math.max(thinkState.pos, thinkState.raw.length - MAX_TAG_PREFIX_LEN)
+            const safeEnd = isFinal
+              ? thinkState.raw.length
+              : Math.max(thinkState.pos, thinkState.raw.length - MAX_TAG_PREFIX_LEN)
             if (safeEnd > thinkState.pos) {
               textDelta += thinkState.raw.slice(thinkState.pos, safeEnd)
               thinkState.pos = safeEnd
@@ -702,7 +705,9 @@ export function useAiChat() {
           const idx = thinkState.raw.indexOf(closeTag, thinkState.pos)
           if (idx === -1) {
             // 未找到结束标签：如果不是最后终结块，保留末尾至多 MAX_TAG_PREFIX_LEN 个字符
-            const safeEnd = isFinal ? thinkState.raw.length : Math.max(thinkState.pos, thinkState.raw.length - MAX_TAG_PREFIX_LEN)
+            const safeEnd = isFinal
+              ? thinkState.raw.length
+              : Math.max(thinkState.pos, thinkState.raw.length - MAX_TAG_PREFIX_LEN)
             if (safeEnd > thinkState.pos) {
               thinkingDelta += thinkState.raw.slice(thinkState.pos, safeEnd)
               thinkState.pos = safeEnd
@@ -929,13 +934,11 @@ export function useAiChat() {
             } else {
               bucket.toolResults.push(toolResult)
             }
-            
+
             // 工具执行完成后触发数据刷新（实现无感刷新）
             // 工具名优先取 tool_result 自带的 name（coordinator 路径只发 tool_result、不发
             // tool_call 事件，此时 toolCalls 里匹配不到对应项）；取不到再回退到 tool_call 匹配。
-            const toolName =
-              toolResult.name ||
-              bucket.toolCalls?.find((tc) => tc.id === toolResult.tool_call_id)?.name
+            const toolName = toolResult.name || bucket.toolCalls?.find((tc) => tc.id === toolResult.tool_call_id)?.name
             if (toolName) {
               // 延迟 300ms 触发，等待后端数据落盘完成
               setTimeout(() => {
@@ -944,9 +947,11 @@ export function useAiChat() {
                 // useCollections / collectionStore 都监听此事件，确保双侧同步
                 const collectionTools = ['create_collection', 'create_sub_collection']
                 if (collectionTools.includes(toolName)) {
-                  window.dispatchEvent(new CustomEvent('clipsync:collections-updated', {
-                    detail: { reason: 'ai-tool', tool: toolName }
-                  }))
+                  window.dispatchEvent(
+                    new CustomEvent('clipsync:collections-updated', {
+                      detail: { reason: 'ai-tool', tool: toolName },
+                    }),
+                  )
                 }
               }, 300)
             }
@@ -1010,7 +1015,11 @@ export function useAiChat() {
       if (isFirstMessageInNewConv) {
         const userMsg = messages.value.find((m) => m.role === 'user')
         if (userMsg?.content) {
-          const title = userMsg.content.replace(/[\u2404].*?[\u2404]/g, '').trim().slice(0, 20) || '新对话'
+          const title =
+            userMsg.content
+              .replace(/[\u2404].*?[\u2404]/g, '')
+              .trim()
+              .slice(0, 20) || '新对话'
           conv.rename(conv.currentConversationId.value, title).catch(() => {})
         }
       }

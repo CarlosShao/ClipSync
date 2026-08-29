@@ -36,7 +36,8 @@ const settledText = computed(() => {
   if (submittedPayload.value) return submittedPayload.value
   if (!props.toolResult?.content) return ''
   try {
-    const obj = typeof props.toolResult.content === 'object' ? props.toolResult.content : JSON.parse(props.toolResult.content)
+    const obj =
+      typeof props.toolResult.content === 'object' ? props.toolResult.content : JSON.parse(props.toolResult.content)
     if (obj?.user_response) return obj.user_response
   } catch {
     /* ignore */
@@ -49,7 +50,10 @@ function normalizeOptions(raw: any): string[] {
   let list = raw
   if (typeof list === 'string') {
     if (list.includes('\n') || list.includes(',') || list.includes('，')) {
-      list = list.split(/[\n,，]+/).map((s: string) => s.trim()).filter(Boolean)
+      list = list
+        .split(/[\n,，]+/)
+        .map((s: string) => s.trim())
+        .filter(Boolean)
     } else {
       list = [list.trim()]
     }
@@ -60,14 +64,16 @@ function normalizeOptions(raw: any): string[] {
     }
     return [String(list)]
   }
-  return list.map((item, idx) => {
-    if (typeof item === 'string') return item.trim()
-    if (typeof item === 'number') return String(item)
-    if (item && typeof item === 'object') {
-      return (item.label || item.text || item.title || item.name || item.value || JSON.stringify(item)).trim()
-    }
-    return tf('ai_ask_option_n', '选项 {n}', { n: idx + 1 })
-  }).filter(Boolean)
+  return list
+    .map((item, idx) => {
+      if (typeof item === 'string') return item.trim()
+      if (typeof item === 'number') return String(item)
+      if (item && typeof item === 'object') {
+        return (item.label || item.text || item.title || item.name || item.value || JSON.stringify(item)).trim()
+      }
+      return tf('ai_ask_option_n', '选项 {n}', { n: idx + 1 })
+    })
+    .filter(Boolean)
 }
 
 const askData = computed<AskUserData>(() => {
@@ -88,7 +94,8 @@ const askData = computed<AskUserData>(() => {
   // 兜底：从 result 中解析
   if (!parsed.questions && !parsed.question && !parsed.options && props.toolResult?.content) {
     try {
-      const resObj = typeof props.toolResult.content === 'object' ? props.toolResult.content : JSON.parse(props.toolResult.content)
+      const resObj =
+        typeof props.toolResult.content === 'object' ? props.toolResult.content : JSON.parse(props.toolResult.content)
       if (resObj && typeof resObj === 'object') {
         parsed = { ...resObj, ...parsed }
       }
@@ -109,8 +116,11 @@ const askData = computed<AskUserData>(() => {
       })
     }
   } else {
-    const singleQ = parsed.question || parsed.title || parsed.prompt || parsed.message || tf('ai_ask_choose_prompt', '请做出选择：')
-    const singleOpts = normalizeOptions(parsed.options ?? parsed.choices ?? parsed.items ?? parsed.selections ?? parsed.candidates)
+    const singleQ =
+      parsed.question || parsed.title || parsed.prompt || parsed.message || tf('ai_ask_choose_prompt', '请做出选择：')
+    const singleOpts = normalizeOptions(
+      parsed.options ?? parsed.choices ?? parsed.items ?? parsed.selections ?? parsed.candidates,
+    )
     questions.push({
       question: singleQ,
       options: singleOpts.length
@@ -189,16 +199,22 @@ async function submitAllAnswers() {
 
   askData.value.questions.forEach((q, qi) => {
     const sel = getSelectedForQ(qi)
-    const displayOptions = sel.map((opt) => {
-      if (opt === '__OTHER__') {
-        const custom = getCustomOther(qi).trim()
-        return custom ? tf('ai_ask_other_bracket', '其他({text})', { text: custom }) : tf('ai_ask_other_plain', '其他')
-      }
-      return opt
-    }).filter(Boolean)
+    const displayOptions = sel
+      .map((opt) => {
+        if (opt === '__OTHER__') {
+          const custom = getCustomOther(qi).trim()
+          return custom
+            ? tf('ai_ask_other_bracket', '其他({text})', { text: custom })
+            : tf('ai_ask_other_plain', '其他')
+        }
+        return opt
+      })
+      .filter(Boolean)
 
     if (displayOptions.length > 0) {
-      summaryLines.push(`${qi + 1}. ${tf('ai_ask_qa_line', '【{q}】：{a}', { q: q.question, a: displayOptions.join('、') })}`)
+      summaryLines.push(
+        `${qi + 1}. ${tf('ai_ask_qa_line', '【{q}】：{a}', { q: q.question, a: displayOptions.join('、') })}`,
+      )
     }
   })
 
@@ -296,7 +312,11 @@ async function submitAllAnswers() {
           <div class="ai-ask-card__other-head">
             <span class="ai-ask-card__opt-index other"><PenLine :size="10" /></span>
             <span class="ai-ask-card__opt-label">{{ tf('ai_ask_other', '其他（自定义填写）') }}</span>
-            <CheckCircle2 v-if="isOptSelected(currentQuestionIndex, '__OTHER__')" :size="14" class="ai-ask-card__opt-check" />
+            <CheckCircle2
+              v-if="isOptSelected(currentQuestionIndex, '__OTHER__')"
+              :size="14"
+              class="ai-ask-card__opt-check"
+            />
           </div>
           <div
             v-if="isOptSelected(currentQuestionIndex, '__OTHER__')"
@@ -354,12 +374,7 @@ async function submitAllAnswers() {
             </button>
           </div>
 
-          <button
-            type="button"
-            class="ai-ask-card__submit-btn"
-            :disabled="!canSubmit"
-            @click="submitAllAnswers"
-          >
+          <button type="button" class="ai-ask-card__submit-btn" :disabled="!canSubmit" @click="submitAllAnswers">
             <Send :size="12" />
             <span>{{ tf('ai_ask_submit', '提交选择') }}</span>
           </button>

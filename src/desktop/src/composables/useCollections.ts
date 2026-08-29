@@ -96,15 +96,21 @@ export function useCollections() {
   // even when FavoritesView is unmounted (e.g. user is on AI page).
   const flatCollections = computed({
     get: () => collectionStore.flatCollections,
-    set: (val: any[]) => { collectionStore.flatCollections = val }
+    set: (val: any[]) => {
+      collectionStore.flatCollections = val
+    },
   })
   const expandedPaths = computed({
     get: () => collectionStore.expandedPaths,
-    set: (val: Set<string>) => { collectionStore.expandedPaths = val }
+    set: (val: Set<string>) => {
+      collectionStore.expandedPaths = val
+    },
   })
   const loading = computed({
     get: () => collectionStore.loading,
-    set: (val: boolean) => { collectionStore.loading = val }
+    set: (val: boolean) => {
+      collectionStore.loading = val
+    },
   })
 
   const activeNodeId = ref<string | null>(null)
@@ -287,7 +293,9 @@ export function useCollections() {
           collectionStore.expandPath(parent.path)
         }
       }
-      window.dispatchEvent(new CustomEvent('clipsync:collections-updated', { detail: { reason: 'create', id: data.collection.id } }))
+      window.dispatchEvent(
+        new CustomEvent('clipsync:collections-updated', { detail: { reason: 'create', id: data.collection.id } }),
+      )
     }
     return data
   }

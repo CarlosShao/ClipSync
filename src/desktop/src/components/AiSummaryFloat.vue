@@ -169,10 +169,7 @@ onUnmounted(() => {
 <template>
   <Teleport to="body">
     <Transition name="summary-float">
-      <div
-        v-if="visible"
-        class="ai-summary-float pointer-events-auto"
-      >
+      <div v-if="visible" class="ai-summary-float pointer-events-auto">
         <div class="flex items-start justify-between gap-2 shrink-0">
           <div class="flex items-center gap-1.5 text-xs font-medium text-strong">
             <Sparkles class="w-3.5 h-3.5" />
@@ -190,7 +187,9 @@ onUnmounted(() => {
           {{ preview }}
         </div>
         <div class="float-summary mt-2 text-sm leading-relaxed text-foreground">
-          <span v-if="loading" class="text-muted-foreground">{{ tf('ai_summary_float_loading', '正在生成摘要...') }}</span>
+          <span v-if="loading" class="text-muted-foreground">{{
+            tf('ai_summary_float_loading', '正在生成摘要...')
+          }}</span>
           <span v-else>{{ summary }}</span>
         </div>
       </div>

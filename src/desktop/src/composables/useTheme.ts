@@ -19,7 +19,7 @@ export const currentMode = ref<ThemeMode>((localStorage.getItem(THEME_MODE_KEY) 
 
 // The mode actually applied to the DOM — 'system' resolves to the OS preference
 export const resolvedMode = computed<'light' | 'dark'>(() =>
-  currentMode.value === 'system' ? (systemPrefersDark.value ? 'dark' : 'light') : currentMode.value
+  currentMode.value === 'system' ? (systemPrefersDark.value ? 'dark' : 'light') : currentMode.value,
 )
 
 const allThemes: { value: ThemeStyle; label: string; previewColor: string }[] = [

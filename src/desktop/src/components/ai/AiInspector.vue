@@ -112,13 +112,19 @@ const isOverlay = computed(() => inspectorMode.value === 'overlay')
         </h4>
         <div v-if="hasAgents" class="ai-insp-agents">
           <div v-for="a in agentSummary" :key="a.id" class="ai-insp-agent" :class="statusClass(a.status)">
-            <component :is="AGENT_ICONS[(a.status as keyof typeof AGENT_ICONS)] || CircleDot" :size="12" class="ai-insp-agent-icon" />
+            <component
+              :is="AGENT_ICONS[a.status as keyof typeof AGENT_ICONS] || CircleDot"
+              :size="12"
+              class="ai-insp-agent-icon"
+            />
             <div class="ai-insp-agent-body">
               <span class="ai-insp-agent-name">{{ a.name }}</span>
               <span v-if="a.objective && a.objective !== a.name" class="ai-insp-agent-obj">{{ a.objective }}</span>
               <span class="ai-insp-agent-meta">
                 {{ statusText(a.status) }}
-                <template v-if="a.toolCount"> · {{ tf('ai_agent_tools_count', `${a.toolCount} 次工具调用`, { n: a.toolCount }) }}</template>
+                <template v-if="a.toolCount">
+                  · {{ tf('ai_agent_tools_count', `${a.toolCount} 次工具调用`, { n: a.toolCount }) }}</template
+                >
                 <template v-if="formatDuration(a.duration)"> · {{ formatDuration(a.duration) }}</template>
               </span>
             </div>
@@ -314,7 +320,9 @@ const isOverlay = computed(() => inspectorMode.value === 'overlay')
   color: var(--text-tertiary);
 }
 @keyframes ai-insp-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .ai-insp-agent.is-running .ai-insp-agent-icon {

@@ -284,7 +284,12 @@ export async function api<T = any>(
   }
 
   // 重试耗尽（429 仍受限）
-  return { ok: false, status: 429, error: 'Too many requests after retries, please wait and try again.', retryAfter: lastRetryAfter }
+  return {
+    ok: false,
+    status: 429,
+    error: 'Too many requests after retries, please wait and try again.',
+    retryAfter: lastRetryAfter,
+  }
 }
 
 /**

@@ -28,9 +28,7 @@ function normalizeFeatures(raw: any): string[] {
     }
   }
   if (!Array.isArray(arr)) return []
-  return arr
-    .map((f: any) => (typeof f === 'string' ? f : String(f?.label ?? f?.name ?? '')))
-    .filter(Boolean)
+  return arr.map((f: any) => (typeof f === 'string' ? f : String(f?.label ?? f?.name ?? ''))).filter(Boolean)
 }
 
 async function loadSubscription() {

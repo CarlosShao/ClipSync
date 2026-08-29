@@ -136,7 +136,9 @@ function openAiSuggest() {
   try {
     const favs = localStorage.getItem('clipsync-favorites') || '[]'
     const arr = JSON.parse(favs)
-    suggestCollectionNames.value = Array.isArray(arr) ? arr.map((f: any) => (typeof f === 'string' ? f : f?.name)).filter(Boolean) : []
+    suggestCollectionNames.value = Array.isArray(arr)
+      ? arr.map((f: any) => (typeof f === 'string' ? f : f?.name)).filter(Boolean)
+      : []
   } catch {
     suggestCollectionNames.value = []
   }

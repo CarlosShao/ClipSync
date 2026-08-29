@@ -6,12 +6,51 @@ import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useConfigStore } from '@/stores/configStore'
 import { usePrivacy } from '@/composables/usePrivacy'
-import { Star, Search, Copy, Image as ImageIcon, LayoutGrid, List, ExternalLink, FileText, Folder, FolderPlus, FolderInput, Plus, X, Check, CheckSquare, Square, ArrowUpDown, Tag, ClipboardList, ChevronRight, Lock, Bookmark, Archive, Trash2, Palette, Edit, AlertTriangle, RefreshCw } from 'lucide-vue-next'
+import {
+  Star,
+  Search,
+  Copy,
+  Image as ImageIcon,
+  LayoutGrid,
+  List,
+  ExternalLink,
+  FileText,
+  Folder,
+  FolderPlus,
+  FolderInput,
+  Plus,
+  X,
+  Check,
+  CheckSquare,
+  Square,
+  ArrowUpDown,
+  Tag,
+  ClipboardList,
+  ChevronRight,
+  Lock,
+  Bookmark,
+  Archive,
+  Trash2,
+  Palette,
+  Edit,
+  AlertTriangle,
+  RefreshCw,
+} from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { createFavoriteCollection, deleteFavoriteCollection, addCollectionItem, removeCollectionItem, setItemTags, getAllFavoriteTags, deleteTag, getCollectionItems, type FavoriteTag } from '@/api/client'
+import {
+  createFavoriteCollection,
+  deleteFavoriteCollection,
+  addCollectionItem,
+  removeCollectionItem,
+  setItemTags,
+  getAllFavoriteTags,
+  deleteTag,
+  getCollectionItems,
+  type FavoriteTag,
+} from '@/api/client'
 import { useCollections, type CollectionNode } from '@/composables/useCollections'
 import { useItemPassword } from '@/composables/useItemPassword'
 import ProtectionDialog from '@/components/clipboard/ProtectionDialog.vue'
@@ -731,14 +770,16 @@ async function handleDeleteCollection(id: string) {
   if (childCount > 0) {
     const translated = t('confirm_delete_collection_with_children', { name, children: childCount, items: itemCount })
     // i18n t() 在 key 找不到时返回字面 key 字符串，所以检查是否等于 key 本身
-    msg = translated && translated !== 'confirm_delete_collection_with_children'
-      ? translated
-      : `确认删除收藏夹「${name}」及其下 ${childCount} 个子收藏夹（共 ${itemCount} 项）？`
+    msg =
+      translated && translated !== 'confirm_delete_collection_with_children'
+        ? translated
+        : `确认删除收藏夹「${name}」及其下 ${childCount} 个子收藏夹（共 ${itemCount} 项）？`
   } else {
     const translated = t('confirm_delete_collection', { name, items: itemCount })
-    msg = translated && translated !== 'confirm_delete_collection'
-      ? translated
-      : `确认删除收藏夹「${name}」（共 ${itemCount} 项）？`
+    msg =
+      translated && translated !== 'confirm_delete_collection'
+        ? translated
+        : `确认删除收藏夹「${name}」（共 ${itemCount} 项）？`
   }
   pendingDeleteCollectionId.value = id
   pendingDeleteCollectionMessage.value = msg
@@ -1147,9 +1188,7 @@ function cancelEditTags() {
             {{ node.name }}
           </span>
           <span class="fav-tree-count">{{ (node.children || []).length + node.item_count }}</span>
-          <button class="fav-tree-del" :title="t('delete')" @click.stop="handleDeleteCollection(node.id)">
-            ×
-          </button>
+          <button class="fav-tree-del" :title="t('delete')" @click.stop="handleDeleteCollection(node.id)">×</button>
           <!-- Flyout: show direct children on hover -->
           <div
             v-if="collections.flyoutNodeId.value === node.id && (node.children || []).length > 0"
@@ -1632,9 +1671,13 @@ function cancelEditTags() {
                 <!-- Tags on card -->
                 <div class="fav-card-tags">
                   <template v-if="editingTagsItemId !== item.id">
-                    <Badge v-for="tag in getTags(item)" :key="tag" class="fav-tag-badge" :style="tagColorStyle(tag, _tagColorMap)">{{
-                      tag
-                    }}</Badge>
+                    <Badge
+                      v-for="tag in getTags(item)"
+                      :key="tag"
+                      class="fav-tag-badge"
+                      :style="tagColorStyle(tag, _tagColorMap)"
+                      >{{ tag }}</Badge
+                    >
                     <button class="fav-tag-add-btn" :title="t('tag_edit_hint')" @click.stop="startEditTags(item)">
                       <Tag :size="12" />
                     </button>

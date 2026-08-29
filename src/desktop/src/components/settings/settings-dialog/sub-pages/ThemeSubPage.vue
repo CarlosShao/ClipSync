@@ -24,11 +24,7 @@ const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string 
     <h3 class="sp-title">{{ t('sg_theme') }}</h3>
     <p class="sp-desc">{{ t('sg_theme_h') }}</p>
     <!-- Follow-system mode: prominent card at the top, same active style as theme cards -->
-    <div
-      class="theme-card mode-card"
-      :class="{ active: currentMode === 'system' }"
-      @click="setMode('system')"
-    >
+    <div class="theme-card mode-card" :class="{ active: currentMode === 'system' }" @click="setMode('system')">
       <div class="theme-preview mode-preview">
         <Monitor :size="18" />
         <span class="mode-preview-text">{{ tf('mode_system', '跟随系统') }}</span>

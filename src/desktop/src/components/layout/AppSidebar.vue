@@ -81,7 +81,16 @@ const accountNavItems = computed(() => [
 <template>
   <aside :class="['sidebar', { 'sidebar--collapsed': isCollapsed }]" role="navigation" :aria-label="t('app_name')">
     <!-- ===== Header ===== -->
-    <div class="sb-header" :class="{ 'sb-header--clickable': isCollapsed }" @click="emit('toggle')">
+    <div
+      class="sb-header"
+      :class="{ 'sb-header--clickable': isCollapsed }"
+      :role="isCollapsed ? 'button' : undefined"
+      :tabindex="isCollapsed ? 0 : undefined"
+      :aria-label="isCollapsed ? t('nav_expand') : undefined"
+      @click="emit('toggle')"
+      @keydown.enter.prevent="isCollapsed && emit('toggle')"
+      @keydown.space.prevent="isCollapsed && emit('toggle')"
+    >
       <!-- Expanded: logo + name + toggle -->
       <div v-show="!isCollapsed" class="sb-brand">
         <div class="sb-logo">C</div>
@@ -171,8 +180,15 @@ const accountNavItems = computed(() => [
       <div
         class="user-chip"
         :class="{ 'user-chip--active': showUserMenu }"
+        role="button"
+        tabindex="0"
+        :aria-haspopup="'menu'"
+        :aria-expanded="showUserMenu"
+        :aria-label="t('nav_profile')"
         :title="t('nav_profile') || 'View Profile'"
         @click.stop="toggleUserMenu"
+        @keydown.enter.prevent="toggleUserMenu"
+        @keydown.space.prevent="toggleUserMenu"
       >
         <div class="user-avatar-ring">
           <img v-if="userAvatarUrl" :src="userAvatarUrl" alt="" class="user-avatar-img" />
@@ -233,9 +249,14 @@ const accountNavItems = computed(() => [
     <div
       v-show="isCollapsed"
       class="sb-footer-dot"
+      role="button"
+      tabindex="0"
+      :aria-label="t('nav_profile')"
       :title="userName || 'User'"
       style="cursor: pointer; border-radius: var(--radius-md); transition: background 0.12s"
       @click="emit('navigate', 'profile')"
+      @keydown.enter.prevent="emit('navigate', 'profile')"
+      @keydown.space.prevent="emit('navigate', 'profile')"
     >
       <div class="user-avatar-ring user-avatar-ring--sm">
         <div class="user-avatar-in user-avatar-in--sm">{{ userName ? userName.slice(0, 1) : 'C' }}</div>
@@ -506,6 +527,13 @@ const accountNavItems = computed(() => [
 }
 .user-chip--active {
   background: var(--bg-hover);
+}
+/* C8③：折叠热区 / user-chip / 折叠头像 均为可聚焦控件，补齐 focus-visible 高亮 */
+.sb-header--clickable:focus-visible,
+.user-chip:focus-visible,
+.sb-footer-dot:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 
 /* User popover menu — appears above the chip */

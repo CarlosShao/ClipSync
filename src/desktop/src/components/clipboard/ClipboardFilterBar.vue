@@ -39,9 +39,12 @@ const selectedCount = computed(() => clip.selectedCount.value)
 const searchInput = ref(clip.searchQuery.value)
 
 // 与全局 searchQuery 双向同步（外部清空时输入框也要清空）
-watch(() => clip.searchQuery.value, (q) => {
-  if (q !== searchInput.value) searchInput.value = q
-})
+watch(
+  () => clip.searchQuery.value,
+  (q) => {
+    if (q !== searchInput.value) searchInput.value = q
+  },
+)
 
 function onSearchFocus() {
   showHistory.value = true
@@ -50,7 +53,9 @@ function onSearchFocus() {
 
 function onSearchBlur() {
   // 延迟关闭，确保下拉项 mousedown 能先触发
-  setTimeout(() => { showHistory.value = false }, 150)
+  setTimeout(() => {
+    showHistory.value = false
+  }, 150)
 }
 
 // 输入防抖 300ms，避免每敲一个字母都打后端；用 id 标记避免与立即提交/清空竞态。

@@ -5,7 +5,15 @@ import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { enqueue } from '@/utils/offlineQueue'
 import { logger } from '@/utils/logger'
-import { items, recentUploadHashes, HASH_TTL, totalItems, mainTotalItems, currentView, type ClipItem } from './clipboardState'
+import {
+  items,
+  recentUploadHashes,
+  HASH_TTL,
+  totalItems,
+  mainTotalItems,
+  currentView,
+  type ClipItem,
+} from './clipboardState'
 import { cacheContent } from './clipboardCache'
 import { trimToMaxHistory } from './clipboardLoad'
 import { useConfigStore } from '@/stores/configStore'
@@ -457,9 +465,7 @@ export async function uploadFileToServer(payload: string) {
   }
   // 真实字节优先：有二进制捕获时上传它，否则退回文本/路径数组
   const storedContent = uploadedBase64 || fileContent
-  const displaySize = uploadedBase64
-    ? formatBytes(uploadedBytes)
-    : `${(fileContent.length / 1024).toFixed(1)} KB`
+  const displaySize = uploadedBase64 ? formatBytes(uploadedBytes) : `${(fileContent.length / 1024).toFixed(1)} KB`
 
   // 归档视图下跳过乐观插入：新条目未归档，不应出现在归档列表中
   const isArchiveView = currentView.value === 'archive'

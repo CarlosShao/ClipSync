@@ -43,7 +43,7 @@ const { t } = useI18n()
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  z-index: 200;
+  z-index: var(--z-drawer);
   min-width: 100%;
   width: max-content;
   max-width: 360px;

@@ -546,12 +546,7 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
               <Button variant="ghost" size="icon-sm" :title="t('ai_new_chat', '新对话')" @click="onNewConversation">
                 <Plus :size="15" />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                :title="t('ai_memory', '记忆')"
-                @click="showMemory = !showMemory"
-              >
+              <Button variant="ghost" size="icon-sm" :title="t('ai_memory', '记忆')" @click="showMemory = !showMemory">
                 <Brain :size="15" />
               </Button>
               <Button v-if="messages.length" variant="ghost" size="icon-sm" :title="t('ai_clear')" @click="clear">
@@ -607,10 +602,7 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
               <!-- 头部：权限请求标题行 -->
               <div class="ai-cfm-pop__head">
                 <div class="ai-cfm-pop__title-row">
-                  <span
-                    class="ai-cfm-pop__icon"
-                    :class="{ 'ai-cfm-pop__icon--danger': isDestructiveConfirm }"
-                  >
+                  <span class="ai-cfm-pop__icon" :class="{ 'ai-cfm-pop__icon--danger': isDestructiveConfirm }">
                     <ShieldCheck :size="14" />
                   </span>
                   <span class="ai-cfm-pop__title">
@@ -636,11 +628,7 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
 
               <!-- 按钮区：拒绝 + 仅本对话下拉 -->
               <div class="ai-cfm-pop__actions">
-                <button
-                  class="ai-cfm-pop__btn ai-cfm-pop__btn--deny"
-                  :disabled="approving"
-                  @click="approve(false)"
-                >
+                <button class="ai-cfm-pop__btn ai-cfm-pop__btn--deny" :disabled="approving" @click="approve(false)">
                   <XCircle :size="13" />
                   {{ tf('ai_confirm_deny', '拒绝') }}
                   <span class="ai-cfm-pop__kbd">Esc</span>
@@ -669,7 +657,10 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
                     <button
                       type="button"
                       class="ai-cfm-pop__menu-item"
-                      @click="showConfirmMenu = false; approve(true, 'once')"
+                      @click="
+                        showConfirmMenu = false
+                        approve(true, 'once')
+                      "
                     >
                       <Check :size="12" />
                       <span>{{ tf('ai_confirm_once_allow', '仅本次允许') }}</span>
@@ -678,15 +669,23 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
                       v-if="pendingConfirm?.tool"
                       type="button"
                       class="ai-cfm-pop__menu-item"
-                      @click="showConfirmMenu = false; approve(true, 'tool')"
+                      @click="
+                        showConfirmMenu = false
+                        approve(true, 'tool')
+                      "
                     >
                       <ShieldCheck :size="12" />
-                      <span>{{ tf('ai_confirm_allow_tool', '本会话始终允许 {tool}', { tool: pendingConfirm?.tool || '' }) }}</span>
+                      <span>{{
+                        tf('ai_confirm_allow_tool', '本会话始终允许 {tool}', { tool: pendingConfirm?.tool || '' })
+                      }}</span>
                     </button>
                     <button
                       type="button"
                       class="ai-cfm-pop__menu-item ai-cfm-pop__menu-item--danger"
-                      @click="showConfirmMenu = false; approve(true, 'all')"
+                      @click="
+                        showConfirmMenu = false
+                        approve(true, 'all')
+                      "
                     >
                       <ShieldAlert :size="12" />
                       <span>{{ tf('ai_confirm_allow_all', '本会话始终允许所有操作') }}</span>
@@ -703,7 +702,9 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
           <!-- 编辑即回滚提示条：发送后将截断锚点消息及其后的所有轮次 -->
           <div v-if="pendingEdit" class="ai-reedit-banner" role="status">
             <Pencil :size="13" class="ai-reedit-banner-icon" />
-            <span class="ai-reedit-banner-text">{{ t('ai_reedit_banner', '正在编辑历史消息：发送将回滚该消息及其后的所有对话') }}</span>
+            <span class="ai-reedit-banner-text">{{
+              t('ai_reedit_banner', '正在编辑历史消息：发送将回滚该消息及其后的所有对话')
+            }}</span>
             <button type="button" class="ai-reedit-cancel" @click="cancelReedit">
               {{ t('cancel_btn') }}
             </button>
@@ -1199,7 +1200,9 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.14),
+    0 2px 6px rgba(0, 0, 0, 0.06);
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -1220,7 +1223,9 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
   cursor: pointer;
   text-align: left;
   white-space: nowrap;
-  transition: background-color 0.12s, color 0.12s;
+  transition:
+    background-color 0.12s,
+    color 0.12s;
 }
 .ai-cfm-pop__menu-item:hover {
   background: var(--bg-hover);

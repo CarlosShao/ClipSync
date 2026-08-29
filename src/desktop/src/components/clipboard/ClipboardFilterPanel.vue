@@ -91,14 +91,16 @@ const dateTo = computed<Date | null>({
               value=""
               :selected="clip.advancedFilters.value.deviceId === ''"
               @select="onDeviceChange('')"
-            >{{ t('filter_all_devices') }}</CustomSelectOption>
+              >{{ t('filter_all_devices') }}</CustomSelectOption
+            >
             <CustomSelectOption
               v-for="d in devices"
               :key="d.id"
               :value="d.id"
               :selected="clip.advancedFilters.value.deviceId === d.id"
               @select="onDeviceChange(d.id)"
-            >{{ d.name }}</CustomSelectOption>
+              >{{ d.name }}</CustomSelectOption
+            >
           </template>
         </CustomSelect>
       </div>
@@ -138,8 +140,11 @@ const dateTo = computed<Date | null>({
             size="sm"
             class="min-w-[80px] rounded-md px-4 h-8"
             @click="clip.clearAdvancedFilters()"
-          >{{ t('filter_clear') }}</Button>
-          <Button variant="outline" size="sm" class="min-w-[80px] rounded-md px-4 h-8" @click="emit('close')">{{ t('filter_close') }}</Button>
+            >{{ t('filter_clear') }}</Button
+          >
+          <Button variant="outline" size="sm" class="min-w-[80px] rounded-md px-4 h-8" @click="emit('close')">{{
+            t('filter_close')
+          }}</Button>
         </div>
       </div>
     </div>
@@ -148,33 +153,67 @@ const dateTo = computed<Date | null>({
 
 <style scoped>
 .adv-filter-panel {
-  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
-  padding: 20px 24px; margin: 0 12px 8px;
-  background: var(--bg-surface); border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 20px 24px;
+  margin: 0 12px 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
 }
 .adv-filter-grid {
-  display: flex; gap: 16px; flex-wrap: wrap; flex: 1; align-items: flex-end;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  flex: 1;
+  align-items: flex-end;
 }
-.adv-filter-field { display: flex; flex-direction: column; gap: 6px; }
-.adv-filter-field--actions { gap: 0; }
+.adv-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.adv-filter-field--actions {
+  gap: 0;
+}
 .adv-filter-field label {
-  font-size: 13px; font-weight: 500; color: var(--text-secondary);
-  height: 18px; line-height: 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  height: 18px;
+  line-height: 18px;
 }
-.adv-filter-label-placeholder { height: 18px; }
-.adv-filter-field--device { min-width: 170px; }
-.adv-filter-field--actions { min-width: 180px; margin-left: auto; }
-.adv-filter-actions-inline { display: flex; gap: 8px; align-items: center; }
+.adv-filter-label-placeholder {
+  height: 18px;
+}
+.adv-filter-field--device {
+  min-width: 170px;
+}
+.adv-filter-field--actions {
+  min-width: 180px;
+  margin-left: auto;
+}
+.adv-filter-actions-inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
 .adv-filter-field .custom-select,
 .adv-filter-field .custom-select-trigger {
-  height: 32px !important; min-height: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
 }
 .adv-filter-field .h-8 {
-  height: 32px !important; min-height: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
 }
 .filter-input-sm {
-  height: 32px !important; min-height: 32px !important;
-  padding: 0 12px !important; font-size: 13px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 12px !important;
+  font-size: 13px !important;
 }
 </style>

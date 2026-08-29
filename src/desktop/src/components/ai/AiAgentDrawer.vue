@@ -27,11 +27,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKey, true))
       <div class="ai-agent-drawer" role="dialog" aria-modal="true">
         <div class="ai-agent-drawer-head">
           <span class="ai-agent-drawer-title">{{ t('ai_subagent_drawer_title') }}</span>
-          <button
-            class="ai-agent-drawer-close"
-            :aria-label="t('ai_subagent_close', '关闭')"
-            @click="emit('close')"
-          >
+          <button class="ai-agent-drawer-close" :aria-label="t('ai_subagent_close', '关闭')" @click="emit('close')">
             <X :size="16" />
           </button>
         </div>
@@ -92,7 +88,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKey, true))
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 .ai-agent-drawer-close:hover {
   background: var(--bg-surface);
@@ -103,8 +101,12 @@ onUnmounted(() => document.removeEventListener('keydown', onKey, true))
   overflow-y: auto;
 }
 @keyframes ai-drawer-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* 键盘可达性：focus-visible 高亮（--accent token） */

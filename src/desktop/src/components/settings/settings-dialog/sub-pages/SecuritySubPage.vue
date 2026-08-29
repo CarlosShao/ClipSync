@@ -7,12 +7,7 @@ import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import { X, ShieldCheck, Copy } from 'lucide-vue-next'
 import QRCode from 'qrcode'
-import {
-  get2FAStatus,
-  setup2FA,
-  enable2FA,
-  disable2FA,
-} from '@/api/auth'
+import { get2FAStatus, setup2FA, enable2FA, disable2FA } from '@/api/auth'
 
 const { t } = useI18n()
 const toast = useSonner()
@@ -290,7 +285,9 @@ onMounted(() => {
     <Teleport to="body">
       <div v-if="showBackupModal" class="modal-overlay" @click.self="showBackupModal = false">
         <div class="modal-box">
-          <Button variant="ghost" size="icon" class="modal-close" @click="showBackupModal = false"><X :size="18" /></Button>
+          <Button variant="ghost" size="icon" class="modal-close" @click="showBackupModal = false"
+            ><X :size="18"
+          /></Button>
           <h2 class="modal-title">{{ t('sec_2fa_backup_title') }}</h2>
           <p class="modal-desc">{{ t('sec_2fa_backup_desc') }}</p>
 

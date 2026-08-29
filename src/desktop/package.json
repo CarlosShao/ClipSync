@@ -10,7 +10,7 @@
     "tauri": "tauri",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "lint:style": "stylelint \"src/components/ai/**/*.{vue,css}\"",
+    "lint:style": "stylelint \"src/components/**/*.{vue,css}\"",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

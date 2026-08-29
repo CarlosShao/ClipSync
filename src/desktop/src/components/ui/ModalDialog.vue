@@ -28,7 +28,7 @@ function onKeyDown(e: KeyboardEvent) {
   }
   if (e.key === 'Tab' && modalRef.value) {
     const focusable = modalRef.value.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
     )
     if (focusable.length === 0) return
     const first = focusable[0]
@@ -55,7 +55,7 @@ watch(
       document.addEventListener('keydown', onKeyDown)
       await nextTick()
       const firstFocusable = modalRef.value?.querySelector<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       )
       firstFocusable?.focus()
     } else {

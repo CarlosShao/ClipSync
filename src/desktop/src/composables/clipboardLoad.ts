@@ -1,6 +1,6 @@
 // === 剪贴板数据加载（分页拉取 / 图片异步队列 / 设备列表 / 条目更新） ===
 import { api, apiBlob } from '@/api/client'
-import { logger }from '@/utils/logger'
+import { logger } from '@/utils/logger'
 import { useSonner } from './useSonner'
 import {
   items,
@@ -55,7 +55,10 @@ export async function syncDeletions(): Promise<{ removed: number } | null> {
     // 推进游标到服务端时间（服务端为准，避免本地时钟漂移累积）
     if (res.data?.serverTime) {
       try {
-        localStorage.setItem(LAST_SYNC_KEY, new Date(new Date(res.data.serverTime).getTime() - SYNC_OVERLAP_MS).toISOString())
+        localStorage.setItem(
+          LAST_SYNC_KEY,
+          new Date(new Date(res.data.serverTime).getTime() - SYNC_OVERLAP_MS).toISOString(),
+        )
       } catch {
         /* ignore */
       }
@@ -141,7 +144,9 @@ export async function loadClipboardItems(opts?: {
       'GET',
       `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}${viewParam}${searchParam}`,
     )
-    console.log(`[Clipboard] loadClipboardItems response: ok=${res.ok}, status=${res.status}, items count=${Array.isArray(res.data?.items) ? res.data.items.length : 'N/A'}`)
+    console.log(
+      `[Clipboard] loadClipboardItems response: ok=${res.ok}, status=${res.status}, items count=${Array.isArray(res.data?.items) ? res.data.items.length : 'N/A'}`,
+    )
     if (res.ok && Array.isArray(res.data?.items)) {
       // 成功响应即推进删除感知同步点（含 append 空页分支，均为有效同步时刻）
       touchLastSyncAt()
@@ -149,7 +154,9 @@ export async function loadClipboardItems(opts?: {
       // 后端返回空数组 = 没更多数据了。用实际条目数修正 totalItems，
       // 避免 pagination.total 虚高导致 hasMore 永远为 true、加载更多按钮卡住。
       if (res.data.items.length === 0 && append) {
-        console.warn(`[Clipboard] page ${page} returned 0 items, correcting totalItems from ${totalItems.value} to ${items.value.length}`)
+        console.warn(
+          `[Clipboard] page ${page} returned 0 items, correcting totalItems from ${totalItems.value} to ${items.value.length}`,
+        )
         totalItems.value = items.value.length
         // 收藏分支拉的是收藏子集，绝不能拿它覆盖侧边栏的剪贴板总数
         if (view !== 'archive' && !loadFavorites) mainTotalItems.value = totalItems.value
@@ -334,7 +341,9 @@ export async function loadClipboardItems(opts?: {
 }
 
 export async function loadMore() {
-  console.log(`[Clipboard] loadMore called: loadingMore=${loadingMore.value}, hasMore=${hasMore.value}, currentPage=${currentPage.value}`)
+  console.log(
+    `[Clipboard] loadMore called: loadingMore=${loadingMore.value}, hasMore=${hasMore.value}, currentPage=${currentPage.value}`,
+  )
   if (loadingMore.value || !hasMore.value) {
     console.warn(`[Clipboard] loadMore blocked: loadingMore=${loadingMore.value}, hasMore=${hasMore.value}`)
     return
@@ -529,7 +538,7 @@ import { onAiDataRefresh } from './useAiDataRefresh'
 
 if (typeof window !== 'undefined' && !(window as any).__clipboardAiRefreshInited) {
   ;(window as any).__clipboardAiRefreshInited = true
-  
+
   onAiDataRefresh((event) => {
     if (event.type === 'clipboard') {
       // 静默刷新剪贴板数据（不带 loading 状态，实现无感刷新）

@@ -1,9 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import {
-  getFavoriteCollections,
-  migrateHierarchy,
-} from '@/api/client'
+import { getFavoriteCollections, migrateHierarchy } from '@/api/client'
 import { onAiDataRefresh } from '@/composables/useAiDataRefresh'
 
 function buildTree(flat: any[]) {
@@ -167,7 +164,7 @@ export const useCollectionStore = defineStore('collections', () => {
     if (path) {
       const prefix = path + '.'
       flatCollections.value = flatCollections.value.filter(
-        (c: any) => c.id !== id && !(c.path && c.path.startsWith(prefix))
+        (c: any) => c.id !== id && !(c.path && c.path.startsWith(prefix)),
       )
     } else {
       flatCollections.value = flatCollections.value.filter((c: any) => c.id !== id)
@@ -216,22 +213,16 @@ export const useCollectionStore = defineStore('collections', () => {
 
     onAiDataRefresh((event) => {
       if (event.type === 'collections') {
-        const isCreate =
-          event.toolName === 'create_collection' ||
-          event.toolName === 'create_sub_collection'
+        const isCreate = event.toolName === 'create_collection' || event.toolName === 'create_sub_collection'
         loadCollections({ expandParents: isCreate })
       }
     })
 
     if (typeof window !== 'undefined') {
       window.addEventListener('clipsync:collections-updated', (e) => {
-        const detail = (e as CustomEvent)?.detail as
-          | { reason?: string; id?: string }
-          | undefined
+        const detail = (e as CustomEvent)?.detail as { reason?: string; id?: string } | undefined
         const isCreate =
-          detail?.reason === 'ai-tool' ||
-          detail?.reason === 'create' ||
-          detail?.reason === 'create-from-popover'
+          detail?.reason === 'ai-tool' || detail?.reason === 'create' || detail?.reason === 'create-from-popover'
         loadCollections({ expandParents: isCreate })
       })
     }

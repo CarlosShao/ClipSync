@@ -19,7 +19,7 @@ import AiToolTimeline from './AiToolTimeline.vue'
  *           （写操作标注/破坏性标签/等待确认态）→ ③ AiAgentCards（子代理卡片网格，
  *           点击打开 AiAgentDrawer）→ 内容（AiStreamText 节流渲染 Markdown）
  */
-const props = defineProps<{ 
+const props = defineProps<{
   message: ChatMessage
   index: number
   isStreaming: boolean
@@ -409,7 +409,9 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
                   v-if="isLoading || hasThinking"
                   :thinking="seg.text"
                   :thinking-started-at="seg.startedAt ?? message.thinkingStartedAt"
-                  :is-streaming="isStreamingNow && (seg.isLive ?? (isThinkingPhase && si === thinkingSegments.length - 1))"
+                  :is-streaming="
+                    isStreamingNow && (seg.isLive ?? (isThinkingPhase && si === thinkingSegments.length - 1))
+                  "
                   :expanded="isThinkingExpanded(si)"
                   @toggle="toggleThinking(si)"
                 />
@@ -421,7 +423,10 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
                   :confirm-tool="confirmTool ?? null"
                 />
                 <!-- 多段思考：段间插入细分隔线，避免两段粘连 -->
-                <div v-if="thinkingSegments.length > 1 && si < thinkingSegments.length - 1" class="ai-think-seg-gap"></div>
+                <div
+                  v-if="thinkingSegments.length > 1 && si < thinkingSegments.length - 1"
+                  class="ai-think-seg-gap"
+                ></div>
               </template>
             </template>
 
@@ -435,11 +440,7 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
             </template>
 
             <!-- 子代理 -->
-            <AiAgentCards
-              v-if="visibleAgentRuns.length"
-              :runs="visibleAgentRuns"
-              @open="agentDrawerRun = $event"
-            />
+            <AiAgentCards v-if="visibleAgentRuns.length" :runs="visibleAgentRuns" @open="agentDrawerRun = $event" />
           </template>
 
           <!-- 子代理详情抽屉 -->

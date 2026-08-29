@@ -106,12 +106,18 @@ async function saveRule() {
     return
   }
   // 解析关键词
-  const keywords = keywordInput.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+  const keywords = keywordInput.value
+    .split(/[,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
   if (keywords.length === 0) {
     error.value = t('wf_keyword_required') || '至少需要一个关键词'
     return
   }
-  const actionApplyTags = tagsInput.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+  const actionApplyTags = tagsInput.value
+    .split(/[,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
   const body = {
     name,
     enabled: editing.value.enabled !== false,
@@ -119,17 +125,26 @@ async function saveRule() {
     matchMode: editing.value.matchMode,
     keywords,
     actionType: editing.value.actionType,
-    actionValue: editing.value.actionType === 'tag' ? (actionApplyTags[0] || editing.value.actionValue || '') : editing.value.actionValue || null,
+    actionValue:
+      editing.value.actionType === 'tag'
+        ? actionApplyTags[0] || editing.value.actionValue || ''
+        : editing.value.actionValue || null,
     actionApplyTags: editing.value.actionType === 'tag' ? actionApplyTags : [],
     priority: Number(editing.value.priority) || 100,
   }
   try {
     if (isNew.value) {
       const res = await api<{ id: string }>('POST', '/api/workflow-rules', body)
-      if (!res.ok) { error.value = res.error || '创建失败'; return }
+      if (!res.ok) {
+        error.value = res.error || '创建失败'
+        return
+      }
     } else {
       const res = await api<{ ok: boolean }>('PUT', `/api/workflow-rules/${editing.value.id}`, body)
-      if (!res.ok) { error.value = res.error || '更新失败'; return }
+      if (!res.ok) {
+        error.value = res.error || '更新失败'
+        return
+      }
     }
     showForm.value = false
     editing.value = null
@@ -167,7 +182,12 @@ function typeLabel(type: string) {
   return m[type] || type
 }
 function actionLabel(a: string) {
-  const m: Record<string, string> = { favorite: '自动收藏', archive: '自动归档', tag: '自动打标签', move_to_collection: '移入收藏夹' }
+  const m: Record<string, string> = {
+    favorite: '自动收藏',
+    archive: '自动归档',
+    tag: '自动打标签',
+    move_to_collection: '移入收藏夹',
+  }
   return m[a] || a
 }
 
@@ -179,9 +199,7 @@ onMounted(loadRules)
     <div class="wf-header">
       <div class="wf-title-row">
         <h3 class="wf-title">{{ t('wf_title') || '自动规则（工作流）' }}</h3>
-        <button class="wf-add-btn" @click="startCreate">
-          <Plus :size="14" /> {{ t('wf_add') || '新建规则' }}
-        </button>
+        <button class="wf-add-btn" @click="startCreate"><Plus :size="14" /> {{ t('wf_add') || '新建规则' }}</button>
       </div>
       <p class="wf-desc">{{ t('wf_desc') || '当复制的内容满足条件时自动执行动作（收藏/归档/打标签/移入收藏夹）。' }}</p>
     </div>
@@ -198,7 +216,10 @@ onMounted(loadRules)
 
         <label class="wf-field">
           <span class="wf-label">{{ t('wf_content_type') || '内容类型' }}</span>
-          <CustomSelect :model-value="editing!.contentType" @update:model-value="(v: string) => (editing!.contentType = v as WorkflowRule['contentType'])">
+          <CustomSelect
+            :model-value="editing!.contentType"
+            @update:model-value="(v: string) => (editing!.contentType = v as WorkflowRule['contentType'])"
+          >
             {{ typeLabel(editing!.contentType as string) }}
             <template #options>
               <CustomSelectOption
@@ -207,38 +228,57 @@ onMounted(loadRules)
                 :value="ct"
                 :selected="editing!.contentType === ct"
                 @select="(v: string) => (editing!.contentType = v as WorkflowRule['contentType'])"
-              >{{ typeLabel(ct) }}</CustomSelectOption>
+                >{{ typeLabel(ct) }}</CustomSelectOption
+              >
             </template>
           </CustomSelect>
         </label>
 
         <label class="wf-field">
           <span class="wf-label">{{ t('wf_match_mode') || '匹配方式' }}</span>
-          <CustomSelect :model-value="editing!.matchMode" @update:model-value="(v: string) => (editing!.matchMode = v as WorkflowRule['matchMode'])">
-            {{ editing!.matchMode === 'keyword' ? (t('wf_mode_keyword') || '关键词') : (t('wf_mode_regex') || '正则') }}
+          <CustomSelect
+            :model-value="editing!.matchMode"
+            @update:model-value="(v: string) => (editing!.matchMode = v as WorkflowRule['matchMode'])"
+          >
+            {{ editing!.matchMode === 'keyword' ? t('wf_mode_keyword') || '关键词' : t('wf_mode_regex') || '正则' }}
             <template #options>
               <CustomSelectOption
                 value="keyword"
                 :selected="editing!.matchMode === 'keyword'"
                 @select="(v: string) => (editing!.matchMode = v as WorkflowRule['matchMode'])"
-              >{{ t('wf_mode_keyword') || '关键词' }}</CustomSelectOption>
+                >{{ t('wf_mode_keyword') || '关键词' }}</CustomSelectOption
+              >
               <CustomSelectOption
                 value="regex"
                 :selected="editing!.matchMode === 'regex'"
                 @select="(v: string) => (editing!.matchMode = v as WorkflowRule['matchMode'])"
-              >{{ t('wf_mode_regex') || '正则' }}</CustomSelectOption>
+                >{{ t('wf_mode_regex') || '正则' }}</CustomSelectOption
+              >
             </template>
           </CustomSelect>
         </label>
 
         <label class="wf-field wf-field--full">
           <span class="wf-label">{{ t('wf_keywords') || '关键词 / 正则（逗号分隔）' }}</span>
-          <input v-model="keywordInput" class="wf-input" :placeholder="editing.matchMode === 'regex' ? '例如：^\\d{6}$' : '例如：python, todo, 合同'" @focus="syncInputs" />
+          <input
+            v-model="keywordInput"
+            class="wf-input"
+            :placeholder="editing.matchMode === 'regex' ? '例如：^\\d{6}$' : '例如：python, todo, 合同'"
+            @focus="syncInputs"
+          />
         </label>
 
         <label class="wf-field">
           <span class="wf-label">{{ t('wf_action') || '动作' }}</span>
-          <CustomSelect :model-value="editing!.actionType" @update:model-value="(v: string) => { editing!.actionType = v as WorkflowRule['actionType']; syncInputs() }">
+          <CustomSelect
+            :model-value="editing!.actionType"
+            @update:model-value="
+              (v: string) => {
+                editing!.actionType = v as WorkflowRule['actionType']
+                syncInputs()
+              }
+            "
+          >
             {{ actionLabel(editing!.actionType as string) }}
             <template #options>
               <CustomSelectOption
@@ -246,8 +286,14 @@ onMounted(loadRules)
                 :key="a"
                 :value="a"
                 :selected="editing!.actionType === a"
-                @select="(v: string) => { editing!.actionType = v as WorkflowRule['actionType']; syncInputs() }"
-              >{{ actionLabel(a) }}</CustomSelectOption>
+                @select="
+                  (v: string) => {
+                    editing!.actionType = v as WorkflowRule['actionType']
+                    syncInputs()
+                  }
+                "
+                >{{ actionLabel(a) }}</CustomSelectOption
+              >
             </template>
           </CustomSelect>
         </label>
@@ -277,9 +323,7 @@ onMounted(loadRules)
         <button class="wf-btn wf-btn--primary" @click="saveRule">
           <Check :size="13" /> {{ t('wf_save') || '保存' }}
         </button>
-        <button class="wf-btn" @click="cancelEdit">
-          <X :size="13" /> {{ t('wf_cancel') || '取消' }}
-        </button>
+        <button class="wf-btn" @click="cancelEdit"><X :size="13" /> {{ t('wf_cancel') || '取消' }}</button>
       </div>
     </div>
 
@@ -304,13 +348,22 @@ onMounted(loadRules)
           </div>
         </div>
         <div class="wf-item-actions">
-          <button class="wf-icon-btn" :class="{ on: rule.enabled }" :title="rule.enabled ? t('wf_disable') || '停用' : t('wf_enable') || '启用'" @click="toggleRule(rule)">
+          <button
+            class="wf-icon-btn"
+            :class="{ on: rule.enabled }"
+            :title="rule.enabled ? t('wf_disable') || '停用' : t('wf_enable') || '启用'"
+            @click="toggleRule(rule)"
+          >
             <Power :size="13" />
           </button>
           <button class="wf-icon-btn" :title="t('wf_edit') || '编辑'" @click="startEdit(rule)">
             <Pencil :size="13" />
           </button>
-          <button class="wf-icon-btn wf-icon-btn--danger" :title="t('wf_delete') || '删除'" @click="deleteRule(rule.id)">
+          <button
+            class="wf-icon-btn wf-icon-btn--danger"
+            :title="t('wf_delete') || '删除'"
+            @click="deleteRule(rule.id)"
+          >
             <Trash2 :size="13" />
           </button>
         </div>
@@ -320,73 +373,202 @@ onMounted(loadRules)
 </template>
 
 <style scoped>
-.wf-settings { padding: 4px 2px; }
-.wf-header { margin-bottom: 14px; }
-.wf-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.wf-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0; }
+.wf-settings {
+  padding: 4px 2px;
+}
+.wf-header {
+  margin-bottom: 14px;
+}
+.wf-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.wf-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
 .wf-add-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 5px 12px; border-radius: 6px;
-  border: 1px solid var(--accent); color: var(--accent);
-  background: transparent; font-size: 12.5px; cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: transparent;
+  font-size: 12.5px;
+  cursor: pointer;
   transition: all 0.15s;
 }
-.wf-add-btn:hover { background: var(--accent-bg); }
-.wf-desc { font-size: 12px; color: var(--text-secondary); margin: 6px 0 0; line-height: 1.6; }
-.wf-error { color: var(--danger); font-size: 12.5px; padding: 8px 0; }
+.wf-add-btn:hover {
+  background: var(--accent-bg);
+}
+.wf-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 6px 0 0;
+  line-height: 1.6;
+}
+.wf-error {
+  color: var(--danger);
+  font-size: 12.5px;
+  padding: 8px 0;
+}
 .wf-form {
-  border: 1px solid var(--border-default); border-radius: 10px;
-  padding: 14px; margin-bottom: 14px; background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 14px;
+  background: var(--bg-surface);
 }
-.wf-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.wf-field { display: flex; flex-direction: column; gap: 4px; }
-.wf-field :deep(.custom-select) { width: 100%; }
-.wf-field--full { grid-column: 1 / -1; }
-.wf-label { font-size: 12px; color: var(--text-secondary); }
+.wf-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.wf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wf-field :deep(.custom-select) {
+  width: 100%;
+}
+.wf-field--full {
+  grid-column: 1 / -1;
+}
+.wf-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
 .wf-input {
-  font-size: 12.5px; padding: 6px 10px;
-  border: 1px solid var(--border-default); border-radius: 6px;
-  background: var(--bg-input); color: var(--text-primary); outline: none;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  outline: none;
 }
-.wf-input:focus { border-color: var(--accent); }
-.wf-check { flex-direction: row; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-primary); }
-.wf-form-actions { display: flex; gap: 8px; margin-top: 14px; }
-.wf-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 16px; border-radius: 6px; font-size: 12.5px;
-  border: 1px solid var(--border-default); background: transparent; cursor: pointer;
+.wf-input:focus {
+  border-color: var(--accent);
+}
+.wf-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
   color: var(--text-primary);
 }
-.wf-btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-foreground); }
-.wf-empty { color: var(--text-tertiary); font-size: 12.5px; padding: 20px 0; text-align: center; }
-.wf-list { display: flex; flex-direction: column; gap: 8px; }
+.wf-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.wf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  border: 1px solid var(--border-default);
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.wf-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-foreground);
+}
+.wf-empty {
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  padding: 20px 0;
+  text-align: center;
+}
+.wf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .wf-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; border: 1px solid var(--border-subtle);
-  border-radius: 8px; background: var(--bg-surface);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-surface);
   transition: opacity 0.15s;
 }
-.wf-item.disabled { opacity: 0.55; }
-.wf-item-main { flex: 1; min-width: 0; }
-.wf-item-head { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-.wf-item-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.wf-item.disabled {
+  opacity: 0.55;
+}
+.wf-item-main {
+  flex: 1;
+  min-width: 0;
+}
+.wf-item-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.wf-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
 .wf-item-badge {
-  font-size: 10.5px; padding: 1px 6px; border-radius: 4px;
-  background: var(--bg-hover); color: var(--text-secondary);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
-.wf-item-badge--action { background: var(--accent-bg); color: var(--accent); }
+.wf-item-badge--action {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
 .wf-item-detail {
-  font-size: 11.5px; color: var(--text-secondary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.wf-item-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.wf-item-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
 .wf-icon-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 5px;
-  border: none; background: transparent; color: var(--text-secondary);
-  cursor: pointer; transition: all 0.12s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.12s;
 }
-.wf-icon-btn:hover { background: var(--bg-hover); }
-.wf-icon-btn.on { color: var(--success); }
-.wf-icon-btn--danger:hover { color: var(--danger); background: rgba(239, 68, 68, 0.08); }
+.wf-icon-btn:hover {
+  background: var(--bg-hover);
+}
+.wf-icon-btn.on {
+  color: var(--success);
+}
+.wf-icon-btn--danger:hover {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.08);
+}
 </style>
