@@ -193,7 +193,7 @@ async function onSuggestTags(itemId: string, tags: string[]) {
     toast.show(t('ai_suggest_tags_applied', { n: tags.length }) || `已应用 ${tags.length} 个标签`, 'success')
     popupRef.value?.markApplied(itemId, 'tags', tags)
   } else {
-    toast.show(ok.error || '应用标签失败', 'error')
+    toast.show(ok.error || t('clip_tag_fail'), 'error')
   }
 }
 

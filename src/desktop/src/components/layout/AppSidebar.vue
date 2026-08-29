@@ -172,7 +172,13 @@ const accountNavItems = computed(() => [
         class="user-chip"
         :class="{ 'user-chip--active': showUserMenu }"
         :title="t('nav_profile') || 'View Profile'"
+        role="button"
+        tabindex="0"
+        aria-haspopup="menu"
+        :aria-expanded="showUserMenu"
         @click.stop="toggleUserMenu"
+        @keydown.enter.prevent="toggleUserMenu"
+        @keydown.space.prevent="toggleUserMenu"
       >
         <div class="user-avatar-ring">
           <img v-if="userAvatarUrl" :src="userAvatarUrl" alt="" class="user-avatar-img" />
@@ -235,7 +241,10 @@ const accountNavItems = computed(() => [
       class="sb-footer-dot"
       :title="userName || 'User'"
       style="cursor: pointer; border-radius: var(--radius-md); transition: background 0.12s"
+      role="button"
+      tabindex="0"
       @click="emit('navigate', 'profile')"
+      @keydown.enter.prevent="emit('navigate', 'profile')"
     >
       <div class="user-avatar-ring user-avatar-ring--sm">
         <div class="user-avatar-in user-avatar-in--sm">{{ userName ? userName.slice(0, 1) : 'C' }}</div>

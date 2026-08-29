@@ -53,7 +53,7 @@ async function copyUserContent() {
       document.body.removeChild(ta)
     } catch {
       try {
-        window.prompt('复制下面文本到剪贴板：', text)
+        window.prompt(t('ai_copy_prompt'), text)
       } catch {
         /* ignore */
       }

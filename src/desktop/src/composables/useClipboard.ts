@@ -64,7 +64,7 @@ import {
   trimToMaxHistory,
 } from './clipboardLoad'
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 
 export type { ClipItem, ClipboardFilter }
 
@@ -603,7 +603,7 @@ export function useClipboard() {
       res = await apiOrEnqueue('DELETE', '/api/clipboard', { ids: serverIds }, 'delete', { ids: serverIds })
       if (!res.ok && res.status !== 0) {
         console.error('[Clipboard] batchDelete server error:', res.status, res.error)
-        throw new Error(res.error || `删除失败 (HTTP ${res.status})`)
+        throw new Error(res.error || tf('clip_del_http_fail', '删除失败 (HTTP {status})', { status: res.status }))
       }
     }
     // 仅在服务端确认成功后才从本地列表移除选中项
@@ -633,7 +633,7 @@ export function useClipboard() {
       res = await apiOrEnqueue('DELETE', `/api/clipboard/${item.id}`, undefined, 'delete', { id: item.id })
       if (!res.ok && res.status !== 0) {
         console.error('[Clipboard] deleteSingle server error:', res.status, res.error)
-        throw new Error(res.error || `删除失败 (HTTP ${res.status})`)
+        throw new Error(res.error || tf('clip_del_http_fail', '删除失败 (HTTP {status})', { status: res.status }))
       }
     }
     // 仅在服务端确认成功（或是本地临时项）后才从本地列表移除

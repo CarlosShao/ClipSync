@@ -2,6 +2,7 @@
 import { api, apiBlob } from '@/api/client'
 import { logger }from '@/utils/logger'
 import { useSonner } from './useSonner'
+import { useI18n } from '@/composables/useI18n'
 import {
   items,
   loading,
@@ -22,6 +23,8 @@ import {
 import { getCachedContent, cacheContent } from './clipboardCache'
 import { setItemPreview, releaseRemovedObjectUrls } from './clipboardObjectUrls'
 import { resolveDeviceName } from './useDevice'
+
+const { tf } = useI18n()
 
 // 设备列表（用于筛选下拉），懒加载 + 内存缓存，避免每次打开筛选面板都打 /api/devices
 let devicesCache: { id: string; name: string; platform?: string }[] = []
@@ -313,19 +316,19 @@ export async function loadClipboardItems(opts?: {
         if (res.retryAfter && res.retryAfter > 0) {
           rateLimited(res.retryAfter)
         } else {
-          showToast('请求过于频繁，请稍后再试', 'warning', 4000)
+          showToast(tf('rate_limit_warn', '操作过于频繁，请稍后再试'), 'warning', 4000)
         }
       } else if (res.status >= 500) {
-        showToast(`服务器错误 (${res.status})`, 'error')
+        showToast(tf('clip_server_error', '服务器错误 ({status})', { status: res.status }), 'error')
       }
       // 置错误态：界面据此渲染"加载失败 + 重试"而不是空态，
       // 否则失败与"确实没有数据"无法区分，用户也没有重试入口。
-      loadError.value = res.error || `加载失败 (${res.status || 'network'})`
+      loadError.value = res.error || tf('clip_load_fail_status', '加载失败 ({status})', { status: res.status || 'network' })
       return false
     }
   } catch (e: any) {
     console.warn(`[Clipboard] loadClipboardItems error: page=${page}`, e?.message || e)
-    loadError.value = e?.message || '加载失败'
+    loadError.value = e?.message || tf('load_failed_title', '加载失败')
     return false
   } finally {
     if (append) loadingMore.value = false

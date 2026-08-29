@@ -213,7 +213,7 @@
 
 | ID | 决策 | 默认方案 | 影响工单 |
 |---|---|---|---|
-| D1 | 加密接线 vs 摘牌 | **摘牌**（移除 E2EE 占位开关、contentEncrypted 更名）；真实加密（含 DPAPI/Keychain 密钥存储）另立专项 | C7、B1 |
+| D1 | 加密接线 vs 摘牌 | **摘牌**（已移除 E2EE 占位开关、删除 crypto.rs）；contentEncrypted 更名后置至加密专项（见进度表）；真实加密（含 DPAPI/Keychain 密钥存储）另立专项 | C7、B1 |
 | D2 | 自动粘贴（模拟按键） | **本期不做**，文案诚实化 | B9 |
 | D3 | 二进制文件跨设备 | **≤5MB 上传内容**，超限标注"仅本机" | B7 |
 | D4 | 版本历史 | **先探明服务端 API**：有则接线，无则移除 | B9 |
@@ -235,8 +235,9 @@
 
 | 工单 | 状态 | 执行者 | 提交 |
 |---|---|---|---|
-| A1–A10 | ☐ 待派发 | — | — |
-| B1–B6 | ☐ 待派发 | — | — |
-| B7–B10 | ☐ 待派发（依赖 D3/D4 拍板） | — | — |
-| C1–C8 | ☐ 待派发 | — | — |
-| Wave 3 | ☐ 待执行 | 编排者 | — |
+| A1–A10 | ✅ 完成（验收通过：在用命令零误删，A10 只删 sync_client/crypto 与 3 个 tray 死命令） | hy4 (CodeBuddy) | 85b93a2 |
+| B1–B6 | ✅ 完成 | hy4 (CodeBuddy) | d014a2e |
+| B7–B10 | ✅ 完成（D3/D4 按默认方案；B9 版本历史经服务端自动快照实现真接线） | hy4 (CodeBuddy) | d014a2e / 7aa87b9 |
+| C1–C8 | ✅ 完成（C8③ AppSidebar user-chip a11y 由编排者补齐） | hy4 (CodeBuddy) | a40dea6 |
+| D1 contentEncrypted 更名 | ⏸ **后置至加密专项**：file 类型载荷中 `content`（路径 JSON）与 `contentEncrypted`（文件本体）语义不同，盲改服务端取值优先级会破坏文件上传；且与 sync 协议、移动端消费、DB 列名 `content_encrypted` 耦合。待真实加密接线时连同密钥存储一并处理 | — | — |
+| Wave 3 | ✅ 2026-08-29 收尾：stylelint 全量 3 处 z-index 裸值 → `--z-*` token、lint:style 范围扩至 `src/components/**`、AppSidebar user-chip/折叠头像键盘可达、i18n 残留 6 处清零（新增 5 key 双语言）；prettier 全库格式化实测破坏 Vue 模板构建，已回滚搁置（禁对 .vue 跑 prettier --write），CRLF 告警待换方案 | 编排者 (ZCode) | 见 git log |
