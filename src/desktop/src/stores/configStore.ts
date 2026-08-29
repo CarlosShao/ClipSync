@@ -36,6 +36,14 @@ export const useConfigStore = defineStore('config', () => {
   const privacyMode = ref(false) // 隐私模式：自动隐藏敏感内容
   const autoBlur = ref(false) // 窗口失焦时自动隐藏敏感内容
 
+  // === 外观个性化（设置→外观）：全部为纯前端 CSS 变量驱动 ===
+  const fontScale = ref(1) // 界面字号缩放（0.9/1/1.1/1.25），作用于 html 根字号（rem 类跟随）
+  const fontFamily = ref('default') // 界面字体预设 key（default/yahei/serif/kai）
+  const frosted = ref(false) // 毛玻璃：主表面半透明 + #app backdrop 虚化
+  const surfaceOpacity = ref(85) // 毛玻璃开启时的表面不透明度（40-100%）
+  const bgImage = ref('') // 自定义背景图 dataURL（canvas 降采样后存储）
+  const bgDim = ref(0) // 背景图压暗（0-60%），保证内容可读性
+
   const isLoggedIn = computed(() => !!config.value.token)
   const serverUrl = computed(() => config.value.server_url)
 
@@ -77,9 +85,17 @@ export const useConfigStore = defineStore('config', () => {
       if (typeof prefs.autostart === 'boolean') autostart.value = prefs.autostart
       if (typeof prefs.privacyMode === 'boolean') privacyMode.value = prefs.privacyMode
       if (typeof prefs.autoBlur === 'boolean') autoBlur.value = prefs.autoBlur
+      if (typeof prefs.fontScale === 'number') fontScale.value = prefs.fontScale
+      if (typeof prefs.fontFamily === 'string') fontFamily.value = prefs.fontFamily
+      if (typeof prefs.frosted === 'boolean') frosted.value = prefs.frosted
+      if (typeof prefs.surfaceOpacity === 'number') surfaceOpacity.value = prefs.surfaceOpacity
+      if (typeof prefs.bgDim === 'number') bgDim.value = prefs.bgDim
+      if (typeof prefs.bgImage === 'string') bgImage.value = prefs.bgImage
     } catch {
       /* ignore corrupt data */
     }
+    // 恢复外观偏好后立即落到 <html>（字号/字体/毛玻璃/背景图）
+    applyAppearance()
 
     // A9：把"自动同步"开关真正接到原生剪贴板监听上。
     // Rust 侧 start/stop 都幂等，所以这里可以无条件调用。
@@ -163,6 +179,13 @@ export const useConfigStore = defineStore('config', () => {
       autostart: autostart.value,
       privacyMode: privacyMode.value,
       autoBlur: autoBlur.value,
+      fontScale: fontScale.value,
+      fontFamily: fontFamily.value,
+      frosted: frosted.value,
+      surfaceOpacity: surfaceOpacity.value,
+      bgDim: bgDim.value,
+      // bgImage 单独存（dataURL 可达数百 KB，避免 prefs JSON 膨胀影响其它字段读写）
+      bgImage: bgImage.value,
     }
     localStorage.setItem('clipsync-prefs', JSON.stringify(prefs))
   }
@@ -234,9 +257,85 @@ export const useConfigStore = defineStore('config', () => {
     savePrefs()
   }
 
-  // 初始化时应用 reduceMotion 状态（在 load() 恢复 prefs 之后会再次执行）
+  // === 外观个性化：应用与设置 ===
+  const FONT_STACKS: Record<string, string> = {
+    yahei: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+    serif: 'Georgia, "Noto Serif SC", "Source Han Serif SC", "SimSun", serif',
+    kai: '"KaiTi", "Kaiti SC", "STKaiti", serif',
+  }
+
+  /**
+   * 把外观偏好落到 <html> 上。全部走 inline CSS 变量/行内样式：
+   * inline 优先级高于任何主题选择器，且不与主题定义形成循环引用 ——
+   * 半透明表面用「移除行内 → 读主题解析色 → 写 color-mix」三步实现，
+   * 拖滑杆反复调用也不会叠乘透明度。
+   */
+  function applyAppearance() {
+    const root = document.documentElement
+    // 1) 字号：根字号缩放，Tailwind rem 工具类全部跟随
+    root.style.fontSize = `${Math.round(14 * fontScale.value)}px`
+    // 2) 字体：body 的 font-family 已改为 var(--font-ui, 默认栈)
+    const stack = FONT_STACKS[fontFamily.value]
+    if (stack) root.style.setProperty('--font-ui', stack)
+    else root.style.removeProperty('--font-ui')
+    // 3) 背景图与压暗
+    root.style.setProperty('--app-bg-image', bgImage.value ? `url("${bgImage.value}")` : 'none')
+    root.style.setProperty('--app-bg-dim', String(bgDim.value / 100))
+    // 4) 毛玻璃：表面半透明（40-100%）
+    root.classList.toggle('frosted', frosted.value)
+    const alpha = frosted.value ? Math.min(Math.max(surfaceOpacity.value, 40), 100) : 100
+    for (const v of ['--bg-base', '--bg-surface', '--bg-sidebar']) {
+      root.style.removeProperty(v)
+      if (alpha >= 100) continue
+      const solid = getComputedStyle(root).getPropertyValue(v).trim()
+      if (!solid) continue
+      root.style.setProperty(v, `color-mix(in srgb, ${solid} ${alpha}%, transparent)`)
+    }
+  }
+
+  function setFontScale(v: number) {
+    fontScale.value = v
+    savePrefs()
+    applyAppearance()
+  }
+  function setFontFamily(v: string) {
+    fontFamily.value = v
+    savePrefs()
+    applyAppearance()
+  }
+  function setFrosted(val?: boolean) {
+    frosted.value = val ?? !frosted.value
+    savePrefs()
+    applyAppearance()
+  }
+  function setSurfaceOpacity(v: number) {
+    surfaceOpacity.value = v
+    savePrefs()
+    applyAppearance()
+  }
+  function setBgImage(dataUrl: string) {
+    bgImage.value = dataUrl
+    savePrefs()
+    applyAppearance()
+  }
+  function setBgDim(v: number) {
+    bgDim.value = v
+    savePrefs()
+    applyAppearance()
+  }
+
+  // 主题切换（html.class 变化）会改写主题变量的解析值，半透明覆盖需要重算
+  if (typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => applyAppearance()).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    })
+  }
+
+  // 初始化时应用 reduceMotion 与外观偏好（load() 恢复 prefs 后会再次执行）
   if (typeof window !== 'undefined') {
     document.documentElement.classList.toggle('reduce-motion', reduceMotion.value)
+    applyAppearance()
   }
 
   // 拉取用户资料并填充 user state（phone/email/nickname/avatarUrl/plan）
@@ -302,6 +401,19 @@ export const useConfigStore = defineStore('config', () => {
     imageCompress,
     privacyMode,
     autoBlur,
+    fontScale,
+    fontFamily,
+    frosted,
+    surfaceOpacity,
+    bgImage,
+    bgDim,
+    setFontScale,
+    setFontFamily,
+    setFrosted,
+    setSurfaceOpacity,
+    setBgImage,
+    setBgDim,
+    applyAppearance,
     isLoggedIn,
     serverUrl,
     load,
