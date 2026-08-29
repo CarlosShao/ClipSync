@@ -1246,9 +1246,11 @@ fn set_global_shortcuts(
                         if last.elapsed() < std::time::Duration::from_millis(300) { return; }
                         *last = Instant::now();
                     }
-                    // Always destroy + recreate (reusing stale Vue DOM causes empty outline)
+                    // Toggle 语义（同 setup 中的注册）：存在仅关闭，不存在才新建，
+                    // 不在回调内同步 close+重建（会阻塞主线程事件泵导致应用未响应）。
                     if let Some(existing) = app_h.get_webview_window("quick-paste") {
                         let _ = existing.close();
+                        return;
                     }
                     ensure_quick_paste_window(app_h);
                 }),
@@ -1664,8 +1666,14 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
     // If window already exists, destroy it completely (don't reuse — avoids stale Vue state)
     if let Some(qp_win) = app.get_webview_window("quick-paste") {
         let _ = qp_win.close();
-        // Small yield to let OS clean up the window handle
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        // close 的销毁要等事件循环下一拍才生效。此处可能正处在全局快捷键回调
+        // （主线程）里：同步 sleep 等待会阻塞主线程事件泵，紧接着的 build 又与
+        // 未完成的销毁竞态 —— 旧实现（sleep(10ms) + 立即重建）会让整个应用
+        // "未响应"。这里把重建排到主线程队列（当前回调结束后执行），届时
+        // 旧窗口已销毁、label 可复用。
+        let app2 = app.clone();
+        let _ = app.run_on_main_thread(move || ensure_quick_paste_window(&app2));
+        return;
     }
 
     // Position: centered horizontally, upper-center vertically.
@@ -1878,10 +1886,12 @@ pub fn run() {
                         if !should_fire { return; }
                     }
 
-                    debug!("[GlobalShortcut:qp] Triggered → recreate QuickPaste popup");
-                    // Always destroy + recreate (reusing a hidden window with stale Vue DOM causes empty outline)
+                    debug!("[GlobalShortcut:qp] Triggered → toggle QuickPaste popup");
+                    // Toggle 语义：面板存在则仅关闭（close 即销毁，不复用旧 Vue DOM），
+                    // 不存在才新建。绝不能在回调里 close + 立即重建（见 ensure 内注释）。
                     if let Some(existing) = app.get_webview_window("quick-paste") {
                         let _ = existing.close();
+                        return;
                     }
                     ensure_quick_paste_window(app);
                 });

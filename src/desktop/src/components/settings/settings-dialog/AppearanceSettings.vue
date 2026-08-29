@@ -46,11 +46,6 @@
         </Button>
       </div>
     </div>
-    <div class="sg-row">
-      <div class="sg-label">
-        <div class="sg-name sg-name--hint">{{ t('sg_theme_hint') }}</div>
-      </div>
-    </div>
   </div>
 </template>
 

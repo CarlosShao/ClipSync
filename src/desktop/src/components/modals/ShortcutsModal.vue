@@ -10,7 +10,7 @@ import './modal-shared.css'
 defineProps<{ showModalType: string }>()
 const emit = defineEmits<{ close: [] }>()
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const toast = useSonner()
 
 // ===== Shortcut Customization =====
@@ -110,7 +110,7 @@ function applyShortcutReport(
     toast.show(fallbacks.join('；'), 'warning')
     return
   }
-  toast.show(`Shortcut updated: ${changedStr}`, 'success')
+  toast.show(tf('sc_updated', '快捷键已更新：{keys}', { keys: changedStr }), 'success')
 }
 
 function getKeys(id: string): string[] {
@@ -293,11 +293,11 @@ function onKeyDown(e: KeyboardEvent) {
       .setGlobalShortcuts(globalMap)
       .then((report) => applyShortcutReport(report, shortcutStr))
       .catch((err: any) => {
-        toast.show(`Failed to register shortcut: ${err}`, 'error')
+        toast.show(tf('sk_register_fail', '快捷键注册失败：{err}', { err }), 'error')
       })
   } else {
     // In-app shortcut: persisted only, handled by local key listeners.
-    toast.show(`Shortcut updated: ${shortcutStr}`, 'success')
+    toast.show(tf('sc_updated', '快捷键已更新：{keys}', { keys: shortcutStr }), 'success')
   }
 }
 </script>

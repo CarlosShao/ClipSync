@@ -5,7 +5,7 @@ import { useSonner } from '@/composables/useSonner'
 import * as tauri from '@/lib/tauri'
 import { Pencil } from 'lucide-vue-next'
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const toast = useSonner()
 const emit = defineEmits<{ back: [] }>()
 
@@ -99,7 +99,7 @@ function applyShortcutReport(
     toast.show(fallbacks.join('；'), 'warning')
     return
   }
-  toast.show(`Shortcut updated: ${changedStr}`, 'success')
+  toast.show(tf('sc_updated', '快捷键已更新：{keys}', { keys: changedStr }), 'success')
 }
 
 // ── Key display / resolution helpers ──────────────────────────────────
@@ -255,10 +255,10 @@ function onKeyDown(e: KeyboardEvent) {
       .setGlobalShortcuts(globalMap)
       .then((report) => applyShortcutReport(report, shortcutStr))
       .catch((err: any) => {
-        toast.show(`Failed to register shortcut: ${err}`, 'error')
+        toast.show(tf('sk_register_fail', '快捷键注册失败：{err}', { err }), 'error')
       })
   } else {
-    toast.show(`Shortcut updated: ${shortcutStr}`, 'success')
+    toast.show(tf('sc_updated', '快捷键已更新：{keys}', { keys: shortcutStr }), 'success')
   }
 }
 </script>

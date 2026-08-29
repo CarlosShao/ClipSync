@@ -738,35 +738,41 @@ html.theme-raycast.light {
 
 /* ============================================================
    RESET & BASE
+   ⚠️ 必须放进 @layer base：CSS 级联层规则是「未分层 > 已分层」，
+   若这条 * 重置留在未分层区，它会压过 Tailwind utilities 层的
+   px-*/py-* 内边距工具类 —— 这正是"按钮/输入框文字贴边"顽固 bug
+   的根因（shadcn Button 的 padding 全靠 Tailwind 类提供）。
    ============================================================ */
-*,
-*::before,
-*::after {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+@layer base {
+  *,
+  *::before,
+  *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
 
-html {
-  font-size: 14px;
-  height: 100%;
-  width: 100%;
-}
+  html {
+    font-size: 14px;
+    height: 100%;
+    width: 100%;
+  }
 
-body {
-  font-family:
-    'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    'PingFang SC',
-    'Hiragino Sans GB',
-    'Microsoft YaHei',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: var(--bg-base);
-  color: var(--text-primary);
+  body {
+    font-family:
+      'Inter',
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      'PingFang SC',
+      'Hiragino Sans GB',
+      'Microsoft YaHei',
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--bg-base);
+    color: var(--text-primary);
+  }
 }
 
 /* ============================================================
@@ -851,26 +857,14 @@ select:focus-visible {
 }
 
 /* ============================================================
-   SHADCN BUTTON DEFENSIVE RESET
-   Root cause: Scoped CSS in parent components (e.g. .sg-row button)
-   can override Tailwind utility classes on shadcn Button children
-   because scoped selectors gain a data-attribute qualifier that
-   increases specificity beyond unscoped Tailwind classes.
-
-   This ensures shadcn buttons ALWAYS have proper padding, regardless
-   of parent scoped CSS specificity conflicts.
-
-   EXCLUSION: Switch uses a <button> with inline-flex too, but it must
-   NOT get padding. We exclude it via the rounded-full selector.
+   SHADCN BUTTON PADDING — 已由上面的 @layer base 修复
+   根因回顾：旧的未分层 `* { padding: 0 }` 会压过 Tailwind 的
+   px-*/py-* 工具类，此前用 `button.inline-flex:not([class*='size-'])`
+   加 !important 打补丁 —— 但 shadcn Button 的类串里包含
+   `[&_svg]:size-4`，子串命中 `size-` 导致 :not() 永远排除掉
+   所有 shadcn Button，补丁从未生效。现在 reset 已分层，
+   工具类恢复正常优先级，此补丁整体移除。
    ============================================================ */
-button.inline-flex:not([class*='rounded-full']):not([class*='size-']) {
-  padding-left: 16px !important;
-  padding-right: 16px !important;
-}
-button.inline-flex:not([class*='rounded-full']):not([class*='size-'])[class*='h-10'] {
-  padding-left: 20px !important;
-  padding-right: 20px !important;
-}
 
 /* ============================================================
    REDUCED MOTION FALLBACK (S8)
@@ -892,4 +886,20 @@ button.inline-flex:not([class*='rounded-full']):not([class*='size-'])[class*='h-
     transition-duration: 0.01ms !important;
     transition-delay: 0ms !important;
   }
+}
+
+/* ============================================================
+   减少动画（设置开关）：DataSettings「减少动画」往 <html> 加
+   .reduce-motion 类。此前该类无任何 CSS 消费（纯死开关），
+   现在与 prefers-reduced-motion 同等力度作用于全站。
+   ============================================================ */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
 }

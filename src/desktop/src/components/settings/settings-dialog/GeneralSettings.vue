@@ -124,7 +124,7 @@ watch(maxHistoryModel, () => onMaxHistoryChange())
           @keyup.enter="saveServerUrl"
         />
         <Button variant="outline" size="sm" :disabled="!serverUrlDirty || !!serverUrlError" @click="saveServerUrl">
-          {{ t('btn_save') }}
+          {{ t('common_save') }}
         </Button>
         <Button variant="outline" size="sm" @click="resetServerUrl">{{ t('sg_server_url_reset') }}</Button>
       </div>

@@ -92,6 +92,9 @@ async function onToggle2FA(next: boolean) {
 }
 
 function cancelSetup() {
+  // 无论进行到哪一步，先关掉弹窗（旧实现只清数据不关弹窗，
+  // 导致点 X 后剩一个空壳弹窗且无法关闭）
+  showSetupModal.value = false
   // 只有尚未完成启用流程（备份码未展示）时才回滚
   if (!showBackupModal.value) {
     twoFAEnabled.value = false
