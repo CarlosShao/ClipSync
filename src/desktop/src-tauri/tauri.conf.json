@@ -26,12 +26,13 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: http: https:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 http://localhost:3001 https: ws: wss:; object-src 'none'; base-uri 'self'; frame-src 'self' blob: data:"
     }
   },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -48,7 +49,7 @@
     "updater": {
       "active": true,
       "dangerousDisablePluginAutostart": false,
-      "endpoints": ["http://localhost:3001/api/app/update.json"],
+      "endpoints": ["https://updates.clipsync.app/api/app/update.json"],
       "pubkey": "placeholder_pubkey_replace_in_production"
     }
   }

@@ -7,6 +7,9 @@ import { useClipboard } from '@/composables/useClipboard'
 import { clearQueue } from '@/utils/offlineQueue'
 
 const isDev = import.meta.env.DEV
+// A1：服务器地址默认值。只在"拿不到配置"时生效，绝不覆盖用户已保存的值
+// （空字符串是合法的"未连接"态）。
+const DEFAULT_SERVER_URL = 'http://localhost:3001'
 
 export const useConfigStore = defineStore('config', () => {
   // 同步从 localStorage 恢复 token，避免 HomeView onMounted 先于 App onMounted 导致 api() 无 token → 401
@@ -14,7 +17,7 @@ export const useConfigStore = defineStore('config', () => {
   const config = ref<AppConfig>({
     // 开发环境：相对路径，走 Vite proxy (/api → http://localhost:3001)
     // 生产环境（Tauri）：显式指向 Docker 后端
-    server_url: isDev ? '' : 'http://localhost:3001',
+    server_url: isDev ? '' : DEFAULT_SERVER_URL,
     token: savedToken || null,
     device_id: null,
     user_id: null,
@@ -40,13 +43,17 @@ export const useConfigStore = defineStore('config', () => {
     try {
       const c = await tauri.getConfig()
       config.value = c
+      // A1：不再根据构建模式强制覆写 server_url。只有配置里根本没有这个字段
+      // （旧版本持久化的文件）时才回落默认值；空字符串 = 用户主动清空 = 未连接。
+      if (c.server_url == null) {
+        config.value.server_url = isDev ? '' : DEFAULT_SERVER_URL
+      }
       const auto = await tauri.isAutostartEnabled().catch(() => false)
       autostart.value = auto
     } catch {
-      /* defaults */
+      // 非 Tauri 环境（浏览器 dev）：dev 走 Vite proxy 相对路径，其它回落默认值
+      config.value.server_url = isDev ? '' : DEFAULT_SERVER_URL
     }
-    // 根据构建模式强制设置正确的 server_url
-    config.value.server_url = import.meta.env.DEV ? '' : 'http://localhost:3001'
     // 从 localStorage 恢复 token（Tauri getConfig 可能不包含 token）
     if (!config.value.token) {
       const savedToken = localStorage.getItem('clipsync-token')
@@ -68,6 +75,10 @@ export const useConfigStore = defineStore('config', () => {
     } catch {
       /* ignore corrupt data */
     }
+
+    // A9：把"自动同步"开关真正接到原生剪贴板监听上。
+    // Rust 侧 start/stop 都幂等，所以这里可以无条件调用。
+    await syncClipboardMonitor()
 
     // 有 token 时立即从后端拉取用户资料（name/email/phone/plan/avatar）
     // 否则重开 app 后所有 profile 字段永远显示 "Not set"
@@ -166,9 +177,22 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
+  // A9：autoSync 开关 → 原生剪贴板监听的启停。
+  // Rust 侧 start/stop 都幂等（已运行/已停止直接返回），浏览器 dev 下 invoke 失败静默忽略。
+  async function syncClipboardMonitor() {
+    try {
+      if (autoSync.value) await tauri.startClipboardMonitor()
+      else await tauri.stopClipboardMonitor()
+    } catch {
+      /* 非 Tauri 环境（浏览器 dev）没有这些命令 */
+    }
+  }
+
   function toggleAutoSync(val?: boolean) {
     autoSync.value = val ?? !autoSync.value
     savePrefs()
+    // A9：切换即时生效 —— 关掉之后真的不会再采集到任何条目
+    void syncClipboardMonitor()
   }
 
   function toggleImageCompress(val?: boolean) {

@@ -1,21 +1,101 @@
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
-use tauri::{Listener, Manager};
+use tauri::{Emitter, Manager};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use std::thread;
 
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
 use tauri_plugin_autostart::MacosLauncher;
 
 mod clipboard_monitor;
-mod crypto;
-mod sync_client;
+
+// ============================================================================
+// AppConfig persistence (A1)
+// ============================================================================
+
+/// File name of the persisted config inside Tauri's `app_config_dir`
+/// (Windows: %APPDATA%\com.clipsync.desktop\config.json).
+const CONFIG_FILE_NAME: &str = "config.json";
+
+/// Resolve the on-disk config path. `None` when the OS refuses to hand out a
+/// config directory — the app then keeps running with an in-memory config.
+fn config_file_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join(CONFIG_FILE_NAME))
+}
+
+/// Load the persisted config.
+///
+/// ANY failure (missing file, unreadable, corrupt JSON, schema drift) falls back
+/// to `AppConfig::default()` — a broken/legacy config file must never stop the
+/// app from starting.
+fn load_persisted_config(app: &tauri::AppHandle) -> AppConfig {
+    let Some(path) = config_file_path(app) else {
+        warn!("[Config] app_config_dir unavailable, using in-memory defaults");
+        return AppConfig::default();
+    };
+    if !path.exists() {
+        info!("[Config] No persisted config at {}, using defaults", path.display());
+        return AppConfig::default();
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => match serde_json::from_str::<AppConfig>(&raw) {
+            Ok(cfg) => {
+                info!("[Config] Loaded {} (server_url='{}')", path.display(), cfg.server_url);
+                cfg
+            }
+            Err(e) => {
+                error!("[Config] Corrupt config at {}: {}. Falling back to defaults.", path.display(), e);
+                AppConfig::default()
+            }
+        },
+        Err(e) => {
+            error!("[Config] Unreadable config at {}: {}. Falling back to defaults.", path.display(), e);
+            AppConfig::default()
+        }
+    }
+}
+
+/// Best-effort persist. Failures are logged, never propagated: a read-only
+/// config directory must not break settings that already work in memory.
+fn persist_config(app: &tauri::AppHandle, cfg: &AppConfig) {
+    let Some(path) = config_file_path(app) else { return };
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            error!("[Config] Cannot create config dir {}: {}", parent.display(), e);
+            return;
+        }
+    }
+    match serde_json::to_string_pretty(cfg) {
+        Ok(raw) => {
+            if let Err(e) = std::fs::write(&path, raw) {
+                error!("[Config] Failed to write {}: {}", path.display(), e);
+            } else {
+                debug!("[Config] Persisted to {}", path.display());
+            }
+        }
+        Err(e) => error!("[Config] Failed to serialize config: {}", e),
+    }
+}
+
+/// Persist whatever is currently in the in-memory AppState.
+fn persist_state_config(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        let cfg = state.config.lock().unwrap().clone();
+        persist_config(app, &cfg);
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppConfig {
     pub server_url: String,
     pub token: Option<String>,
@@ -51,28 +131,6 @@ pub struct AppState {
     pub last_ai_toggle: Arc<Mutex<Instant>>,
 }
 
-// 系统托盘菜单命令
-#[tauri::command]
-fn tray_show_window(app: tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-}
-
-#[tauri::command]
-fn tray_hide_window(app: tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.hide();
-    }
-}
-
-#[tauri::command]
-fn tray_quit(app: tauri::AppHandle) {
-    let _ = app.exit(0);
-}
-
 /// Helper: ensure main window is visible and focused (handles both minimized + hidden states)
 fn ensure_window_visible(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
     if let Some(window) = app.get_webview_window("main") {
@@ -90,28 +148,35 @@ fn get_config(state: tauri::State<AppState>) -> AppConfig {
 }
 
 #[tauri::command]
-fn update_config(state: tauri::State<AppState>, config: AppConfig) {
+fn update_config(app: tauri::AppHandle, state: tauri::State<AppState>, config: AppConfig) {
     // 字段级合并：只更新用户可设置的字段（server_url / 快捷键），
     // **永远保留**认证与身份字段 token/device_id/user_id。
     // 之前是整体覆盖 `*config = config`，若前端设置快照漏带 token，
     // 一次"保存快捷键"就会把登录态抹成 None → 用户被静默登出。
     // 清除登录态请走专用命令 clear_auth（前端 logout 调用）。
-    let mut cfg = state.config.lock().unwrap();
-    cfg.server_url = config.server_url;
-    cfg.quick_paste_shortcut = config.quick_paste_shortcut;
-    cfg.toggle_window_shortcut = config.toggle_window_shortcut;
-    cfg.toggle_ai_panel_shortcut = config.toggle_ai_panel_shortcut;
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.server_url = config.server_url;
+        cfg.quick_paste_shortcut = config.quick_paste_shortcut;
+        cfg.toggle_window_shortcut = config.toggle_window_shortcut;
+        cfg.toggle_ai_panel_shortcut = config.toggle_ai_panel_shortcut;
+    }
+    // A1: 持久化到 app_config_dir，重启后仍然保留
+    persist_state_config(&app);
 }
 
 /// 清除认证/身份状态（前端 logout 调用）。与 update_config 分离，
 /// 确保"保存设置"绝不会误删活动会话。
 #[tauri::command]
-fn clear_auth(state: tauri::State<AppState>) {
-    let mut cfg = state.config.lock().unwrap();
-    cfg.token = None;
-    cfg.device_id = None;
-    cfg.user_id = None;
-    eprintln!("[Auth] Cleared token/device_id/user_id on logout");
+fn clear_auth(app: tauri::AppHandle, state: tauri::State<AppState>) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.token = None;
+        cfg.device_id = None;
+        cfg.user_id = None;
+    }
+    persist_state_config(&app);
+    debug!("[Auth] Cleared token/device_id/user_id on logout");
 }
 
 /// Copy local files to clipboard (CF_HDROP) — checks if files exist first.
@@ -212,6 +277,10 @@ fn set_clipboard_content(content: String) -> Result<(), String> {
 
     use clipboard_win::raw;
     raw::open().map_err(|e| format!("open: {}", e))?;
+    // A3: 写文本前先清空剪贴板（对齐 set_clipboard_files）。
+    // Windows 允许同一剪贴板上并存 CF_UNICODETEXT / CF_DIB / CF_HDROP，
+    // 不清空的话"先复制图片、再同步文本"之后 Ctrl+V 仍会得到旧图片。
+    let _ = raw::empty();
     // CF_UNICODETEXT (format 13) 要求 UTF-16LE 编码，且必须以双字节 null 结尾
     let mut utf16_bytes: Vec<u8> = content
         .encode_utf16()
@@ -272,8 +341,10 @@ fn read_file_content_base64(path: String) -> Result<String, String> {
 #[tauri::command]
 fn save_and_copy_file(base64_data: String, filename: String) -> Result<String, String> {
     use std::fs;
-    // 1. Decode base64
-    let bytes = base64::decode(&base64_data)
+    use base64::Engine;
+    // 1. Decode base64（A9：base64::decode 已在 0.22 废弃，改用 Engine API）
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&base64_data)
         .map_err(|e| format!("base64 decode failed: {}", e))?;
 
     // 2. Save to temp dir
@@ -314,17 +385,17 @@ fn get_clipboard_files() -> Vec<String> {
             if clipboard_win::raw::is_format_avail(15) {
                 match clipboard_win::raw::get_file_list(&mut files) {
                     Ok(_) => {
-                        eprintln!("[get_clipboard_files] CF_HDROP available, got {} file(s)", files.len());
+                        debug!("[get_clipboard_files] CF_HDROP available, got {} file(s)", files.len());
                     }
                     Err(e) => {
-                        eprintln!("[get_clipboard_files] CF_HDROP available but get_file_list failed: {}", e);
+                        error!("[get_clipboard_files] CF_HDROP available but get_file_list failed: {}", e);
                     }
                 }
             }
             let _ = clipboard_win::raw::close();
         }
         Err(e) => {
-            eprintln!("[get_clipboard_files] clipboard open failed: {}", e);
+            error!("[get_clipboard_files] clipboard open failed: {}", e);
         }
     }
     files
@@ -396,7 +467,7 @@ fn check_clipboard_image_info() -> serde_json::Value {
                         if size == 0 {
                             serde_json::json!({ "available": false, "size": 0 })
                         } else if size > MAX_RAW_BYTES {
-                            eprintln!("[check_clipboard_image_info] Image too large: {} bytes, skipping", size);
+                            debug!("[check_clipboard_image_info] Image too large: {} bytes, skipping", size);
                             serde_json::json!({ "available": false, "size": size, "reason": "too_large" })
                         } else {
                             let hash = fnv64(&bytes);
@@ -468,7 +539,7 @@ pub fn read_clipboard_image_raw() -> Option<(Vec<u8>, &'static str)> {
                         let mut png = vec![0u8; n];
                         if raw::get(fmt, &mut png).unwrap_or(0) > 0 {
                             let _ = raw::close();
-                            eprintln!("[read_clipboard_image_raw] source=PNG-clipboard, {} bytes", png.len());
+                            debug!("[read_clipboard_image_raw] source=PNG-clipboard, {} bytes", png.len());
                             return Some((png, "PNG-clipboard"));
                         }
                     }
@@ -483,7 +554,7 @@ pub fn read_clipboard_image_raw() -> Option<(Vec<u8>, &'static str)> {
         return None;
     }
 
-    eprintln!("[read_clipboard_image_raw] source={} raw {} bytes, starts with {:02x?}, has_BM={}",
+    debug!("[read_clipboard_image_raw] source={} raw {} bytes, starts with {:02x?}, has_BM={}",
         src, dib.len(), dib.iter().take(4).collect::<Vec<_>>(),
         dib.len() > 2 && &dib[0..2] == b"BM");
 
@@ -514,11 +585,11 @@ pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str) -> Option<(String, u64
             Ok(img) => {
                 let rgba = img.to_rgba8();
                 let (w, h) = rgba.dimensions();
-                eprintln!("[encode_clipboard_raw_to_png] image crate OK: {}x{}", w, h);
+                debug!("[encode_clipboard_raw_to_png] image crate OK: {}x{}", w, h);
                 return encode_rgba_to_png_data_url(&rgba, w, h).ok().map(|url| (url, fnv64(raw)));
             }
             Err(e) => {
-                eprintln!("[encode_clipboard_raw_to_png] image crate failed: {}, trying manual parser", e);
+                error!("[encode_clipboard_raw_to_png] image crate failed: {}, trying manual parser", e);
             }
         }
     }
@@ -527,7 +598,7 @@ pub fn encode_clipboard_raw_to_png(raw: &[u8], src: &str) -> Option<(String, u64
     let actual_dib = if &raw[0..2] == b"BM" && raw.len() > 14 { &raw[14..] } else { raw };
     dib_to_png_data_url(actual_dib)
         .map(|url| (url, fnv64(raw)))
-        .map_err(|e| { eprintln!("[encode_clipboard_raw_to_png] failed: {}", e); e })
+        .map_err(|e| { error!("[encode_clipboard_raw_to_png] failed: {}", e); e })
         .ok()
 }
 
@@ -566,7 +637,7 @@ fn convert_bmp_to_png(bmp_data_url: String) -> Result<String, String> {
         .decode(b64_part)
         .map_err(|e| format!("base64 decode failed: {} (input {} bytes)", e, b64_part.len()))?;
 
-    eprintln!("[convert_bmp_to_png] decoded {} bytes, first 4: {:02x?}, has_BM_header: {}",
+    debug!("[convert_bmp_to_png] decoded {} bytes, first 4: {:02x?}, has_BM_header: {}",
         raw_bytes.len(),
         raw_bytes.iter().take(4).collect::<Vec<_>>(),
         raw_bytes.len() > 2 && &raw_bytes[0..2] == b"BM");
@@ -576,10 +647,10 @@ fn convert_bmp_to_png(bmp_data_url: String) -> Result<String, String> {
         // Use pixel offset from BM header if it looks sane, otherwise default to 14
         let pix_off = u32::from_le_bytes(raw_bytes[10..14].try_into().unwrap());
         if pix_off >= 14 && pix_off < raw_bytes.len() as u32 {
-            eprintln!("[convert_bmp_to_png] using BM pixel_offset={}", pix_off);
+            debug!("[convert_bmp_to_png] using BM pixel_offset={}", pix_off);
             &raw_bytes[pix_off as usize..]
         } else {
-            eprintln!("[convert_bmp_to_png] bad pixel_offset={}, defaulting to 14", pix_off);
+            debug!("[convert_bmp_to_png] bad pixel_offset={}, defaulting to 14", pix_off);
             &raw_bytes[14..]
         }
     } else if raw_bytes.len() > 4 {
@@ -596,8 +667,6 @@ fn convert_bmp_to_png(bmp_data_url: String) -> Result<String, String> {
 /// Handles BITMAPINFOHEADER (40), BITMAPV4HEADER (108), BITMAPV5HEADER (124).
 /// Auto-detects byte order by trying multiple interpretations and picking the best one.
 fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
-    use base64::Engine;
-
     if dib.len() < 40 {
         return Err(format!("DIB too short: {} bytes", dib.len()));
     }
@@ -609,7 +678,7 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
     let bpp = u16::from_le_bytes(dib[14..16].try_into().unwrap());
     let compression = u32::from_le_bytes(dib[16..20].try_into().unwrap());
 
-    eprintln!("[dib_to_png] === NEW CONVERSION === {}x{} bpp={} comp={} hdr={} dib_len={}",
+    debug!("[dib_to_png] === NEW CONVERSION === {}x{} bpp={} comp={} hdr={} dib_len={}",
         width.abs(), height_raw.abs(), bpp, compression, header_size, dib.len());
 
     if header_size < 40 || (header_size as usize) > dib.len() || width <= 0 || height_raw == 0 {
@@ -626,7 +695,7 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
     let row_stride = ((w * bytes_per_pixel + 3) / 4) * 4;
 
     // === HEX DUMP: Show raw bytes around expected pixel data boundary ===
-    eprintln!("[dib_to_png] --- HEX DUMP around header/pixel boundary ---");
+    debug!("[dib_to_png] --- HEX DUMP around header/pixel boundary ---");
     // Last 16 bytes of header area
     let dump_start = header_size.saturating_sub(16).max(0) as usize;
     for row in (dump_start..(header_size as usize + 64).min(dib.len())).step_by(16) {
@@ -634,7 +703,7 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
         let hex: Vec<String> = dib[row..end].iter().map(|b| format!("{:02x}", b)).collect();
         let ascii: String = dib[row..end].iter().map(|b| if *b >= 0x20 && *b < 0x7f { *b as char } else { '.' }).collect();
         let marker = if row < header_size as usize { " [HDR]" } else { " [PX?]" };
-        eprintln!("[dib_to_png] {:04x}: {}{} {}", row, marker, hex.join(" "), ascii);
+        debug!("[dib_to_png] {:04x}: {}{} {}", row, marker, hex.join(" "), ascii);
     }
 
     // === Try standard approach first (header_size offset + BGRA for 32bpp) ===
@@ -644,9 +713,9 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
         let standard_name = if bytes_per_pixel == 4 { "BGRA" } else { "BGR" };
         if let Ok(stats) = try_pixel_extraction(dib, w, h, top_down, header_size as usize, row_stride, bytes_per_pixel, standard_fn) {
             let pct = stats.non_blank as f64 / stats.total.max(1) as f64 * 100.0;
-            eprintln!("[dib_to_png] STANDARD offset={} ORDER={} → {:.1}%", header_size, standard_name, pct);
+            debug!("[dib_to_png] STANDARD offset={} ORDER={} → {:.1}%", header_size, standard_name, pct);
             if stats.total > 0 && pct > 5.0 {
-                eprintln!("[dib_to_png] ACCEPTED standard: offset={} order={} ({:.1}%)", header_size, standard_name, pct);
+                debug!("[dib_to_png] ACCEPTED standard: offset={} order={} ({:.1}%)", header_size, standard_name, pct);
                 return encode_rgba_to_png_data_url(&stats.rgba, w, h);
             }
         }
@@ -684,23 +753,23 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
 
         // Real pixel data: >50% non-zero and >10 unique byte values in 128 bytes
         if non_zero_count > 64 && unique_bytes.len() > 10 && !candidate_offsets.contains(&probe_off) {
-            eprintln!("[dib_to_png] SCAN found likely pixel start at offset {} (nz={}, uniq={})",
+            debug!("[dib_to_png] SCAN found likely pixel start at offset {} (nz={}, uniq={})",
                 probe_off, non_zero_count, unique_bytes.len());
             candidate_offsets.insert(1, probe_off); // insert early to try first
             break 'offset_search;
         }
     }
 
-    eprintln!("[dib_to_png] Trying {} candidate offsets (fallback)", candidate_offsets.len());
+    debug!("[dib_to_png] Trying {} candidate offsets (fallback)", candidate_offsets.len());
     let mut best_result: Option<(String, usize, PixelExtractionResult)> = None;
 
     for (idx, &pix_off) in candidate_offsets.iter().enumerate() {
-        eprintln!("[dib_to_png] Candidate #{}: offset={} (need {}, have {})",
+        debug!("[dib_to_png] Candidate #{}: offset={} (need {}, have {})",
             idx, pix_off, pix_off + (row_stride * h) as usize, dib.len());
 
         // Skip obviously invalid offsets
         if pix_off + (row_stride * h) as usize > dib.len() {
-            eprintln!("[dib_to_png]   -> SKIP: truncated");
+            debug!("[dib_to_png]   -> SKIP: truncated");
             continue;
         }
 
@@ -723,7 +792,7 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
             match result {
                 Ok(stats) => {
                     let pct = stats.non_blank as f64 / stats.total.max(1) as f64 * 100.0;
-                    eprintln!("[dib_to_png] OFFSET#{} @{} ORDER={} -> non_blank={}/{} ({:.1}%)",
+                    debug!("[dib_to_png] OFFSET#{} @{} ORDER={} -> non_blank={}/{} ({:.1}%)",
                         idx, pix_off, order_name, stats.non_blank, stats.total, pct);
 
                     // Keep track of the best result
@@ -738,7 +807,7 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("[dib_to_png] OFFSET#{} @{} ORDER={} -> err: {}", idx, pix_off, order_name, e);
+                    debug!("[dib_to_png] OFFSET#{} @{} ORDER={} -> err: {}", idx, pix_off, order_name, e);
                 }
             }
         }
@@ -748,7 +817,7 @@ fn dib_to_png_data_url(dib: &[u8]) -> Result<String, String> {
     if let Some((_order_name, pix_off, stats)) = best_result {
         let pct = stats.non_blank as f64 / stats.total.max(1) as f64 * 100.0;
         if pct > 5.0 {
-            eprintln!("[dib_to_png] ACCEPTED fallback: offset={} ({:.1}%)", pix_off, pct);
+            debug!("[dib_to_png] ACCEPTED fallback: offset={} ({:.1}%)", pix_off, pct);
             return encode_rgba_to_png_data_url(&stats.rgba, w, h);
         }
     }
@@ -815,7 +884,7 @@ fn encode_rgba_to_png_data_url(rgba: &[u8], w: u32, h: u32) -> Result<String, St
             if sx < w && sy < h {
                 let idx = ((sy * w + sx) * 4) as usize;
                 if idx + 3 < rgba.len() {
-                    eprintln!("  FINAL PIXEL@({},{})=({},{},{},{})", sx, sy,
+                    debug!("  FINAL PIXEL@({},{})=({},{},{},{})", sx, sy,
                         rgba[idx], rgba[idx+1], rgba[idx+2], rgba[idx+3]);
                 }
             }
@@ -832,48 +901,134 @@ fn encode_rgba_to_png_data_url(rgba: &[u8], w: u32, h: u32) -> Result<String, St
     }
 
     let b64 = base64::engine::general_purpose::STANDARD.encode(&png_buf);
-    eprintln!("[dib_to_png] PNG output: {} bytes", png_buf.len());
+    debug!("[dib_to_png] PNG output: {} bytes", png_buf.len());
     Ok(format!("data:image/png;base64,{}", b64))
 }
+/// tauri.conf.json 里出厂自带的占位 pubkey。只要它还在，就说明更新服务
+/// **尚未配置**——此时必须明确报错，而不是继续谎报"已是最新版本"（A7）。
+const PLACEHOLDER_UPDATER_PUBKEY: &str = "placeholder_pubkey_replace_in_production";
+
+/// 从已解析的 Tauri 插件配置里读取 updater 的 pubkey。
+fn updater_pubkey(app: &tauri::AppHandle) -> Option<String> {
+    app.config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|v| v.get("pubkey"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// 只做"有没有更新"的检查，不下载不安装。
+/// 返回 `{ hasUpdate, version, notes, date }`；未配置更新服务时返回 Err。
 #[tauri::command]
 async fn check_for_updates(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(mobile)]
+    {
+        let _ = &app;
+        return Err("更新功能仅支持桌面端".to_string());
+    }
+
     #[cfg(not(mobile))]
     {
         use tauri_plugin_updater::UpdaterExt;
-        let updater = app.updater().map_err(|e| e.to_string())?;
-        if let Some(update) = updater.check().await.map_err(|e| e.to_string())? {
-            let version = update.version.clone();
-            let _ = update.download_and_install(
-                |chunk_size, total_size| {
-                    println!("Downloaded {} bytes (total: {:?})", chunk_size, total_size);
-                },
-                || {
-                    println!("Download finished");
-                }
-            ).await.map_err(|e| e.to_string())?;
-            return Ok(serde_json::json!({ "hasUpdate": true, "version": version }));
+
+        // A7：pubkey 缺失或仍是占位值 → 明确告知"更新服务未配置"
+        let pubkey = updater_pubkey(&app).unwrap_or_default();
+        if pubkey.trim().is_empty() || pubkey == PLACEHOLDER_UPDATER_PUBKEY {
+            return Err("更新服务未配置：tauri.conf.json 的 plugins.updater.pubkey 仍是占位值".to_string());
+        }
+
+        let updater = app
+            .updater()
+            .map_err(|e| format!("更新服务未配置或初始化失败: {}", e))?;
+
+        match updater.check().await {
+            Ok(Some(update)) => {
+                info!("[Updater] new version available: {}", update.version);
+                Ok(serde_json::json!({
+                    "hasUpdate": true,
+                    "version": update.version,
+                    "notes": update.body,
+                    "date": update.date.map(|d| d.to_string()),
+                }))
+            }
+            Ok(None) => {
+                info!("[Updater] already up to date");
+                Ok(serde_json::json!({ "hasUpdate": false }))
+            }
+            Err(e) => Err(format!("检查更新失败: {}", e)),
         }
     }
-    Ok(serde_json::json!({ "hasUpdate": false }))
+}
+
+/// 用户确认后真正下载 + 安装 + 重启（A7：与"检查"解耦，UI 先弹确认框）。
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(mobile)]
+    {
+        let _ = &app;
+        return Err("更新功能仅支持桌面端".to_string());
+    }
+
+    #[cfg(not(mobile))]
+    {
+        use tauri_plugin_updater::UpdaterExt;
+
+        let updater = app.updater().map_err(|e| e.to_string())?;
+        let update = match updater.check().await {
+            Ok(Some(u)) => u,
+            Ok(None) => return Err("没有可用更新".to_string()),
+            Err(e) => return Err(format!("检查更新失败: {}", e)),
+        };
+
+        update
+            .download_and_install(
+                |chunk_size, total_size| {
+                    debug!("[Updater] downloaded {} bytes (total: {:?})", chunk_size, total_size);
+                },
+                || {
+                    info!("[Updater] download finished");
+                },
+            )
+            .await
+            .map_err(|e| format!("下载安装失败: {}", e))?;
+
+        info!("[Updater] installed, relaunching");
+        // restart() 发散（!），后面的代码不会执行
+        app.restart();
+    }
 }
 
 #[tauri::command]
-async fn login(state: tauri::State<'_, AppState>, phone: String, code: String) -> Result<serde_json::Value, String> {
-    let config = state.config.lock().unwrap().clone();
+async fn login(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    phone: String,
+    code: String,
+) -> Result<serde_json::Value, String> {
+    let server_url = state.config.lock().unwrap().server_url.clone();
+    if server_url.trim().is_empty() {
+        return Err("服务器地址未配置，请先在设置中填写服务器地址".to_string());
+    }
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{}/api/auth/login", config.server_url))
+        .post(format!("{}/api/auth/login", server_url))
         .json(&serde_json::json!({ "phone": phone, "code": code }))
         .send()
         .await
         .map_err(|e| e.to_string())?;
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
     if let Some(token) = body.get("token").and_then(|t| t.as_str()) {
-        let mut cfg = state.config.lock().unwrap();
-        cfg.token = Some(token.to_string());
-        if let Some(user) = body.get("user") {
-            cfg.user_id = user.get("id").and_then(|id| id.as_str()).map(|s| s.to_string());
+        {
+            let mut cfg = state.config.lock().unwrap();
+            cfg.token = Some(token.to_string());
+            if let Some(user) = body.get("user") {
+                cfg.user_id = user.get("id").and_then(|id| id.as_str()).map(|s| s.to_string());
+            }
         }
+        // A1：登录态落盘，重启后不必重新登录
+        persist_state_config(&app);
     }
     Ok(body)
 }
@@ -902,12 +1057,12 @@ fn register_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), Stri
     {
         let handle = app.clone();
         let shortcut_clone = shortcut.clone();
-        eprintln!("[Shortcut] Registering custom shortcut: '{}'", shortcut_clone);
+        debug!("[Shortcut] Registering custom shortcut: '{}'", shortcut_clone);
 
         let shortcut_obj: Shortcut = shortcut_clone
             .parse()
             .map_err(|e| {
-                eprintln!("[Shortcut] Failed to parse '{}': {}", shortcut_clone, e);
+                error!("[Shortcut] Failed to parse '{}': {}", shortcut_clone, e);
                 format!("Invalid shortcut '{}': {}", shortcut_clone, e)
             })?;
 
@@ -915,16 +1070,16 @@ fn register_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), Stri
         // The eval-based toggle expects window.__toggleAiPanel to exist in the main webview.
         let sc_label = shortcut_clone.clone();
         handle.global_shortcut().on_shortcut(shortcut_obj, move |app, _sc, _event| {
-            eprintln!("[GlobalShortcut:custom] '{}' triggered → toggle AI panel", sc_label);
+            debug!("[GlobalShortcut:custom] '{}' triggered → toggle AI panel", sc_label);
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.eval("if(window.__toggleAiPanel) window.__toggleAiPanel()");
             }
         }).map_err(|e| {
-            eprintln!("[Shortcut] on_shortcut failed for '{}': {}", shortcut_clone, e);
+            error!("[Shortcut] on_shortcut failed for '{}': {}", shortcut_clone, e);
             e.to_string()
         })?;
 
-        eprintln!("[Shortcut] ✅ Successfully registered: '{}'", shortcut_clone);
+        debug!("[Shortcut] ✅ Successfully registered: '{}'", shortcut_clone);
     }
     Ok(())
 }
@@ -959,11 +1114,11 @@ fn toggle_window(app: tauri::AppHandle) {
 #[tauri::command]
 fn start_clipboard_monitor(state: tauri::State<AppState>, app: tauri::AppHandle) {
     if state.is_monitoring.load(Ordering::Relaxed) {
-        eprintln!("[Monitor] Already running, skipping");
+        debug!("[Monitor] Already running, skipping");
         return;
     }
     state.is_monitoring.store(true, Ordering::Relaxed);
-    eprintln!("[Monitor] Starting native clipboard monitor thread...");
+    debug!("[Monitor] Starting native clipboard monitor thread...");
 
     let handle = app.clone();
     let stop = state.is_monitoring.clone();
@@ -978,124 +1133,195 @@ fn start_clipboard_monitor(state: tauri::State<AppState>, app: tauri::AppHandle)
 #[tauri::command]
 fn stop_clipboard_monitor(state: tauri::State<AppState>) {
     if !state.is_monitoring.load(Ordering::Relaxed) {
-        eprintln!("[Monitor] Already stopped, skipping");
+        debug!("[Monitor] Already stopped, skipping");
         return;
     }
     state.is_monitoring.store(false, Ordering::Relaxed);
     clipboard_monitor::request_stop_monitor();
-    eprintln!("[Monitor] Stopping native clipboard monitor (Shutdown signal sent)");
+    debug!("[Monitor] Stopping native clipboard monitor (Shutdown signal sent)");
+}
+
+/// Try `requested` first, then each fallback in order, and report EXACTLY what
+/// ended up being registered.
+///
+/// A8: when the OS (or another app) already owns the requested hotkey we used to
+/// silently fall back to an alternative and the UI kept showing the key the user
+/// picked — i.e. the app lied. `effective` now carries the truth back to the UI.
+fn register_with_fallback<F>(
+    handle: &tauri::AppHandle,
+    requested: &str,
+    fallbacks: &[&str],
+    handler: F,
+) -> serde_json::Value
+where
+    F: Fn(&tauri::AppHandle, &Shortcut, ShortcutEvent) + Send + Sync + Clone + 'static,
+{
+    let mut candidates: Vec<String> = vec![requested.to_string()];
+    for f in fallbacks {
+        if !candidates.iter().any(|c| c == f) {
+            candidates.push((*f).to_string());
+        }
+    }
+
+    let mut last_err = String::new();
+    for (idx, candidate) in candidates.iter().enumerate() {
+        let sc = match candidate.parse::<Shortcut>() {
+            Ok(sc) => sc,
+            Err(e) => {
+                last_err = format!("无法解析快捷键 '{}': {}", candidate, e);
+                error!("[Shortcut] {}", last_err);
+                continue;
+            }
+        };
+        match handle.global_shortcut().on_shortcut(sc, handler.clone()) {
+            Ok(()) => {
+                let is_fallback = idx > 0;
+                if is_fallback {
+                    warn!(
+                        "[Shortcut] '{}' 无法注册（{}），已改用备选键 '{}'",
+                        requested, last_err, candidate
+                    );
+                } else {
+                    info!("[Shortcut] registered '{}'", candidate);
+                }
+                return serde_json::json!({
+                    "ok": true,
+                    "requested": requested,
+                    "effective": candidate,
+                    "fallback": is_fallback,
+                    "reason": if is_fallback { last_err.clone() } else { String::new() },
+                });
+            }
+            Err(e) => {
+                last_err = format!("'{}' 注册失败: {}", candidate, e);
+                if idx == 0 {
+                    error!("[Shortcut] {}", last_err);
+                } else {
+                    debug!("[Shortcut] {}", last_err);
+                }
+            }
+        }
+    }
+
+    error!("[Shortcut] '{}' 及全部备选键均注册失败: {}", requested, last_err);
+    serde_json::json!({
+        "ok": false,
+        "requested": requested,
+        "effective": null,
+        "fallback": false,
+        "reason": last_err,
+    })
 }
 
 /// Re-register all global shortcuts from the frontend-supplied map.
-/// Map keys: "quickPaste", "toggleWindow". Also persists them into AppConfig.
-/// Uses on_shortcut() per-shortcut handlers (no string comparison needed).
+/// Map keys: "quickPaste", "toggleWindow", "toggleAiPanel". Also persists them
+/// into AppConfig.
+///
+/// A8: returns a per-id report `{ ok, requested, effective, fallback, reason }`
+/// so the UI can show the key combination that actually took effect.
 #[tauri::command]
-fn set_global_shortcuts(app: tauri::AppHandle, shortcuts: HashMap<String, String>) -> Result<(), String> {
+fn set_global_shortcuts(
+    app: tauri::AppHandle,
+    shortcuts: HashMap<String, String>,
+) -> Result<HashMap<String, serde_json::Value>, String> {
     #[cfg(not(mobile))]
     {
         let handle = app.clone();
         handle.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
+        let mut report: HashMap<String, serde_json::Value> = HashMap::new();
 
         // ── QuickPaste ──
         if let Some(qp) = shortcuts.get("quickPaste") {
-            let cands: Vec<&str> = if qp.to_lowercase().contains("shift+v") {
-                vec![qp.as_str(), "Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
+            let fallbacks: Vec<&str> = if qp.to_lowercase().contains("shift+v") {
+                vec!["Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
             } else {
-                vec![qp.as_str(), "Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
+                vec!["Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
             };
-            for (i, candidate) in cands.iter().enumerate() {
-                if let Ok(sc) = candidate.parse::<Shortcut>() {
-                    match handle.global_shortcut().on_shortcut(sc, |app_h, _shortcut, _event| {
-                        // Debounce key-repeat
-                        if let Some(s) = app_h.try_state::<AppState>() {
-                            let mut last = s.last_qp_toggle.lock().unwrap();
-                            if last.elapsed() < std::time::Duration::from_millis(300) { return; }
-                            *last = Instant::now();
-                        }
-                        // Always destroy + recreate (reusing stale Vue DOM causes empty outline)
-                        if let Some(existing) = app_h.get_webview_window("quick-paste") {
-                            let _ = existing.close();
-                        }
-                        ensure_quick_paste_window(app_h);
-                    }) {
-                        Ok(()) => { println!("[setGS] ✅ quickPaste='{}'{}", candidate, if i > 0 { " (fb)" } else { "" }); break; }
-                        Err(e) => { if i == 0 { eprintln!("[setGS] QP primary failed: {}", e); } }
+            report.insert(
+                "quickPaste".to_string(),
+                register_with_fallback(&handle, qp, &fallbacks, |app_h, _shortcut, _event| {
+                    // Debounce key-repeat
+                    if let Some(s) = app_h.try_state::<AppState>() {
+                        let mut last = s.last_qp_toggle.lock().unwrap();
+                        if last.elapsed() < std::time::Duration::from_millis(300) { return; }
+                        *last = Instant::now();
                     }
-                }
-            }
+                    // Always destroy + recreate (reusing stale Vue DOM causes empty outline)
+                    if let Some(existing) = app_h.get_webview_window("quick-paste") {
+                        let _ = existing.close();
+                    }
+                    ensure_quick_paste_window(app_h);
+                }),
+            );
         }
 
         // ── Toggle Window ──
         if let Some(tw) = shortcuts.get("toggleWindow") {
-            let cands: Vec<&str> = vec![tw.as_str(), "Ctrl+Alt+S", "Super+Alt+Space", "Ctrl+Alt+Enter"];
-            for (i, candidate) in cands.iter().enumerate() {
-                if let Ok(sc) = candidate.parse::<Shortcut>() {
-                    match handle.global_shortcut().on_shortcut(sc, |app_h, _shortcut, _event| {
-                        // Debounce: ignore OS key-repeat AND potential key-up events (500ms covers long holds)
-                        let should_fire = if let Some(s) = app_h.try_state::<AppState>() {
-                            let mut last = s.last_tw_toggle.lock().unwrap();
-                            if last.elapsed() < std::time::Duration::from_millis(500) {
-                                eprintln!("[setGS:tw] DEBOUNCED ({}ms ago)", last.elapsed().as_millis());
-                                false
-                            } else { *last = Instant::now(); true }
-                        } else { true };
-                        if !should_fire { return; }
+            let fallbacks: Vec<&str> = vec!["Ctrl+Alt+S", "Super+Alt+Space", "Ctrl+Alt+Enter"];
+            report.insert(
+                "toggleWindow".to_string(),
+                register_with_fallback(&handle, tw, &fallbacks, |app_h, _shortcut, _event| {
+                    // Debounce: ignore OS key-repeat AND potential key-up events (500ms covers long holds)
+                    let should_fire = if let Some(s) = app_h.try_state::<AppState>() {
+                        let mut last = s.last_tw_toggle.lock().unwrap();
+                        if last.elapsed() < std::time::Duration::from_millis(500) {
+                            debug!("[setGS:tw] DEBOUNCED ({}ms ago)", last.elapsed().as_millis());
+                            false
+                        } else { *last = Instant::now(); true }
+                    } else { true };
+                    if !should_fire { return; }
 
-                        eprintln!("[setGS:tw] Triggered → toggle main window");
-                        if let Some(w) = app_h.get_webview_window("main") {
-                            let min = w.is_minimized().unwrap_or(false);
-                            let foc = w.is_focused().unwrap_or(false);
-                            if min || !foc { let _ = w.unminimize(); let _ = w.show(); let _ = w.set_focus(); }
-                            else { let _ = w.hide(); }
-                        }
-                    }) {
-                        Ok(()) => { println!("[setGS] ✅ toggleWindow='{}'{}", candidate, if i > 0 { " (fb)" } else { "" }); break; }
-                        Err(e) => { if i == 0 { eprintln!("[setGS] TW primary failed: {}", e); } }
+                    debug!("[setGS:tw] Triggered → toggle main window");
+                    if let Some(w) = app_h.get_webview_window("main") {
+                        let min = w.is_minimized().unwrap_or(false);
+                        let foc = w.is_focused().unwrap_or(false);
+                        if min || !foc { let _ = w.unminimize(); let _ = w.show(); let _ = w.set_focus(); }
+                        else { let _ = w.hide(); }
                     }
-                }
-            }
+                }),
+            );
         }
 
         // ── Toggle AI Panel ──
         if let Some(ai) = shortcuts.get("toggleAiPanel") {
-            let cands: Vec<&str> = vec![ai.as_str(), "Ctrl+Shift+A", "Ctrl+Alt+A", "Alt+Shift+A"];
-            for (i, candidate) in cands.iter().enumerate() {
-                if let Ok(sc) = candidate.parse::<Shortcut>() {
-                    match handle.global_shortcut().on_shortcut(sc, |app_h, _shortcut, _event| {
-                        let should_fire = if let Some(s) = app_h.try_state::<AppState>() {
-                            let mut last = s.last_ai_toggle.lock().unwrap();
-                            if last.elapsed() < std::time::Duration::from_millis(500) {
-                                false
-                            } else {
-                                *last = Instant::now();
-                                true
-                            }
+            let fallbacks: Vec<&str> = vec!["Ctrl+Shift+A", "Ctrl+Alt+A", "Alt+Shift+A"];
+            report.insert(
+                "toggleAiPanel".to_string(),
+                register_with_fallback(&handle, ai, &fallbacks, |app_h, _shortcut, _event| {
+                    let should_fire = if let Some(s) = app_h.try_state::<AppState>() {
+                        let mut last = s.last_ai_toggle.lock().unwrap();
+                        if last.elapsed() < std::time::Duration::from_millis(500) {
+                            false
                         } else {
+                            *last = Instant::now();
                             true
-                        };
-                        if !should_fire { return; }
-
-                        eprintln!("[setGS:ai] Triggered → toggle AI panel");
-                        if let Some(w) = app_h.get_webview_window("main") {
-                            let _ = w.eval("if (window.__toggleAiPanel) window.__toggleAiPanel()");
                         }
-                    }) {
-                        Ok(()) => { println!("[setGS] ✅ toggleAiPanel='{}'{}", candidate, if i > 0 { " (fb)" } else { "" }); break; }
-                        Err(e) => { if i == 0 { eprintln!("[setGS] AI primary failed: {}", e); } }
+                    } else {
+                        true
+                    };
+                    if !should_fire { return; }
+
+                    debug!("[setGS:ai] Triggered → toggle AI panel");
+                    if let Some(w) = app_h.get_webview_window("main") {
+                        let _ = w.eval("if (window.__toggleAiPanel) window.__toggleAiPanel()");
                     }
-                }
-            }
+                }),
+            );
         }
 
-        // Persist to config
+        // Persist to config（保存用户"期望"的键位；实际生效键位以返回值回传前端）
         if let Some(state) = app.try_state::<AppState>() {
             let mut cfg = state.config.lock().unwrap();
             cfg.quick_paste_shortcut = shortcuts.get("quickPaste").cloned();
             cfg.toggle_window_shortcut = shortcuts.get("toggleWindow").cloned();
             cfg.toggle_ai_panel_shortcut = shortcuts.get("toggleAiPanel").cloned();
         }
+        persist_state_config(&app);
+        return Ok(report);
     }
-    Ok(())
+
+    #[cfg(mobile)]
+    Ok(HashMap::new())
 }
 
 /// Open image preview in a new Tauri window.
@@ -1182,15 +1408,25 @@ function doCopy(){{
     Ok(())
 }
 
+/// 发送验证码。A1：地址不再硬编码 localhost:3001，改读用户配置的 server_url。
 #[tauri::command]
-async fn send_verification_code(phone: String) -> Result<serde_json::Value, String> {
+async fn send_verification_code(
+    state: tauri::State<'_, AppState>,
+    phone: String,
+) -> Result<serde_json::Value, String> {
+    let server_url = state.config.lock().unwrap().server_url.clone();
+    if server_url.trim().is_empty() {
+        return Err("服务器地址未配置，请先在设置中填写服务器地址".to_string());
+    }
+    let url = format!("{}/api/auth/send-code", server_url);
+    info!("[Auth] send_verification_code -> {}", url);
     let client = reqwest::Client::new();
     let resp = client
-        .post("http://localhost:3001/api/auth/send-code")
+        .post(&url)
         .json(&serde_json::json!({ "phone": phone }))
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("请求 {} 失败: {}", url, e))?;
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
     Ok(body)
 }
@@ -1215,7 +1451,7 @@ fn apply_window_titlebar_color(window: &tauri::WebviewWindow, dark: bool) {
     let hwnd_raw = match window.hwnd() {
         Ok(h) => h.0,
         Err(e) => {
-            eprintln!("[TitleBar] hwnd() failed: {}", e);
+            error!("[TitleBar] hwnd() failed: {}", e);
             return;
         }
     };
@@ -1237,7 +1473,7 @@ fn apply_window_titlebar_color(window: &tauri::WebviewWindow, dark: bool) {
             std::mem::size_of::<u32>() as u32,
         );
         if r1 != 0 {
-            eprintln!("[TitleBar] DWMWA_CAPTION_COLOR failed: {} (需要 Win11 22H2+)", r1);
+            error!("[TitleBar] DWMWA_CAPTION_COLOR failed: {} (需要 Win11 22H2+)", r1);
         }
 
         let r2 = DwmSetWindowAttribute(
@@ -1247,7 +1483,7 @@ fn apply_window_titlebar_color(window: &tauri::WebviewWindow, dark: bool) {
             std::mem::size_of::<u32>() as u32,
         );
         if r2 != 0 {
-            eprintln!("[TitleBar] DWMWA_TEXT_COLOR failed: {}", r2);
+            error!("[TitleBar] DWMWA_TEXT_COLOR failed: {}", r2);
         }
 
         // 2) Fallback：DWMWA_USE_IMMERSIVE_DARK_MODE（Win10 1903+，Win11 也支持）
@@ -1274,7 +1510,7 @@ fn apply_window_titlebar_color(_window: &tauri::WebviewWindow, _dark: bool) {
 #[tauri::command(rename_all = "camelCase")]
 fn set_titlebar_mode(window: tauri::WebviewWindow, is_dark: bool) {
     apply_window_titlebar_color(&window, is_dark);
-    println!("[TitleBar] set_titlebar_mode is_dark={}", is_dark);
+    info!("[TitleBar] set_titlebar_mode is_dark={}", is_dark);
 }
 
 // 设置系统托盘（Tauri 2.x）
@@ -1301,54 +1537,62 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
         .menu(&menu)
         .tooltip("ClipSync - 剪贴板同步")
         .on_menu_event(|app, event| {
-            eprintln!("[Tray] Menu event: id={:?}", event.id);
+            debug!("[Tray] Menu event: id={:?}", event.id);
             match event.id.as_ref() {
                 "show" => {
                     ensure_window_visible(&app);
-                    eprintln!("[Tray] -> show window");
+                    debug!("[Tray] -> show window");
                 }
                 "quick_paste" => {
                     // Use the dedicated quick-paste floating popup
                     ensure_quick_paste_window(&app);
-                    eprintln!("[Tray] -> toggle QuickPaste popup");
+                    debug!("[Tray] -> toggle QuickPaste popup");
                 }
                 "toggle_theme" => {
                     if let Some(window) = ensure_window_visible(&app) {
                         // 调用前端 useTheme().toggleMode()
                         let _ = window.eval("if(window.__toggleTheme) window.__toggleTheme()");
-                        eprintln!("[Tray] -> toggle theme");
+                        debug!("[Tray] -> toggle theme");
                     }
                 }
                 "settings" => {
                     if let Some(window) = ensure_window_visible(&app) {
-                        // 切换到设置页
+                        // A7：优先 emit 事件（B10 负责 listen 并跳转）。
+                        // 保留原 eval 作为兜底，避免 B10 未落地时托盘"设置"变成死菜单。
                         match window.eval("window.switchPage('settings')") {
-                            Ok(_) => eprintln!("[Tray] -> open settings"),
-                            Err(e) => eprintln!("[Tray] settings eval error: {}", e),
+                            Ok(_) => debug!("[Tray] -> open settings (eval fallback)"),
+                            Err(e) => error!("[Tray] settings eval error: {}", e),
                         }
                     }
-                    eprintln!("[Tray] -> open settings");
+                    match app.emit("tray://open-settings", ()) {
+                        Ok(_) => debug!("[Tray] -> emitted tray://open-settings"),
+                        Err(e) => error!("[Tray] emit tray://open-settings failed: {}", e),
+                    }
                 }
                 "check_update" => {
+                    // A7：不再 eval 前端的 window.checkForUpdates（该函数只弹"已是最新"的假
+                    // 成功）。改为 emit 事件，由前端统一监听后走真实 check_for_updates。
                     if let Some(window) = ensure_window_visible(&app) {
-                        match window.eval("if(window.checkForUpdates) window.checkForUpdates()") {
-                            Ok(_) => eprintln!("[Tray] -> check updates"),
-                            Err(e) => eprintln!("[Tray] check_updates eval error: {}", e),
-                        }
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                    }
+                    match app.emit("tray://check-updates", ()) {
+                        Ok(_) => debug!("[Tray] -> emitted tray://check-updates"),
+                        Err(e) => error!("[Tray] emit tray://check-updates failed: {}", e),
                     }
                 }
                 "hide" => {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.hide();
-                        eprintln!("[Tray] -> hide window");
+                        debug!("[Tray] -> hide window");
                     }
                 }
                 "quit" => {
-                    eprintln!("[Tray] -> quit app");
+                    debug!("[Tray] -> quit app");
                     let _ = app.exit(0);
                 }
                 other => {
-                    eprintln!("[Tray] Unknown menu item: {}", other);
+                    debug!("[Tray] Unknown menu item: {}", other);
                 }
             }
         });
@@ -1356,9 +1600,9 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     // 如果图标加载成功，设置托盘图标
     if let Some(icon) = tray_icon {
         builder = builder.icon(icon);
-        eprintln!("[Tray] Icon loaded (using default window icon)");
+        debug!("[Tray] Icon loaded (using default window icon)");
     } else {
-        eprintln!("[Tray] WARNING: No tray icon found, using default");
+        debug!("[Tray] WARNING: No tray icon found, using default");
     }
 
     // 左键单击托盘图标：切换窗口显示/隐藏（仅处理左键，不干扰右键菜单）
@@ -1377,11 +1621,11 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
                         let _ = window.unminimize();
                         let _ = window.show();
                         let _ = window.set_focus();
-                        eprintln!("[Tray] Left-click -> show (was {})", if is_minimized { "minimized" } else { "hidden" });
+                        debug!("[Tray] Left-click -> show (was {})", if is_minimized { "minimized" } else { "hidden" });
                     } else {
                         // Visible and not minimized → hide to tray
                         let _ = window.hide();
-                        eprintln!("[Tray] Left-click -> hide");
+                        debug!("[Tray] Left-click -> hide");
                     }
                 }
             }
@@ -1391,7 +1635,7 @@ fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
 
     builder.build(app)?;
 
-    eprintln!("[Tray] Tray icon setup complete");
+    debug!("[Tray] Tray icon setup complete");
     Ok(())
 }
 
@@ -1402,7 +1646,7 @@ async fn resize_qp_window(app: tauri::AppHandle, width: f64, height: f64) -> Res
     if let Some(win) = app.get_webview_window("quick-paste") {
         win.set_size(tauri::LogicalSize::new(width, height))
             .map_err(|e| format!("set_size failed: {}", e))?;
-        eprintln!("[QP] Rust resized to {}x{}", width, height);
+        debug!("[QP] Rust resized to {}x{}", width, height);
         Ok(())
     } else {
         Err("quick-paste window not found".into())
@@ -1452,19 +1696,25 @@ fn ensure_quick_paste_window(app: &tauri::AppHandle) {
     .build()
     {
         Ok(_) => {
-            eprintln!("[QuickPaste] Floating window created at ({}, {})", qp_x, qp_y);
+            debug!("[QuickPaste] Floating window created at ({}, {})", qp_x, qp_y);
             if let Some(w) = app.get_webview_window("quick-paste") {
                 let _ = w.show();
                 let _ = w.set_focus();
             }
         }
-        Err(e) => eprintln!("[QuickPaste] Failed: {}", e),
+        Err(e) => error!("[QuickPaste] Failed: {}", e),
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    env_logger::init();
+    // A5：panic 也写日志。release 下 panic = abort 且无控制台，默认 hook 只打到 stderr，
+    // 崩溃现场会永久丢失。这里补一条 log::error! 让它落进日志文件。
+    let default_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        error!("[PANIC] {}", info);
+        default_panic_hook(info);
+    }));
 
     let state = AppState {
         config: Arc::new(Mutex::new(AppConfig::default())),
@@ -1475,16 +1725,54 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        // A6：单实例锁。必须排在其他插件之前注册，二次启动时把已有窗口拉起来而不是再开一个进程。
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            info!("[SingleInstance] Second launch detected → focusing existing window");
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        // A5：日志同时落盘（Tauri log dir）与 stdout，单文件 2MB 轮转
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                })
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("clipsync".into()),
+                    },
+                ))
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                ))
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+                .max_file_size(2 * 1024 * 1024)
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // A6：记住窗口位置/尺寸。
+        // 显式不恢复 VISIBLE —— 本应用靠"隐藏到托盘"退出，若把隐藏状态也恢复，
+        // 下次启动会看不到主窗口（表现得像没启动）。DECORATIONS 同理不恢复。
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        )
         .manage(state)
         .invoke_handler(tauri::generate_handler![
-            tray_show_window,
-            tray_hide_window,
-            tray_quit,
             get_config,
             update_config,
             clear_auth,
@@ -1502,6 +1790,7 @@ pub fn run() {
             get_clipboard_image,
             convert_bmp_to_png,
             check_for_updates,
+            install_update,
             login,
             send_verification_code,
             enable_autostart,
@@ -1518,6 +1807,20 @@ pub fn run() {
             stop_clipboard_monitor,
         ])
         .setup(|app| {
+            info!("[Setup] ClipSync starting up");
+
+            // A1：先把持久化的配置读回来（缺失/损坏 → 自动回落默认值），
+            // 后面注册快捷键才能用上用户保存的键位。
+            let persisted = load_persisted_config(app.handle());
+            {
+                let st = app.state::<AppState>();
+                let mut cfg = st.config.lock().unwrap();
+                *cfg = persisted.clone();
+            }
+            if persisted.server_url.trim().is_empty() {
+                warn!("[Config] server_url 为空 → 未连接状态，请在 设置 → 服务器地址 中填写");
+            }
+
             // 设置系统托盘
             setup_tray_icon(app)?;
 
@@ -1534,7 +1837,7 @@ pub fn run() {
                     if let Some(w) = app_handle.get_webview_window("main") {
                         let _ = w.hide();
                     }
-                    eprintln!("[Window] Close intercepted -> hidden to tray");
+                    debug!("[Window] Close intercepted -> hidden to tray");
                 }
             });
 
@@ -1556,143 +1859,99 @@ pub fn run() {
                 let ai_str = cfg.toggle_ai_panel_shortcut
                     .unwrap_or_else(|| "Ctrl+Shift+A".to_string());
 
-                eprintln!("[Setup] Registering global shortcuts: qp='{}' tw='{}' ai='{}'", qp_str, tw_str, ai_str);
+                info!("[Setup] Registering global shortcuts: qp='{}' tw='{}' ai='{}'", qp_str, tw_str, ai_str);
 
                 // ── QuickPaste: show/hide independent floating popup ──
-                let qp_candidates: Vec<&str> = if qp_str.to_lowercase().contains("shift+v") {
-                    vec![&qp_str, "Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
+                let qp_fallbacks: Vec<&str> = if qp_str.to_lowercase().contains("shift+v") {
+                    vec!["Alt+Shift+V", "Ctrl+Shift+K", "Ctrl+Alt+V"]
                 } else {
-                    vec![&qp_str, "Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
+                    vec!["Ctrl+Shift+V", "Alt+Shift+V", "Ctrl+Shift+K"]
                 };
-                for (i, candidate) in qp_candidates.iter().enumerate() {
-                    match candidate.parse::<Shortcut>() {
-                        Ok(sc) => {
-                            match handle.global_shortcut().on_shortcut(sc, |app, _shortcut, _event| {
-                                // Debounce: ignore OS key-repeat within 300ms
-                                {
-                                    let should_fire = if let Some(s) = app.try_state::<AppState>() {
-                                        let mut last = s.last_qp_toggle.lock().unwrap();
-                                        if last.elapsed() < std::time::Duration::from_millis(300) { false }
-                                        else { *last = Instant::now(); true }
-                                    } else { false };
-                                    if !should_fire { return; }
-                                }
-
-                                eprintln!("[GlobalShortcut:qp] Triggered → recreate QuickPaste popup");
-                                // Always destroy + recreate (reusing a hidden window with stale Vue DOM causes empty outline)
-                                if let Some(existing) = app.get_webview_window("quick-paste") {
-                                    let _ = existing.close();
-                                }
-                                ensure_quick_paste_window(&app);
-                            }) {
-                                Ok(()) => {
-                                    println!("[Setup] ✅ quick_paste registered: {}{}", candidate, if i > 0 { " (fallback)" } else { "" });
-                                    break;
-                                }
-                                Err(e) => {
-                                    eprintln!("[Setup] quick_paste '{}' failed: {}", candidate, e);
-                                }
-                            }
-                        }
-                        Err(e) => eprintln!("[Setup] Failed to parse '{}': {}", candidate, e),
+                let qp_report = register_with_fallback(&handle, &qp_str, &qp_fallbacks, |app, _shortcut, _event| {
+                    // Debounce: ignore OS key-repeat within 300ms
+                    {
+                        let should_fire = if let Some(s) = app.try_state::<AppState>() {
+                            let mut last = s.last_qp_toggle.lock().unwrap();
+                            if last.elapsed() < std::time::Duration::from_millis(300) { false }
+                            else { *last = Instant::now(); true }
+                        } else { false };
+                        if !should_fire { return; }
                     }
-                }
+
+                    debug!("[GlobalShortcut:qp] Triggered → recreate QuickPaste popup");
+                    // Always destroy + recreate (reusing a hidden window with stale Vue DOM causes empty outline)
+                    if let Some(existing) = app.get_webview_window("quick-paste") {
+                        let _ = existing.close();
+                    }
+                    ensure_quick_paste_window(app);
+                });
 
                 // ── Toggle Window: show/hide main window (pure Rust) ──
-                let tw_candidates: Vec<&str> = vec![&tw_str, "Ctrl+Alt+S", "Super+Alt+Space", "Ctrl+Alt+Enter"];
-                for (i, candidate) in tw_candidates.iter().enumerate() {
-                    match candidate.parse::<Shortcut>() {
-                        Ok(sc) => {
-                            match handle.global_shortcut().on_shortcut(sc, |app, _shortcut, _event| {
-                                // Debounce: ignore OS key-repeat AND potential key-up events (500ms covers long holds)
-                                {
-                                    let should_fire = if let Some(s) = app.try_state::<AppState>() {
-                                        let mut last = s.last_tw_toggle.lock().unwrap();
-                                        if last.elapsed() < std::time::Duration::from_millis(500) {
-                                            eprintln!("[GlobalShortcut:tw] DEBOUNCED ({}ms ago)", last.elapsed().as_millis());
-                                            false
-                                        } else { *last = Instant::now(); true }
-                                    } else { true };
-                                    if !should_fire { return; }
-                                }
-
-                                eprintln!("[GlobalShortcut:tw] Triggered → toggle main window");
-                                if let Some(window) = app.get_webview_window("main") {
-                                    let minimized = window.is_minimized().unwrap_or(false);
-                                    let focused = window.is_focused().unwrap_or(false);
-                                    if minimized || !focused {
-                                        let _ = window.unminimize();
-                                        let _ = window.show();
-                                        let _ = window.set_focus();
-                                    } else {
-                                        let _ = window.hide();
-                                    }
-                                } else {
-                                    eprintln!("[GlobalShortcut:tw] ERROR: main window not found!");
-                                }
-                            }) {
-                                Ok(()) => {
-                                    println!("[Setup] ✅ toggle_window registered: {}{}", candidate, if i > 0 { " (fallback)" } else { "" });
-                                    break;
-                                }
-                                Err(e) => {
-                                    eprintln!("[Setup] toggle_window '{}' failed: {}", candidate, e);
-                                }
-                            }
-                        }
-                        Err(e) => eprintln!("[Setup] Failed to parse '{}': {}", candidate, e),
+                let tw_fallbacks: Vec<&str> = vec!["Ctrl+Alt+S", "Super+Alt+Space", "Ctrl+Alt+Enter"];
+                let tw_report = register_with_fallback(&handle, &tw_str, &tw_fallbacks, |app, _shortcut, _event| {
+                    // Debounce: ignore OS key-repeat AND potential key-up events (500ms covers long holds)
+                    {
+                        let should_fire = if let Some(s) = app.try_state::<AppState>() {
+                            let mut last = s.last_tw_toggle.lock().unwrap();
+                            if last.elapsed() < std::time::Duration::from_millis(500) {
+                                debug!("[GlobalShortcut:tw] DEBOUNCED ({}ms ago)", last.elapsed().as_millis());
+                                false
+                            } else { *last = Instant::now(); true }
+                        } else { true };
+                        if !should_fire { return; }
                     }
-                }
 
-            // ── AI Panel: toggle AI sidebar (eval frontend __toggleAiPanel) ──
-            let ai_candidates: Vec<&str> = vec![&ai_str, "Ctrl+Shift+A", "Ctrl+Alt+A", "Alt+Shift+A"];
-            for (i, candidate) in ai_candidates.iter().enumerate() {
-                match candidate.parse::<Shortcut>() {
-                    Ok(sc) => {
-                        match handle.global_shortcut().on_shortcut(sc, |app, _shortcut, _event| {
-                            let should_fire = if let Some(s) = app.try_state::<AppState>() {
-                                let mut last = s.last_ai_toggle.lock().unwrap();
-                                if last.elapsed() < std::time::Duration::from_millis(500) {
-                                    false
-                                } else {
-                                    *last = Instant::now();
-                                    true
-                                }
-                            } else {
-                                true
-                            };
-                            if !should_fire { return; }
-
-                            eprintln!("[GlobalShortcut:ai] Triggered → toggle AI panel");
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.eval("if (window.__toggleAiPanel) window.__toggleAiPanel()");
-                            }
-                        }) {
-                            Ok(()) => {
-                                println!("[Setup] ✅ ai_panel registered: {}{}", candidate, if i > 0 { " (fallback)" } else { "" });
-                                break;
-                            }
-                            Err(e) => {
-                                eprintln!("[Setup] ai_panel '{}' failed: {}", candidate, e);
-                            }
+                    debug!("[GlobalShortcut:tw] Triggered → toggle main window");
+                    if let Some(window) = app.get_webview_window("main") {
+                        let minimized = window.is_minimized().unwrap_or(false);
+                        let focused = window.is_focused().unwrap_or(false);
+                        if minimized || !focused {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        } else {
+                            let _ = window.hide();
                         }
+                    } else {
+                        error!("[GlobalShortcut:tw] ERROR: main window not found!");
                     }
-                    Err(e) => eprintln!("[Setup] Failed to parse '{}': {}", candidate, e),
-                }
-            }
-            }
-
-            // 剪贴板监控：原生 Rust 线程轮询，通过 Tauri 事件推送到前端
-            {
-                let monitor_state = app.state::<AppState>();
-                monitor_state.is_monitoring.store(true, Ordering::Relaxed);
-                let handle = app.handle().clone();
-                let stop = monitor_state.is_monitoring.clone();
-                thread::spawn(move || {
-                    clipboard_monitor::start_monitor(handle, stop);
                 });
-                eprintln!("[Setup] Native clipboard monitor started (event-driven)");
+
+                // ── AI Panel: toggle AI sidebar (eval frontend __toggleAiPanel) ──
+                let ai_fallbacks: Vec<&str> = vec!["Ctrl+Shift+A", "Ctrl+Alt+A", "Alt+Shift+A"];
+                let ai_report = register_with_fallback(&handle, &ai_str, &ai_fallbacks, |app, _shortcut, _event| {
+                    let should_fire = if let Some(s) = app.try_state::<AppState>() {
+                        let mut last = s.last_ai_toggle.lock().unwrap();
+                        if last.elapsed() < std::time::Duration::from_millis(500) {
+                            false
+                        } else {
+                            *last = Instant::now();
+                            true
+                        }
+                    } else {
+                        true
+                    };
+                    if !should_fire { return; }
+
+                    debug!("[GlobalShortcut:ai] Triggered → toggle AI panel");
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.eval("if (window.__toggleAiPanel) window.__toggleAiPanel()");
+                    }
+                });
+
+                // A8：启动时也把"实际生效键位"写进日志，便于排查"设置了但没生效"
+                info!(
+                    "[Setup] Shortcuts effective: quickPaste={} toggleWindow={} toggleAiPanel={}",
+                    qp_report.get("effective").and_then(|v| v.as_str()).unwrap_or("<none>"),
+                    tw_report.get("effective").and_then(|v| v.as_str()).unwrap_or("<none>"),
+                    ai_report.get("effective").and_then(|v| v.as_str()).unwrap_or("<none>"),
+                );
             }
+
+            // A9：剪贴板监控不再在 setup 里无条件自启。
+            // 由前端根据"自动同步"开关调用 start_clipboard_monitor / stop_clipboard_monitor
+            // 实时启停，这样 autoSync=false 时真的不会再产生任何条目。
+            info!("[Setup] Clipboard monitor idle — waiting for the autoSync setting to start it");
 
             Ok(())
         })

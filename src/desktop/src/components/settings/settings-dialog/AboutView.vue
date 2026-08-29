@@ -1,26 +1,69 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { getVersion } from '@tauri-apps/api/app'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import Button from '@/components/ui/button/Button.vue'
+import * as tauri from '@/lib/tauri'
 import { Github, ExternalLink, RefreshCw } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const toast = useSonner()
-const appVersion = '0.1.0'
+
+// A7：版本号动态取自 tauri.conf.json 的 version，不再硬编码 '0.1.0'
+const appVersion = ref('…')
 const checkingUpdate = ref(false)
+const installingUpdate = ref(false)
+/** 有待安装的新版本 → 就地展示"发现新版本 vX + 立即安装/稍后" */
+const pendingUpdate = ref<{ version: string } | null>(null)
 const lastChecked = ref('')
 
-async function checkForUpdates() {
-  checkingUpdate.value = true
+onMounted(async () => {
   try {
-    await new Promise((r) => setTimeout(r, 1500))
-    toast.show(t('sg_update_latest') || '当前已是最新版本', 'success')
-    lastChecked.value = new Date().toLocaleDateString()
+    appVersion.value = await getVersion()
   } catch {
-    toast.show(t('sg_update_fail') || '检查更新失败', 'error')
+    // 浏览器 dev 环境没有 Tauri 运行时
+    appVersion.value = import.meta.env.DEV ? 'dev' : '—'
+  }
+})
+
+function errMessage(e: unknown, fallbackKey: string): string {
+  const raw = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
+  return raw || t(fallbackKey)
+}
+
+async function checkForUpdates() {
+  if (checkingUpdate.value || installingUpdate.value) return
+  checkingUpdate.value = true
+  pendingUpdate.value = null
+  try {
+    const res = await tauri.checkForUpdates()
+    lastChecked.value = new Date().toLocaleDateString()
+    if (res?.hasUpdate && res.version) {
+      // A7：有更新 → 先确认，用户点了"立即安装"才下载
+      pendingUpdate.value = { version: res.version }
+    } else {
+      toast.show(t('sg_update_latest'), 'success')
+    }
+  } catch (e: unknown) {
+    // A7：pubkey 未配置 / 网络失败都明确报错，绝不再谎报"已是最新版本"
+    toast.show(errMessage(e, 'sg_update_fail'), 'error')
   } finally {
     checkingUpdate.value = false
+  }
+}
+
+async function installUpdate() {
+  if (installingUpdate.value) return
+  installingUpdate.value = true
+  toast.show(t('sg_update_installing'), 'info')
+  try {
+    await tauri.installUpdate()
+    // 成功时 Rust 会直接 relaunch，不会走到下面
+  } catch (e: unknown) {
+    toast.show(errMessage(e, 'sg_update_fail'), 'error')
+  } finally {
+    installingUpdate.value = false
   }
 }
 </script>
@@ -32,7 +75,7 @@ async function checkForUpdates() {
       <div class="about-logo">C</div>
       <div class="about-info">
         <div class="about-name">{{ t('app_name') }}</div>
-        <div class="about-version">{{ t('app_version').replace('{v}', appVersion) }}</div>
+        <div class="about-version">{{ t('app_version', { v: appVersion }) }}</div>
       </div>
     </div>
 
@@ -55,10 +98,29 @@ async function checkForUpdates() {
           >{{ t('sg_update_last') || '上次检查' }}: {{ lastChecked }}</span
         >
       </div>
-      <Button variant="outline" size="sm" :disabled="checkingUpdate" class="update-btn" @click="checkForUpdates">
+      <Button
+        variant="outline"
+        size="sm"
+        :disabled="checkingUpdate || installingUpdate"
+        class="update-btn"
+        @click="checkForUpdates"
+      >
         <RefreshCw :size="14" :class="{ spin: checkingUpdate }" />
-        {{ checkingUpdate ? t('sg_update_checking') || '检查中...' : t('btn_check') || '立即检查' }}
+        {{ checkingUpdate ? t('sg_update_checking') : t('btn_check') }}
       </Button>
+    </div>
+
+    <!-- A7：发现新版本 → 就地确认；确认后才 download_and_install + relaunch -->
+    <div v-if="pendingUpdate" class="about-update">
+      <div class="about-update-text">
+        {{ t('sg_update_found', { v: pendingUpdate.version }) }}
+      </div>
+      <div class="about-update-actions">
+        <Button size="sm" :disabled="installingUpdate" @click="installUpdate">{{ t('btn_install') }}</Button>
+        <Button variant="outline" size="sm" :disabled="installingUpdate" @click="pendingUpdate = null">{{
+          t('btn_later')
+        }}</Button>
+      </div>
     </div>
 
     <!-- Feedback row -->
@@ -173,6 +235,29 @@ async function checkForUpdates() {
 /* Update button */
 .update-btn {
   gap: 6px;
+}
+
+/* 发现新版本后的就地确认条 */
+.about-update {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--accent-light);
+}
+.about-update-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.about-update-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 @keyframes spin {

@@ -58,6 +58,61 @@ const shortcutList = [
   { id: 'search' as ShortcutId, label: 'sk_search', global: false },
 ]
 
+// ── A8：实际生效键位回传 ──────────────────────────────────────────
+// Rust 注册失败时会静默改用备选键；以前前端照旧显示用户选的键，等于在骗人。
+const GLOBAL_LABEL_KEYS: Record<string, string> = {
+  quickPaste: 'sk_quick_paste',
+  toggleWindow: 'sk_toggle_window',
+  toggleAiPanel: 'sk_ai_panel',
+}
+/** id → Rust 回传的"实际生效键位" */
+const effectiveShortcuts = reactive<Record<string, string>>({})
+
+function shortcutStr(id: string): string {
+  return (customShortcuts[id] || []).join('+')
+}
+
+function effectiveMismatch(id: string): boolean {
+  const eff = effectiveShortcuts[id]
+  return !!eff && eff !== shortcutStr(id)
+}
+
+/** 录制时校验：三个全局键互不重复（重复则直接拒绝保存） */
+function findDuplicateGlobal(id: string, keys: string[]): string | null {
+  const candidate = keys.join('+')
+  for (const gid of GLOBAL_IDS) {
+    if (gid === id) continue
+    if (shortcutStr(gid) === candidate) return gid
+  }
+  return null
+}
+
+/** 把 Rust 逐项回传的注册结果反映到 UI 上 */
+function applyShortcutReport(
+  report: Record<string, tauri.ShortcutRegistration> | undefined,
+  changedStr: string,
+) {
+  const fallbacks: string[] = []
+  const failures: string[] = []
+  for (const [id, r] of Object.entries(report || {})) {
+    if (!r) continue
+    if (r.effective) effectiveShortcuts[id] = r.effective
+    else delete effectiveShortcuts[id]
+
+    if (!r.ok) failures.push(t('sk_register_failed', { k: r.requested, r: r.reason }))
+    else if (r.fallback) fallbacks.push(t('sk_fallback_warn', { k: r.requested, e: r.effective ?? '' }))
+  }
+  if (failures.length) {
+    toast.show(failures.join('；'), 'error')
+    return
+  }
+  if (fallbacks.length) {
+    toast.show(fallbacks.join('；'), 'warning')
+    return
+  }
+  toast.show(`Shortcut updated: ${changedStr}`, 'success')
+}
+
 function getKeys(id: string): string[] {
   return customShortcuts[id] || []
 }
@@ -207,8 +262,19 @@ function onKeyDown(e: KeyboardEvent) {
   // Save new shortcut (sanitize to prevent garbage characters)
   const id = recordingId.value!
   const cleanKeys = sanitizeKeys(keys)
-  customShortcuts[id] = cleanKeys
   const shortcutStr = cleanKeys.join('+')
+
+  // A8：三个全局键互不重复 —— 重复直接拒绝，避免"改了 A 结果 B 也跟着变"
+  if (isGlobal) {
+    const dupId = findDuplicateGlobal(id, cleanKeys)
+    if (dupId) {
+      recordingId.value = null
+      toast.show(t('sk_duplicate', { n: t(GLOBAL_LABEL_KEYS[dupId]) }), 'error')
+      return
+    }
+  }
+
+  customShortcuts[id] = cleanKeys
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...savedShortcuts, [id]: cleanKeys }))
   } catch (e) {
@@ -225,9 +291,7 @@ function onKeyDown(e: KeyboardEvent) {
     }
     tauri
       .setGlobalShortcuts(globalMap)
-      .then(() => {
-        toast.show(`Shortcut updated: ${shortcutStr}`, 'success')
-      })
+      .then((report) => applyShortcutReport(report, shortcutStr))
       .catch((err: any) => {
         toast.show(`Failed to register shortcut: ${err}`, 'error')
       })
@@ -253,6 +317,9 @@ function onKeyDown(e: KeyboardEvent) {
         <div v-if="recordingId !== sk.id" class="sk-keys" @click="startRecord(sk.id)">
           <kbd v-for="k in getKeys(sk.id)" :key="k">{{ safeDisplayKey(k) }}</kbd>
           <Pencil :size="12" class="sk-edit-ico" />
+          <span v-if="effectiveMismatch(sk.id)" class="sk-effective">
+            {{ t('sk_effective') }} {{ effectiveShortcuts[sk.id] }}
+          </span>
         </div>
         <div v-else ref="recorderEl" class="sk-recorder" tabindex="0" @blur="stopRecord" @keydown="onKeyDown">
           {{ t('sk_press_keys') }}...
@@ -340,6 +407,17 @@ function onKeyDown(e: KeyboardEvent) {
   margin-left: 4px;
   opacity: 0.4;
   cursor: pointer;
+}
+/* A8：注册被备选键替代时，提示真正生效的是哪个组合 */
+.sk-effective {
+  margin-left: 6px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 9999px;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
 }
 .sk-hint {
   margin-top: 12px;
