@@ -255,9 +255,10 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   // === 外观个性化：应用与设置 ===
-  /** 壁纸/磨砂模式下主表面的不透明度（固定值，不暴露滑杆 —— 拖滑杆的
-   *  自由度只会把效果调没；这个值按「背景清晰可辨 + 文字可读」调定的） */
-  const WALLPAPER_SURFACE_ALPHA = 76
+  /** 壁纸/磨砂模式下主表面的不透明度。58% = 42% 透出壁纸 —— 按「一眼可见、
+   *  文字仍可读」调定（76% 时浅色壁纸只透 24%，肉眼几乎不可见，已验证失败）。
+   *  可读性靠背景压暗滑杆微调，不再收紧透出度。 */
+  const WALLPAPER_SURFACE_ALPHA = 58
 
   /**
    * 把外观偏好落到 <html> 上。全部走 inline CSS 变量/行内样式：
@@ -285,7 +286,7 @@ export const useConfigStore = defineStore('config', () => {
       root.style.setProperty(v, `color-mix(in srgb, ${solid} ${alpha}%, transparent)`)
     }
     // 4) 背景图经 <style> 标签注入：dataURL 可达数百 KB，走 inline style
-    //    属性可能被浏览器拒收（上一版图片"丝毫看不出"的嫌疑之一）
+    //    属性可能被浏览器拒收。规则自包含（含铺排方式），不依赖 base 层
     let tag = document.getElementById('clipsync-bg-style') as HTMLStyleElement | null
     if (!tag) {
       tag = document.createElement('style')
@@ -294,7 +295,7 @@ export const useConfigStore = defineStore('config', () => {
     }
     const dim = bgDim.value / 100
     tag.textContent = bgImage.value
-      ? `body{background-image:linear-gradient(rgba(0,0,0,${dim}),rgba(0,0,0,${dim})),url("${bgImage.value}");}`
+      ? `body{background-image:linear-gradient(rgba(0,0,0,${dim}),rgba(0,0,0,${dim})),url("${bgImage.value}");background-size:cover;background-position:center;background-repeat:no-repeat;background-attachment:fixed;}`
       : ''
   }
 
