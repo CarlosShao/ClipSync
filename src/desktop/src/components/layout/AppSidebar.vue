@@ -266,12 +266,7 @@ const accountNavItems = computed(() => [
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  /* 毛玻璃边框：主题色柔和渐变叠加在侧栏底色上（tabbit 风格），
-     dark 主题下 color-mix 自动随变量变深，无需单独适配 */
-  background:
-    linear-gradient(165deg, color-mix(in srgb, var(--accent) 10%, transparent) 0%, transparent 42%),
-    linear-gradient(320deg, color-mix(in srgb, var(--accent) 6%, transparent) 0%, transparent 35%),
-    var(--bg-sidebar);
+  background: var(--bg-sidebar);
   border-right: 1px solid var(--border-default);
   overflow: hidden;
   transition: width 280ms cubic-bezier(0.4, 0 0.2, 1);
