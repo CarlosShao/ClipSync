@@ -6,6 +6,40 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ClipSync</title>
+    <script>
+      // 启动错误陷阱：任何未捕获 JS 错误直接渲染到页面上（黑屏排查用）。
+      // 必须在模块脚本之前注册，才能捕获启动阶段的崩溃。
+      ;(function () {
+        function show(msg) {
+          try {
+            var el = document.createElement('pre')
+            el.setAttribute('data-boot-error', '1')
+            el.style.cssText =
+              'position:fixed;left:8px;right:8px;bottom:8px;z-index:2147483647;background:#fff3f3;color:#b91c1c;border:1px solid #fca5a5;padding:10px;font:12px/1.5 Consolas,monospace;white-space:pre-wrap;max-height:45vh;overflow:auto'
+            el.textContent = msg
+            ;(document.body || document.documentElement).appendChild(el)
+          } catch (err) {
+            /* ignore */
+          }
+        }
+        window.addEventListener('error', function (e) {
+          show(
+            '[boot error] ' +
+              (e.message || e.error || 'unknown') +
+              '\n    at ' +
+              (e.filename || '?') +
+              ':' +
+              (e.lineno || '?') +
+              ':' +
+              (e.colno || '?'),
+          )
+        })
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason
+          show('[unhandled rejection] ' + (r && r.stack ? r.stack : r))
+        })
+      })()
+    </script>
   </head>
   <body class="min-h-screen bg-base text-primary antialiased">
     <div id="app"></div>
