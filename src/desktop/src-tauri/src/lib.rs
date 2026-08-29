@@ -1659,17 +1659,24 @@ async fn resize_qp_window(app: tauri::AppHandle, width: f64, height: f64) -> Res
 /// Rationale: clearing innerHTML to prevent ghost outline destroys Vue's virtual DOM,
 /// making re-show produce an empty window. Destroying + recreating is 100% reliable.
 /// QuickPaste 面板开关（快捷键/托盘统一入口）。
-/// 窗口操作必须经 run_on_main_thread 排到事件循环【下一拍】执行：
-/// 全局快捷键与托盘菜单回调本身就运行在主线程事件回调上下文里，
-/// 在回调内同步 close/build webview 会与未完成的销毁竞态，实测会把
-/// 整个应用卡死（用户复现：改快捷键后首次按键必冻结，且出现两个
-/// Floating window created 日志）。
+/// ⚠️ 面板开 → 隐藏（hide），不开 → 显示/新建。**绝不销毁窗口**：
+/// 实测在事件循环回调上下文里 close（销毁）webview 会与消息泵竞态，
+/// 第二次按快捷键必把整个应用卡死（用户稳定复现）。空壳/陈旧内容问题
+/// 由前端 window.__qpActivate 在每次重新显示时刷新解决。
 fn toggle_quick_paste(app: &tauri::AppHandle) {
     let app2 = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(existing) = app2.get_webview_window("quick-paste") {
-            // 面板开着 → 仅关闭（close 即销毁，不复用旧 Vue DOM）
-            let _ = existing.close();
+            if existing.is_visible().unwrap_or(false) {
+                let _ = existing.hide();
+                debug!("[QuickPaste] panel hidden");
+            } else {
+                let _ = existing.show();
+                let _ = existing.set_focus();
+                // 重新显示 → 前端重拉历史并重置搜索/展开态
+                let _ = existing.eval("if(window.__qpActivate) window.__qpActivate()");
+                debug!("[QuickPaste] panel re-shown + activated");
+            }
         } else {
             ensure_quick_paste_window(&app2);
         }
@@ -1678,9 +1685,11 @@ fn toggle_quick_paste(app: &tauri::AppHandle) {
 
 fn ensure_quick_paste_window(app: &tauri::AppHandle) {
     // 防御：正常流程由 toggle_quick_paste 保证调用时窗口不存在。
-    // 若竞态下仍存在，只关闭、不在本回调里重建（重建由下一次 toggle 触发）。
+    // 若竞态下仍存在，只隐藏、不在回调里重建（显示逻辑由 toggle 负责）。
     if let Some(qp_win) = app.get_webview_window("quick-paste") {
-        let _ = qp_win.close();
+        let _ = qp_win.show();
+        let _ = qp_win.set_focus();
+        let _ = qp_win.eval("if(window.__qpActivate) window.__qpActivate()");
         return;
     }
 

@@ -15,23 +15,40 @@ const emit = defineEmits<{
 
 const open = ref(false)
 const dropUp = ref(false)
+const dropRight = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 
+// 向上找第一个会裁剪溢出内容的祖先（对话框滚动容器等），作为边界参考
+function findClipAncestor(el: HTMLElement): HTMLElement | null {
+  let p = el.parentElement
+  while (p && p !== document.body) {
+    const ov = getComputedStyle(p).overflowX
+    if (ov === 'auto' || ov === 'scroll' || ov === 'hidden') return p
+    p = p.parentElement
+  }
+  return null
+}
+
 // 展开前测一下上下方空间：下方放不下且上方更宽裕时朝上弹，
-// 避免在对话框底部把菜单挤出容器/撑出滚动条
+// 菜单右缘超出裁剪容器时改为右对齐，避免被对话框边缘截断
 async function toggle() {
   open.value = !open.value
   if (open.value) {
     dropUp.value = false
+    dropRight.value = false
     await nextTick()
     const anchor = dropdownRef.value
     const menu = anchor?.querySelector('.custom-select-dropdown') as HTMLElement | null
     if (!anchor || !menu) return
     const rect = anchor.getBoundingClientRect()
+    const menuWidth = menu.offsetWidth
     const need = Math.min(menu.scrollHeight, 240) + 8
     const below = window.innerHeight - rect.bottom
     const above = rect.top
     dropUp.value = below < need && above > below
+    const clip = findClipAncestor(anchor)
+    const limit = clip ? clip.getBoundingClientRect().right - 8 : window.innerWidth - 8
+    dropRight.value = rect.left + menuWidth > limit && rect.right - menuWidth >= (clip ? clip.getBoundingClientRect().left + 8 : 8)
   }
 }
 function select(value: string) {
@@ -77,7 +94,11 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
       <span class="custom-select-trigger-text"><slot /></span>
       <ChevronDown class="custom-select-chevron" :class="{ open: open }" />
     </button>
-    <div v-if="open" class="custom-select-dropdown" :class="{ 'custom-select-dropdown--up': dropUp }">
+    <div
+      v-if="open"
+      class="custom-select-dropdown"
+      :class="{ 'custom-select-dropdown--up': dropUp, 'custom-select-dropdown--right': dropRight }"
+    >
       <slot name="options" />
     </div>
   </div>
@@ -168,6 +189,12 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
   top: auto;
   bottom: calc(100% + 6px);
   animation: selectSlideInUp 0.15s ease;
+}
+
+/* 右缘会超出裁剪容器时改为右对齐（向左伸展） */
+.custom-select-dropdown--right {
+  left: auto;
+  right: 0;
 }
 
 @keyframes selectSlideInUp {

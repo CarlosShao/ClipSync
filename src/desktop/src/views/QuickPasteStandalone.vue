@@ -75,6 +75,11 @@ function focusSearch() {
   qpSearch.value = ''
   qpSelectedIndex.value = 0
   expanded.value = false
+  // 面板改为"隐藏/显示"复用同一窗口实例（不再销毁重建），重新显示时必须
+  // 把窗口尺寸复位到收起态：上次可能停留在展开尺寸（470px 高）
+  getCurrentWindow()
+    .setSize(new LogicalSize(COLLAPSED_W, COLLAPSED_H))
+    .catch((e) => console.warn('[QP] reset size failed:', e))
   nextTick(() => focusSearch())
 }
 
@@ -110,11 +115,15 @@ async function collapseAndClose(action: () => void = () => {}) {
   expanded.value = false
   action()
   await new Promise((r) => setTimeout(r, 200))
-  // Use Tauri API — native window.close() crashes the webview in Tauri v2
+  // 面板窗口现在常驻（隐藏/显示复用），选完条目只收起+隐藏，绝不 close：
+  // Tauri v2 里销毁 webview 与主线程事件泵竞态，会把整个应用卡死
+  // （旧注释 "native window.close() crashes the webview" 即此问题）
   try {
-    await getCurrentWindow().close()
+    const win = getCurrentWindow()
+    await win.setSize(new LogicalSize(COLLAPSED_W, COLLAPSED_H))
+    await win.hide()
   } catch (e) {
-    console.warn('[QP] window close failed:', e)
+    console.warn('[QP] collapse+hide failed:', e)
   }
 }
 

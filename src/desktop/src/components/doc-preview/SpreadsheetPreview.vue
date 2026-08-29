@@ -1,12 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 
 const { tf } = useI18n()
 // Excel 表格预览：xlsx 库 sheet_to_html 输出的多 sheet 表格，按 sheet 标签切换。
 // 表格 HTML 由 DocPreviewModal 加载 ArrayBuffer 后动态生成并传入；
 // 本组件只负责渲染 + 切换 sheet，不依赖网络。
+//
+// ⚠️ sheet_to_html 输出的是裸 <tr><td>（没有 <thead>/<th>），
+// 而 Chromium 里 position:sticky 需要明确的表头结构才能吸顶 ——
+// ensureThead 把每张表的第一行包进 <thead>，否则"表头吸顶"无从生效。
 
-defineProps<{
+const props = defineProps<{
   sheets: { name: string; html: string }[]
   activeIdx: number
 }>()
@@ -14,6 +19,25 @@ defineProps<{
 const emit = defineEmits<{
   'update:active-idx': [idx: number]
 }>()
+
+function ensureThead(html: string): string {
+  try {
+    const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, 'text/html')
+    doc.querySelectorAll('table').forEach((tb) => {
+      if (tb.querySelector('thead')) return
+      const firstRow = tb.querySelector('tr')
+      if (!firstRow) return
+      const thead = doc.createElement('thead')
+      tb.insertBefore(thead, firstRow)
+      thead.appendChild(firstRow)
+    })
+    return doc.getElementById('root')?.innerHTML ?? html
+  } catch {
+    return html
+  }
+}
+
+const processedSheets = computed(() => props.sheets.map((s) => ({ ...s, html: ensureThead(s.html) })))
 
 function selectSheet(idx: number) {
   emit('update:active-idx', idx)
@@ -40,8 +64,8 @@ function selectSheet(idx: number) {
     </div>
 
     <div class="sheet-body">
-      <!-- sheet_to_html 输出的是完整 <table>，以 v-html 注入 -->
-      <div v-if="sheets[activeIdx]" class="sheet-html" v-html="sheets[activeIdx].html" />
+      <!-- sheet_to_html 输出的是完整 <table>（经 ensureThead 注入表头），以 v-html 注入 -->
+      <div v-if="processedSheets[activeIdx]" class="sheet-html" v-html="processedSheets[activeIdx].html" />
       <div v-else class="sheet-empty">{{ tf('doc_no_content', '无内容') }}</div>
     </div>
   </div>
@@ -127,6 +151,14 @@ function selectSheet(idx: number) {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
+  /* 不透明底层：吸顶滚动时行内容不能从半透明表头里透出来 */
+  background: var(--bg-surface);
+}
+.sheet-html :deep(thead td),
+.sheet-html :deep(thead th) {
+  background: var(--bg-hover);
+  font-weight: 600;
+  color: var(--text-primary);
 }
 .sheet-html :deep(th),
 .sheet-html :deep(td) {
