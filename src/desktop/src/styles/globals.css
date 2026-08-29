@@ -915,3 +915,36 @@ html.reduce-motion *::after {
   transition-delay: 0ms !important;
   scroll-behavior: auto !important;
 }
+
+/* ============================================================
+   界面字体预设（设置→外观→界面字体）
+   !important 压过各组件 scoped 的 font-family（否则字体切换
+   被组件局部样式盖住、肉眼不可见）；紧随其后的代码/等宽例外
+   规则把 pre/code/kbd 恢复为等宽字体，避免代码预览被衬线化。
+   ============================================================ */
+html.app-font-yahei body,
+html.app-font-yahei body *:not(pre):not(code):not(kbd):not(samp):not([class*='mono']):not(svg) {
+  font-family: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif !important;
+}
+html.app-font-serif body,
+html.app-font-serif body *:not(pre):not(code):not(kbd):not(samp):not([class*='mono']):not(svg) {
+  font-family: Georgia, 'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif !important;
+}
+html.app-font-kai body,
+html.app-font-kai body *:not(pre):not(code):not(kbd):not(samp):not([class*='mono']):not(svg) {
+  font-family: 'KaiTi', 'Kaiti SC', 'STKaiti', serif !important;
+}
+html.app-font-yahei body pre,
+html.app-font-yahei body code,
+html.app-font-yahei body kbd,
+html.app-font-yahei body samp,
+html.app-font-serif body pre,
+html.app-font-serif body code,
+html.app-font-serif body kbd,
+html.app-font-serif body samp,
+html.app-font-kai body pre,
+html.app-font-kai body code,
+html.app-font-kai body kbd,
+html.app-font-kai body samp {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, 'Courier New', monospace !important;
+}

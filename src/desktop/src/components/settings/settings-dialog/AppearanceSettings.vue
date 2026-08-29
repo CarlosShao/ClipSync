@@ -53,17 +53,17 @@
         <div class="sg-name">{{ t('ap_font_size') }}</div>
         <div class="sg-hint">{{ t('ap_font_size_h') }}</div>
       </div>
-      <div class="mode-seg-shadcn">
-        <button
-          v-for="opt in FONT_SIZES"
-          :key="opt.v"
-          type="button"
-          class="mode-seg-btn-shadcn"
-          :class="{ active: configStore.fontScale === opt.v }"
-          @click="configStore.setFontScale(opt.v)"
-        >
-          {{ t(opt.key) }}
-        </button>
+      <div class="ap-slider-wrap">
+        <input
+          type="range"
+          class="ap-slider"
+          min="80"
+          max="140"
+          step="5"
+          :value="Math.round(configStore.fontScale * 100)"
+          @input="configStore.setFontScale(Number(($event.target as HTMLInputElement).value) / 100)"
+        />
+        <span class="ap-slider-val">{{ Math.round(configStore.fontScale * 100) }}%</span>
       </div>
     </div>
 
@@ -97,23 +97,23 @@
       <Switch :model-value="configStore.frosted" @update:model-value="configStore.setFrosted($event)" />
     </div>
 
-    <!-- 表面不透明度（毛玻璃开启时可见） -->
+    <!-- 表面透明度（毛玻璃开启时可见） -->
     <div v-if="configStore.frosted" class="sg-row">
       <div class="sg-label">
-        <div class="sg-name">{{ t('ap_surface_opacity') }}</div>
-        <div class="sg-hint">{{ t('ap_surface_opacity_h') }}</div>
+        <div class="sg-name">{{ t('ap_surface_transparency') }}</div>
+        <div class="sg-hint">{{ t('ap_surface_transparency_h') }}</div>
       </div>
       <div class="ap-slider-wrap">
         <input
           type="range"
           class="ap-slider"
-          min="40"
-          max="100"
+          min="0"
+          max="60"
           step="5"
-          :value="configStore.surfaceOpacity"
-          @input="configStore.setSurfaceOpacity(Number(($event.target as HTMLInputElement).value))"
+          :value="configStore.surfaceTransparency"
+          @input="configStore.setSurfaceTransparency(Number(($event.target as HTMLInputElement).value))"
         />
-        <span class="ap-slider-val">{{ configStore.surfaceOpacity }}%</span>
+        <span class="ap-slider-val">{{ configStore.surfaceTransparency }}%</span>
       </div>
     </div>
 
@@ -172,12 +172,6 @@ const emit = defineEmits<{
   'open-sub-page': [page: string]
 }>()
 
-const FONT_SIZES = [
-  { v: 0.9, key: 'font_s' },
-  { v: 1, key: 'font_m' },
-  { v: 1.1, key: 'font_l' },
-  { v: 1.25, key: 'font_xl' },
-]
 const FONT_FAMILIES = [
   { v: 'default', key: 'font_default', preview: '' },
   { v: 'yahei', key: 'font_yahei', preview: 'font-family: "Microsoft YaHei", sans-serif' },
@@ -185,7 +179,8 @@ const FONT_FAMILIES = [
   { v: 'kai', key: 'font_kai', preview: 'font-family: "KaiTi", "STKaiti", serif' },
 ]
 
-/** 背景图降采样：长边 ≤1920、JPEG 0.85，控制 localStorage 占用 */
+/** 背景图降采样：长边 ≤1920、JPEG 0.85，控制 localStorage 占用。
+ *  选图后自动开启毛玻璃（不开启时主表面全不透明，背景图完全透不出来） */
 function handleBgFile(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
@@ -204,6 +199,7 @@ function handleBgFile(e: Event) {
       if (!ctx) return
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
       configStore.setBgImage(canvas.toDataURL('image/jpeg', 0.85))
+      if (!configStore.frosted) configStore.setFrosted(true)
     }
     img.src = reader.result as string
   }

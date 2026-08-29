@@ -40,7 +40,7 @@ export const useConfigStore = defineStore('config', () => {
   const fontScale = ref(1) // 界面字号缩放（0.9/1/1.1/1.25），作用于 html 根字号（rem 类跟随）
   const fontFamily = ref('default') // 界面字体预设 key（default/yahei/serif/kai）
   const frosted = ref(false) // 毛玻璃：主表面半透明 + #app backdrop 虚化
-  const surfaceOpacity = ref(85) // 毛玻璃开启时的表面不透明度（40-100%）
+  const surfaceTransparency = ref(30) // 表面透明度（0-60%），毛玻璃开启时生效
   const bgImage = ref('') // 自定义背景图 dataURL（canvas 降采样后存储）
   const bgDim = ref(0) // 背景图压暗（0-60%），保证内容可读性
 
@@ -88,7 +88,9 @@ export const useConfigStore = defineStore('config', () => {
       if (typeof prefs.fontScale === 'number') fontScale.value = prefs.fontScale
       if (typeof prefs.fontFamily === 'string') fontFamily.value = prefs.fontFamily
       if (typeof prefs.frosted === 'boolean') frosted.value = prefs.frosted
-      if (typeof prefs.surfaceOpacity === 'number') surfaceOpacity.value = prefs.surfaceOpacity
+      if (typeof prefs.surfaceTransparency === 'number') surfaceTransparency.value = prefs.surfaceTransparency
+      else if (typeof prefs.surfaceOpacity === 'number')
+        surfaceTransparency.value = Math.max(0, 100 - prefs.surfaceOpacity) // 旧字段迁移
       if (typeof prefs.bgDim === 'number') bgDim.value = prefs.bgDim
       if (typeof prefs.bgImage === 'string') bgImage.value = prefs.bgImage
     } catch {
@@ -182,7 +184,7 @@ export const useConfigStore = defineStore('config', () => {
       fontScale: fontScale.value,
       fontFamily: fontFamily.value,
       frosted: frosted.value,
-      surfaceOpacity: surfaceOpacity.value,
+      surfaceTransparency: surfaceTransparency.value,
       bgDim: bgDim.value,
       // bgImage 单独存（dataURL 可达数百 KB，避免 prefs JSON 膨胀影响其它字段读写）
       bgImage: bgImage.value,
@@ -258,12 +260,6 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   // === 外观个性化：应用与设置 ===
-  const FONT_STACKS: Record<string, string> = {
-    yahei: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
-    serif: 'Georgia, "Noto Serif SC", "Source Han Serif SC", "SimSun", serif',
-    kai: '"KaiTi", "Kaiti SC", "STKaiti", serif',
-  }
-
   /**
    * 把外观偏好落到 <html> 上。全部走 inline CSS 变量/行内样式：
    * inline 优先级高于任何主题选择器，且不与主题定义形成循环引用 ——
@@ -274,16 +270,18 @@ export const useConfigStore = defineStore('config', () => {
     const root = document.documentElement
     // 1) 字号：根字号缩放，Tailwind rem 工具类全部跟随
     root.style.fontSize = `${Math.round(14 * fontScale.value)}px`
-    // 2) 字体：body 的 font-family 已改为 var(--font-ui, 默认栈)
-    const stack = FONT_STACKS[fontFamily.value]
-    if (stack) root.style.setProperty('--font-ui', stack)
-    else root.style.removeProperty('--font-ui')
+    // 2) 字体：切预设 class（globals.css 中带 !important 的规则真正生效，
+    //    并排除 pre/code 等等宽场景）
+    root.classList.toggle('app-font-yahei', fontFamily.value === 'yahei')
+    root.classList.toggle('app-font-serif', fontFamily.value === 'serif')
+    root.classList.toggle('app-font-kai', fontFamily.value === 'kai')
+    root.style.removeProperty('--font-ui')
     // 3) 背景图与压暗
     root.style.setProperty('--app-bg-image', bgImage.value ? `url("${bgImage.value}")` : 'none')
     root.style.setProperty('--app-bg-dim', String(bgDim.value / 100))
-    // 4) 毛玻璃：表面半透明（40-100%）
+    // 4) 毛玻璃：表面透明度（0-60%，0 = 完全不透明）
     root.classList.toggle('frosted', frosted.value)
-    const alpha = frosted.value ? Math.min(Math.max(surfaceOpacity.value, 40), 100) : 100
+    const alpha = frosted.value ? Math.max(100 - Math.min(Math.max(surfaceTransparency.value, 0), 60), 40) : 100
     for (const v of ['--bg-base', '--bg-surface', '--bg-sidebar']) {
       root.style.removeProperty(v)
       if (alpha >= 100) continue
@@ -308,8 +306,8 @@ export const useConfigStore = defineStore('config', () => {
     savePrefs()
     applyAppearance()
   }
-  function setSurfaceOpacity(v: number) {
-    surfaceOpacity.value = v
+  function setSurfaceTransparency(v: number) {
+    surfaceTransparency.value = v
     savePrefs()
     applyAppearance()
   }
@@ -404,13 +402,13 @@ export const useConfigStore = defineStore('config', () => {
     fontScale,
     fontFamily,
     frosted,
-    surfaceOpacity,
+    surfaceTransparency,
     bgImage,
     bgDim,
     setFontScale,
     setFontFamily,
     setFrosted,
-    setSurfaceOpacity,
+    setSurfaceTransparency,
     setBgImage,
     setBgDim,
     applyAppearance,
