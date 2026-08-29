@@ -69,9 +69,7 @@ function focusSearch() {
   el?.select()
 }
 
-;(window as any).__qpActivate = () => {
-  clip.refresh()
-  prediction.load()
+;(window as any).__qpActivate = async () => {
   qpSearch.value = ''
   qpSelectedIndex.value = 0
   expanded.value = false
@@ -81,7 +79,35 @@ function focusSearch() {
     .setSize(new LogicalSize(COLLAPSED_W, COLLAPSED_H))
     .catch((e) => console.warn('[QP] reset size failed:', e))
   nextTick(() => focusSearch())
+  try {
+    const ok = await clip.refresh()
+    // 一次拉取偶发不落请求/失败时自动补一发，避免"第二次打开列表是旧的，
+    // 要等几秒或点一下输入框才出现新数据"
+    if (!ok) setTimeout(() => { clip.refresh().catch(() => {}) }, 1200)
+  } catch (e) {
+    console.warn('[QP] activate refresh failed:', e)
+    setTimeout(() => { clip.refresh().catch(() => {}) }, 1200)
+  }
+  prediction.load()
 }
+
+// 复用窗口后，隐藏期间数据会变旧：重新获得焦点 / 由隐藏转可见时强制刷新。
+// （eval 的 __qpActivate 偶发不落请求，这里是保证"第一时间看到新列表"的兜底）
+let lastQpActivateAt = 0
+function activateRefresh() {
+  const now = Date.now()
+  if (now - lastQpActivateAt < 600) return
+  lastQpActivateAt = now
+  ;(window as any).__qpActivate?.()
+}
+window.addEventListener('focus', activateRefresh)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) activateRefresh()
+})
+onUnmounted(() => {
+  window.removeEventListener('focus', activateRefresh)
+  document.removeEventListener('visibilitychange', activateRefresh)
+})
 
 // ── Expand: resize window FIRST, then reveal drawer ──
 async function expandDrawer() {

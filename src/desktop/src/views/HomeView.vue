@@ -65,9 +65,20 @@ const showQuickPaste = ref(false)
 // 版本历史弹窗作用的条目 id（B9：由列表「更多 → 版本历史」写入，传给 ModalManager）
 const versionItemId = ref('')
 
-// Avatar URL from localStorage (set by profile save / login)
-const userAvatarUrl =
-  typeof localStorage !== 'undefined' ? localStorage.getItem('clipsync-avatar') || undefined : undefined
+// Avatar URL：头像可在 Profile 页随时更换，必须保持响应式并监听变更事件
+// （旧实现只在挂载时读一次 localStorage，改头像后侧栏不更新）
+const userAvatarUrl = ref(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('clipsync-avatar') || undefined : undefined,
+)
+function syncAvatarFromStorage() {
+  userAvatarUrl.value = localStorage.getItem('clipsync-avatar') || undefined
+}
+window.addEventListener('clipsync:avatar-changed', syncAvatarFromStorage)
+// 跨窗口（其它 webview 改了头像）经 storage 事件同步
+window.addEventListener('storage', (e) => {
+  if (e.key === 'clipsync-avatar') syncAvatarFromStorage()
+})
+onUnmounted(() => window.removeEventListener('clipsync:avatar-changed', syncAvatarFromStorage))
 
 // Sync route param to currentSub (both initial load and runtime navigation)
 if (route.params.sub) currentSub.value = route.params.sub as string

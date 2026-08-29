@@ -148,14 +148,16 @@ function selectSheet(idx: number) {
   font-size: 12px;
 }
 .sheet-html :deep(thead) {
-  position: sticky;
-  top: 0;
   z-index: var(--z-sticky);
   /* 不透明底层：吸顶滚动时行内容不能从半透明表头里透出来 */
   background: var(--bg-surface);
 }
+/* ⚠️ Chromium 只支持表格【单元格】的 position:sticky，
+   写在 thead 行组上会被静默忽略 —— 必须把 sticky 落到 td/th 上 */
 .sheet-html :deep(thead td),
 .sheet-html :deep(thead th) {
+  position: sticky;
+  top: 0;
   background: var(--bg-hover);
   font-weight: 600;
   color: var(--text-primary);

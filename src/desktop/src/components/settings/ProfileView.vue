@@ -133,6 +133,8 @@ async function handleAvatarUpload(e: Event) {
     const dataUrl = reader.result as string
     avatarUrl.value = dataUrl
     localStorage.setItem('clipsync-avatar', dataUrl)
+    // 通知侧栏等消费方立即更新（HomeView 监听此事件同步头像）
+    window.dispatchEvent(new Event('clipsync:avatar-changed'))
 
     const ok = await configStore.updateUserProfile({ avatarUrl: dataUrl })
     if (!ok) {
