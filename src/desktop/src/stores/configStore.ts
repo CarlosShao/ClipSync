@@ -285,22 +285,6 @@ export const useConfigStore = defineStore('config', () => {
     applyAppearance()
   }
 
-  // 主题切换（html.class 变化）会改写主题变量的解析值，字号/字体需要重算
-  if (typeof MutationObserver !== 'undefined') {
-    new MutationObserver(() => applyAppearance()).observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    })
-  }
-
-  // 主题切换（html.class 变化）会改写主题变量的解析值，半透明覆盖需要重算
-  if (typeof MutationObserver !== 'undefined') {
-    new MutationObserver(() => applyAppearance()).observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    })
-  }
-
   // 初始化时应用 reduceMotion 与外观偏好（load() 恢复 prefs 后会再次执行）
   if (typeof window !== 'undefined') {
     document.documentElement.classList.toggle('reduce-motion', reduceMotion.value)

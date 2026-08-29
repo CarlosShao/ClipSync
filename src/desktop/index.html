@@ -3,6 +3,53 @@
      这里给中性默认值 en，避免首次绘制时硬编码为中文。 -->
 <html lang="en">
   <head>
+    <script>
+      // 早期错误捕获：不依赖任何模块，能在 main.ts 注册捕获器之前兜住错误。
+      // 用于排查"黑屏但无任何报错线索"的问题（Tauri webview 的 console 默认不转发到 Rust 日志，
+      // 且 DevTools 在 debug 构建里未启用，开不了）。
+      (function () {
+        function box(id, bg) {
+          var el = document.getElementById(id);
+          if (!el) {
+            el = document.createElement('div');
+            el.id = id;
+            el.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:' + bg + ';color:#fff;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:16px;white-space:pre-wrap;overflow:auto;';
+            (document.documentElement || document.body).appendChild(el);
+          }
+          return el;
+        }
+        window.addEventListener('error', function (e) {
+          var el = box('clip-early-error', '#7f1d1d');
+          var msg = (e && (e.message || (e.error && e.error.message))) || 'unknown error';
+          var loc = e && e.filename ? ('\n' + e.filename + ':' + e.lineno + ':' + e.colno) : '';
+          var stack = e && e.error && e.error.stack ? ('\n\n' + e.error.stack) : '';
+          el.textContent = '[ClipSync 前端错误 / early] ' + msg + loc + stack;
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var el = box('clip-early-error', '#7f1d1d');
+          var r = e && e.reason;
+          var msg = r && r.message ? r.message : String(r);
+          var stack = r && r.stack ? ('\n\n' + r.stack) : '';
+          el.textContent = '[ClipSync 未处理的 Promise 拒绝 / early] ' + msg + stack;
+        });
+        // 挂载超时检测：若无 JS 报错但 #app 在 3s 内仍未渲染任何内容，
+        // 说明是"静默白/黑屏"（组件 setup 抛错被 Vue 吞掉、或路由首屏未渲染）。
+        setTimeout(function () {
+          var app = document.getElementById('app');
+          if (!app || app.children.length === 0) {
+            var el = box('clip-mount-timeout', '#1e3a8a');
+            el.textContent = '[ClipSync 诊断] #app 在 3 秒内未渲染任何内容（挂载超时）。\n' +
+              '可能原因：\n' +
+              '  1) 某个组件 setup() 抛错但被 Vue 错误边界吞掉（未冒泡到 window.onerror）\n' +
+              '  2) 路由首屏组件未渲染\n' +
+              '  3) WebView 加载了页面但没有执行 JS\n\n' +
+              '请对照：在普通浏览器访问 http://localhost:1420/ ——\n' +
+              '  - 若浏览器也空白 → 前端代码本身有问题\n' +
+              '  - 若浏览器正常、仅 Tauri 黑屏 → 是 Tauri/WebView2 渲染问题';
+          }
+        }, 3000);
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ClipSync</title>

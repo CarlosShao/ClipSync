@@ -12,7 +12,12 @@ import 'vue-sonner/style.css'
 initErrorCapture()
 initPerfMonitor()
 
+console.log('[BOOT] 0 modules loaded')
 const app = createApp(App)
+console.log('[BOOT] 1 createApp')
 app.use(createPinia())
+console.log('[BOOT] 2 pinia')
 app.use(router)
+console.log('[BOOT] 3 router')
 app.mount('#app')
+console.log('[BOOT] 4 mounted')

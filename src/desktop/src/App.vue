@@ -9,10 +9,15 @@ import * as tauri from '@/lib/tauri'
 
 const QuickPasteStandalone = defineAsyncComponent(() => import('@/views/QuickPasteStandalone.vue'))
 
+console.log('[BOOT] A pre-stores')
 const configStore = useConfigStore()
+console.log('[BOOT] B configStore')
 const collectionStore = useCollectionStore()
+console.log('[BOOT] C collectionStore')
 const { resolvedMode } = useTheme()
+console.log('[BOOT] D useTheme')
 const { setLang } = useI18n()
+console.log('[BOOT] E useI18n')
 
 // Detect standalone QuickPaste mode via URL parameter.
 // Rust creates QP window with ?mode=qp → window.location.search is available
@@ -20,12 +25,15 @@ const { setLang } = useI18n()
 const isQuickPasteStandalone = ref(typeof window !== 'undefined' && window.location.search.includes('mode=qp'))
 
 onMounted(async () => {
+  console.log('[BOOT] F onMounted start')
   await configStore.load()
+  console.log('[BOOT] G configStore.loaded')
   // Initialize collection store early so that AI-triggered data refreshes
   // are captured even when FavoritesView is not mounted (e.g. user on AI page).
   collectionStore.init().catch((e) => {
     console.warn('[App] collectionStore.init failed:', e)
   })
+  console.log('[BOOT] H collectionStore.init called')
   // Sync titlebar color on mount
   try {
     tauri.setTitlebarMode(resolvedMode.value === 'dark')
@@ -37,6 +45,7 @@ onMounted(async () => {
   if (isQuickPasteStandalone.value) {
     document.documentElement.classList.add('qp-mode')
   }
+  console.log('[BOOT] I onMounted end')
 })
 </script>
 

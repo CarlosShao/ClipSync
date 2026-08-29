@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run dev:clean",
     "beforeBuildCommand": "npm run build"
   },
   "app": {
@@ -22,7 +22,8 @@
         "transparent": false,
         "center": true,
         "backgroundColor": "#000000",
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9222"
       }
     ],
     "security": {
