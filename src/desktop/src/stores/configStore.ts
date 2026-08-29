@@ -36,12 +36,9 @@ export const useConfigStore = defineStore('config', () => {
   const privacyMode = ref(false) // 隐私模式：自动隐藏敏感内容
   const autoBlur = ref(false) // 窗口失焦时自动隐藏敏感内容
 
-  // === 外观个性化（设置→外观）：全部为纯前端 CSS 变量驱动 ===
-  const fontScale = ref(1) // 界面字号缩放（0.9/1/1.1/1.25），作用于 html 根字号（rem 类跟随）
+  // === 外观个性化（设置→外观）：纯前端 CSS 变量驱动 ===
+  const fontScale = ref(1) // 界面字号缩放（0.8-1.4），作用于 html 根字号（rem 类跟随）
   const fontFamily = ref('default') // 界面字体预设 key（default/yahei/serif/kai）
-  const frosted = ref(false) // 磨砂：在壁纸透传基础上叠加 backdrop 虚化质感
-  const bgImage = ref('') // 自定义背景图 dataURL（canvas 降采样后存储）
-  const bgDim = ref(0) // 背景图压暗（0-60%），保证内容可读性
 
   const isLoggedIn = computed(() => !!config.value.token)
   const serverUrl = computed(() => config.value.server_url)
@@ -86,9 +83,13 @@ export const useConfigStore = defineStore('config', () => {
       if (typeof prefs.autoBlur === 'boolean') autoBlur.value = prefs.autoBlur
       if (typeof prefs.fontScale === 'number') fontScale.value = prefs.fontScale
       if (typeof prefs.fontFamily === 'string') fontFamily.value = prefs.fontFamily
-      if (typeof prefs.frosted === 'boolean') frosted.value = prefs.frosted
-      if (typeof prefs.bgDim === 'number') bgDim.value = prefs.bgDim
-      if (typeof prefs.bgImage === 'string') bgImage.value = prefs.bgImage
+      // 清理历史版本残留的壁纸/磨砂字段（含大体积背景 dataURL，功能已移除）
+      if ('bgImage' in prefs || 'frosted' in prefs || 'bgDim' in prefs) {
+        delete prefs.bgImage
+        delete prefs.frosted
+        delete prefs.bgDim
+        localStorage.setItem('clipsync-prefs', JSON.stringify(prefs))
+      }
     } catch {
       /* ignore corrupt data */
     }
@@ -179,10 +180,6 @@ export const useConfigStore = defineStore('config', () => {
       autoBlur: autoBlur.value,
       fontScale: fontScale.value,
       fontFamily: fontFamily.value,
-      frosted: frosted.value,
-      bgDim: bgDim.value,
-      // bgImage 单独存（dataURL 可达数百 KB，避免 prefs JSON 膨胀影响其它字段读写）
-      bgImage: bgImage.value,
     }
     localStorage.setItem('clipsync-prefs', JSON.stringify(prefs))
   }
@@ -255,15 +252,9 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   // === 外观个性化：应用与设置 ===
-  /** 壁纸/磨砂模式下主表面的不透明度。58% = 42% 透出壁纸 —— 按「一眼可见、
-   *  文字仍可读」调定（76% 时浅色壁纸只透 24%，肉眼几乎不可见，已验证失败）。
-   *  可读性靠背景压暗滑杆微调，不再收紧透出度。 */
-  const WALLPAPER_SURFACE_ALPHA = 58
-
   /**
-   * 把外观偏好落到 <html> 上。全部走 inline CSS 变量/行内样式：
-   * inline 优先级高于任何主题选择器，且不与主题定义形成循环引用 ——
-   * 半透明表面用「移除行内 → 读主题解析色 → 写 color-mix」三步实现。
+   * 把外观偏好（字号/字体）落到 <html> 上。inline 优先级高于任何主题
+   * 选择器；同时清理历史版本壁纸/磨砂功能的运行时残留，确保背景为默认实色。
    */
   function applyAppearance() {
     const root = document.documentElement
@@ -275,28 +266,12 @@ export const useConfigStore = defineStore('config', () => {
     root.classList.toggle('app-font-serif', fontFamily.value === 'serif')
     root.classList.toggle('app-font-kai', fontFamily.value === 'kai')
     root.style.removeProperty('--font-ui')
-    // 3) 壁纸/磨砂模式：有背景图或开了磨砂 → 主表面统一半透明（壁纸透传）
-    root.classList.toggle('frosted', frosted.value)
-    const alpha = (bgImage.value || frosted.value) ? WALLPAPER_SURFACE_ALPHA : 100
-    for (const v of ['--bg-base', '--bg-surface', '--bg-sidebar']) {
+    // 3) 清理已移除的壁纸/磨砂功能残留（行内透明变量 / frosted class / 背景样式标签）
+    for (const v of ['--bg-base', '--bg-surface', '--bg-sidebar', '--app-bg-image', '--app-bg-dim']) {
       root.style.removeProperty(v)
-      if (alpha >= 100) continue
-      const solid = getComputedStyle(root).getPropertyValue(v).trim()
-      if (!solid) continue
-      root.style.setProperty(v, `color-mix(in srgb, ${solid} ${alpha}%, transparent)`)
     }
-    // 4) 背景图经 <style> 标签注入：dataURL 可达数百 KB，走 inline style
-    //    属性可能被浏览器拒收。规则自包含（含铺排方式），不依赖 base 层
-    let tag = document.getElementById('clipsync-bg-style') as HTMLStyleElement | null
-    if (!tag) {
-      tag = document.createElement('style')
-      tag.id = 'clipsync-bg-style'
-      document.head.appendChild(tag)
-    }
-    const dim = bgDim.value / 100
-    tag.textContent = bgImage.value
-      ? `body{background-image:linear-gradient(rgba(0,0,0,${dim}),rgba(0,0,0,${dim})),url("${bgImage.value}");background-size:cover;background-position:center;background-repeat:no-repeat;background-attachment:fixed;}`
-      : ''
+    root.classList.remove('frosted')
+    document.getElementById('clipsync-bg-style')?.remove()
   }
 
   function setFontScale(v: number) {
@@ -309,20 +284,13 @@ export const useConfigStore = defineStore('config', () => {
     savePrefs()
     applyAppearance()
   }
-  function setFrosted(val?: boolean) {
-    frosted.value = val ?? !frosted.value
-    savePrefs()
-    applyAppearance()
-  }
-  function setBgImage(dataUrl: string) {
-    bgImage.value = dataUrl
-    savePrefs()
-    applyAppearance()
-  }
-  function setBgDim(v: number) {
-    bgDim.value = v
-    savePrefs()
-    applyAppearance()
+
+  // 主题切换（html.class 变化）会改写主题变量的解析值，字号/字体需要重算
+  if (typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => applyAppearance()).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    })
   }
 
   // 主题切换（html.class 变化）会改写主题变量的解析值，半透明覆盖需要重算
@@ -404,14 +372,8 @@ export const useConfigStore = defineStore('config', () => {
     autoBlur,
     fontScale,
     fontFamily,
-    frosted,
-    bgImage,
-    bgDim,
     setFontScale,
     setFontFamily,
-    setFrosted,
-    setBgImage,
-    setBgDim,
     applyAppearance,
     isLoggedIn,
     serverUrl,
