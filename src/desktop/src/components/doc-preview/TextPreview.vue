@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from '@/composables/useI18n'
+
+const { tf } = useI18n()
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -20,7 +23,7 @@ const isTruncated = computed(() => {
 <template>
   <div class="text-preview">
     <div class="text-preview-content">{{ lines.join('\n') }}</div>
-    <div v-if="isTruncated" class="text-truncated">内容已截断</div>
+    <div v-if="isTruncated" class="text-truncated">{{ tf('doc_truncated', '内容已截断') }}</div>
   </div>
 </template>
 

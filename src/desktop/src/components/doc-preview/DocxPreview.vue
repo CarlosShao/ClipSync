@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from '@/composables/useI18n'
+
+const { tf } = useI18n()
 // Word (.docx) 预览：mammoth 把 .docx 转成 HTML（已含 <h1>-<h6> 标题与 id 锚点），
 // 通过 v-html 注入；可选传入 toc 列表显示左侧目录（点击跳锚点）。
 import { ref, nextTick, watch } from 'vue'
@@ -41,8 +44,8 @@ nextTick(() => {
 
 <template>
   <div class="docx-preview-wrap">
-    <div v-if="toc && toc.length > 0" class="docx-toc" :aria-label="'目录'">
-      <div class="docx-toc-title">目录</div>
+    <div v-if="toc && toc.length > 0" class="docx-toc" :aria-label="tf('doc_toc', '目录')">
+      <div class="docx-toc-title">{{ tf('doc_toc', '目录') }}</div>
       <ul class="docx-toc-list">
         <li
           v-for="item in toc"

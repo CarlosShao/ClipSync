@@ -1,4 +1,5 @@
 import { toast } from 'vue-sonner'
+import { useI18n } from '@/composables/useI18n'
 
 export interface SonnerToast {
   show(message: string, type?: 'success' | 'error' | 'warning' | 'info', duration?: number): void
@@ -15,6 +16,8 @@ export interface SonnerToast {
 }
 
 export function useSonner(): SonnerToast {
+  // C5③：toast 文案统一走 i18n；调用方传入的可能是 i18n key（后端回传），这里一并翻译
+  const { tMsg, tf } = useI18n()
   const typeMap: Record<string, (message: string, options?: Record<string, unknown>) => void> = {
     success: (msg, opts) => toast.success(msg, opts),
     error: (msg, opts) => toast.error(msg, opts),
@@ -24,7 +27,7 @@ export function useSonner(): SonnerToast {
 
   function show(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info', duration = 3000) {
     const fn = typeMap[type] || toast.info
-    fn(message, { duration })
+    fn(tMsg(message), { duration })
   }
 
   function loading(message: string): string | number {
@@ -40,7 +43,8 @@ export function useSonner(): SonnerToast {
     const initial = Math.max(1, Math.ceil(seconds))
     let remaining = initial
     // 持续显示，由内部定时器消失
-    const id = toast.warning(`限流中，请 ${remaining} 秒后重试`, { duration: Infinity })
+    const limitedText = (n: number) => tf('rate_limited_countdown', '限流中，请 {s} 秒后重试', { s: n })
+    const id = toast.warning(limitedText(remaining), { duration: Infinity })
     const timer = setInterval(() => {
       remaining -= 1
       if (remaining <= 0) {
@@ -48,7 +52,7 @@ export function useSonner(): SonnerToast {
         toast.dismiss(id)
         return
       }
-      toast.warning(`限流中，请 ${remaining} 秒后重试`, { id, duration: Infinity })
+      toast.warning(limitedText(remaining), { id, duration: Infinity })
     }, 1000)
     return id
   }

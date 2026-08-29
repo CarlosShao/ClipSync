@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from '@/composables/useI18n'
+
+const { tf } = useI18n()
 // PPTX 预览：从 .pptx 文件解压出所有 slide XML，正则提取 <a:t> 文本节点
 // 按 slide 顺序展示。DocPreviewModal 负责读 ArrayBuffer + 调 JSZip 解析，
 // 本组件只负责渲染传入的 slide 文本数组。
@@ -9,11 +12,11 @@ defineProps<{
 
 <template>
   <div class="pptx-preview">
-    <div v-if="slides.length === 0" class="pptx-empty">幻灯片为空</div>
+    <div v-if="slides.length === 0" class="pptx-empty">{{ tf('doc_slides_empty', '幻灯片为空') }}</div>
     <div v-else class="slide-list">
       <div v-for="(slide, idx) in slides" :key="idx" class="slide-card">
         <div class="slide-header">
-          <span class="slide-num">第 {{ idx + 1 }} 页</span>
+          <span class="slide-num">{{ tf('doc_slide_page', '第 {n} 页', { n: idx + 1 }) }}</span>
         </div>
         <div class="slide-body" v-html="slide" />
       </div>

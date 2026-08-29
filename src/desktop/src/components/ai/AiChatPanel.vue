@@ -243,6 +243,21 @@ function closeConfirmMenu(e: MouseEvent) {
   }
 }
 
+// prettier 会把多语句内联 @click 拆行并丢分号，导致模板解析失败；
+// 故把三个快捷放行按钮抽成方法（C3 确认系统收敛）。
+function confirmOnce() {
+  showConfirmMenu.value = false
+  approve(true, 'once')
+}
+function confirmAllowTool() {
+  showConfirmMenu.value = false
+  approve(true, 'tool')
+}
+function confirmAllowAll() {
+  showConfirmMenu.value = false
+  approve(true, 'all')
+}
+
 // 监听 settings 保存/删除 provider 后的全局事件，刷新本地列表
 // 否则 AI 面板常驻打开时，新增/修改的 provider 不会立刻出现在下拉里（只能刷新页面）
 const onProvidersChanged = () => loadProviders()
@@ -669,7 +684,7 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
                     <button
                       type="button"
                       class="ai-cfm-pop__menu-item"
-                      @click="showConfirmMenu = false; approve(true, 'once')"
+                      @click="confirmOnce"
                     >
                       <Check :size="12" />
                       <span>{{ tf('ai_confirm_once_allow', '仅本次允许') }}</span>
@@ -678,7 +693,7 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
                       v-if="pendingConfirm?.tool"
                       type="button"
                       class="ai-cfm-pop__menu-item"
-                      @click="showConfirmMenu = false; approve(true, 'tool')"
+                      @click="confirmAllowTool"
                     >
                       <ShieldCheck :size="12" />
                       <span>{{ tf('ai_confirm_allow_tool', '本会话始终允许 {tool}', { tool: pendingConfirm?.tool || '' }) }}</span>
@@ -686,7 +701,7 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
                     <button
                       type="button"
                       class="ai-cfm-pop__menu-item ai-cfm-pop__menu-item--danger"
-                      @click="showConfirmMenu = false; approve(true, 'all')"
+                      @click="confirmAllowAll"
                     >
                       <ShieldAlert :size="12" />
                       <span>{{ tf('ai_confirm_allow_all', '本会话始终允许所有操作') }}</span>

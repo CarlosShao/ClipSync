@@ -4,6 +4,7 @@ import { useProtection, type ProtectionLevel } from '@/composables/useProtection
 import { useClipboard } from '@/composables/useClipboard'
 import { usePrivacy } from '@/composables/usePrivacy'
 import { useSonner } from '@/composables/useSonner'
+import { useI18n } from '@/composables/useI18n'
 import Button from '@/components/ui/button/Button.vue'
 import { Input } from '@/components/ui/input'
 import { Lock, Unlock, Shield, Key, Eye, EyeOff, Copy, AlertTriangle } from 'lucide-vue-next'
@@ -11,42 +12,48 @@ import { Lock, Unlock, Shield, Key, Eye, EyeOff, Copy, AlertTriangle } from 'luc
 const clip = useClipboard()
 const privacy = usePrivacy()
 const toast = useSonner()
+const { tf, tMsg } = useI18n()
 
-// 直接硬编码中文，避免 i18n 字典查找失败导致显示原始 key
+// 本地字典已迁入 i18n（C5）：全部走 tf(key, 中文兜底)，英文环境下取 en.json 译文；
+// 缺 key 时回退中文原文，不会出现裸 key（tf 而非 t）。
 const L = {
-  title: '保护级别',
-  desc: '选择保护级别',
-  none: '无保护',
-  none_desc: '不加密，任何人可查看',
-  pin: 'PIN 保护',
-  pin_desc: '需要 PIN 验证，超时自动锁定',
-  advanced: '高级加密',
-  advanced_desc: '强加密保护，解锁后本次会话永久可见，忘记密码可通过恢复密钥恢复',
-  password: '密码',
-  password_ph: '输入密码（至少4位）',
-  confirm_pwd: '确认密码',
-  confirm_pwd_ph: '再次输入密码',
-  pwd_mismatch: '两次密码不一致',
-  apply: '应用',
-  remove: '移除保护',
-  unlock_desc: '输入密码解锁此条目',
-  enter_pwd: '密码',
-  pwd_ph: '输入密码',
-  use_recovery: '使用恢复密钥',
-  recovery_key: '恢复密钥',
-  recovery_ph: '输入128位恢复密钥',
-  recovery_info: '使用恢复密钥解锁。恢复密钥在设置高级加密时生成，长度为128位十六进制字符。',
-  save_recovery: '保存恢复密钥',
-  recovery_warn: '请将此恢复密钥保存到安全位置。忘记密码时需要用它恢复访问。',
-  i_saved: '我已保存',
-  applied: '保护已应用',
-  applied_desc: '保护级别已更新',
-  cancel: '取消',
-  saving: '保存中...',
-  unlocking: '解锁中...',
-  unlock: '解锁',
-  back: '返回',
-  close: '×',
+  get title() { return tf('prot_title', '保护级别') },
+  get desc() { return tf('prot_desc', '选择保护级别') },
+  get none() { return tf('prot_none', '无保护') },
+  get none_desc() { return tf('prot_none_desc', '不加密，任何人可查看') },
+  get pin() { return tf('prot_pin', 'PIN 保护') },
+  get pin_desc() { return tf('prot_pin_desc', '需要 PIN 验证，超时自动锁定') },
+  get advanced() { return tf('prot_advanced', '高级加密') },
+  get advanced_desc() {
+    return tf('prot_advanced_desc', '强加密保护，解锁后本次会话永久可见，忘记密码可通过恢复密钥恢复')
+  },
+  get password() { return tf('prot_password', '密码') },
+  get password_ph() { return tf('prot_password_ph', '输入密码（至少4位）') },
+  get confirm_pwd() { return tf('prot_confirm_pwd', '确认密码') },
+  get confirm_pwd_ph() { return tf('prot_confirm_pwd_ph', '再次输入密码') },
+  get pwd_mismatch() { return tf('prot_pwd_mismatch', '两次密码不一致') },
+  get apply() { return tf('prot_apply', '应用') },
+  get remove() { return tf('prot_remove', '移除保护') },
+  get unlock_desc() { return tf('prot_unlock_desc', '输入密码解锁此条目') },
+  get enter_pwd() { return tf('prot_enter_pwd', '密码') },
+  get pwd_ph() { return tf('prot_pwd_ph', '输入密码') },
+  get use_recovery() { return tf('prot_use_recovery', '使用恢复密钥') },
+  get recovery_key() { return tf('prot_recovery_key', '恢复密钥') },
+  get recovery_ph() { return tf('prot_recovery_ph', '输入128位恢复密钥') },
+  get recovery_info() {
+    return tf('prot_recovery_info', '使用恢复密钥解锁。恢复密钥在设置高级加密时生成，长度为128位十六进制字符。')
+  },
+  get save_recovery() { return tf('prot_save_recovery', '保存恢复密钥') },
+  get recovery_warn() { return tf('prot_recovery_warn', '请将此恢复密钥保存到安全位置。忘记密码时需要用它恢复访问。') },
+  get i_saved() { return tf('prot_i_saved', '我已保存') },
+  get applied() { return tf('prot_applied', '保护已应用') },
+  get applied_desc() { return tf('prot_applied_desc', '保护级别已更新') },
+  get cancel() { return tf('prot_cancel', '取消') },
+  get saving() { return tf('prot_saving', '保存中...') },
+  get unlocking() { return tf('prot_unlocking', '解锁中...') },
+  get unlock() { return tf('prot_unlock', '解锁') },
+  get back() { return tf('prot_back', '返回') },
+  get close() { return '×' },
 }
 
 const protection = useProtection()
@@ -154,7 +161,7 @@ async function handleUnlock() {
       emit('unlocked', props.content)
       emit('update:open', false)
     } else {
-      protection.error.value = 'PIN 错误'
+      protection.error.value = 'prot_pin_wrong'
     }
   } else {
     // 高级加密：走服务端解密
@@ -192,7 +199,7 @@ async function handleRemove() {
 
 async function copyRecoveryKey() {
   const ok = await clip.copyText(recoveryKey.value)
-  if (ok) toast.show('恢复密钥已复制', 'success')
+  if (ok) toast.show(tf('prot_recovery_copied', '恢复密钥已复制'), 'success')
 }
 
 function nextStep() {
@@ -314,7 +321,7 @@ function nextStep() {
               <Input v-model="unlockPassword" type="password" :placeholder="L.pwd_ph" @keyup.enter="handleUnlock" />
             </div>
           </div>
-          <div v-if="protection.error.value" class="protection-error">{{ protection.error.value }}</div>
+          <div v-if="protection.error.value" class="protection-error">{{ tMsg(protection.error.value) }}</div>
           <div class="protection-actions">
             <Button
               v-if="props.currentLevel !== 'pin'"
@@ -389,7 +396,7 @@ function nextStep() {
 
       <!-- Error -->
       <div v-if="protection.error.value && step === 'select'" class="protection-error">
-        {{ protection.error.value }}
+        {{ tMsg(protection.error.value) }}
       </div>
     </div>
   </Teleport>

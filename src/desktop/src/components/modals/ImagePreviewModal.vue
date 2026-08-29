@@ -10,7 +10,7 @@ import './modal-shared.css'
 const props = defineProps<{ previewItem?: any; previewType?: string }>()
 const emit = defineEmits<{ close: [] }>()
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const toast = useSonner()
 
 const {
@@ -95,11 +95,11 @@ function handleClose() {
       <div class="img-preview-bar">
         <span class="img-preview-label">Image</span>
         <div class="img-preview-zoom">
-          <Button variant="outline" size="icon-sm" :disabled="imgZoom <= IMG_ZOOM_MIN" title="缩小" @click="zoomOut">
+          <Button variant="outline" size="icon-sm" :disabled="imgZoom <= IMG_ZOOM_MIN" :title="tf('img_zoom_out', '缩小')" @click="zoomOut">
             <ZoomOut :size="15" />
           </Button>
           <span class="img-zoom-level">{{ Math.round(imgZoom * 100) }}%</span>
-          <Button variant="outline" size="icon-sm" :disabled="imgZoom >= IMG_ZOOM_MAX" title="放大" @click="zoomIn">
+          <Button variant="outline" size="icon-sm" :disabled="imgZoom >= IMG_ZOOM_MAX" :title="tf('img_zoom_in', '放大')" @click="zoomIn">
             <ZoomIn :size="15" />
           </Button>
           <Button
@@ -107,15 +107,15 @@ function handleClose() {
             variant="ghost"
             size="sm"
             class="ml-1"
-            title="重置"
+            :title="tf('img_reset', '重置')"
             @click="resetImgZoom"
             >1:1</Button
           >
           <span class="img-preview-sep" />
-          <Button variant="outline" size="icon-sm" title="左旋90度" @click="rotateLeft">
+          <Button variant="outline" size="icon-sm" :title="tf('img_rotate_left', '左旋90度')" @click="rotateLeft">
             <RotateCcw :size="15" />
           </Button>
-          <Button variant="outline" size="icon-sm" title="右旋90度" @click="rotateRight">
+          <Button variant="outline" size="icon-sm" :title="tf('img_rotate_right', '右旋90度')" @click="rotateRight">
             <RotateCw :size="15" />
           </Button>
         </div>

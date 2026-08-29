@@ -6,7 +6,7 @@ import { api } from '@/api/client'
 import Button from '@/components/ui/button/Button.vue'
 import { Download } from 'lucide-vue-next'
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const toast = useSonner()
 const emit = defineEmits<{ back: [] }>()
 
@@ -70,14 +70,14 @@ async function handleExportRequest() {
           <Download :size="24" class="export-ico" />
         </div>
         <div>
-          <p class="export-title">JSON 格式数据包</p>
+          <p class="export-title">{{ tf('export_pkg_title', 'JSON 格式数据包') }}</p>
           <p class="export-desc">{{ t('export_msg') }}</p>
         </div>
       </div>
       <div class="export-feats">
-        <span>&#10003; 剪贴板记录</span>
-        <span>&#10003; 设备信息</span>
-        <span>&#10003; 账户资料</span>
+        <span>&#10003; {{ tf('export_feat_clips', '剪贴板记录') }}</span>
+        <span>&#10003; {{ tf('export_feat_devices', '设备信息') }}</span>
+        <span>&#10003; {{ tf('export_feat_profile', '账户资料') }}</span>
       </div>
       <Button class="w-full export-request-btn" :disabled="exporting" @click="handleExportRequest">
         <Download :size="14" class="btn-ico-left" />

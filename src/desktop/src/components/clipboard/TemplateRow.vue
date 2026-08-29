@@ -4,8 +4,10 @@ import { ClipboardPlus, Pencil, Trash2 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import type { ClipboardTemplate } from '@/types'
 import { extractVariables, isBuiltinVar } from '@/stores/templateStore'
+import { useI18n } from '@/composables/useI18n'
 
 const props = defineProps<{ template: ClipboardTemplate }>()
+const { t, tf } = useI18n()
 const emit = defineEmits<{
   edit: [tpl: ClipboardTemplate]
   insert: [tpl: ClipboardTemplate]
@@ -41,7 +43,7 @@ function fmtTime(iso: string): string {
             v-for="v in vars"
             :key="v"
             :class="['var-chip', isBuiltinVar(v) ? 'var-builtin' : 'var-user']"
-            :title="isBuiltinVar(v) ? '内置变量（自动填充）' : '自定义变量（插入时填写）'"
+            :title="isBuiltinVar(v) ? tf('tpl_var_builtin', '内置变量（自动填充）') : tf('tpl_var_user', '自定义变量（插入时填写）')"
             >{{ '{' + '{' + v + '}' + '}' }}</span
           >
         </span>
@@ -50,12 +52,12 @@ function fmtTime(iso: string): string {
     </div>
     <div class="tpl-actions">
       <Button size="sm" variant="outline" class="px-5 min-w-[80px] rounded-md" @click="emit('insert', template)">
-        <ClipboardPlus :size="14" /> 插入
+        <ClipboardPlus :size="14" /> {{ t('tpl_insert_btn') }}
       </Button>
       <Button size="sm" variant="ghost" class="px-5 min-w-[80px] rounded-md" @click="emit('edit', template)">
-        <Pencil :size="14" /> 编辑
+        <Pencil :size="14" /> {{ tf('edit', '编辑') }}
       </Button>
-      <Button size="icon-sm" variant="ghost" class="tpl-del" title="删除" @click="emit('delete', template)">
+      <Button size="icon-sm" variant="ghost" class="tpl-del" :title="t('delete')" @click="emit('delete', template)">
         <Trash2 :size="15" />
       </Button>
     </div>

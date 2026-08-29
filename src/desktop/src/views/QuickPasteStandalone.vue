@@ -9,7 +9,7 @@ import { Search, Image as ImageIcon, FileText, ClipboardList, Pin, Link, Filter 
 import QuickPasteSuggestions from '@/components/clipboard/QuickPasteSuggestions.vue'
 import type { FrequentItem } from '@/api/clipboard'
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const clip = useClipboard()
 const prediction = usePastePrediction()
 const suggestions = prediction.suggestions
@@ -17,7 +17,17 @@ const suggestions = prediction.suggestions
 const qpSearch = ref('')
 const qpSelectedIndex = ref(0)
 const expanded = ref(false)
-const qpTypeFilter = ref<'all' | 'text' | 'image' | 'file' | 'link'>('all')
+
+// 类型筛选：标签走 i18n（C5）
+type QpTypeFilter = 'all' | 'text' | 'image' | 'file' | 'link'
+const qpTypeFilters = computed<{ v: QpTypeFilter; l: string }[]>(() => [
+  { v: 'all', l: tf('filter_all', '全部') },
+  { v: 'text', l: tf('type_text', '文本') },
+  { v: 'image', l: tf('type_image', '图片') },
+  { v: 'file', l: tf('type_file', '文件') },
+  { v: 'link', l: tf('type_link', '链接') },
+])
+const qpTypeFilter = ref<QpTypeFilter>('all')
 
 // Pinned items (stored in localStorage)
 const PINNED_KEY = 'clipsync-qp-pinned'
@@ -222,17 +232,11 @@ function truncate(str: string, max: number): string {
         <!-- Type filter bar -->
         <div class="qp-filters">
           <button
-            v-for="f in [
-              { v: 'all', l: '全部' },
-              { v: 'text', l: '文本' },
-              { v: 'image', l: '图片' },
-              { v: 'file', l: '文件' },
-              { v: 'link', l: '链接' },
-            ]"
+            v-for="f in qpTypeFilters"
             :key="f.v"
             class="qp-filter-btn"
             :class="{ active: qpTypeFilter === f.v }"
-            @click="qpTypeFilter = f.v as any"
+            @click="qpTypeFilter = f.v"
           >
             {{ f.l }}
           </button>

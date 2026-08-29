@@ -47,7 +47,7 @@ const emit = defineEmits<{
   'open-memory': []
 }>()
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const { breakpoint, navRailMode, navRailCollapsed, navOverlayOpen, setNavOverlayOpen, toggleNavRail } = useAiChatUi()
 
 // 展开态宽度拖拽（左侧面板：拖右缘右移变宽 → invert）
@@ -185,7 +185,7 @@ function onDockFromFloat() {
     :style="navRailMode === 'expanded' ? { width: width + 'px' } : {}"
   >
     <!-- 行内展开态：右缘拖拽把手 -->
-    <div v-if="navRailMode === 'expanded'" class="ai-nav-resize" title="拖拽调整宽度" @mousedown="startDrag" />
+    <div v-if="navRailMode === 'expanded'" class="ai-nav-resize" :title="tf('ai_resize_hint', '拖拽调整宽度')" @mousedown="startDrag" />
 
     <template v-if="isFullUi">
       <!-- 顶部：新建 + 指令行搜索 -->

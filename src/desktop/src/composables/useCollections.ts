@@ -10,6 +10,7 @@ import {
   reorderCollections,
 } from '@/api/client'
 import { useSonner } from '@/composables/useSonner'
+import { useI18n } from '@/composables/useI18n'
 import { useCollectionStore } from '@/stores/collectionStore'
 
 export interface CollectionNode {
@@ -90,6 +91,7 @@ function expandToDepth(nodes: CollectionNode[], depth: number) {
 
 export function useCollections() {
   const toast = useSonner()
+  const { t, tf } = useI18n()
   const collectionStore = useCollectionStore()
 
   // Core state: sourced from the global Pinia store so that data persists
@@ -305,7 +307,7 @@ export function useCollections() {
   async function moveCollection(id: string, parentId: string | null) {
     const data = await apiMoveCollection(id, parentId)
     if (!data?.collection) {
-      throw new Error('移动收藏夹失败')
+      throw new Error(tf('col_move_failed', '移动收藏夹失败'))
     }
     const oldPath = findNodeById(tree.value, id)?.path
     if (oldPath) {
@@ -388,7 +390,7 @@ export function useCollections() {
         await moveCollection(ctxMenuNodeId.value, null)
       } catch (e: any) {
         console.warn('[collections] move to root failed:', e)
-        toast.show(e.message || '移动到根目录失败', 'error')
+        toast.show(e.message || t('col_move_root_failed'), 'error')
       }
     }
     closeCtxMenu()
@@ -516,7 +518,7 @@ export function useCollections() {
       await reorderCollections(orders)
     } catch (e: any) {
       console.warn('[collections] reorder failed:', e)
-      toast.show(e.message || '排序收藏夹失败', 'error')
+      toast.show(e.message || t('col_reorder_failed'), 'error')
       await loadCollections()
     }
   }
@@ -589,7 +591,7 @@ export function useCollections() {
       await reorderCollection(draggedId, targetId, position)
     } catch (e: any) {
       console.warn('[collections] drop failed:', e)
-      toast.show(e.message || '移动收藏夹失败', 'error')
+      toast.show(e.message || t('col_move_failed'), 'error')
     } finally {
       dragNodeId.value = null
     }
@@ -620,7 +622,7 @@ export function useCollections() {
       await reorderCollection(draggedId, null, 'before')
     } catch (e: any) {
       console.warn('[collections] drop root failed:', e)
-      toast.show(e.message || '移动到根目录失败', 'error')
+      toast.show(e.message || t('col_move_root_failed'), 'error')
     } finally {
       dragNodeId.value = null
     }
@@ -651,7 +653,7 @@ export function useCollections() {
       await reorderCollection(draggedId, null, 'after')
     } catch (e: any) {
       console.warn('[collections] drop bottom failed:', e)
-      toast.show(e.message || '移动到根目录失败', 'error')
+      toast.show(e.message || t('col_move_root_failed'), 'error')
     } finally {
       dragNodeId.value = null
     }

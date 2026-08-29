@@ -7,7 +7,7 @@ import { useTheme } from '@/composables/useTheme'
 import { api, prefetchCsrf, storeRefreshToken } from '@/api/client'
 import { verify2FALogin } from '@/api/auth'
 import * as tauri from '@/lib/tauri'
-import { Eye, EyeOff, Sun, Moon, ArrowLeft, X } from 'lucide-vue-next'
+import { Eye, EyeOff, Sun, Moon, ArrowLeft, X, Languages } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
@@ -16,9 +16,19 @@ defineOptions({ name: 'AuthPage' })
 const emit = defineEmits<{ (e: 'login-success'): void }>()
 
 const configStore = useConfigStore()
-const { t } = useI18n()
+const { t, tf, currentLang, setLang } = useI18n()
 const toast = useSonner()
 const { toggleMode, resolvedMode } = useTheme()
+
+// ===== 语言切换入口（C5①）：登录页是未登录态唯一可见页面，必须能改语言 =====
+const langMenuOpen = ref(false)
+function toggleLangMenu() {
+  langMenuOpen.value = !langMenuOpen.value
+}
+function pickLang(lang: 'zh' | 'en') {
+  setLang(lang)
+  langMenuOpen.value = false
+}
 
 // ===== Auth state =====
 const authView = ref<'login-phone' | 'login-password' | 'register' | 'set-password' | 'login-2fa'>('login-phone')
@@ -550,11 +560,48 @@ const isRegisterView = computed(() => authView.value === 'register')
     <div class="auth-inner">
       <!-- Left: Form -->
       <div :class="['auth-left', { 'auth-left--scrollable': isRegisterView }]">
-        <!-- Theme toggle: top-right corner -->
+        <!-- 右上角操作区：语言切换 + 主题切换（并排） -->
+        <div class="auth-corner-actions">
+          <Button
+            variant="ghost"
+            size="sm"
+            class="theme-pill"
+            :title="tf('lang_switch', '切换语言')"
+            :aria-label="tf('lang_switch', '切换语言')"
+            :aria-expanded="langMenuOpen"
+            aria-haspopup="menu"
+            @click="toggleLangMenu"
+          >
+            <Languages :size="14" />
+            <span>{{ currentLang === 'zh' ? tf('lang_zh', '中文') : tf('lang_en', 'English') }}</span>
+          </Button>
+          <div v-if="langMenuOpen" class="lang-menu" role="menu">
+            <button
+              type="button"
+              class="lang-menu-item"
+              :class="{ active: currentLang === 'zh' }"
+              role="menuitemradio"
+              :aria-checked="currentLang === 'zh'"
+              @click="pickLang('zh')"
+            >
+              {{ tf('lang_zh', '中文') }}
+            </button>
+            <button
+              type="button"
+              class="lang-menu-item"
+              :class="{ active: currentLang === 'en' }"
+              role="menuitemradio"
+              :aria-checked="currentLang === 'en'"
+              @click="pickLang('en')"
+            >
+              {{ tf('lang_en', 'English') }}
+            </button>
+          </div>
+        <!-- Theme toggle -->
         <Button
           variant="ghost"
           size="sm"
-          class="theme-pill theme-pill-absolute"
+          class="theme-pill"
           :title="resolvedMode === 'dark' ? t('mode_light') : t('mode_dark')"
           @click="toggleMode"
         >
@@ -562,6 +609,7 @@ const isRegisterView = computed(() => authView.value === 'register')
           <Sun v-else :size="14" />
           <span>{{ resolvedMode === 'dark' ? t('mode_light') : t('mode_dark') }}</span>
         </Button>
+        </div>
         <div class="auth-card">
           <!-- ===== LOGIN ===== -->
           <div v-if="authView === 'login-phone' || authView === 'login-password'" class="auth-view">
@@ -1531,12 +1579,55 @@ const isRegisterView = computed(() => authView.value === 'register')
   color: var(--accent);
 }
 
-/* ===== Theme toggle ===== */
-.theme-pill-absolute {
+/* ===== 右上角操作区：语言切换 + 主题切换 ===== */
+.auth-corner-actions {
   position: absolute;
   top: 20px;
   right: 20px;
-  z-index: 10;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 120px;
+  padding: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-dropdown);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lang-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.lang-menu-item:hover {
+  background: var(--bg-hover);
+}
+.lang-menu-item.active {
+  color: var(--accent);
+  background: var(--accent-bg);
+  font-weight: 600;
+}
+.lang-menu-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 .theme-pill {
   display: inline-flex;
@@ -1614,7 +1705,7 @@ const isRegisterView = computed(() => authView.value === 'register')
 .sp-step.completed .sp-step-num {
   border-color: var(--success);
   background: var(--success);
-  color: #fff;
+  color: var(--scrim-foreground);
 }
 .sp-step-line {
   width: 32px;
@@ -1626,7 +1717,10 @@ const isRegisterView = computed(() => authView.value === 'register')
   background: var(--success);
 }
 
-/* ===== Right panel ===== */
+/* ===== Right panel =====
+   登录页右侧是固定的品牌宣传面板（深蓝/靛紫渐变），刻意不随明暗主题变化：
+   它是营销视觉，不是功能表面，套主题 token 会在浅色主题下丢失品牌感。 */
+/* stylelint-disable color-no-hex */
 .auth-right {
   position: relative;
   display: flex;
@@ -1659,12 +1753,13 @@ const isRegisterView = computed(() => authView.value === 'register')
 }
 .auth-right-content {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-sticky);
   text-align: center;
   padding: 48px 40px;
-  color: #fff;
+  color: var(--scrim-foreground);
   max-width: 380px;
 }
+/* stylelint-enable color-no-hex */
 .quote-text {
   font-size: 20px;
   font-weight: 500;
@@ -1686,7 +1781,7 @@ const isRegisterView = computed(() => authView.value === 'register')
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
 }
 .modal-box {
   position: relative;

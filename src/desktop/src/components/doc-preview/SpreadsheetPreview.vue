@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from '@/composables/useI18n'
+
+const { tf } = useI18n()
 // Excel 表格预览：xlsx 库 sheet_to_html 输出的多 sheet 表格，按 sheet 标签切换。
 // 表格 HTML 由 DocPreviewModal 加载 ArrayBuffer 后动态生成并传入；
 // 本组件只负责渲染 + 切换 sheet，不依赖网络。
@@ -39,7 +42,7 @@ function selectSheet(idx: number) {
     <div class="sheet-body">
       <!-- sheet_to_html 输出的是完整 <table>，以 v-html 注入 -->
       <div v-if="sheets[activeIdx]" class="sheet-html" v-html="sheets[activeIdx].html" />
-      <div v-else class="sheet-empty">无内容</div>
+      <div v-else class="sheet-empty">{{ tf('doc_no_content', '无内容') }}</div>
     </div>
   </div>
 </template>

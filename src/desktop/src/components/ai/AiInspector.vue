@@ -85,7 +85,7 @@ const isOverlay = computed(() => inspectorMode.value === 'overlay')
 <template>
   <div class="ai-insp" :class="{ 'ai-insp--overlay': isOverlay }" :style="isOverlay ? {} : { width: width + 'px' }">
     <!-- 行内形态：左缘拖拽把手 -->
-    <div v-if="!isOverlay" class="ai-insp-resize" title="拖拽调整宽度" @mousedown="startDrag" />
+    <div v-if="!isOverlay" class="ai-insp-resize" :title="tf('ai_resize_hint', '拖拽调整宽度')" @mousedown="startDrag" />
 
     <div class="ai-insp-head">
       <span class="ai-insp-title">{{ t('ai_inspector_title', 'Inspector') }}</span>

@@ -62,7 +62,8 @@ const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string 
         </div>
       </div>
     </div>
-    <p class="sp-hint">Linear 和 Raycast 是固定暗色系主题，不支持亮色模式。</p>
+    <!-- 旧文案「Linear 和 Raycast 是固定暗色系主题，不支持亮色模式」已随 C6① 失效：
+         这两个主题已补齐 light 变体，明暗切换不再失效。错误提示按"诚实摘除"处理。 -->
   </div>
 </template>
 

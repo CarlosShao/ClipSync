@@ -11,7 +11,12 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { useNotifications } from '@/composables/useNotifications'
 import { useSonner } from '@/composables/useSonner'
 import { usePrivacy } from '@/composables/usePrivacy'
-import { setKeyboardLayer, topKeyboardLayer, resetKeyboardLayers, setQuickPasteOpen } from '@/composables/useClipboardKeyboard'
+import {
+  setKeyboardLayer,
+  topKeyboardLayer,
+  resetKeyboardLayers,
+  setQuickPasteOpen,
+} from '@/composables/useClipboardKeyboard'
 import * as tauri from '@/lib/tauri'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
@@ -105,6 +110,12 @@ const aiSidebarOpen = ref(false)
 function openAiSettings() {
   settingsInitialCategory.value = 'ai'
   showSettingsDialog.value = true
+}
+// 设置弹窗关闭：抽成方法而非多语句内联 handler —— prettier 会把
+// `@close="a; b"` 拆行并丢掉分号，导致 Vue 模板表达式解析失败（构建报错）。
+function closeSettingsDialog() {
+  showSettingsDialog.value = false
+  settingsInitialCategory.value = ''
 }
 function openModalFromDialog(type: string) {
   showModalType.value = type
@@ -215,10 +226,7 @@ watch(
   () => {
     setKeyboardLayer('pin', showPinDialog.value)
     setKeyboardLayer('preview', !!previewItem.value)
-    setKeyboardLayer(
-      'modal',
-      !!(showModalType.value || showForgotPwd.value || showSettingsDialog.value),
-    )
+    setKeyboardLayer('modal', !!(showModalType.value || showForgotPwd.value || showSettingsDialog.value))
     setKeyboardLayer('ai', aiSidebarOpen.value)
     // 快速粘贴面板是全局单例：HomeView 的 showQuickPaste 是唯一真相源
     setQuickPasteOpen(showQuickPaste.value)
@@ -568,7 +576,12 @@ function confirmAction() {
     </main>
 
     <!-- AI 面板（右侧展开/折叠）：view 传入当前页面上下文，AI 回答可感知用户所在页面（#229） -->
-    <AiChatPanel :open="aiSidebarOpen" :view="currentSub" @close="aiSidebarOpen = false" @open-settings="openAiSettings" />
+    <AiChatPanel
+      :open="aiSidebarOpen"
+      :view="currentSub"
+      @close="aiSidebarOpen = false"
+      @open-settings="openAiSettings"
+    />
   </div>
 
   <QuickPastePanel :open="showQuickPaste" @close="showQuickPaste = false" />
@@ -646,7 +659,11 @@ function confirmAction() {
   <SatisfactionSurvey />
 
   <!-- Settings Dialog (v2 — progressive migration) -->
-  <SettingsDialog :open="showSettingsDialog" :initial-category="settingsInitialCategory" @close="showSettingsDialog = false; settingsInitialCategory = ''" />
+  <SettingsDialog
+    :open="showSettingsDialog"
+    :initial-category="settingsInitialCategory"
+    @close="closeSettingsDialog"
+  />
 </template>
 
 <style scoped>

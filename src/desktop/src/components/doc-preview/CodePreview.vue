@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from '@/composables/useI18n'
+
+const { tf } = useI18n()
 import { computed } from 'vue'
 import { renderCode } from '@/utils/docPreview'
 
@@ -25,7 +28,7 @@ const isTruncated = computed(() => {
       <span v-for="(_, i) in lines" :key="i" class="line-num">{{ i + 1 }}</span>
     </div>
     <pre class="code-content"><code v-html="renderCode(content, fileName)"></code></pre>
-    <div v-if="isTruncated" class="code-truncated">内容已截断</div>
+    <div v-if="isTruncated" class="code-truncated">{{ tf('doc_truncated', '内容已截断') }}</div>
   </div>
 </template>
 

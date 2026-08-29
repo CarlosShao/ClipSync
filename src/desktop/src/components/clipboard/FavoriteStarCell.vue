@@ -84,10 +84,10 @@ function confirmCreate(itemId: string) {
         <div class="fav-new-parent">
           <span class="fav-new-parent-label">
             <FolderPlus :size="11" />
-            {{ t('fav_new_col_parent_label') || '建在' }}
+            {{ tf('fav_new_col_parent_label', '建在') }}
           </span>
           <select v-model="newCollectionParent" class="fav-new-parent-select">
-            <option value="root">{{ t('fav_new_col_parent_root') || '顶级' }}</option>
+            <option value="root">{{ tf('fav_new_col_parent_root', '顶级') }}</option>
             <option v-for="node in fav.collectionTreeNodes.value" :key="node.id" :value="node.id">
               {{ '— '.repeat(Math.max(0, node.depth - 2)) }}{{ node.name }}
             </option>

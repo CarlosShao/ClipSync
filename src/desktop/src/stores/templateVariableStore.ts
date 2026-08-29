@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { getTemplateVariables, upsertTemplateVariable, deleteTemplateVariable } from '@/api/client'
 import { useSonner } from '@/composables/useSonner'
+import { useI18n } from '@/composables/useI18n'
 
 // 全局模板变量：name → value（默认值 / 上次记住的输入）。
 // 后端按用户隔离存储在 template_variables 表，前端解析模板时回退到此。
@@ -19,6 +20,7 @@ export const useTemplateVariableStore = defineStore('templateVariables', () => {
   const loading = ref(false)
   const initialized = ref(false)
   const toast = useSonner()
+  const { t, tf } = useI18n()
 
   // 以数组形式返回（用于设置页渲染）
   function list(): TemplateVariable[] {
@@ -57,7 +59,7 @@ export const useTemplateVariableStore = defineStore('templateVariables', () => {
         return true
       }
     } catch (e: any) {
-      toast.show('保存失败：' + (e?.message || ''), 'error')
+      toast.show(tf('tv_save_failed', '保存失败：{msg}', { msg: e?.message || '' }), 'error')
       console.warn('[TemplateVariables] set failed', e)
     }
     return false
@@ -70,11 +72,11 @@ export const useTemplateVariableStore = defineStore('templateVariables', () => {
         const next = { ...variables.value }
         delete next[name]
         variables.value = next
-        toast.show('变量已删除', 'success')
+        toast.show(t('tv_deleted'), 'success')
         return true
       }
     } catch (e: any) {
-      toast.show('删除失败：' + (e?.message || ''), 'error')
+      toast.show(tf('tv_delete_failed', '删除失败：{msg}', { msg: e?.message || '' }), 'error')
       console.warn('[TemplateVariables] remove failed', e)
     }
     return false

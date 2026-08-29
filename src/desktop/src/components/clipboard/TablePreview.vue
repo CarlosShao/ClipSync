@@ -1,9 +1,24 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '@/composables/useI18n'
 import { parseTable } from '@/utils/table'
 
 const props = defineProps<{ content: string }>()
+const { tf } = useI18n()
 const parsed = computed(() => parseTable(props.content))
+
+const dimensionText = computed(() =>
+  tf('table_rows_cols', '{rows} 行 × {cols} 列', {
+    rows: parsed.value?.rows.length ?? 0,
+    cols: parsed.value ? (parsed.value.hasHeader ? parsed.value.headers.length : parsed.value.rows[0]?.length || 0) : 0,
+  }),
+)
+const delimiterText = computed(() => {
+  const d = parsed.value?.delimiter
+  if (d === '\t') return 'TSV'
+  if (d === ',') return 'CSV'
+  return tf('table_delim_other', '分隔符')
+})
 </script>
 
 <template>
@@ -23,8 +38,7 @@ const parsed = computed(() => parseTable(props.content))
       </table>
     </div>
     <div class="table-preview-meta">
-      {{ parsed.rows.length }} 行 × {{ parsed.hasHeader ? parsed.headers.length : parsed.rows[0]?.length || 0 }} 列 ·
-      {{ parsed.delimiter === '\t' ? 'TSV' : parsed.delimiter === ',' ? 'CSV' : '分隔符' }}
+      {{ dimensionText }} · {{ delimiterText }}
     </div>
   </div>
   <span v-else class="fallback-text">{{ content }}</span>

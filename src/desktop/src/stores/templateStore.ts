@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { getTemplates, createTemplate, updateTemplate, deleteTemplate } from '@/api/client'
 import { useClipboard } from '@/composables/useClipboard'
 import { useSonner } from '@/composables/useSonner'
+import { useI18n } from '@/composables/useI18n'
 import * as tauri from '@/lib/tauri'
 import { useTemplateVariableStore } from '@/stores/templateVariableStore'
 import type { ClipboardTemplate } from '@/types'
@@ -92,6 +93,7 @@ export const useTemplateStore = defineStore('templates', () => {
 
   const { copyText } = useClipboard()
   const toast = useSonner()
+  const { t, tf } = useI18n()
 
   async function fetchTemplates() {
     loading.value = true
@@ -113,11 +115,11 @@ export const useTemplateStore = defineStore('templates', () => {
       const created = await createTemplate(name, content)
       if (created) {
         templates.value.unshift(created as ClipboardTemplate)
-        toast.show('模板已创建', 'success')
+        toast.show(t('tpl_created'), 'success')
         return created as ClipboardTemplate
       }
     } catch (e: any) {
-      toast.show('创建失败：' + (e?.message || ''), 'error')
+      toast.show(tf('tpl_create_failed', '创建失败：{msg}', { msg: e?.message || '' }), 'error')
       console.warn('[Templates] create failed', e)
     }
     return null
@@ -129,11 +131,11 @@ export const useTemplateStore = defineStore('templates', () => {
       if (updated) {
         const idx = templates.value.findIndex((t) => t.id === id)
         if (idx !== -1) templates.value[idx] = updated as ClipboardTemplate
-        toast.show('模板已更新', 'success')
+        toast.show(t('tpl_updated'), 'success')
         return updated as ClipboardTemplate
       }
     } catch (e: any) {
-      toast.show('更新失败：' + (e?.message || ''), 'error')
+      toast.show(tf('tpl_update_failed', '更新失败：{msg}', { msg: e?.message || '' }), 'error')
       console.warn('[Templates] update failed', e)
     }
     return null
@@ -144,11 +146,11 @@ export const useTemplateStore = defineStore('templates', () => {
       const ok = await deleteTemplate(id)
       if (ok) {
         templates.value = templates.value.filter((t) => t.id !== id)
-        toast.show('模板已删除', 'success')
+        toast.show(t('tpl_deleted'), 'success')
         return true
       }
     } catch (e: any) {
-      toast.show('删除失败：' + (e?.message || ''), 'error')
+      toast.show(tf('tpl_delete_failed', '删除失败：{msg}', { msg: e?.message || '' }), 'error')
       console.warn('[Templates] delete failed', e)
     }
     return false
@@ -161,12 +163,12 @@ export const useTemplateStore = defineStore('templates', () => {
       const resolved = await resolveTemplate(tpl.content, userValues, globals)
       const ok = await copyText(resolved)
       if (ok) {
-        toast.show('已插入剪贴板', 'success')
+        toast.show(t('tpl_inserted'), 'success')
         return true
       }
-      toast.show('插入失败', 'error')
+      toast.show(t('tpl_insert_failed'), 'error')
     } catch (e: any) {
-      toast.show('插入失败：' + (e?.message || ''), 'error')
+      toast.show(tf('tpl_insert_failed_msg', '插入失败：{msg}', { msg: e?.message || '' }), 'error')
       console.warn('[Templates] insert failed', e)
     }
     return false

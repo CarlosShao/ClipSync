@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from '@/composables/useI18n'
+
+const { tf } = useI18n()
 import { useImageZoom } from '@/composables/useImageZoom'
 import Button from '@/components/ui/button/Button.vue'
 import { ZoomIn, ZoomOut, RotateCcw, RotateCw } from 'lucide-vue-next'
@@ -30,18 +33,18 @@ const {
 <template>
   <div class="image-preview">
     <div class="image-zoom-toolbar">
-      <Button variant="ghost" size="icon-sm" :disabled="imgZoom <= IMG_ZOOM_MIN" title="缩小" @click="zoomOut">
+      <Button variant="ghost" size="icon-sm" :disabled="imgZoom <= IMG_ZOOM_MIN" :title="tf('img_zoom_out', '缩小')" @click="zoomOut">
         <ZoomOut :size="15" />
       </Button>
       <span class="image-zoom-label">{{ Math.round(imgZoom * 100) }}%</span>
-      <Button variant="ghost" size="icon-sm" :disabled="imgZoom >= IMG_ZOOM_MAX" title="放大" @click="zoomIn">
+      <Button variant="ghost" size="icon-sm" :disabled="imgZoom >= IMG_ZOOM_MAX" :title="tf('img_zoom_in', '放大')" @click="zoomIn">
         <ZoomIn :size="15" />
       </Button>
       <span class="image-sep" />
-      <Button variant="ghost" size="icon-sm" title="左旋90度" @click="rotateLeft">
+      <Button variant="ghost" size="icon-sm" :title="tf('img_rotate_left', '左旋90度')" @click="rotateLeft">
         <RotateCcw :size="15" />
       </Button>
-      <Button variant="ghost" size="icon-sm" title="右旋90度" @click="rotateRight">
+      <Button variant="ghost" size="icon-sm" :title="tf('img_rotate_right', '右旋90度')" @click="rotateRight">
         <RotateCw :size="15" />
       </Button>
       <Button
@@ -49,7 +52,7 @@ const {
         variant="ghost"
         size="sm"
         class="ml-1"
-        title="重置"
+        :title="tf('img_reset', '重置')"
         @click="resetImgZoom"
       >1:1</Button>
     </div>

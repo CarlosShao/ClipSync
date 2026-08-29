@@ -14,7 +14,7 @@ import { useTemplateVariableStore } from '@/stores/templateVariableStore'
 const props = defineProps<{ open: boolean; editing: ClipboardTemplate | null }>()
 const emit = defineEmits<{ close: []; save: [payload: { name: string; content: string }] }>()
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const toast = useSonner()
 const varStore = useTemplateVariableStore()
 
@@ -78,7 +78,7 @@ function onSave() {
             :key="v"
             type="button"
             class="tpl-builtin-btn"
-            :title="`插入 {{${v}}}`"
+            :title="tf('tpl_insert_var', '插入 {{{v}}}', { v })"
             @click="insertVar(v)"
           >
             {{ '{' + '{' + v + '}' + '}' }}
@@ -91,7 +91,7 @@ function onSave() {
             :key="gv.name"
             type="button"
             class="tpl-builtin-btn"
-            :title="`插入 {{${gv.name}}}`"
+            :title="tf('tpl_insert_var', '插入 {{{v}}}', { v: gv.name })"
             @click="insertVar(gv.name)"
           >
             {{ '{' + '{' + gv.name + '}' + '}' }}
