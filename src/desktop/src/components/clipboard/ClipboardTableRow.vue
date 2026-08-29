@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch, nextTick, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useClipItemDisplay, detectContentType } from '@/composables/useClipItemDisplay'
 import type { ClipItem } from '@/composables/useClipboard'
@@ -21,6 +22,7 @@ import {
   Lock,
   Clock,
   MoreHorizontal,
+  History,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -41,6 +43,7 @@ const emit = defineEmits<{
   'toggle-more': [item: ClipItem]
   share: [item: ClipItem]
   reveal: [item: ClipItem]
+  'version-history': [item: ClipItem]
   'open-protection': [item: ClipItem]
   'archive-toggle': [item: ClipItem]
   'expiry-from-dropdown': [item: ClipItem, e: MouseEvent]
@@ -49,10 +52,32 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const display = useClipItemDisplay()
+
+// 本地乐观条目的临时 id 前缀（与 useClipboard 的 LOCAL_ID_PREFIX_RE 对齐）
+const LOCAL_ID_PREFIX_RE = /^(local-|text-|img-|file-|browser-)/
+const isServerItem = computed(() => !LOCAL_ID_PREFIX_RE.test(props.item.id))
+// 「仅本机」标记（B7 / 决策 D3）：文件字节未随条目上传，对端无法还原
+const isLocalOnlyFile = computed(
+  () => props.item.type === 'file' && props.item.metadata?.localOnly === true,
+)
+
+// 键盘 ↑↓ 移动焦点行时必须把它滚进可视区，否则焦点跑到视口外，
+// 用户看到的是"高亮消失"，按 Enter 复制的是看不见的条目。
+const rowRef = ref<{ $el?: HTMLElement } | null>(null)
+watch(
+  () => props.focused,
+  (isFocused) => {
+    if (!isFocused) return
+    nextTick(() => {
+      rowRef.value?.$el?.scrollIntoView({ block: 'nearest' })
+    })
+  },
+)
 </script>
 
 <template>
   <TableRow
+    ref="rowRef"
     :data-state="item.selected ? 'selected' : undefined"
     :class="{ focused }"
     @mouseenter="emit('focus')"
@@ -106,6 +131,10 @@ const display = useClipItemDisplay()
             <span class="syncing-dot" /> {{ display.formatContent(item) }}
           </span>
           <span v-else>{{ display.formatContent(item) }}</span>
+          <!-- 仅本机可用：文件字节未上传，对端点击复制会给出明确提示而不是隐晦报错 -->
+          <span v-if="isLocalOnlyFile" class="local-only-badge" :title="t('file_local_only_hint')">
+            {{ t('file_local_only') }}
+          </span>
         </span>
         <!-- 代码样式 -->
         <span v-else-if="detectContentType(display.displayContent(item)) === 'code'" class="cell-code-preview">
@@ -221,6 +250,15 @@ const display = useClipItemDisplay()
               <button type="button" class="more-item" @click="emit('open-protection', item)">
                 <Lock :size="14" />{{ t('protection_set') }}
               </button>
+              <!-- 版本历史：仅服务端条目有历史（本地临时 id 会打到 400），故对临时项隐藏 -->
+              <button
+                v-if="isServerItem"
+                type="button"
+                class="more-item"
+                @click="emit('version-history', item)"
+              >
+                <History :size="14" />{{ t('modal_versions') }}
+              </button>
               <button type="button" class="more-item" @click="emit('archive-toggle', item)">
                 <Archive :size="14" />{{ isArchive ? t('unarchive_action') : t('archive_action') }}
               </button>
@@ -258,8 +296,8 @@ const display = useClipItemDisplay()
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
-  border: 1px dashed color-mix(in srgb, var(--color-primary, #6366f1) 40%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 40%, transparent);
   border-radius: var(--radius-md);
   font-size: 13px;
   color: var(--text-secondary);
@@ -291,6 +329,22 @@ const display = useClipItemDisplay()
   50% {
     opacity: 0.3;
   }
+}
+
+/* 「仅本机」标记（B7）：与同步中的圆点并列，视觉上不抢主文本 */
+.local-only-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  margin-left: 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 /* 普通文本 */

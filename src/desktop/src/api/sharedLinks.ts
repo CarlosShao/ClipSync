@@ -3,7 +3,7 @@
 // 注意：分享 URL 由后端根据请求 origin 或 SHARE_LINK_BASE_URL 环境变量生成，
 // 前端不要自己拼域名，避免本地开发时指向错误的 clipsync.io。
 // ============================================
-import { api } from './client'
+import { api, getCsrfToken } from './client'
 import { useConfigStore } from '@/stores/configStore'
 
 export interface SharedLink {
@@ -39,11 +39,16 @@ export async function uploadSharedFile(
   const headers: Record<string, string> = {}
   const token = config.config.token
   if (token) headers['Authorization'] = `Bearer ${token}`
+  // 与 apiForm / apiBlob 对齐：裸 fetch 必须带 X-CSRF-Token，
+  // 否则挂在 csrfProtection 下的路由会直接拒绝上传。
+  const csrf = await getCsrfToken()
+  if (csrf) headers['X-CSRF-Token'] = csrf
   try {
     const res = await fetch(`${config.serverUrl}/api/shared-links/upload-file`, {
       method: 'POST',
       body: formData,
       headers,
+      credentials: 'include',
     })
     if (!res.ok) {
       let errorText = `HTTP ${res.status}`

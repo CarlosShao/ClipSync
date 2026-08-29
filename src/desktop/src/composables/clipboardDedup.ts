@@ -2,14 +2,26 @@
 // 用户铁律：从 ClipSync UI 复制任何条目，都不应再次产生重复记录。
 // 策略1: 时间戳跳过（复制后短时间内不处理剪贴板变化）
 // 策略2: 精确内容匹配（复制时记录会写入剪贴板的内容/文件路径，monitor 检测到匹配内容时跳过）
-import { setSkipPollUntil, type ClipItem } from './clipboardState'
+import { setSkipPollUntil, pollIntervalMs, type ClipItem } from './clipboardState'
 import { logger } from '@/utils/logger'
 
 // 记录从 ClipSync UI 复制出去的内容：文件路径 或 文本/链接内容
 const copiedFilePaths = new Map<string, number>()
 export const copiedTexts = new Map<string, number>()
 export const copiedItems = new Map<string, { type: string; content: string; timestamp: number }>()
-const COPIED_CONTENT_TTL = 15000
+// 图片回写去重：key 是 data URL 的哈希（与 useClipboard 的 lastImageHash 同族）。
+// 图片不能像文本那样按内容精确比对 —— 写回剪贴板的字节与 monitor 读回后重新编码的
+// data URL 未必逐字节相等，但同一族哈希在稳定编码路径下一致，足以拦住自身回写。
+const copiedImageHashes = new Map<string, number>()
+const COPIED_CONTENT_TTL_BASE = 15000
+// 去重窗口必须至少覆盖一次兜底轮询：syncInterval（B8）可以被调到 5/15 分钟，
+// 若窗口仍固定 15s，下一次轮询落在窗口外就会把「刚从 ClipSync 复制出去的内容」
+// 当成外部新内容重新上传一条。
+function copiedContentTtl(): number {
+  const interval = pollIntervalMs.value
+  if (!Number.isFinite(interval) || interval <= 0) return COPIED_CONTENT_TTL_BASE
+  return Math.max(COPIED_CONTENT_TTL_BASE, interval + 5000)
+}
 
 export function normalizePath(p: string): string {
   return p.toLowerCase().replace(/\\/g, '/')
@@ -26,15 +38,32 @@ export function skipNextPolls(ms = 6000) {
 
 export function cleanupCopiedContent() {
   const now = Date.now()
+  const ttl = copiedContentTtl()
   for (const [k, t] of copiedFilePaths) {
-    if (now - t > COPIED_CONTENT_TTL) copiedFilePaths.delete(k)
+    if (now - t > ttl) copiedFilePaths.delete(k)
   }
   for (const [k, t] of copiedTexts) {
-    if (now - t > COPIED_CONTENT_TTL) copiedTexts.delete(k)
+    if (now - t > ttl) copiedTexts.delete(k)
   }
   for (const [k, t] of copiedItems) {
-    if (now - t.timestamp > COPIED_CONTENT_TTL) copiedItems.delete(k)
+    if (now - t.timestamp > ttl) copiedItems.delete(k)
   }
+  for (const [k, t] of copiedImageHashes) {
+    if (now - t > ttl) copiedImageHashes.delete(k)
+  }
+}
+
+/**
+ * 登记一次图片回写：传入 data URL 的哈希（simpleHash，与 lastImageHash 同族）。
+ * copyItem 写回图片后会同时登记「写入内容」与「读回内容」两把哈希 —— 后者才是
+ * 兜底轮询真正会看到的值，两把都登记才能真正拦住自身回写被重新上传。
+ */
+export function markImageCopiedFromClipSync(...hashes: (string | undefined | null)[]) {
+  const now = Date.now()
+  for (const h of hashes) {
+    if (h) copiedImageHashes.set(h, now)
+  }
+  cleanupCopiedContent()
 }
 
 // 复制时记录该条目对应的真实剪贴板内容，用于 monitor 去重
@@ -83,6 +112,13 @@ export function isClipboardChangeFromInternalCopy(payload: any, contentType?: st
           /* ignore */
         }
       }
+    }
+  }
+  if (contentType === 'image') {
+    const hash = payload?.hash as string | undefined
+    if (hash ? copiedImageHashes.has(hash) : false) {
+      logger.debug('[Clipboard] skip image upload: hash matches internal copy')
+      return true
     }
   }
   if (!contentType) {

@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick, h, Teleport } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, Teleport } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useConfigStore } from '@/stores/configStore'
 import { usePrivacy } from '@/composables/usePrivacy'
-import { Star, Search, Copy, Image as ImageIcon, LayoutGrid, List, ExternalLink, FileText, Folder, FolderPlus, FolderInput, Plus, X, Check, CheckSquare, Square, ArrowUpDown, Tag, ClipboardList, ChevronRight, Lock, Bookmark, Archive, Trash2, Palette, Edit } from 'lucide-vue-next'
+import { Star, Search, Copy, Image as ImageIcon, LayoutGrid, List, ExternalLink, FileText, Folder, FolderPlus, FolderInput, Plus, X, Check, CheckSquare, Square, ArrowUpDown, Tag, ClipboardList, ChevronRight, Lock, Bookmark, Archive, Trash2, Palette, Edit, AlertTriangle, RefreshCw } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
@@ -245,9 +245,11 @@ async function onCopyItem(item: ClipItem) {
     return
   }
 
-  await clip.copyItem(item)
-  privacy.scheduleClipboardClear()
-  toast.show(t('copied'), 'success')
+  const ok = await clip.copyItem(item)
+  // 传入条目：敏感条目无条件清空，普通条目受"复制后自动清空"开关控制
+  if (ok) privacy.scheduleClipboardClear(item)
+  // 必须按 copyItem 的真实结果提示：之前无条件弹"已复制"，跨设备文件复制失败时是在说谎
+  toast.show(ok ? t('copied') : clip.lastCopyError.value || t('copy_failed'), ok ? 'success' : 'error')
 }
 
 // === 统一保护级别对话框 ===
@@ -330,8 +332,57 @@ onMounted(() => {
   document.addEventListener('click', handleClickOutside)
   collections.loadCollections()
   loadTags()
-  clip.loadClipboardItems({ favorite: true })
+  reloadFavorites()
 })
+
+// === 收藏分页（B10 / 决策 D7）===
+// 之前 favorites=true 一次性拉 limit=200，超过 200 条收藏后面的永远取不到。
+// 改为按 pageSize 分页 + 滚动到底自动加载（不做虚拟滚动）。
+const FAV_PAGE_SIZE = 50
+const favPage = ref(1)
+const favLoadingMore = ref(false)
+const favHasMore = ref(true)
+// 服务端收藏总数（分页加载后本地只持有已加载页，徽标不能退化为"已加载条数"）
+const favTotal = ref(0)
+
+async function reloadFavorites() {
+  favPage.value = 1
+  favHasMore.value = true
+  const ok = await clip.loadClipboardItems({ favorite: true, page: 1, limit: FAV_PAGE_SIZE })
+  if (!ok) return
+  favTotal.value = clip.totalItems.value
+  // 第一页就装满了全部收藏 → 没有更多（否则会多打一次必然为空的第 2 页请求）
+  if (favTotal.value <= clip.items.value.length) favHasMore.value = false
+}
+
+async function loadMoreFavorites() {
+  if (favLoadingMore.value || !favHasMore.value) return
+  const next = favPage.value + 1
+  const before = clip.items.value.length
+  favLoadingMore.value = true
+  const ok = await clip.loadClipboardItems({
+    favorite: true,
+    page: next,
+    append: true,
+    limit: FAV_PAGE_SIZE,
+  })
+  favLoadingMore.value = false
+  if (!ok) return // 失败不推进页码，重试拿到的还是同一页
+  const added = clip.items.value.length - before
+  // 本页不满 或 已加载条数达到服务端总数 → 后面没有了
+  if (added < FAV_PAGE_SIZE || (favTotal.value > 0 && clip.items.value.length >= favTotal.value)) {
+    favHasMore.value = false
+  }
+  favPage.value = next
+}
+
+// 滚动到底自动加载：滚到底部前一屏（160px）就预取，用户几乎感知不到等待
+const favContentRef = ref<HTMLElement | null>(null)
+const favSentinelRef = ref<HTMLElement | null>(null)
+let favObserver: IntersectionObserver | null = null
+
+// 与"确实没有收藏"区分开：失败时渲染错误态 + 重试，而不是空态
+const loadError = computed(() => clip.loadError.value)
 
 // Auto-show new collection input when navigated from "no collections" dialog
 watch(
@@ -451,7 +502,10 @@ const groupLabels: Record<string, string> = {
 }
 const groupOrder = ['text', 'code', 'link', 'image', 'file']
 const sortedGroupKeys = computed(() => groupOrder.filter((k) => groupedItems.value[k]?.length))
-const favoriteCount = computed(() => clip.items.value.filter((i) => (i as any).isFavorite).length)
+// 分页加载后本地只持有已加载页，徽标必须用服务端总数，否则会显示成"50"
+const favoriteCount = computed(() =>
+  favTotal.value > 0 ? favTotal.value : clip.items.value.filter((i) => (i as any).isFavorite).length,
+)
 const selectedCount = computed(() => selectedIds.value.size)
 
 // --- Helpers ---
@@ -539,8 +593,8 @@ function hasLocalPath(item: ClipItem): boolean {
   }
 }
 async function copyItem(item: ClipItem) {
-  await clip.copyItem(item)
-  toast.show(t('copied'), 'success')
+  const ok = await clip.copyItem(item)
+  toast.show(ok ? t('copied') : clip.lastCopyError.value || t('copy_failed'), ok ? 'success' : 'error')
 }
 async function handleUnfavorite(item: ClipItem) {
   // 如果当前在收藏夹视图中，先从收藏夹移除并实时更新计数
@@ -934,6 +988,25 @@ onMounted(() => {
   collections.loadCollections().catch((e: any) => {
     toast.show(e.message || t('fav_load_fail'), 'error')
   })
+  // 收藏分页：滚到底自动加载下一页（B10）
+  nextTick(() => {
+    const root = favContentRef.value
+    const target = favSentinelRef.value
+    if (!root || !target || typeof IntersectionObserver === 'undefined') return
+    favObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((en) => en.isIntersecting)) loadMoreFavorites()
+      },
+      { root, rootMargin: '160px' },
+    )
+    favObserver.observe(target)
+  })
+})
+
+onUnmounted(() => {
+  favObserver?.disconnect()
+  favObserver = null
+  document.removeEventListener('mousedown', handleClickOutside)
 })
 
 function cancelEditTags() {
@@ -943,6 +1016,15 @@ function cancelEditTags() {
 </script>
 
 <style src="./favorites-view.css" scoped></style>
+
+<style scoped>
+/* 收藏分页加载区（B10）：样式独立成块，不侵入共有的 favorites-view.css */
+.fav-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0 24px;
+}
+</style>
 
 <template>
   <div class="fav-page">
@@ -1169,7 +1251,7 @@ function cancelEditTags() {
       </div>
 
       <!-- Content -->
-      <div class="fav-content">
+      <div ref="favContentRef" class="fav-content">
         <!-- Skeleton loading -->
         <div v-if="collections.loading.value || clip.loading.value" class="fav-skeleton">
           <div v-if="viewMode === 'grid'" class="fav-skeleton-grid">
@@ -1178,6 +1260,15 @@ function cancelEditTags() {
           <div v-else class="fav-skeleton-list">
             <div v-for="i in 5" :key="i" class="fav-skeleton-row" />
           </div>
+        </div>
+        <!-- Load failed: 与真空态区分，提供重试入口 -->
+        <div v-else-if="loadError && favoriteItems.length === 0" class="fav-empty">
+          <div class="fav-empty-icon fav-empty-icon-error"><AlertTriangle :size="48" :stroke-width="1.2" /></div>
+          <h3 class="fav-empty-title">{{ t('load_failed_title') }}</h3>
+          <p class="fav-empty-desc">{{ t('load_failed_desc') }}</p>
+          <Button variant="outline" size="sm" class="fav-retry-btn" @click="reloadFavorites">
+            <RefreshCw :size="14" /> {{ t('retry_btn') }}
+          </Button>
         </div>
         <!-- Empty -->
         <div v-else-if="favoriteItems.length === 0 && !searchInput" class="fav-empty">
@@ -1720,6 +1811,15 @@ function cancelEditTags() {
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- 收藏分页哨兵（B10）：滚动进入视口自动加载下一页；
+             同时本身是个可点按钮，IntersectionObserver 不可用时仍能手动加载 -->
+        <div v-if="favHasMore && favoriteItems.length > 0" ref="favSentinelRef" class="fav-load-more">
+          <Button variant="outline" size="sm" :disabled="favLoadingMore" @click="loadMoreFavorites">
+            <span v-if="favLoadingMore">{{ t('loading_more') }}</span>
+            <span v-else>{{ t('load_more') }}</span>
+          </Button>
         </div>
       </div>
     </div>

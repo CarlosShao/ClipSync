@@ -66,8 +66,28 @@ export const totalItems = ref(0)
 // 主剪贴板视图（非归档）的总数，用于侧边栏计数稳定显示：
 // 归档视图拉取时只更新 totalItems，不覆盖 mainTotalItems，避免侧边栏「剪贴板」数字跳到归档数量。
 export const mainTotalItems = ref(0)
+// 列表加载失败状态：非空表示"请求失败"，与"服务器确实没有数据"区分开。
+// 之前失败只弹 toast、界面落空态，用户无法区分断网和真的没有记录，也没有重试入口。
+export const loadError = ref<string | null>(null)
 export const loadingMore = ref(false)
-export const hasMore = computed(() => totalItems.value > 0 && items.value.length < totalItems.value)
+// === 死设置接线（B8）===
+// 兜底轮询间隔（ms）。由 HomeView 依据 configStore.syncInterval（单位：分钟）写入：
+// 0 = 纯事件驱动，不再兜底轮询。此前该值硬编码为 10s，syncInterval 形同虚设。
+export const pollIntervalMs = ref(10_000)
+// 本地列表保留上限（条）。0 / 负数 = 不裁剪。由 HomeView 依据 configStore.maxHistory 写入。
+// 注意：上限只裁剪「本地持有」的条目，不改写 totalItems（服务端真实总数），
+// 否则侧边栏计数会随设置变化而跳动。
+export const maxHistoryCap = ref(0)
+function effectiveHistoryCap(): number {
+  return maxHistoryCap.value > 0 ? maxHistoryCap.value : Number.POSITIVE_INFINITY
+}
+// 达到本地上限后不再显示"加载更多"：否则按钮点了会 append 一页再被裁掉，
+// 表现为"点了没反应"。
+export const hasMore = computed(
+  () =>
+    totalItems.value > 0 &&
+    items.value.length < Math.min(totalItems.value, effectiveHistoryCap()),
+)
 
 // === 高级搜索筛选（device / date range）===
 // 与 activeFilter/searchQuery 同理，使用 module-level ref 让筛选面板双向绑定，

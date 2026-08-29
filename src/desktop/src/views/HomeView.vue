@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { listen } from '@tauri-apps/api/event'
 import { useConfigStore } from '@/stores/configStore'
 import { useTheme, resolvedMode } from '@/composables/useTheme'
 import { useI18n } from '@/composables/useI18n'
@@ -10,6 +11,7 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { useNotifications } from '@/composables/useNotifications'
 import { useSonner } from '@/composables/useSonner'
 import { usePrivacy } from '@/composables/usePrivacy'
+import { setKeyboardLayer, topKeyboardLayer, resetKeyboardLayers, setQuickPasteOpen } from '@/composables/useClipboardKeyboard'
 import * as tauri from '@/lib/tauri'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
@@ -55,6 +57,8 @@ const router = useRouter()
 const sidebarOpen = ref(true)
 const currentSub = ref('clipboard') // will be synced with route
 const showQuickPaste = ref(false)
+// 版本历史弹窗作用的条目 id（B9：由列表「更多 → 版本历史」写入，传给 ModalManager）
+const versionItemId = ref('')
 
 // Avatar URL from localStorage (set by profile save / login)
 const userAvatarUrl =
@@ -67,6 +71,21 @@ watch(
   (sub) => {
     if (sub) currentSub.value = sub as string
   },
+)
+
+// === 死设置接线（B8）===
+// syncInterval 的单位是「分钟」（GeneralSettings 选项：0 实时 / 5 / 15），
+// 0 = 纯事件驱动，不再兜底轮询。
+watch(
+  () => configStore.syncInterval,
+  (v) => clip.setPollInterval(Number(v) * 60_000),
+  { immediate: true },
+)
+// maxHistory：本地列表保留上限。999999 表示「无限」（Pro 专属），归一为 0 = 不裁剪。
+watch(
+  () => configStore.maxHistory,
+  (v) => clip.setMaxHistory(Number(v) >= 999999 ? 0 : Number(v)),
+  { immediate: true },
 )
 
 // Modal state
@@ -165,7 +184,69 @@ async function verifyPin() {
 }
 
 let stopPolling: (() => void) | null = null
+// ws.onMessage 返回的取消函数。useWebSocket 的 handlers 是模块级数组，组件卸载/登出时
+// 不会自动摘除 —— 不保存并调用它，重新登录会再挂一个 handler，一次推送触发 N 次刷新。
+let offWsMessage: (() => void) | null = null
 let nativeNotifPermission = false
+// 托盘菜单事件（A7 由 Rust emit，前端只 listen）：卸载时统一摘除
+let trayUnlisteners: (() => void)[] = []
+
+function detachTrayListeners() {
+  trayUnlisteners.forEach((fn) => {
+    try {
+      fn()
+    } catch {
+      /* ignore */
+    }
+  })
+  trayUnlisteners = []
+}
+
+function detachWsHandler() {
+  offWsMessage?.()
+  offWsMessage = null
+}
+
+// === 键盘层级栈登记 ===
+// Esc 由最高层消费（PIN > 预览 > ModalManager 弹窗 > AI 面板 > 快速粘贴 > 列表），
+// 列表快捷键在任意弹层打开时被冻结（见 useClipboardKeyboard）。
+watch(
+  [showPinDialog, previewItem, showModalType, showForgotPwd, showSettingsDialog, aiSidebarOpen, showQuickPaste],
+  () => {
+    setKeyboardLayer('pin', showPinDialog.value)
+    setKeyboardLayer('preview', !!previewItem.value)
+    setKeyboardLayer(
+      'modal',
+      !!(showModalType.value || showForgotPwd.value || showSettingsDialog.value),
+    )
+    setKeyboardLayer('ai', aiSidebarOpen.value)
+    // 快速粘贴面板是全局单例：HomeView 的 showQuickPaste 是唯一真相源
+    setQuickPasteOpen(showQuickPaste.value)
+  },
+  { immediate: true },
+)
+
+/**
+ * 真实更新检查（B10：托盘「检查更新」菜单入口）。
+ * 走 A7 的 check_for_updates 命令：未配置 pubkey 时 Rust 会 reject，
+ * 此时必须给出明确失败提示，绝不能谎报"已是最新"。
+ */
+async function runUpdateCheck() {
+  try {
+    const res = await tauri.checkForUpdates()
+    if (res?.hasUpdate) toast.show(t('upd_available', { v: res.version || '' }), 'success')
+    else toast.show(t('upd_uptodate'), 'info')
+  } catch (e: any) {
+    console.warn('[Home] check for updates failed:', e?.message || e)
+    toast.show(t('upd_check_failed'), 'error')
+  }
+}
+
+/** 列表「更多 → 版本历史」：记录条目 id 并打开版本历史弹窗（B9 / 决策 D4） */
+function onVersionHistory(item: any) {
+  versionItemId.value = item?.id || ''
+  showModalType.value = 'versions'
+}
 
 /** Send a native OS notification (system tray balloon). Silently skips if permission denied. */
 function notifyNative(title: string, body: string) {
@@ -198,7 +279,7 @@ onMounted(async () => {
   notif.loadHistory()
   // WebSocket 推送（设备注册后后端定向广播）→ 刷新列表 + 弹系统通知；通知推送 → 实时插入收件箱
   // 事件名与后端广播契约对齐：clipboard.js 广播 new_clipboard / clipboard_updated / clipboard_favorite / clipboard_deleted
-  ws.onMessage((data) => {
+  offWsMessage = ws.onMessage((data) => {
     if (data?.type === 'new_clipboard') {
       clip.refresh()
       perfFirstDataLoad()
@@ -275,6 +356,25 @@ onMounted(async () => {
     console.warn('[Home] shortcut restore failed:', e)
   }
 
+  // === 托盘菜单事件（B10）===
+  // Rust 侧（A7）emit tray://open-settings / tray://check-updates。
+  // 若 A 流尚未 emit，listen 只是静默挂起一个永不触发的监听器，不会报错。
+  try {
+    trayUnlisteners.push(
+      await listen('tray://open-settings', () => {
+        settingsInitialCategory.value = ''
+        showSettingsDialog.value = true
+      }),
+    )
+  } catch (e) {
+    console.warn('[Home] listen tray://open-settings failed:', e)
+  }
+  try {
+    trayUnlisteners.push(await listen('tray://check-updates', () => runUpdateCheck()))
+  } catch (e) {
+    console.warn('[Home] listen tray://check-updates failed:', e)
+  }
+
   document.addEventListener('keydown', handleGlobalKeydown)
   try {
     tauri.setTitlebarMode(resolvedMode.value === 'dark')
@@ -285,6 +385,9 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (stopPolling) stopPolling()
+  detachWsHandler()
+  detachTrayListeners()
+  resetKeyboardLayers()
   delete (window as any).__toggleQuickPaste
   delete (window as any).__toggleWindow
   delete (window as any).__toggleTheme
@@ -293,22 +396,36 @@ onUnmounted(() => {
 
 function handleGlobalKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    if (showQuickPaste.value) {
-      showQuickPaste.value = false
+    // 按层级栈由高到低逐层消费：PIN 弹窗 > 预览弹窗 > ModalManager 弹窗 > AI 面板 > 快速粘贴。
+    // 之前先从 quickPaste 开始判断，导致 PIN/预览弹窗开着时按 Esc 反而关掉了底层的面板。
+    const layer = topKeyboardLayer()
+    if (layer === 'pin') {
+      closePinDialog()
       return
     }
-    if (showModalType.value) {
+    if (layer === 'preview') {
+      closePreview()
+      return
+    }
+    if (layer === 'modal') {
       showModalType.value = ''
       return
     }
-    if (aiSidebarOpen.value && !showSettingsDialog.value) {
+    if (layer === 'ai' && !showSettingsDialog.value) {
       aiSidebarOpen.value = false
       return
     }
+    if (layer === 'quickPaste') {
+      showQuickPaste.value = false
+      return
+    }
+    return
   }
+  // Ctrl+K 全局唯一入口（ClipboardView 侧已移除重复注册链，否则两条通道互相抵消）
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
     showQuickPaste.value = !showQuickPaste.value
+    return
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'j') {
     e.preventDefault()
@@ -385,6 +502,8 @@ function showConfirm(msg: string, cb: () => void) {
 }
 function handleLogout() {
   notif.reset()
+  // 先摘掉 WS handler 再断开：否则重新登录后新旧 handler 叠加，一条推送触发多次刷新
+  detachWsHandler()
   configStore.logout()
   ws.disconnect()
   router.replace('/auth')
@@ -429,6 +548,7 @@ function confirmAction() {
         @show-pin-dialog="onShowPinDialog"
         @show-pin-setup="onShowPinSetup"
         @toggle-sensitive="onToggleSensitive"
+        @version-history="onVersionHistory"
       />
       <FavoritesView
         v-else-if="currentSub === 'favorites'"
@@ -463,6 +583,7 @@ function confirmAction() {
     :preview-item="previewItem"
     :preview-type="previewType"
     :confirm-message="confirmMessage"
+    :version-item-id="versionItemId"
     @close-modal="closeModal"
     @close-forgot-pwd="showForgotPwd = false"
     @close-preview="closePreview"

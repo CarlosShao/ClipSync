@@ -50,8 +50,11 @@ export function useClipboardActions(options: ClipboardActionOptions) {
       return false
     }
     const ok = await clip.copyItem(item)
-    toast.show(ok ? t('copied') : t('copy_failed'), ok ? 'success' : 'error')
-    privacy.scheduleClipboardClear()
+    // copyItem 会给出具体失败原因（如跨设备文件未上传字节），优先展示它，
+    // 否则才退回笼统的"复制失败"
+    toast.show(ok ? t('copied') : clip.lastCopyError.value || t('copy_failed'), ok ? 'success' : 'error')
+    // 传入条目：敏感条目无条件清空（隐私保护），普通条目受"复制后自动清空"开关控制
+    privacy.scheduleClipboardClear(item)
     return ok
   }
 

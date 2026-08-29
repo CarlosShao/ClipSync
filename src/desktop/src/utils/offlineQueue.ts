@@ -111,7 +111,21 @@ export async function flushQueue(): Promise<number> {
           if (action.type === 'create') {
             res = await api('POST', '/api/clipboard', action.payload)
           } else if (action.type === 'delete') {
-            res = await api('DELETE', `/api/clipboard/${action.payload.id}`)
+            // 入队结构与 flush 请求必须对齐：
+            //   - 批量删除入队的是 { ids: string[] } → 走 DELETE /api/clipboard {ids}
+            //   - 单条删除入队的是 { id } → 走 DELETE /api/clipboard/:id
+            // 之前一律取 payload.id，批量删除就打成 DELETE /api/clipboard/undefined。
+            const ids: unknown = action.payload?.ids
+            if (Array.isArray(ids) && ids.length > 0) {
+              res = await api('DELETE', '/api/clipboard', { ids })
+            } else if (action.payload?.id) {
+              res = await api('DELETE', `/api/clipboard/${action.payload.id}`)
+            } else {
+              // 结构既无 ids 也无 id：无意义的条目，标记已同步以免永久卡住队列
+              action.synced = true
+              synced++
+              continue
+            }
           }
           if (res?.ok) {
             action.synced = true

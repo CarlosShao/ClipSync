@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useDevice } from '@/composables/useDevice'
 import { useSonner } from '@/composables/useSonner'
-import { Monitor, Smartphone, Globe, Trash2, QrCode, Plus } from 'lucide-vue-next'
+import { Monitor, Smartphone, Globe, Trash2, QrCode, Plus, AlertTriangle, RefreshCw } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 
 const { t } = useI18n()
@@ -12,6 +12,11 @@ const toast = useSonner()
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
 const deviceList = computed(() => device.devices.value)
 const isLoading = computed(() => device.loading.value)
+const loadError = computed(() => device.error.value)
+
+function retryLoad() {
+  device.loadDevices()
+}
 
 function getDeviceIcon(type: string) {
   switch (type) {
@@ -91,7 +96,17 @@ async function handleDelete(id: string, name: string) {
         </div>
       </div>
     </div>
-    <div v-if="deviceList.length === 0 && !isLoading" class="empty-state">
+    <!-- 加载失败：与"确实没有设备"区分开，并提供重试入口 -->
+    <div v-if="loadError" class="empty-state">
+      <div class="empty-icon error-icon"><AlertTriangle :size="32" /></div>
+      <div class="empty-title">{{ t('load_failed_title') }}</div>
+      <div class="empty-desc">{{ t('load_failed_desc') }}</div>
+      <Button variant="outline" size="sm" class="dev-retry-btn" :disabled="isLoading" @click="retryLoad">
+        <RefreshCw :size="14" />
+        <span>{{ t('retry_btn') }}</span>
+      </Button>
+    </div>
+    <div v-else-if="deviceList.length === 0 && !isLoading" class="empty-state">
       <div class="empty-icon"><Smartphone :size="32" /></div>
       <div class="empty-title">{{ t('dev_empty') }}</div>
       <div class="empty-desc">{{ t('dev_empty_hint') }}</div>
@@ -219,6 +234,13 @@ async function handleDelete(id: string, name: string) {
 .empty-desc {
   font-size: 13px;
   color: var(--text-secondary);
+}
+.error-icon {
+  color: var(--danger) !important;
+}
+.dev-retry-btn {
+  margin-top: 12px;
+  gap: 6px !important;
 }
 
 /* Skeleton Loading */

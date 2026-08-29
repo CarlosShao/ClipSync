@@ -11,6 +11,7 @@ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { runOcrForClip } from '../utils/aiOcr.js';
 import { hashImageStored } from '../utils/imageHash.js';
 import { runWorkflowRulesForItem } from '../services/workflowEngine.js';
+import { createVersion } from '../utils/versionManager.js';
 
 const router = Router();
 
@@ -881,6 +882,34 @@ router.put('/:id', apiLimiter, async (req, res) => {
 
     if (setClauses.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    // 版本历史自动快照（B9 / 决策 D4）：版本 API 此前只有读写端、**无任何写入方**，
+    // file_versions 表恒为空 —— 只接线入口会得到"点开恒为暂无版本历史"的假入口。
+    // 在内容真正被覆盖前落一份旧内容快照；失败静默（版本是附属能力，不能拖垮内容更新）。
+    if (content !== undefined) {
+      try {
+        const before = await pool.query(
+          `SELECT content_encrypted, content_preview, content_size, metadata, source_device_id
+           FROM clipboard_items WHERE id = $1 AND user_id = $2`,
+          [id, req.userId]
+        );
+        const prev = before.rows[0];
+        if (prev && prev.content_encrypted != null) {
+          await createVersion({
+            clipboardItemId: id,
+            userId: req.userId,
+            contentEncrypted: prev.content_encrypted,
+            contentPreview: prev.content_preview || '',
+            contentSize: prev.content_size || 0,
+            metadata: prev.metadata || {},
+            sourceDeviceId: prev.source_device_id || undefined,
+            changeDescription: 'Auto snapshot before content update',
+          });
+        }
+      } catch (versionErr) {
+        logger.error('[Clipboard] auto version snapshot failed (non-fatal):', { error: versionErr.message });
+      }
     }
 
     const result = await pool.query(

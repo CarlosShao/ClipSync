@@ -266,7 +266,8 @@ function truncate(str: string, max: number): string {
         <div class="qp-ft">
           <span>{{ filteredItems.length }} {{ t('items_c') }}</span>
           <span><kbd>&uarr;&darr;</kbd> {{ t('qp_navigate') }}</span>
-          <span><kbd>&crarr;</kbd> {{ t('qp_paste') }}</span>
+          <!-- 文案必须与实际行为一致（决策 D2：本期不做自动粘贴，回车只写入剪贴板） -->
+          <span><kbd>&crarr;</kbd> {{ t('qp_copy') }}</span>
         </div>
       </div>
     </Transition>

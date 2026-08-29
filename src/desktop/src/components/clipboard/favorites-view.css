@@ -257,8 +257,8 @@
   gap: 8px;
   padding: 6px 10px;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
-  border: 1px dashed color-mix(in srgb, var(--color-primary, #6366f1) 40%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 40%, transparent);
   font-size: 13px;
   color: var(--text-secondary);
 }
@@ -558,6 +558,14 @@
   padding: 0 20px !important;
   height: 36px !important;
 }
+/* 错误态：图标不用空态的半透明，保持警示色可读 */
+.fav-empty .fav-empty-icon-error {
+  color: var(--danger);
+  opacity: 1;
+}
+.fav-retry-btn {
+  gap: 6px !important;
+}
 
 /* Skeleton loading */
 .fav-skeleton {
@@ -635,7 +643,7 @@
   background: var(--info);
 }
 .fav-group-badge[data-type='code'] .type-dot {
-  background: var(--purple, #8b5cf6);
+  background: var(--purple);
 }
 .fav-group-badge[data-type='link'] .type-dot {
   background: var(--warning);

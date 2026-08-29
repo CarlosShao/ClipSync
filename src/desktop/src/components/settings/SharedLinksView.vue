@@ -4,7 +4,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useClipboard } from '@/composables/useClipboard'
 import { getSharedLinks, createSharedLink, deleteSharedLink, type SharedLink } from '@/api/client'
-import { Link, Copy, Trash2, ChevronDown } from 'lucide-vue-next'
+import { Link, Copy, Trash2, ChevronDown, AlertTriangle, RefreshCw } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import { Textarea } from '@/components/ui/textarea'
@@ -16,6 +16,8 @@ const { copyText } = useClipboard()
 
 const links = ref<SharedLinkLike[]>([])
 const loading = ref(false)
+// 加载失败标记：与"确实没有分享链接"区分开，渲染错误态 + 重试
+const loadFailed = ref(false)
 const addOpen = ref(false)
 const content = ref('')
 const title = ref('')
@@ -28,11 +30,19 @@ type SharedLinkLike = SharedLink
 
 async function load() {
   loading.value = true
+  loadFailed.value = false
   try {
     const data = await getSharedLinks()
-    links.value = data ?? []
+    // getSharedLinks 失败返回 null：null 视为加载失败，空数组才是真的没有数据
+    if (data === null) {
+      loadFailed.value = true
+      toast.show(t('shared_links_load_err'), 'error')
+      return
+    }
+    links.value = data
   } catch (e: any) {
     console.warn('[SharedLinks] load failed', e)
+    loadFailed.value = true
     toast.show(t('shared_links_load_err'), 'error')
   } finally {
     loading.value = false
@@ -148,8 +158,20 @@ onMounted(load)
     <div v-if="loading" class="empty-state">
       <div class="empty-text">{{ t('shared_links_loading') }}</div>
     </div>
+    <div v-else-if="loadFailed" class="empty-state">
+      <div class="empty-icon error-icon"><AlertTriangle :size="32" /></div>
+      <div class="empty-text empty-title">{{ t('load_failed_title') }}</div>
+      <div class="empty-text">{{ t('load_failed_desc') }}</div>
+      <Button variant="outline" size="sm" class="links-retry-btn" :disabled="loading" @click="load">
+        <RefreshCw :size="14" />
+        <span>{{ t('retry_btn') }}</span>
+      </Button>
+    </div>
     <div v-else-if="links.length === 0" class="empty-state">
-      <div class="empty-icon">🔗</div>
+      <!-- 空态图标统一用 lucide 组件，不再用 emoji（主题/字号不受控，深浅色下易破相） -->
+      <div class="empty-icon empty-icon--svg">
+        <Link :size="32" :stroke-width="1.5" />
+      </div>
       <div class="empty-text">{{ t('shared_links_empty') }}</div>
     </div>
     <div v-else class="links-list">
@@ -278,7 +300,7 @@ onMounted(load)
   padding-left: 4px;
 }
 .pwd-error {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
   font-size: 12px;
   margin-top: 6px;
 }
@@ -362,7 +384,7 @@ onMounted(load)
   background: var(--accent-light);
 }
 .link-revoke:hover {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
   background: var(--danger-light, rgba(239, 68, 68, 0.1));
 }
 .empty-state {
@@ -373,8 +395,27 @@ onMounted(load)
   font-size: 32px;
   margin-bottom: 8px;
 }
+.empty-icon--svg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
 .empty-text {
   font-size: 13px;
   color: var(--text-secondary);
+}
+.empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.error-icon {
+  font-size: 32px;
+  color: var(--danger);
+}
+.links-retry-btn {
+  margin-top: 12px;
+  gap: 6px !important;
 }
 </style>

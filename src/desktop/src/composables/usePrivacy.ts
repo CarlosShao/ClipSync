@@ -3,6 +3,7 @@ import { useConfigStore } from '@/stores/configStore'
 
 const PIN_KEY = 'clipsync-privacy-pin'
 const PIN_TIMEOUT_KEY = 'clipsync-privacy-timeout'
+const CLEAR_CLIPBOARD_KEY = 'clipsync-privacy-clear-clipboard'
 const DEFAULT_PIN_TIMEOUT = 30000 // 30 seconds
 const CLIPBOARD_CLEAR_DELAY = 5000 // 5 seconds
 
@@ -11,8 +12,20 @@ const _pinSet = ref(false)
 const _pinVerified = ref(false)
 const _peekItemId = ref<string | null>(null)
 const _pinExpiresAt = ref<number>(0) // timestamp when PIN verification expires
+// 「复制后自动清空剪贴板」默认关闭：无条件清空会打断"复制 → 切窗 → Ctrl+V"的正常用法。
+// 敏感条目（手动锁定 / 隐私模式自动识别）不受此开关影响，始终 5 秒清空。
+const _clearClipboardAfterCopy = ref(false)
 let _peekTimer: ReturnType<typeof setTimeout> | null = null
 let _clipboardTimer: ReturnType<typeof setTimeout> | null = null
+
+function loadClearClipboardPref() {
+  try {
+    _clearClipboardAfterCopy.value = localStorage.getItem(CLEAR_CLIPBOARD_KEY) === '1'
+  } catch {
+    _clearClipboardAfterCopy.value = false
+  }
+}
+loadClearClipboardPref()
 
 export function usePrivacy() {
   const configStore = useConfigStore()
@@ -122,14 +135,29 @@ export function usePrivacy() {
     }
   }
 
-  // Clipboard auto-clear after copy
-  function scheduleClipboardClear() {
+  /**
+   * 复制后延时清空系统剪贴板。
+   * - 敏感条目（手动锁定 / 隐私模式自动识别）：无条件清空，保持隐私保护语义
+   * - 普通条目：仅在「复制后自动清空剪贴板」开启时清空（默认关闭）
+   */
+  function scheduleClipboardClear(item?: any) {
+    const sensitive = !!item && isItemSensitive(item)
+    if (!sensitive && !_clearClipboardAfterCopy.value) return
     if (_clipboardTimer) clearTimeout(_clipboardTimer)
     _clipboardTimer = setTimeout(() => {
       if (navigator.clipboard) {
         navigator.clipboard.writeText('').catch(() => {})
       }
     }, CLIPBOARD_CLEAR_DELAY)
+  }
+
+  function toggleClearClipboardAfterCopy(val?: boolean) {
+    _clearClipboardAfterCopy.value = val ?? !_clearClipboardAfterCopy.value
+    try {
+      localStorage.setItem(CLEAR_CLIPBOARD_KEY, _clearClipboardAfterCopy.value ? '1' : '0')
+    } catch {
+      /* localStorage 不可用时仅内存生效 */
+    }
   }
 
   // Detect sensitive content by regex patterns
@@ -187,6 +215,8 @@ export function usePrivacy() {
     pinVerified: computed(() => _pinVerified.value),
     peekItemId: computed(() => _peekItemId.value),
     pinRemaining: computed(() => getPinRemaining()),
+    clearClipboardAfterCopy: computed(() => _clearClipboardAfterCopy.value),
+    toggleClearClipboardAfterCopy,
     loadPin,
     setPin,
     verifyPin,

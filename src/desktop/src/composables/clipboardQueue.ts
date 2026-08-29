@@ -57,6 +57,17 @@ export function enqueueClipboardTask(task: ClipboardTask) {
   processClipboardQueue().catch((e) => console.warn('[Clipboard] processClipboardQueue error:', e))
 }
 
+/**
+ * 列表查重（对齐文本/文件路径）：图片上传前先确认本地列表里没有同一张图。
+ * 复制图片条目时会把条目内容写回剪贴板，兜底轮询随后读到它 —— 若不做列表查重，
+ * 只要写回字节与当初捕获的 data URL 有任何差异（缩放过的大图、服务端返回的原始图），
+ * 就会被当成新截图重新上传一条。
+ */
+function imageExistsInList(dataUrl: string): boolean {
+  if (!dataUrl) return false
+  return items.value.some((i) => i.type === 'image' && (i.content === dataUrl || i.preview === dataUrl))
+}
+
 async function processClipboardQueue() {
   if (isProcessingQueue) return
   isProcessingQueue = true
@@ -96,7 +107,17 @@ async function processClipboardQueue() {
         } else if (task.type === 'image') {
           const { dataUrl, hash } = task.payload as { dataUrl: string; size: number; hash?: string }
           if (dataUrl) {
-            await uploadImageToServer(dataUrl, hash)
+            const dedupHash = hash || simpleHash(dataUrl)
+            // 与文本路径对齐：上传前先确认不是自己刚写回剪贴板的内容、列表里也没有同一张图。
+            if (isClipboardChangeFromInternalCopy({ hash: dedupHash }, 'image')) {
+              logger.debug('[Clipboard] queue: skip image from internal copy')
+              continue
+            }
+            if (imageExistsInList(dataUrl)) {
+              logger.debug('[Clipboard] queue: skip image already in list')
+              continue
+            }
+            await uploadImageToServer(dataUrl, dedupHash)
           }
         }
       } catch (e) {

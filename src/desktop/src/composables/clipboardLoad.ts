@@ -11,14 +11,17 @@ import {
   currentView,
   totalItems,
   mainTotalItems,
+  loadError,
   hasMore,
   activeFilter,
   advancedFilters,
   searchQuery,
+  maxHistoryCap,
   type ClipItem,
 } from './clipboardState'
 import { getCachedContent, cacheContent } from './clipboardCache'
 import { setItemPreview, releaseRemovedObjectUrls } from './clipboardObjectUrls'
+import { resolveDeviceName } from './useDevice'
 
 // 设备列表（用于筛选下拉），懒加载 + 内存缓存，避免每次打开筛选面板都打 /api/devices
 let devicesCache: { id: string; name: string; platform?: string }[] = []
@@ -78,12 +81,29 @@ export async function syncDeletions(): Promise<{ removed: number } | null> {
   }
 }
 
+/**
+ * 按「历史保留上限」设置（configStore.maxHistory）裁剪本地列表（B8②）。
+ * 只裁本地持有的条目，不改写 totalItems —— 那是服务端真实总数，
+ * 侧边栏计数依赖它，跟着裁会随设置跳动。
+ */
+export function trimToMaxHistory() {
+  const cap = maxHistoryCap.value
+  if (!cap || cap <= 0) return
+  if (items.value.length <= cap) return
+  const kept = items.value.slice(0, cap)
+  // 先回收被裁掉条目的图片 blob URL，再替换数组
+  releaseRemovedObjectUrls(kept)
+  items.value = kept
+}
+
 export async function loadClipboardItems(opts?: {
   page?: number
   append?: boolean
   all?: boolean
   favorite?: boolean
   view?: 'all' | 'archive'
+  /** 覆盖每页条数（收藏页按 pageSize 分页，不再一次性拉 200 条） */
+  limit?: number
 }) {
   const page = opts?.page ?? 1
   const append = opts?.append ?? false
@@ -96,7 +116,7 @@ export async function loadClipboardItems(opts?: {
   if (!append) currentPage.value = page
   if (append) loadingMore.value = true
   else loading.value = true
-  const limit = loadAll ? 500 : loadFavorites ? 200 : pageSize.value
+  const limit = opts?.limit ?? (loadAll ? 500 : pageSize.value)
   const favParam = loadFavorites ? '&favorites=true' : ''
   const viewParam = view === 'archive' ? '&view=archive' : ''
   // 按当前分类筛选：后端直接过滤并返回该类型总数，避免"图片分类下显示全部总数"的 bug。
@@ -125,17 +145,20 @@ export async function loadClipboardItems(opts?: {
     if (res.ok && Array.isArray(res.data?.items)) {
       // 成功响应即推进删除感知同步点（含 append 空页分支，均为有效同步时刻）
       touchLastSyncAt()
+      loadError.value = null
       // 后端返回空数组 = 没更多数据了。用实际条目数修正 totalItems，
       // 避免 pagination.total 虚高导致 hasMore 永远为 true、加载更多按钮卡住。
       if (res.data.items.length === 0 && append) {
         console.warn(`[Clipboard] page ${page} returned 0 items, correcting totalItems from ${totalItems.value} to ${items.value.length}`)
         totalItems.value = items.value.length
-        if (view !== 'archive') mainTotalItems.value = totalItems.value
+        // 收藏分支拉的是收藏子集，绝不能拿它覆盖侧边栏的剪贴板总数
+        if (view !== 'archive' && !loadFavorites) mainTotalItems.value = totalItems.value
         return true
       }
       totalItems.value = res.data?.pagination?.total ?? res.data.items.length
-      // 仅在主视图（all）更新侧边栏计数，归档视图不覆盖主视图总数
-      if (view !== 'archive') {
+      // 仅在主视图（all）更新侧边栏计数：归档视图不覆盖主视图总数，
+      // 收藏页（favorites=true）返回的是收藏子集数量，同样不能覆盖。
+      if (view !== 'archive' && !loadFavorites) {
         mainTotalItems.value = totalItems.value
       }
       const serverIds = new Set(res.data.items.map((i: any) => i.id))
@@ -272,6 +295,8 @@ export async function loadClipboardItems(opts?: {
         releaseRemovedObjectUrls([...localWithContent, ...serverItems])
         items.value = [...localWithContent, ...serverItems]
       }
+      // 历史保留上限（B8②）：置顶项已由 resortPinned 前置，裁尾不会误删
+      trimToMaxHistory()
 
       // 队列化加载图片：每批 3 张，间隔 200ms，避免并发过高被限流。
       // 已带有预览（blob/data URL）的条目跳过，避免重复拉取并生成新 blob。
@@ -293,10 +318,14 @@ export async function loadClipboardItems(opts?: {
       } else if (res.status >= 500) {
         showToast(`服务器错误 (${res.status})`, 'error')
       }
+      // 置错误态：界面据此渲染"加载失败 + 重试"而不是空态，
+      // 否则失败与"确实没有数据"无法区分，用户也没有重试入口。
+      loadError.value = res.error || `加载失败 (${res.status || 'network'})`
       return false
     }
   } catch (e: any) {
     console.warn(`[Clipboard] loadClipboardItems error: page=${page}`, e?.message || e)
+    loadError.value = e?.message || '加载失败'
     return false
   } finally {
     if (append) loadingMore.value = false
@@ -312,18 +341,18 @@ export async function loadMore() {
   }
   const next = currentPage.value + 1
   console.log(`[Clipboard] loadMore requesting page ${next}...`)
-  // 无论成功失败都推进页码，避免卡在某一页反复重试同一个失败请求
+  // 只在成功时推进页码：失败推进会永久跳过这一页（重试拿到的是再下一页的数据，
+  // 中间那页在本次会话里再也取不回来）。
   try {
     const ok = await loadClipboardItems({ page: next, append: true })
-    currentPage.value = next
     if (!ok) {
-      console.warn(`[Clipboard] loadMore page ${next} failed, page advanced anyway to avoid stall`)
+      console.warn(`[Clipboard] loadMore page ${next} failed, keeping page at ${currentPage.value}`)
     } else {
+      currentPage.value = next
       console.log(`[Clipboard] loadMore page ${next} succeeded, items now: ${items.value.length}/${totalItems.value}`)
     }
   } catch (e) {
     console.error(`[Clipboard] loadMore page ${next} threw exception:`, e)
-    currentPage.value = next
   }
 }
 
@@ -332,11 +361,12 @@ export async function loadDevices(): Promise<{ id: string; name: string; platfor
   if (devicesCache.length > 0) return devicesCache
   try {
     const res = await api('GET', '/api/devices')
-    const list = res.data?.devices || res.data
+    const list = Array.isArray(res.data) ? res.data : res.data?.devices
     if (res.ok && Array.isArray(list)) {
+      // 设备名统一走 resolveDeviceName（与设备列表同源），避免下拉里出现裸 id
       devicesCache = list.map((d: any) => ({
         id: d.id,
-        name: d.device_name || d.deviceName || d.id,
+        name: resolveDeviceName(d),
         platform: d.platform,
       }))
     }
@@ -344,6 +374,28 @@ export async function loadDevices(): Promise<{ id: string; name: string; platfor
     console.warn('[Clipboard] loadDevices failed:', e?.message || e)
   }
   return devicesCache
+}
+
+// 本地临时 id（未拿到服务端 UUID）没有版本可言，后端会 400，直接跳过
+const LOCAL_ID_PREFIX_RE = /^(local-|text-|img-|file-|browser-)/
+
+/**
+ * 覆盖条目内容前记录一份版本快照（fire-and-forget）。
+ * 本地只有预览内容时也能记：宁可记一份截断快照，也别让版本历史永远空着。
+ */
+function snapshotVersionBeforeUpdate(itemId: string) {
+  if (LOCAL_ID_PREFIX_RE.test(itemId)) return
+  const current = items.value.find((i) => i.id === itemId)
+  const snapshot = current?.content || ''
+  void api('POST', '/api/versions', {
+    clipboardItemId: itemId,
+    contentEncrypted: snapshot,
+    contentPreview: snapshot.slice(0, 5000),
+    contentSize: snapshot.length,
+    changeDescription: 'Auto snapshot before content update',
+  }).catch((e: any) => {
+    console.warn('[Clipboard] version snapshot failed:', e?.message || e)
+  })
 }
 
 // === 条目级内容更新（标签 / 条目级密码 protection 标记 / 内容本身）===
@@ -359,6 +411,11 @@ export async function updateItemContent(
   },
 ): Promise<boolean> {
   try {
+    // 内容即将被覆盖 → 先落一个版本快照（B9 / 决策 D4）。
+    // 服务端版本 API 一直都在（GET /api/versions/:id、POST /api/versions/restore/:id），
+    // 缺的从来都是「写入方」：不写版本，版本历史入口点开必然是空的假入口。
+    // 只覆盖内容时才记版本（改标签/保护标记不产生版本）；失败静默，绝不阻塞主更新。
+    if (payload.content !== undefined) snapshotVersionBeforeUpdate(itemId)
     const res = await api('PUT', `/api/clipboard/${itemId}`, payload)
     if (!res.ok) {
       console.warn('[Clipboard] updateItemContent failed:', res.status, res.error)

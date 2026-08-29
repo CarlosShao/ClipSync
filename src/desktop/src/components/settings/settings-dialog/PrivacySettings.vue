@@ -65,11 +65,11 @@ function resetPinForm() {
 function handleSetPin() {
   pinError.value = ''
   if (!/^\d{4,6}$/.test(pinNew.value)) {
-    pinError.value = t('pin_format_error') || 'PIN 必须为4-6位数字'
+    pinError.value = t('pin_format_error')
     return
   }
   if (pinNew.value !== pinConfirm.value) {
-    pinError.value = t('pin_mismatch') || '两次输入的PIN不一致'
+    pinError.value = t('pin_mismatch')
     return
   }
   pinSetting.value = true
@@ -78,7 +78,7 @@ function handleSetPin() {
     pinSetting.value = false
     resetPinForm()
     showPinSetup.value = false
-    toast.show(t('pin_set_success') || 'PIN 已设置', 'success')
+    toast.show(t('pin_set_success'), 'success')
   }, 300)
 }
 
@@ -86,7 +86,7 @@ function handleResetPin() {
   privacy.resetPin()
   resetPinForm()
   showPinSetup.value = false
-  toast.show(t('pin_reset_success') || 'PIN 已清除', 'info')
+  toast.show(t('pin_reset_success'), 'info')
 }
 
 // ── Password change handlers ──
@@ -99,19 +99,19 @@ function resetPwdForm() {
 async function handleChangePassword() {
   pwdError.value = ''
   if (!pwdOld.value) {
-    pwdError.value = t('pwd_old_required') || '请输入当前密码'
+    pwdError.value = t('pwd_old_required')
     return
   }
   if (!pwdNew.value) {
-    pwdError.value = t('pwd_new_required') || '请输入新密码'
+    pwdError.value = t('pwd_new_required')
     return
   }
   if (pwdNew.value.length < 8) {
-    pwdError.value = t('pwd_min_length') || '新密码至少8位'
+    pwdError.value = t('pwd_min_length')
     return
   }
   if (pwdNew.value !== pwdConfirm.value) {
-    pwdError.value = t('pwd_mismatch') || '两次输入的新密码不一致'
+    pwdError.value = t('pwd_mismatch')
     return
   }
 
@@ -120,15 +120,15 @@ async function handleChangePassword() {
   pwdChanging.value = false
 
   if (result.ok) {
-    toast.show(t('pwd_changed_ok') || '密码修改成功', 'success')
+    toast.show(t('pwd_changed_ok'), 'success')
     resetPwdForm()
     showPwdChange.value = false
   } else {
     const err = result.error || ''
     if (err.includes('Current password is incorrect')) {
-      pwdError.value = t('pwd_old_incorrect') || '当前密码不正确'
+      pwdError.value = t('pwd_old_incorrect')
     } else {
-      pwdError.value = err || t('pwd_change_fail') || '密码修改失败'
+      pwdError.value = err || t('pwd_change_fail')
     }
   }
 }
@@ -186,16 +186,24 @@ async function handleChangePassword() {
       <Switch :model-value="configStore.autoBlur" @update:model-value="(v: boolean) => configStore.toggleAutoBlur(v)" />
     </div>
 
+    <!-- 复制后自动清空剪贴板（默认关闭） -->
+    <div class="sg-row">
+      <div class="sg-label">
+        <div class="sg-name">{{ t('sg_privacy_clear_clipboard') }}</div>
+        <div class="sg-hint">{{ t('sg_privacy_clear_clipboard_h') }}</div>
+      </div>
+      <Switch
+        :model-value="privacy.clearClipboardAfterCopy.value"
+        @update:model-value="(v: boolean) => privacy.toggleClearClipboardAfterCopy(v)"
+      />
+    </div>
+
     <!-- PIN Protection (expandable) -->
     <div class="sg-row" style="cursor: pointer" @click="showPinSetup = !showPinSetup">
       <div class="sg-label">
-        <div class="sg-name">{{ t('sg_privacy_pin') || 'PIN 保护' }}</div>
+        <div class="sg-name">{{ t('sg_privacy_pin') }}</div>
         <div class="sg-hint">
-          {{
-            pinSet
-              ? t('sg_privacy_pin_set') || 'PIN 已设置，查看/复制敏感数据需验证'
-              : t('sg_privacy_pin_unset') || '未设置，查看/复制敏感数据无需验证'
-          }}
+          {{ pinSet ? t('sg_privacy_pin_set') : t('sg_privacy_pin_unset') }}
         </div>
       </div>
       <ChevronDown :class="['sg-arrow', { 'sg-arrow--rotated': showPinSetup }]" />
@@ -205,32 +213,32 @@ async function handleChangePassword() {
     <div v-if="showPinSetup" class="pwd-change-form">
       <template v-if="!pinSet">
         <div class="pwd-field">
-          <label class="pwd-label">{{ t('pin_new') || '设置 PIN（4-6位数字）' }}</label>
+          <label class="pwd-label">{{ t('pin_new') }}</label>
           <Input
             v-model="pinNew"
             type="password"
             inputmode="numeric"
             maxlength="6"
             class="sg-input--block"
-            :placeholder="t('pin_new_ph') || '输入4-6位数字PIN'"
+            :placeholder="t('pin_new_ph')"
             @keyup.enter="handleSetPin"
           />
         </div>
         <div class="pwd-field">
-          <label class="pwd-label">{{ t('pin_confirm') || '确认 PIN' }}</label>
+          <label class="pwd-label">{{ t('pin_confirm') }}</label>
           <Input
             v-model="pinConfirm"
             type="password"
             inputmode="numeric"
             maxlength="6"
             class="sg-input--block"
-            :placeholder="t('pin_confirm_ph') || '再次输入PIN'"
+            :placeholder="t('pin_confirm_ph')"
             @keyup.enter="handleSetPin"
           />
         </div>
         <div class="pwd-actions">
           <Button class="pwd-btn" :disabled="pinSetting" @click="handleSetPin">
-            {{ pinSetting ? t('saving') || '设置中...' : t('pin_set_btn') || '设置 PIN' }}
+            {{ pinSetting ? t('saving') : t('pin_set_btn') }}
           </Button>
           <Button
             variant="outline"
@@ -249,7 +257,7 @@ async function handleChangePassword() {
 
       <template v-else>
         <div class="pwd-field">
-          <p class="pin-status-text">{{ t('sg_privacy_pin_set') || 'PIN 已设置' }}</p>
+          <p class="pin-status-text">{{ t('sg_privacy_pin_set') }}</p>
         </div>
         <div class="pwd-field">
           <label class="pwd-label">{{ t('pin_timeout_label') }}</label>
@@ -269,7 +277,7 @@ async function handleChangePassword() {
         </div>
         <div class="pwd-actions">
           <Button variant="destructive" class="pwd-btn" @click="handleResetPin">
-            {{ t('pin_reset_btn') || '清除 PIN' }}
+            {{ t('pin_reset_btn') }}
           </Button>
           <Button variant="outline" class="pwd-btn" @click="showPinSetup = false">
             {{ t('cancel_btn') }}
@@ -283,8 +291,8 @@ async function handleChangePassword() {
     <!-- Change Password (expandable) -->
     <div class="sg-row" style="cursor: pointer" @click="showPwdChange = !showPwdChange">
       <div class="sg-label">
-        <div class="sg-name">{{ t('sg_chpwd') || '修改密码' }}</div>
-        <div class="sg-hint">{{ t('sg_chpwd_h') || '输入旧密码和新密码以修改登录密码' }}</div>
+        <div class="sg-name">{{ t('sg_chpwd') }}</div>
+        <div class="sg-hint">{{ t('sg_chpwd_h') }}</div>
       </div>
       <ChevronDown :class="['sg-arrow', { 'sg-arrow--rotated': showPwdChange }]" />
     </div>
@@ -292,37 +300,32 @@ async function handleChangePassword() {
     <!-- Password change form (inline expand) -->
     <div v-if="showPwdChange" class="pwd-change-form">
       <div class="pwd-field">
-        <label class="pwd-label">{{ t('pwd_old') || '当前密码' }}</label>
-        <Input
-          v-model="pwdOld"
-          type="password"
-          class="sg-input--block"
-          :placeholder="t('pwd_old_ph') || '输入当前密码'"
-        />
+        <label class="pwd-label">{{ t('pwd_old') }}</label>
+        <Input v-model="pwdOld" type="password" class="sg-input--block" :placeholder="t('pwd_old_ph')" />
       </div>
       <div class="pwd-field">
-        <label class="pwd-label">{{ t('pwd_new') || '新密码' }}</label>
+        <label class="pwd-label">{{ t('pwd_new') }}</label>
         <Input
           v-model="pwdNew"
           type="password"
           class="sg-input--block"
-          :placeholder="t('pwd_new_ph') || '至少8位字符'"
+          :placeholder="t('pwd_new_ph')"
           minlength="8"
         />
       </div>
       <div class="pwd-field">
-        <label class="pwd-label">{{ t('pwd_confirm') || '确认新密码' }}</label>
+        <label class="pwd-label">{{ t('pwd_confirm') }}</label>
         <Input
           v-model="pwdConfirm"
           type="password"
           class="sg-input--block"
-          :placeholder="t('pwd_confirm_ph') || '再次输入新密码'"
+          :placeholder="t('pwd_confirm_ph')"
           @keyup.enter="handleChangePassword"
         />
       </div>
       <div class="pwd-actions">
         <Button class="pwd-btn" :disabled="pwdChanging" @click="handleChangePassword">
-          {{ pwdChanging ? t('saving') || '修改中...' : t('sg_chpwd_btn') || '确认修改' }}
+          {{ pwdChanging ? t('saving') : t('sg_chpwd_btn') }}
         </Button>
         <Button
           variant="outline"
@@ -422,7 +425,7 @@ async function handleChangePassword() {
   padding: 10px 28px;
 }
 .pwd-error {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
   font-size: 12px;
   margin-top: 6px;
 }

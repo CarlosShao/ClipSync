@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
@@ -9,13 +9,13 @@ import { useFavoritePopover } from '@/composables/useFavoritePopover'
 import { useClipItemDisplay } from '@/composables/useClipItemDisplay'
 import { useClipboardActions } from '@/composables/useClipboardActions'
 import { useClipboardOperations } from '@/composables/useClipboardOperations'
-import { useClipboardKeyboard } from '@/composables/useClipboardKeyboard'
+import { useClipboardKeyboard, setKeyboardLayer } from '@/composables/useClipboardKeyboard'
 import { useContextMenu } from '@/composables/useContextMenu'
 import { useFileUpload } from '@/composables/useFileUpload'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useProtectionDialog } from '@/composables/useProtectionDialog'
 import { useItemPassword } from '@/composables/useItemPassword'
-import { Copy, Upload, ClipboardList } from 'lucide-vue-next'
+import { Copy, Upload, ClipboardList, AlertTriangle, RefreshCw } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 import { Table, TableHeader, TableBody, TableRow, TableHead } from '@/components/ui/table'
@@ -52,7 +52,6 @@ const itemPw = useItemPassword()
 const fav = useFavoritePopover()
 const display = useClipItemDisplay()
 
-const showQuickPaste = ref(false)
 const {
   confirmOpen,
   confirmTitle,
@@ -77,12 +76,10 @@ const {
 const actions = useClipboardActions({ emit, openProtectionDialog })
 const ops = useClipboardOperations(isArchive, emit, showConfirm)
 const keyboard = useClipboardKeyboard({
-  showQuickPaste,
   confirmOpen,
-  toggleQuickPaste: () => {
-    showQuickPaste.value = !showQuickPaste.value
-    emit('toggle-quick-paste')
-  },
+  // 只负责通知 HomeView：面板开关的唯一真相源在 HomeView（setQuickPasteOpen），
+  // 这里不再自己 toggle 一份本地 ref，否则一次按键会被 toggle 两次而互相抵消。
+  toggleQuickPaste: () => emit('toggle-quick-paste'),
   copySelected: actions.copyWithPinCheck,
   deleteSelected: ops.handleSingleDelete,
 })
@@ -118,8 +115,6 @@ function toggleFilterPanel() {
 const suggestOpen = ref(false)
 const suggestItems = ref<{ id: string; content: string; preview?: string }[]>([])
 const suggestCollectionNames = ref<string[]>([])
-// 语义相似度检测候选（#236）
-const suggestCandidates = ref<import('@/api/ai').SimilarityCandidate[]>([])
 // 弹窗 ref（用于标记某条已应用）
 const popupRef = ref<InstanceType<typeof import('@/components/ai/AiSuggestPopup.vue').default> | null>(null)
 
@@ -145,12 +140,6 @@ function openAiSuggest() {
   } catch {
     suggestCollectionNames.value = []
   }
-  // 语义重复检测候选（#236）：最近 10 条非当前批文本条目
-  const batchIds = new Set(suggestItems.value.map((x) => x.id))
-  suggestCandidates.value = clip.items.value
-    .filter((i) => i.type === 'text' && !batchIds.has(i.id) && (i.content || i.preview || '').trim())
-    .slice(0, 10)
-    .map((i) => ({ id: i.id, text: (i.content || i.preview || '').slice(0, 200) }))
   suggestOpen.value = true
 }
 
@@ -213,6 +202,8 @@ const isLoading = computed(() => clip.loading.value)
 const totalItems = computed(() => clip.totalItems.value)
 const hasMore = computed(() => clip.hasMore.value)
 const loadingMore = computed(() => clip.loadingMore.value)
+// 加载失败：与"确实没有数据"区分开，渲染错误态 + 重试按钮
+const loadError = computed(() => clip.loadError.value)
 const remaining = computed(() => Math.max(0, totalItems.value - filteredItems.value.length))
 const allSelected = computed(() => clip.allSelected.value)
 
@@ -226,17 +217,38 @@ function onClipboardScroll(e: Event) {
   if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) clip.loadMore()
 }
 
+function reload() {
+  clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
+}
+
 onMounted(() => {
   fav.loadCollections()
-  clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
+  reload()
 })
 
 watch(
   () => props.mode,
   () => {
-    clip.loadClipboardItems({ view: isArchive.value ? 'archive' : 'all' })
+    reload()
   },
 )
+
+// === 键盘层级栈：把本组件的弹层登记到全局 'modal' 层 ===
+// 登记后：① 列表快捷键（↑↓/Enter/Delete）在弹层打开时被冻结；
+// ② HomeView 的 Esc 仲裁知道有弹层在，不会越过它去关底层。
+watch(
+  [confirmOpen, protectionDialogOpen, suggestOpen],
+  () => {
+    const open = !!(confirmOpen.value || protectionDialogOpen.value || suggestOpen.value)
+    setKeyboardLayer('modal', open)
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => {
+  // 卸载时必须撤下，否则残留的 true 会永久冻结列表快捷键
+  setKeyboardLayer('modal', false)
+})
 </script>
 
 <template>
@@ -310,6 +322,20 @@ watch(
         </div>
       </div>
 
+      <!-- 加载失败：必须可重试，且不能伪装成"暂无内容" -->
+      <div v-else-if="loadError && filteredItems.length === 0" class="error-state">
+        <div class="error-icon-wrap">
+          <AlertTriangle :size="48" style="color: var(--danger)" />
+        </div>
+        <h3 class="error-title">{{ t('load_failed_title') }}</h3>
+        <p class="error-desc">{{ t('load_failed_desc') }}</p>
+        <p v-if="loadError" class="error-detail">{{ loadError }}</p>
+        <Button variant="outline" size="sm" class="error-retry-btn" :disabled="isLoading" @click="reload">
+          <RefreshCw :size="14" class="error-retry-icon" />
+          <span>{{ t('retry_btn') }}</span>
+        </Button>
+      </div>
+
       <div v-else-if="filteredItems.length > 0" class="table-wrapper">
         <Table role="table" :aria-label="t('nav_clipboard')">
           <TableHeader>
@@ -349,6 +375,12 @@ watch(
               @reveal="
                 (item) => {
                   ops.revealFileFolder(item)
+                  ctx.closeMore()
+                }
+              "
+              @version-history="
+                (item) => {
+                  emit('version-history', item)
                   ctx.closeMore()
                 }
               "
@@ -437,7 +469,6 @@ watch(
       :open="suggestOpen"
       :items="suggestItems"
       :collections="suggestCollectionNames"
-      :candidates="suggestCandidates"
       @close="onSuggestClose"
       @apply-favorite="onSuggestFavorite"
       @apply-archive="onSuggestArchive"
@@ -575,6 +606,51 @@ watch(
   color: var(--accent);
   margin-top: 16px;
   font-weight: 500;
+}
+
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
+}
+.error-icon-wrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--danger-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.error-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.error-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.error-detail {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 6px;
+  max-width: 460px;
+  word-break: break-all;
+}
+.error-retry-btn {
+  margin-top: 18px;
+  gap: 6px !important;
+  padding-left: 18px !important;
+  padding-right: 18px !important;
+}
+.error-retry-icon {
+  flex-shrink: 0;
 }
 
 .skeleton-wrap {

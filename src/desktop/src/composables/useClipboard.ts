@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import * as tauri from '@/lib/tauri'
 import { api, apiForm } from '@/api/client'
@@ -19,6 +19,7 @@ import {
   loading,
   totalItems,
   mainTotalItems,
+  loadError,
   hasMore,
   loadingMore,
   currentPage,
@@ -35,6 +36,8 @@ import {
   persistFilter,
   recentUploadHashes,
   HASH_TTL,
+  pollIntervalMs,
+  maxHistoryCap,
   type ClipItem,
   type ClipboardFilter,
 } from './clipboardState'
@@ -42,15 +45,24 @@ import { cacheContent, clearContentCache } from './clipboardCache'
 import {
   skipNextPolls,
   markContentCopiedFromClipSync,
+  markImageCopiedFromClipSync,
   isClipboardChangeFromInternalCopy,
   copiedTexts,
   copiedItems,
   cleanupCopiedContent,
 } from './clipboardDedup'
 import { releaseRemovedObjectUrls, releaseAllObjectUrls } from './clipboardObjectUrls'
-import { simpleHash, apiOrEnqueue, resizeImageIfNeeded, ensureDeviceId } from './clipboardUpload'
+import { simpleHash, apiOrEnqueue, prepareImageForUpload, dataUrlMime, ensureDeviceId } from './clipboardUpload'
 import { enqueueClipboardTask } from './clipboardQueue'
-import { loadClipboardItems, loadMore, loadDevices, updateItemContent, clearAdvancedFilters, syncDeletions } from './clipboardLoad'
+import {
+  loadClipboardItems,
+  loadMore,
+  loadDevices,
+  updateItemContent,
+  clearAdvancedFilters,
+  syncDeletions,
+  trimToMaxHistory,
+} from './clipboardLoad'
 
 const { t } = useI18n()
 
@@ -59,8 +71,31 @@ export type { ClipItem, ClipboardFilter }
 // 图片按 PNG content hash 去重（不是 Rust raw-DIB hash），避免某些剪贴板源
 // （WeChat 截图、部分 GPU 驱动）的 raw bytes 碰撞导致后续截图被静默丢弃。
 let lastImageSize = 0
+// 主去重键：JS 族哈希 simpleHash(dataUrl)，事件路径与兜底轮询都用这一把。
 let lastImageHash = ''
+// 副去重键：Rust 族哈希（checkClipboardImageInfo 返回的 fnv64，哈希对象不同）。
+// 两把键必须同时登记 —— 只登记其中一把，另一条路径必然把自身回写当成新图。
+let lastImageRustHash = ''
 let lastBrowserText = ''
+
+// 兜底轮询间隔由 pollIntervalMs 提供（B8①：消费 configStore.syncInterval）。
+// 默认 10s，与改造前行为一致；设为 0 表示纯事件驱动、不再兜底轮询。
+const DEFAULT_POLL_INTERVAL = 10_000
+// 复制后的 skip 窗口必须 >= 兜底轮询间隔 + 余量，否则复制后下一次兜底轮询仍会落在
+// 窗口外，把刚刚写回剪贴板的内容当成外部新内容重新上传。
+// 这里刻意用固定值而不跟随 pollIntervalMs：窗口要挡的是 Rust monitor 的事件路径
+// （700ms 级），若跟着 15 分钟轮询放大，复制一次要冻结 15 分钟采集。
+const COPY_SKIP_MS = DEFAULT_POLL_INTERVAL + 3_000
+
+/** 最近一次 copyItem 的失败原因（供上层替换掉笼统的"复制失败"提示） */
+export const lastCopyError = ref<string | null>(null)
+
+// 本地乐观条目的 id 前缀（服务端还没有这些条目，任何带 id 的请求都会 404/400）。
+// 清单必须覆盖所有本地前缀：漏掉 file-/browser- 会打出 DELETE /api/clipboard/file-xxx。
+const LOCAL_ID_PREFIX_RE = /^(local-|text-|img-|file-|browser-)/
+function isLocalItemId(id: string): boolean {
+  return LOCAL_ID_PREFIX_RE.test(id)
+}
 
 async function readAndUpload() {
   try {
@@ -97,12 +132,22 @@ async function readAndUpload() {
     // 直接拉取当前剪贴板 PNG 并用自己的 PNG content hash 去重。
     const imgInfo = await tauri.checkClipboardImageInfo().catch(() => ({ available: false, size: 0, hash: '' }))
     if (imgInfo.available) {
+      // Rust 族去重：copyItem 回写图片时登记过 fnv64，命中即说明剪贴板里仍是
+      // 我们自己写进去的那张图（字节级相同），不是用户新截的图。
+      if (imgInfo.hash && String(imgInfo.hash) === lastImageRustHash) {
+        logger.debug('[Clipboard] fallback poll: rust hash matches internal copy, skipping')
+        return
+      }
       const imgData = await tauri.getClipboardImage().catch((e: any) => {
         console.warn('[Clipboard] fallback poll getClipboardImage failed:', e)
         return ''
       })
       if (imgData) {
         const pngHash = simpleHash(imgData)
+        if (isClipboardChangeFromInternalCopy({ hash: pngHash }, 'image')) {
+          logger.debug('[Clipboard] fallback poll: image matches internal copy, skipping')
+          return
+        }
         if (pngHash !== lastImageHash) {
           lastImageSize = imgInfo.size
           lastImageHash = pngHash
@@ -146,6 +191,29 @@ async function readAndUpload() {
 export function useClipboard() {
   // === Event-driven clipboard handler (from Rust clipboard_monitor.rs) ===
   let unlistenEvent: (() => void) | null = null
+  let stopped = false
+  // 兜底轮询用「一次性 setTimeout 自递归」而非固定 setInterval：
+  // 用户改 syncInterval 时能立刻按新间隔重排，不必等到下一个周期。
+  let fallbackTimer: ReturnType<typeof setTimeout> | null = null
+  function scheduleFallback() {
+    if (fallbackTimer) clearTimeout(fallbackTimer)
+    fallbackTimer = null
+    const ms = pollIntervalMs.value
+    // 0（实时）= 纯事件驱动，不再兜底轮询
+    if (!Number.isFinite(ms) || ms <= 0) {
+      logger.debug('[Clipboard] fallback polling disabled (event-driven only)')
+      return
+    }
+    fallbackTimer = setTimeout(async () => {
+      fallbackTimer = null
+      if (stopped) return
+      try {
+        await readAndUpload()
+      } finally {
+        if (!stopped) scheduleFallback()
+      }
+    }, ms)
+  }
 
   async function handleClipboardEvent(payload: any) {
     try {
@@ -188,6 +256,10 @@ export function useClipboard() {
           // re-enqueue an already-synced image. One consistent hash across both paths is
           // what guarantees consecutive different screenshots all sync and none is re-uploaded.
           const dedupHash = simpleHash(imgData)
+          if (isClipboardChangeFromInternalCopy({ hash: dedupHash }, 'image')) {
+            logger.debug('[Clipboard] event: image matches internal copy, skipping')
+            return
+          }
           if (dedupHash !== lastImageHash) {
             lastImageSize = size
             lastImageHash = dedupHash
@@ -253,6 +325,7 @@ export function useClipboard() {
 
   function startPolling(interval = 1500) {
     polling.value = true
+    stopped = false
     setInitialLoadDone(false)
     // Initialize offline queue: auto-flush on reconnect/focus
     initOfflineSync((count) => {
@@ -269,10 +342,17 @@ export function useClipboard() {
     // bytes only when the OS reports a genuine change. Image PNG encoding runs in
     // a dedicated worker thread so rapid consecutive screenshots are not dropped
     // while the loop is blocked compressing the previous one.
+    // 事件监听的 unlisten 来自异步 promise：stop 可能先于 promise resolve。
+    // 用 stopped 标志兜底，保证无论是"先 resolve 后 stop"还是"先 stop 后 resolve"
+    // 都能真正摘掉监听，避免切换账号后同一个事件被处理两次。
     listen<any>('clipboard-changed', async (event) => {
       await handleClipboardEvent(event.payload)
     })
       .then((unlisten) => {
+        if (stopped) {
+          unlisten()
+          return
+        }
         unlistenEvent = unlisten
         logger.debug('[Clipboard] Listening for native clipboard-changed events')
       })
@@ -280,21 +360,43 @@ export function useClipboard() {
         console.warn('[Clipboard] Failed to attach event listener, falling back to polling:', err)
       })
 
-    // --- Fallback: slow polling (every 10s) as safety net ---
+    // --- Fallback: slow polling (every pollIntervalMs) as safety net ---
     // If the Rust monitor is not running or events are missed, this ensures
     // clipboard changes are still detected. Dedup logic in readAndUpload()
     // prevents duplicate uploads when both events and poll fire.
-    const fallbackId = setInterval(readAndUpload, 10000)
+    scheduleFallback()
 
     return () => {
       polling.value = false
+      stopped = true
       unlistenEvent?.()
       unlistenEvent = null
-      clearInterval(fallbackId)
+      if (fallbackTimer) clearTimeout(fallbackTimer)
+      fallbackTimer = null
     }
   }
 
+  /**
+   * 兜底轮询间隔（ms）。由 HomeView 依据 configStore.syncInterval（分钟）写入。
+   * 0 = 纯事件驱动。改完立即按新间隔重排下一次轮询。
+   */
+  function setPollInterval(ms: number) {
+    const next = Number.isFinite(ms) && ms > 0 ? Math.floor(ms) : 0
+    if (pollIntervalMs.value === next) return
+    pollIntervalMs.value = next
+    if (polling.value) scheduleFallback()
+  }
+
+  /** 本地历史保留上限（条）。0 / 负数 = 不裁剪。由 HomeView 依据 configStore.maxHistory 写入。 */
+  function setMaxHistory(cap: number) {
+    const next = Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : 0
+    if (maxHistoryCap.value === next) return
+    maxHistoryCap.value = next
+    trimToMaxHistory()
+  }
+
   async function copyItem(item: ClipItem) {
+    lastCopyError.value = null
     try {
       // === 条目级密码保护：受保护且未解锁的条目禁止复制 ===
       // 受保护且已解锁的条目：用会话内存中的明文（服务端存的是密文，不能从 /content 拉）。
@@ -306,13 +408,14 @@ export function useClipboard() {
         }
       }
 
-      // 精确内容去重：复制时记录会写入剪贴板的实际内容/路径，monitor 检测到相同内容时跳过
-      // 窗口只开 3s：足够 monitor 下一次轮询跳过自身复制，同时不会误杀紧接着的外部复制。
-      skipNextPolls(3000)
+      // 精确内容去重：复制时记录会写入剪贴板的实际内容/路径，monitor 检测到相同内容时跳过。
+      // 窗口必须覆盖兜底轮询间隔（10s）+ 余量，否则 3s 的旧窗口会让下一次兜底轮询
+      // 落在窗口外，把刚写回的图片/文本当成外部新内容重新上传。
+      skipNextPolls(COPY_SKIP_MS)
       markContentCopiedFromClipSync(item)
 
       // 预测粘贴：复制成功后记录使用（仅 server item；local 临时 id 后端静默跳过）
-      const isServerItem = !/^local-|^text-|^file-|^img-|^browser-/.test(item.id)
+      const isServerItem = !isLocalItemId(item.id)
       const recordUseIfServer = () => {
         if (!isServerItem) return
         recordUse(item.id).catch((e: any) =>
@@ -321,26 +424,75 @@ export function useClipboard() {
       }
 
       if (item.type === 'file') {
+        // === 跨设备文件还原（B7 / 决策 D3）===
+        // 优先级：① 本机路径真实存在 → 直接复制文件（含"在资源管理器中显示"的路径语义）
+        //        ② 服务端随条目存了字节（metadata.fileEncoding === 'base64'）→ 下载还原成临时文件再复制到剪贴板
+        //        ③ 都没有 → 明确告知"仅本机可用"，不再抛 "Files not found" 之类的原始错误
         try {
           const parsed = JSON.parse(item.content)
-          // 路径数组 ["D:\\path\\to\\file"] → 复制文件到剪贴板
-          if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
-            await tauri.setClipboardFiles(parsed)
-            recordUseIfServer()
-            return true
+          const paths: string[] | undefined =
+            Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string'
+              ? parsed
+              : parsed && typeof parsed === 'object' && Array.isArray(parsed.paths) && parsed.paths.length > 0
+                ? parsed.paths
+                : undefined
+          if (paths && paths.length > 0) {
+            try {
+              // copy_local_files 先逐个校验存在性：全部不存在时 Fast-fail（跨设备场景），
+              // 部分存在时只复制存在的那些，并跳过下面不必要的下载。
+              await tauri.copyLocalFiles(paths)
+              recordUseIfServer()
+              return true
+            } catch {
+              /* 本机没有这些路径 → 走服务端字节还原 */
+            }
           }
-          // 带 paths 字段的元数据 {"name":"...","paths":["D:\\..."]} → 复制文件到剪贴板
-          if (parsed && typeof parsed === 'object' && Array.isArray(parsed.paths) && parsed.paths.length > 0) {
-            await tauri.setClipboardFiles(parsed.paths)
-            recordUseIfServer()
-            return true
+          const meta = (item.metadata || {}) as Record<string, any>
+          if (meta.fileEncoding === 'base64' && isServerItem) {
+            try {
+              const res = await api<{ contentEncrypted?: string }>('GET', `/api/clipboard/${item.id}`)
+              const b64 = res.ok ? res.data?.contentEncrypted : ''
+              const name = meta.originalName || parsed?.name || 'file'
+              if (b64) {
+                // save_and_copy_file：base64 → 临时目录落盘 → 以 CF_HDROP 写回剪贴板
+                const savedPath = await tauri.saveAndCopyFile(b64, name)
+                // 登记还原出来的临时路径：否则 monitor 会把它当成"用户新复制的文件"再上传一条
+                if (savedPath) {
+                  markContentCopiedFromClipSync({ ...item, content: JSON.stringify([savedPath]) })
+                }
+                recordUseIfServer()
+                return true
+              }
+            } catch (e: any) {
+              console.warn('[Clipboard] cross-device file restore failed:', e?.message || e)
+            }
           }
-          // 纯元数据对象（服务器上传的文件）→ 复制文件名
+          // 服务端只存了明文（文本文件）：本机没有路径时退化为复制文件内容，
+          // 比只复制一个文件名有用得多，且不做"假装还原成文件"的假动作。
+          if (meta.fileEncoding === 'text' && meta.localOnly !== true && isServerItem) {
+            try {
+              const res = await api<{ contentEncrypted?: string }>('GET', `/api/clipboard/${item.id}/content`)
+              const text = res.ok ? res.data?.contentEncrypted : ''
+              if (text) {
+                // 记录实际写入剪贴板的文本，否则 monitor 会把它当外部新内容重新上传
+                copiedTexts.set(text, Date.now())
+                cleanupCopiedContent()
+                await tauri.setClipboardContent(text)
+                recordUseIfServer()
+                return true
+              }
+            } catch (e: any) {
+              console.warn('[Clipboard] cross-device text file copy failed:', e?.message || e)
+            }
+          }
+          // 纯元数据对象（服务器上传的文件，无字节）→ 退化为复制文件名（既有行为）
           if (parsed && typeof parsed === 'object' && parsed.name) {
             await tauri.setClipboardContent(parsed.name)
             recordUseIfServer()
             return true
           }
+          // 既无本机路径也无服务端字节：给出可理解的提示，不要抛原始错误
+          lastCopyError.value = t('file_local_only_hint')
           return false
         } catch {
           /* 解析失败 */
@@ -367,11 +519,28 @@ export function useClipboard() {
           } catch {
             await tauri.setClipboardContent(dataUrl)
           }
-          // 写入后记录当前剪贴板图片的哈希，避免兜底轮询把它当作新截图重新上传
+          // 写入后登记两族哈希，避免兜底轮询/事件路径把它当作新截图重新上传：
+          //   - JS 族（simpleHash(dataUrl)）：事件与兜底轮询实际比较的键
+          //   - Rust 族（checkClipboardImageInfo 的 fnv64）：另一条检测路径的键
+          // 只登记其中一把，另一条路径必然漏判 → 复制图片后立即出现重复条目。
+          const writtenHash = simpleHash(dataUrl)
+          lastImageHash = writtenHash
+          recentUploadHashes.set(writtenHash, Date.now())
+          markImageCopiedFromClipSync(writtenHash)
           try {
             const info = await tauri.checkClipboardImageInfo()
             lastImageSize = info.size
-            lastImageHash = info.hash || ''
+            lastImageRustHash = info.hash ? String(info.hash) : ''
+            if (lastImageRustHash) recentUploadHashes.set(lastImageRustHash, Date.now())
+            // 读回写入结果再登记一次：这是兜底轮询真正会看到的 data URL。
+            // 写回字节与读回重新编码的字节未必逐字节相等，两把都登记才稳。
+            const readBack = await tauri.getClipboardImage().catch(() => '')
+            if (readBack) {
+              const readHash = simpleHash(readBack)
+              lastImageHash = readHash
+              recentUploadHashes.set(readHash, Date.now())
+              markImageCopiedFromClipSync(readHash)
+            }
           } catch {
             /* ignore */
           }
@@ -385,7 +554,7 @@ export function useClipboard() {
       // 如果已知 contentSize 且当前 content 不完整，先从服务器拉取完整内容再写入剪贴板。
       // 老数据 contentSize 可能为 0，对非空服务端条目也尝试拉取，确保不会只复制 200 字符预览。
       let textContent = item.content
-      const isLocalItem = /^local-|^text-|^file-|^img-|^browser-/.test(item.id)
+      const isLocalItem = isLocalItemId(item.id)
       const contentSize = item.contentSize || 0
       // 受保护且已解锁：服务端存的是密文，必须用会话内存里的明文，绝不向 /content 拉取。
       if (itemPw.isItemProtected(item) && itemPw.isUnlocked(item.id)) {
@@ -428,16 +597,7 @@ export function useClipboard() {
     const selected = items.value.filter((i) => i.selected)
     const count = selected.length
     // 只删服务器上的（过滤掉所有本地临时 id）
-    const serverIds = selected
-      .map((i) => i.id)
-      .filter(
-        (id) =>
-          !id.startsWith('local-') &&
-          !id.startsWith('text-') &&
-          !id.startsWith('img-') &&
-          !id.startsWith('file-') &&
-          !id.startsWith('browser-'),
-      )
+    const serverIds = selected.map((i) => i.id).filter((id) => !isLocalItemId(id))
     let res: any = { ok: true, status: 200 }
     if (serverIds.length > 0) {
       res = await apiOrEnqueue('DELETE', '/api/clipboard', { ids: serverIds }, 'delete', { ids: serverIds })
@@ -466,7 +626,8 @@ export function useClipboard() {
   }
 
   async function deleteSingle(item: ClipItem) {
-    const isLocal = item.id.startsWith('local-') || item.id.startsWith('text-') || item.id.startsWith('img-')
+    // 本地前缀清单必须完整（含 file-/browser-），否则会对不存在的服务端 id 发请求
+    const isLocal = isLocalItemId(item.id)
     let res: any = { ok: true, status: 200 }
     if (!isLocal) {
       res = await apiOrEnqueue('DELETE', `/api/clipboard/${item.id}`, undefined, 'delete', { id: item.id })
@@ -497,6 +658,9 @@ export function useClipboard() {
     const prevFavAt = (item as any).favoritedAt
     ;(item as any).isFavorite = !prev
     ;(item as any).favoritedAt = !prev ? Date.now() : undefined
+    // 本地乐观条目（尚未拿到服务端 id）：只改本地，不发请求。
+    // 否则会对 local-xxx 这类假 id 打 PUT /api/clipboard/local-xxx/favorite → 400。
+    if (isLocalItemId(item.id)) return
     const res = await api('PUT', `/api/clipboard/${item.id}/favorite`)
     if (!res.ok) {
       // 回滚
@@ -696,13 +860,14 @@ export function useClipboard() {
         reader.onerror = () => reject(new Error('Failed to read file'))
         reader.readAsDataURL(file)
       })
-      const dataUrl = await resizeImageIfNeeded(rawDataUrl)
+      // 与剪贴板截图同一条预处理链路，同样消费「图片压缩」设置（B8③）
+      const dataUrl = await prepareImageForUpload(rawDataUrl)
       const res = await api('POST', '/api/clipboard', {
         contentType: 'image',
         content: dataUrl,
         contentEncrypted: dataUrl,
         sourceDeviceId: deviceId,
-        mimeType: file.type,
+        mimeType: dataUrlMime(dataUrl, file.type),
         size: file.size,
         contentPreview: `[Image ${file.name}]`,
       })
@@ -835,6 +1000,7 @@ export function useClipboard() {
     offlineQueueSize,
     totalItems,
     mainTotalItems,
+    loadError,
     hasMore,
     loadingMore,
     loadMore,
@@ -843,6 +1009,9 @@ export function useClipboard() {
     selectedCount,
     allSelected,
     startPolling,
+    setPollInterval,
+    setMaxHistory,
+    lastCopyError,
     copyItem,
     copyText,
     toggleSelectAll,

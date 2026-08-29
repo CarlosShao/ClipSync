@@ -7,6 +7,8 @@ import { enqueue } from '@/utils/offlineQueue'
 import { logger } from '@/utils/logger'
 import { items, recentUploadHashes, HASH_TTL, totalItems, mainTotalItems, currentView, type ClipItem } from './clipboardState'
 import { cacheContent } from './clipboardCache'
+import { trimToMaxHistory } from './clipboardLoad'
+import { useConfigStore } from '@/stores/configStore'
 
 const { t } = useI18n()
 const toast = useSonner()
@@ -99,12 +101,82 @@ export function resizeImageIfNeeded(dataUrl: string, maxPx = 1080): Promise<stri
   })
 }
 
+/** 读取 data URL 的 MIME（用于上传 payload 的 mimeType，避免压缩后类型与声明不符）。 */
+export function dataUrlMime(dataUrl: string, fallback = 'image/png'): string {
+  const m = /^data:([^;,]+)/.exec(dataUrl || '')
+  return m ? m[1] : fallback
+}
+
+/** 图片压缩开关（configStore.imageCompress）。只在调用时才取 store，避免模块级循环依赖。 */
+function imageCompressEnabled(): boolean {
+  try {
+    return useConfigStore().imageCompress === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 上传前的图片预处理，消费「图片压缩」设置（B8③）：
+ * - 开：等比缩到最长边 1080 后以 webp/0.8 重编码（保留 alpha，体积显著下降）
+ * - 关：仅在超尺寸时等比缩放，不重编码（保持原始编码与画质）
+ * 注意：返回的 data URL 只用于上传；imageHash 仍按**原始**字节计算，
+ * 保证服务端去重与「同一张图粘贴进 AI 聊天」的哈希一致。
+ */
+export async function prepareImageForUpload(dataUrl: string, maxPx = 1080): Promise<string> {
+  const resized = await resizeImageIfNeeded(dataUrl, maxPx)
+  if (!imageCompressEnabled()) return resized
+  try {
+    const quality = 0.8
+    const compressed = await reencodeDataUrl(resized, 'image/webp', quality)
+    // 极端情况下（编码失败 / 压缩后反而更大）退回缩放结果，绝不上传坏图
+    if (!compressed || compressed.length > resized.length) return resized
+    return compressed
+  } catch {
+    return resized
+  }
+}
+
+function reencodeDataUrl(dataUrl: string, mime: string, quality: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          reject(new Error('canvas unavailable'))
+          return
+        }
+        ctx.drawImage(img, 0, 0)
+        resolve(canvas.toDataURL(mime, quality))
+      } catch (e) {
+        reject(e)
+      }
+    }
+    img.onerror = () => reject(new Error('image decode failed'))
+    img.src = dataUrl
+  })
+}
+
 // 文本同步大小上限：比后端 express.json 的 10MB 小 1MB 留余量，避免 413 Payload Too Large
 const MAX_TEXT_UPLOAD_SIZE = 9 * 1024 * 1024
 
 // 富文本捕获（Windows "HTML Format"）上限：html 超 2MB 时丢弃只留纯文本，
 // 防止 metadata.html 拖垮请求体（后端 express.json 10MB 上限）与 DB 行体积。
 const CAPTURED_HTML_LIMIT = 2 * 1024 * 1024
+
+// 跨设备文件字节上限（决策 D3）：5MB 原文件 ≈ 6.7MB base64，
+// 仍在后端 express.json / contentEncrypted 的 10MB 上限内。
+export const FILE_BYTES_UPLOAD_LIMIT = 5 * 1024 * 1024
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
 
 const DEVICE_ID_KEY = 'clipsync-device-id'
 
@@ -201,6 +273,7 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
     // total 重设，自动纠正，不会重复计数）。否则同步后数字要等刷新/加载更多才变化。
     totalItems.value += 1
     mainTotalItems.value += 1
+    trimToMaxHistory()
   }
   // 获取设备ID
   const deviceId = await ensureDeviceId()
@@ -264,8 +337,8 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
   const dedupKey = contentHash && contentHash.length > 0 ? contentHash : simpleHash(dataUrl)
   if (recentUploadHashes.has(dedupKey) && Date.now() - (recentUploadHashes.get(dedupKey) || 0) < HASH_TTL) return
   recentUploadHashes.set(dedupKey, Date.now())
-  // Resize large images (>1080p) before upload to save bandwidth
-  const resized = await resizeImageIfNeeded(dataUrl)
+  // 上传前预处理：消费「图片压缩」设置（开=重编码 0.8；关=仅超尺寸裁边）
+  const resized = await prepareImageForUpload(dataUrl)
   const base64 = resized.split(',')[1]
 
   // 归档视图下跳过乐观插入：新条目未归档，不应出现在归档列表中
@@ -284,6 +357,7 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
     })
     totalItems.value += 1
     mainTotalItems.value += 1
+    trimToMaxHistory()
   }
 
   const deviceId = await ensureDeviceId()
@@ -303,7 +377,8 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
     contentType: 'image',
     contentEncrypted: resized,
     sourceDeviceId: deviceId,
-    mimeType: 'image/png',
+    // 压缩后可能是 webp，mimeType 必须跟着实际编码，不能继续写死 image/png
+    mimeType: dataUrlMime(resized),
     size: base64?.length || 0,
     contentPreview: `[Image ${base64?.length || 0} bytes]`,
     imageHash,
@@ -341,19 +416,50 @@ export async function uploadFileToServer(payload: string) {
     filePaths = [payload]
   }
 
-  // Try to read actual file content via Tauri (for preview support)
+  const fileName = filePaths[0].split(/[/\\]/).pop() || filePaths[0] || 'Unknown'
+
+  // === 跨设备文件捕获（B7 / 决策 D3）===
+  // 1) 文本文件：沿用既有 readFileContent 通道（保住 DocPreview 的纯文本预览）
+  // 2) 二进制文件：readFileContentBase64 读原字节，≤5MB 才随条目上传，
+  //    对端即可下载还原；超限 / 读不到 → 标记 localOnly（"仅本机可用"）。
+  // 只处理单文件：多文件复制没有打包协议，跨设备还原无从谈起，一律标仅本机。
   let fileContent = payload // fallback: store path array
-  let fileName = filePaths[0] || 'Unknown'
+  let textReadOk = false
+  let uploadedBase64 = ''
+  let uploadedBytes = 0
   try {
-    const name = filePaths[0].split(/[/\\]/).pop() || filePaths[0]
-    fileName = name
-    const content = await tauri.readFileContent(filePaths[0])
-    if (content && content.length > 0) {
-      fileContent = content
+    const text = await tauri.readFileContent(filePaths[0])
+    if (text && text.length > 0) {
+      fileContent = text
+      textReadOk = true
     }
   } catch {
-    /* file not readable (binary, permission, etc.) — keep path array */
+    /* 非 UTF-8（二进制）/ 超 5MB / 无权限 — 走下面的二进制通道 */
   }
+  // 只有「文本读不出来」的纯二进制文件才走 base64 通道：
+  // 文本文件必须继续按明文存，否则 DocPreview 的纯文本预览会被 base64 糊掉（回归）。
+  if (!textReadOk && filePaths.length === 1) {
+    try {
+      const b64 = await tauri.readFileContentBase64(filePaths[0])
+      if (b64) {
+        // base64 长度 × 3/4 ≈ 原始字节数（含 padding 误差，够用于阈值判断）
+        const bytes = Math.floor((b64.length * 3) / 4)
+        if (bytes > 0 && bytes <= FILE_BYTES_UPLOAD_LIMIT) {
+          uploadedBase64 = b64
+          uploadedBytes = bytes
+        } else {
+          logger.debug('[Clipboard] file too large for cross-device upload, local only', fileName, bytes)
+        }
+      }
+    } catch (e: any) {
+      logger.debug('[Clipboard] binary read failed, local only', fileName, e?.message || e)
+    }
+  }
+  // 真实字节优先：有二进制捕获时上传它，否则退回文本/路径数组
+  const storedContent = uploadedBase64 || fileContent
+  const displaySize = uploadedBase64
+    ? formatBytes(uploadedBytes)
+    : `${(fileContent.length / 1024).toFixed(1)} KB`
 
   // 归档视图下跳过乐观插入：新条目未归档，不应出现在归档列表中
   const isArchiveView = currentView.value === 'archive'
@@ -365,15 +471,21 @@ export async function uploadFileToServer(payload: string) {
       type: 'file',
       content: JSON.stringify({
         name: fileName,
-        size: `${(fileContent.length / 1024).toFixed(1)} KB`,
-        type: 'text/plain',
+        size: displaySize,
+        type: uploadedBase64 ? 'application/octet-stream' : 'text/plain',
       }),
       source: 'Desktop',
       timestamp: Date.now(),
       selected: false,
+      metadata: {
+        paths: filePaths,
+        originalName: fileName,
+        localOnly: !uploadedBase64 && !textReadOk,
+      },
     })
     totalItems.value += 1
     mainTotalItems.value += 1
+    trimToMaxHistory()
   }
 
   const deviceId = await ensureDeviceId()
@@ -386,13 +498,25 @@ export async function uploadFileToServer(payload: string) {
     }
     return
   }
+  // metadata 只放**轻量标记**（paths / 名称 / 编码标记），绝不放 base64 本体：
+  // GET /api/clipboard 列表接口会 SELECT metadata，塞进 6MB 会把整个列表请求拖垮。
+  // 字节本体走 contentEncrypted（text 列，列表接口不查）。
   const uploadPayload = {
     contentType: 'file',
     content: JSON.stringify({ name: fileName, paths: filePaths }),
-    contentEncrypted: fileContent,
+    contentEncrypted: storedContent,
     sourceDeviceId: deviceId,
     contentPreview: fileName,
-    metadata: { paths: filePaths, originalName: fileName },
+    metadata: {
+      paths: filePaths,
+      originalName: fileName,
+      // 对端据此判断"能否还原文件"：base64 = 字节已随条目上传，可直接下载还原
+      fileEncoding: uploadedBase64 ? 'base64' : 'text',
+      fileSize: uploadedBytes || fileContent.length,
+      // 文本文件（明文已随条目上传）也算"非仅本机"：内容在对端可见可复制，
+      // 只有"还原成原文件"做不到。仅二进制且未捕获成功时才标仅本机。
+      localOnly: !uploadedBase64 && !textReadOk,
+    },
   }
   const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
   if (res.ok && res.data?.id) {
@@ -406,7 +530,8 @@ export async function uploadFileToServer(payload: string) {
         localItem.id = res.data.id
         // Update content to include paths field (for hasLocalPath detection)
         localItem.content = JSON.stringify({ name: fileName, paths: filePaths })
-        cacheContent(res.data.id, fileContent)
+        localItem.metadata = uploadPayload.metadata
+        cacheContent(res.data.id, storedContent)
       }
     }
     return
