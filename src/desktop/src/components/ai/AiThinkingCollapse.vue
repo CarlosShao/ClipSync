@@ -288,8 +288,9 @@ html.light .ai-tc-title::after {
   display: flex;
   justify-content: flex-end;
   margin-left: 8px;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px);
-  mask-image: linear-gradient(90deg, transparent 0, #000 28px);
+  /* mask 只取 alpha 通道，颜色本身不显示：用主题前景色保证任何主题下都不透明 */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, var(--text-primary) 28px);
+  mask-image: linear-gradient(90deg, transparent 0, var(--text-primary) 28px);
 }
 .ai-tc-ticker-text {
   flex-shrink: 0;

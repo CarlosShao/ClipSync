@@ -485,13 +485,6 @@ export function deleteMemory(id: string) {
   return api<{ deleted: boolean }>('DELETE', `/api/ai/memories/${id}`)
 }
 
-// ===== 工具确认门控（UI-E，对接后端 Package C）=====
-// SSE meta.type==='confirm_tool_action' 弹出确认卡后，用户批准/拒绝回调此接口。
-// 后端未就绪时返回 404 属预期：卡片显示错误并允许重试，不阻塞组件。
-export function approveAiChatTool(body: { requestId: string; allow: boolean }) {
-  return api<{ ok: boolean }>('POST', '/api/ai/chat/approve', body)
-}
-
 // ===== ask_user 交互卡片作答（人类在回路选择）=====
 export function respondAiChatAskUser(body: { requestId: string; userResponse: string }) {
   return api<{ accepted: boolean }>('POST', '/api/ai/chat/respond_ask_user', body)
@@ -671,8 +664,11 @@ export interface SummarizeResult {
   summary: string
 }
 
-export function summarizeClipboard(params: { providerId: string; content: string }) {
-  return api<SummarizeResult>('POST', '/api/ai/summarize', params)
+export function summarizeClipboard(
+  params: { providerId: string; content: string },
+  opts?: { signal?: AbortSignal },
+) {
+  return api<SummarizeResult>('POST', '/api/ai/summarize', params, opts)
 }
 
 // 主动建议（#230）：根据剪贴板内容给出收藏/分类/清理建议
@@ -720,25 +716,6 @@ export function suggestClipboardBatch(params: {
   collections?: string[]
 }) {
   return api<SuggestResult>('POST', '/api/ai/suggest', params)
-}
-
-// 语义相似度检测（#236）：判断内容与候选条目哪些语义重复
-export interface SimilarityCandidate {
-  id: string
-  text: string
-}
-export interface DuplicateHit {
-  id: string
-  reason: string
-  degree: 'high' | 'medium'
-}
-export interface SimilarityResult {
-  duplicates: DuplicateHit[]
-  checked: number
-}
-
-export function similarityCheck(params: { providerId: string; content: string; candidates: SimilarityCandidate[] }) {
-  return api<SimilarityResult>('POST', '/api/ai/similarity', params)
 }
 
 // 聊天历史关键词搜索（#231）：在会话列表提供历史消息搜索，返回命中的对话+片段+位置

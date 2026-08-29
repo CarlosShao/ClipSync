@@ -57,7 +57,8 @@ watch(
         </div>
         <div class="invoice-right">
           <span class="invoice-amount">¥{{ inv.amount || 0 }}</span>
-          <Button variant="ghost" size="sm" @click="toast.show(t('fb_not_available'), 'info')">
+          <!-- 发票下载尚未接入：统一占位文案"功能建设中"（此前误用反馈服务文案） -->
+          <Button variant="ghost" size="sm" @click="toast.show(t('ft_building'), 'info')">
             <Download :size="14" />
           </Button>
         </div>

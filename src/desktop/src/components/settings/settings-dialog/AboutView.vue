@@ -155,8 +155,9 @@ async function installUpdate() {
   width: 52px;
   height: 52px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #6366f1 0%, #a78bfa 100%);
-  color: #fff;
+  /* Logo 品牌渐变：沿用主题的 logo-gradient token，避免明暗主题下对比度失控（C6②） */
+  background: var(--logo-gradient);
+  color: var(--accent-foreground);
   display: flex;
   align-items: center;
   justify-content: center;

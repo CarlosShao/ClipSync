@@ -380,8 +380,8 @@ onMounted(() => {
   color: var(--text-tertiary);
 }
 .sec-badge.on {
-  background: var(--success-light, #dcfce7);
-  color: var(--success, #16a34a);
+  background: var(--success-light);
+  color: var(--success);
 }
 .sec-badge.off {
   background: var(--bg-hover);
@@ -439,7 +439,8 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   padding: 12px;
-  background: #fff;
+  /* 二维码必须浅底才可被扫描，深色主题下不能用 --bg-surface */
+  background: var(--qr-canvas-bg);
   border-radius: var(--radius-md);
   margin-bottom: 14px;
 }

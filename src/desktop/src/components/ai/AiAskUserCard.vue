@@ -2,11 +2,13 @@
 import { ref, computed, inject } from 'vue'
 import { CheckCircle2, HelpCircle, PenLine, Send, ChevronLeft, ChevronRight, Loader2 } from 'lucide-vue-next'
 import { respondAiChatAskUser, type ToolCall, type ToolResult } from '@/api/ai'
+import { useI18n } from '@/composables/useI18n'
 
 const props = defineProps<{
   step: ToolCall
   toolResult?: ToolResult | null
 }>()
+const { tf } = useI18n()
 
 const injectSend = inject<((content: string) => void) | null>('aiChatSend', null)
 
@@ -64,7 +66,7 @@ function normalizeOptions(raw: any): string[] {
     if (item && typeof item === 'object') {
       return (item.label || item.text || item.title || item.name || item.value || JSON.stringify(item)).trim()
     }
-    return `选项 ${idx + 1}`
+    return tf('ai_ask_option_n', '选项 {n}', { n: idx + 1 })
   }).filter(Boolean)
 }
 
@@ -100,18 +102,20 @@ const askData = computed<AskUserData>(() => {
   if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
     for (const q of parsed.questions) {
       questions.push({
-        question: q.question || q.title || q.prompt || '请做出选择：',
+        question: q.question || q.title || q.prompt || tf('ai_ask_choose_prompt', '请做出选择：'),
         options: normalizeOptions(q.options ?? q.choices ?? q.items ?? q.selections),
         is_multi_select: Boolean(q.is_multi_select || q.multiple || q.isMultiSelect),
         context: q.context || q.description || '',
       })
     }
   } else {
-    const singleQ = parsed.question || parsed.title || parsed.prompt || parsed.message || '请做出选择：'
+    const singleQ = parsed.question || parsed.title || parsed.prompt || parsed.message || tf('ai_ask_choose_prompt', '请做出选择：')
     const singleOpts = normalizeOptions(parsed.options ?? parsed.choices ?? parsed.items ?? parsed.selections ?? parsed.candidates)
     questions.push({
       question: singleQ,
-      options: singleOpts.length ? singleOpts : ['确认执行', '取消操作'],
+      options: singleOpts.length
+        ? singleOpts
+        : [tf('ai_ask_confirm_exec', '确认执行'), tf('ai_ask_cancel_op', '取消操作')],
       is_multi_select: Boolean(parsed.is_multi_select || parsed.multiple || parsed.isMultiSelect),
       context: parsed.context || parsed.description || '',
     })
@@ -181,26 +185,26 @@ async function submitAllAnswers() {
   if (isSubmitting.value) return
   isSubmitting.value = true
 
-  const summaryLines: string[] = ['我已做出选择：']
+  const summaryLines: string[] = [tf('ai_ask_prefix', '我已做出选择：')]
 
   askData.value.questions.forEach((q, qi) => {
     const sel = getSelectedForQ(qi)
     const displayOptions = sel.map((opt) => {
       if (opt === '__OTHER__') {
         const custom = getCustomOther(qi).trim()
-        return custom ? `其他(${custom})` : '其他'
+        return custom ? tf('ai_ask_other_bracket', '其他({text})', { text: custom }) : tf('ai_ask_other_plain', '其他')
       }
       return opt
     }).filter(Boolean)
 
     if (displayOptions.length > 0) {
-      summaryLines.push(`${qi + 1}. 【${q.question}】：${displayOptions.join('、')}`)
+      summaryLines.push(`${qi + 1}. ${tf('ai_ask_qa_line', '【{q}】：{a}', { q: q.question, a: displayOptions.join('、') })}`)
     }
   })
 
   const note = extraNote.value.trim()
   if (note) {
-    summaryLines.push(`【补充说明与附加要求】：${note}`)
+    summaryLines.push(`${tf('ai_ask_notes_section', '【补充说明与附加要求】：')}${note}`)
   }
 
   const finalMessage = summaryLines.join('\n')
@@ -237,7 +241,7 @@ async function submitAllAnswers() {
     <div v-if="settledText" class="ai-ask-card__settled">
       <div class="ai-ask-card__settled-header">
         <CheckCircle2 :size="15" class="ai-ask-card__settled-icon" />
-        <span>已提交您的选择与要求</span>
+        <span>{{ tf('ai_ask_settled_title', '已提交您的选择与要求') }}</span>
       </div>
       <pre class="ai-ask-card__settled-body">{{ settledText }}</pre>
     </div>
@@ -257,7 +261,7 @@ async function submitAllAnswers() {
             {{ currentQuestionIndex + 1 }} / {{ totalQuestions }}
           </span>
           <span class="ai-ask-card__badge" :class="{ multi: currentQ?.is_multi_select }">
-            {{ currentQ?.is_multi_select ? '多选' : '单选' }}
+            {{ currentQ?.is_multi_select ? tf('ai_ask_multi', '多选') : tf('ai_ask_single', '单选') }}
           </span>
         </div>
       </div>
@@ -291,7 +295,7 @@ async function submitAllAnswers() {
         >
           <div class="ai-ask-card__other-head">
             <span class="ai-ask-card__opt-index other"><PenLine :size="10" /></span>
-            <span class="ai-ask-card__opt-label">其他（自定义填写）</span>
+            <span class="ai-ask-card__opt-label">{{ tf('ai_ask_other', '其他（自定义填写）') }}</span>
             <CheckCircle2 v-if="isOptSelected(currentQuestionIndex, '__OTHER__')" :size="14" class="ai-ask-card__opt-check" />
           </div>
           <div
@@ -303,7 +307,7 @@ async function submitAllAnswers() {
               type="text"
               class="ai-ask-card__other-input"
               :value="getCustomOther(currentQuestionIndex)"
-              placeholder="请输入您的自定义选项或具体要求..."
+              :placeholder="tf('ai_ask_other_ph', '请输入您的自定义选项或具体要求...')"
               @input="setCustomOther(currentQuestionIndex, ($event.target as HTMLInputElement).value)"
             />
           </div>
@@ -316,13 +320,13 @@ async function submitAllAnswers() {
         <div class="ai-ask-card__notes-wrap">
           <div class="ai-ask-card__notes-label">
             <PenLine :size="11" />
-            <span>补充说明 / 附加要求（可选）：</span>
+            <span>{{ tf('ai_ask_notes_label', '补充说明 / 附加要求（可选）：') }}</span>
           </div>
           <textarea
             class="ai-ask-card__notes-input"
             :value="extraNote"
             rows="2"
-            placeholder="如需补充其他指示或注意事项，可在此输入..."
+            :placeholder="tf('ai_ask_notes_ph', '如需补充其他指示或注意事项，可在此输入...')"
             @input="extraNote = ($event.target as HTMLTextAreaElement).value"
           />
         </div>
@@ -337,7 +341,7 @@ async function submitAllAnswers() {
               @click="setQuestionIndex(currentQuestionIndex - 1)"
             >
               <ChevronLeft :size="13" />
-              <span>上一题</span>
+              <span>{{ tf('ai_ask_prev', '上一题') }}</span>
             </button>
             <button
               v-if="totalQuestions > 1 && currentQuestionIndex < totalQuestions - 1"
@@ -345,7 +349,7 @@ async function submitAllAnswers() {
               class="ai-ask-card__nav-btn primary"
               @click="setQuestionIndex(currentQuestionIndex + 1)"
             >
-              <span>下一题</span>
+              <span>{{ tf('ai_ask_next', '下一题') }}</span>
               <ChevronRight :size="13" />
             </button>
           </div>
@@ -357,7 +361,7 @@ async function submitAllAnswers() {
             @click="submitAllAnswers"
           >
             <Send :size="12" />
-            <span>提交选择</span>
+            <span>{{ tf('ai_ask_submit', '提交选择') }}</span>
           </button>
         </div>
       </div>
@@ -370,7 +374,7 @@ async function submitAllAnswers() {
 .ai-ask-card {
   margin: 6px 0 8px 0;
   border-radius: 8px;
-  background: var(--bg-surface, #ffffff);
+  background: var(--bg-surface);
   border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   overflow: hidden;
@@ -380,8 +384,8 @@ async function submitAllAnswers() {
 
 .ai-ask-card__settled {
   padding: 10px 12px;
-  background: rgba(34, 197, 94, 0.06);
-  border: 1px solid rgba(34, 197, 94, 0.2);
+  background: color-mix(in srgb, var(--success) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
   border-radius: 8px;
 }
 
@@ -390,19 +394,19 @@ async function submitAllAnswers() {
   align-items: center;
   gap: 6px;
   font-weight: 600;
-  color: #16a34a;
+  color: var(--success);
   font-size: 12px;
 }
 
 .ai-ask-card__settled-icon {
-  color: #16a34a;
+  color: var(--success);
 }
 
 .ai-ask-card__settled-body {
   margin: 6px 0 0 0;
   font-family: inherit;
   font-size: 12px;
-  color: var(--text-secondary, #4b5563);
+  color: var(--text-secondary);
   white-space: pre-wrap;
   line-height: 1.5;
 }
@@ -424,12 +428,12 @@ async function submitAllAnswers() {
   align-items: flex-start;
   gap: 6px;
   font-weight: 600;
-  color: var(--text-primary, #111827);
+  color: var(--text-primary);
   flex: 1;
 }
 
 .ai-ask-card__icon {
-  color: #3b82f6;
+  color: var(--accent);
   margin-top: 1px;
   flex-shrink: 0;
 }
@@ -449,27 +453,27 @@ async function submitAllAnswers() {
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.05);
-  color: var(--text-secondary, #6b7280);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 .ai-ask-card__badge {
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(59, 130, 246, 0.1);
-  color: #2563eb;
+  background: var(--accent-bg);
+  color: var(--accent);
   font-weight: 500;
 }
 
 .ai-ask-card__badge.multi {
-  background: rgba(168, 85, 247, 0.1);
-  color: #9333ea;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
 }
 
 .ai-ask-card__desc {
   font-size: 12px;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   margin-bottom: 10px;
   line-height: 1.45;
   padding-left: 21px;
@@ -489,9 +493,9 @@ async function submitAllAnswers() {
   width: 100%;
   padding: 7px 10px;
   border-radius: 6px;
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
-  color: var(--text-primary, #374151);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  color: var(--text-primary);
   text-align: left;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -499,14 +503,14 @@ async function submitAllAnswers() {
 }
 
 .ai-ask-card__opt-btn:hover {
-  background: rgba(59, 130, 246, 0.04);
-  border-color: rgba(59, 130, 246, 0.3);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .ai-ask-card__opt-btn.selected {
-  background: rgba(59, 130, 246, 0.08);
-  border-color: #3b82f6;
-  color: #1d4ed8;
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
   font-weight: 500;
 }
 
@@ -517,16 +521,16 @@ async function submitAllAnswers() {
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--bg-hover);
   font-size: 10.5px;
   font-weight: 600;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
 .ai-ask-card__opt-btn.selected .ai-ask-card__opt-index {
-  background: #3b82f6;
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 
 .ai-ask-card__opt-label {
@@ -536,7 +540,7 @@ async function submitAllAnswers() {
 }
 
 .ai-ask-card__opt-check {
-  color: #3b82f6;
+  color: var(--accent);
   flex-shrink: 0;
 }
 
@@ -562,22 +566,22 @@ async function submitAllAnswers() {
   padding: 5px 8px;
   font-size: 12px;
   border-radius: 4px;
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.15));
-  background: var(--input-bg, #ffffff);
-  color: var(--text-primary, #111827);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.15));
+  background: var(--bg-input);
+  color: var(--text-primary);
   outline: none;
 }
 
 .ai-ask-card__other-input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .ai-ask-card__footer {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border-top: 1px dashed var(--border-color, rgba(0, 0, 0, 0.08));
+  border-top: 1px dashed var(--border-default, rgba(0, 0, 0, 0.08));
   padding-top: 10px;
 }
 
@@ -586,7 +590,7 @@ async function submitAllAnswers() {
   align-items: center;
   gap: 4px;
   font-size: 11.5px;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   margin-bottom: 4px;
 }
 
@@ -595,9 +599,9 @@ async function submitAllAnswers() {
   padding: 6px 8px;
   font-size: 12px;
   border-radius: 6px;
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
-  background: var(--input-bg, #ffffff);
-  color: var(--text-primary, #111827);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.12));
+  background: var(--bg-input);
+  color: var(--text-primary);
   outline: none;
   resize: vertical;
   min-height: 48px;
@@ -605,8 +609,8 @@ async function submitAllAnswers() {
 }
 
 .ai-ask-card__notes-input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .ai-ask-card__actions {
@@ -628,20 +632,20 @@ async function submitAllAnswers() {
   gap: 4px;
   padding: 4px 8px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+  background: var(--bg-hover);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
   font-size: 11.5px;
-  color: var(--text-secondary, #4b5563);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .ai-ask-card__nav-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--bg-active, var(--bg-hover));
 }
 
 .ai-ask-card__nav-btn.primary {
-  color: #2563eb;
-  border-color: rgba(37, 99, 235, 0.2);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .ai-ask-card__submit-btn {
@@ -650,8 +654,8 @@ async function submitAllAnswers() {
   gap: 5px;
   padding: 5px 12px;
   border-radius: 6px;
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--accent-foreground);
   font-size: 12px;
   font-weight: 500;
   border: none;
@@ -661,7 +665,8 @@ async function submitAllAnswers() {
 }
 
 .ai-ask-card__submit-btn:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: var(--accent-hover, var(--accent));
+  filter: brightness(1.05);
 }
 
 .ai-ask-card__submit-btn:disabled {

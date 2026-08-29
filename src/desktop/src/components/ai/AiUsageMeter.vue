@@ -94,8 +94,10 @@ const cacheHitRateText = computed(() => {
 })
 
 // ---- 费用估算 ----
-// TODO(backend): 对接后端费用接口后替换（当前按 OpenAI 官方基准价硬编码估算，仅参考）
-const PRICE_PER_MTOKEN = { input: 2.5, output: 10 } // USD / 百万 token
+// TODO(backend): 对接后端按供应商计费接口后替换。
+// 当前为「按 OpenAI 基准价估算」：单价硬编码，不区分供应商/模型，界面上必须显式标注口径，
+// 避免被误读为真实账单（C4③）。
+const PRICE_PER_MTOKEN = { input: 2.5, output: 10 } // USD / 百万 token（OpenAI 基准价）
 const estimatedCost = computed(() => {
   const c = props.contextUsage
   if (!c) return null
@@ -104,6 +106,10 @@ const estimatedCost = computed(() => {
   if (total < 0.01) return '<$0.01'
   return '$' + total.toFixed(3)
 })
+/** 估算口径说明：与数值同屏展示，明确"按 OpenAI 基准价估算，非实际账单" */
+const costBasisHint = computed(() =>
+  t('ai_cost_basis_hint', '按 OpenAI 基准价估算（输入 $2.5 / 输出 $10 每百万 token），仅供参考，非实际账单'),
+)
 
 // ---- 压缩进度（能力迁自 AiCompressProgress）----
 const compressState = computed(() => props.compress)
@@ -280,10 +286,13 @@ const compressDetail = computed(() => {
         {{ t('ai_cache_not_supported_hint', '当前供应商协议不支持 prompt 缓存') }}
       </div>
 
-      <!-- 费用估算 -->
-      <div v-if="estimatedCost" class="ai-um-cost">
-        <span>{{ t('ai_estimated_cost', '预估费用') }}</span>
-        <span class="ai-um-cost-val">{{ estimatedCost }}</span>
+      <!-- 费用估算（口径：按 OpenAI 基准价估算，非实际账单） -->
+      <div v-if="estimatedCost" class="ai-um-cost-block">
+        <div class="ai-um-cost">
+          <span>{{ t('ai_estimated_cost', '预估费用') }}</span>
+          <span class="ai-um-cost-val">{{ estimatedCost }}</span>
+        </div>
+        <div class="ai-um-cost-hint">{{ costBasisHint }}</div>
       </div>
 
       <!-- full 态 + 传入 compress：内联压缩进度 -->
@@ -507,12 +516,17 @@ const compressDetail = computed(() => {
 }
 
 /* 费用估算 */
+.ai-um-cost-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
 .ai-um-cost {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-top: 4px;
-  border-top: 1px solid var(--border-subtle);
   font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
@@ -520,6 +534,13 @@ const compressDetail = computed(() => {
   font-weight: 600;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+/* 估算口径说明：明说"非实际账单"，避免误读 */
+.ai-um-cost-hint {
+  font-size: var(--text-2xs);
+  line-height: 1.45;
+  color: var(--text-tertiary);
+  opacity: 0.9;
 }
 
 /* 压缩进度（能力迁自 AiCompressProgress；动画仅 opacity/transform） */

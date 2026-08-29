@@ -437,7 +437,7 @@ function nextStep() {
 }
 
 .protection-icon {
-  color: var(--color-primary, #6366f1);
+  color: var(--color-primary);
 }
 
 .protection-close {
@@ -488,7 +488,7 @@ function nextStep() {
 }
 
 .protection-option.active {
-  border-color: var(--color-primary, #6366f1);
+  border-color: var(--color-primary);
   background: var(--accent-light);
 }
 
@@ -508,7 +508,7 @@ function nextStep() {
 }
 
 .protection-option.active .protection-option-icon {
-  background: var(--color-primary, #6366f1);
+  background: var(--color-primary);
   color: white;
 }
 
@@ -654,13 +654,13 @@ function nextStep() {
 }
 
 .protection-success-icon {
-  color: var(--color-primary, #6366f1);
+  color: var(--color-primary);
   margin-bottom: 12px;
 }
 
 .protection-success h4 {
   margin: 0 0 8px;
-  color: var(--color-primary, #6366f1);
+  color: var(--color-primary);
 }
 
 .protection-success p {

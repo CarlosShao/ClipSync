@@ -25,7 +25,9 @@ const loadingInvoices = ref(false)
 async function loadInvoices() {
   loadingInvoices.value = true
   try {
-    const res = await api('GET', '/api/user/invoices')
+    // 端点统一：后端实际挂载为 /api/invoices（routes/invoices.js），
+    // 此前使用的 /api/user/invoices 并不存在，账单页永远为空且静默失败（C7）。
+    const res = await api('GET', '/api/invoices')
     if (res.ok && Array.isArray(res.data?.invoices)) {
       invoices.value = res.data.invoices
     }
@@ -66,7 +68,8 @@ onMounted(() => {
         </div>
         <div class="invoice-right">
           <span class="invoice-amount">&yen;{{ inv.amount || 0 }}</span>
-          <Button variant="ghost" size="sm" @click="toast.show(t('fb_not_available'), 'info')">
+          <!-- 发票下载尚未接入：统一占位文案"功能建设中"（此前误用反馈服务文案） -->
+          <Button variant="ghost" size="sm" @click="toast.show(t('ft_building'), 'info')">
             <Download :size="14" />
           </Button>
         </div>

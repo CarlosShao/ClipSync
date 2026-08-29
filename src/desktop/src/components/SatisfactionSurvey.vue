@@ -206,7 +206,7 @@ function npsLabel(score: number): string {
 }
 .nps-btn.selected {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-foreground);
   border-color: var(--accent);
 }
 .nps-btn.detractor.selected {

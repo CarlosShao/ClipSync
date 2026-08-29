@@ -62,6 +62,9 @@
 .markdown-body details summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .markdown-body details[open] summary { margin-bottom: 8px; }
 .markdown-body .hljs { background: transparent; color: var(--text-primary); }
+/* 语法高亮配色是 GitHub 固定调色板，语义上不属于主题色，
+   强行套主题 token 会破坏代码可读性（如关键字失去红色）。这里显式豁免。 */
+/* stylelint-disable color-no-hex */
 .markdown-body .hljs-keyword { color: #cf222e; }
 .markdown-body .hljs-string { color: #0a3069; }
 .markdown-body .hljs-comment { color: var(--text-tertiary); font-style: italic; }
@@ -73,3 +76,4 @@
 .markdown-body .hljs-attr { color: #0550ae; }
 .markdown-body .hljs-meta { color: #6e7781; }
 .markdown-body .hljs-literal { color: #0550ae; }
+/* stylelint-enable color-no-hex */

@@ -1032,11 +1032,16 @@ export function useAiChat() {
     }
     approving.value = true
     const res = await approveToolAction(req.requestId, allow)
-    // 无论成功与否都收起确认卡片，避免卡片滞留（后端已按其状态继续推进流）
-    pendingConfirm.value = null
     approving.value = false
     if (!res.ok) {
+      // 失败：保留确认卡片（不再无条件收起），让用户可直接重试；
+      // 同时把错误抛到错误条（值可以是 i18n key，渲染方统一经 tMsg 翻译）。
       error.value = res.error || 'ai_approve_failed'
+      return
+    }
+    // 仅成功时收起；期间若流已结束/后端已清 pending，则不覆盖新状态
+    if (pendingConfirm.value && pendingConfirm.value.requestId === req.requestId) {
+      pendingConfirm.value = null
     }
   }
 

@@ -2,10 +2,9 @@
 import { ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
-import { api } from '@/api/client'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
 import Button from '@/components/ui/button/Button.vue'
-import { MessageCircle, Landmark, CircleCheck } from 'lucide-vue-next'
+import { MessageCircle, Landmark, CircleCheck, Clock } from 'lucide-vue-next'
 import './modal-shared.css'
 
 defineProps<{ showModalType: string }>()
@@ -17,7 +16,7 @@ const toast = useSonner()
 // Plan selection state (for pricing → payment flow)
 const selectedPlan = ref<{ id: string; name: string; price: number } | null>(null)
 const paymentSending = ref(false)
-const paymentResult = ref<{ success: boolean; message: string } | null>(null)
+const paymentResult = ref<{ kind: 'success' | 'fail' | 'pending'; message: string } | null>(null)
 
 // ===== Plan Selection → Payment Flow =====
 function selectPlan(planId: string, planName: string, price: number) {
@@ -29,25 +28,15 @@ function selectPlan(planId: string, planName: string, price: number) {
   emit('switch-modal', 'payment')
 }
 
-async function selectPaymentMethod(method: string) {
+// 选择支付方式 —— C7 假实现诚实化：
+// 支付渠道（微信/支付宝）尚未接入，此前直接 POST /api/subscriptions/subscribe 并弹出
+// "订阅成功"，属于典型的假成功（用户并未付款却显示订阅生效）。
+// 现改为明确的"渠道接入中"占位，既不假装成功也不假装失败。
+function selectPaymentMethod(_method: string) {
   const p = selectedPlan.value
   if (!p) return
-  paymentSending.value = true
-  try {
-    const res = await api('POST', '/api/subscriptions/subscribe', { planId: p.id, billingCycle: 'monthly' })
-    if (res.ok) {
-      paymentResult.value = { success: true, message: t('sub_success', { n: p.name }) }
-      emit('switch-modal', 'payment-result')
-    } else {
-      paymentResult.value = { success: false, message: res.error || t('sub_fail') }
-      emit('switch-modal', 'payment-result')
-    }
-  } catch (e: any) {
-    paymentResult.value = { success: false, message: String(e) }
-    emit('switch-modal', 'payment-result')
-  } finally {
-    paymentSending.value = false
-  }
+  paymentResult.value = { kind: 'pending', message: t('pay_channel_pending') }
+  emit('switch-modal', 'payment-result')
 }
 </script>
 
@@ -96,7 +85,6 @@ async function selectPaymentMethod(method: string) {
       <Button
         variant="outline"
         class="w-full justify-start payment-option"
-        :disabled="paymentSending"
         @click="selectPaymentMethod('wechat')"
       >
         <MessageCircle class="pay-icon pay-icon--wechat" /> <span>{{ t('pay_wechat') }}</span>
@@ -104,7 +92,6 @@ async function selectPaymentMethod(method: string) {
       <Button
         variant="outline"
         class="w-full justify-start payment-option"
-        :disabled="paymentSending"
         @click="selectPaymentMethod('alipay')"
       >
         <Landmark class="pay-icon pay-icon--alipay" /> <span>{{ t('pay_alipay') }}</span>
@@ -115,13 +102,20 @@ async function selectPaymentMethod(method: string) {
   <!-- Payment Result -->
   <ModalDialog
     :open="showModalType === 'payment-result'"
-    :title="paymentResult?.success ? t('sub_result_success') : t('sub_result_fail')"
+    :title="
+      paymentResult?.kind === 'success'
+        ? t('sub_result_success')
+        : paymentResult?.kind === 'pending'
+          ? t('sub_result_pending')
+          : t('sub_result_fail')
+    "
     max-width="400px"
     @close="emit('close')"
   >
     <div v-if="paymentResult" class="pay-result">
-      <div class="pay-result-icon" :class="paymentResult.success ? 'success' : 'fail'">
-        <CircleCheck v-if="paymentResult.success" :size="48" />
+      <div class="pay-result-icon" :class="paymentResult.kind">
+        <CircleCheck v-if="paymentResult.kind === 'success'" :size="48" />
+        <Clock v-else-if="paymentResult.kind === 'pending'" :size="48" />
         <span v-else style="font-size: 48px">!</span>
       </div>
       <p class="pay-result-msg">{{ paymentResult.message }}</p>
@@ -158,12 +152,15 @@ async function selectPaymentMethod(method: string) {
   height: 22px;
   flex-shrink: 0;
 }
+/* 支付渠道品牌色：微信绿 / 支付宝蓝是固定的品牌识别色，不随主题变化 */
+/* stylelint-disable color-no-hex */
 .pay-icon--wechat {
   color: #07c160;
 }
 .pay-icon--alipay {
   color: #1677ff;
 }
+/* stylelint-enable color-no-hex */
 .price-card {
   padding: 20px;
   border: 1px solid var(--border-default);
@@ -251,6 +248,9 @@ async function selectPaymentMethod(method: string) {
 }
 .pay-result-icon.fail {
   color: var(--danger);
+}
+.pay-result-icon.pending {
+  color: var(--warning);
 }
 .pay-result-msg {
   font-size: 14px;

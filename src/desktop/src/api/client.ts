@@ -178,7 +178,17 @@ function forceLogout() {
   }
 }
 
-export async function api<T = any>(method: string, path: string, body?: any): Promise<ApiResponse<T>> {
+/**
+ * 通用 JSON 请求封装。
+ * 第 4 参 opts.signal 为可选的外界中止信号（C1：复制后自动摘要需在发起新请求前
+ * abort 在途请求）；未传时沿用内置 30s 超时信号，行为与之前完全一致。
+ */
+export async function api<T = any>(
+  method: string,
+  path: string,
+  body?: any,
+  opts?: { signal?: AbortSignal },
+): Promise<ApiResponse<T>> {
   const config = useConfigStore()
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
 
@@ -211,7 +221,8 @@ export async function api<T = any>(method: string, path: string, body?: any): Pr
         headers,
         body: body ? JSON.stringify(body) : undefined,
         credentials: 'include',
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        // 传入外部 signal 时由调用方负责超时/中止策略；未传时沿用内置 30s 超时
+        signal: opts?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
 
       if (res.status === 429 && attempt < MAX_RETRIES) {

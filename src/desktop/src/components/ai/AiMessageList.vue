@@ -115,6 +115,17 @@ function isStreamingMessage(index: number): boolean {
   return props.isStreaming && isLatestMessage(index)
 }
 
+/**
+ * C4①：消息列表 key 必须是稳定 id，不能用数组下标。
+ * 用下标时截断/插入消息会让 Vue 复用错误的组件实例，出现"思考面板/工具卡状态错位"。
+ * 优先级：后端 id → createdAt+role → 退化为下标（仅兜底，理论上不会走到）。
+ */
+function messageKey(m: ChatMessage, i: number): string {
+  if (m.id) return m.id
+  if (m.createdAt) return `${m.role}-${m.createdAt}`
+  return `${m.role}-idx-${i}`
+}
+
 defineExpose({ scrollToPos })
 </script>
 
@@ -128,7 +139,7 @@ defineExpose({ scrollToPos })
     </div>
     <AiMessage
       v-for="(m, i) in messages"
-      :key="i"
+      :key="messageKey(m, i)"
       :message="m"
       :index="i"
       :is-streaming="isStreamingMessage(i)"

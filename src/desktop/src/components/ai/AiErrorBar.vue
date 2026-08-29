@@ -6,11 +6,19 @@
  * 样式全部走语义 token（--danger / --danger-bg），供 AiMessageList 顶部区域与
  * 后续新 Shell 复用。
  */
-defineProps<{ message: string }>()
+import { computed } from 'vue'
+import { useI18n } from '@/composables/useI18n'
+
+const props = defineProps<{ message: string }>()
+const { tMsg } = useI18n()
+
+// 后端/协议层可能直接回传 i18n key（如 ai_approve_failed）；统一翻译，
+// 避免界面直接渲染裸 key；非 key 的普通句子原样展示。
+const text = computed(() => tMsg(props.message))
 </script>
 
 <template>
-  <div class="ai-error-bar" role="alert">{{ message }}</div>
+  <div class="ai-error-bar" role="alert">{{ text }}</div>
 </template>
 
 <style scoped>

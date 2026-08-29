@@ -341,6 +341,49 @@ html.theme-linear {
   --icon-stroke: 1.4;
 }
 
+/* LINEAR light 变体（C6①）：原主题只有一套暗色变量，明暗切换失效，这里补齐浅色 */
+html.theme-linear.light {
+  --bg-base: #ffffff;
+  --bg-sidebar: #f9fafb;
+  --bg-surface: #ffffff;
+  --bg-hover: #f4f4f5;
+  --bg-active: #e9e9ec;
+  --bg-selected: #ede9fe;
+  --bg-modal-overlay: rgba(0, 0, 0, 0.35);
+  --border-default: #e4e4e7;
+  --border-subtle: #f1f1f3;
+  --border-focus: #6366f1;
+  --text-primary: #09090b;
+  --text-secondary: #52525b;
+  --text-tertiary: #8b8b93;
+  --text-inverse: #ffffff;
+  --accent: #6366f1;
+  --accent-rgb: 99 102 241;
+  --accent-hover: #4f46e5;
+  --accent-light: rgba(99, 102, 241, 0.08);
+  --accent-bg: #eef2ff;
+  --gradient-accent: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  --logo-gradient: linear-gradient(135deg, #6366f1 0%, #a78bfa 100%);
+  --success: #16a34a;
+  --success-bg: #f0fdf4;
+  --warning: #d97706;
+  --warning-bg: #fffbeb;
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --info: #2563eb;
+  --info-bg: #eff6ff;
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --shadow-elevated: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-dropdown: 0 8px 28px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 20px 56px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --icon-stroke: 1.4;
+}
+
 /* ===== APPLE HIG — Native macOS Feel ===== */
 html.theme-apple.light {
   --bg-base: #f5f5f7;
@@ -463,6 +506,49 @@ html.theme-raycast {
   --icon-stroke: 1.65;
 }
 
+/* RAYCAST light 变体（C6①）：原主题只有一套暗色变量，明暗切换失效，这里补齐浅色 */
+html.theme-raycast.light {
+  --bg-base: #fafafa;
+  --bg-sidebar: #f4f4f5;
+  --bg-surface: #ffffff;
+  --bg-hover: #f1f1f2;
+  --bg-active: #e9e9ea;
+  --bg-selected: rgba(0, 102, 255, 0.08);
+  --bg-modal-overlay: rgba(0, 0, 0, 0.25);
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-subtle: rgba(0, 0, 0, 0.04);
+  --border-focus: #0066ff;
+  --text-primary: #1c1c1e;
+  --text-secondary: #4a4a4d;
+  --text-tertiary: #8a8a8e;
+  --text-inverse: #ffffff;
+  --accent: #0066ff;
+  --accent-rgb: 0 102 255;
+  --accent-hover: #0055e6;
+  --accent-light: rgba(0, 102, 255, 0.06);
+  --accent-bg: #eaf1ff;
+  --gradient-accent: linear-gradient(135deg, #0066ff 0%, #6699ff 100%);
+  --logo-gradient: linear-gradient(135deg, #ff6363 0%, #55b3ff 100%);
+  --success: #16a34a;
+  --success-bg: rgba(22, 163, 74, 0.08);
+  --warning: #d97706;
+  --warning-bg: rgba(217, 119, 6, 0.08);
+  --danger: #dc2626;
+  --danger-bg: rgba(220, 38, 38, 0.08);
+  --info: #0066ff;
+  --info-bg: rgba(0, 102, 255, 0.08);
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 11px;
+  --radius-xl: 14px;
+  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --shadow-elevated: 0 2px 8px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-dropdown: 0 12px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --icon-stroke: 1.65;
+}
+
 /* ===== ARC — Vibrant Colorful Playful ===== */
 html.theme-arc.light {
   --bg-base: #fefefe;
@@ -571,6 +657,14 @@ html.dark {
   --muted: var(--bg-hover);
   --muted-foreground: var(--text-secondary);
   --accent-foreground: var(--text-inverse);
+  /* 危险色按钮上的前景色：与 --accent-foreground 对称，供 .ai-cfm-pop 等使用（C6②） */
+  --danger-foreground: #ffffff;
+  /* 深色蒙层（rgba(0,0,0,.x)）之上的前景色：与主题无关，恒为白 */
+  --scrim-foreground: #ffffff;
+  /* 二维码画布底色：必须浅底，深色主题下用 --bg-surface 会导致无法扫描 */
+  --qr-canvas-bg: #ffffff;
+  /* 摄像头/视频画布底色 */
+  --media-canvas-bg: #000000;
   --destructive: var(--danger);
   --destructive-foreground: var(--text-inverse);
   --border: var(--border-default);
@@ -591,6 +685,10 @@ html.dark {
   --shadow-pop: var(--shadow-dropdown);
   --text-muted: var(--text-tertiary);
   --purple: #8b5cf6;
+  /* 输入控件底色：主题未提供该 token，统一映射到 surface（C6② token 化补漏） */
+  --bg-input: var(--bg-surface);
+  /* success 的浅色底：统一映射到 success-bg */
+  --success-light: var(--success-bg);
   --font-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Consolas', monospace;
   /* Z-index scale */
   --z-base: 0;
@@ -627,6 +725,15 @@ html.theme-raycast {
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* C6①：linear/raycast 补齐 light 变体后，浅色档位必须回到浅色阴影
+   （上面的暗色规则选择器 html.theme-linear 在 light 档同样命中，这里用更高优先级覆盖） */
+html.theme-linear.light,
+html.theme-raycast.light {
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
 }
 
 /* ============================================================
@@ -683,7 +790,10 @@ body {
 .bg-selected {
   background: var(--bg-selected);
 }
-.text-primary {
+/* C6③：原类名 `.text-primary` 与 Tailwind v4 的颜色工具类 `text-primary`
+   （@theme inline 里 --color-primary → var(--primary)）同名冲突，两者的胜出取决于
+   层叠顺序，实测不可预期。这里把自定义工具类改名为 `.text-strong`，消除歧义。 */
+.text-strong {
   color: var(--text-primary);
 }
 .text-secondary {

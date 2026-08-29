@@ -268,7 +268,7 @@ function closeDropdowns() {
 }
 .pc-dropdown-item:hover { background: var(--bg-hover); }
 .pc-dropdown-item--active {
-  background: var(--accent); color: var(--text-inverse, #fff);
+  background: var(--accent); color: var(--text-inverse);
   font-weight: 600;
 }
 .pc-dropdown-item--active:hover { background: var(--accent-hover); }
@@ -300,7 +300,7 @@ function closeDropdowns() {
 }
 .pc-day--sel {
   background: var(--accent) !important;
-  color: var(--text-inverse, #fff) !important;
+  color: var(--text-inverse) !important;
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }

@@ -279,7 +279,8 @@ onUnmounted(() => {
   width: 220px;
   height: 220px;
   margin: 0 auto 16px;
-  background: #fff;
+  /* 二维码需浅底才可被扫描，深色主题下不能用 --bg-surface */
+  background: var(--qr-canvas-bg);
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
@@ -337,7 +338,7 @@ onUnmounted(() => {
   margin: 0 auto;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: #000;
+  background: var(--media-canvas-bg);
   aspect-ratio: 1/1;
   display: flex;
   align-items: center;
@@ -349,7 +350,7 @@ onUnmounted(() => {
   object-fit: cover;
 }
 .pair-camera-hint {
-  color: #888;
+  color: var(--text-tertiary);
   font-size: 13px;
   text-align: center;
   padding: 20px;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch, reactive } from 'vue'
+import { watch, reactive, ref, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useTheme } from '@/composables/useTheme'
@@ -18,7 +18,6 @@ import ImagePreviewModal from '@/components/modals/ImagePreviewModal.vue'
 import DocPreviewModal from '@/components/modals/DocPreviewModal.vue'
 import ShortcutsModal from '@/components/modals/ShortcutsModal.vue'
 import FeedbackModal from '@/components/modals/FeedbackModal.vue'
-import ExportModal from '@/components/modals/ExportModal.vue'
 import './modal-shared.css'
 
 const props = defineProps<{
@@ -44,6 +43,18 @@ const { t } = useI18n()
 const toast = useSonner()
 const { allThemes, setStyle, currentStyle } = useTheme()
 const { savePreference, loadPreferencesInto, PREF_TYPE_BY_KEY } = useNotifications()
+
+// 应用版本号动态获取（此前 updates 弹窗硬编码 v2.4.1，与实际版本不符属假信息 C7）。
+// 浏览器环境下 @tauri-apps/api 不可用，动态 import + catch 兜底为空显示 "—"。
+const appVersion = ref('')
+onMounted(async () => {
+  try {
+    const { getVersion } = await import('@tauri-apps/api/app')
+    appVersion.value = await getVersion()
+  } catch {
+    appVersion.value = ''
+  }
+})
 
 // ===== Security & Notification Preferences (persisted to localStorage) =====
 // security 与 notifications 两个弹窗共享此状态，故保留在编排层
@@ -173,13 +184,7 @@ watch(
           @update:model-value="(v: boolean) => saveSecNotif({ loginNotification: v })"
         />
       </div>
-      <div class="sec-item">
-        <div>
-          <div class="sec-label">{{ t('sec_e2ee') }}</div>
-          <div class="sec-hint">{{ t('sec_e2ee_pending') }}</div>
-        </div>
-        <Switch :model-value="false" disabled />
-      </div>
+      <!-- E2EE 占位开关已移除（决策 D1 摘牌）：不再保留"看起来能用、实际永远关闭"的假入口 -->
     </div>
   </ModalDialog>
 
@@ -199,7 +204,8 @@ watch(
   >
     <div class="modal-center-pad20">
       <p class="cancel-text">{{ t('sub_cancel_h') }}</p>
-      <Button variant="destructive" class="w-full" @click="toast.show(t('toast_signup_soon'), 'info')">{{
+      <!-- 取消订阅尚未接入后端：统一占位文案"功能建设中"（此前误用"注册流程即将推出"） -->
+      <Button variant="destructive" class="w-full" @click="toast.show(t('ft_building'), 'info')">{{
         t('sub_cancel')
       }}</Button>
     </div>
@@ -269,7 +275,7 @@ watch(
     <div class="upd-box">
       <CircleCheck :size="48" class="upd-ico" />
       <h3 class="upd-title">{{ t('upd_uptodate') }}</h3>
-      <p class="upd-version">{{ t('upd_version') }}: v2.4.1</p>
+      <p class="upd-version">{{ t('upd_version') }}: v{{ appVersion || '—' }}</p>
       <p class="upd-latest">{{ t('upd_latest') }}</p>
       <div class="upd-changelog">
         <div class="upd-changelog-h">{{ t('upd_whatsnew') }}</div>
@@ -284,8 +290,8 @@ watch(
   <!-- Feedback -->
   <FeedbackModal :show-modal-type="showModalType" @close="emit('close-modal')" />
 
-  <!-- Export -->
-  <ExportModal :show-modal-type="showModalType" @close="emit('close-modal')" />
+  <!-- Export 弹窗挂载已移除（B9）：全应用无任何入口把 showModalType 置为 'export'
+       （数据导出入口走设置页 ExportSubPage），保留挂载等于留一个永远打不开的死弹窗。 -->
 
   <!-- Forgot Password -->
   <ForgotPasswordModal :open="!!showForgotPwd" @close="emit('close-forgot-pwd')" />

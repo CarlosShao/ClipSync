@@ -21,7 +21,7 @@ import {
 } from '@/api/ai'
 import type { AiProvider, AiProviderPreset, AiApiFormat, AiSettings } from '@/api/ai'
 
-const { t } = useI18n()
+const { t, tf, tMsg } = useI18n()
 const toast = useSonner()
 
 const providers = ref<AiProvider[]>([])
@@ -51,8 +51,8 @@ const testingId = ref<string | null>(null)
 const formOpen = ref(false)
 // 表单容器引用：展开后滚动到可见区域（供应商多时表单在列表下方，避免“点了没反应”）
 const formRef = ref<HTMLElement | null>(null)
-// 思考强度选项兜底文案（locale 未热更新/缺 key 时仍可读）
-const strengthFallback: Record<'low' | 'medium' | 'high', string> = { low: '轻量', medium: '均衡', high: '深度' }
+// 思考强度选项兜底文案（locale 未热更新/缺 key 时仍可读；英文环境下仅作最后兜底）
+const strengthFallback: Record<'low' | 'medium' | 'high', string> = { low: 'Low', medium: 'Balanced', high: 'Deep' }
 
 function scrollFormIntoView() {
   nextTick(() => formRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
@@ -73,6 +73,16 @@ const prefMode = ref<'ask' | 'agent'>('ask')
 const prefThinking = ref(false)
 const prefThinkingStrength = ref<'low' | 'medium' | 'high'>('medium')
 const prefMemory = ref(false)
+// 复制后自动 AI 摘要（C1）：本地偏好，默认关闭；默认配置下复制内容不触发任何 LLM 调用
+const AUTO_SUMMARY_KEY = 'ai-auto-summary-on-copy'
+const autoSummaryOnCopy = ref(localStorage.getItem(AUTO_SUMMARY_KEY) === '1')
+
+function setAutoSummaryOnCopy(v: boolean) {
+  autoSummaryOnCopy.value = v
+  localStorage.setItem(AUTO_SUMMARY_KEY, v ? '1' : '0')
+  // 通知常驻的 AiSummaryFloat 即时生效
+  window.dispatchEvent(new CustomEvent('clipsync:ai-auto-summary-changed'))
+}
 
 // 系统提示词脏状态：只有真正修改过才允许保存
 const promptDirty = computed(() => customPrompt.value !== promptSnapshot.value)
@@ -101,10 +111,10 @@ async function savePrefs(patch: Partial<AiSettings>) {
     if (res.ok) {
       window.dispatchEvent(new CustomEvent('clipsync:ai-settings-changed'))
     } else {
-      toast.show(res.error || t('ai_save_failed'), 'error')
+      toast.show(tMsg(res.error) || t('ai_save_failed'), 'error')
     }
   } catch (e: any) {
-    toast.show(String(e?.message || e), 'error')
+    toast.show(tMsg(e?.message) || String(e), 'error')
   }
 }
 
@@ -121,10 +131,10 @@ async function saveCustomPrompt() {
       window.dispatchEvent(new CustomEvent('clipsync:ai-settings-changed'))
       setTimeout(() => (promptSaved.value = false), 2400)
     } else {
-      toast.show(res.error || t('ai_prompt_save_fail', '保存失败'), 'error')
+      toast.show(tMsg(res.error) || t('ai_prompt_save_fail', '保存失败'), 'error')
     }
   } catch (e: any) {
-    toast.show(String(e?.message || e), 'error')
+    toast.show(tMsg(e?.message) || String(e), 'error')
   } finally {
     promptSaving.value = false
   }
@@ -224,24 +234,13 @@ async function refreshModels() {
     if (editingId.value) {
       res = await getProviderModels(editingId.value)
     } else {
-      // 未保存：先落地（密钥加密入库），再用已存密钥拉取，避免明文 key 出现在 fetch-models 请求体
-      const createRes = await createProvider({
-        provider: formProvider.value,
-        name: formName.value.trim(),
-        apiKey: formApiKey.value,
-        baseUrl: formBaseUrl.value.trim() || undefined,
-        model: formSelectedModels.value[0] || '',
-        models: formSelectedModels.value,
-        isDefault: formIsDefault.value,
-        contextWindow: formContextWindow.value ? Number(formContextWindow.value) : null,
-        apiFormat: isCustom.value ? formApiFormat.value : undefined,
-      })
-      if (!createRes.ok || !createRes.data?.id) {
-        toast.show(createRes.error || t('ai_save_failed'), 'error')
-        return
-      }
-      editingId.value = createRes.data.id
-      res = await getProviderModels(editingId.value)
+      // 未保存表单：不再隐式 createProvider 落库（否则"刷新模型"会悄悄写入一条配置），
+      // 改为明确提示用户先保存。保存后 editingId 就绪，再点刷新即可拉取模型列表。
+      toast.show(
+        t('ai_refresh_models_need_save', '请先保存该供应商配置，再刷新模型列表'),
+        'info',
+      )
+      return
     }
     if (res.ok && res.data) {
       const list = res.data.models || []
@@ -255,10 +254,10 @@ async function refreshModels() {
       formSelectedModels.value = Array.from(selected)
       toast.show(t('ai_models_refreshed'), 'success')
     } else {
-      toast.show(res.error || t('ai_models_refresh_fail'), 'error')
+      toast.show(tMsg(res.error) || t('ai_models_refresh_fail'), 'error')
     }
   } catch (e: any) {
-    toast.show(String(e?.message || e), 'error')
+    toast.show(tMsg(e?.message) || String(e), 'error')
   } finally {
     refreshingModels.value = false
   }
@@ -302,10 +301,10 @@ async function save() {
       await load()
       resetForm()
     } else {
-      formError.value = res.error || t('ai_save_failed')
+      formError.value = tMsg(res.error) || t('ai_save_failed')
     }
   } catch (e: any) {
-    formError.value = String(e?.message || e)
+    formError.value = tMsg(e?.message) || String(e)
   } finally {
     saving.value = false
   }
@@ -319,7 +318,7 @@ async function remove(id: string) {
     window.dispatchEvent(new CustomEvent('clipsync:ai-providers-changed'))
     await load()
   } else {
-    toast.show(res.error || t('ai_delete_failed'), 'error')
+    toast.show(tMsg(res.error) || t('ai_delete_failed'), 'error')
   }
 }
 
@@ -331,10 +330,10 @@ async function test(id: string) {
       toast.show(t('ai_test_ok'), 'success')
     } else {
       const detail = res.data?.detail ? `${res.data.detail} ` : ''
-      toast.show(detail + (res.error || t('ai_test_fail')), 'error')
+      toast.show(detail + (tMsg(res.error) || t('ai_test_fail')), 'error')
     }
   } catch (e: any) {
-    toast.show(String(e?.message || e), 'error')
+    toast.show(tMsg(e?.message) || String(e), 'error')
   } finally {
     testingId.value = null
   }
@@ -360,7 +359,7 @@ onMounted(() => {
         <Button variant="outline" size="sm" class="shrink-0 whitespace-nowrap" @click="toggleForm">
           <Plus v-if="!formOpen" />
           <ChevronDown v-else class="ai-add-chev open" />
-          {{ formOpen ? t('collapse', '收起') : t('ai_add_provider') }}
+          {{ formOpen ? tf('collapse', '收起') : t('ai_add_provider') }}
         </Button>
       </div>
 
@@ -377,7 +376,7 @@ onMounted(() => {
             <div class="ai-prov-meta">
               {{ presetLabel(p.provider) }} ·
               <template v-if="Array.isArray(p.models) && p.models.length > 1">
-                {{ p.models[0] }} 等 {{ p.models.length }} 个模型
+                {{ tf('ai_provider_models_count', `${p.models[0]} 等 ${p.models.length} 个模型`, { first: p.models[0], n: p.models.length }) }}
               </template>
               <template v-else>{{ p.model }}</template>
             </div>
@@ -541,14 +540,14 @@ onMounted(() => {
         </div>
 
         <div class="ai-field">
-          <label class="ai-label">上下文窗口 (tokens)</label>
+          <label class="ai-label">{{ t('ai_context_window_label', '上下文窗口 (tokens)') }}</label>
           <Input
             v-model="formContextWindow"
             type="number"
-            :placeholder="`自动按模型：${formSelectedModels[0] || '?'}`"
+            :placeholder="tf('ai_context_window_ph', `自动按模型：${formSelectedModels[0] || '?'}`, { model: formSelectedModels[0] || '?' })"
           />
           <div class="sg-hint">
-            留空则按内置模型表自动识别（切换模型时总量随之变化）。自定义/未知模型请填真实上下文窗口，如 128000 / 200000 / 1000000。
+            {{ t('ai_context_window_hint', '留空则按内置模型表自动识别（切换模型时总量随之变化）。自定义/未知模型请填真实上下文窗口，如 128000 / 200000 / 1000000。') }}
           </div>
         </div>
 
@@ -656,6 +655,17 @@ onMounted(() => {
             :model-value="prefMemory"
             @update:model-value="(v: boolean) => { prefMemory = v; savePrefs({ memoryEnabled: v }) }"
           />
+        </div>
+
+        <!-- 复制后自动 AI 摘要（C1）：默认关闭，开启后每次复制文本都会调用一次 LLM -->
+        <div class="ai-pref-row">
+          <div class="ai-pref-text">
+            <div class="ai-pref-name">{{ t('ai_auto_summary_title', '复制后自动 AI 摘要') }}</div>
+            <div class="ai-pref-hint">
+              {{ t('ai_auto_summary_hint', '开启后每次复制文本会自动调用大模型生成摘要并弹出浮窗；相同内容 10 分钟内只调用一次。关闭时不产生任何模型调用。') }}
+            </div>
+          </div>
+          <Switch :model-value="autoSummaryOnCopy" @update:model-value="setAutoSummaryOnCopy" />
         </div>
       </div>
     </section>
@@ -837,14 +847,14 @@ onMounted(() => {
   cursor: default;
 }
 .ai-card-btn--danger:hover {
-  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
-  color: var(--danger, #ef4444);
-  border-color: color-mix(in srgb, var(--danger, #ef4444) 35%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
 }
 .ai-card-btn--confirm:hover {
-  background: color-mix(in srgb, var(--success, #16a34a) 12%, transparent);
-  color: var(--success, #16a34a);
-  border-color: color-mix(in srgb, var(--success, #16a34a) 35%, transparent);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
 }
 /* 测试中旋转微光 */
 .ai-card-btn.testing :deep(svg) {
@@ -865,8 +875,8 @@ onMounted(() => {
   color: var(--accent);
 }
 .ai-badge--key {
-  background: var(--success-bg, #dcfce7);
-  color: var(--success, #16a34a);
+  background: var(--success-bg);
+  color: var(--success);
 }
 .ai-badge--nokey {
   background: var(--bg-hover);
@@ -970,8 +980,8 @@ onMounted(() => {
   line-height: 1;
 }
 .ai-model-tag--selected:hover .ai-model-remove {
-  background: var(--danger, #ef4444);
-  color: #fff;
+  background: var(--danger);
+  color: var(--danger-foreground);
 }
 .ai-models-hint {
   font-size: 11px;
@@ -986,7 +996,7 @@ onMounted(() => {
   vertical-align: middle;
 }
 .ai-error {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
   font-size: 12px;
   margin: 4px 0 10px;
 }
@@ -1081,8 +1091,8 @@ onMounted(() => {
   resize: vertical;
 }
 .ai-prompt-ta:focus {
-  border-color: var(--accent, #4f8cff);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #4f8cff) 20%, transparent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .ai-prompt-foot {
   display: flex;
@@ -1096,11 +1106,11 @@ onMounted(() => {
 }
 .ai-prompt-dirty {
   font-size: 12px;
-  color: var(--warning, #f59e0b);
+  color: var(--warning);
 }
 .ai-prompt-saved {
   font-size: 12px;
-  color: var(--success, #16a34a);
+  color: var(--success);
 }
 .ai-prompt-save {
   margin-left: auto;
@@ -1130,7 +1140,7 @@ onMounted(() => {
   height: 16px;
   border-radius: 50%;
   background: var(--accent);
-  color: var(--accent-bg, #fff);
+  color: var(--accent-bg);
   font-size: 11px;
   font-weight: 700;
   font-style: italic;

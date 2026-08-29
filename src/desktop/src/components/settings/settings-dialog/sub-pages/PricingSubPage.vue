@@ -13,7 +13,7 @@ function selectPlan(planId: string, planName: string, price: number) {
     return
   }
   // Placeholder: payment flow not yet implemented
-  toast.show(t('fb_not_available'), 'info')
+  toast.show(t('ft_building'), 'info')
 }
 </script>
 

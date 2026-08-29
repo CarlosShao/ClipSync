@@ -120,7 +120,7 @@ async function handleFeedbackSubmit() {
 }
 .fb-type-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-foreground);
   border-color: var(--accent);
 }
 .fb-textarea {

@@ -342,7 +342,7 @@ function onSubmit() {
   transition: border-color 0.15s;
 }
 .ipd-input:focus {
-  border-color: var(--color-primary, #6366f1);
+  border-color: var(--color-primary);
 }
 .ipd-eye {
   position: absolute;
@@ -364,7 +364,7 @@ function onSubmit() {
 }
 .ipd-error {
   font-size: 13px;
-  color: var(--destructive, #ef4444);
+  color: var(--destructive);
   margin: 6px 0 0;
   min-height: 18px;
 }
@@ -373,8 +373,8 @@ function onSubmit() {
   align-items: center;
   gap: 8px;
   padding: 12px 14px;
-  background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-primary, #6366f1) 30%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
   border-radius: var(--radius-md);
   font-size: 14px;
   color: var(--text-primary);

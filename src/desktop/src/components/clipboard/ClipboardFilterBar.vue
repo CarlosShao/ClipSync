@@ -133,7 +133,7 @@ function clearSearch() {
     <Button
       variant="ghost"
       size="icon-sm"
-      :class="{ 'text-primary': showFilterPanel }"
+      :class="{ 'text-strong': showFilterPanel }"
       :title="t('adv_filter')"
       @click="emit('toggle-filter-panel')"
     >
@@ -334,11 +334,11 @@ function clearSearch() {
 }
 .batch-suggest-btn .batch-count {
   background: var(--accent);
-  color: var(--accent-foreground, #fff);
+  color: var(--accent-foreground);
 }
 .batch-del-btn {
   color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger, #ef4444) 35%, var(--border-default));
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border-default));
 }
 .batch-del-btn:hover {
   background: var(--danger-bg);
@@ -347,7 +347,7 @@ function clearSearch() {
 }
 .batch-del-btn .batch-count {
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-foreground);
 }
 .batch-restore-btn:hover {
   background: var(--bg-hover);

@@ -2,7 +2,6 @@
 import { ref, reactive } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
-import { api } from '@/api/client'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 
@@ -27,19 +26,11 @@ async function handleFeedbackSubmit() {
   if (!fbForm.description.trim()) return
   fbSending.value = true
   try {
-    const res = await api('POST', '/api/feedback', {
-      type: fbForm.type,
-      description: fbForm.description,
-      contact: fbForm.contact || undefined,
-    })
-    if (res.ok) {
-      fbSent.value = true
-      toast.show(t('fb_sent') || 'Thank you for your feedback!', 'success')
-    } else {
-      toast.show(res.error || t('fb_not_available'), 'info')
-    }
-  } catch {
-    toast.show(t('fb_not_available') || 'Feedback service not yet connected.', 'info')
+    // C7 假实现诚实化：后端**没有** POST /api/feedback 端点，此前调用必然 404
+    // 并静默走失败分支（且与 FeedbackModal 行为不一致）。现与弹窗统一 ——
+    // 明确告知服务未接入，不假装提交成功。
+    // TODO: 后端提供 /api/feedback 后接线真实提交，并恢复 fbSent 成功态。
+    toast.show(t('fb_not_available'), 'info')
   } finally {
     fbSending.value = false
   }

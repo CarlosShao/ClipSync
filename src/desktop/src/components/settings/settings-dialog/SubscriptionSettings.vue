@@ -25,7 +25,8 @@ const emit = defineEmits<{ 'open-sub-page': [page: string] }>()
       </div>
       <ChevronRight class="sg-arrow" />
     </div>
-    <div class="sg-row sg-row--clickable" @click="toast.show(t('fb_not_available'), 'info')">
+    <!-- 发票下载尚未接入：统一占位文案"功能建设中"（此前误用反馈服务文案） -->
+    <div class="sg-row sg-row--clickable" @click="toast.show(t('ft_building'), 'info')">
       <div class="sg-label">
         <div class="sg-name">{{ t('sg_invoices') }}</div>
         <div class="sg-hint">{{ t('sg_invoices_h') }}</div>

@@ -333,7 +333,7 @@ onMounted(loadRules)
 }
 .wf-add-btn:hover { background: var(--accent-bg); }
 .wf-desc { font-size: 12px; color: var(--text-secondary); margin: 6px 0 0; line-height: 1.6; }
-.wf-error { color: var(--danger, #ef4444); font-size: 12.5px; padding: 8px 0; }
+.wf-error { color: var(--danger); font-size: 12.5px; padding: 8px 0; }
 .wf-form {
   border: 1px solid var(--border-default); border-radius: 10px;
   padding: 14px; margin-bottom: 14px; background: var(--bg-surface);
@@ -357,7 +357,7 @@ onMounted(loadRules)
   border: 1px solid var(--border-default); background: transparent; cursor: pointer;
   color: var(--text-primary);
 }
-.wf-btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.wf-btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-foreground); }
 .wf-empty { color: var(--text-tertiary); font-size: 12.5px; padding: 20px 0; text-align: center; }
 .wf-list { display: flex; flex-direction: column; gap: 8px; }
 .wf-item {
@@ -387,6 +387,6 @@ onMounted(loadRules)
   cursor: pointer; transition: all 0.12s;
 }
 .wf-icon-btn:hover { background: var(--bg-hover); }
-.wf-icon-btn.on { color: var(--success, #16a34a); }
-.wf-icon-btn--danger:hover { color: var(--danger, #ef4444); background: rgba(239, 68, 68, 0.08); }
+.wf-icon-btn.on { color: var(--success); }
+.wf-icon-btn--danger:hover { color: var(--danger); background: rgba(239, 68, 68, 0.08); }
 </style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted, onBeforeUnmount } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import { useI18n } from '@/composables/useI18n'
 import {
   getProviders,
@@ -42,8 +43,6 @@ const props = defineProps<{
   items: SuggestInputItem[]
   /** 现有收藏夹名称 */
   collections?: string[]
-  /** 语义相似度检测候选（#236）——已废弃，保留字段兼容旧调用方 */
-  candidates?: { id: string; text: string }[]
 }>()
 const emit = defineEmits<{
   close: []
@@ -56,17 +55,11 @@ const emit = defineEmits<{
   /** 一键应用标签：itemId + tags */
   'apply-tags': [itemId: string, tags: string[]]
 }>()
-const { t } = useI18n()
+const { tf, tMsg } = useI18n()
 
-/**
- * 集中处理 i18n key 找不到的情况。
- * useI18n t() 在 key 缺失时返回 key 字面字符串（不是 undefined/''），所以 `t(k) || fallback` 永远不会触发 fallback。
- * 必须显式判断「返回值等于 key」才走 fallback。
- */
-function tf(key: string, fallback: string, params?: Record<string, any>): string {
-  const v = t(key, params as any)
-  if (typeof v === 'string' && v && v !== key) return v
-  return fallback
+/** 后端/协议层可能回传 i18n key；统一翻译，避免界面出现裸 key */
+function errText(v?: string | null, fallback = ''): string {
+  return tMsg(v, fallback) || fallback
 }
 
 const loading = ref(false)
@@ -115,10 +108,10 @@ async function runBatch(texts: SuggestBatchItem[]) {
     })
     suggestions.value = map
     if (Object.keys(map).length === 0) {
-      error.value = res.data.error || 'AI 未返回结构化建议'
+      error.value = errText(res.data.error, tf('ai_suggest_no_structured', 'AI 未返回结构化建议'))
     }
   } else {
-    error.value = res.error || res.data?.error || '建议生成失败'
+    error.value = errText(res.error || res.data?.error, tf('ai_suggest_failed', '建议生成失败'))
   }
 }
 
@@ -144,7 +137,7 @@ async function analyze() {
   try {
     await runBatch(texts)
   } catch (e: any) {
-    error.value = e?.message || '建议生成失败'
+    error.value = errText(e?.message, tf('ai_suggest_failed', '建议生成失败'))
   } finally {
     loading.value = false
   }
@@ -228,13 +221,27 @@ defineExpose({
 })
 
 const hasAnySuggestion = computed(() => Object.keys(suggestions.value).length > 0)
-const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #230 验收）：批量场景无意义且每次重开会"重复 AI 建议"。
+
+// ===== C8②：Esc / 点击外部关闭 =====
+const popupEl = ref<HTMLElement | null>(null)
+onClickOutside(popupEl, () => {
+  if (props.open) emit('close')
+})
+function onWindowKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || !props.open) return
+  // 仅在弹窗打开时消费 Esc；捕获阶段拦截，避免冒泡到全局 Esc 仲裁（B3 已收归 HomeView）
+  e.stopPropagation()
+  e.preventDefault()
+  emit('close')
+}
+window.addEventListener('keydown', onWindowKeydown, true)
+onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown, true))
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="suggest-float">
-      <div v-if="open" class="ai-suggest-popup">
+      <div v-if="open" ref="popupEl" class="ai-suggest-popup">
         <!-- Header -->
         <div class="ai-suggest-head">
           <div class="ai-suggest-title">
@@ -278,13 +285,11 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
 
         <!-- Error -->
         <div v-else-if="error" class="ai-suggest-status ai-suggest-status--error">
-          <span>{{ error }}</span>
+          <span>{{ tMsg(error) }}</span>
         </div>
 
         <!-- Body: list of suggestion cards -->
         <div v-else-if="hasAnySuggestion" class="ai-suggest-body">
-          <!-- 整批维度的相似度检测 -->
-          <!-- 整批维度相似度检测已移除（#230 验收）：批量场景对批处理无意义、且每次重开都重跑浪费 token。 -->
           <div
             v-for="input in props.items"
             :key="input.id"
@@ -364,7 +369,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                     v-if="suggestions[input.id].worth_favorite && suggestions[input.id].suggested_collection"
                     class="ai-suggest-row-collection"
                   >
-                    {{ tf('ai_suggest_collection_hint', `建议归入「${suggestions[input.id].suggested_collection}」`, { name: suggestions[input.id].suggested_collection }) }}
+                    {{ tf('ai_suggest_collection_hint', `建议归入「${suggestions[input.id].suggested_collection}」`, { name: suggestions[input.id].suggested_collection || '' }) }}
                   </span>
                 </div>
                 <button
@@ -377,7 +382,7 @@ const duplicateEntries = computed(() => []) // 相似度检测已移除（见 #2
                 </button>
                 <span v-else-if="applied[input.id]?.favorited" class="ai-suggest-applied-tag">
                   <Check :size="12" />
-                  <span>{{ t('ai_suggest_applied_fav', '已收藏') }}</span>
+                  <span>{{ tf('ai_suggest_applied_fav', '已收藏') }}</span>
                 </span>
               </div>
               <!-- 已收藏条目：显示一个静态标识行，避免出现"建议收藏"按钮的奇怪行为 -->

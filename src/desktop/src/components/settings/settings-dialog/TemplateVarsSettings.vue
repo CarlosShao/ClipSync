@@ -220,7 +220,7 @@ onMounted(() => {
   min-width: 100px;
 }
 .pwd-error {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
   font-size: 12px;
   margin-top: 6px;
 }

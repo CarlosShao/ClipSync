@@ -176,7 +176,7 @@ function applyCustom() {
   border-radius: var(--radius-md);
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-foreground);
   cursor: pointer;
   transition: opacity 0.15s;
 }

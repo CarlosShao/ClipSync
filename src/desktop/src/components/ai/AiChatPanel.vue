@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, provide } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, provide, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useAiChat } from '@/composables/useAiChat'
 import { useAiChatUi } from '@/composables/useAiChatUi'
@@ -49,7 +49,7 @@ const props = defineProps<{
   view?: string
 }>()
 const emit = defineEmits<{ close: []; 'open-settings': [] }>()
-const { t, currentLang } = useI18n()
+const { t, tf, tMsg, currentLang } = useI18n()
 
 const {
   providers,
@@ -105,6 +105,24 @@ const thinkingStrength = ref<'low' | 'medium' | 'high'>(
   (localStorage.getItem('ai-thinking-strength') as 'low' | 'medium' | 'high') || 'medium',
 )
 
+// C3④：程序化写入偏好（DB 覆盖 / 切换会话同步 / 设置页广播）不得触发"全局默认模式"持久化，
+// 否则打开一个 agent 模式的历史会话会把全局默认模式改成 agent。
+// 做法：写入前置位 suppressPrefPersist，watcher 跳过一次，再在 nextTick 复位。
+let suppressPrefPersist = false
+function applyPrefsQuietly(patch: {
+  mode?: 'ask' | 'agent'
+  thinking?: boolean
+  strength?: 'low' | 'medium' | 'high'
+}) {
+  suppressPrefPersist = true
+  if (patch.mode) mode.value = patch.mode
+  if (patch.thinking !== undefined) thinkingEnabled.value = patch.thinking
+  if (patch.strength) thinkingStrength.value = patch.strength
+  nextTick(() => {
+    suppressPrefPersist = false
+  })
+}
+
 // DB 偏好加载后：以 DB 为准覆盖本地（仅一次）
 let settingsApplied = false
 watch(
@@ -112,9 +130,11 @@ watch(
   (s) => {
     if (s && !settingsApplied) {
       settingsApplied = true
-      mode.value = s.defaultMode || 'ask'
-      thinkingEnabled.value = s.thinkingEnabled || false
-      thinkingStrength.value = s.thinkingStrength || 'medium'
+      applyPrefsQuietly({
+        mode: s.defaultMode || 'ask',
+        thinking: s.thinkingEnabled || false,
+        strength: s.thinkingStrength || 'medium',
+      })
     }
   },
   { immediate: true },
@@ -128,9 +148,11 @@ async function applyExternalAiSettings() {
   try {
     const res = await getSettings()
     if (res.ok && res.data) {
-      mode.value = res.data.defaultMode || 'ask'
-      thinkingEnabled.value = res.data.thinkingEnabled || false
-      thinkingStrength.value = res.data.thinkingStrength || 'medium'
+      applyPrefsQuietly({
+        mode: res.data.defaultMode || 'ask',
+        thinking: res.data.thinkingEnabled || false,
+        strength: res.data.thinkingStrength || 'medium',
+      })
       memoryEnabled.value = res.data.memoryEnabled ?? false
     }
   } catch {
@@ -140,8 +162,10 @@ async function applyExternalAiSettings() {
 window.addEventListener('clipsync:ai-settings-changed', applyExternalAiSettings)
 onBeforeUnmount(() => window.removeEventListener('clipsync:ai-settings-changed', applyExternalAiSettings))
 
-// 变更时：同时写 localStorage（瞬时回退）与 DB（持久化，满足“入库不丢失”）
+// 变更时：同时写 localStorage（瞬时回退）与 DB（持久化，满足“入库不丢失”）。
+// C3④：仅"用户主动切换"才落库；程序化同步（切换会话 / DB 覆盖 / 设置页广播）跳过。
 watch([mode, thinkingEnabled, thinkingStrength], () => {
+  if (suppressPrefPersist) return
   localStorage.setItem('ai-mode', mode.value)
   localStorage.setItem('ai-thinking-enabled', String(thinkingEnabled.value))
   localStorage.setItem('ai-thinking-strength', thinkingStrength.value)
@@ -196,6 +220,22 @@ watch(pendingConfirm, () => {
   showConfirmMenu.value = false
 })
 
+/**
+ * C3③：Esc → 拒绝当前确认（仅 AI 面板内层级生效）。
+ * 只在"有待确认的工具门控"时消费 Esc，并在捕获阶段 stopPropagation，
+ * 避免冒泡到全局 Esc 仲裁（B3 已收归 HomeView）——即不会误关 AI 面板。
+ */
+function onConfirmEscape(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return
+  if (!props.open || !pendingConfirm.value || approving.value) return
+  e.stopPropagation()
+  e.preventDefault()
+  showConfirmMenu.value = false
+  approve(false)
+}
+window.addEventListener('keydown', onConfirmEscape, true)
+onBeforeUnmount(() => window.removeEventListener('keydown', onConfirmEscape, true))
+
 function closeConfirmMenu(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (!target?.closest('.ai-cfm-pop__allow-wrap')) {
@@ -215,12 +255,14 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', closeConfirmMenu)
 })
 
-// 切换对话时同步模式/思考开关
+// 切换对话时同步模式/思考开关（C3④：只同步到本面板，不写回全局默认偏好）
 async function onSelectConversation(id: string) {
   await loadConversation(id)
   if (currentConversation.value) {
-    mode.value = currentConversation.value.mode || 'ask'
-    thinkingEnabled.value = currentConversation.value.thinking_enabled || false
+    applyPrefsQuietly({
+      mode: currentConversation.value.mode || 'ask',
+      thinking: currentConversation.value.thinking_enabled || false,
+    })
   }
 }
 
@@ -396,6 +438,18 @@ function confirmToolName(tool?: string): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
 }
+
+/**
+ * C4④：把当前消息流里最后一条 assistant 消息的 agentRuns 聚合给 Inspector
+ * 的「子代理总览」，替换原先的占位区块。
+ */
+const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const runs = messages.value[i]?.agentRuns
+    if (runs && runs.length) return runs
+  }
+  return []
+})
 </script>
 
 <template>
@@ -406,7 +460,7 @@ function confirmToolName(tool?: string): string {
     :style="open ? { width: width + 'px', minWidth: width + 'px' } : {}"
   >
     <!-- 左侧拖拽手柄（#215） -->
-    <div class="ai-resize-handle" title="拖拽调整宽度" @mousedown="startDrag" />
+    <div class="ai-resize-handle" :title="tf('ai_resize_hint', '拖拽调整宽度')" @mousedown="startDrag" />
 
     <div class="ai-main">
       <!-- 记忆管理面板 -->
@@ -560,11 +614,11 @@ function confirmToolName(tool?: string): string {
                     <ShieldCheck :size="14" />
                   </span>
                   <span class="ai-cfm-pop__title">
-                    {{ t('ai_confirm_perm_title', '权限请求') }}：
+                    {{ tf('ai_confirm_perm_title', '权限请求') }}：
                     <code class="ai-cfm-pop__tool-code">{{ confirmToolName(pendingConfirm.tool) }}</code>
                   </span>
                   <span v-if="isDestructiveConfirm" class="ai-cfm-pop__danger-tag">
-                    {{ t('ai_confirm_destructive') || '破坏性' }}
+                    {{ tf('ai_confirm_destructive', '破坏性') }}
                   </span>
                 </div>
               </div>
@@ -588,7 +642,7 @@ function confirmToolName(tool?: string): string {
                   @click="approve(false)"
                 >
                   <XCircle :size="13" />
-                  {{ t('ai_confirm_deny') || '拒绝' }}
+                  {{ tf('ai_confirm_deny', '拒绝') }}
                   <span class="ai-cfm-pop__kbd">Esc</span>
                 </button>
                 <div class="ai-cfm-pop__allow-wrap">
@@ -598,12 +652,12 @@ function confirmToolName(tool?: string): string {
                     @click="approve(true, 'once')"
                   >
                     <CheckCircle2 :size="13" />
-                    {{ approving ? (t('ai_confirm_approving') || '处理中…') : (t('ai_confirm_once') || '仅本次') }}
+                    {{ approving ? tf('ai_confirm_approving', '处理中…') : tf('ai_confirm_once', '仅本次') }}
                   </button>
                   <button
                     class="ai-cfm-pop__btn-caret"
                     :disabled="approving"
-                    title="更多选项"
+                    :title="tf('ai_confirm_more', '更多选项')"
                     tabindex="0"
                     @click.stop="showConfirmMenu = !showConfirmMenu"
                   >
@@ -618,7 +672,7 @@ function confirmToolName(tool?: string): string {
                       @click="showConfirmMenu = false; approve(true, 'once')"
                     >
                       <Check :size="12" />
-                      <span>{{ t('ai_confirm_once') || '仅本次允许' }}</span>
+                      <span>{{ tf('ai_confirm_once_allow', '仅本次允许') }}</span>
                     </button>
                     <button
                       v-if="pendingConfirm?.tool"
@@ -627,7 +681,7 @@ function confirmToolName(tool?: string): string {
                       @click="showConfirmMenu = false; approve(true, 'tool')"
                     >
                       <ShieldCheck :size="12" />
-                      <span>本会话始终允许 {{ pendingConfirm.tool }}</span>
+                      <span>{{ tf('ai_confirm_allow_tool', '本会话始终允许 {tool}', { tool: pendingConfirm?.tool || '' }) }}</span>
                     </button>
                     <button
                       type="button"
@@ -635,7 +689,7 @@ function confirmToolName(tool?: string): string {
                       @click="showConfirmMenu = false; approve(true, 'all')"
                     >
                       <ShieldAlert :size="12" />
-                      <span>本会话始终允许所有操作</span>
+                      <span>{{ tf('ai_confirm_allow_all', '本会话始终允许所有操作') }}</span>
                     </button>
                   </div>
                 </div>
@@ -643,7 +697,8 @@ function confirmToolName(tool?: string): string {
             </div>
           </Transition>
 
-          <div v-if="error" class="ai-error-bar">{{ error }}</div>
+          <!-- 错误条：值可能是 i18n key（协议层/后端回传），统一翻译，禁止渲染裸 key -->
+          <div v-if="error" class="ai-error-bar">{{ tMsg(error) }}</div>
 
           <!-- 编辑即回滚提示条：发送后将截断锚点消息及其后的所有轮次 -->
           <div v-if="pendingEdit" class="ai-reedit-banner" role="status">
@@ -684,6 +739,7 @@ function confirmToolName(tool?: string): string {
             :context-usage="contextUsage"
             :provider-supports-cache="providerSupportsCache"
             :memory-enabled="memoryEnabled"
+            :agent-runs="currentAgentRuns"
             @open-memory="showMemory = true"
           />
         </template>
@@ -910,11 +966,11 @@ function confirmToolName(tool?: string): string {
     0 4px 14px rgba(0, 0, 0, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.04);
   flex-shrink: 0;
-  z-index: 5;
+  z-index: var(--z-sticky);
 }
 .ai-cfm-pop--destructive {
-  border-color: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--border-subtle));
-  background: color-mix(in srgb, var(--danger, #ef4444) 3%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--danger) 22%, var(--border-subtle));
+  background: color-mix(in srgb, var(--danger) 3%, var(--bg-surface));
 }
 
 /* 气泡箭头：指向消息区（上方） */
@@ -931,8 +987,8 @@ function confirmToolName(tool?: string): string {
   border-radius: 2px 0 0 0;
 }
 .ai-cfm-pop--destructive .ai-cfm-pop__arrow {
-  border-left-color: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--border-subtle));
-  border-top-color: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--border-subtle));
+  border-left-color: color-mix(in srgb, var(--danger) 22%, var(--border-subtle));
+  border-top-color: color-mix(in srgb, var(--danger) 22%, var(--border-subtle));
 }
 
 /* 头部标题行 */
@@ -959,8 +1015,8 @@ function confirmToolName(tool?: string): string {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .ai-cfm-pop__icon--danger {
-  color: var(--danger, #ef4444);
-  background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 .ai-cfm-pop__title {
   font-size: 12.5px;
@@ -981,16 +1037,16 @@ function confirmToolName(tool?: string): string {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .ai-cfm-pop--destructive .ai-cfm-pop__tool-code {
-  color: var(--danger, #ef4444);
-  background: color-mix(in srgb, var(--danger, #ef4444) 8%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 .ai-cfm-pop__danger-tag {
   flex-shrink: 0;
   font-size: 10.5px;
   font-weight: 600;
-  color: var(--danger, #ef4444);
-  background: color-mix(in srgb, var(--danger, #ef4444) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 20%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
   border-radius: 4px;
   padding: 1px 6px;
   line-height: 1.4;
@@ -1096,7 +1152,7 @@ function confirmToolName(tool?: string): string {
   align-items: stretch;
   border-radius: 6px;
   overflow: visible;
-  border: 1px solid var(--danger, #ef4444);
+  border: 1px solid var(--danger);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .ai-cfm-pop__allow-wrap:has(:disabled) {
@@ -1104,14 +1160,14 @@ function confirmToolName(tool?: string): string {
   cursor: not-allowed;
 }
 .ai-cfm-pop__btn--allow {
-  color: #fff;
-  background: var(--danger, #ef4444);
+  color: var(--danger-foreground);
+  background: var(--danger);
   border-color: transparent;
   border-radius: 5px 0 0 5px;
-  border-right: 1px solid color-mix(in srgb, #fff 18%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--danger-foreground) 18%, transparent);
 }
 .ai-cfm-pop__btn--allow:not(:disabled):hover {
-  background: color-mix(in srgb, var(--danger, #ef4444) 88%, #000);
+  background: color-mix(in srgb, var(--danger) 88%, var(--text-inverse));
 }
 .ai-cfm-pop__btn-caret {
   display: inline-flex;
@@ -1121,13 +1177,13 @@ function confirmToolName(tool?: string): string {
   padding: 0 5px;
   border: none;
   border-radius: 0 5px 5px 0;
-  background: var(--danger, #ef4444);
-  color: #fff;
+  background: var(--danger);
+  color: var(--danger-foreground);
   cursor: pointer;
   transition: background-color 0.12s ease;
 }
 .ai-cfm-pop__btn-caret:not(:disabled):hover {
-  background: color-mix(in srgb, var(--danger, #ef4444) 88%, #000);
+  background: color-mix(in srgb, var(--danger) 88%, var(--text-inverse));
 }
 .ai-cfm-pop__btn-caret:disabled {
   opacity: 0.5;
@@ -1140,15 +1196,15 @@ function confirmToolName(tool?: string): string {
   bottom: calc(100% + 6px);
   right: 0;
   min-width: 220px;
-  background: var(--bg-surface, #ffffff);
-  border: 1px solid var(--border-subtle, #e5e7eb);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06);
   padding: 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  z-index: 100;
+  z-index: var(--z-overlay);
 }
 .ai-cfm-pop__menu-item {
   display: flex;
@@ -1157,7 +1213,7 @@ function confirmToolName(tool?: string): string {
   padding: 7px 10px;
   border: none;
   background: transparent;
-  color: var(--text-primary, #1f2937);
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 500;
   border-radius: 6px;
@@ -1167,13 +1223,13 @@ function confirmToolName(tool?: string): string {
   transition: background-color 0.12s, color 0.12s;
 }
 .ai-cfm-pop__menu-item:hover {
-  background: var(--bg-hover, #f3f4f6);
+  background: var(--bg-hover);
 }
 .ai-cfm-pop__menu-item--danger {
-  color: var(--danger, #ef4444);
+  color: var(--danger);
 }
 .ai-cfm-pop__menu-item--danger:hover {
-  background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 /* 过渡动画：从下方滑入 */

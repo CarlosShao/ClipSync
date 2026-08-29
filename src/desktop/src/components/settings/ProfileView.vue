@@ -279,7 +279,7 @@ async function handleAvatarUpload(e: Event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--scrim-foreground);
   opacity: 0;
   transition: opacity 0.15s;
 }

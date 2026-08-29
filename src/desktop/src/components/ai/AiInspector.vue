@@ -3,29 +3,72 @@ import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useAiChatUi } from '@/composables/useAiChatUi'
 import { useResizablePanel } from '@/composables/useResizablePanel'
-import type { ContextUsage } from '@/api/ai'
+import type { AgentRun, ContextUsage } from '@/api/ai'
 import AiUsageMeter from './AiUsageMeter.vue'
 import AiMemoryPanel from './AiMemoryPanel.vue'
-import { Gauge, Bot, Brain, X } from 'lucide-vue-next'
+import { Gauge, Bot, Brain, X, Loader2, CircleCheck, CircleX, CircleDot } from 'lucide-vue-next'
 
 /**
  * AI Shell 右侧 Inspector（UI-B；UI-E 接入内容组件）。
  * xl（≥1440）行内展开；lg（1100–1439）折叠为浮层（可呼出）；数据由 contextUsage 驱动（props 传入）。
- * 区块：token 用量/缓存命中/费用（AiUsageMeter full 态，UI-E）/ 子代理总览（占位）/
- *       记忆速览（AiMemoryPanel peek 态，UI-E）。
+ * 区块：token 用量/缓存命中/费用（AiUsageMeter full 态，UI-E）/ 子代理总览（C4④ 接线
+ *       真实 agentRuns，不再是占位）/ 记忆速览（AiMemoryPanel peek 态，UI-E）。
  */
-defineProps<{
+const props = defineProps<{
   contextUsage: ContextUsage | null
   /** 协议层是否支持 prompt cache（与 AiChatComposer 判定一致：不支持时显示「未启用」而非 0%） */
   providerSupportsCache?: boolean
   memoryEnabled?: boolean
+  /** 当前消息流的子代理运行列表（C4④：由 AiChatPanel 从最后一条 assistant 消息聚合传入） */
+  agentRuns?: AgentRun[]
 }>()
+
+const AGENT_ICONS = {
+  pending: CircleDot,
+  running: Loader2,
+  done: CircleCheck,
+  failed: CircleX,
+} as const
+
+/** 子代理总览：只取有名字的运行，按 pending/running/done/failed 归并状态 */
+const agentSummary = computed(() =>
+  (props.agentRuns || [])
+    .filter((r) => r && (r.name || r.objective))
+    .map((r) => ({
+      id: r.id,
+      name: r.name || r.objective || '',
+      status: r.status,
+      objective: r.objective,
+      toolCount: r.toolCalls?.length || 0,
+      duration: r.duration,
+    })),
+)
+const hasAgents = computed(() => agentSummary.value.length > 0)
+
+function statusClass(status: string): string {
+  return `is-${status || 'pending'}`
+}
+function statusText(status: string): string {
+  const key = `ai_agent_status_${status || 'pending'}`
+  const map: Record<string, string> = {
+    pending: '排队中',
+    running: '运行中',
+    done: '已完成',
+    failed: '失败',
+  }
+  return tf(key, map[status] || status || '排队中')
+}
+function formatDuration(ms?: number): string {
+  if (!ms || ms <= 0) return ''
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
 
 const emit = defineEmits<{
   'open-memory': []
 }>()
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const { inspectorMode, closeInspector } = useAiChatUi()
 
 // 行内形态宽度拖拽（右侧面板：拖左缘左移变宽 → 默认方向）
@@ -61,13 +104,27 @@ const isOverlay = computed(() => inspectorMode.value === 'overlay')
         <AiUsageMeter variant="full" :context-usage="contextUsage" :provider-supports-cache="providerSupportsCache" />
       </section>
 
-      <!-- 子代理总览（占位：内容由后续包填充） -->
+      <!-- 子代理总览（C4④：接线真实 agentRuns，无数据时给出诚实空态） -->
       <section class="ai-insp-section">
         <h4 class="ai-insp-sec-title">
           <Bot :size="13" />
           {{ t('ai_subagents_title', '子代理') }}
         </h4>
-        <div class="ai-insp-placeholder">
+        <div v-if="hasAgents" class="ai-insp-agents">
+          <div v-for="a in agentSummary" :key="a.id" class="ai-insp-agent" :class="statusClass(a.status)">
+            <component :is="AGENT_ICONS[(a.status as keyof typeof AGENT_ICONS)] || CircleDot" :size="12" class="ai-insp-agent-icon" />
+            <div class="ai-insp-agent-body">
+              <span class="ai-insp-agent-name">{{ a.name }}</span>
+              <span v-if="a.objective && a.objective !== a.name" class="ai-insp-agent-obj">{{ a.objective }}</span>
+              <span class="ai-insp-agent-meta">
+                {{ statusText(a.status) }}
+                <template v-if="a.toolCount"> · {{ tf('ai_agent_tools_count', `${a.toolCount} 次工具调用`, { n: a.toolCount }) }}</template>
+                <template v-if="formatDuration(a.duration)"> · {{ formatDuration(a.duration) }}</template>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="ai-insp-placeholder">
           {{ t('ai_subagents_empty', '暂无运行中的子代理') }}
         </div>
       </section>
@@ -197,6 +254,73 @@ const isOverlay = computed(() => inspectorMode.value === 'overlay')
 }
 
 /* 用量环 / 缓存命中 / 记忆速览样式已随区块迁入 AiUsageMeter.vue 与 AiMemoryPanel.vue（UI-E） */
+
+/* 子代理总览列表（C4④） */
+.ai-insp-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-insp-agent {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+.ai-insp-agent-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-tertiary);
+}
+.ai-insp-agent.is-running .ai-insp-agent-icon {
+  color: var(--accent);
+  animation: ai-insp-spin 1s linear infinite;
+}
+.ai-insp-agent.is-done .ai-insp-agent-icon {
+  color: var(--success);
+}
+.ai-insp-agent.is-failed .ai-insp-agent-icon {
+  color: var(--danger);
+}
+.ai-insp-agent-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ai-insp-agent-name {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-insp-agent-obj {
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ai-insp-agent-meta {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+}
+@keyframes ai-insp-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-insp-agent.is-running .ai-insp-agent-icon {
+    animation: none;
+  }
+}
 
 /* 占位区块 */
 .ai-insp-placeholder {
