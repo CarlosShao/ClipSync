@@ -71,6 +71,28 @@ export const useConfigStore = defineStore('config', () => {
       }
     }
     // 从 localStorage 恢复用户偏好设置（跨会话持久化）
+    // 前置清理：历史版本的壁纸/毛玻璃字段（含数百 KB 的背景 dataURL）已废弃，
+    // 不再读取；从存储中物理删除，防止任何旧代码路径复燃（该组合存在
+    // fixed 背景 + backdrop-filter 的 GPU 合成黑屏问题）
+    try {
+      const rawPrefs = JSON.parse(localStorage.getItem('clipsync-prefs') || '{}')
+      if (
+        'bgImage' in rawPrefs ||
+        'frosted' in rawPrefs ||
+        'bgDim' in rawPrefs ||
+        'surfaceOpacity' in rawPrefs ||
+        'surfaceTransparency' in rawPrefs
+      ) {
+        delete rawPrefs.bgImage
+        delete rawPrefs.frosted
+        delete rawPrefs.bgDim
+        delete rawPrefs.surfaceOpacity
+        delete rawPrefs.surfaceTransparency
+        localStorage.setItem('clipsync-prefs', JSON.stringify(rawPrefs))
+      }
+    } catch {
+      /* ignore corrupt data */
+    }
     try {
       const prefs = JSON.parse(localStorage.getItem('clipsync-prefs') || '{}')
       if (typeof prefs.syncInterval === 'number') syncInterval.value = prefs.syncInterval
