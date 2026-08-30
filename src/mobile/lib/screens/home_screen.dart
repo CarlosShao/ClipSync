@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/device.dart';
 import '../providers/auth_provider.dart';
 import '../providers/clipboard_provider.dart';
 import '../providers/device_provider.dart';
@@ -91,21 +94,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  void _loadData() {
+  Future<void> _loadData() async {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
-    if (token != null) {
-      context.read<ClipboardProvider>().loadItems(token, refresh: true);
-      context.read<DeviceProvider>().loadDevices(token);
+    if (token == null) return;
 
-      // Connect WebSocket for real-time sync
-      final wsProvider = context.read<WsProvider>();
-      if (!wsProvider.isConnected) {
-        // Use phone as temporary device ID for MVP
-        final deviceId = (auth.user?['id'] ?? 'mobile').toString();
+    unawaited(
+      context.read<ClipboardProvider>().loadItems(token, refresh: true),
+    );
+    unawaited(context.read<DeviceProvider>().loadDevices(token));
+
+    // Connect WebSocket for real-time sync
+    final wsProvider = context.read<WsProvider>();
+    if (!wsProvider.isConnected) {
+      // 优先使用登录时注册的真实设备 id（T1.5）；未注册成功时回退旧逻辑并告警
+      final deviceId = await auth.ensureDeviceId();
+      if (!mounted) return;
+      if (deviceId != null && deviceId.isNotEmpty) {
         wsProvider.connect(
           token: token,
           deviceId: deviceId,
+          clipboardProvider: context.read<ClipboardProvider>(),
+        );
+      } else {
+        debugPrint(
+          '[ClipSync] 警告: 真实设备 id 缺失（设备注册失败），回退使用 user id '
+          '作为 WS deviceId，服务端将拒绝 register',
+        );
+        wsProvider.connect(
+          token: token,
+          deviceId: (auth.user?['id'] ?? 'mobile').toString(),
           clipboardProvider: context.read<ClipboardProvider>(),
         );
       }
@@ -442,7 +460,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         index: index,
                         child: Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: DeviceCard(device: device),
+                          // 长按设备卡片呼出解绑确认（T1.5 最小接入）
+                          child: GestureDetector(
+                            onLongPress: () => _confirmUnbindDevice(device),
+                            child: DeviceCard(device: device),
+                          ),
                         ),
                       );
                     },
@@ -454,6 +476,54 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         );
       },
     );
+  }
+
+  /// 长按解绑设备：确认对话框 → DELETE /api/devices/:id。
+  /// 解绑当前设备时给出保护提示，并在成功后清空本地 deviceId、断开 WS。
+  Future<void> _confirmUnbindDevice(Device device) async {
+    final auth = context.read<AuthProvider>();
+    final isCurrentDevice = device.id == auth.deviceId;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('解绑设备'),
+        content: Text(
+          isCurrentDevice
+              ? '「${device.deviceName}」是当前设备。\n解绑后将停止本机同步，且需要重新注册设备才能恢复。确定解绑吗？'
+              : '确定解绑「${device.deviceName}」吗？解绑后该设备将无法再同步。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('解绑'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    final token = auth.token;
+    if (token == null) return;
+
+    await context.read<DeviceProvider>().removeDevice(token, device.id);
+    if (!mounted) return;
+
+    if (isCurrentDevice) {
+      // 本机解绑成功后清空本地记录（下次 ensureDeviceId 会重新注册），并断开 WS
+      await auth.clearDeviceId();
+      if (!mounted) return;
+      if (auth.deviceId == null) {
+        context.read<WsProvider>().disconnect();
+      }
+    }
   }
 }
 

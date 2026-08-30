@@ -14,12 +14,12 @@ class WsService {
   static const int _maxReconnectAttempts = 10;
 
   // Callbacks
-  Function(Map<String, dynamic>)? onNewClipboard;
-  Function(String)? onClipboardDeleted;
-  Function(List<String>)? onClipboardBatchDeleted;
-  Function(String, bool)? onClipboardFavorite;
-  Function()? onConnected;
-  Function()? onDisconnected;
+  void Function(Map<String, dynamic>)? onNewClipboard;
+  void Function(String)? onClipboardDeleted;
+  void Function(List<String>)? onClipboardBatchDeleted;
+  void Function(String, bool)? onClipboardFavorite;
+  void Function()? onConnected;
+  void Function()? onDisconnected;
 
   bool get isConnected => _isConnected;
 
@@ -37,7 +37,7 @@ class WsService {
 
     _channel!.stream.listen(
       (data) {
-        final msg = jsonDecode(data as String);
+        final msg = jsonDecode(data as String) as Map<String, dynamic>;
         _handleMessage(msg);
       },
       onDone: () {
@@ -80,14 +80,17 @@ class WsService {
         break;
       case 'clipboard_deleted':
         if (msg['itemId'] != null) {
-          onClipboardDeleted?.call(msg['itemId']);
+          onClipboardDeleted?.call(msg['itemId'] as String);
         } else if (msg['itemIds'] != null) {
           final ids = (msg['itemIds'] as List).cast<String>();
           onClipboardBatchDeleted?.call(ids);
         }
         break;
       case 'clipboard_favorite':
-        onClipboardFavorite?.call(msg['itemId'], msg['isFavorite']);
+        onClipboardFavorite?.call(
+          msg['itemId'] as String,
+          msg['isFavorite'] as bool,
+        );
         break;
       case 'error':
         break;
