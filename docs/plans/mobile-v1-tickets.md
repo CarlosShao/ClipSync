@@ -172,7 +172,12 @@
 | T2.4 | ✅（新卡片 + 临时 tile 切换 + 删除孤儿 coach_mark；0 error） | subagent | 23cf088 |
 | T2.5 | ✅（详情页：PhotoView 鉴权缩放/文件下载/文本全览 + 复制收藏操作栏；0 error） | subagent | 28b1427 |
 | T3.1–T3.5 | ✅（前台服务保活 WS+剪贴板采集五层去重/WS csrf 握手修复/本地通知+权限引导/分享收发；error 66 持平） | subagent | 603b808 |
-| T4.1–T4.6 | ☐ | — | — |
+| T4.1 收藏夹页 | ✅（分组列表/组内条目/新建/删除/复制全文） | subagent | a04c6d1 |
+| T4.2 模板页 | ✅（列表三态/变量逐填渲染/一键复制 + 设置入口与路由） | subagent | a04c6d1 |
+| T4.3 设备会话管理 | ✅（活跃会话区块/吊销/当前会话登出联动；error 66→64） | subagent | 65a6402 |
+| T4.4 订阅去 mock | ✅（真实 plans/current/invoices、取消恢复确认流、购买引导桌面端；error 64→61） | subagent | 65a6402 |
+| T4.5 i18n | ✅（gen-l10n 基建 + 69 key 双语 + 设置页整页接线，切换真实生效） | subagent | 656be24 |
+| T4.6 生物识别锁 | ✅（锁定页/布防时机/设置开关 + FlutterFragmentActivity/USE_BIOMETRIC/FaceID 平台配置） | subagent+编排者 | 656be24 |
 | S1 | ✅（sync.js:98 冲突分支 req.userId 修复，167 测试全绿） | 编排者 | dffb5d5 |
 
 **备注**：T1.1 修正了工单假设——列表接口不返回完整内容（仅预览，服务端截断 5000 字符），
