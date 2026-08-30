@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../router/app_router.dart';
+import '../router/route_guard.dart';
 
 /// 首次使用引导流程
 class OnboardingScreen extends StatefulWidget {
@@ -21,21 +24,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       color: Colors.blue,
     ),
     OnboardingPage(
-      icon: Icons.notifications,
-      title: '系统托盘运行',
-      description: 'ClipSync 在系统托盘后台运行\n点击托盘图标快速打开',
+      icon: Icons.cloud_sync,
+      title: '后台自动同步',
+      description: 'ClipSync 在后台保持连接\n电脑复制的内容自动同步到手机',
       color: Colors.green,
     ),
     OnboardingPage(
-      icon: Icons.keyboard,
-      title: '全局快捷键',
-      description: '按 Ctrl+Shift+V 快速打开粘贴面板\n随时访问您的剪贴板历史',
+      icon: Icons.notifications,
+      title: '即时通知',
+      description: '电脑复制内容后\n手机第一时间收到通知提醒',
       color: Colors.orange,
     ),
     OnboardingPage(
       icon: Icons.content_paste,
-      title: '剪贴板监控',
-      description: '自动监控剪贴板变化\n复制内容自动同步到所有设备',
+      title: '剪贴板同步',
+      description: '手机复制的内容也会自动同步\n在所有设备间无缝流转',
       color: Colors.purple,
     ),
     OnboardingPage(
@@ -53,11 +56,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _completeOnboarding() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('onboarded', true);
-    
+    // 统一写入 'onboarding_completed' 键（与 main.dart 路由守卫读取的键一致），
+    // 并同步内存守卫状态，避免重定向把用户弹回引导页
     if (!mounted) return;
-    Navigator.of(context).pushReplacementNamed('/home');
+    await context.read<RouteGuardState>().completeOnboarding();
+    if (!mounted) return;
+    // 通过 go_router 导航；守卫会依据登录态决定最终落地页（未登录 → /login）
+    context.go(AppRoutes.home);
   }
 
   @override

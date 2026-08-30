@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../router/app_router.dart';
 import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -74,7 +76,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     final success = await context.read<AuthProvider>().login(phone, code);
-    if (!success && mounted) {
+    if (!mounted) return;
+    if (success) {
+      // 登录成功：通过 go_router 进入主页（守卫会校验 onboarding/token 状态）
+      context.go(AppRoutes.home);
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('登录失败，请检查验证码')),
       );

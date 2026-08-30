@@ -10,7 +10,6 @@ import '../widgets/device_card.dart';
 import '../widgets/coach_mark.dart';
 import '../utils/animations.dart';
 import '../utils/performance.dart';
-import '../utils/lazy_load.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -103,7 +102,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final wsProvider = context.read<WsProvider>();
       if (!wsProvider.isConnected) {
         // Use phone as temporary device ID for MVP
-        final deviceId = auth.user?['id'] ?? 'mobile';
+        final deviceId = (auth.user?['id'] ?? 'mobile').toString();
         wsProvider.connect(
           token: token,
           deviceId: deviceId,

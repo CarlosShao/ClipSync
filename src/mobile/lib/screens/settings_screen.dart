@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/user.dart';
-import '../providers/settings_provider.dart';
+
+import '../providers/auth_provider.dart';
 import '../providers/clipboard_provider.dart';
+import '../providers/settings_provider.dart';
+import '../router/app_router.dart';
 import '../services/server_config.dart';
+import '../theme/app_theme.dart';
 import 'notification_settings_screen.dart';
 import 'subscription_management_screen.dart';
-import 'package:provider/provider.dart';
 
-/// 桌面端设置页面
+/// 设置页面（移动端）
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
 
@@ -19,12 +22,11 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _serverUrlController = TextEditingController();
-  final TextEditingController _shortcutController = TextEditingController();
-  bool _autoStart = false;
   bool _notificationsEnabled = true;
-  String _themeMode = 'system';
+
+  /// 主题模式 int 枚举：0=system / 1=light / 2=dark（与 ThemeMode.index 对齐）
+  int _themeModeIndex = 0;
   String _language = 'zh';
-  String _quickPasteShortcut = 'CmdOrCtrl+Shift+V';
   bool _isLoading = false;
 
   @override
@@ -36,20 +38,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _serverUrlController.dispose();
-    _shortcutController.dispose();
     super.dispose();
   }
 
   Future<void> _loadSettings() async {
+    // SettingsProvider 已在 main() 启动时完成 init，直接读取归一化后的主题值
+    final settings = context.read<SettingsProvider>();
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       _serverUrlController.text = prefs.getString('server_url') ?? ServerConfig.baseUrl;
-      _autoStart = prefs.getBool('auto_start') ?? false;
       _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
-      _themeMode = prefs.getString('theme_mode') ?? 'system';
+      _themeModeIndex = settings.themeModeIndex;
       _language = prefs.getString('language') ?? 'zh';
-      _quickPasteShortcut = prefs.getString('quick_paste_shortcut') ?? 'CmdOrCtrl+Shift+V';
-      _shortcutController.text = _quickPasteShortcut;
     });
   }
 
@@ -66,28 +67,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _toggleAutoStart(bool value) async {
-    setState(() {
-      _autoStart = value;
-    });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('auto_start', value);
-    
-    // 调用桌面端命令
-    try {
-      if (value) {
-        await const MethodChannel('com.clipsync.desktop/channel')
-            .invokeMethod('enable_autostart');
-      } else {
-        await const MethodChannel('com.clipsync.desktop/channel')
-            .invokeMethod('disable_autostart');
-      }
-    } catch (e) {
-      // 桌面端不可用（如在移动端运行）
-      print('自动启动设置失败: $e');
-    }
-  }
-
   Future<void> _toggleNotifications(bool value) async {
     setState(() {
       _notificationsEnabled = value;
@@ -96,61 +75,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setBool('notifications_enabled', value);
   }
 
-  Future<void> _saveShortcut() async {
-    final newShortcut = _shortcutController.text.trim();
-    if (newShortcut.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('快捷键不能为空')),
-      );
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      // 调用桌面端命令注册新快捷键
-      await const MethodChannel('com.clipsync.desktop/channel')
-          .invokeMethod('register_shortcut', {'shortcut': newShortcut});
-
-      setState(() {
-        _quickPasteShortcut = newShortcut;
-      });
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('quick_paste_shortcut', newShortcut);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('快捷键已更新: $newShortcut')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('快捷键设置失败: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _setThemeMode(String? value) async {
+  Future<void> _setThemeMode(int? value) async {
     if (value == null) return;
     setState(() {
-      _themeMode = value;
+      _themeModeIndex = value;
     });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('theme_mode', value);
-    
-    // 通知设置变更
-    final provider = Provider.of<SettingsProvider>(context, listen: false);
-    provider.setThemeMode(value);
+    // 持久化（SettingsProvider，int 枚举：0=system/1=light/2=dark）
+    context.read<SettingsProvider>().setThemeModeIndex(value);
+    // 立即应用到全局主题（ThemeProvider 读写同一 theme_mode 键的 int 值）
+    context.read<ThemeProvider>().setThemeMode(ThemeMode.values[value]);
   }
 
   Future<void> _setLanguage(String? value) async {
@@ -160,7 +93,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('language', value);
-    
+    if (!mounted) return;
+
     // 通知语言变更
     final provider = Provider.of<SettingsProvider>(context, listen: false);
     provider.setLanguage(value);
@@ -170,19 +104,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       // 清除剪贴板缓存
       final provider = Provider.of<ClipboardProvider>(context, listen: false);
       provider.clearCache();
-      
+
       // 清除图片缓存
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
-      
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('clipboard_cache');
-      
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('缓存已清理')),
@@ -201,32 +135,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _exportLogs() async {
-    setState(() {
-      _isLoading = true;
-    });
-    
-    try {
-      // 调用桌面端命令导出日志
-      final result = await const MethodChannel('com.clipsync.desktop/channel')
-          .invokeMethod('export_logs');
-      
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('日志已导出至: $result')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
+  /// 退出登录：确认对话框 → 清除凭证 → 回到登录页
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text('确定要退出当前账号吗？退出后需要重新验证码登录。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(
+              '退出',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    await context.read<AuthProvider>().logout();
+    if (!mounted) return;
+    // go_router 导航回登录页（守卫同样会因失去 token 强制跳转）
+    context.go(AppRoutes.login);
   }
 
   @override
@@ -234,41 +171,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('设置'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
+        // 作为主页 tab 嵌入时无返回栈，交由 AppBar 自动处理 leading
       ),
       body: ListView(
         children: [
           _buildSectionHeader('服务器配置'),
           _buildServerUrlSetting(),
           const Divider(),
-          
-            _buildSectionHeader('桌面端设置'),
-            _buildAutoStartSetting(),
-            _buildNotificationSetting(),
-            _buildShortcutSetting(),
-            const Divider(),
-          
+
+          _buildSectionHeader('通用'),
+          _buildNotificationSetting(),
+          const Divider(),
+
           _buildSectionHeader('外观'),
           _buildThemeSetting(),
           _buildLanguageSetting(),
           const Divider(),
-          
+
           _buildSectionHeader('数据管理'),
           _buildClearCacheButton(),
-          _buildExportLogsButton(),
           const Divider(),
-          
+
           _buildSectionHeader('通知管理'),
           _buildNotificationSettings(),
           const Divider(),
-          
+
           _buildSectionHeader('订阅管理'),
           _buildSubscriptionSetting(),
           const Divider(),
-          
+
+          _buildLogoutTile(),
+          const Divider(),
+
           _buildAboutSection(),
         ],
       ),
@@ -307,15 +241,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildAutoStartSetting() {
-    return SwitchListTile(
-      title: const Text('开机自启动'),
-      subtitle: const Text('系统启动时自动运行 ClipSync'),
-      value: _autoStart,
-      onChanged: (value) => _toggleAutoStart(value),
-    );
-  }
-
   Widget _buildNotificationSetting() {
     return SwitchListTile(
       title: const Text('推送通知'),
@@ -325,72 +250,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildShortcutSetting() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          title: const Text('快速粘贴快捷键'),
-          subtitle: const Text('触发快速粘贴面板的全局快捷键'),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _shortcutController,
-                  decoration: const InputDecoration(
-                    hintText: 'CmdOrCtrl+Shift+V',
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              _isLoading
-                  ? const CircularProgressIndicator()
-                  : IconButton(
-                      icon: const Icon(Icons.save),
-                      onPressed: _saveShortcut,
-                      tooltip: '保存快捷键',
-                    ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Text(
-            '格式示例: CmdOrCtrl+Shift+V, Alt+Space',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildThemeSetting() {
     return ListTile(
       title: const Text('主题'),
       subtitle: Text(_getThemeText()),
-      trailing: DropdownButton<String>(
-        value: _themeMode,
+      trailing: DropdownButton<int>(
+        value: _themeModeIndex,
         onChanged: _setThemeMode,
         items: const [
-          DropdownMenuItem(value: 'light', child: Text('浅色')),
-          DropdownMenuItem(value: 'dark', child: Text('深色')),
-          DropdownMenuItem(value: 'system', child: Text('跟随系统')),
+          DropdownMenuItem(value: 0, child: Text('跟随系统')),
+          DropdownMenuItem(value: 1, child: Text('浅色')),
+          DropdownMenuItem(value: 2, child: Text('深色')),
         ],
       ),
     );
   }
 
   String _getThemeText() {
-    switch (_themeMode) {
-      case 'light':
+    switch (_themeModeIndex) {
+      case 1:
         return '浅色主题';
-      case 'dark':
+      case 2:
         return '深色主题';
-      case 'system':
+      case 0:
       default:
         return '跟随系统';
     }
@@ -437,21 +319,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildExportLogsButton() {
-    return ListTile(
-      leading: const Icon(Icons.file_download),
-      title: const Text('导出日志'),
-      subtitle: const Text('导出应用日志用于错误报告'),
-      trailing: _isLoading
-          ? const CircularProgressIndicator()
-          : IconButton(
-              icon: const Icon(Icons.file_open),
-              onPressed: _exportLogs,
-              tooltip: '导出',
-            ),
-    );
-  }
-
   /// 通知设置
   Widget _buildNotificationSettings() {
     return ListTile(
@@ -462,8 +329,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => NotificationSettingsScreen(),
+          MaterialPageRoute<void>(
+            builder: (context) => const NotificationSettingsScreen(),
           ),
         );
       },
@@ -480,11 +347,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => SubscriptionManagementScreen(),
+          MaterialPageRoute<void>(
+            builder: (context) => const SubscriptionManagementScreen(),
           ),
         );
       },
+    );
+  }
+
+  /// 退出登录（红色，确认后清除凭证并返回登录页）
+  Widget _buildLogoutTile() {
+    return ListTile(
+      leading: const Icon(Icons.logout, color: Colors.red),
+      title: const Text(
+        '退出登录',
+        style: TextStyle(color: Colors.red),
+      ),
+      subtitle: const Text('清除本机登录凭证'),
+      onTap: _confirmLogout,
     );
   }
 
