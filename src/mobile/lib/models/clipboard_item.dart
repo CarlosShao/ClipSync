@@ -208,6 +208,30 @@ class ClipboardItem {
     }
   }
 
+  // ---------- 类型判定 / 文件名辅助（T2.5 详情预览页，纯追加只读 getter） ----------
+
+  /// 是否图片条目
+  bool get isImage => contentType == 'image';
+
+  /// 是否文件条目
+  bool get isFile => contentType == 'file';
+
+  /// 是否链接条目
+  bool get isLink => contentType == 'link';
+
+  /// 是否代码条目
+  bool get isCode => contentType == 'code';
+
+  /// 是否纯文本条目
+  bool get isText => contentType == 'text';
+
+  /// 文件显示名（元数据 fileName 优先，回退 originalName；均缺省返回 null）
+  String? get fileName {
+    final dynamic name = metadata['fileName'] ?? metadata['originalName'];
+    if (name is String && name.isNotEmpty) return name;
+    return null;
+  }
+
   // ---------- 防御性解析工具（后端/WS 字段可能缺省或类型漂移） ----------
 
   static String? _asString(dynamic v) => v is String ? v : null;
