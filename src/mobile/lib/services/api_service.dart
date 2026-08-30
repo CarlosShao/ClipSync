@@ -422,4 +422,98 @@ class ApiService {
       throw Exception('Failed to revoke all sessions');
     }
   }
+
+  // Templates
+
+  /// 拉取当前用户的模板列表（T4.2）
+  ///
+  /// 对齐后端 `GET /api/templates`（src/server/src/routes/templates.js）：
+  /// 响应体为 `{ data: [{ id, name, content, created_at, updated_at }, ...] }`，
+  /// 按创建时间倒序。结果不做本地缓存（模板可能被任意端增改删，实时性优先）。
+  Future<List<ClipboardTemplate>> getTemplates(String? token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/templates'),
+      headers: await _headers(token),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load templates');
+    }
+
+    final dynamic raw = _decodeMap(response.body)['data'];
+    if (raw is List) {
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(ClipboardTemplate.fromJson)
+          .toList();
+    }
+    return const <ClipboardTemplate>[];
+  }
+}
+
+/// 剪贴板模板（后端 clipboard_templates 行，T4.2）。
+///
+/// 字段与 `GET /api/templates` 响应一一对应（snake_case）。
+/// [content] 支持 `{{变量}}` 占位符：[variableNames] 按出现顺序提取变量名
+/// （去重、去除两侧空白），[render] 用给定值替换全部占位符后返回渲染文本。
+class ClipboardTemplate {
+  final String id;
+  final String name;
+
+  /// 模板正文，可含 `{{变量}}` 占位符
+  final String content;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const ClipboardTemplate({
+    required this.id,
+    required this.name,
+    this.content = '',
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory ClipboardTemplate.fromJson(Map<String, dynamic> json) {
+    return ClipboardTemplate(
+      id: _asString(json['id']) ?? '',
+      name: _asString(json['name']) ?? '',
+      content: _asString(json['content']) ?? '',
+      createdAt: _asDateTime(json['created_at']),
+      updatedAt: _asDateTime(json['updated_at']),
+    );
+  }
+
+  /// `{{变量}}` 占位符模式：允许占位符两侧任意空白，变量名不含花括号
+  static final RegExp _variablePattern = RegExp(r'\{\{\s*([^{}]+?)\s*\}\}');
+
+  /// 模板中出现的变量名（按首次出现顺序去重）
+  List<String> get variableNames {
+    final List<String> names = <String>[];
+    for (final Match match in _variablePattern.allMatches(content)) {
+      final String? name = match[1];
+      if (name != null && name.isNotEmpty && !names.contains(name)) {
+        names.add(name);
+      }
+    }
+    return names;
+  }
+
+  /// 是否含变量占位符（决定「使用」时是否进入逐个填写流程）
+  bool get hasVariables => variableNames.isNotEmpty;
+
+  /// 渲染模板：所有 `{{变量}}` 替换为 [values] 中对应值，缺失的变量渲染为空串
+  String render(Map<String, String> values) {
+    return content.replaceAllMapped(_variablePattern, (Match match) {
+      final String? name = match[1];
+      if (name == null) {
+        return match.group(0) ?? '';
+      }
+      return values[name] ?? '';
+    });
+  }
+
+  static String? _asString(dynamic v) => v is String ? v : null;
+
+  static DateTime? _asDateTime(dynamic v) =>
+      v is String && v.isNotEmpty ? DateTime.tryParse(v) : null;
 }

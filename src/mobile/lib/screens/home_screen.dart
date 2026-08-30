@@ -14,6 +14,7 @@ import '../theme/app_theme.dart';
 import '../utils/performance.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/device_card.dart';
+import 'favorites/favorites_screen.dart';
 
 /// 主页骨架（T2.2 应用骨架）：Material 3 NavigationBar 4 tab shell。
 ///
@@ -172,17 +173,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// 收藏 tab（T2.2 占位）：Wave 4 T4.1 收藏夹页落地前仅展示空状态。
+/// 收藏 tab（T4.1 落地）。
+///
+/// 保留 [FavoritesTab] 符号：router/app_router.dart 的收藏分支以它为根页；
+/// Wave 4 起内部实现由 EmptyState 占位替换为收藏夹页 [FavoritesScreen]
+/// （分组列表 / 新建 / 删除，自身管理数据与状态）。
 class FavoritesTab extends StatelessWidget {
   const FavoritesTab({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const EmptyState(
-      icon: Icons.star_outline,
-      title: '收藏功能即将上线',
-      message: 'Wave 4 将带来收藏夹分组与条目管理，敬请期待',
-    );
+    return const FavoritesScreen();
   }
 }
 

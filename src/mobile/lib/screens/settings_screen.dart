@@ -11,6 +11,7 @@ import '../services/server_config.dart';
 import '../theme/app_theme.dart';
 import 'notification_settings_screen.dart';
 import 'subscription_management_screen.dart';
+import 'templates/templates_screen.dart';
 
 /// 设置页面（移动端）
 class SettingsScreen extends StatefulWidget {
@@ -190,6 +191,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           _buildSectionHeader('数据管理'),
           _buildClearCacheButton(),
+          _buildTemplatesTile(),
           const Divider(),
 
           _buildSectionHeader('通知管理'),
@@ -316,6 +318,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: _clearCache,
               tooltip: '清理',
             ),
+    );
+  }
+
+  /// 模板库（T4.2）：查看 / 使用剪贴板模板
+  Widget _buildTemplatesTile() {
+    return ListTile(
+      leading: const Icon(Icons.description_outlined),
+      title: const Text('模板库'),
+      subtitle: const Text('查看并快速使用剪贴板模板'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute<void>(
+            builder: (context) => const TemplatesScreen(),
+          ),
+        );
+      },
     );
   }
 

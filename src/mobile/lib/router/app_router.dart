@@ -12,6 +12,7 @@ import '../screens/onboarding/permission_guide_screen.dart';
 import '../screens/onboarding_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/share/share_receive_screen.dart';
+import '../screens/templates/templates_screen.dart';
 import 'route_guard.dart';
 
 /// 路由路径常量
@@ -35,6 +36,9 @@ class AppRoutes {
 
   /// T3.5：系统分享接收确认页（extra: SharePayload）
   static const shareReceive = '/share/receive';
+
+  /// T4.2：模板库页（设置页「模板库」入口；亦支持深链直达）
+  static const templates = '/templates';
 }
 
 /// 权限引导页一次性门控（T3.4）。
@@ -149,6 +153,11 @@ GoRouter createAppRouter({
                 : const SharePayload(),
           );
         },
+      ),
+      // T4.2：模板库（设置页 Navigator.push 打开；此路由同时支持深链直达）
+      GoRoute(
+        path: AppRoutes.templates,
+        builder: (context, state) => const TemplatesScreen(),
       ),
       // 主页 4 tab shell：IndexedStack 保活分支，HomeScreen 提供骨架外观
       StatefulShellRoute.indexedStack(
