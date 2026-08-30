@@ -12,6 +12,7 @@ import '../screens/onboarding/permission_guide_screen.dart';
 import '../screens/onboarding_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/share/share_receive_screen.dart';
+import '../screens/subscription/subscription_management_screen.dart';
 import '../screens/templates/templates_screen.dart';
 import 'route_guard.dart';
 
@@ -39,6 +40,10 @@ class AppRoutes {
 
   /// T4.2：模板库页（设置页「模板库」入口；亦支持深链直达）
   static const templates = '/templates';
+
+  /// T4.4：订阅管理页（设置页「订阅管理」入口；亦支持深链直达），
+  /// 替代已删除的 screens/subscription_management_screen.dart 直推入口
+  static const subscriptionManagement = '/subscriptions';
 }
 
 /// 权限引导页一次性门控（T3.4）。
@@ -64,6 +69,8 @@ class PermissionGuideGate {
 /// - `/onboarding`      首次使用引导页
 /// - `/permission-guide` 首次启动权限引导页（T3.4，由 [PermissionGuideGate] 门控）
 /// - `/share/receive`   系统分享接收确认页（T3.5，extra: SharePayload）
+/// - `/templates`       模板库页（T4.2）
+/// - `/subscriptions`   订阅管理页（T4.4）
 ///
 /// 四个 tab 由 [StatefulShellRoute.indexedStack] 组成同一个 shell：
 /// 每个分支一个独立 Navigator，分支容器为 IndexedStack（切 tab 保活，
@@ -158,6 +165,12 @@ GoRouter createAppRouter({
       GoRoute(
         path: AppRoutes.templates,
         builder: (context, state) => const TemplatesScreen(),
+      ),
+      // T4.4：订阅管理（设置页 context.push 打开；当前套餐/真实套餐列表/
+      // 取消与恢复订阅；支付引导桌面端完成）
+      GoRoute(
+        path: AppRoutes.subscriptionManagement,
+        builder: (context, state) => const SubscriptionManagementScreen(),
       ),
       // 主页 4 tab shell：IndexedStack 保活分支，HomeScreen 提供骨架外观
       StatefulShellRoute.indexedStack(

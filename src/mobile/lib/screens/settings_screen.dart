@@ -10,7 +10,6 @@ import '../router/app_router.dart';
 import '../services/server_config.dart';
 import '../theme/app_theme.dart';
 import 'notification_settings_screen.dart';
-import 'subscription_management_screen.dart';
 import 'templates/templates_screen.dart';
 
 /// 设置页面（移动端）
@@ -357,21 +356,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// 订阅管理设置
+  /// 订阅管理设置（T4.4：改指路由 /subscriptions，
+  /// 旧 subscription_management_screen.dart 直推入口已删除）
   Widget _buildSubscriptionSetting() {
     return ListTile(
       leading: const Icon(Icons.workspace_premium),
       title: const Text('订阅管理'),
       subtitle: const Text('查看或更改订阅套餐'),
       trailing: const Icon(Icons.chevron_right),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute<void>(
-            builder: (context) => const SubscriptionManagementScreen(),
-          ),
-        );
-      },
+      onTap: () => context.push(AppRoutes.subscriptionManagement),
     );
   }
 

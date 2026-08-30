@@ -1,247 +1,211 @@
-import 'package:http/http.dart' as http;
 import 'dart:convert';
-import '../models/subscription_plan.dart';
-import 'server_config.dart';
 
-/// 订阅 API 服务
+import 'package:http/http.dart' as http;
+
+import '../models/subscription_plan.dart';
+import '../models/user_subscription.dart';
+import 'server_config.dart';
+import 'token_store.dart';
+
+/// 当前订阅查询结果（GET /api/subscriptions/current 的响应结构）。
+///
+/// - [subscription] 为 null 表示当前没有活跃订阅（后端约定：此时返回
+///   `subscription: null`，并在 [plan] 中携带 Free 套餐信息）；
+/// - [plan] 为当前生效套餐（无活跃订阅时为 Free 套餐，后端缺失时为 null）。
+class CurrentSubscriptionData {
+  const CurrentSubscriptionData({this.subscription, this.plan});
+
+  /// 当前活跃订阅；null 表示未订阅（Free）。
+  final UserSubscription? subscription;
+
+  /// 当前生效套餐（含未订阅时的 Free 套餐）。
+  final SubscriptionPlan? plan;
+}
+
+/// 订阅 API 服务（T4.4 去 mock 重写）。
+///
+/// 对齐后端契约（src/server/src/routes/subscriptions.js / invoices.js）：
+/// - GET  /api/subscriptions/plans   公开接口，可用套餐列表
+/// - GET  /api/subscriptions/current 认证，当前订阅 + 生效套餐
+/// - POST /api/subscriptions/cancel  认证，期末取消（到期前订阅仍可用）
+/// - POST /api/subscriptions/resume  认证，恢复已标记期末取消的订阅
+/// - GET  /api/invoices              认证，账单列表
+///
+/// 支付不在移动端完成：升级/购买统一引导到桌面端操作，因此本服务
+/// 不提供 subscribe 调用（旧 mock 订阅与 /api/payments/history 死调用
+/// 一并移除）。所有失败路径均抛出携带后端 error 文案的异常，由调用方
+/// 呈现，不再静默降级为模拟数据。
 class SubscriptionApiService {
   static String get _baseUrl => '${ServerConfig.baseUrl}/api';
-  
-  /// 获取套餐列表
+
+  /// 解析 Bearer 令牌：显式传入优先，否则读 TokenStore（secure storage）；
+  /// 两者都缺失时抛出未登录异常。
+  static Future<String> _resolveToken(String? token) async {
+    final resolved = token ?? await TokenStore.getAccessToken();
+    if (resolved == null || resolved.isEmpty) {
+      throw Exception('未登录：缺少访问令牌');
+    }
+    return resolved;
+  }
+
+  static Future<Map<String, String>> _authHeaders(String? token) async {
+    return <String, String>{
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${await _resolveToken(token)}',
+    };
+  }
+
+  /// 从错误响应体提取后端 error 文案（`{ error: '...' }`），
+  /// 非 JSON 响应体或缺失字段时回退到 [fallback] + 状态码。
+  static String _serverError(http.Response response, String fallback) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      return '$fallback（HTTP ${response.statusCode}）';
+    }
+    if (decoded is Map<String, dynamic> && decoded['error'] is String) {
+      return decoded['error'] as String;
+    }
+    return '$fallback（HTTP ${response.statusCode}）';
+  }
+
+  /// 解析套餐对象（/plans 与 /current 共用 camelCase 字段结构）。
+  ///
+  /// 说明：后端不返回 created_at/updated_at，而 [SubscriptionPlan] 的
+  /// 这两个审计字段为必填，此处以当前时间占位（不参与任何展示逻辑）。
+  static SubscriptionPlan _parsePlan(Map<String, dynamic> raw) {
+    return SubscriptionPlan(
+      id: raw['id']?.toString() ?? '',
+      name: raw['name']?.toString() ?? '',
+      // /plans 响应不含 description，用 displayName 作为卡片副标题
+      description: (raw['description'] ?? raw['displayName'])?.toString(),
+      price: (raw['price'] as num?)?.toDouble() ?? 0,
+      currency: raw['currency']?.toString() ?? 'CNY',
+      interval: raw['billingCycle']?.toString() ?? 'month',
+      maxDevices: (raw['maxDevices'] as num?)?.toInt() ?? 0,
+      maxClipboardPerDay: (raw['maxClipboardItems'] as num?)?.toInt() ?? 0,
+      maxStorageMB: (raw['maxStorageMb'] as num?)?.toInt() ?? 0,
+      isActive: true,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  /// 获取套餐列表（公开接口，无需登录）。
+  ///
+  /// 后端：GET /api/subscriptions/plans → `{ plans: [...] }`。
   static Future<List<SubscriptionPlan>> getPlans() async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/subscriptions/plans'),
+      headers: const <String, String>{'Content-Type': 'application/json'},
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_serverError(response, '获取套餐列表失败'));
+    }
+    final Object? decoded;
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/subscriptions/plans'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      );
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final plansJson = data['plans'] as List<dynamic>;
-        return plansJson.map((json) => SubscriptionPlan.fromJson(json)).toList();
-      } else {
-        throw Exception('获取套餐列表失败: ${response.statusCode}');
-      }
-    } catch (e) {
-      // 如果后端不可用，返回模拟数据
-      print('⚠️ 后端不可用，使用模拟数据: $e');
-      return _getMockPlans();
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      throw Exception('获取套餐列表失败：响应格式异常');
+    }
+    final Object? plansJson =
+        decoded is Map<String, dynamic> ? decoded['plans'] : null;
+    if (plansJson is! List) {
+      return const <SubscriptionPlan>[];
+    }
+    return plansJson.whereType<Map<String, dynamic>>().map(_parsePlan).toList(
+          growable: false,
+        );
+  }
+
+  /// 查询当前用户订阅状态。
+  ///
+  /// 后端：GET /api/subscriptions/current →
+  /// `{ subscription: {...} | null, plan: {...} }`（无活跃订阅时
+  /// subscription 为 null，plan 为 Free 套餐）。
+  static Future<CurrentSubscriptionData> getCurrentSubscription(
+    String? token,
+  ) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/subscriptions/current'),
+      headers: await _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_serverError(response, '获取当前订阅失败'));
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      throw Exception('获取当前订阅失败：响应格式异常');
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('获取当前订阅失败：响应格式异常');
+    }
+    final Object? sub = decoded['subscription'];
+    final Object? plan = decoded['plan'];
+    return CurrentSubscriptionData(
+      subscription:
+          sub is Map<String, dynamic> ? UserSubscription.fromJson(sub) : null,
+      plan: plan is Map<String, dynamic> ? _parsePlan(plan) : null,
+    );
+  }
+
+  /// 取消订阅（期末生效：到期前订阅仍可用，到期后自动降级）。
+  ///
+  /// 后端：POST /api/subscriptions/cancel，无活跃订阅时返回 400。
+  static Future<void> cancelSubscription(String? token) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/subscriptions/cancel'),
+      headers: await _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_serverError(response, '取消订阅失败'));
     }
   }
-  
-  /// 获取当前订阅
-  static Future<Map<String, dynamic>?> getCurrentSubscription(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/subscriptions/current'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data;
-      } else {
-        throw Exception('获取当前订阅失败: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('⚠️ 获取当前订阅失败: $e');
-      return null;
+
+  /// 恢复已标记「期末取消」的订阅（继续自动续订）。
+  ///
+  /// 后端：POST /api/subscriptions/resume，无可恢复订阅时返回 400。
+  static Future<void> resumeSubscription(String? token) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/subscriptions/resume'),
+      headers: await _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_serverError(response, '恢复订阅失败'));
     }
   }
-  
-  /// 创建/升级订阅
-  static Future<Map<String, dynamic>> subscribe({
-    required String token,
-    required String planId,
-    required String paymentMethod,
+
+  /// 获取账单列表（最多 [limit] 条，按时间倒序）。
+  ///
+  /// 后端：GET /api/invoices → `{ invoices: [...], pagination: {...} }`。
+  /// 已替换旧的 /api/payments/history 死调用。
+  static Future<List<Map<String, dynamic>>> getInvoices(
+    String? token, {
+    int limit = 20,
   }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/subscriptions/subscribe'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: json.encode({
-          'planId': planId,
-          'paymentMethod': paymentMethod,
-        }),
-      );
-      
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = json.decode(response.body);
-        return data;
-      } else {
-        throw Exception('创建订阅失败: ${response.statusCode}');
-      }
-    } catch (e) {
-      // 如果后端不可用，返回模拟数据
-      print('⚠️ 后端不可用，模拟订阅成功: $e');
-      return {
-        'success': true,
-        'message': '订阅成功（模拟）',
-        'subscription': {
-          'id': 'mock-sub-001',
-          'planId': planId,
-          'status': 'active',
-        },
-      };
+    final response = await http.get(
+      Uri.parse('$_baseUrl/invoices?limit=$limit'),
+      headers: await _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_serverError(response, '获取账单失败'));
     }
-  }
-  
-  /// 取消订阅
-  static Future<bool> cancelSubscription(String token) async {
+    final Object? decoded;
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/subscriptions/cancel'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-      
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        throw Exception('取消订阅失败: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('⚠️ 取消订阅失败: $e');
-      return false;
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      throw Exception('获取账单失败：响应格式异常');
     }
-  }
-  
-  /// 恢复订阅
-  static Future<bool> resumeSubscription(String token) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/subscriptions/resume'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-      
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        throw Exception('恢复订阅失败: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('⚠️ 恢复订阅失败: $e');
-      return false;
+    final Object? invoicesJson =
+        decoded is Map<String, dynamic> ? decoded['invoices'] : null;
+    if (invoicesJson is! List) {
+      return const <Map<String, dynamic>>[];
     }
-  }
-
-  /// 获取支付历史
-  static Future<List<dynamic>> getPaymentHistory(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/payments/history'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['payments'] as List<dynamic>;
-      } else {
-        throw Exception('获取支付历史失败: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('⚠️ 获取支付历史失败: $e');
-      return [];
-    }
-  }
-
-  /// 获取发票列表
-  static Future<List<dynamic>> getInvoices(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/invoices'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['invoices'] as List<dynamic>;
-      } else {
-        throw Exception('获取发票列表失败: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('⚠️ 获取发票列表失败: $e');
-      return [];
-    }
-  }
-  
-  /// 模拟数据（后端不可用时的降级方案）
-  static List<SubscriptionPlan> _getMockPlans() {
-    return [
-      SubscriptionPlan(
-        id: 'free',
-        name: 'Free',
-        description: '适合个人用户的基础功能',
-        price: 0,
-        currency: 'CNY',
-        interval: 'month',
-        maxDevices: 2,
-        maxClipboardPerDay: 50,
-        maxStorageMB: 50,
-        isActive: true,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      SubscriptionPlan(
-        id: 'pro',
-        name: 'Pro',
-        description: '适合重度用户的专业功能',
-        price: 9.9,
-        currency: 'CNY',
-        interval: 'month',
-        maxDevices: 5,
-        maxClipboardPerDay: 500,
-        maxStorageMB: 500,
-        hasOcr: true,
-        hasPrioritySync: true,
-        hasAICategories: true,
-        isActive: true,
-        paywallFeature1: '优先客服支持',
-        paywallFeature2: '高级 Markdown 预览',
-        paywallFeature3: '无广告体验',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      SubscriptionPlan(
-        id: 'enterprise',
-        name: 'Enterprise',
-        description: '适合团队的企业级功能',
-        price: 29.9,
-        currency: 'CNY',
-        interval: 'month',
-        maxDevices: 999,
-        maxClipboardPerDay: 9999,
-        maxStorageMB: 9999,
-        hasOcr: true,
-        hasPrioritySync: true,
-        hasAICategories: true,
-        hasTeamSharing: true,
-        isActive: true,
-        paywallFeature1: '团队共享剪贴板',
-        paywallFeature2: '团队管理中心',
-        paywallFeature3: '优先功能访问',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-    ];
+    return invoicesJson
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
   }
 }

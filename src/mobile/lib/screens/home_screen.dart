@@ -14,6 +14,7 @@ import '../theme/app_theme.dart';
 import '../utils/performance.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/device_card.dart';
+import 'devices/sessions_section.dart';
 import 'favorites/favorites_screen.dart';
 
 /// 主页骨架（T2.2 应用骨架）：Material 3 NavigationBar 4 tab shell。
@@ -247,10 +248,15 @@ class _DevicesTabState extends State<DevicesTab> {
         return ListView.separated(
           controller: _scrollController,
           padding: const EdgeInsets.all(AppSpacing.lg),
-          itemCount: provider.devices.length,
+          // 末位追加「活跃会话」区块（T4.3：会话管理区挂载于设备列表下方）
+          itemCount: provider.devices.length + 1,
           separatorBuilder: (BuildContext context, int index) =>
               const SizedBox(height: AppSpacing.md),
           itemBuilder: (context, index) {
+            if (index == provider.devices.length) {
+              // T4.3：活跃会话区块（自管理加载/空/错误三态与吊销流程）
+              return const SessionsSection();
+            }
             final device = provider.devices[index];
             // 长按设备卡片呼出解绑确认（T1.5 最小接入，逻辑保留）
             return GestureDetector(
