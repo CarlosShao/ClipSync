@@ -1,99 +1,69 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+
 import '../models/device.dart';
 import '../providers/auth_provider.dart';
 import '../providers/clipboard_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/ws_provider.dart';
 import '../theme/app_theme.dart';
-import '../widgets/clipboard_card.dart';
-import '../widgets/device_card.dart';
-import '../widgets/coach_mark.dart';
-import '../utils/animations.dart';
 import '../utils/performance.dart';
-import 'settings_screen.dart';
+import '../widgets/common/empty_state.dart';
+import '../widgets/device_card.dart';
 
+/// 主页骨架（T2.2 应用骨架）：Material 3 NavigationBar 4 tab shell。
+///
+/// 路由侧由 `router/app_router.dart` 的 [StatefulShellRoute.indexedStack]
+/// 承载四个分支（/home/clipboard、/home/favorites、/home/devices、
+/// /home/settings）：每个分支一个独立 Navigator，分支间以 IndexedStack
+/// 容器保活，切换 tab 不丢失滚动位置与页面状态。
+///
+/// 本组件是 shell 宿主，职责：
+/// - 提供 AppBar：简洁标题随 tab 切换（设置 tab 的 SettingsScreen 自带
+///   Scaffold + AppBar，shell 侧在该 tab 隐藏标题栏避免双标题）；
+/// - 提供 M3 NavigationBar（64 高、主题见 AppTheme.navigationBarTheme）；
+/// - body 挂载 [StatefulNavigationShell]（分支 IndexedStack）；
+/// - 保留旧版初始化逻辑：进入主页拉取剪贴板/设备数据并连接 WebSocket
+///   （[_HomeScreenState._loadData]，含真实 deviceId 注册与回退逻辑）。
+///
+/// 旧版剪贴板列表实现（SliverGrid / 交错入场动画 / CoachMark）随本次
+/// 重构废弃删除；剪贴板 tab 改由 T2.3 交付的 ClipboardScreen 承载。
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, required this.navigationShell});
+
+  /// go_router 分支导航容器（IndexedStack），由 shell route builder 注入。
+  final StatefulNavigationShell navigationShell;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  int _currentIndex = 0;
-  late AnimationController _pageController;
-  late CoachMarkController _coachMarkController;
-  final GlobalKey _refreshButtonKey = GlobalKey();
-  late ScrollController _clipboardScrollController;
-  late ScrollController _deviceScrollController;
+class _HomeScreenState extends State<HomeScreen> {
+  /// tab 下标（0=剪贴板 / 1=收藏 / 2=设备 / 3=设置，与 NavigationBar
+  /// destinations 及路由分支顺序一一对应）
+  static const int _tabDevices = 2;
+  static const int _tabSettings = 3;
 
-  // 页面列表
-  late final List<Widget> _pages;
+  /// AppBar 简洁标题，随 tab 切换
+  static const List<String> _tabTitles = <String>[
+    '剪贴板',
+    '收藏',
+    '我的设备',
+    '设置',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _pageController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _pageController.forward();
-
-    // 初始化滚动控制器
-    _clipboardScrollController = ScrollController();
-    _deviceScrollController = ScrollController();
-    
-    // 添加滚动监听器，实现加载更多
-    _clipboardScrollController.addListener(_onClipboardScroll);
-    _deviceScrollController.addListener(_onDeviceScroll);
-
-    // 初始化气泡提示控制器
-    _coachMarkController = CoachMarkController(
-      context: context,
-      onComplete: () {
-        // 所有提示显示完成后的回调
-      },
-    );
-
-    // 添加刷新按钮提示
-    _coachMarkController.addMark(CoachMark(
-      id: 'refresh_button',
-      targetKey: _refreshButtonKey,
-      title: '刷新内容',
-      description: '点击此按钮可以手动刷新剪贴板内容，获取最新的同步数据。',
-    ));
-
-    // 延迟显示提示，确保UI已构建且首帧渲染完成
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // 延迟 500ms 显示，避免影响首帧渲染
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          _showCoachMarksIfNeeded();
-        }
-      });
-    });
-
-    _pages = [
-      _buildClipboardPage(),
-      _buildDevicesPage(),
-      const SettingsScreen(),
-    ];
-
+    // 保留旧版行为：进入主页即拉取数据并连接 WS（登录后连接）
     _loadData();
   }
 
-  @override
-  void dispose() {
-    _pageController.dispose();
-    _coachMarkController.dispose();
-    _clipboardScrollController.dispose();
-    _deviceScrollController.dispose();
-    super.dispose();
-  }
-
+  /// 数据加载 + WS 连接（自旧版 home_screen 原样保留）。
   Future<void> _loadData() async {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
@@ -130,36 +100,121 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _showCoachMarksIfNeeded() async {
-    // 检查是否应该显示提示
-    final shouldShow = await CoachMarkController.shouldShowMark('refresh_button');
-    if (shouldShow) {
-      _coachMarkController.start();
-    }
+  void _onDestinationSelected(int index) {
+    // 切换分支；再次点击当前 tab 时回到该分支根路由（M3 惯例）
+    widget.navigationShell.goBranch(
+      index,
+      initialLocation: index == widget.navigationShell.currentIndex,
+    );
   }
 
-  void _onClipboardScroll() {
-    if (_clipboardScrollController.position.pixels >=
-        _clipboardScrollController.position.maxScrollExtent - 200) {
-      _loadMoreClipboardItems();
-    }
-  }
-
-  void _onDeviceScroll() {
-    if (_deviceScrollController.position.pixels >=
-        _deviceScrollController.position.maxScrollExtent - 200) {
-      _loadMoreDevices();
-    }
-  }
-
-  void _loadMoreClipboardItems() {
-    final auth = context.read<AuthProvider>();
-    final token = auth.token;
+  void _refreshDevices() {
+    final token = context.read<AuthProvider>().token;
     if (token != null) {
-      final provider = context.read<ClipboardProvider>();
-      if (provider.hasMore && !provider.isLoading) {
-        provider.loadItems(token);
-      }
+      context.read<DeviceProvider>().loadDevices(token);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int currentIndex = widget.navigationShell.currentIndex;
+    return PerformanceMonitor(
+      name: 'HomeScreen',
+      child: Scaffold(
+        // 设置 tab 的内容自带 Scaffold + AppBar，shell 侧不再叠加标题栏
+        appBar:
+            currentIndex == _tabSettings ? null : _buildAppBar(currentIndex),
+        body: widget.navigationShell,
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: currentIndex,
+          onDestinationSelected: _onDestinationSelected,
+          destinations: const <Widget>[
+            NavigationDestination(
+              icon: Icon(Icons.content_paste_outlined),
+              selectedIcon: Icon(Icons.content_paste),
+              label: '剪贴板',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.star_outline),
+              selectedIcon: Icon(Icons.star),
+              label: '收藏',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.devices_outlined),
+              selectedIcon: Icon(Icons.devices),
+              label: '设备',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings),
+              label: '设置',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 简洁标题栏：标题随 tab 切换；设备 tab 保留旧版刷新操作。
+  PreferredSizeWidget _buildAppBar(int index) {
+    return AppBar(
+      title: Text(_tabTitles[index]),
+      actions: index == _tabDevices
+          ? <Widget>[
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: '刷新设备',
+                onPressed: _refreshDevices,
+              ),
+            ]
+          : null,
+    );
+  }
+}
+
+/// 收藏 tab（T2.2 占位）：Wave 4 T4.1 收藏夹页落地前仅展示空状态。
+class FavoritesTab extends StatelessWidget {
+  const FavoritesTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const EmptyState(
+      icon: Icons.star_outline,
+      title: '收藏功能即将上线',
+      message: 'Wave 4 将带来收藏夹分组与条目管理，敬请期待',
+    );
+  }
+}
+
+/// 设备 tab：设备列表 + 长按解绑（内容自旧版设备页迁移，T2.2 仅更换宿主）。
+class DevicesTab extends StatefulWidget {
+  const DevicesTab({super.key});
+
+  @override
+  State<DevicesTab> createState() => _DevicesTabState();
+}
+
+class _DevicesTabState extends State<DevicesTab> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 滚动近底部时触发拉取（旧版 load-more 逻辑保留）
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMoreDevices();
     }
   }
 
@@ -174,305 +229,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _onTabChanged(int index) {
-    if (index != _currentIndex) {
-      setState(() {
-        _currentIndex = index;
-      });
-      // 重置动画控制器以播放过渡动画
-      _pageController.reset();
-      _pageController.forward();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return PerformanceMonitor(
-      name: 'HomeScreen',
-      child: Scaffold(
-        body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        transitionBuilder: (child, animation) {
-          return FadeTransition(
-            opacity: animation,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0.05, 0.0),
-                end: Offset.zero,
-              ).animate(CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeOutCubic,
-              )),
-              child: child,
-            ),
-          );
-        },
-        child: _pages[_currentIndex],
-      ),
-      bottomNavigationBar: _buildAnimatedBottomNav(),
-    ),
-    );
-  }
-
-  Widget _buildAnimatedBottomNav() {
-    return Container(
-      decoration: BoxDecoration(
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: _onTabChanged,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: AppTheme.primaryColor,
-        unselectedItemColor: Colors.grey,
-        selectedFontSize: 12,
-        unselectedFontSize: 12,
-        elevation: 0,
-        items: [
-          _buildNavItem(
-            icon: Icons.content_paste,
-            label: '剪贴板',
-            index: 0,
-          ),
-          _buildNavItem(
-            icon: Icons.devices,
-            label: '设备',
-            index: 1,
-          ),
-          _buildNavItem(
-            icon: Icons.settings,
-            label: '设置',
-            index: 2,
-          ),
-        ],
-      ),
-    );
-  }
-
-  BottomNavigationBarItem _buildNavItem({
-    required IconData icon,
-    required String label,
-    required int index,
-  }) {
-    return BottomNavigationBarItem(
-      icon: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: EdgeInsets.all(_currentIndex == index ? 4 : 0),
-        child: Icon(
-          icon,
-          size: _currentIndex == index ? 26 : 24,
-          color: _currentIndex == index ? AppTheme.primaryColor : Colors.grey,
-        ),
-      ),
-      label: label,
-    );
-  }
-
-  Widget _buildClipboardPage() {
-    return Consumer<ClipboardProvider>(
-      builder: (context, provider, _) {
-        return CustomScrollView(
-          key: const ValueKey('clipboard_page'),
-          controller: _clipboardScrollController,
-          slivers: [
-            SliverAppBar(
-              expandedHeight: 120,
-              pinned: true,
-              flexibleSpace: FlexibleSpaceBar(
-                title: const Text('剪贴板'),
-                background: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppTheme.primaryColor,
-                        AppTheme.primaryLight,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              actions: [
-                AppAnimations.bounceButton(
-                  key: _refreshButtonKey,
-                  onTap: _loadData,
-                  child: const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Icon(Icons.refresh, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-            if (provider.isLoading && provider.items.isEmpty)
-              const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (provider.items.isEmpty)
-              const SliverFillRemaining(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.content_paste, size: 64, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text(
-                        '暂无剪贴板内容',
-                        style: TextStyle(color: Colors.grey, fontSize: 16),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        '复制内容后将自动同步到此处',
-                        style: TextStyle(color: Colors.grey, fontSize: 14),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.all(16),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.8,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final item = provider.items[index];
-                      // 为每个卡片添加交错入场动画
-                      return _AnimatedCard(
-                        index: index,
-                        child: ClipboardCard(item: item),
-                      );
-                    },
-                    childCount: provider.items.length,
-                  ),
-                ),
-              ),
-            // 加载更多指示器
-            if (provider.isLoading && provider.items.isNotEmpty)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-              ),
-            if (!provider.hasMore && provider.items.isNotEmpty)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(
-                    child: Text(
-                      '没有更多内容了',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildDevicesPage() {
     return Consumer<DeviceProvider>(
       builder: (context, provider, _) {
-        return CustomScrollView(
-          key: const ValueKey('devices_page'),
-          controller: _deviceScrollController,
-          slivers: [
-            SliverAppBar(
-              expandedHeight: 120,
-              pinned: true,
-              flexibleSpace: FlexibleSpaceBar(
-                title: const Text('我的设备'),
-                background: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppTheme.primaryColor,
-                        AppTheme.primaryLight,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              actions: [
-                AppAnimations.bounceButton(
-                  onTap: () {
-                    final token = context.read<AuthProvider>().token;
-                    if (token != null) {
-                      provider.loadDevices(token);
-                    }
-                  },
-                  child: const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Icon(Icons.refresh, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-            if (provider.isLoading)
-              const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (provider.devices.isEmpty)
-              const SliverFillRemaining(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.devices, size: 64, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text(
-                        '暂无设备',
-                        style: TextStyle(color: Colors.grey, fontSize: 16),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        '登录其他设备以开始同步',
-                        style: TextStyle(color: Colors.grey, fontSize: 14),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.all(16),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final device = provider.devices[index];
-                      return _AnimatedCard(
-                        index: index,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          // 长按设备卡片呼出解绑确认（T1.5 最小接入）
-                          child: GestureDetector(
-                            onLongPress: () => _confirmUnbindDevice(device),
-                            child: DeviceCard(device: device),
-                          ),
-                        ),
-                      );
-                    },
-                    childCount: provider.devices.length,
-                  ),
-                ),
-              ),
-          ],
+        if (provider.isLoading && provider.devices.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (provider.devices.isEmpty) {
+          return const EmptyState(
+            icon: Icons.devices,
+            title: '暂无设备',
+            message: '登录其他设备以开始同步',
+          );
+        }
+        return ListView.separated(
+          controller: _scrollController,
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          itemCount: provider.devices.length,
+          separatorBuilder: (BuildContext context, int index) =>
+              const SizedBox(height: AppSpacing.md),
+          itemBuilder: (context, index) {
+            final device = provider.devices[index];
+            // 长按设备卡片呼出解绑确认（T1.5 最小接入，逻辑保留）
+            return GestureDetector(
+              onLongPress: () => _confirmUnbindDevice(device),
+              child: DeviceCard(device: device),
+            );
+          },
         );
       },
     );
@@ -500,7 +284,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
             child: const Text('解绑'),
           ),
         ],
@@ -527,77 +313,50 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 }
 
-/// 带交错入场动画的卡片包装器
-class _AnimatedCard extends StatefulWidget {
-  final int index;
+/// 双击返回退出确认（工单 T2.2「双击退出确认」）。
+///
+/// go_router 的 StatefulShellRoute 下，系统返回键作用于当前分支 Navigator；
+/// 分支到达栈底时返回键将直接退出应用。此 guard 包在每个 tab 分支根页外层，
+/// 拦截栈底返回：第一次返回提示「再按一次退出」，2 秒内再次返回才真正退出
+/// （计时为静态字段，跨 4 个 tab 分支共享）。
+class BackExitGuard extends StatefulWidget {
+  const BackExitGuard({super.key, required this.child});
+
   final Widget child;
 
-  const _AnimatedCard({
-    required this.index,
-    required this.child,
-  });
-
   @override
-  State<_AnimatedCard> createState() => _AnimatedCardState();
+  State<BackExitGuard> createState() => _BackExitGuardState();
 }
 
-class _AnimatedCardState extends State<_AnimatedCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
+class _BackExitGuardState extends State<BackExitGuard> {
+  /// 上次返回键时间（跨 tab 分支共享）
+  static DateTime? _lastBackPressAt;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
-
-    // 计算交错延迟（最多延迟 300ms）
-    final delay = Duration(milliseconds: (widget.index * 60).clamp(0, 300));
-    final start = delay.inMilliseconds / _controller.duration!.inMilliseconds;
-
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Interval(start, 1.0, curve: Curves.easeOut),
-      ),
-    );
-
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0.0, 0.2),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Interval(start, 1.0, curve: Curves.easeOutCubic),
-      ),
-    );
-
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  Future<void> _onPopInvokedWithResult(bool didPop, Object? result) async {
+    if (didPop) return;
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastBackPressAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 2)) {
+      await SystemNavigator.pop();
+      return;
+    }
+    _lastBackPressAt = now;
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('再按一次返回键退出 ClipSync'),
+          duration: Duration(seconds: 2),
+        ),
+      );
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return FadeTransition(
-          opacity: _fadeAnimation,
-          child: SlideTransition(
-            position: _slideAnimation,
-            child: child,
-          ),
-        );
-      },
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: _onPopInvokedWithResult,
       child: widget.child,
     );
   }

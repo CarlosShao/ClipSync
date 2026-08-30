@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
+import '../screens/clipboard/clipboard_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/onboarding_screen.dart';
+import '../screens/settings_screen.dart';
 import 'route_guard.dart';
 
 /// 路由路径常量
@@ -14,16 +16,34 @@ class AppRoutes {
   static const splash = '/';
   static const login = '/login';
   static const onboarding = '/onboarding';
+
+  /// 主页 shell 逻辑根：裸路径别名（登录/引导完成后的跳转入口），
+  /// 由重定向映射到默认分支 [homeClipboard]，本身不注册路由页面。
   static const home = '/home';
+
+  /// 4 个 tab 分支路由（T2.2 应用骨架：StatefulShellRoute.indexedStack）
+  static const homeClipboard = '/home/clipboard';
+  static const homeFavorites = '/home/favorites';
+  static const homeDevices = '/home/devices';
+  static const homeSettings = '/home/settings';
 }
 
 /// 创建应用路由（go_router）。
 ///
 /// 路由表：
-/// - `/`            冷启动加载页（等待 AuthProvider 完成 auth_token 本地校验）
-/// - `/login`       验证码登录页
-/// - `/onboarding`  首次使用引导页
-/// - `/home`        主页（HomeScreen 内部承载 剪贴板/设备/设置 三个 tab 区）
+/// - `/home/clipboard`  剪贴板 tab（默认分支，挂载 ClipboardScreen）
+/// - `/home/favorites`  收藏 tab（Wave 4 前为 EmptyState 占位）
+/// - `/home/devices`    设备 tab（设备列表 + 解绑）
+/// - `/home/settings`   设置 tab（SettingsScreen）
+/// - `/`                冷启动加载页（等待 AuthProvider 完成 auth_token 本地校验）
+/// - `/login`           验证码登录页
+/// - `/onboarding`      首次使用引导页
+///
+/// 四个 tab 由 [StatefulShellRoute.indexedStack] 组成同一个 shell：
+/// 每个分支一个独立 Navigator，分支容器为 IndexedStack（切 tab 保活，
+/// 不丢滚动位置与状态）；shell 页面由 HomeScreen 承载（AppBar +
+/// M3 NavigationBar）。裸 `/home` 与 `/`、`/login`、`/onboarding` 一样
+/// 在重定向中映射到默认分支 `/home/clipboard`。
 ///
 /// 重定向守卫（守卫数据源沿用原有读取逻辑：AuthProvider 负责读取
 /// SharedPreferences 的 `auth_token`，RouteGuardState 负责读取
@@ -31,11 +51,7 @@ class AppRoutes {
 /// 1. 认证状态未知（isLoading）→ 统一回 `/` 加载页；
 /// 2. 未完成 onboarding → `/onboarding`；
 /// 3. 无 token → `/login`；
-/// 4. 有 token 访问 `/login` 或 `/onboarding` → `/home`。
-///
-/// 说明：home 的三个 tab 区由 HomeScreen 内部自管理（Wave 0 不拆其内部
-/// 结构），此处以单一 `/home` 路由挂载，等价于 shell 方式；真正的
-/// StatefulShellRoute 拆分随 T2.2「应用骨架」对 home_screen 的重构落地。
+/// 4. 有 token 访问 `/` / `/login` / `/onboarding` / `/home` → `/home/clipboard`。
 GoRouter createAppRouter({
   required AuthProvider authProvider,
   required RouteGuardState guardState,
@@ -62,11 +78,12 @@ GoRouter createAppRouter({
         return location == AppRoutes.login ? null : AppRoutes.login;
       }
 
-      // 4. 已登录：从加载页 / 登录页 / 引导页进入主页
+      // 4. 已登录：从加载页 / 登录页 / 引导页 / 裸 /home 进入主页默认分支
       if (location == AppRoutes.splash ||
           location == AppRoutes.login ||
-          location == AppRoutes.onboarding) {
-        return AppRoutes.home;
+          location == AppRoutes.onboarding ||
+          location == AppRoutes.home) {
+        return AppRoutes.homeClipboard;
       }
       return null;
     },
@@ -83,9 +100,53 @@ GoRouter createAppRouter({
         path: AppRoutes.onboarding,
         builder: (context, state) => const OnboardingScreen(),
       ),
-      GoRoute(
-        path: AppRoutes.home,
-        builder: (context, state) => const HomeScreen(),
+      // 主页 4 tab shell：IndexedStack 保活分支，HomeScreen 提供骨架外观
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            HomeScreen(navigationShell: navigationShell),
+        branches: [
+          // 剪贴板 tab：T2.3 交付的 ClipboardScreen（冻结契约：无参构造，
+          // 自身消费 ClipboardProvider）。文件由并行工单落盘。
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.homeClipboard,
+                builder: (context, state) =>
+                    const BackExitGuard(child: ClipboardScreen()),
+              ),
+            ],
+          ),
+          // 收藏 tab：Wave 4 前为 EmptyState 占位
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.homeFavorites,
+                builder: (context, state) =>
+                    const BackExitGuard(child: FavoritesTab()),
+              ),
+            ],
+          ),
+          // 设备 tab：设备列表 + 长按解绑（自旧版设备页迁移）
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.homeDevices,
+                builder: (context, state) =>
+                    const BackExitGuard(child: DevicesTab()),
+              ),
+            ],
+          ),
+          // 设置 tab：既有 SettingsScreen 宿主挂载（文件本身不重构）
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.homeSettings,
+                builder: (context, state) =>
+                    const BackExitGuard(child: SettingsScreen()),
+              ),
+            ],
+          ),
+        ],
       ),
     ],
   );
