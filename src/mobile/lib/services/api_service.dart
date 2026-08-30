@@ -1,18 +1,38 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../models/clipboard_item.dart';
 import '../models/device.dart';
 import '../models/session.dart';
 import 'cache_service.dart';
 import 'server_config.dart';
+import 'token_store.dart';
 
 class ApiService {
   static String get baseUrl => ServerConfig.baseUrl;
 
-  Map<String, String> _headers(String token) {
+  /// 解析 Bearer 令牌：显式传入的 token 优先；未传时从 TokenStore（secure storage，
+  /// T1.2 冻结契约）读取。都没有则抛出未登录异常。
+  Future<String> _resolveToken(String? token) async {
+    final resolved = token ?? await TokenStore.getAccessToken();
+    if (resolved == null || resolved.isEmpty) {
+      throw Exception('未登录：缺少访问令牌');
+    }
+    return resolved;
+  }
+
+  Future<Map<String, String>> _headers(String? token) async {
+    final resolved = await _resolveToken(token);
     return {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
+      'Authorization': 'Bearer $resolved',
     };
+  }
+
+  /// JSON 响应体安全解码为 Map（jsonDecode 返回 dynamic，直接返回会触发
+  /// return_of_invalid_type / argument_type_not_assignable）
+  static Map<String, dynamic> _decodeMap(String body) {
+    final decoded = jsonDecode(body);
+    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
   }
 
   // Auth
@@ -39,82 +59,163 @@ class ApiService {
       throw Exception('Login failed');
     }
 
-    return jsonDecode(response.body);
+    return _decodeMap(response.body);
   }
 
-  Future<Map<String, dynamic>> getProfile(String token) async {
+  Future<Map<String, dynamic>> getProfile(String? token) async {
     return await CacheDecorator().cachedOperation(
       CacheKeys.userProfile(),
       () async {
         final response = await http.get(
           Uri.parse('$baseUrl/api/auth/me'),
-          headers: _headers(token),
+          headers: await _headers(token),
         );
 
         if (response.statusCode != 200) {
           throw Exception('Failed to get profile');
         }
 
-        return jsonDecode(response.body);
+        return _decodeMap(response.body);
       },
       ttl: const Duration(minutes: 5),
     ) ?? {};
   }
 
   // Clipboard
-  Future<Map<String, dynamic>> getClipboardItems(
-    String token, {
+
+  /// 拉取剪贴板列表（T1.1）
+  ///
+  /// - 返回解析后的 [ClipboardPage]（items + pagination）。
+  /// - 保留并暴露全部分页/筛选能力：page/limit、contentType、search、favorites、
+  ///   deviceId、dateFrom、dateTo、tag、all、view（对齐后端 GET /api/clipboard 查询参数）。
+  /// - 缓存键带上筛选签名：无筛选时沿用既有键（缓存兼容），带筛选时各自独立缓存，
+  ///   避免不同筛选结果串缓存。
+  Future<ClipboardPage> getClipboardItems(
+    String? token, {
     int page = 1,
     int limit = 50,
     String? contentType,
     String? search,
     bool? favorites,
+    String? deviceId,
+    String? dateFrom,
+    String? dateTo,
+    String? tag,
+    bool all = false,
+    String? view,
     bool forceRefresh = false,
   }) async {
-    return await CacheDecorator().cachedOperation(
-      CacheKeys.clipboardListWithPage(page),
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+    };
+
+    if (contentType != null && contentType.isNotEmpty) {
+      queryParams['contentType'] = contentType;
+    }
+    if (search != null && search.trim().isNotEmpty) {
+      queryParams['search'] = search.trim();
+    }
+    if (favorites == true) queryParams['favorites'] = 'true';
+    if (all) queryParams['all'] = 'true';
+    if (deviceId != null && deviceId.isNotEmpty) {
+      queryParams['deviceId'] = deviceId;
+    }
+    if (dateFrom != null && dateFrom.isNotEmpty) {
+      queryParams['dateFrom'] = dateFrom;
+    }
+    if (dateTo != null && dateTo.isNotEmpty) queryParams['dateTo'] = dateTo;
+    if (tag != null && tag.isNotEmpty) queryParams['tag'] = tag;
+    if (view != null && view.isNotEmpty) queryParams['view'] = view;
+
+    // 缓存键：无筛选沿用旧键（兼容既有缓存）；有筛选附加签名段
+    final filterSignature = <String>[
+      if (contentType != null && contentType.isNotEmpty)
+        'type=${Uri.encodeComponent(contentType)}',
+      if (search != null && search.trim().isNotEmpty)
+        'q=${Uri.encodeComponent(search.trim())}',
+      if (favorites == true) 'fav=1',
+      if (deviceId != null && deviceId.isNotEmpty)
+        'dev=${Uri.encodeComponent(deviceId)}',
+      if (dateFrom != null && dateFrom.isNotEmpty)
+        'from=${Uri.encodeComponent(dateFrom)}',
+      if (dateTo != null && dateTo.isNotEmpty)
+        'to=${Uri.encodeComponent(dateTo)}',
+      if (tag != null && tag.isNotEmpty) 'tag=${Uri.encodeComponent(tag)}',
+      if (all) 'all=1',
+      if (view != null && view.isNotEmpty) 'view=${Uri.encodeComponent(view)}',
+    ].join('&');
+    final cacheKey = filterSignature.isEmpty
+        ? CacheKeys.clipboardListWithPage(page)
+        : '${CacheKeys.clipboardListWithPage(page)}#$filterSignature';
+
+    // 缓存原始 Map（可安全经磁盘 JSON 序列化往返），出缓存后再解析为强类型
+    final data = await CacheDecorator().cachedOperation<Map<String, dynamic>>(
+      cacheKey,
       () async {
-        final queryParams = {
-          'page': page.toString(),
-          'limit': limit.toString(),
-        };
-
-        if (contentType != null) queryParams['contentType'] = contentType;
-        if (search != null) queryParams['search'] = search;
-        if (favorites == true) queryParams['favorites'] = 'true';
-
         final uri = Uri.parse('$baseUrl/api/clipboard').replace(
           queryParameters: queryParams,
         );
 
-        final response = await http.get(uri, headers: _headers(token));
+        final response = await http.get(uri, headers: await _headers(token));
 
         if (response.statusCode != 200) {
           throw Exception('Failed to load clipboard items');
         }
 
-        return jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
+        return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
       },
       ttl: const Duration(minutes: 2),
       forceRefresh: forceRefresh,
-    ) ?? {};
+    );
+
+    return ClipboardPage.fromJson(data ?? const {});
   }
 
-  Future<void> toggleFavorite(String token, String itemId) async {
+  /// 获取单条完整内容（T1.1 核心）
+  ///
+  /// 列表响应只含截断预览（服务端截断至 5000 字符），复制长文本前需经
+  /// `GET /api/clipboard/:id/content` 拉取完整内容（contentEncrypted 字段，
+  /// 历史命名、实际为明文；对齐桌面端 useClipboard.ts 的复制取数路径）。
+  Future<String?> getItemContent(String? token, String itemId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/clipboard/$itemId/content'),
+      headers: await _headers(token),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load clipboard item content');
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      final content = decoded['contentEncrypted'];
+      return content is String ? content : null;
+    }
+    return null;
+  }
+
+  /// 收藏 toggle（PUT /api/clipboard/:id/favorite）。
+  /// 返回服务端权威状态 {id, isFavorite, favoritedAt}，请求失败抛异常。
+  Future<Map<String, dynamic>?> toggleFavorite(String? token, String itemId) async {
     final response = await http.put(
       Uri.parse('$baseUrl/api/clipboard/$itemId/favorite'),
-      headers: _headers(token),
+      headers: await _headers(token),
     );
 
     if (response.statusCode != 200) {
       throw Exception('Failed to toggle favorite');
     }
+
+    final decoded = jsonDecode(response.body);
+    return decoded is Map<String, dynamic> ? decoded : null;
   }
 
-  Future<void> deleteClipboardItem(String token, String itemId) async {
+  Future<void> deleteClipboardItem(String? token, String itemId) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/api/clipboard/$itemId'),
-      headers: _headers(token),
+      headers: await _headers(token),
     );
 
     if (response.statusCode != 200) {
@@ -123,21 +224,21 @@ class ApiService {
   }
 
   // Devices
-  Future<List<Device>> getDevices(String token, {bool forceRefresh = false}) async {
+  Future<List<Device>> getDevices(String? token, {bool forceRefresh = false}) async {
     return await CacheDecorator().cachedOperation<List<Device>>(
       CacheKeys.deviceList(),
       () async {
         final response = await http.get(
           Uri.parse('$baseUrl/api/devices'),
-          headers: _headers(token),
+          headers: await _headers(token),
         );
 
         if (response.statusCode != 200) {
           throw Exception('Failed to load devices');
         }
 
-        final List<dynamic> data = jsonDecode(response.body);
-        return data.map((json) => Device.fromJson(json)).toList();
+        final data = jsonDecode(response.body) as List<dynamic>;
+        return data.map((json) => Device.fromJson(json as Map<String, dynamic>)).toList();
       },
       ttl: const Duration(minutes: 5),
       forceRefresh: forceRefresh,
@@ -145,7 +246,7 @@ class ApiService {
   }
 
   Future<Device> registerDevice(
-    String token, {
+    String? token, {
     required String deviceName,
     required String deviceType,
     required String platform,
@@ -154,7 +255,7 @@ class ApiService {
   }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/api/devices'),
-      headers: _headers(token),
+      headers: await _headers(token),
       body: jsonEncode({
         'deviceName': deviceName,
         'deviceType': deviceType,
@@ -168,13 +269,13 @@ class ApiService {
       throw Exception('Failed to register device');
     }
 
-    return Device.fromJson(jsonDecode(response.body));
+    return Device.fromJson(_decodeMap(response.body));
   }
 
-  Future<void> removeDevice(String token, String deviceId) async {
+  Future<void> removeDevice(String? token, String deviceId) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/api/devices/$deviceId'),
-      headers: _headers(token),
+      headers: await _headers(token),
     );
 
     if (response.statusCode != 200) {
@@ -184,24 +285,24 @@ class ApiService {
 
   // Sync
   Future<Map<String, dynamic>?> syncPush(
-    String token,
+    String? token,
     String deviceId,
     List<Map<String, dynamic>> changes,
   ) async {
     final response = await http.post(
       Uri.parse('$baseUrl/api/sync/push'),
-      headers: _headers(token),
+      headers: await _headers(token),
       body: jsonEncode({'deviceId': deviceId, 'changes': changes}),
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return _decodeMap(response.body);
     }
     return null;
   }
 
   Future<Map<String, dynamic>?> syncPull(
-    String token,
+    String? token,
     String deviceId, {
     String? since,
     int limit = 100,
@@ -213,29 +314,29 @@ class ApiService {
       queryParameters: queryParams,
     );
 
-    final response = await http.get(uri, headers: _headers(token));
+    final response = await http.get(uri, headers: await _headers(token));
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return _decodeMap(response.body);
     }
     return null;
   }
 
-  Future<Map<String, dynamic>?> getSyncStatus(String token, String deviceId) async {
+  Future<Map<String, dynamic>?> getSyncStatus(String? token, String deviceId) async {
     final response = await http.get(
       Uri.parse('$baseUrl/api/sync/status/$deviceId'),
-      headers: _headers(token),
+      headers: await _headers(token),
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return _decodeMap(response.body);
     }
     return null;
   }
 
   // Media upload
   Future<Map<String, dynamic>?> uploadImage(
-    String token,
+    String? token,
     String deviceId, {
     required List<int> imageBytes,
     required String filename,
@@ -243,7 +344,7 @@ class ApiService {
   }) async {
     final uri = Uri.parse('$baseUrl/api/media/image');
     final request = http.MultipartRequest('POST', uri);
-    request.headers['Authorization'] = 'Bearer $token';
+    request.headers['Authorization'] = 'Bearer ${await _resolveToken(token)}';
     request.fields['sourceDeviceId'] = deviceId;
     request.files.add(http.MultipartFile.fromBytes(
       'image',
@@ -253,13 +354,13 @@ class ApiService {
 
     final response = await request.send();
     if (response.statusCode == 201) {
-      return jsonDecode(await response.stream.bytesToString());
+      return _decodeMap(await response.stream.bytesToString());
     }
     return null;
   }
 
   Future<Map<String, dynamic>?> uploadFile(
-    String token,
+    String? token,
     String deviceId, {
     required List<int> fileBytes,
     required String filename,
@@ -267,7 +368,7 @@ class ApiService {
   }) async {
     final uri = Uri.parse('$baseUrl/api/media/file');
     final request = http.MultipartRequest('POST', uri);
-    request.headers['Authorization'] = 'Bearer $token';
+    request.headers['Authorization'] = 'Bearer ${await _resolveToken(token)}';
     request.fields['sourceDeviceId'] = deviceId;
     request.files.add(http.MultipartFile.fromBytes(
       'file',
@@ -277,30 +378,33 @@ class ApiService {
 
     final response = await request.send();
     if (response.statusCode == 201) {
-      return jsonDecode(await response.stream.bytesToString());
+      return _decodeMap(await response.stream.bytesToString());
     }
     return null;
   }
 
   // Sessions
-  Future<List<Session>> getSessions(String token) async {
+  Future<List<Session>> getSessions(String? token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/api/sessions'),
-      headers: _headers(token),
+      headers: await _headers(token),
     );
 
     if (response.statusCode != 200) {
       throw Exception('Failed to load sessions');
     }
 
-    final List<dynamic> data = jsonDecode(response.body)['data']['sessions'];
-    return data.map((json) => Session.fromJson(json)).toList();
+    final dataField = _decodeMap(response.body)['data'];
+    final sessionsField = dataField is Map<String, dynamic> ? dataField['sessions'] : null;
+    final List<dynamic> data =
+        sessionsField is List<dynamic> ? sessionsField : const <dynamic>[];
+    return data.map((json) => Session.fromJson(json as Map<String, dynamic>)).toList();
   }
 
-  Future<void> revokeSession(String token, String sessionId) async {
+  Future<void> revokeSession(String? token, String sessionId) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/api/sessions/$sessionId'),
-      headers: _headers(token),
+      headers: await _headers(token),
     );
 
     if (response.statusCode != 200) {
@@ -308,10 +412,10 @@ class ApiService {
     }
   }
 
-  Future<void> revokeAllSessions(String token) async {
+  Future<void> revokeAllSessions(String? token) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/api/sessions'),
-      headers: _headers(token),
+      headers: await _headers(token),
     );
 
     if (response.statusCode != 200) {

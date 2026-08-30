@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../models/clipboard_item.dart';
+import '../providers/clipboard_provider.dart';
 import '../theme/app_theme.dart';
 
 class ClipboardCard extends StatefulWidget {
@@ -213,11 +215,37 @@ class _ClipboardCardState extends State<ClipboardCard>
     return '${dateTime.month}/${dateTime.day}';
   }
 
-  void _copyToClipboard(BuildContext context) {
-    Clipboard.setData(ClipboardData(text: widget.item.contentPreview));
-    ScaffoldMessenger.of(context).showSnackBar(
+  /// 复制动作（T1.1）：复制**完整内容**而非截断预览。
+  ///
+  /// - 优先经 Provider 解析：预览疑似截断（>5000 字符被服务端截断）时
+  ///   自动拉取 `GET /api/clipboard/:id/content` 的完整内容并回填缓存；
+  /// - Provider 不可用/取数失败时退化为模型内最优文本（fullContent ?? 预览）；
+  /// - 成功后弹「已复制」轻提示。
+  Future<void> _copyToClipboard(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    String text = widget.item.copyText;
+    try {
+      final provider = context.read<ClipboardProvider>();
+      final resolved = await provider.resolveCopyText(null, widget.item.id);
+      if (resolved.isNotEmpty) text = resolved;
+    } catch (_) {
+      // 保持退化文本，继续复制
+    }
+
+    if (text.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('该条目暂无文本内容'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: text));
+    messenger.showSnackBar(
       const SnackBar(
-        content: Text('已复制到剪贴板'),
+        content: Text('已复制'),
         duration: Duration(seconds: 1),
       ),
     );
