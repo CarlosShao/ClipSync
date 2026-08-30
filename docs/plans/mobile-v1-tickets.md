@@ -171,7 +171,7 @@
 | T2.3 | ✅（搜索 300ms 防抖 + 类型 chips + 下拉刷新 + 无限分页 + 三态 + 新内容浮条；0 error） | subagent | 5e48cd0 |
 | T2.4 | ✅（新卡片 + 临时 tile 切换 + 删除孤儿 coach_mark；0 error） | subagent | 23cf088 |
 | T2.5 | ✅（详情页：PhotoView 鉴权缩放/文件下载/文本全览 + 复制收藏操作栏；0 error） | subagent | 28b1427 |
-| T3.1–T3.5 | ☐ | — | — |
+| T3.1–T3.5 | ✅（前台服务保活 WS+剪贴板采集五层去重/WS csrf 握手修复/本地通知+权限引导/分享收发；error 66 持平） | subagent | 603b808 |
 | T4.1–T4.6 | ☐ | — | — |
 | S1 | ✅（sync.js:98 冲突分支 req.userId 修复，167 测试全绿） | 编排者 | dffb5d5 |
 
