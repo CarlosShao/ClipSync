@@ -433,15 +433,15 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
     // ── 落盘修复：合并文件此前写在 UPLOAD_DIR 根（uploadId 命名），而下载端点
     //    在 uploads/files/ 按 content_encrypted（finalFilename）查找 → 永远 404。
     //    统一移动到 files/ 子目录并使用与 DB 一致的最终文件名。
-    const filesDir = path.join(path.dirname(mergedPath), 'files');
+    const filesDir = path.join(path.dirname(finalPath), 'files');
     await fs.mkdir(filesDir, { recursive: true });
     const finalTarget = path.join(filesDir, finalFilename);
     try {
-      await fs.rename(mergedPath, finalTarget);
+      await fs.rename(finalPath, finalTarget);
     } catch {
       // 跨盘 rename 失败时降级为复制+清理
-      await fs.copyFile(mergedPath, finalTarget);
-      await fs.rm(mergedPath, { force: true });
+      await fs.copyFile(finalPath, finalTarget);
+      await fs.rm(finalPath, { force: true });
     }
 
     // ── 关联已有条目（桌面自动文件同步：先建条目→后台上传字节→完成回填）。
