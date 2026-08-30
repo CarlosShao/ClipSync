@@ -12,6 +12,7 @@ import '../providers/device_provider.dart';
 import '../providers/ws_provider.dart';
 import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
+import '../widgets/common/error_state.dart';
 import '../utils/performance.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/device_card.dart';
