@@ -7,7 +7,7 @@ import '../../models/clipboard_item.dart';
 import '../../providers/clipboard_provider.dart';
 import '../../services/token_store.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/common/app_card.dart';
+import '../../widgets/clipboard_card.dart';
 import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/error_state.dart';
 import '../../widgets/common/skeleton_list.dart';
@@ -37,9 +37,9 @@ const double _kNewContentScrollThreshold = 600;
 /// 本页仅消费 Consumer 重建，不重复接线；离开列表顶部时收到新内容会显示
 /// 「有 N 条新内容」轻量浮条，点击回到顶部。
 ///
-/// 卡片渲染说明：T2.4 正在并行重写 `widgets/clipboard_card.dart`，为避免对
-/// 其签名耦合，本页暂用内置简化条目 [_ClipboardTile]；T2.4 交付后由编排者
-/// 统一替换。
+/// 卡片渲染（T2.4）：条目统一由 [ClipboardCard] 渲染——四色类型块/缩略图、
+/// 3 行预览省略、来源设备与相对时间；单击回调进详情页，长按/右上角更多
+/// 菜单提供收藏 toggle、置顶（占位）与删除（带确认），数据操作走 Provider。
 class ClipboardScreen extends StatefulWidget {
   const ClipboardScreen({super.key});
 
@@ -397,7 +397,10 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
           return _buildListFooter(provider);
         }
         final item = provider.items[index];
-        return _ClipboardTile(item: item, onTap: () => _openDetail(item));
+        return Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.md),
+          child: ClipboardCard(key: ValueKey<String>(item.id), item: item, onTap: () => _openDetail(item)),
+        );
       },
     );
   }
@@ -488,126 +491,4 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   /// 错误文案友好化：去掉异常前缀（'Exception: xxx' → 'xxx'）。
   String _friendlyError(String raw) => raw.replaceFirst(RegExp(r'^Exception:\s*'), '');
-}
-
-// -----------------------------------------------------------------------------
-// 简化卡片条目（T2.4 交付 ClipboardCard 前的临时渲染）
-// -----------------------------------------------------------------------------
-
-/// 类型图标映射（未识别类型回退文本图标）。
-IconData _typeIcon(String contentType) {
-  switch (contentType) {
-    case 'image':
-      return Icons.image_outlined;
-    case 'link':
-      return Icons.link;
-    case 'file':
-      return Icons.insert_drive_file_outlined;
-    case 'code':
-      return Icons.code;
-    case 'text':
-      return Icons.subject;
-    default:
-      return Icons.subject;
-  }
-}
-
-/// 相对时间：刚刚 / N 分钟前 / N 小时前 / N 天前 / M 月 D 日。
-String _formatRelativeTime(DateTime time) {
-  final diff = DateTime.now().difference(time);
-  if (diff.inMinutes < 1) {
-    return '刚刚';
-  }
-  if (diff.inMinutes < 60) {
-    return '${diff.inMinutes} 分钟前';
-  }
-  if (diff.inHours < 24) {
-    return '${diff.inHours} 小时前';
-  }
-  if (diff.inDays < 7) {
-    return '${diff.inDays} 天前';
-  }
-  return '${time.month} 月 ${time.day} 日';
-}
-
-/// 简化剪贴板条目卡片：类型图标 + 类型标签/收藏星 + 相对时间 + 两行预览。
-/// 点击打开详情页；复制/收藏/删除等完整操作由 T2.4 的 ClipboardCard 提供。
-class _ClipboardTile extends StatelessWidget {
-  const _ClipboardTile({required this.item, required this.onTap});
-
-  final ClipboardItem item;
-  final VoidCallback onTap;
-
-  /// 列表预览文本：文件优先显示文件名；图片无 OCR 时显示占位文案。
-  String get _previewText {
-    if (item.isFile) {
-      return item.fileName ?? '（文件）';
-    }
-    final preview = item.contentPreview.trim();
-    if (preview.isEmpty) {
-      return item.isImage ? '（图片）' : '（空内容）';
-    }
-    return preview;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: AppCard(
-        onTap: onTap,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-        child: Row(
-          children: <Widget>[
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-              ),
-              alignment: Alignment.center,
-              child: Icon(_typeIcon(item.contentType), size: 20, color: scheme.primary),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Text(
-                        item.typeLabel,
-                        style: textTheme.labelSmall?.copyWith(color: scheme.primary),
-                      ),
-                      if (item.isFavorite) ...<Widget>[
-                        const SizedBox(width: AppSpacing.xs),
-                        const Icon(Icons.star, size: 14, color: AppColors.warning),
-                      ],
-                      const Spacer(),
-                      Text(
-                        _formatRelativeTime(item.createdAt),
-                        style: textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    _previewText,
-                    style: textTheme.bodyMedium,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
