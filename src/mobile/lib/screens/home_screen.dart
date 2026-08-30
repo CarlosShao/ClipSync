@@ -253,6 +253,17 @@ class _DevicesTabState extends State<DevicesTab> {
         if (provider.isLoading && provider.devices.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
+        // 错误必须可见：此前失败会被显示成「暂无设备」，掩盖真实原因
+        if (provider.error != null && provider.devices.isEmpty) {
+          return ErrorState(
+            title: '设备列表加载失败',
+            message: provider.error!,
+            onRetry: () {
+              final token = context.read<AuthProvider>().token;
+              if (token != null) provider.loadDevices(token);
+            },
+          );
+        }
         if (provider.devices.isEmpty) {
           return const EmptyState(
             icon: Icons.devices,
