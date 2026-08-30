@@ -21,17 +21,50 @@ class Device {
     required this.createdAt,
   });
 
+  /// 防御式解析：服务端返回 snake_case（device_name/is_online/last_seen_at），
+  /// 历史兼容 camelCase；任何字段缺失/类型不符都不允许崩溃
+  /// （此前 camelCase 直取 + DateTime.parse(null) 导致设备页整页加载失败）
   factory Device.fromJson(Map<String, dynamic> json) {
+    String readString(List<String> keys, [String fallback = '']) {
+      for (final k in keys) {
+        final v = json[k];
+        if (v is String && v.isNotEmpty) return v;
+      }
+      return fallback;
+    }
+
+    DateTime? readDate(List<String> keys) {
+      for (final k in keys) {
+        final v = json[k];
+        if (v is String && v.isNotEmpty) {
+          try {
+            return DateTime.parse(v);
+          } catch (_) {
+            /* ignore malformed date */
+          }
+        }
+      }
+      return null;
+    }
+
+    bool readBool(List<String> keys) {
+      for (final k in keys) {
+        final v = json[k];
+        if (v is bool) return v;
+      }
+      return false;
+    }
+
     return Device(
-      id: json['id'],
-      deviceName: json['deviceName'],
-      deviceType: json['deviceType'],
-      platform: json['platform'],
-      platformVersion: json['platformVersion'],
-      appVersion: json['appVersion'],
-      isOnline: json['isOnline'] ?? false,
-      lastSeenAt: json['lastSeenAt'] != null ? DateTime.parse(json['lastSeenAt']) : null,
-      createdAt: DateTime.parse(json['createdAt']),
+      id: readString(const ['id']),
+      deviceName: readString(const ['device_name', 'deviceName'], '未知设备'),
+      deviceType: readString(const ['device_type', 'deviceType'], 'desktop'),
+      platform: readString(const ['platform'], 'unknown'),
+      platformVersion: readString(const ['platform_version', 'platformVersion']),
+      appVersion: readString(const ['app_version', 'appVersion']),
+      isOnline: readBool(const ['is_online', 'isOnline']),
+      lastSeenAt: readDate(const ['last_seen_at', 'lastSeenAt']),
+      createdAt: readDate(const ['created_at', 'createdAt']) ?? DateTime.now(),
     );
   }
 

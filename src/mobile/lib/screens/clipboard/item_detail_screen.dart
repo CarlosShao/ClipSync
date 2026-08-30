@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/clipboard_item.dart';
 import '../../services/api_service.dart';
 import '../../services/server_config.dart';
@@ -62,6 +64,10 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   bool _favoriteBusy = false;
   bool _downloadBusy = false;
 
+  // 文件条目降级（F4）：content 为来源设备本机路径 / 下载失败时置位，
+  // 文件卡片切换为「复制文件名」+ 降级提示，不再提供跨设备下载入口。
+  bool _fileDegraded = false;
+
   bool get _isTextLike => _item.isText || _item.isLink || _item.isCode;
 
   @override
@@ -72,8 +78,10 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       _loadImage();
     } else if (_isTextLike) {
       _loadFullText();
+    } else if (_item.isFile) {
+      // F4：预取 content 探测是否为来源设备本机路径 → 直接降级，不进加载失败态
+      unawaited(_probeFileContent());
     }
-    // file 类型无需预备数据：下载时再取 token
   }
 
   // ---------------------------------------------------------------------------
@@ -108,6 +116,51 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       if (!mounted) return;
       setState(() => _textState = _TextLoadState.error);
     }
+  }
+
+  /// F4：预取文件条目 content 并探测是否为来源设备本机路径。
+  ///
+  /// 剪贴板捕获的文件条目 content 存的是来源设备本机路径（手机无该文件、
+  /// 无对应 media 记录，下载端点必然失败），探测命中即直接进入降级态：
+  /// 展示文件名 + 降级提示，不提供下载入口、不进加载失败态。
+  /// 探测失败不致命：保留下载入口，由用户点击后按下载失败路径降级。
+  Future<void> _probeFileContent() async {
+    if (_fileDegraded) {
+      return;
+    }
+    String? content = _item.fullContent;
+    if (content == null || content.isEmpty) {
+      try {
+        content = await ApiService().getItemContent(null, _item.id);
+        if (!mounted) return;
+        if (content != null && content.isNotEmpty) {
+          _item = _item.copyWith(fullContent: content);
+        }
+      } catch (_) {
+        // 拉取失败：保留下载入口，失败再降级
+        return;
+      }
+    }
+    if (_looksLikeLocalPath(content)) {
+      if (!mounted) return;
+      setState(() => _fileDegraded = true);
+    }
+  }
+
+  /// 路径启发式（F4）：含 \ 或 / 且非 URL、非 data: 的文本内容视为本机路径。
+  bool _looksLikeLocalPath(String? content) {
+    if (content == null) {
+      return false;
+    }
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) {
+      return false;
+    }
+    final lower = trimmed.toLowerCase();
+    if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('data:')) {
+      return false;
+    }
+    return trimmed.contains('\\') || trimmed.contains('/');
   }
 
   /// 准备图片数据。双通道策略（对齐桌面端渲染）：
@@ -196,26 +249,27 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   /// 复制全量：文本类复制已加载全文；图片复制 OCR 文本；文件复制文件名。
   Future<void> _copyFull() async {
     final messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
     String text;
     if (_isTextLike) {
       text = _textState == _TextLoadState.loaded ? _fullText : _item.copyText;
     } else if (_item.isImage) {
       text = _item.ocrText;
     } else {
-      text = _item.fileName ?? '';
+      text = _fileDisplayName;
     }
     if (text.isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('该条目暂无文本内容'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(l10n.noTextContent),
+          duration: const Duration(seconds: 2),
         ),
       );
       return;
     }
     await Clipboard.setData(ClipboardData(text: text));
     messenger.showSnackBar(
-      const SnackBar(content: Text('已复制'), duration: Duration(seconds: 2)),
+      SnackBar(content: Text(l10n.copied), duration: const Duration(seconds: 2)),
     );
   }
 
@@ -223,14 +277,15 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   /// （详情页已加载全文时优先用全文）。
   Future<void> _shareItem() async {
     final messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
     final text = _isTextLike
         ? (_textState == _TextLoadState.loaded ? _fullText : _item.copyText)
         : _item.copyText;
     if (text.trim().isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('该条目暂无文本内容'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(l10n.noTextContent),
+          duration: const Duration(seconds: 2),
         ),
       );
       return;
@@ -239,7 +294,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       await Share.share(text.trim());
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('分享失败，请稍后重试'), duration: Duration(seconds: 2)),
+        SnackBar(content: Text(l10n.shareFailed), duration: const Duration(seconds: 2)),
       );
     }
   }
@@ -247,6 +302,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   /// 收藏 toggle：调既有 PUT /api/clipboard/:id/favorite，以服务端返回为准。
   Future<void> _toggleFavorite() async {
     final messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
     setState(() => _favoriteBusy = true);
     try {
       final result = await ApiService().toggleFavorite(null, _item.id);
@@ -262,15 +318,19 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       if (!mounted) return;
       setState(() => _favoriteBusy = false);
       messenger.showSnackBar(
-        const SnackBar(content: Text('收藏操作失败，请稍后重试')),
+        SnackBar(content: Text(l10n.favoriteFailed)),
       );
     }
   }
 
   /// 文件下载：GET /api/media/:id/download（Bearer）→ 保存到临时目录 downloads/
   /// 并以SnackBar 告知保存路径。同名校验存在时追加序号避免覆盖。
+  ///
+  /// F4：任何下载失败（404 / 网络异常等）都按「文件在来源设备本机」降级——
+  /// SnackBar 提示跨设备暂不可取，文件卡片切换为「复制文件名」。
   Future<void> _downloadFile() async {
     final messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
     setState(() => _downloadBusy = true);
     try {
       final token = await TokenStore.getAccessToken();
@@ -301,17 +361,54 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       }
       await target.writeAsBytes(response.bodyBytes);
       messenger.showSnackBar(
-        SnackBar(content: Text('已保存到 ${target.path}'), duration: const Duration(seconds: 3)),
+        SnackBar(
+          content: Text(l10n.fileSavedTo(target.path)),
+          duration: const Duration(seconds: 3),
+        ),
       );
     } catch (_) {
+      if (mounted) {
+        setState(() => _fileDegraded = true);
+      }
       messenger.showSnackBar(
-        const SnackBar(content: Text('下载失败，请稍后重试')),
+        SnackBar(content: Text(l10n.fileLocalOnlyHint), duration: const Duration(seconds: 3)),
       );
     } finally {
       if (mounted) {
         setState(() => _downloadBusy = false);
       }
     }
+  }
+
+  /// F4：复制文件名（降级态下替代下载入口的动作）。
+  Future<void> _copyFileName() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final name = _fileDisplayName;
+    if (name.isEmpty) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: name));
+    messenger.showSnackBar(
+      SnackBar(content: Text(l10n.copied), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  /// 文件展示名（F4）：metadata 文件名优先；缺失时从路径型 content/预览
+  /// 推导基名（含 \ 或 / 时取末段），避免把整条来源路径当文件名展示。
+  String get _fileDisplayName {
+    final name = _item.fileName;
+    if (name != null && name.isNotEmpty) {
+      return name;
+    }
+    final raw = (_item.fullContent ?? _item.contentPreview).trim();
+    if (raw.isNotEmpty) {
+      final base = raw.split(RegExp(r'[\\/]')).last.trim();
+      if (base.isNotEmpty) {
+        return base;
+      }
+    }
+    return AppLocalizations.of(context).unknownFile;
   }
 
   /// 文件名净化：去掉路径分隔符与非法字符，避免写入时路径穿越。
@@ -328,6 +425,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -335,10 +433,10 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(_item.typeLabel),
+            Text(_localizedTypeLabel(l10n)),
             const SizedBox(width: AppSpacing.sm),
             Text(
-              _formatRelativeTime(_item.createdAt),
+              _formatRelativeTime(l10n, _item.createdAt),
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -349,6 +447,24 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       body: _buildBody(theme),
       bottomNavigationBar: _buildBottomBar(theme),
     );
+  }
+
+  /// 本地化类型标签（模型 typeLabel 为硬编码中文，UI 层按 contentType 重映射）
+  String _localizedTypeLabel(AppLocalizations l10n) {
+    switch (_item.contentType) {
+      case 'text':
+        return l10n.typeText;
+      case 'image':
+        return l10n.typeImage;
+      case 'link':
+        return l10n.typeLink;
+      case 'file':
+        return l10n.typeFile;
+      case 'code':
+        return l10n.typeCode;
+      default:
+        return _item.contentType;
+    }
   }
 
   /// 内容区按类型分发
@@ -370,9 +486,10 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     }
     final provider = _imageProvider;
     if (_imageFailed || provider == null) {
+      final l10n = AppLocalizations.of(context);
       return _buildErrorView(
         theme,
-        message: provider == null ? '缺少登录凭据，无法加载图片' : '图片加载失败，请检查网络后重试',
+        message: provider == null ? l10n.imageNoCredentials : l10n.imageLoadFailed,
         onRetry: provider == null ? _loadImage : _retryImage,
       );
     }
@@ -415,7 +532,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
               const CircularProgressIndicator(),
               const SizedBox(height: AppSpacing.md),
               Text(
-                '加载中…',
+                AppLocalizations.of(context).loading,
                 style: theme.textTheme.labelMedium
                     ?.copyWith(color: scheme.onSurfaceVariant),
               ),
@@ -430,10 +547,32 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
 
   Widget _buildFileView(ThemeData theme) {
     final scheme = theme.colorScheme;
-    final fileName = _item.fileName ?? _item.contentPreview;
-    final displayName = fileName.isEmpty ? '未知文件' : fileName;
+    final l10n = AppLocalizations.of(context);
+    final displayName = _fileDisplayName;
     final mime = _item.metadata['mimeType'];
     final mimeText = mime is String && mime.isNotEmpty ? ' · $mime' : '';
+
+    // F4 降级态：不提供下载入口，改为「复制文件名」+ 来源设备本机提示
+    final Widget actionButton = _fileDegraded
+        ? FilledButton.tonalIcon(
+            onPressed: _copyFileName,
+            icon: const Icon(Icons.copy_rounded),
+            label: Text(l10n.copyFileName),
+          )
+        : FilledButton.tonalIcon(
+            onPressed: _downloadBusy ? null : _downloadFile,
+            icon: _downloadBusy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_rounded),
+            label: Text(_downloadBusy ? l10n.downloading : l10n.openDownload),
+          );
+    final String actionHint = _fileDegraded
+        ? l10n.fileLocalOnlyHint
+        : l10n.fileDownloadHint;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -481,20 +620,10 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                 ],
               ),
               const SizedBox(height: AppSpacing.lg),
-              FilledButton.tonalIcon(
-                onPressed: _downloadBusy ? null : _downloadFile,
-                icon: _downloadBusy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.download_rounded),
-                label: Text(_downloadBusy ? '下载中…' : '打开（下载到本机）'),
-              ),
+              actionButton,
               const SizedBox(height: AppSpacing.sm),
               Text(
-                '文件经服务端下载接口获取，保存到应用临时目录',
+                actionHint,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: scheme.onSurfaceVariant,
@@ -516,7 +645,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       case _TextLoadState.error:
         return _buildErrorView(
           theme,
-          message: '内容加载失败，请检查网络后重试',
+          message: AppLocalizations.of(context).contentLoadFailed,
           onRetry: _loadFullText,
         );
       case _TextLoadState.loaded:
@@ -579,7 +708,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
-              '链接内容 · 点击底部「复制」即可复制完整链接',
+              AppLocalizations.of(context).linkHint,
               style: theme.textTheme.labelMedium?.copyWith(
                 color: scheme.onSecondaryContainer,
               ),
@@ -645,7 +774,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
             FilledButton.tonalIcon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
-              label: const Text('重试'),
+              label: Text(AppLocalizations.of(context).retry),
             ),
           ],
         ),
@@ -657,6 +786,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
 
   Widget _buildBottomBar(ThemeData theme) {
     final scheme = theme.colorScheme;
+    final AppLocalizations l10n = AppLocalizations.of(context);
     return BottomAppBar(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
@@ -668,19 +798,19 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
             child: FilledButton.icon(
               onPressed: _copyFull,
               icon: const Icon(Icons.copy_rounded),
-              label: const Text('复制'),
+              label: Text(l10n.copy),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
           IconButton.filledTonal(
             onPressed: _shareItem,
-            tooltip: '分享',
+            tooltip: l10n.share,
             icon: const Icon(Icons.share_rounded),
           ),
           const SizedBox(width: AppSpacing.sm),
           IconButton.filledTonal(
             onPressed: _favoriteBusy ? null : _toggleFavorite,
-            tooltip: _item.isFavorite ? '取消收藏' : '收藏',
+            tooltip: _item.isFavorite ? l10n.unfavorite : l10n.favorite,
             color: _item.isFavorite ? AppColors.warning : scheme.onSurfaceVariant,
             icon: _favoriteBusy
                 ? const SizedBox(
@@ -702,13 +832,13 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   // --------------------------- 格式化工具 ---------------------------
 
   /// 相对时间：刚刚 / N 分钟前 / N 小时前 / N 天前 / 年月日
-  String _formatRelativeTime(DateTime dateTime) {
+  String _formatRelativeTime(AppLocalizations l10n, DateTime dateTime) {
     final diff = DateTime.now().difference(dateTime);
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
-    if (diff.inDays < 1) return '${diff.inHours} 小时前';
-    if (diff.inDays < 7) return '${diff.inDays} 天前';
-    return '${dateTime.year}/${dateTime.month}/${dateTime.day}';
+    if (diff.inMinutes < 1) return l10n.relJustNow;
+    if (diff.inHours < 1) return l10n.relMinutesAgo(diff.inMinutes);
+    if (diff.inDays < 1) return l10n.relHoursAgo(diff.inHours);
+    if (diff.inDays < 7) return l10n.relDaysAgo(diff.inDays);
+    return l10n.relDateYMD(dateTime.year, dateTime.month, dateTime.day);
   }
 
   /// 字节大小格式化：B / KB / MB / GB（10 以上取整，10 以下保留一位小数）

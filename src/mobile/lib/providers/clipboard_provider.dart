@@ -10,6 +10,9 @@ import '../utils/performance.dart';
 /// - 列表加载：[loadItems]（兼容旧签名）/ [refresh] / [loadMore]，分页基于服务端 pagination
 /// - 搜索/筛选：[searchQuery] / [contentTypeFilter] / [favoritesOnly] +
 ///   [setSearchQuery] / [setContentTypeFilter] / [setFavoritesOnly]（切换即重置分页并重拉）
+/// - WS 新条目过滤（F2）：与当前 [contentTypeFilter] 不匹配的新条目不插入列表，
+///   累计到 [pendingNewCount]（「有 N 条新内容」浮条数据源），点击浮条后经
+///   [clearPendingNewCount] 清零并 [refresh] 重拉
 /// - 收藏：[toggleFavorite]（PUT /api/clipboard/:id/favorite，以服务端返回状态回写）
 /// - 全量内容：[resolveCopyText]（预览疑似截断时经内容接口拉取完整内容并回填缓存）
 /// - 实时同步：handleNewItem / handleBatchUpdate / handleDeletedItem /
@@ -28,6 +31,9 @@ class ClipboardProvider extends ChangeNotifier {
   String? _searchQuery;
   String? _contentTypeFilter;
   bool _favoritesOnly = false;
+
+  // F2：WS 到达但与当前类型筛选不匹配、暂未插入列表的新条目数
+  int _pendingNewCount = 0;
 
   // 节流器：限制 notifyListeners() 调用频率
   final Throttler _notifyThrottler = Throttler(interval: const Duration(milliseconds: 100));
@@ -48,6 +54,19 @@ class ClipboardProvider extends ChangeNotifier {
 
   /// 是否只看收藏
   bool get favoritesOnly => _favoritesOnly;
+
+  /// WS 到达、但与当前类型筛选不匹配而未插入列表的新条目数（F2）。
+  ///
+  /// >0 时 UI 显示「有 N 条新内容」浮条；任何第 1 页成功刷新
+  /// （下拉刷新 / 切换筛选 / 清除筛选，服务端已按当前筛选重同步）后清零。
+  int get pendingNewCount => _pendingNewCount;
+
+  /// 清零 [pendingNewCount]（浮条点击时调用，随后应 [refresh] 重拉列表）。
+  void clearPendingNewCount() {
+    if (_pendingNewCount == 0) return;
+    _pendingNewCount = 0;
+    notifyListeners();
+  }
 
   // ---------------------------------------------------------------------------
   // 列表加载（分页）
@@ -108,6 +127,12 @@ class ClipboardProvider extends ChangeNotifier {
       _hasMore = result.hasMore;
       // 只在成功时推进页码：失败保留页码，重试拿到的是同一页
       _page = page + 1;
+
+      // 第 1 页刷新成功 = 服务端已按当前筛选重同步，被筛选挡住的新条目
+      // 要么已进入本页、要么已被用户主动放弃（F2 浮条清零）
+      if (isRefresh && page == 1 && _pendingNewCount != 0) {
+        _pendingNewCount = 0;
+      }
 
       notifyListeners();
     } catch (e) {
@@ -235,19 +260,38 @@ class ClipboardProvider extends ChangeNotifier {
   // WebSocket 实时同步（签名与接线保持不变）
   // ---------------------------------------------------------------------------
 
+  /// 当前类型筛选是否放行该 contentType（null/空筛选 = 全部，恒放行）。
+  bool _matchesContentTypeFilter(String contentType) {
+    final filter = _contentTypeFilter;
+    return filter == null || filter.isEmpty || filter == contentType;
+  }
+
   /// Handle real-time updates from WebSocket
+  ///
+  /// F2：新条目与当前 [contentTypeFilter] 不匹配时不插入列表（否则会出现
+  /// 「文本筛选下冒出图片条目」），改为累计 [pendingNewCount] 交由浮条提示；
+  /// 匹配则头插并清零 pending 计数（列表头部已是最新可见内容）。
   void handleNewItem(Map<String, dynamic> data) {
     final raw = data['item'];
     final itemJson = raw is Map<String, dynamic> ? raw : data;
     if (itemJson['id'] == null) return;
     final newItem = ClipboardItem.fromJson(itemJson);
-    if (!_items.any((i) => i.id == newItem.id)) {
-      _items.insert(0, newItem);
-      if (_totalItems > 0) _totalItems++;
+    if (_items.any((i) => i.id == newItem.id)) return;
+
+    if (!_matchesContentTypeFilter(newItem.contentType)) {
+      _pendingNewCount++;
       _notifyThrottler(() {
         notifyListeners();
       });
+      return;
     }
+
+    _items.insert(0, newItem);
+    if (_totalItems > 0) _totalItems++;
+    if (_pendingNewCount != 0) _pendingNewCount = 0;
+    _notifyThrottler(() {
+      notifyListeners();
+    });
   }
 
   /// Handle batch updates
@@ -301,6 +345,7 @@ class ClipboardProvider extends ChangeNotifier {
     _totalItems = 0;
     _page = 1;
     _hasMore = true;
+    _pendingNewCount = 0;
     notifyListeners();
   }
 

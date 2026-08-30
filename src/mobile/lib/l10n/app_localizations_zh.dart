@@ -220,4 +220,181 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aboutDesc => '跨设备剪贴板同步工具';
+
+  @override
+  String get clipboardSearchHint => '搜索剪贴板内容…';
+
+  @override
+  String get clearSearch => '清除搜索';
+
+  @override
+  String get typeAll => '全部';
+
+  @override
+  String get typeText => '文本';
+
+  @override
+  String get typeLink => '链接';
+
+  @override
+  String get typeImage => '图片';
+
+  @override
+  String get typeFile => '文件';
+
+  @override
+  String get typeCode => '代码';
+
+  @override
+  String get clipboardNoResultsTitle => '没有找到匹配的内容';
+
+  @override
+  String get clipboardNoResultsMessage => '试试更换关键词，或清除搜索与筛选条件';
+
+  @override
+  String get clipboardClearFilters => '清除筛选';
+
+  @override
+  String get clipboardEmptyTitle => '暂无剪贴板内容';
+
+  @override
+  String get clipboardEmptyMessage => '在电脑上复制任意内容，它会自动同步到这里';
+
+  @override
+  String get clipboardLoadMoreFailed => '加载更多失败';
+
+  @override
+  String get clipboardNoMore => '没有更多了';
+
+  @override
+  String clipboardNewContentBar(int count) {
+    return '有 $count 条新内容，点击查看';
+  }
+
+  @override
+  String get favorite => '收藏';
+
+  @override
+  String get unfavorite => '取消收藏';
+
+  @override
+  String get pinToTop => '置顶';
+
+  @override
+  String get comingSoon => '即将上线';
+
+  @override
+  String get moreActions => '更多操作';
+
+  @override
+  String get deleteConfirmTitle => '删除这条内容？';
+
+  @override
+  String deleteConfirmMessage(String preview) {
+    return '「$preview」删除后将无法恢复。';
+  }
+
+  @override
+  String get deleted => '已删除';
+
+  @override
+  String get deleteFailed => '删除失败，请稍后重试';
+
+  @override
+  String get placeholderFile => '（文件）';
+
+  @override
+  String get placeholderImage => '（图片）';
+
+  @override
+  String get placeholderEmpty => '（空内容）';
+
+  @override
+  String get unknownDevice => '未知设备';
+
+  @override
+  String clipboardCardSemantics(String type, String preview) {
+    return '剪贴板$type，内容：$preview';
+  }
+
+  @override
+  String get relJustNow => '刚刚';
+
+  @override
+  String relMinutesAgo(int minutes) {
+    return '$minutes 分钟前';
+  }
+
+  @override
+  String relHoursAgo(int hours) {
+    return '$hours 小时前';
+  }
+
+  @override
+  String relDaysAgo(int days) {
+    return '$days 天前';
+  }
+
+  @override
+  String relDateMD(int month, int day) {
+    return '$month 月 $day 日';
+  }
+
+  @override
+  String relDateYMD(int year, int month, int day) {
+    return '$year/$month/$day';
+  }
+
+  @override
+  String get copy => '复制';
+
+  @override
+  String get copied => '已复制';
+
+  @override
+  String get noTextContent => '该条目暂无文本内容';
+
+  @override
+  String get share => '分享';
+
+  @override
+  String get shareFailed => '分享失败，请稍后重试';
+
+  @override
+  String get favoriteFailed => '收藏操作失败，请稍后重试';
+
+  @override
+  String get imageNoCredentials => '缺少登录凭据，无法加载图片';
+
+  @override
+  String get imageLoadFailed => '图片加载失败，请检查网络后重试';
+
+  @override
+  String get contentLoadFailed => '内容加载失败，请检查网络后重试';
+
+  @override
+  String get linkHint => '链接内容 · 点击底部「复制」即可复制完整链接';
+
+  @override
+  String get unknownFile => '未知文件';
+
+  @override
+  String get downloading => '下载中…';
+
+  @override
+  String get openDownload => '打开（下载到本机）';
+
+  @override
+  String get copyFileName => '复制文件名';
+
+  @override
+  String get fileDownloadHint => '文件经服务端下载接口获取，保存到应用临时目录';
+
+  @override
+  String get fileLocalOnlyHint => '文件保存在来源设备本机，暂不支持跨设备获取';
+
+  @override
+  String fileSavedTo(String path) {
+    return '已保存到 $path';
+  }
 }

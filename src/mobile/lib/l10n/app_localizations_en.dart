@@ -223,4 +223,189 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutDesc => 'Cross-device clipboard sync tool';
+
+  @override
+  String get clipboardSearchHint => 'Search clipboard content…';
+
+  @override
+  String get clearSearch => 'Clear search';
+
+  @override
+  String get typeAll => 'All';
+
+  @override
+  String get typeText => 'Text';
+
+  @override
+  String get typeLink => 'Link';
+
+  @override
+  String get typeImage => 'Image';
+
+  @override
+  String get typeFile => 'File';
+
+  @override
+  String get typeCode => 'Code';
+
+  @override
+  String get clipboardNoResultsTitle => 'No matches found';
+
+  @override
+  String get clipboardNoResultsMessage =>
+      'Try different keywords, or clear the search and filters';
+
+  @override
+  String get clipboardClearFilters => 'Clear filters';
+
+  @override
+  String get clipboardEmptyTitle => 'No clipboard content yet';
+
+  @override
+  String get clipboardEmptyMessage =>
+      'Copy anything on your computer and it will sync here automatically';
+
+  @override
+  String get clipboardLoadMoreFailed => 'Failed to load more';
+
+  @override
+  String get clipboardNoMore => 'No more items';
+
+  @override
+  String clipboardNewContentBar(int count) {
+    return '$count new items, tap to view';
+  }
+
+  @override
+  String get favorite => 'Favorite';
+
+  @override
+  String get unfavorite => 'Unfavorite';
+
+  @override
+  String get pinToTop => 'Pin to top';
+
+  @override
+  String get comingSoon => 'Coming soon';
+
+  @override
+  String get moreActions => 'More actions';
+
+  @override
+  String get deleteConfirmTitle => 'Delete this item?';
+
+  @override
+  String deleteConfirmMessage(String preview) {
+    return '\"$preview\" will be permanently deleted.';
+  }
+
+  @override
+  String get deleted => 'Deleted';
+
+  @override
+  String get deleteFailed => 'Delete failed, please try again later';
+
+  @override
+  String get placeholderFile => '(File)';
+
+  @override
+  String get placeholderImage => '(Image)';
+
+  @override
+  String get placeholderEmpty => '(Empty)';
+
+  @override
+  String get unknownDevice => 'Unknown device';
+
+  @override
+  String clipboardCardSemantics(String type, String preview) {
+    return 'Clipboard $type, content: $preview';
+  }
+
+  @override
+  String get relJustNow => 'Just now';
+
+  @override
+  String relMinutesAgo(int minutes) {
+    return '$minutes min ago';
+  }
+
+  @override
+  String relHoursAgo(int hours) {
+    return '$hours h ago';
+  }
+
+  @override
+  String relDaysAgo(int days) {
+    return '$days d ago';
+  }
+
+  @override
+  String relDateMD(int month, int day) {
+    return '$month/$day';
+  }
+
+  @override
+  String relDateYMD(int year, int month, int day) {
+    return '$year/$month/$day';
+  }
+
+  @override
+  String get copy => 'Copy';
+
+  @override
+  String get copied => 'Copied';
+
+  @override
+  String get noTextContent => 'No text content in this item';
+
+  @override
+  String get share => 'Share';
+
+  @override
+  String get shareFailed => 'Share failed, please try again later';
+
+  @override
+  String get favoriteFailed => 'Favorite action failed, please try again later';
+
+  @override
+  String get imageNoCredentials =>
+      'Sign-in credentials missing, unable to load the image';
+
+  @override
+  String get imageLoadFailed =>
+      'Image failed to load, check your network and retry';
+
+  @override
+  String get contentLoadFailed =>
+      'Content failed to load, check your network and retry';
+
+  @override
+  String get linkHint =>
+      'Link content · tap \"Copy\" below to copy the full link';
+
+  @override
+  String get unknownFile => 'Unknown file';
+
+  @override
+  String get downloading => 'Downloading…';
+
+  @override
+  String get openDownload => 'Open (download to device)';
+
+  @override
+  String get copyFileName => 'Copy file name';
+
+  @override
+  String get fileDownloadHint =>
+      'Files are fetched via the server download API and saved to the app\'s temporary directory';
+
+  @override
+  String get fileLocalOnlyHint =>
+      'The file is saved on the source device and cannot be fetched across devices yet';
+
+  @override
+  String fileSavedTo(String path) {
+    return 'Saved to $path';
+  }
 }

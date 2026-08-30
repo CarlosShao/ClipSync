@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/clipboard_item.dart';
 import '../providers/clipboard_provider.dart';
 import '../services/server_config.dart';
@@ -104,9 +105,10 @@ class _ClipboardCardState extends State<ClipboardCard> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
 
     return Semantics(
-      label: '剪贴板${widget.item.typeLabel}，内容：$_previewText',
+      label: l10n.clipboardCardSemantics(_typeLabel(l10n), _previewText),
       button: true,
       child: AppCard(
         onTap: widget.onTap,
@@ -126,11 +128,30 @@ class _ClipboardCardState extends State<ClipboardCard> {
     );
   }
 
+  /// 本地化类型标签（模型 typeLabel 为硬编码中文，UI 层按 contentType 重映射）。
+  String _typeLabel(AppLocalizations l10n) {
+    switch (widget.item.contentType) {
+      case 'text':
+        return l10n.typeText;
+      case 'image':
+        return l10n.typeImage;
+      case 'link':
+        return l10n.typeLink;
+      case 'file':
+        return l10n.typeFile;
+      case 'code':
+        return l10n.typeCode;
+      default:
+        return widget.item.contentType;
+    }
+  }
+
   /// 中间内容列：类型标签 + 收藏星标 / 预览（≤3 行省略）/ 来源设备 + 相对时间。
   Widget _buildContent(ThemeData theme) {
     final ColorScheme scheme = theme.colorScheme;
     final TextTheme textTheme = theme.textTheme;
     final Color typeColor = _typeColor(theme);
+    final AppLocalizations l10n = AppLocalizations.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,7 +160,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
         Row(
           children: <Widget>[
             Text(
-              widget.item.typeLabel,
+              _typeLabel(l10n),
               style: textTheme.labelSmall?.copyWith(color: typeColor, fontWeight: FontWeight.w600),
             ),
             if (widget.item.isFavorite) ...<Widget>[
@@ -166,7 +187,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
             const SizedBox(width: AppSpacing.xs),
             Expanded(
               child: Text(
-                widget.item.sourceDevice?.name ?? '未知设备',
+                widget.item.sourceDevice?.name ?? l10n.unknownDevice,
                 style: textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -174,7 +195,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
             ),
             const SizedBox(width: AppSpacing.sm),
             Text(
-              _formatRelativeTime(widget.item.createdAt),
+              _formatRelativeTime(l10n, widget.item.createdAt),
               style: textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
@@ -245,7 +266,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
   Widget _buildMoreButton(ThemeData theme) {
     return PopupMenuButton<_CardAction>(
       key: _menuKey,
-      tooltip: '更多操作',
+      tooltip: AppLocalizations.of(context).moreActions,
       icon: Icon(Icons.more_vert, size: 20, color: theme.colorScheme.onSurfaceVariant),
       constraints: const BoxConstraints(minWidth: 200),
       onSelected: _onMenuSelected,
@@ -256,6 +277,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
   /// 更多菜单项：收藏 toggle / 置顶（占位禁用）/ 删除（红色危险项）。
   List<PopupMenuEntry<_CardAction>> _buildMenuItems(ThemeData theme) {
     final ColorScheme scheme = theme.colorScheme;
+    final AppLocalizations l10n = AppLocalizations.of(context);
     final bool favorite = widget.item.isFavorite;
 
     return <PopupMenuEntry<_CardAction>>[
@@ -269,7 +291,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
               color: favorite ? scheme.onSurfaceVariant : _warningColor(theme),
             ),
             const SizedBox(width: AppSpacing.sm),
-            Text(favorite ? '取消收藏' : '收藏'),
+            Text(favorite ? l10n.unfavorite : l10n.favorite),
           ],
         ),
       ),
@@ -279,10 +301,10 @@ class _ClipboardCardState extends State<ClipboardCard> {
           children: <Widget>[
             Icon(Icons.push_pin_outlined, size: 18, color: scheme.onSurfaceVariant),
             const SizedBox(width: AppSpacing.sm),
-            const Text('置顶'),
+            Text(l10n.pinToTop),
             const Spacer(),
             Text(
-              '即将上线',
+              l10n.comingSoon,
               style: theme.textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
@@ -295,7 +317,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
           children: <Widget>[
             Icon(Icons.delete_outline, size: 18, color: scheme.error),
             const SizedBox(width: AppSpacing.sm),
-            Text('删除', style: TextStyle(color: scheme.error)),
+            Text(l10n.delete, style: TextStyle(color: scheme.error)),
           ],
         ),
       ),
@@ -337,6 +359,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
   Future<void> _deleteWithConfirm() async {
     final ClipboardProvider provider = context.read<ClipboardProvider>();
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
     final bool confirmed = await _confirmDelete();
     if (!confirmed || !mounted) {
       return;
@@ -346,7 +369,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
     final bool removed = !provider.items.any((ClipboardItem e) => e.id == widget.item.id);
     messenger.showSnackBar(
       SnackBar(
-        content: Text(removed ? '已删除' : '删除失败，请稍后重试'),
+        content: Text(removed ? l10n.deleted : l10n.deleteFailed),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -355,20 +378,21 @@ class _ClipboardCardState extends State<ClipboardCard> {
   /// 删除确认对话框；返回用户是否确认。
   Future<bool> _confirmDelete() async {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final AppLocalizations l10n = AppLocalizations.of(context);
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('删除这条内容？'),
-        content: Text('「$_confirmPreviewText」删除后将无法恢复。'),
+        title: Text(l10n.deleteConfirmTitle),
+        content: Text(l10n.deleteConfirmMessage(_confirmPreviewText)),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: scheme.error),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('删除'),
+            child: Text(l10n.delete),
           ),
         ],
       ),
@@ -402,12 +426,13 @@ class _ClipboardCardState extends State<ClipboardCard> {
   /// 列表预览文本：文件优先显示文件名；图片无预览/OCR 时显示占位文案。
   String get _previewText {
     final ClipboardItem item = widget.item;
+    final AppLocalizations l10n = AppLocalizations.of(context);
     if (item.isFile) {
-      return item.fileName ?? '（文件）';
+      return item.fileName ?? l10n.placeholderFile;
     }
     final String preview = item.contentPreview.trim();
     if (preview.isEmpty) {
-      return item.isImage ? '（图片）' : '（空内容）';
+      return item.isImage ? l10n.placeholderImage : l10n.placeholderEmpty;
     }
     return preview;
   }
@@ -416,7 +441,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
   String get _confirmPreviewText {
     final String flat = _previewText.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (flat.isEmpty) {
-      return widget.item.typeLabel;
+      return _typeLabel(AppLocalizations.of(context));
     }
     if (flat.length <= _kConfirmPreviewMaxChars) {
       return flat;
@@ -480,20 +505,20 @@ class _ClipboardCardState extends State<ClipboardCard> {
       theme.brightness == Brightness.dark ? AppColors.warningDark : AppColors.warning;
 
   /// 相对时间：刚刚 / N 分钟前 / N 小时前 / N 天前 / M 月 D 日。
-  String _formatRelativeTime(DateTime time) {
+  String _formatRelativeTime(AppLocalizations l10n, DateTime time) {
     final Duration diff = DateTime.now().difference(time);
     if (diff.inMinutes < 1) {
-      return '刚刚';
+      return l10n.relJustNow;
     }
     if (diff.inMinutes < 60) {
-      return '${diff.inMinutes} 分钟前';
+      return l10n.relMinutesAgo(diff.inMinutes);
     }
     if (diff.inHours < 24) {
-      return '${diff.inHours} 小时前';
+      return l10n.relHoursAgo(diff.inHours);
     }
     if (diff.inDays < 7) {
-      return '${diff.inDays} 天前';
+      return l10n.relDaysAgo(diff.inDays);
     }
-    return '${time.month} 月 ${time.day} 日';
+    return l10n.relDateMD(time.month, time.day);
   }
 }

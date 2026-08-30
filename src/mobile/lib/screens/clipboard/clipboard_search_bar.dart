@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
+
 /// 剪贴板流顶部搜索栏（T2.3）。
 ///
 /// 纯 UI 组件：文本变化经 [debounce]（默认 300ms）防抖后回调 [onQueryChanged]，
@@ -13,13 +15,14 @@ class ClipboardSearchBar extends StatefulWidget {
   /// 创建搜索栏。
   ///
   /// [controller] 为宿主持有的文本控制器；[onQueryChanged] 在防抖结束后
-  /// 收到去首尾空格的关键字（空串表示无搜索）；[debounce] 默认 300ms。
+  /// 收到去首尾空格的关键字（空串表示无搜索）；[debounce] 默认 300ms；
+  /// [hintText] 缺省时取本地化占位文案（F5）。
   const ClipboardSearchBar({
     required this.controller,
     required this.onQueryChanged,
     super.key,
     this.debounce = const Duration(milliseconds: 300),
-    this.hintText = '搜索剪贴板内容…',
+    this.hintText,
   });
 
   /// 宿主持有的文本控制器（外部 clear 也会触发防抖回调）。
@@ -31,8 +34,8 @@ class ClipboardSearchBar extends StatefulWidget {
   /// 防抖时长，默认 300ms。
   final Duration debounce;
 
-  /// 占位提示文案。
-  final String hintText;
+  /// 占位提示文案；null = 使用本地化默认文案。
+  final String? hintText;
 
   @override
   State<ClipboardSearchBar> createState() => _ClipboardSearchBarState();
@@ -75,6 +78,8 @@ class _ClipboardSearchBarState extends State<ClipboardSearchBar> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final hasText = widget.controller.text.isNotEmpty;
+    final hintText =
+        widget.hintText ?? AppLocalizations.of(context).clipboardSearchHint;
 
     return TextField(
       controller: widget.controller,
@@ -85,13 +90,13 @@ class _ClipboardSearchBarState extends State<ClipboardSearchBar> {
         widget.onQueryChanged(value.trim());
       },
       decoration: InputDecoration(
-        hintText: widget.hintText,
+        hintText: hintText,
         prefixIcon: Icon(Icons.search, color: scheme.onSurfaceVariant),
         suffixIcon: hasText
             ? IconButton(
                 icon: Icon(Icons.close, size: 20, color: scheme.onSurfaceVariant),
                 onPressed: _handleClear,
-                tooltip: '清除搜索',
+                tooltip: AppLocalizations.of(context).clearSearch,
               )
             : null,
       ),

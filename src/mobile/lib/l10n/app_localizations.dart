@@ -511,6 +511,324 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cross-device clipboard sync tool'**
   String get aboutDesc;
+
+  /// No description provided for @clipboardSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search clipboard content…'**
+  String get clipboardSearchHint;
+
+  /// No description provided for @clearSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear search'**
+  String get clearSearch;
+
+  /// No description provided for @typeAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get typeAll;
+
+  /// No description provided for @typeText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text'**
+  String get typeText;
+
+  /// No description provided for @typeLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Link'**
+  String get typeLink;
+
+  /// No description provided for @typeImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get typeImage;
+
+  /// No description provided for @typeFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get typeFile;
+
+  /// No description provided for @typeCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Code'**
+  String get typeCode;
+
+  /// No description provided for @clipboardNoResultsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No matches found'**
+  String get clipboardNoResultsTitle;
+
+  /// No description provided for @clipboardNoResultsMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Try different keywords, or clear the search and filters'**
+  String get clipboardNoResultsMessage;
+
+  /// No description provided for @clipboardClearFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get clipboardClearFilters;
+
+  /// No description provided for @clipboardEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No clipboard content yet'**
+  String get clipboardEmptyTitle;
+
+  /// No description provided for @clipboardEmptyMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy anything on your computer and it will sync here automatically'**
+  String get clipboardEmptyMessage;
+
+  /// No description provided for @clipboardLoadMoreFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load more'**
+  String get clipboardLoadMoreFailed;
+
+  /// No description provided for @clipboardNoMore.
+  ///
+  /// In en, this message translates to:
+  /// **'No more items'**
+  String get clipboardNoMore;
+
+  /// No description provided for @clipboardNewContentBar.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} new items, tap to view'**
+  String clipboardNewContentBar(int count);
+
+  /// No description provided for @favorite.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorite'**
+  String get favorite;
+
+  /// No description provided for @unfavorite.
+  ///
+  /// In en, this message translates to:
+  /// **'Unfavorite'**
+  String get unfavorite;
+
+  /// No description provided for @pinToTop.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin to top'**
+  String get pinToTop;
+
+  /// No description provided for @comingSoon.
+  ///
+  /// In en, this message translates to:
+  /// **'Coming soon'**
+  String get comingSoon;
+
+  /// No description provided for @moreActions.
+  ///
+  /// In en, this message translates to:
+  /// **'More actions'**
+  String get moreActions;
+
+  /// No description provided for @deleteConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this item?'**
+  String get deleteConfirmTitle;
+
+  /// No description provided for @deleteConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{preview}\" will be permanently deleted.'**
+  String deleteConfirmMessage(String preview);
+
+  /// No description provided for @deleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted'**
+  String get deleted;
+
+  /// No description provided for @deleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete failed, please try again later'**
+  String get deleteFailed;
+
+  /// No description provided for @placeholderFile.
+  ///
+  /// In en, this message translates to:
+  /// **'(File)'**
+  String get placeholderFile;
+
+  /// No description provided for @placeholderImage.
+  ///
+  /// In en, this message translates to:
+  /// **'(Image)'**
+  String get placeholderImage;
+
+  /// No description provided for @placeholderEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'(Empty)'**
+  String get placeholderEmpty;
+
+  /// No description provided for @unknownDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown device'**
+  String get unknownDevice;
+
+  /// No description provided for @clipboardCardSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard {type}, content: {preview}'**
+  String clipboardCardSemantics(String type, String preview);
+
+  /// No description provided for @relJustNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Just now'**
+  String get relJustNow;
+
+  /// No description provided for @relMinutesAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes} min ago'**
+  String relMinutesAgo(int minutes);
+
+  /// No description provided for @relHoursAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours} h ago'**
+  String relHoursAgo(int hours);
+
+  /// No description provided for @relDaysAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{days} d ago'**
+  String relDaysAgo(int days);
+
+  /// No description provided for @relDateMD.
+  ///
+  /// In en, this message translates to:
+  /// **'{month}/{day}'**
+  String relDateMD(int month, int day);
+
+  /// No description provided for @relDateYMD.
+  ///
+  /// In en, this message translates to:
+  /// **'{year}/{month}/{day}'**
+  String relDateYMD(int year, int month, int day);
+
+  /// No description provided for @copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get copy;
+
+  /// No description provided for @copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get copied;
+
+  /// No description provided for @noTextContent.
+  ///
+  /// In en, this message translates to:
+  /// **'No text content in this item'**
+  String get noTextContent;
+
+  /// No description provided for @share.
+  ///
+  /// In en, this message translates to:
+  /// **'Share'**
+  String get share;
+
+  /// No description provided for @shareFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Share failed, please try again later'**
+  String get shareFailed;
+
+  /// No description provided for @favoriteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorite action failed, please try again later'**
+  String get favoriteFailed;
+
+  /// No description provided for @imageNoCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in credentials missing, unable to load the image'**
+  String get imageNoCredentials;
+
+  /// No description provided for @imageLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Image failed to load, check your network and retry'**
+  String get imageLoadFailed;
+
+  /// No description provided for @contentLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Content failed to load, check your network and retry'**
+  String get contentLoadFailed;
+
+  /// No description provided for @linkHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Link content · tap \"Copy\" below to copy the full link'**
+  String get linkHint;
+
+  /// No description provided for @unknownFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown file'**
+  String get unknownFile;
+
+  /// No description provided for @downloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get downloading;
+
+  /// No description provided for @openDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Open (download to device)'**
+  String get openDownload;
+
+  /// No description provided for @copyFileName.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy file name'**
+  String get copyFileName;
+
+  /// No description provided for @fileDownloadHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Files are fetched via the server download API and saved to the app\'s temporary directory'**
+  String get fileDownloadHint;
+
+  /// No description provided for @fileLocalOnlyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The file is saved on the source device and cannot be fetched across devices yet'**
+  String get fileLocalOnlyHint;
+
+  /// No description provided for @fileSavedTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved to {path}'**
+  String fileSavedTo(String path);
 }
 
 class _AppLocalizationsDelegate

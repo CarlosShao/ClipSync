@@ -89,5 +89,114 @@
   "logoutDesc": "Clear local sign-in credentials",
   "logoutConfirmMessage": "Sign out of the current account? You will need to sign in with a verification code again.",
   "logoutAction": "Sign out",
-  "aboutDesc": "Cross-device clipboard sync tool"
+  "aboutDesc": "Cross-device clipboard sync tool",
+
+  "clipboardSearchHint": "Search clipboard content…",
+  "clearSearch": "Clear search",
+
+  "typeAll": "All",
+  "typeText": "Text",
+  "typeLink": "Link",
+  "typeImage": "Image",
+  "typeFile": "File",
+  "typeCode": "Code",
+
+  "clipboardNoResultsTitle": "No matches found",
+  "clipboardNoResultsMessage": "Try different keywords, or clear the search and filters",
+  "clipboardClearFilters": "Clear filters",
+  "clipboardEmptyTitle": "No clipboard content yet",
+  "clipboardEmptyMessage": "Copy anything on your computer and it will sync here automatically",
+  "clipboardLoadMoreFailed": "Failed to load more",
+  "clipboardNoMore": "No more items",
+  "clipboardNewContentBar": "{count} new items, tap to view",
+  "@clipboardNewContentBar": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "favorite": "Favorite",
+  "unfavorite": "Unfavorite",
+  "pinToTop": "Pin to top",
+  "comingSoon": "Coming soon",
+  "moreActions": "More actions",
+  "deleteConfirmTitle": "Delete this item?",
+  "deleteConfirmMessage": "\"{preview}\" will be permanently deleted.",
+  "@deleteConfirmMessage": {
+    "placeholders": {
+      "preview": { "type": "String" }
+    }
+  },
+  "deleted": "Deleted",
+  "deleteFailed": "Delete failed, please try again later",
+  "placeholderFile": "(File)",
+  "placeholderImage": "(Image)",
+  "placeholderEmpty": "(Empty)",
+  "unknownDevice": "Unknown device",
+  "clipboardCardSemantics": "Clipboard {type}, content: {preview}",
+  "@clipboardCardSemantics": {
+    "placeholders": {
+      "type": { "type": "String" },
+      "preview": { "type": "String" }
+    }
+  },
+
+  "relJustNow": "Just now",
+  "relMinutesAgo": "{minutes} min ago",
+  "@relMinutesAgo": {
+    "placeholders": {
+      "minutes": { "type": "int" }
+    }
+  },
+  "relHoursAgo": "{hours} h ago",
+  "@relHoursAgo": {
+    "placeholders": {
+      "hours": { "type": "int" }
+    }
+  },
+  "relDaysAgo": "{days} d ago",
+  "@relDaysAgo": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "relDateMD": "{month}/{day}",
+  "@relDateMD": {
+    "placeholders": {
+      "month": { "type": "int" },
+      "day": { "type": "int" }
+    }
+  },
+  "relDateYMD": "{year}/{month}/{day}",
+  "@relDateYMD": {
+    "placeholders": {
+      "year": { "type": "int" },
+      "month": { "type": "int" },
+      "day": { "type": "int" }
+    }
+  },
+
+  "copy": "Copy",
+  "copied": "Copied",
+  "noTextContent": "No text content in this item",
+  "share": "Share",
+  "shareFailed": "Share failed, please try again later",
+  "favoriteFailed": "Favorite action failed, please try again later",
+  "imageNoCredentials": "Sign-in credentials missing, unable to load the image",
+  "imageLoadFailed": "Image failed to load, check your network and retry",
+  "contentLoadFailed": "Content failed to load, check your network and retry",
+  "linkHint": "Link content · tap \"Copy\" below to copy the full link",
+
+  "unknownFile": "Unknown file",
+  "downloading": "Downloading…",
+  "openDownload": "Open (download to device)",
+  "copyFileName": "Copy file name",
+  "fileDownloadHint": "Files are fetched via the server download API and saved to the app's temporary directory",
+  "fileLocalOnlyHint": "The file is saved on the source device and cannot be fetched across devices yet",
+  "fileSavedTo": "Saved to {path}",
+  "@fileSavedTo": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  }
 }

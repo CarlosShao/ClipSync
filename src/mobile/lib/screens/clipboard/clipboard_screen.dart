@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/clipboard_item.dart';
 import '../../providers/clipboard_provider.dart';
 import '../../services/token_store.dart';
@@ -18,9 +19,6 @@ import 'type_filter_chips.dart';
 /// 滚动接近底部多少像素时触发加载更多。
 const double _kLoadMoreThreshold = 400;
 
-/// 滚动超过多少像素后视为「已离开列表顶部」，新内容到达时改弹浮条提示。
-const double _kNewContentScrollThreshold = 600;
-
 /// 首页剪贴板流（T2.3）。
 ///
 /// 页面结构：顶部搜索栏（300ms 防抖）+ 类型筛选 chips（单选）+ 列表主体。
@@ -34,8 +32,12 @@ const double _kNewContentScrollThreshold = 600;
 ///   「无内容」与「筛选无结果」）。
 ///
 /// 实时性：WS 新增/删除/收藏经 WsProvider → provider 的 handle* 方法更新列表，
-/// 本页仅消费 Consumer 重建，不重复接线；离开列表顶部时收到新内容会显示
-/// 「有 N 条新内容」轻量浮条，点击回到顶部。
+/// 本页仅消费 Consumer 重建，不重复接线。
+///
+/// 新内容浮条（F2）：与当前类型筛选不匹配的 WS 新条目不会插入列表，而是累计在
+/// [ClipboardProvider.pendingNewCount]；浮条直接读该计数（>0 显示），点击后
+/// [ClipboardProvider.clearPendingNewCount] + [ClipboardProvider.refresh] + 回到顶部，
+/// 由服务端按当前筛选重新同步。
 ///
 /// 卡片渲染（T2.4）：条目统一由 [ClipboardCard] 渲染——四色类型块/缩略图、
 /// 3 行预览省略、来源设备与相对时间；单击回调进详情页，长按/右上角更多
@@ -51,21 +53,13 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
-  /// initState 阶段捕获的 provider 引用，dispose 时用于移除监听。
+  /// initState 阶段捕获的 provider 引用，供数据动作转发使用。
   ClipboardProvider? _provider;
-
-  /// 「已读锚点」：最后被用户看到过的列表顶部条目 id。
-  String? _anchorItemId;
-
-  /// 锚点之上未被看到的新条目数（>0 时显示浮条）。
-  int _hiddenNewCount = 0;
 
   @override
   void initState() {
     super.initState();
-    final provider = context.read<ClipboardProvider>();
-    _provider = provider;
-    provider.addListener(_onProviderChanged);
+    _provider = context.read<ClipboardProvider>();
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initialLoad();
@@ -74,7 +68,6 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   @override
   void dispose() {
-    _provider?.removeListener(_onProviderChanged);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
@@ -188,7 +181,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // 滚动监听：无限分页 + 顶部「已读」锚点维护
+  // 滚动监听：无限分页
   // ---------------------------------------------------------------------------
 
   void _onScroll() {
@@ -199,89 +192,20 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     if (position.pixels >= position.maxScrollExtent - _kLoadMoreThreshold) {
       unawaited(_loadMore());
     }
-    if (position.pixels <= 100) {
-      _markTopVisible();
-    }
   }
 
-  /// 用户在列表顶部（未滚动走）：实时新条目直接可见，视为已读并重置浮条。
-  void _markTopVisible() {
-    final provider = _provider;
-    if (provider == null) {
-      return;
-    }
-    final items = provider.items;
-    if (items.isEmpty) {
-      return;
-    }
-    _anchorItemId = items.first.id;
-    if (_hiddenNewCount != 0) {
-      setState(() => _hiddenNewCount = 0);
-    }
-  }
-
-  /// provider 通知：维护「新内容」浮条计数。
+  /// 点击浮条（F2）：清零 pending 计数 + 按当前筛选重拉第 1 页 + 回到顶部。
   ///
-  /// 可见性判定基于滚动位置（provider.handleNewItem 会把新条目无条件插入
-  /// 列表头部，因此列表内不存在「被筛选挡住」的条目；离开顶部才算不可见）。
-  void _onProviderChanged() {
-    if (!mounted) {
-      return;
-    }
+  /// refresh 成功后服务端数据与当前筛选重新对齐（此前被筛选挡住的新条目
+  /// 若匹配筛选会随本页返回，不匹配则随计数清零被用户主动放弃）。
+  void _revealNewContent() {
     final provider = _provider;
     if (provider == null) {
       return;
     }
-    final items = provider.items;
-
-    if (items.isEmpty) {
-      _anchorItemId = null;
-      if (_hiddenNewCount != 0) {
-        setState(() => _hiddenNewCount = 0);
-      }
-      return;
-    }
-
-    final topId = items.first.id;
-    final scrolledAway =
-        _scrollController.hasClients &&
-        _scrollController.position.pixels > _kNewContentScrollThreshold;
-
-    if (!scrolledAway) {
-      _anchorItemId = topId;
-      if (_hiddenNewCount != 0) {
-        setState(() => _hiddenNewCount = 0);
-      }
-      return;
-    }
-
-    if (_anchorItemId == null || topId == _anchorItemId) {
-      _anchorItemId ??= topId;
-      return;
-    }
-
-    // 锚点之前有多少条新条目 = 精确的「N 条新内容」
-    final anchorId = _anchorItemId!;
-    final anchorIndex = items.indexWhere((ClipboardItem item) => item.id == anchorId);
-    if (anchorIndex <= 0) {
-      // 锚点被刷新/清理丢失：重新锚定，不弹条
-      _anchorItemId = topId;
-      if (_hiddenNewCount != 0) {
-        setState(() => _hiddenNewCount = 0);
-      }
-      return;
-    }
-    if (anchorIndex != _hiddenNewCount) {
-      setState(() => _hiddenNewCount = anchorIndex);
-    }
-  }
-
-  /// 点击浮条：回顶部并清零计数。
-  void _revealNewContent() {
+    provider.clearPendingNewCount();
+    unawaited(provider.refresh());
     _scrollToTop(animated: true);
-    if (_hiddenNewCount != 0) {
-      setState(() => _hiddenNewCount = 0);
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -299,7 +223,9 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
               child: Stack(
                 children: <Widget>[
                   RefreshIndicator(onRefresh: _onRefresh, child: _buildContent(provider)),
-                  if (_hiddenNewCount > 0) _buildNewContentBar(context),
+                  // F2：浮条数据源 = 被当前筛选挡住的 WS 新条目数
+                  if (provider.pendingNewCount > 0)
+                    _buildNewContentBar(context, provider.pendingNewCount),
                 ],
               ),
             ),
@@ -351,22 +277,23 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   /// 空态：区分「无内容」与「筛选/搜索无结果」两种文案。
   Widget _buildEmptyState(ClipboardProvider provider) {
+    final AppLocalizations l10n = AppLocalizations.of(context);
     final hasFilters =
         (provider.searchQuery != null && provider.searchQuery!.isNotEmpty) ||
         provider.contentTypeFilter != null;
     if (hasFilters) {
       return EmptyState(
         icon: Icons.search_off,
-        title: '没有找到匹配的内容',
-        message: '试试更换关键词，或清除搜索与筛选条件',
-        actionLabel: '清除筛选',
+        title: l10n.clipboardNoResultsTitle,
+        message: l10n.clipboardNoResultsMessage,
+        actionLabel: l10n.clipboardClearFilters,
         onAction: _clearAllFilters,
       );
     }
-    return const EmptyState(
+    return EmptyState(
       icon: Icons.content_paste_off,
-      title: '暂无剪贴板内容',
-      message: '在电脑上复制任意内容，它会自动同步到这里',
+      title: l10n.clipboardEmptyTitle,
+      message: l10n.clipboardEmptyMessage,
     );
   }
 
@@ -409,6 +336,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   Widget _buildListFooter(ClipboardProvider provider) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final AppLocalizations l10n = AppLocalizations.of(context);
 
     if (provider.isLoading) {
       return const Padding(
@@ -431,8 +359,14 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
             children: <Widget>[
               Icon(Icons.cloud_off, size: 16, color: scheme.error),
               const SizedBox(width: AppSpacing.xs),
-              Text('加载更多失败', style: textTheme.bodySmall?.copyWith(color: scheme.error)),
-              TextButton(onPressed: () => unawaited(_loadMore(isRetry: true)), child: const Text('重试')),
+              Text(
+                l10n.clipboardLoadMoreFailed,
+                style: textTheme.bodySmall?.copyWith(color: scheme.error),
+              ),
+              TextButton(
+                onPressed: () => unawaited(_loadMore(isRetry: true)),
+                child: Text(l10n.retry),
+              ),
             ],
           ),
         ),
@@ -443,7 +377,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
         padding: const EdgeInsets.all(AppSpacing.lg),
         child: Center(
           child: Text(
-            '没有更多了',
+            l10n.clipboardNoMore,
             style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ),
@@ -452,8 +386,8 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     return const SizedBox.shrink();
   }
 
-  /// 「有 N 条新内容」轻量浮条：吸底居中的深色胶囊，点击回顶部。
-  Widget _buildNewContentBar(BuildContext context) {
+  /// 「有 N 条新内容」轻量浮条（F2）：吸底居中的深色胶囊，点击重拉并回顶。
+  Widget _buildNewContentBar(BuildContext context, int count) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final pillRadius = BorderRadius.circular(999);
@@ -477,7 +411,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
                   Icon(Icons.arrow_upward, size: 16, color: scheme.onInverseSurface),
                   const SizedBox(width: AppSpacing.xs),
                   Text(
-                    '有 $_hiddenNewCount 条新内容，点击查看',
+                    AppLocalizations.of(context).clipboardNewContentBar(count),
                     style: textTheme.labelMedium?.copyWith(color: scheme.onInverseSurface),
                   ),
                 ],
