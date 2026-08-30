@@ -6,8 +6,6 @@ version: 0.1.0+1
 environment:
   sdk: ^3.13.0-167.0.dev
 
-generate: true
-
 dependencies:
   flutter:
     sdk: flutter
@@ -45,10 +43,15 @@ dependencies:
   share_plus: ^10.0.0
   receive_sharing_intent: ^1.8.0
 
+  # T4.6: 生物识别锁（指纹/面容系统验证）
+  local_auth: ^2.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
 
 flutter:
+  # T4.5: i18n 基建启用 —— generate 必须位于 flutter: 节点下才对 gen-l10n 生效
+  generate: true
   uses-material-design: true

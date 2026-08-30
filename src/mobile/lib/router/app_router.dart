@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../screens/clipboard/clipboard_screen.dart';
 import '../screens/home_screen.dart';
+import '../screens/lock_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/onboarding/permission_guide_screen.dart';
 import '../screens/onboarding_screen.dart';
@@ -44,6 +45,9 @@ class AppRoutes {
   /// T4.4：订阅管理页（设置页「订阅管理」入口；亦支持深链直达），
   /// 替代已删除的 screens/subscription_management_screen.dart 直推入口
   static const subscriptionManagement = '/subscriptions';
+
+  /// T4.6：生物识别锁定页（由 [BiometricLockGate] 门控：布防时唯一可达页面）
+  static const lock = '/lock';
 }
 
 /// 权限引导页一次性门控（T3.4）。
@@ -57,6 +61,30 @@ class PermissionGuideGate {
   static final ValueNotifier<bool> pending = ValueNotifier<bool>(false);
 }
 
+/// 生物识别锁布防门控（T4.6）。
+///
+/// locked=true（已布防）时，已登录用户访问任何路由都会被重定向到
+/// `/lock`（[LockScreen]），通过生物验证后由锁定页调用 [unlock] 放行。
+///
+/// 布防时机（两处，均在 main.dart）：
+/// - 冷启动：读取 SharedPreferences `biometric_lock_enabled`（开关写入方
+///   settings_screen.dart），开关开启即布防；
+/// - 运行期：ClipSyncApp 监听 AppLifecycleState.paused——App 退到后台
+///   即布防，回前台经锁定页验证后放行。
+///
+/// 未登录/登录失效时由路由守卫自动复位（重新登录后按开关状态重新布防）。
+class BiometricLockGate {
+  BiometricLockGate._();
+
+  static final ValueNotifier<bool> locked = ValueNotifier<bool>(false);
+
+  /// 布防：进入应用前需通过生物验证
+  static void lock() => locked.value = true;
+
+  /// 解除：生物验证成功，放行进入应用
+  static void unlock() => locked.value = false;
+}
+
 /// 创建应用路由（go_router）。
 ///
 /// 路由表：
@@ -68,6 +96,7 @@ class PermissionGuideGate {
 /// - `/login`           验证码登录页
 /// - `/onboarding`      首次使用引导页
 /// - `/permission-guide` 首次启动权限引导页（T3.4，由 [PermissionGuideGate] 门控）
+/// - `/lock`            生物识别锁定页（T4.6，由 [BiometricLockGate] 门控）
 /// - `/share/receive`   系统分享接收确认页（T3.5，extra: SharePayload）
 /// - `/templates`       模板库页（T4.2）
 /// - `/subscriptions`   订阅管理页（T4.4）
@@ -83,8 +112,10 @@ class PermissionGuideGate {
 /// `onboarding_completed`，两者在启动时完成加载）：
 /// 1. 认证状态未知（isLoading）→ 统一回 `/` 加载页；
 /// 2. 未完成 onboarding → `/onboarding`；
-/// 3. 无 token → `/login`；
-/// 4. 有 token 访问 `/` / `/login` / `/onboarding` / `/home` → `/home/clipboard`。
+/// 3. 无 token → `/login`（并复位生物锁布防，T4.6）；
+/// 4. 有 token 且生物锁已布防（冷启动/后台回前台）→ `/lock`（T4.6）；
+/// 5. 已登录未布防时访问 `/` / `/login` / `/onboarding` / `/home` /
+///    已解锁的 `/lock` → `/home/clipboard`。
 GoRouter createAppRouter({
   required AuthProvider authProvider,
   required RouteGuardState guardState,
@@ -96,6 +127,8 @@ GoRouter createAppRouter({
       guardState,
       // 权限引导完成（pending 翻转）后刷新重定向
       PermissionGuideGate.pending,
+      // T4.6：生物锁布防/解除（locked 翻转）后刷新重定向
+      BiometricLockGate.locked,
     ]),
     redirect: (context, state) {
       final location = state.matchedLocation;
@@ -111,9 +144,26 @@ GoRouter createAppRouter({
         return location == AppRoutes.onboarding ? null : AppRoutes.onboarding;
       }
 
-      // 3. 已完成引导：无 token 只能停留在登录页
+      // 3. 已完成引导：无 token 只能停留在登录页；
+      //    同时复位生物锁布防（重新登录后由 main.dart 侧按开关重新布防）
       if (!authProvider.isAuthenticated) {
+        BiometricLockGate.unlock();
         return location == AppRoutes.login ? null : AppRoutes.login;
+      }
+
+      // 3.2 已登录且生物锁已布防（T4.6：冷启动 / 后台回前台）→ 锁定页。
+      //     优先于权限引导页：未通过身份验证前不放行任何应用内容。
+      if (BiometricLockGate.locked.value &&
+          location != AppRoutes.lock) {
+        return AppRoutes.lock;
+      }
+
+      // 3.3 走到这里说明已解锁：从锁定页回主页（若权限引导未展示过，
+      //     先完成引导再进主页，保持 T3.4 一次性引导语义）
+      if (location == AppRoutes.lock) {
+        return PermissionGuideGate.pending.value
+            ? AppRoutes.permissionGuide
+            : AppRoutes.homeClipboard;
       }
 
       // 3.5 已登录且未展示过权限引导页（T3.4 一次性）→ 权限引导页
@@ -148,6 +198,11 @@ GoRouter createAppRouter({
       GoRoute(
         path: AppRoutes.permissionGuide,
         builder: (context, state) => const PermissionGuideScreen(),
+      ),
+      // T4.6：生物识别锁定页（已登录 + 布防时由重定向守卫强制进入）
+      GoRoute(
+        path: AppRoutes.lock,
+        builder: (context, state) => const LockScreen(),
       ),
       // T3.5：系统分享接收确认页（extra: SharePayload，非预期类型给空态）
       GoRoute(

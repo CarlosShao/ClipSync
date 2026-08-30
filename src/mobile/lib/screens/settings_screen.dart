@@ -3,10 +3,12 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/clipboard_provider.dart';
 import '../providers/settings_provider.dart';
 import '../router/app_router.dart';
+import '../services/biometric_service.dart';
 import '../services/server_config.dart';
 import '../theme/app_theme.dart';
 import 'notification_settings_screen.dart';
@@ -29,6 +31,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _language = 'zh';
   bool _isLoading = false;
 
+  /// T4.6：生物识别锁开关（SharedPreferences 键 biometric_lock_enabled，
+  /// 读取方 main.dart 冷启动布防 + ClipSyncApp 退后台布防）
+  bool _biometricLockEnabled = false;
+
+  /// T4.6：设备是否具备可用生物识别能力（不支持则开关禁用）
+  bool _biometricSupported = false;
+
   @override
   void initState() {
     super.initState();
@@ -46,11 +55,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final settings = context.read<SettingsProvider>();
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+
+    // T4.6：生物识别能力检测（canCheckBiometrics + isDeviceSupported）。
+    // 设备不支持时把残留的历史开关强制回落为关闭，避免永久锁在锁定页外。
+    final biometricSupported = await BiometricService.canAuthenticate();
+    var biometricLockEnabled = prefs.getBool('biometric_lock_enabled') ?? false;
+    if (!biometricSupported && biometricLockEnabled) {
+      biometricLockEnabled = false;
+      await prefs.setBool('biometric_lock_enabled', false);
+    }
+
+    if (!mounted) return;
     setState(() {
       _serverUrlController.text = prefs.getString('server_url') ?? ServerConfig.baseUrl;
       _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
       _themeModeIndex = settings.themeModeIndex;
       _language = prefs.getString('language') ?? 'zh';
+      _biometricSupported = biometricSupported;
+      _biometricLockEnabled = biometricLockEnabled;
     });
   }
 
@@ -63,7 +85,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ServerConfig.setBaseUrl(url);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('服务器地址已保存')),
+      SnackBar(content: Text(AppLocalizations.of(context).serverUrlSaved)),
     );
   }
 
@@ -119,12 +141,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('缓存已清理')),
+        SnackBar(content: Text(AppLocalizations.of(context).cacheCleared)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('清理失败: $e')),
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).clearCacheFailed(e.toString()),
+          ),
+        ),
       );
     } finally {
       if (mounted) {
@@ -139,23 +165,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _confirmLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('退出登录'),
-        content: const Text('确定要退出当前账号吗？退出后需要重新验证码登录。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text(
-              '退出',
-              style: TextStyle(color: Colors.red),
+      builder: (dialogContext) {
+        final l10n = AppLocalizations.of(dialogContext);
+        return AlertDialog(
+          title: Text(l10n.logout),
+          content: Text(l10n.logoutConfirmMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(l10n.cancel),
             ),
-          ),
-        ],
-      ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(
+                l10n.logoutAction,
+                style: const TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        );
+      },
     );
 
     if (confirmed != true || !mounted) return;
@@ -168,36 +197,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // T4.5: i18n —— 本页文案接 AppLocalizations，随设置页语言切换即时变化；
+    // 未迁移的硬编码文案（如 T4.6 安全区块）维持现状，后续渐进迁移。
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('设置'),
+        title: Text(l10n.tabSettings),
         // 作为主页 tab 嵌入时无返回栈，交由 AppBar 自动处理 leading
       ),
       body: ListView(
         children: [
-          _buildSectionHeader('服务器配置'),
+          _buildSectionHeader(l10n.sectionServer),
           _buildServerUrlSetting(),
           const Divider(),
 
-          _buildSectionHeader('通用'),
+          _buildSectionHeader(l10n.sectionGeneral),
           _buildNotificationSetting(),
           const Divider(),
 
-          _buildSectionHeader('外观'),
+          _buildSectionHeader(l10n.sectionAppearance),
           _buildThemeSetting(),
           _buildLanguageSetting(),
           const Divider(),
 
-          _buildSectionHeader('数据管理'),
+          _buildSectionHeader('安全'),
+          _buildBiometricLockSetting(),
+          const Divider(),
+
+          _buildSectionHeader(l10n.sectionData),
           _buildClearCacheButton(),
           _buildTemplatesTile(),
           const Divider(),
 
-          _buildSectionHeader('通知管理'),
+          _buildSectionHeader(l10n.sectionNotification),
           _buildNotificationSettings(),
           const Divider(),
 
-          _buildSectionHeader('订阅管理'),
+          _buildSectionHeader(l10n.sectionSubscription),
           _buildSubscriptionSetting(),
           const Divider(),
 
@@ -225,9 +261,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildServerUrlSetting() {
+    final l10n = AppLocalizations.of(context);
     return ListTile(
-      title: const Text('服务器地址'),
-      subtitle: const Text('ClipSync 后端服务地址'),
+      title: Text(l10n.serverUrl),
+      subtitle: Text(l10n.serverUrlDesc),
       trailing: SizedBox(
         width: 200,
         child: TextField(
@@ -243,45 +280,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildNotificationSetting() {
+    final l10n = AppLocalizations.of(context);
     return SwitchListTile(
-      title: const Text('推送通知'),
-      subtitle: const Text('接收剪贴板同步通知'),
+      title: Text(l10n.pushNotifications),
+      subtitle: Text(l10n.pushNotificationsDesc),
       value: _notificationsEnabled,
       onChanged: (value) => _toggleNotifications(value),
     );
   }
 
   Widget _buildThemeSetting() {
+    final l10n = AppLocalizations.of(context);
     return ListTile(
-      title: const Text('主题'),
+      title: Text(l10n.theme),
       subtitle: Text(_getThemeText()),
       trailing: DropdownButton<int>(
         value: _themeModeIndex,
         onChanged: _setThemeMode,
-        items: const [
-          DropdownMenuItem(value: 0, child: Text('跟随系统')),
-          DropdownMenuItem(value: 1, child: Text('浅色')),
-          DropdownMenuItem(value: 2, child: Text('深色')),
+        items: [
+          DropdownMenuItem(value: 0, child: Text(l10n.themeSystem)),
+          DropdownMenuItem(value: 1, child: Text(l10n.themeLight)),
+          DropdownMenuItem(value: 2, child: Text(l10n.themeDark)),
         ],
       ),
     );
   }
 
   String _getThemeText() {
+    final l10n = AppLocalizations.of(context);
     switch (_themeModeIndex) {
       case 1:
-        return '浅色主题';
+        return l10n.themeLight;
       case 2:
-        return '深色主题';
+        return l10n.themeDark;
       case 0:
       default:
-        return '跟随系统';
+        return l10n.themeSystem;
     }
   }
 
   Widget _buildLanguageSetting() {
+    final l10n = AppLocalizations.of(context);
     return ListTile(
-      title: const Text('语言'),
+      title: Text(l10n.language),
+      // 副标题展示语言原生名（简体中文/English），刻意不随语言切换翻译
       subtitle: Text(_getLanguageText()),
       trailing: DropdownButton<String>(
         value: _language,
@@ -305,27 +347,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// T4.6：生物识别锁开关——设备不支持时呈「设备不支持」禁用态
+  Widget _buildBiometricLockSetting() {
+    return SwitchListTile(
+      secondary: const Icon(Icons.fingerprint),
+      title: const Text('生物识别锁'),
+      subtitle: Text(
+        _biometricSupported
+            ? '冷启动与回到前台时需通过指纹/面容验证'
+            : '设备不支持生物识别',
+      ),
+      value: _biometricSupported && _biometricLockEnabled,
+      // 设备不支持时 onChanged 为 null → 开关呈禁用态
+      onChanged: _biometricSupported ? _toggleBiometricLock : null,
+    );
+  }
+
+  /// T4.6：切换生物识别锁。开启前先做一次生物验证确认本人操作，
+  /// 验证未通过则保持关闭；结果持久化到 biometric_lock_enabled。
+  Future<void> _toggleBiometricLock(bool value) async {
+    if (value) {
+      final ok = await BiometricService.authenticate(
+        reason: '验证指纹或面容以开启生物识别锁',
+      );
+      if (!ok) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('验证未通过，未开启生物识别锁')),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _biometricLockEnabled = value;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('biometric_lock_enabled', value);
+  }
+
   Widget _buildClearCacheButton() {
+    final l10n = AppLocalizations.of(context);
     return ListTile(
       leading: const Icon(Icons.cleaning_services),
-      title: const Text('清理缓存'),
-      subtitle: const Text('清除剪贴板缓存和临时文件'),
+      title: Text(l10n.clearCache),
+      subtitle: Text(l10n.clearCacheDesc),
       trailing: _isLoading
           ? const CircularProgressIndicator()
           : IconButton(
               icon: const Icon(Icons.delete_forever),
               onPressed: _clearCache,
-              tooltip: '清理',
+              tooltip: l10n.clearCacheTooltip,
             ),
     );
   }
 
   /// 模板库（T4.2）：查看 / 使用剪贴板模板
   Widget _buildTemplatesTile() {
+    final l10n = AppLocalizations.of(context);
     return ListTile(
       leading: const Icon(Icons.description_outlined),
-      title: const Text('模板库'),
-      subtitle: const Text('查看并快速使用剪贴板模板'),
+      title: Text(l10n.templates),
+      subtitle: Text(l10n.templatesDesc),
       trailing: const Icon(Icons.chevron_right),
       onTap: () {
         Navigator.push(
@@ -340,10 +423,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// 通知设置
   Widget _buildNotificationSettings() {
+    final l10n = AppLocalizations.of(context);
     return ListTile(
       leading: const Icon(Icons.notifications),
-      title: const Text('通知设置'),
-      subtitle: const Text('管理推送通知偏好'),
+      title: Text(l10n.notificationSettings),
+      subtitle: Text(l10n.notificationSettingsDesc),
       trailing: const Icon(Icons.chevron_right),
       onTap: () {
         Navigator.push(
@@ -359,10 +443,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 订阅管理设置（T4.4：改指路由 /subscriptions，
   /// 旧 subscription_management_screen.dart 直推入口已删除）
   Widget _buildSubscriptionSetting() {
+    final l10n = AppLocalizations.of(context);
     return ListTile(
       leading: const Icon(Icons.workspace_premium),
-      title: const Text('订阅管理'),
-      subtitle: const Text('查看或更改订阅套餐'),
+      title: Text(l10n.subscriptionManagement),
+      subtitle: Text(l10n.subscriptionDesc),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => context.push(AppRoutes.subscriptionManagement),
     );
@@ -370,13 +455,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// 退出登录（红色，确认后清除凭证并返回登录页）
   Widget _buildLogoutTile() {
+    final l10n = AppLocalizations.of(context);
     return ListTile(
       leading: const Icon(Icons.logout, color: Colors.red),
-      title: const Text(
-        '退出登录',
-        style: TextStyle(color: Colors.red),
+      title: Text(
+        l10n.logout,
+        style: const TextStyle(color: Colors.red),
       ),
-      subtitle: const Text('清除本机登录凭证'),
+      subtitle: Text(l10n.logoutDesc),
       onTap: _confirmLogout,
     );
   }
@@ -388,7 +474,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       applicationVersion: '0.1.0',
       applicationIcon: const FlutterLogo(size: 48),
       aboutBoxChildren: [
-        const Text('跨设备剪贴板同步工具'),
+        Text(AppLocalizations.of(context).aboutDesc),
         const SizedBox(height: 8),
         const Text('© 2026 ClipSync Team'),
       ],

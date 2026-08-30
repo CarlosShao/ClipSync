@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// T4.5: i18n 基建 —— flutter gen-l10n 生成（配置见 l10n.yaml）
+import 'l10n/app_localizations.dart';
 import 'providers/auth_provider.dart';
 import 'providers/device_provider.dart';
 import 'providers/settings_provider.dart';
@@ -21,8 +22,6 @@ import 'services/ws_service.dart';
 import 'screens/share/share_intent_listener.dart';
 import 'theme/app_theme.dart';
 import 'utils/performance.dart';
-// Temporarily disabled - localization
-// import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 void main() async {
   // 启动性能监控 - 记录启动开始时间
@@ -47,6 +46,12 @@ void main() async {
   // 读取 onboarding 完成标记，作为路由守卫数据源（写入方：OnboardingScreen）
   final prefs = await SharedPreferences.getInstance();
   final onboardingCompleted = prefs.getBool('onboarding_completed') ?? false;
+
+  // T4.6：生物识别锁冷启动布防——开关开启即锁定，已登录用户会被路由守卫
+  // 重定向到 /lock 经生物验证后放行；未登录/凭证失效时守卫会自动复位。
+  // 开关写入方：设置页（settings_screen.dart），键 biometric_lock_enabled。
+  BiometricLockGate.locked.value =
+      prefs.getBool('biometric_lock_enabled') ?? false;
 
   // 创建需要异步初始化的 Provider（在 runApp 前完成，供路由守卫与设置页使用）
   final authProvider = AuthProvider();
@@ -121,7 +126,7 @@ void _initializeErrorReporting() {
   });
 }
 
-class ClipSyncApp extends StatelessWidget {
+class ClipSyncApp extends StatefulWidget {
   final GoRouter appRouter;
   final AuthProvider authProvider;
   final RouteGuardState guardState;
@@ -140,40 +145,70 @@ class ClipSyncApp extends StatelessWidget {
   });
 
   @override
+  State<ClipSyncApp> createState() => _ClipSyncAppState();
+}
+
+class _ClipSyncAppState extends State<ClipSyncApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// T4.6：App 退到后台即布防生物锁；回前台时由路由守卫强制经 /lock
+  /// 生物验证后放行（冷启动布防在 main() 读取 biometric_lock_enabled）。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _armBiometricLock();
+    }
+  }
+
+  /// 已登录且开关开启时布防（开关读取走 SharedPreferences，
+  /// 与设置页写入键 biometric_lock_enabled 保持一致）
+  Future<void> _armBiometricLock() async {
+    if (!widget.authProvider.isAuthenticated) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('biometric_lock_enabled') ?? false) {
+      BiometricLockGate.lock();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         // 已在 main() 中完成异步初始化的 Provider，使用 .value 注入
-        ChangeNotifierProvider.value(value: authProvider),
-        ChangeNotifierProvider.value(value: guardState),
-        ChangeNotifierProvider.value(value: settingsProvider),
+        ChangeNotifierProvider.value(value: widget.authProvider),
+        ChangeNotifierProvider.value(value: widget.guardState),
+        ChangeNotifierProvider.value(value: widget.settingsProvider),
         // 延迟加载非关键Provider
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         // T3.1/T3.2：EchoAwareClipboardProvider 在 main() 中创建（采集回环登记），.value 注入
-        ChangeNotifierProvider.value(value: clipboardProvider),
+        ChangeNotifierProvider.value(value: widget.clipboardProvider),
         ChangeNotifierProvider(create: (context) => DeviceProvider()),
         ChangeNotifierProvider(create: (context) => WsProvider()),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, _) {
+      // T4.5: i18n —— locale 由 SettingsProvider.language 驱动（设置页切换即时生效，
+      // 持久化键 'language'；未迁移的硬编码文案不受影响，后续渐进迁移）
+      child: Consumer2<ThemeProvider, SettingsProvider>(
+        builder: (context, themeProvider, settingsProvider, _) {
           return MaterialApp.router(
             title: 'ClipSync',
             debugShowCheckedModeBanner: false,
-            // Temporarily disabled - localization
-            // localizationsDelegates: AppLocalizations.localizationsDelegates,
-            localizationsDelegates: [
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
-            supportedLocales: [
-              Locale('en', ''),
-              Locale('zh', ''),
-            ],
+            locale: Locale(settingsProvider.language),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
-            routerConfig: appRouter,
+            routerConfig: widget.appRouter,
             builder: (context, child) {
               return ErrorReportWidget(child: child ?? const SizedBox.shrink());
             },
