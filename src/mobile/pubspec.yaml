@@ -39,6 +39,12 @@ dependencies:
   device_info_plus: ^11.0.0
   crypto: ^3.0.0  # T0.2: 由 transitive 转显式
 
+  # T3.4: 即时通知（本地通知，Android 渠道 clipsync_sync / clipsync_alert）
+  flutter_local_notifications: ^17.0.0
+  # T3.5: 分享收发（系统分享面板发送 / 接收）
+  share_plus: ^10.0.0
+  receive_sharing_intent: ^1.8.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

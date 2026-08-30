@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_view/photo_view.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../models/clipboard_item.dart';
 import '../../services/api_service.dart';
@@ -180,6 +181,31 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     messenger.showSnackBar(
       const SnackBar(content: Text('已复制'), duration: Duration(seconds: 2)),
     );
+  }
+
+  /// 分享条目文本（T3.5）：调系统分享面板（share_plus），文本取 copyText
+  /// （详情页已加载全文时优先用全文）。
+  Future<void> _shareItem() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final text = _isTextLike
+        ? (_textState == _TextLoadState.loaded ? _fullText : _item.copyText)
+        : _item.copyText;
+    if (text.trim().isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('该条目暂无文本内容'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    try {
+      await Share.share(text.trim());
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('分享失败，请稍后重试'), duration: Duration(seconds: 2)),
+      );
+    }
   }
 
   /// 收藏 toggle：调既有 PUT /api/clipboard/:id/favorite，以服务端返回为准。
@@ -610,6 +636,12 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
             ),
           ),
           const SizedBox(width: AppSpacing.md),
+          IconButton.filledTonal(
+            onPressed: _shareItem,
+            tooltip: '分享',
+            icon: const Icon(Icons.share_rounded),
+          ),
+          const SizedBox(width: AppSpacing.sm),
           IconButton.filledTonal(
             onPressed: _favoriteBusy ? null : _toggleFavorite,
             tooltip: _item.isFavorite ? '取消收藏' : '收藏',

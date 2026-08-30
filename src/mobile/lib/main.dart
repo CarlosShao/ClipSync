@@ -6,15 +6,19 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'providers/auth_provider.dart';
-import 'providers/clipboard_provider.dart';
 import 'providers/device_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/ws_provider.dart';
 import 'router/app_router.dart';
 import 'router/route_guard.dart';
 import 'services/cache_service.dart';
+import 'services/clipboard_capture.dart';
 import 'services/error_report_service.dart';
+import 'services/local_notification_service.dart';
 import 'services/server_config.dart';
+import 'services/sync_service.dart';
+import 'services/ws_service.dart';
+import 'screens/share/share_intent_listener.dart';
 import 'theme/app_theme.dart';
 import 'utils/performance.dart';
 // Temporarily disabled - localization
@@ -50,11 +54,40 @@ void main() async {
   final settingsProvider = SettingsProvider();
   await settingsProvider.init();
 
+  // T3.1/T3.2：剪贴板采集管线绑定 + 登录态启停前台服务挂钩
+  // - EchoAwareClipboardProvider：WS 推送内容登记进采集去重环（回环抑制）
+  // - ClipboardCaptureService：持有列表引用 + 设备 id，采集文本去重后入库
+  // - SyncService.attach：已登录（含冷启动恢复）→ 启动前台服务，登出 → 停止
+  final clipboardProvider = EchoAwareClipboardProvider();
+  ClipboardCaptureService.instance.bind(
+    provider: clipboardProvider,
+    deviceIdProvider: () => authProvider.deviceId,
+  );
+  SyncService.instance.attach(authProvider);
+
   // 创建 go_router 路由表（守卫依赖 authProvider / guardState）
   final appRouter = createAppRouter(
     authProvider: authProvider,
     guardState: guardState,
   );
+
+  // T3.4：本地通知初始化（幂等；失败静默）+ 通知点击回首页 +
+  //        WS new_clipboard 全局钩子（弹「剪贴板已更新」通知）
+  await LocalNotificationService.instance.initialize();
+  LocalNotificationService.instance.onNotificationTap = () {
+    appRouter.go(AppRoutes.home);
+  };
+  WsService.globalNewClipboardHook = (msg) {
+    LocalNotificationService.instance.handleWsNewClipboard(msg);
+  };
+
+  // T3.4：首次启动权限引导页门控（onboarding 完成后的下一次启动展示一次；
+  //        路由守卫要求 onboarding + 登录完成，顺序由 app_router 保证）
+  PermissionGuideGate.pending.value =
+      !(prefs.getBool('permission_guide_shown') ?? false);
+
+  // T3.5：系统分享面板接收监听（冷启动 getInitialMedia + 运行中 media stream）
+  ShareIntentListener.instance.start(appRouter);
 
   // 延迟初始化错误报告服务（不阻塞启动）
   _initializeErrorReporting();
@@ -67,6 +100,7 @@ void main() async {
     authProvider: authProvider,
     guardState: guardState,
     settingsProvider: settingsProvider,
+    clipboardProvider: clipboardProvider,
   ));
 }
 
@@ -93,12 +127,16 @@ class ClipSyncApp extends StatelessWidget {
   final RouteGuardState guardState;
   final SettingsProvider settingsProvider;
 
+  /// T3.1/T3.2：带回环登记的剪贴板 Provider（main() 中创建并绑定采集服务）
+  final EchoAwareClipboardProvider clipboardProvider;
+
   const ClipSyncApp({
     super.key,
     required this.appRouter,
     required this.authProvider,
     required this.guardState,
     required this.settingsProvider,
+    required this.clipboardProvider,
   });
 
   @override
@@ -111,7 +149,8 @@ class ClipSyncApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: settingsProvider),
         // 延迟加载非关键Provider
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (context) => ClipboardProvider()),
+        // T3.1/T3.2：EchoAwareClipboardProvider 在 main() 中创建（采集回环登记），.value 注入
+        ChangeNotifierProvider.value(value: clipboardProvider),
         ChangeNotifierProvider(create: (context) => DeviceProvider()),
         ChangeNotifierProvider(create: (context) => WsProvider()),
       ],

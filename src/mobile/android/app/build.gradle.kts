@@ -6,12 +6,15 @@ plugins {
 
 android {
     namespace = "com.clipsync.clipsync_mobile"
-    compileSdk = flutter.compileSdkVersion
+    // T3.5：receive_sharing_intent 插件 AAR 要求 compileSdk 37
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // T3.4：flutter_local_notifications 要求核心库脱糖
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -69,4 +72,8 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
