@@ -264,7 +264,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: scheme.surfaceContainerHigh,
-          child: Text(group.icon, style: const TextStyle(fontSize: 18)),
+          // 服务端 icon 字段存的是图标名（如 "folder"）而非 emoji：
+          // ASCII 长串按文件夹图标渲染，emoji（短字符）才按文字渲染，
+          // 避免图标名在圆标内折行成 "fold er"
+          child: group.icon.length <= 2
+              ? Text(group.icon, style: const TextStyle(fontSize: 18))
+              : Icon(Icons.folder_outlined,
+                  size: 20, color: scheme.primary),
         ),
         title: Text(
           group.name,

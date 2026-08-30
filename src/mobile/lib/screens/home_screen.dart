@@ -10,6 +10,7 @@ import '../providers/auth_provider.dart';
 import '../providers/clipboard_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/ws_provider.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../utils/performance.dart';
 import '../widgets/common/empty_state.dart';
@@ -50,13 +51,24 @@ class _HomeScreenState extends State<HomeScreen> {
   static const int _tabDevices = 2;
   static const int _tabSettings = 3;
 
-  /// AppBar 简洁标题，随 tab 切换
-  static const List<String> _tabTitles = <String>[
-    '剪贴板',
-    '收藏',
-    '我的设备',
-    '设置',
+  /// AppBar 标题的 l10n key（顺序与 tab 索引对应，build 期经 l10n 求值，
+  /// 语言切换即时生效）
+  static const List<String> _tabTitleKeys = <String>[
+    'tabClipboard',
+    'tabFavorites',
+    'tabDevices',
+    'tabSettings',
   ];
+
+  List<String> _tabTitles(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return [
+      l10n.tabClipboard,
+      l10n.tabFavorites,
+      l10n.tabDevices,
+      l10n.tabSettings,
+    ];
+  }
 
   @override
   void initState() {
@@ -74,14 +86,16 @@ class _HomeScreenState extends State<HomeScreen> {
     unawaited(
       context.read<ClipboardProvider>().loadItems(token, refresh: true),
     );
-    unawaited(context.read<DeviceProvider>().loadDevices(token));
 
     // Connect WebSocket for real-time sync
     final wsProvider = context.read<WsProvider>();
     if (!wsProvider.isConnected) {
-      // 优先使用登录时注册的真实设备 id（T1.5）；未注册成功时回退旧逻辑并告警
+      // 优先使用登录时注册的真实设备 id（T1.5）；未注册成功时回退旧逻辑并告警。
+      // ⚠️ 注册必须先于设备列表拉取：首次安装时注册产生本机设备条目，
+      // 否则列表为空直到手动刷新（真机已踩坑）。
       final deviceId = await auth.ensureDeviceId();
       if (!mounted) return;
+      unawaited(context.read<DeviceProvider>().loadDevices(token));
       if (deviceId != null && deviceId.isNotEmpty) {
         wsProvider.connect(
           token: token,
@@ -120,36 +134,37 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final int currentIndex = widget.navigationShell.currentIndex;
+    final tabTitles = _tabTitles(context);
     return PerformanceMonitor(
       name: 'HomeScreen',
       child: Scaffold(
         // 设置 tab 的内容自带 Scaffold + AppBar，shell 侧不再叠加标题栏
         appBar:
-            currentIndex == _tabSettings ? null : _buildAppBar(currentIndex),
+            currentIndex == _tabSettings ? null : _buildAppBar(currentIndex, tabTitles),
         body: widget.navigationShell,
         bottomNavigationBar: NavigationBar(
           selectedIndex: currentIndex,
           onDestinationSelected: _onDestinationSelected,
-          destinations: const <Widget>[
+          destinations: <Widget>[
             NavigationDestination(
-              icon: Icon(Icons.content_paste_outlined),
-              selectedIcon: Icon(Icons.content_paste),
-              label: '剪贴板',
+              icon: const Icon(Icons.content_paste_outlined),
+              selectedIcon: const Icon(Icons.content_paste),
+              label: tabTitles[0],
             ),
             NavigationDestination(
-              icon: Icon(Icons.star_outline),
-              selectedIcon: Icon(Icons.star),
-              label: '收藏',
+              icon: const Icon(Icons.star_outline),
+              selectedIcon: const Icon(Icons.star),
+              label: tabTitles[1],
             ),
             NavigationDestination(
-              icon: Icon(Icons.devices_outlined),
-              selectedIcon: Icon(Icons.devices),
-              label: '设备',
+              icon: const Icon(Icons.devices_outlined),
+              selectedIcon: const Icon(Icons.devices),
+              label: tabTitles[2],
             ),
             NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: '设置',
+              icon: const Icon(Icons.settings_outlined),
+              selectedIcon: const Icon(Icons.settings),
+              label: tabTitles[3],
             ),
           ],
         ),
@@ -158,9 +173,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 简洁标题栏：标题随 tab 切换；设备 tab 保留旧版刷新操作。
-  PreferredSizeWidget _buildAppBar(int index) {
+  PreferredSizeWidget _buildAppBar(int index, List<String> tabTitles) {
     return AppBar(
-      title: Text(_tabTitles[index]),
+      title: Text(tabTitles[index]),
       actions: index == _tabDevices
           ? <Widget>[
               IconButton(

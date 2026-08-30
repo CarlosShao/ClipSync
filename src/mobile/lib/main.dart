@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // T4.5: i18n 基建 —— flutter gen-l10n 生成（配置见 l10n.yaml）
 import 'l10n/app_localizations.dart';
 import 'providers/auth_provider.dart';
+import 'providers/clipboard_provider.dart';
 import 'providers/device_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/ws_provider.dart';
@@ -190,8 +191,11 @@ class _ClipSyncAppState extends State<ClipSyncApp> with WidgetsBindingObserver {
         ChangeNotifierProvider.value(value: widget.settingsProvider),
         // 延迟加载非关键Provider
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        // T3.1/T3.2：EchoAwareClipboardProvider 在 main() 中创建（采集回环登记），.value 注入
-        ChangeNotifierProvider.value(value: widget.clipboardProvider),
+        // T3.1/T3.2：EchoAwareClipboardProvider 在 main() 中创建（采集回环登记）。
+        // ⚠️ 必须显式声明父类型 ClipboardProvider：provider 包按注册时的
+        // 泛型精确匹配查找，注册成子类类型会导致 Consumer<ClipboardProvider>
+        // 抛 ProviderNotFoundException（真机已踩坑）
+        ChangeNotifierProvider<ClipboardProvider>.value(value: widget.clipboardProvider),
         ChangeNotifierProvider(create: (context) => DeviceProvider()),
         ChangeNotifierProvider(create: (context) => WsProvider()),
       ],
