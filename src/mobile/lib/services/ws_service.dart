@@ -101,8 +101,11 @@ class WsService {
     final channel = WebSocketChannel.connect(uri);
     _channel = channel;
 
+    // 连接成功（首帧消息到达）后重置重连计数，让后续断线拥有完整的
+    // 指数退避序列；否则失败 10 次后将永久放弃重连
     channel.stream.listen(
       (data) {
+        if (_reconnectAttempts != 0) _reconnectAttempts = 0;
         if (data is! String) return;
         final dynamic decoded = jsonDecode(data);
         if (decoded is Map<String, dynamic>) {
@@ -186,9 +189,14 @@ class WsService {
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (max)
     final delaySeconds = (1 << (_reconnectAttempts - 1).clamp(0, 5)).clamp(1, 30);
 
-    // Add jitter (±20%) to prevent thundering herd
-    final jitterRange = (delaySeconds * 0.2).round();
-    final jitter = (DateTime.now().millisecondsSinceEpoch % (jitterRange * 2)) - jitterRange;
+    // Add jitter (±20%) to prevent thundering herd.
+    // ⚠️ 首次重连 delaySeconds=1 → jitterRange=0 → `x % 0` 抛
+    // IntegerDivisionByZeroException，且异常发生在断线回调内，
+    // 会直接杀死重连调度（WS 一断即永久死亡）——必须零值保护
+    final jitterRange = delaySeconds <= 1 ? 0 : (delaySeconds * 0.2).round();
+    final jitter = jitterRange <= 0
+        ? 0
+        : (DateTime.now().millisecondsSinceEpoch % (jitterRange * 2)) - jitterRange;
     final finalDelaySeconds = (delaySeconds + jitter).clamp(1, 30);
 
     final delay = Duration(seconds: finalDelaySeconds);
