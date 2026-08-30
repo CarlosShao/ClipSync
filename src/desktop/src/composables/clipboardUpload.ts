@@ -1,10 +1,11 @@
 // === 剪贴板上传（文本 / 图片 / 文件）与离线兜底 ===
-import { api } from '@/api/client'
+import { api, apiForm } from '@/api/client'
 import * as tauri from '@/lib/tauri'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { enqueue } from '@/utils/offlineQueue'
 import { logger } from '@/utils/logger'
+import { CHUNK_SIZE, chunkedUpload } from '@/utils/chunkedUpload'
 import { items, recentUploadHashes, HASH_TTL, totalItems, mainTotalItems, currentView, type ClipItem } from './clipboardState'
 import { cacheContent } from './clipboardCache'
 import { trimToMaxHistory } from './clipboardLoad'
@@ -168,9 +169,89 @@ const MAX_TEXT_UPLOAD_SIZE = 9 * 1024 * 1024
 // 防止 metadata.html 拖垮请求体（后端 express.json 10MB 上限）与 DB 行体积。
 const CAPTURED_HTML_LIMIT = 2 * 1024 * 1024
 
-// 跨设备文件字节上限（决策 D3）：5MB 原文件 ≈ 6.7MB base64，
-// 仍在后端 express.json / contentEncrypted 的 10MB 上限内。
-export const FILE_BYTES_UPLOAD_LIMIT = 5 * 1024 * 1024
+// === 跨设备文件自动同步路由阈值（D1 升级）===
+// 二进制文件 ≤10MB：multipart 直传 POST /api/media/file（服务端落盘 + 自建剪贴板
+// 条目 + WS 广播，前端不再 POST /api/clipboard 造重复条目）；
+// 二进制文件 >10MB：先建条目（localOnly:true），再 chunkedUpload 分片上传，
+// complete 请求带 clipboardItemId 让服务端 S2 UPDATE 该条目并广播（条目转正）。
+// 文本文件 ≤5MB（readFileContent 通道）保持明文随条目上传，DocPreview 预览依赖。
+export const FILE_MULTIPART_UPLOAD_LIMIT = 10 * 1024 * 1024
+
+/**
+ * 套餐文件大小上限（对齐 useFileUpload.planMaxBytes 与服务端
+ * subscription_plans.max_file_size_mb / chunked-upload init 的 DB 校验）：
+ * Free 128MB / Pro 256MB / Enterprise 1GB。超限捕获文件标 localOnly 并提示。
+ */
+export function planMaxUploadBytes(): number {
+  try {
+    const plan = useConfigStore().user?.plan || 'Free'
+    if (plan === 'Pro' || plan === 'pro' || plan === '专业版') return 256 * 1024 * 1024
+    if (plan === 'Enterprise' || plan === 'enterprise' || plan === '企业版') return 1024 * 1024 * 1024
+    return 128 * 1024 * 1024
+  } catch {
+    return 128 * 1024 * 1024
+  }
+}
+
+/** 从文件名扩展名猜 MIME（剪贴板捕获的文件没有 File.type，只能按扩展名推断）。 */
+const MIME_BY_EXT: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  zip: 'application/zip',
+  rar: 'application/x-rar-compressed',
+  '7z': 'application/x-7z-compressed',
+  gz: 'application/gzip',
+  tar: 'application/x-tar',
+  apk: 'application/vnd.android.package-archive',
+  txt: 'text/plain',
+  md: 'text/markdown',
+  csv: 'text/csv',
+  json: 'application/json',
+  xml: 'application/xml',
+  yaml: 'application/yaml',
+  yml: 'application/yaml',
+  html: 'text/html',
+  css: 'text/css',
+  js: 'text/javascript',
+  ts: 'text/javascript',
+  py: 'text/x-python',
+  java: 'text/x-java-source',
+  c: 'text/plain',
+  cpp: 'text/plain',
+  h: 'text/plain',
+  go: 'text/plain',
+  rs: 'text/plain',
+  sh: 'text/x-sh',
+  sql: 'application/sql',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  svg: 'image/svg+xml',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+}
+
+export function guessMimeFromName(name: string): string {
+  const m = /\.([A-Za-z0-9]+)$/.exec(name || '')
+  const ext = m ? m[1].toLowerCase() : ''
+  return MIME_BY_EXT[ext] || 'application/octet-stream'
+}
+
+/** base64 → 字节（data URL 走 fetch 解码，避免逐字符循环解码 10MB 级字符串）。 */
+async function base64ToBytes(b64: string): Promise<Uint8Array> {
+  const res = await fetch(`data:application/octet-stream;base64,${b64}`)
+  return new Uint8Array(await res.arrayBuffer())
+}
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -400,6 +481,22 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
   }
 }
 
+/**
+ * 分片读取本机文件并组装 File（>10MB 捕获文件的分片上传桥，D1）。
+ * read_file_content_base64 硬上限 10MB，大文件必须经 read_file_range_base64
+ * 按 CHUNK_SIZE 切片读取；每次解码后立即释放 base64 字符串，
+ * 全程最多持有「整份文件字节 + 一份 base64 切片」的内存。
+ */
+async function readFileAsFile(path: string, fileName: string, mime: string, size: number): Promise<File> {
+  const parts: BlobPart[] = []
+  for (let start = 0; start < size; start += CHUNK_SIZE) {
+    const len = Math.min(CHUNK_SIZE, size - start)
+    const b64 = await tauri.readFileRangeBase64(path, start, len)
+    parts.push(await base64ToBytes(b64))
+  }
+  return new File(parts, fileName, { type: mime })
+}
+
 export async function uploadFileToServer(payload: string) {
   const hash = simpleHash(payload)
   if (recentUploadHashes.has(hash) && Date.now() - (recentUploadHashes.get(hash) || 0) < HASH_TTL) {
@@ -417,16 +514,19 @@ export async function uploadFileToServer(payload: string) {
   }
 
   const fileName = filePaths[0].split(/[/\\]/).pop() || filePaths[0] || 'Unknown'
+  const extMatch = /\.([A-Za-z0-9]+)$/.exec(fileName)
+  const ext = extMatch ? extMatch[1].toLowerCase() : ''
+  const isSingleFile = filePaths.length === 1
 
-  // === 跨设备文件捕获（B7 / 决策 D3）===
-  // 1) 文本文件：沿用既有 readFileContent 通道（保住 DocPreview 的纯文本预览）
-  // 2) 二进制文件：readFileContentBase64 读原字节，≤5MB 才随条目上传，
-  //    对端即可下载还原；超限 / 读不到 → 标记 localOnly（"仅本机可用"）。
-  // 只处理单文件：多文件复制没有打包协议，跨设备还原无从谈起，一律标仅本机。
+  // === 跨设备文件捕获（B7 / D3 基础上的 D1 升级）===
+  // ① 文本文件（readFileContent 通道）：明文随条目上传，保住 DocPreview 的纯文本预览
+  // ② 二进制文件：不再 base64 内嵌，按大小路由 ——
+  //    ≤10MB → multipart POST /api/media/file（服务端落盘 + 自建条目 + WS 广播）；
+  //    >10MB → 先建条目（localOnly:true）再 chunkedUpload，complete 带 clipboardItemId
+  //            让服务端 S2 UPDATE 该条目并广播（见 FILE_MULTIPART_UPLOAD_LIMIT 注释）
+  // ③ 超套餐上限 / 读不到 / 多文件 → localOnly（"仅本机可用"），多文件为已知限制
   let fileContent = payload // fallback: store path array
   let textReadOk = false
-  let uploadedBase64 = ''
-  let uploadedBytes = 0
   try {
     const text = await tauri.readFileContent(filePaths[0])
     if (text && text.length > 0) {
@@ -436,34 +536,227 @@ export async function uploadFileToServer(payload: string) {
   } catch {
     /* 非 UTF-8（二进制）/ 超 5MB / 无权限 — 走下面的二进制通道 */
   }
-  // 只有「文本读不出来」的纯二进制文件才走 base64 通道：
-  // 文本文件必须继续按明文存，否则 DocPreview 的纯文本预览会被 base64 糊掉（回归）。
-  if (!textReadOk && filePaths.length === 1) {
-    try {
-      const b64 = await tauri.readFileContentBase64(filePaths[0])
-      if (b64) {
-        // base64 长度 × 3/4 ≈ 原始字节数（含 padding 误差，够用于阈值判断）
-        const bytes = Math.floor((b64.length * 3) / 4)
-        if (bytes > 0 && bytes <= FILE_BYTES_UPLOAD_LIMIT) {
-          uploadedBase64 = b64
-          uploadedBytes = bytes
-        } else {
-          logger.debug('[Clipboard] file too large for cross-device upload, local only', fileName, bytes)
-        }
-      }
-    } catch (e: any) {
-      logger.debug('[Clipboard] binary read failed, local only', fileName, e?.message || e)
-    }
-  }
-  // 真实字节优先：有二进制捕获时上传它，否则退回文本/路径数组
-  const storedContent = uploadedBase64 || fileContent
-  const displaySize = uploadedBase64
-    ? formatBytes(uploadedBytes)
-    : `${(fileContent.length / 1024).toFixed(1)} KB`
 
-  // 归档视图下跳过乐观插入：新条目未归档，不应出现在归档列表中
+  const isBinaryCapture = isSingleFile && !textReadOk
   const isArchiveView = currentView.value === 'archive'
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+
+  const deviceId = await ensureDeviceId()
+
+  /** 从本地列表移除乐观项并回滚计数（上传失败 / 重复时用） */
+  const removeOptimistic = () => {
+    if (!isArchiveView) {
+      items.value = items.value.filter((i) => i.id !== localId)
+      totalItems.value = Math.max(0, totalItems.value - 1)
+      mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+    }
+  }
+
+  // ============ 二进制分支 ============
+  if (isBinaryCapture) {
+    const mime = guessMimeFromName(fileName)
+    const sizeDisplayJson = (size: number) =>
+      JSON.stringify({ name: fileName, size: formatBytes(size), type: mime })
+
+    // 先拿真实大小：套餐校验必须在读字节之前，避免超限大文件白读一次内存。
+    // stat 失败时退而尝试 base64 读（≤10MB 才会成功，顺带拿到大小）。
+    let fileSize = -1
+    let cachedB64 = ''
+    try {
+      fileSize = await tauri.getFileSize(filePaths[0])
+    } catch {
+      logger.debug('[Clipboard] get_file_size failed', fileName)
+    }
+    if (fileSize < 0) {
+      try {
+        cachedB64 = await tauri.readFileContentBase64(filePaths[0])
+        if (cachedB64) fileSize = Math.floor((cachedB64.length * 3) / 4)
+      } catch {
+        logger.debug('[Clipboard] binary read failed, local only', fileName)
+      }
+    }
+
+    // 统一 metadata（对齐消费方契约，D1 设计第 5 条）：
+    // 上传成功后条目 localOnly=false；本地乐观项在上传完成前也标 localOnly=true
+    const baseMeta = {
+      originalName: fileName,
+      mimeType: mime,
+      extension: ext,
+      fileSize: fileSize > 0 ? fileSize : 0,
+      source: 'auto-sync',
+      paths: filePaths,
+      localOnly: true,
+      fileEncoding: 'server',
+    }
+    const displayJson = sizeDisplayJson(fileSize > 0 ? fileSize : 0)
+
+    // 乐观插入（条目内容 = {name,size,type} JSON；路径只放 metadata.paths，
+    // 避免手机端把 content 探测成本机路径而隐藏下载入口，F4 降级判定）
+    if (!isArchiveView) {
+      items.value.unshift({
+        id: localId,
+        type: 'file',
+        content: displayJson,
+        source: 'Desktop',
+        timestamp: Date.now(),
+        selected: false,
+        metadata: { ...baseMeta },
+      })
+      totalItems.value += 1
+      mainTotalItems.value += 1
+      trimToMaxHistory()
+    }
+
+    if (!deviceId) {
+      console.warn('[Clipboard] uploadFileToServer: no deviceId, dropping file')
+      removeOptimistic()
+      return
+    }
+
+    /** 建一条 localOnly:true 的占位条目（超套餐 / 捕获失败 / 上传失败兜底共用）。 */
+    const createLocalOnlyEntry = async () => {
+      const uploadPayload = {
+        contentType: 'file',
+        content: displayJson,
+        contentEncrypted: displayJson,
+        sourceDeviceId: deviceId,
+        contentPreview: fileName,
+        contentSize: fileSize > 0 ? fileSize : 0,
+        metadata: { ...baseMeta },
+      }
+      const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
+      if (res.ok && res.data?.id) {
+        const localItem = items.value.find((i) => i.id === localId)
+        if (res.data.duplicate) {
+          // 服务端 5 分钟窗口判定重复：移除本地乐观项，避免两条同名记录
+          removeOptimistic()
+        } else if (localItem) {
+          localItem.id = res.data.id
+          cacheContent(res.data.id, displayJson)
+        }
+        return
+      }
+      removeOptimistic()
+    }
+
+    // ---- 套餐限制（Free 128MB / Pro 256MB / Enterprise 1GB）：超限 localOnly + 提示 ----
+    const planLimit = planMaxUploadBytes()
+    if (fileSize > planLimit) {
+      console.warn('[Clipboard] file exceeds plan limit, local only', fileName, fileSize, planLimit)
+      const maxMb = Math.round(planLimit / 1024 / 1024)
+      toast.show(
+        `${fileName}: ${t('file_exceeds_plan', { size: formatBytes(fileSize), limit: `${maxMb}MB`, plan: '' })}`,
+        'error',
+      )
+      await createLocalOnlyEntry()
+      return
+    }
+
+    // ---- 二进制 ≤10MB：multipart 直传 /api/media/file ----
+    // 服务端 media.js 落盘后自建剪贴板条目并 WS 广播 new_clipboard（列表经 refresh 自动出现），
+    // 因此这里绝不 POST /api/clipboard —— 重复创建会造出第二条同名条目。
+    if (fileSize >= 0 && fileSize <= FILE_MULTIPART_UPLOAD_LIMIT) {
+      try {
+        const b64 = cachedB64 || (await tauri.readFileContentBase64(filePaths[0]))
+        if (b64) {
+          const bytes = await base64ToBytes(b64)
+          const file = new File([bytes], fileName, { type: mime })
+          const formData = new FormData()
+          formData.append('file', file, fileName)
+          formData.append('sourceDeviceId', deviceId)
+          const res = await apiForm('/api/media/file', formData)
+          if (res.ok && res.data?.id) {
+            const localItem = items.value.find((i) => i.id === localId)
+            if (localItem) {
+              localItem.id = res.data.id
+              // media.js 响应字段是 filename（服务端落盘名），不是 contentEncrypted
+              // —— 按实际响应解析（useClipboard 旧分支在这里读错字段）
+              localItem.content = JSON.stringify({
+                name: fileName,
+                size: formatBytes(fileSize),
+                type: mime,
+                serverFilename: res.data.filename || '',
+              })
+              localItem.metadata = { ...baseMeta, localOnly: false }
+              cacheContent(res.data.id, localItem.content)
+            }
+            return
+          }
+          logger.debug('[Clipboard] media/file upload rejected:', res.status, res.error)
+        }
+      } catch (e: any) {
+        logger.debug('[Clipboard] multipart upload failed', fileName, e?.message || e)
+      }
+      // 兜底：脚本扩展名被服务端过滤 / 读文件失败 / 网络错误 → 建仅本机占位条目
+      await createLocalOnlyEntry()
+      toast.show(`${fileName}: ${t('upload_fail')}`, 'error')
+      return
+    }
+
+    // ---- 二进制 >10MB：两步（S2 契约）----
+    // ① POST /api/clipboard 创建条目（localOnly:true，metadata 携带统一字段）
+    // ② chunkedUpload 分片上传，complete body 附 clipboardItemId —— 服务端 S2
+    //    提供时不建新条目，改为 UPDATE 该条目并广播（条目转正 localOnly=false）
+    if (fileSize > FILE_MULTIPART_UPLOAD_LIMIT) {
+      const entryPayload = {
+        contentType: 'file',
+        content: displayJson,
+        contentEncrypted: displayJson,
+        sourceDeviceId: deviceId,
+        contentPreview: fileName,
+        contentSize: fileSize,
+        metadata: { ...baseMeta },
+      }
+      const createRes = await api('POST', '/api/clipboard', entryPayload)
+      if (!createRes.ok || !createRes.data?.id) {
+        removeOptimistic()
+        toast.show(`${fileName}: ${createRes.error || t('upload_fail')}`, 'error')
+        return
+      }
+      if (createRes.data.duplicate) {
+        removeOptimistic()
+        return
+      }
+      const serverId: string = createRes.data.id
+      const localItem = items.value.find((i) => i.id === localId)
+      if (localItem) {
+        localItem.id = serverId
+        cacheContent(serverId, displayJson)
+      }
+      try {
+        const file = await readFileAsFile(filePaths[0], fileName, mime, fileSize)
+        await chunkedUpload(
+          file,
+          (progress) => {
+            // 进度只写本地条目内容；服务端条目的 PUT metadata 白名单不含 uploadProgress，
+            // 逐片 PUT 既会被白名单丢弃又打爆接口（设计第 6 条按此省略，见交付报告）
+            const it = items.value.find((x) => x.id === serverId)
+            if (it && !progress.done) it.content = `${fileName} (${progress.percent}%)`
+          },
+          undefined,
+          { clipboardItemId: serverId },
+        )
+        // 完成：本地条目转正（权威状态由服务端 S2 广播 + WS refresh 到达后重建）
+        const fin = items.value.find((x) => x.id === serverId)
+        if (fin) {
+          fin.content = displayJson
+          fin.metadata = { ...baseMeta, localOnly: false }
+        }
+      } catch (e: any) {
+        // 分片失败：服务端条目保持 localOnly:true（占位与实际状态一致），提示后不再重试
+        console.warn('[Clipboard] chunked upload failed, entry stays localOnly', fileName, e?.message || e)
+        toast.show(`${fileName}: ${e?.message || t('upload_fail')}`, 'error')
+      }
+      return
+    }
+
+    // ---- 大小完全未知（stat 与 base64 读取都失败）：标仅本机 ----
+    await createLocalOnlyEntry()
+    return
+  }
+
+  // ============ 传统通道：文本文件（明文内嵌）/ 多文件（保持现状）============
+  const displaySize = `${(fileContent.length / 1024).toFixed(1)} KB`
   if (!isArchiveView) {
     // 乐观更新
     items.value.unshift({
@@ -472,7 +765,7 @@ export async function uploadFileToServer(payload: string) {
       content: JSON.stringify({
         name: fileName,
         size: displaySize,
-        type: uploadedBase64 ? 'application/octet-stream' : 'text/plain',
+        type: 'text/plain',
       }),
       source: 'Desktop',
       timestamp: Date.now(),
@@ -480,7 +773,7 @@ export async function uploadFileToServer(payload: string) {
       metadata: {
         paths: filePaths,
         originalName: fileName,
-        localOnly: !uploadedBase64 && !textReadOk,
+        localOnly: !textReadOk,
       },
     })
     totalItems.value += 1
@@ -488,34 +781,31 @@ export async function uploadFileToServer(payload: string) {
     trimToMaxHistory()
   }
 
-  const deviceId = await ensureDeviceId()
   if (!deviceId) {
     console.warn('[Clipboard] uploadFileToServer: no deviceId, dropping file')
-    if (!isArchiveView) {
-      items.value = items.value.filter((i) => i.id !== localId)
-      totalItems.value = Math.max(0, totalItems.value - 1)
-      mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
-    }
+    removeOptimistic()
     return
   }
-  // metadata 只放**轻量标记**（paths / 名称 / 编码标记），绝不放 base64 本体：
-  // GET /api/clipboard 列表接口会 SELECT metadata，塞进 6MB 会把整个列表请求拖垮。
-  // 字节本体走 contentEncrypted（text 列，列表接口不查）。
+  // metadata 只放轻量标记（paths / 名称 / 编码标记），绝不放文本本体之外的大块内容：
+  // GET /api/clipboard 列表接口会 SELECT metadata，塞进兆级字体会拖垮整个列表请求。
+  // 文本本体走 contentEncrypted（text 列，列表接口不查）。
   const uploadPayload = {
     contentType: 'file',
     content: JSON.stringify({ name: fileName, paths: filePaths }),
-    contentEncrypted: storedContent,
+    contentEncrypted: fileContent,
     sourceDeviceId: deviceId,
     contentPreview: fileName,
     metadata: {
       paths: filePaths,
       originalName: fileName,
-      // 对端据此判断"能否还原文件"：base64 = 字节已随条目上传，可直接下载还原
-      fileEncoding: uploadedBase64 ? 'base64' : 'text',
-      fileSize: uploadedBytes || fileContent.length,
-      // 文本文件（明文已随条目上传）也算"非仅本机"：内容在对端可见可复制，
-      // 只有"还原成原文件"做不到。仅二进制且未捕获成功时才标仅本机。
-      localOnly: !uploadedBase64 && !textReadOk,
+      mimeType: 'text/plain',
+      extension: ext,
+      fileSize: fileContent.length,
+      source: 'auto-sync',
+      // 文本文件（明文已随条目上传）算"非仅本机"：内容在对端可见可复制，
+      // 只有"还原成原文件"做不到。多文件（首个文件读不成文本）才标仅本机。
+      localOnly: !textReadOk,
+      fileEncoding: 'text',
     },
   }
   const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
@@ -525,21 +815,17 @@ export async function uploadFileToServer(payload: string) {
       if (res.data.duplicate) {
         // 后端判定为重复条目：直接移除本地乐观项，避免 UI 出现两条同名记录
         logger.debug('[Clipboard] server reported duplicate, removing optimistic local item')
-        items.value = items.value.filter((i) => i.id !== localId)
+        removeOptimistic()
       } else {
         localItem.id = res.data.id
         // Update content to include paths field (for hasLocalPath detection)
         localItem.content = JSON.stringify({ name: fileName, paths: filePaths })
         localItem.metadata = uploadPayload.metadata
-        cacheContent(res.data.id, storedContent)
+        cacheContent(res.data.id, fileContent)
       }
     }
     return
   }
   // 上传失败：从本地列表移除乐观项，避免残留脏数据，并回滚计数
-  if (!isArchiveView) {
-    items.value = items.value.filter((i) => i.id !== localId)
-    totalItems.value = Math.max(0, totalItems.value - 1)
-    mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
-  }
+  removeOptimistic()
 }

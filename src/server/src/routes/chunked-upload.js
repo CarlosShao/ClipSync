@@ -11,6 +11,7 @@ import { logger } from '../utils/logger.js';
 import { storeUploadSession, getUploadSession, deleteUploadSession } from '../utils/redis-client.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { writeChunk, readChunk, mergeChunks, deleteChunks, getFilePath } from '../utils/storage.js';
+import { broadcastToUser } from '../ws/server.js';
 
 // 允许的文件 MIME类型（安全白名单）
 const ALLOWED_MIME_TYPES = new Set([
@@ -429,39 +430,106 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
       }
     }
 
-    // 保存到数据库
-    const result = await pool.query(
-      `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata)
-       VALUES ($1, $2, 'file', $3, $4, $5, $6)
-       RETURNING id, content_type, content_preview, content_size, created_at`,
-      [
-        req.userId,
-        sourceDeviceId,
-        finalFilename,
-        session.filename,
-        session.fileSize,
-        JSON.stringify({
-          originalName: session.filename,
-          mimeType: session.mimeType,
-          chunkedUpload: true,
-          totalChunks: session.totalChunks
-        })
-      ]
-    );
-    
-    // 清理会话  
+    // ── 落盘修复：合并文件此前写在 UPLOAD_DIR 根（uploadId 命名），而下载端点
+    //    在 uploads/files/ 按 content_encrypted（finalFilename）查找 → 永远 404。
+    //    统一移动到 files/ 子目录并使用与 DB 一致的最终文件名。
+    const filesDir = path.join(path.dirname(mergedPath), 'files');
+    await fs.mkdir(filesDir, { recursive: true });
+    const finalTarget = path.join(filesDir, finalFilename);
+    try {
+      await fs.rename(mergedPath, finalTarget);
+    } catch {
+      // 跨盘 rename 失败时降级为复制+清理
+      await fs.copyFile(mergedPath, finalTarget);
+      await fs.rm(mergedPath, { force: true });
+    }
+
+    // ── 关联已有条目（桌面自动文件同步：先建条目→后台上传字节→完成回填）。
+    //    提供 clipboardItemId 时不新建条目，改为回填该条目并广播更新。
+    const clipboardItemId = (req.body && req.body.clipboardItemId) || null;
+    let itemId;
+    let createdAt;
+    if (clipboardItemId) {
+      const ownership = await pool.query(
+        `SELECT metadata FROM clipboard_items WHERE id = $1 AND user_id = $2 AND content_type = 'file'`,
+        [clipboardItemId, req.userId]
+      );
+      if (ownership.rows.length === 0) {
+        await fs.rm(finalTarget, { force: true }).catch(() => {});
+        return res.status(404).json({ error: 'Linked clipboard item not found' });
+      }
+      const prevMeta = typeof ownership.rows[0].metadata === 'string'
+        ? (() => { try { return JSON.parse(ownership.rows[0].metadata || '{}'); } catch { return {}; } })()
+        : (ownership.rows[0].metadata || {});
+      const mergedMetadata = {
+        ...prevMeta,
+        originalName: session.filename,
+        mimeType: session.mimeType,
+        chunkedUpload: true,
+        totalChunks: session.totalChunks,
+        fileSize: session.fileSize,
+        localOnly: false,
+        fileEncoding: 'server',
+        source: 'auto-sync'
+      };
+      const updated = await pool.query(
+        `UPDATE clipboard_items
+         SET content_encrypted = $3, content_size = $4, metadata = $5, updated_at = now()
+         WHERE id = $1 AND user_id = $2
+         RETURNING id, content_type, content_preview, content_size, created_at`,
+        [clipboardItemId, req.userId, finalFilename, session.fileSize, JSON.stringify(mergedMetadata)]
+      );
+      itemId = updated.rows[0].id;
+      createdAt = updated.rows[0].created_at;
+    } else {
+      // 保存到数据库
+      const result = await pool.query(
+        `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata)
+         VALUES ($1, $2, 'file', $3, $4, $5, $6)
+         RETURNING id, content_type, content_preview, content_size, created_at`,
+        [
+          req.userId,
+          sourceDeviceId,
+          finalFilename,
+          session.filename,
+          session.fileSize,
+          JSON.stringify({
+            originalName: session.filename,
+            mimeType: session.mimeType,
+            chunkedUpload: true,
+            totalChunks: session.totalChunks
+          })
+        ]
+      );
+      itemId = result.rows[0].id;
+      createdAt = result.rows[0].created_at;
+    }
+
+    // 清理会话
     await removeUploadSession(uploadId);
-    
-    logger.info('Chunked upload completed', { uploadId, filename: finalFilename, itemId: result.rows[0].id });
-    
+
+    // 广播（字段结构对齐 media.js 的 new_clipboard）
+    broadcastToUser(req.userId, {
+      type: 'new_clipboard',
+      item: {
+        id: itemId,
+        contentType: 'file',
+        contentPreview: session.filename,
+        contentSize: session.fileSize,
+        createdAt
+      }
+    });
+
+    logger.info('Chunked upload completed', { uploadId, filename: finalFilename, itemId });
+
     res.json({
       success: true,
-      itemId: result.rows[0].id,
+      itemId,
       filename: finalFilename,
       originalName: session.filename,
       fileSize: session.fileSize,
       contentType: 'file',
-      createdAt: result.rows[0].created_at
+      createdAt
     });
   } catch (err) {
     logger.error('Chunked upload complete error', { error: err.message });

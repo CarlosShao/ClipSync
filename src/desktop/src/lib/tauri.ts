@@ -36,6 +36,10 @@ export const getClipboardFiles = () => invoke<string[]>('get_clipboard_files')
 export const setClipboardFiles = (paths: string[]) => invoke('set_clipboard_files', { paths })
 export const readFileContent = (path: string) => invoke<string>('read_file_content', { path })
 export const readFileContentBase64 = (path: string) => invoke<string>('read_file_content_base64', { path })
+// D1 文件自动同步桥：>10MB 捕获文件分片上传前先查大小（套餐校验）再按切片读字节
+export const getFileSize = (path: string) => invoke<number>('get_file_size', { path })
+export const readFileRangeBase64 = (path: string, start: number, len: number) =>
+  invoke<string>('read_file_range_base64', { path, start, len })
 export const copyLocalFiles = (paths: string[]) => invoke<string>('copy_local_files', { paths })
 export const saveAndCopyFile = (base64Data: string, filename: string) =>
   invoke<string>('save_and_copy_file', { base64Data, filename })

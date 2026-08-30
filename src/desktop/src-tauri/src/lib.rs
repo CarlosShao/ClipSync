@@ -338,6 +338,56 @@ fn read_file_content_base64(path: String) -> Result<String, String> {
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }
 
+/// Get a file size in bytes. Used by the clipboard file auto-sync (D1) to run the
+/// plan-limit check BEFORE reading large captured files into memory.
+#[tauri::command]
+fn get_file_size(path: String) -> Result<u64, String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    let metadata =
+        std::fs::metadata(p).map_err(|e| format!("Cannot read file metadata: {}", e))?;
+    Ok(metadata.len())
+}
+
+/// Read a byte range [start, start + len) of a local file and return it as base64.
+/// Bridge for the chunked upload of clipboard-captured files >10MB (D1):
+/// read_file_content_base64 caps at 10MB, so large files must be sliced.
+/// Slices are capped at 64MB per call to bound webview memory.
+#[tauri::command]
+fn read_file_range_base64(path: String, start: u64, len: u64) -> Result<String, String> {
+    use std::fs;
+    use std::io::{Read, Seek, SeekFrom};
+    use base64::Engine;
+    const MAX_SLICE: u64 = 64 * 1024 * 1024;
+    if len == 0 || len > MAX_SLICE {
+        return Err(format!("Invalid slice length: {}", len));
+    }
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    let mut f = fs::File::open(p).map_err(|e| format!("Cannot open file: {}", e))?;
+    let file_len = f
+        .metadata()
+        .map_err(|e| format!("Cannot read file metadata: {}", e))?
+        .len();
+    if start >= file_len {
+        return Err(format!(
+            "Range out of bounds: start {} >= file size {}",
+            start, file_len
+        ));
+    }
+    let read_len = len.min(file_len - start) as usize;
+    f.seek(SeekFrom::Start(start))
+        .map_err(|e| format!("Seek failed: {}", e))?;
+    let mut buf = vec![0u8; read_len];
+    f.read_exact(&mut buf)
+        .map_err(|e| format!("Read failed: {}", e))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&buf))
+}
+
 #[tauri::command]
 fn save_and_copy_file(base64_data: String, filename: String) -> Result<String, String> {
     use std::fs;
@@ -1808,6 +1858,8 @@ pub fn run() {
             set_clipboard_files,
             read_file_content,
             read_file_content_base64,
+            get_file_size,
+            read_file_range_base64,
             copy_local_files,
             get_clipboard_files,
             save_and_copy_file,

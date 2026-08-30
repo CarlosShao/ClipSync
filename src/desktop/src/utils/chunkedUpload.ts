@@ -44,6 +44,7 @@ function loadUploadState(): UploadState | null {
 }
 
 const CHUNK_SIZE = 10 * 1024 * 1024 // 10MB per chunk (server limit)
+export { CHUNK_SIZE }
 
 export interface UploadProgress {
   uploadId: string
@@ -109,9 +110,18 @@ async function uploadChunk(uploadId: string, chunkIndex: number, chunk: Blob, re
   }
 }
 
-/** Complete (merge) the upload on the server. */
-async function completeUpload(uploadId: string, deviceId?: string): Promise<any> {
-  const res = await api('POST', `/api/upload/complete/${uploadId}`, { deviceId })
+/** Complete (merge) the upload on the server.
+ *  extraBody: 随 complete 请求附加的字段（D1 剪贴板文件自动同步传 clipboardItemId，
+ *  服务端 S2 收到后不建新条目，改为 UPDATE 该条目并广播）。 */
+async function completeUpload(
+  uploadId: string,
+  deviceId?: string,
+  extraBody?: Record<string, any>,
+): Promise<any> {
+  const res = await api('POST', `/api/upload/complete/${uploadId}`, {
+    deviceId,
+    ...(extraBody || {}),
+  })
   if (!res.ok) throw new Error(res.error || 'Failed to complete upload')
   return res.data
 }
@@ -129,12 +139,15 @@ async function getUploadStatus(uploadId: string): Promise<{ missingChunks: numbe
  * @param file - The File object to upload
  * @param onProgress - Progress callback (called after each chunk)
  * @param existingUploadId - If resuming, pass the previous uploadId
+ * @param extraCompleteBody - Extra fields merged into the complete request body
+ *   (e.g. { clipboardItemId } for the clipboard auto-sync two-step flow, S2 contract)
  * @returns The created clipboard item
  */
 export async function chunkedUpload(
   file: File,
   onProgress?: (p: UploadProgress) => void,
   existingUploadId?: string,
+  extraCompleteBody?: Record<string, any>,
 ): Promise<any> {
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
 
@@ -208,7 +221,7 @@ export async function chunkedUpload(
 
   // Complete the upload
   const deviceId = localStorage.getItem('clipsync-device-id') || undefined
-  const result = await completeUpload(uploadId, deviceId)
+  const result = await completeUpload(uploadId, deviceId, extraCompleteBody)
 
   // Clean up saved state on success
   saveUploadState(null)

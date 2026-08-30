@@ -87,6 +87,7 @@ class WsService {
 
     // 使旧的 in-flight 连接流程作废
     final epoch = ++_connectEpoch;
+    print('[WsDebug] _connect deviceId=$_deviceId tokenPresent=${token != null}');
 
     final csrf = await _fetchWsCsrf();
     if (epoch != _connectEpoch) return; // 已被新一轮 connect/disconnect 取代
@@ -100,6 +101,7 @@ class WsService {
 
     final channel = WebSocketChannel.connect(uri);
     _channel = channel;
+    print('[WsDebug] channel opened uri=${uri.toString()}');
 
     // 连接成功（首帧消息到达）后重置重连计数，让后续断线拥有完整的
     // 指数退避序列；否则失败 10 次后将永久放弃重连
@@ -121,6 +123,7 @@ class WsService {
       },
       onError: (error) {
         if (epoch != _connectEpoch) return;
+        print('[WsDebug] onError: $error');
         _isConnected = false;
         _heartbeatTimer?.cancel();
         onDisconnected?.call();
@@ -132,7 +135,10 @@ class WsService {
     _registerTimer?.cancel();
     _registerTimer = Timer(const Duration(milliseconds: 500), () {
       if (_deviceId != null) {
+        print('[WsDebug] >> register deviceId=$_deviceId');
         send({'type': 'register', 'deviceId': _deviceId});
+      } else {
+        print('[WsDebug] register skipped: _deviceId is null');
       }
     });
 
@@ -170,6 +176,7 @@ class WsService {
         );
         break;
       case 'error':
+        print('[WsDebug] server error: ${msg['message']}');
         break;
     }
   }
