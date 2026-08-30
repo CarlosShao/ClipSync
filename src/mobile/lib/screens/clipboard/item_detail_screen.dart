@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -52,7 +53,10 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   bool _imageFailed = false;
   int _imageEpoch = 0; // 重试代数：重建 provider 强制重新拉取
   Map<String, String> _mediaHeaders = const <String, String>{};
-  CachedNetworkImageProvider? _imageProvider;
+  // 双通道：旧桌面版本把图片存成 dataURL（无 media 记录）→ MemoryImage；
+  // 新版本走 media 端点 → CachedNetworkImageProvider（带鉴权头）
+  ImageProvider<Object>? _imageProvider;
+  bool _isInlineDataImage = false;
 
   // 操作栏忙碌状态
   bool _favoriteBusy = false;
@@ -106,15 +110,46 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     }
   }
 
-  /// 准备图片鉴权头并构建 provider（Bearer 来自 TokenStore）。
+  /// 准备图片数据。双通道策略（对齐桌面端渲染）：
+  /// ① 先取条目完整内容——`data:image` 开头 = 旧版内联 dataURL，解码为
+  ///    MemoryImage（这类图片没有 media 记录，media 端点必然 404）；
+  /// ② 否则走 GET /api/media/:id/preview（Bearer 鉴权网络图）。
   Future<void> _loadImage() async {
+    // ① 内联 dataURL 通道
+    String? content = _item.fullContent;
+    if (content == null || !content.startsWith('data:image')) {
+      try {
+        final fetched = await ApiService().getItemContent(null, _item.id);
+        if (fetched != null && fetched.isNotEmpty) {
+          content = fetched;
+          if (mounted) {
+            _item = _item.copyWith(fullContent: fetched);
+          }
+        }
+      } catch (_) {
+        // 取内容失败不致命：继续尝试 media 通道
+      }
+    }
+    if (content != null && content.startsWith('data:image')) {
+      final comma = content.indexOf(',');
+      final bytes = base64Decode(content.substring(comma + 1));
+      if (!mounted) return;
+      setState(() {
+        _headersReady = true;
+        _imageFailed = false;
+        _isInlineDataImage = true;
+        _imageProvider = MemoryImage(bytes);
+      });
+      return;
+    }
+    // ② media 端点通道
     final token = await TokenStore.getAccessToken();
     if (!mounted) return;
     if (token == null || token.isEmpty) {
-      // 无可用 token：直接进入错误态（重试会重新读 token）
       setState(() {
         _headersReady = true;
         _imageFailed = true;
+        _isInlineDataImage = false;
         _imageProvider = null;
       });
       return;
@@ -123,6 +158,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       _mediaHeaders = <String, String>{'Authorization': 'Bearer $token'};
       _headersReady = true;
       _imageFailed = false;
+      _isInlineDataImage = false;
       _imageProvider = _buildImageProvider();
     });
   }
