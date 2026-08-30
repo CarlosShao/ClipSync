@@ -166,7 +166,11 @@
 | T0.4 | ✅（INTERNET 权限 + 应用名 ClipSync；debug/release 双构建通过） | 编排者 | 077c5e0 |
 | T1.1 | ✅（全量内容模型 + /content 取全量策略；error 92→66，独占 4 文件 0 error） | subagent | a1534b4 |
 | T1.2-T1.5 | ✅（TokenStore/静默续期/2FA/真实设备注册；独占 5 文件 0 error） | subagent | 951d9a6 |
-| T2.1–T2.5 | ☐ | — | — |
+| T2.1 | ✅（M3 主题重做 + 5 基础组件，main.dart 零适配；独占文件 0 error） | subagent | 28b1427 |
+| T2.2 | ✅（NavigationBar 4 tab shell + StatefulShellRoute 保活 + 双击退出；0 error） | subagent | 5e48cd0 |
+| T2.3 | ✅（搜索 300ms 防抖 + 类型 chips + 下拉刷新 + 无限分页 + 三态 + 新内容浮条；0 error） | subagent | 5e48cd0 |
+| T2.4 | ✅（新卡片 + 临时 tile 切换 + 删除孤儿 coach_mark；0 error） | subagent | 23cf088 |
+| T2.5 | ✅（详情页：PhotoView 鉴权缩放/文件下载/文本全览 + 复制收藏操作栏；0 error） | subagent | 28b1427 |
 | T3.1–T3.5 | ☐ | — | — |
 | T4.1–T4.6 | ☐ | — | — |
 | S1 | ✅（sync.js:98 冲突分支 req.userId 修复，167 测试全绿） | 编排者 | dffb5d5 |
