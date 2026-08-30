@@ -136,10 +136,8 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
 
   /// 重新订阅
   Future<void> _resubscribe() async {
-    // 导航到套餐选择页面
-    Navigator.pushNamed(context, '/subscription-plans').catchError((e) {
-      print('⚠️ 导航到套餐选择页面失败: $e');
-    });
+    // Wave 4 重写：订阅套餐选择页已于 Wave 0 (T0.2) 清理，跳转调用随之移除；
+    // Wave 4 重做套餐选择后在此恢复入口。
   }
 
   @override

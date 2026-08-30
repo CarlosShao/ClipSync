@@ -3,14 +3,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:clipsync_mobile/screens/login_screen.dart';
 import 'package:clipsync_mobile/providers/auth_provider.dart';
 import 'package:clipsync_mobile/theme/app_theme.dart';
-import 'mock_plugins.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setupMockFlutterSecureStorage();
+  // T0.2: 原 mock 插件辅助文件已随死代码清理删除。
+  // AuthProvider 当前使用 SharedPreferences 存取 token，测试环境用官方 mock 即可；
+  // flutter_secure_storage 的 mock 随 Wave 1 (T1.2) token 迁移时再由对应工单补回。
+  SharedPreferences.setMockInitialValues({});
 
   testWidgets('登录页：能正常渲染所有关键组件', (tester) async {
     await tester.pumpWidget(

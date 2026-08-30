@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 剪贴板同步核心能力：网络访问（release 包默认无网络权限，必须显式声明） -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="clipsync_mobile"
+        android:label="ClipSync"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
