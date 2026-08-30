@@ -164,8 +164,12 @@
 | T0.2 | ✅（12 死文件删除，error 134→98，零残留引用） | subagent | 077c5e0 |
 | T0.3 | ✅（4 崩溃点修复 + go_router 路由表，独占文件 0 error） | subagent | 89853d7 |
 | T0.4 | ✅（INTERNET 权限 + 应用名 ClipSync；debug/release 双构建通过） | 编排者 | 077c5e0 |
-| T1.1–T1.5 | ☐ | — | — |
+| T1.1 | ✅（全量内容模型 + /content 取全量策略；error 92→66，独占 4 文件 0 error） | subagent | a1534b4 |
+| T1.2-T1.5 | ✅（TokenStore/静默续期/2FA/真实设备注册；独占 5 文件 0 error） | subagent | 951d9a6 |
 | T2.1–T2.5 | ☐ | — | — |
 | T3.1–T3.5 | ☐ | — | — |
 | T4.1–T4.6 | ☐ | — | — |
-| S1 | ☐ | — | — |
+| S1 | ✅（sync.js:98 冲突分支 req.userId 修复，167 测试全绿） | 编排者 | dffb5d5 |
+
+**备注**：T1.1 修正了工单假设——列表接口不返回完整内容（仅预览，服务端截断 5000 字符），
+取全量走 GET /api/clipboard/:id/content（与桌面端同策略），验收标准（复制 >5000 字符无截断）仍达成。
