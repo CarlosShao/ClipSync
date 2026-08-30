@@ -15,6 +15,9 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
   
+  # Routing
+  go_router: ^14.0.0
+
   # Network & API
   http: ^1.2.0
   web_socket_channel: ^3.0.0
