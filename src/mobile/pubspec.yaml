@@ -19,6 +19,8 @@ dependencies:
   # Network & API
   http: ^1.2.0
   web_socket_channel: ^3.0.0
+  # B2: 离线队列重放的网络状态感知（网络恢复/启动在线触发重放）
+  connectivity_plus: ^7.3.1
   
   # Local Storage
   shared_preferences: ^2.2.0

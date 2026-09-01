@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -7,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import '../providers/clipboard_provider.dart';
 import 'app_exception.dart';
+import 'pending_upload_queue.dart';
 import 'server_config.dart';
 import 'token_store.dart';
 
@@ -85,6 +87,9 @@ class ClipboardCaptureService {
       if (failedUntil != null) {
         if (DateTime.now().isBefore(failedUntil)) return;
         _failedHashCooldown.remove(hash);
+        // 冷却结束：若离线队列有积压 → 顺带触发一次重放尝试
+        // （不内嵌 timer；由采集/网络恢复事件驱动，队列内部有重入保护）
+        unawaited(_replayQueueIfPending());
       }
 
       // 层2：回环抑制（本机刚上传的 / WS 推回的 / 列表已有的）
@@ -143,14 +148,19 @@ class ClipboardCaptureService {
   // ---------------------------------------------------------------------------
 
   Future<void> _uploadWithRetry(String text, String hash) async {
+    // 幂等键一次性生成并贯穿所有重试与离线入队：服务端按 Idempotency-Key 幂等，
+    // 超时重试/离线重放复用同键，避免「请求已达服务端但响应丢失」类场景重复入库
+    final idempotencyKey = _generateIdempotencyKey();
     for (var attempt = 1; attempt <= _maxUploadAttempts; attempt++) {
       try {
-        final duplicated = await _upload(text);
+        final duplicated = await _upload(text, idempotencyKey: idempotencyKey);
         if (duplicated) {
           // 服务端 5 分钟内容哈希去重命中：内容已在服务端，登记后不再上传
           debugPrint('[ClipboardCapture] server dedup hit (duplicate)');
         }
         _remember(hash);
+        // 上传成功：清除离线队列中同文本积压（避免后续重放重复入库）
+        await PendingUploadQueue.instance.removeMatchingText(text);
         return;
       } catch (e) {
         debugPrint('[ClipboardCapture] upload attempt $attempt failed: $e');
@@ -159,13 +169,29 @@ class ClipboardCaptureService {
         }
       }
     }
-    // 重试耗尽：进入冷却，期间同内容采集跳过，不无限打服务器
+    // 重试耗尽：进入冷却（防抖动，期间同内容采集跳过），
+    // 同时入离线持久化队列——网络恢复/冷却结束/重启后由重放链路补传，不再静默丢失
     _failedHashCooldown[hash] = DateTime.now().add(_failedCooldown);
+    await PendingUploadQueue.instance.enqueue(
+      idempotencyKey: idempotencyKey,
+      contentType: 'text',
+      text: text,
+      initialAttempts: _maxUploadAttempts,
+    );
+    debugPrint('[ClipboardCapture] upload failed $_maxUploadAttempts times: '
+        'content queued for offline replay');
+  }
+
+  /// 离线队列有积压时触发一次重放尝试（重入保护与空队列判断在队列内部）
+  Future<void> _replayQueueIfPending() async {
+    if (await PendingUploadQueue.instance.hasPending()) {
+      await PendingUploadQueue.instance.replayPending();
+    }
   }
 
   /// POST /api/clipboard（对齐服务端契约）。
   /// 返回 true 表示服务端内容去重命中（HTTP 200 + duplicate）。
-  Future<bool> _upload(String text) async {
+  Future<bool> _upload(String text, {required String idempotencyKey}) async {
     final token = await TokenStore.getAccessToken();
     if (token == null || token.isEmpty) {
       debugPrint('[ClipboardCapture] skip upload: not logged in');
@@ -177,7 +203,8 @@ class ClipboardCaptureService {
       return false;
     }
 
-    var statusCode = await _postClipboard(text, token, deviceId);
+    var statusCode =
+        await _postClipboard(text, token, deviceId, idempotencyKey);
     if (statusCode == 401) {
       // 访问令牌过期：静默续期一次后重放（T1.3 TokenStore 单飞契约）
       final renewed = await TokenStore.refreshAccessToken();
@@ -187,19 +214,44 @@ class ClipboardCaptureService {
           'HTTP 401 and refresh token unavailable',
         );
       }
-      statusCode = await _postClipboard(text, renewed, deviceId);
+      statusCode = await _postClipboard(text, renewed, deviceId, idempotencyKey);
     }
     return _interpret(statusCode);
   }
 
-  Future<int> _postClipboard(String text, String token, String deviceId) async {
+  /// 离线队列重放：按既有上传链路重传文本（复用入队时的幂等键）。
+  /// 返回 true=成功（含服务端幂等/去重命中），false=仍失败（队列保留该条）。
+  /// 成功后登记哈希（回环抑制层 2a），WS 推回的回声不会引发再次上传。
+  Future<bool> reuploadText(String text, String idempotencyKey) async {
+    try {
+      final token = await TokenStore.getAccessToken();
+      if (token == null || token.isEmpty) {
+        debugPrint('[ClipboardCapture] replay skip: not logged in');
+        return false;
+      }
+      final deviceId = _deviceIdProvider?.call();
+      if (deviceId == null || deviceId.isEmpty) {
+        debugPrint('[ClipboardCapture] replay skip: device not registered yet');
+        return false;
+      }
+      await _upload(text, idempotencyKey: idempotencyKey);
+      _remember(_hashOf(text));
+      return true;
+    } catch (e) {
+      debugPrint('[ClipboardCapture] replay upload failed: $e');
+      return false;
+    }
+  }
+
+  Future<int> _postClipboard(
+      String text, String token, String deviceId, String idempotencyKey) async {
     final response = await http
         .post(
           Uri.parse('${ServerConfig.baseUrl}/api/clipboard'),
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer $token',
-            'Idempotency-Key': _generateIdempotencyKey(),
+            'Idempotency-Key': idempotencyKey,
           },
           body: jsonEncode(<String, dynamic>{
             'sourceDeviceId': deviceId,
