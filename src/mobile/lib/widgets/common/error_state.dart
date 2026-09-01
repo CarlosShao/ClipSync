@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 
 /// 错误状态：错误图标 + 标题 + 描述 + 重试按钮。
@@ -16,15 +17,15 @@ import '../../theme/app_theme.dart';
 class ErrorState extends StatelessWidget {
   /// 创建错误状态占位。
   ///
-  /// [message] 为必填错误描述；[title] 默认「加载失败」；
-  /// [icon] 默认错误轮廓图标；[retryLabel] 默认「重试」；
-  /// [onRetry] 为重试回调，为 null 时不渲染按钮。
+  /// [message] 为必填错误描述；[title] 为 null 时回退 l10n 的
+  /// loadFailedTitle；[icon] 默认错误轮廓图标；[retryLabel] 为 null 时
+  /// 回退 l10n 的 retry；[onRetry] 为重试回调，为 null 时不渲染按钮。
   const ErrorState({
     required this.message,
     super.key,
-    this.title = '加载失败',
+    this.title,
     this.icon = Icons.error_outline,
-    this.retryLabel = '重试',
+    this.retryLabel,
     this.onRetry,
     this.padding = const EdgeInsets.symmetric(vertical: AppSpacing.xxl, horizontal: AppSpacing.xl),
   });
@@ -32,14 +33,14 @@ class ErrorState extends StatelessWidget {
   /// 错误描述文案。
   final String message;
 
-  /// 错误标题，默认「加载失败」。
-  final String title;
+  /// 错误标题，null 时回退 l10n 的 loadFailedTitle。
+  final String? title;
 
   /// 图标，默认 [Icons.error_outline]。
   final IconData icon;
 
-  /// 重试按钮文案，默认「重试」。
-  final String retryLabel;
+  /// 重试按钮文案，null 时回退 l10n 的 retry。
+  final String? retryLabel;
 
   /// 重试回调；为 null 时隐藏按钮。
   final VoidCallback? onRetry;
@@ -51,6 +52,9 @@ class ErrorState extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final l10n = AppLocalizations.of(context);
+    final effectiveTitle = title ?? l10n.loadFailedTitle;
+    final effectiveRetryLabel = retryLabel ?? l10n.retry;
 
     return Padding(
       padding: padding,
@@ -66,7 +70,7 @@ class ErrorState extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.lg),
             Text(
-              title,
+              effectiveTitle,
               style: textTheme.titleMedium,
               textAlign: TextAlign.center,
               maxLines: 1,
@@ -80,7 +84,7 @@ class ErrorState extends StatelessWidget {
             ),
             if (onRetry != null) ...<Widget>[
               const SizedBox(height: AppSpacing.xl),
-              FilledButton(onPressed: onRetry, child: Text(retryLabel)),
+              FilledButton(onPressed: onRetry, child: Text(effectiveRetryLabel)),
             ],
           ],
         ),

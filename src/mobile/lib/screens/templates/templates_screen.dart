@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common/app_card.dart';
@@ -124,10 +125,11 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   Future<void> _showResultDialog(String rendered) async {
     // 在 await 之前捕获 messenger，避免 async 间隔后使用已失效的 context
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     await showDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('渲染结果'),
+        title: Text(l10n.renderResultTitle),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 320),
           child: SingleChildScrollView(
@@ -142,7 +144,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('关闭'),
+            child: Text(l10n.close),
           ),
           FilledButton.icon(
             onPressed: () {
@@ -151,11 +153,11 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
               messenger
                 ..hideCurrentSnackBar()
                 ..showSnackBar(
-                  const SnackBar(content: Text('已复制渲染结果到剪贴板')),
+                  SnackBar(content: Text(l10n.renderResultCopied)),
                 );
             },
             icon: const Icon(Icons.copy_all_outlined),
-            label: const Text('复制全文'),
+            label: Text(l10n.copyAll),
           ),
         ],
       ),
@@ -172,8 +174,9 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('模板库')),
+      appBar: AppBar(title: Text(l10n.templates)),
       body: RefreshIndicator(
         onRefresh: _load,
         child: _buildContent(),
@@ -195,11 +198,12 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
       );
     }
     if (_templates.isEmpty) {
+      final l10n = AppLocalizations.of(context);
       return _scrollableBody(
-        const EmptyState(
+        EmptyState(
           icon: Icons.description_outlined,
-          title: '暂无模板',
-          message: '在桌面端保存剪贴板内容为模板后，会同步到这里',
+          title: l10n.noTemplates,
+          message: l10n.noTemplatesDesc,
         ),
       );
     }
@@ -227,6 +231,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   Widget _buildTemplateCard(ClipboardTemplate template) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final l10n = AppLocalizations.of(context);
     final variables = template.variableNames;
     final preview = template.content.trim();
 
@@ -260,7 +265,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    '${variables.length} 个变量',
+                    l10n.variableCount(variables.length),
                     style: textTheme.labelSmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -271,7 +276,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            preview.isEmpty ? '（模板内容为空）' : preview,
+            preview.isEmpty ? l10n.emptyTemplateContent : preview,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: textTheme.bodyMedium?.copyWith(
@@ -285,7 +290,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
             child: FilledButton.tonalIcon(
               onPressed: () => unawaited(_useTemplate(template)),
               icon: const Icon(Icons.play_arrow_outlined),
-              label: const Text('使用'),
+              label: Text(l10n.useTemplate),
             ),
           ),
         ],
@@ -356,15 +361,16 @@ class _VariableInputDialogState extends State<_VariableInputDialog> {
   @override
   Widget build(BuildContext context) {
     final isLast = widget.step >= widget.total;
+    final l10n = AppLocalizations.of(context);
 
     return AlertDialog(
-      title: const Text('填写变量'),
+      title: Text(l10n.fillVariableTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            '第 ${widget.step} / ${widget.total} 个变量',
+            l10n.variableProgress(widget.step, widget.total),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -375,7 +381,9 @@ class _VariableInputDialogState extends State<_VariableInputDialog> {
             autofocus: true,
             decoration: InputDecoration(
               labelText: widget.variableName,
-              hintText: '请输入 {{${widget.variableName}}} 的值',
+              // 模板占位符提示渲染为 {{变量名}}（双花括号语义由 Dart 侧拼接，
+              // arb 模板为严格 ICU 语法，不能放字面量花括号）
+              hintText: l10n.variableInputHint('{{${widget.variableName}}}'),
             ),
             onSubmitted: (String value) => _submit(),
           ),
@@ -384,11 +392,11 @@ class _VariableInputDialogState extends State<_VariableInputDialog> {
       actions: <Widget>[
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(l10n.cancel),
         ),
         FilledButton(
           onPressed: _submit,
-          child: Text(isLast ? '完成' : '下一项'),
+          child: Text(isLast ? l10n.done : l10n.nextItem),
         ),
       ],
     );

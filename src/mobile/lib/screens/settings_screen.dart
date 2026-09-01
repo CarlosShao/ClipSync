@@ -220,7 +220,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildLanguageSetting(),
           const Divider(),
 
-          _buildSectionHeader('安全'),
+          _buildSectionHeader(l10n.sectionSecurity),
           _buildBiometricLockSetting(),
           const Divider(),
 
@@ -349,13 +349,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// T4.6：生物识别锁开关——设备不支持时呈「设备不支持」禁用态
   Widget _buildBiometricLockSetting() {
+    final l10n = AppLocalizations.of(context);
     return SwitchListTile(
       secondary: const Icon(Icons.fingerprint),
-      title: const Text('生物识别锁'),
+      title: Text(l10n.biometricLock),
       subtitle: Text(
         _biometricSupported
-            ? '冷启动与回到前台时需通过指纹/面容验证'
-            : '设备不支持生物识别',
+            ? l10n.biometricLockDesc
+            : l10n.biometricUnsupported,
       ),
       value: _biometricSupported && _biometricLockEnabled,
       // 设备不支持时 onChanged 为 null → 开关呈禁用态
@@ -366,14 +367,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// T4.6：切换生物识别锁。开启前先做一次生物验证确认本人操作，
   /// 验证未通过则保持关闭；结果持久化到 biometric_lock_enabled。
   Future<void> _toggleBiometricLock(bool value) async {
+    final l10n = AppLocalizations.of(context);
     if (value) {
       final ok = await BiometricService.authenticate(
-        reason: '验证指纹或面容以开启生物识别锁',
+        reason: l10n.biometricLockReason,
       );
       if (!ok) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('验证未通过，未开启生物识别锁')),
+          SnackBar(content: Text(l10n.biometricLockFailed)),
         );
         return;
       }

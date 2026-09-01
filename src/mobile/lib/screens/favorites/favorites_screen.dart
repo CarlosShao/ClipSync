@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../services/collections_api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common/empty_state.dart';
@@ -96,6 +97,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   /// 调用创建接口，成功后重拉列表并提示。
   Future<void> _createGroup(String name) async {
+    final l10n = AppLocalizations.of(context);
     setState(() => _isMutating = true);
     try {
       final group = await _api.createCollection(name);
@@ -103,12 +105,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         return;
       }
       unawaited(_load());
-      _showSnackBar('已创建「${group.name}」');
+      _showSnackBar(l10n.collectionCreated(group.name));
     } on Exception catch (e) {
       if (!mounted) {
         return;
       }
-      _showSnackBar('创建失败：${_friendlyError(e.toString())}');
+      _showSnackBar(l10n.collectionCreateFailed(_friendlyError(e.toString())));
     } finally {
       if (mounted) {
         setState(() => _isMutating = false);
@@ -118,26 +120,23 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   /// 删除分组：确认对话框（带说明）→ 删除 → 重拉列表。
   Future<void> _confirmDelete(CollectionGroup group) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('删除分组'),
-        content: Text(
-          '确定删除「${group.name}」吗？\n\n'
-          '组内的剪贴板条目不会被删除，仍保留在剪贴板收藏中；'
-          '该分组下的子分组会被一并删除。',
-        ),
+        title: Text(l10n.deleteCollection),
+        content: Text(l10n.deleteCollectionConfirm(group.name)),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(
               foregroundColor: Theme.of(dialogContext).colorScheme.error,
             ),
-            child: const Text('删除'),
+            child: Text(l10n.delete),
           ),
         ],
       ),
@@ -154,12 +153,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         return;
       }
       unawaited(_load());
-      _showSnackBar('已删除「${group.name}」');
+      _showSnackBar(l10n.collectionDeleted(group.name));
     } on Exception catch (e) {
       if (!mounted) {
         return;
       }
-      _showSnackBar('删除失败：${_friendlyError(e.toString())}');
+      _showSnackBar(l10n.collectionDeleteFailed(_friendlyError(e.toString())));
     } finally {
       if (mounted) {
         setState(() => _isMutating = false);
@@ -194,11 +193,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _isMutating ? null : _showCreateDialog,
         icon: const Icon(Icons.create_new_folder_outlined),
-        label: const Text('新建分组'),
+        label: Text(l10n.createCollection),
       ),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -222,12 +222,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       );
     }
     if (_groups.isEmpty) {
+      final l10n = AppLocalizations.of(context);
       return _scrollableBody(
         EmptyState(
           icon: Icons.star_outline,
-          title: '暂无收藏夹分组',
-          message: '新建一个分组，把常用的剪贴板内容整理在一起',
-          actionLabel: '新建分组',
+          title: l10n.collectionsEmptyTitle,
+          message: l10n.collectionsEmptyMessage,
+          actionLabel: l10n.createCollection,
           onAction: _isMutating ? null : _showCreateDialog,
         ),
       );
@@ -257,6 +258,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Widget _buildGroupTile(CollectionGroup group) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final l10n = AppLocalizations.of(context);
 
     return Card(
       margin: EdgeInsets.zero,
@@ -278,11 +280,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          '${group.itemCount} 条内容',
+          l10n.collectionItemCount(group.itemCount),
           style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
         ),
         trailing: PopupMenuButton<String>(
-          tooltip: '更多操作',
+          tooltip: l10n.moreActions,
           onSelected: (String value) {
             if (value == 'delete') {
               unawaited(_confirmDelete(group));
@@ -299,7 +301,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                     color: scheme.error,
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                  Text('删除分组', style: TextStyle(color: scheme.error)),
+                  Text(l10n.deleteCollection, style: TextStyle(color: scheme.error)),
                 ],
               ),
             ),
@@ -344,7 +346,7 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
   void _submit() {
     final name = widget.controller.text.trim();
     if (name.isEmpty) {
-      setState(() => _errorText = '请输入分组名称');
+      setState(() => _errorText = AppLocalizations.of(context).collectionNameRequired);
       return;
     }
     Navigator.of(context).pop(name);
@@ -352,14 +354,15 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return AlertDialog(
-      title: const Text('新建分组'),
+      title: Text(l10n.createCollection),
       content: TextField(
         controller: widget.controller,
         autofocus: true,
         maxLength: 100,
         decoration: InputDecoration(
-          labelText: '分组名称',
+          labelText: l10n.collectionNameLabel,
           errorText: _errorText,
         ),
         onSubmitted: (String value) => _submit(),
@@ -367,11 +370,11 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
       actions: <Widget>[
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(l10n.cancel),
         ),
         FilledButton(
           onPressed: _submit,
-          child: const Text('创建'),
+          child: Text(l10n.create),
         ),
       ],
     );

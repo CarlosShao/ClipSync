@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/device.dart';
 import '../theme/app_theme.dart';
 
@@ -40,8 +41,12 @@ class _DeviceCardState extends State<DeviceCard>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Semantics(
-      label: '设备：${widget.device.deviceName}，状态：${widget.device.isOnline ? '在线' : '离线'}',
+      label: l10n.deviceSemantics(
+        widget.device.deviceName,
+        widget.device.isOnline ? l10n.deviceOnline : l10n.deviceOffline,
+      ),
       button: true,
       child: GestureDetector(
         onTapDown: (_) => _controller.forward(),
@@ -106,7 +111,9 @@ class _DeviceCardState extends State<DeviceCard>
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                widget.device.isOnline ? '在线' : widget.device.platform,
+                                widget.device.isOnline
+                                    ? AppLocalizations.of(context).deviceOnline
+                                    : widget.device.platform,
                                 style: const TextStyle(
                                   fontSize: 13,
                                   color: AppTheme.textSecondary,
@@ -184,13 +191,14 @@ class _DeviceCardState extends State<DeviceCard>
   }
 
   String _getDeviceTypeLabel() {
+    final l10n = AppLocalizations.of(context);
     switch (widget.device.deviceType) {
       case 'desktop':
-        return '桌面端';
+        return l10n.platformDesktop;
       case 'mobile':
-        return '移动端';
+        return l10n.platformMobile;
       case 'tablet':
-        return '平板';
+        return l10n.platformTablet;
       default:
         return widget.device.deviceType;
     }

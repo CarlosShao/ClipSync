@@ -470,4 +470,399 @@ class AppLocalizationsZh extends AppLocalizations {
   String fileSavedTo(String path) {
     return '已保存到 $path';
   }
+
+  @override
+  String get sectionSecurity => '安全';
+
+  @override
+  String get biometricLock => '生物识别锁';
+
+  @override
+  String get biometricLockDesc => '冷启动与回到前台时需通过指纹/面容验证';
+
+  @override
+  String get biometricUnsupported => '设备不支持生物识别';
+
+  @override
+  String get biometricLockReason => '验证指纹或面容以开启生物识别锁';
+
+  @override
+  String get biometricLockFailed => '验证未通过，未开启生物识别锁';
+
+  @override
+  String get create => '创建';
+
+  @override
+  String get createCollection => '新建分组';
+
+  @override
+  String collectionCreated(String name) {
+    return '已创建「$name」';
+  }
+
+  @override
+  String collectionCreateFailed(String error) {
+    return '创建失败：$error';
+  }
+
+  @override
+  String get deleteCollection => '删除分组';
+
+  @override
+  String deleteCollectionConfirm(String name) {
+    return '确定删除「$name」吗？\n\n组内的剪贴板条目不会被删除，仍保留在剪贴板收藏中；该分组下的子分组会被一并删除。';
+  }
+
+  @override
+  String collectionDeleted(String name) {
+    return '已删除「$name」';
+  }
+
+  @override
+  String collectionDeleteFailed(String error) {
+    return '删除失败：$error';
+  }
+
+  @override
+  String get collectionsEmptyTitle => '暂无收藏夹分组';
+
+  @override
+  String get collectionsEmptyMessage => '新建一个分组，把常用的剪贴板内容整理在一起';
+
+  @override
+  String collectionItemCount(int count) {
+    return '$count 条内容';
+  }
+
+  @override
+  String get collectionNameRequired => '请输入分组名称';
+
+  @override
+  String get collectionNameLabel => '分组名称';
+
+  @override
+  String get noCopyableContent => '该条目暂无可复制的内容';
+
+  @override
+  String get copyFailed => '复制失败，请重试';
+
+  @override
+  String get collectionItemsEmptyTitle => '该分组暂无内容';
+
+  @override
+  String get collectionItemsEmptyMessage => '在剪贴板列表中将内容加入收藏后，会出现在这里';
+
+  @override
+  String get unknownSource => '未知来源';
+
+  @override
+  String get sessionsLoadFailed => '会话列表加载失败，请检查网络后重试';
+
+  @override
+  String get activeSessions => '活跃会话';
+
+  @override
+  String get activeSessionsDesc => '已登录本账号的设备会话，可远程吊销下线';
+
+  @override
+  String get refreshSessions => '刷新会话';
+
+  @override
+  String get noActiveSessions => '暂无活跃会话';
+
+  @override
+  String get noActiveSessionsDesc => '当前账号没有活跃的登录会话';
+
+  @override
+  String get revokeCurrentSession => '吊销当前会话';
+
+  @override
+  String get revokeSession => '吊销会话';
+
+  @override
+  String revokeCurrentSessionConfirm(String deviceName) {
+    return '「$deviceName」是当前设备。\n吊销后本机将立即退出登录，需要重新验证码登录。确定吊销吗？';
+  }
+
+  @override
+  String revokeSessionConfirm(String deviceName) {
+    return '确定吊销「$deviceName」的会话吗？吊销后该设备将被强制下线。';
+  }
+
+  @override
+  String get revoke => '吊销';
+
+  @override
+  String get revokeFailed => '吊销失败，请稍后重试';
+
+  @override
+  String get currentSessionRevoked => '当前会话已吊销，已退出登录';
+
+  @override
+  String sessionRevoked(String deviceName) {
+    return '已吊销「$deviceName」的会话';
+  }
+
+  @override
+  String get lastActivePrefix => '最近活跃 ';
+
+  @override
+  String get currentBadge => '当前';
+
+  @override
+  String get cancelSubscription => '取消订阅';
+
+  @override
+  String get cancelSubscriptionConfirm =>
+      '确定要取消订阅吗？取消后将在当前计费周期结束后自动降级为免费版，到期前订阅权益仍可正常使用。';
+
+  @override
+  String get subscriptionCancelled => '订阅已取消，将于当前计费周期结束后生效';
+
+  @override
+  String cancelSubscriptionFailed(String error) {
+    return '取消订阅失败：$error';
+  }
+
+  @override
+  String get resumeSubscription => '恢复订阅';
+
+  @override
+  String get resumeSubscriptionConfirm => '确定要恢复订阅吗？恢复后订阅将在当前周期结束后继续自动续订。';
+
+  @override
+  String get subscriptionResumed => '订阅已恢复，将继续自动续订';
+
+  @override
+  String resumeSubscriptionFailed(String error) {
+    return '恢复订阅失败：$error';
+  }
+
+  @override
+  String get thinkAgain => '再想想';
+
+  @override
+  String get statusCancelScheduled => '已取消（期末生效）';
+
+  @override
+  String get statusActive => '生效中';
+
+  @override
+  String get statusTrial => '试用中';
+
+  @override
+  String get availablePlans => '可选套餐';
+
+  @override
+  String get billingRecords => '账单记录';
+
+  @override
+  String get subscriptionStatusLabel => '订阅状态';
+
+  @override
+  String get expiryDate => '到期时间';
+
+  @override
+  String get trialEndDate => '试用期至';
+
+  @override
+  String subscriptionEndsOn(String date) {
+    return '订阅将于 $date 到期后终止，届时自动降级为免费版。';
+  }
+
+  @override
+  String get desktopPaymentHint => '移动端暂不支持支付。升级或购买套餐请在桌面端登录后，在「订阅管理」中完成支付。';
+
+  @override
+  String get currentPlanBadge => '当前套餐';
+
+  @override
+  String get payOnDesktop => '请在桌面端完成支付';
+
+  @override
+  String get noInvoices => '暂无账单记录';
+
+  @override
+  String get renderResultTitle => '渲染结果';
+
+  @override
+  String get close => '关闭';
+
+  @override
+  String get renderResultCopied => '已复制渲染结果到剪贴板';
+
+  @override
+  String get copyAll => '复制全文';
+
+  @override
+  String get noTemplates => '暂无模板';
+
+  @override
+  String get noTemplatesDesc => '在桌面端保存剪贴板内容为模板后，会同步到这里';
+
+  @override
+  String variableCount(int count) {
+    return '$count 个变量';
+  }
+
+  @override
+  String get emptyTemplateContent => '（模板内容为空）';
+
+  @override
+  String get useTemplate => '使用';
+
+  @override
+  String get fillVariableTitle => '填写变量';
+
+  @override
+  String variableProgress(int step, int total) {
+    return '第 $step / $total 个变量';
+  }
+
+  @override
+  String variableInputHint(String name) {
+    return '请输入 $name 的值';
+  }
+
+  @override
+  String get done => '完成';
+
+  @override
+  String get nextItem => '下一项';
+
+  @override
+  String get permissionGuideTitle => '权限与保活引导';
+
+  @override
+  String get permissionGuideIntro => '为了让「电脑复制 → 手机秒到」持续生效，建议完成以下 3 步设置：';
+
+  @override
+  String get finishAndStart => '完成，开始使用';
+
+  @override
+  String get stepNotifTitle => '1. 通知权限';
+
+  @override
+  String get stepNotifDesc => '接收「剪贴板已更新」即时通知（Android 13+ 需授权）。';
+
+  @override
+  String get statusOn => '已开启';
+
+  @override
+  String get statusOff => '未开启';
+
+  @override
+  String get statusExempted => '已豁免';
+
+  @override
+  String get statusNotExempted => '未豁免';
+
+  @override
+  String get requestNotifPermission => '申请通知权限';
+
+  @override
+  String get notifPermissionGranted => '通知权限已开启';
+
+  @override
+  String get notifPermissionDenied => '通知权限未授予，可在系统设置中手动开启';
+
+  @override
+  String get stepBatteryTitle => '2. 电池优化豁免';
+
+  @override
+  String get stepBatteryDesc => '加入电池优化白名单，避免息屏后同步断连、通知延迟。';
+
+  @override
+  String get statusUndetected => '暂无法自动检测（需应用原生支持）';
+
+  @override
+  String get batteryTitle => '电池优化豁免';
+
+  @override
+  String get batteryManualGuide =>
+      '未能自动跳转，请手动设置：\n\n系统设置 → 应用管理 → ClipSync → 电池\n→ 选择「不受限制 / 允许后台活动」\n\n部分机型路径为：设置 → 电池 → 更多电池设置 → 应用休眠。';
+
+  @override
+  String get jumping => '跳转中…';
+
+  @override
+  String get gotoBatterySettings => '前往电池优化设置';
+
+  @override
+  String get stepAutoStartTitle => '3. 自启动设置';
+
+  @override
+  String get stepAutoStartDesc => '允许 ClipSync 自启动与后台运行，开机后自动恢复同步。';
+
+  @override
+  String get autoStartTitle => '自启动设置';
+
+  @override
+  String get autoStartGuide =>
+      '不同厂商路径示例：\n\n· 小米 MIUI：安全中心 → 应用管理 → 权限 → 自启动管理 → 允许 ClipSync\n· 华为 EMUI/HarmonyOS：设置 → 应用 → 应用启动管理 → ClipSync → 手动管理（允许自启动/关联启动/后台活动）\n· OPPO ColorOS：手机管家 → 权限隐私 → 自启动管理 → 允许 ClipSync\n· vivo OriginOS：i管家 → 应用管理 → 权限管理 → 自启动 → 允许 ClipSync';
+
+  @override
+  String get autoStartStatusHint => '按厂商规则各异，建议手动确认';
+
+  @override
+  String get gotIt => '知道了';
+
+  @override
+  String get gotoAutoStartSettings => '前往自启动设置';
+
+  @override
+  String get unknown => '未知';
+
+  @override
+  String get saveToClipboard => '存入剪贴板';
+
+  @override
+  String get saveToClipboardDesc => '内容将上传到你的 ClipSync 账号，所有已登录设备可见。';
+
+  @override
+  String get nothingToSave => '没有可存入的内容';
+
+  @override
+  String get saving => '存入中…';
+
+  @override
+  String saveInFailed(String error) {
+    return '存入失败：$error';
+  }
+
+  @override
+  String get saveInFailedRetry => '存入失败，请稍后重试';
+
+  @override
+  String savedInCount(int count) {
+    return '已存入 $count 条剪贴板内容';
+  }
+
+  @override
+  String imageCount(int count) {
+    return '图片（$count 张）';
+  }
+
+  @override
+  String deviceSemantics(String name, String status) {
+    return '设备：$name，状态：$status';
+  }
+
+  @override
+  String get deviceOnline => '在线';
+
+  @override
+  String get deviceOffline => '离线';
+
+  @override
+  String get platformDesktop => '桌面端';
+
+  @override
+  String get platformMobile => '移动端';
+
+  @override
+  String get platformTablet => '平板';
+
+  @override
+  String get loadFailedTitle => '加载失败';
 }

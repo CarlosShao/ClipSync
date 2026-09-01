@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../screens/clipboard/clipboard_screen.dart';
 import '../screens/home_screen.dart';
@@ -285,35 +286,36 @@ class _SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(
+          children: [
+            const Icon(
               Icons.content_paste,
               size: 64,
               color: Color(0xFF6C5CE7),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Text(
-              'ClipSync',
-              style: TextStyle(
+              l10n.appTitle,
+              style: const TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF2D3436),
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
-              '跨设备剪贴板同步',
-              style: TextStyle(
+              l10n.loginSubtitle,
+              style: const TextStyle(
                 fontSize: 14,
                 color: Color(0xFF636E72),
               ),
             ),
-            SizedBox(height: 32),
-            CircularProgressIndicator(color: Color(0xFF6C5CE7)),
+            const SizedBox(height: 32),
+            const CircularProgressIndicator(color: Color(0xFF6C5CE7)),
           ],
         ),
       ),

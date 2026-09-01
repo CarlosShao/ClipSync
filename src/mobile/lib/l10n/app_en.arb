@@ -234,5 +234,231 @@
     "placeholders": {
       "path": { "type": "String" }
     }
-  }
+  },
+
+  "sectionSecurity": "Security",
+
+  "biometricLock": "Biometric lock",
+  "biometricLockDesc": "Require fingerprint or face verification on cold start and app resume",
+  "biometricUnsupported": "Biometric authentication is not supported on this device",
+  "biometricLockReason": "Verify fingerprint or face to enable the biometric lock",
+  "biometricLockFailed": "Verification failed, biometric lock not enabled",
+
+  "create": "Create",
+  "createCollection": "New collection",
+  "collectionCreated": "Created \"{name}\"",
+  "@collectionCreated": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "collectionCreateFailed": "Create failed: {error}",
+  "@collectionCreateFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "deleteCollection": "Delete collection",
+  "deleteCollectionConfirm": "Delete \"{name}\"?\n\nClipboard items in this collection stay in clipboard favorites; sub-collections under it will be deleted as well.",
+  "@deleteCollectionConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "collectionDeleted": "Deleted \"{name}\"",
+  "@collectionDeleted": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "collectionDeleteFailed": "Delete failed: {error}",
+  "@collectionDeleteFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "collectionsEmptyTitle": "No collections yet",
+  "collectionsEmptyMessage": "Create a collection to organize your frequently used clipboard content",
+  "collectionItemCount": "{count} items",
+  "@collectionItemCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "collectionNameRequired": "Please enter a collection name",
+  "collectionNameLabel": "Collection name",
+
+  "noCopyableContent": "No copyable content in this item",
+  "copyFailed": "Copy failed, please retry",
+  "collectionItemsEmptyTitle": "No items in this collection",
+  "collectionItemsEmptyMessage": "Items added to favorites from the clipboard list will appear here",
+  "unknownSource": "Unknown source",
+
+  "sessionsLoadFailed": "Failed to load sessions, check your network and retry",
+  "activeSessions": "Active sessions",
+  "activeSessionsDesc": "Device sessions signed in to this account can be revoked remotely",
+  "refreshSessions": "Refresh sessions",
+  "noActiveSessions": "No active sessions",
+  "noActiveSessionsDesc": "The current account has no active sign-in sessions",
+  "revokeCurrentSession": "Revoke current session",
+  "revokeSession": "Revoke session",
+  "revokeCurrentSessionConfirm": "\"{deviceName}\" is the current device.\nRevoking signs this device out immediately and requires signing in with a verification code again. Revoke anyway?",
+  "@revokeCurrentSessionConfirm": {
+    "placeholders": {
+      "deviceName": { "type": "String" }
+    }
+  },
+  "revokeSessionConfirm": "Revoke the session of \"{deviceName}\"? That device will be signed out immediately.",
+  "@revokeSessionConfirm": {
+    "placeholders": {
+      "deviceName": { "type": "String" }
+    }
+  },
+  "revoke": "Revoke",
+  "revokeFailed": "Revoke failed, please try again later",
+  "currentSessionRevoked": "Current session revoked, signed out",
+  "sessionRevoked": "Session of \"{deviceName}\" revoked",
+  "@sessionRevoked": {
+    "placeholders": {
+      "deviceName": { "type": "String" }
+    }
+  },
+  "lastActivePrefix": "Last active ",
+  "currentBadge": "Current",
+
+  "cancelSubscription": "Cancel subscription",
+  "cancelSubscriptionConfirm": "Cancel your subscription? It will downgrade to the free plan after the current billing period ends, and benefits remain active until then.",
+  "subscriptionCancelled": "Subscription cancelled, effective at the end of the current billing period",
+  "cancelSubscriptionFailed": "Cancel subscription failed: {error}",
+  "@cancelSubscriptionFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "resumeSubscription": "Resume subscription",
+  "resumeSubscriptionConfirm": "Resume your subscription? Auto-renewal will continue after the current period ends.",
+  "subscriptionResumed": "Subscription resumed, auto-renewal will continue",
+  "resumeSubscriptionFailed": "Resume subscription failed: {error}",
+  "@resumeSubscriptionFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "thinkAgain": "Think again",
+  "statusCancelScheduled": "Cancelled (ends at period end)",
+  "statusActive": "Active",
+  "statusTrial": "Trial",
+  "availablePlans": "Available plans",
+  "billingRecords": "Billing records",
+  "subscriptionStatusLabel": "Subscription status",
+  "expiryDate": "Expiry date",
+  "trialEndDate": "Trial ends on",
+  "subscriptionEndsOn": "Your subscription ends on {date} and will automatically downgrade to the free plan.",
+  "@subscriptionEndsOn": {
+    "placeholders": {
+      "date": { "type": "String" }
+    }
+  },
+  "desktopPaymentHint": "Payment is not supported on mobile yet. To upgrade or purchase a plan, sign in on the desktop app and complete the payment in Subscription.",
+  "currentPlanBadge": "Current plan",
+  "payOnDesktop": "Pay on desktop",
+  "noInvoices": "No billing records",
+
+  "renderResultTitle": "Render result",
+  "close": "Close",
+  "renderResultCopied": "Rendered result copied to clipboard",
+  "copyAll": "Copy all",
+  "noTemplates": "No templates",
+  "noTemplatesDesc": "Templates saved from clipboard content on the desktop will sync here",
+  "variableCount": "{count} variables",
+  "@variableCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "emptyTemplateContent": "(Template content is empty)",
+  "useTemplate": "Use",
+  "fillVariableTitle": "Fill in variables",
+  "variableProgress": "Variable {step} / {total}",
+  "@variableProgress": {
+    "placeholders": {
+      "step": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "variableInputHint": "Enter a value for {name}",
+  "@variableInputHint": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "done": "Done",
+  "nextItem": "Next item",
+
+  "permissionGuideTitle": "Permissions and keep-alive guide",
+  "permissionGuideIntro": "To keep \"copy on computer, instantly on phone\" working, complete these 3 steps:",
+  "finishAndStart": "Done, start using",
+  "stepNotifTitle": "1. Notification permission",
+  "stepNotifDesc": "Receive instant \"clipboard updated\" notifications (authorization required on Android 13+).",
+  "statusOn": "On",
+  "statusOff": "Off",
+  "statusExempted": "Exempted",
+  "statusNotExempted": "Not exempted",
+  "requestNotifPermission": "Request notification permission",
+  "notifPermissionGranted": "Notification permission granted",
+  "notifPermissionDenied": "Notification permission not granted. Enable it manually in system settings.",
+  "stepBatteryTitle": "2. Battery optimization exemption",
+  "stepBatteryDesc": "Join the battery optimization whitelist to avoid sync disconnection and delayed notifications when the screen is off.",
+  "statusUndetected": "Cannot auto-detect (requires native support)",
+  "batteryTitle": "Battery optimization exemption",
+  "batteryManualGuide": "Auto navigation failed. Set it manually:\n\nSystem settings → App management → ClipSync → Battery\n→ Choose \"Unrestricted / Allow background activity\"\n\nOn some devices: Settings → Battery → More battery settings → App sleep.",
+  "jumping": "Opening…",
+  "gotoBatterySettings": "Go to battery optimization settings",
+  "stepAutoStartTitle": "3. Auto-start settings",
+  "stepAutoStartDesc": "Allow ClipSync to auto-start and run in the background, resuming sync after reboot.",
+  "autoStartTitle": "Auto-start settings",
+  "autoStartGuide": "Example paths by vendor:\n\n· Xiaomi MIUI: Security center → App management → Permissions → Auto-start management → Allow ClipSync\n· Huawei EMUI/HarmonyOS: Settings → Apps → App launch management → ClipSync → Manual management (allow auto-start, linked launch, background activity)\n· OPPO ColorOS: Phone Manager → Permission privacy → Auto-start management → Allow ClipSync\n· vivo OriginOS: i Manager → App management → Permission management → Auto-start → Allow ClipSync",
+  "autoStartStatusHint": "Varies by vendor, verify manually",
+  "gotIt": "Got it",
+  "gotoAutoStartSettings": "Go to auto-start settings",
+  "unknown": "Unknown",
+
+  "saveToClipboard": "Save to clipboard",
+  "saveToClipboardDesc": "Content will be uploaded to your ClipSync account and become visible on all signed-in devices.",
+  "nothingToSave": "Nothing to save",
+  "saving": "Saving…",
+  "saveInFailed": "Save failed: {error}",
+  "@saveInFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "saveInFailedRetry": "Save failed, please try again later",
+  "savedInCount": "Saved {count} clipboard items",
+  "@savedInCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "imageCount": "Images ({count})",
+  "@imageCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "deviceSemantics": "Device: {name}, status: {status}",
+  "@deviceSemantics": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "status": { "type": "String" }
+    }
+  },
+  "deviceOnline": "Online",
+  "deviceOffline": "Offline",
+  "platformDesktop": "Desktop",
+  "platformMobile": "Mobile",
+  "platformTablet": "Tablet",
+
+  "loadFailedTitle": "Load failed"
 }

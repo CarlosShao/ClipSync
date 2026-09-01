@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../router/app_router.dart';
 import '../../services/local_notification_service.dart';
 import '../../theme/app_theme.dart';
@@ -60,9 +61,12 @@ class _PermissionGuideScreenState extends State<PermissionGuideScreen> {
         .requestPermission();
     if (!mounted) return;
     setState(() => _notificationEnabled = granted);
+    final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(granted ? '通知权限已开启' : '通知权限未授予，可在系统设置中手动开启'),
+        content: Text(granted
+            ? l10n.notifPermissionGranted
+            : l10n.notifPermissionDenied),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -74,13 +78,8 @@ class _PermissionGuideScreenState extends State<PermissionGuideScreen> {
     if (!mounted) return;
     setState(() => _batteryJumping = false);
     if (!ok) {
-      _showManualGuide(
-        '电池优化豁免',
-        '未能自动跳转，请手动设置：\n\n'
-            '系统设置 → 应用管理 → ClipSync → 电池\n'
-            '→ 选择「不受限制 / 允许后台活动」\n\n'
-            '部分机型路径为：设置 → 电池 → 更多电池设置 → 应用休眠。',
-      );
+      final l10n = AppLocalizations.of(context);
+      _showManualGuide(l10n.batteryTitle, l10n.batteryManualGuide);
       return;
     }
     // 从系统设置返回后重查状态
@@ -97,6 +96,7 @@ class _PermissionGuideScreenState extends State<PermissionGuideScreen> {
   }
 
   void _showManualGuide(String title, String body) {
+    final l10n = AppLocalizations.of(context);
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -105,7 +105,7 @@ class _PermissionGuideScreenState extends State<PermissionGuideScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('知道了'),
+            child: Text(l10n.gotIt),
           ),
         ],
       ),
@@ -114,14 +114,8 @@ class _PermissionGuideScreenState extends State<PermissionGuideScreen> {
 
   /// 国产 ROM 自启动设置通用指引（跳转失败时展示）
   void _showAutoStartGuide() {
-    _showManualGuide(
-      '自启动设置',
-      '不同厂商路径示例：\n\n'
-          '· 小米 MIUI：安全中心 → 应用管理 → 权限 → 自启动管理 → 允许 ClipSync\n'
-          '· 华为 EMUI/HarmonyOS：设置 → 应用 → 应用启动管理 → ClipSync → 手动管理（允许自启动/关联启动/后台活动）\n'
-          '· OPPO ColorOS：手机管家 → 权限隐私 → 自启动管理 → 允许 ClipSync\n'
-          '· vivo OriginOS：i管家 → 应用管理 → 权限管理 → 自启动 → 允许 ClipSync',
-    );
+    final l10n = AppLocalizations.of(context);
+    _showManualGuide(l10n.autoStartTitle, l10n.autoStartGuide);
   }
 
   // ---------------------------------------------------------------------------
@@ -148,16 +142,17 @@ class _PermissionGuideScreenState extends State<PermissionGuideScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('权限与保活引导'),
+        title: Text(l10n.permissionGuideTitle),
         automaticallyImplyLeading: false,
       ),
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
           Text(
-            '为了让「电脑复制 → 手机秒到」持续生效，建议完成以下 3 步设置：',
+            l10n.permissionGuideIntro,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -171,12 +166,12 @@ class _PermissionGuideScreenState extends State<PermissionGuideScreen> {
           const SizedBox(height: AppSpacing.xl),
           FilledButton(
             onPressed: _finish,
-            child: const Text('完成，开始使用'),
+            child: Text(l10n.finishAndStart),
           ),
           const SizedBox(height: AppSpacing.sm),
           TextButton(
             onPressed: _finish,
-            child: const Text('跳过'),
+            child: Text(l10n.skip),
           ),
           const SizedBox(height: AppSpacing.lg),
         ],
@@ -185,47 +180,50 @@ class _PermissionGuideScreenState extends State<PermissionGuideScreen> {
   }
 
   Widget _buildNotificationCard(ThemeData theme) {
+    final l10n = AppLocalizations.of(context);
     return _GuideCard(
       icon: Icons.notifications_active_rounded,
-      title: '1. 通知权限',
-      description: '接收「剪贴板已更新」即时通知（Android 13+ 需授权）。',
-      statusText: _statusLabel(_notificationEnabled, '已开启', '未开启'),
+      title: l10n.stepNotifTitle,
+      description: l10n.stepNotifDesc,
+      statusText: _statusLabel(_notificationEnabled, l10n.statusOn, l10n.statusOff),
       statusColor: _statusColor(_notificationEnabled),
-      actionLabel: '申请通知权限',
+      actionLabel: l10n.requestNotifPermission,
       onAction: _requestNotificationPermission,
     );
   }
 
   Widget _buildBatteryCard(ThemeData theme) {
+    final l10n = AppLocalizations.of(context);
     return _GuideCard(
       icon: Icons.battery_saver_rounded,
-      title: '2. 电池优化豁免',
-      description: '加入电池优化白名单，避免息屏后同步断连、通知延迟。',
+      title: l10n.stepBatteryTitle,
+      description: l10n.stepBatteryDesc,
       statusText: _batteryIgnored == null
-          ? '暂无法自动检测（需应用原生支持）'
-          : _statusLabel(_batteryIgnored, '已豁免', '未豁免'),
+          ? l10n.statusUndetected
+          : _statusLabel(_batteryIgnored, l10n.statusExempted, l10n.statusNotExempted),
       statusColor: _batteryIgnored == null
           ? theme.colorScheme.onSurfaceVariant
           : _statusColor(_batteryIgnored),
-      actionLabel: _batteryJumping ? '跳转中…' : '前往电池优化设置',
+      actionLabel: _batteryJumping ? l10n.jumping : l10n.gotoBatterySettings,
       onAction: _batteryJumping ? null : _openBatteryOptimization,
     );
   }
 
   Widget _buildAutoStartCard(ThemeData theme) {
+    final l10n = AppLocalizations.of(context);
     return _GuideCard(
       icon: Icons.restart_alt_rounded,
-      title: '3. 自启动设置',
-      description: '允许 ClipSync 自启动与后台运行，开机后自动恢复同步。',
-      statusText: '按厂商规则各异，建议手动确认',
+      title: l10n.stepAutoStartTitle,
+      description: l10n.stepAutoStartDesc,
+      statusText: l10n.autoStartStatusHint,
       statusColor: theme.colorScheme.onSurfaceVariant,
-      actionLabel: '前往自启动设置',
+      actionLabel: l10n.gotoAutoStartSettings,
       onAction: _openAutoStartSettings,
     );
   }
 
   String _statusLabel(bool? value, String yes, String no) {
-    if (value == null) return '未知';
+    if (value == null) return AppLocalizations.of(context).unknown;
     return value ? yes : no;
   }
 

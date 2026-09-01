@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/clipboard_provider.dart';
 import '../../services/api_service.dart';
@@ -73,6 +74,7 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
   Future<void> _saveToClipboard() async {
     if (_uploading) return;
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     setState(() => _uploading = true);
 
     var successCount = 0;
@@ -98,7 +100,10 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
       if (mounted) {
         setState(() => _uploading = false);
         messenger.showSnackBar(
-          SnackBar(content: Text('存入失败：$e'), duration: const Duration(seconds: 3)),
+          SnackBar(
+            content: Text(l10n.saveInFailed(e.toString())),
+            duration: const Duration(seconds: 3),
+          ),
         );
       }
       return;
@@ -112,13 +117,16 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
       unawaited(context.read<ClipboardProvider>().refresh());
       messenger.showSnackBar(
         SnackBar(
-          content: Text('已存入 $successCount 条剪贴板内容'),
+          content: Text(l10n.savedInCount(successCount)),
           duration: const Duration(seconds: 2),
         ),
       );
     } else {
       messenger.showSnackBar(
-        const SnackBar(content: Text('存入失败，请稍后重试'), duration: Duration(seconds: 3)),
+        SnackBar(
+          content: Text(l10n.saveInFailedRetry),
+          duration: const Duration(seconds: 3),
+        ),
       );
     }
     Navigator.of(context).pop();
@@ -181,8 +189,9 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('存入剪贴板')),
+      appBar: AppBar(title: Text(l10n.saveToClipboard)),
       body: widget.payload.isEmpty
           ? Center(
               child: Column(
@@ -190,7 +199,7 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
                 children: [
                   Icon(Icons.share_outlined, size: 48, color: theme.colorScheme.onSurfaceVariant),
                   const SizedBox(height: AppSpacing.md),
-                  const Text('没有可存入的内容'),
+                  Text(l10n.nothingToSave),
                 ],
               ),
             )
@@ -202,7 +211,7 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
                   _buildImageSection(theme, widget.payload.imagePaths),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  '内容将上传到你的 ClipSync 账号，所有已登录设备可见。',
+                  l10n.saveToClipboardDesc,
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -225,7 +234,7 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.playlist_add_rounded),
-                      label: Text(_uploading ? '存入中…' : '存入剪贴板'),
+                      label: Text(_uploading ? l10n.saving : l10n.saveToClipboard),
                     ),
                   ),
                 ],
@@ -251,7 +260,7 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
-                  text.trim().startsWith('http') ? '链接' : '文本',
+                  text.trim().startsWith('http') ? AppLocalizations.of(context).typeLink : AppLocalizations.of(context).typeText,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -284,7 +293,7 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
                 Icon(Icons.image_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
-                  '图片（${paths.length} 张）',
+                  AppLocalizations.of(context).imageCount(paths.length),
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

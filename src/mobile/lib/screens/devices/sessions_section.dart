@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/ws_provider.dart';
 import '../../router/app_router.dart';
@@ -69,7 +70,7 @@ class _SessionsSectionState extends State<SessionsSection> {
       debugPrint('[SessionsSection] load sessions failed: $e');
       if (!mounted) return;
       setState(() {
-        _errorMessage = '会话列表加载失败，请检查网络后重试';
+        _errorMessage = AppLocalizations.of(context).sessionsLoadFailed;
         _phase = _SessionsPhase.error;
       });
     }
@@ -78,16 +79,17 @@ class _SessionsSectionState extends State<SessionsSection> {
   @override
   Widget build(BuildContext context) {
     final TextTheme textTheme = Theme.of(context).textTheme;
+    final AppLocalizations l10n = AppLocalizations.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         SectionHeader(
-          title: '活跃会话',
-          subtitle: '已登录本账号的设备会话，可远程吊销下线',
+          title: l10n.activeSessions,
+          subtitle: l10n.activeSessionsDesc,
           trailing: IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: '刷新会话',
+            tooltip: l10n.refreshSessions,
             onPressed:
                 _phase == _SessionsPhase.loading ? null : _loadSessions,
           ),
@@ -101,20 +103,24 @@ class _SessionsSectionState extends State<SessionsSection> {
             onRetry: _loadSessions,
           )
         else if (_sessions.isEmpty)
-          const EmptyState(
+          EmptyState(
             icon: Icons.devices_other,
-            title: '暂无活跃会话',
-            message: '当前账号没有活跃的登录会话',
+            title: l10n.noActiveSessions,
+            message: l10n.noActiveSessionsDesc,
           )
         else
           for (final ActiveSession session in _sessions)
-            _buildSessionCard(session, textTheme),
+            _buildSessionCard(session, textTheme, l10n),
       ],
     );
   }
 
   /// 单条会话卡片：平台图标 + 设备名（含当前标记）+ 最近活跃信息 + 吊销操作。
-  Widget _buildSessionCard(ActiveSession session, TextTheme textTheme) {
+  Widget _buildSessionCard(
+    ActiveSession session,
+    TextTheme textTheme,
+    AppLocalizations l10n,
+  ) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool revoking = _revokingId == session.id;
 
@@ -159,7 +165,7 @@ class _SessionsSectionState extends State<SessionsSection> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _sessionSubtitle(session),
+                  _sessionSubtitle(session, l10n),
                   style: textTheme.bodySmall
                       ?.copyWith(color: scheme.onSurfaceVariant),
                   maxLines: 1,
@@ -189,7 +195,9 @@ class _SessionsSectionState extends State<SessionsSection> {
     }
     return IconButton(
       icon: const Icon(Icons.logout),
-      tooltip: session.isCurrent ? '吊销当前会话' : '吊销会话',
+      tooltip: session.isCurrent
+          ? AppLocalizations.of(context).revokeCurrentSession
+          : AppLocalizations.of(context).revokeSession,
       color: Theme.of(context).colorScheme.error,
       onPressed: () => _confirmRevoke(session),
     );
@@ -197,28 +205,29 @@ class _SessionsSectionState extends State<SessionsSection> {
 
   /// 吊销确认对话框：当前会话给出「将退出登录」的强提示。
   Future<void> _confirmRevoke(ActiveSession session) async {
+    final AppLocalizations l10n = AppLocalizations.of(context);
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(session.isCurrent ? '吊销当前会话' : '吊销会话'),
+        title: Text(session.isCurrent
+            ? l10n.revokeCurrentSession
+            : l10n.revokeSession),
         content: Text(
           session.isCurrent
-              ? '「${session.deviceName}」是当前设备。\n'
-                  '吊销后本机将立即退出登录，需要重新验证码登录。确定吊销吗？'
-              : '确定吊销「${session.deviceName}」的会话吗？'
-                  '吊销后该设备将被强制下线。',
+              ? l10n.revokeCurrentSessionConfirm(session.deviceName)
+              : l10n.revokeSessionConfirm(session.deviceName),
         ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(
               foregroundColor: Theme.of(dialogContext).colorScheme.error,
             ),
-            child: const Text('吊销'),
+            child: Text(l10n.revoke),
           ),
         ],
       ),
@@ -235,6 +244,7 @@ class _SessionsSectionState extends State<SessionsSection> {
   ///   跳回登录页，效果与设置页退出登录一致。
   Future<void> _revoke(ActiveSession session) async {
     if (!mounted) return;
+    final AppLocalizations l10n = AppLocalizations.of(context);
     setState(() => _revokingId = session.id);
 
     try {
@@ -245,7 +255,7 @@ class _SessionsSectionState extends State<SessionsSection> {
       setState(() => _revokingId = null);
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('吊销失败，请稍后重试')));
+        ..showSnackBar(SnackBar(content: Text(l10n.revokeFailed)));
       return;
     }
 
@@ -262,7 +272,7 @@ class _SessionsSectionState extends State<SessionsSection> {
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(content: Text('当前会话已吊销，已退出登录')),
+          SnackBar(content: Text(l10n.currentSessionRevoked)),
         );
       return;
     }
@@ -277,14 +287,14 @@ class _SessionsSectionState extends State<SessionsSection> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text('已吊销「${session.deviceName}」的会话')),
+        SnackBar(content: Text(l10n.sessionRevoked(session.deviceName))),
       );
   }
 
   /// 副标题：最近活跃时间（相对时间，过旧回退日期）+ 来源 IP。
-  static String _sessionSubtitle(ActiveSession session) {
-    final StringBuffer buffer = StringBuffer('最近活跃 ');
-    buffer.write(_relativeTime(session.lastActiveAt));
+  static String _sessionSubtitle(ActiveSession session, AppLocalizations l10n) {
+    final StringBuffer buffer = StringBuffer(l10n.lastActivePrefix);
+    buffer.write(_relativeTime(session.lastActiveAt, l10n));
     if (session.ipAddress.isNotEmpty) {
       buffer.write(' · ${session.ipAddress}');
     }
@@ -292,28 +302,26 @@ class _SessionsSectionState extends State<SessionsSection> {
   }
 
   /// 相对时间文案；服务端当前以 created_at 充当最近活跃时间。
-  static String _relativeTime(DateTime? time) {
+  static String _relativeTime(DateTime? time, AppLocalizations l10n) {
     if (time == null) {
-      return '未知';
+      return l10n.unknown;
     }
     final Duration elapsed = DateTime.now().difference(time);
     // 服务器时钟略超前时差值为负，按「刚刚」处理
     if (elapsed < const Duration(minutes: 1)) {
-      return '刚刚';
+      return l10n.relJustNow;
     }
     if (elapsed < const Duration(hours: 1)) {
-      return '${elapsed.inMinutes} 分钟前';
+      return l10n.relMinutesAgo(elapsed.inMinutes);
     }
     if (elapsed < const Duration(hours: 24)) {
-      return '${elapsed.inHours} 小时前';
+      return l10n.relHoursAgo(elapsed.inHours);
     }
     if (elapsed < const Duration(days: 30)) {
-      return '${elapsed.inDays} 天前';
+      return l10n.relDaysAgo(elapsed.inDays);
     }
     final DateTime local = time.toLocal();
-    final String month = local.month.toString().padLeft(2, '0');
-    final String day = local.day.toString().padLeft(2, '0');
-    return '${local.year}-$month-$day';
+    return l10n.relDateYMD(local.year, local.month, local.day);
   }
 
   /// 平台 → 图标（后端 platform 取 device_type/platform，见 sessions.js:40）。
@@ -359,7 +367,7 @@ class _CurrentSessionBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Text(
-        '当前',
+        AppLocalizations.of(context).currentBadge,
         style: textTheme.labelSmall?.copyWith(color: scheme.onPrimaryContainer),
       ),
     );

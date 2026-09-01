@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../providers/clipboard_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/collections_api_service.dart';
@@ -90,6 +91,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     // initState 阶段捕获的引用与同步快照，避免跨 async gap 使用 context
     final provider = context.read<ClipboardProvider>();
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final inProviderCache = provider.items.any((item) => item.id == entry.id);
 
     setState(() => _copyingId = entry.id);
@@ -98,17 +100,17 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
       if (text.isEmpty) {
         messenger
           ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('该条目暂无可复制的内容')));
+          ..showSnackBar(SnackBar(content: Text(l10n.noCopyableContent)));
         return;
       }
       await Clipboard.setData(ClipboardData(text: text));
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
+        ..showSnackBar(SnackBar(content: Text(l10n.copied)));
     } on Exception catch (_) {
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('复制失败，请重试')));
+        ..showSnackBar(SnackBar(content: Text(l10n.copyFailed)));
     } finally {
       if (mounted) {
         setState(() => _copyingId = null);
@@ -173,11 +175,12 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
       );
     }
     if (_items.isEmpty) {
+      final l10n = AppLocalizations.of(context);
       return _scrollableBody(
-        const EmptyState(
+        EmptyState(
           icon: Icons.folder_open,
-          title: '该分组暂无内容',
-          message: '在剪贴板列表中将内容加入收藏后，会出现在这里',
+          title: l10n.collectionItemsEmptyTitle,
+          message: l10n.collectionItemsEmptyMessage,
         ),
       );
     }
@@ -207,6 +210,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    final l10n = AppLocalizations.of(context);
     final isCopying = _copyingId == entry.id;
 
     return Card(
@@ -227,7 +231,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Text(
-                      entry.contentPreview.isEmpty ? '（空内容）' : entry.contentPreview,
+                      entry.contentPreview.isEmpty ? l10n.placeholderEmpty : entry.contentPreview,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: textTheme.bodyMedium,
@@ -294,10 +298,11 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
 
   /// 副文本：来源设备名 + 相对时间。
   String _buildMetaText(FavoriteEntry entry) {
+    final l10n = AppLocalizations.of(context);
     final device = entry.deviceName;
-    final time = entry.createdAt != null ? _formatRelativeTime(entry.createdAt!) : '';
+    final time = entry.createdAt != null ? _formatRelativeTime(entry.createdAt!, l10n) : '';
     if (device == null || device.isEmpty) {
-      return time.isEmpty ? '未知来源' : time;
+      return time.isEmpty ? l10n.unknownSource : time;
     }
     if (time.isEmpty) {
       return device;
@@ -357,21 +362,21 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   }
 
   /// 相对时间：刚刚 / N 分钟前 / N 小时前 / N 天前 / M 月 D 日（对齐 ClipboardCard）。
-  String _formatRelativeTime(DateTime time) {
+  String _formatRelativeTime(DateTime time, AppLocalizations l10n) {
     final Duration diff = DateTime.now().difference(time);
     if (diff.inMinutes < 1) {
-      return '刚刚';
+      return l10n.relJustNow;
     }
     if (diff.inMinutes < 60) {
-      return '${diff.inMinutes} 分钟前';
+      return l10n.relMinutesAgo(diff.inMinutes);
     }
     if (diff.inHours < 24) {
-      return '${diff.inHours} 小时前';
+      return l10n.relHoursAgo(diff.inHours);
     }
     if (diff.inDays < 7) {
-      return '${diff.inDays} 天前';
+      return l10n.relDaysAgo(diff.inDays);
     }
-    return '${time.month} 月 ${time.day} 日';
+    return l10n.relDateMD(time.month, time.day);
   }
 
   /// 错误文案友好化：去掉异常前缀（'Exception: xxx' → 'xxx'）。

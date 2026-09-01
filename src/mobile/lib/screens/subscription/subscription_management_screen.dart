@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/subscription_plan.dart';
 import '../../models/user_subscription.dart';
 import '../../providers/auth_provider.dart';
@@ -127,11 +128,11 @@ class _SubscriptionManagementScreenState
 
   /// 取消订阅：确认对话框 → POST /api/subscriptions/cancel → 刷新当前订阅。
   Future<void> _cancelSubscription() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _confirmAction(
-      title: '取消订阅',
-      message: '确定要取消订阅吗？取消后将在当前计费周期结束后自动降级为免费版，'
-          '到期前订阅权益仍可正常使用。',
-      confirmLabel: '取消订阅',
+      title: l10n.cancelSubscription,
+      message: l10n.cancelSubscriptionConfirm,
+      confirmLabel: l10n.cancelSubscription,
     );
     if (confirmed != true || !mounted) {
       return;
@@ -148,14 +149,14 @@ class _SubscriptionManagementScreenState
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('订阅已取消，将于当前计费周期结束后生效')),
+        SnackBar(content: Text(l10n.subscriptionCancelled)),
       );
     } on Exception catch (e) {
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('取消订阅失败：$e')),
+        SnackBar(content: Text(l10n.cancelSubscriptionFailed(e.toString()))),
       );
     } finally {
       if (mounted) {
@@ -168,10 +169,11 @@ class _SubscriptionManagementScreenState
 
   /// 恢复订阅：确认对话框 → POST /api/subscriptions/resume → 刷新当前订阅。
   Future<void> _resumeSubscription() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _confirmAction(
-      title: '恢复订阅',
-      message: '确定要恢复订阅吗？恢复后订阅将在当前周期结束后继续自动续订。',
-      confirmLabel: '恢复订阅',
+      title: l10n.resumeSubscription,
+      message: l10n.resumeSubscriptionConfirm,
+      confirmLabel: l10n.resumeSubscription,
     );
     if (confirmed != true || !mounted) {
       return;
@@ -188,14 +190,14 @@ class _SubscriptionManagementScreenState
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('订阅已恢复，将继续自动续订')),
+        SnackBar(content: Text(l10n.subscriptionResumed)),
       );
     } on Exception catch (e) {
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('恢复订阅失败：$e')),
+        SnackBar(content: Text(l10n.resumeSubscriptionFailed(e.toString()))),
       );
     } finally {
       if (mounted) {
@@ -213,6 +215,7 @@ class _SubscriptionManagementScreenState
     required String confirmLabel,
   }) {
     final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
     return showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
@@ -221,7 +224,7 @@ class _SubscriptionManagementScreenState
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('再想想'),
+            child: Text(l10n.thinkAgain),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
@@ -241,15 +244,15 @@ class _SubscriptionManagementScreenState
   // ---------------------------------------------------------------------------
 
   /// 订阅状态文案（仅在有活跃订阅时调用）。
-  String _statusLabelOf(UserSubscription subscription) {
+  String _statusLabelOf(UserSubscription subscription, AppLocalizations l10n) {
     if (subscription.cancelAtPeriodEnd) {
-      return '已取消（期末生效）';
+      return l10n.statusCancelScheduled;
     }
     switch (subscription.status) {
       case 'active':
-        return '生效中';
+        return l10n.statusActive;
       case 'trial':
-        return '试用中';
+        return l10n.statusTrial;
       default:
         return subscription.status;
     }
@@ -284,15 +287,16 @@ class _SubscriptionManagementScreenState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('订阅管理'),
+        title: Text(l10n.subscriptionManagement),
         centerTitle: true,
         actions: <Widget>[
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: '刷新',
+            tooltip: l10n.refresh,
             onPressed: _isLoading ? null : _load,
           ),
         ],
@@ -318,9 +322,9 @@ class _SubscriptionManagementScreenState
                       _buildCurrentSubscriptionCard(scheme),
                       const SizedBox(height: AppSpacing.lg),
                       _buildDesktopPaymentHint(scheme),
-                      const SectionHeader(title: '可选套餐'),
+                      SectionHeader(title: l10n.availablePlans),
                       ..._plans.map(_buildPlanCard),
-                      const SectionHeader(title: '账单记录'),
+                      SectionHeader(title: l10n.billingRecords),
                       ..._buildInvoiceCards(scheme),
                     ],
                   ),
@@ -333,6 +337,7 @@ class _SubscriptionManagementScreenState
   // ---------------------------------------------------------------------------
 
   Widget _buildCurrentSubscriptionCard(ColorScheme scheme) {
+    final l10n = AppLocalizations.of(context);
     final plan = _current?.plan;
     final subscription = _current?.subscription;
 
@@ -376,25 +381,26 @@ class _SubscriptionManagementScreenState
           ),
           const SizedBox(height: AppSpacing.md),
           _buildDetailRow(
-            '订阅状态',
-            subscription == null ? '—' : _statusLabelOf(subscription),
+            l10n.subscriptionStatusLabel,
+            subscription == null ? '—' : _statusLabelOf(subscription, l10n),
           ),
           _buildDetailRow(
-            '到期时间',
+            l10n.expiryDate,
             _formatDate(subscription?.currentPeriodEnd),
           ),
           if (subscription?.status == 'trial' &&
               subscription?.trialEnd != null)
             _buildDetailRow(
-              '试用期至',
+              l10n.trialEndDate,
               _formatDate(subscription?.trialEnd),
             ),
           if (subscription?.cancelAtPeriodEnd ?? false)
             Padding(
               padding: const EdgeInsets.only(top: AppSpacing.xs),
               child: Text(
-                '订阅将于 ${_formatDate(subscription?.currentPeriodEnd)} 到期后终止，'
-                '届时自动降级为免费版。',
+                l10n.subscriptionEndsOn(
+                  _formatDate(subscription?.currentPeriodEnd),
+                ),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -417,7 +423,7 @@ class _SubscriptionManagementScreenState
                   : subscription.cancelAtPeriodEnd
                       ? FilledButton.tonal(
                           onPressed: _resumeSubscription,
-                          child: const Text('恢复订阅'),
+                          child: Text(l10n.resumeSubscription),
                         )
                       : OutlinedButton(
                           onPressed: _cancelSubscription,
@@ -425,7 +431,7 @@ class _SubscriptionManagementScreenState
                             foregroundColor: scheme.error,
                             side: BorderSide(color: scheme.error),
                           ),
-                          child: const Text('取消订阅'),
+                          child: Text(l10n.cancelSubscription),
                         ),
             ),
           ],
@@ -448,7 +454,7 @@ class _SubscriptionManagementScreenState
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Text(
-        _statusLabelOf(subscription),
+        _statusLabelOf(subscription, AppLocalizations.of(context)),
         style: Theme.of(context)
             .textTheme
             .labelSmall
@@ -500,8 +506,7 @@ class _SubscriptionManagementScreenState
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
-              '移动端暂不支持支付。升级或购买套餐请在桌面端登录后，'
-              '在「订阅管理」中完成支付。',
+              AppLocalizations.of(context).desktopPaymentHint,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
@@ -515,6 +520,7 @@ class _SubscriptionManagementScreenState
   Widget _buildPlanCard(SubscriptionPlan plan) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final l10n = AppLocalizations.of(context);
     final bool isCurrent = plan.id == _currentPlanId;
 
     return Padding(
@@ -551,7 +557,7 @@ class _SubscriptionManagementScreenState
                       Padding(
                         padding: const EdgeInsets.only(top: AppSpacing.xs),
                         child: Text(
-                          '当前套餐',
+                          l10n.currentPlanBadge,
                           style: textTheme.labelSmall
                               ?.copyWith(color: scheme.primary),
                         ),
@@ -593,7 +599,7 @@ class _SubscriptionManagementScreenState
                   ),
                   const SizedBox(width: AppSpacing.xs),
                   Text(
-                    '请在桌面端完成支付',
+                    l10n.payOnDesktop,
                     style: textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -618,7 +624,7 @@ class _SubscriptionManagementScreenState
           padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
           child: Center(
             child: Text(
-              '暂无账单记录',
+              AppLocalizations.of(context).noInvoices,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),

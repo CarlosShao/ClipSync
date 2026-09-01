@@ -488,4 +488,419 @@ class AppLocalizationsEn extends AppLocalizations {
   String fileSavedTo(String path) {
     return 'Saved to $path';
   }
+
+  @override
+  String get sectionSecurity => 'Security';
+
+  @override
+  String get biometricLock => 'Biometric lock';
+
+  @override
+  String get biometricLockDesc =>
+      'Require fingerprint or face verification on cold start and app resume';
+
+  @override
+  String get biometricUnsupported =>
+      'Biometric authentication is not supported on this device';
+
+  @override
+  String get biometricLockReason =>
+      'Verify fingerprint or face to enable the biometric lock';
+
+  @override
+  String get biometricLockFailed =>
+      'Verification failed, biometric lock not enabled';
+
+  @override
+  String get create => 'Create';
+
+  @override
+  String get createCollection => 'New collection';
+
+  @override
+  String collectionCreated(String name) {
+    return 'Created \"$name\"';
+  }
+
+  @override
+  String collectionCreateFailed(String error) {
+    return 'Create failed: $error';
+  }
+
+  @override
+  String get deleteCollection => 'Delete collection';
+
+  @override
+  String deleteCollectionConfirm(String name) {
+    return 'Delete \"$name\"?\n\nClipboard items in this collection stay in clipboard favorites; sub-collections under it will be deleted as well.';
+  }
+
+  @override
+  String collectionDeleted(String name) {
+    return 'Deleted \"$name\"';
+  }
+
+  @override
+  String collectionDeleteFailed(String error) {
+    return 'Delete failed: $error';
+  }
+
+  @override
+  String get collectionsEmptyTitle => 'No collections yet';
+
+  @override
+  String get collectionsEmptyMessage =>
+      'Create a collection to organize your frequently used clipboard content';
+
+  @override
+  String collectionItemCount(int count) {
+    return '$count items';
+  }
+
+  @override
+  String get collectionNameRequired => 'Please enter a collection name';
+
+  @override
+  String get collectionNameLabel => 'Collection name';
+
+  @override
+  String get noCopyableContent => 'No copyable content in this item';
+
+  @override
+  String get copyFailed => 'Copy failed, please retry';
+
+  @override
+  String get collectionItemsEmptyTitle => 'No items in this collection';
+
+  @override
+  String get collectionItemsEmptyMessage =>
+      'Items added to favorites from the clipboard list will appear here';
+
+  @override
+  String get unknownSource => 'Unknown source';
+
+  @override
+  String get sessionsLoadFailed =>
+      'Failed to load sessions, check your network and retry';
+
+  @override
+  String get activeSessions => 'Active sessions';
+
+  @override
+  String get activeSessionsDesc =>
+      'Device sessions signed in to this account can be revoked remotely';
+
+  @override
+  String get refreshSessions => 'Refresh sessions';
+
+  @override
+  String get noActiveSessions => 'No active sessions';
+
+  @override
+  String get noActiveSessionsDesc =>
+      'The current account has no active sign-in sessions';
+
+  @override
+  String get revokeCurrentSession => 'Revoke current session';
+
+  @override
+  String get revokeSession => 'Revoke session';
+
+  @override
+  String revokeCurrentSessionConfirm(String deviceName) {
+    return '\"$deviceName\" is the current device.\nRevoking signs this device out immediately and requires signing in with a verification code again. Revoke anyway?';
+  }
+
+  @override
+  String revokeSessionConfirm(String deviceName) {
+    return 'Revoke the session of \"$deviceName\"? That device will be signed out immediately.';
+  }
+
+  @override
+  String get revoke => 'Revoke';
+
+  @override
+  String get revokeFailed => 'Revoke failed, please try again later';
+
+  @override
+  String get currentSessionRevoked => 'Current session revoked, signed out';
+
+  @override
+  String sessionRevoked(String deviceName) {
+    return 'Session of \"$deviceName\" revoked';
+  }
+
+  @override
+  String get lastActivePrefix => 'Last active ';
+
+  @override
+  String get currentBadge => 'Current';
+
+  @override
+  String get cancelSubscription => 'Cancel subscription';
+
+  @override
+  String get cancelSubscriptionConfirm =>
+      'Cancel your subscription? It will downgrade to the free plan after the current billing period ends, and benefits remain active until then.';
+
+  @override
+  String get subscriptionCancelled =>
+      'Subscription cancelled, effective at the end of the current billing period';
+
+  @override
+  String cancelSubscriptionFailed(String error) {
+    return 'Cancel subscription failed: $error';
+  }
+
+  @override
+  String get resumeSubscription => 'Resume subscription';
+
+  @override
+  String get resumeSubscriptionConfirm =>
+      'Resume your subscription? Auto-renewal will continue after the current period ends.';
+
+  @override
+  String get subscriptionResumed =>
+      'Subscription resumed, auto-renewal will continue';
+
+  @override
+  String resumeSubscriptionFailed(String error) {
+    return 'Resume subscription failed: $error';
+  }
+
+  @override
+  String get thinkAgain => 'Think again';
+
+  @override
+  String get statusCancelScheduled => 'Cancelled (ends at period end)';
+
+  @override
+  String get statusActive => 'Active';
+
+  @override
+  String get statusTrial => 'Trial';
+
+  @override
+  String get availablePlans => 'Available plans';
+
+  @override
+  String get billingRecords => 'Billing records';
+
+  @override
+  String get subscriptionStatusLabel => 'Subscription status';
+
+  @override
+  String get expiryDate => 'Expiry date';
+
+  @override
+  String get trialEndDate => 'Trial ends on';
+
+  @override
+  String subscriptionEndsOn(String date) {
+    return 'Your subscription ends on $date and will automatically downgrade to the free plan.';
+  }
+
+  @override
+  String get desktopPaymentHint =>
+      'Payment is not supported on mobile yet. To upgrade or purchase a plan, sign in on the desktop app and complete the payment in Subscription.';
+
+  @override
+  String get currentPlanBadge => 'Current plan';
+
+  @override
+  String get payOnDesktop => 'Pay on desktop';
+
+  @override
+  String get noInvoices => 'No billing records';
+
+  @override
+  String get renderResultTitle => 'Render result';
+
+  @override
+  String get close => 'Close';
+
+  @override
+  String get renderResultCopied => 'Rendered result copied to clipboard';
+
+  @override
+  String get copyAll => 'Copy all';
+
+  @override
+  String get noTemplates => 'No templates';
+
+  @override
+  String get noTemplatesDesc =>
+      'Templates saved from clipboard content on the desktop will sync here';
+
+  @override
+  String variableCount(int count) {
+    return '$count variables';
+  }
+
+  @override
+  String get emptyTemplateContent => '(Template content is empty)';
+
+  @override
+  String get useTemplate => 'Use';
+
+  @override
+  String get fillVariableTitle => 'Fill in variables';
+
+  @override
+  String variableProgress(int step, int total) {
+    return 'Variable $step / $total';
+  }
+
+  @override
+  String variableInputHint(String name) {
+    return 'Enter a value for $name';
+  }
+
+  @override
+  String get done => 'Done';
+
+  @override
+  String get nextItem => 'Next item';
+
+  @override
+  String get permissionGuideTitle => 'Permissions and keep-alive guide';
+
+  @override
+  String get permissionGuideIntro =>
+      'To keep \"copy on computer, instantly on phone\" working, complete these 3 steps:';
+
+  @override
+  String get finishAndStart => 'Done, start using';
+
+  @override
+  String get stepNotifTitle => '1. Notification permission';
+
+  @override
+  String get stepNotifDesc =>
+      'Receive instant \"clipboard updated\" notifications (authorization required on Android 13+).';
+
+  @override
+  String get statusOn => 'On';
+
+  @override
+  String get statusOff => 'Off';
+
+  @override
+  String get statusExempted => 'Exempted';
+
+  @override
+  String get statusNotExempted => 'Not exempted';
+
+  @override
+  String get requestNotifPermission => 'Request notification permission';
+
+  @override
+  String get notifPermissionGranted => 'Notification permission granted';
+
+  @override
+  String get notifPermissionDenied =>
+      'Notification permission not granted. Enable it manually in system settings.';
+
+  @override
+  String get stepBatteryTitle => '2. Battery optimization exemption';
+
+  @override
+  String get stepBatteryDesc =>
+      'Join the battery optimization whitelist to avoid sync disconnection and delayed notifications when the screen is off.';
+
+  @override
+  String get statusUndetected => 'Cannot auto-detect (requires native support)';
+
+  @override
+  String get batteryTitle => 'Battery optimization exemption';
+
+  @override
+  String get batteryManualGuide =>
+      'Auto navigation failed. Set it manually:\n\nSystem settings → App management → ClipSync → Battery\n→ Choose \"Unrestricted / Allow background activity\"\n\nOn some devices: Settings → Battery → More battery settings → App sleep.';
+
+  @override
+  String get jumping => 'Opening…';
+
+  @override
+  String get gotoBatterySettings => 'Go to battery optimization settings';
+
+  @override
+  String get stepAutoStartTitle => '3. Auto-start settings';
+
+  @override
+  String get stepAutoStartDesc =>
+      'Allow ClipSync to auto-start and run in the background, resuming sync after reboot.';
+
+  @override
+  String get autoStartTitle => 'Auto-start settings';
+
+  @override
+  String get autoStartGuide =>
+      'Example paths by vendor:\n\n· Xiaomi MIUI: Security center → App management → Permissions → Auto-start management → Allow ClipSync\n· Huawei EMUI/HarmonyOS: Settings → Apps → App launch management → ClipSync → Manual management (allow auto-start, linked launch, background activity)\n· OPPO ColorOS: Phone Manager → Permission privacy → Auto-start management → Allow ClipSync\n· vivo OriginOS: i Manager → App management → Permission management → Auto-start → Allow ClipSync';
+
+  @override
+  String get autoStartStatusHint => 'Varies by vendor, verify manually';
+
+  @override
+  String get gotIt => 'Got it';
+
+  @override
+  String get gotoAutoStartSettings => 'Go to auto-start settings';
+
+  @override
+  String get unknown => 'Unknown';
+
+  @override
+  String get saveToClipboard => 'Save to clipboard';
+
+  @override
+  String get saveToClipboardDesc =>
+      'Content will be uploaded to your ClipSync account and become visible on all signed-in devices.';
+
+  @override
+  String get nothingToSave => 'Nothing to save';
+
+  @override
+  String get saving => 'Saving…';
+
+  @override
+  String saveInFailed(String error) {
+    return 'Save failed: $error';
+  }
+
+  @override
+  String get saveInFailedRetry => 'Save failed, please try again later';
+
+  @override
+  String savedInCount(int count) {
+    return 'Saved $count clipboard items';
+  }
+
+  @override
+  String imageCount(int count) {
+    return 'Images ($count)';
+  }
+
+  @override
+  String deviceSemantics(String name, String status) {
+    return 'Device: $name, status: $status';
+  }
+
+  @override
+  String get deviceOnline => 'Online';
+
+  @override
+  String get deviceOffline => 'Offline';
+
+  @override
+  String get platformDesktop => 'Desktop';
+
+  @override
+  String get platformMobile => 'Mobile';
+
+  @override
+  String get platformTablet => 'Tablet';
+
+  @override
+  String get loadFailedTitle => 'Load failed';
 }
