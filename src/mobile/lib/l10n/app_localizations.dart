@@ -1981,6 +1981,480 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Team sharing'**
   String get featureTeamShare;
+
+  /// No description provided for @renameCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename group'**
+  String get renameCollection;
+
+  /// No description provided for @collectionRenamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Group renamed'**
+  String get collectionRenamed;
+
+  /// No description provided for @addToCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to group'**
+  String get addToCollection;
+
+  /// No description provided for @removeFromCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from group'**
+  String get removeFromCollection;
+
+  /// No description provided for @selectGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a group'**
+  String get selectGroup;
+
+  /// No description provided for @noAvailableGroups.
+  ///
+  /// In en, this message translates to:
+  /// **'No groups yet. Create one in Favorites first'**
+  String get noAvailableGroups;
+
+  /// No description provided for @movedToCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Added to \"{name}\"'**
+  String movedToCollection(String name);
+
+  /// No description provided for @removedFromCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed from group'**
+  String get removedFromCollection;
+
+  /// No description provided for @sharedLinks.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared links'**
+  String get sharedLinks;
+
+  /// No description provided for @sharedLinksDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage external share links for your content'**
+  String get sharedLinksDesc;
+
+  /// No description provided for @noSharedLinks.
+  ///
+  /// In en, this message translates to:
+  /// **'No shared links'**
+  String get noSharedLinks;
+
+  /// No description provided for @noSharedLinksDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared links created from item details will appear here'**
+  String get noSharedLinksDesc;
+
+  /// No description provided for @createSharedLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Create shared link'**
+  String get createSharedLink;
+
+  /// No description provided for @sharedLinkCreated.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared link created and copied'**
+  String get sharedLinkCreated;
+
+  /// No description provided for @copyLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link'**
+  String get copyLink;
+
+  /// No description provided for @linkCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Link copied'**
+  String get linkCopied;
+
+  /// No description provided for @revokeLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Revoke link'**
+  String get revokeLink;
+
+  /// No description provided for @revokeLinkConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Revoke this shared link? It will stop working immediately.'**
+  String get revokeLinkConfirm;
+
+  /// No description provided for @sharedLinkRevoked.
+  ///
+  /// In en, this message translates to:
+  /// **'Link revoked'**
+  String get sharedLinkRevoked;
+
+  /// No description provided for @expiresAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Expires {date}'**
+  String expiresAt(String date);
+
+  /// No description provided for @neverExpires.
+  ///
+  /// In en, this message translates to:
+  /// **'Never expires'**
+  String get neverExpires;
+
+  /// No description provided for @notificationsCenter.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get notificationsCenter;
+
+  /// No description provided for @notificationsCenterDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'View in-app notifications and replies'**
+  String get notificationsCenterDesc;
+
+  /// No description provided for @noNotifications.
+  ///
+  /// In en, this message translates to:
+  /// **'No notifications'**
+  String get noNotifications;
+
+  /// No description provided for @markAllRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark all read'**
+  String get markAllRead;
+
+  /// No description provided for @markRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as read'**
+  String get markRead;
+
+  /// No description provided for @notifLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load notifications'**
+  String get notifLoadFailed;
+
+  /// No description provided for @accountSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get accountSection;
+
+  /// No description provided for @profileTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get profileTitle;
+
+  /// No description provided for @nickname.
+  ///
+  /// In en, this message translates to:
+  /// **'Nickname'**
+  String get nickname;
+
+  /// No description provided for @editNickname.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit nickname'**
+  String get editNickname;
+
+  /// No description provided for @nicknameSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Nickname updated'**
+  String get nicknameSaved;
+
+  /// No description provided for @nicknameSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to save, please try again later'**
+  String get nicknameSaveFailed;
+
+  /// No description provided for @notLoggedIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Not signed in'**
+  String get notLoggedIn;
+
+  /// No description provided for @searchHistoryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Search history'**
+  String get searchHistoryTitle;
+
+  /// No description provided for @clearSearchHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear history'**
+  String get clearSearchHistory;
+
+  /// No description provided for @searchHistoryCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Search history cleared'**
+  String get searchHistoryCleared;
+
+  /// No description provided for @advancedFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Filters'**
+  String get advancedFilter;
+
+  /// No description provided for @filterDateRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Date range'**
+  String get filterDateRange;
+
+  /// No description provided for @filterToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get filterToday;
+
+  /// No description provided for @filterWeek.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 7 days'**
+  String get filterWeek;
+
+  /// No description provided for @filterMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 30 days'**
+  String get filterMonth;
+
+  /// No description provided for @filterAllTime.
+  ///
+  /// In en, this message translates to:
+  /// **'All time'**
+  String get filterAllTime;
+
+  /// No description provided for @filterDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Device'**
+  String get filterDevice;
+
+  /// No description provided for @filterAllDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'All devices'**
+  String get filterAllDevices;
+
+  /// No description provided for @filterFavoritesOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorites only'**
+  String get filterFavoritesOnly;
+
+  /// No description provided for @applyFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply'**
+  String get applyFilter;
+
+  /// No description provided for @resetFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get resetFilter;
+
+  /// No description provided for @activeFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} filters'**
+  String activeFilters(int count);
+
+  /// No description provided for @pinSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Pinned'**
+  String get pinSuccess;
+
+  /// No description provided for @unpinSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Unpinned'**
+  String get unpinSuccess;
+
+  /// No description provided for @setExpiry.
+  ///
+  /// In en, this message translates to:
+  /// **'Set expiry'**
+  String get setExpiry;
+
+  /// No description provided for @expiryNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get expiryNever;
+
+  /// No description provided for @expiryOneHour.
+  ///
+  /// In en, this message translates to:
+  /// **'1 hour'**
+  String get expiryOneHour;
+
+  /// No description provided for @expiryOneDay.
+  ///
+  /// In en, this message translates to:
+  /// **'1 day'**
+  String get expiryOneDay;
+
+  /// No description provided for @expiryOneWeek.
+  ///
+  /// In en, this message translates to:
+  /// **'7 days'**
+  String get expiryOneWeek;
+
+  /// No description provided for @expiryOneMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'30 days'**
+  String get expiryOneMonth;
+
+  /// No description provided for @expirySet.
+  ///
+  /// In en, this message translates to:
+  /// **'Expiry updated'**
+  String get expirySet;
+
+  /// No description provided for @expiredBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Expired'**
+  String get expiredBadge;
+
+  /// No description provided for @archive.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive'**
+  String get archive;
+
+  /// No description provided for @unarchive.
+  ///
+  /// In en, this message translates to:
+  /// **'Unarchive'**
+  String get unarchive;
+
+  /// No description provided for @archivedBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Archived'**
+  String get archivedBadge;
+
+  /// No description provided for @editTags.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit tags'**
+  String get editTags;
+
+  /// No description provided for @tagsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Separate tags with commas'**
+  String get tagsHint;
+
+  /// No description provided for @tagsSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Tags updated'**
+  String get tagsSaved;
+
+  /// No description provided for @itemLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'This item is protected'**
+  String get itemLocked;
+
+  /// No description provided for @passwordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get passwordLabel;
+
+  /// No description provided for @wrongPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect password'**
+  String get wrongPassword;
+
+  /// No description provided for @filterArchived.
+  ///
+  /// In en, this message translates to:
+  /// **'Archived'**
+  String get filterArchived;
+
+  /// No description provided for @newTemplate.
+  ///
+  /// In en, this message translates to:
+  /// **'New template'**
+  String get newTemplate;
+
+  /// No description provided for @editTemplate.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit template'**
+  String get editTemplate;
+
+  /// No description provided for @templateName.
+  ///
+  /// In en, this message translates to:
+  /// **'Template name'**
+  String get templateName;
+
+  /// No description provided for @templateContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Content'**
+  String get templateContent;
+
+  /// No description provided for @templateNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Template name is required'**
+  String get templateNameRequired;
+
+  /// No description provided for @templateSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Template saved'**
+  String get templateSaved;
+
+  /// No description provided for @deleteTemplateConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete template \"{name}\"?'**
+  String deleteTemplateConfirm(String name);
+
+  /// No description provided for @templateDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Template deleted'**
+  String get templateDeleted;
+
+  /// No description provided for @templateVarsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrap a variable name in double braces in the content to declare it'**
+  String get templateVarsHint;
+
+  /// No description provided for @variableDefaultValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Default value (optional)'**
+  String get variableDefaultValue;
 }
 
 class _AppLocalizationsDelegate

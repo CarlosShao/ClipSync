@@ -1061,4 +1061,253 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get featureTeamShare => 'Team sharing';
+
+  @override
+  String get renameCollection => 'Rename group';
+
+  @override
+  String get collectionRenamed => 'Group renamed';
+
+  @override
+  String get addToCollection => 'Add to group';
+
+  @override
+  String get removeFromCollection => 'Remove from group';
+
+  @override
+  String get selectGroup => 'Select a group';
+
+  @override
+  String get noAvailableGroups =>
+      'No groups yet. Create one in Favorites first';
+
+  @override
+  String movedToCollection(String name) {
+    return 'Added to \"$name\"';
+  }
+
+  @override
+  String get removedFromCollection => 'Removed from group';
+
+  @override
+  String get sharedLinks => 'Shared links';
+
+  @override
+  String get sharedLinksDesc => 'Manage external share links for your content';
+
+  @override
+  String get noSharedLinks => 'No shared links';
+
+  @override
+  String get noSharedLinksDesc =>
+      'Shared links created from item details will appear here';
+
+  @override
+  String get createSharedLink => 'Create shared link';
+
+  @override
+  String get sharedLinkCreated => 'Shared link created and copied';
+
+  @override
+  String get copyLink => 'Copy link';
+
+  @override
+  String get linkCopied => 'Link copied';
+
+  @override
+  String get revokeLink => 'Revoke link';
+
+  @override
+  String get revokeLinkConfirm =>
+      'Revoke this shared link? It will stop working immediately.';
+
+  @override
+  String get sharedLinkRevoked => 'Link revoked';
+
+  @override
+  String expiresAt(String date) {
+    return 'Expires $date';
+  }
+
+  @override
+  String get neverExpires => 'Never expires';
+
+  @override
+  String get notificationsCenter => 'Notifications';
+
+  @override
+  String get notificationsCenterDesc => 'View in-app notifications and replies';
+
+  @override
+  String get noNotifications => 'No notifications';
+
+  @override
+  String get markAllRead => 'Mark all read';
+
+  @override
+  String get markRead => 'Mark as read';
+
+  @override
+  String get notifLoadFailed => 'Failed to load notifications';
+
+  @override
+  String get accountSection => 'Account';
+
+  @override
+  String get profileTitle => 'Profile';
+
+  @override
+  String get nickname => 'Nickname';
+
+  @override
+  String get editNickname => 'Edit nickname';
+
+  @override
+  String get nicknameSaved => 'Nickname updated';
+
+  @override
+  String get nicknameSaveFailed => 'Failed to save, please try again later';
+
+  @override
+  String get notLoggedIn => 'Not signed in';
+
+  @override
+  String get searchHistoryTitle => 'Search history';
+
+  @override
+  String get clearSearchHistory => 'Clear history';
+
+  @override
+  String get searchHistoryCleared => 'Search history cleared';
+
+  @override
+  String get advancedFilter => 'Filters';
+
+  @override
+  String get filterDateRange => 'Date range';
+
+  @override
+  String get filterToday => 'Today';
+
+  @override
+  String get filterWeek => 'Last 7 days';
+
+  @override
+  String get filterMonth => 'Last 30 days';
+
+  @override
+  String get filterAllTime => 'All time';
+
+  @override
+  String get filterDevice => 'Device';
+
+  @override
+  String get filterAllDevices => 'All devices';
+
+  @override
+  String get filterFavoritesOnly => 'Favorites only';
+
+  @override
+  String get applyFilter => 'Apply';
+
+  @override
+  String get resetFilter => 'Reset';
+
+  @override
+  String activeFilters(int count) {
+    return '$count filters';
+  }
+
+  @override
+  String get pinSuccess => 'Pinned';
+
+  @override
+  String get unpinSuccess => 'Unpinned';
+
+  @override
+  String get setExpiry => 'Set expiry';
+
+  @override
+  String get expiryNever => 'Never';
+
+  @override
+  String get expiryOneHour => '1 hour';
+
+  @override
+  String get expiryOneDay => '1 day';
+
+  @override
+  String get expiryOneWeek => '7 days';
+
+  @override
+  String get expiryOneMonth => '30 days';
+
+  @override
+  String get expirySet => 'Expiry updated';
+
+  @override
+  String get expiredBadge => 'Expired';
+
+  @override
+  String get archive => 'Archive';
+
+  @override
+  String get unarchive => 'Unarchive';
+
+  @override
+  String get archivedBadge => 'Archived';
+
+  @override
+  String get editTags => 'Edit tags';
+
+  @override
+  String get tagsHint => 'Separate tags with commas';
+
+  @override
+  String get tagsSaved => 'Tags updated';
+
+  @override
+  String get itemLocked => 'This item is protected';
+
+  @override
+  String get passwordLabel => 'Password';
+
+  @override
+  String get wrongPassword => 'Incorrect password';
+
+  @override
+  String get filterArchived => 'Archived';
+
+  @override
+  String get newTemplate => 'New template';
+
+  @override
+  String get editTemplate => 'Edit template';
+
+  @override
+  String get templateName => 'Template name';
+
+  @override
+  String get templateContent => 'Content';
+
+  @override
+  String get templateNameRequired => 'Template name is required';
+
+  @override
+  String get templateSaved => 'Template saved';
+
+  @override
+  String deleteTemplateConfirm(String name) {
+    return 'Delete template \"$name\"?';
+  }
+
+  @override
+  String get templateDeleted => 'Template deleted';
+
+  @override
+  String get templateVarsHint =>
+      'Wrap a variable name in double braces in the content to declare it';
+
+  @override
+  String get variableDefaultValue => 'Default value (optional)';
 }

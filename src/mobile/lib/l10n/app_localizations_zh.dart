@@ -1014,4 +1014,249 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get featureTeamShare => '团队共享';
+
+  @override
+  String get renameCollection => '重命名分组';
+
+  @override
+  String get collectionRenamed => '已重命名';
+
+  @override
+  String get addToCollection => '加入分组';
+
+  @override
+  String get removeFromCollection => '移出分组';
+
+  @override
+  String get selectGroup => '选择分组';
+
+  @override
+  String get noAvailableGroups => '暂无可用分组，先在收藏页新建一个';
+
+  @override
+  String movedToCollection(String name) {
+    return '已加入「$name」';
+  }
+
+  @override
+  String get removedFromCollection => '已移出分组';
+
+  @override
+  String get sharedLinks => '共享链接';
+
+  @override
+  String get sharedLinksDesc => '管理内容的外部分享链接';
+
+  @override
+  String get noSharedLinks => '暂无共享链接';
+
+  @override
+  String get noSharedLinksDesc => '在条目详情页创建共享链接后，会显示在这里';
+
+  @override
+  String get createSharedLink => '创建共享链接';
+
+  @override
+  String get sharedLinkCreated => '共享链接已创建并复制';
+
+  @override
+  String get copyLink => '复制链接';
+
+  @override
+  String get linkCopied => '链接已复制';
+
+  @override
+  String get revokeLink => '撤销链接';
+
+  @override
+  String get revokeLinkConfirm => '确定撤销该共享链接吗？撤销后链接立即失效。';
+
+  @override
+  String get sharedLinkRevoked => '链接已撤销';
+
+  @override
+  String expiresAt(String date) {
+    return '有效期至 $date';
+  }
+
+  @override
+  String get neverExpires => '永久有效';
+
+  @override
+  String get notificationsCenter => '通知中心';
+
+  @override
+  String get notificationsCenterDesc => '查看站内通知与回复';
+
+  @override
+  String get noNotifications => '暂无通知';
+
+  @override
+  String get markAllRead => '全部已读';
+
+  @override
+  String get markRead => '标为已读';
+
+  @override
+  String get notifLoadFailed => '通知加载失败';
+
+  @override
+  String get accountSection => '账号';
+
+  @override
+  String get profileTitle => '个人资料';
+
+  @override
+  String get nickname => '昵称';
+
+  @override
+  String get editNickname => '修改昵称';
+
+  @override
+  String get nicknameSaved => '昵称已更新';
+
+  @override
+  String get nicknameSaveFailed => '保存失败，请稍后重试';
+
+  @override
+  String get notLoggedIn => '未登录';
+
+  @override
+  String get searchHistoryTitle => '搜索历史';
+
+  @override
+  String get clearSearchHistory => '清空历史';
+
+  @override
+  String get searchHistoryCleared => '搜索历史已清空';
+
+  @override
+  String get advancedFilter => '筛选';
+
+  @override
+  String get filterDateRange => '时间范围';
+
+  @override
+  String get filterToday => '今天';
+
+  @override
+  String get filterWeek => '最近 7 天';
+
+  @override
+  String get filterMonth => '最近 30 天';
+
+  @override
+  String get filterAllTime => '全部时间';
+
+  @override
+  String get filterDevice => '来源设备';
+
+  @override
+  String get filterAllDevices => '全部设备';
+
+  @override
+  String get filterFavoritesOnly => '仅收藏';
+
+  @override
+  String get applyFilter => '应用';
+
+  @override
+  String get resetFilter => '重置';
+
+  @override
+  String activeFilters(int count) {
+    return '$count 项筛选';
+  }
+
+  @override
+  String get pinSuccess => '已置顶';
+
+  @override
+  String get unpinSuccess => '已取消置顶';
+
+  @override
+  String get setExpiry => '设置过期时间';
+
+  @override
+  String get expiryNever => '永不过期';
+
+  @override
+  String get expiryOneHour => '1 小时';
+
+  @override
+  String get expiryOneDay => '1 天';
+
+  @override
+  String get expiryOneWeek => '7 天';
+
+  @override
+  String get expiryOneMonth => '30 天';
+
+  @override
+  String get expirySet => '过期时间已设置';
+
+  @override
+  String get expiredBadge => '已过期';
+
+  @override
+  String get archive => '归档';
+
+  @override
+  String get unarchive => '取消归档';
+
+  @override
+  String get archivedBadge => '已归档';
+
+  @override
+  String get editTags => '编辑标签';
+
+  @override
+  String get tagsHint => '多个标签用逗号分隔';
+
+  @override
+  String get tagsSaved => '标签已更新';
+
+  @override
+  String get itemLocked => '此条目已加密保护';
+
+  @override
+  String get passwordLabel => '密码';
+
+  @override
+  String get wrongPassword => '密码错误';
+
+  @override
+  String get filterArchived => '已归档';
+
+  @override
+  String get newTemplate => '新建模板';
+
+  @override
+  String get editTemplate => '编辑模板';
+
+  @override
+  String get templateName => '模板名称';
+
+  @override
+  String get templateContent => '模板内容';
+
+  @override
+  String get templateNameRequired => '请输入模板名称';
+
+  @override
+  String get templateSaved => '模板已保存';
+
+  @override
+  String deleteTemplateConfirm(String name) {
+    return '确定删除模板「$name」吗？';
+  }
+
+  @override
+  String get templateDeleted => '模板已删除';
+
+  @override
+  String get templateVarsHint => '内容中用双大括号包裹变量名即可声明变量';
+
+  @override
+  String get variableDefaultValue => '默认值（可选）';
 }
