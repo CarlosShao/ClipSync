@@ -75,8 +75,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // 保留旧版行为：进入主页即拉取数据并连接 WS（登录后连接）
-    _loadData();
+    // 保留旧版行为：进入主页即拉取数据并连接 WS（登录后连接）。
+    // ⚠️ 必须推迟到首帧之后：_loadData → loadItems → _fetchPage 会在
+    // build 阶段同步 notifyListeners，触发 framework「构建期标记 dirty」
+    // 异常（模拟器红屏已踩坑）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadData();
+    });
   }
 
   /// 数据加载 + WS 连接（自旧版 home_screen 原样保留）。

@@ -57,6 +57,26 @@ export function useWebSocket() {
     const config = useConfigStore()
     if (!config.config.token) return
 
+    // ⚠️ 连接前自愈 deviceId：localStorage 缓存丢失（清缓存/后端重启窗口期
+    // 注册失败）时若照常连接却不发 register，会被服务端 10s 超时踢线 →
+    // 重连 → 再连接的死循环（真机已踩坑：服务端日志每 12s 一次
+    // "connection timeout: Not registered" 刷屏且零实时推送）。
+    // 自愈失败（后端不可达）时本轮不连接，走重连退避稍后再试。
+    let cachedDeviceId = localStorage.getItem('clipsync-device-id')
+    if (!cachedDeviceId) {
+      try {
+        const { ensureDeviceId } = await import('./clipboardUpload')
+        cachedDeviceId = (await ensureDeviceId()) || null
+      } catch {
+        /* 后端不可达：下一轮重连再试 */
+      }
+    }
+    if (!cachedDeviceId) {
+      console.warn('[WS] No deviceId available yet — scheduling reconnect')
+      scheduleReconnect()
+      return
+    }
+
     let url = config.serverUrl.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(config.config.token || '')
     const csrf = await fetchWsCsrf()
     if (csrf) url += '&csrf_token=' + encodeURIComponent(csrf)
@@ -73,10 +93,9 @@ export function useWebSocket() {
       registered.value = false
       reconnectAttempts = 0
       // 必须先注册设备：后端仅对已注册连接定向广播（10 秒未注册即被踢 4005）
-      const deviceId = localStorage.getItem('clipsync-device-id')
-      if (deviceId) {
+      if (cachedDeviceId) {
         try {
-          ws?.send(JSON.stringify({ type: 'register', deviceId }))
+          ws?.send(JSON.stringify({ type: 'register', deviceId: cachedDeviceId }))
         } catch {
           /* send failure will trigger onclose */
         }
