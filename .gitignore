@@ -85,6 +85,9 @@ data/
 # omo (local AI tool run state, not project code)
 .omo/
 
+# Freebuff (local tool workspace identity, not project code)
+.freebuff/
+
 # Agent runtime / workspace identity files (not project code)
 .openclaw/
 .scratch/
