@@ -3,7 +3,9 @@ package com.clipsync.clipsync_mobile
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -18,6 +20,7 @@ import io.flutter.plugin.common.MethodChannel
  * - isBatteryOptimizationIgnored      电池优化豁免查询（T3.4 引导页消费）
  * - requestIgnoreBatteryOptimization  跳转电池优化豁免系统弹窗
  * - openAutoStartSettings             尽力跳转厂商自启动设置页（全失败返回 false，Dart 降级指引）
+ * - openAppNotificationSettings       跳转本应用系统通知设置页（B3 通知设置页消费）
  * - requestNotificationPermission     POST_NOTIFICATIONS 运行时权限申请（Android 13+）
  *
  * 原生 → Dart：
@@ -60,6 +63,7 @@ class MainActivity : FlutterFragmentActivity() {
                 }
                 "requestNotificationPermission" -> requestNotificationPermission(result)
                 "openAutoStartSettings" -> result.success(openAutoStartSettings())
+                "openAppNotificationSettings" -> result.success(openAppNotificationSettings())
                 else -> result.notImplemented()
             }
         }
@@ -91,6 +95,33 @@ class MainActivity : FlutterFragmentActivity() {
             }
         }
         return false
+    }
+
+    // -------------------------------------------------------------------------
+    // 应用通知设置页（B3：ACTION_APP_NOTIFICATION_SETTINGS；
+    // 低版本系统无此入口时回退应用详情页，仍失败返回 false 由 Dart 降级提示）
+    // -------------------------------------------------------------------------
+
+    private fun openAppNotificationSettings(): Boolean {
+        try {
+            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            return true
+        } catch (e: Exception) {
+            try {
+                val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(fallback)
+                return true
+            } catch (e: Exception) {
+                return false
+            }
+        }
     }
 
     override fun onDestroy() {
