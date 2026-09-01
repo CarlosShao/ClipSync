@@ -182,7 +182,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _completeLogin(Map<String, dynamic> result) async {
     final accessToken = result['token'];
     if (accessToken is! String || accessToken.isEmpty) {
-      throw Exception('登录响应缺少 token');
+      throw Exception('Login response missing token');
     }
 
     _token = accessToken;
@@ -322,7 +322,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<_DeviceInfoBrief> _collectDeviceInfo() async {
-    var deviceName = 'Android 设备';
+    var deviceName = 'Android'; // 语言中立（该值上报服务端并跨端展示）
     var platformVersion = '';
     var appVersion = '';
     try {
