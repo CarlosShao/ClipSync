@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/clipboard_item.dart';
 import '../services/api_service.dart';
 import '../services/app_exception.dart';
+import '../services/item_actions_api_service.dart';
 import '../services/search_history_api_service.dart';
 import '../services/token_store.dart';
 import '../utils/performance.dart';
@@ -26,6 +27,7 @@ import '../utils/performance.dart';
 class ClipboardProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
   final SearchHistoryApiService _searchHistoryApi = SearchHistoryApiService();
+  final ItemActionsApiService _itemActions = ItemActionsApiService();
 
   List<ClipboardItem> _items = [];
   bool _isLoading = false;
@@ -45,6 +47,10 @@ class ClipboardProvider extends ChangeNotifier {
   // C2 高级筛选：时间范围（null = 全部时间）与来源设备（null = 全部设备）
   String? _filterDateRange;
   String? _filterDeviceId;
+
+  // C3 归档视图（filterArchived 开关）：true = 仅看已归档（后端 view=archive），
+  // false = 默认视图（后端排除已归档，无「混合展示」参数）
+  bool _archiveView = false;
 
   // C2 搜索历史：本地镜像（≤[kSearchHistoryLimit] 条），聚焦浮层直接读
   static const int kSearchHistoryLimit = 10;
@@ -85,12 +91,16 @@ class ClipboardProvider extends ChangeNotifier {
   /// 来源设备筛选：null = 全部设备（FilterPanel 单选，设备列表复用 DeviceProvider）
   String? get filterDeviceId => _filterDeviceId;
 
-  /// 已激活的高级筛选数（时间范围 / 来源设备 / 仅收藏各计 1），
+  /// 归档视图（C3 FilterPanel「已归档」开关）：true = 仅看已归档条目
+  bool get archiveView => _archiveView;
+
+  /// 已激活的高级筛选数（时间范围 / 来源设备 / 仅收藏 / 归档视图各计 1），
   /// 供筛选入口徽标 activeFilters{count} 展示。
   int get activeFilterCount =>
       (_filterDateRange != null ? 1 : 0) +
       (_filterDeviceId != null ? 1 : 0) +
-      (_favoritesOnly ? 1 : 0);
+      (_favoritesOnly ? 1 : 0) +
+      (_archiveView ? 1 : 0);
 
   /// WS 到达、但与当前类型筛选不匹配而未插入列表的新条目数（F2）。
   ///
@@ -151,6 +161,7 @@ class ClipboardProvider extends ChangeNotifier {
         favorites: _favoritesOnly ? true : null,
         deviceId: _filterDeviceId,
         dateFrom: _resolveDateFrom(),
+        view: _archiveView ? 'archive' : null,
         forceRefresh: forceRefresh,
       );
 
@@ -240,46 +251,64 @@ class ClipboardProvider extends ChangeNotifier {
     await _reloadWithCurrentFilters();
   }
 
-  /// 应用高级筛选（C2 FilterPanel「应用」； favoritesOnly 传 null = 维持现值）。
+  /// 设置归档视图并重拉第 1 页（C3：true = 仅看已归档，后端 view=archive）
+  Future<void> setArchiveView(bool value) async {
+    if (value == _archiveView) return;
+    _archiveView = value;
+    await _reloadWithCurrentFilters();
+  }
+
+  /// 应用高级筛选（C2/C3 FilterPanel「应用」； favoritesOnly / archiveView
+  /// 传 null = 维持现值）。
   ///
   /// 任一字段变化即重置分页从第 1 页重拉（与搜索/类型筛选切换同路径）。
   Future<void> applyFilters({
     String? dateRange,
     String? deviceId,
     bool? favoritesOnly,
+    bool? archiveView,
   }) async {
     final nextDateRange = (dateRange == null || dateRange.isEmpty) ? null : dateRange;
     final nextDeviceId = (deviceId == null || deviceId.isEmpty) ? null : deviceId;
     final nextFavorites = favoritesOnly ?? _favoritesOnly;
+    final nextArchiveView = archiveView ?? _archiveView;
     if (nextDateRange == _filterDateRange &&
         nextDeviceId == _filterDeviceId &&
-        nextFavorites == _favoritesOnly) {
+        nextFavorites == _favoritesOnly &&
+        nextArchiveView == _archiveView) {
       return;
     }
     _filterDateRange = nextDateRange;
     _filterDeviceId = nextDeviceId;
     _favoritesOnly = nextFavorites;
+    _archiveView = nextArchiveView;
     await _reloadWithCurrentFilters();
   }
 
-  /// 重置高级筛选（C2 FilterPanel「重置」：时间/设备/仅收藏全清，重拉第 1 页）。
+  /// 重置高级筛选（C2/C3 FilterPanel「重置」：时间/设备/仅收藏/归档视图全清，
+  /// 重拉第 1 页）。
   Future<void> resetAdvancedFilters() async {
-    if (_filterDateRange == null && _filterDeviceId == null && !_favoritesOnly) {
+    if (_filterDateRange == null &&
+        _filterDeviceId == null &&
+        !_favoritesOnly &&
+        !_archiveView) {
       return;
     }
     _filterDateRange = null;
     _filterDeviceId = null;
     _favoritesOnly = false;
+    _archiveView = false;
     await _reloadWithCurrentFilters();
   }
 
-  /// 清空全部搜索/筛选（含 C2 高级筛选）并重拉第 1 页
+  /// 清空全部搜索/筛选（含 C2 高级筛选与 C3 归档视图）并重拉第 1 页
   Future<void> clearFilters() async {
     if (_searchQuery == null &&
         _contentTypeFilter == null &&
         !_favoritesOnly &&
         _filterDateRange == null &&
-        _filterDeviceId == null) {
+        _filterDeviceId == null &&
+        !_archiveView) {
       return;
     }
     _searchQuery = null;
@@ -287,6 +316,7 @@ class ClipboardProvider extends ChangeNotifier {
     _favoritesOnly = false;
     _filterDateRange = null;
     _filterDeviceId = null;
+    _archiveView = false;
     await _reloadWithCurrentFilters();
   }
 
@@ -384,6 +414,150 @@ class ClipboardProvider extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
+  // 条目动作（C3：置顶 / 过期 / 归档 / 标签；与 ItemActionsApiService 对接）
+  // ---------------------------------------------------------------------------
+
+  /// 置顶/取消置顶：乐观更新 + 客户端临时前移（服务端列表本就按
+  /// `pinned DESC, created_at DESC` 排序，客户端不持久排序），成功后重拉
+  /// 第 1 页取服务端权威顺序；失败回滚并把异常抛给 UI（friendlyError 提示）。
+  /// 条目不在当前列表（如详情页跨页动作）时跳过乐观段，仍调用 API。
+  Future<void> setPinned(String? token, String itemId, bool pinned) async {
+    final int index = _items.indexWhere((item) => item.id == itemId);
+    final ClipboardItem? original = index == -1 ? null : _items[index];
+    if (original != null) {
+      final ClipboardItem updated = original.copyWith(
+        metadata: <String, dynamic>{...original.metadata, 'pinned': pinned},
+      );
+      _items[index] = updated;
+      if (pinned) {
+        // 置顶 → 列表首位；取消置顶 → 移出置顶块（重拉前的一致性展示）
+        _items.removeAt(index);
+        _items.insert(0, updated);
+      } else {
+        _sortPinnedFirst();
+      }
+      notifyListeners();
+    }
+
+    try {
+      await _itemActions.setPinned(token, itemId, pinned);
+    } on Exception catch (e) {
+      if (original != null) {
+        _rollbackItem(itemId, original);
+      }
+      _error = e;
+      notifyListeners();
+      rethrow;
+    }
+    // 置顶成功：重拉第 1 页对齐服务端权威顺序（绕过 2 分钟列表缓存）
+    await refresh(forceRefresh: true);
+  }
+
+  /// 设置/清除过期时间：乐观回写本地徽章，成功以服务端返回的 expiresAt 为准；
+  /// 失败回滚并抛出（UI 层 friendlyError 提示）。
+  /// 条目不在当前列表时跳过本地段，仍调用 API。
+  Future<void> setExpiry(String? token, String itemId, DateTime? expiresAt) async {
+    final int index = _items.indexWhere((item) => item.id == itemId);
+    final ClipboardItem? original = index == -1 ? null : _items[index];
+    if (original != null) {
+      _items[index] = (expiresAt == null)
+          ? original.withoutExpiry()
+          : original.copyWith(expiresAt: expiresAt);
+      notifyListeners();
+    }
+
+    try {
+      final Map<String, dynamic>? result =
+          await _itemActions.setExpiry(token, itemId, expiresAt);
+      // 服务端权威值回写（清除时响应 expiresAt 为 null，走 withoutExpiry）
+      final DateTime? serverExpiry = _parseDate(result?['expiresAt']);
+      final int idx = _items.indexWhere((item) => item.id == itemId);
+      if (idx != -1) {
+        _items[idx] = (serverExpiry == null)
+            ? _items[idx].withoutExpiry()
+            : _items[idx].copyWith(expiresAt: serverExpiry);
+        notifyListeners();
+      }
+    } on Exception catch (e) {
+      if (original != null) {
+        _rollbackItem(itemId, original);
+      }
+      _error = e;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// 归档/取消归档：成功后按后端语义同步列表 —— 默认视图（view 缺省）
+  /// 排除已归档、归档视图（view=archive）只含已归档，与当前视图不符的
+  /// 条目移出列表；失败异常抛给 UI。
+  Future<void> setArchived(String? token, String itemId, bool archived) async {
+    try {
+      await _itemActions.setArchived(token, itemId, archived);
+      final int index = _items.indexWhere((item) => item.id == itemId);
+      if (index != -1) {
+        if (archived == _archiveView) {
+          // 归档视图下的「取消归档」不会走到这（结果与视图不符才移出），
+          // 保留分支以覆盖「默认视图收到归档条目残留」等边界
+          _items[index] = _items[index].copyWith(isArchived: archived);
+        } else {
+          _items.removeAt(index);
+          if (_totalItems > 0) _totalItems--;
+        }
+        notifyListeners();
+      }
+    } on Exception catch (e) {
+      _error = e;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// 更新条目标签：成功后以服务端合并返回的 metadata 回写（回退本地值）；
+  /// 失败异常抛给 UI。
+  Future<void> updateTags(String? token, String itemId, List<String> tags) async {
+    try {
+      final Map<String, dynamic>? result =
+          await _itemActions.updateTags(token, itemId, tags);
+      final int index = _items.indexWhere((item) => item.id == itemId);
+      if (index != -1) {
+        final dynamic meta = result?['metadata'];
+        final List<String> serverTags = (meta is Map<String, dynamic> &&
+                meta['tags'] is List)
+            ? (meta['tags'] as List).whereType<String>().toList()
+            : tags;
+        _items[index] = _items[index].copyWith(
+          metadata: <String, dynamic>{..._items[index].metadata, 'tags': serverTags},
+        );
+        notifyListeners();
+      }
+    } on Exception catch (e) {
+      _error = e;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// 动作失败回滚：按 id 恢复条目快照（条目可能已被重拉移出，找不到则忽略）。
+  void _rollbackItem(String itemId, ClipboardItem snapshot) {
+    final int index = _items.indexWhere((item) => item.id == itemId);
+    if (index != -1) {
+      _items[index] = snapshot;
+    }
+  }
+
+  /// 展示层临时排序：置顶条目稳定前移（模拟服务端 ORDER BY pinned DESC）。
+  /// 仅用于取消置顶后的过渡展示；成功重拉后以服务端顺序为准。
+  void _sortPinnedFirst() {
+    if (!_items.any((item) => item.isPinned)) return;
+    final List<ClipboardItem> pinned =
+        _items.where((item) => item.isPinned).toList();
+    final List<ClipboardItem> rest =
+        _items.where((item) => !item.isPinned).toList();
+    _items = <ClipboardItem>[...pinned, ...rest];
+  }
+
+  // ---------------------------------------------------------------------------
   // 全量内容（复制用；对齐桌面端 useClipboard.ts 的取数路径）
   // ---------------------------------------------------------------------------
 
@@ -435,7 +609,8 @@ class ClipboardProvider extends ChangeNotifier {
     final newItem = ClipboardItem.fromJson(itemJson);
     if (_items.any((i) => i.id == newItem.id)) return;
 
-    if (!_matchesContentTypeFilter(newItem.contentType)) {
+    if (!_matchesContentTypeFilter(newItem.contentType) || _archiveView) {
+      // 归档视图下新条目（未归档）同样被视图挡住，累计到浮条
       _pendingNewCount++;
       _notifyThrottler(() {
         notifyListeners();

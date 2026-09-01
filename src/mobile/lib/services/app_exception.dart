@@ -58,6 +58,21 @@ class AppErrorCodes {
   /// 模板渲染失败
   static const String renderTemplateFailed = 'renderTemplateFailed';
 
+  /// 模板变量默认值获取失败（C4；arb 暂无专属 key，经 detail / errorUnknown 兜底）
+  static const String fetchTemplateVarsFailed = 'fetchTemplateVarsFailed';
+
+  /// 模板变量默认值保存失败（C4；arb 暂无专属 key，经 detail / errorUnknown 兜底）
+  static const String saveTemplateVarsFailed = 'saveTemplateVarsFailed';
+
+  /// 模板创建失败（C4；arb 暂无专属 key，经 detail / errorUnknown 兜底）
+  static const String createTemplateFailed = 'createTemplateFailed';
+
+  /// 模板更新失败（C4；arb 暂无专属 key，经 detail / errorUnknown 兜底）
+  static const String updateTemplateFailed = 'updateTemplateFailed';
+
+  /// 模板删除失败（C4；arb 暂无专属 key，经 detail / errorUnknown 兜底）
+  static const String deleteTemplateFailed = 'deleteTemplateFailed';
+
   /// 收藏夹分组列表加载失败
   static const String fetchCollectionsFailed = 'fetchCollectionsFailed';
 
@@ -126,6 +141,29 @@ class AppErrorCodes {
 
   /// 搜索历史获取/记录/清空失败（C2；arb 无专属 key，映射 detail/errorUnknown）
   static const String fetchSearchHistoryFailed = 'fetchSearchHistoryFailed';
+
+  // ---------------------------------------------------------------------------
+  // C3 条目动作（置顶/过期/归档/标签/解锁）。arb 冻结无专属失败 key，
+  // 除 wrongPassword（有预置 key）外均经 message() 的 detail / errorUnknown 兜底。
+  // ---------------------------------------------------------------------------
+
+  /// 置顶/取消置顶失败
+  static const String pinFailed = 'pinFailed';
+
+  /// 设置/清除过期时间失败
+  static const String setExpiryFailed = 'setExpiryFailed';
+
+  /// 归档/取消归档失败
+  static const String archiveFailed = 'archiveFailed';
+
+  /// 条目标签更新失败
+  static const String updateTagsFailed = 'updateTagsFailed';
+
+  /// 受保护条目解锁失败（非密码错误的其他失败）
+  static const String unlockFailed = 'unlockFailed';
+
+  /// 受保护条目密码错误（后端 401 Invalid password；arb 预置 wrongPassword key）
+  static const String wrongPassword = 'wrongPassword';
 
   /// 文件下载失败
   static const String downloadFailed = 'downloadFailed';
@@ -235,6 +273,10 @@ String? _localizedMessage(AppLocalizations l10n, String code) {
       return l10n.errorDeviceNotRegistered;
     case AppErrorCodes.networkError:
       return l10n.errorNetwork;
+    case AppErrorCodes.wrongPassword:
+      // C3：arb 预置 wrongPassword key，直接映射（detail 不附加，避免
+      // 「密码错误（HTTP 401）」这类技术噪音）
+      return l10n.wrongPassword;
     default:
       return null;
   }

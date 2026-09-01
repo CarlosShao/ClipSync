@@ -8,16 +8,21 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_view/photo_view.dart';
+import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../models/clipboard_item.dart';
+import '../../providers/clipboard_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/app_exception.dart';
+import '../../services/item_actions_api_service.dart';
 import '../../services/server_config.dart';
 import '../../services/shared_links_api_service.dart';
 import '../../services/token_store.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/clipboard_card.dart'
+    show ExpiryChoice, showExpiryPickerDialog, showTagsEditorDialog;
 
 /// 文本类（text/link/code）全量内容加载状态
 enum _TextLoadState { loading, loaded, error }
@@ -30,8 +35,15 @@ enum _TextLoadState { loading, loaded, error }
 ///   （调 GET /api/media/:id/download 下载到本机临时目录）；
 /// - text/link/code：全文展示（code 等宽字体），SelectionArea 支持选择复制。
 ///
-/// 底部操作栏：复制全量（Clipboard.setData +「已复制」提示）与收藏 toggle
-/// （消费既有 ApiService.toggleFavorite）。
+/// 受保护条目（C3，protectionLevel 非 none）：进入即锁定，不渲染任何内容，
+/// 弹密码对话框经 POST /api/protection/unlock（protection.js 协议，401 =
+/// 密码错误）验证；成功以返回内容填充条目并解除锁定，失败 wrongPassword
+/// 提示可重试；取消后保留锁定占位与解锁入口。
+///
+/// 底部操作栏：复制全量（Clipboard.setData +「已复制」提示）、收藏 toggle、
+/// 共享链接，以及 C3 条目动作溢出菜单（置顶 / 归档 / 编辑标签 / 过期时间，
+/// 与卡片长按菜单同一动作集，走同一 [ClipboardProvider] 方法）。
+/// 状态徽章（C3）：已过期 / 已归档展示在 AppBar 标题行。
 ///
 /// 全量内容拉取：text/link/code 经 [ApiService.getItemContent]
 /// （GET /api/clipboard/:id/content，token 由 TokenStore 静态解析）；
@@ -71,13 +83,25 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   // 文件卡片切换为「复制文件名」+ 降级提示，不再提供跨设备下载入口。
   bool _fileDegraded = false;
 
+  // C3：受保护条目锁定态（解锁前不渲染内容区）
+  bool _locked = false;
+
   bool get _isTextLike => _item.isText || _item.isLink || _item.isCode;
 
   @override
   void initState() {
     super.initState();
     _item = widget.item;
-    if (_item.isImage) {
+    if (_item.isProtected) {
+      // C3：受保护条目先锁定，首帧后弹密码对话框（不预取内容，
+      // 内容统一经 POST /api/protection/unlock 验证后获取）
+      _locked = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_showUnlockDialog());
+        }
+      });
+    } else if (_item.isImage) {
       _loadImage();
     } else if (_isTextLike) {
       _loadFullText();
@@ -246,6 +270,130 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // 受保护条目解锁（C3）
+  // ---------------------------------------------------------------------------
+
+  /// 密码解锁对话框：POST /api/protection/unlock（protection.js 协议），
+  /// 401 = 密码错误（wrongPassword），其余失败 unlockFailed，均在对话框内
+  /// 提示可重试；成功 pop(true) 并以返回内容分发加载。取消 pop(false)。
+  Future<void> _showUnlockDialog() async {
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final TextEditingController controller = TextEditingController();
+    final bool? unlocked = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        String? errorText;
+        bool submitting = false;
+        return StatefulBuilder(
+          builder:
+              (BuildContext innerContext, void Function(VoidCallback) setDialogState) {
+            Future<void> submit() async {
+              final String password = controller.text;
+              if (password.isEmpty || submitting) {
+                return;
+              }
+              setDialogState(() {
+                submitting = true;
+                errorText = null;
+              });
+              try {
+                final String content = await ItemActionsApiService()
+                    .unlock(null, _item.id, password);
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop(true);
+                }
+                await _onUnlocked(content);
+              } on Exception catch (e) {
+                setDialogState(() {
+                  submitting = false;
+                  errorText = friendlyError(e, l10n);
+                });
+              }
+            }
+
+            return AlertDialog(
+              title: Text(l10n.itemLocked),
+              content: TextField(
+                controller: controller,
+                obscureText: true,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: l10n.passwordLabel,
+                  errorText: errorText,
+                ),
+                onSubmitted: (_) => unawaited(submit()),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(l10n.cancel),
+                ),
+                FilledButton(
+                  onPressed: submitting ? null : () => unawaited(submit()),
+                  child: Text(l10n.unlock),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (unlocked != true && mounted) {
+      // 用户取消：保持锁定占位，可从占位按钮重新发起解锁
+      setState(() {});
+    }
+  }
+
+  /// 解锁成功：以返回内容回填条目并解除锁定，按类型分发加载
+  /// （image 走既有双通道；text/link/code 直接展示；file 走路径探测降级）。
+  Future<void> _onUnlocked(String content) async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _locked = false;
+      _item = _item.copyWith(fullContent: content);
+    });
+    if (_item.isImage) {
+      await _loadImage();
+    } else if (_isTextLike) {
+      setState(() {
+        _fullText = content;
+        _textState = _TextLoadState.loaded;
+      });
+    } else if (_item.isFile) {
+      await _probeFileContent();
+    }
+  }
+
+  /// 受保护条目锁定占位（C3）：解锁前不渲染任何内容，仅提供解锁入口。
+  Widget _buildLockedView(ThemeData theme) {
+    final ColorScheme scheme = theme.colorScheme;
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.lock_outline, size: 48, color: scheme.onSurfaceVariant),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            l10n.itemLocked,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          FilledButton.icon(
+            onPressed: () => unawaited(_showUnlockDialog()),
+            icon: const Icon(Icons.lock_open),
+            label: Text(l10n.unlock),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // 底部操作栏动作
   // ---------------------------------------------------------------------------
 
@@ -326,7 +474,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     }
   }
 
-  /// C5：创建共享链接——对当前条目直接调创建 API，成功后自动复制链接
+  /// C3：创建共享链接——对当前条目直接调创建 API，成功后自动复制链接
   /// （文案 sharedLinkCreated「已创建并复制」），失败经 SnackBar 提示。
   Future<void> _createSharedLink() async {
     final messenger = ScaffoldMessenger.of(context);
@@ -350,6 +498,133 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       if (mounted) {
         setState(() => _shareLinkBusy = false);
       }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 条目动作（C3：置顶 / 归档 / 过期 / 标签；与卡片长按菜单同一动作集，
+  // 走同一 [ClipboardProvider] 方法，列表随 Provider 通知同步，详情自身
+  // 以 _item 回写 + SnackBar 反馈）
+  // ---------------------------------------------------------------------------
+
+  /// C3 动作菜单分发。
+  void _onDetailMenuSelected(String action) {
+    switch (action) {
+      case 'pin':
+        unawaited(_togglePin());
+      case 'archive':
+        unawaited(_toggleArchive());
+      case 'expiry':
+        unawaited(_setExpiryFlow());
+      case 'tags':
+        unawaited(_editTagsFlow());
+    }
+  }
+
+  /// 置顶 toggle：Provider 乐观更新/重拉/回滚，详情 _item 同步回写。
+  Future<void> _togglePin() async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final ClipboardProvider provider = context.read<ClipboardProvider>();
+    final bool wasPinned = _item.isPinned;
+    try {
+      await provider.setPinned(null, _item.id, !wasPinned);
+      if (!mounted) return;
+      setState(() {
+        _item = _item.copyWith(
+          metadata: <String, dynamic>{..._item.metadata, 'pinned': !wasPinned},
+        );
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(wasPinned ? l10n.unpinSuccess : l10n.pinSuccess),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(e, l10n))));
+    }
+  }
+
+  /// 归档/取消归档：成功后条目已离开当前视图列表，提示并返回列表页
+  /// （归档提示 archivedBadge；取消归档以 unarchive 文案 + 返回作为反馈）。
+  Future<void> _toggleArchive() async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final ClipboardProvider provider = context.read<ClipboardProvider>();
+    final bool willArchive = !_item.isArchived;
+    try {
+      await provider.setArchived(null, _item.id, willArchive);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(willArchive ? l10n.archivedBadge : l10n.unarchive),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(e, l10n))));
+    }
+  }
+
+  /// 设置过期时间：预设选择对话框 → Provider.setExpiry → 详情 _item 回写
+  /// （清除过期走 withoutExpiry）→ expirySet 提示。
+  Future<void> _setExpiryFlow() async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final ClipboardProvider provider = context.read<ClipboardProvider>();
+    final ExpiryChoice? choice = await showExpiryPickerDialog(context);
+    if (choice == null || !mounted) {
+      return;
+    }
+    try {
+      await provider.setExpiry(null, _item.id, choice.expiresAt);
+      if (!mounted) return;
+      setState(() {
+        _item = (choice.expiresAt == null)
+            ? _item.withoutExpiry()
+            : _item.copyWith(expiresAt: choice.expiresAt);
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.expirySet),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(e, l10n))));
+    }
+  }
+
+  /// 编辑标签：标签编辑对话框 → Provider.updateTags → 详情 _item 回写 →
+  /// tagsSaved 提示。
+  Future<void> _editTagsFlow() async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final ClipboardProvider provider = context.read<ClipboardProvider>();
+    final List<String>? tags =
+        await showTagsEditorDialog(context, initialTags: _item.tags);
+    if (tags == null || !mounted) {
+      return;
+    }
+    try {
+      await provider.updateTags(null, _item.id, tags);
+      if (!mounted) return;
+      setState(() {
+        _item = _item.copyWith(
+          metadata: <String, dynamic>{..._item.metadata, 'tags': tags},
+        );
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.tagsSaved),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(e, l10n))));
     }
   }
 
@@ -471,11 +746,43 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            // C3 状态徽章：已过期 / 已归档
+            if (_item.isExpired) ...<Widget>[
+              const SizedBox(width: AppSpacing.sm),
+              _buildStatusBadge(theme, l10n.expiredBadge, theme.colorScheme.error),
+            ],
+            if (_item.isArchived) ...<Widget>[
+              const SizedBox(width: AppSpacing.sm),
+              _buildStatusBadge(
+                theme,
+                l10n.archivedBadge,
+                theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
           ],
         ),
       ),
       body: _buildBody(theme),
       bottomNavigationBar: _buildBottomBar(theme),
+    );
+  }
+
+  /// C3：状态徽章（已过期 / 已归档）：低透明底色 + 彩色小字胶囊。
+  Widget _buildStatusBadge(ThemeData theme, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 
@@ -497,8 +804,11 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     }
   }
 
-  /// 内容区按类型分发
+  /// 内容区按类型分发；受保护条目解锁前只渲染锁定占位（C3）
   Widget _buildBody(ThemeData theme) {
+    if (_locked) {
+      return _buildLockedView(theme);
+    }
     if (_item.isImage) {
       return _buildImageView(theme);
     }
@@ -826,21 +1136,22 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
         children: [
           Expanded(
             child: FilledButton.icon(
-              onPressed: _copyFull,
+              // C3：锁定期间不暴露内容复制
+              onPressed: _locked ? null : _copyFull,
               icon: const Icon(Icons.copy_rounded),
               label: Text(l10n.copy),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
           IconButton.filledTonal(
-            onPressed: _shareItem,
+            onPressed: _locked ? null : _shareItem,
             tooltip: l10n.share,
             icon: const Icon(Icons.share_rounded),
           ),
           const SizedBox(width: AppSpacing.sm),
-          // C5：创建共享链接入口（仅操作区追加，其余区域不动）
+          // C5：创建共享链接入口（仅操作区追加，其余区域不动；锁定期间禁用）
           IconButton.filledTonal(
-            onPressed: _shareLinkBusy ? null : _createSharedLink,
+            onPressed: (_shareLinkBusy || _locked) ? null : _createSharedLink,
             tooltip: l10n.createSharedLink,
             icon: _shareLinkBusy
                 ? const SizedBox(
@@ -849,6 +1160,69 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.add_link),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          // C3：条目动作溢出菜单（置顶/归档/编辑标签/过期；底栏空间有限）
+          PopupMenuButton<String>(
+            tooltip: l10n.moreActions,
+            icon: const Icon(Icons.more_vert),
+            onSelected: _onDetailMenuSelected,
+            itemBuilder: (BuildContext menuContext) => <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
+                value: 'pin',
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      _item.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                      size: 18,
+                      color: _item.isPinned
+                          ? AppColors.warning
+                          : scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(l10n.pinToTop),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'archive',
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      _item.isArchived
+                          ? Icons.unarchive_outlined
+                          : Icons.archive_outlined,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(_item.isArchived ? l10n.unarchive : l10n.archive),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'expiry',
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.schedule_outlined,
+                        size: 18, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(l10n.setExpiry),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'tags',
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.label_outline,
+                        size: 18, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(l10n.editTags),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(width: AppSpacing.sm),
           IconButton.filledTonal(

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/clipboard_item.dart';
 import '../providers/clipboard_provider.dart';
+import '../services/app_exception.dart';
 import '../services/server_config.dart';
 import '../services/token_store.dart';
 import '../theme/app_theme.dart';
@@ -24,7 +25,7 @@ const int _kThumbMemCacheWidth = 200;
 const int _kConfirmPreviewMaxChars = 60;
 
 /// 更多菜单动作（右上角按钮与长按共用一套菜单）。
-enum _CardAction { toggleFavorite, addToCollection, pin, delete }
+enum _CardAction { toggleFavorite, pin, setExpiry, archive, editTags, addToCollection, delete }
 
 /// 剪贴板条目卡片（T2.4）。
 ///
@@ -42,9 +43,14 @@ enum _CardAction { toggleFavorite, addToCollection, pin, delete }
 /// - 单击 → [onTap] 回调（详情跳转由列表页处理，保持单一导航入口）；
 /// - 长按 / 右上角更多按钮 → 同一弹出菜单：
 ///   收藏 toggle（[ClipboardProvider.toggleFavorite]，以服务端权威状态回写）、
-///   置顶（占位「即将上线」，禁用态）、加入分组（C1，经
-///   addItemToCollectionFlow 选组后加入）、删除（确认对话框后
-///   [ClipboardProvider.deleteItem]，成功移出列表）。
+///   置顶 toggle（C3，[ClipboardProvider.setPinned]，乐观更新 + 成功重拉 +
+///   失败回滚）、设置过期时间（C3，[showExpiryPickerDialog] 预设选择 →
+///   [ClipboardProvider.setExpiry]）、归档/取消归档（C3，
+///   [ClipboardProvider.setArchived]，按后端视图语义同步列表）、编辑标签
+///   （C3，[showTagsEditorDialog] → [ClipboardProvider.updateTags]）、
+///   加入分组（C1，经 addItemToCollectionFlow 选组后加入）、删除（确认
+///   对话框后 [ClipboardProvider.deleteItem]，成功移出列表）。
+/// - 状态徽章（C3）：置顶图钉 / 已过期 / 已归档展示在类型标签行。
 ///
 /// 图片条目：经媒体端点 `GET /api/media/:id/preview`（Bearer 鉴权）显示
 /// 服务端缩略图；无凭据或加载失败时回退类型图标块。
@@ -169,6 +175,19 @@ class _ClipboardCardState extends State<ClipboardCard> {
               const SizedBox(width: AppSpacing.xs),
               Icon(Icons.star, size: 14, color: _warningColor(theme)),
             ],
+            // C3 状态徽章：置顶 / 已过期 / 已归档
+            if (widget.item.isPinned) ...<Widget>[
+              const SizedBox(width: AppSpacing.xs),
+              Icon(Icons.push_pin, size: 12, color: _warningColor(theme)),
+            ],
+            if (widget.item.isExpired) ...<Widget>[
+              const SizedBox(width: AppSpacing.xs),
+              _buildBadge(l10n.expiredBadge, scheme.error),
+            ],
+            if (widget.item.isArchived) ...<Widget>[
+              const SizedBox(width: AppSpacing.xs),
+              _buildBadge(l10n.archivedBadge, scheme.onSurfaceVariant),
+            ],
           ],
         ),
         const SizedBox(height: AppSpacing.xs),
@@ -276,11 +295,14 @@ class _ClipboardCardState extends State<ClipboardCard> {
     );
   }
 
-  /// 更多菜单项：收藏 toggle / 置顶（占位禁用）/ 删除（红色危险项）。
+  /// 更多菜单项：收藏 toggle / 置顶 toggle（C3）/ 过期（C3）/ 归档（C3）/
+  /// 编辑标签（C3）/ 加入分组 / 删除（红色危险项）。
   List<PopupMenuEntry<_CardAction>> _buildMenuItems(ThemeData theme) {
     final ColorScheme scheme = theme.colorScheme;
     final AppLocalizations l10n = AppLocalizations.of(context);
     final bool favorite = widget.item.isFavorite;
+    final bool pinned = widget.item.isPinned;
+    final bool archived = widget.item.isArchived;
 
     return <PopupMenuEntry<_CardAction>>[
       PopupMenuItem<_CardAction>(
@@ -297,18 +319,53 @@ class _ClipboardCardState extends State<ClipboardCard> {
           ],
         ),
       ),
+      // C3 置顶 toggle：arb 无「取消置顶」动词 key（unpinSuccess 为结果文案），
+      // 菜单沿用 pinToTop，以图钉实心态区分当前状态。
       PopupMenuItem<_CardAction>(
-        enabled: false,
+        value: _CardAction.pin,
         child: Row(
           children: <Widget>[
-            Icon(Icons.push_pin_outlined, size: 18, color: scheme.onSurfaceVariant),
+            Icon(
+              pinned ? Icons.push_pin : Icons.push_pin_outlined,
+              size: 18,
+              color: pinned ? _warningColor(theme) : scheme.onSurfaceVariant,
+            ),
             const SizedBox(width: AppSpacing.sm),
             Text(l10n.pinToTop),
-            const Spacer(),
-            Text(
-              l10n.comingSoon,
-              style: theme.textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+      PopupMenuItem<_CardAction>(
+        value: _CardAction.setExpiry,
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.schedule_outlined, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: AppSpacing.sm),
+            Text(l10n.setExpiry),
+          ],
+        ),
+      ),
+      PopupMenuItem<_CardAction>(
+        value: _CardAction.archive,
+        child: Row(
+          children: <Widget>[
+            Icon(
+              archived ? Icons.unarchive_outlined : Icons.archive_outlined,
+              size: 18,
+              color: scheme.onSurfaceVariant,
             ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(archived ? l10n.unarchive : l10n.archive),
+          ],
+        ),
+      ),
+      PopupMenuItem<_CardAction>(
+        value: _CardAction.editTags,
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.label_outline, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: AppSpacing.sm),
+            Text(l10n.editTags),
           ],
         ),
       ),
@@ -345,11 +402,19 @@ class _ClipboardCardState extends State<ClipboardCard> {
     _menuKey.currentState?.showButtonMenu();
   }
 
-  /// 菜单动作分发。置顶为占位项（禁用态），正常不会回调。
+  /// 菜单动作分发（C3：置顶/过期/归档/标签均已接线）。
   void _onMenuSelected(_CardAction action) {
     switch (action) {
       case _CardAction.toggleFavorite:
         unawaited(_toggleFavorite());
+      case _CardAction.pin:
+        unawaited(_togglePin());
+      case _CardAction.setExpiry:
+        unawaited(_setExpiryFlow());
+      case _CardAction.archive:
+        unawaited(_toggleArchive());
+      case _CardAction.editTags:
+        unawaited(_editTagsFlow());
       case _CardAction.addToCollection:
         // C1：加入分组流程（拉分组 → 选择对话框 → addItem → 成功提示），
         // 实现收敛在 collection_picker.dart，本文件只做入口。
@@ -358,8 +423,6 @@ class _ClipboardCardState extends State<ClipboardCard> {
         );
       case _CardAction.delete:
         unawaited(_deleteWithConfirm());
-      case _CardAction.pin:
-        break;
     }
   }
 
@@ -368,6 +431,99 @@ class _ClipboardCardState extends State<ClipboardCard> {
     final ClipboardProvider provider = context.read<ClipboardProvider>();
     final String? token = await TokenStore.getAccessToken();
     await provider.toggleFavorite(token, widget.item.id);
+  }
+
+  /// 置顶 toggle（C3）：走 Provider（乐观更新 → 成功重拉第 1 页 /
+  /// 失败回滚），结果提示 pinSuccess / unpinSuccess。
+  Future<void> _togglePin() async {
+    final ClipboardProvider provider = context.read<ClipboardProvider>();
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final bool wasPinned = widget.item.isPinned;
+    final String? token = await TokenStore.getAccessToken();
+    try {
+      await provider.setPinned(token, widget.item.id, !wasPinned);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(wasPinned ? l10n.unpinSuccess : l10n.pinSuccess),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(e, l10n))));
+    }
+  }
+
+  /// 设置过期时间（C3）：预设选择对话框 → Provider.setExpiry →
+  /// 成功 expirySet 提示（清除过期同样提示）。
+  Future<void> _setExpiryFlow() async {
+    final ClipboardProvider provider = context.read<ClipboardProvider>();
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final ExpiryChoice? choice = await showExpiryPickerDialog(context);
+    if (choice == null || !mounted) {
+      return;
+    }
+    final String? token = await TokenStore.getAccessToken();
+    try {
+      await provider.setExpiry(token, widget.item.id, choice.expiresAt);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.expirySet),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(e, l10n))));
+    }
+  }
+
+  /// 归档/取消归档（C3）：Provider.setArchived 按后端视图语义同步列表
+  /// （默认视图排除归档 / 归档视图只含归档，动作后条目离开当前视图）。
+  /// 归档提示 archivedBadge；取消归档以列表移出作为反馈。
+  Future<void> _toggleArchive() async {
+    final ClipboardProvider provider = context.read<ClipboardProvider>();
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final bool willArchive = !widget.item.isArchived;
+    final String? token = await TokenStore.getAccessToken();
+    try {
+      await provider.setArchived(token, widget.item.id, willArchive);
+      if (willArchive) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(l10n.archivedBadge),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(e, l10n))));
+    }
+  }
+
+  /// 编辑标签（C3）：标签编辑对话框 → Provider.updateTags → tagsSaved 提示。
+  Future<void> _editTagsFlow() async {
+    final ClipboardProvider provider = context.read<ClipboardProvider>();
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final List<String>? tags =
+        await showTagsEditorDialog(context, initialTags: widget.item.tags);
+    if (tags == null || !mounted) {
+      return;
+    }
+    final String? token = await TokenStore.getAccessToken();
+    try {
+      await provider.updateTags(token, widget.item.id, tags);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.tagsSaved),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(e, l10n))));
+    }
   }
 
   /// 删除（带确认对话框）：确认后走 [ClipboardProvider.deleteItem]。
@@ -518,9 +674,28 @@ class _ClipboardCardState extends State<ClipboardCard> {
     }
   }
 
-  /// 警示色（收藏星标）：亮暗分档。
+  /// 警示色（收藏星标 / 置顶图钉）：亮暗分档。
   Color _warningColor(ThemeData theme) =>
       theme.brightness == Brightness.dark ? AppColors.warningDark : AppColors.warning;
+
+  /// 状态徽章（C3：已过期 / 已归档）：低透明底色 + 彩色小字胶囊。
+  Widget _buildBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
 
   /// 相对时间：刚刚 / N 分钟前 / N 小时前 / N 天前 / M 月 D 日。
   String _formatRelativeTime(AppLocalizations l10n, DateTime time) {
@@ -539,4 +714,126 @@ class _ClipboardCardState extends State<ClipboardCard> {
     }
     return l10n.relDateMD(time.month, time.day);
   }
+}
+
+/// 过期时间选择结果（C3）：[expiresAt] 为 null 表示「永不过期」（清除过期）。
+///
+/// 单独成类以区分「取消关闭」（showDialog 返回 null）与「选择永不过期」。
+class ExpiryChoice {
+  const ExpiryChoice(this.expiresAt);
+
+  /// 所选过期时刻；null = 永不过期（清除）。
+  final DateTime? expiresAt;
+}
+
+/// C3：过期时间预设选择对话框（卡片长按菜单与详情页共用）。
+///
+/// 预设时长对齐 arb 文案（expiryNever / OneHour / OneDay / OneWeek /
+/// OneMonth）：null（清除）/ 1 / 24 / 168 / 720 小时（月 = 30 天），
+/// 以选择时刻为基准计算绝对时刻，body 传 ISO 串（PUT /api/clipboard/:id
+/// 的 expiresAt 字段，后端 `new Date()` 解析）。
+/// 选择 → 返回 [ExpiryChoice]；取消 / 点外部关闭 → 返回 null。
+Future<ExpiryChoice?> showExpiryPickerDialog(BuildContext context) {
+  final AppLocalizations l10n = AppLocalizations.of(context);
+  final DateTime now = DateTime.now();
+  return showDialog<ExpiryChoice>(
+    context: context,
+    builder: (BuildContext dialogContext) => SimpleDialog(
+      title: Text(l10n.setExpiry),
+      children: <Widget>[
+        SimpleDialogOption(
+          onPressed: () =>
+              Navigator.of(dialogContext).pop(const ExpiryChoice(null)),
+          child: Text(l10n.expiryNever),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(dialogContext).pop(
+            ExpiryChoice(now.add(const Duration(hours: 1))),
+          ),
+          child: Text(l10n.expiryOneHour),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(dialogContext).pop(
+            ExpiryChoice(now.add(const Duration(hours: 24))),
+          ),
+          child: Text(l10n.expiryOneDay),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(dialogContext).pop(
+            ExpiryChoice(now.add(const Duration(hours: 168))),
+          ),
+          child: Text(l10n.expiryOneWeek),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(dialogContext).pop(
+            ExpiryChoice(now.add(const Duration(hours: 720))),
+          ),
+          child: Text(l10n.expiryOneMonth),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(l10n.cancel),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// C3：标签编辑对话框（卡片长按菜单与详情页共用）。
+///
+/// 输入按半角/全角逗号与换行拆分（[parseTagInput]），副标题提示
+/// tagsHint；空输入提交 = 清空全部标签。提交 → 返回标签列表；
+/// 取消 / 点外部关闭 → 返回 null。
+Future<List<String>?> showTagsEditorDialog(
+  BuildContext context, {
+  required List<String> initialTags,
+}) {
+  final AppLocalizations l10n = AppLocalizations.of(context);
+  final TextEditingController controller =
+      TextEditingController(text: initialTags.join(', '));
+  return showDialog<List<String>>(
+    context: context,
+    builder: (BuildContext dialogContext) => AlertDialog(
+      title: Text(l10n.editTags),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLines: 3,
+        minLines: 1,
+        decoration: InputDecoration(hintText: l10n.tagsHint),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.of(dialogContext).pop(parseTagInput(controller.text)),
+          child: Text(l10n.save),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 解析标签输入：按半角/全角逗号与换行拆分，去首尾空白、去空段、去重（保序）。
+List<String> parseTagInput(String raw) {
+  final List<String> tags = <String>[];
+  for (final String part in raw.split(RegExp(r'[,，\n]'))) {
+    final String tag = part.trim();
+    if (tag.isEmpty || tags.contains(tag)) {
+      continue;
+    }
+    tags.add(tag);
+  }
+  return tags;
 }

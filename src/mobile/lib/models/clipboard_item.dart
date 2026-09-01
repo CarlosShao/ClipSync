@@ -165,6 +165,40 @@ class ClipboardItem {
   /// 是否置顶（桌面端约定：metadata.pinned === true）
   bool get isPinned => metadata['pinned'] == true;
 
+  /// 是否已过期（C3：expiresAt 非空且早于当前时刻）
+  bool get isExpired {
+    final DateTime? expires = expiresAt;
+    return expires != null && expires.isBefore(DateTime.now());
+  }
+
+  /// 是否受密码保护（C3：protection_level 非 none，解锁走 POST /api/protection/unlock）
+  bool get isProtected => protectionLevel != 'none' && protectionLevel.isNotEmpty;
+
+  /// 返回清除过期时间的副本（C3）。
+  ///
+  /// [copyWith] 对可空字段的语义是「传 null = 保留原值」，无法显式置空，
+  /// 清除过期时间（expiryNever）时使用本方法。
+  ClipboardItem withoutExpiry() {
+    return ClipboardItem(
+      id: id,
+      contentType: contentType,
+      fullContent: fullContent,
+      contentPreview: contentPreview,
+      ocrText: ocrText,
+      contentSize: contentSize,
+      metadata: metadata,
+      isFavorite: isFavorite,
+      favoritedAt: favoritedAt,
+      isArchived: isArchived,
+      expiresAt: null,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      protectionLevel: protectionLevel,
+      sourceDeviceId: sourceDeviceId,
+      sourceDevice: sourceDevice,
+    );
+  }
+
   /// 标签列表（桌面端约定：metadata.tags 数组）
   List<String> get tags {
     final raw = metadata['tags'];

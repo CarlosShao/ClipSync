@@ -37,6 +37,7 @@ class _FilterPanelState extends State<FilterPanel> {
   String? _dateRange;
   String? _deviceId;
   bool _favoritesOnly = false;
+  bool _archiveView = false;
 
   @override
   void initState() {
@@ -45,6 +46,7 @@ class _FilterPanelState extends State<FilterPanel> {
     _dateRange = provider.filterDateRange;
     _deviceId = provider.filterDeviceId;
     _favoritesOnly = provider.favoritesOnly;
+    _archiveView = provider.archiveView;
   }
 
   void _apply() {
@@ -55,6 +57,7 @@ class _FilterPanelState extends State<FilterPanel> {
         dateRange: _dateRange,
         deviceId: _deviceId,
         favoritesOnly: _favoritesOnly,
+        archiveView: _archiveView,
       ),
     );
   }
@@ -66,6 +69,7 @@ class _FilterPanelState extends State<FilterPanel> {
       _dateRange = null;
       _deviceId = null;
       _favoritesOnly = false;
+      _archiveView = false;
     });
     unawaited(provider.resetAdvancedFilters());
   }
@@ -102,6 +106,16 @@ class _FilterPanelState extends State<FilterPanel> {
               title: Text(l10n.filterFavoritesOnly, style: textTheme.bodyMedium),
               value: _favoritesOnly,
               onChanged: (bool value) => setState(() => _favoritesOnly = value),
+            ),
+            // C3：已归档开关 —— 后端 GET /api/clipboard 仅支持 view=archive
+            // （只看归档）与缺省（排除归档）两种视图，无混合展示参数，
+            // 故开关语义为「切换到归档视图」而非「在列表中包含已归档」。
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(l10n.filterArchived, style: textTheme.bodyMedium),
+              value: _archiveView,
+              onChanged: (bool value) => setState(() => _archiveView = value),
             ),
             const SizedBox(height: AppSpacing.lg),
             _buildActions(l10n),
