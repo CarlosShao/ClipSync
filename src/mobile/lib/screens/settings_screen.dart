@@ -225,6 +225,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildSectionHeader(l10n.sectionData),
           _buildClearCacheButton(),
           _buildTemplatesTile(),
+          _buildSharedLinksTile(),
+          _buildNotificationsCenterTile(),
           const Divider(),
 
           _buildSectionHeader(l10n.sectionNotification),
@@ -440,6 +442,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       },
+    );
+  }
+
+  /// C5：共享链接管理入口（列表 / 复制 / 撤销 / 创建）
+  Widget _buildSharedLinksTile() {
+    final l10n = AppLocalizations.of(context);
+    return ListTile(
+      leading: const Icon(Icons.link),
+      title: Text(l10n.sharedLinks),
+      subtitle: Text(l10n.sharedLinksDesc),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => context.push(AppRoutes.sharedLinks),
+    );
+  }
+
+  /// C5：通知中心入口（站内通知列表 / 已读 / 全部已读）
+  Widget _buildNotificationsCenterTile() {
+    final l10n = AppLocalizations.of(context);
+    return ListTile(
+      leading: const Icon(Icons.mark_email_unread_outlined),
+      title: Text(l10n.notificationsCenter),
+      subtitle: Text(l10n.notificationsCenterDesc),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => context.push(AppRoutes.notifications),
     );
   }
 

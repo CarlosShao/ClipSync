@@ -10,10 +10,12 @@ import '../screens/clipboard/clipboard_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/lock_screen.dart';
 import '../screens/login_screen.dart';
+import '../screens/notifications/notifications_screen.dart';
 import '../screens/onboarding/permission_guide_screen.dart';
 import '../screens/onboarding_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/share/share_receive_screen.dart';
+import '../screens/shared/shared_links_screen.dart';
 import '../screens/subscription/subscription_management_screen.dart';
 import '../screens/templates/templates_screen.dart';
 import 'route_guard.dart';
@@ -46,6 +48,12 @@ class AppRoutes {
   /// T4.4：订阅管理页（设置页「订阅管理」入口；亦支持深链直达），
   /// 替代已删除的 screens/subscription_management_screen.dart 直推入口
   static const subscriptionManagement = '/subscriptions';
+
+  /// C5：共享链接页（设置页「共享链接」入口；亦支持深链直达）
+  static const sharedLinks = '/shared-links';
+
+  /// C5：通知中心页（设置页「通知中心」入口；亦支持深链直达）
+  static const notifications = '/notifications';
 
   /// T4.6：生物识别锁定页（由 [BiometricLockGate] 门控：布防时唯一可达页面）
   static const lock = '/lock';
@@ -101,6 +109,8 @@ class BiometricLockGate {
 /// - `/share/receive`   系统分享接收确认页（T3.5，extra: SharePayload）
 /// - `/templates`       模板库页（T4.2）
 /// - `/subscriptions`   订阅管理页（T4.4）
+/// - `/shared-links`    共享链接页（C5）
+/// - `/notifications`   通知中心页（C5）
 ///
 /// 四个 tab 由 [StatefulShellRoute.indexedStack] 组成同一个 shell：
 /// 每个分支一个独立 Navigator，分支容器为 IndexedStack（切 tab 保活，
@@ -227,6 +237,16 @@ GoRouter createAppRouter({
       GoRoute(
         path: AppRoutes.subscriptionManagement,
         builder: (context, state) => const SubscriptionManagementScreen(),
+      ),
+      // C5：共享链接（设置页 context.push 打开；列表/复制/撤销/创建）
+      GoRoute(
+        path: AppRoutes.sharedLinks,
+        builder: (context, state) => const SharedLinksScreen(),
+      ),
+      // C5：通知中心（设置页 context.push 打开；站内通知列表/已读/全部已读）
+      GoRoute(
+        path: AppRoutes.notifications,
+        builder: (context, state) => const NotificationsScreen(),
       ),
       // 主页 4 tab shell：IndexedStack 保活分支，HomeScreen 提供骨架外观
       StatefulShellRoute.indexedStack(

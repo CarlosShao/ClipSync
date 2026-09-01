@@ -15,6 +15,7 @@ import '../../models/clipboard_item.dart';
 import '../../services/api_service.dart';
 import '../../services/app_exception.dart';
 import '../../services/server_config.dart';
+import '../../services/shared_links_api_service.dart';
 import '../../services/token_store.dart';
 import '../../theme/app_theme.dart';
 
@@ -64,6 +65,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   // 操作栏忙碌状态
   bool _favoriteBusy = false;
   bool _downloadBusy = false;
+  bool _shareLinkBusy = false;
 
   // 文件条目降级（F4）：content 为来源设备本机路径 / 下载失败时置位，
   // 文件卡片切换为「复制文件名」+ 降级提示，不再提供跨设备下载入口。
@@ -321,6 +323,33 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.favoriteFailed)),
       );
+    }
+  }
+
+  /// C5：创建共享链接——对当前条目直接调创建 API，成功后自动复制链接
+  /// （文案 sharedLinkCreated「已创建并复制」），失败经 SnackBar 提示。
+  Future<void> _createSharedLink() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    setState(() => _shareLinkBusy = true);
+    try {
+      final link = await SharedLinksApiService()
+          .createLinkFromClipboardItem(_item);
+      await Clipboard.setData(ClipboardData(text: link.url));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.sharedLinkCreated),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } on Exception catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(friendlyError(e, l10n))),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _shareLinkBusy = false);
+      }
     }
   }
 
@@ -807,6 +836,19 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
             onPressed: _shareItem,
             tooltip: l10n.share,
             icon: const Icon(Icons.share_rounded),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          // C5：创建共享链接入口（仅操作区追加，其余区域不动）
+          IconButton.filledTonal(
+            onPressed: _shareLinkBusy ? null : _createSharedLink,
+            tooltip: l10n.createSharedLink,
+            icon: _shareLinkBusy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.add_link),
           ),
           const SizedBox(width: AppSpacing.sm),
           IconButton.filledTonal(
