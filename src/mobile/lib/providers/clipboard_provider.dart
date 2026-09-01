@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/clipboard_item.dart';
 import '../services/api_service.dart';
 import '../services/app_exception.dart';
+import '../services/search_history_api_service.dart';
 import '../services/token_store.dart';
 import '../utils/performance.dart';
 
@@ -18,8 +19,13 @@ import '../utils/performance.dart';
 /// - 全量内容：[resolveCopyText]（预览疑似截断时经内容接口拉取完整内容并回填缓存）
 /// - 实时同步：handleNewItem / handleBatchUpdate / handleDeletedItem /
 ///   handleBatchDeleted / handleFavoriteChanged（WS 回调接线，签名不变）
+/// - 搜索历史（C2）：[setSearchQuery] 成功后自动记录（去重防抖词），
+///   [searchHistory] / [loadSearchHistory] / [clearSearchHistory] 供浮层使用
+/// - 高级筛选（C2）：[filterDateRange] / [filterDeviceId]（[applyFilters] /
+///   [resetAdvancedFilters]），应用即重置分页重拉；[activeFilterCount] 供徽标
 class ClipboardProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
+  final SearchHistoryApiService _searchHistoryApi = SearchHistoryApiService();
 
   List<ClipboardItem> _items = [];
   bool _isLoading = false;
@@ -35,6 +41,17 @@ class ClipboardProvider extends ChangeNotifier {
   String? _searchQuery;
   String? _contentTypeFilter;
   bool _favoritesOnly = false;
+
+  // C2 高级筛选：时间范围（null = 全部时间）与来源设备（null = 全部设备）
+  String? _filterDateRange;
+  String? _filterDeviceId;
+
+  // C2 搜索历史：本地镜像（≤[kSearchHistoryLimit] 条），聚焦浮层直接读
+  static const int kSearchHistoryLimit = 10;
+  List<SearchHistoryItem> _searchHistory = const <SearchHistoryItem>[];
+
+  /// 最近一次成功记录到服务端的搜索词（连续重复搜索不重复记录）
+  String? _lastRecordedQuery;
 
   // F2：WS 到达但与当前类型筛选不匹配、暂未插入列表的新条目数
   int _pendingNewCount = 0;
@@ -58,6 +75,22 @@ class ClipboardProvider extends ChangeNotifier {
 
   /// 是否只看收藏
   bool get favoritesOnly => _favoritesOnly;
+
+  /// 当前搜索历史（最近搜索在前，本地镜像 ≤[kSearchHistoryLimit] 条）
+  List<SearchHistoryItem> get searchHistory => _searchHistory;
+
+  /// 时间范围筛选：null = 全部时间；'today' / 'week' / 'month'（FilterPanel 单选）
+  String? get filterDateRange => _filterDateRange;
+
+  /// 来源设备筛选：null = 全部设备（FilterPanel 单选，设备列表复用 DeviceProvider）
+  String? get filterDeviceId => _filterDeviceId;
+
+  /// 已激活的高级筛选数（时间范围 / 来源设备 / 仅收藏各计 1），
+  /// 供筛选入口徽标 activeFilters{count} 展示。
+  int get activeFilterCount =>
+      (_filterDateRange != null ? 1 : 0) +
+      (_filterDeviceId != null ? 1 : 0) +
+      (_favoritesOnly ? 1 : 0);
 
   /// WS 到达、但与当前类型筛选不匹配而未插入列表的新条目数（F2）。
   ///
@@ -97,7 +130,8 @@ class ClipboardProvider extends ChangeNotifier {
     await _fetchPage(token: token, page: _page, isRefresh: false, forceRefresh: forceRefresh);
   }
 
-  Future<void> _fetchPage({
+  /// 拉取一页；返回是否成功（搜索历史记录等后续动作据此决定是否触发）。
+  Future<bool> _fetchPage({
     required String token,
     required int page,
     required bool isRefresh,
@@ -115,6 +149,8 @@ class ClipboardProvider extends ChangeNotifier {
         contentType: _contentTypeFilter,
         search: _searchQuery,
         favorites: _favoritesOnly ? true : null,
+        deviceId: _filterDeviceId,
+        dateFrom: _resolveDateFrom(),
         forceRefresh: forceRefresh,
       );
 
@@ -139,11 +175,29 @@ class ClipboardProvider extends ChangeNotifier {
       }
 
       notifyListeners();
+      return true;
     } on Exception catch (e) {
       _error = e;
       notifyListeners();
+      return false;
     } finally {
       _isLoading = false;
+    }
+  }
+
+  /// 时间范围筛选 → `dateFrom` 请求参数（本地时区 [DateTime.now] 计算；
+  /// `dateTo` 不传 = 至今，对齐后端 GET /api/clipboard 的 `new Date(dateFrom)` 解析）。
+  String? _resolveDateFrom() {
+    final DateTime now = DateTime.now();
+    switch (_filterDateRange) {
+      case kDateRangeToday:
+        return DateTime(now.year, now.month, now.day).toUtc().toIso8601String();
+      case kDateRangeWeek:
+        return now.subtract(const Duration(days: 7)).toUtc().toIso8601String();
+      case kDateRangeMonth:
+        return now.subtract(const Duration(days: 30)).toUtc().toIso8601String();
+      default:
+        return null;
     }
   }
 
@@ -151,12 +205,24 @@ class ClipboardProvider extends ChangeNotifier {
   // 搜索 / 筛选（Wave 2 UI 数据层；防抖由 UI 层负责）
   // ---------------------------------------------------------------------------
 
-  /// 设置搜索关键字并重拉第 1 页；传 null/空串清除搜索
+  // 时间范围筛选值（FilterPanel 单选；与 l10n filterToday/Week/Month 对应）
+  static const String kDateRangeToday = 'today';
+  static const String kDateRangeWeek = 'week';
+  static const String kDateRangeMonth = 'month';
+
+  /// 设置搜索关键字并重拉第 1 页；传 null/空串清除搜索。
+  ///
+  /// C2：防抖触发的那次搜索**成功后**记录搜索历史——非空词、且与上次已记录
+  /// 词不同才 POST /api/search-history（记录失败静默，不影响搜索主流程）。
   Future<void> setSearchQuery(String? query) async {
     final next = (query == null || query.trim().isEmpty) ? null : query.trim();
     if (next == _searchQuery) return;
     _searchQuery = next;
-    await _reloadWithCurrentFilters();
+    final ok = await _reloadWithCurrentFilters();
+    if (ok && next != null && next != _lastRecordedQuery) {
+      _lastRecordedQuery = next;
+      await _recordSearchQuery(next);
+    }
   }
 
   /// 设置类型筛选并重拉第 1 页；传 null 清除筛选
@@ -174,23 +240,110 @@ class ClipboardProvider extends ChangeNotifier {
     await _reloadWithCurrentFilters();
   }
 
-  /// 清空全部搜索/筛选并重拉第 1 页
-  Future<void> clearFilters() async {
-    if (_searchQuery == null && _contentTypeFilter == null && !_favoritesOnly) return;
-    _searchQuery = null;
-    _contentTypeFilter = null;
+  /// 应用高级筛选（C2 FilterPanel「应用」； favoritesOnly 传 null = 维持现值）。
+  ///
+  /// 任一字段变化即重置分页从第 1 页重拉（与搜索/类型筛选切换同路径）。
+  Future<void> applyFilters({
+    String? dateRange,
+    String? deviceId,
+    bool? favoritesOnly,
+  }) async {
+    final nextDateRange = (dateRange == null || dateRange.isEmpty) ? null : dateRange;
+    final nextDeviceId = (deviceId == null || deviceId.isEmpty) ? null : deviceId;
+    final nextFavorites = favoritesOnly ?? _favoritesOnly;
+    if (nextDateRange == _filterDateRange &&
+        nextDeviceId == _filterDeviceId &&
+        nextFavorites == _favoritesOnly) {
+      return;
+    }
+    _filterDateRange = nextDateRange;
+    _filterDeviceId = nextDeviceId;
+    _favoritesOnly = nextFavorites;
+    await _reloadWithCurrentFilters();
+  }
+
+  /// 重置高级筛选（C2 FilterPanel「重置」：时间/设备/仅收藏全清，重拉第 1 页）。
+  Future<void> resetAdvancedFilters() async {
+    if (_filterDateRange == null && _filterDeviceId == null && !_favoritesOnly) {
+      return;
+    }
+    _filterDateRange = null;
+    _filterDeviceId = null;
     _favoritesOnly = false;
     await _reloadWithCurrentFilters();
   }
 
-  Future<void> _reloadWithCurrentFilters() async {
+  /// 清空全部搜索/筛选（含 C2 高级筛选）并重拉第 1 页
+  Future<void> clearFilters() async {
+    if (_searchQuery == null &&
+        _contentTypeFilter == null &&
+        !_favoritesOnly &&
+        _filterDateRange == null &&
+        _filterDeviceId == null) {
+      return;
+    }
+    _searchQuery = null;
+    _contentTypeFilter = null;
+    _favoritesOnly = false;
+    _filterDateRange = null;
+    _filterDeviceId = null;
+    await _reloadWithCurrentFilters();
+  }
+
+  Future<bool> _reloadWithCurrentFilters() async {
     final token = await _resolveToken();
     if (token == null) {
       _error = const AppException(AppErrorCodes.noToken);
       notifyListeners();
-      return;
+      return false;
     }
-    await _fetchPage(token: token, page: 1, isRefresh: true);
+    return _fetchPage(token: token, page: 1, isRefresh: true);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 搜索历史（C2）
+  // ---------------------------------------------------------------------------
+
+  /// 拉取搜索历史到本地镜像（搜索栏聚焦浮层展示前调用）；失败静默保留旧数据。
+  Future<void> loadSearchHistory() async {
+    try {
+      final items = await _searchHistoryApi.fetchHistory(limit: kSearchHistoryLimit);
+      _searchHistory = items;
+      notifyListeners();
+    } on Exception catch (_) {
+      // 静默失败：浮层沿用旧镜像或空态，不阻塞搜索栏交互
+    }
+  }
+
+  /// 记录搜索词（fire-and-forget 语义）：成功后乐观顶到本地镜像最前。
+  Future<void> _recordSearchQuery(String term) async {
+    try {
+      await _searchHistoryApi.recordQuery(term);
+      final merged = <SearchHistoryItem>[
+        SearchHistoryItem.local(term),
+        ..._searchHistory.where((SearchHistoryItem e) => e.keyword != term),
+      ];
+      _searchHistory = merged.length > kSearchHistoryLimit
+          ? merged.sublist(0, kSearchHistoryLimit)
+          : merged;
+      notifyListeners();
+    } on Exception catch (_) {
+      // 静默失败：历史记录不影响搜索主流程
+    }
+  }
+
+  /// 清空搜索历史（浮层「清空」按钮）；返回是否成功（SnackBar 用）。
+  Future<bool> clearSearchHistory() async {
+    try {
+      await _searchHistoryApi.clearHistory();
+      _searchHistory = const <SearchHistoryItem>[];
+      // 服务端已清空：下次搜索重新开始记录
+      _lastRecordedQuery = null;
+      notifyListeners();
+      return true;
+    } on Exception catch (_) {
+      return false;
+    }
   }
 
   Future<String?> _resolveToken() => TokenStore.getAccessToken();

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../providers/clipboard_provider.dart';
 import '../../theme/app_theme.dart';
+import 'filter_panel.dart';
 
 /// 筛选选项定义（value 为 provider 的 contentTypeFilter 值，null = 全部）。
 class _FilterOption {
@@ -40,13 +43,15 @@ String _optionLabel(AppLocalizations l10n, String? value) {
   }
 }
 
-/// 剪贴板流类型筛选 chips 横向滚动行（T2.3）。
+/// 剪贴板流类型筛选 chips 横向滚动行（T2.3 / C2 高级筛选入口）。
 ///
 /// 单选语义：全部 / 文本 / 链接 / 图片 / 文件。选中项回传
 /// [TypeFilterChips.onSelected]（「全部」回传 null），由宿主转发给
 /// `ClipboardProvider.setContentTypeFilter`（重置分页由 provider 处理）。
 ///
-/// 纯展示组件：选中态由 [TypeFilterChips.selected] 驱动，自身不持有状态。
+/// C2：行首固定渲染「高级筛选」入口 chip——无激活筛选时显示 advancedFilter，
+/// 有激活筛选时显示 activeFilters{count} 徽标（选中态高亮）；点击打开
+/// FilterPanel bottom sheet。
 class TypeFilterChips extends StatelessWidget {
   /// 创建类型筛选行。
   ///
@@ -68,10 +73,14 @@ class TypeFilterChips extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
-        itemCount: _kFilterOptions.length,
+        itemCount: _kFilterOptions.length + 1,
         separatorBuilder: (BuildContext context, int index) => const SizedBox(width: AppSpacing.sm),
         itemBuilder: (BuildContext context, int index) {
-          final option = _kFilterOptions[index];
+          // 行首：高级筛选入口（C2）
+          if (index == 0) {
+            return _buildFilterEntryChip(context, l10n);
+          }
+          final option = _kFilterOptions[index - 1];
           final isSelected = option.value == selected;
 
           return ChoiceChip(
@@ -90,6 +99,27 @@ class TypeFilterChips extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+
+  /// 高级筛选入口 chip（C2）：徽标数取 [ClipboardProvider.activeFilterCount]，
+  /// 点击打开 FilterPanel（应用/重置由面板提交，provider 负责重拉）。
+  Widget _buildFilterEntryChip(BuildContext context, AppLocalizations l10n) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final int activeCount = context.select<ClipboardProvider, int>((p) => p.activeFilterCount);
+    final bool hasActive = activeCount > 0;
+
+    return ChoiceChip(
+      selected: hasActive,
+      avatar: Icon(
+        Icons.tune,
+        size: 16,
+        color: hasActive ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
+      ),
+      label: Text(hasActive ? l10n.activeFilters(activeCount) : l10n.advancedFilter),
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
+      onSelected: (bool _) => showFilterPanel(context),
     );
   }
 }

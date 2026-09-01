@@ -22,6 +22,9 @@ class AppErrorCodes {
   /// 获取用户资料失败
   static const String fetchProfileFailed = 'fetchProfileFailed';
 
+  /// 用户资料更新失败（C6 账号区块；arb 暂无专属 key，经 detail / errorUnknown 兜底）
+  static const String updateProfileFailed = 'updateProfileFailed';
+
   /// 剪贴板列表加载失败
   static const String fetchClipboardFailed = 'fetchClipboardFailed';
 
@@ -120,6 +123,9 @@ class AppErrorCodes {
 
   /// 站内通知标记已读失败（C5 通知中心页）
   static const String markNotificationReadFailed = 'markNotificationReadFailed';
+
+  /// 搜索历史获取/记录/清空失败（C2；arb 无专属 key，映射 detail/errorUnknown）
+  static const String fetchSearchHistoryFailed = 'fetchSearchHistoryFailed';
 
   /// 文件下载失败
   static const String downloadFailed = 'downloadFailed';
