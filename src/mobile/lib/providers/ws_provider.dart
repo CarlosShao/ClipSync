@@ -67,6 +67,20 @@ class WsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// B3 网络恢复自动重连入口：未连接时按 home_screen 同款参数发起连接。
+  ///
+  /// 防重入：已连接短路；并发调用由 WsService 的 _connectEpoch 兜底 ——
+  /// 新 connect 使 csrf 在途的旧连接流程作废，最终只会开出一条通道。
+  /// 不改变 WsService 的指数退避重连策略本身。
+  void ensureConnected({
+    required String token,
+    required String deviceId,
+    required ClipboardProvider clipboardProvider,
+  }) {
+    if (_isConnected) return;
+    connect(token: token, deviceId: deviceId, clipboardProvider: clipboardProvider);
+  }
+
   @override
   void dispose() {
     _service.dispose();

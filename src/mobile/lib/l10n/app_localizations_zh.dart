@@ -219,6 +219,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushNotificationsDesc => '接收剪贴板同步通知';
 
   @override
+  String get clipboardCapture => '剪贴板采集';
+
+  @override
+  String get clipboardCaptureDesc => '关闭后，本机复制的内容不再自动同步到其他设备';
+
+  @override
   String get theme => '主题';
 
   @override
@@ -911,6 +917,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get errorUnknown => '操作失败，请稍后重试';
 
   @override
+  String get errorFetchNotificationPrefs => '获取通知偏好失败';
+
+  @override
+  String get errorUpdateNotificationPrefs => '保存通知偏好失败';
+
+  @override
   String get notifChannelClipboard => '剪贴板同步';
 
   @override
@@ -929,15 +941,37 @@ class AppLocalizationsZh extends AppLocalizations {
   String get notifNewClipboardBody => '收到新的剪贴板内容';
 
   @override
+  String get serverNotifPrefs => '服务端通知偏好';
+
+  @override
+  String get notifTypeDeviceOnline => '设备上线通知';
+
+  @override
+  String get notifTypeSyncComplete => '同步完成通知';
+
+  @override
+  String get notifTypeSecurityAlert => '安全告警通知';
+
+  @override
+  String get notifTypeProductUpdate => '产品更新通知';
+
+  @override
+  String get systemNotifSettings => '系统通知设置';
+
+  @override
+  String get systemNotifSettingsDesc => '在系统设置中管理 ClipSync 的通知权限与渠道';
+
+  @override
+  String get systemNotifSettingsFailed => '无法打开系统通知设置';
+
+  @override
   String get errorReportTitle => '错误报告';
 
   @override
-  String pendingReportsCount(int count) {
-    return '待发送错误报告：$count 条';
-  }
+  String get exportErrorLogs => '导出错误日志';
 
   @override
-  String get errorReportDesc => '这些错误将在下次联网时自动发送。';
+  String get errorLocalOnlyDesc => '错误仅记录在本机（最多保留 20 条），不会自动上传。';
 
   @override
   String get clearAll => '清空';

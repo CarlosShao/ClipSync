@@ -85,6 +85,12 @@ class AppErrorCodes {
   /// 剪贴板内容上传失败
   static const String uploadFailed = 'uploadFailed';
 
+  /// 服务端通知偏好获取失败（B3 通知设置页）
+  static const String fetchNotificationPrefsFailed = 'fetchNotificationPrefsFailed';
+
+  /// 服务端通知偏好保存失败（B3 通知设置页）
+  static const String updateNotificationPrefsFailed = 'updateNotificationPrefsFailed';
+
   /// 文件下载失败
   static const String downloadFailed = 'downloadFailed';
 
@@ -177,6 +183,10 @@ String? _localizedMessage(AppLocalizations l10n, String code) {
       return l10n.errorFetchInvoices;
     case AppErrorCodes.uploadFailed:
       return l10n.errorUpload;
+    case AppErrorCodes.fetchNotificationPrefsFailed:
+      return l10n.errorFetchNotificationPrefs;
+    case AppErrorCodes.updateNotificationPrefsFailed:
+      return l10n.errorUpdateNotificationPrefs;
     case AppErrorCodes.downloadFailed:
       return l10n.errorDownload;
     case AppErrorCodes.deviceNotRegistered:

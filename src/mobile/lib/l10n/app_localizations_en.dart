@@ -228,6 +228,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pushNotificationsDesc => 'Receive clipboard sync notifications';
 
   @override
+  String get clipboardCapture => 'Clipboard capture';
+
+  @override
+  String get clipboardCaptureDesc =>
+      'When off, content copied on this device no longer syncs to other devices';
+
+  @override
   String get theme => 'Theme';
 
   @override
@@ -950,6 +957,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errorUnknown => 'Something went wrong. Please try again later.';
 
   @override
+  String get errorFetchNotificationPrefs =>
+      'Failed to load notification preferences';
+
+  @override
+  String get errorUpdateNotificationPrefs =>
+      'Failed to save notification preference';
+
+  @override
   String get notifChannelClipboard => 'Clipboard sync';
 
   @override
@@ -970,16 +985,40 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notifNewClipboardBody => 'New clipboard content received';
 
   @override
+  String get serverNotifPrefs => 'Server notification preferences';
+
+  @override
+  String get notifTypeDeviceOnline => 'Device online';
+
+  @override
+  String get notifTypeSyncComplete => 'Sync complete';
+
+  @override
+  String get notifTypeSecurityAlert => 'Security alerts';
+
+  @override
+  String get notifTypeProductUpdate => 'Product updates';
+
+  @override
+  String get systemNotifSettings => 'System notification settings';
+
+  @override
+  String get systemNotifSettingsDesc =>
+      'Manage ClipSync\'s notification permission and channels in system settings';
+
+  @override
+  String get systemNotifSettingsFailed =>
+      'Could not open system notification settings';
+
+  @override
   String get errorReportTitle => 'Error report';
 
   @override
-  String pendingReportsCount(int count) {
-    return 'Pending error reports: $count';
-  }
+  String get exportErrorLogs => 'Export error logs';
 
   @override
-  String get errorReportDesc =>
-      'These errors will be sent automatically when the app next goes online.';
+  String get errorLocalOnlyDesc =>
+      'Errors are kept locally on this device (up to 20) and are never uploaded automatically.';
 
   @override
   String get clearAll => 'Clear all';

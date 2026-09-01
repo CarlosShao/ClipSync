@@ -506,6 +506,18 @@ abstract class AppLocalizations {
   /// **'Receive clipboard sync notifications'**
   String get pushNotificationsDesc;
 
+  /// No description provided for @clipboardCapture.
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard capture'**
+  String get clipboardCapture;
+
+  /// No description provided for @clipboardCaptureDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When off, content copied on this device no longer syncs to other devices'**
+  String get clipboardCaptureDesc;
+
   /// No description provided for @theme.
   ///
   /// In en, this message translates to:
@@ -1784,6 +1796,18 @@ abstract class AppLocalizations {
   /// **'Something went wrong. Please try again later.'**
   String get errorUnknown;
 
+  /// No description provided for @errorFetchNotificationPrefs.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load notification preferences'**
+  String get errorFetchNotificationPrefs;
+
+  /// No description provided for @errorUpdateNotificationPrefs.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to save notification preference'**
+  String get errorUpdateNotificationPrefs;
+
   /// No description provided for @notifChannelClipboard.
   ///
   /// In en, this message translates to:
@@ -1820,23 +1844,71 @@ abstract class AppLocalizations {
   /// **'New clipboard content received'**
   String get notifNewClipboardBody;
 
+  /// No description provided for @serverNotifPrefs.
+  ///
+  /// In en, this message translates to:
+  /// **'Server notification preferences'**
+  String get serverNotifPrefs;
+
+  /// No description provided for @notifTypeDeviceOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Device online'**
+  String get notifTypeDeviceOnline;
+
+  /// No description provided for @notifTypeSyncComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync complete'**
+  String get notifTypeSyncComplete;
+
+  /// No description provided for @notifTypeSecurityAlert.
+  ///
+  /// In en, this message translates to:
+  /// **'Security alerts'**
+  String get notifTypeSecurityAlert;
+
+  /// No description provided for @notifTypeProductUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Product updates'**
+  String get notifTypeProductUpdate;
+
+  /// No description provided for @systemNotifSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'System notification settings'**
+  String get systemNotifSettings;
+
+  /// No description provided for @systemNotifSettingsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage ClipSync\'s notification permission and channels in system settings'**
+  String get systemNotifSettingsDesc;
+
+  /// No description provided for @systemNotifSettingsFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open system notification settings'**
+  String get systemNotifSettingsFailed;
+
   /// No description provided for @errorReportTitle.
   ///
   /// In en, this message translates to:
   /// **'Error report'**
   String get errorReportTitle;
 
-  /// No description provided for @pendingReportsCount.
+  /// No description provided for @exportErrorLogs.
   ///
   /// In en, this message translates to:
-  /// **'Pending error reports: {count}'**
-  String pendingReportsCount(int count);
+  /// **'Export error logs'**
+  String get exportErrorLogs;
 
-  /// No description provided for @errorReportDesc.
+  /// No description provided for @errorLocalOnlyDesc.
   ///
   /// In en, this message translates to:
-  /// **'These errors will be sent automatically when the app next goes online.'**
-  String get errorReportDesc;
+  /// **'Errors are kept locally on this device (up to 20) and are never uploaded automatically.'**
+  String get errorLocalOnlyDesc;
 
   /// No description provided for @clearAll.
   ///

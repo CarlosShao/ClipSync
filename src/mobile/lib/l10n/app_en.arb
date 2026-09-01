@@ -92,6 +92,8 @@
   "serverUrlSaved": "Server address saved",
   "pushNotifications": "Push notifications",
   "pushNotificationsDesc": "Receive clipboard sync notifications",
+  "clipboardCapture": "Clipboard capture",
+  "clipboardCaptureDesc": "When off, content copied on this device no longer syncs to other devices",
   "theme": "Theme",
   "themeSystem": "Follow system",
   "themeLight": "Light",
@@ -455,6 +457,8 @@
   "errorDeviceNotRegistered": "Device not registered. Sign out and sign in again, then retry.",
   "errorNetwork": "Network error. Check your connection and retry.",
   "errorUnknown": "Something went wrong. Please try again later.",
+  "errorFetchNotificationPrefs": "Failed to load notification preferences",
+  "errorUpdateNotificationPrefs": "Failed to save notification preference",
 
   "notifChannelClipboard": "Clipboard sync",
   "notifChannelClipboardDesc": "Clipboard sync reminders between your devices (silent)",
@@ -463,14 +467,18 @@
   "notifClipboardUpdated": "Clipboard updated",
   "notifNewClipboardBody": "New clipboard content received",
 
+  "serverNotifPrefs": "Server notification preferences",
+  "notifTypeDeviceOnline": "Device online",
+  "notifTypeSyncComplete": "Sync complete",
+  "notifTypeSecurityAlert": "Security alerts",
+  "notifTypeProductUpdate": "Product updates",
+  "systemNotifSettings": "System notification settings",
+  "systemNotifSettingsDesc": "Manage ClipSync's notification permission and channels in system settings",
+  "systemNotifSettingsFailed": "Could not open system notification settings",
+
   "errorReportTitle": "Error report",
-  "pendingReportsCount": "Pending error reports: {count}",
-  "@pendingReportsCount": {
-    "placeholders": {
-      "count": { "type": "int" }
-    }
-  },
-  "errorReportDesc": "These errors will be sent automatically when the app next goes online.",
+  "exportErrorLogs": "Export error logs",
+  "errorLocalOnlyDesc": "Errors are kept locally on this device (up to 20) and are never uploaded automatically.",
   "clearAll": "Clear all",
   "errorQueueCleared": "Error queue cleared",
 

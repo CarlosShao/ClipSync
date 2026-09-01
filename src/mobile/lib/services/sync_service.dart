@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/auth_provider.dart';
 import 'api_service.dart';
@@ -16,10 +17,15 @@ import 'token_store.dart';
 /// - 登录态挂钩：[attach] 监听 AuthProvider，已登录 → 启动前台服务，登出 → 停止
 /// - MethodChannel（clipsync/sync）Dart → 原生：startService/stopService/
 ///   requestNotificationPermission/isBatteryOptimizationIgnored/requestIgnoreBatteryOptimization
-/// - MethodChannel 原生 → Dart：onClipboardCaptured → 转交 [ClipboardCaptureService]
+/// - MethodChannel 原生 → Dart：onClipboardCaptured → 采集开关判断（B3）→
+///   转交 [ClipboardCaptureService]
+/// - 剪贴板采集总开关（B3）：SharedPreferences `clipboard_capture_enabled`
+///   （默认开），采集入口每次实时读取，不缓存 stale 值；关闭只停采集，
+///   前台服务保持运行（WS 推送接收不受影响）
 /// - 离线重放（B2）：绑定队列上传器 + 监听网络恢复/启动在线 → 触发
 ///   [PendingUploadQueue.replayPending]（重入保护与空队列判断在队列内部）
-/// - 同步总开关：内存态（硬编码默认开），Wave 3 后续工单接设置页持久化
+/// - 网络恢复钩子（B3）：[onNetworkRestored] 由 main.dart 接线 WsProvider，
+///   弥补 WS 重连连续失败被放弃后无法自愈的缺口
 class SyncService {
   SyncService._();
 
@@ -27,18 +33,15 @@ class SyncService {
 
   static const MethodChannel _channel = MethodChannel('clipsync/sync');
 
-  /// 同步总开关（内存态，默认开启；关闭即停服并停止采集）
-  bool _syncEnabled = true;
-  bool get syncEnabled => _syncEnabled;
-  set syncEnabled(bool value) {
-    if (_syncEnabled == value) return;
-    _syncEnabled = value;
-    if (value) {
-      _start();
-    } else {
-      _stop();
-    }
-  }
+  /// 剪贴板采集总开关的 SharedPreferences 键（B3；写入方 settings_provider，
+  /// 默认 true。与设置页/SettingsProvider 保持同一字面量，勿改）
+  static const String _prefKeyCaptureEnabled = 'clipboard_capture_enabled';
+
+  /// 网络恢复钩子（B3）：connectivity_plus 恢复在线时触发；
+  /// main.dart 接线 WsProvider.ensureConnected —— WS 重连被既有策略放弃后
+  /// 由网络恢复事件重新发起连接。未接线时为空操作。
+  /// （实例成员：SyncService 为全局单例，main.dart 经 instance 挂钩）
+  void Function()? onNetworkRestored;
 
   AuthProvider? _auth;
   bool _attached = false;
@@ -61,10 +64,23 @@ class SyncService {
   void _onAuthChanged() {
     final auth = _auth;
     if (auth == null) return;
-    if (auth.isAuthenticated && _syncEnabled) {
+    // 采集开关关闭也不停服务：前台服务保持运行（WS 推送链路不受影响），
+    // 采集由 MethodChannel 入口按开关实时拦截
+    if (auth.isAuthenticated) {
       _start();
     } else {
       _stop();
+    }
+  }
+
+  /// 剪贴板采集开关实时读取（B3）：每次采集/重放前查 SharedPreferences，
+  /// 不缓存 stale 值；读取失败按默认开启处理（与 SettingsProvider 默认一致）
+  Future<bool> _isCaptureEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_prefKeyCaptureEnabled) ?? true;
+    } catch (_) {
+      return true;
     }
   }
 
@@ -81,7 +97,9 @@ class SyncService {
           final args = call.arguments;
           if (args is Map) {
             final text = args['text'];
-            if (text is String) {
+            // 采集总开关（B3）：关闭时丢弃回传文本（前台服务仍运行，
+            // 只是不再采集上传系统剪贴板）
+            if (text is String && await _isCaptureEnabled()) {
               ClipboardCaptureService.instance.handleCapturedText(text);
             }
           }
@@ -106,13 +124,17 @@ class SyncService {
 
     Connectivity().onConnectivityChanged.listen((results) {
       final online = results.any((c) => c != ConnectivityResult.none);
-      if (online) _triggerReplay('network restored');
+      if (online) {
+        // B3：网络恢复钩子（main.dart 接线 WS 自动重连，弥补重连放弃缺口）
+        onNetworkRestored?.call();
+        unawaited(_triggerReplay('network restored'));
+      }
     });
     Future<void>.delayed(const Duration(milliseconds: 800), () async {
       try {
         final results = await Connectivity().checkConnectivity();
         if (results.any((c) => c != ConnectivityResult.none)) {
-          _triggerReplay('startup online');
+          unawaited(_triggerReplay('startup online'));
         }
       } catch (e) {
         debugPrint('[SyncService] startup connectivity check failed: $e');
@@ -120,12 +142,13 @@ class SyncService {
     });
   }
 
-  /// 重放触发门控：未登录/同步关闭时不烧重试次数（队列原样保留）
-  void _triggerReplay(String reason) {
+  /// 重放触发门控：未登录/采集开关关闭时不烧重试次数（队列原样保留；
+  /// 隐私语义：关闭采集后不再把本机内容传出去，含离线积压重放）
+  Future<void> _triggerReplay(String reason) async {
     final auth = _auth;
-    if (auth == null || !auth.isAuthenticated || !_syncEnabled) {
+    if (auth == null || !auth.isAuthenticated || !await _isCaptureEnabled()) {
       debugPrint(
-          '[SyncService] replay skipped ($reason): not authenticated or sync disabled');
+          '[SyncService] replay skipped ($reason): not authenticated or capture disabled');
       return;
     }
     unawaited(PendingUploadQueue.instance.replayPending());

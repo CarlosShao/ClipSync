@@ -77,6 +77,8 @@
   "serverUrlSaved": "服务器地址已保存",
   "pushNotifications": "推送通知",
   "pushNotificationsDesc": "接收剪贴板同步通知",
+  "clipboardCapture": "剪贴板采集",
+  "clipboardCaptureDesc": "关闭后，本机复制的内容不再自动同步到其他设备",
   "theme": "主题",
   "themeSystem": "跟随系统",
   "themeLight": "浅色",
@@ -309,6 +311,8 @@
   "errorDeviceNotRegistered": "设备未注册，请退出重新登录后重试",
   "errorNetwork": "网络连接异常，请检查网络后重试",
   "errorUnknown": "操作失败，请稍后重试",
+  "errorFetchNotificationPrefs": "获取通知偏好失败",
+  "errorUpdateNotificationPrefs": "保存通知偏好失败",
 
   "notifChannelClipboard": "剪贴板同步",
   "notifChannelClipboardDesc": "设备间剪贴板内容同步提醒（静默，不发出声音）",
@@ -317,9 +321,18 @@
   "notifClipboardUpdated": "剪贴板已更新",
   "notifNewClipboardBody": "收到新的剪贴板内容",
 
+  "serverNotifPrefs": "服务端通知偏好",
+  "notifTypeDeviceOnline": "设备上线通知",
+  "notifTypeSyncComplete": "同步完成通知",
+  "notifTypeSecurityAlert": "安全告警通知",
+  "notifTypeProductUpdate": "产品更新通知",
+  "systemNotifSettings": "系统通知设置",
+  "systemNotifSettingsDesc": "在系统设置中管理 ClipSync 的通知权限与渠道",
+  "systemNotifSettingsFailed": "无法打开系统通知设置",
+
   "errorReportTitle": "错误报告",
-  "pendingReportsCount": "待发送错误报告：{count} 条",
-  "errorReportDesc": "这些错误将在下次联网时自动发送。",
+  "exportErrorLogs": "导出错误日志",
+  "errorLocalOnlyDesc": "错误仅记录在本机（最多保留 20 条），不会自动上传。",
   "clearAll": "清空",
   "errorQueueCleared": "已清空错误队列",
 

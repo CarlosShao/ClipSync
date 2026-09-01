@@ -71,6 +71,28 @@ void main() async {
   );
   SyncService.instance.attach(authProvider);
 
+  // B3：网络恢复 → WS 自动重连。WsService 连续重连 10 次失败会按既有策略
+  // 永久放弃，此处由 SyncService 的 connectivity 恢复事件重新发起连接；
+  // WsProvider 在 main() 创建（.value 注入），供本钩子与 UI 共用同一实例。
+  final wsProvider = WsProvider();
+  SyncService.instance.onNetworkRestored = () {
+    if (!authProvider.isAuthenticated) return;
+    final token = authProvider.token;
+    if (token == null || token.isEmpty) return;
+    final deviceId = authProvider.deviceId;
+    if (deviceId == null || deviceId.isEmpty) {
+      // 设备 id 未就绪（注册未完成）：由 home_screen 的 ensureDeviceId 链路兜底
+      debugPrint('[B3] network restored: skip WS reconnect, deviceId not ready');
+      return;
+    }
+    debugPrint('[B3] network restored: ensure WS connected');
+    wsProvider.ensureConnected(
+      token: token,
+      deviceId: deviceId,
+      clipboardProvider: clipboardProvider,
+    );
+  };
+
   // 创建 go_router 路由表（守卫依赖 authProvider / guardState）
   final appRouter = createAppRouter(
     authProvider: authProvider,
@@ -107,6 +129,7 @@ void main() async {
     guardState: guardState,
     settingsProvider: settingsProvider,
     clipboardProvider: clipboardProvider,
+    wsProvider: wsProvider,
   ));
 }
 
@@ -136,6 +159,9 @@ class ClipSyncApp extends StatefulWidget {
   /// T3.1/T3.2：带回环登记的剪贴板 Provider（main() 中创建并绑定采集服务）
   final EchoAwareClipboardProvider clipboardProvider;
 
+  /// B3：WS Provider（main() 中创建，onNetworkRestored 钩子与 UI 共用）
+  final WsProvider wsProvider;
+
   const ClipSyncApp({
     super.key,
     required this.appRouter,
@@ -143,6 +169,7 @@ class ClipSyncApp extends StatefulWidget {
     required this.guardState,
     required this.settingsProvider,
     required this.clipboardProvider,
+    required this.wsProvider,
   });
 
   @override
@@ -197,7 +224,8 @@ class _ClipSyncAppState extends State<ClipSyncApp> with WidgetsBindingObserver {
         // 抛 ProviderNotFoundException（真机已踩坑）
         ChangeNotifierProvider<ClipboardProvider>.value(value: widget.clipboardProvider),
         ChangeNotifierProvider(create: (context) => DeviceProvider()),
-        ChangeNotifierProvider(create: (context) => WsProvider()),
+        // B3：WsProvider 在 main() 创建（onNetworkRestored 钩子与 UI 共用）
+        ChangeNotifierProvider<WsProvider>.value(value: widget.wsProvider),
       ],
       // T4.5: i18n —— locale 由 SettingsProvider.language 驱动（设置页切换即时生效，
       // 持久化键 'language'；未迁移的硬编码文案不受影响，后续渐进迁移）

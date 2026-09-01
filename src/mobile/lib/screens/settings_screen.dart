@@ -24,7 +24,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _serverUrlController = TextEditingController();
-  bool _notificationsEnabled = true;
 
   /// 主题模式 int 枚举：0=system / 1=light / 2=dark（与 ThemeMode.index 对齐）
   int _themeModeIndex = 0;
@@ -68,7 +67,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     setState(() {
       _serverUrlController.text = prefs.getString('server_url') ?? ServerConfig.baseUrl;
-      _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
       _themeModeIndex = settings.themeModeIndex;
       _language = prefs.getString('language') ?? 'zh';
       _biometricSupported = biometricSupported;
@@ -89,12 +87,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// B3：推送通知开关——读写改走 SettingsProvider（SharedPreferences 键
+  /// notifications_enabled 不变，本地通知链路 LocalNotificationService 读取
+  /// 同一键不受影响）；与通知设置页（notification_settings_screen）共用同一
+  /// provider 字段，两处联动。
   Future<void> _toggleNotifications(bool value) async {
-    setState(() {
-      _notificationsEnabled = value;
-    });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('notifications_enabled', value);
+    await context.read<SettingsProvider>().setNotificationsEnabled(value);
   }
 
   Future<void> _setThemeMode(int? value) async {
@@ -231,6 +229,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           _buildSectionHeader(l10n.sectionNotification),
           _buildNotificationSettings(),
+          _buildClipboardCaptureSetting(),
           const Divider(),
 
           _buildSectionHeader(l10n.sectionSubscription),
@@ -281,10 +280,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildNotificationSetting() {
     final l10n = AppLocalizations.of(context);
+    // B3：值来自 SettingsProvider（通知设置页切换后返回本页仍保持联动）
+    final notificationsEnabled = context.watch<SettingsProvider>().notificationsEnabled;
     return SwitchListTile(
       title: Text(l10n.pushNotifications),
       subtitle: Text(l10n.pushNotificationsDesc),
-      value: _notificationsEnabled,
+      value: notificationsEnabled,
       onChanged: (value) => _toggleNotifications(value),
     );
   }
@@ -438,6 +439,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             builder: (context) => const NotificationSettingsScreen(),
           ),
         );
+      },
+    );
+  }
+
+  /// B3：剪贴板采集总开关——关闭后本机复制内容不再自动同步到其他设备
+  /// （前台服务保持运行，WS 推送接收不受影响；状态与持久化在
+  /// SettingsProvider 'clipboard_capture_enabled'，采集侧实时读取）
+  Widget _buildClipboardCaptureSetting() {
+    final l10n = AppLocalizations.of(context);
+    final captureEnabled = context.watch<SettingsProvider>().clipboardCaptureEnabled;
+    return SwitchListTile(
+      secondary: const Icon(Icons.content_copy),
+      title: Text(l10n.clipboardCapture),
+      subtitle: Text(l10n.clipboardCaptureDesc),
+      value: captureEnabled,
+      onChanged: (value) {
+        context.read<SettingsProvider>().setClipboardCaptureEnabled(value);
       },
     );
   }
