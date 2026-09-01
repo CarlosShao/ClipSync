@@ -268,7 +268,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// C6：账号资料区块——圆形头像（昵称/手机号首字，主色底白字；有 avatarUrl
   /// 则显示网络头像）+ 昵称（未设置显示手机号）+ 手机号/邮箱副信息行，
-  /// 点击弹昵称编辑对话框；未登录（user 为 null）灰化占位。
+  /// trailing 套餐徽标（G6：数据源 auth_provider 已拉的 user.plan，服务端
+  /// GET /api/auth/me 的 COALESCE(plan_name, 'Free')；Free 灰、付费主题色
+  /// 小 Chip，样式对齐订阅页 _buildStatusChip），点击弹昵称编辑对话框；
+  /// 未登录（user 为 null）灰化占位。
   Widget _buildAccountSection() {
     final l10n = AppLocalizations.of(context);
     final user = context.watch<AuthProvider>().user;
@@ -287,6 +290,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final phone = ((user['phone'] as String?) ?? '').trim();
     final email = ((user['email'] as String?) ?? '').trim();
     final avatarUrl = ((user['avatarUrl'] as String?) ?? '').trim();
+    final plan = ((user['plan'] as String?) ?? '').trim();
 
     final display = nickname.isNotEmpty ? nickname : phone;
     final subtitle = phone.isNotEmpty ? phone : email;
@@ -311,8 +315,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       title: Text(display.isNotEmpty ? display : l10n.notLoggedIn),
       subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
-      trailing: const Icon(Icons.chevron_right),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (plan.isNotEmpty) ...[
+            _buildPlanBadge(plan),
+            const SizedBox(width: AppSpacing.xs),
+          ],
+          const Icon(Icons.chevron_right),
+        ],
+      ),
       onTap: _showEditNicknameDialog,
+    );
+  }
+
+  /// G6：套餐徽标小 Chip——Free（不区分大小写）灰色，付费套餐（Pro/
+  /// Enterprise 等）主题色；plan 缺失时不展示（由调用方判断）。
+  Widget _buildPlanBadge(String plan) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    final bool isFree = plan.toLowerCase() == 'free';
+    final (Color background, Color foreground) = isFree
+        ? (scheme.surfaceContainerHighest, scheme.onSurfaceVariant)
+        : (scheme.primaryContainer, scheme.onPrimaryContainer);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Text(
+        plan,
+        style: textTheme.labelSmall?.copyWith(
+          color: foreground,
+          fontWeight: FontWeight.w600,
+        ),
+        maxLines: 1,
+      ),
     );
   }
 

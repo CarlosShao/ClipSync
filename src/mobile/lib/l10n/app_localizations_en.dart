@@ -1199,6 +1199,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get filterAllTime => 'All time';
 
   @override
+  String get filterCustom => 'Custom';
+
+  @override
+  String get filterDateFrom => 'Start';
+
+  @override
+  String get filterDateTo => 'End';
+
+  @override
   String get filterDevice => 'Device';
 
   @override
@@ -1310,4 +1319,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get variableDefaultValue => 'Default value (optional)';
+
+  @override
+  String get multiSelect => 'Select multiple';
+
+  @override
+  String selectedCount(int count) {
+    return '$count selected';
+  }
+
+  @override
+  String get selectAll => 'Select all';
+
+  @override
+  String get deselectAll => 'Deselect all';
+
+  @override
+  String get moveToCollection => 'Move to…';
+
+  @override
+  String moveSuccess(int count) {
+    return 'Moved $count items';
+  }
 }

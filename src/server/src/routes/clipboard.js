@@ -83,6 +83,11 @@ router.get('/', apiLimiter, async (req, res) => {
       whereClause += ' AND ci.archived = FALSE';
     }
 
+    // 过期条目不可见（G7 / exp-api：产品期望「过期即消失」）：
+    // expires_at 为空（永不过期）恒可见；已过期（<= now）从列表与 totalItems
+    // 中排除（COUNT 与列表共用 whereClause，计数天然一致）。
+    whereClause += ' AND (ci.expires_at IS NULL OR ci.expires_at > NOW())';
+
     if (search) {
       const cleanSearch = validateSearch(search);
       if (cleanSearch) {

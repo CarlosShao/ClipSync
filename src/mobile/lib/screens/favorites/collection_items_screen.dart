@@ -34,7 +34,15 @@ import '../../widgets/favorites/collection_picker.dart';
 /// - 「加入其他分组」：分组选择对话框 → addItemToCollection（后端唯一归属
 ///   自动移出其他分组 = 移动语义）→ 本组列表即时移除该条目；
 /// - 「移出分组」：removeItemFromCollection，乐观移除 + 失败回滚
-///   （条目仅解除分组关联，不从剪贴板删除）。
+///   （条目仅解除分组关联，不从剪贴板删除）；
+/// - 「多选」（C1 收尾）：进入多选模式（AppBar 动作图标同入口）。
+///
+/// 多选模式（C1 收尾：条目多选移动）：
+/// - AppBar 切换为多选态：关闭按钮 + 「已选 N 项」标题 + 全选/取消全选；
+/// - 条目前出现勾选框，点击条目切换勾选（复制/长按菜单暂停）；
+/// - 底部操作栏「移动到…」→ collection_picker 选目标分组 → 批量
+///   addItemToCollection（后端唯一归属 = 移动语义，加入即自动移出本组）；
+///   完成后退出多选态并刷新。
 class CollectionItemsScreen extends StatefulWidget {
   const CollectionItemsScreen({required this.collection, super.key});
 
@@ -56,6 +64,19 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
 
   /// 最近一次失败的原始错误对象（UI 层经 friendlyError 映射 l10n 文案）
   Object? _error;
+
+  /// 多选模式（C1 收尾）：AppBar 动作 / 长按菜单进入，批量移动完成后退出
+  bool _multiSelect = false;
+
+  /// 多选模式下已勾选的条目 id
+  final Set<String> _selectedIds = <String>{};
+
+  /// 批量移动进行中（防重复提交 + 按钮转圈）
+  bool _moving = false;
+
+  /// 当前列表条目是否已全部勾选（空列表视为未全选）
+  bool get _isAllSelected =>
+      _items.isNotEmpty && _selectedIds.length == _items.length;
 
   @override
   void initState() {
@@ -180,6 +201,11 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
               ),
               onTap: () => Navigator.of(sheetContext).pop('remove'),
             ),
+            ListTile(
+              leading: const Icon(Icons.checklist),
+              title: Text(l10n.multiSelect),
+              onTap: () => Navigator.of(sheetContext).pop('multi'),
+            ),
           ],
         ),
       ),
@@ -191,6 +217,9 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
       await _moveEntryToOtherCollection(entry);
     } else if (action == 'remove') {
       await _removeEntryFromCollection(entry);
+    } else if (action == 'multi') {
+      // 长按入口进入多选态，并预勾选该条目
+      _enterMultiSelect(entry.id);
     }
   }
 
@@ -231,18 +260,207 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // 多选移动（C1 收尾）
+  // ---------------------------------------------------------------------------
+
+  /// 进入多选模式；[initialId] 非空时预勾选该条目（长按菜单入口）。
+  void _enterMultiSelect([String? initialId]) {
+    setState(() {
+      _multiSelect = true;
+      _selectedIds.clear();
+      if (initialId != null) {
+        _selectedIds.add(initialId);
+      }
+    });
+  }
+
+  /// 退出多选模式并清空勾选。
+  void _exitMultiSelect() {
+    setState(() {
+      _multiSelect = false;
+      _selectedIds.clear();
+    });
+  }
+
+  /// 勾选/取消勾选单个条目。
+  void _toggleSelected(String entryId) {
+    setState(() {
+      if (_selectedIds.contains(entryId)) {
+        _selectedIds.remove(entryId);
+      } else {
+        _selectedIds.add(entryId);
+      }
+    });
+  }
+
+  /// 全选/取消全选（AppBar 动作：已全选 → 取消全选，否则全选）。
+  void _toggleSelectAll() {
+    setState(() {
+      if (_isAllSelected) {
+        _selectedIds.clear();
+      } else {
+        _selectedIds.addAll(_items.map((FavoriteEntry e) => e.id));
+      }
+    });
+  }
+
+  /// 批量移动勾选条目到其他分组：
+  ///
+  /// 1. 拉取全部分组并排除当前组（无可选分组 → noAvailableGroups 提示）；
+  /// 2. [showCollectionPickerDialog] 选择目标分组（取消 = 放弃本次移动）；
+  /// 3. 逐条调既有 addItemToCollection —— 后端唯一归属：加入目标分组时自动
+  ///    移出其他分组（含本组），即「移动」语义，无需先 removeItemFromCollection
+  ///    （先删后加在加失败时会把条目留在无分组状态，add-first 更稳）；
+  /// 4. 全部失败 → 保留多选态与勾选便于重试；有成功项 → 移出本地列表、
+  ///    退出多选态并刷新（部分失败时对失败部分追加 friendlyError 提示）。
+  Future<void> _moveSelectedToCollection() async {
+    if (_selectedIds.isEmpty || _moving) {
+      return;
+    }
+    // initState 阶段捕获引用，避免跨 async gap 使用 context
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _moving = true);
+    try {
+      final groups = await _api.listCollections();
+      if (!mounted) {
+        return;
+      }
+      final options = groups
+          .where((CollectionGroup g) => g.id != widget.collection.id)
+          .toList();
+      if (options.isEmpty) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(l10n.noAvailableGroups)));
+        return;
+      }
+
+      final target = await showCollectionPickerDialog(context, groups: options);
+      if (target == null || !mounted) {
+        return;
+      }
+
+      final pendingIds = List<String>.of(_selectedIds);
+      final movedIds = <String>[];
+      Object? firstError;
+      for (final String id in pendingIds) {
+        try {
+          await _api.addItemToCollection(target.id, id);
+          movedIds.add(id);
+        } on Exception catch (e) {
+          firstError ??= e;
+        }
+      }
+      if (!mounted) {
+        return;
+      }
+      // 结果提示（单条 SnackBar）：全部成功 → moveSuccess；
+      // 部分/全部失败 → moveSuccess（有成功项时）+ friendlyError 并列展示，
+      // 避免后一条把前一条顶掉。
+      final Widget feedback = firstError == null
+          ? Text(l10n.moveSuccess(movedIds.length))
+          : (movedIds.isEmpty
+              ? Text(friendlyError(firstError, l10n))
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(l10n.moveSuccess(movedIds.length)),
+                    Text(friendlyError(firstError, l10n)),
+                  ],
+                ));
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: feedback));
+
+      if (movedIds.isEmpty) {
+        // 全部失败：保留多选态与勾选，提示错误后可重试
+        return;
+      }
+      // 完成后退出多选态并刷新：先本地移出已移动项（避免闪烁），再拉服务端权威状态
+      setState(() {
+        _items.removeWhere((FavoriteEntry e) => movedIds.contains(e.id));
+        _multiSelect = false;
+        _selectedIds.clear();
+        _moving = false;
+      });
+      await _load();
+    } finally {
+      if (mounted && _moving) {
+        setState(() => _moving = false);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // 构建
   // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.collection.name),
+        leading: _multiSelect
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: l10n.cancel,
+                onPressed: _exitMultiSelect,
+              )
+            : null,
+        title: Text(
+          _multiSelect
+              ? l10n.selectedCount(_selectedIds.length)
+              : widget.collection.name,
+        ),
+        actions: <Widget>[
+          if (_multiSelect)
+            IconButton(
+              icon: Icon(_isAllSelected ? Icons.deselect : Icons.select_all),
+              tooltip: _isAllSelected ? l10n.deselectAll : l10n.selectAll,
+              onPressed: _toggleSelectAll,
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.checklist),
+              tooltip: l10n.multiSelect,
+              onPressed: () => _enterMultiSelect(),
+            ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: _buildContent(),
+      ),
+      bottomNavigationBar: _multiSelect ? _buildSelectionBar(l10n) : null,
+    );
+  }
+
+  /// 多选底部操作栏：「移动到…」批量移动到其他分组（无勾选 / 移动中禁用）。
+  Widget _buildSelectionBar(AppLocalizations l10n) {
+    return BottomAppBar(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: FilledButton.icon(
+              onPressed:
+                  (_selectedIds.isEmpty || _moving) ? null : _moveSelectedToCollection,
+              icon: _moving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.drive_file_move_outlined),
+              label: Text(l10n.moveToCollection),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -293,24 +511,40 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
 
   /// 条目卡片：类型色块 + 3 行预览 + 来源设备与相对时间；
   /// 整行点击复制全文（复制中行尾转圈），长按弹分组管理菜单。
+  /// 多选模式下：条目前出现勾选框，点击切换勾选，复制/长按菜单暂停。
   Widget _buildEntryTile(FavoriteEntry entry) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final textTheme = theme.textTheme;
     final l10n = AppLocalizations.of(context);
     final isCopying = _copyingId == entry.id;
+    final isSelected = _selectedIds.contains(entry.id);
 
     return Card(
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
+      // 多选态勾选高亮：轻微品牌色底（未勾选保持卡片默认底色）
+      color: _multiSelect && isSelected
+          ? scheme.primary.withValues(alpha: 0.08)
+          : null,
       child: InkWell(
-        onTap: isCopying ? null : () => unawaited(_copyEntry(entry)),
-        onLongPress: () => unawaited(_showEntryActions(entry)),
+        onTap: _multiSelect
+            ? () => _toggleSelected(entry.id)
+            : (isCopying ? null : () => unawaited(_copyEntry(entry))),
+        onLongPress:
+            _multiSelect ? null : () => unawaited(_showEntryActions(entry)),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
+              if (_multiSelect) ...<Widget>[
+                Checkbox(
+                  value: isSelected,
+                  onChanged: (_) => _toggleSelected(entry.id),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+              ],
               _buildTypeBadge(entry, scheme),
               const SizedBox(width: AppSpacing.md),
               Expanded(
@@ -348,21 +582,24 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: AppSpacing.sm),
-              Padding(
-                padding: const EdgeInsets.only(top: AppSpacing.xs),
-                child: isCopying
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        Icons.content_copy_outlined,
-                        size: 18,
-                        color: scheme.onSurfaceVariant,
-                      ),
-              ),
+              // 多选态隐藏复制入口（点击语义切换为勾选），避免误导
+              if (!_multiSelect) ...<Widget>[
+                const SizedBox(width: AppSpacing.sm),
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  child: isCopying
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          Icons.content_copy_outlined,
+                          size: 18,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                ),
+              ],
             ],
           ),
         ),

@@ -393,6 +393,9 @@
   "filterWeek": "最近 7 天",
   "filterMonth": "最近 30 天",
   "filterAllTime": "全部时间",
+  "filterCustom": "自定义",
+  "filterDateFrom": "开始",
+  "filterDateTo": "结束",
   "filterDevice": "来源设备",
   "filterAllDevices": "全部设备",
   "filterFavoritesOnly": "仅收藏",
@@ -430,5 +433,12 @@
   "deleteTemplateConfirm": "确定删除模板「{name}」吗？",
   "templateDeleted": "模板已删除",
   "templateVarsHint": "内容中用双大括号包裹变量名即可声明变量",
-  "variableDefaultValue": "默认值（可选）"
+  "variableDefaultValue": "默认值（可选）",
+
+  "multiSelect": "多选",
+  "selectedCount": "已选 {count} 项",
+  "selectAll": "全选",
+  "deselectAll": "取消全选",
+  "moveToCollection": "移动到…",
+  "moveSuccess": "已移动 {count} 项"
 }

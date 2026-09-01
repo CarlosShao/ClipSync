@@ -2240,6 +2240,24 @@ abstract class AppLocalizations {
   /// **'All time'**
   String get filterAllTime;
 
+  /// No description provided for @filterCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get filterCustom;
+
+  /// No description provided for @filterDateFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'Start'**
+  String get filterDateFrom;
+
+  /// No description provided for @filterDateTo.
+  ///
+  /// In en, this message translates to:
+  /// **'End'**
+  String get filterDateTo;
+
   /// No description provided for @filterDevice.
   ///
   /// In en, this message translates to:
@@ -2455,6 +2473,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Default value (optional)'**
   String get variableDefaultValue;
+
+  /// No description provided for @multiSelect.
+  ///
+  /// In en, this message translates to:
+  /// **'Select multiple'**
+  String get multiSelect;
+
+  /// No description provided for @selectedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} selected'**
+  String selectedCount(int count);
+
+  /// No description provided for @selectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get selectAll;
+
+  /// No description provided for @deselectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Deselect all'**
+  String get deselectAll;
+
+  /// No description provided for @moveToCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to…'**
+  String get moveToCollection;
+
+  /// No description provided for @moveSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Moved {count} items'**
+  String moveSuccess(int count);
 }
 
 class _AppLocalizationsDelegate

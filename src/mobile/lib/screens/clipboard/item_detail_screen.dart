@@ -22,7 +22,7 @@ import '../../services/shared_links_api_service.dart';
 import '../../services/token_store.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/clipboard_card.dart'
-    show ExpiryChoice, showExpiryPickerDialog, showTagsEditorDialog;
+    show ClipboardTagChips, ExpiryChoice, showExpiryPickerDialog, showTagsEditorDialog;
 
 /// 文本类（text/link/code）全量内容加载状态
 enum _TextLoadState { loading, loaded, error }
@@ -762,7 +762,26 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
           ],
         ),
       ),
-      body: _buildBody(theme),
+      body: Column(
+        children: <Widget>[
+          // G2 标签展示：有标签时在内容区顶部渲染 chips（横排可滚动，
+          // 最多 3 个 + "+N"）；受保护条目解锁前不渲染任何内容，含标签
+          if (!_locked && _item.tags.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.md,
+                AppSpacing.lg,
+                0,
+              ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ClipboardTagChips(tags: _item.tags),
+              ),
+            ),
+          Expanded(child: _buildBody(theme)),
+        ],
+      ),
       bottomNavigationBar: _buildBottomBar(theme),
     );
   }

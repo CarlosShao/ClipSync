@@ -18,10 +18,12 @@ import '../../theme/app_theme.dart';
 ///
 /// C2 搜索历史浮层：聚焦且输入框为空时展示最近 10 条历史（数据源
 /// `ClipboardProvider.searchHistory`，聚焦时经 [ClipboardProvider.loadSearchHistory]
-/// 刷新）；点击条目回填输入框并按既有防抖路径执行搜索；底部「清空」经
-/// [ClipboardProvider.clearSearchHistory] 清空并提示 searchHistoryCleared；
-/// 失焦 / 点击浮层外部 / 输入非空文本时收起。交互对齐桌面端
-/// SearchHistoryDropdown.vue（只读参照）。
+/// 刷新）；点击条目回填输入框并按既有防抖路径执行搜索；条目尾部删除图标
+/// （G4）经 [ClipboardProvider.deleteSearchHistory] 删除单条（服务端 + 本地
+/// 镜像同步移除，浮层经 AnimatedBuilder 自动刷新，失败提示 deleteFailed）；
+/// 底部「清空」经 [ClipboardProvider.clearSearchHistory] 清空并提示
+/// searchHistoryCleared；失焦 / 点击浮层外部 / 输入非空文本时收起。交互对齐
+/// 桌面端 SearchHistoryDropdown.vue（只读参照）。
 class ClipboardSearchBar extends StatefulWidget {
   /// 创建搜索栏。
   ///
@@ -225,7 +227,8 @@ class _ClipboardSearchBarState extends State<ClipboardSearchBar> {
                   padding: EdgeInsets.zero,
                   itemCount: items.length,
                   itemBuilder: (BuildContext context, int index) {
-                    final keyword = items[index].keyword;
+                    final SearchHistoryItem item = items[index];
+                    final keyword = item.keyword;
                     return Listener(
                       onPointerDown: (_) => _historyPressing = true,
                       child: ListTile(
@@ -237,6 +240,18 @@ class _ClipboardSearchBarState extends State<ClipboardSearchBar> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: textTheme.bodyMedium,
+                        ),
+                        // G4：单条删除（点图标不触发回填）；删除后 provider
+                        // 镜像更新，浮层随 AnimatedBuilder 刷新
+                        trailing: IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 16,
+                          icon: Icon(Icons.close, color: scheme.onSurfaceVariant),
+                          tooltip: l10n.delete,
+                          onPressed: () =>
+                              unawaited(_handleDeleteHistory(provider, item)),
                         ),
                         onTap: () => _pickHistoryKeyword(keyword),
                       ),
@@ -299,6 +314,23 @@ class _ClipboardSearchBarState extends State<ClipboardSearchBar> {
         SnackBar(content: Text(l10n.searchHistoryCleared)),
       );
     }
+  }
+
+  /// G4：删除单条历史——浮层保持打开（输入框仍聚焦为空态），列表经
+  /// provider 通知自动刷新；失败提示 deleteFailed（不收起浮层，可重试）。
+  Future<void> _handleDeleteHistory(
+    ClipboardProvider provider,
+    SearchHistoryItem item,
+  ) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final bool ok = await provider.deleteSearchHistory(item);
+    if (!mounted || ok) {
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(content: Text(l10n.deleteFailed)),
+    );
   }
 
   // ---------------------------------------------------------------------------

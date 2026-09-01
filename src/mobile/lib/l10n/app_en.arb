@@ -556,6 +556,9 @@
   "filterWeek": "Last 7 days",
   "filterMonth": "Last 30 days",
   "filterAllTime": "All time",
+  "filterCustom": "Custom",
+  "filterDateFrom": "Start",
+  "filterDateTo": "End",
   "filterDevice": "Device",
   "filterAllDevices": "All devices",
   "filterFavoritesOnly": "Favorites only",
@@ -595,5 +598,14 @@
   "@deleteTemplateConfirm": { "placeholders": { "name": { "type": "String" } } },
   "templateDeleted": "Template deleted",
   "templateVarsHint": "Wrap a variable name in double braces in the content to declare it",
-  "variableDefaultValue": "Default value (optional)"
+  "variableDefaultValue": "Default value (optional)",
+
+  "multiSelect": "Select multiple",
+  "selectedCount": "{count} selected",
+  "@selectedCount": { "placeholders": { "count": { "type": "int" } } },
+  "selectAll": "Select all",
+  "deselectAll": "Deselect all",
+  "moveToCollection": "Move to…",
+  "moveSuccess": "Moved {count} items",
+  "@moveSuccess": { "placeholders": { "count": { "type": "int" } } }
 }

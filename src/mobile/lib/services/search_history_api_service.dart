@@ -50,7 +50,9 @@ class SearchHistoryItem {
 /// 挂载于 src/server/src/index.js:433）：
 /// - GET    /api/search-history?limit=N → { items: [...], count: n }
 /// - POST   /api/search-history {keyword} → 201 { id, keyword, ... }
-/// - DELETE /api/search-history → { ok: true }
+/// - DELETE /api/search-history → { ok: true }（清空全部）
+/// - DELETE /api/search-history?keyword=K → { ok: true }（G4 单条删除·按关键词）
+/// - DELETE /api/search-history/:id → { ok: true }（G4 单条删除·按行 id，404=不存在）
 ///
 /// Bearer 令牌统一走 [TokenStore.getAccessToken()]（T1.2 冻结契约）；Bearer
 /// 认证请求在服务端跳过 CSRF 校验（csrf.js:157），POST/DELETE 可直连。
@@ -114,6 +116,32 @@ class SearchHistoryApiService {
       headers: await _headers(),
     );
 
+    if (response.statusCode != 200) {
+      throw const AppException(AppErrorCodes.fetchSearchHistoryFailed);
+    }
+  }
+
+  /// 删除单条历史（G4）：优先按服务端行 id（DELETE /:id，404 视为已不存在，
+  /// 与删除语义一致故不视为失败）；本地乐观镜像无 id 时按关键词兜底
+  /// （DELETE /?keyword=）。
+  Future<void> deleteHistory({String? id, String? keyword}) async {
+    if (id != null && id.isNotEmpty) {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/$id'),
+        headers: await _headers(),
+      );
+      if (response.statusCode != 200 && response.statusCode != 404) {
+        throw const AppException(AppErrorCodes.fetchSearchHistoryFailed);
+      }
+      return;
+    }
+    if (keyword == null || keyword.isEmpty) {
+      return;
+    }
+    final response = await http.delete(
+      Uri.parse('$_baseUrl?keyword=${Uri.encodeQueryComponent(keyword)}'),
+      headers: await _headers(),
+    );
     if (response.statusCode != 200) {
       throw const AppException(AppErrorCodes.fetchSearchHistoryFailed);
     }

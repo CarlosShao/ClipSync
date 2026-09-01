@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import pool from '../db/pool.js';
-import { validateSearch } from '../validation/validator.js';
+import { isValidUUID, validateSearch } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
 import { logger } from '../utils/logger.js';
 
@@ -47,14 +47,53 @@ router.post('/', apiLimiter, async (req, res) => {
   }
 });
 
-// DELETE /api/search-history - 清空当前用户全部搜索历史
+// DELETE /api/search-history - 清空当前用户全部搜索历史；
+// 携带 ?keyword= 时仅删除该关键词的单条记录（G4 单条删除：客户端本地镜像条目
+// 可能尚未持有服务端行 id，按关键词删除兜底；keyword 与全清互斥）。
+// 写入路径经 validateSearch 的 HTML 实体转义且该转义不幂等，故按
+// 「转义后 + 原始」两种形态匹配（ANY 数组），保证含特殊字符的关键词也能命中。
 router.delete('/', apiLimiter, async (req, res) => {
   try {
+    const rawKeyword = req.query.keyword;
+    if (rawKeyword !== undefined) {
+      const raw = String(rawKeyword).trim().substring(0, 100);
+      const candidates = [...new Set([validateSearch(raw, 100), raw].filter(Boolean))];
+      if (candidates.length === 0) {
+        return res.status(400).json({ error: 'Keyword is required' });
+      }
+      await pool.query(
+        'DELETE FROM search_history WHERE user_id = $1 AND keyword = ANY($2::text[])',
+        [req.userId, candidates]
+      );
+      return res.json({ ok: true });
+    }
     await pool.query('DELETE FROM search_history WHERE user_id = $1', [req.userId]);
     res.json({ ok: true });
   } catch (err) {
     logger.error('Clear search history error:', err);
     res.status(500).json({ error: 'Failed to clear search history' });
+  }
+});
+
+// DELETE /api/search-history/:id - 删除单条历史（按行 id；WHERE 同时限定
+// user_id，跨用户 id 一律 404，保证用户隔离）
+router.delete('/:id', apiLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+    const result = await pool.query(
+      'DELETE FROM search_history WHERE id = $1 AND user_id = $2',
+      [id, req.userId]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Search history not found' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('Delete search history error:', err);
+    res.status(500).json({ error: 'Failed to delete search history' });
   }
 });
 

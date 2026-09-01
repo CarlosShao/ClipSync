@@ -22,7 +22,8 @@ import '../utils/performance.dart';
 ///   handleBatchDeleted / handleFavoriteChanged（WS 回调接线，签名不变）
 /// - 搜索历史（C2）：[setSearchQuery] 成功后自动记录（去重防抖词），
 ///   [searchHistory] / [loadSearchHistory] / [clearSearchHistory] 供浮层使用
-/// - 高级筛选（C2）：[filterDateRange] / [filterDeviceId]（[applyFilters] /
+/// - 高级筛选（C2/G5）：[filterDateRange]（today/week/month/custom，custom 档
+///   配 [filterCustomFrom] / [filterCustomTo]）/ [filterDeviceId]（[applyFilters] /
 ///   [resetAdvancedFilters]），应用即重置分页重拉；[activeFilterCount] 供徽标
 class ClipboardProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
@@ -48,6 +49,11 @@ class ClipboardProvider extends ChangeNotifier {
   String? _filterDateRange;
   String? _filterDeviceId;
 
+  // G5 自定义时间范围：仅 _filterDateRange == kDateRangeCustom 时参与查询，
+  // dateFrom = 起始日 00:00、dateTo = 结束日 23:59:59.999（本地时区换算 UTC）
+  DateTime? _filterCustomFrom;
+  DateTime? _filterCustomTo;
+
   // C3 归档视图（filterArchived 开关）：true = 仅看已归档（后端 view=archive），
   // false = 默认视图（后端排除已归档，无「混合展示」参数）
   bool _archiveView = false;
@@ -64,6 +70,10 @@ class ClipboardProvider extends ChangeNotifier {
 
   // 节流器：限制 notifyListeners() 调用频率
   final Throttler _notifyThrottler = Throttler(interval: const Duration(milliseconds: 100));
+
+  // G3：过期过滤的假空态保护——整页被过滤清空时自动续拉的最大页数
+  // （上限防环：服务端分页异常/时钟偏差下不无限请求）
+  static const int _kMaxExpiredSkipPages = 5;
 
   List<ClipboardItem> get items => _items;
   bool get isLoading => _isLoading;
@@ -85,8 +95,13 @@ class ClipboardProvider extends ChangeNotifier {
   /// 当前搜索历史（最近搜索在前，本地镜像 ≤[kSearchHistoryLimit] 条）
   List<SearchHistoryItem> get searchHistory => _searchHistory;
 
-  /// 时间范围筛选：null = 全部时间；'today' / 'week' / 'month'（FilterPanel 单选）
+  /// 时间范围筛选：null = 全部时间；'today' / 'week' / 'month' / 'custom'
+  /// （FilterPanel 单选）
   String? get filterDateRange => _filterDateRange;
+
+  /// 自定义时间范围起止（G5，仅 [kDateRangeCustom] 档生效；FilterPanel 回显用）
+  DateTime? get filterCustomFrom => _filterCustomFrom;
+  DateTime? get filterCustomTo => _filterCustomTo;
 
   /// 来源设备筛选：null = 全部设备（FilterPanel 单选，设备列表复用 DeviceProvider）
   String? get filterDeviceId => _filterDeviceId;
@@ -141,6 +156,12 @@ class ClipboardProvider extends ChangeNotifier {
   }
 
   /// 拉取一页；返回是否成功（搜索历史记录等后续动作据此决定是否触发）。
+  ///
+  /// G3（C3 过期条目过滤·移动端侧）：结果映射时过滤已过期条目
+  /// （expiresAt 非空且早于当前时刻；服务端侧过滤由服务端另行实施）。
+  /// 过滤后若本页为空且服务端还有下一页，自动续拉（上限
+  /// [_kMaxExpiredSkipPages] 页），避免整页全是过期条目时出现「假空态」；
+  /// 页码推进到实际取到的最后一页，保持分页计数大致正确。
   Future<bool> _fetchPage({
     required String token,
     required int page,
@@ -153,19 +174,35 @@ class ClipboardProvider extends ChangeNotifier {
     if (shouldNotify) notifyListeners();
 
     try {
-      final result = await _api.getClipboardItems(
-        token,
-        page: page,
-        contentType: _contentTypeFilter,
-        search: _searchQuery,
-        favorites: _favoritesOnly ? true : null,
-        deviceId: _filterDeviceId,
-        dateFrom: _resolveDateFrom(),
-        view: _archiveView ? 'archive' : null,
-        forceRefresh: forceRefresh,
-      );
+      // 单页请求收敛为局部函数：自动续拉复用同一套筛选参数
+      Future<ClipboardPage> fetchPage(int p) => _api.getClipboardItems(
+            token,
+            page: p,
+            contentType: _contentTypeFilter,
+            search: _searchQuery,
+            favorites: _favoritesOnly ? true : null,
+            deviceId: _filterDeviceId,
+            dateFrom: _resolveDateFrom(),
+            dateTo: _resolveDateTo(),
+            view: _archiveView ? 'archive' : null,
+            forceRefresh: forceRefresh,
+          );
 
-      final newItems = result.items;
+      ClipboardPage result = await fetchPage(page);
+      List<ClipboardItem> newItems = _filterExpired(result.items);
+
+      // 假空态保护：本页可见条目为 0 且还有下一页 → 自动续拉一页
+      int fetchedPage = page;
+      int skippedPages = 0;
+      while (newItems.isEmpty &&
+          result.hasMore &&
+          skippedPages < _kMaxExpiredSkipPages) {
+        skippedPages++;
+        fetchedPage = page + skippedPages;
+        result = await fetchPage(fetchedPage);
+        newItems = _filterExpired(result.items);
+      }
+
       if (isRefresh) {
         _items = newItems;
       } else {
@@ -176,8 +213,9 @@ class ClipboardProvider extends ChangeNotifier {
 
       _totalItems = result.total;
       _hasMore = result.hasMore;
-      // 只在成功时推进页码：失败保留页码，重试拿到的是同一页
-      _page = page + 1;
+      // 只在成功时推进页码：失败保留页码，重试拿到的是同一页；
+      // 自动续拉后推进到实际取到的最后一页的下一页
+      _page = fetchedPage + 1;
 
       // 第 1 页刷新成功 = 服务端已按当前筛选重同步，被筛选挡住的新条目
       // 要么已进入本页、要么已被用户主动放弃（F2 浮条清零）
@@ -196,6 +234,12 @@ class ClipboardProvider extends ChangeNotifier {
     }
   }
 
+  /// G3：过滤已过期条目（expiresAt 非空且早于当前时刻，与
+  /// [ClipboardItem.isExpired] 判定一致；刷新前列表已展示的过期条目
+  /// 维持「已过期」徽标展示，刷新/分页时被过滤）。
+  List<ClipboardItem> _filterExpired(List<ClipboardItem> items) =>
+      items.where((ClipboardItem item) => !item.isExpired).toList();
+
   /// 时间范围筛选 → `dateFrom` 请求参数（本地时区 [DateTime.now] 计算；
   /// `dateTo` 不传 = 至今，对齐后端 GET /api/clipboard 的 `new Date(dateFrom)` 解析）。
   String? _resolveDateFrom() {
@@ -207,19 +251,42 @@ class ClipboardProvider extends ChangeNotifier {
         return now.subtract(const Duration(days: 7)).toUtc().toIso8601String();
       case kDateRangeMonth:
         return now.subtract(const Duration(days: 30)).toUtc().toIso8601String();
+      case kDateRangeCustom:
+        final DateTime? from = _filterCustomFrom;
+        return from == null
+            ? null
+            : DateTime(from.year, from.month, from.day).toUtc().toIso8601String();
       default:
         return null;
     }
+  }
+
+  /// 自定义时间范围 → `dateTo` 请求参数（G5）：结束日 23:59:59.999 本地时间
+  /// （含当天全部时刻）；非 custom 档恒为 null（= 至今，与预设档语义一致）。
+  String? _resolveDateTo() {
+    if (_filterDateRange != kDateRangeCustom) {
+      return null;
+    }
+    final DateTime? to = _filterCustomTo;
+    if (to == null) {
+      return null;
+    }
+    return DateTime(to.year, to.month, to.day, 23, 59, 59, 999)
+        .toUtc()
+        .toIso8601String();
   }
 
   // ---------------------------------------------------------------------------
   // 搜索 / 筛选（Wave 2 UI 数据层；防抖由 UI 层负责）
   // ---------------------------------------------------------------------------
 
-  // 时间范围筛选值（FilterPanel 单选；与 l10n filterToday/Week/Month 对应）
+  // 时间范围筛选值（FilterPanel 单选；与 l10n filterToday/Week/Month/Custom 对应）
   static const String kDateRangeToday = 'today';
   static const String kDateRangeWeek = 'week';
   static const String kDateRangeMonth = 'month';
+
+  /// G5 自定义时间范围档（起止日期经 [applyFilters] 的 customFrom/customTo 传入）
+  static const String kDateRangeCustom = 'custom';
 
   /// 设置搜索关键字并重拉第 1 页；传 null/空串清除搜索。
   ///
@@ -261,9 +328,15 @@ class ClipboardProvider extends ChangeNotifier {
   /// 应用高级筛选（C2/C3 FilterPanel「应用」； favoritesOnly / archiveView
   /// 传 null = 维持现值）。
   ///
+  /// G5：`dateRange` 传 [kDateRangeCustom] 时必须同时传 customFrom + customTo
+  /// （起止倒置自动对调；日期缺失则整档回退为「全部时间」，防半选态提交）；
+  /// 非自定义档传入的 custom 日期一律忽略清空。
+  ///
   /// 任一字段变化即重置分页从第 1 页重拉（与搜索/类型筛选切换同路径）。
   Future<void> applyFilters({
     String? dateRange,
+    DateTime? customFrom,
+    DateTime? customTo,
     String? deviceId,
     bool? favoritesOnly,
     bool? archiveView,
@@ -272,13 +345,34 @@ class ClipboardProvider extends ChangeNotifier {
     final nextDeviceId = (deviceId == null || deviceId.isEmpty) ? null : deviceId;
     final nextFavorites = favoritesOnly ?? _favoritesOnly;
     final nextArchiveView = archiveView ?? _archiveView;
-    if (nextDateRange == _filterDateRange &&
+
+    // 解析自定义档：日期齐全才生效（倒置对调），否则回退「全部时间」
+    String? effectiveRange = nextDateRange;
+    DateTime? nextCustomFrom;
+    DateTime? nextCustomTo;
+    if (nextDateRange == kDateRangeCustom) {
+      if (customFrom != null && customTo != null) {
+        final bool ordered = !customFrom.isAfter(customTo);
+        nextCustomFrom = ordered ? customFrom : customTo;
+        nextCustomTo = ordered ? customTo : customFrom;
+      } else {
+        effectiveRange = null;
+      }
+    }
+
+    final bool dateRangeChanged = effectiveRange != _filterDateRange ||
+        (effectiveRange == kDateRangeCustom &&
+            (!_sameDay(nextCustomFrom, _filterCustomFrom) ||
+                !_sameDay(nextCustomTo, _filterCustomTo)));
+    if (!dateRangeChanged &&
         nextDeviceId == _filterDeviceId &&
         nextFavorites == _favoritesOnly &&
         nextArchiveView == _archiveView) {
       return;
     }
-    _filterDateRange = nextDateRange;
+    _filterDateRange = effectiveRange;
+    _filterCustomFrom = nextCustomFrom;
+    _filterCustomTo = nextCustomTo;
     _filterDeviceId = nextDeviceId;
     _favoritesOnly = nextFavorites;
     _archiveView = nextArchiveView;
@@ -295,6 +389,8 @@ class ClipboardProvider extends ChangeNotifier {
       return;
     }
     _filterDateRange = null;
+    _filterCustomFrom = null;
+    _filterCustomTo = null;
     _filterDeviceId = null;
     _favoritesOnly = false;
     _archiveView = false;
@@ -315,9 +411,18 @@ class ClipboardProvider extends ChangeNotifier {
     _contentTypeFilter = null;
     _favoritesOnly = false;
     _filterDateRange = null;
+    _filterCustomFrom = null;
+    _filterCustomTo = null;
     _filterDeviceId = null;
     _archiveView = false;
     await _reloadWithCurrentFilters();
+  }
+
+  /// 两个日期是否同一天（年月日比较；G5 自定义档按天粒度，变更判定用）
+  static bool _sameDay(DateTime? a, DateTime? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return false;
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   Future<bool> _reloadWithCurrentFilters() async {
@@ -369,6 +474,29 @@ class ClipboardProvider extends ChangeNotifier {
       _searchHistory = const <SearchHistoryItem>[];
       // 服务端已清空：下次搜索重新开始记录
       _lastRecordedQuery = null;
+      notifyListeners();
+      return true;
+    } on Exception catch (_) {
+      return false;
+    }
+  }
+
+  /// 删除单条搜索历史（G4 浮层条目删除按钮）：有服务端 id 走 DELETE /:id，
+  /// 本地乐观镜像（空 id）走 ?keyword= 兜底；成功后同步本地镜像并通知
+  /// （浮层经 AnimatedBuilder 自动刷新）；失败返回 false（UI 提示用）。
+  Future<bool> deleteSearchHistory(SearchHistoryItem item) async {
+    if (item.id.isEmpty && item.keyword.isEmpty) {
+      return false;
+    }
+    try {
+      await _searchHistoryApi.deleteHistory(
+        id: item.id.isNotEmpty ? item.id : null,
+        keyword: item.keyword,
+      );
+      _searchHistory = _searchHistory
+          .where((SearchHistoryItem e) =>
+              e.id != item.id && e.keyword != item.keyword)
+          .toList();
       notifyListeners();
       return true;
     } on Exception catch (_) {
@@ -609,6 +737,10 @@ class ClipboardProvider extends ChangeNotifier {
     final newItem = ClipboardItem.fromJson(itemJson);
     if (_items.any((i) => i.id == newItem.id)) return;
 
+    // G3：已过期条目不入列表（服务端过期过滤的移动端侧配套；
+    // 也不占用「有 N 条新内容」浮条计数，静默丢弃即可）
+    if (newItem.isExpired) return;
+
     if (!_matchesContentTypeFilter(newItem.contentType) || _archiveView) {
       // 归档视图下新条目（未归档）同样被视图挡住，累计到浮条
       _pendingNewCount++;
@@ -631,6 +763,8 @@ class ClipboardProvider extends ChangeNotifier {
     var hasChanges = false;
     for (final itemData in items) {
       final newItem = ClipboardItem.fromJson(itemData);
+      // G3：已过期条目不入列表（与 handleNewItem 同规则）
+      if (newItem.isExpired) continue;
       if (!_items.any((i) => i.id == newItem.id)) {
         _items.insert(0, newItem);
         if (_totalItems > 0) _totalItems++;

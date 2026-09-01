@@ -1149,6 +1149,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get filterAllTime => '全部时间';
 
   @override
+  String get filterCustom => '自定义';
+
+  @override
+  String get filterDateFrom => '开始';
+
+  @override
+  String get filterDateTo => '结束';
+
+  @override
   String get filterDevice => '来源设备';
 
   @override
@@ -1259,4 +1268,26 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get variableDefaultValue => '默认值（可选）';
+
+  @override
+  String get multiSelect => '多选';
+
+  @override
+  String selectedCount(int count) {
+    return '已选 $count 项';
+  }
+
+  @override
+  String get selectAll => '全选';
+
+  @override
+  String get deselectAll => '取消全选';
+
+  @override
+  String get moveToCollection => '移动到…';
+
+  @override
+  String moveSuccess(int count) {
+    return '已移动 $count 项';
+  }
 }

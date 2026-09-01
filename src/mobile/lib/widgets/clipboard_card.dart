@@ -197,6 +197,11 @@ class _ClipboardCardState extends State<ClipboardCard> {
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
         ),
+        // G2 标签展示：有标签时渲染小号 chips（横排可滚动，最多 3 个 + "+N"）
+        if (widget.item.tags.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppSpacing.sm),
+          ClipboardTagChips(tags: widget.item.tags),
+        ],
         const SizedBox(height: AppSpacing.sm),
         Row(
           children: <Widget>[
@@ -713,6 +718,77 @@ class _ClipboardCardState extends State<ClipboardCard> {
       return l10n.relDaysAgo(diff.inDays);
     }
     return l10n.relDateMD(time.month, time.day);
+  }
+}
+
+/// 标签直显上限（G2）：超出部分折叠为「+N」。
+const int _kMaxVisibleTags = 3;
+
+/// 单个标签 chip 的最大宽度（超长标签省略，避免撑破横排滚动区）。
+const double _kTagChipMaxWidth = 140;
+
+/// G2：条目标签 chips（小号轻量容器，非交互；横排可滚动）。
+///
+/// 视觉对齐 M3 Chip：secondaryContainer 底 + 小号胶囊圆角 + onSecondaryContainer
+/// 小字。最多直显 [_kMaxVisibleTags] 个，其余折叠为「+N」（纯数字计数，
+/// 双语免翻）。无边距依赖，由调用方控制与相邻内容的间距；空列表由调用方
+/// 短路不渲染。卡片（ClipboardCard）与详情页（ItemDetailScreen）共用。
+class ClipboardTagChips extends StatelessWidget {
+  const ClipboardTagChips({super.key, required this.tags});
+
+  /// 标签列表（调用方保证非空）。
+  final List<String> tags;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final TextStyle style = theme.textTheme.labelSmall?.copyWith(
+          color: scheme.onSecondaryContainer,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ) ??
+        TextStyle(color: scheme.onSecondaryContainer, fontSize: 11);
+    final int hiddenCount = tags.length - _kMaxVisibleTags;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (final String tag in tags.take(_kMaxVisibleTags))
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.xs),
+              child: _buildChip(theme, tag, style),
+            ),
+          if (hiddenCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.xs),
+              child: _buildChip(theme, '+$hiddenCount', style),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 小号轻量标签容器：secondaryContainer 底 + 胶囊圆角。
+  Widget _buildChip(ThemeData theme, String label, TextStyle style) {
+    final ColorScheme scheme = theme.colorScheme;
+    return Container(
+      alignment: Alignment.center,
+      constraints: const BoxConstraints(maxWidth: _kTagChipMaxWidth),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Text(
+        label,
+        style: style,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
   }
 }
 
