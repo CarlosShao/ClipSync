@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:device_info_plus/device_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_localizations.dart';
@@ -77,15 +78,23 @@ class ErrorReport {
   );
 }
 
-/// 错误报告服务
+/// 错误报告服务。
+///
+/// 保留语义（与桌面端 src/desktop/src/utils/errorReport.ts 对齐）：
+/// 捕获的错误仅在本地滚动保留最近 [_maxStoredReports] 条（超出丢弃最旧），
+/// 并持久化到 SharedPreferences，重启后仍可查看。
+/// 后端当前没有错误上报端点，因此不会向服务器发送任何错误数据；
+/// 用户可在错误报告对话框中查看、导出（分享 JSON 文件）或清空这些本地记录。
 class ErrorReportService {
   static ErrorReportService? _instance;
   static ErrorReportService get instance => _instance ??= ErrorReportService._();
-  
+
   ErrorReportService._();
-  
+
+  /// 本地保留的错误报告上限（超出丢弃最旧）。
+  static const int _maxStoredReports = 20;
+
   final List<ErrorReport> _errorQueue = [];
-  bool _isReporting = false;
   String? _userId;
   String _appVersion = 'unknown';
   String _platform = 'unknown';
@@ -122,7 +131,7 @@ class ErrorReportService {
     // 设置全局错误处理
     _setupErrorHandlers();
     
-    // 加载未发送的错误报告
+    // 加载本地保留的错误报告
     await _loadPendingReports();
     
     debugPrint('ErrorReportService initialized');
@@ -152,14 +161,12 @@ class ErrorReportService {
       timestamp: DateTime.now(),
     );
     
-    // 添加到队列
+    // 添加到队列（本地滚动保留，超出丢弃最旧；不做任何网络发送）
     _errorQueue.add(errorReport);
-    
+    _trimQueue();
+
     // 保存到本地
     await _savePendingReports();
-    
-    // 尝试发送
-    await _sendErrorReports();
     
     // 在调试模式下打印错误
     if (kDebugMode) {
@@ -193,8 +200,11 @@ class ErrorReportService {
     );
   }
   
-  /// 获取待发送的错误报告数量
+  /// 获取本地保留的错误报告数量
   int get pendingCount => _errorQueue.length;
+
+  /// 获取本地保留的错误报告只读快照（旧 → 新）
+  List<ErrorReport> get recentReports => List.unmodifiable(_errorQueue);
   
   /// 清空错误队列
   Future<void> clearQueue() async {
@@ -236,38 +246,46 @@ class ErrorReportService {
     // 捕获Flutter框架错误
     FlutterError.onError = (FlutterErrorDetails details) {
       reportFlutterError(details);
-      
+
       // 在调试模式下打印错误
       if (kDebugMode) {
         FlutterError.presentError(details);
       }
     };
-    
-    // 捕获异步错误
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // 这里可以添加更多错误捕获逻辑
-    });
+
+    // 捕获未被Flutter框架处理的异步错误（记录到本地队列）
+    PlatformDispatcher.instance.onError = (error, stackTrace) {
+      reportAsyncError(error, stackTrace);
+      return true;
+    };
   }
   
-  Future<void> _sendErrorReports() async {
-    if (_isReporting || _errorQueue.isEmpty) return;
-    
-    _isReporting = true;
-    
+  /// 将队列裁剪到 [_maxStoredReports] 条以内（丢弃最旧）。
+  void _trimQueue() {
+    if (_errorQueue.length > _maxStoredReports) {
+      _errorQueue.removeRange(0, _errorQueue.length - _maxStoredReports);
+    }
+  }
+
+  /// 将本地错误报告导出为 JSON 文件（写入临时目录），返回文件路径。
+  /// 队列为空或写入失败时返回 null。仅操作本地数据，不涉及网络上传。
+  Future<String?> exportToFile() async {
+    if (_errorQueue.isEmpty) return null;
+
     try {
-      // 这里应该调用实际的错误报告API
-      // 暂时模拟发送
-      await Future.delayed(const Duration(seconds: 1));
-      
-      // 发送成功，清空队列
-      _errorQueue.clear();
-      await _savePendingReports();
-      
-      debugPrint('Error reports sent successfully');
+      final tempDir = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final file = File(
+        '${tempDir.path}${Platform.pathSeparator}clipsync-errors-$timestamp.json',
+      );
+      const encoder = JsonEncoder.withIndent('  ');
+      await file.writeAsString(
+        encoder.convert(_errorQueue.map((report) => report.toJson()).toList()),
+      );
+      return file.path;
     } catch (e) {
-      debugPrint('Failed to send error reports: $e');
-    } finally {
-      _isReporting = false;
+      debugPrint('Failed to export error reports: $e');
+      return null;
     }
   }
   
@@ -284,7 +302,11 @@ class ErrorReportService {
           debugPrint('Failed to parse error report: $e');
         }
       }
-      
+
+      // 历史数据可能超出上限，裁剪后回写
+      _trimQueue();
+      await _savePendingReports();
+
       debugPrint('Loaded ${_errorQueue.length} pending error reports');
     } catch (e) {
       debugPrint('Failed to load pending reports: $e');
@@ -357,21 +379,31 @@ class ErrorReportWidget extends StatefulWidget {
 
 class _ErrorReportWidgetState extends State<ErrorReportWidget> {
   int _pendingReports = 0;
-  
+  Timer? _refreshTimer;
+
   @override
   void initState() {
     super.initState();
     _updatePendingCount();
-    
-    // 定期检查待发送报告
-    Timer.periodic(const Duration(minutes: 5), (_) {
+
+    // 定期刷新本地保留的报告计数
+    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       _updatePendingCount();
     });
   }
-  
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
   void _updatePendingCount() {
+    if (!mounted) return;
+    final count = ErrorReportService.instance.pendingCount;
+    if (count == _pendingReports) return;
     setState(() {
-      _pendingReports = ErrorReportService.instance.pendingCount;
+      _pendingReports = count;
     });
   }
   
@@ -419,40 +451,123 @@ class _ErrorReportWidgetState extends State<ErrorReportWidget> {
     );
   }
   
+  /// 导出本地错误报告为 JSON 文件并通过系统分享面板分享。
+  /// 文案兜底说明：分享图标即「导出」入口（本工单禁止改 arb，暂无导出文案 key）。
+  Future<void> _exportReports() async {
+    try {
+      final path = await ErrorReportService.instance.exportToFile();
+      if (path == null) return;
+      await Share.shareXFiles([XFile(path)]);
+    } catch (e) {
+      debugPrint('Failed to share error reports: $e');
+    }
+  }
+
   void _showErrorReportDialog(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    showDialog(
+    // 最新记录排在最前（打开对话框时的快照）
+    final reports = ErrorReportService.instance.recentReports.reversed.toList();
+
+    showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.errorReportTitle),
-        content: Column(
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(l10n.pendingReportsCount(_pendingReports)),
-            const SizedBox(height: 8),
-            Text(l10n.errorReportDesc),
+            const Icon(Icons.bug_report, size: 22),
+            const SizedBox(width: 8),
+            Text(l10n.errorReportTitle),
           ],
         ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 320),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: reports.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final report = reports[index];
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          Icons.circle,
+                          size: 10,
+                          color: _severityColor(report.severity),
+                        ),
+                        title: Text(
+                          report.message,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        subtitle: Text(
+                          _formatTimestamp(report.timestamp),
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.errorLocalOnlyDesc,
+                style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor),
+              ),
+            ],
+          ),
+        ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l10n.close),
+          IconButton(
+            onPressed: _exportReports,
+            tooltip: l10n.exportErrorLogs,
+            icon: const Icon(Icons.share),
           ),
           TextButton(
             onPressed: () {
               ErrorReportService.instance.clearQueue();
               _updatePendingCount();
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text(l10n.errorQueueCleared)),
               );
             },
             child: Text(l10n.clearAll),
           ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(l10n.close),
+          ),
         ],
       ),
     );
+  }
+
+  Color _severityColor(ErrorSeverity severity) {
+    switch (severity) {
+      case ErrorSeverity.low:
+        return Colors.grey;
+      case ErrorSeverity.medium:
+        return Colors.orange;
+      case ErrorSeverity.high:
+        return Colors.deepOrange;
+      case ErrorSeverity.critical:
+        return Colors.red;
+    }
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final local = timestamp.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
   }
 }
 
