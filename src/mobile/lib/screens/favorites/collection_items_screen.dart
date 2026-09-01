@@ -13,8 +13,9 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/error_state.dart';
 import '../../widgets/common/skeleton_list.dart';
+import '../../widgets/favorites/collection_picker.dart';
 
-/// 收藏夹组内条目页（T4.1）。
+/// 收藏夹组内条目页（T4.1 / C1 管理补齐）。
 ///
 /// 由 FavoritesScreen 以根 Navigator 全屏压入（自带 Scaffold + AppBar，
 /// 盖过主页 shell 的标题栏与底栏）。
@@ -28,6 +29,12 @@ import '../../widgets/common/skeleton_list.dart';
 /// - 否则文本类条目（text/link/code）直接走 `GET /api/clipboard/:id/content`
 ///   拉全文，失败退化为预览；其余类型直接复制预览文本；
 /// - 最终 Clipboard.setData + SnackBar 反馈。
+///
+/// 长按条目（C1）→ 底部动作菜单：
+/// - 「加入其他分组」：分组选择对话框 → addItemToCollection（后端唯一归属
+///   自动移出其他分组 = 移动语义）→ 本组列表即时移除该条目；
+/// - 「移出分组」：removeItemFromCollection，乐观移除 + 失败回滚
+///   （条目仅解除分组关联，不从剪贴板删除）。
 class CollectionItemsScreen extends StatefulWidget {
   const CollectionItemsScreen({required this.collection, super.key});
 
@@ -147,6 +154,83 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // 分组条目管理（C1）
+  // ---------------------------------------------------------------------------
+
+  /// 长按条目 → 底部动作菜单（加入其他分组 / 移出分组）。
+  Future<void> _showEntryActions(FavoriteEntry entry) async {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (BuildContext sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outlined),
+              title: Text(l10n.addToCollection),
+              onTap: () => Navigator.of(sheetContext).pop('add'),
+            ),
+            ListTile(
+              leading: Icon(Icons.playlist_remove, color: scheme.error),
+              title: Text(
+                l10n.removeFromCollection,
+                style: TextStyle(color: scheme.error),
+              ),
+              onTap: () => Navigator.of(sheetContext).pop('remove'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) {
+      return;
+    }
+    if (action == 'add') {
+      await _moveEntryToOtherCollection(entry);
+    } else if (action == 'remove') {
+      await _removeEntryFromCollection(entry);
+    }
+  }
+
+  /// 加入其他分组：分组选择 → addItem（后端唯一归属自动移出本组 = 移动），
+  /// 成功后把条目从本组列表即时移除。
+  Future<void> _moveEntryToOtherCollection(FavoriteEntry entry) async {
+    final target = await addItemToCollectionFlow(
+      context,
+      itemId: entry.id,
+      excludeCollectionId: widget.collection.id,
+    );
+    if (target == null || !mounted) {
+      return;
+    }
+    setState(() => _items.removeWhere((FavoriteEntry e) => e.id == entry.id));
+  }
+
+  /// 移出分组：乐观移除 + 失败回滚（条目仅解除关联，不从剪贴板删除）。
+  Future<void> _removeEntryFromCollection(FavoriteEntry entry) async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final snapshot = List<FavoriteEntry>.of(_items);
+    setState(() => _items.removeWhere((FavoriteEntry e) => e.id == entry.id));
+    try {
+      await _api.removeItemFromCollection(widget.collection.id, entry.id);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(l10n.removedFromCollection)));
+    } on Exception catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _items = snapshot);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(friendlyError(e, l10n))));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // 构建
   // ---------------------------------------------------------------------------
 
@@ -208,7 +292,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   }
 
   /// 条目卡片：类型色块 + 3 行预览 + 来源设备与相对时间；
-  /// 整行点击复制全文，复制中行尾转圈。
+  /// 整行点击复制全文（复制中行尾转圈），长按弹分组管理菜单。
   Widget _buildEntryTile(FavoriteEntry entry) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -221,6 +305,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: isCopying ? null : () => unawaited(_copyEntry(entry)),
+        onLongPress: () => unawaited(_showEntryActions(entry)),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
           child: Row(

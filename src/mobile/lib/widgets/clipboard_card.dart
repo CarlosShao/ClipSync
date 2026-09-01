@@ -11,6 +11,7 @@ import '../services/server_config.dart';
 import '../services/token_store.dart';
 import '../theme/app_theme.dart';
 import 'common/app_card.dart';
+import 'favorites/collection_picker.dart';
 
 /// 卡片左侧类型图标块 / 缩略图边长。
 const double _kLeadingSize = 44;
@@ -23,7 +24,7 @@ const int _kThumbMemCacheWidth = 200;
 const int _kConfirmPreviewMaxChars = 60;
 
 /// 更多菜单动作（右上角按钮与长按共用一套菜单）。
-enum _CardAction { toggleFavorite, pin, delete }
+enum _CardAction { toggleFavorite, addToCollection, pin, delete }
 
 /// 剪贴板条目卡片（T2.4）。
 ///
@@ -41,7 +42,8 @@ enum _CardAction { toggleFavorite, pin, delete }
 /// - 单击 → [onTap] 回调（详情跳转由列表页处理，保持单一导航入口）；
 /// - 长按 / 右上角更多按钮 → 同一弹出菜单：
 ///   收藏 toggle（[ClipboardProvider.toggleFavorite]，以服务端权威状态回写）、
-///   置顶（占位「即将上线」，禁用态）、删除（确认对话框后
+///   置顶（占位「即将上线」，禁用态）、加入分组（C1，经
+///   addItemToCollectionFlow 选组后加入）、删除（确认对话框后
 ///   [ClipboardProvider.deleteItem]，成功移出列表）。
 ///
 /// 图片条目：经媒体端点 `GET /api/media/:id/preview`（Bearer 鉴权）显示
@@ -310,6 +312,16 @@ class _ClipboardCardState extends State<ClipboardCard> {
           ],
         ),
       ),
+      PopupMenuItem<_CardAction>(
+        value: _CardAction.addToCollection,
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.drive_file_move_outlined, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: AppSpacing.sm),
+            Text(l10n.addToCollection),
+          ],
+        ),
+      ),
       const PopupMenuDivider(),
       PopupMenuItem<_CardAction>(
         value: _CardAction.delete,
@@ -338,6 +350,12 @@ class _ClipboardCardState extends State<ClipboardCard> {
     switch (action) {
       case _CardAction.toggleFavorite:
         unawaited(_toggleFavorite());
+      case _CardAction.addToCollection:
+        // C1：加入分组流程（拉分组 → 选择对话框 → addItem → 成功提示），
+        // 实现收敛在 collection_picker.dart，本文件只做入口。
+        unawaited(
+          addItemToCollectionFlow(context, itemId: widget.item.id),
+        );
       case _CardAction.delete:
         unawaited(_deleteWithConfirm());
       case _CardAction.pin:

@@ -123,11 +123,16 @@ class FavoriteEntry {
       v is String && v.isNotEmpty ? DateTime.tryParse(v) : null;
 }
 
-/// 收藏夹（Collections）API 封装（T4.1）。
+/// 收藏夹（Collections）API 封装（T4.1 / C1 管理补齐）。
 ///
 /// 对齐后端 `/api/favorites` 路由（src/server/src/routes/favorites.js）：
 /// - GET    /api/favorites/collections                 → { collections: [...] }
-/// - POST   /api/favorites/collections {name}         → 201 { collection: {...} }
+/// - POST   /api/favorites/collections {name}          → 201 { collection: {...} }
+/// - PUT    /api/favorites/collections/:id {name?,icon?,sortOrder?} → { collection }（:95）
+/// - PUT    /api/favorites/collections/:id/move {parentId?}         → { collection }（:168）
+/// - PUT    /api/favorites/collections/reorder {orders:[{id,sortOrder}]}（:242）
+/// - POST   /api/favorites/collections/:id/items {itemId}           → { message }（:289）
+/// - DELETE /api/favorites/collections/:collectionId/items/:itemId  → { message, deleted }（:329）
 /// - DELETE /api/favorites/collections/:id             → { message }（级联删除子分组）
 /// - GET    /api/favorites/collections/:id/items       → { items: [...] }
 ///
@@ -228,5 +233,133 @@ class CollectionsApiService {
           .toList();
     }
     return const <FavoriteEntry>[];
+  }
+
+  /// 更新收藏夹分组（PUT /collections/:id，:95）：按需携带 name / icon /
+  /// sortOrder（body 只包含非空字段；后端要求至少一个字段，否则 400）。
+  ///
+  /// - name 超过 100 字符由后端截断；icon 超过 10 字符由后端截断；
+  /// - 成功返回更新后的分组（注意：该端点响应不含 path 字段，fromJson 置空）。
+  Future<CollectionGroup> updateCollection(
+    String id, {
+    String? name,
+    String? icon,
+    int? sortOrder,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$_baseUrl/collections/$id'),
+      headers: await _headers(),
+      body: jsonEncode(<String, dynamic>{
+        // null-aware elements：null 值字段不进 body（后端要求至少一个字段）
+        'name': ?name,
+        'icon': ?icon,
+        'sortOrder': ?sortOrder,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw const AppException(AppErrorCodes.renameCollectionFailed);
+    }
+
+    final dynamic raw = _decodeMap(response.body)['collection'];
+    if (raw is Map<String, dynamic>) {
+      return CollectionGroup.fromJson(raw);
+    }
+    throw const AppException(AppErrorCodes.renameCollectionFailed);
+  }
+
+  /// 移动收藏夹分组到新父级（PUT /collections/:id/move，:168）。
+  ///
+  /// [parentId] 为 null 时移动到根级；后端会同步改写所有后代分组的 ltree
+  /// path，并拒绝移动到自己或自己的后代（400）。
+  Future<CollectionGroup> moveCollection(String id, {String? parentId}) async {
+    final response = await http.put(
+      Uri.parse('$_baseUrl/collections/$id/move'),
+      headers: await _headers(),
+      body: jsonEncode(<String, String?>{'parentId': parentId}),
+    );
+
+    if (response.statusCode != 200) {
+      throw const AppException(AppErrorCodes.moveCollectionFailed);
+    }
+
+    final dynamic raw = _decodeMap(response.body)['collection'];
+    if (raw is Map<String, dynamic>) {
+      return CollectionGroup.fromJson(raw);
+    }
+    throw const AppException(AppErrorCodes.moveCollectionFailed);
+  }
+
+  /// 批量更新分组排序（PUT /collections/reorder，:242）。
+  ///
+  /// [orderedGroups] 传入排好序的完整列表，按索引生成
+  /// `{orders: [{id, sortOrder}]}`（sortOrder = 0..n-1）。
+  ///
+  /// 已知后端缺陷（favorites.js 路由注册顺序）：`PUT /collections/reorder`
+  /// 注册在 `PUT /collections/:id` 之后，Express 先按 `:id` 匹配到
+  /// 'reorder'，isValidUUID 校验失败恒返 400，批量端点实际不可达。
+  /// 故批量请求返回 400 时退化为逐条 `PUT /collections/:id {sortOrder}`
+  /// （:100-116 支持 sortOrder 字段）保证排序可持久化；后端修复注册顺序后
+  /// 自动恢复批量路径。任一条目更新失败即抛出，由调用方回滚本地顺序。
+  Future<void> reorderCollections(List<CollectionGroup> orderedGroups) async {
+    if (orderedGroups.isEmpty) {
+      return;
+    }
+    final headers = await _headers();
+    final response = await http.put(
+      Uri.parse('$_baseUrl/collections/reorder'),
+      headers: headers,
+      body: jsonEncode(<String, dynamic>{
+        'orders': <Map<String, dynamic>>[
+          for (var i = 0; i < orderedGroups.length; i++)
+            <String, dynamic>{'id': orderedGroups[i].id, 'sortOrder': i},
+        ],
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    }
+    if (response.statusCode != 400) {
+      throw const AppException(AppErrorCodes.reorderCollectionsFailed);
+    }
+    // 路由遮蔽退化路径（见方法注释）：逐条落 sort_order。
+    for (var i = 0; i < orderedGroups.length; i++) {
+      await updateCollection(orderedGroups[i].id, sortOrder: i);
+    }
+  }
+
+  /// 把剪贴板条目加入收藏夹分组（POST /collections/:id/items，:289）。
+  ///
+  /// 注意唯一归属：后端会先移除该条目在其他分组中的关联，因此对已有分组的
+  /// 条目调用本方法即「移动到目标分组」语义（无需再显式 removeItem）。
+  Future<void> addItemToCollection(String collectionId, String itemId) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/collections/$collectionId/items'),
+      headers: await _headers(),
+      body: jsonEncode(<String, String>{'itemId': itemId}),
+    );
+
+    if (response.statusCode != 200) {
+      throw const AppException(AppErrorCodes.addItemToCollectionFailed);
+    }
+  }
+
+  /// 把条目移出收藏夹分组（DELETE /collections/:collectionId/items/:itemId，:329）。
+  ///
+  /// 条目本身不从剪贴板删除，仅解除分组关联；未关联时后端也返回 200
+  /// （deleted=false），视为成功。
+  Future<void> removeItemFromCollection(
+    String collectionId,
+    String itemId,
+  ) async {
+    final response = await http.delete(
+      Uri.parse('$_baseUrl/collections/$collectionId/items/$itemId'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      throw const AppException(AppErrorCodes.removeItemFromCollectionFailed);
+    }
   }
 }

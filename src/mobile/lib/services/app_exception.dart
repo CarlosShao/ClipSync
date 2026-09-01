@@ -67,6 +67,21 @@ class AppErrorCodes {
   /// 收藏夹分组删除失败
   static const String deleteCollectionFailed = 'deleteCollectionFailed';
 
+  /// 收藏夹分组更新（改名/图标）失败（C1；arb 暂无专属 key，映射 errorUnknown）
+  static const String renameCollectionFailed = 'renameCollectionFailed';
+
+  /// 收藏夹分组层级移动失败（C1；arb 暂无专属 key，映射 errorUnknown）
+  static const String moveCollectionFailed = 'moveCollectionFailed';
+
+  /// 收藏夹分组排序失败（C1；arb 暂无专属 key，映射 errorUnknown）
+  static const String reorderCollectionsFailed = 'reorderCollectionsFailed';
+
+  /// 条目加入收藏夹分组失败（C1；arb 暂无专属 key，映射 errorUnknown）
+  static const String addItemToCollectionFailed = 'addItemToCollectionFailed';
+
+  /// 条目移出收藏夹分组失败（C1；arb 暂无专属 key，映射 errorUnknown）
+  static const String removeItemFromCollectionFailed = 'removeItemFromCollectionFailed';
+
   /// 套餐列表获取失败
   static const String fetchPlansFailed = 'fetchPlansFailed';
 
@@ -90,6 +105,21 @@ class AppErrorCodes {
 
   /// 服务端通知偏好保存失败（B3 通知设置页）
   static const String updateNotificationPrefsFailed = 'updateNotificationPrefsFailed';
+
+  /// 共享链接列表获取失败（C5 共享链接页）
+  static const String fetchSharedLinksFailed = 'fetchSharedLinksFailed';
+
+  /// 共享链接创建失败（C5 共享链接页 / 条目详情入口）
+  static const String createSharedLinkFailed = 'createSharedLinkFailed';
+
+  /// 共享链接撤销失败（C5 共享链接页）
+  static const String revokeSharedLinkFailed = 'revokeSharedLinkFailed';
+
+  /// 站内通知列表获取失败（C5 通知中心页）
+  static const String fetchNotificationsFailed = 'fetchNotificationsFailed';
+
+  /// 站内通知标记已读失败（C5 通知中心页）
+  static const String markNotificationReadFailed = 'markNotificationReadFailed';
 
   /// 文件下载失败
   static const String downloadFailed = 'downloadFailed';
@@ -187,6 +217,12 @@ String? _localizedMessage(AppLocalizations l10n, String code) {
       return l10n.errorFetchNotificationPrefs;
     case AppErrorCodes.updateNotificationPrefsFailed:
       return l10n.errorUpdateNotificationPrefs;
+    case AppErrorCodes.fetchNotificationsFailed:
+      // C5：arb 无独立 key，复用通知中心加载失败文案（notifLoadFailed）
+      return l10n.notifLoadFailed;
+    // C5：fetchSharedLinksFailed / createSharedLinkFailed /
+    // revokeSharedLinkFailed / markNotificationReadFailed 暂无对应 arb key
+    // （arb 冻结不可加），经 message() 的 detail / errorUnknown 兜底展示。
     case AppErrorCodes.downloadFailed:
       return l10n.errorDownload;
     case AppErrorCodes.deviceNotRegistered:
