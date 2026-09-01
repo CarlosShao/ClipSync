@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'app_exception.dart';
 import 'server_config.dart';
 import 'token_store.dart';
 
@@ -139,7 +140,7 @@ class CollectionsApiService {
   Future<Map<String, String>> _headers() async {
     final token = await TokenStore.getAccessToken();
     if (token == null || token.isEmpty) {
-      throw Exception('未登录：缺少访问令牌');
+      throw const AppException(AppErrorCodes.noToken);
     }
     return <String, String>{
       'Content-Type': 'application/json',
@@ -162,7 +163,7 @@ class CollectionsApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to load collections');
+      throw const AppException(AppErrorCodes.fetchCollectionsFailed);
     }
 
     final dynamic raw = _decodeMap(response.body)['collections'];
@@ -186,14 +187,14 @@ class CollectionsApiService {
     );
 
     if (response.statusCode != 201) {
-      throw Exception('Failed to create collection');
+      throw const AppException(AppErrorCodes.createCollectionFailed);
     }
 
     final dynamic raw = _decodeMap(response.body)['collection'];
     if (raw is Map<String, dynamic>) {
       return CollectionGroup.fromJson(raw);
     }
-    throw Exception('Failed to create collection');
+    throw const AppException(AppErrorCodes.createCollectionFailed);
   }
 
   /// 删除收藏夹分组（后端级联删除其所有子分组；组内剪贴板条目不受影响）。
@@ -204,7 +205,7 @@ class CollectionsApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to delete collection');
+      throw const AppException(AppErrorCodes.deleteCollectionFailed);
     }
   }
 
@@ -216,7 +217,7 @@ class CollectionsApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to load collection items');
+      throw const AppException(AppErrorCodes.fetchCollectionItemsFailed);
     }
 
     final dynamic raw = _decodeMap(response.body)['items'];

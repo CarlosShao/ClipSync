@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../providers/clipboard_provider.dart';
+import 'app_exception.dart';
 import 'server_config.dart';
 import 'token_store.dart';
 
@@ -181,7 +182,10 @@ class ClipboardCaptureService {
       // 访问令牌过期：静默续期一次后重放（T1.3 TokenStore 单飞契约）
       final renewed = await TokenStore.refreshAccessToken();
       if (renewed == null || renewed.isEmpty) {
-        throw Exception('上传失败：HTTP 401 且刷新令牌不可用');
+        throw const AppException(
+          AppErrorCodes.uploadFailed,
+          'HTTP 401 and refresh token unavailable',
+        );
       }
       statusCode = await _postClipboard(text, renewed, deviceId);
     }
@@ -213,7 +217,7 @@ class ClipboardCaptureService {
   bool _interpret(int statusCode) {
     if (statusCode == 201) return false; // 新建成功
     if (statusCode == 200) return true; // 服务端去重命中（duplicate: true）
-    throw Exception('上传失败：HTTP $statusCode');
+    throw AppException(AppErrorCodes.uploadFailed, 'HTTP $statusCode');
   }
 
   /// 幂等键：uuid 未依赖（T0.2 移除），用时间戳 + dart:math 随机数生成

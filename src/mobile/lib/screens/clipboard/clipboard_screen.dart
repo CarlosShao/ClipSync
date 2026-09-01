@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/clipboard_item.dart';
 import '../../providers/clipboard_provider.dart';
+import '../../services/app_exception.dart';
 import '../../services/token_store.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/clipboard_card.dart';
@@ -262,11 +263,12 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   /// 列表主体：三态分发。骨架/错误/空态也包在 RefreshIndicator 的可滚动
   /// 容器里，保证任何状态下都能下拉刷新。
   Widget _buildContent(ClipboardProvider provider) {
+    final AppLocalizations l10n = AppLocalizations.of(context);
     if (provider.isLoading && provider.items.isEmpty) {
       return _scrollableBody(const SkeletonList(itemCount: 8));
     }
     if (provider.error != null && provider.items.isEmpty) {
-      final message = _friendlyError(provider.error!);
+      final message = friendlyError(provider.error, l10n);
       return _scrollableBody(ErrorState(message: message, onRetry: () => unawaited(_onRefresh())));
     }
     if (provider.items.isEmpty) {
@@ -422,7 +424,4 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
       ),
     );
   }
-
-  /// 错误文案友好化：去掉异常前缀（'Exception: xxx' → 'xxx'）。
-  String _friendlyError(String raw) => raw.replaceFirst(RegExp(r'^Exception:\s*'), '');
 }

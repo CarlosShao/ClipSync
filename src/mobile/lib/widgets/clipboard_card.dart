@@ -128,7 +128,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
     );
   }
 
-  /// 本地化类型标签（模型 typeLabel 为硬编码中文，UI 层按 contentType 重映射）。
+  /// 本地化类型标签（A3：模型不再提供中文 typeLabel，UI 层按 contentType 映射 l10n）。
   String _typeLabel(AppLocalizations l10n) {
     switch (widget.item.contentType) {
       case 'text':

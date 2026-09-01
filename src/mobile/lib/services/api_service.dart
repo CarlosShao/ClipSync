@@ -4,6 +4,7 @@ import '../models/clipboard_item.dart';
 import '../models/device.dart';
 import '../models/session.dart';
 import 'cache_service.dart';
+import 'app_exception.dart';
 import 'server_config.dart';
 import 'token_store.dart';
 
@@ -15,7 +16,7 @@ class ApiService {
   Future<String> _resolveToken(String? token) async {
     final resolved = token ?? await TokenStore.getAccessToken();
     if (resolved == null || resolved.isEmpty) {
-      throw Exception('未登录：缺少访问令牌');
+      throw const AppException(AppErrorCodes.noToken);
     }
     return resolved;
   }
@@ -44,7 +45,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to send verification code');
+      throw const AppException(AppErrorCodes.sendCodeFailed);
     }
   }
 
@@ -56,7 +57,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Login failed');
+      throw const AppException(AppErrorCodes.loginFailed);
     }
 
     return _decodeMap(response.body);
@@ -72,7 +73,7 @@ class ApiService {
         );
 
         if (response.statusCode != 200) {
-          throw Exception('Failed to get profile');
+          throw const AppException(AppErrorCodes.fetchProfileFailed);
         }
 
         return _decodeMap(response.body);
@@ -160,7 +161,7 @@ class ApiService {
         final response = await http.get(uri, headers: await _headers(token));
 
         if (response.statusCode != 200) {
-          throw Exception('Failed to load clipboard items');
+          throw const AppException(AppErrorCodes.fetchClipboardFailed);
         }
 
         final decoded = jsonDecode(response.body);
@@ -185,7 +186,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to load clipboard item content');
+      throw const AppException(AppErrorCodes.fetchItemContentFailed);
     }
 
     final decoded = jsonDecode(response.body);
@@ -205,7 +206,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to toggle favorite');
+      throw const AppException(AppErrorCodes.toggleFavoriteFailed);
     }
 
     final decoded = jsonDecode(response.body);
@@ -219,7 +220,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to delete item');
+      throw const AppException(AppErrorCodes.deleteItemFailed);
     }
   }
 
@@ -234,7 +235,7 @@ class ApiService {
         );
 
         if (response.statusCode != 200) {
-          throw Exception('Failed to load devices');
+          throw const AppException(AppErrorCodes.fetchDevicesFailed);
         }
 
         final data = jsonDecode(response.body) as List<dynamic>;
@@ -266,7 +267,7 @@ class ApiService {
     );
 
     if (response.statusCode != 201) {
-      throw Exception('Failed to register device');
+      throw const AppException(AppErrorCodes.registerDeviceFailed);
     }
 
     return Device.fromJson(_decodeMap(response.body));
@@ -279,7 +280,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to remove device');
+      throw const AppException(AppErrorCodes.removeDeviceFailed);
     }
   }
 
@@ -391,7 +392,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to load sessions');
+      throw const AppException(AppErrorCodes.fetchSessionsFailed);
     }
 
     final dataField = _decodeMap(response.body)['data'];
@@ -408,7 +409,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to revoke session');
+      throw const AppException(AppErrorCodes.revokeFailed);
     }
   }
 
@@ -419,7 +420,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to revoke all sessions');
+      throw const AppException(AppErrorCodes.revokeFailed);
     }
   }
 
@@ -437,7 +438,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to load templates');
+      throw const AppException(AppErrorCodes.fetchTemplatesFailed);
     }
 
     final dynamic raw = _decodeMap(response.body)['data'];

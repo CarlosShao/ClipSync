@@ -1,12 +1,47 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// 本地通知文案配置（A3 解耦：服务层无 BuildContext，由 main.dart 在
+/// MaterialApp builder 首帧后取 AppLocalizations 注入；locale 切换时
+/// builder 重建会再次注入，通知文案跟随语言）。
+class NotificationTexts {
+  const NotificationTexts({
+    required this.channelClipboardName,
+    required this.channelClipboardDesc,
+    required this.channelAlertName,
+    required this.channelAlertDesc,
+    required this.clipboardUpdatedTitle,
+    required this.newClipboardBody,
+  });
+
+  /// 剪贴板同步渠道名
+  final String channelClipboardName;
+
+  /// 剪贴板同步渠道描述
+  final String channelClipboardDesc;
+
+  /// 同步告警渠道名
+  final String channelAlertName;
+
+  /// 同步告警渠道描述
+  final String channelAlertDesc;
+
+  /// 「剪贴板已更新」通知标题
+  final String clipboardUpdatedTitle;
+
+  /// 无预览内容时的通知正文
+  final String newClipboardBody;
+}
 
 /// 本地通知服务（T3.4 即时通知）
 ///
 /// - flutter_local_notifications 封装：初始化 Android 双渠道
 ///   `clipsync_sync`（低优先级，剪贴板同步提醒，静默展示）与
 ///   `clipsync_alert`（默认优先级，供后续同步异常等告警使用）；
+///   渠道名/描述等文案经 [applyTexts] 注入（[NotificationTexts]）；
 /// - WS 收到 new_clipboard → 弹「剪贴板已更新」本地通知（正文=内容预览），
 ///   点击导航回首页（冷启动时落在默认路由 `/`，经路由守卫同样回首页）；
 /// - Android 13+ POST_NOTIFICATIONS 运行时权限申请（[requestPermission]，
@@ -22,6 +57,8 @@ class LocalNotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
+  bool _channelsCreated = false;
+  NotificationTexts? _texts;
 
   /// 是否已完成初始化
   bool get isInitialized => _initialized;
@@ -39,7 +76,17 @@ class LocalNotificationService {
   /// 设置页「推送通知」偏好的 SharedPreferences 键（既有约定，勿改）
   static const String _prefKeyNotificationsEnabled = 'notifications_enabled';
 
-  /// 初始化插件并创建双渠道。可安全重复调用（幂等）。
+  /// 注入本地化文案（main.dart 的 MaterialApp builder 每次构建时调用；
+  /// 渠道尚未创建且插件已初始化时补建渠道，幂等）。
+  void applyTexts(NotificationTexts texts) {
+    _texts = texts;
+    if (_initialized && !_channelsCreated) {
+      unawaited(_createChannels());
+    }
+  }
+
+  /// 初始化插件。可安全重复调用（幂等）。
+  /// 渠道创建延后到 [applyTexts] 提供文案后进行（首帧前文案未就绪）。
   Future<void> initialize() async {
     if (_initialized) return;
 
@@ -52,30 +99,43 @@ class LocalNotificationService {
         settings,
         onDidReceiveNotificationResponse: _handleNotificationResponse,
       );
+      _initialized = true;
+    } catch (e) {
+      debugPrint('[LocalNotification] initialize failed: $e');
+      return;
+    }
+    // 文案已先行注入（如热重启后二次初始化）时直接补建渠道
+    await _createChannels();
+  }
 
+  /// 创建/更新 Android 双渠道（幂等；重复创建即更新名称与描述）。
+  Future<void> _createChannels() async {
+    final texts = _texts;
+    if (texts == null || _channelsCreated) return;
+    try {
       final android = _plugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (android != null) {
         await android.createNotificationChannel(
-          const AndroidNotificationChannel(
+          AndroidNotificationChannel(
             syncChannelId,
-            '剪贴板同步',
-            description: '设备间剪贴板内容同步提醒（静默，不发出声音）',
+            texts.channelClipboardName,
+            description: texts.channelClipboardDesc,
             importance: Importance.low,
           ),
         );
         await android.createNotificationChannel(
-          const AndroidNotificationChannel(
+          AndroidNotificationChannel(
             alertChannelId,
-            '同步告警',
-            description: '同步异常、设备告警等重要提醒',
+            texts.channelAlertName,
+            description: texts.channelAlertDesc,
             importance: Importance.defaultImportance,
           ),
         );
+        _channelsCreated = true;
       }
-      _initialized = true;
     } catch (e) {
-      debugPrint('[LocalNotification] initialize failed: $e');
+      debugPrint('[LocalNotification] create channels failed: $e');
     }
   }
 
@@ -126,21 +186,27 @@ class LocalNotificationService {
     await showClipboardUpdated(preview);
   }
 
-  /// 弹「剪贴板已更新」通知（clipsync_sync 低优先级渠道）
+  /// 弹「剪贴板已更新」通知（clipsync_sync 低优先级渠道）。
+  /// 文案尚未注入（首帧前的极小窗口）时跳过本次弹通知。
   Future<void> showClipboardUpdated(String preview) async {
     if (!_initialized) return;
+    final texts = _texts;
+    if (texts == null) {
+      debugPrint('[LocalNotification] skip show: texts not applied yet');
+      return;
+    }
 
-    final body = preview.isEmpty ? '收到新的剪贴板内容' : preview;
+    final body = preview.isEmpty ? texts.newClipboardBody : preview;
     try {
       await _plugin.show(
         _clipboardNotificationId,
-        '剪贴板已更新',
+        texts.clipboardUpdatedTitle,
         body,
-        const NotificationDetails(
+        NotificationDetails(
           android: AndroidNotificationDetails(
             syncChannelId,
-            '剪贴板同步',
-            channelDescription: '设备间剪贴板内容同步提醒（静默，不发出声音）',
+            texts.channelClipboardName,
+            channelDescription: texts.channelClipboardDesc,
             importance: Importance.low,
             priority: Priority.low,
             onlyAlertOnce: true,

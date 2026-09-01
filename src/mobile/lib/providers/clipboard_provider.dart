@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/clipboard_item.dart';
 import '../services/api_service.dart';
+import '../services/app_exception.dart';
 import '../services/token_store.dart';
 import '../utils/performance.dart';
 
@@ -22,7 +23,10 @@ class ClipboardProvider extends ChangeNotifier {
 
   List<ClipboardItem> _items = [];
   bool _isLoading = false;
-  String? _error;
+
+  /// 最近一次失败的原始错误对象（AppException / 其他 Exception），
+  /// UI 层经 friendlyError 映射 l10n 文案后展示（A3 解耦）
+  Object? _error;
   int _page = 1;
   bool _hasMore = true;
   int _totalItems = 0;
@@ -40,7 +44,7 @@ class ClipboardProvider extends ChangeNotifier {
 
   List<ClipboardItem> get items => _items;
   bool get isLoading => _isLoading;
-  String? get error => _error;
+  Object? get error => _error;
   bool get hasMore => _hasMore;
 
   /// 服务端报告的当前筛选条件下的总数（pagination.total）
@@ -135,8 +139,8 @@ class ClipboardProvider extends ChangeNotifier {
       }
 
       notifyListeners();
-    } catch (e) {
-      _error = e.toString();
+    } on Exception catch (e) {
+      _error = e;
       notifyListeners();
     } finally {
       _isLoading = false;
@@ -182,7 +186,7 @@ class ClipboardProvider extends ChangeNotifier {
   Future<void> _reloadWithCurrentFilters() async {
     final token = await _resolveToken();
     if (token == null) {
-      _error = '未登录：缺少访问令牌';
+      _error = const AppException(AppErrorCodes.noToken);
       notifyListeners();
       return;
     }
@@ -208,8 +212,8 @@ class ClipboardProvider extends ChangeNotifier {
         );
         notifyListeners();
       }
-    } catch (e) {
-      _error = e.toString();
+    } on Exception catch (e) {
+      _error = e;
       notifyListeners();
     }
   }
@@ -220,8 +224,8 @@ class ClipboardProvider extends ChangeNotifier {
       _items.removeWhere((item) => item.id == itemId);
       if (_totalItems > 0) _totalItems--;
       notifyListeners();
-    } catch (e) {
-      _error = e.toString();
+    } on Exception catch (e) {
+      _error = e;
       notifyListeners();
     }
   }

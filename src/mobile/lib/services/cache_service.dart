@@ -47,11 +47,11 @@ class CacheItem<T> {
   };
 
   factory CacheItem.fromJson(Map<String, dynamic> json) => CacheItem(
-    key: json['key'],
-    value: json['value'],
-    expiresAt: DateTime.parse(json['expiresAt']),
-    createdAt: DateTime.parse(json['createdAt']),
-    size: json['size'] ?? 0,
+    key: json['key'] as String,
+    value: json['value'] as T,
+    expiresAt: DateTime.parse(json['expiresAt'] as String),
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    size: json['size'] as int? ?? 0,
   );
 }
 

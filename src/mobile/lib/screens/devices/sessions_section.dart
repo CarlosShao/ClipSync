@@ -115,6 +115,11 @@ class _SessionsSectionState extends State<SessionsSection> {
     );
   }
 
+  /// 会话设备名（服务端未返回时用 l10n unknownDevice 兜底；
+  /// A3：model 不再内嵌中文默认值）。
+  static String _sessionName(ActiveSession session, AppLocalizations l10n) =>
+      session.deviceName.isEmpty ? l10n.unknownDevice : session.deviceName;
+
   /// 单条会话卡片：平台图标 + 设备名（含当前标记）+ 最近活跃信息 + 吊销操作。
   Widget _buildSessionCard(
     ActiveSession session,
@@ -151,7 +156,7 @@ class _SessionsSectionState extends State<SessionsSection> {
                   children: <Widget>[
                     Flexible(
                       child: Text(
-                        session.deviceName,
+                        _sessionName(session, l10n),
                         style: textTheme.titleSmall,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -214,8 +219,8 @@ class _SessionsSectionState extends State<SessionsSection> {
             : l10n.revokeSession),
         content: Text(
           session.isCurrent
-              ? l10n.revokeCurrentSessionConfirm(session.deviceName)
-              : l10n.revokeSessionConfirm(session.deviceName),
+              ? l10n.revokeCurrentSessionConfirm(_sessionName(session, l10n))
+              : l10n.revokeSessionConfirm(_sessionName(session, l10n)),
         ),
         actions: <Widget>[
           TextButton(
@@ -287,7 +292,7 @@ class _SessionsSectionState extends State<SessionsSection> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text(l10n.sessionRevoked(session.deviceName))),
+        SnackBar(content: Text(l10n.sessionRevoked(_sessionName(session, l10n)))),
       );
   }
 

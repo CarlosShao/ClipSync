@@ -4,14 +4,17 @@ import '../services/api_service.dart';
 
 class DeviceProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
-  
+
   List<Device> _devices = [];
   bool _isLoading = false;
-  String? _error;
+
+  /// 最近一次失败的原始错误对象，UI 层经 friendlyError 映射 l10n 文案后
+  /// 展示（A3 解耦：不再存 e.toString()）
+  Object? _error;
 
   List<Device> get devices => _devices;
   bool get isLoading => _isLoading;
-  String? get error => _error;
+  Object? get error => _error;
 
   Future<void> loadDevices(String token, {bool forceRefresh = false}) async {
     _isLoading = true;
@@ -20,8 +23,8 @@ class DeviceProvider extends ChangeNotifier {
 
     try {
       _devices = await _api.getDevices(token, forceRefresh: forceRefresh);
-    } catch (e) {
-      _error = e.toString();
+    } on Exception catch (e) {
+      _error = e;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -47,8 +50,8 @@ class DeviceProvider extends ChangeNotifier {
       _devices.add(device);
       notifyListeners();
       return device;
-    } catch (e) {
-      _error = e.toString();
+    } on Exception catch (e) {
+      _error = e;
       notifyListeners();
       return null;
     }
@@ -59,8 +62,8 @@ class DeviceProvider extends ChangeNotifier {
       await _api.removeDevice(token, deviceId);
       _devices.removeWhere((device) => device.id == deviceId);
       notifyListeners();
-    } catch (e) {
-      _error = e.toString();
+    } on Exception catch (e) {
+      _error = e;
       notifyListeners();
     }
   }

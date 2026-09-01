@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/clipboard_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/app_exception.dart';
 import '../../services/collections_api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common/empty_state.dart';
@@ -45,7 +46,9 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
 
   /// 正在复制全文的条目 id（行尾转圈反馈；null = 无复制进行中）
   String? _copyingId;
-  String? _error;
+
+  /// 最近一次失败的原始错误对象（UI 层经 friendlyError 映射 l10n 文案）
+  Object? _error;
 
   @override
   void initState() {
@@ -74,7 +77,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
       }
       setState(() {
         _isLoading = false;
-        _error = e.toString();
+        _error = e;
       });
     }
   }
@@ -163,19 +166,19 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   /// 主体：三态分发。骨架/错误/空态也包在 RefreshIndicator 的可滚动容器里，
   /// 保证任何状态下都能下拉刷新。
   Widget _buildContent() {
+    final l10n = AppLocalizations.of(context);
     if (_isLoading && _items.isEmpty) {
       return _scrollableBody(const SkeletonList(itemCount: 6));
     }
     if (_error != null && _items.isEmpty) {
       return _scrollableBody(
         ErrorState(
-          message: _friendlyError(_error!),
+          message: friendlyError(_error, l10n),
           onRetry: () => unawaited(_load()),
         ),
       );
     }
     if (_items.isEmpty) {
-      final l10n = AppLocalizations.of(context);
       return _scrollableBody(
         EmptyState(
           icon: Icons.folder_open,
@@ -378,9 +381,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     }
     return l10n.relDateMD(time.month, time.day);
   }
-
-  /// 错误文案友好化：去掉异常前缀（'Exception: xxx' → 'xxx'）。
-  String _friendlyError(String raw) => raw.replaceFirst(RegExp(r'^Exception:\s*'), '');
 
   /// 全页可滚动包装：内容不满一屏时也能下拉刷新（AlwaysScrollable），
   /// 状态占位在 minHeight 约束内垂直居中。

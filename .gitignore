@@ -146,3 +146,6 @@ DerivedData/
 # stylelint / 子代理排查时的临时输出产物
 .stylelint-out.json
 .*-out.json
+
+# 移动端陈旧构建日志
+src/mobile/build_*.txt

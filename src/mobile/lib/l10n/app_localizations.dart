@@ -248,12 +248,6 @@ abstract class AppLocalizations {
   /// **'Back to sign-in'**
   String get backToLogin;
 
-  /// No description provided for @sendCodeFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Failed to send: {error}'**
-  String sendCodeFailed(String error);
-
   /// No description provided for @phoneAndCodeRequired.
   ///
   /// In en, this message translates to:
@@ -1022,12 +1016,6 @@ abstract class AppLocalizations {
   /// **'Created \"{name}\"'**
   String collectionCreated(String name);
 
-  /// No description provided for @collectionCreateFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Create failed: {error}'**
-  String collectionCreateFailed(String error);
-
   /// No description provided for @deleteCollection.
   ///
   /// In en, this message translates to:
@@ -1045,12 +1033,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Deleted \"{name}\"'**
   String collectionDeleted(String name);
-
-  /// No description provided for @collectionDeleteFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Delete failed: {error}'**
-  String collectionDeleteFailed(String error);
 
   /// No description provided for @collectionsEmptyTitle.
   ///
@@ -1226,12 +1208,6 @@ abstract class AppLocalizations {
   /// **'Subscription cancelled, effective at the end of the current billing period'**
   String get subscriptionCancelled;
 
-  /// No description provided for @cancelSubscriptionFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Cancel subscription failed: {error}'**
-  String cancelSubscriptionFailed(String error);
-
   /// No description provided for @resumeSubscription.
   ///
   /// In en, this message translates to:
@@ -1249,12 +1225,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Subscription resumed, auto-renewal will continue'**
   String get subscriptionResumed;
-
-  /// No description provided for @resumeSubscriptionFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Resume subscription failed: {error}'**
-  String resumeSubscriptionFailed(String error);
 
   /// No description provided for @thinkAgain.
   ///
@@ -1675,6 +1645,270 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Load failed'**
   String get loadFailedTitle;
+
+  /// No description provided for @errorNoToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Not signed in. Please sign in and try again.'**
+  String get errorNoToken;
+
+  /// No description provided for @errorSendCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to send verification code'**
+  String get errorSendCode;
+
+  /// No description provided for @errorFetchProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load profile'**
+  String get errorFetchProfile;
+
+  /// No description provided for @errorFetchClipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load clipboard items'**
+  String get errorFetchClipboard;
+
+  /// No description provided for @errorFetchItemContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load full content'**
+  String get errorFetchItemContent;
+
+  /// No description provided for @errorRegisterDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to register device'**
+  String get errorRegisterDevice;
+
+  /// No description provided for @errorRemoveDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to remove device'**
+  String get errorRemoveDevice;
+
+  /// No description provided for @errorFetchTemplates.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load templates'**
+  String get errorFetchTemplates;
+
+  /// No description provided for @errorRenderTemplate.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to render template'**
+  String get errorRenderTemplate;
+
+  /// No description provided for @errorFetchCollections.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load collections'**
+  String get errorFetchCollections;
+
+  /// No description provided for @errorFetchCollectionItems.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load collection items'**
+  String get errorFetchCollectionItems;
+
+  /// No description provided for @errorCreateCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to create collection'**
+  String get errorCreateCollection;
+
+  /// No description provided for @errorDeleteCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to delete collection'**
+  String get errorDeleteCollection;
+
+  /// No description provided for @errorFetchPlans.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load plans'**
+  String get errorFetchPlans;
+
+  /// No description provided for @errorFetchCurrentSub.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load subscription'**
+  String get errorFetchCurrentSub;
+
+  /// No description provided for @errorCancelSub.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to cancel subscription'**
+  String get errorCancelSub;
+
+  /// No description provided for @errorResumeSub.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to resume subscription'**
+  String get errorResumeSub;
+
+  /// No description provided for @errorFetchInvoices.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load invoices'**
+  String get errorFetchInvoices;
+
+  /// No description provided for @errorUpload.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload failed'**
+  String get errorUpload;
+
+  /// No description provided for @errorDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download failed'**
+  String get errorDownload;
+
+  /// No description provided for @errorDeviceNotRegistered.
+  ///
+  /// In en, this message translates to:
+  /// **'Device not registered. Sign out and sign in again, then retry.'**
+  String get errorDeviceNotRegistered;
+
+  /// No description provided for @errorNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Network error. Check your connection and retry.'**
+  String get errorNetwork;
+
+  /// No description provided for @errorUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong. Please try again later.'**
+  String get errorUnknown;
+
+  /// No description provided for @notifChannelClipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard sync'**
+  String get notifChannelClipboard;
+
+  /// No description provided for @notifChannelClipboardDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard sync reminders between your devices (silent)'**
+  String get notifChannelClipboardDesc;
+
+  /// No description provided for @notifChannelAlert.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync alerts'**
+  String get notifChannelAlert;
+
+  /// No description provided for @notifChannelAlertDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync errors, device alerts and other important reminders'**
+  String get notifChannelAlertDesc;
+
+  /// No description provided for @notifClipboardUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard updated'**
+  String get notifClipboardUpdated;
+
+  /// No description provided for @notifNewClipboardBody.
+  ///
+  /// In en, this message translates to:
+  /// **'New clipboard content received'**
+  String get notifNewClipboardBody;
+
+  /// No description provided for @errorReportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Error report'**
+  String get errorReportTitle;
+
+  /// No description provided for @pendingReportsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending error reports: {count}'**
+  String pendingReportsCount(int count);
+
+  /// No description provided for @errorReportDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'These errors will be sent automatically when the app next goes online.'**
+  String get errorReportDesc;
+
+  /// No description provided for @clearAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all'**
+  String get clearAll;
+
+  /// No description provided for @errorQueueCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Error queue cleared'**
+  String get errorQueueCleared;
+
+  /// No description provided for @planFree.
+  ///
+  /// In en, this message translates to:
+  /// **'Free'**
+  String get planFree;
+
+  /// No description provided for @perMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'/month'**
+  String get perMonth;
+
+  /// No description provided for @perYear.
+  ///
+  /// In en, this message translates to:
+  /// **'/year'**
+  String get perYear;
+
+  /// No description provided for @planMaxDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to {count} devices'**
+  String planMaxDevices(int count);
+
+  /// No description provided for @planDailyClips.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} clipboard items per day'**
+  String planDailyClips(int count);
+
+  /// No description provided for @planStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage: {size} MB'**
+  String planStorage(int size);
+
+  /// No description provided for @featureOcr.
+  ///
+  /// In en, this message translates to:
+  /// **'OCR text recognition'**
+  String get featureOcr;
+
+  /// No description provided for @featurePrioritySync.
+  ///
+  /// In en, this message translates to:
+  /// **'Priority sync'**
+  String get featurePrioritySync;
+
+  /// No description provided for @featureAiClassify.
+  ///
+  /// In en, this message translates to:
+  /// **'AI smart classification'**
+  String get featureAiClassify;
+
+  /// No description provided for @featureTeamShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Team sharing'**
+  String get featureTeamShare;
 }
 
 class _AppLocalizationsDelegate

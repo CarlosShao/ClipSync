@@ -40,16 +40,14 @@ class BiometricService {
 
   /// 弹出系统生物验证，验证通过返回 true。
   ///
-  /// - [reason]：展示在系统验证对话框中的文案；
+  /// - [reason]：展示在系统验证对话框中的文案（调用方传 l10n 文案）；
   /// - biometricOnly 保持默认 false —— 允许回落到设备密码/图案，避免
   ///   用户清除指纹/面容录入后被永久锁在锁定页外；
   /// - stickyAuth: true —— 验证过程中 App 被切到后台再回来时流程不中断；
   /// - useErrorDialogs 保持默认 true —— 系统级错误（如未录入）由插件
   ///   弹引导对话框。
   /// 验证失败（指纹不匹配/用户取消）返回 false，调用方可重试。
-  static Future<bool> authenticate({
-    String reason = '请验证指纹或面容以继续',
-  }) async {
+  static Future<bool> authenticate({required String reason}) async {
     try {
       return await _auth.authenticate(
         localizedReason: reason,

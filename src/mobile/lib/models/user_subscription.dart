@@ -25,19 +25,25 @@ class UserSubscription {
   });
 
   factory UserSubscription.fromJson(Map<String, dynamic> json) {
+    final Object? idRaw = json['id'];
+    final Object? planNameRaw = json['planName'] ?? json['plan_name'];
+    final Object? statusRaw = json['status'];
+    final Object? autoRenewRaw = json['autoRenew'] ?? json['auto_renew'];
+    final Object? cancelRaw =
+        json['cancelAtPeriodEnd'] ?? json['cancel_at_period_end'];
     return UserSubscription(
-      id: json['id']?.toString(),
-      planName: json['planName'] ?? json['plan_name']?.toString(),
-      status: json['status']?.toString() ?? 'active',
+      id: idRaw?.toString(),
+      planName: planNameRaw?.toString(),
+      status: statusRaw?.toString() ?? 'active',
       currentPeriodStart: _parseDate(json['currentPeriodStart'] ?? json['current_period_start']),
       currentPeriodEnd: _parseDate(json['currentPeriodEnd'] ?? json['current_period_end']),
-      autoRenew: json['autoRenew'] ?? json['auto_renew'] ?? true,
-      cancelAtPeriodEnd: json['cancelAtPeriodEnd'] ?? json['cancel_at_period_end'] ?? false,
+      autoRenew: autoRenewRaw is bool ? autoRenewRaw : true,
+      cancelAtPeriodEnd: cancelRaw is bool ? cancelRaw : false,
       trialEnd: _parseDate(json['trialEnd'] ?? json['trial_end']),
     );
   }
 
-  static DateTime? _parseDate(dynamic value) {
+  static DateTime? _parseDate(Object? value) {
     if (value == null) return null;
     if (value is DateTime) return value;
     return DateTime.tryParse(value.toString());

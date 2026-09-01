@@ -214,6 +214,20 @@ class _ClipSyncAppState extends State<ClipSyncApp> with WidgetsBindingObserver {
             themeMode: themeProvider.themeMode,
             routerConfig: widget.appRouter,
             builder: (context, child) {
+              // A3：本地通知文案本地化——服务层无 BuildContext，在 MaterialApp
+              // builder（Localizations 之下）首帧取 AppLocalizations 注入；
+              // locale 切换时 builder 重建会再次注入
+              final l10n = AppLocalizations.of(context);
+              LocalNotificationService.instance.applyTexts(
+                NotificationTexts(
+                  channelClipboardName: l10n.notifChannelClipboard,
+                  channelClipboardDesc: l10n.notifChannelClipboardDesc,
+                  channelAlertName: l10n.notifChannelAlert,
+                  channelAlertDesc: l10n.notifChannelAlertDesc,
+                  clipboardUpdatedTitle: l10n.notifClipboardUpdated,
+                  newClipboardBody: l10n.notifNewClipboardBody,
+                ),
+              );
               return ErrorReportWidget(child: child ?? const SizedBox.shrink());
             },
           );

@@ -57,7 +57,9 @@ class Device {
 
     return Device(
       id: readString(const ['id']),
-      deviceName: readString(const ['device_name', 'deviceName'], '未知设备'),
+      // 设备名缺失时返回空串，UI 层用 l10n unknownDevice 兜底（A3 解耦：
+      // model 不再内嵌中文默认值）
+      deviceName: readString(const ['device_name', 'deviceName']),
       deviceType: readString(const ['device_type', 'deviceType'], 'desktop'),
       platform: readString(const ['platform'], 'unknown'),
       platformVersion: readString(const ['platform_version', 'platformVersion']),

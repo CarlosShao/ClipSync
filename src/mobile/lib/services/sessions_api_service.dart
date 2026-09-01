@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'app_exception.dart';
 import 'server_config.dart';
 import 'token_store.dart';
 
@@ -23,7 +24,7 @@ class ActiveSession {
 
   const ActiveSession({
     required this.id,
-    this.deviceName = '未知设备',
+    this.deviceName = '',
     this.platform = 'unknown',
     this.ipAddress = '',
     this.createdAt,
@@ -34,7 +35,7 @@ class ActiveSession {
   factory ActiveSession.fromJson(Map<String, dynamic> json) {
     return ActiveSession(
       id: _asString(json['id']) ?? '',
-      deviceName: _asString(json['deviceName']) ?? '未知设备',
+      deviceName: _asString(json['deviceName']) ?? '',
       platform: _asString(json['platform']) ?? 'unknown',
       ipAddress: _asString(json['ipAddress']) ?? '',
       createdAt: _asDateTime(json['createdAt']),
@@ -68,7 +69,7 @@ class SessionsApiService {
   Future<Map<String, String>> _headers({String? sessionId}) async {
     final token = await TokenStore.getAccessToken();
     if (token == null || token.isEmpty) {
-      throw Exception('未登录：缺少访问令牌');
+      throw const AppException(AppErrorCodes.noToken);
     }
     return <String, String>{
       'Content-Type': 'application/json',
@@ -138,7 +139,7 @@ class SessionsApiService {
         .timeout(const Duration(seconds: 15));
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to load sessions');
+      throw const AppException(AppErrorCodes.fetchSessionsFailed);
     }
 
     final Map<String, dynamic> body = _decodeMap(response.body);
@@ -175,7 +176,7 @@ class SessionsApiService {
         .timeout(const Duration(seconds: 15));
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to revoke session');
+      throw const AppException(AppErrorCodes.revokeFailed);
     }
   }
 

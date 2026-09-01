@@ -23,15 +23,17 @@ class Session {
 
   factory Session.fromJson(Map<String, dynamic> json) {
     return Session(
-      id: json['id'],
-      deviceName: json['deviceName'],
-      platform: json['platform'],
-      appVersion: json['appVersion'],
-      ipAddress: json['ipAddress'],
-      userAgent: json['userAgent'],
-      createdAt: DateTime.parse(json['createdAt']),
-      lastActiveAt: DateTime.parse(json['lastActiveAt']),
-      isCurrent: json['isCurrent'] ?? false,
+      id: json['id'] as String? ?? '',
+      deviceName: json['deviceName'] as String?,
+      platform: json['platform'] as String?,
+      appVersion: json['appVersion'] as String?,
+      ipAddress: json['ipAddress'] as String?,
+      userAgent: json['userAgent'] as String?,
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      lastActiveAt: DateTime.tryParse(json['lastActiveAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      isCurrent: json['isCurrent'] as bool? ?? false,
     );
   }
 }

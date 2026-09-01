@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../services/app_exception.dart';
 import '../../services/collections_api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common/empty_state.dart';
@@ -40,7 +41,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   /// 创建 / 删除请求进行中（FAB 与空态按钮防重复提交）
   bool _isMutating = false;
-  String? _error;
+
+  /// 最近一次失败的原始错误对象（UI 层经 friendlyError 映射 l10n 文案）
+  Object? _error;
 
   @override
   void initState() {
@@ -69,7 +72,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       }
       setState(() {
         _isLoading = false;
-        _error = e.toString();
+        _error = e;
       });
     }
   }
@@ -110,7 +113,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       if (!mounted) {
         return;
       }
-      _showSnackBar(l10n.collectionCreateFailed(_friendlyError(e.toString())));
+      _showSnackBar(friendlyError(e, l10n));
     } finally {
       if (mounted) {
         setState(() => _isMutating = false);
@@ -158,7 +161,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       if (!mounted) {
         return;
       }
-      _showSnackBar(l10n.collectionDeleteFailed(_friendlyError(e.toString())));
+      _showSnackBar(friendlyError(e, l10n));
     } finally {
       if (mounted) {
         setState(() => _isMutating = false);
@@ -184,9 +187,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  /// 错误文案友好化：去掉异常前缀（'Exception: xxx' → 'xxx'）。
-  String _friendlyError(String raw) => raw.replaceFirst(RegExp(r'^Exception:\s*'), '');
-
   // ---------------------------------------------------------------------------
   // 构建
   // ---------------------------------------------------------------------------
@@ -210,19 +210,19 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   /// 主体：三态分发。骨架/错误/空态也包在 RefreshIndicator 的可滚动容器里，
   /// 保证任何状态下都能下拉刷新。
   Widget _buildContent() {
+    final l10n = AppLocalizations.of(context);
     if (_isLoading && _groups.isEmpty) {
       return _scrollableBody(const SkeletonList(itemCount: 6));
     }
     if (_error != null && _groups.isEmpty) {
       return _scrollableBody(
         ErrorState(
-          message: _friendlyError(_error!),
+          message: friendlyError(_error, l10n),
           onRetry: () => unawaited(_load()),
         ),
       );
     }
     if (_groups.isEmpty) {
-      final l10n = AppLocalizations.of(context);
       return _scrollableBody(
         EmptyState(
           icon: Icons.star_outline,

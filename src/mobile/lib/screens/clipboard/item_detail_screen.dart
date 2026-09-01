@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/clipboard_item.dart';
 import '../../services/api_service.dart';
+import '../../services/app_exception.dart';
 import '../../services/server_config.dart';
 import '../../services/token_store.dart';
 import '../../theme/app_theme.dart';
@@ -335,7 +336,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     try {
       final token = await TokenStore.getAccessToken();
       if (token == null || token.isEmpty) {
-        throw Exception('未登录：缺少访问令牌');
+        throw const AppException(AppErrorCodes.noToken);
       }
       final response = await http
           .get(
@@ -344,7 +345,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
           )
           .timeout(const Duration(seconds: 120));
       if (response.statusCode != 200) {
-        throw Exception('下载失败（HTTP ${response.statusCode}）');
+        throw AppException(AppErrorCodes.downloadFailed, 'HTTP ${response.statusCode}');
       }
       final dir = await getTemporaryDirectory();
       final saveDir = Directory('${dir.path}${Platform.pathSeparator}downloads');
@@ -449,7 +450,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     );
   }
 
-  /// 本地化类型标签（模型 typeLabel 为硬编码中文，UI 层按 contentType 重映射）
+  /// 本地化类型标签（A3：模型不再提供中文 typeLabel，UI 层按 contentType 映射 l10n）
   String _localizedTypeLabel(AppLocalizations l10n) {
     switch (_item.contentType) {
       case 'text':

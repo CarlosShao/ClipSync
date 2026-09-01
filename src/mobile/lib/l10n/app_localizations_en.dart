@@ -88,11 +88,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get backToLogin => 'Back to sign-in';
 
   @override
-  String sendCodeFailed(String error) {
-    return 'Failed to send: $error';
-  }
-
-  @override
   String get phoneAndCodeRequired => 'Please enter phone number and code';
 
   @override
@@ -523,11 +518,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String collectionCreateFailed(String error) {
-    return 'Create failed: $error';
-  }
-
-  @override
   String get deleteCollection => 'Delete collection';
 
   @override
@@ -538,11 +528,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String collectionDeleted(String name) {
     return 'Deleted \"$name\"';
-  }
-
-  @override
-  String collectionDeleteFailed(String error) {
-    return 'Delete failed: $error';
   }
 
   @override
@@ -648,11 +633,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Subscription cancelled, effective at the end of the current billing period';
 
   @override
-  String cancelSubscriptionFailed(String error) {
-    return 'Cancel subscription failed: $error';
-  }
-
-  @override
   String get resumeSubscription => 'Resume subscription';
 
   @override
@@ -662,11 +642,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get subscriptionResumed =>
       'Subscription resumed, auto-renewal will continue';
-
-  @override
-  String resumeSubscriptionFailed(String error) {
-    return 'Resume subscription failed: $error';
-  }
 
   @override
   String get thinkAgain => 'Think again';
@@ -903,4 +878,148 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get loadFailedTitle => 'Load failed';
+
+  @override
+  String get errorNoToken => 'Not signed in. Please sign in and try again.';
+
+  @override
+  String get errorSendCode => 'Failed to send verification code';
+
+  @override
+  String get errorFetchProfile => 'Failed to load profile';
+
+  @override
+  String get errorFetchClipboard => 'Failed to load clipboard items';
+
+  @override
+  String get errorFetchItemContent => 'Failed to load full content';
+
+  @override
+  String get errorRegisterDevice => 'Failed to register device';
+
+  @override
+  String get errorRemoveDevice => 'Failed to remove device';
+
+  @override
+  String get errorFetchTemplates => 'Failed to load templates';
+
+  @override
+  String get errorRenderTemplate => 'Failed to render template';
+
+  @override
+  String get errorFetchCollections => 'Failed to load collections';
+
+  @override
+  String get errorFetchCollectionItems => 'Failed to load collection items';
+
+  @override
+  String get errorCreateCollection => 'Failed to create collection';
+
+  @override
+  String get errorDeleteCollection => 'Failed to delete collection';
+
+  @override
+  String get errorFetchPlans => 'Failed to load plans';
+
+  @override
+  String get errorFetchCurrentSub => 'Failed to load subscription';
+
+  @override
+  String get errorCancelSub => 'Failed to cancel subscription';
+
+  @override
+  String get errorResumeSub => 'Failed to resume subscription';
+
+  @override
+  String get errorFetchInvoices => 'Failed to load invoices';
+
+  @override
+  String get errorUpload => 'Upload failed';
+
+  @override
+  String get errorDownload => 'Download failed';
+
+  @override
+  String get errorDeviceNotRegistered =>
+      'Device not registered. Sign out and sign in again, then retry.';
+
+  @override
+  String get errorNetwork => 'Network error. Check your connection and retry.';
+
+  @override
+  String get errorUnknown => 'Something went wrong. Please try again later.';
+
+  @override
+  String get notifChannelClipboard => 'Clipboard sync';
+
+  @override
+  String get notifChannelClipboardDesc =>
+      'Clipboard sync reminders between your devices (silent)';
+
+  @override
+  String get notifChannelAlert => 'Sync alerts';
+
+  @override
+  String get notifChannelAlertDesc =>
+      'Sync errors, device alerts and other important reminders';
+
+  @override
+  String get notifClipboardUpdated => 'Clipboard updated';
+
+  @override
+  String get notifNewClipboardBody => 'New clipboard content received';
+
+  @override
+  String get errorReportTitle => 'Error report';
+
+  @override
+  String pendingReportsCount(int count) {
+    return 'Pending error reports: $count';
+  }
+
+  @override
+  String get errorReportDesc =>
+      'These errors will be sent automatically when the app next goes online.';
+
+  @override
+  String get clearAll => 'Clear all';
+
+  @override
+  String get errorQueueCleared => 'Error queue cleared';
+
+  @override
+  String get planFree => 'Free';
+
+  @override
+  String get perMonth => '/month';
+
+  @override
+  String get perYear => '/year';
+
+  @override
+  String planMaxDevices(int count) {
+    return 'Up to $count devices';
+  }
+
+  @override
+  String planDailyClips(int count) {
+    return '$count clipboard items per day';
+  }
+
+  @override
+  String planStorage(int size) {
+    return 'Storage: $size MB';
+  }
+
+  @override
+  String get featureOcr => 'OCR text recognition';
+
+  @override
+  String get featurePrioritySync => 'Priority sync';
+
+  @override
+  String get featureAiClassify => 'AI smart classification';
+
+  @override
+  String get featureTeamShare => 'Team sharing';
 }

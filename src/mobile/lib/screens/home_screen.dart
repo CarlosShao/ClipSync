@@ -11,6 +11,7 @@ import '../providers/clipboard_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/ws_provider.dart';
 import '../l10n/app_localizations.dart';
+import '../services/app_exception.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/error_state.dart';
 import '../utils/performance.dart';
@@ -260,7 +261,7 @@ class _DevicesTabState extends State<DevicesTab> {
         if (provider.error != null && provider.devices.isEmpty) {
           return ErrorState(
             title: l10n.devicesLoadFailed,
-            message: provider.error!,
+            message: friendlyError(provider.error, l10n),
             onRetry: () {
               final token = context.read<AuthProvider>().token;
               if (token != null) provider.loadDevices(token);
@@ -304,6 +305,10 @@ class _DevicesTabState extends State<DevicesTab> {
     final auth = context.read<AuthProvider>();
     final isCurrentDevice = device.id == auth.deviceId;
     final l10n = AppLocalizations.of(context);
+    // 设备名缺失（服务端未返回）时用 l10n 兜底（A3：model 不再内嵌中文默认值）
+    final deviceName = device.deviceName.isEmpty
+        ? l10n.unknownDevice
+        : device.deviceName;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -311,8 +316,8 @@ class _DevicesTabState extends State<DevicesTab> {
         title: Text(l10n.unbindDevice),
         content: Text(
           isCurrentDevice
-              ? l10n.unbindCurrentDeviceConfirm(device.deviceName)
-              : l10n.unbindConfirm(device.deviceName),
+              ? l10n.unbindCurrentDeviceConfirm(deviceName)
+              : l10n.unbindConfirm(deviceName),
         ),
         actions: [
           TextButton(

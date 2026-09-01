@@ -86,11 +86,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get backToLogin => '返回重新登录';
 
   @override
-  String sendCodeFailed(String error) {
-    return '发送失败: $error';
-  }
-
-  @override
   String get phoneAndCodeRequired => '请输入手机号和验证码';
 
   @override
@@ -501,11 +496,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String collectionCreateFailed(String error) {
-    return '创建失败：$error';
-  }
-
-  @override
   String get deleteCollection => '删除分组';
 
   @override
@@ -516,11 +506,6 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String collectionDeleted(String name) {
     return '已删除「$name」';
-  }
-
-  @override
-  String collectionDeleteFailed(String error) {
-    return '删除失败：$error';
   }
 
   @override
@@ -620,11 +605,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get subscriptionCancelled => '订阅已取消，将于当前计费周期结束后生效';
 
   @override
-  String cancelSubscriptionFailed(String error) {
-    return '取消订阅失败：$error';
-  }
-
-  @override
   String get resumeSubscription => '恢复订阅';
 
   @override
@@ -632,11 +612,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get subscriptionResumed => '订阅已恢复，将继续自动续订';
-
-  @override
-  String resumeSubscriptionFailed(String error) {
-    return '恢复订阅失败：$error';
-  }
 
   @override
   String get thinkAgain => '再想想';
@@ -865,4 +840,144 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get loadFailedTitle => '加载失败';
+
+  @override
+  String get errorNoToken => '未登录，请先登录后重试';
+
+  @override
+  String get errorSendCode => '验证码发送失败';
+
+  @override
+  String get errorFetchProfile => '获取用户信息失败';
+
+  @override
+  String get errorFetchClipboard => '剪贴板列表加载失败';
+
+  @override
+  String get errorFetchItemContent => '获取完整内容失败';
+
+  @override
+  String get errorRegisterDevice => '设备注册失败';
+
+  @override
+  String get errorRemoveDevice => '设备解绑失败';
+
+  @override
+  String get errorFetchTemplates => '模板列表加载失败';
+
+  @override
+  String get errorRenderTemplate => '模板渲染失败';
+
+  @override
+  String get errorFetchCollections => '收藏夹分组加载失败';
+
+  @override
+  String get errorFetchCollectionItems => '分组内容加载失败';
+
+  @override
+  String get errorCreateCollection => '创建收藏夹分组失败';
+
+  @override
+  String get errorDeleteCollection => '删除收藏夹分组失败';
+
+  @override
+  String get errorFetchPlans => '获取套餐列表失败';
+
+  @override
+  String get errorFetchCurrentSub => '获取当前订阅失败';
+
+  @override
+  String get errorCancelSub => '取消订阅失败';
+
+  @override
+  String get errorResumeSub => '恢复订阅失败';
+
+  @override
+  String get errorFetchInvoices => '获取账单失败';
+
+  @override
+  String get errorUpload => '上传失败';
+
+  @override
+  String get errorDownload => '下载失败';
+
+  @override
+  String get errorDeviceNotRegistered => '设备未注册，请退出重新登录后重试';
+
+  @override
+  String get errorNetwork => '网络连接异常，请检查网络后重试';
+
+  @override
+  String get errorUnknown => '操作失败，请稍后重试';
+
+  @override
+  String get notifChannelClipboard => '剪贴板同步';
+
+  @override
+  String get notifChannelClipboardDesc => '设备间剪贴板内容同步提醒（静默，不发出声音）';
+
+  @override
+  String get notifChannelAlert => '同步告警';
+
+  @override
+  String get notifChannelAlertDesc => '同步异常、设备告警等重要提醒';
+
+  @override
+  String get notifClipboardUpdated => '剪贴板已更新';
+
+  @override
+  String get notifNewClipboardBody => '收到新的剪贴板内容';
+
+  @override
+  String get errorReportTitle => '错误报告';
+
+  @override
+  String pendingReportsCount(int count) {
+    return '待发送错误报告：$count 条';
+  }
+
+  @override
+  String get errorReportDesc => '这些错误将在下次联网时自动发送。';
+
+  @override
+  String get clearAll => '清空';
+
+  @override
+  String get errorQueueCleared => '已清空错误队列';
+
+  @override
+  String get planFree => '免费';
+
+  @override
+  String get perMonth => '/月';
+
+  @override
+  String get perYear => '/年';
+
+  @override
+  String planMaxDevices(int count) {
+    return '最多 $count 台设备';
+  }
+
+  @override
+  String planDailyClips(int count) {
+    return '每日 $count 条剪贴板';
+  }
+
+  @override
+  String planStorage(int size) {
+    return '存储空间 ${size}MB';
+  }
+
+  @override
+  String get featureOcr => 'OCR 文字识别';
+
+  @override
+  String get featurePrioritySync => '优先同步';
+
+  @override
+  String get featureAiClassify => 'AI 智能分类';
+
+  @override
+  String get featureTeamShare => '团队共享';
 }

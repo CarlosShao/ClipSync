@@ -42,9 +42,13 @@ class _DeviceCardState extends State<DeviceCard>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    // 设备名缺失（服务端未返回）时用 l10n 兜底（A3：model 不再内嵌中文默认值）
+    final deviceName = widget.device.deviceName.isEmpty
+        ? l10n.unknownDevice
+        : widget.device.deviceName;
     return Semantics(
       label: l10n.deviceSemantics(
-        widget.device.deviceName,
+        deviceName,
         widget.device.isOnline ? l10n.deviceOnline : l10n.deviceOffline,
       ),
       button: true,
@@ -80,7 +84,7 @@ class _DeviceCardState extends State<DeviceCard>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.device.deviceName,
+                            deviceName,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../services/app_exception.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/empty_state.dart';
@@ -39,7 +40,9 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
   List<ClipboardTemplate> _templates = <ClipboardTemplate>[];
   bool _isLoading = false;
-  String? _error;
+
+  /// 最近一次失败的原始错误对象（UI 层经 friendlyError 映射 l10n 文案）
+  Object? _error;
 
   @override
   void initState() {
@@ -68,7 +71,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
       }
       setState(() {
         _isLoading = false;
-        _error = e.toString();
+        _error = e;
       });
     }
   }
@@ -164,10 +167,6 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     );
   }
 
-  /// 错误文案友好化：去掉异常前缀（'Exception: xxx' → 'xxx'）。
-  String _friendlyError(String raw) =>
-      raw.replaceFirst(RegExp(r'^Exception:\s*'), '');
-
   // ---------------------------------------------------------------------------
   // 构建
   // ---------------------------------------------------------------------------
@@ -186,19 +185,19 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
   /// 主体：三态分发。骨架/错误/空态也包在可滚动容器里，任何状态可下拉刷新。
   Widget _buildContent() {
+    final l10n = AppLocalizations.of(context);
     if (_isLoading && _templates.isEmpty) {
       return _scrollableBody(const SkeletonList(itemCount: 6));
     }
     if (_error != null && _templates.isEmpty) {
       return _scrollableBody(
         ErrorState(
-          message: _friendlyError(_error!),
+          message: friendlyError(_error, l10n),
           onRetry: () => unawaited(_load()),
         ),
       );
     }
     if (_templates.isEmpty) {
-      final l10n = AppLocalizations.of(context);
       return _scrollableBody(
         EmptyState(
           icon: Icons.description_outlined,

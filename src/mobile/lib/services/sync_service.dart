@@ -77,7 +77,7 @@ class SyncService {
           }
           return null;
         default:
-          throw MissingPluginException('clipsync/sync 未知方法: ${call.method}');
+          throw MissingPluginException('clipsync/sync unknown method: ${call.method}');
       }
     });
   }

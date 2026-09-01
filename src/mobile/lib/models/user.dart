@@ -24,15 +24,16 @@ class User {
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      id: json['id'],
-      phone: json['phone'],
-      email: json['email'],
-      displayName: json['display_name'],
-      avatarUrl: json['avatar_url'],
-      subscriptionStatus: json['subscription_status'] ?? 'free',
-      createdAt: DateTime.parse(json['created_at']),
-      lastLoginAt: json['last_login_at'] != null
-          ? DateTime.parse(json['last_login_at'])
+      id: json['id'] as String? ?? '',
+      phone: json['phone'] as String?,
+      email: json['email'] as String?,
+      displayName: json['display_name'] as String?,
+      avatarUrl: json['avatar_url'] as String?,
+      subscriptionStatus: json['subscription_status'] as String? ?? 'free',
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      lastLoginAt: json['last_login_at'] is String
+          ? DateTime.tryParse(json['last_login_at'] as String)
           : null,
     );
   }

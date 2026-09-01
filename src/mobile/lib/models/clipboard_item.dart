@@ -191,23 +191,6 @@ class ClipboardItem {
     }
   }
 
-  String get typeLabel {
-    switch (contentType) {
-      case 'text':
-        return '文本';
-      case 'image':
-        return '图片';
-      case 'link':
-        return '链接';
-      case 'file':
-        return '文件';
-      case 'code':
-        return '代码';
-      default:
-        return contentType;
-    }
-  }
-
   // ---------- 类型判定 / 文件名辅助（T2.5 详情预览页，纯追加只读 getter） ----------
 
   /// 是否图片条目

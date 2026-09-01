@@ -8,6 +8,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_localizations.dart';
+
 /// 错误严重程度
 enum ErrorSeverity {
   low,
@@ -56,19 +58,22 @@ class ErrorReport {
   };
 
   factory ErrorReport.fromJson(Map<String, dynamic> json) => ErrorReport(
-    id: json['id'],
-    message: json['message'],
-    stackTrace: json['stackTrace'],
+    id: json['id'] as String? ?? '',
+    message: json['message'] as String? ?? '',
+    stackTrace: json['stackTrace'] as String?,
     severity: ErrorSeverity.values.firstWhere(
       (e) => e.name == json['severity'],
       orElse: () => ErrorSeverity.medium,
     ),
-    platform: json['platform'],
-    appVersion: json['appVersion'],
-    userId: json['userId'],
-    metadata: json['metadata'] ?? {},
-    timestamp: DateTime.parse(json['timestamp']),
-    isResolved: json['isResolved'] ?? false,
+    platform: json['platform'] as String? ?? 'unknown',
+    appVersion: json['appVersion'] as String? ?? 'unknown',
+    userId: json['userId'] as String?,
+    metadata: json['metadata'] is Map<String, dynamic>
+        ? json['metadata'] as Map<String, dynamic>
+        : <String, dynamic>{},
+    timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+    isResolved: json['isResolved'] as bool? ?? false,
   );
 }
 
@@ -415,23 +420,24 @@ class _ErrorReportWidgetState extends State<ErrorReportWidget> {
   }
   
   void _showErrorReportDialog(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('错误报告'),
+        title: Text(l10n.errorReportTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('待发送错误报告：$_pendingReports 条'),
+            Text(l10n.pendingReportsCount(_pendingReports)),
             const SizedBox(height: 8),
-            const Text('这些错误将在下次联网时自动发送。'),
+            Text(l10n.errorReportDesc),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
+            child: Text(l10n.close),
           ),
           TextButton(
             onPressed: () {
@@ -439,10 +445,10 @@ class _ErrorReportWidgetState extends State<ErrorReportWidget> {
               _updatePendingCount();
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已清空错误队列')),
+                SnackBar(content: Text(l10n.errorQueueCleared)),
               );
             },
-            child: const Text('清空'),
+            child: Text(l10n.clearAll),
           ),
         ],
       ),

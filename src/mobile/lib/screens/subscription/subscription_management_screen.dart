@@ -7,6 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/subscription_plan.dart';
 import '../../models/user_subscription.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/app_exception.dart';
 import '../../services/subscription_api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common/app_card.dart';
@@ -46,7 +47,9 @@ class _SubscriptionManagementScreenState
   List<Map<String, dynamic>> _invoices = const <Map<String, dynamic>>[];
   bool _isLoading = false;
   bool _isMutating = false;
-  String? _error;
+
+  /// 最近一次失败的原始错误对象（UI 层经 friendlyError 映射 l10n 文案）
+  Object? _error;
 
   @override
   void initState() {
@@ -89,7 +92,7 @@ class _SubscriptionManagementScreenState
       }
       setState(() {
         _isLoading = false;
-        _error = e.toString();
+        _error = e;
       });
     }
   }
@@ -156,7 +159,7 @@ class _SubscriptionManagementScreenState
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.cancelSubscriptionFailed(e.toString()))),
+        SnackBar(content: Text(friendlyError(e, l10n))),
       );
     } finally {
       if (mounted) {
@@ -197,7 +200,7 @@ class _SubscriptionManagementScreenState
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.resumeSubscriptionFailed(e.toString()))),
+        SnackBar(content: Text(friendlyError(e, l10n))),
       );
     } finally {
       if (mounted) {
@@ -280,6 +283,39 @@ class _SubscriptionManagementScreenState
     return amount == null ? '—' : '¥${amount.toStringAsFixed(2)}';
   }
 
+  /// 套餐价格文案（A3 解耦：model 只提供结构化数据，货币符号/周期后缀
+  /// 由 UI 经 l10n 组装）。
+  String _planPriceText(SubscriptionPlan plan, AppLocalizations l10n) {
+    if (plan.isFree) {
+      return l10n.planFree;
+    }
+    final String symbol = plan.currency == 'CNY' ? '¥' : r'$';
+    final String period = plan.billingPeriod == BillingPeriod.yearly
+        ? l10n.perYear
+        : l10n.perMonth;
+    return '$symbol${plan.price.toStringAsFixed(2)}$period';
+  }
+
+  /// 套餐特性文案列表：数量类经 l10n 占位符插值，能力类按布尔字段显隐，
+  /// 末尾追加服务端下发的 paywallFeatureN（原样展示）。
+  List<String> _planFeatureLines(SubscriptionPlan plan, AppLocalizations l10n) {
+    return <String>[
+      l10n.planMaxDevices(plan.maxDevices),
+      l10n.planDailyClips(plan.maxClipboardPerDay),
+      l10n.planStorage(plan.maxStorageMB),
+      if (plan.hasOcr) l10n.featureOcr,
+      if (plan.hasPrioritySync) l10n.featurePrioritySync,
+      if (plan.hasAICategories) l10n.featureAiClassify,
+      if (plan.hasTeamSharing) l10n.featureTeamShare,
+      for (final String? feature in <String?>[
+        plan.paywallFeature1,
+        plan.paywallFeature2,
+        plan.paywallFeature3,
+      ])
+        if (feature != null && feature.isNotEmpty) feature,
+    ];
+  }
+
   // ---------------------------------------------------------------------------
   // 页面骨架
   // ---------------------------------------------------------------------------
@@ -305,7 +341,7 @@ class _SubscriptionManagementScreenState
           ? const SkeletonList(itemCount: 6)
           : _error != null
               ? ErrorState(
-                  message: _error!,
+                  message: friendlyError(_error, l10n),
                   onRetry: _load,
                 )
               : RefreshIndicator(
@@ -552,7 +588,7 @@ class _SubscriptionManagementScreenState
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: <Widget>[
-                    Text(plan.formattedPrice, style: textTheme.titleMedium),
+                    Text(_planPriceText(plan, l10n), style: textTheme.titleMedium),
                     if (isCurrent)
                       Padding(
                         padding: const EdgeInsets.only(top: AppSpacing.xs),
@@ -567,7 +603,7 @@ class _SubscriptionManagementScreenState
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            ...plan.features.map(
+            ..._planFeatureLines(plan, l10n).map(
               (String feature) => Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Row(

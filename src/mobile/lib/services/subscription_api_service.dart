@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/subscription_plan.dart';
 import '../models/user_subscription.dart';
+import 'app_exception.dart';
 import 'server_config.dart';
 import 'token_store.dart';
 
@@ -43,7 +44,7 @@ class SubscriptionApiService {
   static Future<String> _resolveToken(String? token) async {
     final resolved = token ?? await TokenStore.getAccessToken();
     if (resolved == null || resolved.isEmpty) {
-      throw Exception('未登录：缺少访问令牌');
+      throw const AppException(AppErrorCodes.noToken);
     }
     return resolved;
   }
@@ -55,19 +56,18 @@ class SubscriptionApiService {
     };
   }
 
-  /// 从错误响应体提取后端 error 文案（`{ error: '...' }`），
-  /// 非 JSON 响应体或缺失字段时回退到 [fallback] + 状态码。
-  static String _serverError(http.Response response, String fallback) {
-    final Object? decoded;
+  /// 从错误响应体提取后端 error 文案（`{ error: '...' }`）作为异常 detail，
+  /// 非 JSON 响应体或缺失字段时回退到状态码描述（HTTP xxx）。
+  static String? _serverDetail(http.Response response) {
     try {
-      decoded = jsonDecode(response.body);
+      final Object? decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic> && decoded['error'] is String) {
+        return decoded['error'] as String;
+      }
     } on FormatException {
-      return '$fallback（HTTP ${response.statusCode}）';
+      // 非 JSON 响应体：回退到状态码
     }
-    if (decoded is Map<String, dynamic> && decoded['error'] is String) {
-      return decoded['error'] as String;
-    }
-    return '$fallback（HTTP ${response.statusCode}）';
+    return 'HTTP ${response.statusCode}';
   }
 
   /// 解析套餐对象（/plans 与 /current 共用 camelCase 字段结构）。
@@ -101,13 +101,13 @@ class SubscriptionApiService {
       headers: const <String, String>{'Content-Type': 'application/json'},
     );
     if (response.statusCode != 200) {
-      throw Exception(_serverError(response, '获取套餐列表失败'));
+      throw AppException(AppErrorCodes.fetchPlansFailed, _serverDetail(response));
     }
     final Object? decoded;
     try {
       decoded = jsonDecode(response.body);
     } on FormatException {
-      throw Exception('获取套餐列表失败：响应格式异常');
+      throw const AppException(AppErrorCodes.fetchPlansFailed);
     }
     final Object? plansJson =
         decoded is Map<String, dynamic> ? decoded['plans'] : null;
@@ -132,16 +132,19 @@ class SubscriptionApiService {
       headers: await _authHeaders(token),
     );
     if (response.statusCode != 200) {
-      throw Exception(_serverError(response, '获取当前订阅失败'));
+      throw AppException(
+        AppErrorCodes.fetchCurrentSubFailed,
+        _serverDetail(response),
+      );
     }
     final Object? decoded;
     try {
       decoded = jsonDecode(response.body);
     } on FormatException {
-      throw Exception('获取当前订阅失败：响应格式异常');
+      throw const AppException(AppErrorCodes.fetchCurrentSubFailed);
     }
     if (decoded is! Map<String, dynamic>) {
-      throw Exception('获取当前订阅失败：响应格式异常');
+      throw const AppException(AppErrorCodes.fetchCurrentSubFailed);
     }
     final Object? sub = decoded['subscription'];
     final Object? plan = decoded['plan'];
@@ -161,7 +164,7 @@ class SubscriptionApiService {
       headers: await _authHeaders(token),
     );
     if (response.statusCode != 200) {
-      throw Exception(_serverError(response, '取消订阅失败'));
+      throw AppException(AppErrorCodes.cancelSubFailed, _serverDetail(response));
     }
   }
 
@@ -174,7 +177,7 @@ class SubscriptionApiService {
       headers: await _authHeaders(token),
     );
     if (response.statusCode != 200) {
-      throw Exception(_serverError(response, '恢复订阅失败'));
+      throw AppException(AppErrorCodes.resumeSubFailed, _serverDetail(response));
     }
   }
 
@@ -191,13 +194,16 @@ class SubscriptionApiService {
       headers: await _authHeaders(token),
     );
     if (response.statusCode != 200) {
-      throw Exception(_serverError(response, '获取账单失败'));
+      throw AppException(
+        AppErrorCodes.fetchInvoicesFailed,
+        _serverDetail(response),
+      );
     }
     final Object? decoded;
     try {
       decoded = jsonDecode(response.body);
     } on FormatException {
-      throw Exception('获取账单失败：响应格式异常');
+      throw const AppException(AppErrorCodes.fetchInvoicesFailed);
     }
     final Object? invoicesJson =
         decoded is Map<String, dynamic> ? decoded['invoices'] : null;

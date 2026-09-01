@@ -11,6 +11,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/clipboard_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/app_exception.dart';
 import '../../services/token_store.dart';
 import '../../theme/app_theme.dart';
 
@@ -81,11 +82,11 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
     try {
       final token = await TokenStore.getAccessToken();
       if (token == null || token.isEmpty) {
-        throw Exception('未登录：缺少访问令牌');
+        throw const AppException(AppErrorCodes.noToken);
       }
       final deviceId = await context.read<AuthProvider>().ensureDeviceId();
       if (deviceId == null || deviceId.isEmpty) {
-        throw Exception('设备未注册，无法上传（请退出重登后重试）');
+        throw const AppException(AppErrorCodes.deviceNotRegistered);
       }
 
       for (final text in widget.payload.texts) {
@@ -101,7 +102,7 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
         setState(() => _uploading = false);
         messenger.showSnackBar(
           SnackBar(
-            content: Text(l10n.saveInFailed(e.toString())),
+            content: Text(l10n.saveInFailed(friendlyError(e, l10n))),
             duration: const Duration(seconds: 3),
           ),
         );
