@@ -86,6 +86,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get backToLogin => '返回重新登录';
 
   @override
+  String sendCodeFailed(String error) {
+    return '发送失败: $error';
+  }
+
+  @override
+  String get phoneAndCodeRequired => '请输入手机号和验证码';
+
+  @override
+  String get twoFactorCodeLabel => '动态验证码';
+
+  @override
   String get tabClipboard => '剪贴板';
 
   @override
@@ -116,6 +127,68 @@ class AppLocalizationsZh extends AppLocalizations {
   String unbindConfirm(String deviceName) {
     return '确定解绑「$deviceName」吗？解绑后该设备将无法再同步。';
   }
+
+  @override
+  String get devicesLoadFailed => '设备列表加载失败';
+
+  @override
+  String unbindCurrentDeviceConfirm(String deviceName) {
+    return '「$deviceName」是当前设备。\n解绑后将停止本机同步，且需要重新注册设备才能恢复。确定解绑吗？';
+  }
+
+  @override
+  String get biometricUnlockReason => '验证指纹或面容以进入 ClipSync';
+
+  @override
+  String get biometricVerifyFailed => '验证未通过，请重试';
+
+  @override
+  String get lockScreenMessage => '应用已锁定，请验证身份后继续';
+
+  @override
+  String get unlock => '解锁';
+
+  @override
+  String get backAgainToExit => '再按一次返回键退出 ClipSync';
+
+  @override
+  String get skip => '跳过';
+
+  @override
+  String get next => '下一步';
+
+  @override
+  String get getStarted => '开始使用';
+
+  @override
+  String get onboardingTitle1 => '欢迎使用 ClipSync';
+
+  @override
+  String get onboardingDesc1 => '跨设备剪贴板同步工具\n让您的剪贴板在手机、电脑间自由流转';
+
+  @override
+  String get onboardingTitle2 => '后台自动同步';
+
+  @override
+  String get onboardingDesc2 => 'ClipSync 在后台保持连接\n电脑复制的内容自动同步到手机';
+
+  @override
+  String get onboardingTitle3 => '即时通知';
+
+  @override
+  String get onboardingDesc3 => '电脑复制内容后\n手机第一时间收到通知提醒';
+
+  @override
+  String get onboardingTitle4 => '剪贴板同步';
+
+  @override
+  String get onboardingDesc4 => '手机复制的内容也会自动同步\n在所有设备间无缝流转';
+
+  @override
+  String get onboardingTitle5 => '准备就绪';
+
+  @override
+  String get onboardingDesc5 => '现在可以开始使用 ClipSync 了！\n复制内容试试吧 😊';
 
   @override
   String get sectionServer => '服务器配置';

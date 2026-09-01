@@ -32,6 +32,14 @@
   "twoFactorDesc": "Enter the 6-digit code from your authenticator app\n(or a backup code)",
   "verifyAndLogin": "Verify and sign in",
   "backToLogin": "Back to sign-in",
+  "sendCodeFailed": "Failed to send: {error}",
+  "@sendCodeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "phoneAndCodeRequired": "Please enter phone number and code",
+  "twoFactorCodeLabel": "Authentication code",
 
   "tabClipboard": "Clipboard",
   "tabFavorites": "Favorites",
@@ -49,6 +57,34 @@
       "deviceName": { "type": "String" }
     }
   },
+  "devicesLoadFailed": "Failed to load devices",
+  "unbindCurrentDeviceConfirm": "\"{deviceName}\" is the current device.\nUnbinding will stop sync on this device, and you will need to re-register the device to restore sync. Unbind anyway?",
+  "@unbindCurrentDeviceConfirm": {
+    "placeholders": {
+      "deviceName": { "type": "String" }
+    }
+  },
+
+  "biometricUnlockReason": "Verify fingerprint or face to unlock ClipSync",
+  "biometricVerifyFailed": "Verification failed, please retry",
+  "lockScreenMessage": "App is locked. Verify your identity to continue",
+  "unlock": "Unlock",
+
+  "backAgainToExit": "Press back again to exit ClipSync",
+
+  "skip": "Skip",
+  "next": "Next",
+  "getStarted": "Get Started",
+  "onboardingTitle1": "Welcome to ClipSync",
+  "onboardingDesc1": "Cross-device clipboard sync tool\nLet your clipboard flow freely between phones and computers",
+  "onboardingTitle2": "Background auto sync",
+  "onboardingDesc2": "ClipSync stays connected in the background\nContent copied on your computer syncs to your phone automatically",
+  "onboardingTitle3": "Instant notifications",
+  "onboardingDesc3": "When content is copied on your computer\nyour phone is notified right away",
+  "onboardingTitle4": "Clipboard sync",
+  "onboardingDesc4": "Content copied on your phone also syncs automatically\nFlowing seamlessly across all your devices",
+  "onboardingTitle5": "All set",
+  "onboardingDesc5": "You're ready to start using ClipSync!\nTry copying something 😊",
 
   "sectionServer": "Server",
   "sectionGeneral": "General",

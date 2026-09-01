@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../router/app_router.dart';
 import '../theme/app_theme.dart';
@@ -45,10 +46,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _sendCode() async {
+    final l10n = AppLocalizations.of(context);
     final phone = _phoneController.text.trim();
     if (phone.isEmpty || phone.length != 11) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入正确的手机号')),
+        SnackBar(content: Text(l10n.invalidPhone)),
       );
       return;
     }
@@ -57,22 +59,23 @@ class _LoginScreenState extends State<LoginScreen> {
       await context.read<AuthProvider>().sendVerificationCode(phone);
       _startCountdown();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('验证码已发送')),
+        SnackBar(content: Text(l10n.codeSent)),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('发送失败: $e')),
+        SnackBar(content: Text(l10n.sendCodeFailed(e.toString()))),
       );
     }
   }
 
   Future<void> _login() async {
+    final l10n = AppLocalizations.of(context);
     final phone = _phoneController.text.trim();
     final code = _codeController.text.trim();
 
     if (phone.isEmpty || code.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入手机号和验证码')),
+        SnackBar(content: Text(l10n.phoneAndCodeRequired)),
       );
       return;
     }
@@ -87,16 +90,17 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _twoFactorRequired = true);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('登录失败，请检查验证码')),
+        SnackBar(content: Text(l10n.loginFailed)),
       );
     }
   }
 
   Future<void> _submitTwoFactor() async {
+    final l10n = AppLocalizations.of(context);
     final code = _twoFactorController.text.trim();
     if (code.length != 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入 6 位动态验证码')),
+        SnackBar(content: Text(l10n.enterSixDigitCode)),
       );
       return;
     }
@@ -110,7 +114,7 @@ class _LoginScreenState extends State<LoginScreen> {
       context.go(AppRoutes.home);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('动态验证码错误或已过期，请重试')),
+        SnackBar(content: Text(l10n.codeInvalidOrExpired)),
       );
     }
   }
@@ -141,6 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
   // 普通登录表单（手机号 + 短信验证码）
   // ---------------------------------------------------------------------------
   Widget _buildLoginForm() {
+    final l10n = AppLocalizations.of(context);
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -159,18 +164,18 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 24),
-        const Text(
-          'ClipSync',
-          style: TextStyle(
+        Text(
+          l10n.appTitle,
+          style: const TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.bold,
             color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          '跨设备剪贴板同步',
-          style: TextStyle(
+        Text(
+          l10n.loginSubtitle,
+          style: const TextStyle(
             fontSize: 16,
             color: AppTheme.textSecondary,
           ),
@@ -182,8 +187,8 @@ class _LoginScreenState extends State<LoginScreen> {
           controller: _phoneController,
           keyboardType: TextInputType.phone,
           decoration: InputDecoration(
-            labelText: '手机号',
-            hintText: '请输入手机号',
+            labelText: l10n.phoneNumber,
+            hintText: l10n.phoneHint,
             prefixIcon: const Icon(Icons.phone),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -200,8 +205,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: _codeController,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  labelText: '验证码',
-                  hintText: '请输入验证码',
+                  labelText: l10n.verificationCode,
+                  hintText: l10n.codeHint,
                   prefixIcon: const Icon(Icons.lock_outline),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -224,7 +229,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 child: Text(
-                  _countdown > 0 ? '$_countdown秒' : '获取验证码',
+                  _countdown > 0
+                      ? l10n.codeCountdown(_countdown)
+                      : l10n.getCode,
                 ),
               ),
             ),
@@ -245,9 +252,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text(
-              '登录',
-              style: TextStyle(fontSize: 18),
+            child: Text(
+              l10n.login,
+              style: const TextStyle(fontSize: 18),
             ),
           ),
         ),
@@ -259,6 +266,7 @@ class _LoginScreenState extends State<LoginScreen> {
   // 两步验证表单（6 位动态验证码）
   // ---------------------------------------------------------------------------
   Widget _buildTwoFactorForm() {
+    final l10n = AppLocalizations.of(context);
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -276,19 +284,19 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 24),
-        const Text(
-          '两步验证',
-          style: TextStyle(
+        Text(
+          l10n.twoFactorTitle,
+          style: const TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.bold,
             color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          '请输入身份验证器 App 中的 6 位动态码\n（或备份码）',
+        Text(
+          l10n.twoFactorDesc,
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 15,
             color: AppTheme.textSecondary,
           ),
@@ -310,7 +318,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           decoration: InputDecoration(
             counterText: '',
-            labelText: '动态验证码',
+            labelText: l10n.twoFactorCodeLabel,
             hintText: '000000',
             prefixIcon: const Icon(Icons.shield_outlined),
             border: OutlineInputBorder(
@@ -343,9 +351,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: Colors.white,
                     ),
                   )
-                : const Text(
-                    '验证并登录',
-                    style: TextStyle(fontSize: 18),
+                : Text(
+                    l10n.verifyAndLogin,
+                    style: const TextStyle(fontSize: 18),
                   ),
           ),
         ),
@@ -354,9 +362,9 @@ class _LoginScreenState extends State<LoginScreen> {
         // 返回普通登录
         TextButton(
           onPressed: _verifying2fa ? null : _backToNormalLogin,
-          child: const Text(
-            '返回重新登录',
-            style: TextStyle(color: AppTheme.textSecondary),
+          child: Text(
+            l10n.backToLogin,
+            style: const TextStyle(color: AppTheme.textSecondary),
           ),
         ),
       ],

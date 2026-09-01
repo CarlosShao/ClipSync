@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../router/app_router.dart';
 import '../services/biometric_service.dart';
 
@@ -33,12 +34,13 @@ class _LockScreenState extends State<LockScreen> {
 
   Future<void> _unlock() async {
     if (_authenticating || !mounted) return;
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _authenticating = true;
       _error = null;
     });
     final ok = await BiometricService.authenticate(
-      reason: '验证指纹或面容以进入 ClipSync',
+      reason: l10n.biometricUnlockReason,
     );
     if (!mounted) return;
     setState(() => _authenticating = false);
@@ -46,13 +48,14 @@ class _LockScreenState extends State<LockScreen> {
       // 解除布防，ValueNotifier 触发 go_router 重新求值重定向 → 主页
       BiometricLockGate.unlock();
     } else {
-      setState(() => _error = '验证未通过，请重试');
+      setState(() => _error = l10n.biometricVerifyFailed);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     // 配色与冷启动加载页（app_router.dart _SplashScreen）保持一致
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -65,18 +68,18 @@ class _LockScreenState extends State<LockScreen> {
                 color: Color(0xFF6C5CE7),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'ClipSync',
-                style: TextStyle(
+              Text(
+                l10n.appTitle,
+                style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF2D3436),
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                '应用已锁定，请验证身份后继续',
-                style: TextStyle(
+              Text(
+                l10n.lockScreenMessage,
+                style: const TextStyle(
                   fontSize: 14,
                   color: Color(0xFF636E72),
                 ),
@@ -88,7 +91,7 @@ class _LockScreenState extends State<LockScreen> {
                 FilledButton.icon(
                   onPressed: _unlock,
                   icon: const Icon(Icons.fingerprint),
-                  label: const Text('解锁'),
+                  label: Text(l10n.unlock),
                 ),
               if (_error != null) ...[
                 const SizedBox(height: 16),

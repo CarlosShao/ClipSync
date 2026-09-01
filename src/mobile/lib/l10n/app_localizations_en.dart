@@ -88,6 +88,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get backToLogin => 'Back to sign-in';
 
   @override
+  String sendCodeFailed(String error) {
+    return 'Failed to send: $error';
+  }
+
+  @override
+  String get phoneAndCodeRequired => 'Please enter phone number and code';
+
+  @override
+  String get twoFactorCodeLabel => 'Authentication code';
+
+  @override
   String get tabClipboard => 'Clipboard';
 
   @override
@@ -118,6 +129,75 @@ class AppLocalizationsEn extends AppLocalizations {
   String unbindConfirm(String deviceName) {
     return 'Unbind \"$deviceName\"? The device will no longer be able to sync.';
   }
+
+  @override
+  String get devicesLoadFailed => 'Failed to load devices';
+
+  @override
+  String unbindCurrentDeviceConfirm(String deviceName) {
+    return '\"$deviceName\" is the current device.\nUnbinding will stop sync on this device, and you will need to re-register the device to restore sync. Unbind anyway?';
+  }
+
+  @override
+  String get biometricUnlockReason =>
+      'Verify fingerprint or face to unlock ClipSync';
+
+  @override
+  String get biometricVerifyFailed => 'Verification failed, please retry';
+
+  @override
+  String get lockScreenMessage =>
+      'App is locked. Verify your identity to continue';
+
+  @override
+  String get unlock => 'Unlock';
+
+  @override
+  String get backAgainToExit => 'Press back again to exit ClipSync';
+
+  @override
+  String get skip => 'Skip';
+
+  @override
+  String get next => 'Next';
+
+  @override
+  String get getStarted => 'Get Started';
+
+  @override
+  String get onboardingTitle1 => 'Welcome to ClipSync';
+
+  @override
+  String get onboardingDesc1 =>
+      'Cross-device clipboard sync tool\nLet your clipboard flow freely between phones and computers';
+
+  @override
+  String get onboardingTitle2 => 'Background auto sync';
+
+  @override
+  String get onboardingDesc2 =>
+      'ClipSync stays connected in the background\nContent copied on your computer syncs to your phone automatically';
+
+  @override
+  String get onboardingTitle3 => 'Instant notifications';
+
+  @override
+  String get onboardingDesc3 =>
+      'When content is copied on your computer\nyour phone is notified right away';
+
+  @override
+  String get onboardingTitle4 => 'Clipboard sync';
+
+  @override
+  String get onboardingDesc4 =>
+      'Content copied on your phone also syncs automatically\nFlowing seamlessly across all your devices';
+
+  @override
+  String get onboardingTitle5 => 'All set';
+
+  @override
+  String get onboardingDesc5 =>
+      'You\'re ready to start using ClipSync!\nTry copying something 😊';
 
   @override
   String get sectionServer => 'Server';

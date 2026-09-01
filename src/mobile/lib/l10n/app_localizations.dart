@@ -248,6 +248,24 @@ abstract class AppLocalizations {
   /// **'Back to sign-in'**
   String get backToLogin;
 
+  /// No description provided for @sendCodeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to send: {error}'**
+  String sendCodeFailed(String error);
+
+  /// No description provided for @phoneAndCodeRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter phone number and code'**
+  String get phoneAndCodeRequired;
+
+  /// No description provided for @twoFactorCodeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Authentication code'**
+  String get twoFactorCodeLabel;
+
   /// No description provided for @tabClipboard.
   ///
   /// In en, this message translates to:
@@ -307,6 +325,126 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unbind \"{deviceName}\"? The device will no longer be able to sync.'**
   String unbindConfirm(String deviceName);
+
+  /// No description provided for @devicesLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load devices'**
+  String get devicesLoadFailed;
+
+  /// No description provided for @unbindCurrentDeviceConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{deviceName}\" is the current device.\nUnbinding will stop sync on this device, and you will need to re-register the device to restore sync. Unbind anyway?'**
+  String unbindCurrentDeviceConfirm(String deviceName);
+
+  /// No description provided for @biometricUnlockReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify fingerprint or face to unlock ClipSync'**
+  String get biometricUnlockReason;
+
+  /// No description provided for @biometricVerifyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Verification failed, please retry'**
+  String get biometricVerifyFailed;
+
+  /// No description provided for @lockScreenMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'App is locked. Verify your identity to continue'**
+  String get lockScreenMessage;
+
+  /// No description provided for @unlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock'**
+  String get unlock;
+
+  /// No description provided for @backAgainToExit.
+  ///
+  /// In en, this message translates to:
+  /// **'Press back again to exit ClipSync'**
+  String get backAgainToExit;
+
+  /// No description provided for @skip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get skip;
+
+  /// No description provided for @next.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get next;
+
+  /// No description provided for @getStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Get Started'**
+  String get getStarted;
+
+  /// No description provided for @onboardingTitle1.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome to ClipSync'**
+  String get onboardingTitle1;
+
+  /// No description provided for @onboardingDesc1.
+  ///
+  /// In en, this message translates to:
+  /// **'Cross-device clipboard sync tool\nLet your clipboard flow freely between phones and computers'**
+  String get onboardingDesc1;
+
+  /// No description provided for @onboardingTitle2.
+  ///
+  /// In en, this message translates to:
+  /// **'Background auto sync'**
+  String get onboardingTitle2;
+
+  /// No description provided for @onboardingDesc2.
+  ///
+  /// In en, this message translates to:
+  /// **'ClipSync stays connected in the background\nContent copied on your computer syncs to your phone automatically'**
+  String get onboardingDesc2;
+
+  /// No description provided for @onboardingTitle3.
+  ///
+  /// In en, this message translates to:
+  /// **'Instant notifications'**
+  String get onboardingTitle3;
+
+  /// No description provided for @onboardingDesc3.
+  ///
+  /// In en, this message translates to:
+  /// **'When content is copied on your computer\nyour phone is notified right away'**
+  String get onboardingDesc3;
+
+  /// No description provided for @onboardingTitle4.
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard sync'**
+  String get onboardingTitle4;
+
+  /// No description provided for @onboardingDesc4.
+  ///
+  /// In en, this message translates to:
+  /// **'Content copied on your phone also syncs automatically\nFlowing seamlessly across all your devices'**
+  String get onboardingDesc4;
+
+  /// No description provided for @onboardingTitle5.
+  ///
+  /// In en, this message translates to:
+  /// **'All set'**
+  String get onboardingTitle5;
+
+  /// No description provided for @onboardingDesc5.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re ready to start using ClipSync!\nTry copying something 😊'**
+  String get onboardingDesc5;
 
   /// No description provided for @sectionServer.
   ///

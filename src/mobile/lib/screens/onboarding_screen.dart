@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../router/app_router.dart';
 import '../router/route_guard.dart';
 
@@ -16,38 +17,40 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  final List<OnboardingPage> _pages = const [
-    OnboardingPage(
-      icon: Icons.sync,
-      title: '欢迎使用 ClipSync',
-      description: '跨设备剪贴板同步工具\n让您的剪贴板在手机、电脑间自由流转',
-      color: Colors.blue,
-    ),
-    OnboardingPage(
-      icon: Icons.cloud_sync,
-      title: '后台自动同步',
-      description: 'ClipSync 在后台保持连接\n电脑复制的内容自动同步到手机',
-      color: Colors.green,
-    ),
-    OnboardingPage(
-      icon: Icons.notifications,
-      title: '即时通知',
-      description: '电脑复制内容后\n手机第一时间收到通知提醒',
-      color: Colors.orange,
-    ),
-    OnboardingPage(
-      icon: Icons.content_paste,
-      title: '剪贴板同步',
-      description: '手机复制的内容也会自动同步\n在所有设备间无缝流转',
-      color: Colors.purple,
-    ),
-    OnboardingPage(
-      icon: Icons.check_circle,
-      title: '准备就绪',
-      description: '现在可以开始使用 ClipSync 了！\n复制内容试试吧 😊',
-      color: Colors.teal,
-    ),
-  ];
+  /// 引导页文案需经 l10n 求值，无法再以 const 字段初始化，
+  /// 改为每次 build 用 AppLocalizations 现构造列表。
+  List<OnboardingPage> _buildPages(AppLocalizations l10n) => [
+        OnboardingPage(
+          icon: Icons.sync,
+          title: l10n.onboardingTitle1,
+          description: l10n.onboardingDesc1,
+          color: Colors.blue,
+        ),
+        OnboardingPage(
+          icon: Icons.cloud_sync,
+          title: l10n.onboardingTitle2,
+          description: l10n.onboardingDesc2,
+          color: Colors.green,
+        ),
+        OnboardingPage(
+          icon: Icons.notifications,
+          title: l10n.onboardingTitle3,
+          description: l10n.onboardingDesc3,
+          color: Colors.orange,
+        ),
+        OnboardingPage(
+          icon: Icons.content_paste,
+          title: l10n.onboardingTitle4,
+          description: l10n.onboardingDesc4,
+          color: Colors.purple,
+        ),
+        OnboardingPage(
+          icon: Icons.check_circle,
+          title: l10n.onboardingTitle5,
+          description: l10n.onboardingDesc5,
+          color: Colors.teal,
+        ),
+      ];
 
   @override
   void dispose() {
@@ -67,6 +70,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final pages = _buildPages(l10n);
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -79,15 +84,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     _currentPage = index;
                   });
                 },
-                itemCount: _pages.length,
+                itemCount: pages.length,
                 itemBuilder: (context, index) {
-                  final page = _pages[index];
+                  final page = pages[index];
                   return OnboardingPageWidget(page: page);
                 },
               ),
             ),
-            _buildPageIndicator(),
-            _buildButtons(),
+            _buildPageIndicator(pages),
+            _buildButtons(l10n, pages),
             const SizedBox(height: 24),
           ],
         ),
@@ -95,10 +100,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildPageIndicator() {
+  Widget _buildPageIndicator(List<OnboardingPage> pages) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(_pages.length, (index) {
+      children: List.generate(pages.length, (index) {
         return Container(
           width: 10,
           height: 10,
@@ -114,8 +119,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildButtons() {
-    final isLastPage = _currentPage == _pages.length - 1;
+  Widget _buildButtons(AppLocalizations l10n, List<OnboardingPage> pages) {
+    final isLastPage = _currentPage == pages.length - 1;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -124,7 +129,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         children: [
           TextButton(
             onPressed: _completeOnboarding,
-            child: const Text('跳过'),
+            child: Text(l10n.skip),
           ),
           ElevatedButton(
             onPressed: () {
@@ -137,7 +142,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 );
               }
             },
-            child: Text(isLastPage ? '开始使用' : '下一步'),
+            child: Text(isLastPage ? l10n.getStarted : l10n.next),
           ),
         ],
       ),

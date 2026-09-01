@@ -175,13 +175,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 简洁标题栏：标题随 tab 切换；设备 tab 保留旧版刷新操作。
   PreferredSizeWidget _buildAppBar(int index, List<String> tabTitles) {
+    final l10n = AppLocalizations.of(context);
     return AppBar(
       title: Text(tabTitles[index]),
       actions: index == _tabDevices
           ? <Widget>[
               IconButton(
                 icon: const Icon(Icons.refresh),
-                tooltip: '刷新设备',
+                tooltip: l10n.refreshDevices,
                 onPressed: _refreshDevices,
               ),
             ]
@@ -251,13 +252,14 @@ class _DevicesTabState extends State<DevicesTab> {
   Widget build(BuildContext context) {
     return Consumer<DeviceProvider>(
       builder: (context, provider, _) {
+        final l10n = AppLocalizations.of(context);
         if (provider.isLoading && provider.devices.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
         // 错误必须可见：此前失败会被显示成「暂无设备」，掩盖真实原因
         if (provider.error != null && provider.devices.isEmpty) {
           return ErrorState(
-            title: '设备列表加载失败',
+            title: l10n.devicesLoadFailed,
             message: provider.error!,
             onRetry: () {
               final token = context.read<AuthProvider>().token;
@@ -266,10 +268,10 @@ class _DevicesTabState extends State<DevicesTab> {
           );
         }
         if (provider.devices.isEmpty) {
-          return const EmptyState(
+          return EmptyState(
             icon: Icons.devices,
-            title: '暂无设备',
-            message: '登录其他设备以开始同步',
+            title: l10n.noDevices,
+            message: l10n.noDevicesDesc,
           );
         }
         return ListView.separated(
@@ -301,27 +303,28 @@ class _DevicesTabState extends State<DevicesTab> {
   Future<void> _confirmUnbindDevice(Device device) async {
     final auth = context.read<AuthProvider>();
     final isCurrentDevice = device.id == auth.deviceId;
+    final l10n = AppLocalizations.of(context);
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('解绑设备'),
+        title: Text(l10n.unbindDevice),
         content: Text(
           isCurrentDevice
-              ? '「${device.deviceName}」是当前设备。\n解绑后将停止本机同步，且需要重新注册设备才能恢复。确定解绑吗？'
-              : '确定解绑「${device.deviceName}」吗？解绑后该设备将无法再同步。',
+              ? l10n.unbindCurrentDeviceConfirm(device.deviceName)
+              : l10n.unbindConfirm(device.deviceName),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(
               foregroundColor: Theme.of(dialogContext).colorScheme.error,
             ),
-            child: const Text('解绑'),
+            child: Text(l10n.unbind),
           ),
         ],
       ),
@@ -375,13 +378,14 @@ class _BackExitGuardState extends State<BackExitGuard> {
       return;
     }
     _lastBackPressAt = now;
+    final l10n = AppLocalizations.of(context);
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        const SnackBar(
-          content: Text('再按一次返回键退出 ClipSync'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(l10n.backAgainToExit),
+          duration: const Duration(seconds: 2),
         ),
       );
   }
