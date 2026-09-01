@@ -49,6 +49,12 @@ class AuthProvider extends ChangeNotifier {
   String? get refreshToken => _refreshToken;
   Map<String, dynamic>? get user => _user;
 
+  /// 同步本地用户资料（C6：昵称编辑成功后更新内存 user 并通知依赖重建）
+  void updateUser(Map<String, dynamic> user) {
+    _user = user;
+    notifyListeners();
+  }
+
   /// 本机真实设备 id（未注册成功时为 null）
   String? get deviceId => _deviceId;
 

@@ -9,6 +9,7 @@ import '../providers/clipboard_provider.dart';
 import '../providers/settings_provider.dart';
 import '../router/app_router.dart';
 import '../services/biometric_service.dart';
+import '../services/profile_api_service.dart';
 import '../services/server_config.dart';
 import '../theme/app_theme.dart';
 import 'notification_settings_screen.dart';
@@ -205,6 +206,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: ListView(
         children: [
+          _buildSectionHeader(l10n.accountSection),
+          _buildAccountSection(),
+          const Divider(),
+
           _buildSectionHeader(l10n.sectionServer),
           _buildServerUrlSetting(),
           const Divider(),
@@ -258,6 +263,141 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: Theme.of(context).primaryColor,
         ),
       ),
+    );
+  }
+
+  /// C6：账号资料区块——圆形头像（昵称/手机号首字，主色底白字；有 avatarUrl
+  /// 则显示网络头像）+ 昵称（未设置显示手机号）+ 手机号/邮箱副信息行，
+  /// 点击弹昵称编辑对话框；未登录（user 为 null）灰化占位。
+  Widget _buildAccountSection() {
+    final l10n = AppLocalizations.of(context);
+    final user = context.watch<AuthProvider>().user;
+
+    if (user == null) {
+      return ListTile(
+        enabled: false,
+        leading: const CircleAvatar(
+          child: Icon(Icons.person_outline),
+        ),
+        title: Text(l10n.notLoggedIn),
+      );
+    }
+
+    final nickname = ((user['nickname'] as String?) ?? '').trim();
+    final phone = ((user['phone'] as String?) ?? '').trim();
+    final email = ((user['email'] as String?) ?? '').trim();
+    final avatarUrl = ((user['avatarUrl'] as String?) ?? '').trim();
+
+    final display = nickname.isNotEmpty ? nickname : phone;
+    final subtitle = phone.isNotEmpty ? phone : email;
+
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 24,
+        backgroundColor: Theme.of(context).primaryColor,
+        backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+        child: avatarUrl.isNotEmpty
+            ? null
+            : display.isEmpty
+                ? const Icon(Icons.person_outline, color: Colors.white)
+                : Text(
+                    String.fromCharCode(display.runes.first),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+      ),
+      title: Text(display.isNotEmpty ? display : l10n.notLoggedIn),
+      subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+      trailing: const Icon(Icons.chevron_right),
+      onTap: _showEditNicknameDialog,
+    );
+  }
+
+  /// C6：昵称编辑对话框——保存走 PUT /api/auth/profile（ProfileApiService），
+  /// 成功后同步 AuthProvider.user 并提示 nicknameSaved；失败提示
+  /// nicknameSaveFailed（对话框保持打开可重试）。
+  Future<void> _showEditNicknameDialog() async {
+    final l10n = AppLocalizations.of(context);
+    final auth = context.read<AuthProvider>();
+    final controller = TextEditingController(
+      text: ((auth.user?['nickname'] as String?) ?? '').trim(),
+    );
+    var saving = false;
+    String? savedNickname;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(l10n.editNickname),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: l10n.nickname,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed:
+                  saving ? null : () => Navigator.pop(dialogContext, false),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final nickname = controller.text.trim();
+                      if (nickname.isEmpty) return;
+                      saving = true;
+                      setDialogState(() {});
+                      try {
+                        await ProfileApiService()
+                            .updateNickname(auth.token, nickname);
+                        savedNickname = nickname;
+                        if (!dialogContext.mounted) return;
+                        Navigator.pop(dialogContext, true);
+                      } catch (e) {
+                        debugPrint('[Settings] update nickname failed: $e');
+                        saving = false;
+                        setDialogState(() {});
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(l10n.nicknameSaveFailed),
+                          ),
+                        );
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(l10n.save),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final nickname = savedNickname;
+    controller.dispose();
+    if (saved != true || nickname == null || !mounted) return;
+
+    final currentUser = auth.user;
+    if (currentUser != null) {
+      final updated = Map<String, dynamic>.from(currentUser);
+      updated['nickname'] = nickname;
+      auth.updateUser(updated);
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l10n.nicknameSaved)),
     );
   }
 
