@@ -18,6 +18,13 @@ class WsService {
   int _reconnectAttempts = 0;
   static const int _maxReconnectAttempts = 10;
 
+  // B1 pong 看门狗：每次发送 ping 时检查距上次 pong 是否超过 _pongTimeout，
+  // 超时即判定半开连接（NAT 超时 / Doze 后 TCP 已死但本地无感知，永远等不到
+  // onDone），主动销毁通道并走既有重连流程。对齐桌面端
+  // useWebSocket.ts 的 PONG_TIMEOUT = 35s；ping 间隔保持 30s 不变。
+  static const Duration _pongTimeout = Duration(seconds: 35);
+  DateTime? _lastPongAt;
+
   /// 连接代数：防止上一次连接流程（异步获取 csrf 途中）与新一轮连接重叠
   /// 造成重复开通道；新 connect 会使旧的 in-flight 流程作废。
   int _connectEpoch = 0;
@@ -118,6 +125,7 @@ class WsService {
         if (epoch != _connectEpoch) return;
         _isConnected = false;
         _heartbeatTimer?.cancel();
+        _lastPongAt = null;
         onDisconnected?.call();
         _scheduleReconnect();
       },
@@ -126,6 +134,7 @@ class WsService {
         print('[WsDebug] onError: $error');
         _isConnected = false;
         _heartbeatTimer?.cancel();
+        _lastPongAt = null;
         onDisconnected?.call();
         _scheduleReconnect();
       },
@@ -143,8 +152,19 @@ class WsService {
     });
 
     // Start heartbeat
+    // 连接建立即初始化 lastPongAt：给首个 pong 一个完整的超时窗口
+    _lastPongAt = DateTime.now();
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      // pong 看门狗：距上次 pong 超过 _pongTimeout → 半开连接，
+      // 销毁当前通道并复用既有断线退避重连流程（本 tick 不再发 ping）
+      final lastPong = _lastPongAt;
+      if (lastPong != null &&
+          DateTime.now().difference(lastPong) > _pongTimeout) {
+        print('[WsDebug] pong timeout (>35s) — half-open connection, forcing reconnect');
+        _forceReconnect();
+        return;
+      }
       send({'type': 'ping'});
     });
   }
@@ -155,6 +175,10 @@ class WsService {
         _isConnected = true;
         _reconnectAttempts = 0;
         onConnected?.call();
+        break;
+      case 'pong':
+        // 看门狗刷新：证明连接双向可用
+        _lastPongAt = DateTime.now();
         break;
       case 'new_clipboard':
         onNewClipboard?.call(msg);
@@ -189,6 +213,27 @@ class WsService {
     }
   }
 
+  /// pong 看门狗判定半开连接后的强制重连：主动销毁当前通道，
+  /// 复用既有断线流程（onDisconnected → _scheduleReconnect 指数退避）。
+  ///
+  /// 半开连接下 sink.close() 的 close 帧可能永远得不到对端确认，
+  /// onDone 不会触发——因此必须在此显式调度重连，不能只靠 close 回调。
+  /// 递增 _connectEpoch 作废旧通道迟到的 onDone/onError，避免二次调度。
+  void _forceReconnect() {
+    _connectEpoch++;
+    _heartbeatTimer?.cancel();
+    try {
+      _channel?.sink.close();
+    } catch (_) {
+      // 通道已死：直接进入重连调度
+    }
+    _channel = null;
+    _isConnected = false;
+    _lastPongAt = null;
+    onDisconnected?.call();
+    _scheduleReconnect();
+  }
+
   void _scheduleReconnect() {
     if (_reconnectAttempts >= _maxReconnectAttempts) return;
     _reconnectAttempts++;
@@ -220,6 +265,7 @@ class WsService {
     _registerTimer?.cancel();
     _channel?.sink.close();
     _isConnected = false;
+    _lastPongAt = null;
   }
 
   void dispose() {
