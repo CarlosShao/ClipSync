@@ -27,10 +27,27 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
+        // 后端重启窗口期（hy4/部署）proxy 会刷 socket hang up 错误——
+        // 降噪：仅打印一行简短提示，不打全堆栈
+        configure: (proxy) => {
+          proxy.on('error', (err, _req, res) => {
+            if (res && !res.headersSent) {
+              res.writeHead(502, { 'Content-Type': 'text/plain' });
+              res.end('backend temporarily unavailable');
+            } else {
+              console.warn('[proxy] backend unreachable:', err.code);
+            }
+          });
+        },
       },
       '/ws': {
         target: 'http://localhost:3001',
         ws: true,
+        configure: (proxy) => {
+          proxy.on('error', () => {
+            console.warn('[proxy] ws connection dropped (backend restarting?)');
+          });
+        },
       },
     },
   },

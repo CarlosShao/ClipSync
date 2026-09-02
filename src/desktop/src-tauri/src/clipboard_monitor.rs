@@ -460,8 +460,23 @@ enum ClipContent {
 fn read_clipboard_raw() -> ClipContent {
     use clipboard_win::raw;
 
-    if let Err(e) = raw::open() {
-        return ClipContent::Error(format!("open: {}", e));
+    // 剪贴板是独占资源：写入方（含本产品移动端回写触发的桌面粘贴模拟、
+    // 输入法等）持有期间 raw::open 会 OSError(5)/OSError(31)。
+    // 单次失败直接放弃会导致该条剪贴板内容**漏同步**（真机已踩坑：
+    // 「有的文本没同步到」），这里带退避重试 3 次。
+    let mut open_err: Option<String> = None;
+    for attempt in 0..3 {
+        if attempt > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(80 * attempt as u64));
+        }
+        if raw::open().is_ok() {
+            open_err = None;
+            break;
+        }
+        open_err = Some(format!("open failed (attempt {})", attempt + 1));
+    }
+    if let Some(err) = open_err {
+        return ClipContent::Error(err);
     }
 
     let _guard = ClipGuard;
