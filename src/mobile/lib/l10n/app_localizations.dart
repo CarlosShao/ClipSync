@@ -1064,6 +1064,36 @@ abstract class AppLocalizations {
   /// **'{count} items'**
   String collectionItemCount(int count);
 
+  /// No description provided for @collectionFolderCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} folders'**
+  String collectionFolderCount(int count);
+
+  /// No description provided for @subCollectionsHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Sub-collections'**
+  String get subCollectionsHeader;
+
+  /// No description provided for @itemsSectionHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Items'**
+  String get itemsSectionHeader;
+
+  /// No description provided for @breadcrumbAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get breadcrumbAll;
+
+  /// No description provided for @createUnderParentHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Will be created under \"{name}\"'**
+  String createUnderParentHint(String name);
+
   /// No description provided for @collectionNameRequired.
   ///
   /// In en, this message translates to:

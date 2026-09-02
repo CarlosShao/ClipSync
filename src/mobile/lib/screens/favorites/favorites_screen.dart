@@ -9,22 +9,29 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/error_state.dart';
 import '../../widgets/common/skeleton_list.dart';
+import 'collection_dialogs.dart';
 import 'collection_items_screen.dart';
 
-/// 收藏夹页（T4.1 / C1 管理补齐）。
+/// 收藏夹页（T4.1 / C1 管理补齐；树形层级导航根页）。
 ///
-/// 页面结构：收藏夹分组列表（名称 + 条目数）+ 右下角「新建分组」FAB。
+/// 页面结构：**当前层级**的收藏夹分组列表 + 右下角「新建分组」FAB。
+/// 根页只显示顶层分组（path 为 ltree 两段 `root.<id>`，按 `.col_` 分段判定，
+/// 见 [CollectionsApiService.listCollections]）；子分组在点进分组后的
+/// [CollectionItemsScreen] 中逐层下钻（资源管理器式）。
 ///
 /// 数据交互全部走 [CollectionsApiService]（Bearer 由 TokenStore 解析）：
-/// - 首次进入 / 下拉刷新：listCollections（分组含服务端聚合的 item_count）；
-/// - 新建分组：对话框输入名称 → createCollection → 重拉列表（后端新分组
-///   sort_order=0 排最前）；
-/// - 删除分组：分组行 trailing 菜单 → 确认对话框（说明组内条目不受影响）→
-///   deleteCollection（后端级联删除子分组）→ 重拉列表；
+/// - 首次进入 / 下拉刷新：listCollections（拉全量分组，含服务端聚合的
+///   item_count 与 path；本地按 path 过滤出顶层展示）；
+/// - 分组卡片副标题：条目数 + 直接子分组数（「3 条内容 · 2 个子分组」）；
+/// - 新建分组：对话框输入名称 → createCollection（根页 = 顶层，不传
+///   parentId）→ 重拉列表（后端新分组 sort_order=0 排最前）；
+/// - 删除分组：分组行 trailing 菜单 → 确认对话框（说明子分组级联删除）→
+///   deleteCollection → 重拉列表；
 /// - 重命名分组（C1）：trailing 菜单 → 改名对话框（可选改图标 emoji）→
 ///   updateCollection → 重拉列表；
-/// - 拖拽排序（C1）：列表长按拖动，乐观更新本地顺序 → reorderCollections
-///   （批量端点被后端路由遮蔽时 API 层自动退化为逐条 sortOrder），失败回滚；
+/// - 拖拽排序（C1）：列表长按拖动，乐观更新顶层顺序 → reorderCollections
+///   （只提交顶层分组；批量端点被后端路由遮蔽时 API 层自动退化为逐条
+///   sortOrder），失败回滚；
 /// - 点进分组：整行点击以根 Navigator 压入 [CollectionItemsScreen]
 ///   （全屏覆盖 shell 的 AppBar 与底栏，返回后回到本页）。
 ///
@@ -40,6 +47,7 @@ class FavoritesScreen extends StatefulWidget {
 class _FavoritesScreenState extends State<FavoritesScreen> {
   final CollectionsApiService _api = CollectionsApiService();
 
+  /// 全量分组（含子分组；展示与排序均从该列表派生）
   List<CollectionGroup> _groups = <CollectionGroup>[];
   bool _isLoading = false;
 
@@ -48,6 +56,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   /// 最近一次失败的原始错误对象（UI 层经 friendlyError 映射 l10n 文案）
   Object? _error;
+
+  /// 当前展示的顶层分组（path 分段数 ≤ 2，即 `root.<id>`；
+  /// path 异常为空时按顶层兜底展示，避免分组凭空消失）。
+  List<CollectionGroup> get _visibleGroups =>
+      _groups.where(isTopLevelCollection).toList();
 
   @override
   void initState() {
@@ -86,12 +99,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   // ---------------------------------------------------------------------------
 
   /// 新建分组：对话框输入名称（必填，≤100 字符与后端截断一致）。
+  /// 根页 = 顶层新建，不传 parentId。
   Future<void> _showCreateDialog() async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
       builder: (BuildContext dialogContext) =>
-          _CreateCollectionDialog(controller: controller),
+          CreateCollectionDialog(controller: controller),
     );
     controller.dispose();
 
@@ -128,28 +142,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   /// 删除分组：确认对话框（带说明）→ 删除 → 重拉列表。
   Future<void> _confirmDelete(CollectionGroup group) async {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(l10n.deleteCollection),
-        content: Text(l10n.deleteCollectionConfirm(group.name)),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(dialogContext).colorScheme.error,
-            ),
-            child: Text(l10n.delete),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) {
+    final confirmed = await confirmDeleteCollection(context, group);
+    if (!confirmed || !mounted) {
       return;
     }
 
@@ -178,7 +172,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     final (String name, String? icon) =
         await showDialog<(String, String?)>(
           context: context,
-          builder: (BuildContext dialogContext) => _RenameCollectionDialog(
+          builder: (BuildContext dialogContext) => RenameCollectionDialog(
             initialName: group.name,
             initialIcon: group.icon,
           ),
@@ -211,17 +205,26 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     }
   }
 
-  /// 拖拽排序：乐观更新本地顺序 → reorderCollections 持久化，失败回滚。
-  ///（onReorderItem 的 newIndex 已代扣被移除项的位移，无需再 -1）
+  /// 拖拽排序（C1，仅顶层分组）：乐观更新本地顺序 → reorderCollections 持久
+  /// 化，失败回滚。（onReorderItem 的 newIndex 已代扣被移除项的位移）
+  ///
+  /// 只提交顶层分组的顺序：子分组显示在二级页，其 sort_order 不随根页拖动
+  /// 变化（树形层级下扁平全量重排会把子分组顺序打乱）。
   Future<void> _onReorder(int oldIndex, int newIndex) async {
     final l10n = AppLocalizations.of(context);
     final previous = List<CollectionGroup>.of(_groups);
+    final reordered = List<CollectionGroup>.of(_visibleGroups);
+    // onReorderItem 的 newIndex 已代扣被移除项的位移，直接先移后插
+    reordered.insert(newIndex, reordered.removeAt(oldIndex));
     setState(() {
-      final moved = _groups.removeAt(oldIndex);
-      _groups.insert(newIndex, moved);
+      // 顶层按新顺序置前；子分组保持原相对顺序（不参与本次提交）
+      _groups = <CollectionGroup>[
+        ...reordered,
+        ..._groups.where((CollectionGroup g) => !isTopLevelCollection(g)),
+      ];
     });
     try {
-      await _api.reorderCollections(_groups);
+      await _api.reorderCollections(reordered);
     } on Exception catch (e) {
       if (!mounted) {
         return;
@@ -284,7 +287,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         ),
       );
     }
-    if (_groups.isEmpty) {
+    if (_visibleGroups.isEmpty) {
       return _scrollableBody(
         EmptyState(
           icon: Icons.star_outline,
@@ -298,9 +301,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     return _buildGroupList();
   }
 
-  /// 分组列表（C1 拖拽排序）：长按条目即可拖动换位，onReorder 乐观更新 +
+  /// 顶层分组列表（C1 拖拽排序）：长按条目即可拖动换位，onReorder 乐观更新 +
   /// 失败回滚；拖拽中的条目以带阴影的 Material 提升（对齐 cardTheme 圆角）。
   Widget _buildGroupList() {
+    final visible = _visibleGroups;
     return ReorderableListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(
@@ -309,7 +313,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         AppSpacing.lg,
         96,
       ),
-      itemCount: _groups.length,
+      itemCount: visible.length,
       onReorderItem: _onReorder,
       proxyDecorator: (Widget child, int index, Animation<double> animation) {
         return AnimatedBuilder(
@@ -325,40 +329,39 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         );
       },
       itemBuilder: (BuildContext context, int index) => KeyedSubtree(
-        key: ValueKey<String>(_groups[index].id),
-        child: _buildGroupTile(_groups[index]),
+        key: ValueKey<String>(visible[index].id),
+        child: _buildGroupTile(visible[index]),
       ),
     );
   }
 
-  /// 分组卡片：图标 + 名称 + 条目数；整行点击进组内条目页，长按拖动排序，
-  /// trailing 菜单提供「重命名分组」「删除分组」入口。
+  /// 顶层分组卡片：图标 + 名称 + 条目数/子分组数；整行点击进组内条目页，
+  /// 长按拖动排序，trailing 菜单提供「重命名分组」「删除分组」入口。
   Widget _buildGroupTile(CollectionGroup group) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final l10n = AppLocalizations.of(context);
 
+    final subtitleParts = <String>[
+      l10n.collectionItemCount(group.itemCount),
+    ];
+    final folderCount = childCollectionsOf(_groups, group).length;
+    if (folderCount > 0) {
+      subtitleParts.add(l10n.collectionFolderCount(folderCount));
+    }
+
     return Card(
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: scheme.surfaceContainerHigh,
-          // 服务端 icon 字段存的是图标名（如 "folder"）而非 emoji：
-          // ASCII 长串按文件夹图标渲染，emoji（短字符）才按文字渲染，
-          // 避免图标名在圆标内折行成 "fold er"
-          child: group.icon.length <= 2
-              ? Text(group.icon, style: const TextStyle(fontSize: 18))
-              : Icon(Icons.folder_outlined,
-                  size: 20, color: scheme.primary),
-        ),
+        leading: collectionLeadingAvatar(group, scheme),
         title: Text(
           group.name,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          l10n.collectionItemCount(group.itemCount),
+          subtitleParts.join(' · '),
           style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
         ),
         trailing: PopupMenuButton<String>(
@@ -415,183 +418,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           ),
         );
       },
-    );
-  }
-}
-
-/// 新建分组对话框：输入名称，空名称给出错误提示，回车或「创建」提交。
-class _CreateCollectionDialog extends StatefulWidget {
-  const _CreateCollectionDialog({required this.controller});
-
-  final TextEditingController controller;
-
-  @override
-  State<_CreateCollectionDialog> createState() =>
-      _CreateCollectionDialogState();
-}
-
-class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
-  String? _errorText;
-
-  void _submit() {
-    final name = widget.controller.text.trim();
-    if (name.isEmpty) {
-      setState(() => _errorText = AppLocalizations.of(context).collectionNameRequired);
-      return;
-    }
-    Navigator.of(context).pop(name);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return AlertDialog(
-      title: Text(l10n.createCollection),
-      content: TextField(
-        controller: widget.controller,
-        autofocus: true,
-        maxLength: 100,
-        decoration: InputDecoration(
-          labelText: l10n.collectionNameLabel,
-          errorText: _errorText,
-        ),
-        onSubmitted: (String value) => _submit(),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.cancel),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          child: Text(l10n.create),
-        ),
-      ],
-    );
-  }
-}
-
-/// 重命名分组对话框（C1）：输入名称（必填）+ 可选改图标 emoji。
-///
-/// 返回位置记录 `(name, icon)`：icon 为 null 表示未改图标（不随请求发送）；
-/// 取消返回 null。预设图标全部为 ≤2 UTF-16 code unit 的 emoji，
-/// 与分组卡片的 icon 渲染分支（length<=2 显示 emoji 文本）保持一致。
-class _RenameCollectionDialog extends StatefulWidget {
-  const _RenameCollectionDialog({
-    required this.initialName,
-    required this.initialIcon,
-  });
-
-  final String initialName;
-  final String initialIcon;
-
-  @override
-  State<_RenameCollectionDialog> createState() =>
-      _RenameCollectionDialogState();
-}
-
-class _RenameCollectionDialogState extends State<_RenameCollectionDialog> {
-  /// 预设图标（覆盖常用语义：默认文件夹/星标/紧急/想法/目标/置顶/上线/媒体等）
-  static const List<String> _presetIcons = <String>[
-    '📁', '⭐', '🔥', '💡', '🎯', '📌', '🚀', '🎵', '📷', '🏠', '✅', '💼',
-  ];
-
-  late final TextEditingController _controller;
-  late String _selectedIcon;
-  bool _iconChanged = false;
-  String? _errorText;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialName);
-    _selectedIcon = widget.initialIcon;
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final name = _controller.text.trim();
-    if (name.isEmpty) {
-      setState(() => _errorText = AppLocalizations.of(context).collectionNameRequired);
-      return;
-    }
-    Navigator.of(context).pop((name, _iconChanged ? _selectedIcon : null));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    return AlertDialog(
-      title: Text(l10n.renameCollection),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            maxLength: 100,
-            decoration: InputDecoration(
-              labelText: l10n.collectionNameLabel,
-              errorText: _errorText,
-            ),
-            onSubmitted: (String value) => _submit(),
-          ),
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: <Widget>[
-                for (final String emoji in _presetIcons)
-                  Padding(
-                    padding: const EdgeInsets.only(right: AppSpacing.sm),
-                    child: _buildIconOption(emoji, scheme),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.cancel),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          child: Text(l10n.save),
-        ),
-      ],
-    );
-  }
-
-  /// 图标选项：选中态用 primary 描边加粗；当前 icon 不在预设里时无选中项。
-  Widget _buildIconOption(String emoji, ColorScheme scheme) {
-    final selected = emoji == _selectedIcon;
-    return GestureDetector(
-      onTap: () => setState(() {
-        _selectedIcon = emoji;
-        _iconChanged = true;
-      }),
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(
-            color: selected ? scheme.primary : scheme.outlineVariant,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        alignment: Alignment.center,
-        child: Text(emoji, style: const TextStyle(fontSize: 20)),
-      ),
     );
   }
 }

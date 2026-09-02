@@ -181,14 +181,19 @@ class CollectionsApiService {
     return const <CollectionGroup>[];
   }
 
-  /// 创建收藏夹分组（根级；后端新分组 sort_order=0 排最前）。
+  /// 创建收藏夹分组（后端新分组 sort_order=0 排最前）。
   ///
-  /// 名称超 100 字符由后端截断；成功返回新建分组（201）。
-  Future<CollectionGroup> createCollection(String name) async {
+  /// [parentId] 为 null 时创建顶层分组；非空时创建为该分组的子分组
+  /// （后端以 parent.path 拼接 ltree 子路径，favorites.js:59-67）。
+  /// 名称超 100 字符由后端截断；成功返回新建分组（201，响应含 path）。
+  Future<CollectionGroup> createCollection(String name, {String? parentId}) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/collections'),
       headers: await _headers(),
-      body: jsonEncode(<String, String>{'name': name}),
+      body: jsonEncode(<String, String?>{
+        'name': name,
+        'parentId': ?parentId,
+      }),
     );
 
     if (response.statusCode != 201) {
@@ -362,4 +367,32 @@ class CollectionsApiService {
       throw const AppException(AppErrorCodes.removeItemFromCollectionFailed);
     }
   }
+}
+
+/// 树形层级导航辅助（基于 ltree path，favorites.js GET /collections 返回）：
+/// path 形如 `root.<uuid>`（顶层）、`root.<uuid>.col_<uuid>`（二层）…，
+/// 按 `.` 分段，段数 - 1 即层级数；子分组 = path 以「父分组 path + .」为前缀。
+///
+/// - [isTopLevelCollection]：顶层分组判定（path ≤ 2 段；空 path 兜底为顶层，
+///   避免数据异常时分组凭空消失）；
+/// - [childCollectionsOf]：某分组的直接子分组（前缀匹配且剩余段不含 `.`）；
+///   parent.path 为空时无法判定层级，返回空。
+bool isTopLevelCollection(CollectionGroup group) =>
+    group.path.split('.').length <= 2;
+
+List<CollectionGroup> childCollectionsOf(
+  List<CollectionGroup> groups,
+  CollectionGroup parent,
+) {
+  if (parent.path.isEmpty) {
+    return const <CollectionGroup>[];
+  }
+  final prefix = '${parent.path}.';
+  return groups
+      .where(
+        (CollectionGroup g) =>
+            g.path.startsWith(prefix) &&
+            !g.path.substring(prefix.length).contains('.'),
+      )
+      .toList();
 }

@@ -269,6 +269,21 @@
       "count": { "type": "int" }
     }
   },
+  "collectionFolderCount": "{count} folders",
+  "@collectionFolderCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "subCollectionsHeader": "Sub-collections",
+  "itemsSectionHeader": "Items",
+  "breadcrumbAll": "All",
+  "createUnderParentHint": "Will be created under \"{name}\"",
+  "@createUnderParentHint": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
   "collectionNameRequired": "Please enter a collection name",
   "collectionNameLabel": "Collection name",
 

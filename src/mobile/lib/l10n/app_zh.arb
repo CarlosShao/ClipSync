@@ -180,6 +180,11 @@
   "collectionsEmptyTitle": "暂无收藏夹分组",
   "collectionsEmptyMessage": "新建一个分组，把常用的剪贴板内容整理在一起",
   "collectionItemCount": "{count} 条内容",
+  "collectionFolderCount": "{count} 个子分组",
+  "subCollectionsHeader": "子收藏夹",
+  "itemsSectionHeader": "内容",
+  "breadcrumbAll": "全部",
+  "createUnderParentHint": "将创建到「{name}」下",
   "collectionNameRequired": "请输入分组名称",
   "collectionNameLabel": "分组名称",
 

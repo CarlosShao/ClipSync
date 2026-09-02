@@ -550,6 +550,25 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String collectionFolderCount(int count) {
+    return '$count folders';
+  }
+
+  @override
+  String get subCollectionsHeader => 'Sub-collections';
+
+  @override
+  String get itemsSectionHeader => 'Items';
+
+  @override
+  String get breadcrumbAll => 'All';
+
+  @override
+  String createUnderParentHint(String name) {
+    return 'Will be created under \"$name\"';
+  }
+
+  @override
   String get collectionNameRequired => 'Please enter a collection name';
 
   @override

@@ -14,14 +14,25 @@ import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/error_state.dart';
 import '../../widgets/common/skeleton_list.dart';
 import '../../widgets/favorites/collection_picker.dart';
+import 'collection_dialogs.dart';
 
-/// 收藏夹组内条目页（T4.1 / C1 管理补齐）。
+/// 收藏夹组内条目页（树形层级导航二级页，两段式布局）。
 ///
 /// 由 FavoritesScreen 以根 Navigator 全屏压入（自带 Scaffold + AppBar，
-/// 盖过主页 shell 的标题栏与底栏）。
+/// 盖过主页 shell 的标题栏与底栏）。页内以**状态切换**实现层级下钻
+/// （资源管理器式）：点「子收藏夹」卡片替换当前分组并重载，不逐层压路由；
+/// 返回（AppBar 返回键 / 系统返回手势，经 PopScope 拦截）逐级上溯至入口
+/// 分组后才退出路由。AppBar 标题显示当前分组名，其下为可点击面包屑
+/// （全部 / 分组 / 子分组 → 跳转对应层级；「全部」退出本页回收藏夹根页）。
+///
+/// 两段式布局：
+/// - 上半「子收藏夹」区：当前分组的直接子分组卡片（点进继续下钻；
+///   trailing 菜单保留重命名/删除）；
+/// - 下半「条目」区：既有条目列表与单条/多选操作完全保留。
 ///
 /// 数据交互：条目列表走 CollectionsApiService.listCollectionItems
-/// （`GET /api/favorites/collections/:id/items`，只含 content_preview）。
+/// （`GET /api/favorites/collections/:id/items`，只含 content_preview）；
+/// 全量分组走 listCollections（推导子分组与面包屑祖先链，path 为 ltree）。
 ///
 /// 点击条目 = 复制全文（对齐 ClipboardProvider.resolveCopyText 的取数路径）：
 /// - 条目仍在剪贴板 provider 缓存中 → 复用既有 resolveCopyText
@@ -46,7 +57,7 @@ import '../../widgets/favorites/collection_picker.dart';
 class CollectionItemsScreen extends StatefulWidget {
   const CollectionItemsScreen({required this.collection, super.key});
 
-  /// 所属收藏夹分组（名称用于 AppBar 标题）
+  /// 入口收藏夹分组（页内可继续下钻；返回逐级上溯至该分组后退出路由）
   final CollectionGroup collection;
 
   @override
@@ -55,9 +66,20 @@ class CollectionItemsScreen extends StatefulWidget {
 
 class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   final CollectionsApiService _api = CollectionsApiService();
+  final ScrollController _scrollController = ScrollController();
 
+  /// 当前所在分组（页内状态导航；初始为入口分组）
+  late CollectionGroup _current = widget.collection;
+
+  /// 全量分组（服务端按 sort_order 排序；用于推导子分组与面包屑祖先链）
+  List<CollectionGroup> _allGroups = <CollectionGroup>[];
+
+  /// 当前分组的条目列表
   List<FavoriteEntry> _items = <FavoriteEntry>[];
   bool _isLoading = false;
+
+  /// 新建/重命名/删除分组请求进行中（FAB 防重复提交）
+  bool _isMutating = false;
 
   /// 正在复制全文的条目 id（行尾转圈反馈；null = 无复制进行中）
   String? _copyingId;
@@ -78,25 +100,67 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   bool get _isAllSelected =>
       _items.isNotEmpty && _selectedIds.length == _items.length;
 
+  /// 是否已从入口分组下钻（决定返回行为：逐级上溯 vs 退出路由）
+  bool get _drilledIn => _current.id != widget.collection.id;
+
+  /// 当前分组的直接子分组（path 前缀匹配，见 childCollectionsOf）
+  List<CollectionGroup> get _subCollections =>
+      childCollectionsOf(_allGroups, _current);
+
+  /// 面包屑链：顶层分组 → … → 当前分组（按 ltree path 前缀逐段匹配祖先）。
+  /// path 为空时退化为仅当前分组（不显示祖先链）。
+  List<CollectionGroup> get _breadcrumb {
+    final path = _current.path;
+    if (path.isEmpty) {
+      return <CollectionGroup>[_current];
+    }
+    final segments = path.split('.');
+    final crumbs = <CollectionGroup>[];
+    for (var i = 1; i < segments.length; i++) {
+      final prefix = segments.sublist(0, i + 1).join('.');
+      for (final CollectionGroup group in _allGroups) {
+        if (group.path == prefix) {
+          crumbs.add(group);
+          break;
+        }
+      }
+    }
+    // 兜底：祖先链未覆盖当前分组（数据异常 / 刚创建未刷新）时补在末位
+    if (crumbs.isEmpty || crumbs.last.id != _current.id) {
+      crumbs.add(_current);
+    }
+    return crumbs;
+  }
+
   @override
   void initState() {
     super.initState();
     unawaited(_load());
   }
 
-  /// 拉取组内条目列表。
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// 拉取全量分组 + 当前分组条目列表（下钻 / 上溯 / 下拉刷新共用）。
   Future<void> _load() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
     try {
-      final items = await _api.listCollectionItems(widget.collection.id);
+      final results = await Future.wait<dynamic>(<Future<dynamic>>[
+        _api.listCollections(),
+        _api.listCollectionItems(_current.id),
+      ]);
       if (!mounted) {
         return;
       }
       setState(() {
-        _items = items;
+        _allGroups = results[0] as List<CollectionGroup>;
+        _items = results[1] as List<FavoriteEntry>;
         _isLoading = false;
       });
     } on Exception catch (e) {
@@ -108,6 +172,151 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
         _error = e;
       });
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 层级导航（下钻 / 上溯 / 面包屑跳转）
+  // ---------------------------------------------------------------------------
+
+  /// 切换到目标分组（下钻 / 面包屑祖先跳转共用）：重置多选与条目状态，
+  /// 重载分组与条目数据。
+  void _navigateTo(CollectionGroup target) {
+    if (target.id == _current.id) {
+      return;
+    }
+    setState(() {
+      _current = target;
+      _multiSelect = false;
+      _selectedIds.clear();
+      _copyingId = null;
+      _items = <FavoriteEntry>[];
+      _error = null;
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    });
+    unawaited(_load());
+  }
+
+  /// 返回上一级（AppBar 返回键 / 系统返回手势经 PopScope 触发）。
+  void _goUp() {
+    final crumbs = _breadcrumb;
+    if (crumbs.length >= 2) {
+      _navigateTo(crumbs[crumbs.length - 2]);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 分组管理（新建子分组 / 重命名 / 删除，对话框与根页共用）
+  // ---------------------------------------------------------------------------
+
+  /// 新建分组：挂到当前分组下（parentId = 当前分组 id）；对话框显示父级提示。
+  Future<void> _showCreateDialog() async {
+    final l10n = AppLocalizations.of(context);
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => CreateCollectionDialog(
+        controller: controller,
+        parentName: _current.name,
+      ),
+    );
+    controller.dispose();
+
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty || !mounted) {
+      return;
+    }
+    setState(() => _isMutating = true);
+    try {
+      final group = await _api.createCollection(trimmed, parentId: _current.id);
+      if (!mounted) {
+        return;
+      }
+      unawaited(_load());
+      _showSnackBar(l10n.collectionCreated(group.name));
+    } on Exception catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(friendlyError(e, l10n));
+    } finally {
+      if (mounted) {
+        setState(() => _isMutating = false);
+      }
+    }
+  }
+
+  /// 重命名子分组：改名对话框（预填当前名称，可选改图标 emoji）→ 更新 → 重拉。
+  Future<void> _showRenameDialog(CollectionGroup sub) async {
+    final (String name, String? icon) =
+        await showDialog<(String, String?)>(
+          context: context,
+          builder: (BuildContext dialogContext) => RenameCollectionDialog(
+            initialName: sub.name,
+            initialIcon: sub.icon,
+          ),
+        ) ??
+        ('', null);
+
+    // 名称未改且未改图标：无需请求
+    if (name.isEmpty || (name == sub.name && icon == null) || !mounted) {
+      return;
+    }
+
+    final l10n = AppLocalizations.of(context);
+    setState(() => _isMutating = true);
+    try {
+      await _api.updateCollection(sub.id, name: name, icon: icon);
+      if (!mounted) {
+        return;
+      }
+      unawaited(_load());
+      _showSnackBar(l10n.collectionRenamed);
+    } on Exception catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(friendlyError(e, l10n));
+    } finally {
+      if (mounted) {
+        setState(() => _isMutating = false);
+      }
+    }
+  }
+
+  /// 删除子分组：确认对话框（说明子分组级联删除）→ 删除 → 重拉列表。
+  Future<void> _confirmDelete(CollectionGroup sub) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await confirmDeleteCollection(context, sub);
+    if (!confirmed || !mounted) {
+      return;
+    }
+
+    setState(() => _isMutating = true);
+    try {
+      await _api.deleteCollection(sub.id);
+      if (!mounted) {
+        return;
+      }
+      unawaited(_load());
+      _showSnackBar(l10n.collectionDeleted(sub.name));
+    } on Exception catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(friendlyError(e, l10n));
+    } finally {
+      if (mounted) {
+        setState(() => _isMutating = false);
+      }
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   // ---------------------------------------------------------------------------
@@ -229,7 +438,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     final target = await addItemToCollectionFlow(
       context,
       itemId: entry.id,
-      excludeCollectionId: widget.collection.id,
+      excludeCollectionId: _current.id,
     );
     if (target == null || !mounted) {
       return;
@@ -244,7 +453,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     final snapshot = List<FavoriteEntry>.of(_items);
     setState(() => _items.removeWhere((FavoriteEntry e) => e.id == entry.id));
     try {
-      await _api.removeItemFromCollection(widget.collection.id, entry.id);
+      await _api.removeItemFromCollection(_current.id, entry.id);
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(l10n.removedFromCollection)));
@@ -327,7 +536,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
         return;
       }
       final options = groups
-          .where((CollectionGroup g) => g.id != widget.collection.id)
+          .where((CollectionGroup g) => g.id != _current.id)
           .toList();
       if (options.isEmpty) {
         messenger
@@ -400,40 +609,141 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        leading: _multiSelect
-            ? IconButton(
-                icon: const Icon(Icons.close),
-                tooltip: l10n.cancel,
-                onPressed: _exitMultiSelect,
+    return PopScope<Object?>(
+      // 已下钻时拦截系统返回：逐级上溯；回到入口层级（或面包屑祖先链无法
+      // 解析的极端数据）才允许退出路由
+      canPop: !_drilledIn || _breadcrumb.length < 2,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) {
+          return;
+        }
+        _goUp();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: _multiSelect
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: l10n.cancel,
+                  onPressed: _exitMultiSelect,
+                )
+              // 默认返回键走 Navigator.maybePop → PopScope：
+              // 已下钻时上溯一级，入口层级退出本页
+              : null,
+          title: Text(
+            _multiSelect
+                ? l10n.selectedCount(_selectedIds.length)
+                : _current.name,
+          ),
+          actions: <Widget>[
+            if (_multiSelect)
+              IconButton(
+                icon: Icon(_isAllSelected ? Icons.deselect : Icons.select_all),
+                tooltip: _isAllSelected ? l10n.deselectAll : l10n.selectAll,
+                onPressed: _toggleSelectAll,
               )
-            : null,
-        title: Text(
-          _multiSelect
-              ? l10n.selectedCount(_selectedIds.length)
-              : widget.collection.name,
+            else
+              IconButton(
+                icon: const Icon(Icons.checklist),
+                tooltip: l10n.multiSelect,
+                onPressed: () => _enterMultiSelect(),
+              ),
+          ],
         ),
-        actions: <Widget>[
-          if (_multiSelect)
-            IconButton(
-              icon: Icon(_isAllSelected ? Icons.deselect : Icons.select_all),
-              tooltip: _isAllSelected ? l10n.deselectAll : l10n.selectAll,
-              onPressed: _toggleSelectAll,
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.checklist),
-              tooltip: l10n.multiSelect,
-              onPressed: () => _enterMultiSelect(),
+        floatingActionButton: _multiSelect
+            ? null
+            : FloatingActionButton.extended(
+                onPressed: _isMutating ? null : _showCreateDialog,
+                icon: const Icon(Icons.create_new_folder_outlined),
+                label: Text(l10n.createCollection),
+              ),
+        body: Column(
+          children: <Widget>[
+            if (!_multiSelect) _buildBreadcrumb(l10n),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _load,
+                child: _buildContent(),
+              ),
             ),
+          ],
+        ),
+        bottomNavigationBar: _multiSelect ? _buildSelectionBar(l10n) : null,
+      ),
+    );
+  }
+
+  /// 面包屑（树形层级导航）：`全部 / 分组 / 子分组 / 当前分组`。
+  /// 点击祖先逐级跳转（页内状态切换）；点击「全部」退出本页回收藏夹根页。
+  Widget _buildBreadcrumb(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final crumbs = _breadcrumb;
+    return SizedBox(
+      height: 40,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Row(
+                children: <Widget>[
+                  _buildCrumb(
+                    l10n.breadcrumbAll,
+                    isCurrent: false,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  for (var i = 0; i < crumbs.length; i++) ...<Widget>[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                      ),
+                      child: Text(
+                        '/',
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: scheme.outlineVariant),
+                      ),
+                    ),
+                    _buildCrumb(
+                      crumbs[i].name,
+                      isCurrent: i == crumbs.length - 1,
+                      onTap: i == crumbs.length - 1
+                          ? null
+                          : () => _navigateTo(crumbs[i]),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: _buildContent(),
+    );
+  }
+
+  /// 单个面包屑项：当前层级加粗高亮不可点，祖先为 primary 色可点。
+  Widget _buildCrumb(String label, {required bool isCurrent, VoidCallback? onTap}) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xs,
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: isCurrent ? scheme.onSurface : scheme.primary,
+            fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
       ),
-      bottomNavigationBar: _multiSelect ? _buildSelectionBar(l10n) : null,
     );
   }
 
@@ -466,13 +776,13 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   }
 
   /// 主体：三态分发。骨架/错误/空态也包在 RefreshIndicator 的可滚动容器里，
-  /// 保证任何状态下都能下拉刷新。
+  /// 保证任何状态下都能下拉刷新。有子分组或条目时进入两段式布局。
   Widget _buildContent() {
     final l10n = AppLocalizations.of(context);
-    if (_isLoading && _items.isEmpty) {
+    if (_isLoading && _items.isEmpty && _subCollections.isEmpty) {
       return _scrollableBody(const SkeletonList(itemCount: 6));
     }
-    if (_error != null && _items.isEmpty) {
+    if (_error != null && _items.isEmpty && _subCollections.isEmpty) {
       return _scrollableBody(
         ErrorState(
           message: friendlyError(_error, l10n),
@@ -480,7 +790,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
         ),
       );
     }
-    if (_items.isEmpty) {
+    if (!_isLoading && _items.isEmpty && _subCollections.isEmpty) {
       return _scrollableBody(
         EmptyState(
           icon: Icons.folder_open,
@@ -489,11 +799,45 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
         ),
       );
     }
-    return _buildItemList();
+    return _buildSections();
   }
 
-  Widget _buildItemList() {
-    return ListView.separated(
+  /// 两段式主体：上半「子收藏夹」区（点进下钻）+ 下半「条目」区（既有条目
+  /// 列表与单条/多选操作）。某区为空时整区省略（两者皆空走上方三态）。
+  Widget _buildSections() {
+    final l10n = AppLocalizations.of(context);
+    final subs = _subCollections;
+    final children = <Widget>[];
+
+    if (subs.isNotEmpty) {
+      children.add(_buildSectionHeader(l10n.subCollectionsHeader));
+      for (final CollectionGroup sub in subs) {
+        children.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: _buildSubCollectionTile(sub),
+          ),
+        );
+      }
+      children.add(const SizedBox(height: AppSpacing.md));
+    }
+
+    if (_items.isNotEmpty) {
+      if (subs.isNotEmpty) {
+        children.add(_buildSectionHeader(l10n.itemsSectionHeader));
+      }
+      for (final FavoriteEntry entry in _items) {
+        children.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: _buildEntryTile(entry),
+          ),
+        );
+      }
+    }
+
+    return ListView(
+      controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,
@@ -501,11 +845,92 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
         AppSpacing.lg,
         AppSpacing.xxl,
       ),
-      itemCount: _items.length,
-      separatorBuilder: (BuildContext context, int index) =>
-          const SizedBox(height: AppSpacing.md),
-      itemBuilder: (BuildContext context, int index) =>
-          _buildEntryTile(_items[index]),
+      children: children,
+    );
+  }
+
+  /// 区块标题（子收藏夹 / 内容）。
+  Widget _buildSectionHeader(String label) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: AppSpacing.xs, bottom: AppSpacing.sm),
+      child: Text(
+        label,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  /// 子收藏夹卡片：图标 + 名称 + 条目数/子分组数；整行点击下钻，
+  /// trailing 菜单提供「重命名分组」「删除分组」（树形导航下子分组仅在此
+  /// 展示，管理入口随之保留在本页）。
+  Widget _buildSubCollectionTile(CollectionGroup sub) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final l10n = AppLocalizations.of(context);
+
+    final subtitleParts = <String>[
+      l10n.collectionItemCount(sub.itemCount),
+    ];
+    final folderCount = childCollectionsOf(_allGroups, sub).length;
+    if (folderCount > 0) {
+      subtitleParts.add(l10n.collectionFolderCount(folderCount));
+    }
+
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: collectionLeadingAvatar(sub, scheme),
+        title: Text(
+          sub.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          subtitleParts.join(' · '),
+          style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+        trailing: PopupMenuButton<String>(
+          tooltip: l10n.moreActions,
+          onSelected: (String value) {
+            if (value == 'rename') {
+              unawaited(_showRenameDialog(sub));
+            } else if (value == 'delete') {
+              unawaited(_confirmDelete(sub));
+            }
+          },
+          itemBuilder: (BuildContext menuContext) => <PopupMenuItem<String>>[
+            PopupMenuItem<String>(
+              value: 'rename',
+              child: Row(
+                children: <Widget>[
+                  Icon(Icons.edit_outlined, size: 20, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(l10n.renameCollection),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'delete',
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.delete_outline,
+                    size: 20,
+                    color: scheme.error,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(l10n.deleteCollection, style: TextStyle(color: scheme.error)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        onTap: () => _navigateTo(sub),
+      ),
     );
   }
 

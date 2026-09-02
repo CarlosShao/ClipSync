@@ -526,6 +526,25 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String collectionFolderCount(int count) {
+    return '$count 个子分组';
+  }
+
+  @override
+  String get subCollectionsHeader => '子收藏夹';
+
+  @override
+  String get itemsSectionHeader => '内容';
+
+  @override
+  String get breadcrumbAll => '全部';
+
+  @override
+  String createUnderParentHint(String name) {
+    return '将创建到「$name」下';
+  }
+
+  @override
   String get collectionNameRequired => '请输入分组名称';
 
   @override
