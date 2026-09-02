@@ -1,7 +1,6 @@
 {
   "@@locale": "en",
   "appTitle": "ClipSync",
-
   "cancel": "Cancel",
   "confirm": "Confirm",
   "save": "Save",
@@ -9,7 +8,6 @@
   "refresh": "Refresh",
   "retry": "Retry",
   "loading": "Loading...",
-
   "login": "Sign in",
   "loginSubtitle": "Cross-device clipboard sync",
   "phoneNumber": "Phone number",
@@ -20,7 +18,9 @@
   "codeCountdown": "{seconds}s",
   "@codeCountdown": {
     "placeholders": {
-      "seconds": { "type": "int" }
+      "seconds": {
+        "type": "int"
+      }
     }
   },
   "invalidPhone": "Please enter a valid phone number",
@@ -34,13 +34,11 @@
   "backToLogin": "Back to sign-in",
   "phoneAndCodeRequired": "Please enter phone number and code",
   "twoFactorCodeLabel": "Authentication code",
-
   "tabClipboard": "Clipboard",
   "tabFavorites": "Favorites",
   "tabDevices": "Devices",
   "tabSettings": "Settings",
   "refreshDevices": "Refresh devices",
-
   "noDevices": "No devices",
   "noDevicesDesc": "Sign in on other devices to start syncing",
   "unbindDevice": "Unbind device",
@@ -48,24 +46,25 @@
   "unbindConfirm": "Unbind \"{deviceName}\"? The device will no longer be able to sync.",
   "@unbindConfirm": {
     "placeholders": {
-      "deviceName": { "type": "String" }
+      "deviceName": {
+        "type": "String"
+      }
     }
   },
   "devicesLoadFailed": "Failed to load devices",
   "unbindCurrentDeviceConfirm": "\"{deviceName}\" is the current device.\nUnbinding will stop sync on this device, and you will need to re-register the device to restore sync. Unbind anyway?",
   "@unbindCurrentDeviceConfirm": {
     "placeholders": {
-      "deviceName": { "type": "String" }
+      "deviceName": {
+        "type": "String"
+      }
     }
   },
-
   "biometricUnlockReason": "Verify fingerprint or face to unlock ClipSync",
   "biometricVerifyFailed": "Verification failed, please retry",
   "lockScreenMessage": "App is locked. Verify your identity to continue",
   "unlock": "Unlock",
-
   "backAgainToExit": "Press back again to exit ClipSync",
-
   "skip": "Skip",
   "next": "Next",
   "getStarted": "Get Started",
@@ -79,14 +78,12 @@
   "onboardingDesc4": "Content copied on your phone also syncs automatically\nFlowing seamlessly across all your devices",
   "onboardingTitle5": "All set",
   "onboardingDesc5": "You're ready to start using ClipSync!\nTry copying something 😊",
-
   "sectionServer": "Server",
   "sectionGeneral": "General",
   "sectionAppearance": "Appearance",
   "sectionData": "Data",
   "sectionNotification": "Notifications",
   "sectionSubscription": "Subscription",
-
   "serverUrl": "Server address",
   "serverUrlDesc": "ClipSync backend service address",
   "serverUrlSaved": "Server address saved",
@@ -108,7 +105,9 @@
   "clearCacheFailed": "Failed to clear: {error}",
   "@clearCacheFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "templates": "Templates",
@@ -122,17 +121,14 @@
   "logoutConfirmMessage": "Sign out of the current account? You will need to sign in with a verification code again.",
   "logoutAction": "Sign out",
   "aboutDesc": "Cross-device clipboard sync tool",
-
   "clipboardSearchHint": "Search clipboard content…",
   "clearSearch": "Clear search",
-
   "typeAll": "All",
   "typeText": "Text",
   "typeLink": "Link",
   "typeImage": "Image",
   "typeFile": "File",
   "typeCode": "Code",
-
   "clipboardNoResultsTitle": "No matches found",
   "clipboardNoResultsMessage": "Try different keywords, or clear the search and filters",
   "clipboardClearFilters": "Clear filters",
@@ -143,10 +139,11 @@
   "clipboardNewContentBar": "{count} new items, tap to view",
   "@clipboardNewContentBar": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
-
   "favorite": "Favorite",
   "unfavorite": "Unfavorite",
   "pinToTop": "Pin to top",
@@ -156,7 +153,9 @@
   "deleteConfirmMessage": "\"{preview}\" will be permanently deleted.",
   "@deleteConfirmMessage": {
     "placeholders": {
-      "preview": { "type": "String" }
+      "preview": {
+        "type": "String"
+      }
     }
   },
   "deleted": "Deleted",
@@ -168,46 +167,64 @@
   "clipboardCardSemantics": "Clipboard {type}, content: {preview}",
   "@clipboardCardSemantics": {
     "placeholders": {
-      "type": { "type": "String" },
-      "preview": { "type": "String" }
+      "type": {
+        "type": "String"
+      },
+      "preview": {
+        "type": "String"
+      }
     }
   },
-
   "relJustNow": "Just now",
   "relMinutesAgo": "{minutes} min ago",
   "@relMinutesAgo": {
     "placeholders": {
-      "minutes": { "type": "int" }
+      "minutes": {
+        "type": "int"
+      }
     }
   },
   "relHoursAgo": "{hours} h ago",
   "@relHoursAgo": {
     "placeholders": {
-      "hours": { "type": "int" }
+      "hours": {
+        "type": "int"
+      }
     }
   },
   "relDaysAgo": "{days} d ago",
   "@relDaysAgo": {
     "placeholders": {
-      "days": { "type": "int" }
+      "days": {
+        "type": "int"
+      }
     }
   },
   "relDateMD": "{month}/{day}",
   "@relDateMD": {
     "placeholders": {
-      "month": { "type": "int" },
-      "day": { "type": "int" }
+      "month": {
+        "type": "int"
+      },
+      "day": {
+        "type": "int"
+      }
     }
   },
   "relDateYMD": "{year}/{month}/{day}",
   "@relDateYMD": {
     "placeholders": {
-      "year": { "type": "int" },
-      "month": { "type": "int" },
-      "day": { "type": "int" }
+      "year": {
+        "type": "int"
+      },
+      "month": {
+        "type": "int"
+      },
+      "day": {
+        "type": "int"
+      }
     }
   },
-
   "copy": "Copy",
   "copied": "Copied",
   "noTextContent": "No text content in this item",
@@ -218,7 +235,6 @@
   "imageLoadFailed": "Image failed to load, check your network and retry",
   "contentLoadFailed": "Content failed to load, check your network and retry",
   "linkHint": "Link content · tap \"Copy\" below to copy the full link",
-
   "unknownFile": "Unknown file",
   "downloading": "Downloading…",
   "openDownload": "Open (download to device)",
@@ -228,37 +244,42 @@
   "fileSavedTo": "Saved to {path}",
   "@fileSavedTo": {
     "placeholders": {
-      "path": { "type": "String" }
+      "path": {
+        "type": "String"
+      }
     }
   },
-
   "sectionSecurity": "Security",
-
   "biometricLock": "Biometric lock",
   "biometricLockDesc": "Require fingerprint or face verification on cold start and app resume",
   "biometricUnsupported": "Biometric authentication is not supported on this device",
   "biometricLockReason": "Verify fingerprint or face to enable the biometric lock",
   "biometricLockFailed": "Verification failed, biometric lock not enabled",
-
   "create": "Create",
   "createCollection": "New collection",
   "collectionCreated": "Created \"{name}\"",
   "@collectionCreated": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "deleteCollection": "Delete collection",
   "deleteCollectionConfirm": "Delete \"{name}\"?\n\nClipboard items in this collection stay in clipboard favorites; sub-collections under it will be deleted as well.",
   "@deleteCollectionConfirm": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "collectionDeleted": "Deleted \"{name}\"",
   "@collectionDeleted": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "collectionsEmptyTitle": "No collections yet",
@@ -266,13 +287,17 @@
   "collectionItemCount": "{count} items",
   "@collectionItemCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "collectionFolderCount": "{count} folders",
   "@collectionFolderCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "subCollectionsHeader": "Sub-collections",
@@ -281,18 +306,18 @@
   "createUnderParentHint": "Will be created under \"{name}\"",
   "@createUnderParentHint": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "collectionNameRequired": "Please enter a collection name",
   "collectionNameLabel": "Collection name",
-
   "noCopyableContent": "No copyable content in this item",
   "copyFailed": "Copy failed, please retry",
   "collectionItemsEmptyTitle": "No items in this collection",
   "collectionItemsEmptyMessage": "Items added to favorites from the clipboard list will appear here",
   "unknownSource": "Unknown source",
-
   "sessionsLoadFailed": "Failed to load sessions, check your network and retry",
   "activeSessions": "Active sessions",
   "activeSessionsDesc": "Device sessions signed in to this account can be revoked remotely",
@@ -304,13 +329,17 @@
   "revokeCurrentSessionConfirm": "\"{deviceName}\" is the current device.\nRevoking signs this device out immediately and requires signing in with a verification code again. Revoke anyway?",
   "@revokeCurrentSessionConfirm": {
     "placeholders": {
-      "deviceName": { "type": "String" }
+      "deviceName": {
+        "type": "String"
+      }
     }
   },
   "revokeSessionConfirm": "Revoke the session of \"{deviceName}\"? That device will be signed out immediately.",
   "@revokeSessionConfirm": {
     "placeholders": {
-      "deviceName": { "type": "String" }
+      "deviceName": {
+        "type": "String"
+      }
     }
   },
   "revoke": "Revoke",
@@ -319,12 +348,13 @@
   "sessionRevoked": "Session of \"{deviceName}\" revoked",
   "@sessionRevoked": {
     "placeholders": {
-      "deviceName": { "type": "String" }
+      "deviceName": {
+        "type": "String"
+      }
     }
   },
   "lastActivePrefix": "Last active ",
   "currentBadge": "Current",
-
   "cancelSubscription": "Cancel subscription",
   "cancelSubscriptionConfirm": "Cancel your subscription? It will downgrade to the free plan after the current billing period ends, and benefits remain active until then.",
   "subscriptionCancelled": "Subscription cancelled, effective at the end of the current billing period",
@@ -343,14 +373,15 @@
   "subscriptionEndsOn": "Your subscription ends on {date} and will automatically downgrade to the free plan.",
   "@subscriptionEndsOn": {
     "placeholders": {
-      "date": { "type": "String" }
+      "date": {
+        "type": "String"
+      }
     }
   },
   "desktopPaymentHint": "Payment is not supported on mobile yet. To upgrade or purchase a plan, sign in on the desktop app and complete the payment in Subscription.",
   "currentPlanBadge": "Current plan",
   "payOnDesktop": "Pay on desktop",
   "noInvoices": "No billing records",
-
   "renderResultTitle": "Render result",
   "close": "Close",
   "renderResultCopied": "Rendered result copied to clipboard",
@@ -360,7 +391,9 @@
   "variableCount": "{count} variables",
   "@variableCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "emptyTemplateContent": "(Template content is empty)",
@@ -369,19 +402,24 @@
   "variableProgress": "Variable {step} / {total}",
   "@variableProgress": {
     "placeholders": {
-      "step": { "type": "int" },
-      "total": { "type": "int" }
+      "step": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "variableInputHint": "Enter a value for {name}",
   "@variableInputHint": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "done": "Done",
   "nextItem": "Next item",
-
   "permissionGuideTitle": "Permissions and keep-alive guide",
   "permissionGuideIntro": "To keep \"copy on computer, instantly on phone\" working, complete these 3 steps:",
   "finishAndStart": "Done, start using",
@@ -409,7 +447,6 @@
   "gotIt": "Got it",
   "gotoAutoStartSettings": "Go to auto-start settings",
   "unknown": "Unknown",
-
   "saveToClipboard": "Save to clipboard",
   "saveToClipboardDesc": "Content will be uploaded to your ClipSync account and become visible on all signed-in devices.",
   "nothingToSave": "Nothing to save",
@@ -417,28 +454,37 @@
   "saveInFailed": "Save failed: {error}",
   "@saveInFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "saveInFailedRetry": "Save failed, please try again later",
   "savedInCount": "Saved {count} clipboard items",
   "@savedInCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "imageCount": "Images ({count})",
   "@imageCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
-
   "deviceSemantics": "Device: {name}, status: {status}",
   "@deviceSemantics": {
     "placeholders": {
-      "name": { "type": "String" },
-      "status": { "type": "String" }
+      "name": {
+        "type": "String"
+      },
+      "status": {
+        "type": "String"
+      }
     }
   },
   "deviceOnline": "Online",
@@ -446,9 +492,7 @@
   "platformDesktop": "Desktop",
   "platformMobile": "Mobile",
   "platformTablet": "Tablet",
-
   "loadFailedTitle": "Load failed",
-
   "errorNoToken": "Not signed in. Please sign in and try again.",
   "errorSendCode": "Failed to send verification code",
   "errorFetchProfile": "Failed to load profile",
@@ -474,14 +518,12 @@
   "errorUnknown": "Something went wrong. Please try again later.",
   "errorFetchNotificationPrefs": "Failed to load notification preferences",
   "errorUpdateNotificationPrefs": "Failed to save notification preference",
-
   "notifChannelClipboard": "Clipboard sync",
   "notifChannelClipboardDesc": "Clipboard sync reminders between your devices (silent)",
   "notifChannelAlert": "Sync alerts",
   "notifChannelAlertDesc": "Sync errors, device alerts and other important reminders",
   "notifClipboardUpdated": "Clipboard updated",
   "notifNewClipboardBody": "New clipboard content received",
-
   "serverNotifPrefs": "Server notification preferences",
   "notifTypeDeviceOnline": "Device online",
   "notifTypeSyncComplete": "Sync complete",
@@ -490,39 +532,42 @@
   "systemNotifSettings": "System notification settings",
   "systemNotifSettingsDesc": "Manage ClipSync's notification permission and channels in system settings",
   "systemNotifSettingsFailed": "Could not open system notification settings",
-
   "errorReportTitle": "Error report",
   "exportErrorLogs": "Export error logs",
   "errorLocalOnlyDesc": "Errors are kept locally on this device (up to 20) and are never uploaded automatically.",
   "clearAll": "Clear all",
   "errorQueueCleared": "Error queue cleared",
-
   "planFree": "Free",
   "perMonth": "/month",
   "perYear": "/year",
   "planMaxDevices": "Up to {count} devices",
   "@planMaxDevices": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "planDailyClips": "{count} clipboard items per day",
   "@planDailyClips": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "planStorage": "Storage: {size} MB",
   "@planStorage": {
     "placeholders": {
-      "size": { "type": "int" }
+      "size": {
+        "type": "int"
+      }
     }
   },
   "featureOcr": "OCR text recognition",
   "featurePrioritySync": "Priority sync",
   "featureAiClassify": "AI smart classification",
   "featureTeamShare": "Team sharing",
-
   "renameCollection": "Rename group",
   "collectionRenamed": "Group renamed",
   "addToCollection": "Add to group",
@@ -530,9 +575,14 @@
   "selectGroup": "Select a group",
   "noAvailableGroups": "No groups yet. Create one in Favorites first",
   "movedToCollection": "Added to \"{name}\"",
-  "@movedToCollection": { "placeholders": { "name": { "type": "String" } } },
+  "@movedToCollection": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "removedFromCollection": "Removed from group",
-
   "sharedLinks": "Shared links",
   "sharedLinksDesc": "Manage external share links for your content",
   "noSharedLinks": "No shared links",
@@ -545,7 +595,13 @@
   "revokeLinkConfirm": "Revoke this shared link? It will stop working immediately.",
   "sharedLinkRevoked": "Link revoked",
   "expiresAt": "Expires {date}",
-  "@expiresAt": { "placeholders": { "date": { "type": "String" } } },
+  "@expiresAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "neverExpires": "Never expires",
   "notificationsCenter": "Notifications",
   "notificationsCenterDesc": "View in-app notifications and replies",
@@ -553,7 +609,6 @@
   "markAllRead": "Mark all read",
   "markRead": "Mark as read",
   "notifLoadFailed": "Failed to load notifications",
-
   "accountSection": "Account",
   "profileTitle": "Profile",
   "nickname": "Nickname",
@@ -561,7 +616,6 @@
   "nicknameSaved": "Nickname updated",
   "nicknameSaveFailed": "Failed to save, please try again later",
   "notLoggedIn": "Not signed in",
-
   "searchHistoryTitle": "Search history",
   "clearSearchHistory": "Clear history",
   "searchHistoryCleared": "Search history cleared",
@@ -580,8 +634,13 @@
   "applyFilter": "Apply",
   "resetFilter": "Reset",
   "activeFilters": "{count} filters",
-  "@activeFilters": { "placeholders": { "count": { "type": "int" } } },
-
+  "@activeFilters": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "pinSuccess": "Pinned",
   "unpinSuccess": "Unpinned",
   "setExpiry": "Set expiry",
@@ -602,7 +661,6 @@
   "passwordLabel": "Password",
   "wrongPassword": "Incorrect password",
   "filterArchived": "Archived",
-
   "newTemplate": "New template",
   "editTemplate": "Edit template",
   "templateName": "Template name",
@@ -610,17 +668,36 @@
   "templateNameRequired": "Template name is required",
   "templateSaved": "Template saved",
   "deleteTemplateConfirm": "Delete template \"{name}\"?",
-  "@deleteTemplateConfirm": { "placeholders": { "name": { "type": "String" } } },
+  "@deleteTemplateConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "templateDeleted": "Template deleted",
   "templateVarsHint": "Wrap a variable name in double braces in the content to declare it",
   "variableDefaultValue": "Default value (optional)",
-
   "multiSelect": "Select multiple",
   "selectedCount": "{count} selected",
-  "@selectedCount": { "placeholders": { "count": { "type": "int" } } },
+  "@selectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "selectAll": "Select all",
   "deselectAll": "Deselect all",
   "moveToCollection": "Move to…",
   "moveSuccess": "Moved {count} items",
-  "@moveSuccess": { "placeholders": { "count": { "type": "int" } } }
+  "@moveSuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "clipboardWriteback": "Auto write to system clipboard",
+  "clipboardWritebackDesc": "When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly"
 }

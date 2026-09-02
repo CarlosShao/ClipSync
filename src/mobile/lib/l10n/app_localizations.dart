@@ -2539,6 +2539,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Moved {count} items'**
   String moveSuccess(int count);
+
+  /// No description provided for @clipboardWriteback.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto write to system clipboard'**
+  String get clipboardWriteback;
+
+  /// No description provided for @clipboardWritebackDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly'**
+  String get clipboardWritebackDesc;
 }
 
 class _AppLocalizationsDelegate

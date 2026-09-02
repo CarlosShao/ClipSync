@@ -1360,4 +1360,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String moveSuccess(int count) {
     return 'Moved $count items';
   }
+
+  @override
+  String get clipboardWriteback => 'Auto write to system clipboard';
+
+  @override
+  String get clipboardWritebackDesc =>
+      'When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly';
 }

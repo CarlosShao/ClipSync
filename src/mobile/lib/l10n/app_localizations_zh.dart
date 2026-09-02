@@ -1309,4 +1309,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String moveSuccess(int count) {
     return '已移动 $count 项';
   }
+
+  @override
+  String get clipboardWriteback => '自动回写系统剪贴板';
+
+  @override
+  String get clipboardWritebackDesc => '其他设备同步来的新内容自动写入本机剪贴板，任意应用可直接粘贴';
 }

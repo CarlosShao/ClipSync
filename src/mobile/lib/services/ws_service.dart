@@ -88,20 +88,31 @@ class WsService {
     return '';
   }
 
+  /// 串行化守卫：防止并发 _connect 开出双通道互相顶替
+  /// （真机日志实证：双连接互踢 → "Connection closed before full header" 循环）
+  bool _connecting = false;
+
   Future<void> _connect() async {
     final token = _token;
     if (token == null) return;
+    if (_connecting || _isConnected) return; // 已在连接中/已连接：防重入
+    _connecting = true;
 
     // 使旧的 in-flight 连接流程作废
     final epoch = ++_connectEpoch;
     print('[WsDebug] _connect deviceId=$_deviceId tokenPresent=${token != null}');
 
     final csrf = await _fetchWsCsrf();
+    _connecting = false;
     if (epoch != _connectEpoch) return; // 已被新一轮 connect/disconnect 取代
+    if (csrf.isEmpty) {
+      // csrf 获取失败：本轮不建裸连接（服务端会拒绝），走退避重连下一轮重取
+      print('[WsDebug] csrf unavailable — schedule reconnect');
+      _scheduleReconnect();
+      return;
+    }
 
-    final query = <String, String>{'token': token};
-    if (csrf.isNotEmpty) query['csrf_token'] = csrf;
-
+    final query = <String, String>{'token': token, 'csrf_token': csrf};
     final uri = Uri.parse('${ServerConfig.wsUrl}/ws').replace(
       queryParameters: query,
     );
@@ -124,6 +135,7 @@ class WsService {
       onDone: () {
         if (epoch != _connectEpoch) return;
         _isConnected = false;
+        _connecting = false;
         _heartbeatTimer?.cancel();
         _lastPongAt = null;
         onDisconnected?.call();
@@ -133,6 +145,7 @@ class WsService {
         if (epoch != _connectEpoch) return;
         print('[WsDebug] onError: $error');
         _isConnected = false;
+        _connecting = false;
         _heartbeatTimer?.cancel();
         _lastPongAt = null;
         onDisconnected?.call();

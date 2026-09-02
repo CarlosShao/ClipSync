@@ -654,14 +654,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildClipboardCaptureSetting() {
     final l10n = AppLocalizations.of(context);
     final captureEnabled = context.watch<SettingsProvider>().clipboardCaptureEnabled;
-    return SwitchListTile(
-      secondary: const Icon(Icons.content_copy),
-      title: Text(l10n.clipboardCapture),
-      subtitle: Text(l10n.clipboardCaptureDesc),
-      value: captureEnabled,
-      onChanged: (value) {
-        context.read<SettingsProvider>().setClipboardCaptureEnabled(value);
-      },
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.content_copy),
+          title: Text(l10n.clipboardCapture),
+          subtitle: Text(l10n.clipboardCaptureDesc),
+          value: captureEnabled,
+          onChanged: (value) {
+            context.read<SettingsProvider>().setClipboardCaptureEnabled(value);
+          },
+        ),
+        // 核心场景：PC 复制 → 自动写入本机系统剪贴板，任意 App 直接粘贴
+        SwitchListTile(
+          secondary: const Icon(Icons.paste),
+          title: Text(l10n.clipboardWriteback),
+          subtitle: Text(l10n.clipboardWritebackDesc),
+          value: context.watch<SettingsProvider>().clipboardWritebackEnabled,
+          onChanged: (value) {
+            context.read<SettingsProvider>().setClipboardWritebackEnabled(value);
+          },
+        ),
+      ],
     );
   }
 

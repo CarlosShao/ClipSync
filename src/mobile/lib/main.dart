@@ -13,6 +13,9 @@ import 'providers/settings_provider.dart';
 import 'providers/ws_provider.dart';
 import 'router/app_router.dart';
 import 'router/route_guard.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+
+import 'services/api_service.dart';
 import 'services/cache_service.dart';
 import 'services/clipboard_capture.dart';
 import 'services/error_report_service.dart';
@@ -107,6 +110,35 @@ void main() async {
   };
   WsService.globalNewClipboardHook = (msg) {
     LocalNotificationService.instance.handleWsNewClipboard(msg);
+    // 核心场景回写：PC 复制 → 手机系统剪贴板 → 任意 App 直接粘贴。
+    // WS 广播载荷不含内容体（maxPayload 1MB），需按 id 拉取 /:id/content；
+    // 仅文本/链接（图片回写受 Android 剪贴板 URI 限制，v1 不做）；
+    // 来源是本机时跳过（自己复制的内容无需回写）；开关默认开。
+    try {
+      final item = msg['item'] as Map<String, dynamic>?;
+      final type = item?['contentType'] as String?;
+      final sourceDevice = item?['sourceDeviceId'] as String?;
+      final myDevice = authProvider.deviceId;
+      final itemId = item?['id'] as String?;
+      final isRemote =
+          sourceDevice == null || sourceDevice.isEmpty || sourceDevice != myDevice;
+      final writebackOn = settingsProvider.clipboardWritebackEnabled;
+      if (writebackOn && isRemote && itemId != null && (type == 'text' || type == 'link')) {
+        Future(() async {
+          try {
+            final content = await ApiService().getItemContent(null, itemId);
+            if (content != null && content.isNotEmpty) {
+              await Clipboard.setData(ClipboardData(text: content));
+              debugPrint('[Writeback] clipboard written from item $itemId');
+            }
+          } catch (e) {
+            debugPrint('[Writeback] failed for $itemId: $e');
+          }
+        });
+      }
+    } catch (_) {
+      /* 回写失败不影响通知 */
+    }
   };
 
   // T3.4：首次启动权限引导页门控（onboarding 完成后的下一次启动展示一次；

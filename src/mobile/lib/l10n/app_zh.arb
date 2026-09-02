@@ -1,7 +1,6 @@
 {
   "@@locale": "zh",
   "appTitle": "ClipSync",
-
   "cancel": "取消",
   "confirm": "确认",
   "save": "保存",
@@ -9,7 +8,6 @@
   "refresh": "刷新",
   "retry": "重试",
   "loading": "加载中...",
-
   "login": "登录",
   "loginSubtitle": "跨设备剪贴板同步",
   "phoneNumber": "手机号",
@@ -29,13 +27,11 @@
   "backToLogin": "返回重新登录",
   "phoneAndCodeRequired": "请输入手机号和验证码",
   "twoFactorCodeLabel": "动态验证码",
-
   "tabClipboard": "剪贴板",
   "tabFavorites": "收藏",
   "tabDevices": "设备",
   "tabSettings": "设置",
   "refreshDevices": "刷新设备",
-
   "noDevices": "暂无设备",
   "noDevicesDesc": "登录其他设备以开始同步",
   "unbindDevice": "解绑设备",
@@ -43,14 +39,11 @@
   "unbindConfirm": "确定解绑「{deviceName}」吗？解绑后该设备将无法再同步。",
   "devicesLoadFailed": "设备列表加载失败",
   "unbindCurrentDeviceConfirm": "「{deviceName}」是当前设备。\n解绑后将停止本机同步，且需要重新注册设备才能恢复。确定解绑吗？",
-
   "biometricUnlockReason": "验证指纹或面容以进入 ClipSync",
   "biometricVerifyFailed": "验证未通过，请重试",
   "lockScreenMessage": "应用已锁定，请验证身份后继续",
   "unlock": "解锁",
-
   "backAgainToExit": "再按一次返回键退出 ClipSync",
-
   "skip": "跳过",
   "next": "下一步",
   "getStarted": "开始使用",
@@ -64,14 +57,12 @@
   "onboardingDesc4": "手机复制的内容也会自动同步\n在所有设备间无缝流转",
   "onboardingTitle5": "准备就绪",
   "onboardingDesc5": "现在可以开始使用 ClipSync 了！\n复制内容试试吧 😊",
-
   "sectionServer": "服务器配置",
   "sectionGeneral": "通用",
   "sectionAppearance": "外观",
   "sectionData": "数据管理",
   "sectionNotification": "通知管理",
   "sectionSubscription": "订阅管理",
-
   "serverUrl": "服务器地址",
   "serverUrlDesc": "ClipSync 后端服务地址",
   "serverUrlSaved": "服务器地址已保存",
@@ -102,17 +93,14 @@
   "logoutConfirmMessage": "确定要退出当前账号吗？退出后需要重新验证码登录。",
   "logoutAction": "退出",
   "aboutDesc": "跨设备剪贴板同步工具",
-
   "clipboardSearchHint": "搜索剪贴板内容…",
   "clearSearch": "清除搜索",
-
   "typeAll": "全部",
   "typeText": "文本",
   "typeLink": "链接",
   "typeImage": "图片",
   "typeFile": "文件",
   "typeCode": "代码",
-
   "clipboardNoResultsTitle": "没有找到匹配的内容",
   "clipboardNoResultsMessage": "试试更换关键词，或清除搜索与筛选条件",
   "clipboardClearFilters": "清除筛选",
@@ -121,7 +109,6 @@
   "clipboardLoadMoreFailed": "加载更多失败",
   "clipboardNoMore": "没有更多了",
   "clipboardNewContentBar": "有 {count} 条新内容，点击查看",
-
   "favorite": "收藏",
   "unfavorite": "取消收藏",
   "pinToTop": "置顶",
@@ -136,14 +123,12 @@
   "placeholderEmpty": "（空内容）",
   "unknownDevice": "未知设备",
   "clipboardCardSemantics": "剪贴板{type}，内容：{preview}",
-
   "relJustNow": "刚刚",
   "relMinutesAgo": "{minutes} 分钟前",
   "relHoursAgo": "{hours} 小时前",
   "relDaysAgo": "{days} 天前",
   "relDateMD": "{month} 月 {day} 日",
   "relDateYMD": "{year}/{month}/{day}",
-
   "copy": "复制",
   "copied": "已复制",
   "noTextContent": "该条目暂无文本内容",
@@ -154,7 +139,6 @@
   "imageLoadFailed": "图片加载失败，请检查网络后重试",
   "contentLoadFailed": "内容加载失败，请检查网络后重试",
   "linkHint": "链接内容 · 点击底部「复制」即可复制完整链接",
-
   "unknownFile": "未知文件",
   "downloading": "下载中…",
   "openDownload": "打开（下载到本机）",
@@ -162,15 +146,12 @@
   "fileDownloadHint": "文件经服务端下载接口获取，保存到应用临时目录",
   "fileLocalOnlyHint": "文件保存在来源设备本机，暂不支持跨设备获取",
   "fileSavedTo": "已保存到 {path}",
-
   "sectionSecurity": "安全",
-
   "biometricLock": "生物识别锁",
   "biometricLockDesc": "冷启动与回到前台时需通过指纹/面容验证",
   "biometricUnsupported": "设备不支持生物识别",
   "biometricLockReason": "验证指纹或面容以开启生物识别锁",
   "biometricLockFailed": "验证未通过，未开启生物识别锁",
-
   "create": "创建",
   "createCollection": "新建分组",
   "collectionCreated": "已创建「{name}」",
@@ -187,13 +168,11 @@
   "createUnderParentHint": "将创建到「{name}」下",
   "collectionNameRequired": "请输入分组名称",
   "collectionNameLabel": "分组名称",
-
   "noCopyableContent": "该条目暂无可复制的内容",
   "copyFailed": "复制失败，请重试",
   "collectionItemsEmptyTitle": "该分组暂无内容",
   "collectionItemsEmptyMessage": "在剪贴板列表中将内容加入收藏后，会出现在这里",
   "unknownSource": "未知来源",
-
   "sessionsLoadFailed": "会话列表加载失败，请检查网络后重试",
   "activeSessions": "活跃会话",
   "activeSessionsDesc": "已登录本账号的设备会话，可远程吊销下线",
@@ -210,7 +189,6 @@
   "sessionRevoked": "已吊销「{deviceName}」的会话",
   "lastActivePrefix": "最近活跃 ",
   "currentBadge": "当前",
-
   "cancelSubscription": "取消订阅",
   "cancelSubscriptionConfirm": "确定要取消订阅吗？取消后将在当前计费周期结束后自动降级为免费版，到期前订阅权益仍可正常使用。",
   "subscriptionCancelled": "订阅已取消，将于当前计费周期结束后生效",
@@ -231,7 +209,6 @@
   "currentPlanBadge": "当前套餐",
   "payOnDesktop": "请在桌面端完成支付",
   "noInvoices": "暂无账单记录",
-
   "renderResultTitle": "渲染结果",
   "close": "关闭",
   "renderResultCopied": "已复制渲染结果到剪贴板",
@@ -246,7 +223,6 @@
   "variableInputHint": "请输入 {name} 的值",
   "done": "完成",
   "nextItem": "下一项",
-
   "permissionGuideTitle": "权限与保活引导",
   "permissionGuideIntro": "为了让「电脑复制 → 手机秒到」持续生效，建议完成以下 3 步设置：",
   "finishAndStart": "完成，开始使用",
@@ -274,7 +250,6 @@
   "gotIt": "知道了",
   "gotoAutoStartSettings": "前往自启动设置",
   "unknown": "未知",
-
   "saveToClipboard": "存入剪贴板",
   "saveToClipboardDesc": "内容将上传到你的 ClipSync 账号，所有已登录设备可见。",
   "nothingToSave": "没有可存入的内容",
@@ -283,16 +258,13 @@
   "saveInFailedRetry": "存入失败，请稍后重试",
   "savedInCount": "已存入 {count} 条剪贴板内容",
   "imageCount": "图片（{count} 张）",
-
   "deviceSemantics": "设备：{name}，状态：{status}",
   "deviceOnline": "在线",
   "deviceOffline": "离线",
   "platformDesktop": "桌面端",
   "platformMobile": "移动端",
   "platformTablet": "平板",
-
   "loadFailedTitle": "加载失败",
-
   "errorNoToken": "未登录，请先登录后重试",
   "errorSendCode": "验证码发送失败",
   "errorFetchProfile": "获取用户信息失败",
@@ -318,14 +290,12 @@
   "errorUnknown": "操作失败，请稍后重试",
   "errorFetchNotificationPrefs": "获取通知偏好失败",
   "errorUpdateNotificationPrefs": "保存通知偏好失败",
-
   "notifChannelClipboard": "剪贴板同步",
   "notifChannelClipboardDesc": "设备间剪贴板内容同步提醒（静默，不发出声音）",
   "notifChannelAlert": "同步告警",
   "notifChannelAlertDesc": "同步异常、设备告警等重要提醒",
   "notifClipboardUpdated": "剪贴板已更新",
   "notifNewClipboardBody": "收到新的剪贴板内容",
-
   "serverNotifPrefs": "服务端通知偏好",
   "notifTypeDeviceOnline": "设备上线通知",
   "notifTypeSyncComplete": "同步完成通知",
@@ -334,13 +304,11 @@
   "systemNotifSettings": "系统通知设置",
   "systemNotifSettingsDesc": "在系统设置中管理 ClipSync 的通知权限与渠道",
   "systemNotifSettingsFailed": "无法打开系统通知设置",
-
   "errorReportTitle": "错误报告",
   "exportErrorLogs": "导出错误日志",
   "errorLocalOnlyDesc": "错误仅记录在本机（最多保留 20 条），不会自动上传。",
   "clearAll": "清空",
   "errorQueueCleared": "已清空错误队列",
-
   "planFree": "免费",
   "perMonth": "/月",
   "perYear": "/年",
@@ -351,7 +319,6 @@
   "featurePrioritySync": "优先同步",
   "featureAiClassify": "AI 智能分类",
   "featureTeamShare": "团队共享",
-
   "renameCollection": "重命名分组",
   "collectionRenamed": "已重命名",
   "addToCollection": "加入分组",
@@ -360,7 +327,6 @@
   "noAvailableGroups": "暂无可用分组，先在收藏页新建一个",
   "movedToCollection": "已加入「{name}」",
   "removedFromCollection": "已移出分组",
-
   "sharedLinks": "共享链接",
   "sharedLinksDesc": "管理内容的外部分享链接",
   "noSharedLinks": "暂无共享链接",
@@ -380,7 +346,6 @@
   "markAllRead": "全部已读",
   "markRead": "标为已读",
   "notifLoadFailed": "通知加载失败",
-
   "accountSection": "账号",
   "profileTitle": "个人资料",
   "nickname": "昵称",
@@ -388,7 +353,6 @@
   "nicknameSaved": "昵称已更新",
   "nicknameSaveFailed": "保存失败，请稍后重试",
   "notLoggedIn": "未登录",
-
   "searchHistoryTitle": "搜索历史",
   "clearSearchHistory": "清空历史",
   "searchHistoryCleared": "搜索历史已清空",
@@ -407,7 +371,6 @@
   "applyFilter": "应用",
   "resetFilter": "重置",
   "activeFilters": "{count} 项筛选",
-
   "pinSuccess": "已置顶",
   "unpinSuccess": "已取消置顶",
   "setExpiry": "设置过期时间",
@@ -428,7 +391,6 @@
   "passwordLabel": "密码",
   "wrongPassword": "密码错误",
   "filterArchived": "已归档",
-
   "newTemplate": "新建模板",
   "editTemplate": "编辑模板",
   "templateName": "模板名称",
@@ -439,11 +401,12 @@
   "templateDeleted": "模板已删除",
   "templateVarsHint": "内容中用双大括号包裹变量名即可声明变量",
   "variableDefaultValue": "默认值（可选）",
-
   "multiSelect": "多选",
   "selectedCount": "已选 {count} 项",
   "selectAll": "全选",
   "deselectAll": "取消全选",
   "moveToCollection": "移动到…",
-  "moveSuccess": "已移动 {count} 项"
+  "moveSuccess": "已移动 {count} 项",
+  "clipboardWriteback": "自动回写系统剪贴板",
+  "clipboardWritebackDesc": "其他设备同步来的新内容自动写入本机剪贴板，任意应用可直接粘贴"
 }
