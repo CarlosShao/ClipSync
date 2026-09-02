@@ -68,6 +68,10 @@ class TypeFilterChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
+    // ⚠️ select 必须在 sliver 外（本层 build）求值：itemBuilder 的 context
+    // 位于横向 SliverList 内，在那里 select 触发 provider 的
+    // 「select inside a SliverList」断言（真机红屏已踩坑）。
+    final int activeFilterCount = context.select<ClipboardProvider, int>((p) => p.activeFilterCount);
     return SizedBox(
       height: 36,
       child: ListView.separated(
@@ -78,7 +82,7 @@ class TypeFilterChips extends StatelessWidget {
         itemBuilder: (BuildContext context, int index) {
           // 行首：高级筛选入口（C2）
           if (index == 0) {
-            return _buildFilterEntryChip(context, l10n);
+            return _buildFilterEntryChip(context, l10n, activeFilterCount);
           }
           final option = _kFilterOptions[index - 1];
           final isSelected = option.value == selected;
@@ -102,12 +106,11 @@ class TypeFilterChips extends StatelessWidget {
     );
   }
 
-  /// 高级筛选入口 chip（C2）：徽标数取 [ClipboardProvider.activeFilterCount]，
-  /// 点击打开 FilterPanel（应用/重置由面板提交，provider 负责重拉）。
-  Widget _buildFilterEntryChip(BuildContext context, AppLocalizations l10n) {
+  /// 高级筛选入口 chip（C2）：徽标数由 build 层 select 后传入
+  /// （禁止在 sliver 子项内 select），点击打开 FilterPanel。
+  Widget _buildFilterEntryChip(BuildContext context, AppLocalizations l10n, int activeFilterCount) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final int activeCount = context.select<ClipboardProvider, int>((p) => p.activeFilterCount);
-    final bool hasActive = activeCount > 0;
+    final bool hasActive = activeFilterCount > 0;
 
     return ChoiceChip(
       selected: hasActive,
@@ -116,7 +119,7 @@ class TypeFilterChips extends StatelessWidget {
         size: 16,
         color: hasActive ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
       ),
-      label: Text(hasActive ? l10n.activeFilters(activeCount) : l10n.advancedFilter),
+      label: Text(hasActive ? l10n.activeFilters(activeFilterCount) : l10n.advancedFilter),
       showCheckmark: false,
       visualDensity: VisualDensity.compact,
       onSelected: (bool _) => showFilterPanel(context),
