@@ -1191,6 +1191,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notLoggedIn => 'Not signed in';
 
   @override
+  String get email => 'Email';
+
+  @override
+  String get planLabel => 'Plan';
+
+  @override
+  String get changeAvatar => 'Tap to change avatar';
+
+  @override
+  String get avatarUpdated => 'Avatar updated';
+
+  @override
+  String get avatarSaveFailed => 'Failed to save avatar, please try again';
+
+  @override
+  String get pickImageFailed => 'Failed to pick image, please try again';
+
+  @override
   String get searchHistoryTitle => 'Search history';
 
   @override
@@ -1367,6 +1385,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get clipboardWritebackDesc =>
       'When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly';
+
+  @override
+  String get autoSaveImagesTitle => 'Auto-save screenshots to album';
+
+  @override
+  String get autoSaveImagesDesc =>
+      'Automatically save synced images to Pictures/ClipSync album so other apps can access them immediately';
 
   @override
   String get download => 'Download';

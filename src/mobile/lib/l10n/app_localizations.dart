@@ -2216,6 +2216,42 @@ abstract class AppLocalizations {
   /// **'Not signed in'**
   String get notLoggedIn;
 
+  /// No description provided for @email.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get email;
+
+  /// No description provided for @planLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Plan'**
+  String get planLabel;
+
+  /// No description provided for @changeAvatar.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to change avatar'**
+  String get changeAvatar;
+
+  /// No description provided for @avatarUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Avatar updated'**
+  String get avatarUpdated;
+
+  /// No description provided for @avatarSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to save avatar, please try again'**
+  String get avatarSaveFailed;
+
+  /// No description provided for @pickImageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to pick image, please try again'**
+  String get pickImageFailed;
+
   /// No description provided for @searchHistoryTitle.
   ///
   /// In en, this message translates to:
@@ -2551,6 +2587,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly'**
   String get clipboardWritebackDesc;
+
+  /// No description provided for @autoSaveImagesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-save screenshots to album'**
+  String get autoSaveImagesTitle;
+
+  /// No description provided for @autoSaveImagesDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatically save synced images to Pictures/ClipSync album so other apps can access them immediately'**
+  String get autoSaveImagesDesc;
 
   /// No description provided for @download.
   ///

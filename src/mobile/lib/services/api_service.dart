@@ -226,7 +226,11 @@ class ApiService {
 
   // Devices
   Future<List<Device>> getDevices(String? token, {bool forceRefresh = false}) async {
-    return await CacheDecorator().cachedOperation<List<Device>>(
+    // 磁盘缓存只存 JSON 序列化的原始列表；Device 对象不可直接 jsonEncode，
+    // 之前直接把 List<Device> 交给 cachedOperation 导致 _putToDisk 每次
+    // jsonEncode 抛错（"Converting object to an encodable object failed"），
+    // 错误报告队列被反复刷满（FAB 恒显 20）。
+    final cached = await CacheDecorator().cachedOperation<List<dynamic>>(
       CacheKeys.deviceList(),
       () async {
         final response = await http.get(
@@ -238,12 +242,14 @@ class ApiService {
           throw const AppException(AppErrorCodes.fetchDevicesFailed);
         }
 
-        final data = jsonDecode(response.body) as List<dynamic>;
-        return data.map((json) => Device.fromJson(json as Map<String, dynamic>)).toList();
+        return jsonDecode(response.body) as List<dynamic>;
       },
       ttl: const Duration(minutes: 5),
       forceRefresh: forceRefresh,
-    ) ?? [];
+    );
+    return (cached ?? const <dynamic>[])
+        .map((json) => Device.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 
   Future<Device> registerDevice(

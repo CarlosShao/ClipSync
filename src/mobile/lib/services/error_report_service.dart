@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_localizations.dart';
+import '../theme/app_theme.dart';
 
 /// 错误严重程度
 enum ErrorSeverity {
@@ -381,10 +382,21 @@ class _ErrorReportWidgetState extends State<ErrorReportWidget> {
   int _pendingReports = 0;
   Timer? _refreshTimer;
 
+  /// 是否展开内嵌错误报告面板（无需依赖 Navigator——本组件挂在
+  /// MaterialApp.builder，位于 Navigator 之上，直接 showDialog 会抛
+  /// "Navigator operation requested with a context that does not include a Navigator"）。
+  bool _showPanel = false;
+
   @override
   void initState() {
     super.initState();
     _updatePendingCount();
+
+    // ErrorReportService 在首帧后异步加载本地错误记录（_loadPendingReports），
+    // initState 时 count 还是 0；延迟再同步一次，让角标尽快显示而非等 5 分钟定时器。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 500), _updatePendingCount);
+    });
 
     // 定期刷新本地保留的报告计数
     _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
@@ -406,18 +418,22 @@ class _ErrorReportWidgetState extends State<ErrorReportWidget> {
       _pendingReports = count;
     });
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         widget.child,
-        if (widget.showFloatingButton && _pendingReports > 0)
+        // 仅调试构建显示（错误报告为开发者本地诊断工具，release 不出现）；
+        // 有本地错误记录时显示悬浮按钮，角标为未处理报告数。
+        if (widget.showFloatingButton && kDebugMode && _pendingReports > 0)
           Positioned(
             bottom: 16,
             right: 16,
             child: FloatingActionButton(
-              onPressed: () => _showErrorReportDialog(context),
+              onPressed: () {
+                setState(() => _showPanel = !_showPanel);
+              },
               backgroundColor: Colors.orange,
               child: Stack(
                 alignment: Alignment.center,
@@ -447,10 +463,40 @@ class _ErrorReportWidgetState extends State<ErrorReportWidget> {
               ),
             ),
           ),
+        // 内嵌错误报告面板（底部弹出，覆盖在 FAB 上方）
+        if (_showPanel)
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 84,
+            child: _ErrorReportPanel(
+              onClose: () => setState(() => _showPanel = false),
+              onCleared: _updatePendingCount,
+            ),
+          ),
       ],
     );
   }
-  
+}
+
+/// 内嵌错误报告面板（底部浮层）。
+///
+/// 不依赖 Navigator（ErrorReportWidget 挂在 MaterialApp.builder、位于 Navigator
+/// 之上，无法 showDialog），由父级 Stack 直接定位渲染。
+class _ErrorReportPanel extends StatefulWidget {
+  const _ErrorReportPanel({required this.onClose, required this.onCleared});
+
+  /// 关闭面板回调（由父级收起）。
+  final VoidCallback onClose;
+
+  /// 清空队列后通知父级刷新角标计数。
+  final VoidCallback onCleared;
+
+  @override
+  State<_ErrorReportPanel> createState() => _ErrorReportPanelState();
+}
+
+class _ErrorReportPanelState extends State<_ErrorReportPanel> {
   /// 导出本地错误报告为 JSON 文件并通过系统分享面板分享。
   /// 文案兜底说明：分享图标即「导出」入口（本工单禁止改 arb，暂无导出文案 key）。
   Future<void> _exportReports() async {
@@ -463,90 +509,15 @@ class _ErrorReportWidgetState extends State<ErrorReportWidget> {
     }
   }
 
-  void _showErrorReportDialog(BuildContext context) {
+  Future<void> _clear() async {
     final l10n = AppLocalizations.of(context);
-    // 最新记录排在最前（打开对话框时的快照）
-    final reports = ErrorReportService.instance.recentReports.reversed.toList();
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.bug_report, size: 22),
-            const SizedBox(width: 8),
-            Text(l10n.errorReportTitle),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 320),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: reports.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final report = reports[index];
-                      return ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          Icons.circle,
-                          size: 10,
-                          color: _severityColor(report.severity),
-                        ),
-                        title: Text(
-                          report.message,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                        subtitle: Text(
-                          _formatTimestamp(report.timestamp),
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                l10n.errorLocalOnlyDesc,
-                style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: _exportReports,
-            tooltip: l10n.exportErrorLogs,
-            icon: const Icon(Icons.share),
-          ),
-          TextButton(
-            onPressed: () {
-              ErrorReportService.instance.clearQueue();
-              _updatePendingCount();
-              Navigator.pop(dialogContext);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(l10n.errorQueueCleared)),
-              );
-            },
-            child: Text(l10n.clearAll),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(l10n.close),
-          ),
-        ],
-      ),
+    await ErrorReportService.instance.clearQueue();
+    if (!mounted) return;
+    setState(() {});
+    widget.onCleared();
+    widget.onClose();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l10n.errorQueueCleared)),
     );
   }
 
@@ -568,6 +539,128 @@ class _ErrorReportWidgetState extends State<ErrorReportWidget> {
     String two(int value) => value.toString().padLeft(2, '0');
     return '${local.year}-${two(local.month)}-${two(local.day)} '
         '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    // 最新记录排在最前
+    final reports = ErrorReportService.instance.recentReports.reversed.toList();
+
+    return Material(
+      color: theme.colorScheme.surfaceContainerHigh,
+      elevation: AppElevationV2.popover,
+      borderRadius: AppShapesV2.brMd,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 头部：标题 + 关闭
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.bug_report, size: 18),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    l10n.errorReportTitle,
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+                IconButton(
+                  onPressed: widget.onClose,
+                  icon: const Icon(Icons.close, size: 18),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // 报告列表
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: reports.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: Center(
+                        child: Text(
+                          l10n.noNotifications,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                      ),
+                      itemCount: reports.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final report = reports[index];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            Icons.circle,
+                            size: 10,
+                            color: _severityColor(report.severity),
+                          ),
+                          title: Text(
+                            report.message,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          subtitle: Text(
+                            _formatTimestamp(report.timestamp),
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ),
+          const Divider(height: 1),
+          // 底部：本地保留说明 + 操作
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.xs,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    l10n.errorLocalOnlyDesc,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: theme.hintColor,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _exportReports,
+                  icon: const Icon(Icons.share, size: 18),
+                  visualDensity: VisualDensity.compact,
+                ),
+                TextButton(
+                  onPressed: _clear,
+                  child: Text(l10n.clearAll),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

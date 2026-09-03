@@ -11,9 +11,9 @@ import "package:clipsync_mobile/router/app_router.dart";
 import "package:clipsync_mobile/screens/notification_settings_screen.dart";
 import "package:clipsync_mobile/screens/templates/templates_screen.dart";
 import "package:clipsync_mobile/services/biometric_service.dart";
-import "package:clipsync_mobile/services/profile_api_service.dart";
 import "package:clipsync_mobile/services/server_config.dart";
 import "package:clipsync_mobile/theme/app_theme.dart";
+import "package:clipsync_mobile/utils/avatar_utils.dart";
 import "package:clipsync_mobile/widgets/common/app_card.dart";
 import "package:clipsync_mobile/widgets/common/section_divider.dart";
 
@@ -326,7 +326,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 则显示网络头像）+ 昵称（未设置显示手机号）+ 手机号/邮箱副信息行，
   /// trailing 套餐徽标（G6：数据源 auth_provider 已拉的 user.plan，服务端
   /// GET /api/auth/me 的 COALESCE(plan_name, 'Free')；Free 灰、付费主题色
-  /// 小 Chip，样式对齐订阅页 _buildStatusChip），点击弹昵称编辑对话框；
+  /// 小 Chip，样式对齐订阅页 _buildStatusChip），点击进入个人资料页
+  /// （头像/昵称编辑，对齐桌面端 ProfileView）；
   /// 未登录（user 为 null）灰化占位。
   Widget _buildAccountSection() {
     final l10n = AppLocalizations.of(context);
@@ -352,6 +353,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final display = nickname.isNotEmpty ? nickname : phone;
     final subtitle = phone.isNotEmpty ? phone : email;
 
+    // 头像数据源：兼容 base64 dataURL（MemoryImage）与网络 URL（NetworkImage）
+    final avatar = avatarImageProvider(avatarUrl);
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
@@ -360,8 +364,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       leading: CircleAvatar(
         radius: 32,
         backgroundColor: Theme.of(context).primaryColor,
-        backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-        child: avatarUrl.isNotEmpty
+        backgroundImage: avatar,
+        child: avatar != null
             ? null
             : display.isEmpty
                 ? const Icon(Icons.person_outline, color: Colors.white, size: 32)
@@ -389,8 +393,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Icon(Icons.chevron_right),
         ],
       ),
-      onTap: _showEditNicknameDialog,
+      onTap: _openProfile,
     );
+  }
+
+  /// 进入个人资料页（头像/昵称等编辑，对齐桌面端 ProfileView）。
+  void _openProfile() {
+    context.push(AppRoutes.profile);
   }
 
   /// G6：套餐徽标小 Chip——Free（不区分大小写）灰色，付费套餐（Pro/
@@ -419,91 +428,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// C6：昵称编辑对话框——保存走 PUT /api/auth/profile（ProfileApiService），
-  /// 成功后同步 AuthProvider.user 并提示 nicknameSaved；失败提示
-  /// nicknameSaveFailed（对话框保持打开可重试）。
-  Future<void> _showEditNicknameDialog() async {
-    final l10n = AppLocalizations.of(context);
-    final auth = context.read<AuthProvider>();
-    final controller = TextEditingController(
-      text: ((auth.user?['nickname'] as String?) ?? '').trim(),
-    );
-    var saving = false;
-    String? savedNickname;
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: Text(l10n.editNickname),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: l10n.nickname,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed:
-                  saving ? null : () => Navigator.pop(dialogContext, false),
-              child: Text(l10n.cancel),
-            ),
-            TextButton(
-              onPressed: saving
-                  ? null
-                  : () async {
-                      final nickname = controller.text.trim();
-                      if (nickname.isEmpty) return;
-                      saving = true;
-                      setDialogState(() {});
-                      try {
-                        await ProfileApiService()
-                            .updateNickname(auth.token, nickname);
-                        savedNickname = nickname;
-                        if (!dialogContext.mounted) return;
-                        Navigator.pop(dialogContext, true);
-                      } catch (e) {
-                        debugPrint('[Settings] update nickname failed: $e');
-                        saving = false;
-                        setDialogState(() {});
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(l10n.nicknameSaveFailed),
-                          ),
-                        );
-                      }
-                    },
-              child: saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(l10n.save),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    final nickname = savedNickname;
-    controller.dispose();
-    if (saved != true || nickname == null || !mounted) return;
-
-    final currentUser = auth.user;
-    if (currentUser != null) {
-      final updated = Map<String, dynamic>.from(currentUser);
-      updated['nickname'] = nickname;
-      auth.updateUser(updated);
-    }
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(l10n.nicknameSaved)),
-    );
-  }
-
+  /// C6：昵称编辑对话框——已迁移至个人资料页 ProfileScreen（_NicknameEditDialog
+  /// 自持 TextEditingController，修复取消时 dispose 过早导致的框架断言崩溃）。
   Widget _buildServerUrlSetting() {
     final l10n = AppLocalizations.of(context);
     return ListTile(
@@ -769,6 +695,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: context.watch<SettingsProvider>().clipboardWritebackEnabled,
           onChanged: (value) {
             context.read<SettingsProvider>().setClipboardWritebackEnabled(value);
+          },
+        ),
+        // 核心场景：PC 截图/图片 → 自动保存到手机系统相册，任意 App 立即可选
+        SwitchListTile(
+          secondary: const Icon(Icons.photo_library_outlined),
+          title: Text(l10n.autoSaveImagesTitle),
+          subtitle: Text(l10n.autoSaveImagesDesc),
+          value: context.watch<SettingsProvider>().autoSaveImagesToAlbum,
+          onChanged: (value) {
+            context.read<SettingsProvider>().setAutoSaveImagesToAlbum(value);
           },
         ),
       ],

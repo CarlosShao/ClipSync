@@ -49,6 +49,7 @@ dependencies:
 
   # T4.6: 生物识别锁（指纹/面容系统验证）
   local_auth: ^2.0.0
+  image_picker: ^1.2.3
 
 dev_dependencies:
   flutter_test:

@@ -1141,6 +1141,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get notLoggedIn => '未登录';
 
   @override
+  String get email => '邮箱';
+
+  @override
+  String get planLabel => '套餐';
+
+  @override
+  String get changeAvatar => '点击更换头像';
+
+  @override
+  String get avatarUpdated => '头像已更新';
+
+  @override
+  String get avatarSaveFailed => '头像保存失败，请稍后重试';
+
+  @override
+  String get pickImageFailed => '选择图片失败，请重试';
+
+  @override
   String get searchHistoryTitle => '搜索历史';
 
   @override
@@ -1315,6 +1333,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get clipboardWritebackDesc => '其他设备同步来的新内容自动写入本机剪贴板，任意应用可直接粘贴';
+
+  @override
+  String get autoSaveImagesTitle => '自动保存截图至手机相册';
+
+  @override
+  String get autoSaveImagesDesc =>
+      '其他设备同步来的图片自动保存到系统相册 Pictures/ClipSync，发微信等应用立即可选';
 
   @override
   String get download => '下载';

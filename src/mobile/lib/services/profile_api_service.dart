@@ -12,11 +12,21 @@ import 'token_store.dart';
 /// - GET 资料：`GET /api/auth/me` 已由 [ApiService.getProfile] 提供
 ///   （登录/冷启动时 AuthProvider 拉取并缓存，响应含 nickname/phone/
 ///   email/avatarUrl 字段，足够账号区块展示），此处不再重复实现 GET；
-/// - PUT 更新：`PUT /api/auth/profile`，请求体 `{nickname}`（字段名对齐
-///   src/server/src/routes/auth-profile.js），Bearer 认证。
+/// - PUT 更新：`PUT /api/auth/profile`，请求体 `{nickname?, avatarUrl?}`
+///   （字段名对齐 src/server/src/routes/auth-profile.js），Bearer 认证。
 class ProfileApiService {
   /// 更新昵称；成功后清除用户资料缓存，避免重启后 getProfile 读到旧昵称。
-  Future<void> updateNickname(String? token, String nickname) async {
+  Future<void> updateNickname(String? token, String nickname) {
+    return updateProfile(token, {'nickname': nickname});
+  }
+
+  /// 更新头像（base64 dataURL）；成功后清除用户资料缓存。
+  Future<void> updateAvatar(String? token, String avatarUrl) {
+    return updateProfile(token, {'avatarUrl': avatarUrl});
+  }
+
+  /// 通用资料更新：仅发送非空字段，其余由服务端忽略。
+  Future<void> updateProfile(String? token, Map<String, dynamic> fields) async {
     final resolved = token ?? await TokenStore.getAccessToken();
     if (resolved == null || resolved.isEmpty) {
       throw const AppException(AppErrorCodes.noToken);
@@ -28,7 +38,7 @@ class ProfileApiService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $resolved',
       },
-      body: jsonEncode({'nickname': nickname}),
+      body: jsonEncode(fields),
     );
 
     if (response.statusCode != 200) {

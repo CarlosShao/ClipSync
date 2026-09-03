@@ -13,6 +13,7 @@ import '../screens/login_screen.dart';
 import '../screens/notifications/notifications_screen.dart';
 import '../screens/onboarding/permission_guide_screen.dart';
 import '../screens/onboarding_screen.dart';
+import '../screens/profile_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/share/share_receive_screen.dart';
 import '../screens/shared/shared_links_screen.dart';
@@ -55,6 +56,9 @@ class AppRoutes {
 
   /// C5：通知中心页（设置页「通知中心」入口；亦支持深链直达）
   static const notifications = '/notifications';
+
+  /// 个人资料页（设置页「账号」入口；头像/昵称编辑）
+  static const profile = '/profile';
 
   /// T4.6：生物识别锁定页（由 [BiometricLockGate] 门控：布防时唯一可达页面）
   static const lock = '/lock';
@@ -165,12 +169,11 @@ GoRouter createAppRouter({
 
       // 3.2 已登录且生物锁已布防（T4.6：冷启动 / 后台回前台）→ 锁定页。
       //     优先于权限引导页：未通过身份验证前不放行任何应用内容。
-      if (BiometricLockGate.locked.value &&
-          location != AppRoutes.lock) {
-        return AppRoutes.lock;
+      if (BiometricLockGate.locked.value) {
+        return location == AppRoutes.lock ? null : AppRoutes.lock;
       }
 
-      // 3.3 走到这里说明已解锁：从锁定页回主页（若权限引导未展示过，
+      // 3.3 走到这里说明已解锁（locked.value 为 false）：从锁定页回主页（若权限引导未展示过，
       //     先完成引导再进主页，保持 T3.4 一次性引导语义）
       if (location == AppRoutes.lock) {
         return PermissionGuideGate.pending.value
@@ -272,6 +275,14 @@ GoRouter createAppRouter({
         pageBuilder: (context, state) => buildObsidianTransitionPage(
           key: state.pageKey,
           child: const NotificationsScreen(),
+        ),
+      ),
+      // 个人资料（设置页「账号」context.push 打开；头像/昵称编辑，对齐桌面端）
+      GoRoute(
+        path: AppRoutes.profile,
+        pageBuilder: (context, state) => buildObsidianTransitionPage(
+          key: state.pageKey,
+          child: const ProfileScreen(),
         ),
       ),
       // 主页 4 tab shell：IndexedStack 保活分支，HomeScreen 提供骨架外观

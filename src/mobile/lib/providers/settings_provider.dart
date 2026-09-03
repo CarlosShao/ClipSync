@@ -20,6 +20,8 @@ class SettingsProvider extends ChangeNotifier {
   bool _clipboardCaptureEnabled = true;
   /// PC 复制 → 自动写入本机系统剪贴板（直接在任意 App 粘贴，无需打开 ClipSync）
   bool _clipboardWritebackEnabled = true;
+  /// PC 截图/图片同步 → 自动保存到手机系统相册（Pictures/ClipSync）
+  bool _autoSaveImagesToAlbum = true;
 
   /// 主题模式，以 int 枚举持久化（SharedPreferences 'theme_mode'）。
   /// 与 Flutter 的 ThemeMode.index 对齐：0=system（跟随系统）、1=light、2=dark。
@@ -34,6 +36,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get notificationsEnabled => _notificationsEnabled;
   bool get clipboardCaptureEnabled => _clipboardCaptureEnabled;
   bool get clipboardWritebackEnabled => _clipboardWritebackEnabled;
+  bool get autoSaveImagesToAlbum => _autoSaveImagesToAlbum;
   int get themeModeIndex => _themeModeIndex;
 
   /// 初始化
@@ -52,6 +55,7 @@ class SettingsProvider extends ChangeNotifier {
     // B3：剪贴板采集总开关（与 sync_service._prefKeyCaptureEnabled 同一键）
     _clipboardCaptureEnabled = _prefs.getBool('clipboard_capture_enabled') ?? true;
     _clipboardWritebackEnabled = _prefs.getBool('clipboard_writeback_enabled') ?? true;
+    _autoSaveImagesToAlbum = _prefs.getBool('auto_save_images_to_album') ?? true;
     // theme_mode 容错读取：历史版本可能写过字符串（'system'/'light'/'dark'），
     // 统一迁移为 int 枚举（0=system/1=light/2=dark），避免 getString/getInt 类型不匹配崩溃。
     _themeModeIndex = _normalizeThemeModeIndex(_prefs.get('theme_mode'));
@@ -126,6 +130,13 @@ class SettingsProvider extends ChangeNotifier {
   Future<void> setClipboardWritebackEnabled(bool value) async {
     _clipboardWritebackEnabled = value;
     await _prefs.setBool('clipboard_writeback_enabled', value);
+    notifyListeners();
+  }
+
+  /// 设置接收图片自动保存至相册开关
+  Future<void> setAutoSaveImagesToAlbum(bool value) async {
+    _autoSaveImagesToAlbum = value;
+    await _prefs.setBool('auto_save_images_to_album', value);
     notifyListeners();
   }
 

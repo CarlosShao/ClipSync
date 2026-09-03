@@ -104,10 +104,41 @@ class SyncService {
             }
           }
           return null;
+        case 'onScreenshotCaptured':
+          final args = call.arguments;
+          if (args is Map) {
+            final path = args['path'];
+            if (path is String && await _isCaptureEnabled()) {
+              onScreenshotCaptured?.call(path);
+            }
+          }
+          return null;
         default:
           throw MissingPluginException('clipsync/sync unknown method: ${call.method}');
       }
     });
+  }
+
+  /// 手机截屏侦听回调（由 main.dart 挂接上传管线）
+  void Function(String filePath)? onScreenshotCaptured;
+
+  /// 调用原生 MediaStore 接口将图片保存至公共相册 Pictures/ClipSync
+  Future<String?> saveImageToAlbum(
+    Uint8List bytes, {
+    String? fileName,
+    String? mimeType,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<String>('saveImageToAlbum', {
+        'bytes': bytes,
+        'fileName': fileName,
+        'mimeType': mimeType,
+      });
+      return result;
+    } catch (e) {
+      debugPrint('[SyncService] saveImageToAlbum failed: $e');
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------------

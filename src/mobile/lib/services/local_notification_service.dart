@@ -186,9 +186,15 @@ class LocalNotificationService {
     await showClipboardUpdated(preview);
   }
 
-  /// 弹「剪贴板已更新」通知（clipsync_sync 低优先级渠道）。
+  /// 弹「剪贴板已更新」通知（支持富媒体大图与长文本预览）。
   /// 文案尚未注入（首帧前的极小窗口）时跳过本次弹通知。
-  Future<void> showClipboardUpdated(String preview) async {
+  Future<void> showClipboardUpdated(
+    String preview, {
+    String? fullText,
+    String? imagePath,
+    Uint8List? imageBytes,
+    String? sourceDevice,
+  }) async {
     if (!_initialized) return;
     final texts = _texts;
     if (texts == null) {
@@ -197,6 +203,30 @@ class LocalNotificationService {
     }
 
     final body = preview.isEmpty ? texts.newClipboardBody : preview;
+
+    StyleInformation? styleInformation;
+    if (imagePath != null && imagePath.isNotEmpty) {
+      styleInformation = BigPictureStyleInformation(
+        FilePathAndroidBitmap(imagePath),
+        contentTitle: texts.clipboardUpdatedTitle,
+        summaryText: sourceDevice != null ? '来自 $sourceDevice' : body,
+        hideExpandedLargeIcon: true,
+      );
+    } else if (imageBytes != null && imageBytes.isNotEmpty) {
+      styleInformation = BigPictureStyleInformation(
+        ByteArrayAndroidBitmap(imageBytes),
+        contentTitle: texts.clipboardUpdatedTitle,
+        summaryText: sourceDevice != null ? '来自 $sourceDevice' : body,
+        hideExpandedLargeIcon: true,
+      );
+    } else if (fullText != null && fullText.isNotEmpty && fullText.length > 30) {
+      styleInformation = BigTextStyleInformation(
+        fullText,
+        contentTitle: texts.clipboardUpdatedTitle,
+        summaryText: sourceDevice != null ? '来自 $sourceDevice' : null,
+      );
+    }
+
     try {
       await _plugin.show(
         _clipboardNotificationId,
@@ -207,10 +237,11 @@ class LocalNotificationService {
             syncChannelId,
             texts.channelClipboardName,
             channelDescription: texts.channelClipboardDesc,
-            importance: Importance.low,
-            priority: Priority.low,
+            importance: Importance.defaultImportance,
+            priority: Priority.high,
             onlyAlertOnce: true,
             autoCancel: true,
+            styleInformation: styleInformation,
           ),
         ),
         payload: 'new_clipboard',
@@ -227,6 +258,8 @@ class LocalNotificationService {
   }
 
   /// 从 WS 消息提取预览文本：兼容 `msg.item.contentPreview` 与顶层字段两种负载
+  static String extractPreview(Map<String, dynamic> msg) => _extractPreview(msg);
+
   static String _extractPreview(Map<String, dynamic> msg) {
     final dynamic raw = msg['item'];
     final item = raw is Map<String, dynamic> ? raw : msg;

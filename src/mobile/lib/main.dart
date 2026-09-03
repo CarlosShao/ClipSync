@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,6 +24,7 @@ import 'services/error_report_service.dart';
 import 'services/local_notification_service.dart';
 import 'services/server_config.dart';
 import 'services/sync_service.dart';
+import 'services/token_store.dart';
 import 'services/ws_service.dart';
 import 'screens/share/share_intent_listener.dart';
 import 'theme/app_theme.dart';
@@ -102,42 +105,117 @@ void main() async {
     guardState: guardState,
   );
 
-  // T3.4：本地通知初始化（幂等；失败静默）+ 通知点击回首页 +
-  //        WS new_clipboard 全局钩子（弹「剪贴板已更新」通知）
+  // T3.4：本地通知初始化（幂等；失败静默）+ 通知点击回首页
   await LocalNotificationService.instance.initialize();
   LocalNotificationService.instance.onNotificationTap = () {
     appRouter.go(AppRoutes.home);
   };
+
+  // 手机端原生截屏感知 → 自动上传至服务端（PC 端与移动端列表即时呈现）
+  SyncService.instance.onScreenshotCaptured = (path) async {
+    final myDevice = authProvider.deviceId;
+    if (myDevice == null || myDevice.isEmpty) return;
+    try {
+      final file = File(path);
+      if (!await file.exists()) return;
+      final bytes = await file.readAsBytes();
+      final filename = path.split(Platform.pathSeparator).last;
+      debugPrint('[ScreenshotCapture] Uploading screenshot: $filename (${bytes.length} bytes)');
+      final result = await ApiService().uploadImage(
+        null,
+        myDevice,
+        imageBytes: bytes,
+        filename: filename,
+      );
+      if (result != null) {
+        debugPrint('[ScreenshotCapture] Uploaded screenshot successfully');
+        await clipboardProvider.refresh(forceRefresh: true);
+      }
+    } catch (e) {
+      debugPrint('[ScreenshotCapture] Upload failed: $e');
+    }
+  };
+
+  // WS new_clipboard 全局钩子：图片自动保存相册 + 富媒体大图通知 + 文本回写剪贴板
   WsService.globalNewClipboardHook = (msg) {
-    LocalNotificationService.instance.handleWsNewClipboard(msg);
-    // 核心场景回写：PC 复制 → 手机系统剪贴板 → 任意 App 直接粘贴。
-    // WS 广播载荷不含内容体（maxPayload 1MB），需按 id 拉取 /:id/content；
-    // 仅文本/链接（图片回写受 Android 剪贴板 URI 限制，v1 不做）；
-    // 来源是本机时跳过（自己复制的内容无需回写）；开关默认开。
     try {
       final item = msg['item'] as Map<String, dynamic>?;
       final type = item?['contentType'] as String?;
       final sourceDevice = item?['sourceDeviceId'] as String?;
+      final sourceDeviceName = item?['sourceDeviceName'] as String?;
       final myDevice = authProvider.deviceId;
       final itemId = item?['id'] as String?;
+      final preview = LocalNotificationService.extractPreview(msg);
       final isRemote =
           sourceDevice == null || sourceDevice.isEmpty || sourceDevice != myDevice;
       final writebackOn = settingsProvider.clipboardWritebackEnabled;
-      if (writebackOn && isRemote && itemId != null && (type == 'text' || type == 'link')) {
+
+      if (isRemote && itemId != null && type == 'image') {
+        // 核心场景：PC 截图/图片 → 自动保存手机相册 + 弹出大图预览通知
+        Future(() async {
+          try {
+            final token = await TokenStore.getAccessToken();
+            final downloadUrl = '${ServerConfig.baseUrl}/api/media/$itemId/download';
+            final response = await http.get(
+              Uri.parse(downloadUrl),
+              headers: token != null ? {'Authorization': 'Bearer $token'} : {},
+            );
+            if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+              final imageBytes = response.bodyBytes;
+              String? savedAlbumPath;
+              if (settingsProvider.autoSaveImagesToAlbum) {
+                final filename = 'ClipSync_${DateTime.now().millisecondsSinceEpoch}.png';
+                savedAlbumPath = await SyncService.instance.saveImageToAlbum(
+                  imageBytes,
+                  fileName: filename,
+                  mimeType: 'image/png',
+                );
+                debugPrint('[AutoSaveImage] Saved to album: $savedAlbumPath');
+              }
+              await LocalNotificationService.instance.showClipboardUpdated(
+                preview,
+                imagePath: savedAlbumPath,
+                imageBytes: savedAlbumPath == null ? imageBytes : null,
+                sourceDevice: sourceDeviceName,
+              );
+            } else {
+              await LocalNotificationService.instance.handleWsNewClipboard(msg);
+            }
+          } catch (e) {
+            debugPrint('[AutoSaveImage] failed: $e');
+            await LocalNotificationService.instance.handleWsNewClipboard(msg);
+          }
+        });
+      } else if (isRemote && itemId != null && (type == 'text' || type == 'link')) {
+        // 核心场景：文本/链接回写系统剪贴板 + 弹出多行长文本预览通知
         Future(() async {
           try {
             final content = await ApiService().getItemContent(null, itemId);
             if (content != null && content.isNotEmpty) {
-              await Clipboard.setData(ClipboardData(text: content));
-              debugPrint('[Writeback] clipboard written from item $itemId');
+              if (writebackOn) {
+                await Clipboard.setData(ClipboardData(text: content));
+                debugPrint('[Writeback] clipboard written from item $itemId');
+              }
+              await LocalNotificationService.instance.showClipboardUpdated(
+                preview,
+                fullText: content,
+                sourceDevice: sourceDeviceName,
+              );
+            } else {
+              await LocalNotificationService.instance.handleWsNewClipboard(msg);
             }
           } catch (e) {
             debugPrint('[Writeback] failed for $itemId: $e');
+            await LocalNotificationService.instance.handleWsNewClipboard(msg);
           }
         });
+      } else {
+        // 其他类型或非远程消息，走默认基础通知
+        LocalNotificationService.instance.handleWsNewClipboard(msg);
       }
-    } catch (_) {
-      /* 回写失败不影响通知 */
+    } catch (e) {
+      debugPrint('[WsHook] error: $e');
+      LocalNotificationService.instance.handleWsNewClipboard(msg);
     }
   };
 

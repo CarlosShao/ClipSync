@@ -64,6 +64,17 @@ class MainActivity : FlutterFragmentActivity() {
                 "requestNotificationPermission" -> requestNotificationPermission(result)
                 "openAutoStartSettings" -> result.success(openAutoStartSettings())
                 "openAppNotificationSettings" -> result.success(openAppNotificationSettings())
+                "saveImageToAlbum" -> {
+                    val bytes = call.argument<ByteArray>("bytes")
+                    val fileName = call.argument<String>("fileName")
+                    val mimeType = call.argument<String>("mimeType")
+                    if (bytes != null) {
+                        val savedPath = SyncForegroundService.saveImageToAlbum(this, bytes, fileName, mimeType)
+                        result.success(savedPath)
+                    } else {
+                        result.error("INVALID_ARGS", "bytes cannot be null", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
