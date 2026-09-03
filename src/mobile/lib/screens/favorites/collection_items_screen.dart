@@ -4,60 +4,37 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../l10n/app_localizations.dart';
-import '../../providers/clipboard_provider.dart';
-import '../../services/api_service.dart';
-import '../../services/app_exception.dart';
-import '../../services/collections_api_service.dart';
-import '../../theme/app_theme.dart';
-import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/error_state.dart';
-import '../../widgets/common/skeleton_list.dart';
-import '../../widgets/favorites/collection_picker.dart';
-import 'collection_dialogs.dart';
+import 'package:clipsync_mobile/l10n/app_localizations.dart';
+import 'package:clipsync_mobile/providers/clipboard_provider.dart';
+import 'package:clipsync_mobile/screens/favorites/collection_dialogs.dart';
+import 'package:clipsync_mobile/services/api_service.dart';
+import 'package:clipsync_mobile/services/app_exception.dart';
+import 'package:clipsync_mobile/services/collections_api_service.dart';
+import 'package:clipsync_mobile/theme/app_theme.dart';
+import 'package:clipsync_mobile/widgets/common/app_card.dart';
+import 'package:clipsync_mobile/widgets/common/breadcrumb.dart';
+import 'package:clipsync_mobile/widgets/common/device_chip.dart';
+import 'package:clipsync_mobile/widgets/common/empty_state.dart';
+import 'package:clipsync_mobile/widgets/common/error_state.dart';
+import 'package:clipsync_mobile/widgets/common/mono_text.dart';
+import 'package:clipsync_mobile/widgets/common/section_divider.dart';
+import 'package:clipsync_mobile/widgets/common/skeleton_list.dart';
+import 'package:clipsync_mobile/widgets/common/swipe_action_row.dart';
+import 'package:clipsync_mobile/widgets/common/type_badge.dart';
+import 'package:clipsync_mobile/widgets/favorites/collection_picker.dart';
 
-/// 收藏夹组内条目页（树形层级导航二级页，两段式布局）。
+/// 收藏夹组内条目页（树形层级导航二级页，两段式布局，Obsidian v2）。
 ///
-/// 由 FavoritesScreen 以根 Navigator 全屏压入（自带 Scaffold + AppBar，
-/// 盖过主页 shell 的标题栏与底栏）。页内以**状态切换**实现层级下钻
-/// （资源管理器式）：点「子收藏夹」卡片替换当前分组并重载，不逐层压路由；
-/// 返回（AppBar 返回键 / 系统返回手势，经 PopScope 拦截）逐级上溯至入口
-/// 分组后才退出路由。AppBar 标题显示当前分组名，其下为可点击面包屑
-/// （全部 / 分组 / 子分组 → 跳转对应层级；「全部」退出本页回收藏夹根页）。
-///
-/// 两段式布局：
-/// - 上半「子收藏夹」区：当前分组的直接子分组卡片（点进继续下钻；
-///   trailing 菜单保留重命名/删除）；
-/// - 下半「条目」区：既有条目列表与单条/多选操作完全保留。
-///
-/// 数据交互：条目列表走 CollectionsApiService.listCollectionItems
-/// （`GET /api/favorites/collections/:id/items`，只含 content_preview）；
-/// 全量分组走 listCollections（推导子分组与面包屑祖先链，path 为 ltree）。
-///
-/// 点击条目 = 复制全文（对齐 ClipboardProvider.resolveCopyText 的取数路径）：
-/// - 条目仍在剪贴板 provider 缓存中 → 复用既有 resolveCopyText
-///   （预览截断时经内容接口拉全文并回填缓存）；
-/// - 否则文本类条目（text/link/code）直接走 `GET /api/clipboard/:id/content`
-///   拉全文，失败退化为预览；其余类型直接复制预览文本；
-/// - 最终 Clipboard.setData + SnackBar 反馈。
-///
-/// 长按条目（C1）→ 底部动作菜单：
-/// - 「加入其他分组」：分组选择对话框 → addItemToCollection（后端唯一归属
-///   自动移出其他分组 = 移动语义）→ 本组列表即时移除该条目；
-/// - 「移出分组」：removeItemFromCollection，乐观移除 + 失败回滚
-///   （条目仅解除分组关联，不从剪贴板删除）；
-/// - 「多选」（C1 收尾）：进入多选模式（AppBar 动作图标同入口）。
-///
-/// 多选模式（C1 收尾：条目多选移动）：
-/// - AppBar 切换为多选态：关闭按钮 + 「已选 N 项」标题 + 全选/取消全选；
-/// - 条目前出现勾选框，点击条目切换勾选（复制/长按菜单暂停）；
-/// - 底部操作栏「移动到…」→ collection_picker 选目标分组 → 批量
-///   addItemToCollection（后端唯一归属 = 移动语义，加入即自动移出本组）；
-///   完成后退出多选态并刷新。
+/// 遵循 5.5 规格：
+/// - 顶部引入 Obsidian v2 `Breadcrumb` 组件，展示树形路径并支持快速跳转回退；
+/// - 两段式布局：
+///   * 上半段：子分组区（卡片流 + 专属色彩圆标）；
+///   * 下半段：组内收藏条目（单列高密度流，右滑取消收藏，左滑移出）；
+/// - 保留拖拽排序（ReorderableListView）能力与条目多选移动功能。
 class CollectionItemsScreen extends StatefulWidget {
   const CollectionItemsScreen({required this.collection, super.key});
 
-  /// 入口收藏夹分组（页内可继续下钻；返回逐级上溯至该分组后退出路由）
+  /// 入口收藏夹分组
   final CollectionGroup collection;
 
   @override
@@ -87,7 +64,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   /// 最近一次失败的原始错误对象（UI 层经 friendlyError 映射 l10n 文案）
   Object? _error;
 
-  /// 多选模式（C1 收尾）：AppBar 动作 / 长按菜单进入，批量移动完成后退出
+  /// 多选模式：AppBar 动作 / 长按菜单进入，批量移动完成后退出
   bool _multiSelect = false;
 
   /// 多选模式下已勾选的条目 id
@@ -108,7 +85,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
       childCollectionsOf(_allGroups, _current);
 
   /// 面包屑链：顶层分组 → … → 当前分组（按 ltree path 前缀逐段匹配祖先）。
-  /// path 为空时退化为仅当前分组（不显示祖先链）。
   List<CollectionGroup> get _breadcrumb {
     final path = _current.path;
     if (path.isEmpty) {
@@ -125,7 +101,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
         }
       }
     }
-    // 兜底：祖先链未覆盖当前分组（数据异常 / 刚创建未刷新）时补在末位
     if (crumbs.isEmpty || crumbs.last.id != _current.id) {
       crumbs.add(_current);
     }
@@ -144,7 +119,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     super.dispose();
   }
 
-  /// 拉取全量分组 + 当前分组条目列表（下钻 / 上溯 / 下拉刷新共用）。
+  /// 拉取全量分组 + 当前分组条目列表。
   Future<void> _load() async {
     setState(() {
       _isLoading = true;
@@ -175,11 +150,9 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // 层级导航（下钻 / 上溯 / 面包屑跳转）
+  // 层级导航
   // ---------------------------------------------------------------------------
 
-  /// 切换到目标分组（下钻 / 面包屑祖先跳转共用）：重置多选与条目状态，
-  /// 重载分组与条目数据。
   void _navigateTo(CollectionGroup target) {
     if (target.id == _current.id) {
       return;
@@ -198,7 +171,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     unawaited(_load());
   }
 
-  /// 返回上一级（AppBar 返回键 / 系统返回手势经 PopScope 触发）。
   void _goUp() {
     final crumbs = _breadcrumb;
     if (crumbs.length >= 2) {
@@ -207,22 +179,15 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // 分组管理（新建子分组 / 重命名 / 删除，对话框与根页共用）
+  // 分组管理（新建子分组 / 重命名 / 删除）
   // ---------------------------------------------------------------------------
 
-  /// 新建分组：挂到当前分组下（parentId = 当前分组 id）；对话框显示父级提示。
   Future<void> _showCreateDialog() async {
     final l10n = AppLocalizations.of(context);
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) => CreateCollectionDialog(
-        controller: controller,
-        parentName: _current.name,
-      ),
+    final name = await showCreateCollectionSheet(
+      context,
+      parentName: _current.name,
     );
-    controller.dispose();
-
     final trimmed = name?.trim() ?? '';
     if (trimmed.isEmpty || !mounted) {
       return;
@@ -247,7 +212,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     }
   }
 
-  /// 重命名子分组：改名对话框（预填当前名称，可选改图标 emoji）→ 更新 → 重拉。
   Future<void> _showRenameDialog(CollectionGroup sub) async {
     final (String name, String? icon) =
         await showDialog<(String, String?)>(
@@ -259,7 +223,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
         ) ??
         ('', null);
 
-    // 名称未改且未改图标：无需请求
     if (name.isEmpty || (name == sub.name && icon == null) || !mounted) {
       return;
     }
@@ -285,7 +248,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     }
   }
 
-  /// 删除子分组：确认对话框（说明子分组级联删除）→ 删除 → 重拉列表。
   Future<void> _confirmDelete(CollectionGroup sub) async {
     final l10n = AppLocalizations.of(context);
     final confirmed = await confirmDeleteCollection(context, sub);
@@ -323,12 +285,10 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   // 复制全文
   // ---------------------------------------------------------------------------
 
-  /// 点击条目 → 复制全文（含加载反馈与失败提示）。
   Future<void> _copyEntry(FavoriteEntry entry) async {
     if (_copyingId != null) {
       return;
     }
-    // initState 阶段捕获的引用与同步快照，避免跨 async gap 使用 context
     final provider = context.read<ClipboardProvider>();
     final messenger = ScaffoldMessenger.of(context);
     final l10n = AppLocalizations.of(context);
@@ -358,64 +318,72 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     }
   }
 
-  /// 解析复制文本（取数路径对齐 ClipboardProvider.resolveCopyText）：
-  /// 已有全文直接用；预览疑似截断的文本类条目拉全文；失败退化为预览。
   Future<String> _resolveCopyText(
     FavoriteEntry entry,
     ClipboardProvider provider,
     bool inProviderCache,
   ) async {
     if (inProviderCache) {
-      // 复用既有 provider 路径（预览截断时经内容接口拉全文并回填缓存）
       return provider.resolveCopyText(null, entry.id);
     }
     if (entry.isTextLike && entry.mayBeTruncated) {
       try {
-        // GET /api/clipboard/:id/content（token 由 TokenStore 解析）
         final full = await ApiService().getItemContent(null, entry.id);
         if (full != null && full.isNotEmpty) {
           return full;
         }
       } on Exception catch (_) {
-        // 拉取失败：退化为预览文本（仅 >5000 字符时才会失真，属可接受降级）
+        // 退化为预览文本
       }
     }
     return entry.contentPreview;
   }
 
   // ---------------------------------------------------------------------------
-  // 分组条目管理（C1）
+  // 分组条目管理（移出/取消收藏/加入其他分组）
   // ---------------------------------------------------------------------------
 
-  /// 长按条目 → 底部动作菜单（加入其他分组 / 移出分组）。
   Future<void> _showEntryActions(FavoriteEntry entry) async {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
     final action = await showModalBottomSheet<String>(
       context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppShapesV2.xl),
+        ),
+      ),
       builder: (BuildContext sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            ListTile(
-              leading: const Icon(Icons.drive_file_move_outlined),
-              title: Text(l10n.addToCollection),
-              onTap: () => Navigator.of(sheetContext).pop('add'),
-            ),
-            ListTile(
-              leading: Icon(Icons.playlist_remove, color: scheme.error),
-              title: Text(
-                l10n.removeFromCollection,
-                style: TextStyle(color: scheme.error),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.drive_file_move_outlined),
+                title: Text(l10n.addToCollection),
+                onTap: () => Navigator.of(sheetContext).pop('add'),
               ),
-              onTap: () => Navigator.of(sheetContext).pop('remove'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.checklist),
-              title: Text(l10n.multiSelect),
-              onTap: () => Navigator.of(sheetContext).pop('multi'),
-            ),
-          ],
+              ListTile(
+                leading: Icon(Icons.playlist_remove, color: scheme.error),
+                title: Text(
+                  l10n.removeFromCollection,
+                  style: TextStyle(color: scheme.error),
+                ),
+                onTap: () => Navigator.of(sheetContext).pop('remove'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.star_outline_rounded),
+                title: Text(l10n.unfavorite),
+                onTap: () => Navigator.of(sheetContext).pop('unfavorite'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.checklist),
+                title: Text(l10n.multiSelect),
+                onTap: () => Navigator.of(sheetContext).pop('multi'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -426,14 +394,13 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
       await _moveEntryToOtherCollection(entry);
     } else if (action == 'remove') {
       await _removeEntryFromCollection(entry);
+    } else if (action == 'unfavorite') {
+      await _unfavoriteEntry(entry);
     } else if (action == 'multi') {
-      // 长按入口进入多选态，并预勾选该条目
       _enterMultiSelect(entry.id);
     }
   }
 
-  /// 加入其他分组：分组选择 → addItem（后端唯一归属自动移出本组 = 移动），
-  /// 成功后把条目从本组列表即时移除。
   Future<void> _moveEntryToOtherCollection(FavoriteEntry entry) async {
     final target = await addItemToCollectionFlow(
       context,
@@ -446,7 +413,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     setState(() => _items.removeWhere((FavoriteEntry e) => e.id == entry.id));
   }
 
-  /// 移出分组：乐观移除 + 失败回滚（条目仅解除关联，不从剪贴板删除）。
   Future<void> _removeEntryFromCollection(FavoriteEntry entry) async {
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
@@ -468,11 +434,33 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     }
   }
 
+  Future<void> _unfavoriteEntry(FavoriteEntry entry) async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final provider = context.read<ClipboardProvider>();
+    final snapshot = List<FavoriteEntry>.of(_items);
+
+    setState(() => _items.removeWhere((FavoriteEntry e) => e.id == entry.id));
+    try {
+      await provider.toggleFavorite(null, entry.id);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(l10n.unfavorite)));
+    } on Exception catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _items = snapshot);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(friendlyError(e, l10n))));
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  // 多选移动（C1 收尾）
+  // 多选移动
   // ---------------------------------------------------------------------------
 
-  /// 进入多选模式；[initialId] 非空时预勾选该条目（长按菜单入口）。
   void _enterMultiSelect([String? initialId]) {
     setState(() {
       _multiSelect = true;
@@ -483,7 +471,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     });
   }
 
-  /// 退出多选模式并清空勾选。
   void _exitMultiSelect() {
     setState(() {
       _multiSelect = false;
@@ -491,7 +478,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     });
   }
 
-  /// 勾选/取消勾选单个条目。
   void _toggleSelected(String entryId) {
     setState(() {
       if (_selectedIds.contains(entryId)) {
@@ -502,7 +488,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     });
   }
 
-  /// 全选/取消全选（AppBar 动作：已全选 → 取消全选，否则全选）。
   void _toggleSelectAll() {
     setState(() {
       if (_isAllSelected) {
@@ -513,20 +498,10 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     });
   }
 
-  /// 批量移动勾选条目到其他分组：
-  ///
-  /// 1. 拉取全部分组并排除当前组（无可选分组 → noAvailableGroups 提示）；
-  /// 2. [showCollectionPickerDialog] 选择目标分组（取消 = 放弃本次移动）；
-  /// 3. 逐条调既有 addItemToCollection —— 后端唯一归属：加入目标分组时自动
-  ///    移出其他分组（含本组），即「移动」语义，无需先 removeItemFromCollection
-  ///    （先删后加在加失败时会把条目留在无分组状态，add-first 更稳）；
-  /// 4. 全部失败 → 保留多选态与勾选便于重试；有成功项 → 移出本地列表、
-  ///    退出多选态并刷新（部分失败时对失败部分追加 friendlyError 提示）。
   Future<void> _moveSelectedToCollection() async {
     if (_selectedIds.isEmpty || _moving) {
       return;
     }
-    // initState 阶段捕获引用，避免跨 async gap 使用 context
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _moving = true);
@@ -564,9 +539,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
       if (!mounted) {
         return;
       }
-      // 结果提示（单条 SnackBar）：全部成功 → moveSuccess；
-      // 部分/全部失败 → moveSuccess（有成功项时）+ friendlyError 并列展示，
-      // 避免后一条把前一条顶掉。
+
       final Widget feedback = firstError == null
           ? Text(l10n.moveSuccess(movedIds.length))
           : (movedIds.isEmpty
@@ -584,10 +557,8 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
         ..showSnackBar(SnackBar(content: feedback));
 
       if (movedIds.isEmpty) {
-        // 全部失败：保留多选态与勾选，提示错误后可重试
         return;
       }
-      // 完成后退出多选态并刷新：先本地移出已移动项（避免闪烁），再拉服务端权威状态
       setState(() {
         _items.removeWhere((FavoriteEntry e) => movedIds.contains(e.id));
         _multiSelect = false;
@@ -610,8 +581,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return PopScope<Object?>(
-      // 已下钻时拦截系统返回：逐级上溯；回到入口层级（或面包屑祖先链无法
-      // 解析的极端数据）才允许退出路由
       canPop: !_drilledIn || _breadcrumb.length < 2,
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (didPop) {
@@ -627,8 +596,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
                   tooltip: l10n.cancel,
                   onPressed: _exitMultiSelect,
                 )
-              // 默认返回键走 Navigator.maybePop → PopScope：
-              // 已下钻时上溯一级，入口层级退出本页
               : null,
           title: Text(
             _multiSelect
@@ -659,7 +626,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
               ),
         body: Column(
           children: <Widget>[
-            if (!_multiSelect) _buildBreadcrumb(l10n),
+            if (!_multiSelect) _buildBreadcrumbSection(l10n),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _load,
@@ -673,81 +640,41 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     );
   }
 
-  /// 面包屑（树形层级导航）：`全部 / 分组 / 子分组 / 当前分组`。
-  /// 点击祖先逐级跳转（页内状态切换）；点击「全部」退出本页回收藏夹根页。
-  Widget _buildBreadcrumb(AppLocalizations l10n) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+  /// 面包屑（采用 Obsidian v2 Breadcrumb 组件）：清晰展示树形路径并支持点击跳转。
+  Widget _buildBreadcrumbSection(AppLocalizations l10n) {
     final crumbs = _breadcrumb;
-    return SizedBox(
-      height: 40,
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: Row(
-                children: <Widget>[
-                  _buildCrumb(
-                    l10n.breadcrumbAll,
-                    isCurrent: false,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  for (var i = 0; i < crumbs.length; i++) ...<Widget>[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
-                      ),
-                      child: Text(
-                        '/',
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: scheme.outlineVariant),
-                      ),
-                    ),
-                    _buildCrumb(
-                      crumbs[i].name,
-                      isCurrent: i == crumbs.length - 1,
-                      onTap: i == crumbs.length - 1
-                          ? null
-                          : () => _navigateTo(crumbs[i]),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
+    final items = <BreadcrumbItem>[
+      BreadcrumbItem(
+        id: '__all__',
+        label: l10n.breadcrumbAll,
+        icon: Icons.star_rounded,
       ),
+      for (final group in crumbs)
+        BreadcrumbItem(
+          id: group.id,
+          label: group.name,
+          icon: group.icon.length <= 2 ? null : Icons.folder_outlined,
+        ),
+    ];
+
+    return Breadcrumb(
+      items: items,
+      onSelect: (item) {
+        if (item.id == '__all__') {
+          Navigator.of(context).pop();
+          return;
+        }
+        for (final group in crumbs) {
+          if (group.id == item.id) {
+            _navigateTo(group);
+            break;
+          }
+        }
+      },
     );
   }
 
-  /// 单个面包屑项：当前层级加粗高亮不可点，祖先为 primary 色可点。
-  Widget _buildCrumb(String label, {required bool isCurrent, VoidCallback? onTap}) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadius.sm),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xs,
-          vertical: AppSpacing.xs,
-        ),
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: isCurrent ? scheme.onSurface : scheme.primary,
-            fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 多选底部操作栏：「移动到…」批量移动到其他分组（无勾选 / 移动中禁用）。
+  /// 多选底部操作栏。
   Widget _buildSelectionBar(AppLocalizations l10n) {
     return BottomAppBar(
       padding: const EdgeInsets.symmetric(
@@ -775,8 +702,7 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     );
   }
 
-  /// 主体：三态分发。骨架/错误/空态也包在 RefreshIndicator 的可滚动容器里，
-  /// 保证任何状态下都能下拉刷新。有子分组或条目时进入两段式布局。
+  /// 主体：三态分发。
   Widget _buildContent() {
     final l10n = AppLocalizations.of(context);
     if (_isLoading && _items.isEmpty && _subCollections.isEmpty) {
@@ -802,141 +728,226 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     return _buildSections();
   }
 
-  /// 两段式主体：上半「子收藏夹」区（点进下钻）+ 下半「条目」区（既有条目
-  /// 列表与单条/多选操作）。某区为空时整区省略（两者皆空走上方三态）。
+  /// 两段式主体：
+  /// - 上半段：子分组卡片区（点进下钻）；
+  /// - 下半段：组内收藏条目高密度流（带右滑取消收藏、左滑移出手势）。
   Widget _buildSections() {
     final l10n = AppLocalizations.of(context);
     final subs = _subCollections;
-    final children = <Widget>[];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (subs.isNotEmpty) {
-      children.add(_buildSectionHeader(l10n.subCollectionsHeader));
-      for (final CollectionGroup sub in subs) {
-        children.add(
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: _buildSubCollectionTile(sub),
-          ),
-        );
-      }
-      children.add(const SizedBox(height: AppSpacing.md));
-    }
-
-    if (_items.isNotEmpty) {
-      if (subs.isNotEmpty) {
-        children.add(_buildSectionHeader(l10n.itemsSectionHeader));
-      }
-      for (final FavoriteEntry entry in _items) {
-        children.add(
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: _buildEntryTile(entry),
-          ),
-        );
-      }
-    }
-
-    return ListView(
+    return CustomScrollView(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        AppSpacing.xxl,
-      ),
-      children: children,
+      slivers: <Widget>[
+        if (subs.isNotEmpty) ...<Widget>[
+          SliverToBoxAdapter(
+            child: SectionDivider(title: l10n.subCollectionsHeader),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.xs,
+            ),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: _buildSubCollectionTile(subs[index], isDark),
+                  );
+                },
+                childCount: subs.length,
+              ),
+            ),
+          ),
+        ],
+        if (_items.isNotEmpty) ...<Widget>[
+          if (subs.isNotEmpty)
+            SliverToBoxAdapter(
+              child: SectionDivider(title: l10n.itemsSectionHeader),
+            ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.xs,
+              AppSpacing.lg,
+              AppSpacing.xxl,
+            ),
+            sliver: SliverReorderableList(
+              itemCount: _items.length,
+              onReorderItem: (oldIndex, newIndex) {
+                setState(() {
+                  final item = _items.removeAt(oldIndex);
+                  _items.insert(newIndex, item);
+                });
+              },
+              itemBuilder: (context, index) {
+                final entry = _items[index];
+                return ReorderableDelayedDragStartListener(
+                  key: ValueKey<String>(entry.id),
+                  index: index,
+                  enabled: !_multiSelect,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: _buildEntryTile(entry),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ],
     );
   }
 
-  /// 区块标题（子收藏夹 / 内容）。
-  Widget _buildSectionHeader(String label) {
+  /// 子收藏夹卡片：AppCard v2 (SurfaceTier.low) + 专属色圆标 + 统计徽章 + 菜单。
+  Widget _buildSubCollectionTile(CollectionGroup sub, bool isDark) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(left: AppSpacing.xs, bottom: AppSpacing.sm),
-      child: Text(
-        label,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-
-  /// 子收藏夹卡片：图标 + 名称 + 条目数/子分组数；整行点击下钻，
-  /// trailing 菜单提供「重命名分组」「删除分组」（树形导航下子分组仅在此
-  /// 展示，管理入口随之保留在本页）。
-  Widget _buildSubCollectionTile(CollectionGroup sub) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
     final l10n = AppLocalizations.of(context);
 
-    final subtitleParts = <String>[
-      l10n.collectionItemCount(sub.itemCount),
-    ];
     final folderCount = childCollectionsOf(_allGroups, sub).length;
-    if (folderCount > 0) {
-      subtitleParts.add(l10n.collectionFolderCount(folderCount));
-    }
+    final String itemsBadgeText = l10n.collectionItemCount(sub.itemCount);
+    final String? folderBadgeText =
+        folderCount > 0 ? l10n.collectionFolderCount(folderCount) : null;
+    final Color accentColor = collectionAccentColor(sub, isDark);
 
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading: collectionLeadingAvatar(sub, scheme),
-        title: Text(
-          sub.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          subtitleParts.join(' · '),
-          style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-        ),
-        trailing: PopupMenuButton<String>(
-          tooltip: l10n.moreActions,
-          onSelected: (String value) {
-            if (value == 'rename') {
-              unawaited(_showRenameDialog(sub));
-            } else if (value == 'delete') {
-              unawaited(_confirmDelete(sub));
-            }
-          },
-          itemBuilder: (BuildContext menuContext) => <PopupMenuItem<String>>[
-            PopupMenuItem<String>(
-              value: 'rename',
-              child: Row(
-                children: <Widget>[
-                  Icon(Icons.edit_outlined, size: 20, color: scheme.onSurfaceVariant),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(l10n.renameCollection),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'delete',
-              child: Row(
-                children: <Widget>[
-                  Icon(
-                    Icons.delete_outline,
-                    size: 20,
-                    color: scheme.error,
+    return AppCard(
+      surfaceTier: SurfaceTier.low,
+      borderRadius: AppShapesV2.brMd,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      onTap: () => _navigateTo(sub),
+      child: Row(
+        children: <Widget>[
+          collectionLeadingAvatar(
+            sub,
+            scheme,
+            size: 40,
+            isDark: isDark,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  sub.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(l10n.deleteCollection, style: TextStyle(color: scheme.error)),
-                ],
-              ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: <Widget>[
+                    _buildSubBadge(itemsBadgeText, accentColor, isDark),
+                    if (folderBadgeText != null) ...<Widget>[
+                      const SizedBox(width: AppSpacing.xs),
+                      _buildSubBadge(
+                        folderBadgeText,
+                        scheme.onSurfaceVariant,
+                        isDark,
+                        isNeutral: true,
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
-        onTap: () => _navigateTo(sub),
+          ),
+          PopupMenuButton<String>(
+            tooltip: l10n.moreActions,
+            icon: Icon(
+              Icons.more_vert_rounded,
+              color: scheme.onSurfaceVariant,
+              size: 20,
+            ),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(AppShapesV2.md)),
+            ),
+            onSelected: (String value) {
+              if (value == 'rename') {
+                unawaited(_showRenameDialog(sub));
+              } else if (value == 'delete') {
+                unawaited(_confirmDelete(sub));
+              }
+            },
+            itemBuilder: (BuildContext menuContext) => <PopupMenuItem<String>>[
+              PopupMenuItem<String>(
+                value: 'rename',
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.edit_outlined,
+                      size: 20,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(l10n.renameCollection),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'delete',
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.delete_outline_rounded,
+                      size: 20,
+                      color: scheme.error,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(l10n.deleteCollection, style: TextStyle(color: scheme.error)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  /// 条目卡片：类型色块 + 3 行预览 + 来源设备与相对时间；
-  /// 整行点击复制全文（复制中行尾转圈），长按弹分组管理菜单。
-  /// 多选模式下：条目前出现勾选框，点击切换勾选，复制/长按菜单暂停。
+  Widget _buildSubBadge(
+    String label,
+    Color color,
+    bool isDark, {
+    bool isNeutral = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: isNeutral
+            ? (isDark
+                ? AppColorsV2.surfaceHighDark
+                : AppColorsV2.surfaceHighLight)
+            : color.withValues(alpha: isDark ? 0.18 : 0.10),
+        borderRadius: BorderRadius.circular(AppShapesV2.pill),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: isNeutral
+              ? (isDark ? Colors.white70 : Colors.black54)
+              : color,
+        ),
+      ),
+    );
+  }
+
+  /// 组内收藏条目卡片：
+  /// - AppCard v2 (SurfaceTier.low)；
+  /// - 右滑取消收藏（品牌紫/星标）、左滑移出分组（danger 红）；
+  /// - TypeBadge + DeviceChip + 相对时间，高密度流呈现。
   Widget _buildEntryTile(FavoriteEntry entry) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -945,173 +956,171 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     final isCopying = _copyingId == entry.id;
     final isSelected = _selectedIds.contains(entry.id);
 
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      // 多选态勾选高亮：轻微品牌色底（未勾选保持卡片默认底色）
+    final card = AppCard(
+      surfaceTier: SurfaceTier.low,
+      borderRadius: AppShapesV2.brMd,
       color: _multiSelect && isSelected
-          ? scheme.primary.withValues(alpha: 0.08)
+          ? scheme.primary.withValues(alpha: 0.12)
           : null,
-      child: InkWell(
-        onTap: _multiSelect
-            ? () => _toggleSelected(entry.id)
-            : (isCopying ? null : () => unawaited(_copyEntry(entry))),
-        onLongPress:
-            _multiSelect ? null : () => unawaited(_showEntryActions(entry)),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              if (_multiSelect) ...<Widget>[
-                Checkbox(
-                  value: isSelected,
-                  onChanged: (_) => _toggleSelected(entry.id),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-              ],
-              _buildTypeBadge(entry, scheme),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      onTap: _multiSelect
+          ? () => _toggleSelected(entry.id)
+          : (isCopying ? null : () => unawaited(_copyEntry(entry))),
+      onLongPress:
+          _multiSelect ? null : () => unawaited(_showEntryActions(entry)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (_multiSelect) ...<Widget>[
+            Checkbox(
+              value: isSelected,
+              onChanged: (_) => _toggleSelected(entry.id),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+          ],
+          _buildLeadingBlock(entry),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppSpacing.xs,
+                  runSpacing: 2,
                   children: <Widget>[
-                    Text(
-                      entry.contentPreview.isEmpty ? l10n.placeholderEmpty : entry.contentPreview,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Row(
-                      children: <Widget>[
-                        Icon(
-                          _deviceIcon(entry.platform),
-                          size: 13,
+                    TypeBadge(contentType: entry.contentType),
+                    if (entry.deviceName != null && entry.deviceName!.isNotEmpty)
+                      DeviceChip(
+                        deviceName: entry.deviceName!,
+                        platform: entry.platform,
+                      ),
+                    if (entry.createdAt != null)
+                      Text(
+                        _formatRelativeTime(entry.createdAt!, l10n),
+                        style: textTheme.labelSmall?.copyWith(
                           color: scheme.onSurfaceVariant,
+                          fontSize: 11,
                         ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: Text(
-                            _buildMetaText(entry),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: textTheme.labelSmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
                   ],
                 ),
-              ),
-              // 多选态隐藏复制入口（点击语义切换为勾选），避免误导
-              if (!_multiSelect) ...<Widget>[
-                const SizedBox(width: AppSpacing.sm),
-                Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.xs),
-                  child: isCopying
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          Icons.content_copy_outlined,
-                          size: 18,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                ),
+                const SizedBox(height: AppSpacing.xs),
+                _buildEntryPreview(entry, textTheme, scheme, l10n),
               ],
-            ],
+            ),
           ),
-        ),
+          if (!_multiSelect) ...<Widget>[
+            const SizedBox(width: AppSpacing.xs),
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: isCopying
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : IconButton(
+                      icon: Icon(
+                        Icons.more_vert_rounded,
+                        size: 18,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      onPressed: () => unawaited(_showEntryActions(entry)),
+                    ),
+            ),
+          ],
+        ],
       ),
+    );
+
+    if (_multiSelect) {
+      return card;
+    }
+
+    // 单列高密度流：右滑取消收藏，左滑移出当前分组
+    return SwipeActionRow(
+      rightIcon: Icons.star_border_rounded,
+      rightColor: AppColorsV2.brandPrimaryLight,
+      leftIcon: Icons.playlist_remove_rounded,
+      leftColor: AppColorsV2.dangerLight,
+      borderRadius: AppShapesV2.brMd,
+      onSwipeRight: () => unawaited(_unfavoriteEntry(entry)),
+      onSwipeLeft: () => unawaited(_removeEntryFromCollection(entry)),
+      child: card,
     );
   }
 
-  /// 类型色块（颜色与图标对齐 ClipboardCard 的语义分档）。
-  Widget _buildTypeBadge(FavoriteEntry entry, ColorScheme scheme) {
-    final color = _typeColor(entry.contentType, scheme);
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-      ),
-      child: Icon(_typeIcon(entry.contentType), size: 22, color: color),
-    );
-  }
-
-  /// 副文本：来源设备名 + 相对时间。
-  String _buildMetaText(FavoriteEntry entry) {
-    final l10n = AppLocalizations.of(context);
-    final device = entry.deviceName;
-    final time = entry.createdAt != null ? _formatRelativeTime(entry.createdAt!, l10n) : '';
-    if (device == null || device.isEmpty) {
-      return time.isEmpty ? l10n.unknownSource : time;
-    }
-    if (time.isEmpty) {
-      return device;
-    }
-    return '$device · $time';
-  }
-
-  /// 类型主色：语义色走 AppColors（亮暗分档），文件/代码走 ColorScheme 派生色。
-  Color _typeColor(String contentType, ColorScheme scheme) {
+  Widget _buildLeadingBlock(FavoriteEntry entry) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    switch (contentType) {
-      case 'link':
-        return isDark ? AppColors.successDark : AppColors.success;
-      case 'image':
-        return isDark ? AppColors.warningDark : AppColors.warning;
-      case 'file':
-        return scheme.tertiary;
-      case 'code':
-        return scheme.secondary;
-      default:
-        return scheme.primary;
-    }
+    final color = AppColorsV2.getColorForType(entry.contentType, isDark);
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.20 : 0.12),
+        borderRadius: BorderRadius.circular(AppShapesV2.sm),
+      ),
+      child: Icon(
+        _typeIcon(entry.contentType),
+        size: 20,
+        color: color,
+      ),
+    );
   }
 
-  /// 类型图标（未识别类型回退文本图标）。
+  Widget _buildEntryPreview(
+    FavoriteEntry entry,
+    TextTheme textTheme,
+    ColorScheme scheme,
+    AppLocalizations l10n,
+  ) {
+    final String text = entry.contentPreview.trim().isEmpty
+        ? l10n.placeholderEmpty
+        : entry.contentPreview;
+
+    if (entry.contentType == 'code') {
+      return MonoText(
+        text,
+        style: textTheme.bodyMedium?.copyWith(
+          color: scheme.onSurface,
+          fontSize: 13,
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    return Text(
+      text,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: textTheme.bodyMedium?.copyWith(
+        color: scheme.onSurface,
+        height: 1.3,
+      ),
+    );
+  }
+
   IconData _typeIcon(String contentType) {
-    switch (contentType) {
+    switch (contentType.toLowerCase().trim()) {
       case 'image':
         return Icons.image_outlined;
       case 'link':
-        return Icons.link;
+        return Icons.link_rounded;
       case 'file':
         return Icons.insert_drive_file_outlined;
       case 'code':
-        return Icons.code;
+        return Icons.code_rounded;
+      case 'color':
+        return Icons.palette_outlined;
       default:
-        return Icons.subject;
+        return Icons.subject_rounded;
     }
   }
 
-  /// 来源设备平台图标（对齐 ClipboardCard）。
-  IconData _deviceIcon(String? platform) {
-    switch (platform?.toLowerCase()) {
-      case 'windows':
-        return Icons.computer;
-      case 'macos':
-        return Icons.laptop_mac;
-      case 'linux':
-        return Icons.computer;
-      case 'ios':
-        return Icons.phone_iphone;
-      case 'android':
-        return Icons.phone_android;
-      default:
-        return Icons.devices_other;
-    }
-  }
-
-  /// 相对时间：刚刚 / N 分钟前 / N 小时前 / N 天前 / M 月 D 日（对齐 ClipboardCard）。
   String _formatRelativeTime(DateTime time, AppLocalizations l10n) {
     final Duration diff = DateTime.now().difference(time);
     if (diff.inMinutes < 1) {
@@ -1129,8 +1138,6 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     return l10n.relDateMD(time.month, time.day);
   }
 
-  /// 全页可滚动包装：内容不满一屏时也能下拉刷新（AlwaysScrollable），
-  /// 状态占位在 minHeight 约束内垂直居中。
   Widget _scrollableBody(Widget child) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1145,3 +1152,4 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
     );
   }
 }
+

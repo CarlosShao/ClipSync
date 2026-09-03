@@ -2,41 +2,24 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../l10n/app_localizations.dart';
-import '../../services/app_exception.dart';
-import '../../services/collections_api_service.dart';
-import '../../theme/app_theme.dart';
-import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/error_state.dart';
-import '../../widgets/common/skeleton_list.dart';
-import 'collection_dialogs.dart';
-import 'collection_items_screen.dart';
+import 'package:clipsync_mobile/l10n/app_localizations.dart';
+import 'package:clipsync_mobile/screens/favorites/collection_dialogs.dart';
+import 'package:clipsync_mobile/screens/favorites/collection_items_screen.dart';
+import 'package:clipsync_mobile/services/app_exception.dart';
+import 'package:clipsync_mobile/services/collections_api_service.dart';
+import 'package:clipsync_mobile/theme/app_theme.dart';
+import 'package:clipsync_mobile/widgets/common/app_card.dart';
+import 'package:clipsync_mobile/widgets/common/empty_state.dart';
+import 'package:clipsync_mobile/widgets/common/error_state.dart';
+import 'package:clipsync_mobile/widgets/common/skeleton_list.dart';
 
-/// 收藏夹页（T4.1 / C1 管理补齐；树形层级导航根页）。
+/// 收藏夹页（T4.1 / C1 管理补齐；树形层级导航根页，Obsidian v2）。
 ///
-/// 页面结构：**当前层级**的收藏夹分组列表 + 右下角「新建分组」FAB。
-/// 根页只显示顶层分组（path 为 ltree 两段 `root.<id>`，按 `.col_` 分段判定，
-/// 见 [CollectionsApiService.listCollections]）；子分组在点进分组后的
-/// [CollectionItemsScreen] 中逐层下钻（资源管理器式）。
-///
-/// 数据交互全部走 [CollectionsApiService]（Bearer 由 TokenStore 解析）：
-/// - 首次进入 / 下拉刷新：listCollections（拉全量分组，含服务端聚合的
-///   item_count 与 path；本地按 path 过滤出顶层展示）；
-/// - 分组卡片副标题：条目数 + 直接子分组数（「3 条内容 · 2 个子分组」）；
-/// - 新建分组：对话框输入名称 → createCollection（根页 = 顶层，不传
-///   parentId）→ 重拉列表（后端新分组 sort_order=0 排最前）；
-/// - 删除分组：分组行 trailing 菜单 → 确认对话框（说明子分组级联删除）→
-///   deleteCollection → 重拉列表；
-/// - 重命名分组（C1）：trailing 菜单 → 改名对话框（可选改图标 emoji）→
-///   updateCollection → 重拉列表；
-/// - 拖拽排序（C1）：列表长按拖动，乐观更新顶层顺序 → reorderCollections
-///   （只提交顶层分组；批量端点被后端路由遮蔽时 API 层自动退化为逐条
-///   sortOrder），失败回滚；
-/// - 点进分组：整行点击以根 Navigator 压入 [CollectionItemsScreen]
-///   （全屏覆盖 shell 的 AppBar 与底栏，返回后回到本页）。
-///
-/// 三态：SkeletonList（加载中）/ ErrorState（失败可重试）/ EmptyState
-/// （无分组时提供「新建分组」快捷入口）。
+/// 遵循 5.5 规格：
+/// - 顶层分组卡片列表：卡片采用 AppCard v2 (SurfaceTier.low)；
+/// - 左侧专属分组颜色圆标（Paste Pinboard 模式：派生亮暗适配色）；
+/// - 展示分组名称 + 「N items · M folders」统计徽章 + 右侧 ⋮ 菜单（重命名/删除）；
+/// - 点击分组平滑进入子层。
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
 
@@ -98,17 +81,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   // 新建 / 删除分组
   // ---------------------------------------------------------------------------
 
-  /// 新建分组：对话框输入名称（必填，≤100 字符与后端截断一致）。
-  /// 根页 = 顶层新建，不传 parentId。
+  /// 新建分组：采用 Obsidian v2 28dp 大圆角 BottomSheet。
   Future<void> _showCreateDialog() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) =>
-          CreateCollectionDialog(controller: controller),
-    );
-    controller.dispose();
-
+    final name = await showCreateCollectionSheet(context);
     final trimmed = name?.trim() ?? '';
     if (trimmed.isEmpty || !mounted) {
       return;
@@ -179,7 +154,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         ) ??
         ('', null);
 
-    // 名称未改且未改图标：无需请求
     if (name.isEmpty || (name == group.name && icon == null) || !mounted) {
       return;
     }
@@ -205,19 +179,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     }
   }
 
-  /// 拖拽排序（C1，仅顶层分组）：乐观更新本地顺序 → reorderCollections 持久
-  /// 化，失败回滚。（onReorderItem 的 newIndex 已代扣被移除项的位移）
-  ///
-  /// 只提交顶层分组的顺序：子分组显示在二级页，其 sort_order 不随根页拖动
-  /// 变化（树形层级下扁平全量重排会把子分组顺序打乱）。
+  /// 拖拽排序（C1，仅顶层分组）：乐观更新本地顺序 → reorderCollections 持久化，失败回滚。
   Future<void> _onReorder(int oldIndex, int newIndex) async {
     final l10n = AppLocalizations.of(context);
     final previous = List<CollectionGroup>.of(_groups);
     final reordered = List<CollectionGroup>.of(_visibleGroups);
-    // onReorderItem 的 newIndex 已代扣被移除项的位移，直接先移后插
     reordered.insert(newIndex, reordered.removeAt(oldIndex));
     setState(() {
-      // 顶层按新顺序置前；子分组保持原相对顺序（不参与本次提交）
       _groups = <CollectionGroup>[
         ...reordered,
         ..._groups.where((CollectionGroup g) => !isTopLevelCollection(g)),
@@ -234,7 +202,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     }
   }
 
-  /// 点进分组：根 Navigator 全屏压入组内条目页（盖过 shell AppBar 与底栏）。
+  /// 点进分组：根 Navigator 全屏压入组内条目页。
   void _openCollection(CollectionGroup group) {
     unawaited(
       Navigator.of(context, rootNavigator: true).push(
@@ -272,8 +240,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     );
   }
 
-  /// 主体：三态分发。骨架/错误/空态也包在 RefreshIndicator 的可滚动容器里，
-  /// 保证任何状态下都能下拉刷新。
+  /// 主体：三态分发。
   Widget _buildContent() {
     final l10n = AppLocalizations.of(context);
     if (_isLoading && _groups.isEmpty) {
@@ -301,10 +268,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     return _buildGroupList();
   }
 
-  /// 顶层分组列表（C1 拖拽排序）：长按条目即可拖动换位，onReorder 乐观更新 +
-  /// 失败回滚；拖拽中的条目以带阴影的 Material 提升（对齐 cardTheme 圆角）。
+  /// 顶层分组列表（C1 拖拽排序）：长按条目即可拖动换位。
   Widget _buildGroupList() {
     final visible = _visibleGroups;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return ReorderableListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(
@@ -319,10 +288,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         return AnimatedBuilder(
           animation: animation,
           builder: (BuildContext context, Widget? child) => Material(
-            elevation: 2 * animation.value,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            color: Theme.of(context).cardTheme.color ??
-                Theme.of(context).colorScheme.surfaceContainerLow,
+            elevation: AppElevationV2.floating * animation.value,
+            borderRadius: BorderRadius.circular(AppShapesV2.md),
+            color: AppColorsV2.surface(context, tier: SurfaceTier.low),
             child: child,
           ),
           child: child,
@@ -330,83 +298,161 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       },
       itemBuilder: (BuildContext context, int index) => KeyedSubtree(
         key: ValueKey<String>(visible[index].id),
-        child: _buildGroupTile(visible[index]),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.md),
+          child: _buildGroupTile(visible[index], isDark),
+        ),
       ),
     );
   }
 
-  /// 顶层分组卡片：图标 + 名称 + 条目数/子分组数；整行点击进组内条目页，
-  /// 长按拖动排序，trailing 菜单提供「重命名分组」「删除分组」入口。
-  Widget _buildGroupTile(CollectionGroup group) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+  /// 顶层分组卡片：AppCard v2 (SurfaceTier.low) + 左侧专属分组颜色圆标 +
+  /// 名称 + 「N items · M folders」统计徽章 + 右侧 ⋮ 菜单。
+  Widget _buildGroupTile(CollectionGroup group, bool isDark) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
     final l10n = AppLocalizations.of(context);
 
-    final subtitleParts = <String>[
-      l10n.collectionItemCount(group.itemCount),
-    ];
     final folderCount = childCollectionsOf(_groups, group).length;
-    if (folderCount > 0) {
-      subtitleParts.add(l10n.collectionFolderCount(folderCount));
-    }
+    final String itemsBadgeText = l10n.collectionItemCount(group.itemCount);
+    final String? folderBadgeText =
+        folderCount > 0 ? l10n.collectionFolderCount(folderCount) : null;
 
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading: collectionLeadingAvatar(group, scheme),
-        title: Text(
-          group.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          subtitleParts.join(' · '),
-          style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-        ),
-        trailing: PopupMenuButton<String>(
-          tooltip: l10n.moreActions,
-          onSelected: (String value) {
-            if (value == 'rename') {
-              unawaited(_showRenameDialog(group));
-            } else if (value == 'delete') {
-              unawaited(_confirmDelete(group));
-            }
-          },
-          itemBuilder: (BuildContext menuContext) => <PopupMenuItem<String>>[
-            PopupMenuItem<String>(
-              value: 'rename',
-              child: Row(
-                children: <Widget>[
-                  Icon(Icons.edit_outlined, size: 20, color: scheme.onSurfaceVariant),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(l10n.renameCollection),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'delete',
-              child: Row(
-                children: <Widget>[
-                  Icon(
-                    Icons.delete_outline,
-                    size: 20,
-                    color: scheme.error,
+    final Color accentColor = collectionAccentColor(group, isDark);
+
+    return AppCard(
+      surfaceTier: SurfaceTier.low,
+      borderRadius: AppShapesV2.brMd,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      onTap: () => _openCollection(group),
+      child: Row(
+        children: <Widget>[
+          collectionLeadingAvatar(
+            group,
+            scheme,
+            size: 42,
+            isDark: isDark,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  group.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(l10n.deleteCollection, style: TextStyle(color: scheme.error)),
-                ],
-              ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: <Widget>[
+                    _buildCountBadge(itemsBadgeText, accentColor, isDark),
+                    if (folderBadgeText != null) ...<Widget>[
+                      const SizedBox(width: AppSpacing.xs),
+                      _buildCountBadge(
+                        folderBadgeText,
+                        scheme.onSurfaceVariant,
+                        isDark,
+                        isNeutral: true,
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
-        onTap: () => _openCollection(group),
+          ),
+          PopupMenuButton<String>(
+            tooltip: l10n.moreActions,
+            icon: Icon(
+              Icons.more_vert_rounded,
+              color: scheme.onSurfaceVariant,
+              size: 20,
+            ),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(AppShapesV2.md)),
+            ),
+            onSelected: (String value) {
+              if (value == 'rename') {
+                unawaited(_showRenameDialog(group));
+              } else if (value == 'delete') {
+                unawaited(_confirmDelete(group));
+              }
+            },
+            itemBuilder: (BuildContext menuContext) => <PopupMenuItem<String>>[
+              PopupMenuItem<String>(
+                value: 'rename',
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.edit_outlined,
+                      size: 20,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(l10n.renameCollection),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'delete',
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.delete_outline_rounded,
+                      size: 20,
+                      color: scheme.error,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(l10n.deleteCollection, style: TextStyle(color: scheme.error)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  /// 全页可滚动包装：内容不满一屏时也能下拉刷新（AlwaysScrollable），
-  /// 状态占位在 minHeight 约束内垂直居中。
+  /// 统计徽章：pill 样式小胶囊。
+  Widget _buildCountBadge(
+    String label,
+    Color color,
+    bool isDark, {
+    bool isNeutral = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: isNeutral
+            ? (isDark
+                ? AppColorsV2.surfaceHighDark
+                : AppColorsV2.surfaceHighLight)
+            : color.withValues(alpha: isDark ? 0.18 : 0.10),
+        borderRadius: BorderRadius.circular(AppShapesV2.pill),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: isNeutral
+              ? (isDark ? Colors.white70 : Colors.black54)
+              : color,
+        ),
+      ),
+    );
+  }
+
+  /// 全页可滚动包装：内容不满一屏时也能下拉刷新。
   Widget _scrollableBody(Widget child) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -421,3 +467,4 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     );
   }
 }
+
