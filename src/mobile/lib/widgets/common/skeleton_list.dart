@@ -1,22 +1,17 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_theme.dart';
+import 'package:clipsync_mobile/theme/app_theme.dart';
 
-/// 单个骨架占位块：圆角矩形或圆形，底色取主题容器色。
+/// 单个骨架占位块 v2 (Obsidian)。
 ///
-/// 通常不单独使用，交给 [SkeletonList] 统一驱动脉冲动效；
-/// 自定义复杂骨架布局时也可直接组合 [SkeletonBox]。
+/// 圆角矩形或圆形，底色取主题容器色。
 class SkeletonBox extends StatelessWidget {
   /// 创建骨架占位块。
-  ///
-  /// [width] / [height] 控制尺寸（[height] 默认 12，近似一行文字）；
-  /// [radius] 默认 [AppRadius.sm]；[circle] 为 true 时忽略 [radius]
-  /// 渲染为圆形（用于头像占位）。
   const SkeletonBox({
     super.key,
     this.width,
-    this.height = 12,
-    this.radius = AppRadius.sm,
+    this.height = 12.0,
+    this.radius = AppShapesV2.xs,
     this.circle = false,
   });
 
@@ -26,7 +21,7 @@ class SkeletonBox extends StatelessWidget {
   /// 占位块高度，默认 12。
   final double height;
 
-  /// 圆角，默认 [AppRadius.sm]。
+  /// 圆角，默认 [AppShapesV2.xs] (8)。
   final double radius;
 
   /// 是否渲染为圆形。
@@ -34,13 +29,16 @@ class SkeletonBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color baseColor = isDark
+        ? AppColorsV2.surfaceHighDark
+        : AppColorsV2.surfaceHighLight;
 
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
+        color: baseColor,
         shape: circle ? BoxShape.circle : BoxShape.rectangle,
         borderRadius: circle ? null : BorderRadius.circular(radius),
       ),
@@ -48,21 +46,19 @@ class SkeletonBox extends StatelessWidget {
   }
 }
 
-/// 列表加载骨架：头像 + 两行文本的占位行，整组同步呼吸脉冲。
+/// 列表加载骨架 v2 (Obsidian)。
 ///
-/// 用于列表页加载中的占位，动效为克制的透明度呼吸（无第三方依赖）。
-///
-/// ```dart
-/// isLoading
-///     ? const SkeletonList(itemCount: 6)
-///     : ListView(children: items)
-/// ```
+/// 规范要求：
+/// - 增加轻量 shimmer 微光渐变动效（无需第三方包，使用 LinearGradient 变换与 AnimatedBuilder 实现）；
+/// - 头像/图标块 (44dp，对齐 leading 44dp) + 双行文本；
+/// - 兼容原有接口 (itemCount, padding)。
 class SkeletonList extends StatefulWidget {
   /// 创建列表加载骨架。
-  ///
-  /// [itemCount] 为占位行数，默认 5；[padding] 为整体内边距，
-  /// 默认 16（与页面边距一致）。
-  const SkeletonList({super.key, this.itemCount = 5, this.padding = const EdgeInsets.all(AppSpacing.lg)});
+  const SkeletonList({
+    super.key,
+    this.itemCount = 5,
+    this.padding = const EdgeInsets.all(AppSpacing.lg),
+  });
 
   /// 占位行数。
   final int itemCount;
@@ -78,12 +74,8 @@ class _SkeletonListState extends State<SkeletonList>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1200),
-  )..repeat(reverse: true);
-
-  late final Animation<double> _opacity = Tween<double>(begin: 0.45, end: 0.9).animate(
-    CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-  );
+    duration: const Duration(milliseconds: 1500),
+  )..repeat();
 
   @override
   void dispose() {
@@ -93,42 +85,83 @@ class _SkeletonListState extends State<SkeletonList>
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color shimmerBase = isDark
+        ? AppColorsV2.surfaceLowDark
+        : AppColorsV2.surfaceHighLight;
+    final Color shimmerHighlight = isDark
+        ? AppColorsV2.surfaceHighDark
+        : Colors.white.withValues(alpha: 0.85);
+
     return Padding(
       padding: widget.padding ?? EdgeInsets.zero,
-      child: FadeTransition(
-        opacity: _opacity,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: List<Widget>.generate(widget.itemCount, (int index) => _buildRow()),
-        ),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (BuildContext context, Widget? _) {
+          final double progress = _controller.value;
+          final ShaderCallback shaderCallback = (Rect bounds) {
+            return LinearGradient(
+              begin: const Alignment(-1.0, -0.3),
+              end: const Alignment(1.0, 0.3),
+              stops: <double>[
+                (progress - 0.3).clamp(0.0, 1.0),
+                progress.clamp(0.0, 1.0),
+                (progress + 0.3).clamp(0.0, 1.0),
+              ],
+              colors: <Color>[
+                shimmerBase,
+                shimmerHighlight,
+                shimmerBase,
+              ],
+            ).createShader(bounds);
+          };
+
+          return ShaderMask(
+            blendMode: BlendMode.srcATop,
+            shaderCallback: shaderCallback,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: List<Widget>.generate(
+                widget.itemCount,
+                (int index) => _buildRow(),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  /// 构建单行占位：圆形头像 + 标题行 + 副文本行。
+  /// 构建单行占位：44dp 圆角图标 + 标题行 + 副文本行。
   Widget _buildRow() {
-    return const Padding(
-      padding: EdgeInsets.only(bottom: AppSpacing.lg),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SkeletonBox(width: 40, height: 40, circle: true),
-          SizedBox(width: AppSpacing.md),
+          const SkeletonBox(width: 44, height: 44, radius: AppShapesV2.sm),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
+              children: const <Widget>[
                 FractionallySizedBox(
-                  widthFactor: 0.7,
+                  widthFactor: 0.65,
                   alignment: Alignment.centerLeft,
-                  child: SkeletonBox(height: 14),
+                  child: SkeletonBox(height: 14, radius: AppShapesV2.xs),
                 ),
                 SizedBox(height: AppSpacing.sm),
                 FractionallySizedBox(
-                  widthFactor: 0.45,
+                  widthFactor: 0.88,
                   alignment: Alignment.centerLeft,
-                  child: SkeletonBox(),
+                  child: SkeletonBox(height: 12, radius: AppShapesV2.xs),
+                ),
+                SizedBox(height: AppSpacing.sm),
+                FractionallySizedBox(
+                  widthFactor: 0.4,
+                  alignment: Alignment.centerLeft,
+                  child: SkeletonBox(height: 10, radius: AppShapesV2.xs),
                 ),
               ],
             ),

@@ -2599,6 +2599,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'View plans'**
   String get viewPlans;
+
+  /// No description provided for @typeColor.
+  ///
+  /// In en, this message translates to:
+  /// **'Color'**
+  String get typeColor;
+
+  /// No description provided for @copyFirstItemGuide.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy something on your computer to see it here'**
+  String get copyFirstItemGuide;
+
+  /// No description provided for @quickPaste.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick Paste'**
+  String get quickPaste;
+
+  /// No description provided for @recentCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent copied'**
+  String get recentCopied;
+
+  /// No description provided for @pinnedSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Pinned'**
+  String get pinnedSection;
+
+  /// No description provided for @sectionActiveSessions.
+  ///
+  /// In en, this message translates to:
+  /// **'Active Sessions'**
+  String get sectionActiveSessions;
 }
 
 class _AppLocalizationsDelegate

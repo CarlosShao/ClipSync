@@ -416,5 +416,11 @@
   "downloadingPercent": "下载中 {percent}%",
   "openFileFailed": "没有找到可打开此文件的应用",
   "limitSyncNotice": "该文件在来源设备超出套餐限制，未同步到云端",
-  "viewPlans": "了解套餐"
+  "viewPlans": "了解套餐",
+  "typeColor": "颜色",
+  "copyFirstItemGuide": "去桌面端复制第一条内容",
+  "quickPaste": "快速粘贴",
+  "recentCopied": "最近复制",
+  "pinnedSection": "置顶",
+  "sectionActiveSessions": "活跃会话"
 }

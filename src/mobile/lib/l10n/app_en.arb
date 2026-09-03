@@ -721,5 +721,11 @@
   },
   "openFileFailed": "No app found to open this file",
   "limitSyncNotice": "This file exceeded the plan limit on the source device and was not synced to the cloud",
-  "viewPlans": "View plans"
+  "viewPlans": "View plans",
+  "typeColor": "Color",
+  "copyFirstItemGuide": "Copy something on your computer to see it here",
+  "quickPaste": "Quick Paste",
+  "recentCopied": "Recent copied",
+  "pinnedSection": "Pinned",
+  "sectionActiveSessions": "Active Sessions"
 }

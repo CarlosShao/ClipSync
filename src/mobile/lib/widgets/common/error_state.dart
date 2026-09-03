@@ -1,33 +1,29 @@
 import 'package:flutter/material.dart';
 
-import '../../l10n/app_localizations.dart';
-import '../../theme/app_theme.dart';
+import 'package:clipsync_mobile/l10n/app_localizations.dart';
+import 'package:clipsync_mobile/theme/app_theme.dart';
 
-/// 错误状态：错误图标 + 标题 + 描述 + 重试按钮。
+/// 错误状态 v2 (Obsidian)。
 ///
-/// 用于请求失败、网络异常等场景；[onRetry] 为 null 时隐藏重试按钮
-/// （仅展示错误信息的只读场景）。
-///
-/// ```dart
-/// ErrorState(
-///   message: "网络连接失败，请检查网络后重试",
-///   onRetry: () => provider.refresh(),
-/// )
-/// ```
+/// 规范要求：
+/// - 重试按钮改 [FilledButton.tonal]；
+/// - 支持展示错误码 [errorCode]；
+/// - 文案全走 l10n，支持错误重试与回退；
+/// - 保持原有参数接口向后兼容。
 class ErrorState extends StatelessWidget {
   /// 创建错误状态占位。
-  ///
-  /// [message] 为必填错误描述；[title] 为 null 时回退 l10n 的
-  /// loadFailedTitle；[icon] 默认错误轮廓图标；[retryLabel] 为 null 时
-  /// 回退 l10n 的 retry；[onRetry] 为重试回调，为 null 时不渲染按钮。
   const ErrorState({
     required this.message,
     super.key,
     this.title,
-    this.icon = Icons.error_outline,
+    this.errorCode,
+    this.icon = Icons.error_outline_rounded,
     this.retryLabel,
     this.onRetry,
-    this.padding = const EdgeInsets.symmetric(vertical: AppSpacing.xxl, horizontal: AppSpacing.xl),
+    this.padding = const EdgeInsets.symmetric(
+      vertical: AppSpacing.xxl,
+      horizontal: AppSpacing.xl,
+    ),
   });
 
   /// 错误描述文案。
@@ -36,7 +32,10 @@ class ErrorState extends StatelessWidget {
   /// 错误标题，null 时回退 l10n 的 loadFailedTitle。
   final String? title;
 
-  /// 图标，默认 [Icons.error_outline]。
+  /// 可选错误码（如 ERR_NETWORK, 404 等）。
+  final String? errorCode;
+
+  /// 图标，默认 [Icons.error_outline_rounded]。
   final IconData icon;
 
   /// 重试按钮文案，null 时回退 l10n 的 retry。
@@ -50,11 +49,14 @@ class ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final l10n = AppLocalizations.of(context);
-    final effectiveTitle = title ?? l10n.loadFailedTitle;
-    final effectiveRetryLabel = retryLabel ?? l10n.retry;
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final TextTheme textTheme = theme.textTheme;
+    final AppLocalizations l10n = AppLocalizations.of(context);
+
+    final String effectiveTitle = title ?? l10n.loadFailedTitle;
+    final String effectiveRetryLabel = retryLabel ?? l10n.retry;
+    final Color dangerColor = AppColorsV2.dangerFor(isDark: isDark);
 
     return Padding(
       padding: padding,
@@ -63,28 +65,67 @@ class ErrorState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(color: scheme.surfaceContainerHigh, shape: BoxShape.circle),
-              child: Icon(icon, size: 32, color: scheme.error),
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: dangerColor.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 36, color: dangerColor),
             ),
             const SizedBox(height: AppSpacing.lg),
             Text(
               effectiveTitle,
-              style: textTheme.titleMedium,
+              style: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
               textAlign: TextAlign.center,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: AppSpacing.xs),
-            Text(
-              message,
-              style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
-              textAlign: TextAlign.center,
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: Text(
+                message,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
             ),
+            if (errorCode != null && errorCode!.isNotEmpty) ...<Widget>[
+              const SizedBox(height: AppSpacing.xs),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? AppColorsV2.surfaceHighDark
+                      : AppColorsV2.surfaceHighLight,
+                  borderRadius: BorderRadius.circular(AppShapesV2.xs),
+                ),
+                child: Text(
+                  'Code: ',
+                  style: textTheme.labelSmall?.copyWith(
+                    fontFamily: 'JetBrains Mono',
+                    fontFamilyFallback: const <String>['monospace'],
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
             if (onRetry != null) ...<Widget>[
               const SizedBox(height: AppSpacing.xl),
-              FilledButton(onPressed: onRetry, child: Text(effectiveRetryLabel)),
+              FilledButton.tonal(
+                onPressed: onRetry,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppShapesV2.sm),
+                  ),
+                ),
+                child: Text(effectiveRetryLabel),
+              ),
             ],
           ],
         ),

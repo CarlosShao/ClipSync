@@ -1396,4 +1396,23 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get viewPlans => 'View plans';
+
+  @override
+  String get typeColor => 'Color';
+
+  @override
+  String get copyFirstItemGuide =>
+      'Copy something on your computer to see it here';
+
+  @override
+  String get quickPaste => 'Quick Paste';
+
+  @override
+  String get recentCopied => 'Recent copied';
+
+  @override
+  String get pinnedSection => 'Pinned';
+
+  @override
+  String get sectionActiveSessions => 'Active Sessions';
 }

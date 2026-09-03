@@ -1343,4 +1343,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get viewPlans => '了解套餐';
+
+  @override
+  String get typeColor => '颜色';
+
+  @override
+  String get copyFirstItemGuide => '去桌面端复制第一条内容';
+
+  @override
+  String get quickPaste => '快速粘贴';
+
+  @override
+  String get recentCopied => '最近复制';
+
+  @override
+  String get pinnedSection => '置顶';
+
+  @override
+  String get sectionActiveSessions => '活跃会话';
 }

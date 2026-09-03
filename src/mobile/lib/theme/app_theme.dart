@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'tokens_v2.dart';
+
+export 'tokens_v2.dart';
+
 /// ClipSync 设计系统 — 间距 Token。
 ///
 /// 全部间距为 4 的倍数，构成统一节奏体系；
@@ -156,7 +160,7 @@ abstract final class AppTheme {
   /// 暗色主题。
   static ThemeData get darkTheme => _buildTheme(Brightness.dark);
 
-  /// 亮色 [ColorScheme]：品牌紫直出 + 纯中性灰面层（zinc 系）。
+  /// 亮色 [ColorScheme]：品牌紫直出 + Obsidian v2 纯中性灰面层（zinc 系）。
   static ColorScheme _lightScheme() {
     return ColorScheme.fromSeed(
       seedColor: seedColor,
@@ -166,17 +170,17 @@ abstract final class AppTheme {
       onPrimary: Colors.white,
       primaryContainer: const Color(0xFFE7E3FB),
       onPrimaryContainer: const Color(0xFF1C1553),
-      surface: const Color(0xFFFAFAFA),
+      surface: AppColorsV2.surfaceBaseLight,
       onSurface: const Color(0xFF18181B),
       surfaceContainerLowest: Colors.white,
-      surfaceContainerLow: const Color(0xFFF5F5F6),
-      surfaceContainer: const Color(0xFFF0F0F2),
-      surfaceContainerHigh: const Color(0xFFEBEBED),
-      surfaceContainerHighest: const Color(0xFFE4E4E7),
+      surfaceContainerLow: AppColorsV2.surfaceLowLight,
+      surfaceContainer: AppColorsV2.surfaceMidLight,
+      surfaceContainerHigh: AppColorsV2.surfaceHighLight,
+      surfaceContainerHighest: AppColorsV2.surfaceHighestLight,
       onSurfaceVariant: const Color(0xFF52525B),
       outline: const Color(0xFFD4D4D8),
-      outlineVariant: const Color(0xFFE4E4E7),
-      error: const Color(0xFFDC2626),
+      outlineVariant: AppColorsV2.borderLight,
+      error: AppColorsV2.dangerLight,
       onError: Colors.white,
       errorContainer: const Color(0xFFFEE2E2),
       onErrorContainer: const Color(0xFF7F1D1D),
@@ -187,27 +191,27 @@ abstract final class AppTheme {
     );
   }
 
-  /// 暗色 [ColorScheme]：近黑中性面层，品牌紫提亮保证对比度。
+  /// 暗色 [ColorScheme]：近黑中性面层，Obsidian v2 五级 surface 层次，品牌紫提亮保证对比度。
   static ColorScheme _darkScheme() {
     return ColorScheme.fromSeed(
       seedColor: seedColor,
       brightness: Brightness.dark,
     ).copyWith(
-      primary: const Color(0xFFC3B6FF),
+      primary: AppColorsV2.brandPrimaryDark,
       onPrimary: const Color(0xFF2B1F6E),
       primaryContainer: const Color(0xFF413490),
       onPrimaryContainer: const Color(0xFFE5DEFF),
-      surface: const Color(0xFF0E0E10),
+      surface: AppColorsV2.surfaceBaseDark,
       onSurface: const Color(0xFFE4E4E7),
-      surfaceContainerLowest: const Color(0xFF0A0A0B),
-      surfaceContainerLow: const Color(0xFF161619),
-      surfaceContainer: const Color(0xFF1C1C1F),
-      surfaceContainerHigh: const Color(0xFF26262A),
-      surfaceContainerHighest: const Color(0xFF313135),
+      surfaceContainerLowest: const Color(0xFF09090B),
+      surfaceContainerLow: AppColorsV2.surfaceLowDark,
+      surfaceContainer: AppColorsV2.surfaceMidDark,
+      surfaceContainerHigh: AppColorsV2.surfaceHighDark,
+      surfaceContainerHighest: AppColorsV2.surfaceHighestDark,
       onSurfaceVariant: const Color(0xFFA1A1AA),
       outline: const Color(0xFF3F3F46),
-      outlineVariant: const Color(0xFF27272A),
-      error: const Color(0xFFF87171),
+      outlineVariant: AppColorsV2.borderDark,
+      error: AppColorsV2.dangerDark,
       onError: const Color(0xFF450A0A),
       errorContainer: const Color(0xFF7F1D1D),
       onErrorContainer: const Color(0xFFFECACA),
@@ -225,6 +229,13 @@ abstract final class AppTheme {
   static TextTheme _buildTextTheme(Color color) {
     const TextStyle base = TextStyle(fontFamily: 'sans-serif');
     return TextTheme(
+      // display — onboarding 大标题、空状态锚点（36/44）
+      displaySmall: base.copyWith(
+        fontSize: 36,
+        fontWeight: FontWeight.w700,
+        height: 44 / 36,
+        letterSpacing: 0,
+      ),
       // headline — 页面大标题（32/28/24）
       headlineLarge: base.copyWith(
         fontSize: 32,
@@ -265,7 +276,7 @@ abstract final class AppTheme {
     final ColorScheme scheme = isLight ? _lightScheme() : _darkScheme();
     final TextTheme textTheme = _buildTextTheme(scheme.onSurface);
     final OutlineInputBorder inputBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(AppRadius.md),
+      borderRadius: BorderRadius.circular(AppShapesV2.sm),
       borderSide: BorderSide(color: scheme.outline),
     );
 
@@ -280,45 +291,45 @@ abstract final class AppTheme {
         backgroundColor: scheme.surface,
         surfaceTintColor: Colors.transparent,
         foregroundColor: scheme.onSurface,
-        elevation: 0,
-        scrolledUnderElevation: 0,
+        elevation: AppElevationV2.flat,
+        scrolledUnderElevation: AppElevationV2.flat,
         centerTitle: false,
         titleTextStyle: textTheme.titleLarge,
         iconTheme: IconThemeData(color: scheme.onSurface),
       ),
       cardTheme: CardThemeData(
-        color: isLight ? scheme.surfaceContainerLowest : scheme.surfaceContainerLow,
-        elevation: 0,
+        color: scheme.surfaceContainerLow,
+        elevation: AppElevationV2.flat,
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(AppShapesV2.md),
           side: BorderSide(color: scheme.outlineVariant),
         ),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: isLight ? scheme.surfaceContainerLowest : scheme.surfaceContainerLow,
+        backgroundColor: scheme.surfaceContainer,
         surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.lg)),
+        elevation: AppElevationV2.flat,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppShapesV2.xl)),
         titleTextStyle: textTheme.titleLarge,
         contentTextStyle: textTheme.bodyMedium,
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: isLight ? scheme.surfaceContainerLowest : scheme.surfaceContainerLow,
+        backgroundColor: scheme.surfaceContainer,
         surfaceTintColor: Colors.transparent,
         showDragHandle: true,
         dragHandleColor: scheme.outline,
         dragHandleSize: const Size(32, 4),
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppShapesV2.xl)),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: scheme.inverseSurface,
         contentTextStyle: textTheme.bodyMedium?.copyWith(color: scheme.onInverseSurface),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppShapesV2.sm)),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -343,7 +354,7 @@ abstract final class AppTheme {
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
         labelPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderRadius: BorderRadius.circular(AppShapesV2.xs),
           side: BorderSide(color: scheme.outlineVariant),
         ),
         side: BorderSide(color: scheme.outlineVariant),
@@ -352,7 +363,10 @@ abstract final class AppTheme {
         backgroundColor: scheme.surface,
         surfaceTintColor: Colors.transparent,
         indicatorColor: scheme.secondaryContainer,
-        elevation: 0,
+        indicatorShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppShapesV2.lg),
+        ),
+        elevation: AppElevationV2.flat,
         height: 64,
         labelTextStyle: WidgetStatePropertyAll<TextStyle?>(textTheme.labelMedium),
       ),
@@ -361,7 +375,7 @@ abstract final class AppTheme {
         selectedItemColor: scheme.primary,
         unselectedItemColor: scheme.onSurfaceVariant,
         type: BottomNavigationBarType.fixed,
-        elevation: 0,
+        elevation: AppElevationV2.flat,
         selectedLabelStyle: textTheme.labelMedium,
         unselectedLabelStyle: textTheme.labelMedium,
       ),
@@ -375,22 +389,22 @@ abstract final class AppTheme {
       listTileTheme: ListTileThemeData(
         iconColor: scheme.onSurfaceVariant,
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppShapesV2.sm)),
       ),
       dividerTheme: DividerThemeData(color: scheme.outlineVariant, thickness: 1, space: 1),
       popupMenuTheme: PopupMenuThemeData(
-        color: isLight ? scheme.surfaceContainerLowest : scheme.surfaceContainerLow,
+        color: scheme.surfaceContainer,
         surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+        elevation: AppElevationV2.popover,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppShapesV2.sm)),
         textStyle: textTheme.bodyMedium,
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
-        elevation: 0,
-        highlightElevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.lg)),
+        elevation: AppElevationV2.floating,
+        highlightElevation: AppElevationV2.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppShapesV2.lg)),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
         color: scheme.primary,
