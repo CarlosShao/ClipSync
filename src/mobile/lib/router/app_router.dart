@@ -18,6 +18,7 @@ import '../screens/share/share_receive_screen.dart';
 import '../screens/shared/shared_links_screen.dart';
 import '../screens/subscription/subscription_management_screen.dart';
 import '../screens/templates/templates_screen.dart';
+import '../theme/tokens_v2.dart';
 import 'route_guard.dart';
 
 /// 路由路径常量
@@ -199,54 +200,79 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: AppRoutes.login,
-        builder: (context, state) => const LoginScreen(),
+        pageBuilder: (context, state) => buildObsidianTransitionPage(
+          key: state.pageKey,
+          child: const LoginScreen(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.onboarding,
-        builder: (context, state) => const OnboardingScreen(),
+        pageBuilder: (context, state) => buildObsidianTransitionPage(
+          key: state.pageKey,
+          child: const OnboardingScreen(),
+        ),
       ),
       // T3.4：权限与保活引导页（首次启动一次性，见 PermissionGuideGate）
       GoRoute(
         path: AppRoutes.permissionGuide,
-        builder: (context, state) => const PermissionGuideScreen(),
+        pageBuilder: (context, state) => buildObsidianTransitionPage(
+          key: state.pageKey,
+          child: const PermissionGuideScreen(),
+        ),
       ),
       // T4.6：生物识别锁定页（已登录 + 布防时由重定向守卫强制进入）
       GoRoute(
         path: AppRoutes.lock,
-        builder: (context, state) => const LockScreen(),
+        pageBuilder: (context, state) => buildObsidianTransitionPage(
+          key: state.pageKey,
+          child: const LockScreen(),
+        ),
       ),
       // T3.5：系统分享接收确认页（extra: SharePayload，非预期类型给空态）
       GoRoute(
         path: AppRoutes.shareReceive,
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final extra = state.extra;
-          return ShareReceiveScreen(
-            payload: extra is SharePayload
-                ? extra
-                : const SharePayload(),
+          return buildObsidianTransitionPage(
+            key: state.pageKey,
+            child: ShareReceiveScreen(
+              payload: extra is SharePayload ? extra : const SharePayload(),
+            ),
           );
         },
       ),
       // T4.2：模板库（设置页 Navigator.push 打开；此路由同时支持深链直达）
       GoRoute(
         path: AppRoutes.templates,
-        builder: (context, state) => const TemplatesScreen(),
+        pageBuilder: (context, state) => buildObsidianTransitionPage(
+          key: state.pageKey,
+          child: const TemplatesScreen(),
+        ),
       ),
       // T4.4：订阅管理（设置页 context.push 打开；当前套餐/真实套餐列表/
       // 取消与恢复订阅；支付引导桌面端完成）
       GoRoute(
         path: AppRoutes.subscriptionManagement,
-        builder: (context, state) => const SubscriptionManagementScreen(),
+        pageBuilder: (context, state) => buildObsidianTransitionPage(
+          key: state.pageKey,
+          child: const SubscriptionManagementScreen(),
+        ),
       ),
       // C5：共享链接（设置页 context.push 打开；列表/复制/撤销/创建）
       GoRoute(
         path: AppRoutes.sharedLinks,
-        builder: (context, state) => const SharedLinksScreen(),
+        pageBuilder: (context, state) => buildObsidianTransitionPage(
+          key: state.pageKey,
+          child: const SharedLinksScreen(),
+        ),
       ),
       // C5：通知中心（设置页 context.push 打开；站内通知列表/已读/全部已读）
       GoRoute(
         path: AppRoutes.notifications,
-        builder: (context, state) => const NotificationsScreen(),
+        pageBuilder: (context, state) => buildObsidianTransitionPage(
+          key: state.pageKey,
+          child: const NotificationsScreen(),
+        ),
       ),
       // 主页 4 tab shell：IndexedStack 保活分支，HomeScreen 提供骨架外观
       StatefulShellRoute.indexedStack(
@@ -300,42 +326,99 @@ GoRouter createAppRouter({
   );
 }
 
-/// 冷启动加载页：等待本地登录态校验完成（与旧版 main.dart 的加载屏保持一致）
+/// Obsidian v2 容器变换与物理位移动效页面（450ms morph emphasized）。
+Page<dynamic> buildObsidianTransitionPage({
+  required LocalKey key,
+  required Widget child,
+}) {
+  return CustomTransitionPage<void>(
+    key: key,
+    child: child,
+    transitionDuration: AppMotionV2.morph,
+    reverseTransitionDuration: AppMotionV2.slow,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curvedAnimation = CurvedAnimation(
+        parent: animation,
+        curve: AppMotionV2.emphasized,
+        reverseCurve: AppMotionV2.accelerateE,
+      );
+      final offsetAnimation = Tween<Offset>(
+        begin: const Offset(0.06, 0.0),
+        end: Offset.zero,
+      ).animate(curvedAnimation);
+      final fadeAnimation = Tween<double>(
+        begin: 0.0,
+        end: 1.0,
+      ).animate(curvedAnimation);
+
+      return SlideTransition(
+        position: offsetAnimation,
+        child: FadeTransition(
+          opacity: fadeAnimation,
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
+/// 冷启动加载页：等待本地登录态校验完成（对齐 Obsidian v2 质感）
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
+      backgroundColor: AppColorsV2.surface(context, tier: SurfaceTier.base),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.content_paste,
-              size: 64,
-              color: Color(0xFF6C5CE7),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.25),
+                  width: 1.5,
+                ),
+              ),
+              child: Icon(
+                Icons.content_paste_rounded,
+                size: 40,
+                color: theme.colorScheme.primary,
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             Text(
               l10n.appTitle,
-              style: const TextStyle(
-                fontSize: 24,
+              style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF2D3436),
+                letterSpacing: 0,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               l10n.loginSubtitle,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Color(0xFF636E72),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: isDark ? Colors.white60 : Colors.black54,
               ),
             ),
-            const SizedBox(height: 32),
-            const CircularProgressIndicator(color: Color(0xFF6C5CE7)),
+            const SizedBox(height: 36),
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: theme.colorScheme.primary,
+              ),
+            ),
           ],
         ),
       ),
