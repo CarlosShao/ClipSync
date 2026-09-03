@@ -19,6 +19,10 @@ Future<void> showFilterPanel(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
     useSafeArea: true,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: AppShapesV2.rXl),
+    ),
     builder: (BuildContext sheetContext) => const FilterPanel(),
   );
 }
@@ -103,6 +107,17 @@ class _FilterPanelState extends State<FilterPanel> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
               Text(
                 l10n.advancedFilter,
                 style: textTheme.titleMedium,

@@ -17,7 +17,7 @@ class _FilterOption {
   final IconData icon;
 }
 
-// 文案（全部/文本/链接/图片/文件）在构建时经 AppLocalizations 解析（F5），
+// 文案（全部/文本/链接/图片/文件/代码）在构建时经 AppLocalizations 解析（F5），
 // value→key 的映射见 [_optionLabel]。
 const List<_FilterOption> _kFilterOptions = <_FilterOption>[
   _FilterOption(icon: Icons.filter_list),
@@ -25,6 +25,7 @@ const List<_FilterOption> _kFilterOptions = <_FilterOption>[
   _FilterOption(value: 'link', icon: Icons.link),
   _FilterOption(value: 'image', icon: Icons.image_outlined),
   _FilterOption(value: 'file', icon: Icons.insert_drive_file_outlined),
+  _FilterOption(value: 'code', icon: Icons.code_rounded),
 ];
 
 /// 按 contentType 取本地化标签（null / 未知值 = 「全部」）。
@@ -38,6 +39,8 @@ String _optionLabel(AppLocalizations l10n, String? value) {
       return l10n.typeImage;
     case 'file':
       return l10n.typeFile;
+    case 'code':
+      return l10n.typeCode;
     default:
       return l10n.typeAll;
   }
@@ -45,7 +48,7 @@ String _optionLabel(AppLocalizations l10n, String? value) {
 
 /// 剪贴板流类型筛选 chips 横向滚动行（T2.3 / C2 高级筛选入口）。
 ///
-/// 单选语义：全部 / 文本 / 链接 / 图片 / 文件。选中项回传
+/// 单选语义：全部 / 文本 / 链接 / 图片 / 文件 / 代码。选中项回传
 /// [TypeFilterChips.onSelected]（「全部」回传 null），由宿主转发给
 /// `ClipboardProvider.setContentTypeFilter`（重置分页由 provider 处理）。
 ///
@@ -75,6 +78,7 @@ class TypeFilterChips extends StatelessWidget {
     return SizedBox(
       height: 36,
       child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
         itemCount: _kFilterOptions.length + 1,
@@ -99,6 +103,9 @@ class TypeFilterChips extends StatelessWidget {
             label: Text(_optionLabel(l10n, option.value)),
             showCheckmark: false,
             visualDensity: VisualDensity.compact,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppShapesV2.pill),
+            ),
             onSelected: (bool _) => onSelected(option.value),
           );
         },
@@ -122,6 +129,9 @@ class TypeFilterChips extends StatelessWidget {
       label: Text(hasActive ? l10n.activeFilters(activeFilterCount) : l10n.advancedFilter),
       showCheckmark: false,
       visualDensity: VisualDensity.compact,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppShapesV2.pill),
+      ),
       onSelected: (bool _) => showFilterPanel(context),
     );
   }

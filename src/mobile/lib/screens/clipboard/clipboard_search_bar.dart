@@ -356,15 +356,24 @@ class _ClipboardSearchBarState extends State<ClipboardSearchBar> {
           widget.onQueryChanged(value.trim());
         },
         decoration: InputDecoration(
+          isDense: true,
           hintText: hintText,
-          prefixIcon: Icon(Icons.search, color: scheme.onSurfaceVariant),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          prefixIcon: Icon(Icons.search, size: 20, color: scheme.onSurfaceVariant),
+          prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 38),
           suffixIcon: hasText
               ? IconButton(
-                  icon: Icon(Icons.close, size: 20, color: scheme.onSurfaceVariant),
+                  icon: Icon(Icons.close, size: 18, color: scheme.onSurfaceVariant),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   onPressed: _handleClear,
                   tooltip: AppLocalizations.of(context).clearSearch,
                 )
               : null,
+          suffixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 38),
         ),
       ),
     );
