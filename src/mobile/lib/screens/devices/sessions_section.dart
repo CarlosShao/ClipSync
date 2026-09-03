@@ -4,27 +4,28 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../l10n/app_localizations.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/ws_provider.dart';
-import '../../router/app_router.dart';
-import '../../services/sessions_api_service.dart';
-import '../../theme/app_theme.dart';
-import '../../widgets/common/app_card.dart';
-import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/error_state.dart';
-import '../../widgets/common/section_header.dart';
-import '../../widgets/common/skeleton_list.dart';
+import 'package:clipsync_mobile/l10n/app_localizations.dart';
+import 'package:clipsync_mobile/providers/auth_provider.dart';
+import 'package:clipsync_mobile/providers/ws_provider.dart';
+import 'package:clipsync_mobile/router/app_router.dart';
+import 'package:clipsync_mobile/services/sessions_api_service.dart';
+import 'package:clipsync_mobile/theme/app_theme.dart';
+import 'package:clipsync_mobile/widgets/common/app_card.dart';
+import 'package:clipsync_mobile/widgets/common/empty_state.dart';
+import 'package:clipsync_mobile/widgets/common/error_state.dart';
+import 'package:clipsync_mobile/widgets/common/section_divider.dart';
+import 'package:clipsync_mobile/widgets/common/skeleton_list.dart';
 
 /// 会话区块加载阶段：加载中 / 就绪 / 出错（空态由就绪阶段下空列表表达）。
 enum _SessionsPhase { loading, ready, error }
 
-/// 活跃会话管理区块（T4.3）。
+/// 活跃会话管理区块 (Obsidian v2)。
 ///
 /// 挂载于设备 tab 设备列表下方（home_screen.dart 的 [DevicesTab]），
 /// 自管理数据与状态，消费 [SessionsApiService]：
+/// - 顶部使用 `SectionDivider(title: '活跃会话' / l10n)` 统一区块划分；
 /// - 列表项：设备名 + 最近活跃时间/IP + 「当前」会话标记；
-/// - 每项支持吊销单个会话（带确认对话框）；
+/// - 会话列表项样式对齐 Obsidian v2，支持吊销非当前会话（当前会话提示退出）；
 /// - 吊销当前会话 = 退出登录效果：服务端已将该会话 jti 拉黑（access token
 ///   立即失效），客户端同步清空本地凭证并断开 WS，go_router 守卫跳回登录页；
 /// - 空态 / 加载骨架 / 错误重试三态复用 `lib/widgets/common/` 组件。
@@ -42,7 +43,7 @@ class _SessionsSectionState extends State<SessionsSection> {
   List<ActiveSession> _sessions = const <ActiveSession>[];
 
   /// 加载失败的展示文案（错误态）
-  String _errorMessage = '';
+  String _errorMessage = "";
 
   /// 正在吊销的会话 id（行内转圈，防重复提交）
   String? _revokingId;
@@ -57,7 +58,7 @@ class _SessionsSectionState extends State<SessionsSection> {
   Future<void> _loadSessions() async {
     setState(() {
       _phase = _SessionsPhase.loading;
-      _errorMessage = '';
+      _errorMessage = "";
     });
     try {
       final List<ActiveSession> sessions = await _service.listSessions();
@@ -67,7 +68,7 @@ class _SessionsSectionState extends State<SessionsSection> {
         _phase = _SessionsPhase.ready;
       });
     } on Exception catch (e) {
-      debugPrint('[SessionsSection] load sessions failed: $e');
+      debugPrint("[SessionsSection] load sessions failed: $e");
       if (!mounted) return;
       setState(() {
         _errorMessage = AppLocalizations.of(context).sessionsLoadFailed;
@@ -84,16 +85,19 @@ class _SessionsSectionState extends State<SessionsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SectionHeader(
+        SectionDivider(
           title: l10n.activeSessions,
-          subtitle: l10n.activeSessionsDesc,
+          padding: const EdgeInsets.symmetric(
+            vertical: AppSpacing.sm,
+          ),
           trailing: IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, size: 20),
             tooltip: l10n.refreshSessions,
             onPressed:
                 _phase == _SessionsPhase.loading ? null : _loadSessions,
           ),
         ),
+        const SizedBox(height: AppSpacing.xs),
         if (_phase == _SessionsPhase.loading)
           const SkeletonList(itemCount: 2, padding: EdgeInsets.zero)
         else if (_phase == _SessionsPhase.error)
@@ -131,6 +135,10 @@ class _SessionsSectionState extends State<SessionsSection> {
 
     return AppCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
       child: Row(
         children: <Widget>[
           Container(
@@ -138,7 +146,7 @@ class _SessionsSectionState extends State<SessionsSection> {
             height: 40,
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHigh,
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(AppShapesV2.sm),
             ),
             child: Icon(
               _platformIcon(session.platform),

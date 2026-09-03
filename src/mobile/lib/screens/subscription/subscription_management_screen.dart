@@ -11,27 +11,18 @@ import '../../services/app_exception.dart';
 import '../../services/subscription_api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common/app_card.dart';
+import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/error_state.dart';
+import '../../widgets/common/section_divider.dart';
 import '../../widgets/common/skeleton_list.dart';
-import '../../widgets/common/section_header.dart';
 
-/// 订阅管理页（T4.4 去 mock 重写，替代已删除的
-/// lib/screens/subscription_management_screen.dart）。
+/// 订阅管理页（T4.4 / Obsidian v2）。
 ///
-/// 数据全部来自真实后端（[SubscriptionApiService]，契约见
-/// src/server/src/routes/subscriptions.js / invoices.js）：
-/// - GET /api/subscriptions/current：当前订阅 + 生效套餐；
-/// - GET /api/subscriptions/plans：可用套餐列表（公开接口）；
-/// - POST /api/subscriptions/cancel | resume：期末取消 / 恢复续订；
-/// - GET /api/invoices：账单记录（替代旧页失效的 /api/payments/history）。
-///
-/// 页面结构：当前订阅卡片（套餐名/状态/到期时间，无则显示「—」，
-/// 末尾按状态给出取消/恢复入口）→ 桌面端支付提示 → 套餐列表
-/// （当前套餐高亮，购买按钮替换为「请在桌面端完成支付」提示，
-/// 移动端不做真实支付）→ 账单记录。
-///
-/// 三态：SkeletonList（加载中）/ ErrorState（失败可重试）/
-/// RefreshIndicator + 列表（数据），支持下拉刷新与 AppBar 刷新。
+/// 视觉与交互规格：
+/// - 当前套餐卡片：尊享渐变顶边 (gradientLine)、徽标、权益清单；
+/// - 升级方案对比卡片：对比定价、权益列表、FilledButton.tonal / FilledButton 按钮；
+/// - 历史账单明细列表：状态图标、时间、金额；
+/// - 全面采用 Obsidian v2 Token 与 28dp (AppShapesV2.xl) 对话框。
 class SubscriptionManagementScreen extends StatefulWidget {
   const SubscriptionManagementScreen({super.key});
 
@@ -64,7 +55,6 @@ class _SubscriptionManagementScreenState
   // 数据加载
   // ---------------------------------------------------------------------------
 
-  /// 首次进入与下拉刷新共用：加载当前订阅 + 套餐列表，账单异步跟加载。
   Future<void> _load() async {
     setState(() {
       _isLoading = true;
@@ -84,7 +74,6 @@ class _SubscriptionManagementScreenState
         _plans = plans;
         _isLoading = false;
       });
-      // 账单为辅助信息：失败静默隐藏，不影响订阅主流程展示
       unawaited(_loadInvoices(token));
     } on Exception catch (e) {
       if (!mounted) {
@@ -97,8 +86,6 @@ class _SubscriptionManagementScreenState
     }
   }
 
-  /// 账单列表：仅刷新 [CurrentSubscriptionData] 不涉及的部分，
-  /// 失败时保持空列表（区块显示「暂无账单记录」）。
   Future<void> _loadInvoices(String? token) async {
     try {
       final invoices = await SubscriptionApiService.getInvoices(token);
@@ -108,12 +95,11 @@ class _SubscriptionManagementScreenState
       setState(() {
         _invoices = invoices;
       });
-    } on Exception catch (_) {
-      // 账单加载失败不阻塞订阅管理主流程，区块回落为空态
+    } on Exception {
+      // 账单加载失败不阻塞订阅管理主流程
     }
   }
 
-  /// 取消/恢复成功后仅刷新当前订阅（套餐列表与高亮不受影响）。
   Future<void> _refreshCurrent() async {
     final token = context.read<AuthProvider>().token;
     final current = await SubscriptionApiService.getCurrentSubscription(token);
@@ -129,7 +115,6 @@ class _SubscriptionManagementScreenState
   // 取消 / 恢复订阅
   // ---------------------------------------------------------------------------
 
-  /// 取消订阅：确认对话框 → POST /api/subscriptions/cancel → 刷新当前订阅。
   Future<void> _cancelSubscription() async {
     final l10n = AppLocalizations.of(context);
     final confirmed = await _confirmAction(
@@ -170,7 +155,6 @@ class _SubscriptionManagementScreenState
     }
   }
 
-  /// 恢复订阅：确认对话框 → POST /api/subscriptions/resume → 刷新当前订阅。
   Future<void> _resumeSubscription() async {
     final l10n = AppLocalizations.of(context);
     final confirmed = await _confirmAction(
@@ -211,7 +195,6 @@ class _SubscriptionManagementScreenState
     }
   }
 
-  /// 取消/恢复共用的确认对话框；返回 null 表示用户关闭对话框。
   Future<bool?> _confirmAction({
     required String title,
     required String message,
@@ -222,6 +205,7 @@ class _SubscriptionManagementScreenState
     return showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
+        shape: AppShapesV2.shapeXl,
         title: Text(title),
         content: Text(message),
         actions: <Widget>[
@@ -246,7 +230,6 @@ class _SubscriptionManagementScreenState
   // 展示辅助
   // ---------------------------------------------------------------------------
 
-  /// 订阅状态文案（仅在有活跃订阅时调用）。
   String _statusLabelOf(UserSubscription subscription, AppLocalizations l10n) {
     if (subscription.cancelAtPeriodEnd) {
       return l10n.statusCancelScheduled;
@@ -261,7 +244,6 @@ class _SubscriptionManagementScreenState
     }
   }
 
-  /// 日期格式化为 yyyy-MM-dd，空值显示「—」。
   String _formatDate(DateTime? date) {
     if (date == null) {
       return '—';
@@ -271,20 +253,16 @@ class _SubscriptionManagementScreenState
     return '${date.year}-$month-$day';
   }
 
-  /// 账单时间：后端返回 ISO 字符串，截取日期部分展示。
   String _formatInvoiceDate(Map<String, dynamic> invoice) {
     final raw = invoice['createdAt']?.toString() ?? '';
     return raw.length >= 10 ? raw.substring(0, 10) : (raw.isEmpty ? '—' : raw);
   }
 
-  /// 账单金额文案。
   String _formatInvoiceAmount(Map<String, dynamic> invoice) {
     final amount = invoice['amount'] as num?;
     return amount == null ? '—' : '¥${amount.toStringAsFixed(2)}';
   }
 
-  /// 套餐价格文案（A3 解耦：model 只提供结构化数据，货币符号/周期后缀
-  /// 由 UI 经 l10n 组装）。
   String _planPriceText(SubscriptionPlan plan, AppLocalizations l10n) {
     if (plan.isFree) {
       return l10n.planFree;
@@ -296,8 +274,6 @@ class _SubscriptionManagementScreenState
     return '$symbol${plan.price.toStringAsFixed(2)}$period';
   }
 
-  /// 套餐特性文案列表：数量类经 l10n 占位符插值，能力类按布尔字段显隐，
-  /// 末尾追加服务端下发的 paywallFeatureN（原样展示）。
   List<String> _planFeatureLines(SubscriptionPlan plan, AppLocalizations l10n) {
     return <String>[
       l10n.planMaxDevices(plan.maxDevices),
@@ -317,7 +293,7 @@ class _SubscriptionManagementScreenState
   }
 
   // ---------------------------------------------------------------------------
-  // 页面骨架
+  // 页面构建
   // ---------------------------------------------------------------------------
 
   @override
@@ -331,7 +307,7 @@ class _SubscriptionManagementScreenState
         centerTitle: true,
         actions: <Widget>[
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh_rounded),
             tooltip: l10n.refresh,
             onPressed: _isLoading ? null : _load,
           ),
@@ -352,15 +328,19 @@ class _SubscriptionManagementScreenState
                       AppSpacing.lg,
                       AppSpacing.sm,
                       AppSpacing.lg,
-                      AppSpacing.xxl,
+                      AppSpacing.xxl * 2,
                     ),
                     children: <Widget>[
                       _buildCurrentSubscriptionCard(scheme),
                       const SizedBox(height: AppSpacing.lg),
-                      _buildDesktopPaymentHint(scheme),
-                      SectionHeader(title: l10n.availablePlans),
+                      _buildDesktopPaymentHint(),
+                      const SizedBox(height: AppSpacing.md),
+                      SectionDivider(title: l10n.availablePlans),
+                      const SizedBox(height: AppSpacing.xs),
                       ..._plans.map(_buildPlanCard),
-                      SectionHeader(title: l10n.billingRecords),
+                      const SizedBox(height: AppSpacing.md),
+                      SectionDivider(title: l10n.billingRecords),
+                      const SizedBox(height: AppSpacing.xs),
                       ..._buildInvoiceCards(scheme),
                     ],
                   ),
@@ -369,81 +349,197 @@ class _SubscriptionManagementScreenState
   }
 
   // ---------------------------------------------------------------------------
-  // 当前订阅卡片
+  // 当前套餐卡片（尊享渐变顶边 + 徽标 + 权益清单）
   // ---------------------------------------------------------------------------
 
   Widget _buildCurrentSubscriptionCard(ColorScheme scheme) {
+    final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
     final plan = _current?.plan;
     final subscription = _current?.subscription;
 
-    final statusChip = subscription == null
-        ? null
-        : _buildStatusChip(scheme, subscription);
+    final Color brandPurple = isDark
+        ? AppColorsV2.brandPrimaryDark
+        : AppColorsV2.brandPrimaryLight;
 
     return AppCard(
-      borderColor: scheme.outlineVariant,
+      surfaceTier: SurfaceTier.low,
+      borderRadius: AppShapesV2.brLg,
+      gradientLine: const LinearGradient(
+        colors: <Color>[
+          Color(0xFF5A4BD1),
+          Color(0xFFA855F7),
+          Color(0xFF38BDF8),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          // Header: 图标 + 套餐名 + 尊享徽标
           Row(
             children: <Widget>[
-              Icon(plan?.icon ?? Icons.card_membership, color: scheme.primary),
-              const SizedBox(width: AppSpacing.sm),
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: <Color>[Color(0xFF5A4BD1), Color(0xFFA855F7)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: AppShapesV2.brSm,
+                ),
+                child: Icon(
+                  plan?.icon ?? Icons.workspace_premium_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      plan?.name ?? '—',
-                      style: Theme.of(context).textTheme.titleLarge,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: <Widget>[
+                        Flexible(
+                          child: Text(
+                            plan?.name ?? '—',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: brandPurple.withValues(alpha: 0.14),
+                            borderRadius: AppShapesV2.brPill,
+                          ),
+                          child: Text(
+                            l10n.currentPlanBadge,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: brandPurple,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     if (plan?.description case final String description)
                       Text(
                         description,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                   ],
                 ),
               ),
-              if (statusChip != null) statusChip,
+              if (subscription != null) _buildStatusChip(scheme, subscription),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
-          _buildDetailRow(
-            l10n.subscriptionStatusLabel,
-            subscription == null ? '—' : _statusLabelOf(subscription, l10n),
-          ),
-          _buildDetailRow(
-            l10n.expiryDate,
-            _formatDate(subscription?.currentPeriodEnd),
-          ),
-          if (subscription?.status == 'trial' &&
-              subscription?.trialEnd != null)
-            _buildDetailRow(
-              l10n.trialEndDate,
-              _formatDate(subscription?.trialEnd),
+          const SizedBox(height: AppSpacing.lg),
+
+          // 关键日期详情行
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: AppColorsV2.surfaceFor(
+                tier: SurfaceTier.base,
+                isDark: isDark,
+              ),
+              borderRadius: AppShapesV2.brSm,
+              border: Border.all(
+                color: AppColorsV2.borderFor(isDark: isDark),
+                width: 0.5,
+              ),
             ),
+            child: Column(
+              children: <Widget>[
+                _buildDetailRow(
+                  l10n.subscriptionStatusLabel,
+                  subscription == null ? '—' : _statusLabelOf(subscription, l10n),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                _buildDetailRow(
+                  l10n.expiryDate,
+                  _formatDate(subscription?.currentPeriodEnd),
+                ),
+                if (subscription?.status == 'trial' &&
+                    subscription?.trialEnd != null) ...<Widget>[
+                  const SizedBox(height: AppSpacing.xs),
+                  _buildDetailRow(
+                    l10n.trialEndDate,
+                    _formatDate(subscription?.trialEnd),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // 权益清单
+          if (plan != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              '套餐包含权益',
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            ..._planFeatureLines(plan, l10n).map(
+              (String feature) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Icon(
+                      Icons.check_circle_rounded,
+                      size: 16,
+                      color: brandPurple,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        feature,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
           if (subscription?.cancelAtPeriodEnd ?? false)
             Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
               child: Text(
                 l10n.subscriptionEndsOn(
                   _formatDate(subscription?.currentPeriodEnd),
                 ),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColorsV2.dangerColor(context),
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-          // 取消 / 恢复入口（与后端能力对齐：cancel/resume 仅作用于
-          // status=active 的订阅，试用期与无订阅时不展示）
+
+          // 取消 / 恢复操作按钮
           if (subscription != null && subscription.status == 'active') ...<Widget>[
             const SizedBox(height: AppSpacing.lg),
             SizedBox(
@@ -459,11 +555,15 @@ class _SubscriptionManagementScreenState
                   : subscription.cancelAtPeriodEnd
                       ? FilledButton.tonal(
                           onPressed: _resumeSubscription,
+                          style: FilledButton.styleFrom(
+                            shape: AppShapesV2.shapeMd,
+                          ),
                           child: Text(l10n.resumeSubscription),
                         )
                       : OutlinedButton(
                           onPressed: _cancelSubscription,
                           style: OutlinedButton.styleFrom(
+                            shape: AppShapesV2.shapeMd,
                             foregroundColor: scheme.error,
                             side: BorderSide(color: scheme.error),
                           ),
@@ -484,66 +584,80 @@ class _SubscriptionManagementScreenState
             ? (scheme.tertiaryContainer, scheme.onTertiaryContainer)
             : (scheme.primaryContainer, scheme.onPrimaryContainer);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 3),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
+        borderRadius: AppShapesV2.brPill,
       ),
       child: Text(
         _statusLabelOf(subscription, AppLocalizations.of(context)),
-        style: Theme.of(context)
-            .textTheme
-            .labelSmall
-            ?.copyWith(color: foreground),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: foreground,
+        ),
       ),
     );
   }
 
-  /// 键值详情行：[value] 为空时显示「—」。
   Widget _buildDetailRow(String label, String? value) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.xs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          SizedBox(
-            width: 72,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-            ),
+    return Row(
+      children: <Widget>[
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: scheme.onSurfaceVariant,
           ),
-          Expanded(
-            child: Text(
-              value ?? '—',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+        ),
+        const Spacer(),
+        Text(
+          value ?? '—',
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   // ---------------------------------------------------------------------------
-  // 桌面端支付提示 + 套餐列表
+  // 桌面端支付提示
   // ---------------------------------------------------------------------------
 
-  /// 桌面端支付提示：移动端不承载支付（购买按钮已全部替换为本提示）。
-  Widget _buildDesktopPaymentHint(ColorScheme scheme) {
+  Widget _buildDesktopPaymentHint() {
+    final theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+
     return AppCard(
-      borderColor: scheme.primaryContainer,
+      surfaceTier: SurfaceTier.low,
+      borderRadius: AppShapesV2.brMd,
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          Icon(Icons.desktop_windows_outlined, color: scheme.primary, size: 20),
-          const SizedBox(width: AppSpacing.sm),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColorsV2.surfaceFor(tier: SurfaceTier.high, isDark: isDark),
+              borderRadius: AppShapesV2.brSm,
+            ),
+            child: Icon(
+              Icons.desktop_windows_rounded,
+              color: isDark ? AppColorsV2.brandPrimaryDark : AppColorsV2.brandPrimaryLight,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Text(
               AppLocalizations.of(context).desktopPaymentHint,
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -551,36 +665,67 @@ class _SubscriptionManagementScreenState
     );
   }
 
-  /// 套餐卡片：真实 plans 渲染，当前套餐描边高亮 + 「当前套餐」徽标；
-  /// 非当前付费套餐的购买按钮替换为「请在桌面端完成支付」提示。
+  // ---------------------------------------------------------------------------
+  // 升级方案对比卡片
+  // ---------------------------------------------------------------------------
+
   Widget _buildPlanCard(SubscriptionPlan plan) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
     final l10n = AppLocalizations.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
     final bool isCurrent = plan.id == _currentPlanId;
+    final Color brandPurple = isDark
+        ? AppColorsV2.brandPrimaryDark
+        : AppColorsV2.brandPrimaryLight;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: AppCard(
-        borderColor: isCurrent ? scheme.primary : null,
+        surfaceTier: SurfaceTier.low,
+        borderRadius: AppShapesV2.brMd,
+        borderColor: isCurrent ? brandPurple : null,
+        gradientLine: isCurrent
+            ? LinearGradient(
+                colors: <Color>[
+                  brandPurple,
+                  brandPurple.withValues(alpha: 0.1),
+                ],
+              )
+            : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(plan.icon, color: plan.color),
-                const SizedBox(width: AppSpacing.sm),
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: plan.color.withValues(alpha: 0.14),
+                    borderRadius: AppShapesV2.brSm,
+                  ),
+                  child: Icon(plan.icon, color: plan.color, size: 20),
+                ),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(plan.name, style: textTheme.titleMedium),
+                      Text(
+                        plan.name,
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       if (plan.description case final String description)
                         Text(
                           description,
-                          style: textTheme.bodySmall
-                              ?.copyWith(color: scheme.onSurfaceVariant),
+                          style: textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ),
                     ],
                   ),
@@ -588,14 +733,22 @@ class _SubscriptionManagementScreenState
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: <Widget>[
-                    Text(_planPriceText(plan, l10n), style: textTheme.titleMedium),
+                    Text(
+                      _planPriceText(plan, l10n),
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: isCurrent ? brandPurple : scheme.onSurface,
+                      ),
+                    ),
                     if (isCurrent)
                       Padding(
-                        padding: const EdgeInsets.only(top: AppSpacing.xs),
+                        padding: const EdgeInsets.only(top: 2),
                         child: Text(
                           l10n.currentPlanBadge,
-                          style: textTheme.labelSmall
-                              ?.copyWith(color: scheme.primary),
+                          style: textTheme.labelSmall?.copyWith(
+                            color: brandPurple,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                   ],
@@ -605,11 +758,15 @@ class _SubscriptionManagementScreenState
             const SizedBox(height: AppSpacing.md),
             ..._planFeatureLines(plan, l10n).map(
               (String feature) => Padding(
-                padding: const EdgeInsets.only(top: 2),
+                padding: const EdgeInsets.only(top: 3),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Icon(Icons.check, size: 16, color: scheme.primary),
+                    Icon(
+                      Icons.check_rounded,
+                      size: 16,
+                      color: isCurrent ? brandPurple : scheme.onSurfaceVariant,
+                    ),
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(
                       child: Text(
@@ -623,26 +780,33 @@ class _SubscriptionManagementScreenState
                 ),
               ),
             ),
-            // 购买按钮替换为桌面端支付提示（T4.4：移动端不做真实支付）
-            if (!isCurrent && plan.price > 0) ...<Widget>[
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: <Widget>[
-                  Icon(
-                    Icons.desktop_windows_outlined,
-                    size: 16,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Text(
-                    l10n.payOnDesktop,
-                    style: textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              child: isCurrent
+                  ? FilledButton.tonal(
+                      onPressed: null,
+                      style: FilledButton.styleFrom(
+                        shape: AppShapesV2.shapeMd,
+                      ),
+                      child: Text(l10n.currentPlanBadge),
+                    )
+                  : FilledButton(
+                      onPressed: null,
+                      style: FilledButton.styleFrom(
+                        shape: AppShapesV2.shapeMd,
+                        backgroundColor: AppColorsV2.brandPrimaryLight,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          const Icon(Icons.desktop_windows_outlined, size: 16),
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(l10n.payOnDesktop),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ],
         ),
       ),
@@ -656,16 +820,11 @@ class _SubscriptionManagementScreenState
   List<Widget> _buildInvoiceCards(ColorScheme scheme) {
     if (_invoices.isEmpty) {
       return <Widget>[
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-          child: Center(
-            child: Text(
-              AppLocalizations.of(context).noInvoices,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-            ),
-          ),
+        EmptyState(
+          illustration: EmptyStateIllustration.generic,
+          icon: Icons.receipt_long_rounded,
+          title: AppLocalizations.of(context).noInvoices,
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
         ),
       ];
     }
@@ -673,16 +832,22 @@ class _SubscriptionManagementScreenState
       final bool paid = invoice['status']?.toString() == 'paid';
       final String invoiceNo = invoice['invoiceNo']?.toString() ?? '—';
       final String planName = invoice['planName']?.toString() ?? '';
+
       return Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
         child: AppCard(
-          padding: const EdgeInsets.all(AppSpacing.md),
+          surfaceTier: SurfaceTier.low,
+          borderRadius: AppShapesV2.brSm,
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.md,
+          ),
           child: Row(
             children: <Widget>[
               Icon(
-                paid ? Icons.check_circle : Icons.receipt_long,
+                paid ? Icons.check_circle_rounded : Icons.receipt_long_rounded,
                 size: 20,
-                color: paid ? scheme.primary : scheme.onSurfaceVariant,
+                color: paid ? AppColorsV2.typeColorLight : scheme.onSurfaceVariant,
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
@@ -691,7 +856,9 @@ class _SubscriptionManagementScreenState
                   children: <Widget>[
                     Text(
                       planName.isEmpty ? invoiceNo : '$invoiceNo · $planName',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -707,7 +874,9 @@ class _SubscriptionManagementScreenState
               const SizedBox(width: AppSpacing.sm),
               Text(
                 _formatInvoiceAmount(invoice),
-                style: Theme.of(context).textTheme.titleSmall,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
             ],
           ),

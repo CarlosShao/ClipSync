@@ -1,23 +1,25 @@
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import "package:flutter/material.dart";
+import "package:go_router/go_router.dart";
+import "package:provider/provider.dart";
+import "package:shared_preferences/shared_preferences.dart";
 
-import '../l10n/app_localizations.dart';
-import '../providers/auth_provider.dart';
-import '../providers/clipboard_provider.dart';
-import '../providers/settings_provider.dart';
-import '../router/app_router.dart';
-import '../services/biometric_service.dart';
-import '../services/profile_api_service.dart';
-import '../services/server_config.dart';
-import '../theme/app_theme.dart';
-import 'notification_settings_screen.dart';
-import 'templates/templates_screen.dart';
+import "package:clipsync_mobile/l10n/app_localizations.dart";
+import "package:clipsync_mobile/providers/auth_provider.dart";
+import "package:clipsync_mobile/providers/clipboard_provider.dart";
+import "package:clipsync_mobile/providers/settings_provider.dart";
+import "package:clipsync_mobile/router/app_router.dart";
+import "package:clipsync_mobile/screens/notification_settings_screen.dart";
+import "package:clipsync_mobile/screens/templates/templates_screen.dart";
+import "package:clipsync_mobile/services/biometric_service.dart";
+import "package:clipsync_mobile/services/profile_api_service.dart";
+import "package:clipsync_mobile/services/server_config.dart";
+import "package:clipsync_mobile/theme/app_theme.dart";
+import "package:clipsync_mobile/widgets/common/app_card.dart";
+import "package:clipsync_mobile/widgets/common/section_divider.dart";
 
 /// 设置页面（移动端）
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  const SettingsScreen({super.key});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -197,76 +199,130 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     // T4.5: i18n —— 本页文案接 AppLocalizations，随设置页语言切换即时变化；
-    // 未迁移的硬编码文案（如 T4.6 安全区块）维持现状，后续渐进迁移。
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.tabSettings),
-        // 作为主页 tab 嵌入时无返回栈，交由 AppBar 自动处理 leading
       ),
       body: ListView(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.sm,
+        ),
         children: [
-          _buildSectionHeader(l10n.accountSection),
-          _buildAccountSection(),
-          const Divider(),
+          // 账号资料
+          SectionDivider(title: l10n.accountSection),
+          AppCard(
+            surfaceTier: SurfaceTier.low,
+            padding: EdgeInsets.zero,
+            child: _buildAccountSection(),
+          ),
+          const SizedBox(height: AppSpacing.md),
 
-          _buildSectionHeader(l10n.sectionServer),
-          _buildServerUrlSetting(),
-          const Divider(),
+          // 服务器设置
+          SectionDivider(title: l10n.sectionServer),
+          AppCard(
+            surfaceTier: SurfaceTier.low,
+            padding: EdgeInsets.zero,
+            child: _buildServerUrlSetting(),
+          ),
+          const SizedBox(height: AppSpacing.md),
 
-          _buildSectionHeader(l10n.sectionGeneral),
-          _buildNotificationSetting(),
-          const Divider(),
+          // 通用通知与提示
+          SectionDivider(title: l10n.sectionGeneral),
+          AppCard(
+            surfaceTier: SurfaceTier.low,
+            padding: EdgeInsets.zero,
+            child: _buildNotificationSetting(),
+          ),
+          const SizedBox(height: AppSpacing.md),
 
-          _buildSectionHeader(l10n.sectionAppearance),
-          _buildThemeSetting(),
-          _buildLanguageSetting(),
-          const Divider(),
+          // 外观偏好
+          SectionDivider(title: l10n.sectionAppearance),
+          AppCard(
+            surfaceTier: SurfaceTier.low,
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            child: Column(
+              children: [
+                _buildThemeSetting(),
+                const Divider(height: 1),
+                _buildLanguageSetting(),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
 
-          _buildSectionHeader(l10n.sectionSecurity),
-          _buildBiometricLockSetting(),
-          const Divider(),
+          // 安全与生物识别
+          SectionDivider(title: l10n.sectionSecurity),
+          AppCard(
+            surfaceTier: SurfaceTier.low,
+            padding: EdgeInsets.zero,
+            child: _buildBiometricLockSetting(),
+          ),
+          const SizedBox(height: AppSpacing.md),
 
-          _buildSectionHeader(l10n.sectionData),
-          _buildClearCacheButton(),
-          _buildTemplatesTile(),
-          _buildSharedLinksTile(),
-          _buildNotificationsCenterTile(),
-          const Divider(),
+          // 数据与功能模块
+          SectionDivider(title: l10n.sectionData),
+          AppCard(
+            surfaceTier: SurfaceTier.low,
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                _buildClearCacheButton(),
+                const Divider(height: 1),
+                _buildTemplatesTile(),
+                const Divider(height: 1),
+                _buildSharedLinksTile(),
+                const Divider(height: 1),
+                _buildNotificationsCenterTile(),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
 
-          _buildSectionHeader(l10n.sectionNotification),
-          _buildNotificationSettings(),
-          _buildClipboardCaptureSetting(),
-          const Divider(),
+          // 同步与剪贴板设置
+          SectionDivider(title: l10n.sectionNotification),
+          AppCard(
+            surfaceTier: SurfaceTier.low,
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                _buildNotificationSettings(),
+                const Divider(height: 1),
+                _buildClipboardCaptureSetting(),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
 
-          _buildSectionHeader(l10n.sectionSubscription),
-          _buildSubscriptionSetting(),
-          const Divider(),
+          // 订阅管理
+          SectionDivider(title: l10n.sectionSubscription),
+          AppCard(
+            surfaceTier: SurfaceTier.low,
+            padding: EdgeInsets.zero,
+            child: _buildSubscriptionSetting(),
+          ),
+          const SizedBox(height: AppSpacing.md),
 
-          _buildLogoutTile(),
-          const Divider(),
-
-          _buildAboutSection(),
+          // 退出登录与关于
+          AppCard(
+            surfaceTier: SurfaceTier.low,
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                _buildLogoutTile(),
+                const Divider(height: 1),
+                _buildAboutSection(),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
         ],
       ),
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).primaryColor,
-        ),
-      ),
-    );
-  }
-
-  /// C6：账号资料区块——圆形头像（昵称/手机号首字，主色底白字；有 avatarUrl
+  /// C6：账号资料区块——圆形头像（64dp，昵称/手机号首字，主色底白字；有 avatarUrl
   /// 则显示网络头像）+ 昵称（未设置显示手机号）+ 手机号/邮箱副信息行，
   /// trailing 套餐徽标（G6：数据源 auth_provider 已拉的 user.plan，服务端
   /// GET /api/auth/me 的 COALESCE(plan_name, 'Free')；Free 灰、付费主题色
@@ -280,40 +336,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return ListTile(
         enabled: false,
         leading: const CircleAvatar(
-          child: Icon(Icons.person_outline),
+          radius: 32,
+          child: Icon(Icons.person_outline, size: 32),
         ),
         title: Text(l10n.notLoggedIn),
       );
     }
 
-    final nickname = ((user['nickname'] as String?) ?? '').trim();
-    final phone = ((user['phone'] as String?) ?? '').trim();
-    final email = ((user['email'] as String?) ?? '').trim();
-    final avatarUrl = ((user['avatarUrl'] as String?) ?? '').trim();
-    final plan = ((user['plan'] as String?) ?? '').trim();
+    final nickname = ((user["nickname"] as String?) ?? "").trim();
+    final phone = ((user["phone"] as String?) ?? "").trim();
+    final email = ((user["email"] as String?) ?? "").trim();
+    final avatarUrl = ((user["avatarUrl"] as String?) ?? "").trim();
+    final plan = ((user["plan"] as String?) ?? "").trim();
 
     final display = nickname.isNotEmpty ? nickname : phone;
     final subtitle = phone.isNotEmpty ? phone : email;
 
     return ListTile(
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xs,
+      ),
       leading: CircleAvatar(
-        radius: 24,
+        radius: 32,
         backgroundColor: Theme.of(context).primaryColor,
         backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
         child: avatarUrl.isNotEmpty
             ? null
             : display.isEmpty
-                ? const Icon(Icons.person_outline, color: Colors.white)
+                ? const Icon(Icons.person_outline, color: Colors.white, size: 32)
                 : Text(
                     String.fromCharCode(display.runes.first),
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                      fontSize: 22,
                     ),
                   ),
       ),
-      title: Text(display.isNotEmpty ? display : l10n.notLoggedIn),
+      title: Text(
+        display.isNotEmpty ? display : l10n.notLoggedIn,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
       subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -334,7 +398,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildPlanBadge(String plan) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
-    final bool isFree = plan.toLowerCase() == 'free';
+    final bool isFree = plan.toLowerCase() == "free";
     final (Color background, Color foreground) = isFree
         ? (scheme.surfaceContainerHighest, scheme.onSurfaceVariant)
         : (scheme.primaryContainer, scheme.onPrimaryContainer);
@@ -342,7 +406,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
+        borderRadius: BorderRadius.circular(AppShapesV2.sm),
       ),
       child: Text(
         plan,
@@ -473,16 +537,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildThemeSetting() {
     final l10n = AppLocalizations.of(context);
-    return ListTile(
-      title: Text(l10n.theme),
-      subtitle: Text(_getThemeText()),
-      trailing: DropdownButton<int>(
-        value: _themeModeIndex,
-        onChanged: _setThemeMode,
-        items: [
-          DropdownMenuItem(value: 0, child: Text(l10n.themeSystem)),
-          DropdownMenuItem(value: 1, child: Text(l10n.themeLight)),
-          DropdownMenuItem(value: 2, child: Text(l10n.themeDark)),
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.theme,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<int>(
+              showSelectedIcon: false,
+              segments: <ButtonSegment<int>>[
+                ButtonSegment<int>(
+                  value: 0,
+                  label: Text(l10n.themeSystem),
+                  icon: const Icon(Icons.brightness_auto, size: 18),
+                ),
+                ButtonSegment<int>(
+                  value: 1,
+                  label: Text(l10n.themeLight),
+                  icon: const Icon(Icons.light_mode, size: 18),
+                ),
+                ButtonSegment<int>(
+                  value: 2,
+                  label: Text(l10n.themeDark),
+                  icon: const Icon(Icons.dark_mode, size: 18),
+                ),
+              ],
+              selected: <int>{_themeModeIndex},
+              onSelectionChanged: (Set<int> newSelection) {
+                if (newSelection.isNotEmpty) {
+                  _setThemeMode(newSelection.first);
+                }
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -511,8 +607,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         value: _language,
         onChanged: _setLanguage,
         items: const [
-          DropdownMenuItem(value: 'zh', child: Text('简体中文')),
-          DropdownMenuItem(value: 'en', child: Text('English')),
+          DropdownMenuItem(value: "zh", child: Text("简体中文")),
+          DropdownMenuItem(value: "en", child: Text("English")),
         ],
       ),
     );
@@ -520,12 +616,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _getLanguageText() {
     switch (_language) {
-      case 'zh':
-        return '简体中文';
-      case 'en':
-        return 'English';
+      case "zh":
+        return "简体中文";
+      case "en":
+        return "English";
       default:
-        return '简体中文';
+        return "简体中文";
     }
   }
 
@@ -708,14 +804,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildAboutSection() {
     return AboutListTile(
-      icon: const Icon(Icons.info),
-      applicationName: 'ClipSync',
-      applicationVersion: '0.1.0',
+      icon: const Icon(Icons.info_outline),
+      applicationName: "ClipSync",
+      applicationVersion: "0.1.0",
       applicationIcon: const FlutterLogo(size: 48),
       aboutBoxChildren: [
         Text(AppLocalizations.of(context).aboutDesc),
         const SizedBox(height: 8),
-        const Text('© 2026 ClipSync Team'),
+        const Text("© 2026 ClipSync Team"),
       ],
     );
   }

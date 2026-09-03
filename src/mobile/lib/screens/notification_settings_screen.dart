@@ -1,16 +1,19 @@
-import 'dart:convert';
-import 'dart:io';
+import "dart:convert";
+import "dart:io";
 
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:provider/provider.dart';
+import "package:flutter/material.dart";
+import "package:flutter/services.dart";
+import "package:http/http.dart" as http;
+import "package:provider/provider.dart";
 
-import '../l10n/app_localizations.dart';
-import '../providers/settings_provider.dart';
-import '../services/app_exception.dart';
-import '../services/server_config.dart';
-import '../services/token_store.dart';
+import "package:clipsync_mobile/l10n/app_localizations.dart";
+import "package:clipsync_mobile/providers/settings_provider.dart";
+import "package:clipsync_mobile/services/app_exception.dart";
+import "package:clipsync_mobile/services/server_config.dart";
+import "package:clipsync_mobile/services/token_store.dart";
+import "package:clipsync_mobile/theme/app_theme.dart";
+import "package:clipsync_mobile/widgets/common/app_card.dart";
+import "package:clipsync_mobile/widgets/common/section_divider.dart";
 
 /// 通知设置页（B3 真实化，替换占位页）
 ///
@@ -26,7 +29,7 @@ import '../services/token_store.dart';
 ///    与 permission_guide_screen 跳电池/自启动设置同款方式）跳转
 ///    ACTION_APP_NOTIFICATION_SETTINGS。
 class NotificationSettingsScreen extends StatefulWidget {
-  const NotificationSettingsScreen({Key? key}) : super(key: key);
+  const NotificationSettingsScreen({super.key});
 
   @override
   State<NotificationSettingsScreen> createState() =>
@@ -36,15 +39,15 @@ class NotificationSettingsScreen extends StatefulWidget {
 class _NotificationSettingsScreenState extends State<NotificationSettingsScreen> {
   /// 服务端通知偏好类型（与桌面端 useNotifications.ts PREF_TYPE_BY_KEY 对齐）
   static const List<String> _serverPrefTypes = <String>[
-    'device_online',
-    'sync_complete',
-    'security_alert',
-    'product_update',
+    "device_online",
+    "sync_complete",
+    "security_alert",
+    "product_update",
   ];
 
   /// 原生桥（clipsync/sync，由 MainActivity 承载；与 permission_guide_screen
   /// 同一通道契约）
-  static const MethodChannel _nativeBridge = MethodChannel('clipsync/sync');
+  static const MethodChannel _nativeBridge = MethodChannel("clipsync/sync");
 
   /// 服务端偏好：type → enabled（缺失类型按默认开启展示）
   final Map<String, bool> _serverPrefs = <String, bool>{};
@@ -63,40 +66,62 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   Future<void> _loadServerPrefs() async {
     setState(() => _prefsLoading = true);
     try {
-      final map = await _NotificationPrefsApi.fetchPreferences();
-      if (!mounted) return;
+      final prefs = await _NotificationPrefsApi.fetchPreferences();
+      if (!mounted) {
+        return;
+      }
       setState(() {
-        for (final type in _serverPrefTypes) {
-          _serverPrefs[type] = map[type] ?? true;
-        }
+        _serverPrefs.clear();
+        _serverPrefs.addAll(prefs);
         _prefsLoading = false;
       });
-    } catch (e) {
-      if (!mounted) return;
+    } on AppException catch (e) {
+      if (!mounted) {
+        return;
+      }
       setState(() => _prefsLoading = false);
+      final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(friendlyError(e, AppLocalizations.of(context))),
-        ),
+        SnackBar(content: Text(friendlyError(e, l10n))),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _prefsLoading = false);
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.errorNetwork)),
       );
     }
   }
 
-  /// 切换服务端偏好：乐观更新 → PUT；失败回滚并 SnackBar 提示
-  Future<void> _toggleServerPref(String type, bool enabled) async {
-    setState(() => _serverPrefs[type] = enabled);
+  Future<void> _toggleServerPref(String type, bool value) async {
+    final prev = _serverPrefs[type] ?? true;
+    setState(() => _serverPrefs[type] = value);
+
     try {
       await _NotificationPrefsApi.updatePreference(
         notificationType: type,
-        enabled: enabled,
+        enabled: value,
+      );
+    } on AppException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _serverPrefs[type] = prev);
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, l10n))),
       );
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _serverPrefs[type] = !enabled);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _serverPrefs[type] = prev);
+      final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(friendlyError(e, AppLocalizations.of(context))),
-        ),
+        SnackBar(content: Text(l10n.errorNetwork)),
       );
     }
   }
@@ -117,20 +142,29 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     }
     try {
       final ok =
-          await _nativeBridge.invokeMethod<bool>('openAppNotificationSettings') ??
+          await _nativeBridge.invokeMethod<bool>("openAppNotificationSettings") ??
               false;
       if (!ok) {
+        if (!mounted) {
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.systemNotifSettingsFailed)),
         );
       }
     } on PlatformException catch (e) {
-      debugPrint('[NotificationSettings] open settings failed: ${e.message}');
+      debugPrint("[NotificationSettings] open settings failed: ${e.message}");
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.systemNotifSettingsFailed)),
       );
     } on MissingPluginException {
       // 原生桥未注册：降级提示
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.systemNotifSettingsFailed)),
       );
@@ -143,81 +177,101 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.notificationSettings),
       ),
       body: ListView(
-        children: [
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
+        ),
+        children: <Widget>[
           // 1. 本地开关：新剪贴板通知（现有 pushNotifications 字段的正式 UI）
-          SwitchListTile(
-            secondary: const Icon(Icons.notifications_active_outlined),
-            title: Text(l10n.pushNotifications),
-            subtitle: Text(l10n.pushNotificationsDesc),
-            value: context.watch<SettingsProvider>().notificationsEnabled,
-            onChanged: (value) {
-              context.read<SettingsProvider>().setNotificationsEnabled(value);
-            },
+          SectionDivider(
+            title: l10n.sectionGeneral,
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
           ),
-          const Divider(),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: SwitchListTile(
+              secondary: const Icon(Icons.notifications_active_outlined),
+              title: Text(l10n.pushNotifications),
+              subtitle: Text(l10n.pushNotificationsDesc),
+              value: context.watch<SettingsProvider>().notificationsEnabled,
+              onChanged: (bool value) {
+                context.read<SettingsProvider>().setNotificationsEnabled(value);
+              },
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
 
           // 2. 服务端通知偏好（与账号同步，跨设备生效）
-          _buildSectionHeader(l10n.serverNotifPrefs),
-          if (_prefsLoading)
-            const ListTile(
-              leading: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          else
-            for (final type in _serverPrefTypes)
-              SwitchListTile(
-                title: Text(_serverPrefLabel(type, l10n)),
-                value: _serverPrefs[type] ?? true,
-                onChanged: (value) => _toggleServerPref(type, value),
-              ),
-          const Divider(),
+          SectionDivider(
+            title: l10n.serverNotifPrefs,
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          ),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: _prefsLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(AppSpacing.lg),
+                    child: Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: <Widget>[
+                      for (int i = 0; i < _serverPrefTypes.length; i++) ...<Widget>[
+                        SwitchListTile(
+                          title: Text(_serverPrefLabel(_serverPrefTypes[i], l10n)),
+                          value: _serverPrefs[_serverPrefTypes[i]] ?? true,
+                          onChanged: (bool value) =>
+                              _toggleServerPref(_serverPrefTypes[i], value),
+                        ),
+                        if (i < _serverPrefTypes.length - 1)
+                          const Divider(height: 1),
+                      ],
+                    ],
+                  ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
 
           // 3. 系统通知设置入口
-          ListTile(
-            leading: const Icon(Icons.tune),
-            title: Text(l10n.systemNotifSettings),
-            subtitle: Text(l10n.systemNotifSettingsDesc),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _openSystemNotificationSettings,
+          SectionDivider(
+            title: l10n.systemNotifSettings,
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
           ),
-          const SizedBox(height: 16),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: ListTile(
+              leading: const Icon(Icons.tune),
+              title: Text(l10n.systemNotifSettings),
+              subtitle: Text(l10n.systemNotifSettingsDesc),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _openSystemNotificationSettings,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).primaryColor,
-        ),
       ),
     );
   }
 
   String _serverPrefLabel(String type, AppLocalizations l10n) {
     switch (type) {
-      case 'device_online':
+      case "device_online":
         return l10n.notifTypeDeviceOnline;
-      case 'sync_complete':
+      case "sync_complete":
         return l10n.notifTypeSyncComplete;
-      case 'security_alert':
+      case "security_alert":
         return l10n.notifTypeSecurityAlert;
-      case 'product_update':
+      case "product_update":
         return l10n.notifTypeProductUpdate;
       default:
         return type;
@@ -240,30 +294,32 @@ class _NotificationPrefsApi {
   static Future<Map<String, bool>> fetchPreferences() async {
     var token = await _requireToken();
     var response = await http.get(
-      Uri.parse('${ServerConfig.baseUrl}/api/notifications/preferences'),
-      headers: {'Authorization': 'Bearer $token'},
+      Uri.parse("${ServerConfig.baseUrl}/api/notifications/preferences"),
+      headers: {"Authorization": "Bearer $token"},
     );
     if (response.statusCode == 401) {
       token = await _refreshOrThrow();
       response = await http.get(
-        Uri.parse('${ServerConfig.baseUrl}/api/notifications/preferences'),
-        headers: {'Authorization': 'Bearer $token'},
+        Uri.parse("${ServerConfig.baseUrl}/api/notifications/preferences"),
+        headers: {"Authorization": "Bearer $token"},
       );
     }
     if (response.statusCode != 200) {
       throw AppException(
         AppErrorCodes.fetchNotificationPrefsFailed,
-        'HTTP ${response.statusCode}',
+        "HTTP ${response.statusCode}",
       );
     }
     final decoded = jsonDecode(response.body);
-    if (decoded is! List) return <String, bool>{};
+    if (decoded is! List) {
+      return <String, bool>{};
+    }
     final result = <String, bool>{};
     for (final row in decoded) {
       if (row is Map<String, dynamic> &&
-          row['notification_type'] is String &&
-          row['enabled'] is bool) {
-        result[row['notification_type'] as String] = row['enabled'] as bool;
+          row["notification_type"] is String &&
+          row["enabled"] is bool) {
+        result[row["notification_type"] as String] = row["enabled"] as bool;
       }
     }
     return result;
@@ -275,34 +331,34 @@ class _NotificationPrefsApi {
   }) async {
     var token = await _requireToken();
     var response = await http.put(
-      Uri.parse('${ServerConfig.baseUrl}/api/notifications/preferences'),
+      Uri.parse("${ServerConfig.baseUrl}/api/notifications/preferences"),
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
+        "Content-Type": "application/json",
+        "Authorization": "Bearer $token",
       },
       body: jsonEncode(<String, dynamic>{
-        'notificationType': notificationType,
-        'enabled': enabled,
+        "notificationType": notificationType,
+        "enabled": enabled,
       }),
     );
     if (response.statusCode == 401) {
       token = await _refreshOrThrow();
       response = await http.put(
-        Uri.parse('${ServerConfig.baseUrl}/api/notifications/preferences'),
+        Uri.parse("${ServerConfig.baseUrl}/api/notifications/preferences"),
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
+          "Content-Type": "application/json",
+          "Authorization": "Bearer $token",
         },
         body: jsonEncode(<String, dynamic>{
-          'notificationType': notificationType,
-          'enabled': enabled,
+          "notificationType": notificationType,
+          "enabled": enabled,
         }),
       );
     }
     if (response.statusCode != 200) {
       throw AppException(
         AppErrorCodes.updateNotificationPrefsFailed,
-        'HTTP ${response.statusCode}',
+        "HTTP ${response.statusCode}",
       );
     }
   }

@@ -1,24 +1,24 @@
-import 'dart:async';
+import "dart:async";
 
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
+import "package:flutter/material.dart";
+import "package:flutter/services.dart";
+import "package:go_router/go_router.dart";
+import "package:provider/provider.dart";
 
-import '../models/device.dart';
-import '../providers/auth_provider.dart';
-import '../providers/clipboard_provider.dart';
-import '../providers/device_provider.dart';
-import '../providers/ws_provider.dart';
-import '../l10n/app_localizations.dart';
-import '../services/app_exception.dart';
-import '../theme/app_theme.dart';
-import '../widgets/common/error_state.dart';
-import '../utils/performance.dart';
-import '../widgets/common/empty_state.dart';
-import '../widgets/device_card.dart';
-import 'devices/sessions_section.dart';
-import 'favorites/favorites_screen.dart';
+import "package:clipsync_mobile/l10n/app_localizations.dart";
+import "package:clipsync_mobile/models/device.dart";
+import "package:clipsync_mobile/providers/auth_provider.dart";
+import "package:clipsync_mobile/providers/clipboard_provider.dart";
+import "package:clipsync_mobile/providers/device_provider.dart";
+import "package:clipsync_mobile/providers/ws_provider.dart";
+import "package:clipsync_mobile/screens/devices/sessions_section.dart";
+import "package:clipsync_mobile/screens/favorites/favorites_screen.dart";
+import "package:clipsync_mobile/services/app_exception.dart";
+import "package:clipsync_mobile/theme/app_theme.dart";
+import "package:clipsync_mobile/utils/performance.dart";
+import "package:clipsync_mobile/widgets/common/empty_state.dart";
+import "package:clipsync_mobile/widgets/common/error_state.dart";
+import "package:clipsync_mobile/widgets/device_card.dart";
 
 /// 主页骨架（T2.2 应用骨架）：Material 3 NavigationBar 4 tab shell。
 ///
@@ -243,6 +243,13 @@ class _DevicesTabState extends State<DevicesTab> {
     }
   }
 
+  Future<void> _refreshDevices() async {
+    final String? token = context.read<AuthProvider>().token;
+    if (token != null) {
+      await context.read<DeviceProvider>().loadDevices(token, forceRefresh: true);
+    }
+  }
+
   void _loadMoreDevices() {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
@@ -269,36 +276,55 @@ class _DevicesTabState extends State<DevicesTab> {
             message: friendlyError(provider.error, l10n),
             onRetry: () {
               final token = context.read<AuthProvider>().token;
-              if (token != null) provider.loadDevices(token);
+              if (token != null) {
+                provider.loadDevices(token);
+              }
             },
           );
         }
         if (provider.devices.isEmpty) {
-          return EmptyState(
-            icon: Icons.devices,
-            title: l10n.noDevices,
-            message: l10n.noDevicesDesc,
+          return RefreshIndicator(
+            onRefresh: _refreshDevices,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: <Widget>[
+                EmptyState(
+                  icon: Icons.devices,
+                  title: l10n.noDevices,
+                  message: l10n.noDevicesDesc,
+                ),
+              ],
+            ),
           );
         }
-        return ListView.separated(
-          controller: _scrollController,
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          // 末位追加「活跃会话」区块（T4.3：会话管理区挂载于设备列表下方）
-          itemCount: provider.devices.length + 1,
-          separatorBuilder: (BuildContext context, int index) =>
-              const SizedBox(height: AppSpacing.md),
-          itemBuilder: (context, index) {
-            if (index == provider.devices.length) {
-              // T4.3：活跃会话区块（自管理加载/空/错误三态与吊销流程）
-              return const SessionsSection();
-            }
-            final device = provider.devices[index];
-            // 长按设备卡片呼出解绑确认（T1.5 最小接入，逻辑保留）
-            return GestureDetector(
-              onLongPress: () => _confirmUnbindDevice(device),
-              child: DeviceCard(device: device),
-            );
-          },
+        final String? currentDeviceId = context.watch<AuthProvider>().deviceId;
+        return RefreshIndicator(
+          onRefresh: _refreshDevices,
+          child: ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
+            controller: _scrollController,
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            // 末位追加「活跃会话」区块（T4.3：会话管理区挂载于设备列表下方）
+            itemCount: provider.devices.length + 1,
+            separatorBuilder: (BuildContext context, int index) =>
+                const SizedBox(height: AppSpacing.md),
+            itemBuilder: (context, index) {
+              if (index == provider.devices.length) {
+                // T4.3：活跃会话区块（自管理加载/空/错误三态与吊销流程）
+                return const SessionsSection();
+              }
+              final device = provider.devices[index];
+              final bool isCurrent = currentDeviceId != null &&
+                  currentDeviceId.isNotEmpty &&
+                  device.id == currentDeviceId;
+              // 长按设备卡片呼出解绑确认（T1.5 最小接入，逻辑保留）
+              return DeviceCard(
+                device: device,
+                isCurrent: isCurrent,
+                onLongPress: () => _confirmUnbindDevice(device),
+              );
+            },
+          ),
         );
       },
     );

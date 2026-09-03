@@ -11,31 +11,17 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/error_state.dart';
+import '../../widgets/common/mono_text.dart';
 import '../../widgets/common/skeleton_list.dart';
+import '../../widgets/common/type_badge.dart';
 
-/// 模板库页（T4.2 / C4 模板增强）。
+/// 模板库页（T4.2 / C4 模板增强 / Obsidian v2）。
 ///
-/// 页面结构：模板卡片列表（名称 + 内容预览 + 变量徽标 + 「使用」按钮 +
-/// 编辑/删除菜单），FAB「新建模板」，顶部 AppBar 标题「模板库」，
+/// 页面结构：单列模板卡片列表（AppCard v2：名称 + 参数占位符预览 MonoText + 分类标签 +
+/// 「使用/快速填充」按钮 + 编辑/删除菜单），FAB「新建模板」，顶部 AppBar 标题「模板库」，
 /// 支持下拉刷新。
 ///
-/// 数据交互走 [ApiService.getTemplates] 与 [TemplatesApiService]
-/// （模板 CRUD + 全局模板变量；Bearer 由 TokenStore 解析）。
-///
-/// 使用流程（「使用」按钮 / 整卡点击）：
-/// - 模板不含 `{{变量}}`：直接渲染，弹出结果对话框；
-/// - 模板含变量：按出现顺序逐个弹出填写对话框（取消即中止），
-///   预填回退链对齐桌面端（templateVariableStore / VariableFillDialog）：
-///   后端全局存储值（默认值/上次记住输入）→ 模板语法默认值
-///   （`{{name:default}}`）→ 空串；渲染成功后把本次非空输入回写后端，
-///   下次使用自动预填；
-/// - 结果对话框提供「复制全文」：Clipboard.setData + SnackBar 反馈。
-///
-/// 模板管理（C4）：FAB 新建、卡片菜单编辑 / 删除（删除需确认），
-/// 成功后刷新列表。
-///
-/// 三态：SkeletonList（加载中）/ ErrorState（失败可重试）/ EmptyState
-/// （无模板，noTemplatesDesc 既有文案保留，由 FAB「新建模板」引导本机创建）。
+/// 新建/编辑/变量填充/结果弹层全面采用 [AppShapesV2.xl] (28dp) 与 tokens_v2 表面分层。
 class TemplatesScreen extends StatefulWidget {
   const TemplatesScreen({super.key});
 
@@ -90,9 +76,6 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   }
 
   /// 拉取全局模板变量（默认值/上次记住输入）。
-  ///
-  /// 失败不阻塞页面：回退链退化为「无预填」，与桌面端
-  /// templateVariableStore.fetchVariables 失败仅告警的行为一致。
   Future<void> _loadVariableDefaults() async {
     try {
       final Map<String, String> defaults = await _templatesApi.fetchDefaults();
@@ -112,10 +95,6 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   // ---------------------------------------------------------------------------
 
   /// 「使用」入口：含变量先逐个填写，无变量直接渲染，最后弹出结果对话框。
-  ///
-  /// 每个变量的预填回退链对齐桌面端 VariableFillDialog：
-  /// 后端全局存储值（默认值/上次记住输入）→ 模板语法默认值
-  /// （`{{name:default}}`）→ 空串。
   Future<void> _useTemplate(ClipboardTemplate template) async {
     final variables = template.variableNames;
     final values = <String, String>{};
@@ -145,17 +124,12 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     if (!mounted) {
       return;
     }
-    // 渲染成功后记住本次非空输入（对齐桌面端「记住」默认勾选语义），
-    // 下次使用同变量时自动预填
+    // 渲染成功后记住本次非空输入，下次使用同变量时自动预填
     await _rememberInputs(values);
     await _showResultDialog(rendered);
   }
 
   /// `{{name}}` / `{{name:default}}` 占位符原始内容 →（变量名, 语法默认值）。
-  ///
-  /// 对齐桌面端 VAR_PATTERN 语法（templateStore.ts：`{{ name:default }}`，
-  /// 冒号后为默认值）；移动端 [ClipboardTemplate.variableNames] 提取的是
-  /// 花括号内原始文本，展示与回写前需在此拆分。
   static (String, String?) _parseVariableToken(String raw) {
     final int idx = raw.indexOf(':');
     if (idx <= 0) {
@@ -165,10 +139,6 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   }
 
   /// 渲染成功后把本次输入回写全局变量存储（PUT /api/template-variables）。
-  ///
-  /// 仅回写非空输入、且变量名满足后端 NAME_RE 约束的变量（对齐桌面端
-  /// TemplatesView.onFillConfirm 的非空回写语义）。失败静默：记忆属
-  /// 增强能力，不影响本次渲染结果展示。
   Future<void> _rememberInputs(Map<String, String> values) async {
     final Map<String, String> pending = <String, String>{};
     values.forEach((String raw, String value) {
@@ -211,46 +181,77 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     );
   }
 
-  /// 渲染结果对话框：可长按选择部分文本，「复制全文」一键复制全部结果。
+  /// 渲染结果对话框：支持文本选择与一键「复制全文」，圆角 28dp。
   Future<void> _showResultDialog(String rendered) async {
-    // 在 await 之前捕获 messenger，避免 async 间隔后使用已失效的 context
     final messenger = ScaffoldMessenger.of(context);
     final l10n = AppLocalizations.of(context);
     await showDialog<void>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(l10n.renderResultTitle),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 320),
-          child: SingleChildScrollView(
-            child: SelectableText(
-              rendered,
-              style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
+      builder: (BuildContext dialogContext) {
+        final bool isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+        return AlertDialog(
+          shape: AppShapesV2.shapeXl,
+          title: Row(
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.xs),
+                decoration: BoxDecoration(
+                  color: AppColorsV2.brandPrimaryLight.withValues(alpha: 0.12),
+                  borderRadius: AppShapesV2.brXs,
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 20,
+                  color: AppColorsV2.brandPrimaryLight,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: Text(l10n.renderResultTitle)),
+            ],
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 360, minWidth: 280),
+            child: Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColorsV2.surfaceFor(tier: SurfaceTier.high, isDark: isDark),
+                borderRadius: AppShapesV2.brSm,
+                border: Border.all(color: AppColorsV2.borderFor(isDark: isDark)),
+              ),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  rendered,
+                  style: const TextStyle(
+                    fontFamily: 'JetBrains Mono',
+                    fontFamilyFallback: <String>['monospace'],
+                    fontSize: 13,
                     height: 1.5,
                   ),
+                ),
+              ),
             ),
           ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(l10n.close),
-          ),
-          FilledButton.icon(
-            onPressed: () {
-              unawaited(Clipboard.setData(ClipboardData(text: rendered)));
-              Navigator.of(dialogContext).pop();
-              messenger
-                ..hideCurrentSnackBar()
-                ..showSnackBar(
-                  SnackBar(content: Text(l10n.renderResultCopied)),
-                );
-            },
-            icon: const Icon(Icons.copy_all_outlined),
-            label: Text(l10n.copyAll),
-          ),
-        ],
-      ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(l10n.close),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                unawaited(Clipboard.setData(ClipboardData(text: rendered)));
+                Navigator.of(dialogContext).pop();
+                messenger
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(
+                    SnackBar(content: Text(l10n.renderResultCopied)),
+                  );
+              },
+              icon: const Icon(Icons.copy_all_rounded, size: 18),
+              label: Text(l10n.copyAll),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -258,10 +259,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   // 模板 CRUD（C4）
   // ---------------------------------------------------------------------------
 
-  /// 新建 / 编辑模板：弹出编辑对话框，确认后 POST / PUT 并刷新列表。
-  ///
-  /// [template] 为 null 表示新建；成功反馈 [AppLocalizations.templateSaved]，
-  /// 失败经 friendlyError 兜底展示（无专属 arb key，走 detail/errorUnknown）。
+  /// 新建 / 编辑模板：弹出 28dp 编辑对话框。
   Future<void> _showTemplateEditor([ClipboardTemplate? template]) async {
     final (String, String)? result = await showDialog<(String, String)>(
       context: context,
@@ -293,14 +291,14 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     }
   }
 
-  /// 删除模板：确认对话框 → DELETE → templateDeleted 反馈并刷新列表。
+  /// 删除模板：确认对话框采用 28dp 圆角。
   Future<void> _deleteTemplate(ClipboardTemplate template) async {
-    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
         final dialogL10n = AppLocalizations.of(dialogContext);
         return AlertDialog(
+          shape: AppShapesV2.shapeXl,
           title: Text(dialogL10n.delete),
           content: Text(dialogL10n.deleteTemplateConfirm(template.name)),
           actions: <Widget>[
@@ -314,6 +312,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                 dialogL10n.delete,
                 style: TextStyle(
                   color: Theme.of(dialogContext).colorScheme.error,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -358,10 +357,12 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.templates)),
+      appBar: AppBar(
+        title: Text(l10n.templates),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => unawaited(_showTemplateEditor()),
-        icon: const Icon(Icons.add),
+        icon: const Icon(Icons.add_rounded),
         label: Text(l10n.newTemplate),
       ),
       body: RefreshIndicator(
@@ -371,7 +372,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     );
   }
 
-  /// 主体：三态分发。骨架/错误/空态也包在可滚动容器里，任何状态可下拉刷新。
+  /// 主体：三态分发。
   Widget _buildContent() {
     final l10n = AppLocalizations.of(context);
     if (_isLoading && _templates.isEmpty) {
@@ -388,9 +389,12 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     if (_templates.isEmpty) {
       return _scrollableBody(
         EmptyState(
+          illustration: EmptyStateIllustration.generic,
           icon: Icons.description_outlined,
           title: l10n.noTemplates,
           message: l10n.noTemplatesDesc,
+          actionLabel: l10n.newTemplate,
+          onAction: () => unawaited(_showTemplateEditor()),
         ),
       );
     }
@@ -404,7 +408,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
         AppSpacing.lg,
         AppSpacing.md,
         AppSpacing.lg,
-        AppSpacing.xxl,
+        AppSpacing.xxl * 2,
       ),
       itemCount: _templates.length,
       separatorBuilder: (BuildContext context, int index) =>
@@ -414,53 +418,84 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     );
   }
 
-  /// 模板卡片：名称 + 变量徽标 + 内容预览（3 行截断）+ 「使用」按钮。
+  /// 模板卡片 (Obsidian v2)：
+  /// - 单列卡片 AppCard v2 (SurfaceTier.low)；
+  /// - 模板名称、参数占位符预览 (MonoText)、分类标签；
+  /// - 快速填充与一键复制入口。
   Widget _buildTemplateCard(ClipboardTemplate template) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
     final l10n = AppLocalizations.of(context);
-    final variables = template.variableNames;
-    final preview = template.content.trim();
+    final bool isDark = theme.brightness == Brightness.dark;
+    final List<String> variables = template.variableNames;
+    final String preview = template.content.trim();
 
     return AppCard(
+      surfaceTier: SurfaceTier.low,
+      borderRadius: AppShapesV2.brMd,
       onTap: () => unawaited(_useTemplate(template)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // Header: 图标 + 模板名称 + 分类标签/变量徽标 + 菜单
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
-              Expanded(
-                child: Text(
-                  template.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColorsV2.surfaceFor(tier: SurfaceTier.high, isDark: isDark),
+                  borderRadius: AppShapesV2.brSm,
+                ),
+                child: Icon(
+                  variables.isNotEmpty
+                      ? Icons.data_object_rounded
+                      : Icons.notes_rounded,
+                  size: 20,
+                  color: variables.isNotEmpty
+                      ? (isDark ? AppColorsV2.brandPrimaryDark : AppColorsV2.brandPrimaryLight)
+                      : scheme.onSurfaceVariant,
                 ),
               ),
-              if (variables.isNotEmpty) ...<Widget>[
-                const SizedBox(width: AppSpacing.sm),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    l10n.variableCount(variables.length),
-                    style: textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      template.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
               const SizedBox(width: AppSpacing.sm),
+              // 分类与变量标签
+              if (variables.isNotEmpty)
+                TypeBadge(
+                  contentType: 'code',
+                  customLabel: l10n.variableCount(variables.length),
+                )
+              else
+                const TypeBadge(
+                  contentType: 'text',
+                  customLabel: '快捷文本',
+                ),
+              const SizedBox(width: AppSpacing.xs),
               PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.more_vert_rounded,
+                  size: 20,
+                  color: scheme.onSurfaceVariant,
+                ),
+                shape: AppShapesV2.shapeMd,
                 itemBuilder: (BuildContext menuContext) =>
                     <PopupMenuEntry<String>>[
                   PopupMenuItem<String>(
@@ -478,7 +513,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                     child: Row(
                       children: <Widget>[
                         Icon(
-                          Icons.delete_outline,
+                          Icons.delete_outline_rounded,
                           size: 20,
                           color: scheme.error,
                         ),
@@ -501,32 +536,87 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
               ),
             ],
           ),
+
+          // 参数占位符预览 (MonoText 徽章行)
+          if (variables.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: variables.take(4).map((String rawVar) {
+                final (String varName, _) = _parseVariableToken(rawVar);
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColorsV2.surfaceFor(tier: SurfaceTier.high, isDark: isDark),
+                    borderRadius: AppShapesV2.brXs,
+                    border: Border.all(
+                      color: AppColorsV2.borderFor(isDark: isDark),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: MonoText(
+                    '{{$varName}}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? AppColorsV2.typeCodeDark : AppColorsV2.typeCodeLight,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+
+          // 内容预览区域：嵌入式代码/模板块
           const SizedBox(height: AppSpacing.sm),
-          Text(
-            preview.isEmpty ? l10n.emptyTemplateContent : preview,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurfaceVariant,
-              height: 1.4,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            decoration: BoxDecoration(
+              color: AppColorsV2.surfaceFor(tier: SurfaceTier.base, isDark: isDark),
+              borderRadius: AppShapesV2.brSm,
+              border: Border.all(
+                color: AppColorsV2.borderFor(isDark: isDark),
+                width: 0.5,
+              ),
+            ),
+            child: MonoText(
+              preview.isEmpty ? l10n.emptyTemplateContent : preview,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.45,
+              ),
             ),
           ),
+
+          // 底部操作区：一键快速填充 / 使用
           const SizedBox(height: AppSpacing.md),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.tonalIcon(
-              onPressed: () => unawaited(_useTemplate(template)),
-              icon: const Icon(Icons.play_arrow_outlined),
-              label: Text(l10n.useTemplate),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[
+              FilledButton.tonalIcon(
+                onPressed: () => unawaited(_useTemplate(template)),
+                style: FilledButton.styleFrom(
+                  shape: AppShapesV2.shapePill,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                label: Text(l10n.useTemplate),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  /// 全页可滚动包装：内容不满一屏时也能下拉刷新（AlwaysScrollable），
-  /// 状态占位在 minHeight 约束内垂直居中。
+  /// 全页可滚动包装：支持下拉刷新。
   Widget _scrollableBody(Widget child) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -542,12 +632,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   }
 }
 
-/// 变量填写对话框：模板使用流程中的一环，逐个收集 `{{变量}}` 的值。
-///
-/// 顶部提示进度（第 x / N 个）与变量名；输入框经 [initialValue] 预填
-/// 回退链结果（全局存储值 → 语法默认值，见 [TemplatesScreen] 使用流程），
-/// helperText 提示「默认值（可选）」；取消返回 null（调用方中止整个流程），
-/// 提交返回输入值（允许为空串，渲染为空占位）。
+/// 变量填写对话框：采用 [AppShapesV2.xl] (28dp)。
 class _VariableInputDialog extends StatefulWidget {
   const _VariableInputDialog({
     required this.variableName,
@@ -556,16 +641,9 @@ class _VariableInputDialog extends StatefulWidget {
     this.initialValue,
   });
 
-  /// 变量名（占位符内去掉两侧空白后的内容）
   final String variableName;
-
-  /// 当前是第几个变量（1 起）
   final int step;
-
-  /// 变量总数
   final int total;
-
-  /// 同名变量此前已填过的值（预填）
   final String? initialValue;
 
   @override
@@ -588,20 +666,59 @@ class _VariableInputDialogState extends State<_VariableInputDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final isLast = widget.step >= widget.total;
+    final bool isLast = widget.step >= widget.total;
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
 
     return AlertDialog(
-      title: Text(l10n.fillVariableTitle),
+      shape: AppShapesV2.shapeXl,
+      title: Row(
+        children: <Widget>[
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.xs),
+            decoration: BoxDecoration(
+              color: AppColorsV2.brandPrimaryLight.withValues(alpha: 0.12),
+              borderRadius: AppShapesV2.brXs,
+            ),
+            child: const Icon(
+              Icons.tune_rounded,
+              size: 20,
+              color: AppColorsV2.brandPrimaryLight,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: Text(l10n.fillVariableTitle)),
+        ],
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            l10n.variableProgress(widget.step, widget.total),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+          Row(
+            children: <Widget>[
+              Text(
+                l10n.variableProgress(widget.step, widget.total),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColorsV2.surfaceFor(tier: SurfaceTier.high, isDark: isDark),
+                  borderRadius: AppShapesV2.brXs,
+                ),
+                child: MonoText(
+                  '{{${widget.variableName}}}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? AppColorsV2.typeCodeDark : AppColorsV2.typeCodeLight,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.md),
           TextField(
@@ -609,10 +726,9 @@ class _VariableInputDialogState extends State<_VariableInputDialog> {
             autofocus: true,
             decoration: InputDecoration(
               labelText: widget.variableName,
-              // 模板占位符提示渲染为 {{变量名}}（双花括号语义由 Dart 侧拼接，
-              // arb 模板为严格 ICU 语法，不能放字面量花括号）
               hintText: l10n.variableInputHint('{{${widget.variableName}}}'),
               helperText: l10n.variableDefaultValue,
+              border: OutlineInputBorder(borderRadius: AppShapesV2.brSm),
             ),
             onSubmitted: (String value) => _submit(),
           ),
@@ -632,15 +748,10 @@ class _VariableInputDialogState extends State<_VariableInputDialog> {
   }
 }
 
-/// 模板编辑对话框（C4）：新建 / 编辑共用，[template] 为 null 表示新建。
-///
-/// 字段：名称（必填，为空时 errorText 提示 templateNameRequired）+
-/// 内容（多行，helperText 提示 `{{变量}}` 语法，即 templateVarsHint）。
-/// 确认返回 `(name, content)` 记录（名称已 trim），取消 / 关闭返回 null。
+/// 模板编辑对话框：采用 [AppShapesV2.xl] (28dp)。
 class _TemplateEditorDialog extends StatefulWidget {
   const _TemplateEditorDialog({this.template});
 
-  /// 编辑目标；null 表示新建
   final ClipboardTemplate? template;
 
   @override
@@ -677,6 +788,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
     final bool isEditing = widget.template != null;
 
     return AlertDialog(
+      shape: AppShapesV2.shapeXl,
       title: Text(isEditing ? l10n.editTemplate : l10n.newTemplate),
       content: SingleChildScrollView(
         child: Column(
@@ -689,6 +801,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
               decoration: InputDecoration(
                 labelText: l10n.templateName,
                 errorText: _nameError ? l10n.templateNameRequired : null,
+                border: OutlineInputBorder(borderRadius: AppShapesV2.brSm),
               ),
               onChanged: (String value) {
                 if (_nameError && value.trim().isNotEmpty) {
@@ -701,10 +814,16 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
               controller: _contentController,
               maxLines: 6,
               minLines: 4,
+              style: const TextStyle(
+                fontFamily: 'JetBrains Mono',
+                fontFamilyFallback: <String>['monospace'],
+                fontSize: 13,
+              ),
               decoration: InputDecoration(
                 labelText: l10n.templateContent,
                 alignLabelWithHint: true,
                 helperText: l10n.templateVarsHint,
+                border: OutlineInputBorder(borderRadius: AppShapesV2.brSm),
               ),
             ),
           ],

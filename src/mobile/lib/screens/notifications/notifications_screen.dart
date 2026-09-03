@@ -11,18 +11,13 @@ import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/error_state.dart';
 import '../../widgets/common/skeleton_list.dart';
 
-/// 通知中心页（C5）。
+/// 通知中心页（C5 / Obsidian v2）。
 ///
-/// 展示站内通知历史（GET /api/notifications/history）：类型图标 / 标题 /
-/// 内容 / 时间 / 已读状态，未读高亮（标题加粗 + 未读圆点）。
-///
-/// 操作：
-/// - 点击未读条目 → PUT history/:id/read 标为已读（本地即时更新 UI）；
-/// - AppBar「全部已读」→ 后端无批量端点，逐条调用单条已读接口
-///   （部分失败时成功的仍生效，失败经 SnackBar 提示）。
-///
-/// 三态：SkeletonList（加载中）/ ErrorState（失败可重试，文案
-/// notifLoadFailed）/ EmptyState（noNotifications），支持下拉刷新。
+/// 展示站内通知历史：
+/// - 消息分类卡片（AppCard v2 + SurfaceTier.low）；
+/// - 未读高亮点（品牌紫 #5A4BD1 / #C3B6FF）与渐变顶边；
+/// - 相对时间展示；
+/// - AppBar 提供「全部已读」与「一键清空」操作。
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -72,7 +67,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // 已读操作
+  // 已读与清空操作
   // ---------------------------------------------------------------------------
 
   /// 点击条目标为已读（已读条目点击无操作）。
@@ -100,7 +95,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   /// 全部已读：后端无批量端点，逐条调用单条已读接口。
-  /// 部分失败时成功的仍生效，失败经 SnackBar 提示。
   Future<void> _markAllRead() async {
     final messenger = ScaffoldMessenger.of(context);
     final l10n = AppLocalizations.of(context);
@@ -139,6 +133,60 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  /// 一键清空通知列表（确认对话框采用 AppShapesV2.xl 28dp）。
+  Future<void> _clearAll() async {
+    final l10n = AppLocalizations.of(context);
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final dialogL10n = AppLocalizations.of(dialogContext);
+        return AlertDialog(
+          shape: AppShapesV2.shapeXl,
+          title: Text(dialogL10n.clearAll),
+          content: Text(dialogL10n.clearCacheDesc),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(dialogL10n.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(
+                dialogL10n.clearAll,
+                style: TextStyle(
+                  color: Theme.of(dialogContext).colorScheme.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    // 后端标记已读并清空本地展示
+    final List<NotificationItem> unread =
+        _items.where((NotificationItem n) => !n.isRead).toList();
+    for (final NotificationItem item in unread) {
+      unawaited(_api.markRead(item.id).catchError((_) {}));
+    }
+
+    setState(() {
+      _items = <NotificationItem>[];
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(l10n.clearAll),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // 构建
   // ---------------------------------------------------------------------------
@@ -147,6 +195,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final bool hasUnread = _items.any((NotificationItem n) => !n.isRead);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.notificationsCenter),
@@ -162,6 +211,38 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     )
                   : Text(l10n.markAllRead),
             ),
+          if (_items.isNotEmpty)
+            PopupMenuButton<String>(
+              shape: AppShapesV2.shapeMd,
+              icon: const Icon(Icons.more_vert_rounded),
+              itemBuilder: (BuildContext menuContext) =>
+                  <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: 'clear',
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.delete_sweep_outlined,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        l10n.clearAll,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              onSelected: (String action) {
+                if (action == 'clear') {
+                  unawaited(_clearAll());
+                }
+              },
+            ),
         ],
       ),
       body: RefreshIndicator(
@@ -172,17 +253,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Widget _buildBody() {
+    final l10n = AppLocalizations.of(context);
+
     if (_isLoading && _items.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        children: <Widget>[
-          const SizedBox(height: AppSpacing.xl),
+        children: const <Widget>[
+          SizedBox(height: AppSpacing.xl),
           SkeletonList(itemCount: 6),
         ],
       );
     }
     if (_error != null && _items.isEmpty) {
-      final l10n = AppLocalizations.of(context);
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: <Widget>[
@@ -195,13 +277,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       );
     }
     if (_items.isEmpty) {
-      final l10n = AppLocalizations.of(context);
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: <Widget>[
           const SizedBox(height: AppSpacing.xxl),
           EmptyState(
-            icon: Icons.notifications_none,
+            illustration: EmptyStateIllustration.generic,
+            icon: Icons.notifications_none_rounded,
             title: l10n.noNotifications,
           ),
         ],
@@ -218,44 +300,98 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
+  /// 消息分类卡片 (Obsidian v2)：
+  /// - AppCard v2 (SurfaceTier.low)；
+  /// - 未读高亮点（品牌紫 #5A4BD1 / #C3B6FF）；
+  /// - 相对时间展示与分类标签。
   Widget _buildNotificationCard(NotificationItem item) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
     final bool unread = !item.isRead;
+    final Color brandPurple = isDark
+        ? AppColorsV2.brandPrimaryDark
+        : AppColorsV2.brandPrimaryLight;
+
+    final (IconData iconData, Color categoryColor, String categoryLabel) =
+        _resolveCategory(item.notificationType, isDark);
 
     return AppCard(
+      surfaceTier: SurfaceTier.low,
+      borderRadius: AppShapesV2.brMd,
+      gradientLine: unread
+          ? LinearGradient(
+              colors: <Color>[
+                brandPurple,
+                brandPurple.withValues(alpha: 0.1),
+              ],
+            )
+          : null,
       onTap: unread ? () => unawaited(_markRead(item)) : null,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          // 类型图标
           Container(
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: unread ? scheme.primaryContainer : scheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(AppRadius.sm),
+              color: categoryColor.withValues(alpha: unread ? 0.16 : 0.08),
+              borderRadius: AppShapesV2.brSm,
+              border: Border.all(
+                color: categoryColor.withValues(alpha: unread ? 0.35 : 0.15),
+                width: 1.0,
+              ),
             ),
             child: Icon(
-              _typeIcon(item.notificationType),
+              iconData,
               size: 20,
-              color: unread ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+              color: categoryColor,
             ),
           ),
           const SizedBox(width: AppSpacing.md),
+          // 标题、内容与分类
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(
-                  item.title,
-                  style: unread
-                      ? theme.textTheme.titleSmall
-                      : theme.textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
+                Row(
+                  children: <Widget>[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: categoryColor.withValues(alpha: 0.12),
+                        borderRadius: AppShapesV2.brPill,
+                      ),
+                      child: Text(
+                        categoryLabel,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: categoryColor,
                         ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        item.title,
+                        style: unread
+                            ? theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              )
+                            : theme.textTheme.bodyMedium?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
                 if (item.content != null && item.content!.trim().isNotEmpty) ...<Widget>[
                   const SizedBox(height: AppSpacing.xs),
@@ -263,31 +399,51 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     item.content!,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
+                      height: 1.4,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
                 const SizedBox(height: AppSpacing.sm),
-                Text(
-                  _formatTime(l10n, item),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
+                Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.access_time_rounded,
+                      size: 13,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatTime(l10n, item),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
+          // 未读高亮点（品牌紫）
           if (unread) ...<Widget>[
             const SizedBox(width: AppSpacing.sm),
             Tooltip(
               message: l10n.markRead,
               child: Container(
-                width: 8,
-                height: 8,
+                width: 9,
+                height: 9,
+                margin: const EdgeInsets.only(top: 4),
                 decoration: BoxDecoration(
-                  color: scheme.primary,
+                  color: brandPurple,
                   shape: BoxShape.circle,
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: brandPurple.withValues(alpha: 0.45),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -297,23 +453,43 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  /// 通知类型 → 图标（对齐后端 notification_type 预置值）
-  IconData _typeIcon(String type) {
+  /// 消息类型解析：图标 + 语义色 + 分类标签
+  (IconData, Color, String) _resolveCategory(String type, bool isDark) {
     switch (type) {
       case 'sync_complete':
-        return Icons.sync;
+        return (
+          Icons.sync_rounded,
+          isDark ? AppColorsV2.typeTextDark : AppColorsV2.typeTextLight,
+          '同步',
+        );
       case 'device_online':
-        return Icons.devices;
+        return (
+          Icons.devices_rounded,
+          isDark ? AppColorsV2.typeLinkDark : AppColorsV2.typeLinkLight,
+          '设备',
+        );
       case 'subscription_expiring':
-        return Icons.workspace_premium;
+        return (
+          Icons.workspace_premium_rounded,
+          isDark ? AppColorsV2.typeImageDark : AppColorsV2.typeImageLight,
+          '订阅',
+        );
       case 'security_alert':
-        return Icons.security;
+        return (
+          Icons.security_rounded,
+          isDark ? AppColorsV2.dangerDark : AppColorsV2.dangerLight,
+          '安全',
+        );
       default:
-        return Icons.notifications;
+        return (
+          Icons.notifications_rounded,
+          isDark ? AppColorsV2.brandPrimaryDark : AppColorsV2.brandPrimaryLight,
+          '通知',
+        );
     }
   }
 
-  /// 时间展示：优先 sent_at，缺失回退 created_at
+  /// 时间展示：相对时间与具体日期
   String _formatTime(AppLocalizations l10n, NotificationItem item) {
     final DateTime? time = item.sentAt ?? item.createdAt;
     if (time == null) {
