@@ -1,0 +1,1837 @@
+diff --git a/src/server/package-lock.json b/src/server/package-lock.json
+index f2fc9f8..16447ca 100644
+--- a/src/server/package-lock.json
++++ b/src/server/package-lock.json
+@@ -9,6 +9,7 @@
+       "version": "0.2.0",
+       "license": "ISC",
+       "dependencies": {
++        "archiver": "^8.0.0",
+         "bcryptjs": "^3.0.3",
+         "compression": "^1.7.4",
+         "cors": "^2.8.6",
+@@ -1146,6 +1147,18 @@
+         "url": "https://opencollective.com/vitest"
+       }
+     },
++    "node_modules/abort-controller": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/abort-controller/-/abort-controller-3.0.0.tgz",
++      "integrity": "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==",
++      "license": "MIT",
++      "dependencies": {
++        "event-target-shim": "^5.0.0"
++      },
++      "engines": {
++        "node": ">=6.5"
++      }
++    },
+     "node_modules/accepts": {
+       "version": "2.0.0",
+       "resolved": "https://registry.npmjs.org/accepts/-/accepts-2.0.0.tgz",
+@@ -1165,6 +1178,42 @@
+       "integrity": "sha512-klpgFSWLW1ZEs8svjfb7g4qWY0YS5imI82dTg+QahUvJ8YqAY0P10Uk8tTyh9ZGuYEZEMaeJYCF5BFuX552hsw==",
+       "license": "MIT"
+     },
++    "node_modules/archiver": {
++      "version": "8.0.0",
++      "resolved": "https://registry.npmjs.org/archiver/-/archiver-8.0.0.tgz",
++      "integrity": "sha512-fV1orZfsnPn9BaSByR/qE67rJCLJEy2Ox5bq7nJh+jquWaNh6Sfec75kJ2T6PtdGUbPQlrVoSVCEOa5SdiTQ1g==",
++      "license": "MIT",
++      "dependencies": {
++        "async": "^3.2.4",
++        "buffer-crc32": "^1.0.0",
++        "is-stream": "^4.0.0",
++        "lazystream": "^1.0.0",
++        "normalize-path": "^3.0.0",
++        "readable-stream": "^4.0.0",
++        "readdir-glob": "^3.0.0",
++        "tar-stream": "^3.0.0",
++        "zip-stream": "^7.0.2"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/archiver/node_modules/readable-stream": {
++      "version": "4.7.0",
++      "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-4.7.0.tgz",
++      "integrity": "sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==",
++      "license": "MIT",
++      "dependencies": {
++        "abort-controller": "^3.0.0",
++        "buffer": "^6.0.3",
++        "events": "^3.3.0",
++        "process": "^0.11.10",
++        "string_decoder": "^1.3.0"
++      },
++      "engines": {
++        "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
++      }
++    },
+     "node_modules/asap": {
+       "version": "2.0.6",
+       "resolved": "https://registry.npmjs.org/asap/-/asap-2.0.6.tgz",
+@@ -1182,6 +1231,12 @@
+         "node": ">=12"
+       }
+     },
++    "node_modules/async": {
++      "version": "3.2.6",
++      "resolved": "https://registry.npmjs.org/async/-/async-3.2.6.tgz",
++      "integrity": "sha512-htCUDlxyyCLMgaM3xXg0C0LW2xqfuQ6p05pCEIsXuyQ+a1koYKTuBMzRNwmybfLgvJDMd0r1LTn4+E0Ti6C2AA==",
++      "license": "MIT"
++    },
+     "node_modules/asynckit": {
+       "version": "0.4.0",
+       "resolved": "https://registry.npmjs.org/asynckit/-/asynckit-0.4.0.tgz",
+@@ -1189,6 +1244,109 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/b4a": {
++      "version": "1.8.1",
++      "resolved": "https://registry.npmjs.org/b4a/-/b4a-1.8.1.tgz",
++      "integrity": "sha512-aiqre1Nr0B/6DgE2N5vwTc+2/oQZ4Wh1t4NznYY4E00y8LCt6NqdRv81so00oo27D8MVKTpUa/MwUUtBLXCoDw==",
++      "license": "Apache-2.0",
++      "peerDependencies": {
++        "react-native-b4a": "*"
++      },
++      "peerDependenciesMeta": {
++        "react-native-b4a": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/balanced-match": {
++      "version": "4.0.4",
++      "resolved": "https://registry.npmjs.org/balanced-match/-/balanced-match-4.0.4.tgz",
++      "integrity": "sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==",
++      "license": "MIT",
++      "engines": {
++        "node": "18 || 20 || >=22"
++      }
++    },
++    "node_modules/bare-events": {
++      "version": "2.9.2",
++      "resolved": "https://registry.npmjs.org/bare-events/-/bare-events-2.9.2.tgz",
++      "integrity": "sha512-AIPKioV7/Y/8KfZ3AAhjPJxLLbY49S64Ym5DakZlUg75qQiTgUq9hEJoEwa4eUezPUlXRy/i5NpsKvo9jgKmoA==",
++      "license": "Apache-2.0",
++      "peerDependencies": {
++        "bare-abort-controller": "*"
++      },
++      "peerDependenciesMeta": {
++        "bare-abort-controller": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/bare-fs": {
++      "version": "4.8.1",
++      "resolved": "https://registry.npmjs.org/bare-fs/-/bare-fs-4.8.1.tgz",
++      "integrity": "sha512-N1nnXdHZAOSstz0XiHikGS4HGMH4CnSwhqWdGQQMqqdvp4Jybm9sE3R1WVnpWVd4SFkc8ryPDBLViNLwiEqECg==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "bare-events": "^2.5.4",
++        "bare-path": "^3.0.0",
++        "bare-stream": "^2.6.4",
++        "bare-url": "^2.2.2",
++        "fast-fifo": "^1.3.2"
++      },
++      "engines": {
++        "bare": ">=1.28.0"
++      },
++      "peerDependencies": {
++        "bare-buffer": "*"
++      },
++      "peerDependenciesMeta": {
++        "bare-buffer": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/bare-path": {
++      "version": "3.1.2",
++      "resolved": "https://registry.npmjs.org/bare-path/-/bare-path-3.1.2.tgz",
++      "integrity": "sha512-ZyKbsuuqK6Ag0K8pX6V5Txq6XeJRvY+wXucnFGRjiyVYP9YWDpIQugk/b+enRYrEYBJaqLzghRQpXPMR7341Nw==",
++      "license": "Apache-2.0"
++    },
++    "node_modules/bare-stream": {
++      "version": "2.13.4",
++      "resolved": "https://registry.npmjs.org/bare-stream/-/bare-stream-2.13.4.tgz",
++      "integrity": "sha512-PcrQ8lVLbiJscNm1Kez+Yp4Gy4AHGcN1lzwjvf5NybWen7VvEgUfyfnXYJ2zNqWnzOfCb1Abq6lH8ti0syQszA==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "b4a": "^1.8.1",
++        "streamx": "^2.25.0",
++        "teex": "^1.0.1"
++      },
++      "peerDependencies": {
++        "bare-abort-controller": "*",
++        "bare-buffer": "*",
++        "bare-events": "*"
++      },
++      "peerDependenciesMeta": {
++        "bare-abort-controller": {
++          "optional": true
++        },
++        "bare-buffer": {
++          "optional": true
++        },
++        "bare-events": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/bare-url": {
++      "version": "2.5.3",
++      "resolved": "https://registry.npmjs.org/bare-url/-/bare-url-2.5.3.tgz",
++      "integrity": "sha512-3absfEzoyFosWT8v83ZcJgbTJxv+S/sI7jBfeCMlUVatSaefRmwweqBhFpMllQv+HTxs/FbbToVOw1c05NORkQ==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "bare-path": "^3.0.0"
++      }
++    },
+     "node_modules/base64-js": {
+       "version": "1.5.1",
+       "resolved": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz",
+@@ -1255,6 +1413,18 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/brace-expansion": {
++      "version": "5.0.9",
++      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz",
++      "integrity": "sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==",
++      "license": "MIT",
++      "dependencies": {
++        "balanced-match": "^4.0.2"
++      },
++      "engines": {
++        "node": "20 || >=22"
++      }
++    },
+     "node_modules/brotli": {
+       "version": "1.3.3",
+       "resolved": "https://registry.npmjs.org/brotli/-/brotli-1.3.3.tgz",
+@@ -1273,6 +1443,39 @@
+         "pako": "~1.0.5"
+       }
+     },
++    "node_modules/buffer": {
++      "version": "6.0.3",
++      "resolved": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz",
++      "integrity": "sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==",
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/feross"
++        },
++        {
++          "type": "patreon",
++          "url": "https://www.patreon.com/feross"
++        },
++        {
++          "type": "consulting",
++          "url": "https://feross.org/support"
++        }
++      ],
++      "license": "MIT",
++      "dependencies": {
++        "base64-js": "^1.3.1",
++        "ieee754": "^1.2.1"
++      }
++    },
++    "node_modules/buffer-crc32": {
++      "version": "1.0.0",
++      "resolved": "https://registry.npmjs.org/buffer-crc32/-/buffer-crc32-1.0.0.tgz",
++      "integrity": "sha512-Db1SbgBS/fg/392AblrMJk97KggmvYhr4pB5ZIMTWtaivCPMWLkmb7m21cJvpvgK+J3nsU2CmmixNBZx4vFj/w==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=8.0.0"
++      }
++    },
+     "node_modules/buffer-equal-constant-time": {
+       "version": "1.0.1",
+       "resolved": "https://registry.npmjs.org/buffer-equal-constant-time/-/buffer-equal-constant-time-1.0.1.tgz",
+@@ -1385,6 +1588,38 @@
+         "url": "https://github.com/sponsors/sindresorhus"
+       }
+     },
++    "node_modules/compress-commons": {
++      "version": "7.0.1",
++      "resolved": "https://registry.npmjs.org/compress-commons/-/compress-commons-7.0.1.tgz",
++      "integrity": "sha512-g0S8KAD8qf4+V//pr3BfB1aBnARLXNz2Gx+jmHU0LEriUuoQUOPOulVquHKTJ8+EAIIO7fhseNDr9wK5Q9FKBQ==",
++      "license": "MIT",
++      "dependencies": {
++        "crc-32": "^1.2.0",
++        "crc32-stream": "^7.0.1",
++        "is-stream": "^4.0.0",
++        "normalize-path": "^3.0.0",
++        "readable-stream": "^4.0.0"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/compress-commons/node_modules/readable-stream": {
++      "version": "4.7.0",
++      "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-4.7.0.tgz",
++      "integrity": "sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==",
++      "license": "MIT",
++      "dependencies": {
++        "abort-controller": "^3.0.0",
++        "buffer": "^6.0.3",
++        "events": "^3.3.0",
++        "process": "^0.11.10",
++        "string_decoder": "^1.3.0"
++      },
++      "engines": {
++        "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
++      }
++    },
+     "node_modules/compressible": {
+       "version": "2.0.18",
+       "resolved": "https://registry.npmjs.org/compressible/-/compressible-2.0.18.tgz",
+@@ -1508,6 +1743,12 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/core-util-is": {
++      "version": "1.0.3",
++      "resolved": "https://registry.npmjs.org/core-util-is/-/core-util-is-1.0.3.tgz",
++      "integrity": "sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==",
++      "license": "MIT"
++    },
+     "node_modules/cors": {
+       "version": "2.8.6",
+       "resolved": "https://registry.npmjs.org/cors/-/cors-2.8.6.tgz",
+@@ -1525,6 +1766,47 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/crc-32": {
++      "version": "1.2.2",
++      "resolved": "https://registry.npmjs.org/crc-32/-/crc-32-1.2.2.tgz",
++      "integrity": "sha512-ROmzCKrTnOwybPcJApAA6WBWij23HVfGVNKqqrZpuyZOHqK2CwHSvpGuyt/UNNvaIjEd8X5IFGp4Mh+Ie1IHJQ==",
++      "license": "Apache-2.0",
++      "bin": {
++        "crc32": "bin/crc32.njs"
++      },
++      "engines": {
++        "node": ">=0.8"
++      }
++    },
++    "node_modules/crc32-stream": {
++      "version": "7.0.1",
++      "resolved": "https://registry.npmjs.org/crc32-stream/-/crc32-stream-7.0.1.tgz",
++      "integrity": "sha512-IBWsY8xznyQrcHn8h4bC8/4ErNke5elzgG8GcqF4RFPw6aHkWWRc7Tgw6upjaTX/CT/yQgqYENkxYsTYN+hW2g==",
++      "license": "MIT",
++      "dependencies": {
++        "crc-32": "^1.2.0",
++        "readable-stream": "^4.0.0"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/crc32-stream/node_modules/readable-stream": {
++      "version": "4.7.0",
++      "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-4.7.0.tgz",
++      "integrity": "sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==",
++      "license": "MIT",
++      "dependencies": {
++        "abort-controller": "^3.0.0",
++        "buffer": "^6.0.3",
++        "events": "^3.3.0",
++        "process": "^0.11.10",
++        "string_decoder": "^1.3.0"
++      },
++      "engines": {
++        "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
++      }
++    },
+     "node_modules/debug": {
+       "version": "4.4.3",
+       "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+@@ -1715,6 +1997,33 @@
+         "node": ">= 0.6"
+       }
+     },
++    "node_modules/event-target-shim": {
++      "version": "5.0.1",
++      "resolved": "https://registry.npmjs.org/event-target-shim/-/event-target-shim-5.0.1.tgz",
++      "integrity": "sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=6"
++      }
++    },
++    "node_modules/events": {
++      "version": "3.3.0",
++      "resolved": "https://registry.npmjs.org/events/-/events-3.3.0.tgz",
++      "integrity": "sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=0.8.x"
++      }
++    },
++    "node_modules/events-universal": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/events-universal/-/events-universal-1.0.1.tgz",
++      "integrity": "sha512-LUd5euvbMLpwOF8m6ivPCbhQeSiYVNb8Vs0fQ8QjXo0JTkEHpz8pxdQf0gStltaPpw0Cca8b39KxvK9cfKRiAw==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "bare-events": "^2.7.0"
++      }
++    },
+     "node_modules/expect-type": {
+       "version": "1.3.0",
+       "resolved": "https://registry.npmjs.org/expect-type/-/expect-type-1.3.0.tgz",
+@@ -1774,6 +2083,12 @@
+       "integrity": "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==",
+       "license": "MIT"
+     },
++    "node_modules/fast-fifo": {
++      "version": "1.3.2",
++      "resolved": "https://registry.npmjs.org/fast-fifo/-/fast-fifo-1.3.2.tgz",
++      "integrity": "sha512-/d9sfos4yxzpwkDkuN7k2SqFKtYNmCTzgfEpz82x34IM9/zc8KGxQoXg1liNC/izpRM/MBdt44Nmx41ZWqk+FQ==",
++      "license": "MIT"
++    },
+     "node_modules/fast-safe-stringify": {
+       "version": "2.1.1",
+       "resolved": "https://registry.npmjs.org/fast-safe-stringify/-/fast-safe-stringify-2.1.1.tgz",
+@@ -2062,6 +2377,26 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/ieee754": {
++      "version": "1.2.1",
++      "resolved": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz",
++      "integrity": "sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==",
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/feross"
++        },
++        {
++          "type": "patreon",
++          "url": "https://www.patreon.com/feross"
++        },
++        {
++          "type": "consulting",
++          "url": "https://feross.org/support"
++        }
++      ],
++      "license": "BSD-3-Clause"
++    },
+     "node_modules/inherits": {
+       "version": "2.0.4",
+       "resolved": "https://registry.npmjs.org/inherits/-/inherits-2.0.4.tgz",
+@@ -2092,6 +2427,24 @@
+       "integrity": "sha512-hvpoI6korhJMnej285dSg6nu1+e6uxs7zG3BYAm5byqDsgJNWwxzM6z6iZiAgQR4TJ30JmBTOwqZUw3WlyH3AQ==",
+       "license": "MIT"
+     },
++    "node_modules/is-stream": {
++      "version": "4.0.1",
++      "resolved": "https://registry.npmjs.org/is-stream/-/is-stream-4.0.1.tgz",
++      "integrity": "sha512-Dnz92NInDqYckGEUJv689RbRiTSEHCQ7wOVeALbkOz999YpqT46yMRIGtSNl2iCL1waAZSx40+h59NV/EwzV/A==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/sindresorhus"
++      }
++    },
++    "node_modules/isarray": {
++      "version": "1.0.0",
++      "resolved": "https://registry.npmjs.org/isarray/-/isarray-1.0.0.tgz",
++      "integrity": "sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ==",
++      "license": "MIT"
++    },
+     "node_modules/js-md5": {
+       "version": "0.8.3",
+       "resolved": "https://registry.npmjs.org/js-md5/-/js-md5-0.8.3.tgz",
+@@ -2150,6 +2503,48 @@
+         "safe-buffer": "^5.0.1"
+       }
+     },
++    "node_modules/lazystream": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/lazystream/-/lazystream-1.0.1.tgz",
++      "integrity": "sha512-b94GiNHQNy6JNTrt5w6zNyffMrNkXZb3KTkCZJb2V1xaEGCk093vkZ2jk3tpaeP33/OiXC+WvK9AxUebnf5nbw==",
++      "license": "MIT",
++      "dependencies": {
++        "readable-stream": "^2.0.5"
++      },
++      "engines": {
++        "node": ">= 0.6.3"
++      }
++    },
++    "node_modules/lazystream/node_modules/readable-stream": {
++      "version": "2.3.8",
++      "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-2.3.8.tgz",
++      "integrity": "sha512-8p0AUk4XODgIewSi0l8Epjs+EVnWiK7NoDIEGU0HhE7+ZyY8D1IMY7odu5lRrFXGg71L15KG8QrPmum45RTtdA==",
++      "license": "MIT",
++      "dependencies": {
++        "core-util-is": "~1.0.0",
++        "inherits": "~2.0.3",
++        "isarray": "~1.0.0",
++        "process-nextick-args": "~2.0.0",
++        "safe-buffer": "~5.1.1",
++        "string_decoder": "~1.1.1",
++        "util-deprecate": "~1.0.1"
++      }
++    },
++    "node_modules/lazystream/node_modules/safe-buffer": {
++      "version": "5.1.2",
++      "resolved": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.1.2.tgz",
++      "integrity": "sha512-Gd2UZBJDkXlY7GbJxfsE8/nvKkUEU1G38c1siN6QP6a9PT9MmHB8GnpscSmMJSoF8LOIrt8ud/wPtojys4G6+g==",
++      "license": "MIT"
++    },
++    "node_modules/lazystream/node_modules/string_decoder": {
++      "version": "1.1.1",
++      "resolved": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.1.1.tgz",
++      "integrity": "sha512-n/ShnvDi6FHbbVfviro+WojiFzv+s8MPMHBczVePfUpDJLwoLT0ht1l4YwBCbi8pJAveEEdnkHyPyTP/mzRfwg==",
++      "license": "MIT",
++      "dependencies": {
++        "safe-buffer": "~5.1.0"
++      }
++    },
+     "node_modules/lightningcss": {
+       "version": "1.32.0",
+       "resolved": "https://registry.npmjs.org/lightningcss/-/lightningcss-1.32.0.tgz",
+@@ -2560,6 +2955,21 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/minimatch": {
++      "version": "10.2.6",
++      "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-10.2.6.tgz",
++      "integrity": "sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==",
++      "license": "BlueOak-1.0.0",
++      "dependencies": {
++        "brace-expansion": "^5.0.8"
++      },
++      "engines": {
++        "node": "18 || 20 || >=22"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/isaacs"
++      }
++    },
+     "node_modules/ms": {
+       "version": "2.1.3",
+       "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+@@ -2665,6 +3075,15 @@
+         "node": ">=6.0.0"
+       }
+     },
++    "node_modules/normalize-path": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/normalize-path/-/normalize-path-3.0.0.tgz",
++      "integrity": "sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=0.10.0"
++      }
++    },
+     "node_modules/object-assign": {
+       "version": "4.1.1",
+       "resolved": "https://registry.npmjs.org/object-assign/-/object-assign-4.1.1.tgz",
+@@ -2961,6 +3380,21 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/process": {
++      "version": "0.11.10",
++      "resolved": "https://registry.npmjs.org/process/-/process-0.11.10.tgz",
++      "integrity": "sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.6.0"
++      }
++    },
++    "node_modules/process-nextick-args": {
++      "version": "2.0.1",
++      "resolved": "https://registry.npmjs.org/process-nextick-args/-/process-nextick-args-2.0.1.tgz",
++      "integrity": "sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==",
++      "license": "MIT"
++    },
+     "node_modules/proxy-addr": {
+       "version": "2.0.7",
+       "resolved": "https://registry.npmjs.org/proxy-addr/-/proxy-addr-2.0.7.tgz",
+@@ -3027,6 +3461,21 @@
+         "node": ">= 6"
+       }
+     },
++    "node_modules/readdir-glob": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/readdir-glob/-/readdir-glob-3.0.0.tgz",
++      "integrity": "sha512-AhNB2KgKeVJr16nK9LLZbJNWnYoT23ZrumNKFDebHBdkC8KHSqWo871JAUhoWC/RtjEVdqNMFpM6qrwRbaUqpw==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "minimatch": "^10.2.2"
++      },
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/yqnn"
++      }
++    },
+     "node_modules/redis": {
+       "version": "6.0.0",
+       "resolved": "https://registry.npmjs.org/redis/-/redis-6.0.0.tgz",
+@@ -3361,6 +3810,17 @@
+         "node": ">=10.0.0"
+       }
+     },
++    "node_modules/streamx": {
++      "version": "2.28.1",
++      "resolved": "https://registry.npmjs.org/streamx/-/streamx-2.28.1.tgz",
++      "integrity": "sha512-zEzXb0s5Cds7tqMH6rhZ05lcJydCWiQPEwiNngVqzsxCc962vLY4Uw+mW7od8kDH258k2Uz/JrOkdIAAhSh9VA==",
++      "license": "MIT",
++      "dependencies": {
++        "events-universal": "^1.0.0",
++        "fast-fifo": "^1.3.2",
++        "text-decoder": "^1.1.0"
++      }
++    },
+     "node_modules/string_decoder": {
+       "version": "1.3.0",
+       "resolved": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.3.0.tgz",
+@@ -3423,6 +3883,36 @@
+         "node": ">=14.18.0"
+       }
+     },
++    "node_modules/tar-stream": {
++      "version": "3.2.1",
++      "resolved": "https://registry.npmjs.org/tar-stream/-/tar-stream-3.2.1.tgz",
++      "integrity": "sha512-nqsEO8zLZJvrOMdEwkA0QdCLFbetHMn95Zqu4fKwX+hkaTWJPZZOrxx/PwtxoK0MMGQmBQNRW3CPs8IFYQz4cQ==",
++      "license": "MIT",
++      "dependencies": {
++        "b4a": "^1.6.4",
++        "bare-fs": "^4.5.5",
++        "fast-fifo": "^1.2.0",
++        "streamx": "^2.15.0"
++      }
++    },
++    "node_modules/teex": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/teex/-/teex-1.0.1.tgz",
++      "integrity": "sha512-eYE6iEI62Ni1H8oIa7KlDU6uQBtqr4Eajni3wX7rpfXD8ysFx8z0+dri+KWEPWpBsxXfxu58x/0jvTVT1ekOSg==",
++      "license": "MIT",
++      "dependencies": {
++        "streamx": "^2.12.5"
++      }
++    },
++    "node_modules/text-decoder": {
++      "version": "1.2.7",
++      "resolved": "https://registry.npmjs.org/text-decoder/-/text-decoder-1.2.7.tgz",
++      "integrity": "sha512-vlLytXkeP4xvEq2otHeJfSQIRyWxo/oZGEbXrtEEF9Hnmrdly59sUbzZ/QgyWuLYHctCHxFF4tRQZNQ9k60ExQ==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "b4a": "^1.6.4"
++      }
++    },
+     "node_modules/tiny-inflate": {
+       "version": "1.0.3",
+       "resolved": "https://registry.npmjs.org/tiny-inflate/-/tiny-inflate-1.0.3.tgz",
+@@ -3808,6 +4298,36 @@
+       "engines": {
+         "node": ">=0.4"
+       }
++    },
++    "node_modules/zip-stream": {
++      "version": "7.0.5",
++      "resolved": "https://registry.npmjs.org/zip-stream/-/zip-stream-7.0.5.tgz",
++      "integrity": "sha512-dSvYKdvLsAHCDqPOhIwk/q5CvuWtTB3Dgpoe0uVEFjTzIOAmsQpprX25InCvrvJsirEbu1OHyy67n/kAj1Sw/w==",
++      "license": "MIT",
++      "dependencies": {
++        "compress-commons": "^7.0.0",
++        "normalize-path": "^3.0.0",
++        "readable-stream": "^4.0.0"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/zip-stream/node_modules/readable-stream": {
++      "version": "4.7.0",
++      "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-4.7.0.tgz",
++      "integrity": "sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==",
++      "license": "MIT",
++      "dependencies": {
++        "abort-controller": "^3.0.0",
++        "buffer": "^6.0.3",
++        "events": "^3.3.0",
++        "process": "^0.11.10",
++        "string_decoder": "^1.3.0"
++      },
++      "engines": {
++        "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
++      }
+     }
+   }
+ }
+diff --git a/src/server/package.json b/src/server/package.json
+index 6fec30f..3f92af0 100644
+--- a/src/server/package.json
++++ b/src/server/package.json
+@@ -23,6 +23,7 @@
+   "author": "",
+   "license": "ISC",
+   "dependencies": {
++    "archiver": "^8.0.0",
+     "bcryptjs": "^3.0.3",
+     "compression": "^1.7.4",
+     "cors": "^2.8.6",
+diff --git a/src/server/src/index.js b/src/server/src/index.js
+index 09ec4c9..7227ede 100644
+--- a/src/server/src/index.js
++++ b/src/server/src/index.js
+@@ -25,18 +25,20 @@ import twoFactorRoutes from './routes/two-factor.js';
+ import deviceRoutes, { pairingRouter } from './routes/device.js';
+ import clipboardRoutes from './routes/clipboard.js';
+ import mediaRoutes from './routes/media.js';
++import storageRoutes from './routes/storage.js';
+ import syncRoutes from './routes/sync.js';
+ import wsRoutes from './routes/ws.js';
+ import authRefreshRoutes from './routes/auth-refresh.js';
+ import { startCleanupScheduler } from './db/cleanup.js';
+ import { startVersionCleanupScheduler } from './utils/versionManager.js';
++import { startFileRetentionCleanup } from './services/fileRetentionCleanup.js';
+ import pool from './db/pool.js';
+ import migrate from './db/migrate.js';
+ import { csrfProtection, handleGetCsrfToken } from './middleware/csrf.js';
+ import chunkedUploadRoutes from './routes/chunked-upload.js';
+ import versionRoutes from './routes/versions.js';
+ import appRoutes from './routes/app.js';
+-import { subscriptionCheck, requireFeature, checkDeviceLimit, checkClipboardLimit, checkFileSizeLimit } from './middleware/subscriptionCheck.js';
++import { subscriptionCheck, requireFeature, checkDeviceLimit, checkClipboardLimit } from './middleware/subscriptionCheck.js';
+ import sessionRoutes from './routes/sessions.js';
+ import notificationRoutes from './routes/notifications.js';
+ import subscriptionRoutes from './routes/subscriptions.js';
+@@ -377,6 +379,11 @@ app.use('/api/sync', authenticateToken, apiLimiter, csrfProtection, subscription
+   req.userId = req.user.userId;
+   next();
+ }, syncRoutes);
++// 存储用量查询（F0.3）：中间件组合与 media 路由对齐（csrf 对 GET/Bearer 自动放行）
++app.use('/api/storage', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
++  req.userId = req.user.userId;
++  next();
++}, storageRoutes);
+ 
+ app.use('/api/upload', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
+   req.userId = req.user.userId;
+@@ -574,6 +581,10 @@ if (!isClusteredPrimary) {
+     // 若无人清理 file_versions 会随每次内容变更无上限膨胀（autoCleanupInterval 此前零引用）
+     startVersionCleanupScheduler();
+ 
++    // 文件保留期自动清理（F3.3）：按套餐 file_retention_days 删除过期 file 条目
++    // （DB 行 + 磁盘文件），顺带清扫分片/上传临时目录的 24h 遗留物
++    startFileRetentionCleanup();
++
+     // 启用查询性能监控（非生产环境或明确启用时）
+     if (config.nodeEnv !== 'production' || process.env.ENABLE_QUERY_MONITORING === 'true') {
+       enableQueryMonitoring();
+diff --git a/src/server/src/middleware/subscriptionCheck.js b/src/server/src/middleware/subscriptionCheck.js
+index 2c307df..c12b8f3 100644
+--- a/src/server/src/middleware/subscriptionCheck.js
++++ b/src/server/src/middleware/subscriptionCheck.js
+@@ -216,33 +216,6 @@ async function checkClipboardLimit(req, res, next) {
+   }
+ }
+ 
+-/**
+- * 文件大小限制中间件
+- */
+-function checkFileSizeLimit(maxSizeMb) {
+-  return async (req, res, next) => {
+-    try {
+-      const plan = req.user.plan;
+-      
+-      if (!plan) return next();
+-      
+-      if (maxSizeMb > plan.maxFileSizeMb) {
+-        return res.status(403).json({
+-          error: `File size exceeds plan limit (max ${plan.maxFileSizeMb}MB)`,
+-          fileSize: maxSizeMb,
+-          maxFileSize: plan.maxFileSizeMb,
+-          upgradeUrl: '/subscribe',
+-        });
+-      }
+-      
+-      next();
+-    } catch (err) {
+-      logger.error('File size limit check error:', err);
+-      res.status(500).json({ error: 'File size limit check failed' });
+-    }
+-  };
+-}
+-
+ /**
+  * 试用期管理：检查是否新用户（给7天Pro试用）
+  */
+@@ -323,7 +296,6 @@ export {
+   requireFeature,
+   checkDeviceLimit,
+   checkClipboardLimit,
+-  checkFileSizeLimit,
+   checkTrialEligibility,
+   downgradeToFree,
+   getPlanByName,
+diff --git a/src/server/src/routes/chunked-upload.js b/src/server/src/routes/chunked-upload.js
+index 70dc388..25a3e98 100644
+--- a/src/server/src/routes/chunked-upload.js
++++ b/src/server/src/routes/chunked-upload.js
+@@ -3,6 +3,7 @@ import multer from 'multer';
+ import { v4 as uuidv4 } from 'uuid';
+ import path from 'path';
+ import fs from 'fs/promises';
++import { createReadStream, createWriteStream } from 'fs';
+ import { fileURLToPath } from 'url';
+ import pool from '../db/pool.js';
+ import { authenticateToken } from '../middleware/auth.js';
+@@ -12,6 +13,7 @@ import { storeUploadSession, getUploadSession, deleteUploadSession } from '../ut
+ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+ import { writeChunk, readChunk, mergeChunks, deleteChunks, getFilePath } from '../utils/storage.js';
+ import { broadcastToUser } from '../ws/server.js';
++import { getPlanLimits, checkUploadQuota, quotaHttpBody } from '../utils/planLimits.js';
+ 
+ // 允许的文件 MIME类型（安全白名单）
+ const ALLOWED_MIME_TYPES = new Set([
+@@ -68,10 +70,14 @@ const __dirname = path.dirname(__filename);
+ 
+ const router = Router();
+ 
++// 存储后端（与 storage.js 同默认值）：非 local（如 s3）时分片目标不在本地盘，
++// chunk 阶段保留 readFile→writeChunk 旧链路，rename/pipe 优化仅对 local 生效
++const STORAGE_BACKEND = process.env.STORAGE_TYPE || 'local';
++
+ // 分片上传目录
+ const CHUNK_DIR = path.join(__dirname, '../../uploads/chunks');
+ const UPLOAD_DIR = path.join(__dirname, '../../uploads');
+-// multer 临时落盘目录（分片先写这里，再由 writeChunk 持久化到最终位置）
++// multer 临时落盘目录（分片先写这里，再由 rename/pipe 零内存拷贝到分片目标）
+ const MULTER_TMP = path.join(CHUNK_DIR, '.multer-tmp');
+ 
+ // 确保目录存在  
+@@ -141,7 +147,7 @@ async function removeUploadSession(uploadId) {
+   }
+ }
+ 
+-// 磁盘存储分片：每个分片先落临时盘（MULTER_TMP），再由 writeChunk 持久化到最终位置，
++// 磁盘存储分片：每个分片先落临时盘（MULTER_TMP），再由 rename/pipe 零内存拷贝到分片目标，
+ // 避免大文件分片全部缓冲进 Node 内存导致 OOM（原 memoryStorage 的隐患）
+ const storage = multer.diskStorage({
+   destination: (req, file, cb) => cb(null, MULTER_TMP),
+@@ -188,41 +194,26 @@ router.post('/init', authenticateToken, apiLimiter, async (req, res) => {
+       });
+     }
+ 
+-    // ========== 文件大小验证（直接查数据库，不依赖中间件缓存）==========
+-    let maxMb = 128; // 默认 Free 128MB
++    // ========== 套餐配额校验（F0.2）：阈值读 DB，admin 不受限，超限统一 413 ==========
+     try {
+-      const userRes = await pool.query(
+-        `SELECT u.is_admin, us.plan_id, sp.max_file_size_mb
+-         FROM users u
+-         LEFT JOIN user_subscriptions us ON u.id = us.user_id AND us.status = 'active'
+-         LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
+-         WHERE u.id = $1`,
+-        [req.userId]
+-      );
+-      if (userRes.rows.length > 0) {
+-        const row = userRes.rows[0];
+-        if (row.is_admin) {
+-          maxMb = 1024; // Admin = 1GB
+-        } else if (row.max_file_size_mb) {
+-          maxMb = row.max_file_size_mb;
+-        }
+-      }
+-    } catch (e) {
+-      logger.warn('[Upload/init] Failed to fetch plan, using default:', { error: e.message });
+-    }
+-
+-    const MAX_FILE_SIZE = maxMb * 1024 * 1024;
+-    logger.info('[Upload/init] Validation:', {
+-      filename, fileSize, mimeType, totalChunks,
+-      maxMb, MAX_FILE_SIZE, userId: req.userId
+-    });
+-    if (fileSize > MAX_FILE_SIZE) {
+-      logger.warn('[Upload/init] File too large:', { fileSize, MAX_FILE_SIZE });
+-      return res.status(400).json({
+-        error: 'File too large',
+-        maxSize: MAX_FILE_SIZE,
+-        receivedSize: fileSize
++      const limits = await getPlanLimits(req.userId);
++      logger.info('[Upload/init] Plan limits:', {
++        filename, fileSize, mimeType, totalChunks,
++        plan: limits.plan, isUnlimited: limits.isUnlimited,
++        maxFileSizeBytes: limits.maxFileSizeBytes,
++        userId: req.userId
+       });
++      // init 阶段按待传文件大小校验单文件 / 单次总大小 / 已用容量（文件数=1）
++      const verdict = await checkUploadQuota(req.userId, [{ size: fileSize, count: 1 }], limits);
++      if (!verdict.allowed) {
++        logger.warn('[Upload/init] Upload rejected by plan quota:', {
++          userId: req.userId, code: verdict.code, fileSize, plan: verdict.plan
++        });
++        return res.status(413).json(quotaHttpBody(verdict));
++      }
++    } catch (quotaErr) {
++      // planLimits 内部已 fail-open，此处异常不应阻塞上传主流程
++      logger.error('[Upload/init] Plan quota check failed unexpectedly', { error: quotaErr.message });
+     }
+     
+     const uploadId = uuidv4();
+@@ -290,11 +281,46 @@ router.post('/chunk/:uploadId/:chunkIndex', authenticateToken, apiLimiter, uploa
+       return res.status(400).json({ error: 'No chunk data found' });
+     }
+     
+-    // 保存分片（通过存储服务）
+-    // diskStorage 模式下 req.file 仅含 .path（无 .buffer），需读盘后写入并清理临时文件
+-    const chunkBuffer = await fs.readFile(req.file.path);
+-    await writeChunk(uploadId, chunkIndexNum, chunkBuffer);
+-    await fs.unlink(req.file.path).catch(() => {});
++    // 保存分片：multer 已将分片落盘至 MULTER_TMP（req.file.path），零内存拷贝搬到分片目标。
++    // 优化前链路（readFile 整片进内存 → writeChunk 二次写盘）存在双倍磁盘 IO + 一次全分片
++    // 内存缓冲；现在 local 后端优先 fs.rename（MULTER_TMP 在 CHUNK_DIR 之下，同盘 rename
++    // 原子且零拷贝），EXDEV（uploads/chunks 为独立挂载点等跨盘场景）降级为流式 pipe（恒定小
++    // 内存）；非 local 后端（如 s3）分片目标不在本地盘，保留原 readFile→writeChunk 链路。
++    if (STORAGE_BACKEND !== 'local') {
++      const chunkBuffer = await fs.readFile(req.file.path);
++      await writeChunk(uploadId, chunkIndexNum, chunkBuffer);
++    } else {
++      const chunkDir = path.join(CHUNK_DIR, uploadId);
++      await fs.mkdir(chunkDir, { recursive: true });
++      const targetPath = path.join(chunkDir, `chunk_${chunkIndexNum}`);
++      try {
++        await fs.rename(req.file.path, targetPath);
++      } catch (renameErr) {
++        if (renameErr?.code !== 'EXDEV') throw renameErr;
++        try {
++          await new Promise((resolve, reject) => {
++            const rs = createReadStream(req.file.path);
++            const ws = createWriteStream(targetPath);
++            let failed = false;
++            const fail = (err) => {
++              if (failed) return;
++              failed = true;
++              rs.destroy();
++              ws.destroy();
++              reject(err);
++            };
++            rs.on('error', fail);
++            ws.on('error', fail);
++            ws.on('finish', resolve);
++            rs.pipe(ws);
++          });
++        } catch (pipeErr) {
++          // 流式复制失败：清理半成品目标文件，避免 mergeChunks 拿到不完整分片
++          await fs.unlink(targetPath).catch(() => {});
++          throw pipeErr;
++        }
++      }
++    }
+     
+     // 记录已上传的分片（使用数组，避免重复）  
+     if (!session.uploadedChunks.includes(chunkIndexNum)) {
+@@ -315,6 +341,10 @@ router.post('/chunk/:uploadId/:chunkIndex', authenticateToken, apiLimiter, uploa
+   } catch (err) {
+     logger.error('Chunk upload error', { error: err.message });
+     res.status(500).json({ error: 'Failed to upload chunk' });
++  } finally {
++    // multer 中间件先于会话/参数校验就把分片落盘 MULTER_TMP：校验失败早退（404/403/410/400）、
++    // 保存成功（rename 后临时文件已不存在，ENOENT 忽略）、异常路径统一在此清理，防临时文件泄漏
++    if (req.file) await fs.unlink(req.file.path).catch(() => {});
+   }
+ });
+ 
+@@ -461,6 +491,39 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
+       const prevMeta = typeof ownership.rows[0].metadata === 'string'
+         ? (() => { try { return JSON.parse(ownership.rows[0].metadata || '{}'); } catch { return {}; } })()
+         : (ownership.rows[0].metadata || {});
++
++      // ── metadata.files 回填（对齐 media.js POST /file 多文件契约，字段名逐字一致）：
++      //    files:[{fileId:落盘名, name:原始文件名, size:字节, mimeType}] + totalSize + totalCount。
++      //    原始文件名/mime 取 init 表单字段（session.filename / session.mimeType，init 必填已
++      //    收集，无需新增字段）。两种情形：
++      //    - 条目无 files（localOnly 占位条目，单文件 chunked 主路径）→ 写入单元素 files 数组；
++      //    - 条目已有 files（多文件+chunked 混合场景）→ 按 fileId 增量合并：同 fileId 就地更新、
++      //      否则追加，绝不删除/覆盖其他文件项；totalSize/totalCount 按 files[] 重算保持一致。
++      //    并发边界：complete 对同一 uploadId 只会执行一次（成功后即删会话），桌面端两步流程
++      //    串行（建条目→分片→complete），同一条目同一时刻仅本 uploadId 在写 metadata，
++      //    简单读改写可接受；若未来允许多 uploadId 并发回填同一条目，需升级为 JSONB 原子
++      //    操作（jsonb_set / ||）或行级锁。
++      const chunkFileEntry = {
++        fileId: finalFilename,
++        name: session.filename,
++        size: session.fileSize,
++        mimeType: session.mimeType,
++      };
++      const prevFiles = Array.isArray(prevMeta.files)
++        ? prevMeta.files.filter((f) => f && typeof f === 'object')
++        : null;
++      let nextFiles;
++      if (prevFiles) {
++        const existedIdx = prevFiles.findIndex((f) => f.fileId === finalFilename);
++        nextFiles = prevFiles.slice();
++        if (existedIdx >= 0) {
++          nextFiles[existedIdx] = { ...prevFiles[existedIdx], ...chunkFileEntry };
++        } else {
++          nextFiles.push(chunkFileEntry);
++        }
++      } else {
++        nextFiles = [chunkFileEntry];
++      }
+       const mergedMetadata = {
+         ...prevMeta,
+         originalName: session.filename,
+@@ -470,7 +533,10 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
+         fileSize: session.fileSize,
+         localOnly: false,
+         fileEncoding: 'server',
+-        source: 'auto-sync'
++        source: 'auto-sync',
++        files: nextFiles,
++        totalSize: nextFiles.reduce((sum, f) => sum + (Number(f.size) || 0), 0),
++        totalCount: nextFiles.length,
+       };
+       const updated = await pool.query(
+         `UPDATE clipboard_items
+diff --git a/src/server/src/routes/media.js b/src/server/src/routes/media.js
+index 5bca011..4e5f2d8 100644
+--- a/src/server/src/routes/media.js
++++ b/src/server/src/routes/media.js
+@@ -4,6 +4,7 @@ import sharp from 'sharp';
+ import { v4 as uuidv4 } from 'uuid';
+ import path from 'path';
+ import fs from 'fs/promises';
++import { createReadStream } from 'fs';
+ import { fileURLToPath } from 'url';
+ import pool from '../db/pool.js';
+ import { broadcastToUser } from '../ws/server.js';
+@@ -12,6 +13,12 @@ import { apiLimiter } from '../middleware/rateLimiter.js';
+ import { createIdempotencyMiddleware } from '../middleware/idempotency.js';
+ import { logger } from '../utils/logger.js';
+ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
++import { getPlanLimits, checkUploadQuota, quotaHttpBody } from '../utils/planLimits.js';
++// archiver@8 为纯 ESM 包：v7 的默认导出工厂函数已移除，改用命名导出类；
++// 核心流式 API（file/abort/finalize/pipe/'error' 事件）与 v7 一致
++import { ZipArchive } from 'archiver';
++// F1.3：DELETE 复用保留期清理的安全文件名判断与落盘文件删除抽象（uploads/files 口径）
++import { deleteStoredClipFiles, isSafeStoredFilename } from '../services/fileRetentionCleanup.js';
+ 
+ const __filename = fileURLToPath(import.meta.url);
+ const __dirname = path.dirname(__filename);
+@@ -263,117 +270,356 @@ router.post('/image', apiLimiter, idempotencyMiddleware, imageUpload.single('ima
+   }
+ });
+ 
+-// POST /api/media/file - Upload a file
+-router.post('/file', apiLimiter, idempotencyMiddleware, fileUpload.single('file'), async (req, res) => {
+-  const tmpPath = req.file?.path;
++// ─── F1.2：多文件上传支持（单文件兼容旧契约）────────────────────────────────
++// text/* 判定：text/* mime 前缀 + 复用模块底部导出的 TEXT_PREVIEW_EXTENSIONS
++// 扩展名白名单（与 /:id/text-preview 端点同一口径，.json/.js 等非 text/* mime
++// 的文本文件同样可生成预览）。TEXT_PREVIEW_EXTENSIONS 在模块底部声明，
++// 本函数仅请求期执行，不存在 TDZ 问题。
++function isTextLikeFile(file) {
++  const ext = path.extname(file.originalname || '').toLowerCase();
++  return (
++    (typeof file.mimetype === 'string' && file.mimetype.startsWith('text/')) ||
++    TEXT_PREVIEW_EXTENSIONS.has(ext)
++  );
++}
++
++// content_preview 截取字节数：列表接口返回该列，控制在 4KB 内
++const MULTIFILE_TEXT_PREVIEW_BYTES = 4 * 1024;
++
++// 读取落盘文件前 4KB（utf8）生成 content_preview。
++// 容错：4KB 边界可能切断多字节字符（解码产生 U+FFFD）、二进制文件前 4KB 为乱码——
++// 剥离尾部替换符与 NUL 字节后原样返回；读取失败由调用方回退为首文件原始名。
++async function readTextPreviewHead(filePath) {
++  const handle = await fs.open(filePath, 'r');
+   try {
+-    if (!req.file) {
+-      return res.status(400).json({ error: 'Please select a file to upload' });
+-    }
++    const { bytesRead, buffer } = await handle.read({
++      buffer: Buffer.alloc(MULTIFILE_TEXT_PREVIEW_BYTES),
++      position: 0,
++      length: MULTIFILE_TEXT_PREVIEW_BYTES,
++    });
++    return buffer
++      .subarray(0, bytesRead)
++      .toString('utf8')
++      .replace(/\ufffd+$/g, '')
++      .replace(/\0/g, '');
++  } finally {
++    await handle.close().catch(() => {});
++  }
++}
+ 
+-    const { sourceDeviceId, expiresAt } = req.body;
++// POST /api/media/file - Upload file(s)
++// F1.2 契约：multipart 同时接受旧字段 `file`（单文件，旧桌面客户端只发此字段，
++// 绝不能删——换成 .array('files') 会让全部旧客户端 400）与新字段 `files`
++//（多文件数组），handler 内归一化为统一数组后再分流。
++// maxCount=50 决策：传输层上限提到 50（= Enterprise 档 max_files_per_clip），
++// 保证 Free(3)/Pro(10)/Enterprise(50) 的合法多文件请求都能到达业务配额校验，
++// 超限时返回结构化 413 TOO_MANY_FILES（quotaHttpBody），而不是 multer 的通用
++// 错误；>50 属滥用，由 multer 在传输层提前中止（LIMIT_UNEXPECTED_FILE，
++// 已落盘临时文件由 multer abortWithError 自动清理）。DoS 面可控：单文件 1GB
++// 硬上限 + apiLimiter 限速 + diskStorage 落盘（不占内存）+ 业务配额 fail-closed；
++// 残留 tmp 另有 fileRetentionCleanup 定时清扫兜底。
++router.post(
++  '/file',
++  apiLimiter,
++  idempotencyMiddleware,
++  fileUpload.fields([
++    { name: 'files', maxCount: 50 }, // 新字段：多文件数组（业务上限以 checkUploadQuota 为准）
++    { name: 'file', maxCount: 1 },   // 旧字段：单文件（旧客户端契约，逐字段兼容）
++  ]),
++  async (req, res) => {
++    // 归一化：新旧字段合并为统一数组（files 字段在前，file 字段在后）
++    req.files = [...(req.files?.files || []), ...(req.files?.file || [])];
++    const tmpPaths = req.files.map((f) => f?.path).filter(Boolean);
++    const movedPaths = []; // 已 rename 进正式目录的最终文件路径（异常回滚删除，防泄漏）
++    let succeeded = false; // DB 条目落库成功后置 true：此后磁盘文件必须保留（与 DB 一致）
++    try {
++      if (req.files.length === 0) {
++        return res.status(400).json({ error: 'Please select a file to upload' });
++      }
+ 
+-    if (!sourceDeviceId || !isValidUUID(sourceDeviceId)) {
+-      return res.status(400).json({ error: 'Invalid sourceDeviceId' });
+-    }
++      // ========== 套餐配额校验（F0.2/F1.2）：multer 已拿到文件大小，正式落盘/入库前拦截。
++      // multer diskStorage 先写 TMP_DIR（fileUpload limits 1GB 兜底），超限时临时文件由
++      // 本 handler 的 finally 统一 unlink 清理，不会移入正式目录。
++      // 单文件调用形状与 F0.2 完全一致（[{ size, count: 1 }]）；多文件按 N 个文件
++      // 逐个计数，文件数 / 单次总大小 / 已用容量全部由 checkUploadQuota 判定
++      //（业务上限以套餐 max_files_per_clip 为准，非 multer maxCount）。
++      try {
++        const limits = await getPlanLimits(req.userId);
++        const verdict = await checkUploadQuota(
++          req.userId,
++          req.files.map((f) => ({ size: f.size, count: 1 })),
++          limits
++        );
++        if (!verdict.allowed) {
++          logger.warn('File upload rejected by plan quota', {
++            userId: req.userId,
++            code: verdict.code,
++            size: req.files.reduce((sum, f) => sum + (Number(f.size) || 0), 0),
++            count: req.files.length,
++            plan: verdict.plan,
++          });
++          // 413 时所有文件仍在 TMP_DIR，由 finally 统一清理
++          return res.status(413).json(quotaHttpBody(verdict));
++        }
++      } catch (quotaErr) {
++        // planLimits 内部已 fail-open，此处异常不应阻塞上传主流程
++        logger.error('Plan quota check failed unexpectedly', { error: quotaErr.message });
++      }
+ 
+-    // Verify device belongs to user
+-    const deviceCheck = await pool.query(
+-      'SELECT id FROM devices WHERE id = $1 AND user_id = $2',
+-      [sourceDeviceId, req.userId]
+-    );
+-    if (deviceCheck.rows.length === 0) {
+-      return res.status(404).json({ error: 'Device not found' });
+-    }
++      const { sourceDeviceId, expiresAt } = req.body;
+ 
+-    // Save file：将临时文件原子 rename 到正式目录（不拷贝进内存，P2 修复 OOM）
+-    const ext = path.extname(req.file.originalname).toLowerCase();
+-    const filename = `${uuidv4()}${ext}`;
+-    const filePath = path.join(FILE_DIR, filename);
+-    await fs.rename(req.file.path, filePath);
++      if (!sourceDeviceId || !isValidUUID(sourceDeviceId)) {
++        return res.status(400).json({ error: 'Invalid sourceDeviceId' });
++      }
+ 
+-    // Save to database
+-    const result = await pool.query(
+-      `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata, expires_at)
+-       VALUES ($1, $2, 'file', $3, $4, $5, $6, $7)
+-       RETURNING id, content_type, content_preview, content_size, is_favorite, expires_at, created_at`,
+-      [
+-        req.userId,
+-        sourceDeviceId,
+-        filename,
+-        req.file.originalname,
+-        req.file.size,
+-        JSON.stringify({
+-          originalName: req.file.originalname,
+-          mimeType: req.file.mimetype,
+-          extension: ext,
+-        }),
+-        expiresAt || null,
+-      ]
+-    );
++      // Verify device belongs to user
++      const deviceCheck = await pool.query(
++        'SELECT id FROM devices WHERE id = $1 AND user_id = $2',
++        [sourceDeviceId, req.userId]
++      );
++      if (deviceCheck.rows.length === 0) {
++        return res.status(404).json({ error: 'Device not found' });
++      }
+ 
+-    const item = result.rows[0];
++      // 落盘：将每个临时文件原子 rename 到正式目录（不拷贝进内存，P2 修复 OOM）。
++      // file 条目统一进 FILE_DIR（mime 分流与现有单文件逻辑一致，N 个文件 N 次 rename）。
++      const saved = req.files.map((f) => {
++        const ext = path.extname(f.originalname).toLowerCase();
++        const filename = `${uuidv4()}${ext}`;
++        return { file: f, ext, filename, filePath: path.join(FILE_DIR, filename) };
++      });
++      for (const s of saved) {
++        await fs.rename(s.file.path, s.filePath);
++        movedPaths.push(s.filePath);
++      }
+ 
+-    // Update device sync state
+-    await pool.query(
+-      `INSERT INTO device_sync_state (device_id, last_synced_item_id, last_sync_at)
+-       VALUES ($1, $2, NOW())
+-       ON CONFLICT (device_id) DO UPDATE
+-       SET last_synced_item_id = $2, last_sync_at = NOW()`,
+-      [sourceDeviceId, item.id]
+-    );
++      const first = saved[0];
++      const isSingle = saved.length === 1;
++      const totalSize = saved.reduce((sum, s) => sum + (Number(s.file.size) || 0), 0);
++
++      // content_preview：单文件保持旧语义（原始文件名）；多文件取第一个 text/*
++      // 文件落盘后的前 4KB 文本，全部非文本则存首文件原始名
++      let contentPreview = first.file.originalname;
++      if (!isSingle) {
++        const firstText = saved.find((s) => isTextLikeFile(s.file));
++        if (firstText) {
++          try {
++            contentPreview = await readTextPreviewHead(firstText.filePath);
++          } catch (previewErr) {
++            logger.warn('Multi-file text preview read failed, falling back to original name', {
++              error: previewErr.message,
++            });
++          }
++        }
++      }
+ 
+-    // Broadcast
+-    broadcastToUser(req.userId, {
+-      type: 'new_clipboard',
+-      item: {
++      // metadata：单文件保持旧字段（originalName/mimeType/extension，与现状逐字段一致）；
++      // 多文件聚合 files/totalSize/totalCount/fileEncoding，并保留 originalName/
++      // mimeType/extension（首文件口径，兼容 text-preview / download 等现有消费方）。
++      const metadata = isSingle
++        ? {
++            originalName: first.file.originalname,
++            mimeType: first.file.mimetype,
++            extension: first.ext,
++          }
++        : {
++            files: saved.map((s) => ({
++              fileId: s.filename, // 落盘文件名（uuid.ext），download 端按 content_encrypted 找文件
++              name: s.file.originalname,
++              size: s.file.size,
++              mimeType: s.file.mimetype,
++            })),
++            totalSize,
++            totalCount: saved.length,
++            fileEncoding: 'server',
++            originalName: first.file.originalname,
++            mimeType: first.file.mimetype,
++            extension: first.ext,
++          };
++
++      // Save to database
++      // content_encrypted = 首文件落盘文件名（uuid.ext）：服务端多处把该列当文件名
++      // 消费（download / delete / text-preview），多文件聚合也绝不改成 JSON。
++      const result = await pool.query(
++        `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata, expires_at)
++         VALUES ($1, $2, 'file', $3, $4, $5, $6, $7)
++         RETURNING id, content_type, content_preview, content_size, is_favorite, expires_at, created_at`,
++        [
++          req.userId,
++          sourceDeviceId,
++          first.filename,
++          contentPreview,
++          isSingle ? first.file.size : totalSize,
++          JSON.stringify(metadata),
++          expiresAt || null,
++        ]
++      );
++
++      const item = result.rows[0];
++      // 条目已落库：磁盘文件与 DB 绑定，此后任何异常都不得回滚删除文件
++      succeeded = true;
++
++      // Update device sync state
++      await pool.query(
++        `INSERT INTO device_sync_state (device_id, last_synced_item_id, last_sync_at)
++         VALUES ($1, $2, NOW())
++         ON CONFLICT (device_id) DO UPDATE
++         SET last_synced_item_id = $2, last_sync_at = NOW()`,
++        [sourceDeviceId, item.id]
++      );
++
++      // Broadcast：多文件也只广播一个聚合条目（单条 new_clipboard）
++      broadcastToUser(req.userId, {
++        type: 'new_clipboard',
++        item: {
++          id: item.id,
++          contentType: 'file',
++          contentPreview,
++          contentSize: isSingle ? first.file.size : totalSize,
++          createdAt: item.created_at,
++          sourceDeviceId,
++        },
++      });
++
++      logger.info('File uploaded', {
++        itemId: item.id,
++        filename: first.filename,
++        size: isSingle ? first.file.size : totalSize,
++        totalCount: saved.length,
++      });
++
++      // 审计日志：记录文件上传
++      await logAuditEvent({
++        userId: req.user?.userId,
++        action: AUDIT_ACTIONS.UPLOAD_FILE,
++        resourceType: 'clipboard_item',
++        resourceId: item.id,
++        details: {
++          contentType: 'file',
++          filename: first.filename,
++          originalName: first.file.originalname,
++          size: isSingle ? first.file.size : totalSize,
++          mimeType: first.file.mimetype,
++          ...(isSingle ? {} : { totalCount: saved.length, totalSize }),
++        },
++        ipAddress: req.ip,
++        userAgent: req.get('user-agent'),
++      }).catch((err) => logger.error('Audit log failed', { error: err.message }));
++
++      // 响应：单文件（无论走 file 还是 files 单个）与现状逐字段一致；
++      // 多文件在旧字段基础上新增 files/totalSize/totalCount
++      res.status(201).json({
+         id: item.id,
+         contentType: 'file',
+-        contentPreview: req.file.originalname,
+-        contentSize: req.file.size,
++        filename: first.filename,
++        originalName: first.file.originalname,
++        size: first.file.size,
++        mimeType: first.file.mimetype,
+         createdAt: item.created_at,
+-        sourceDeviceId,
+-      },
++        ...(isSingle
++          ? {}
++          : {
++              files: saved.map((s) => ({
++                fileId: s.filename,
++                filename: s.filename,
++                name: s.file.originalname,
++                size: s.file.size,
++                mimeType: s.file.mimetype,
++              })),
++              totalSize,
++              totalCount: saved.length,
++            }),
++      });
++    } catch (err) {
++      logger.error('Upload file error', { error: err.message });
++      res.status(500).json({ error: 'File upload failed' });
++    } finally {
++      // 临时文件清理：rename 成功则对应 temp 已不存在（ENOENT 被忽略）；失败则清理残留
++      await Promise.all(tmpPaths.map((p) => fs.unlink(p).catch(() => {})));
++      // 异常路径回滚：删除已 rename 进正式目录的文件，防止半成品泄漏（落库成功时跳过）
++      if (!succeeded) {
++        await Promise.all(movedPaths.map((p) => fs.unlink(p).catch(() => {})));
++      }
++    }
++  }
++);
++
++// ─── F1.3：download 多文件支持 ──────────────────────────────────────────────
++// zip 打包预检上限：metadata.files[].size 总和超过该值 → 400，要求按 fileIndex 逐个下载
++const MULTIFILE_ZIP_MAX_BYTES = 100 * 1024 * 1024; // 100MB
++
++// 磁盘文件存在性检查（与旧 download 内联 access+stat.isFile 检查逐行为等价的抽象：
++// 目录 / 缺失 / 空文件名拼出目录本身等情况均返回 false → 404）
++async function isReadableFileOnDisk(filePath) {
++  try {
++    await fs.access(filePath);
++    const existsStat = await fs.stat(filePath);
++    return existsStat.isFile();
++  } catch {
++    return false;
++  }
++}
++
++// fileIndex 查询参数校验：undefined → 未传(null)；非负整数字符串且 < total → 有效下标；
++// 其余（非数字 / 负号 / 空串 / 数组重复参数 / 越界）→ 无效(-1)
++function parseFileIndex(rawIndex, total) {
++  if (rawIndex === undefined) return null;
++  if (!/^\d+$/.test(String(rawIndex))) return -1;
++  const idx = parseInt(rawIndex, 10);
++  return idx < total ? idx : -1;
++}
++
++// 单文件下载（200 全量 / 206 Range）。逻辑与改造前 download 的两个分支逐行等价，
++// 仅把 mimeType / 下载名参数化：旧条目传 metadata 口径，多文件条目传 files[n] 口径。
++async function serveFileWithRange(req, res, filePath, { mimeType, downloadName }) {
++  const stat = await fs.stat(filePath);
++  const fileSize = stat.size;
++  const range = req.headers.range;
++
++  if (range) {
++    // Range request for partial content (resume support)
++    const parts = range.replace(/bytes=/, '').split('-');
++    const start = parseInt(parts[0], 10);
++    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
++    const chunkSize = end - start + 1;
++
++    res.writeHead(206, {
++      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
++      'Accept-Ranges': 'bytes',
++      'Content-Length': chunkSize,
++      'Content-Type': mimeType || 'application/octet-stream',
++      'Content-Disposition': `attachment; filename="${encodeURIComponent(downloadName || 'download')}"`,
+     });
+ 
+-    logger.info('File uploaded', { itemId: item.id, filename, size: req.file.size });
+-    
+-    // 审计日志：记录文件上传
+-    await logAuditEvent({
+-      userId: req.user?.userId,
+-      action: AUDIT_ACTIONS.UPLOAD_FILE,
+-      resourceType: 'clipboard_item',
+-      resourceId: item.id,
+-      details: {
+-        contentType: 'file',
+-        filename,
+-        originalName: req.file.originalname,
+-        size: req.file.size,
+-        mimeType: req.file.mimetype,
+-      },
+-      ipAddress: req.ip,
+-      userAgent: req.get('user-agent'),
+-    }).catch(err => logger.error('Audit log failed', { error: err.message }));
+-    
+-    res.status(201).json({
+-      id: item.id,
+-      contentType: 'file',
+-      filename,
+-      originalName: req.file.originalname,
+-      size: req.file.size,
+-      mimeType: req.file.mimetype,
+-      createdAt: item.created_at,
++    const stream = createReadStream(filePath, { start, end });
++    stream.on('error', (streamErr) => {
++      logger.error('Download stream error', { error: streamErr.message, filePath });
++      res.destroy();
+     });
+-  } catch (err) {
+-    logger.error('Upload file error', { error: err.message });
+-    res.status(500).json({ error: 'File upload failed' });
+-  } finally {
+-    // rename 成功则 temp 已不存在（ENOENT 被忽略）；失败则清理残留临时文件
+-    if (tmpPath) await fs.unlink(tmpPath).catch(() => {});
++    stream.pipe(res);
++  } else {
++    res.writeHead(200, {
++      'Content-Length': fileSize,
++      'Content-Type': mimeType || 'application/octet-stream',
++      'Content-Disposition': `attachment; filename="${encodeURIComponent(downloadName || 'download')}"`,
++      'Accept-Ranges': 'bytes',
++    });
++
++    createReadStream(filePath)
++      .on('error', (streamErr) => {
++        logger.error('Download stream error', { error: streamErr.message, filePath });
++        res.destroy();
++      })
++      .pipe(res);
+   }
+-});
++}
+ 
+ // GET /api/media/:id/download - Download file/image (with Range support)
++// F1.3 多文件条目（metadata.files，F1.2 上传契约）扩展：
++//   - ?fileIndex=n → 下载第 n 个文件（Range 逻辑与单文件完全一致），非法/越界 → 400
++//   - 无 fileIndex 且 files.length>1 → 流式 zip 打包（archiver zlib level=1，不落临时
++//     文件、不缓冲整体；打包前按 metadata.files[].size 预检 ≤100MB；忽略 Range 头）
++// 旧单文件条目（无 metadata.files）与 image 走原路径，行为 100% 不变。
+ router.get('/:id/download', apiLimiter, async (req, res) => {
+   try {
+     const { id } = req.params;
+@@ -396,6 +642,97 @@ router.get('/:id/download', apiLimiter, async (req, res) => {
+     const filename = item.content_encrypted; // stored filename
+     const metadata = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+ 
++    // F1.3：仅 file 条目且 metadata.files 为数组时进入多文件分支；其余条目原样走旧路径
++    const multiFiles =
++      item.content_type === 'file' && Array.isArray(metadata?.files) ? metadata.files : null;
++
++    if (multiFiles) {
++      const idx = parseFileIndex(req.query.fileIndex, multiFiles.length);
++
++      // ── 分支 1：fileIndex 指定单个文件下载 ──
++      if (req.query.fileIndex !== undefined) {
++        if (idx === -1) {
++          return res.status(400).json({ error: 'Invalid fileIndex' });
++        }
++        const entry = multiFiles[idx];
++        // fileId 是服务端生成的落盘文件名，防御性按安全文件名口径校验（防 DB 数据被注入路径）
++        if (!isSafeStoredFilename(entry?.fileId)) {
++          return res.status(404).json({ error: 'File not found on disk' });
++        }
++        const entryPath = path.join(FILE_DIR, entry.fileId);
++        if (!(await isReadableFileOnDisk(entryPath))) {
++          return res.status(404).json({ error: 'File not found on disk' });
++        }
++        // 下载名 / Content-Type 取该文件自身口径（metadata.originalName/mimeType 是首文件口径）
++        await serveFileWithRange(req, res, entryPath, {
++          mimeType: entry.mimeType,
++          downloadName: entry.name,
++        });
++        return;
++      }
++
++      // ── 分支 2：多文件（>1）无 fileIndex → 流式 zip ──
++      // files.length===1 的聚合形状按 F1.2 契约不会产生（上传端单文件写旧 metadata），
++      // 防御性落到下方旧路径：content_encrypted 即该文件，口径一致。
++      if (multiFiles.length > 1) {
++        // 打包前预检（只读 metadata，不读文件内容）：files[].size 总和 ≤ 100MB
++        const totalBytes = multiFiles.reduce((sum, f) => sum + (Number(f?.size) || 0), 0);
++        if (totalBytes > MULTIFILE_ZIP_MAX_BYTES) {
++          return res.status(400).json({
++            error: 'zip too large, please download files individually by fileIndex',
++          });
++        }
++
++        // 逐个校验落盘文件存在（任一缺失 → 404，避免 zip 中途截断）；zip 内条目名做
++        // basename 归一化（剥离 / \ 与路径段，防 zip-slip 下游解压风险，正常文件名无损）
++        const zipEntries = [];
++        for (const f of multiFiles) {
++          if (!isSafeStoredFilename(f?.fileId)) {
++            return res.status(404).json({ error: 'File not found on disk' });
++          }
++          const entryPath = path.join(FILE_DIR, f.fileId);
++          if (!(await isReadableFileOnDisk(entryPath))) {
++            return res.status(404).json({ error: 'File not found on disk' });
++          }
++          const entryName =
++            String(f?.name || '').split(/[\\/]/).pop() || `file-${zipEntries.length + 1}`;
++          zipEntries.push({ entryPath, entryName });
++        }
++
++        const zipName = metadata?.originalName ? `${metadata.originalName}.zip` : `${id}.zip`;
++        res.writeHead(200, {
++          'Content-Type': 'application/zip',
++          'Content-Disposition': `attachment; filename="${encodeURIComponent(zipName)}"`,
++        });
++
++        const archive = new ZipArchive({ zlib: { level: 1 } });
++        // archive 内部逐文件 createReadStream，读盘/压缩错误统一走 'error' → 销毁连接
++        archive.on('error', (archiveErr) => {
++          logger.error('Zip archive error', { error: archiveErr.message, itemId: id });
++          res.destroy();
++        });
++        archive.on('warning', (warnErr) => {
++          logger.warn('Zip archive warning', { error: warnErr.message, itemId: id });
++        });
++        // 客户端中断（连接关闭且响应未写完）：中止归档，防止内部文件流继续读取（fd 泄漏）
++        res.on('close', () => {
++          if (!res.writableEnded) {
++            logger.warn('Zip download aborted by client', { itemId: id });
++            archive.abort();
++          }
++        });
++
++        for (const { entryPath, entryName } of zipEntries) {
++          archive.file(entryPath, { name: entryName });
++        }
++        archive.pipe(res);
++        // 必须显式 finalize：宣告条目追加完毕，写出 central directory 并结束归档，
++        // 否则响应永不结束（客户端超时挂起）
++        archive.finalize();
++        return;
++      }
++    }
++
+     let filePath;
+     if (item.content_type === 'image') {
+       filePath = path.join(IMAGE_DIR, filename);
+@@ -406,45 +743,18 @@ router.get('/:id/download', apiLimiter, async (req, res) => {
+     }
+ 
+     // Check file exists
+-    try {
+-      await fs.access(filePath);
+-    } catch {
++    // 注意：filename 为空时 path.join(IMAGE_DIR, '') 会拼出目录本身，而 fs.access(目录)
++    // 同样返回成功，随后 createReadStream 读目录会抛 EISDIR。该错误走流的 'error' 事件
++    // 而非 throw，try/catch 接不住；若不监听就会 uncaughtException 崩掉整个后端进程。
++    //（isReadableFileOnDisk 与原内联检查等价：目录 stat.isFile() === false → 404）
++    if (!(await isReadableFileOnDisk(filePath))) {
+       return res.status(404).json({ error: 'File not found on disk' });
+     }
+ 
+-    const stat = await fs.stat(filePath);
+-    const fileSize = stat.size;
+-    const range = req.headers.range;
+-
+-    if (range) {
+-      // Range request for partial content (resume support)
+-      const parts = range.replace(/bytes=/, '').split('-');
+-      const start = parseInt(parts[0], 10);
+-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+-      const chunkSize = end - start + 1;
+-
+-      res.writeHead(206, {
+-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+-        'Accept-Ranges': 'bytes',
+-        'Content-Length': chunkSize,
+-        'Content-Type': metadata?.mimeType || 'application/octet-stream',
+-        'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata?.originalName || 'download')}"`,
+-      });
+-
+-      const { createReadStream } = await import('fs');
+-      const stream = createReadStream(filePath, { start, end });
+-      stream.pipe(res);
+-    } else {
+-      res.writeHead(200, {
+-        'Content-Length': fileSize,
+-        'Content-Type': metadata?.mimeType || 'application/octet-stream',
+-        'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata?.originalName || 'download')}"`,
+-        'Accept-Ranges': 'bytes',
+-      });
+-
+-      const { createReadStream } = await import('fs');
+-      createReadStream(filePath).pipe(res);
+-    }
++    await serveFileWithRange(req, res, filePath, {
++      mimeType: metadata?.mimeType,
++      downloadName: metadata?.originalName,
++    });
+   } catch (err) {
+     logger.error('Download error', { error: err.message });
+     res.status(500).json({ error: 'Download failed' });
+@@ -477,23 +787,67 @@ router.get('/:id/preview', apiLimiter, async (req, res) => {
+     }
+ 
+     // Serve thumbnail
+-    const thumbPath = path.join(IMAGE_DIR, 'thumbnails', metadata?.thumbnail || '');
+-    try {
+-      await fs.access(thumbPath);
+-      res.setHeader('Content-Type', 'image/jpeg');
+-      res.setHeader('Cache-Control', 'public, max-age=86400');
+-      const { createReadStream } = await import('fs');
+-      createReadStream(thumbPath).pipe(res);
+-    } catch {
++    // 注意（崩溃根因）：metadata.thumbnail 为空时，path.join(..., 'thumbnails', '')
++    // 会拼出 thumbnails 目录本身，而 fs.access(目录) 同样返回成功，随后
++    // createReadStream 读目录即抛 EISDIR。该错误走流的 'error' 事件而非 throw，
++    // try/catch 接不住；若无 .on('error') 监听就会 uncaughtException 崩掉整个后端进程。
++    const thumbName = metadata?.thumbnail;
++    const thumbPath = thumbName ? path.join(IMAGE_DIR, 'thumbnails', thumbName) : null;
++    let served = false;
++
++    if (thumbPath) {
++      try {
++        await fs.access(thumbPath);
++        const thumbStat = await fs.stat(thumbPath);
++        if (thumbStat.isFile()) {
++          res.setHeader('Content-Type', 'image/jpeg');
++          res.setHeader('Cache-Control', 'public, max-age=86400');
++          const { createReadStream } = await import('fs');
++          createReadStream(thumbPath)
++            .on('error', (streamErr) => {
++              logger.error('Preview thumbnail stream error', {
++                error: streamErr.message,
++                thumbPath,
++              });
++              res.destroy();
++            })
++            .pipe(res);
++          served = true;
++        }
++      } catch {
++        /* 缩略图不可用，回退到原图 */
++      }
++    }
++
++    if (!served) {
+       // Fallback to full image
+-      const imgPath = path.join(IMAGE_DIR, item.content_encrypted);
++      const imgName = item.content_encrypted;
++      const imgPath = imgName ? path.join(IMAGE_DIR, imgName) : null;
+       try {
+-        await fs.access(imgPath);
+-        res.setHeader('Content-Type', metadata?.mimeType || 'image/jpeg');
+-        res.setHeader('Cache-Control', 'public, max-age=86400');
+-        const { createReadStream } = await import('fs');
+-        createReadStream(imgPath).pipe(res);
++        if (imgPath) {
++          await fs.access(imgPath);
++          const imgStat = await fs.stat(imgPath);
++          if (imgStat.isFile()) {
++            res.setHeader('Content-Type', metadata?.mimeType || 'image/jpeg');
++            res.setHeader('Cache-Control', 'public, max-age=86400');
++            const { createReadStream } = await import('fs');
++            createReadStream(imgPath)
++              .on('error', (streamErr) => {
++                logger.error('Preview image stream error', {
++                  error: streamErr.message,
++                  imgPath,
++                });
++                res.destroy();
++              })
++              .pipe(res);
++            served = true;
++          }
++        }
+       } catch {
++        /* 落到 404 */
++      }
++
++      if (!served) {
+         return res.status(404).json({ error: 'Image not found' });
+       }
+     }
+@@ -549,12 +903,32 @@ router.get('/:id/text-preview', apiLimiter, async (req, res) => {
+       return res.status(400).json({ error: 'Only file types support text preview' });
+     }
+ 
+-    const ext = (metadata?.extension || '').toLowerCase();
++    // F1.3：多文件条目（metadata.files，F1.2 契约）支持 ?fileIndex=n——缺省时与改造前
++    // 完全一致（metadata.extension / content_encrypted 均为首文件口径）；fileIndex 指定
++    // 时预览对应文件（落盘名 files[n].fileId，扩展名/展示名取 files[n].name）。
++    let ext = (metadata?.extension || '').toLowerCase();
++    let storedName = item.content_encrypted;
++    let previewFileName = metadata?.originalName || item.content_preview;
++
++    if (Array.isArray(metadata?.files) && req.query.fileIndex !== undefined) {
++      const idx = parseFileIndex(req.query.fileIndex, metadata.files.length);
++      if (idx === -1) {
++        return res.status(400).json({ error: 'Invalid fileIndex' });
++      }
++      const entry = metadata.files[idx];
++      if (!isSafeStoredFilename(entry?.fileId)) {
++        return res.status(404).json({ error: 'File not found on disk' });
++      }
++      storedName = entry.fileId;
++      ext = path.extname(String(entry?.name || '')).toLowerCase();
++      previewFileName = entry?.name || previewFileName;
++    }
++
+     if (!TEXT_PREVIEW_EXTENSIONS.has(ext)) {
+       return res.status(400).json({ error: 'This file type does not support text preview', ext });
+     }
+ 
+-    const filePath = path.join(FILE_DIR, item.content_encrypted);
++    const filePath = path.join(FILE_DIR, storedName);
+     try {
+       await fs.access(filePath);
+     } catch {
+@@ -605,7 +979,7 @@ router.get('/:id/text-preview', apiLimiter, async (req, res) => {
+ 
+     res.json({
+       id: item.id,
+-      fileName: metadata?.originalName || item.content_preview,
++      fileName: previewFileName,
+       extension: ext,
+       language: CODE_SYNTAX_MAP[ext] || 'text',
+       encoding,
+@@ -647,12 +1021,18 @@ router.delete('/:id', apiLimiter, async (req, res) => {
+     // Delete physical file
+     if (item.content_type === 'image') {
+       const imgPath = path.join(IMAGE_DIR, item.content_encrypted);
+-      const thumbPath = path.join(IMAGE_DIR, 'thumbnails', metadata?.thumbnail || '');
+       await fs.unlink(imgPath).catch(() => {});
+-      await fs.unlink(thumbPath).catch(() => {});
++      // F1.3 加固：缩略图名经安全文件名校验后再删（空值 / 含路径注入时跳过，防误删目录外文件）
++      if (isSafeStoredFilename(metadata?.thumbnail || '')) {
++        await fs.unlink(path.join(IMAGE_DIR, 'thumbnails', metadata.thumbnail)).catch(() => {});
++      }
+     } else if (item.content_type === 'file') {
+-      const filePath = path.join(FILE_DIR, item.content_encrypted);
+-      await fs.unlink(filePath).catch(() => {});
++      // F1.3：多文件条目需删除全部落盘文件——复用 fileRetentionCleanup.deleteStoredClipFiles：
++      // 覆盖 content_encrypted（首文件落盘名）+ metadata.files[].fileId 逐个（Set 去重），
++      // 均经 isSafeStoredFilename 口径校验（无路径分隔符、非 data:、basename 归一化等值，
++      // 杜绝 path traversal），单个 unlink 失败不中断。旧单文件条目（无 metadata.files）
++      // 只删 content_encrypted，与改造前行为一致。
++      await deleteStoredClipFiles(item);
+     }
+ 
+     // Delete from DB
+diff --git a/src/server/src/routes/subscriptions.js b/src/server/src/routes/subscriptions.js
+index cb310d0..f7cb210 100644
+--- a/src/server/src/routes/subscriptions.js
++++ b/src/server/src/routes/subscriptions.js
+@@ -4,6 +4,7 @@ import { authenticateToken } from '../middleware/auth.js';
+ import { logger } from '../utils/logger.js';
+ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+ import { sendNotification } from '../ws/server.js';
++import { getPlanLimits, getUsedStorageBytes } from '../utils/planLimits.js';
+ 
+ const router = Router();
+ 
+@@ -46,6 +47,22 @@ router.get('/current', authenticateToken, async (req, res) => {
+   try {
+     const userId = req.user.userId;
+ 
++    // F0.3：并行取套餐新字段与已用容量。
++    //  - getPlanLimits 自带旧库缺列容错（information_schema 检测，缺 max_files_per_clip /
++    //    file_retention_days 列时返回 null），不会因迁移未跑而崩；
++    //  - 它只认 status='active' 的订阅，trial 用户会兜底到 Free 行 —— 这与上传配额
++    //    校验（checkUploadQuota）的实际执行口径一致，故此处展示值即生效值；
++    //  - plan 的 id/name 仍以下方订阅查询为准，这里只复用新字段，避免语义冲突。
++    const [planLimits, usedBytes] = await Promise.all([
++      getPlanLimits(userId),
++      getUsedStorageBytes(userId),
++    ]);
++    // 字节转 MB：向上取整到 0.1MB 精度（ceil(x*10)/10），展示余量偏保守；
++    // usedBytes 为 null（用量查询失败）时 storageUsedMb 置 null，由前端显示未知
++    const storageUsedMb = usedBytes != null
++      ? Math.ceil((usedBytes / (1024 * 1024)) * 10) / 10
++      : null;
++
+     // 获取用户当前订阅
+     const subscriptionResult = await pool.query(`
+       SELECT
+@@ -80,6 +97,9 @@ router.get('/current', authenticateToken, async (req, res) => {
+           maxClipboardItems: freePlan.rows[0].max_clipboard_items,
+           maxFileSizeMb: freePlan.rows[0].max_file_size_mb,
+           maxStorageMb: freePlan.rows[0].max_storage_mb,
++          maxFilesPerClip: planLimits.maxFilesPerClip,
++          fileRetentionDays: planLimits.fileRetentionDays,
++          storageUsedMb,
+           features: freePlan.rows[0].features,
+         } : null,
+       });
+@@ -106,6 +126,9 @@ router.get('/current', authenticateToken, async (req, res) => {
+         maxClipboardItems: subscription.max_clipboard_items,
+         maxFileSizeMb: subscription.max_file_size_mb,
+         maxStorageMb: subscription.max_storage_mb,
++        maxFilesPerClip: planLimits.maxFilesPerClip,
++        fileRetentionDays: planLimits.fileRetentionDays,
++        storageUsedMb,
+         features: subscription.features,
+       }
+     });

@@ -242,10 +242,56 @@ class ClipboardItem {
   /// 是否纯文本条目
   bool get isText => contentType == 'text';
 
-  /// 文件显示名（元数据 fileName 优先，回退 originalName；均缺省返回 null）
+  /// 文件显示名（元数据 fileName 优先，回退 originalName；均缺省时
+  /// F2.1：回退新格式 files 首个文件名；仍无则返回 null）
   String? get fileName {
     final dynamic name = metadata['fileName'] ?? metadata['originalName'];
     if (name is String && name.isNotEmpty) return name;
+    final files = this.files;
+    if (files != null && files.isNotEmpty && files.first.name.isNotEmpty) {
+      return files.first.name;
+    }
+    return null;
+  }
+
+  // ---------- 文件条目新格式解析（F2.1，纯追加只读 getter） ----------
+
+  /// 新格式文件列表（metadata.files）。缺失 / 空数组 / 全部条目畸形时
+  /// 返回 null —— 调用方按存量旧格式条目处理，保持旧行为不抛异常。
+  List<ClipFileInfo>? get files {
+    final dynamic raw = metadata['files'];
+    if (raw is! List || raw.isEmpty) {
+      return null;
+    }
+    final result = <ClipFileInfo>[];
+    for (final entry in raw) {
+      final info = ClipFileInfo.fromDynamic(entry);
+      if (info != null) {
+        result.add(info);
+      }
+    }
+    return result.isEmpty ? null : result;
+  }
+
+  /// 多文件条目文件数（新格式 metadata.totalCount；缺失 / 畸形为 0）
+  int get totalCount {
+    final dynamic v = metadata['totalCount'];
+    return v is int ? v : (v is num ? v.toInt() : 0);
+  }
+
+  /// 多文件条目总大小（新格式 metadata.totalSize；缺失 / 畸形为 0）
+  int get totalSize {
+    final dynamic v = metadata['totalSize'];
+    return v is int ? v : (v is num ? v.toInt() : 0);
+  }
+
+  /// 套餐限制原因短码（F3.2，metadata.limitReason，桌面端写入；
+  /// 空串 / 非字符串 / 缺失一律返回 null，调用方空值容错）
+  String? get limitReason {
+    final dynamic v = metadata['limitReason'];
+    if (v is String && v.trim().isNotEmpty) {
+      return v.trim();
+    }
     return null;
   }
 
@@ -279,6 +325,51 @@ class ClipboardItem {
       }
     }
     return const {};
+  }
+}
+
+/// 文件条目单文件信息（F2.1，新格式 metadata.files 项）。
+///
+/// 服务端契约：{ fileId: <服务端落盘名>, name, size, mimeType }。
+/// 解析容忍畸形：entry 非 Map、name 与 fileId 同时缺失判废（单条丢弃，
+/// 不拖垮整个列表）；其余字段类型漂移按缺省兜底。
+class ClipFileInfo {
+  /// 服务端落盘文件名（仅契约留档；下载实际走 ?fileIndex=n 定位）
+  final String fileId;
+
+  /// 展示名（来源设备原始文件名）
+  final String name;
+
+  /// 字节大小（缺失 / 畸形为 0）
+  final int size;
+
+  /// MIME 类型（可能缺失）
+  final String? mimeType;
+
+  const ClipFileInfo({
+    required this.fileId,
+    required this.name,
+    this.size = 0,
+    this.mimeType,
+  });
+
+  /// 容错解析：非 Map / name 与 fileId 均不可得返回 null。
+  static ClipFileInfo? fromDynamic(dynamic entry) {
+    if (entry is! Map) {
+      return null;
+    }
+    final dynamic rawName = entry['name'] ?? entry['fileName'];
+    final String name = rawName is String ? rawName : '';
+    final dynamic rawFileId = entry['fileId'] ?? entry['id'];
+    final String fileId = rawFileId is String ? rawFileId : '';
+    if (name.isEmpty && fileId.isEmpty) {
+      return null;
+    }
+    final dynamic rawSize = entry['size'];
+    final int size = rawSize is int ? rawSize : (rawSize is num ? rawSize.toInt() : 0);
+    final dynamic rawMime = entry['mimeType'];
+    final String? mimeType = rawMime is String && rawMime.isNotEmpty ? rawMime : null;
+    return ClipFileInfo(fileId: fileId, name: name, size: size, mimeType: mimeType);
   }
 }
 

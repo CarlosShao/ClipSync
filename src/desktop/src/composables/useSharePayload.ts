@@ -70,9 +70,11 @@ export function useSharePayload() {
 
     // 文件：读取真实文件、上传到后端，生成可下载的分享链接
     if (item.type === 'file') {
-      const filePath = display.extractFilePath(item.content)
+      // M-2：传入 metadata 作本机路径回退（新格式条目 content 是结构化展示 JSON，
+      // 本机路径只在 metadata.paths）；无本机路径返回 null → share 按无本机文件处理
+      const filePath = display.extractFilePath(item.content, item.metadata)
       if (!filePath) {
-        console.warn('[Clipboard] share file: no file path found in item.content')
+        console.warn('[Clipboard] share file: no local file path in item.content/metadata')
         return null
       }
       let base64: string

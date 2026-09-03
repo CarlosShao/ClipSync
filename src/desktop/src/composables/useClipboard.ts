@@ -4,7 +4,7 @@ import * as tauri from '@/lib/tauri'
 import { api, apiForm } from '@/api/client'
 import { recordUse } from '@/api/clipboard'
 import { useItemPassword } from '@/composables/useItemPassword'
-import { useConfigStore } from '@/stores/configStore'
+import { usePlanLimits } from '@/composables/usePlanLimits'
 import { useI18n } from '@/composables/useI18n'
 import { initOfflineSync, getQueueSize } from '@/utils/offlineQueue'
 import { chunkedUpload, shouldUseChunkedUpload } from '@/utils/chunkedUpload'
@@ -53,6 +53,7 @@ import {
 } from './clipboardDedup'
 import { releaseRemovedObjectUrls, releaseAllObjectUrls } from './clipboardObjectUrls'
 import { simpleHash, apiOrEnqueue, prepareImageForUpload, dataUrlMime, ensureDeviceId } from './clipboardUpload'
+import { handleQuotaResponse, markHandledQuota } from './useUploadLimitNotice'
 import { enqueueClipboardTask } from './clipboardQueue'
 import {
   loadClipboardItems,
@@ -424,10 +425,24 @@ export function useClipboard() {
       }
 
       if (item.type === 'file') {
-        // === 跨设备文件还原（B7 / 决策 D3）===
-        // 优先级：① 本机路径真实存在 → 直接复制文件（含"在资源管理器中显示"的路径语义）
+        // === 跨设备文件还原（B7 / 决策 D3；F1.4 多文件扩展）===
+        // 优先级：① 本机路径真实存在 → 直接复制文件（含“在资源管理器中显示”的路径语义）
         //        ② 服务端随条目存了字节（metadata.fileEncoding === 'base64'）→ 下载还原成临时文件再复制到剪贴板
-        //        ③ 都没有 → 明确告知"仅本机可用"，不再抛 "Files not found" 之类的原始错误
+        //        ③ 都没有 → 明确告知“仅本机可用”，不再抛 “Files not found” 之类的原始错误
+        // F1.4：metadata 统一在 try 外归一化一次（服务端条目可能是 jsonb 对象或 JSON 字符串），
+        // 新格式（metadata.files）判定与 metadata.paths 兑底都依赖它。
+        const meta: Record<string, any> = (() => {
+          const m = item.metadata
+          if (m && typeof m === 'object') return m as Record<string, any>
+          if (typeof m === 'string') {
+            try {
+              return JSON.parse(m) || {}
+            } catch {
+              return {}
+            }
+          }
+          return {}
+        })()
         try {
           const parsed = JSON.parse(item.content)
           const paths: string[] | undefined =
@@ -435,7 +450,10 @@ export function useClipboard() {
               ? parsed
               : parsed && typeof parsed === 'object' && Array.isArray(parsed.paths) && parsed.paths.length > 0
                 ? parsed.paths
-                : undefined
+                : // F1.4 新格式条目 content 不含 paths，从 metadata.paths 兑底（本机会话/乐观期有效）
+                  Array.isArray(meta.paths) && meta.paths.length > 0
+                  ? (meta.paths as string[])
+                  : undefined
           if (paths && paths.length > 0) {
             try {
               // copy_local_files 先逐个校验存在性：全部不存在时 Fast-fail（跨设备场景），
@@ -447,7 +465,6 @@ export function useClipboard() {
               /* 本机没有这些路径 → 走服务端字节还原 */
             }
           }
-          const meta = (item.metadata || {}) as Record<string, any>
           if (meta.fileEncoding === 'base64' && isServerItem) {
             try {
               const res = await api<{ contentEncrypted?: string }>('GET', `/api/clipboard/${item.id}`)
@@ -485,11 +502,44 @@ export function useClipboard() {
               console.warn('[Clipboard] cross-device text file copy failed:', e?.message || e)
             }
           }
-          // 纯元数据对象（服务器上传的文件，无字节）→ 退化为复制文件名（既有行为）
+          // F1.4 新格式（服务端统一落盘，metadata.files）：真正的多文件条目（files>1）在
+          // 无本机路径时无法还原成文件（v1 单文件下载只对应一个落盘文件，多文件无批量
+          // zip 下载），退化为复制首个文件名；通过 lastCopyError 提示“仅本机”，返回 false
+          // 让上层 toast 展示该提示而不是笼统的“已复制”。
+          // M-1：条件必须是 length > 1 —— 单文件 chunked 条目（服务端 complete 会回填单元素
+          // files 数组）不算多文件，必须落到下方 parsed.name 分支复制文件名并 return true
+          //（与旧行为一致），否则会误弹“多文件仅本机可用”提示。
+          if (Array.isArray(meta.files) && meta.files.length > 1) {
+            const firstFile = meta.files.find(
+              (f: any) => f && typeof f === 'object' && (f.name || f.fileId || f.filename),
+            )
+            const displayName = String(firstFile?.name || firstFile?.fileId || firstFile?.filename || '')
+            if (displayName) {
+              copiedTexts.set(displayName, Date.now())
+              cleanupCopiedContent()
+              await tauri.setClipboardContent(displayName)
+              recordUseIfServer()
+            }
+            lastCopyError.value = t('file_multi_local_only_hint')
+            return false
+          }
+          // 纯元数据对象（服务器上传的文件，无字节）→ 退化为复制文件名（既有行为）。
+          // 单文件 chunked 条目（展示 JSON 含 name、metadata.files 为单元素数组）也走这里。
           if (parsed && typeof parsed === 'object' && parsed.name) {
             await tauri.setClipboardContent(parsed.name)
             recordUseIfServer()
             return true
+          }
+          // M-1 边界兜底：单文件 chunked 条目展示 JSON 无 name（畸形/旧数据）时，改用
+          // metadata.files[0] 的名称复制文件名并 return true（与 parsed.name 分支同口径）。
+          if (Array.isArray(meta.files) && meta.files.length === 1) {
+            const f0 = meta.files[0] as Record<string, any> | undefined
+            const fallbackName = String(f0?.name || f0?.fileId || f0?.filename || '')
+            if (fallbackName) {
+              await tauri.setClipboardContent(fallbackName)
+              recordUseIfServer()
+              return true
+            }
           }
           // 既无本机路径也无服务端字节：给出可理解的提示，不要抛原始错误
           lastCopyError.value = t('file_local_only_hint')
@@ -810,28 +860,19 @@ export function useClipboard() {
 
   /** 从文件选择器上传文件到剪贴板 */
   async function uploadFileItem(file: File): Promise<void> {
-    // 按套餐分级限制上传大小（2026-07-07 调整）
-    // Free: 128MB, Pro: 256MB, Enterprise: 1GB
-    const configStore = useConfigStore()
-    const planLimits: Record<string, number> = {
-      Free: 128,
-      free: 128,
-      免费版: 128,
-      Pro: 256,
-      pro: 256,
-      专业版: 256,
-      Enterprise: 1024,
-      enterprise: 1024,
-      企业版: 1024,
-    }
-    const userPlan = configStore.user.plan || 'Free'
-    const maxMb = planLimits[userPlan] || 128 // 默认免费版 128MB
-    const maxBytes = maxMb * 1024 * 1024
+    // 套餐上传上限由后端 /api/subscriptions/current 下发（F0.4），
+    // 桌面端不再维护 Free/Pro/Enterprise 硬编码表。
+    const plan = usePlanLimits()
+    const maxBytes = await plan.getMaxUploadBytes()
 
-    if (file.size > maxBytes) {
+    // L2：套餐数据来自兜底默认值（/api/subscriptions/current 拉取失败）时不做客户端预拦截
+    // —— 兜底 20MB 会把 Pro 用户 20-128MB 的合法文件误判超限；放行交服务端权威校验，
+    // 413 由 handleQuotaResponse 走完整提示链路。
+    if (file.size > maxBytes && !plan.isPlanLimitsFallback()) {
+      const maxMb = Math.round(maxBytes / 1024 / 1024)
       const sizeStr =
         file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(0)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`
-      throw new Error(`${t('file_exceeds_plan', { size: sizeStr, limit: `${maxMb}MB`, plan: userPlan })}`)
+      throw new Error(`${t('file_exceeds_plan', { size: sizeStr, limit: `${maxMb}MB`, plan: '' })}`)
     }
     const sizeStr =
       file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`
@@ -883,6 +924,8 @@ export function useClipboard() {
       }
     } else if (shouldUseChunkedUpload(file)) {
       // Large file (>10MB) → 先创建条目，再分片上传，支持断点续传
+      // F3.1：serverId 提升到 try 外，分片 413 兜底时用它定位本地条目
+      let serverId: string | undefined
       try {
         // Step 1: 在服务器创建条目（元数据）
         const createRes = await api('POST', '/api/clipboard', {
@@ -894,7 +937,7 @@ export function useClipboard() {
           size: file.size,
           contentPreview: `${file.name} (${sizeStr})`,
         })
-        const serverId = createRes.data?.id
+        serverId = createRes.data?.id
         if (serverId) {
           const item = items.value.find((i) => i.id === localId)
           if (item) item.id = serverId
@@ -911,6 +954,13 @@ export function useClipboard() {
         if (finalItem) finalItem.content = displayContent
       } catch (e: any) {
         console.error('[Clipboard] Chunked upload failed:', e)
+        // F3.1：分片 init 413（套餐限制）→ 升级引导 toast（24h 节流），本地条目转
+        // localOnly 占位；错误打已处理标记，useFileUpload 的 catch 不再重复 upload_fail
+        if (await handleQuotaResponse(e, { fileName: file.name, sizeBytes: file.size })) {
+          const item = items.value.find((i) => i.id === (serverId || localId))
+          if (item) item.metadata = { ...(item.metadata || {}), localOnly: true }
+          throw markHandledQuota(e)
+        }
         throw e
       }
     } else {
@@ -929,10 +979,17 @@ export function useClipboard() {
             name: file.name,
             size: sizeStr,
             type: file.type || 'unknown',
-            serverFilename: res.data.contentEncrypted,
+            // media.js 响应字段是 filename（服务端落盘名），不是 contentEncrypted
+            serverFilename: res.data.filename,
           })
           cacheContent(res.data.id, item.content)
         }
+      } else if (res.status === 413 && (await handleQuotaResponse(res, { fileName: file.name, fileCount: 1 }))) {
+        // F3.1：413 配额拒绝 → 升级引导（24h 节流）；本地条目转 localOnly 占位并打
+        // 已处理标记，useFileUpload 的 catch 不再重复 upload_fail
+        const item = items.value.find((i) => i.id === localId)
+        if (item) item.metadata = { ...(item.metadata || {}), localOnly: true }
+        throw markHandledQuota(new Error(res.error || 'Upload failed'))
       } else {
         throw new Error(res.error || 'Upload failed')
       }

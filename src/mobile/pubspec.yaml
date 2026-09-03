@@ -44,6 +44,8 @@ dependencies:
   # T3.5: 分享收发（系统分享面板发送 / 接收）
   share_plus: ^10.0.0
   receive_sharing_intent: ^1.8.0
+  # F2.2: 下载后打开（按 mimeType/扩展名调起系统应用，自带 FileProvider）
+  open_filex: ^4.7.0
 
   # T4.6: 生物识别锁（指纹/面容系统验证）
   local_auth: ^2.0.0

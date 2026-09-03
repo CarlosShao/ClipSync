@@ -161,7 +161,15 @@ export function useClipItemDisplay() {
     return false
   }
 
-  function extractFilePath(content: string): string | null {
+  /** 从条目内容（可附 metadata 回退）提取本机文件路径；无本机路径返回 null。
+   *  M-2：新多文件 / 单文件 chunked 条目的 content 是结构化展示 JSON（{name,files,...} /
+   *  {name,size,type}，无 paths），旧实现会把含 '/' 的整个 JSON 字符串当路径返回，导致
+   *  share 恒失败。现在：① 纯路径字符串分支排除 JSON 结构字符串（{ / [ 开头）；
+   *  ② content 解析不出合法路径时回退读 metadata.paths（与同文件 hasLocalPath 的
+   *  Strategy C 同口径：数组取首项非空字符串，字符串直接使用）。
+   *  无 paths 返回 null：share/reveal 按无本机文件处理，按钮显隐由 hasLocalPath 决定，
+   *  两者口径一致。旧 localOnly 条目（content={name,paths}）与旧路径数组行为不变。 */
+  function extractFilePath(content: string, metadata?: unknown): string | null {
     try {
       const parsed = JSON.parse(content)
       if (parsed && typeof parsed === 'object') {
@@ -180,7 +188,28 @@ export function useClipItemDisplay() {
         /* ignore */
       }
     }
-    if (raw.includes('\\') || raw.includes('/')) return raw
+    // 纯路径字符串：JSON 结构字符串（{ / [ 开头）绝不当路径（mimeType 等 '/' 会误命中）
+    if (!raw.startsWith('{') && !raw.startsWith('[') && (raw.includes('\\') || raw.includes('/'))) return raw
+    // metadata 回退（与 hasLocalPath Strategy C 对齐）：metadata 可能是对象或 JSON 字符串
+    try {
+      const meta: Record<string, unknown> | null =
+        metadata && typeof metadata === 'object'
+          ? (metadata as Record<string, unknown>)
+          : typeof metadata === 'string' && metadata.trim()
+            ? (JSON.parse(metadata) as Record<string, unknown>)
+            : null
+      if (meta) {
+        const paths = meta.paths
+        if (Array.isArray(paths)) {
+          const first = paths.find((p) => typeof p === 'string' && p.length > 0)
+          if (first) return first
+        } else if (typeof paths === 'string' && paths.length > 0) {
+          return paths
+        }
+      }
+    } catch {
+      /* metadata 解析失败按无路径处理 */
+    }
     return null
   }
 

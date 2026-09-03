@@ -1,0 +1,4178 @@
+diff --git a/src/desktop/src/components/modals/DocPreviewModal.vue b/src/desktop/src/components/modals/DocPreviewModal.vue
+index bac4f92..29379a7 100644
+--- a/src/desktop/src/components/modals/DocPreviewModal.vue
++++ b/src/desktop/src/components/modals/DocPreviewModal.vue
+@@ -328,6 +328,17 @@ async function renderPdf(arrayBuffer: ArrayBuffer) {
+   pdfLoading.value = false
+ }
+ 
++/** text-preview 返回的行是 HTML 转义文本（服务端防注入），预览按纯文本插值渲染，需先解码。
++ *  注意 &amp; 必须最后替换，避免二次解码。 */
++function decodeHtmlEntities(s: string): string {
++  return s
++    .replace(/&lt;/g, '<')
++    .replace(/&gt;/g, '>')
++    .replace(/&quot;/g, '"')
++    .replace(/&#39;/g, "'")
++    .replace(/&amp;/g, '&')
++}
++
+ /** Load file content from server for file-type preview */
+ async function loadFileContent(item: any) {
+   if (!item?.id) return
+@@ -590,28 +601,77 @@ async function loadFileContent(item: any) {
+         }
+       }
+     } else {
+-      // Text-based files: fetch content via lightweight endpoint
+-      const content = await getClipboardItemContent(item.id)
+-      if (content) {
+-        // If content is a file path array (old uploads), read actual file via Tauri
+-        let finalContent = content
++      // Text-based files（F1.1 统一落盘后的三级回退）：
++      // ① 本机 metadata.paths[0] 可读 → Tauri 读原文件（原设备最准，含完整内容）；
++      // ② 服务端落盘条目（fileEncoding !== 'text'）→ GET /api/media/:id/text-preview
++      //    （preview.lines 为 HTML 转义文本需解码；旧 uuid.ext 落盘文本条目同样受益）；
++      // ③ 旧文本正文条目（contentEncrypted=正文）/ 路径数组条目 → 保留原 getClipboardItemContent 链。
++      const itemMeta: Record<string, any> = (() => {
++        const m = (item as any)?.metadata
++        if (!m) return {}
++        if (typeof m === 'string') {
++          try {
++            return JSON.parse(m) || {}
++          } catch {
++            return {}
++          }
++        }
++        return m && typeof m === 'object' ? m : {}
++      })()
++      const localPaths: string[] = Array.isArray(itemMeta.paths)
++        ? itemMeta.paths.filter((p: unknown) => typeof p === 'string' && (p as string).length > 0)
++        : []
++      if (localPaths.length > 0) {
+         try {
+-          const parsed = JSON.parse(content)
+-          if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string' && parsed[0].includes('\\')) {
+-            // Path array — try reading actual file content
+-            try {
+-              const fileContent = await tauri.readFileContent(parsed[0])
+-              if (fileContent) finalContent = fileContent
+-            } catch {
+-              /* file not readable */
+-            }
++          const localText = await tauri.readFileContent(localPaths[0])
++          if (localText) {
++            previewContent.value = localText
++            if (docType === 'Markdown') previewToc.value = extractToc(localText)
++            fileContentLoading.value = false
++            return
+           }
+         } catch {
+-          /* not JSON, use as-is */
++          /* 本机文件已不存在 → 继续服务端回退 */
+         }
+-        previewContent.value = finalContent
++      }
++      let loadedText = ''
++      if (itemMeta.fileEncoding !== 'text') {
++        try {
++          const tp = await api('GET', `/api/media/${item.id}/text-preview`)
++          const lines = tp?.data?.preview?.lines
++          if (tp.ok && Array.isArray(lines) && lines.length > 0) {
++            loadedText = lines.map((l: any) => decodeHtmlEntities(String(l))).join('\n')
++          }
++        } catch {
++          /* text-preview 不可用（非白名单扩展 / 旧服务端）→ 走旧链路 */
++        }
++      }
++      if (!loadedText) {
++        const content = await getClipboardItemContent(item.id)
++        if (content) {
++          // If content is a file path array (old uploads), read actual file via Tauri
++          let finalContent = content
++          try {
++            const parsed = JSON.parse(content)
++            if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string' && parsed[0].includes('\\')) {
++              // Path array — try reading actual file content
++              try {
++                const fileContent = await tauri.readFileContent(parsed[0])
++                if (fileContent) finalContent = fileContent
++              } catch {
++                /* file not readable */
++              }
++            }
++          } catch {
++            /* not JSON, use as-is */
++          }
++          loadedText = finalContent
++        }
++      }
++      if (loadedText) {
++        previewContent.value = loadedText
+         if (docType === 'Markdown') {
+-          previewToc.value = extractToc(finalContent)
++          previewToc.value = extractToc(loadedText)
+         }
+       } else {
+         previewContent.value = t('preview_unable')
+diff --git a/src/desktop/src/composables/clipboardLoad.ts b/src/desktop/src/composables/clipboardLoad.ts
+index bc1e979..c248971 100644
+--- a/src/desktop/src/composables/clipboardLoad.ts
++++ b/src/desktop/src/composables/clipboardLoad.ts
+@@ -99,6 +99,18 @@ export function trimToMaxHistory() {
+   items.value = kept
+ }
+ 
++/**
++ * 字节量展示格式化（与 clipboardUpload 内部实现同形）。
++ * 就地实现而不从 clipboardUpload 导入：该模块已 import 本模块的 trimToMaxHistory，
++ * 反向导入会形成循环依赖。
++ */
++function formatBytesSafe(n: number): string {
++  if (!Number.isFinite(n) || n <= 0) return '0 B'
++  if (n < 1024) return `${n} B`
++  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
++  return `${(n / 1024 / 1024).toFixed(1)} MB`
++}
++
+ export async function loadClipboardItems(opts?: {
+   page?: number
+   append?: boolean
+@@ -206,7 +218,22 @@ export async function loadClipboardItems(opts?: {
+               // metadata may be a JSON string (from API) or already-parsed object (from pg driver)
+               const rawMeta = typeof i.metadata === 'string' ? i.metadata : JSON.stringify(i.metadata || {})
+               const meta = JSON.parse(rawMeta || '{}')
+-              if (meta.paths && Array.isArray(meta.paths) && meta.paths.length > 0) {
++              // F1.4 新格式（服务端统一落盘）：metadata.files 存在 → 用结构化展示 JSON 重建
++              // content（files[].name 展示名 / fileId 服务端落盘名），绝不把 contentPreview
++              //（旧文本正文或落盘文件名）当正文展示。旧格式（路径数组）走原分支。
++              if (Array.isArray(meta.files) && meta.files.length > 0) {
++                content = JSON.stringify({
++                  name: (meta.files[0] && meta.files[0].name) || meta.originalName || '',
++                  files: meta.files.map((f: any) => ({
++                    fileId: f.fileId || f.filename || '',
++                    name: f.name || '',
++                    size: formatBytesSafe(Number(f.size) || 0),
++                    mimeType: f.mimeType || '',
++                  })),
++                  totalSize: formatBytesSafe(Number(meta.totalSize) || 0),
++                  totalCount: Number(meta.totalCount) || meta.files.length,
++                })
++              } else if (meta.paths && Array.isArray(meta.paths) && meta.paths.length > 0) {
+                 content = JSON.stringify({ name: meta.originalName || content, paths: meta.paths })
+               }
+             } catch {
+@@ -214,16 +241,16 @@ export async function loadClipboardItems(opts?: {
+             }
+           }
+           // For file items: ensure content is a displayable filename, not raw content
+-          // BUT preserve paths field if it was reconstructed from metadata
+-          const hasPaths = (() => {
++          // BUT preserve structured display JSON（paths / files）if it was reconstructed from metadata
++          const hasStructuredDisplay = (() => {
+             try {
+               const p = JSON.parse(content)
+-              return p && typeof p === 'object' && Array.isArray(p.paths)
++              return p && typeof p === 'object' && (Array.isArray(p.paths) || Array.isArray(p.files))
+             } catch {
+               return false
+             }
+           })()
+-          if ((i.contentType || i.type) === 'file' && content.length > 200 && !hasPaths) {
++          if ((i.contentType || i.type) === 'file' && content.length > 200 && !hasStructuredDisplay) {
+             // content is too long to be a filename — extract from metadata
+             try {
+               const rawMeta = typeof i.metadata === 'string' ? i.metadata : JSON.stringify(i.metadata || {})
+diff --git a/src/desktop/src/composables/clipboardUpload.ts b/src/desktop/src/composables/clipboardUpload.ts
+index 2c70a71..348c189 100644
+--- a/src/desktop/src/composables/clipboardUpload.ts
++++ b/src/desktop/src/composables/clipboardUpload.ts
+@@ -10,6 +10,8 @@ import { items, recentUploadHashes, HASH_TTL, totalItems, mainTotalItems, curren
+ import { cacheContent } from './clipboardCache'
+ import { trimToMaxHistory } from './clipboardLoad'
+ import { useConfigStore } from '@/stores/configStore'
++import { usePlanLimits } from '@/composables/usePlanLimits'
++import { handleQuotaResponse } from './useUploadLimitNotice'
+ 
+ const { t } = useI18n()
+ const toast = useSonner()
+@@ -169,30 +171,18 @@ const MAX_TEXT_UPLOAD_SIZE = 9 * 1024 * 1024
+ // 防止 metadata.html 拖垮请求体（后端 express.json 10MB 上限）与 DB 行体积。
+ const CAPTURED_HTML_LIMIT = 2 * 1024 * 1024
+ 
+-// === 跨设备文件自动同步路由阈值（D1 升级）===
+-// 二进制文件 ≤10MB：multipart 直传 POST /api/media/file（服务端落盘 + 自建剪贴板
+-// 条目 + WS 广播，前端不再 POST /api/clipboard 造重复条目）；
+-// 二进制文件 >10MB：先建条目（localOnly:true），再 chunkedUpload 分片上传，
+-// complete 请求带 clipboardItemId 让服务端 S2 UPDATE 该条目并广播（条目转正）。
+-// 文本文件 ≤5MB（readFileContent 通道）保持明文随条目上传，DocPreview 预览依赖。
++// === 跨设备文件自动同步路由阈值（F1.1 + F1.4，D1/D3 缺陷修复）===
++// 所有文件（文本 / 二进制统一，不再区分）：
++//   ≤10MB → multipart 直传 POST /api/media/file（files 字段批量，一次请求建 1 条目，
++//           服务端落盘 + 自建剪贴板条目 + WS 广播，前端不再 POST /api/clipboard 造重复条目）；
++//   >10MB（单文件）→ 先建条目（localOnly:true），再 chunkedUpload 分片上传，
++//           complete 请求带 clipboardItemId 让服务端 S2 UPDATE 该条目并广播（条目转正）；
++//   多文件批次中含 >10MB 文件 → v1 收窄：整批不上传，localOnly 兜底 + 提示。
++// 文本文件不再把正文明文塞进 contentEncrypted（D1 修复）：跨设备文本预览改走
++// GET /api/media/:id/text-preview（服务端已把 text/* 前 4KB 写入 content_preview）。
++// 本阈值为前端路由常量（与服务端 multipart 上限一致），全套餐等级一致，非套餐阈值。
+ export const FILE_MULTIPART_UPLOAD_LIMIT = 10 * 1024 * 1024
+ 
+-/**
+- * 套餐文件大小上限（对齐 useFileUpload.planMaxBytes 与服务端
+- * subscription_plans.max_file_size_mb / chunked-upload init 的 DB 校验）：
+- * Free 128MB / Pro 256MB / Enterprise 1GB。超限捕获文件标 localOnly 并提示。
+- */
+-export function planMaxUploadBytes(): number {
+-  try {
+-    const plan = useConfigStore().user?.plan || 'Free'
+-    if (plan === 'Pro' || plan === 'pro' || plan === '专业版') return 256 * 1024 * 1024
+-    if (plan === 'Enterprise' || plan === 'enterprise' || plan === '企业版') return 1024 * 1024 * 1024
+-    return 128 * 1024 * 1024
+-  } catch {
+-    return 128 * 1024 * 1024
+-  }
+-}
+-
+ /** 从文件名扩展名猜 MIME（剪贴板捕获的文件没有 File.type，只能按扩展名推断）。 */
+ const MIME_BY_EXT: Record<string, string> = {
+   pdf: 'application/pdf',
+@@ -512,32 +502,7 @@ export async function uploadFileToServer(payload: string) {
+   } catch {
+     filePaths = [payload]
+   }
+-
+-  const fileName = filePaths[0].split(/[/\\]/).pop() || filePaths[0] || 'Unknown'
+-  const extMatch = /\.([A-Za-z0-9]+)$/.exec(fileName)
+-  const ext = extMatch ? extMatch[1].toLowerCase() : ''
+   const isSingleFile = filePaths.length === 1
+-
+-  // === 跨设备文件捕获（B7 / D3 基础上的 D1 升级）===
+-  // ① 文本文件（readFileContent 通道）：明文随条目上传，保住 DocPreview 的纯文本预览
+-  // ② 二进制文件：不再 base64 内嵌，按大小路由 ——
+-  //    ≤10MB → multipart POST /api/media/file（服务端落盘 + 自建条目 + WS 广播）；
+-  //    >10MB → 先建条目（localOnly:true）再 chunkedUpload，complete 带 clipboardItemId
+-  //            让服务端 S2 UPDATE 该条目并广播（见 FILE_MULTIPART_UPLOAD_LIMIT 注释）
+-  // ③ 超套餐上限 / 读不到 / 多文件 → localOnly（"仅本机可用"），多文件为已知限制
+-  let fileContent = payload // fallback: store path array
+-  let textReadOk = false
+-  try {
+-    const text = await tauri.readFileContent(filePaths[0])
+-    if (text && text.length > 0) {
+-      fileContent = text
+-      textReadOk = true
+-    }
+-  } catch {
+-    /* 非 UTF-8（二进制）/ 超 5MB / 无权限 — 走下面的二进制通道 */
+-  }
+-
+-  const isBinaryCapture = isSingleFile && !textReadOk
+   const isArchiveView = currentView.value === 'archive'
+   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+ 
+@@ -552,229 +517,88 @@ export async function uploadFileToServer(payload: string) {
+     }
+   }
+ 
+-  // ============ 二进制分支 ============
+-  if (isBinaryCapture) {
+-    const mime = guessMimeFromName(fileName)
+-    const sizeDisplayJson = (size: number) =>
+-      JSON.stringify({ name: fileName, size: formatBytes(size), type: mime })
+-
+-    // 先拿真实大小：套餐校验必须在读字节之前，避免超限大文件白读一次内存。
+-    // stat 失败时退而尝试 base64 读（≤10MB 才会成功，顺带拿到大小）。
+-    let fileSize = -1
+-    let cachedB64 = ''
++  // === F1.1 + F1.4：文本/二进制统一 multipart/chunked 服务端落盘（D1/D3 修复）===
++  // 逐文件探测（大小/可读性/MIME）：stat 失败时对 ≤10MB 的文件退回 base64 读判定。
++  // 明文/字节读取结果只用于「判定与展示信息」，绝不作为上传正文（D1 修复：
++  // 旧实现把文本正文塞 contentEncrypted、多文件直接 localOnly）。
++  interface FileProbe {
++    path: string
++    name: string
++    ext: string
++    mime: string
++    size: number
++    /** stat 失败时读到的 base64（仅 ≤10MB 才会成功），上传时复用避免二次读盘 */
++    b64?: string
++  }
++  const probes: FileProbe[] = []
++  for (const p of filePaths) {
++    const name = p.split(/[/\\]/).pop() || p || 'Unknown'
++    const extMatch = /\.([A-Za-z0-9]+)$/.exec(name)
++    const ext = extMatch ? extMatch[1].toLowerCase() : ''
++    const mime = guessMimeFromName(name)
++    let size = -1
++    let b64 = ''
+     try {
+-      fileSize = await tauri.getFileSize(filePaths[0])
++      size = await tauri.getFileSize(p)
+     } catch {
+-      logger.debug('[Clipboard] get_file_size failed', fileName)
++      logger.debug('[Clipboard] get_file_size failed', name)
+     }
+-    if (fileSize < 0) {
++    if (size < 0) {
+       try {
+-        cachedB64 = await tauri.readFileContentBase64(filePaths[0])
+-        if (cachedB64) fileSize = Math.floor((cachedB64.length * 3) / 4)
++        b64 = await tauri.readFileContentBase64(p)
++        if (b64) size = Math.floor((b64.length * 3) / 4)
+       } catch {
+-        logger.debug('[Clipboard] binary read failed, local only', fileName)
+-      }
+-    }
+-
+-    // 统一 metadata（对齐消费方契约，D1 设计第 5 条）：
+-    // 上传成功后条目 localOnly=false；本地乐观项在上传完成前也标 localOnly=true
+-    const baseMeta = {
+-      originalName: fileName,
+-      mimeType: mime,
+-      extension: ext,
+-      fileSize: fileSize > 0 ? fileSize : 0,
+-      source: 'auto-sync',
+-      paths: filePaths,
+-      localOnly: true,
+-      fileEncoding: 'server',
+-    }
+-    const displayJson = sizeDisplayJson(fileSize > 0 ? fileSize : 0)
+-
+-    // 乐观插入（条目内容 = {name,size,type} JSON；路径只放 metadata.paths，
+-    // 避免手机端把 content 探测成本机路径而隐藏下载入口，F4 降级判定）
+-    if (!isArchiveView) {
+-      items.value.unshift({
+-        id: localId,
+-        type: 'file',
+-        content: displayJson,
+-        source: 'Desktop',
+-        timestamp: Date.now(),
+-        selected: false,
+-        metadata: { ...baseMeta },
+-      })
+-      totalItems.value += 1
+-      mainTotalItems.value += 1
+-      trimToMaxHistory()
+-    }
+-
+-    if (!deviceId) {
+-      console.warn('[Clipboard] uploadFileToServer: no deviceId, dropping file')
+-      removeOptimistic()
+-      return
+-    }
+-
+-    /** 建一条 localOnly:true 的占位条目（超套餐 / 捕获失败 / 上传失败兜底共用）。 */
+-    const createLocalOnlyEntry = async () => {
+-      const uploadPayload = {
+-        contentType: 'file',
+-        content: displayJson,
+-        contentEncrypted: displayJson,
+-        sourceDeviceId: deviceId,
+-        contentPreview: fileName,
+-        contentSize: fileSize > 0 ? fileSize : 0,
+-        metadata: { ...baseMeta },
+-      }
+-      const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
+-      if (res.ok && res.data?.id) {
+-        const localItem = items.value.find((i) => i.id === localId)
+-        if (res.data.duplicate) {
+-          // 服务端 5 分钟窗口判定重复：移除本地乐观项，避免两条同名记录
+-          removeOptimistic()
+-        } else if (localItem) {
+-          localItem.id = res.data.id
+-          cacheContent(res.data.id, displayJson)
+-        }
+-        return
++        logger.debug('[Clipboard] file probe read failed, treat as unreadable', name)
+       }
+-      removeOptimistic()
+-    }
+-
+-    // ---- 套餐限制（Free 128MB / Pro 256MB / Enterprise 1GB）：超限 localOnly + 提示 ----
+-    const planLimit = planMaxUploadBytes()
+-    if (fileSize > planLimit) {
+-      console.warn('[Clipboard] file exceeds plan limit, local only', fileName, fileSize, planLimit)
+-      const maxMb = Math.round(planLimit / 1024 / 1024)
+-      toast.show(
+-        `${fileName}: ${t('file_exceeds_plan', { size: formatBytes(fileSize), limit: `${maxMb}MB`, plan: '' })}`,
+-        'error',
+-      )
+-      await createLocalOnlyEntry()
+-      return
+-    }
+-
+-    // ---- 二进制 ≤10MB：multipart 直传 /api/media/file ----
+-    // 服务端 media.js 落盘后自建剪贴板条目并 WS 广播 new_clipboard（列表经 refresh 自动出现），
+-    // 因此这里绝不 POST /api/clipboard —— 重复创建会造出第二条同名条目。
+-    if (fileSize >= 0 && fileSize <= FILE_MULTIPART_UPLOAD_LIMIT) {
+-      try {
+-        const b64 = cachedB64 || (await tauri.readFileContentBase64(filePaths[0]))
+-        if (b64) {
+-          const bytes = await base64ToBytes(b64)
+-          const file = new File([bytes], fileName, { type: mime })
+-          const formData = new FormData()
+-          formData.append('file', file, fileName)
+-          formData.append('sourceDeviceId', deviceId)
+-          const res = await apiForm('/api/media/file', formData)
+-          if (res.ok && res.data?.id) {
+-            const localItem = items.value.find((i) => i.id === localId)
+-            if (localItem) {
+-              localItem.id = res.data.id
+-              // media.js 响应字段是 filename（服务端落盘名），不是 contentEncrypted
+-              // —— 按实际响应解析（useClipboard 旧分支在这里读错字段）
+-              localItem.content = JSON.stringify({
+-                name: fileName,
+-                size: formatBytes(fileSize),
+-                type: mime,
+-                serverFilename: res.data.filename || '',
+-              })
+-              localItem.metadata = { ...baseMeta, localOnly: false }
+-              cacheContent(res.data.id, localItem.content)
+-            }
+-            return
+-          }
+-          logger.debug('[Clipboard] media/file upload rejected:', res.status, res.error)
+-        }
+-      } catch (e: any) {
+-        logger.debug('[Clipboard] multipart upload failed', fileName, e?.message || e)
+-      }
+-      // 兜底：脚本扩展名被服务端过滤 / 读文件失败 / 网络错误 → 建仅本机占位条目
+-      await createLocalOnlyEntry()
+-      toast.show(`${fileName}: ${t('upload_fail')}`, 'error')
+-      return
+     }
+-
+-    // ---- 二进制 >10MB：两步（S2 契约）----
+-    // ① POST /api/clipboard 创建条目（localOnly:true，metadata 携带统一字段）
+-    // ② chunkedUpload 分片上传，complete body 附 clipboardItemId —— 服务端 S2
+-    //    提供时不建新条目，改为 UPDATE 该条目并广播（条目转正 localOnly=false）
+-    if (fileSize > FILE_MULTIPART_UPLOAD_LIMIT) {
+-      const entryPayload = {
+-        contentType: 'file',
+-        content: displayJson,
+-        contentEncrypted: displayJson,
+-        sourceDeviceId: deviceId,
+-        contentPreview: fileName,
+-        contentSize: fileSize,
+-        metadata: { ...baseMeta },
+-      }
+-      const createRes = await api('POST', '/api/clipboard', entryPayload)
+-      if (!createRes.ok || !createRes.data?.id) {
+-        removeOptimistic()
+-        toast.show(`${fileName}: ${createRes.error || t('upload_fail')}`, 'error')
+-        return
+-      }
+-      if (createRes.data.duplicate) {
+-        removeOptimistic()
+-        return
+-      }
+-      const serverId: string = createRes.data.id
+-      const localItem = items.value.find((i) => i.id === localId)
+-      if (localItem) {
+-        localItem.id = serverId
+-        cacheContent(serverId, displayJson)
+-      }
+-      try {
+-        const file = await readFileAsFile(filePaths[0], fileName, mime, fileSize)
+-        await chunkedUpload(
+-          file,
+-          (progress) => {
+-            // 进度只写本地条目内容；服务端条目的 PUT metadata 白名单不含 uploadProgress，
+-            // 逐片 PUT 既会被白名单丢弃又打爆接口（设计第 6 条按此省略，见交付报告）
+-            const it = items.value.find((x) => x.id === serverId)
+-            if (it && !progress.done) it.content = `${fileName} (${progress.percent}%)`
+-          },
+-          undefined,
+-          { clipboardItemId: serverId },
+-        )
+-        // 完成：本地条目转正（权威状态由服务端 S2 广播 + WS refresh 到达后重建）
+-        const fin = items.value.find((x) => x.id === serverId)
+-        if (fin) {
+-          fin.content = displayJson
+-          fin.metadata = { ...baseMeta, localOnly: false }
+-        }
+-      } catch (e: any) {
+-        // 分片失败：服务端条目保持 localOnly:true（占位与实际状态一致），提示后不再重试
+-        console.warn('[Clipboard] chunked upload failed, entry stays localOnly', fileName, e?.message || e)
+-        toast.show(`${fileName}: ${e?.message || t('upload_fail')}`, 'error')
+-      }
+-      return
+-    }
+-
+-    // ---- 大小完全未知（stat 与 base64 读取都失败）：标仅本机 ----
+-    await createLocalOnlyEntry()
+-    return
++    probes.push({ path: p, name, ext, mime, size, ...(b64 ? { b64 } : {}) })
+   }
++  const unreadable = probes.filter((f) => f.size < 0)
++  const known = probes.filter((f) => f.size >= 0)
++  const totalSize = known.reduce((s, f) => s + f.size, 0)
++  const firstName = probes[0]?.name || 'Unknown'
++  const firstMime = probes[0]?.mime || 'application/octet-stream'
++
++  // 统一 metadata（对齐消费方契约）：上传成功后条目 localOnly=false；
++  // 本地乐观项在上传完成前也标 localOnly=true。本地路径只放 metadata.paths
++  //（仅本机预览/还原用途，F4 降级判定），绝不放 content（避免手机端把
++  // content 探测成本机路径而隐藏下载入口）。
++  const baseMeta: Record<string, any> = {
++    originalName: firstName,
++    mimeType: firstMime,
++    extension: probes[0]?.ext || '',
++    fileSize: Math.max(0, totalSize),
++    source: 'auto-sync',
++    paths: filePaths,
++    localOnly: true,
++    fileEncoding: 'server',
++  }
++  // 展示 JSON：单文件沿用 {name,size,type}（+serverFilename），多文件为
++  // {name, files:[{name,size,mimeType}], totalSize, totalCount}（F1.4 契约）。
++  // 服务端响应回来后再用 res.files / res.filename 修正 fileId/filename。
++  const displayJsonSingle = JSON.stringify({
++    name: firstName,
++    size: formatBytes(Math.max(0, totalSize)),
++    type: firstMime,
++  })
++  const displayJsonMulti = JSON.stringify({
++    name: firstName,
++    files: known.map((f) => ({ name: f.name, size: formatBytes(Math.max(0, f.size)), mimeType: f.mime })),
++    totalSize: formatBytes(Math.max(0, totalSize)),
++    totalCount: probes.length,
++  })
++  const displayContent = isSingleFile ? displayJsonSingle : displayJsonMulti
+ 
+-  // ============ 传统通道：文本文件（明文内嵌）/ 多文件（保持现状）============
+-  const displaySize = `${(fileContent.length / 1024).toFixed(1)} KB`
++  // 乐观插入
+   if (!isArchiveView) {
+-    // 乐观更新
+     items.value.unshift({
+       id: localId,
+       type: 'file',
+-      content: JSON.stringify({
+-        name: fileName,
+-        size: displaySize,
+-        type: 'text/plain',
+-      }),
++      content: displayContent,
+       source: 'Desktop',
+       timestamp: Date.now(),
+       selected: false,
+-      metadata: {
+-        paths: filePaths,
+-        originalName: fileName,
+-        localOnly: !textReadOk,
+-      },
++      metadata: { ...baseMeta },
+     })
+     totalItems.value += 1
+     mainTotalItems.value += 1
+@@ -786,46 +610,197 @@ export async function uploadFileToServer(payload: string) {
+     removeOptimistic()
+     return
+   }
+-  // metadata 只放轻量标记（paths / 名称 / 编码标记），绝不放文本本体之外的大块内容：
+-  // GET /api/clipboard 列表接口会 SELECT metadata，塞进兆级字体会拖垮整个列表请求。
+-  // 文本本体走 contentEncrypted（text 列，列表接口不查）。
+-  const uploadPayload = {
+-    contentType: 'file',
+-    content: JSON.stringify({ name: fileName, paths: filePaths }),
+-    contentEncrypted: fileContent,
+-    sourceDeviceId: deviceId,
+-    contentPreview: fileName,
+-    metadata: {
+-      paths: filePaths,
+-      originalName: fileName,
+-      mimeType: 'text/plain',
+-      extension: ext,
+-      fileSize: fileContent.length,
+-      source: 'auto-sync',
+-      // 文本文件（明文已随条目上传）算"非仅本机"：内容在对端可见可复制，
+-      // 只有"还原成原文件"做不到。多文件（首个文件读不成文本）才标仅本机。
+-      localOnly: !textReadOk,
+-      fileEncoding: 'text',
+-    },
+-  }
+-  const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
+-  if (res.ok && res.data?.id) {
+-    const localItem = items.value.find((i) => i.id === localId)
+-    if (localItem) {
++
++  /** 建一条 localOnly:true 的占位条目（读不到 / 超套餐 / 批次含大文件 / 上传失败兜底共用）。 */
++  const createLocalOnlyEntry = async () => {
++    const uploadPayload = {
++      contentType: 'file',
++      content: displayContent,
++      contentEncrypted: displayContent,
++      sourceDeviceId: deviceId,
++      contentPreview: firstName,
++      contentSize: Math.max(0, totalSize),
++      metadata: { ...baseMeta },
++    }
++    const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
++    if (res.ok && res.data?.id) {
++      const localItem = items.value.find((i) => i.id === localId)
+       if (res.data.duplicate) {
+-        // 后端判定为重复条目：直接移除本地乐观项，避免 UI 出现两条同名记录
+-        logger.debug('[Clipboard] server reported duplicate, removing optimistic local item')
++        // 服务端 5 分钟窗口判定重复：移除本地乐观项，避免两条同名记录
+         removeOptimistic()
+-      } else {
++      } else if (localItem) {
+         localItem.id = res.data.id
+-        // Update content to include paths field (for hasLocalPath detection)
+-        localItem.content = JSON.stringify({ name: fileName, paths: filePaths })
+-        localItem.metadata = uploadPayload.metadata
+-        cacheContent(res.data.id, fileContent)
++        cacheContent(res.data.id, displayContent)
+       }
++      return
+     }
++    removeOptimistic()
++  }
++
++  // ---- 路由决策（v1）----
++  // ① 有读不到/大小未知的文件 → localOnly 兜底（与旧二进制分支同口径）
++  if (unreadable.length > 0) {
++    console.warn('[Clipboard] some files unreadable, local only:', unreadable.map((f) => f.name).join(', '))
++    await createLocalOnlyEntry()
+     return
+   }
+-  // 上传失败：从本地列表移除乐观项，避免残留脏数据，并回滚计数
+-  removeOptimistic()
++
++  // ② 套餐限制（后端下发，F0.4）：任一文件超限或批量总大小超限 → localOnly + 提示
++  //    （禁硬编码阈值，唯一来源 usePlanLimits）
++  const planLimit = await usePlanLimits().getMaxUploadBytes()
++  const overLimit = probes.find((f) => f.size > planLimit)
++  if (overLimit || totalSize > planLimit) {
++    const sizeStr = formatBytes(overLimit ? overLimit.size : totalSize)
++    const maxMb = Math.round(planLimit / 1024 / 1024)
++    console.warn('[Clipboard] upload exceeds plan limit, local only', overLimit?.name, sizeStr, planLimit)
++    toast.show(
++      `${overLimit ? `${overLimit.name}: ` : ''}${t('file_exceeds_plan', { size: sizeStr, limit: `${maxMb}MB`, plan: '' })}`,
++      'error',
++    )
++    await createLocalOnlyEntry()
++    return
++  }
++
++  const oversize = probes.find((f) => f.size > FILE_MULTIPART_UPLOAD_LIMIT)
++  if (oversize && !isSingleFile) {
++    // ③ v1 收窄（D3 解除多文件 localOnly 后的唯一保留限制）：批次中含 >10MB 文件时
++    //    该文件走不了 multipart，拆批会让一次复制产生多条目 —— 整批 localOnly + 明确提示
++    toast.show(t('file_multi_oversize', { n: FILE_MULTIPART_UPLOAD_LIMIT / 1024 / 1024 }), 'warning')
++    await createLocalOnlyEntry()
++    return
++  }
++
++  if (oversize && isSingleFile) {
++    // ④ 单文件 >10MB（含文本文件，F1.1 统一落盘）：两步 chunked，协议不变（S2 契约）
++    //    ① POST /api/clipboard 创建条目（localOnly:true）
++    //    ② chunkedUpload 分片上传，complete body 附 clipboardItemId —— 条目转正
++    const f = probes[0]
++    const entryMeta: Record<string, any> = { ...baseMeta, fileSize: f.size }
++    const entryPayload = {
++      contentType: 'file',
++      content: displayJsonSingle,
++      contentEncrypted: displayJsonSingle,
++      sourceDeviceId: deviceId,
++      contentPreview: f.name,
++      contentSize: f.size,
++      metadata: entryMeta,
++    }
++    const createRes = await api('POST', '/api/clipboard', entryPayload)
++    if (!createRes.ok || !createRes.data?.id) {
++      removeOptimistic()
++      toast.show(`${f.name}: ${createRes.error || t('upload_fail')}`, 'error')
++      return
++    }
++    if (createRes.data.duplicate) {
++      removeOptimistic()
++      return
++    }
++    const serverId: string = createRes.data.id
++    const localItem = items.value.find((i) => i.id === localId)
++    if (localItem) {
++      localItem.id = serverId
++      cacheContent(serverId, displayJsonSingle)
++    }
++    try {
++      const file = await readFileAsFile(f.path, f.name, f.mime, f.size)
++      await chunkedUpload(
++        file,
++        (progress) => {
++          // 进度只写本地条目内容；服务端条目的 PUT metadata 白名单不含 uploadProgress，
++          // 逐片 PUT 既会被白名单丢弃又打爆接口（设计第 6 条按此省略，见交付报告）
++          const it = items.value.find((x) => x.id === serverId)
++          if (it && !progress.done) it.content = `${f.name} (${progress.percent}%)`
++        },
++        undefined,
++        { clipboardItemId: serverId },
++      )
++      // 完成：本地条目转正（权威状态由服务端 S2 广播 + WS refresh 到达后重建）
++      const fin = items.value.find((x) => x.id === serverId)
++      if (fin) {
++        fin.content = displayJsonSingle
++        fin.metadata = { ...entryMeta, localOnly: false }
++      }
++    } catch (e: any) {
++      // 分片失败：服务端条目保持 localOnly:true（占位与实际状态一致），提示后不再重试
++      console.warn('[Clipboard] chunked upload failed, entry stays localOnly', f.name, e?.message || e)
++      // F3.1：分片 init 413（套餐限制）→ 升级引导 toast（24h 节流）。init 在建条目之后，
++      // 条目已是 localOnly:true 占位，跳过通用 upload_fail 即可
++      if (await handleQuotaResponse(e, { fileName: f.name, sizeBytes: f.size })) return
++      toast.show(`${f.name}: ${e?.message || t('upload_fail')}`, 'error')
++    }
++    return
++  }
++
++  // ⑤ 统一 multipart：单文件 ≤10MB 或全部 ≤10MB 的多文件批次（F1.4）——
++  //    一律发 files 字段（多文件多 entry，单文件单 entry），一次请求建 1 个条目。
++  //    服务端 media.js 落盘后自建剪贴板条目并 WS 广播 new_clipboard，
++  //    因此这里绝不 POST /api/clipboard —— 重复创建会造出第二条同名条目。
++  let quotaHandled = false
++  try {
++    const formData = new FormData()
++    for (const f of probes) {
++      const b64 = f.b64 || (await tauri.readFileContentBase64(f.path))
++      const bytes = await base64ToBytes(b64)
++      formData.append('files', new File([bytes], f.name, { type: f.mime }), f.name)
++    }
++    formData.append('sourceDeviceId', deviceId)
++    const res = await apiForm('/api/media/file', formData)
++    if (res.ok && res.data?.id) {
++      const localItem = items.value.find((i) => i.id === localId)
++      if (localItem) {
++        localItem.id = res.data.id
++        if (isSingleFile) {
++          // 单文件响应兼容旧字段 filename（服务端落盘名 uuid.ext）
++          localItem.content = JSON.stringify({
++            name: firstName,
++            size: formatBytes(totalSize),
++            type: firstMime,
++            serverFilename: res.data.filename || res.data.files?.[0]?.fileId || '',
++          })
++          localItem.metadata = { ...baseMeta, localOnly: false }
++        } else {
++          // 多文件响应（新）：files[] 修正展示名与落盘名 fileId；旧单文件字段忽略
++          const rfiles: any[] = Array.isArray(res.data.files) ? res.data.files : []
++          localItem.content = JSON.stringify({
++            name: rfiles[0]?.name || firstName,
++            files: rfiles.map((f) => ({
++              fileId: f.fileId || f.filename || '',
++              name: f.name || '',
++              size: formatBytes(Number(f.size) || 0),
++              mimeType: f.mimeType || '',
++            })),
++            totalSize: formatBytes(Number(res.data.totalSize) || totalSize),
++            totalCount: Number(res.data.totalCount) || rfiles.length || probes.length,
++          })
++          localItem.metadata = {
++            ...baseMeta,
++            localOnly: false,
++            files: rfiles,
++            totalSize,
++            totalCount: rfiles.length,
++          }
++        }
++        cacheContent(res.data.id, localItem.content)
++      }
++      return
++    }
++    // F3.1：413 配额拒绝（body = quotaHttpBody{ code, limit, current, plan, upgradeTo }）→
++    // 升级引导 toast（24h 节流）。条目仍走下方 localOnly 兜底，仅跳过通用 upload_fail；
++    // 超限原因短码写入 baseMeta.limitReason，随 createLocalOnlyEntry 的 metadata 一次落服务端
++    if (res.status === 413 && (await handleQuotaResponse(res, { fileName: firstName, fileCount: probes.length }))) {
++      const reason = String(res.data?.code || 'UPLOAD_LIMIT')
++      baseMeta.limitReason = reason
++      const optimistic = items.value.find((i) => i.id === localId)
++      if (optimistic) optimistic.metadata = { ...(optimistic.metadata || {}), limitReason: reason }
++      quotaHandled = true
++    } else {
++      logger.debug('[Clipboard] media/file upload rejected:', res.status, res.error)
++    }
++  } catch (e: any) {
++    logger.debug('[Clipboard] multipart upload failed', firstName, e?.message || e)
++  }
++  // 兜底：脚本扩展名被服务端过滤 / 读文件失败 / 网络错误 / 413 配额 → 建仅本机占位条目
++  //（413 时升级引导已由 handleQuotaResponse 发出，这里只补条目，metadata.limitReason 随 payload 落库）
++  await createLocalOnlyEntry()
++  if (!quotaHandled) toast.show(`${firstName}: ${t('upload_fail')}`, 'error')
+ }
+diff --git a/src/desktop/src/composables/useClipboard.ts b/src/desktop/src/composables/useClipboard.ts
+index 087e312..bd9230d 100644
+--- a/src/desktop/src/composables/useClipboard.ts
++++ b/src/desktop/src/composables/useClipboard.ts
+@@ -4,7 +4,7 @@ import * as tauri from '@/lib/tauri'
+ import { api, apiForm } from '@/api/client'
+ import { recordUse } from '@/api/clipboard'
+ import { useItemPassword } from '@/composables/useItemPassword'
+-import { useConfigStore } from '@/stores/configStore'
++import { usePlanLimits } from '@/composables/usePlanLimits'
+ import { useI18n } from '@/composables/useI18n'
+ import { initOfflineSync, getQueueSize } from '@/utils/offlineQueue'
+ import { chunkedUpload, shouldUseChunkedUpload } from '@/utils/chunkedUpload'
+@@ -53,6 +53,7 @@ import {
+ } from './clipboardDedup'
+ import { releaseRemovedObjectUrls, releaseAllObjectUrls } from './clipboardObjectUrls'
+ import { simpleHash, apiOrEnqueue, prepareImageForUpload, dataUrlMime, ensureDeviceId } from './clipboardUpload'
++import { handleQuotaResponse, markHandledQuota } from './useUploadLimitNotice'
+ import { enqueueClipboardTask } from './clipboardQueue'
+ import {
+   loadClipboardItems,
+@@ -424,10 +425,24 @@ export function useClipboard() {
+       }
+ 
+       if (item.type === 'file') {
+-        // === 跨设备文件还原（B7 / 决策 D3）===
+-        // 优先级：① 本机路径真实存在 → 直接复制文件（含"在资源管理器中显示"的路径语义）
++        // === 跨设备文件还原（B7 / 决策 D3；F1.4 多文件扩展）===
++        // 优先级：① 本机路径真实存在 → 直接复制文件（含“在资源管理器中显示”的路径语义）
+         //        ② 服务端随条目存了字节（metadata.fileEncoding === 'base64'）→ 下载还原成临时文件再复制到剪贴板
+-        //        ③ 都没有 → 明确告知"仅本机可用"，不再抛 "Files not found" 之类的原始错误
++        //        ③ 都没有 → 明确告知“仅本机可用”，不再抛 “Files not found” 之类的原始错误
++        // F1.4：metadata 统一在 try 外归一化一次（服务端条目可能是 jsonb 对象或 JSON 字符串），
++        // 新格式（metadata.files）判定与 metadata.paths 兑底都依赖它。
++        const meta: Record<string, any> = (() => {
++          const m = item.metadata
++          if (m && typeof m === 'object') return m as Record<string, any>
++          if (typeof m === 'string') {
++            try {
++              return JSON.parse(m) || {}
++            } catch {
++              return {}
++            }
++          }
++          return {}
++        })()
+         try {
+           const parsed = JSON.parse(item.content)
+           const paths: string[] | undefined =
+@@ -435,7 +450,10 @@ export function useClipboard() {
+               ? parsed
+               : parsed && typeof parsed === 'object' && Array.isArray(parsed.paths) && parsed.paths.length > 0
+                 ? parsed.paths
+-                : undefined
++                : // F1.4 新格式条目 content 不含 paths，从 metadata.paths 兑底（本机会话/乐观期有效）
++                  Array.isArray(meta.paths) && meta.paths.length > 0
++                  ? (meta.paths as string[])
++                  : undefined
+           if (paths && paths.length > 0) {
+             try {
+               // copy_local_files 先逐个校验存在性：全部不存在时 Fast-fail（跨设备场景），
+@@ -447,7 +465,6 @@ export function useClipboard() {
+               /* 本机没有这些路径 → 走服务端字节还原 */
+             }
+           }
+-          const meta = (item.metadata || {}) as Record<string, any>
+           if (meta.fileEncoding === 'base64' && isServerItem) {
+             try {
+               const res = await api<{ contentEncrypted?: string }>('GET', `/api/clipboard/${item.id}`)
+@@ -485,6 +502,24 @@ export function useClipboard() {
+               console.warn('[Clipboard] cross-device text file copy failed:', e?.message || e)
+             }
+           }
++          // F1.4 新格式（服务端统一落盘，metadata.files）：无本机路径时无法还原成文件
++          //（v1 单文件下载只对应一个落盘文件，多文件无批量 zip 下载），退化为复制首个
++          // 文件名；通过 lastCopyError 提示“仅本机”，返回 false 让上层 toast 展示该提示
++          // 而不是笼统的“已复制”。
++          if (Array.isArray(meta.files) && meta.files.length > 0) {
++            const firstFile = meta.files.find(
++              (f: any) => f && typeof f === 'object' && (f.name || f.fileId || f.filename),
++            )
++            const displayName = String(firstFile?.name || firstFile?.fileId || firstFile?.filename || '')
++            if (displayName) {
++              copiedTexts.set(displayName, Date.now())
++              cleanupCopiedContent()
++              await tauri.setClipboardContent(displayName)
++              recordUseIfServer()
++            }
++            lastCopyError.value = t('file_multi_local_only_hint')
++            return false
++          }
+           // 纯元数据对象（服务器上传的文件，无字节）→ 退化为复制文件名（既有行为）
+           if (parsed && typeof parsed === 'object' && parsed.name) {
+             await tauri.setClipboardContent(parsed.name)
+@@ -810,28 +845,15 @@ export function useClipboard() {
+ 
+   /** 从文件选择器上传文件到剪贴板 */
+   async function uploadFileItem(file: File): Promise<void> {
+-    // 按套餐分级限制上传大小（2026-07-07 调整）
+-    // Free: 128MB, Pro: 256MB, Enterprise: 1GB
+-    const configStore = useConfigStore()
+-    const planLimits: Record<string, number> = {
+-      Free: 128,
+-      free: 128,
+-      免费版: 128,
+-      Pro: 256,
+-      pro: 256,
+-      专业版: 256,
+-      Enterprise: 1024,
+-      enterprise: 1024,
+-      企业版: 1024,
+-    }
+-    const userPlan = configStore.user.plan || 'Free'
+-    const maxMb = planLimits[userPlan] || 128 // 默认免费版 128MB
+-    const maxBytes = maxMb * 1024 * 1024
++    // 套餐上传上限由后端 /api/subscriptions/current 下发（F0.4），
++    // 桌面端不再维护 Free/Pro/Enterprise 硬编码表。
++    const maxBytes = await usePlanLimits().getMaxUploadBytes()
+ 
+     if (file.size > maxBytes) {
++      const maxMb = Math.round(maxBytes / 1024 / 1024)
+       const sizeStr =
+         file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(0)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`
+-      throw new Error(`${t('file_exceeds_plan', { size: sizeStr, limit: `${maxMb}MB`, plan: userPlan })}`)
++      throw new Error(`${t('file_exceeds_plan', { size: sizeStr, limit: `${maxMb}MB`, plan: '' })}`)
+     }
+     const sizeStr =
+       file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`
+@@ -883,6 +905,8 @@ export function useClipboard() {
+       }
+     } else if (shouldUseChunkedUpload(file)) {
+       // Large file (>10MB) → 先创建条目，再分片上传，支持断点续传
++      // F3.1：serverId 提升到 try 外，分片 413 兜底时用它定位本地条目
++      let serverId: string | undefined
+       try {
+         // Step 1: 在服务器创建条目（元数据）
+         const createRes = await api('POST', '/api/clipboard', {
+@@ -894,7 +918,7 @@ export function useClipboard() {
+           size: file.size,
+           contentPreview: `${file.name} (${sizeStr})`,
+         })
+-        const serverId = createRes.data?.id
++        serverId = createRes.data?.id
+         if (serverId) {
+           const item = items.value.find((i) => i.id === localId)
+           if (item) item.id = serverId
+@@ -911,6 +935,13 @@ export function useClipboard() {
+         if (finalItem) finalItem.content = displayContent
+       } catch (e: any) {
+         console.error('[Clipboard] Chunked upload failed:', e)
++        // F3.1：分片 init 413（套餐限制）→ 升级引导 toast（24h 节流），本地条目转
++        // localOnly 占位；错误打已处理标记，useFileUpload 的 catch 不再重复 upload_fail
++        if (await handleQuotaResponse(e, { fileName: file.name, sizeBytes: file.size })) {
++          const item = items.value.find((i) => i.id === (serverId || localId))
++          if (item) item.metadata = { ...(item.metadata || {}), localOnly: true }
++          throw markHandledQuota(e)
++        }
+         throw e
+       }
+     } else {
+@@ -929,10 +960,17 @@ export function useClipboard() {
+             name: file.name,
+             size: sizeStr,
+             type: file.type || 'unknown',
+-            serverFilename: res.data.contentEncrypted,
++            // media.js 响应字段是 filename（服务端落盘名），不是 contentEncrypted
++            serverFilename: res.data.filename,
+           })
+           cacheContent(res.data.id, item.content)
+         }
++      } else if (res.status === 413 && (await handleQuotaResponse(res, { fileName: file.name, fileCount: 1 }))) {
++        // F3.1：413 配额拒绝 → 升级引导（24h 节流）；本地条目转 localOnly 占位并打
++        // 已处理标记，useFileUpload 的 catch 不再重复 upload_fail
++        const item = items.value.find((i) => i.id === localId)
++        if (item) item.metadata = { ...(item.metadata || {}), localOnly: true }
++        throw markHandledQuota(new Error(res.error || 'Upload failed'))
+       } else {
+         throw new Error(res.error || 'Upload failed')
+       }
+diff --git a/src/desktop/src/composables/useFileUpload.ts b/src/desktop/src/composables/useFileUpload.ts
+index b44fc88..a41ea44 100644
+--- a/src/desktop/src/composables/useFileUpload.ts
++++ b/src/desktop/src/composables/useFileUpload.ts
+@@ -2,7 +2,8 @@ import { ref } from 'vue'
+ import { useI18n } from '@/composables/useI18n'
+ import { useSonner } from '@/composables/useSonner'
+ import { useClipboard } from '@/composables/useClipboard'
+-import { planMaxUploadBytes } from '@/composables/clipboardUpload'
++import { usePlanLimits } from '@/composables/usePlanLimits'
++import { isHandledQuotaError } from '@/composables/useUploadLimitNotice'
+ 
+ /**
+  * 剪贴板文件上传：触发文件选择、按套餐限制大小、调用 useClipboard.uploadFileItem。
+@@ -18,19 +19,18 @@ export function useFileUpload() {
+     fileInputRef.value?.click()
+   }
+ 
+-  // 套餐大小上限统一走 clipboardUpload.planMaxUploadBytes（Free 128MB / Pro 256MB / Ent 1GB），
+-  // 与剪贴板自动捕获（D1）共用同一份阈值，避免两处漂移。
+-  const planMaxBytes = planMaxUploadBytes
+-
+   async function handleFileUpload(e: Event) {
+     const input = e.target as HTMLInputElement
+     if (!input.files?.length) return
+     const files = Array.from(input.files)
+     input.value = ''
+ 
++    // 套餐大小上限由后端下发（F0.4）：整批只取一次（usePlanLimits 内部有 5 分钟缓存），
++    // 与剪贴板自动捕获（D1）共用同一份后端阈值，避免两处漂移。
++    const maxBytes = await usePlanLimits().getMaxUploadBytes()
++
+     let errorCount = 0
+     for (const file of files) {
+-      const maxBytes = planMaxBytes()
+       if (file.size > maxBytes) {
+         const maxMb = Math.round(maxBytes / 1024 / 1024)
+         const sizeStr =
+@@ -43,7 +43,11 @@ export function useFileUpload() {
+         await clip.uploadFileItem(file)
+       } catch (err: any) {
+         errorCount++
+-        toast.show(`${file.name}: ${err.message || t('upload_fail')}`, 'error')
++        // F3.1：413 配额错误已在 uploadFileItem 内弹出升级引导（24h 节流），
++        // 这里跳过通用 upload_fail，避免同一错误双 toast
++        if (!isHandledQuotaError(err)) {
++          toast.show(`${file.name}: ${err.message || t('upload_fail')}`, 'error')
++        }
+       }
+     }
+ 
+diff --git a/src/desktop/src/locales/en.json b/src/desktop/src/locales/en.json
+index 3d32357..adf59b3 100644
+--- a/src/desktop/src/locales/en.json
++++ b/src/desktop/src/locales/en.json
+@@ -113,6 +113,8 @@
+   "file_cross": "Files not found on this device (cross-device)",
+   "file_local_only": "Local only",
+   "file_local_only_hint": "File bytes were not uploaded with this item (over 5 MB or unreadable), so it can only be copied on the original device",
++  "file_multi_oversize": "Some files exceed {n}MB — copy that file individually to sync it",
++  "file_multi_local_only_hint": "Local only: multi-file items can only be restored on the original device; the file name was copied instead",
+   "settings_t": "Settings",
+   "sg_gen": "General",
+   "sg_sync": "Sync",
+@@ -724,6 +726,14 @@
+   "upload_success": "File(s) uploaded",
+   "text_too_large": "Clipboard text exceeds {n}MB limit and was skipped",
+   "text_upload_failed": "Failed to sync clipboard text",
++  "quota_file_size_exceeded": "\"{fileName}\" ({size}) exceeds the {plan} plan single-file limit ({limit})",
++  "quota_too_many_files": "Up to {limit} files per sync on the {plan} plan",
++  "quota_file_total_exceeded": "{count} file(s) totaling {total} exceed the {plan} plan limit ({limit})",
++  "quota_storage_exceeded": "Cloud storage is full ({used}/{quota}); new files won't sync for now",
++  "quota_upgrade_with_benefits": "Upgrade to {name}: {fileLimit} per file, {storageLimit} cloud storage",
++  "quota_upgrade_generic": "Upgrade to sync larger files",
++  "quota_error_generic": "File exceeds your plan limit and was kept on this device",
++  "quota_ok": "Got it",
+   "file_remote_no_path": "was synced from another device and is not stored locally",
+   "sg_about": "About ClipSync",
+   "sg_about_h": "Version and app information",
+diff --git a/src/desktop/src/locales/zh.json b/src/desktop/src/locales/zh.json
+index 255994c..ee20f31 100644
+--- a/src/desktop/src/locales/zh.json
++++ b/src/desktop/src/locales/zh.json
+@@ -195,6 +195,8 @@
+   "file_cross": "当前设备找不到此文件（跨设备同步）",
+   "file_local_only": "仅本机",
+   "file_local_only_hint": "该文件的字节未随条目上传（超过 5MB 或读取失败），只能在原设备复制",
++  "file_multi_oversize": "存在超过 {n}MB 的文件，请单独复制该文件进行同步",
++  "file_multi_local_only_hint": "仅本机可用：多文件条目需在原设备还原为文件，已复制文件名",
+   "show_in_folder": "在文件夹中显示",
+   "settings_t": "设置",
+   "sg_gen": "通用",
+@@ -395,6 +397,14 @@
+   "upload_success": "文件已上传",
+   "text_too_large": "剪贴板文本超过 {n}MB，已跳过同步",
+   "text_upload_failed": "剪贴板文本同步失败",
++  "quota_file_size_exceeded": "「{fileName}」（{size}）超过 {plan} 套餐单文件 {limit} 限制",
++  "quota_too_many_files": "一次最多同步 {limit} 个文件（{plan} 套餐）",
++  "quota_file_total_exceeded": "本次 {count} 个文件共 {total}，超过 {plan} 套餐 {limit} 限制",
++  "quota_storage_exceeded": "云端存储已满（{used}/{quota}），新文件暂不同步",
++  "quota_upgrade_with_benefits": "升级 {name}：单文件 {fileLimit}、云端 {storageLimit}",
++  "quota_upgrade_generic": "升级后可同步更大的文件",
++  "quota_error_generic": "文件超出当前套餐限制，已保存到本机",
++  "quota_ok": "知道了",
+   "file_remote_no_path": "来自其他设备同步，未存储在本地",
+   "sg_about": "关于 ClipSync",
+   "sg_about_h": "版本与应用信息",
+diff --git a/src/mobile/lib/l10n/app_en.arb b/src/mobile/lib/l10n/app_en.arb
+index c2690c9..8472aaa 100644
+--- a/src/mobile/lib/l10n/app_en.arb
++++ b/src/mobile/lib/l10n/app_en.arb
+@@ -699,5 +699,27 @@
+     }
+   },
+   "clipboardWriteback": "Auto write to system clipboard",
+-  "clipboardWritebackDesc": "When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly"
++  "clipboardWritebackDesc": "When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly",
++  "download": "Download",
++  "open": "Open",
++  "downloadAllZip": "Download all (zip)",
++  "filesCount": "{count} files",
++  "@filesCount": {
++    "placeholders": {
++      "count": {
++        "type": "int"
++      }
++    }
++  },
++  "downloadingPercent": "Downloading {percent}%",
++  "@downloadingPercent": {
++    "placeholders": {
++      "percent": {
++        "type": "int"
++      }
++    }
++  },
++  "openFileFailed": "No app found to open this file",
++  "limitSyncNotice": "This file exceeded the plan limit on the source device and was not synced to the cloud",
++  "viewPlans": "View plans"
+ }
+diff --git a/src/mobile/lib/l10n/app_localizations.dart b/src/mobile/lib/l10n/app_localizations.dart
+index 4c78a95..e7c538e 100644
+--- a/src/mobile/lib/l10n/app_localizations.dart
++++ b/src/mobile/lib/l10n/app_localizations.dart
+@@ -2551,6 +2551,54 @@ abstract class AppLocalizations {
+   /// In en, this message translates to:
+   /// **'When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly'**
+   String get clipboardWritebackDesc;
++
++  /// No description provided for @download.
++  ///
++  /// In en, this message translates to:
++  /// **'Download'**
++  String get download;
++
++  /// No description provided for @open.
++  ///
++  /// In en, this message translates to:
++  /// **'Open'**
++  String get open;
++
++  /// No description provided for @downloadAllZip.
++  ///
++  /// In en, this message translates to:
++  /// **'Download all (zip)'**
++  String get downloadAllZip;
++
++  /// No description provided for @filesCount.
++  ///
++  /// In en, this message translates to:
++  /// **'{count} files'**
++  String filesCount(int count);
++
++  /// No description provided for @downloadingPercent.
++  ///
++  /// In en, this message translates to:
++  /// **'Downloading {percent}%'**
++  String downloadingPercent(int percent);
++
++  /// No description provided for @openFileFailed.
++  ///
++  /// In en, this message translates to:
++  /// **'No app found to open this file'**
++  String get openFileFailed;
++
++  /// No description provided for @limitSyncNotice.
++  ///
++  /// In en, this message translates to:
++  /// **'This file exceeded the plan limit on the source device and was not synced to the cloud'**
++  String get limitSyncNotice;
++
++  /// No description provided for @viewPlans.
++  ///
++  /// In en, this message translates to:
++  /// **'View plans'**
++  String get viewPlans;
+ }
+ 
+ class _AppLocalizationsDelegate
+diff --git a/src/mobile/lib/l10n/app_localizations_en.dart b/src/mobile/lib/l10n/app_localizations_en.dart
+index 3c26d62..ca36f73 100644
+--- a/src/mobile/lib/l10n/app_localizations_en.dart
++++ b/src/mobile/lib/l10n/app_localizations_en.dart
+@@ -1367,4 +1367,33 @@ class AppLocalizationsEn extends AppLocalizations {
+   @override
+   String get clipboardWritebackDesc =>
+       'When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly';
++
++  @override
++  String get download => 'Download';
++
++  @override
++  String get open => 'Open';
++
++  @override
++  String get downloadAllZip => 'Download all (zip)';
++
++  @override
++  String filesCount(int count) {
++    return '$count files';
++  }
++
++  @override
++  String downloadingPercent(int percent) {
++    return 'Downloading $percent%';
++  }
++
++  @override
++  String get openFileFailed => 'No app found to open this file';
++
++  @override
++  String get limitSyncNotice =>
++      'This file exceeded the plan limit on the source device and was not synced to the cloud';
++
++  @override
++  String get viewPlans => 'View plans';
+ }
+diff --git a/src/mobile/lib/l10n/app_localizations_zh.dart b/src/mobile/lib/l10n/app_localizations_zh.dart
+index 98c5df6..d5e5cf7 100644
+--- a/src/mobile/lib/l10n/app_localizations_zh.dart
++++ b/src/mobile/lib/l10n/app_localizations_zh.dart
+@@ -1315,4 +1315,32 @@ class AppLocalizationsZh extends AppLocalizations {
+ 
+   @override
+   String get clipboardWritebackDesc => '其他设备同步来的新内容自动写入本机剪贴板，任意应用可直接粘贴';
++
++  @override
++  String get download => '下载';
++
++  @override
++  String get open => '打开';
++
++  @override
++  String get downloadAllZip => '全部下载（zip）';
++
++  @override
++  String filesCount(int count) {
++    return '$count 个文件';
++  }
++
++  @override
++  String downloadingPercent(int percent) {
++    return '下载中 $percent%';
++  }
++
++  @override
++  String get openFileFailed => '没有找到可打开此文件的应用';
++
++  @override
++  String get limitSyncNotice => '该文件在来源设备超出套餐限制，未同步到云端';
++
++  @override
++  String get viewPlans => '了解套餐';
+ }
+diff --git a/src/mobile/lib/l10n/app_zh.arb b/src/mobile/lib/l10n/app_zh.arb
+index f6a5692..3126f5f 100644
+--- a/src/mobile/lib/l10n/app_zh.arb
++++ b/src/mobile/lib/l10n/app_zh.arb
+@@ -408,5 +408,13 @@
+   "moveToCollection": "移动到…",
+   "moveSuccess": "已移动 {count} 项",
+   "clipboardWriteback": "自动回写系统剪贴板",
+-  "clipboardWritebackDesc": "其他设备同步来的新内容自动写入本机剪贴板，任意应用可直接粘贴"
++  "clipboardWritebackDesc": "其他设备同步来的新内容自动写入本机剪贴板，任意应用可直接粘贴",
++  "download": "下载",
++  "open": "打开",
++  "downloadAllZip": "全部下载（zip）",
++  "filesCount": "{count} 个文件",
++  "downloadingPercent": "下载中 {percent}%",
++  "openFileFailed": "没有找到可打开此文件的应用",
++  "limitSyncNotice": "该文件在来源设备超出套餐限制，未同步到云端",
++  "viewPlans": "了解套餐"
+ }
+diff --git a/src/mobile/lib/models/clipboard_item.dart b/src/mobile/lib/models/clipboard_item.dart
+index c803d53..f711ec4 100644
+--- a/src/mobile/lib/models/clipboard_item.dart
++++ b/src/mobile/lib/models/clipboard_item.dart
+@@ -242,10 +242,56 @@ class ClipboardItem {
+   /// 是否纯文本条目
+   bool get isText => contentType == 'text';
+ 
+-  /// 文件显示名（元数据 fileName 优先，回退 originalName；均缺省返回 null）
++  /// 文件显示名（元数据 fileName 优先，回退 originalName；均缺省时
++  /// F2.1：回退新格式 files 首个文件名；仍无则返回 null）
+   String? get fileName {
+     final dynamic name = metadata['fileName'] ?? metadata['originalName'];
+     if (name is String && name.isNotEmpty) return name;
++    final files = this.files;
++    if (files != null && files.isNotEmpty && files.first.name.isNotEmpty) {
++      return files.first.name;
++    }
++    return null;
++  }
++
++  // ---------- 文件条目新格式解析（F2.1，纯追加只读 getter） ----------
++
++  /// 新格式文件列表（metadata.files）。缺失 / 空数组 / 全部条目畸形时
++  /// 返回 null —— 调用方按存量旧格式条目处理，保持旧行为不抛异常。
++  List<ClipFileInfo>? get files {
++    final dynamic raw = metadata['files'];
++    if (raw is! List || raw.isEmpty) {
++      return null;
++    }
++    final result = <ClipFileInfo>[];
++    for (final entry in raw) {
++      final info = ClipFileInfo.fromDynamic(entry);
++      if (info != null) {
++        result.add(info);
++      }
++    }
++    return result.isEmpty ? null : result;
++  }
++
++  /// 多文件条目文件数（新格式 metadata.totalCount；缺失 / 畸形为 0）
++  int get totalCount {
++    final dynamic v = metadata['totalCount'];
++    return v is int ? v : (v is num ? v.toInt() : 0);
++  }
++
++  /// 多文件条目总大小（新格式 metadata.totalSize；缺失 / 畸形为 0）
++  int get totalSize {
++    final dynamic v = metadata['totalSize'];
++    return v is int ? v : (v is num ? v.toInt() : 0);
++  }
++
++  /// 套餐限制原因短码（F3.2，metadata.limitReason，桌面端写入；
++  /// 空串 / 非字符串 / 缺失一律返回 null，调用方空值容错）
++  String? get limitReason {
++    final dynamic v = metadata['limitReason'];
++    if (v is String && v.trim().isNotEmpty) {
++      return v.trim();
++    }
+     return null;
+   }
+ 
+@@ -282,6 +328,51 @@ class ClipboardItem {
+   }
+ }
+ 
++/// 文件条目单文件信息（F2.1，新格式 metadata.files 项）。
++///
++/// 服务端契约：{ fileId: <服务端落盘名>, name, size, mimeType }。
++/// 解析容忍畸形：entry 非 Map、name 与 fileId 同时缺失判废（单条丢弃，
++/// 不拖垮整个列表）；其余字段类型漂移按缺省兜底。
++class ClipFileInfo {
++  /// 服务端落盘文件名（仅契约留档；下载实际走 ?fileIndex=n 定位）
++  final String fileId;
++
++  /// 展示名（来源设备原始文件名）
++  final String name;
++
++  /// 字节大小（缺失 / 畸形为 0）
++  final int size;
++
++  /// MIME 类型（可能缺失）
++  final String? mimeType;
++
++  const ClipFileInfo({
++    required this.fileId,
++    required this.name,
++    this.size = 0,
++    this.mimeType,
++  });
++
++  /// 容错解析：非 Map / name 与 fileId 均不可得返回 null。
++  static ClipFileInfo? fromDynamic(dynamic entry) {
++    if (entry is! Map) {
++      return null;
++    }
++    final dynamic rawName = entry['name'] ?? entry['fileName'];
++    final String name = rawName is String ? rawName : '';
++    final dynamic rawFileId = entry['fileId'] ?? entry['id'];
++    final String fileId = rawFileId is String ? rawFileId : '';
++    if (name.isEmpty && fileId.isEmpty) {
++      return null;
++    }
++    final dynamic rawSize = entry['size'];
++    final int size = rawSize is int ? rawSize : (rawSize is num ? rawSize.toInt() : 0);
++    final dynamic rawMime = entry['mimeType'];
++    final String? mimeType = rawMime is String && rawMime.isNotEmpty ? rawMime : null;
++    return ClipFileInfo(fileId: fileId, name: name, size: size, mimeType: mimeType);
++  }
++}
++
+ /// 来源设备信息（列表响应：LEFT JOIN devices 的 device_name / platform）
+ class DeviceInfo {
+   final String? id;
+diff --git a/src/mobile/lib/screens/clipboard/item_detail_screen.dart b/src/mobile/lib/screens/clipboard/item_detail_screen.dart
+index b4386bf..dfd3f8c 100644
+--- a/src/mobile/lib/screens/clipboard/item_detail_screen.dart
++++ b/src/mobile/lib/screens/clipboard/item_detail_screen.dart
+@@ -5,6 +5,7 @@ import 'dart:io';
+ import 'package:cached_network_image/cached_network_image.dart';
+ import 'package:flutter/material.dart';
+ import 'package:flutter/services.dart';
++import 'package:go_router/go_router.dart';
+ import 'package:http/http.dart' as http;
+ import 'package:path_provider/path_provider.dart';
+ import 'package:photo_view/photo_view.dart';
+@@ -14,6 +15,7 @@ import 'package:share_plus/share_plus.dart';
+ import '../../l10n/app_localizations.dart';
+ import '../../models/clipboard_item.dart';
+ import '../../providers/clipboard_provider.dart';
++import '../../router/app_router.dart';
+ import '../../services/api_service.dart';
+ import '../../services/app_exception.dart';
+ import '../../services/item_actions_api_service.dart';
+@@ -21,6 +23,7 @@ import '../../services/server_config.dart';
+ import '../../services/shared_links_api_service.dart';
+ import '../../services/token_store.dart';
+ import '../../theme/app_theme.dart';
++import '../../utils/file_opener.dart';
+ import '../../widgets/clipboard_card.dart'
+     show ClipboardTagChips, ExpiryChoice, showExpiryPickerDialog, showTagsEditorDialog;
+ 
+@@ -31,8 +34,10 @@ enum _TextLoadState { loading, loaded, error }
+ ///
+ /// 页面输入为 [ClipboardItem]（构造传入），按类型分发内容区：
+ /// - image：PhotoView 双指缩放查看（GET /api/media/:id/preview，Bearer 鉴权）；
+-/// - file：文件卡片（文件名取 metadata、大小格式化）+ 打开按钮
+-///   （调 GET /api/media/:id/download 下载到本机临时目录）；
++/// - file：多文件条目（metadata.files）渲染文件列表（每行图标+名称+大小
++///   +mimeType，操作区【下载/打开/分享】，未下载时打开与分享自动先下载），
++///   顶部【全部下载（zip）】打包下载（不带 fileIndex → 服务端流式 zip）；
++///   单文件保持卡片样式 + 三按钮。下载均流式写盘至临时目录并显示百分比进度；
+ /// - text/link/code：全文展示（code 等宽字体），SelectionArea 支持选择复制。
+ ///
+ /// 受保护条目（C3，protectionLevel 非 none）：进入即锁定，不渲染任何内容，
+@@ -72,15 +77,33 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+   // 双通道：旧桌面版本把图片存成 dataURL（无 media 记录）→ MemoryImage；
+   // 新版本走 media 端点 → CachedNetworkImageProvider（带鉴权头）
+   ImageProvider<Object>? _imageProvider;
+-  bool _isInlineDataImage = false;
+ 
+   // 操作栏忙碌状态
+   bool _favoriteBusy = false;
+-  bool _downloadBusy = false;
+   bool _shareLinkBusy = false;
+ 
+-  // 文件条目降级（F4）：content 为来源设备本机路径 / 下载失败时置位，
+-  // 文件卡片切换为「复制文件名」+ 降级提示，不再提供跨设备下载入口。
++  // F2.2：下载忙碌与进度（键控，替代原 bool _downloadBusy，可显示百分比）。key：
++  // 'file:<index>' —— 新格式条目单文件下载（index 为 metadata.files 下标）；
++  // 'file:-1' —— 存量单文件条目（不带 fileIndex 的整条下载）；
++  // 'zip' —— F2.3 多文件打包下载。
++  static const String _zipKey = 'zip';
++  final Set<String> _downloadBusy = <String>{};
++  final Map<String, double> _downloadProgress = <String, double>{};
++
++  // F2.2：已下载文件的本地路径（key 同上）——【打开】/【分享】直接复用，
++  // 避免重复下载；路径文件被系统清理时回退重新下载。
++  final Map<String, String> _downloadedPaths = <String, String>{};
++
++  // F2.1：多文件条目逐文件下载失败标记（key: 'file:<index>'），
++  // 仅该行操作区切换降级（复制文件名 + 提示），不影响其余文件行。
++  final Set<String> _degradedFileKeys = <String>{};
++
++  // 文件条目降级（F4/F2.2）：仅存量条目（无 metadata.files）在
++  // ① content 探测为来源设备本机路径（_probeFileContent）或
++  // ② 下载确实失败（_downloadByKey）时置位，文件卡片切换为
++  // 「复制文件名」+ 降级提示，不再提供跨设备下载入口。
++  // 新格式 files 条目不执行路径探测（content 语义不同，易误判），
++  // 且下载失败只降级对应文件行，永不置位本标记。
+   bool _fileDegraded = false;
+ 
+   // C3：受保护条目锁定态（解锁前不渲染内容区）
+@@ -152,7 +175,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+   /// 展示文件名 + 降级提示，不提供下载入口、不进加载失败态。
+   /// 探测失败不致命：保留下载入口，由用户点击后按下载失败路径降级。
+   Future<void> _probeFileContent() async {
+-    if (_fileDegraded) {
++    // F2.1：新格式 files 条目由服务端托管存储，content 可能是正文/落盘名
++    // 等非路径语义，路径探测不适用——跳过（不降级，由下载失败路径兜底）。
++    if (_fileDegraded || _item.files != null) {
+       return;
+     }
+     String? content = _item.fullContent;
+@@ -217,7 +242,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+       setState(() {
+         _headersReady = true;
+         _imageFailed = false;
+-        _isInlineDataImage = true;
+         _imageProvider = MemoryImage(bytes);
+       });
+       return;
+@@ -229,7 +253,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+       setState(() {
+         _headersReady = true;
+         _imageFailed = true;
+-        _isInlineDataImage = false;
+         _imageProvider = null;
+       });
+       return;
+@@ -238,7 +261,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+       _mediaHeaders = <String, String>{'Authorization': 'Bearer $token'};
+       _headersReady = true;
+       _imageFailed = false;
+-      _isInlineDataImage = false;
+       _imageProvider = _buildImageProvider();
+     });
+   }
+@@ -628,64 +650,287 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+     }
+   }
+ 
+-  /// 文件下载：GET /api/media/:id/download（Bearer）→ 保存到临时目录 downloads/
+-  /// 并以SnackBar 告知保存路径。同名校验存在时追加序号避免覆盖。
++  // ---------------------------------------------------------------------------
++  // 文件下载 / 打开 / 分享（F2.2 / F2.3）
++  // ---------------------------------------------------------------------------
++
++  /// 按 key 触发下载（统一入口）：维护忙碌集合、进度与降级标记。
+   ///
+-  /// F4：任何下载失败（404 / 网络异常等）都按「文件在来源设备本机」降级——
+-  /// SnackBar 提示跨设备暂不可取，文件卡片切换为「复制文件名」。
+-  Future<void> _downloadFile() async {
+-    final messenger = ScaffoldMessenger.of(context);
++  /// - [fileIndex] >= 0：多文件条目单文件下载（?fileIndex=n，key 'file:<index>'）；
++  /// - [fileIndex] < 0：整条下载（不带 fileIndex；存量单文件 key 'file:-1'，
++  ///   多文件打包 zip key 'zip'，[zipName] 指定 zip 保存名）。
++  ///
++  /// 失败降级策略（仅下载确实失败时置位）：
++  /// - 存量条目（无 metadata.files）→ 整卡降级（_fileDegraded，F4 语义）；
++  /// - 新格式单文件行 → 该行降级（_degradedFileKeys），不影响其余行；
++  /// - 多文件打包 zip → 仅 SnackBar 提示，不影响文件列表。
++  /// 成功返回本地路径，失败返回 null。
++  Future<String?> _downloadByKey(
++    String key, {
++    required int fileIndex,
++    String? zipName,
++  }) async {
++    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+     final AppLocalizations l10n = AppLocalizations.of(context);
+-    setState(() => _downloadBusy = true);
++    if (_downloadBusy.contains(key)) {
++      return null;
++    }
++    setState(() {
++      _downloadBusy.add(key);
++      _downloadProgress.remove(key);
++    });
+     try {
+-      final token = await TokenStore.getAccessToken();
+-      if (token == null || token.isEmpty) {
+-        throw const AppException(AppErrorCodes.noToken);
+-      }
+-      final response = await http
+-          .get(
+-            Uri.parse('${ServerConfig.baseUrl}/api/media/${_item.id}/download'),
+-            headers: <String, String>{'Authorization': 'Bearer $token'},
+-          )
+-          .timeout(const Duration(seconds: 120));
+-      if (response.statusCode != 200) {
+-        throw AppException(AppErrorCodes.downloadFailed, 'HTTP ${response.statusCode}');
+-      }
+-      final dir = await getTemporaryDirectory();
+-      final saveDir = Directory('${dir.path}${Platform.pathSeparator}downloads');
+-      await saveDir.create(recursive: true);
+-
+-      final baseName = _safeFileName();
+-      var target = File('${saveDir.path}${Platform.pathSeparator}$baseName');
+-      var seq = 1;
+-      while (target.existsSync()) {
+-        final dot = baseName.lastIndexOf('.');
+-        final stem = dot > 0 ? baseName.substring(0, dot) : baseName;
+-        final ext = dot > 0 ? baseName.substring(dot) : '';
+-        target = File('${saveDir.path}${Platform.pathSeparator}$stem(${seq++})$ext');
++      final path = await _streamDownload(
++        busyKey: key,
++        fileIndex: fileIndex,
++        fileName: fileIndex < 0 ? zipName : null,
++      );
++      if (mounted) {
++        setState(() {
++          _downloadedPaths[key] = path;
++          _downloadProgress.remove(key);
++        });
+       }
+-      await target.writeAsBytes(response.bodyBytes);
+       messenger.showSnackBar(
+         SnackBar(
+-          content: Text(l10n.fileSavedTo(target.path)),
++          content: Text(l10n.fileSavedTo(path)),
+           duration: const Duration(seconds: 3),
+         ),
+       );
+-    } catch (_) {
++      return path;
++    } on Exception {
++      final bool hasFiles = _item.files != null;
+       if (mounted) {
+-        setState(() => _fileDegraded = true);
++        setState(() {
++          _downloadProgress.remove(key);
++          if (!hasFiles) {
++            _fileDegraded = true;
++          } else if (fileIndex >= 0) {
++            _degradedFileKeys.add(key);
++          }
++        });
+       }
+       messenger.showSnackBar(
+-        SnackBar(content: Text(l10n.fileLocalOnlyHint), duration: const Duration(seconds: 3)),
++        SnackBar(
++          content: Text(l10n.fileLocalOnlyHint),
++          duration: const Duration(seconds: 3),
++        ),
++      );
++      return null;
++    } finally {
++      if (mounted) {
++        setState(() => _downloadBusy.remove(key));
++      }
++    }
++  }
++
++  /// 流式下载实现（F2.2）：GET /api/media/:id/download（Bearer），
++  /// 经 http.Client().send() → StreamedResponse 边收边写盘到临时目录
++  /// downloads/，按 Content-Length 上报进度（0~1，变化 >=1% 才 setState）
++  /// 替代旧实现的 bodyBytes 整包缓冲。失败抛 AppException（调用方降级）。
++  Future<String> _streamDownload({
++    required String busyKey,
++    required int fileIndex,
++    String? fileName,
++  }) async {
++    final token = await TokenStore.getAccessToken();
++    if (token == null || token.isEmpty) {
++      throw const AppException(AppErrorCodes.noToken);
++    }
++    var url = '${ServerConfig.baseUrl}/api/media/${_item.id}/download';
++    if (fileIndex >= 0) {
++      url = '$url?fileIndex=$fileIndex';
++    }
++    final request = http.Request('GET', Uri.parse(url))
++      ..headers['Authorization'] = 'Bearer $token';
++    final client = http.Client();
++    File? target;
++    try {
++      final streamed =
++          await client.send(request).timeout(const Duration(seconds: 120));
++      if (streamed.statusCode != 200) {
++        throw AppException(
++          AppErrorCodes.downloadFailed,
++          'HTTP ${streamed.statusCode}',
++        );
++      }
++      final dir = await getTemporaryDirectory();
++      final saveDir =
++          Directory('${dir.path}${Platform.pathSeparator}downloads');
++      await saveDir.create(recursive: true);
++      target = File(
++        '${saveDir.path}${Platform.pathSeparator}'
++        '${_uniqueSaveName(fileName ?? _fallbackDownloadName(fileIndex), saveDir)}',
+       );
++      final total = streamed.contentLength ?? 0;
++      final sink = target.openWrite();
++      var received = 0;
++      try {
++        await for (final chunk in streamed.stream) {
++          received += chunk.length;
++          sink.add(chunk);
++          if (total > 0) {
++            final next = (received / total).clamp(0.0, 1.0);
++            final last = _downloadProgress[busyKey];
++            if (last == null || (next - last) >= 0.01 || next >= 1.0) {
++              if (mounted) {
++                setState(() => _downloadProgress[busyKey] = next);
++              }
++            }
++          }
++        }
++        await sink.flush();
++      } finally {
++        await sink.close();
++      }
++      return target.path;
++    } catch (_) {
++      // 流式中断清理半截文件，避免残留损坏文件被后续打开误用
++      try {
++        if (target != null && target.existsSync()) {
++          await target.delete();
++        }
++      } catch (_) {
++        // 清理失败不影响错误上抛
++      }
++      rethrow;
+     } finally {
++      client.close();
++    }
++  }
++
++  /// 下载保存名兜底：多文件取该文件名；单文件/zip 取条目名（fileName →
++  /// contentPreview 首行）或条目 id。净化与同名追加序号见 _uniqueSaveName。
++  String _fallbackDownloadName(int fileIndex) {
++    final files = _item.files;
++    if (fileIndex >= 0 && files != null && fileIndex < files.length) {
++      return files[fileIndex].name;
++    }
++    final raw = (_item.fileName ?? _item.contentPreview).trim();
++    final firstLine = raw.split('\n').first.trim();
++    if (firstLine.isNotEmpty) {
++      return firstLine.length > 80 ? firstLine.substring(0, 80) : firstLine;
++    }
++    return 'clip-file-${_item.id}';
++  }
++
++  /// 文件名净化（去路径分隔符/非法字符防穿越）+ 同名追加序号防覆盖。
++  String _uniqueSaveName(String rawName, Directory saveDir) {
++    var baseName = rawName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
++    if (baseName.isEmpty) {
++      baseName = 'clip-file-${_item.id}';
++    }
++    final dot = baseName.lastIndexOf('.');
++    final stem = dot > 0 ? baseName.substring(0, dot) : baseName;
++    final ext = dot > 0 ? baseName.substring(dot) : '';
++    var candidate = File('${saveDir.path}${Platform.pathSeparator}$baseName');
++    var seq = 1;
++    while (candidate.existsSync()) {
++      candidate =
++          File('${saveDir.path}${Platform.pathSeparator}$stem(${seq++})$ext');
++    }
++    return candidate.uri.pathSegments.last;
++  }
++
++  /// F2.3：多文件条目打包下载——不带 fileIndex 的 download 端点返回
++  /// 服务端流式 zip（Content-Type: application/zip），存临时目录后
++  /// SnackBar 告知路径。决策：不自动解压——【打开】/【分享】zip 即可消费，
++  /// 解压需引入 archive 依赖且临时目录体积翻倍，现阶段无必要。
++  Future<void> _downloadZip() async {
++    await _downloadByKey(_zipKey, fileIndex: -1, zipName: _zipFallbackName());
++  }
++
++  /// zip 包名：条目名 stem + .zip（fileName → contentPreview 兜底条目 id）。
++  String _zipFallbackName() {
++    final raw = (_item.fileName ?? _item.contentPreview).trim();
++    final firstLine = raw.split('\n').first.trim();
++    final base = firstLine.isEmpty ? 'clip-files-${_item.id}' : firstLine;
++    final dot = base.lastIndexOf('.');
++    final stem = dot > 0 ? base.substring(0, dot) : base;
++    return '$stem.zip';
++  }
++
++  /// F2.2：打开文件（未下载 / 缓存失效时先下载再打开；
++  /// 失败提示无可用应用，不降级——文件本身已可用）。
++  Future<void> _openFile(
++    String key, {
++    required int fileIndex,
++    String? zipName,
++  }) async {
++    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
++    final AppLocalizations l10n = AppLocalizations.of(context);
++    if (_downloadBusy.contains(key)) {
++      return;
++    }
++    var path = _downloadedPaths[key];
++    if (path == null || !File(path).existsSync()) {
++      path = await _downloadByKey(key, fileIndex: fileIndex, zipName: zipName);
++      if (path == null) {
++        return; // 下载失败已提示并按需降级
++      }
++    }
++    final bool opened = await FileOpener.open(path);
++    if (!mounted || opened) {
++      return;
++    }
++    messenger.showSnackBar(
++      SnackBar(
++        content: Text(l10n.openFileFailed),
++        duration: const Duration(seconds: 3),
++      ),
++    );
++  }
++
++  /// F2.2：分享文件（未下载时先下载再分享；mimeType 尽力提供）。
++  Future<void> _shareFile(
++    String key, {
++    required int fileIndex,
++    String? zipName,
++    String? mimeType,
++  }) async {
++    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
++    final AppLocalizations l10n = AppLocalizations.of(context);
++    if (_downloadBusy.contains(key)) {
++      return;
++    }
++    var path = _downloadedPaths[key];
++    if (path == null || !File(path).existsSync()) {
++      path = await _downloadByKey(key, fileIndex: fileIndex, zipName: zipName);
++      if (path == null) {
++        return;
++      }
++    }
++    try {
++      await FileOpener.share(path, mimeType: mimeType);
++    } catch (_) {
+       if (mounted) {
+-        setState(() => _downloadBusy = false);
++        messenger.showSnackBar(
++          SnackBar(
++            content: Text(l10n.shareFailed),
++            duration: const Duration(seconds: 2),
++          ),
++        );
+       }
+     }
+   }
+ 
+-  /// F4：复制文件名（降级态下替代下载入口的动作）。
++  /// F2.1：复制多文件列表行文件名（该行降级态动作）。
++  Future<void> _copyClipFileName(ClipFileInfo info) async {
++    final messenger = ScaffoldMessenger.of(context);
++    final AppLocalizations l10n = AppLocalizations.of(context);
++    if (info.name.isEmpty) {
++      return;
++    }
++    await Clipboard.setData(ClipboardData(text: info.name));
++    messenger.showSnackBar(
++      SnackBar(
++        content: Text(l10n.copied),
++        duration: const Duration(seconds: 2),
++      ),
++    );
++  }
++
++  /// F4：复制文件名（单文件卡降级态下替代下载入口的动作）。
+   Future<void> _copyFileName() async {
+     final messenger = ScaffoldMessenger.of(context);
+     final AppLocalizations l10n = AppLocalizations.of(context);
+@@ -701,6 +946,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+ 
+   /// 文件展示名（F4）：metadata 文件名优先；缺失时从路径型 content/预览
+   /// 推导基名（含 \ 或 / 时取末段），避免把整条来源路径当文件名展示。
++  /// （F2.1 后 fileName getter 已含新格式 files 首文件名兜底。）
+   String get _fileDisplayName {
+     final name = _item.fileName;
+     if (name != null && name.isNotEmpty) {
+@@ -716,13 +962,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+     return AppLocalizations.of(context).unknownFile;
+   }
+ 
+-  /// 文件名净化：去掉路径分隔符与非法字符，避免写入时路径穿越。
+-  String _safeFileName() {
+-    final raw = _item.fileName ?? _item.contentPreview;
+-    final name = raw.isEmpty ? 'clip-file-${_item.id}' : raw;
+-    return name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+-  }
+-
+   // ---------------------------------------------------------------------------
+   // 构建
+   // ---------------------------------------------------------------------------
+@@ -764,6 +1003,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+       ),
+       body: Column(
+         children: <Widget>[
++          // F3.2：套餐限制提示条（metadata.limitReason 有值时展示；
++          // getter 仅非空短码返回非 null，空值已容错）
++          if (!_locked && _item.limitReason != null) _buildLimitBanner(theme),
+           // G2 标签展示：有标签时在内容区顶部渲染 chips（横排可滚动，
+           // 最多 3 个 + "+N"）；受保护条目解锁前不渲染任何内容，含标签
+           if (!_locked && _item.tags.isNotEmpty)
+@@ -904,34 +1146,309 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+ 
+   // --------------------------- file ---------------------------
+ 
++  /// 文件内容区分发（F2.1）：多文件条目（files 可解析且 totalCount>1）
++  /// 渲染文件列表；单文件 / 存量条目保持卡片样式。
+   Widget _buildFileView(ThemeData theme) {
++    final files = _item.files;
++    if (files != null && _item.totalCount > 1) {
++      return _buildFileListView(theme, files);
++    }
++    return _buildSingleFileCard(theme, files);
++  }
++
++  /// F2.1：多文件条目列表——头部（文件数 · 总大小 + 打包 zip 下载）+
++  /// 逐文件行（图标 + 名称 + 大小 + mimeType + 下载/打开/分享操作区）。
++  Widget _buildFileListView(ThemeData theme, List<ClipFileInfo> files) {
+     final scheme = theme.colorScheme;
+     final l10n = AppLocalizations.of(context);
+-    final displayName = _fileDisplayName;
+-    final mime = _item.metadata['mimeType'];
+-    final mimeText = mime is String && mime.isNotEmpty ? ' · $mime' : '';
+-
+-    // F4 降级态：不提供下载入口，改为「复制文件名」+ 来源设备本机提示
+-    final Widget actionButton = _fileDegraded
+-        ? FilledButton.tonalIcon(
+-            onPressed: _copyFileName,
+-            icon: const Icon(Icons.copy_rounded),
+-            label: Text(l10n.copyFileName),
+-          )
+-        : FilledButton.tonalIcon(
+-            onPressed: _downloadBusy ? null : _downloadFile,
+-            icon: _downloadBusy
+-                ? const SizedBox(
+-                    width: 16,
+-                    height: 16,
+-                    child: CircularProgressIndicator(strokeWidth: 2),
+-                  )
+-                : const Icon(Icons.download_rounded),
+-            label: Text(_downloadBusy ? l10n.downloading : l10n.openDownload),
+-          );
+-    final String actionHint = _fileDegraded
+-        ? l10n.fileLocalOnlyHint
+-        : l10n.fileDownloadHint;
++    final totalBytes =
++        _item.totalSize > 0 ? _item.totalSize : _sumFileSizes(files);
++    return SingleChildScrollView(
++      padding: const EdgeInsets.all(AppSpacing.lg),
++      child: Card(
++        child: Padding(
++          padding: const EdgeInsets.all(AppSpacing.lg),
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.stretch,
++            children: [
++              Row(
++                children: [
++                  Expanded(
++                    child: Text(
++                      '${l10n.filesCount(files.length)} · ${_formatBytes(totalBytes)}',
++                      style: theme.textTheme.titleSmall,
++                    ),
++                  ),
++                  _buildZipDownloadControl(theme),
++                ],
++              ),
++              const SizedBox(height: AppSpacing.md),
++              const Divider(),
++              for (var i = 0; i < files.length; i++)
++                _buildFileRow(theme, files[i], i),
++              const SizedBox(height: AppSpacing.xs),
++              Text(
++                l10n.fileDownloadHint,
++                textAlign: TextAlign.center,
++                style: theme.textTheme.labelSmall?.copyWith(
++                  color: scheme.onSurfaceVariant,
++                ),
++              ),
++            ],
++          ),
++        ),
++      ),
++    );
++  }
++
++  /// F2.3：打包下载控件——忙碌时显示进度条 + 百分比，空闲显示按钮。
++  Widget _buildZipDownloadControl(ThemeData theme) {
++    final l10n = AppLocalizations.of(context);
++    final scheme = theme.colorScheme;
++    if (_downloadBusy.contains(_zipKey)) {
++      final progress = _downloadProgress[_zipKey];
++      final percent = progress == null ? null : (progress * 100).round();
++      return SizedBox(
++        width: 128,
++        child: Column(
++          crossAxisAlignment: CrossAxisAlignment.stretch,
++          children: [
++            LinearProgressIndicator(value: progress),
++            const SizedBox(height: 4),
++            Text(
++              percent != null
++                  ? l10n.downloadingPercent(percent)
++                  : l10n.downloading,
++              textAlign: TextAlign.center,
++              style: theme.textTheme.labelSmall?.copyWith(
++                color: scheme.onSurfaceVariant,
++              ),
++            ),
++          ],
++        ),
++      );
++    }
++    return FilledButton.tonalIcon(
++      onPressed: () => unawaited(_downloadZip()),
++      icon: const Icon(Icons.folder_zip_outlined, size: 18),
++      label: Text(l10n.downloadAllZip),
++    );
++  }
++
++  /// F2.1：文件行——图标 + 名称 + 大小 + mimeType；操作区三按钮
++  /// （下载 / 打开 / 分享，未下载时打开与分享自动先下载再执行）；
++  /// 下载中行内进度条 + 百分比；下载失败该行降级（复制文件名 + 提示）。
++  Widget _buildFileRow(ThemeData theme, ClipFileInfo info, int index) {
++    final scheme = theme.colorScheme;
++    final l10n = AppLocalizations.of(context);
++    final key = 'file:$index';
++    final busy = _downloadBusy.contains(key);
++    final progress = _downloadProgress[key];
++    final degraded = _degradedFileKeys.contains(key);
++    final displayName = info.name.isNotEmpty ? info.name : l10n.unknownFile;
++    final mimeText = (info.mimeType != null && info.mimeType!.isNotEmpty)
++        ? ' · ${info.mimeType}'
++        : '';
++
++    return Padding(
++      padding: const EdgeInsets.only(bottom: AppSpacing.md),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.stretch,
++        children: [
++          Row(
++            children: [
++              Container(
++                width: 40,
++                height: 40,
++                decoration: BoxDecoration(
++                  color: scheme.primaryContainer,
++                  borderRadius: BorderRadius.circular(AppRadius.sm),
++                ),
++                child: Icon(
++                  _iconForFile(info),
++                  size: 20,
++                  color: scheme.onPrimaryContainer,
++                ),
++              ),
++              const SizedBox(width: AppSpacing.md),
++              Expanded(
++                child: Column(
++                  crossAxisAlignment: CrossAxisAlignment.start,
++                  children: [
++                    Text(
++                      displayName,
++                      style: theme.textTheme.bodyMedium,
++                      maxLines: 2,
++                      overflow: TextOverflow.ellipsis,
++                    ),
++                    Text(
++                      '${_formatBytes(info.size)}$mimeText',
++                      style: theme.textTheme.bodySmall?.copyWith(
++                        color: scheme.onSurfaceVariant,
++                      ),
++                    ),
++                  ],
++                ),
++              ),
++            ],
++          ),
++          const SizedBox(height: AppSpacing.sm),
++          if (busy)
++            Column(
++              crossAxisAlignment: CrossAxisAlignment.stretch,
++              children: [
++                LinearProgressIndicator(value: progress),
++                const SizedBox(height: 4),
++                Text(
++                  progress == null
++                      ? l10n.downloading
++                      : l10n.downloadingPercent((progress * 100).round()),
++                  textAlign: TextAlign.end,
++                  style: theme.textTheme.labelSmall?.copyWith(
++                    color: scheme.onSurfaceVariant,
++                  ),
++                ),
++              ],
++            )
++          else if (degraded)
++            Row(
++              children: [
++                Icon(Icons.error_outline, size: 16, color: scheme.error),
++                const SizedBox(width: AppSpacing.sm),
++                Expanded(
++                  child: Text(
++                    l10n.fileLocalOnlyHint,
++                    style: theme.textTheme.labelSmall?.copyWith(
++                      color: scheme.onSurfaceVariant,
++                    ),
++                  ),
++                ),
++                TextButton.icon(
++                  onPressed: () => unawaited(_copyClipFileName(info)),
++                  icon: const Icon(Icons.copy_rounded, size: 16),
++                  label: Text(l10n.copyFileName),
++                ),
++              ],
++            )
++          else
++            Row(
++              children: [
++                FilledButton.tonalIcon(
++                  onPressed: () =>
++                      unawaited(_downloadByKey(key, fileIndex: index)),
++                  icon: const Icon(Icons.download_rounded, size: 18),
++                  label: Text(l10n.download),
++                ),
++                const SizedBox(width: AppSpacing.sm),
++                OutlinedButton.icon(
++                  onPressed: () =>
++                      unawaited(_openFile(key, fileIndex: index)),
++                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
++                  label: Text(l10n.open),
++                ),
++                const SizedBox(width: AppSpacing.sm),
++                IconButton.outlined(
++                  tooltip: l10n.share,
++                  onPressed: () => unawaited(
++                    _shareFile(key, fileIndex: index, mimeType: info.mimeType),
++                  ),
++                  icon: const Icon(Icons.share_rounded, size: 18),
++                ),
++              ],
++            ),
++        ],
++      ),
++    );
++  }
++
++  /// 单文件卡片（F2.1/F2.2）：存量条目（无 files）与 totalCount==1 的
++  /// 新格式条目共用。按钮从「打开（下载到本机）」升级为三按钮
++  /// （下载 / 打开 / 分享，未下载时打开与分享自动先下载再执行）；
++  /// 下载中进度条 + 百分比；降级态保持 F4 行为（复制文件名 + 提示）。
++  Widget _buildSingleFileCard(ThemeData theme, List<ClipFileInfo>? files) {
++    final scheme = theme.colorScheme;
++    final l10n = AppLocalizations.of(context);
++    final ClipFileInfo? first =
++        (files != null && files.isNotEmpty) ? files.first : null;
++    final displayName = (first != null && first.name.isNotEmpty)
++        ? first.name
++        : _fileDisplayName;
++    final String? mime;
++    if (first != null) {
++      mime = first.mimeType;
++    } else {
++      final dynamic legacyMime = _item.metadata['mimeType'];
++      mime = legacyMime is String && legacyMime.isNotEmpty ? legacyMime : null;
++    }
++    final mimeText = (mime != null && mime.isNotEmpty) ? ' · $mime' : '';
++    final sizeBytes =
++        (first != null && first.size > 0) ? first.size : _item.contentSize;
++
++    // 新格式单文件下载带 fileIndex=0；存量条目不带 fileIndex（key 'file:-1'）
++    final fileIndex = files != null ? 0 : -1;
++    final fileKey = 'file:$fileIndex';
++    final busy = _downloadBusy.contains(fileKey);
++    final progress = _downloadProgress[fileKey];
++
++    final Widget actionArea;
++    if (_fileDegraded) {
++      actionArea = FilledButton.tonalIcon(
++        onPressed: _copyFileName,
++        icon: const Icon(Icons.copy_rounded),
++        label: Text(l10n.copyFileName),
++      );
++    } else if (busy) {
++      final percent = progress == null ? null : (progress * 100).round();
++      actionArea = Column(
++        crossAxisAlignment: CrossAxisAlignment.stretch,
++        children: [
++          LinearProgressIndicator(value: progress),
++          const SizedBox(height: 6),
++          Text(
++            percent != null
++                ? l10n.downloadingPercent(percent)
++                : l10n.downloading,
++            textAlign: TextAlign.center,
++            style: theme.textTheme.labelSmall?.copyWith(
++              color: scheme.onSurfaceVariant,
++            ),
++          ),
++        ],
++      );
++    } else {
++      actionArea = Row(
++        children: [
++          Expanded(
++            child: FilledButton.tonalIcon(
++              onPressed: () =>
++                  unawaited(_downloadByKey(fileKey, fileIndex: fileIndex)),
++              icon: const Icon(Icons.download_rounded, size: 18),
++              label: Text(l10n.download),
++            ),
++          ),
++          const SizedBox(width: AppSpacing.sm),
++          Expanded(
++            child: FilledButton.icon(
++              onPressed: () =>
++                  unawaited(_openFile(fileKey, fileIndex: fileIndex)),
++              icon: const Icon(Icons.open_in_new_rounded, size: 18),
++              label: Text(l10n.open),
++            ),
++          ),
++          const SizedBox(width: AppSpacing.sm),
++          IconButton.filledTonal(
++            tooltip: l10n.share,
++            onPressed: () => unawaited(
++              _shareFile(fileKey, fileIndex: fileIndex,
++                  mimeType: first?.mimeType),
++            ),
++            icon: const Icon(Icons.share_rounded),
++          ),
++        ],
++      );
++    }
++    final String actionHint =
++        _fileDegraded ? l10n.fileLocalOnlyHint : l10n.fileDownloadHint;
+ 
+     return SingleChildScrollView(
+       padding: const EdgeInsets.all(AppSpacing.lg),
+@@ -951,7 +1468,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+                       borderRadius: BorderRadius.circular(AppRadius.md),
+                     ),
+                     child: Icon(
+-                      Icons.insert_drive_file_rounded,
++                      first != null
++                          ? _iconForFile(first)
++                          : Icons.insert_drive_file_rounded,
+                       color: scheme.onPrimaryContainer,
+                     ),
+                   ),
+@@ -968,7 +1487,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+                         ),
+                         const SizedBox(height: AppSpacing.xs),
+                         Text(
+-                          '${_formatBytes(_item.contentSize)}$mimeText',
++                          '${_formatBytes(sizeBytes)}$mimeText',
+                           style: theme.textTheme.bodySmall?.copyWith(
+                             color: scheme.onSurfaceVariant,
+                           ),
+@@ -979,7 +1498,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+                 ],
+               ),
+               const SizedBox(height: AppSpacing.lg),
+-              actionButton,
++              actionArea,
+               const SizedBox(height: AppSpacing.sm),
+               Text(
+                 actionHint,
+@@ -995,6 +1514,84 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
+     );
+   }
+ 
++  /// 文件行图标：按 mime / 扩展名粗分类（图/视频/音频/pdf/压缩包/默认）。
++  IconData _iconForFile(ClipFileInfo info) {
++    final mime = (info.mimeType ?? '').toLowerCase();
++    final name = info.name.toLowerCase();
++    if (mime.startsWith('image/') ||
++        RegExp(r'\.(png|jpe?g|gif|webp|bmp)$').hasMatch(name)) {
++      return Icons.image_outlined;
++    }
++    if (mime.startsWith('video/') ||
++        RegExp(r'\.(mp4|mov|avi|mkv|webm)$').hasMatch(name)) {
++      return Icons.movie_outlined;
++    }
++    if (mime.startsWith('audio/') ||
++        RegExp(r'\.(mp3|wav|flac|aac|ogg|m4a)$').hasMatch(name)) {
++      return Icons.music_note_outlined;
++    }
++    if (mime == 'application/pdf' || name.endsWith('.pdf')) {
++      return Icons.picture_as_pdf_outlined;
++    }
++    if (mime.contains('zip') ||
++        RegExp(r'\.(zip|rar|7z|tar|gz)$').hasMatch(name)) {
++      return Icons.folder_zip_outlined;
++    }
++    return Icons.insert_drive_file_rounded;
++  }
++
++  /// 文件列表总大小兜底（totalSize 缺失 / 为 0 时逐文件求和）。
++  int _sumFileSizes(List<ClipFileInfo> files) {
++    var sum = 0;
++    for (final f in files) {
++      sum += f.size;
++    }
++    return sum;
++  }
++
++  /// F3.2：套餐限制提示条——条目在来源设备超限未同步云端时展示，
++  /// 【了解套餐】跳订阅管理页（/subscriptions，go_router）。
++  Widget _buildLimitBanner(ThemeData theme) {
++    final scheme = theme.colorScheme;
++    final l10n = AppLocalizations.of(context);
++    return Container(
++      margin: const EdgeInsets.fromLTRB(
++        AppSpacing.lg,
++        AppSpacing.md,
++        AppSpacing.lg,
++        0,
++      ),
++      padding: const EdgeInsets.symmetric(
++        horizontal: AppSpacing.md,
++        vertical: AppSpacing.sm,
++      ),
++      decoration: BoxDecoration(
++        color: scheme.errorContainer.withValues(alpha: 0.35),
++        borderRadius: BorderRadius.circular(AppRadius.md),
++      ),
++      child: Row(
++        children: [
++          Icon(Icons.cloud_off_rounded, size: 18, color: scheme.error),
++          const SizedBox(width: AppSpacing.sm),
++          Expanded(
++            child: Text(
++              l10n.limitSyncNotice,
++              style: theme.textTheme.labelMedium?.copyWith(
++                color: scheme.onSurfaceVariant,
++              ),
++            ),
++          ),
++          const SizedBox(width: AppSpacing.sm),
++          TextButton(
++            onPressed: () =>
++                unawaited(context.push(AppRoutes.subscriptionManagement)),
++            child: Text(l10n.viewPlans),
++          ),
++        ],
++      ),
++    );
++  }
++
+   // --------------------------- text / link / code ---------------------------
+ 
+   Widget _buildTextView(ThemeData theme) {
+diff --git a/src/mobile/pubspec.lock b/src/mobile/pubspec.lock
+index 5ab2ce8..4fa83f9 100644
+--- a/src/mobile/pubspec.lock
++++ b/src/mobile/pubspec.lock
+@@ -501,6 +501,14 @@ packages:
+       url: "https://pub.flutter-io.cn"
+     source: hosted
+     version: "2.1.0"
++  open_filex:
++    dependency: "direct main"
++    description:
++      name: open_filex
++      sha256: "9976da61b6a72302cf3b1efbce259200cd40232643a467aac7370addf94d6900"
++      url: "https://pub.flutter-io.cn"
++    source: hosted
++    version: "4.7.0"
+   package_config:
+     dependency: transitive
+     description:
+diff --git a/src/mobile/pubspec.yaml b/src/mobile/pubspec.yaml
+index 36212fc..a98045f 100644
+--- a/src/mobile/pubspec.yaml
++++ b/src/mobile/pubspec.yaml
+@@ -44,6 +44,8 @@ dependencies:
+   # T3.5: 分享收发（系统分享面板发送 / 接收）
+   share_plus: ^10.0.0
+   receive_sharing_intent: ^1.8.0
++  # F2.2: 下载后打开（按 mimeType/扩展名调起系统应用，自带 FileProvider）
++  open_filex: ^4.7.0
+ 
+   # T4.6: 生物识别锁（指纹/面容系统验证）
+   local_auth: ^2.0.0
+diff --git a/src/server/package-lock.json b/src/server/package-lock.json
+index f2fc9f8..16447ca 100644
+--- a/src/server/package-lock.json
++++ b/src/server/package-lock.json
+@@ -9,6 +9,7 @@
+       "version": "0.2.0",
+       "license": "ISC",
+       "dependencies": {
++        "archiver": "^8.0.0",
+         "bcryptjs": "^3.0.3",
+         "compression": "^1.7.4",
+         "cors": "^2.8.6",
+@@ -1146,6 +1147,18 @@
+         "url": "https://opencollective.com/vitest"
+       }
+     },
++    "node_modules/abort-controller": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/abort-controller/-/abort-controller-3.0.0.tgz",
++      "integrity": "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==",
++      "license": "MIT",
++      "dependencies": {
++        "event-target-shim": "^5.0.0"
++      },
++      "engines": {
++        "node": ">=6.5"
++      }
++    },
+     "node_modules/accepts": {
+       "version": "2.0.0",
+       "resolved": "https://registry.npmjs.org/accepts/-/accepts-2.0.0.tgz",
+@@ -1165,6 +1178,42 @@
+       "integrity": "sha512-klpgFSWLW1ZEs8svjfb7g4qWY0YS5imI82dTg+QahUvJ8YqAY0P10Uk8tTyh9ZGuYEZEMaeJYCF5BFuX552hsw==",
+       "license": "MIT"
+     },
++    "node_modules/archiver": {
++      "version": "8.0.0",
++      "resolved": "https://registry.npmjs.org/archiver/-/archiver-8.0.0.tgz",
++      "integrity": "sha512-fV1orZfsnPn9BaSByR/qE67rJCLJEy2Ox5bq7nJh+jquWaNh6Sfec75kJ2T6PtdGUbPQlrVoSVCEOa5SdiTQ1g==",
++      "license": "MIT",
++      "dependencies": {
++        "async": "^3.2.4",
++        "buffer-crc32": "^1.0.0",
++        "is-stream": "^4.0.0",
++        "lazystream": "^1.0.0",
++        "normalize-path": "^3.0.0",
++        "readable-stream": "^4.0.0",
++        "readdir-glob": "^3.0.0",
++        "tar-stream": "^3.0.0",
++        "zip-stream": "^7.0.2"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/archiver/node_modules/readable-stream": {
++      "version": "4.7.0",
++      "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-4.7.0.tgz",
++      "integrity": "sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==",
++      "license": "MIT",
++      "dependencies": {
++        "abort-controller": "^3.0.0",
++        "buffer": "^6.0.3",
++        "events": "^3.3.0",
++        "process": "^0.11.10",
++        "string_decoder": "^1.3.0"
++      },
++      "engines": {
++        "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
++      }
++    },
+     "node_modules/asap": {
+       "version": "2.0.6",
+       "resolved": "https://registry.npmjs.org/asap/-/asap-2.0.6.tgz",
+@@ -1182,6 +1231,12 @@
+         "node": ">=12"
+       }
+     },
++    "node_modules/async": {
++      "version": "3.2.6",
++      "resolved": "https://registry.npmjs.org/async/-/async-3.2.6.tgz",
++      "integrity": "sha512-htCUDlxyyCLMgaM3xXg0C0LW2xqfuQ6p05pCEIsXuyQ+a1koYKTuBMzRNwmybfLgvJDMd0r1LTn4+E0Ti6C2AA==",
++      "license": "MIT"
++    },
+     "node_modules/asynckit": {
+       "version": "0.4.0",
+       "resolved": "https://registry.npmjs.org/asynckit/-/asynckit-0.4.0.tgz",
+@@ -1189,6 +1244,109 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/b4a": {
++      "version": "1.8.1",
++      "resolved": "https://registry.npmjs.org/b4a/-/b4a-1.8.1.tgz",
++      "integrity": "sha512-aiqre1Nr0B/6DgE2N5vwTc+2/oQZ4Wh1t4NznYY4E00y8LCt6NqdRv81so00oo27D8MVKTpUa/MwUUtBLXCoDw==",
++      "license": "Apache-2.0",
++      "peerDependencies": {
++        "react-native-b4a": "*"
++      },
++      "peerDependenciesMeta": {
++        "react-native-b4a": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/balanced-match": {
++      "version": "4.0.4",
++      "resolved": "https://registry.npmjs.org/balanced-match/-/balanced-match-4.0.4.tgz",
++      "integrity": "sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==",
++      "license": "MIT",
++      "engines": {
++        "node": "18 || 20 || >=22"
++      }
++    },
++    "node_modules/bare-events": {
++      "version": "2.9.2",
++      "resolved": "https://registry.npmjs.org/bare-events/-/bare-events-2.9.2.tgz",
++      "integrity": "sha512-AIPKioV7/Y/8KfZ3AAhjPJxLLbY49S64Ym5DakZlUg75qQiTgUq9hEJoEwa4eUezPUlXRy/i5NpsKvo9jgKmoA==",
++      "license": "Apache-2.0",
++      "peerDependencies": {
++        "bare-abort-controller": "*"
++      },
++      "peerDependenciesMeta": {
++        "bare-abort-controller": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/bare-fs": {
++      "version": "4.8.1",
++      "resolved": "https://registry.npmjs.org/bare-fs/-/bare-fs-4.8.1.tgz",
++      "integrity": "sha512-N1nnXdHZAOSstz0XiHikGS4HGMH4CnSwhqWdGQQMqqdvp4Jybm9sE3R1WVnpWVd4SFkc8ryPDBLViNLwiEqECg==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "bare-events": "^2.5.4",
++        "bare-path": "^3.0.0",
++        "bare-stream": "^2.6.4",
++        "bare-url": "^2.2.2",
++        "fast-fifo": "^1.3.2"
++      },
++      "engines": {
++        "bare": ">=1.28.0"
++      },
++      "peerDependencies": {
++        "bare-buffer": "*"
++      },
++      "peerDependenciesMeta": {
++        "bare-buffer": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/bare-path": {
++      "version": "3.1.2",
++      "resolved": "https://registry.npmjs.org/bare-path/-/bare-path-3.1.2.tgz",
++      "integrity": "sha512-ZyKbsuuqK6Ag0K8pX6V5Txq6XeJRvY+wXucnFGRjiyVYP9YWDpIQugk/b+enRYrEYBJaqLzghRQpXPMR7341Nw==",
++      "license": "Apache-2.0"
++    },
++    "node_modules/bare-stream": {
++      "version": "2.13.4",
++      "resolved": "https://registry.npmjs.org/bare-stream/-/bare-stream-2.13.4.tgz",
++      "integrity": "sha512-PcrQ8lVLbiJscNm1Kez+Yp4Gy4AHGcN1lzwjvf5NybWen7VvEgUfyfnXYJ2zNqWnzOfCb1Abq6lH8ti0syQszA==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "b4a": "^1.8.1",
++        "streamx": "^2.25.0",
++        "teex": "^1.0.1"
++      },
++      "peerDependencies": {
++        "bare-abort-controller": "*",
++        "bare-buffer": "*",
++        "bare-events": "*"
++      },
++      "peerDependenciesMeta": {
++        "bare-abort-controller": {
++          "optional": true
++        },
++        "bare-buffer": {
++          "optional": true
++        },
++        "bare-events": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/bare-url": {
++      "version": "2.5.3",
++      "resolved": "https://registry.npmjs.org/bare-url/-/bare-url-2.5.3.tgz",
++      "integrity": "sha512-3absfEzoyFosWT8v83ZcJgbTJxv+S/sI7jBfeCMlUVatSaefRmwweqBhFpMllQv+HTxs/FbbToVOw1c05NORkQ==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "bare-path": "^3.0.0"
++      }
++    },
+     "node_modules/base64-js": {
+       "version": "1.5.1",
+       "resolved": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz",
+@@ -1255,6 +1413,18 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/brace-expansion": {
++      "version": "5.0.9",
++      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz",
++      "integrity": "sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==",
++      "license": "MIT",
++      "dependencies": {
++        "balanced-match": "^4.0.2"
++      },
++      "engines": {
++        "node": "20 || >=22"
++      }
++    },
+     "node_modules/brotli": {
+       "version": "1.3.3",
+       "resolved": "https://registry.npmjs.org/brotli/-/brotli-1.3.3.tgz",
+@@ -1273,6 +1443,39 @@
+         "pako": "~1.0.5"
+       }
+     },
++    "node_modules/buffer": {
++      "version": "6.0.3",
++      "resolved": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz",
++      "integrity": "sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==",
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/feross"
++        },
++        {
++          "type": "patreon",
++          "url": "https://www.patreon.com/feross"
++        },
++        {
++          "type": "consulting",
++          "url": "https://feross.org/support"
++        }
++      ],
++      "license": "MIT",
++      "dependencies": {
++        "base64-js": "^1.3.1",
++        "ieee754": "^1.2.1"
++      }
++    },
++    "node_modules/buffer-crc32": {
++      "version": "1.0.0",
++      "resolved": "https://registry.npmjs.org/buffer-crc32/-/buffer-crc32-1.0.0.tgz",
++      "integrity": "sha512-Db1SbgBS/fg/392AblrMJk97KggmvYhr4pB5ZIMTWtaivCPMWLkmb7m21cJvpvgK+J3nsU2CmmixNBZx4vFj/w==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=8.0.0"
++      }
++    },
+     "node_modules/buffer-equal-constant-time": {
+       "version": "1.0.1",
+       "resolved": "https://registry.npmjs.org/buffer-equal-constant-time/-/buffer-equal-constant-time-1.0.1.tgz",
+@@ -1385,6 +1588,38 @@
+         "url": "https://github.com/sponsors/sindresorhus"
+       }
+     },
++    "node_modules/compress-commons": {
++      "version": "7.0.1",
++      "resolved": "https://registry.npmjs.org/compress-commons/-/compress-commons-7.0.1.tgz",
++      "integrity": "sha512-g0S8KAD8qf4+V//pr3BfB1aBnARLXNz2Gx+jmHU0LEriUuoQUOPOulVquHKTJ8+EAIIO7fhseNDr9wK5Q9FKBQ==",
++      "license": "MIT",
++      "dependencies": {
++        "crc-32": "^1.2.0",
++        "crc32-stream": "^7.0.1",
++        "is-stream": "^4.0.0",
++        "normalize-path": "^3.0.0",
++        "readable-stream": "^4.0.0"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/compress-commons/node_modules/readable-stream": {
++      "version": "4.7.0",
++      "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-4.7.0.tgz",
++      "integrity": "sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==",
++      "license": "MIT",
++      "dependencies": {
++        "abort-controller": "^3.0.0",
++        "buffer": "^6.0.3",
++        "events": "^3.3.0",
++        "process": "^0.11.10",
++        "string_decoder": "^1.3.0"
++      },
++      "engines": {
++        "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
++      }
++    },
+     "node_modules/compressible": {
+       "version": "2.0.18",
+       "resolved": "https://registry.npmjs.org/compressible/-/compressible-2.0.18.tgz",
+@@ -1508,6 +1743,12 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/core-util-is": {
++      "version": "1.0.3",
++      "resolved": "https://registry.npmjs.org/core-util-is/-/core-util-is-1.0.3.tgz",
++      "integrity": "sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==",
++      "license": "MIT"
++    },
+     "node_modules/cors": {
+       "version": "2.8.6",
+       "resolved": "https://registry.npmjs.org/cors/-/cors-2.8.6.tgz",
+@@ -1525,6 +1766,47 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/crc-32": {
++      "version": "1.2.2",
++      "resolved": "https://registry.npmjs.org/crc-32/-/crc-32-1.2.2.tgz",
++      "integrity": "sha512-ROmzCKrTnOwybPcJApAA6WBWij23HVfGVNKqqrZpuyZOHqK2CwHSvpGuyt/UNNvaIjEd8X5IFGp4Mh+Ie1IHJQ==",
++      "license": "Apache-2.0",
++      "bin": {
++        "crc32": "bin/crc32.njs"
++      },
++      "engines": {
++        "node": ">=0.8"
++      }
++    },
++    "node_modules/crc32-stream": {
++      "version": "7.0.1",
++      "resolved": "https://registry.npmjs.org/crc32-stream/-/crc32-stream-7.0.1.tgz",
++      "integrity": "sha512-IBWsY8xznyQrcHn8h4bC8/4ErNke5elzgG8GcqF4RFPw6aHkWWRc7Tgw6upjaTX/CT/yQgqYENkxYsTYN+hW2g==",
++      "license": "MIT",
++      "dependencies": {
++        "crc-32": "^1.2.0",
++        "readable-stream": "^4.0.0"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/crc32-stream/node_modules/readable-stream": {
++      "version": "4.7.0",
++      "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-4.7.0.tgz",
++      "integrity": "sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==",
++      "license": "MIT",
++      "dependencies": {
++        "abort-controller": "^3.0.0",
++        "buffer": "^6.0.3",
++        "events": "^3.3.0",
++        "process": "^0.11.10",
++        "string_decoder": "^1.3.0"
++      },
++      "engines": {
++        "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
++      }
++    },
+     "node_modules/debug": {
+       "version": "4.4.3",
+       "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+@@ -1715,6 +1997,33 @@
+         "node": ">= 0.6"
+       }
+     },
++    "node_modules/event-target-shim": {
++      "version": "5.0.1",
++      "resolved": "https://registry.npmjs.org/event-target-shim/-/event-target-shim-5.0.1.tgz",
++      "integrity": "sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=6"
++      }
++    },
++    "node_modules/events": {
++      "version": "3.3.0",
++      "resolved": "https://registry.npmjs.org/events/-/events-3.3.0.tgz",
++      "integrity": "sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=0.8.x"
++      }
++    },
++    "node_modules/events-universal": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/events-universal/-/events-universal-1.0.1.tgz",
++      "integrity": "sha512-LUd5euvbMLpwOF8m6ivPCbhQeSiYVNb8Vs0fQ8QjXo0JTkEHpz8pxdQf0gStltaPpw0Cca8b39KxvK9cfKRiAw==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "bare-events": "^2.7.0"
++      }
++    },
+     "node_modules/expect-type": {
+       "version": "1.3.0",
+       "resolved": "https://registry.npmjs.org/expect-type/-/expect-type-1.3.0.tgz",
+@@ -1774,6 +2083,12 @@
+       "integrity": "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==",
+       "license": "MIT"
+     },
++    "node_modules/fast-fifo": {
++      "version": "1.3.2",
++      "resolved": "https://registry.npmjs.org/fast-fifo/-/fast-fifo-1.3.2.tgz",
++      "integrity": "sha512-/d9sfos4yxzpwkDkuN7k2SqFKtYNmCTzgfEpz82x34IM9/zc8KGxQoXg1liNC/izpRM/MBdt44Nmx41ZWqk+FQ==",
++      "license": "MIT"
++    },
+     "node_modules/fast-safe-stringify": {
+       "version": "2.1.1",
+       "resolved": "https://registry.npmjs.org/fast-safe-stringify/-/fast-safe-stringify-2.1.1.tgz",
+@@ -2062,6 +2377,26 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/ieee754": {
++      "version": "1.2.1",
++      "resolved": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz",
++      "integrity": "sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==",
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/feross"
++        },
++        {
++          "type": "patreon",
++          "url": "https://www.patreon.com/feross"
++        },
++        {
++          "type": "consulting",
++          "url": "https://feross.org/support"
++        }
++      ],
++      "license": "BSD-3-Clause"
++    },
+     "node_modules/inherits": {
+       "version": "2.0.4",
+       "resolved": "https://registry.npmjs.org/inherits/-/inherits-2.0.4.tgz",
+@@ -2092,6 +2427,24 @@
+       "integrity": "sha512-hvpoI6korhJMnej285dSg6nu1+e6uxs7zG3BYAm5byqDsgJNWwxzM6z6iZiAgQR4TJ30JmBTOwqZUw3WlyH3AQ==",
+       "license": "MIT"
+     },
++    "node_modules/is-stream": {
++      "version": "4.0.1",
++      "resolved": "https://registry.npmjs.org/is-stream/-/is-stream-4.0.1.tgz",
++      "integrity": "sha512-Dnz92NInDqYckGEUJv689RbRiTSEHCQ7wOVeALbkOz999YpqT46yMRIGtSNl2iCL1waAZSx40+h59NV/EwzV/A==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/sindresorhus"
++      }
++    },
++    "node_modules/isarray": {
++      "version": "1.0.0",
++      "resolved": "https://registry.npmjs.org/isarray/-/isarray-1.0.0.tgz",
++      "integrity": "sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ==",
++      "license": "MIT"
++    },
+     "node_modules/js-md5": {
+       "version": "0.8.3",
+       "resolved": "https://registry.npmjs.org/js-md5/-/js-md5-0.8.3.tgz",
+@@ -2150,6 +2503,48 @@
+         "safe-buffer": "^5.0.1"
+       }
+     },
++    "node_modules/lazystream": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/lazystream/-/lazystream-1.0.1.tgz",
++      "integrity": "sha512-b94GiNHQNy6JNTrt5w6zNyffMrNkXZb3KTkCZJb2V1xaEGCk093vkZ2jk3tpaeP33/OiXC+WvK9AxUebnf5nbw==",
++      "license": "MIT",
++      "dependencies": {
++        "readable-stream": "^2.0.5"
++      },
++      "engines": {
++        "node": ">= 0.6.3"
++      }
++    },
++    "node_modules/lazystream/node_modules/readable-stream": {
++      "version": "2.3.8",
++      "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-2.3.8.tgz",
++      "integrity": "sha512-8p0AUk4XODgIewSi0l8Epjs+EVnWiK7NoDIEGU0HhE7+ZyY8D1IMY7odu5lRrFXGg71L15KG8QrPmum45RTtdA==",
++      "license": "MIT",
++      "dependencies": {
++        "core-util-is": "~1.0.0",
++        "inherits": "~2.0.3",
++        "isarray": "~1.0.0",
++        "process-nextick-args": "~2.0.0",
++        "safe-buffer": "~5.1.1",
++        "string_decoder": "~1.1.1",
++        "util-deprecate": "~1.0.1"
++      }
++    },
++    "node_modules/lazystream/node_modules/safe-buffer": {
++      "version": "5.1.2",
++      "resolved": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.1.2.tgz",
++      "integrity": "sha512-Gd2UZBJDkXlY7GbJxfsE8/nvKkUEU1G38c1siN6QP6a9PT9MmHB8GnpscSmMJSoF8LOIrt8ud/wPtojys4G6+g==",
++      "license": "MIT"
++    },
++    "node_modules/lazystream/node_modules/string_decoder": {
++      "version": "1.1.1",
++      "resolved": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.1.1.tgz",
++      "integrity": "sha512-n/ShnvDi6FHbbVfviro+WojiFzv+s8MPMHBczVePfUpDJLwoLT0ht1l4YwBCbi8pJAveEEdnkHyPyTP/mzRfwg==",
++      "license": "MIT",
++      "dependencies": {
++        "safe-buffer": "~5.1.0"
++      }
++    },
+     "node_modules/lightningcss": {
+       "version": "1.32.0",
+       "resolved": "https://registry.npmjs.org/lightningcss/-/lightningcss-1.32.0.tgz",
+@@ -2560,6 +2955,21 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/minimatch": {
++      "version": "10.2.6",
++      "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-10.2.6.tgz",
++      "integrity": "sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==",
++      "license": "BlueOak-1.0.0",
++      "dependencies": {
++        "brace-expansion": "^5.0.8"
++      },
++      "engines": {
++        "node": "18 || 20 || >=22"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/isaacs"
++      }
++    },
+     "node_modules/ms": {
+       "version": "2.1.3",
+       "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+@@ -2665,6 +3075,15 @@
+         "node": ">=6.0.0"
+       }
+     },
++    "node_modules/normalize-path": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/normalize-path/-/normalize-path-3.0.0.tgz",
++      "integrity": "sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=0.10.0"
++      }
++    },
+     "node_modules/object-assign": {
+       "version": "4.1.1",
+       "resolved": "https://registry.npmjs.org/object-assign/-/object-assign-4.1.1.tgz",
+@@ -2961,6 +3380,21 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/process": {
++      "version": "0.11.10",
++      "resolved": "https://registry.npmjs.org/process/-/process-0.11.10.tgz",
++      "integrity": "sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.6.0"
++      }
++    },
++    "node_modules/process-nextick-args": {
++      "version": "2.0.1",
++      "resolved": "https://registry.npmjs.org/process-nextick-args/-/process-nextick-args-2.0.1.tgz",
++      "integrity": "sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==",
++      "license": "MIT"
++    },
+     "node_modules/proxy-addr": {
+       "version": "2.0.7",
+       "resolved": "https://registry.npmjs.org/proxy-addr/-/proxy-addr-2.0.7.tgz",
+@@ -3027,6 +3461,21 @@
+         "node": ">= 6"
+       }
+     },
++    "node_modules/readdir-glob": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/readdir-glob/-/readdir-glob-3.0.0.tgz",
++      "integrity": "sha512-AhNB2KgKeVJr16nK9LLZbJNWnYoT23ZrumNKFDebHBdkC8KHSqWo871JAUhoWC/RtjEVdqNMFpM6qrwRbaUqpw==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "minimatch": "^10.2.2"
++      },
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/yqnn"
++      }
++    },
+     "node_modules/redis": {
+       "version": "6.0.0",
+       "resolved": "https://registry.npmjs.org/redis/-/redis-6.0.0.tgz",
+@@ -3361,6 +3810,17 @@
+         "node": ">=10.0.0"
+       }
+     },
++    "node_modules/streamx": {
++      "version": "2.28.1",
++      "resolved": "https://registry.npmjs.org/streamx/-/streamx-2.28.1.tgz",
++      "integrity": "sha512-zEzXb0s5Cds7tqMH6rhZ05lcJydCWiQPEwiNngVqzsxCc962vLY4Uw+mW7od8kDH258k2Uz/JrOkdIAAhSh9VA==",
++      "license": "MIT",
++      "dependencies": {
++        "events-universal": "^1.0.0",
++        "fast-fifo": "^1.3.2",
++        "text-decoder": "^1.1.0"
++      }
++    },
+     "node_modules/string_decoder": {
+       "version": "1.3.0",
+       "resolved": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.3.0.tgz",
+@@ -3423,6 +3883,36 @@
+         "node": ">=14.18.0"
+       }
+     },
++    "node_modules/tar-stream": {
++      "version": "3.2.1",
++      "resolved": "https://registry.npmjs.org/tar-stream/-/tar-stream-3.2.1.tgz",
++      "integrity": "sha512-nqsEO8zLZJvrOMdEwkA0QdCLFbetHMn95Zqu4fKwX+hkaTWJPZZOrxx/PwtxoK0MMGQmBQNRW3CPs8IFYQz4cQ==",
++      "license": "MIT",
++      "dependencies": {
++        "b4a": "^1.6.4",
++        "bare-fs": "^4.5.5",
++        "fast-fifo": "^1.2.0",
++        "streamx": "^2.15.0"
++      }
++    },
++    "node_modules/teex": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/teex/-/teex-1.0.1.tgz",
++      "integrity": "sha512-eYE6iEI62Ni1H8oIa7KlDU6uQBtqr4Eajni3wX7rpfXD8ysFx8z0+dri+KWEPWpBsxXfxu58x/0jvTVT1ekOSg==",
++      "license": "MIT",
++      "dependencies": {
++        "streamx": "^2.12.5"
++      }
++    },
++    "node_modules/text-decoder": {
++      "version": "1.2.7",
++      "resolved": "https://registry.npmjs.org/text-decoder/-/text-decoder-1.2.7.tgz",
++      "integrity": "sha512-vlLytXkeP4xvEq2otHeJfSQIRyWxo/oZGEbXrtEEF9Hnmrdly59sUbzZ/QgyWuLYHctCHxFF4tRQZNQ9k60ExQ==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "b4a": "^1.6.4"
++      }
++    },
+     "node_modules/tiny-inflate": {
+       "version": "1.0.3",
+       "resolved": "https://registry.npmjs.org/tiny-inflate/-/tiny-inflate-1.0.3.tgz",
+@@ -3808,6 +4298,36 @@
+       "engines": {
+         "node": ">=0.4"
+       }
++    },
++    "node_modules/zip-stream": {
++      "version": "7.0.5",
++      "resolved": "https://registry.npmjs.org/zip-stream/-/zip-stream-7.0.5.tgz",
++      "integrity": "sha512-dSvYKdvLsAHCDqPOhIwk/q5CvuWtTB3Dgpoe0uVEFjTzIOAmsQpprX25InCvrvJsirEbu1OHyy67n/kAj1Sw/w==",
++      "license": "MIT",
++      "dependencies": {
++        "compress-commons": "^7.0.0",
++        "normalize-path": "^3.0.0",
++        "readable-stream": "^4.0.0"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/zip-stream/node_modules/readable-stream": {
++      "version": "4.7.0",
++      "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-4.7.0.tgz",
++      "integrity": "sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==",
++      "license": "MIT",
++      "dependencies": {
++        "abort-controller": "^3.0.0",
++        "buffer": "^6.0.3",
++        "events": "^3.3.0",
++        "process": "^0.11.10",
++        "string_decoder": "^1.3.0"
++      },
++      "engines": {
++        "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
++      }
+     }
+   }
+ }
+diff --git a/src/server/package.json b/src/server/package.json
+index 6fec30f..3f92af0 100644
+--- a/src/server/package.json
++++ b/src/server/package.json
+@@ -23,6 +23,7 @@
+   "author": "",
+   "license": "ISC",
+   "dependencies": {
++    "archiver": "^8.0.0",
+     "bcryptjs": "^3.0.3",
+     "compression": "^1.7.4",
+     "cors": "^2.8.6",
+diff --git a/src/server/src/index.js b/src/server/src/index.js
+index 09ec4c9..7227ede 100644
+--- a/src/server/src/index.js
++++ b/src/server/src/index.js
+@@ -25,18 +25,20 @@ import twoFactorRoutes from './routes/two-factor.js';
+ import deviceRoutes, { pairingRouter } from './routes/device.js';
+ import clipboardRoutes from './routes/clipboard.js';
+ import mediaRoutes from './routes/media.js';
++import storageRoutes from './routes/storage.js';
+ import syncRoutes from './routes/sync.js';
+ import wsRoutes from './routes/ws.js';
+ import authRefreshRoutes from './routes/auth-refresh.js';
+ import { startCleanupScheduler } from './db/cleanup.js';
+ import { startVersionCleanupScheduler } from './utils/versionManager.js';
++import { startFileRetentionCleanup } from './services/fileRetentionCleanup.js';
+ import pool from './db/pool.js';
+ import migrate from './db/migrate.js';
+ import { csrfProtection, handleGetCsrfToken } from './middleware/csrf.js';
+ import chunkedUploadRoutes from './routes/chunked-upload.js';
+ import versionRoutes from './routes/versions.js';
+ import appRoutes from './routes/app.js';
+-import { subscriptionCheck, requireFeature, checkDeviceLimit, checkClipboardLimit, checkFileSizeLimit } from './middleware/subscriptionCheck.js';
++import { subscriptionCheck, requireFeature, checkDeviceLimit, checkClipboardLimit } from './middleware/subscriptionCheck.js';
+ import sessionRoutes from './routes/sessions.js';
+ import notificationRoutes from './routes/notifications.js';
+ import subscriptionRoutes from './routes/subscriptions.js';
+@@ -377,6 +379,11 @@ app.use('/api/sync', authenticateToken, apiLimiter, csrfProtection, subscription
+   req.userId = req.user.userId;
+   next();
+ }, syncRoutes);
++// 存储用量查询（F0.3）：中间件组合与 media 路由对齐（csrf 对 GET/Bearer 自动放行）
++app.use('/api/storage', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
++  req.userId = req.user.userId;
++  next();
++}, storageRoutes);
+ 
+ app.use('/api/upload', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
+   req.userId = req.user.userId;
+@@ -574,6 +581,10 @@ if (!isClusteredPrimary) {
+     // 若无人清理 file_versions 会随每次内容变更无上限膨胀（autoCleanupInterval 此前零引用）
+     startVersionCleanupScheduler();
+ 
++    // 文件保留期自动清理（F3.3）：按套餐 file_retention_days 删除过期 file 条目
++    // （DB 行 + 磁盘文件），顺带清扫分片/上传临时目录的 24h 遗留物
++    startFileRetentionCleanup();
++
+     // 启用查询性能监控（非生产环境或明确启用时）
+     if (config.nodeEnv !== 'production' || process.env.ENABLE_QUERY_MONITORING === 'true') {
+       enableQueryMonitoring();
+diff --git a/src/server/src/middleware/subscriptionCheck.js b/src/server/src/middleware/subscriptionCheck.js
+index 2c307df..c12b8f3 100644
+--- a/src/server/src/middleware/subscriptionCheck.js
++++ b/src/server/src/middleware/subscriptionCheck.js
+@@ -216,33 +216,6 @@ async function checkClipboardLimit(req, res, next) {
+   }
+ }
+ 
+-/**
+- * 文件大小限制中间件
+- */
+-function checkFileSizeLimit(maxSizeMb) {
+-  return async (req, res, next) => {
+-    try {
+-      const plan = req.user.plan;
+-      
+-      if (!plan) return next();
+-      
+-      if (maxSizeMb > plan.maxFileSizeMb) {
+-        return res.status(403).json({
+-          error: `File size exceeds plan limit (max ${plan.maxFileSizeMb}MB)`,
+-          fileSize: maxSizeMb,
+-          maxFileSize: plan.maxFileSizeMb,
+-          upgradeUrl: '/subscribe',
+-        });
+-      }
+-      
+-      next();
+-    } catch (err) {
+-      logger.error('File size limit check error:', err);
+-      res.status(500).json({ error: 'File size limit check failed' });
+-    }
+-  };
+-}
+-
+ /**
+  * 试用期管理：检查是否新用户（给7天Pro试用）
+  */
+@@ -323,7 +296,6 @@ export {
+   requireFeature,
+   checkDeviceLimit,
+   checkClipboardLimit,
+-  checkFileSizeLimit,
+   checkTrialEligibility,
+   downgradeToFree,
+   getPlanByName,
+diff --git a/src/server/src/routes/chunked-upload.js b/src/server/src/routes/chunked-upload.js
+index 70dc388..25a3e98 100644
+--- a/src/server/src/routes/chunked-upload.js
++++ b/src/server/src/routes/chunked-upload.js
+@@ -3,6 +3,7 @@ import multer from 'multer';
+ import { v4 as uuidv4 } from 'uuid';
+ import path from 'path';
+ import fs from 'fs/promises';
++import { createReadStream, createWriteStream } from 'fs';
+ import { fileURLToPath } from 'url';
+ import pool from '../db/pool.js';
+ import { authenticateToken } from '../middleware/auth.js';
+@@ -12,6 +13,7 @@ import { storeUploadSession, getUploadSession, deleteUploadSession } from '../ut
+ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+ import { writeChunk, readChunk, mergeChunks, deleteChunks, getFilePath } from '../utils/storage.js';
+ import { broadcastToUser } from '../ws/server.js';
++import { getPlanLimits, checkUploadQuota, quotaHttpBody } from '../utils/planLimits.js';
+ 
+ // 允许的文件 MIME类型（安全白名单）
+ const ALLOWED_MIME_TYPES = new Set([
+@@ -68,10 +70,14 @@ const __dirname = path.dirname(__filename);
+ 
+ const router = Router();
+ 
++// 存储后端（与 storage.js 同默认值）：非 local（如 s3）时分片目标不在本地盘，
++// chunk 阶段保留 readFile→writeChunk 旧链路，rename/pipe 优化仅对 local 生效
++const STORAGE_BACKEND = process.env.STORAGE_TYPE || 'local';
++
+ // 分片上传目录
+ const CHUNK_DIR = path.join(__dirname, '../../uploads/chunks');
+ const UPLOAD_DIR = path.join(__dirname, '../../uploads');
+-// multer 临时落盘目录（分片先写这里，再由 writeChunk 持久化到最终位置）
++// multer 临时落盘目录（分片先写这里，再由 rename/pipe 零内存拷贝到分片目标）
+ const MULTER_TMP = path.join(CHUNK_DIR, '.multer-tmp');
+ 
+ // 确保目录存在  
+@@ -141,7 +147,7 @@ async function removeUploadSession(uploadId) {
+   }
+ }
+ 
+-// 磁盘存储分片：每个分片先落临时盘（MULTER_TMP），再由 writeChunk 持久化到最终位置，
++// 磁盘存储分片：每个分片先落临时盘（MULTER_TMP），再由 rename/pipe 零内存拷贝到分片目标，
+ // 避免大文件分片全部缓冲进 Node 内存导致 OOM（原 memoryStorage 的隐患）
+ const storage = multer.diskStorage({
+   destination: (req, file, cb) => cb(null, MULTER_TMP),
+@@ -188,41 +194,26 @@ router.post('/init', authenticateToken, apiLimiter, async (req, res) => {
+       });
+     }
+ 
+-    // ========== 文件大小验证（直接查数据库，不依赖中间件缓存）==========
+-    let maxMb = 128; // 默认 Free 128MB
++    // ========== 套餐配额校验（F0.2）：阈值读 DB，admin 不受限，超限统一 413 ==========
+     try {
+-      const userRes = await pool.query(
+-        `SELECT u.is_admin, us.plan_id, sp.max_file_size_mb
+-         FROM users u
+-         LEFT JOIN user_subscriptions us ON u.id = us.user_id AND us.status = 'active'
+-         LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
+-         WHERE u.id = $1`,
+-        [req.userId]
+-      );
+-      if (userRes.rows.length > 0) {
+-        const row = userRes.rows[0];
+-        if (row.is_admin) {
+-          maxMb = 1024; // Admin = 1GB
+-        } else if (row.max_file_size_mb) {
+-          maxMb = row.max_file_size_mb;
+-        }
+-      }
+-    } catch (e) {
+-      logger.warn('[Upload/init] Failed to fetch plan, using default:', { error: e.message });
+-    }
+-
+-    const MAX_FILE_SIZE = maxMb * 1024 * 1024;
+-    logger.info('[Upload/init] Validation:', {
+-      filename, fileSize, mimeType, totalChunks,
+-      maxMb, MAX_FILE_SIZE, userId: req.userId
+-    });
+-    if (fileSize > MAX_FILE_SIZE) {
+-      logger.warn('[Upload/init] File too large:', { fileSize, MAX_FILE_SIZE });
+-      return res.status(400).json({
+-        error: 'File too large',
+-        maxSize: MAX_FILE_SIZE,
+-        receivedSize: fileSize
++      const limits = await getPlanLimits(req.userId);
++      logger.info('[Upload/init] Plan limits:', {
++        filename, fileSize, mimeType, totalChunks,
++        plan: limits.plan, isUnlimited: limits.isUnlimited,
++        maxFileSizeBytes: limits.maxFileSizeBytes,
++        userId: req.userId
+       });
++      // init 阶段按待传文件大小校验单文件 / 单次总大小 / 已用容量（文件数=1）
++      const verdict = await checkUploadQuota(req.userId, [{ size: fileSize, count: 1 }], limits);
++      if (!verdict.allowed) {
++        logger.warn('[Upload/init] Upload rejected by plan quota:', {
++          userId: req.userId, code: verdict.code, fileSize, plan: verdict.plan
++        });
++        return res.status(413).json(quotaHttpBody(verdict));
++      }
++    } catch (quotaErr) {
++      // planLimits 内部已 fail-open，此处异常不应阻塞上传主流程
++      logger.error('[Upload/init] Plan quota check failed unexpectedly', { error: quotaErr.message });
+     }
+     
+     const uploadId = uuidv4();
+@@ -290,11 +281,46 @@ router.post('/chunk/:uploadId/:chunkIndex', authenticateToken, apiLimiter, uploa
+       return res.status(400).json({ error: 'No chunk data found' });
+     }
+     
+-    // 保存分片（通过存储服务）
+-    // diskStorage 模式下 req.file 仅含 .path（无 .buffer），需读盘后写入并清理临时文件
+-    const chunkBuffer = await fs.readFile(req.file.path);
+-    await writeChunk(uploadId, chunkIndexNum, chunkBuffer);
+-    await fs.unlink(req.file.path).catch(() => {});
++    // 保存分片：multer 已将分片落盘至 MULTER_TMP（req.file.path），零内存拷贝搬到分片目标。
++    // 优化前链路（readFile 整片进内存 → writeChunk 二次写盘）存在双倍磁盘 IO + 一次全分片
++    // 内存缓冲；现在 local 后端优先 fs.rename（MULTER_TMP 在 CHUNK_DIR 之下，同盘 rename
++    // 原子且零拷贝），EXDEV（uploads/chunks 为独立挂载点等跨盘场景）降级为流式 pipe（恒定小
++    // 内存）；非 local 后端（如 s3）分片目标不在本地盘，保留原 readFile→writeChunk 链路。
++    if (STORAGE_BACKEND !== 'local') {
++      const chunkBuffer = await fs.readFile(req.file.path);
++      await writeChunk(uploadId, chunkIndexNum, chunkBuffer);
++    } else {
++      const chunkDir = path.join(CHUNK_DIR, uploadId);
++      await fs.mkdir(chunkDir, { recursive: true });
++      const targetPath = path.join(chunkDir, `chunk_${chunkIndexNum}`);
++      try {
++        await fs.rename(req.file.path, targetPath);
++      } catch (renameErr) {
++        if (renameErr?.code !== 'EXDEV') throw renameErr;
++        try {
++          await new Promise((resolve, reject) => {
++            const rs = createReadStream(req.file.path);
++            const ws = createWriteStream(targetPath);
++            let failed = false;
++            const fail = (err) => {
++              if (failed) return;
++              failed = true;
++              rs.destroy();
++              ws.destroy();
++              reject(err);
++            };
++            rs.on('error', fail);
++            ws.on('error', fail);
++            ws.on('finish', resolve);
++            rs.pipe(ws);
++          });
++        } catch (pipeErr) {
++          // 流式复制失败：清理半成品目标文件，避免 mergeChunks 拿到不完整分片
++          await fs.unlink(targetPath).catch(() => {});
++          throw pipeErr;
++        }
++      }
++    }
+     
+     // 记录已上传的分片（使用数组，避免重复）  
+     if (!session.uploadedChunks.includes(chunkIndexNum)) {
+@@ -315,6 +341,10 @@ router.post('/chunk/:uploadId/:chunkIndex', authenticateToken, apiLimiter, uploa
+   } catch (err) {
+     logger.error('Chunk upload error', { error: err.message });
+     res.status(500).json({ error: 'Failed to upload chunk' });
++  } finally {
++    // multer 中间件先于会话/参数校验就把分片落盘 MULTER_TMP：校验失败早退（404/403/410/400）、
++    // 保存成功（rename 后临时文件已不存在，ENOENT 忽略）、异常路径统一在此清理，防临时文件泄漏
++    if (req.file) await fs.unlink(req.file.path).catch(() => {});
+   }
+ });
+ 
+@@ -461,6 +491,39 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
+       const prevMeta = typeof ownership.rows[0].metadata === 'string'
+         ? (() => { try { return JSON.parse(ownership.rows[0].metadata || '{}'); } catch { return {}; } })()
+         : (ownership.rows[0].metadata || {});
++
++      // ── metadata.files 回填（对齐 media.js POST /file 多文件契约，字段名逐字一致）：
++      //    files:[{fileId:落盘名, name:原始文件名, size:字节, mimeType}] + totalSize + totalCount。
++      //    原始文件名/mime 取 init 表单字段（session.filename / session.mimeType，init 必填已
++      //    收集，无需新增字段）。两种情形：
++      //    - 条目无 files（localOnly 占位条目，单文件 chunked 主路径）→ 写入单元素 files 数组；
++      //    - 条目已有 files（多文件+chunked 混合场景）→ 按 fileId 增量合并：同 fileId 就地更新、
++      //      否则追加，绝不删除/覆盖其他文件项；totalSize/totalCount 按 files[] 重算保持一致。
++      //    并发边界：complete 对同一 uploadId 只会执行一次（成功后即删会话），桌面端两步流程
++      //    串行（建条目→分片→complete），同一条目同一时刻仅本 uploadId 在写 metadata，
++      //    简单读改写可接受；若未来允许多 uploadId 并发回填同一条目，需升级为 JSONB 原子
++      //    操作（jsonb_set / ||）或行级锁。
++      const chunkFileEntry = {
++        fileId: finalFilename,
++        name: session.filename,
++        size: session.fileSize,
++        mimeType: session.mimeType,
++      };
++      const prevFiles = Array.isArray(prevMeta.files)
++        ? prevMeta.files.filter((f) => f && typeof f === 'object')
++        : null;
++      let nextFiles;
++      if (prevFiles) {
++        const existedIdx = prevFiles.findIndex((f) => f.fileId === finalFilename);
++        nextFiles = prevFiles.slice();
++        if (existedIdx >= 0) {
++          nextFiles[existedIdx] = { ...prevFiles[existedIdx], ...chunkFileEntry };
++        } else {
++          nextFiles.push(chunkFileEntry);
++        }
++      } else {
++        nextFiles = [chunkFileEntry];
++      }
+       const mergedMetadata = {
+         ...prevMeta,
+         originalName: session.filename,
+@@ -470,7 +533,10 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
+         fileSize: session.fileSize,
+         localOnly: false,
+         fileEncoding: 'server',
+-        source: 'auto-sync'
++        source: 'auto-sync',
++        files: nextFiles,
++        totalSize: nextFiles.reduce((sum, f) => sum + (Number(f.size) || 0), 0),
++        totalCount: nextFiles.length,
+       };
+       const updated = await pool.query(
+         `UPDATE clipboard_items
+diff --git a/src/server/src/routes/media.js b/src/server/src/routes/media.js
+index 5bca011..4e5f2d8 100644
+--- a/src/server/src/routes/media.js
++++ b/src/server/src/routes/media.js
+@@ -4,6 +4,7 @@ import sharp from 'sharp';
+ import { v4 as uuidv4 } from 'uuid';
+ import path from 'path';
+ import fs from 'fs/promises';
++import { createReadStream } from 'fs';
+ import { fileURLToPath } from 'url';
+ import pool from '../db/pool.js';
+ import { broadcastToUser } from '../ws/server.js';
+@@ -12,6 +13,12 @@ import { apiLimiter } from '../middleware/rateLimiter.js';
+ import { createIdempotencyMiddleware } from '../middleware/idempotency.js';
+ import { logger } from '../utils/logger.js';
+ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
++import { getPlanLimits, checkUploadQuota, quotaHttpBody } from '../utils/planLimits.js';
++// archiver@8 为纯 ESM 包：v7 的默认导出工厂函数已移除，改用命名导出类；
++// 核心流式 API（file/abort/finalize/pipe/'error' 事件）与 v7 一致
++import { ZipArchive } from 'archiver';
++// F1.3：DELETE 复用保留期清理的安全文件名判断与落盘文件删除抽象（uploads/files 口径）
++import { deleteStoredClipFiles, isSafeStoredFilename } from '../services/fileRetentionCleanup.js';
+ 
+ const __filename = fileURLToPath(import.meta.url);
+ const __dirname = path.dirname(__filename);
+@@ -263,117 +270,356 @@ router.post('/image', apiLimiter, idempotencyMiddleware, imageUpload.single('ima
+   }
+ });
+ 
+-// POST /api/media/file - Upload a file
+-router.post('/file', apiLimiter, idempotencyMiddleware, fileUpload.single('file'), async (req, res) => {
+-  const tmpPath = req.file?.path;
++// ─── F1.2：多文件上传支持（单文件兼容旧契约）────────────────────────────────
++// text/* 判定：text/* mime 前缀 + 复用模块底部导出的 TEXT_PREVIEW_EXTENSIONS
++// 扩展名白名单（与 /:id/text-preview 端点同一口径，.json/.js 等非 text/* mime
++// 的文本文件同样可生成预览）。TEXT_PREVIEW_EXTENSIONS 在模块底部声明，
++// 本函数仅请求期执行，不存在 TDZ 问题。
++function isTextLikeFile(file) {
++  const ext = path.extname(file.originalname || '').toLowerCase();
++  return (
++    (typeof file.mimetype === 'string' && file.mimetype.startsWith('text/')) ||
++    TEXT_PREVIEW_EXTENSIONS.has(ext)
++  );
++}
++
++// content_preview 截取字节数：列表接口返回该列，控制在 4KB 内
++const MULTIFILE_TEXT_PREVIEW_BYTES = 4 * 1024;
++
++// 读取落盘文件前 4KB（utf8）生成 content_preview。
++// 容错：4KB 边界可能切断多字节字符（解码产生 U+FFFD）、二进制文件前 4KB 为乱码——
++// 剥离尾部替换符与 NUL 字节后原样返回；读取失败由调用方回退为首文件原始名。
++async function readTextPreviewHead(filePath) {
++  const handle = await fs.open(filePath, 'r');
+   try {
+-    if (!req.file) {
+-      return res.status(400).json({ error: 'Please select a file to upload' });
+-    }
++    const { bytesRead, buffer } = await handle.read({
++      buffer: Buffer.alloc(MULTIFILE_TEXT_PREVIEW_BYTES),
++      position: 0,
++      length: MULTIFILE_TEXT_PREVIEW_BYTES,
++    });
++    return buffer
++      .subarray(0, bytesRead)
++      .toString('utf8')
++      .replace(/\ufffd+$/g, '')
++      .replace(/\0/g, '');
++  } finally {
++    await handle.close().catch(() => {});
++  }
++}
+ 
+-    const { sourceDeviceId, expiresAt } = req.body;
++// POST /api/media/file - Upload file(s)
++// F1.2 契约：multipart 同时接受旧字段 `file`（单文件，旧桌面客户端只发此字段，
++// 绝不能删——换成 .array('files') 会让全部旧客户端 400）与新字段 `files`
++//（多文件数组），handler 内归一化为统一数组后再分流。
++// maxCount=50 决策：传输层上限提到 50（= Enterprise 档 max_files_per_clip），
++// 保证 Free(3)/Pro(10)/Enterprise(50) 的合法多文件请求都能到达业务配额校验，
++// 超限时返回结构化 413 TOO_MANY_FILES（quotaHttpBody），而不是 multer 的通用
++// 错误；>50 属滥用，由 multer 在传输层提前中止（LIMIT_UNEXPECTED_FILE，
++// 已落盘临时文件由 multer abortWithError 自动清理）。DoS 面可控：单文件 1GB
++// 硬上限 + apiLimiter 限速 + diskStorage 落盘（不占内存）+ 业务配额 fail-closed；
++// 残留 tmp 另有 fileRetentionCleanup 定时清扫兜底。
++router.post(
++  '/file',
++  apiLimiter,
++  idempotencyMiddleware,
++  fileUpload.fields([
++    { name: 'files', maxCount: 50 }, // 新字段：多文件数组（业务上限以 checkUploadQuota 为准）
++    { name: 'file', maxCount: 1 },   // 旧字段：单文件（旧客户端契约，逐字段兼容）
++  ]),
++  async (req, res) => {
++    // 归一化：新旧字段合并为统一数组（files 字段在前，file 字段在后）
++    req.files = [...(req.files?.files || []), ...(req.files?.file || [])];
++    const tmpPaths = req.files.map((f) => f?.path).filter(Boolean);
++    const movedPaths = []; // 已 rename 进正式目录的最终文件路径（异常回滚删除，防泄漏）
++    let succeeded = false; // DB 条目落库成功后置 true：此后磁盘文件必须保留（与 DB 一致）
++    try {
++      if (req.files.length === 0) {
++        return res.status(400).json({ error: 'Please select a file to upload' });
++      }
+ 
+-    if (!sourceDeviceId || !isValidUUID(sourceDeviceId)) {
+-      return res.status(400).json({ error: 'Invalid sourceDeviceId' });
+-    }
++      // ========== 套餐配额校验（F0.2/F1.2）：multer 已拿到文件大小，正式落盘/入库前拦截。
++      // multer diskStorage 先写 TMP_DIR（fileUpload limits 1GB 兜底），超限时临时文件由
++      // 本 handler 的 finally 统一 unlink 清理，不会移入正式目录。
++      // 单文件调用形状与 F0.2 完全一致（[{ size, count: 1 }]）；多文件按 N 个文件
++      // 逐个计数，文件数 / 单次总大小 / 已用容量全部由 checkUploadQuota 判定
++      //（业务上限以套餐 max_files_per_clip 为准，非 multer maxCount）。
++      try {
++        const limits = await getPlanLimits(req.userId);
++        const verdict = await checkUploadQuota(
++          req.userId,
++          req.files.map((f) => ({ size: f.size, count: 1 })),
++          limits
++        );
++        if (!verdict.allowed) {
++          logger.warn('File upload rejected by plan quota', {
++            userId: req.userId,
++            code: verdict.code,
++            size: req.files.reduce((sum, f) => sum + (Number(f.size) || 0), 0),
++            count: req.files.length,
++            plan: verdict.plan,
++          });
++          // 413 时所有文件仍在 TMP_DIR，由 finally 统一清理
++          return res.status(413).json(quotaHttpBody(verdict));
++        }
++      } catch (quotaErr) {
++        // planLimits 内部已 fail-open，此处异常不应阻塞上传主流程
++        logger.error('Plan quota check failed unexpectedly', { error: quotaErr.message });
++      }
+ 
+-    // Verify device belongs to user
+-    const deviceCheck = await pool.query(
+-      'SELECT id FROM devices WHERE id = $1 AND user_id = $2',
+-      [sourceDeviceId, req.userId]
+-    );
+-    if (deviceCheck.rows.length === 0) {
+-      return res.status(404).json({ error: 'Device not found' });
+-    }
++      const { sourceDeviceId, expiresAt } = req.body;
+ 
+-    // Save file：将临时文件原子 rename 到正式目录（不拷贝进内存，P2 修复 OOM）
+-    const ext = path.extname(req.file.originalname).toLowerCase();
+-    const filename = `${uuidv4()}${ext}`;
+-    const filePath = path.join(FILE_DIR, filename);
+-    await fs.rename(req.file.path, filePath);
++      if (!sourceDeviceId || !isValidUUID(sourceDeviceId)) {
++        return res.status(400).json({ error: 'Invalid sourceDeviceId' });
++      }
+ 
+-    // Save to database
+-    const result = await pool.query(
+-      `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata, expires_at)
+-       VALUES ($1, $2, 'file', $3, $4, $5, $6, $7)
+-       RETURNING id, content_type, content_preview, content_size, is_favorite, expires_at, created_at`,
+-      [
+-        req.userId,
+-        sourceDeviceId,
+-        filename,
+-        req.file.originalname,
+-        req.file.size,
+-        JSON.stringify({
+-          originalName: req.file.originalname,
+-          mimeType: req.file.mimetype,
+-          extension: ext,
+-        }),
+-        expiresAt || null,
+-      ]
+-    );
++      // Verify device belongs to user
++      const deviceCheck = await pool.query(
++        'SELECT id FROM devices WHERE id = $1 AND user_id = $2',
++        [sourceDeviceId, req.userId]
++      );
++      if (deviceCheck.rows.length === 0) {
++        return res.status(404).json({ error: 'Device not found' });
++      }
+ 
+-    const item = result.rows[0];
++      // 落盘：将每个临时文件原子 rename 到正式目录（不拷贝进内存，P2 修复 OOM）。
++      // file 条目统一进 FILE_DIR（mime 分流与现有单文件逻辑一致，N 个文件 N 次 rename）。
++      const saved = req.files.map((f) => {
++        const ext = path.extname(f.originalname).toLowerCase();
++        const filename = `${uuidv4()}${ext}`;
++        return { file: f, ext, filename, filePath: path.join(FILE_DIR, filename) };
++      });
++      for (const s of saved) {
++        await fs.rename(s.file.path, s.filePath);
++        movedPaths.push(s.filePath);
++      }
+ 
+-    // Update device sync state
+-    await pool.query(
+-      `INSERT INTO device_sync_state (device_id, last_synced_item_id, last_sync_at)
+-       VALUES ($1, $2, NOW())
+-       ON CONFLICT (device_id) DO UPDATE
+-       SET last_synced_item_id = $2, last_sync_at = NOW()`,
+-      [sourceDeviceId, item.id]
+-    );
++      const first = saved[0];
++      const isSingle = saved.length === 1;
++      const totalSize = saved.reduce((sum, s) => sum + (Number(s.file.size) || 0), 0);
++
++      // content_preview：单文件保持旧语义（原始文件名）；多文件取第一个 text/*
++      // 文件落盘后的前 4KB 文本，全部非文本则存首文件原始名
++      let contentPreview = first.file.originalname;
++      if (!isSingle) {
++        const firstText = saved.find((s) => isTextLikeFile(s.file));
++        if (firstText) {
++          try {
++            contentPreview = await readTextPreviewHead(firstText.filePath);
++          } catch (previewErr) {
++            logger.warn('Multi-file text preview read failed, falling back to original name', {
++              error: previewErr.message,
++            });
++          }
++        }
++      }
+ 
+-    // Broadcast
+-    broadcastToUser(req.userId, {
+-      type: 'new_clipboard',
+-      item: {
++      // metadata：单文件保持旧字段（originalName/mimeType/extension，与现状逐字段一致）；
++      // 多文件聚合 files/totalSize/totalCount/fileEncoding，并保留 originalName/
++      // mimeType/extension（首文件口径，兼容 text-preview / download 等现有消费方）。
++      const metadata = isSingle
++        ? {
++            originalName: first.file.originalname,
++            mimeType: first.file.mimetype,
++            extension: first.ext,
++          }
++        : {
++            files: saved.map((s) => ({
++              fileId: s.filename, // 落盘文件名（uuid.ext），download 端按 content_encrypted 找文件
++              name: s.file.originalname,
++              size: s.file.size,
++              mimeType: s.file.mimetype,
++            })),
++            totalSize,
++            totalCount: saved.length,
++            fileEncoding: 'server',
++            originalName: first.file.originalname,
++            mimeType: first.file.mimetype,
++            extension: first.ext,
++          };
++
++      // Save to database
++      // content_encrypted = 首文件落盘文件名（uuid.ext）：服务端多处把该列当文件名
++      // 消费（download / delete / text-preview），多文件聚合也绝不改成 JSON。
++      const result = await pool.query(
++        `INSERT INTO clipboard_items (user_id, source_device_id, content_type, content_encrypted, content_preview, content_size, metadata, expires_at)
++         VALUES ($1, $2, 'file', $3, $4, $5, $6, $7)
++         RETURNING id, content_type, content_preview, content_size, is_favorite, expires_at, created_at`,
++        [
++          req.userId,
++          sourceDeviceId,
++          first.filename,
++          contentPreview,
++          isSingle ? first.file.size : totalSize,
++          JSON.stringify(metadata),
++          expiresAt || null,
++        ]
++      );
++
++      const item = result.rows[0];
++      // 条目已落库：磁盘文件与 DB 绑定，此后任何异常都不得回滚删除文件
++      succeeded = true;
++
++      // Update device sync state
++      await pool.query(
++        `INSERT INTO device_sync_state (device_id, last_synced_item_id, last_sync_at)
++         VALUES ($1, $2, NOW())
++         ON CONFLICT (device_id) DO UPDATE
++         SET last_synced_item_id = $2, last_sync_at = NOW()`,
++        [sourceDeviceId, item.id]
++      );
++
++      // Broadcast：多文件也只广播一个聚合条目（单条 new_clipboard）
++      broadcastToUser(req.userId, {
++        type: 'new_clipboard',
++        item: {
++          id: item.id,
++          contentType: 'file',
++          contentPreview,
++          contentSize: isSingle ? first.file.size : totalSize,
++          createdAt: item.created_at,
++          sourceDeviceId,
++        },
++      });
++
++      logger.info('File uploaded', {
++        itemId: item.id,
++        filename: first.filename,
++        size: isSingle ? first.file.size : totalSize,
++        totalCount: saved.length,
++      });
++
++      // 审计日志：记录文件上传
++      await logAuditEvent({
++        userId: req.user?.userId,
++        action: AUDIT_ACTIONS.UPLOAD_FILE,
++        resourceType: 'clipboard_item',
++        resourceId: item.id,
++        details: {
++          contentType: 'file',
++          filename: first.filename,
++          originalName: first.file.originalname,
++          size: isSingle ? first.file.size : totalSize,
++          mimeType: first.file.mimetype,
++          ...(isSingle ? {} : { totalCount: saved.length, totalSize }),
++        },
++        ipAddress: req.ip,
++        userAgent: req.get('user-agent'),
++      }).catch((err) => logger.error('Audit log failed', { error: err.message }));
++
++      // 响应：单文件（无论走 file 还是 files 单个）与现状逐字段一致；
++      // 多文件在旧字段基础上新增 files/totalSize/totalCount
++      res.status(201).json({
+         id: item.id,
+         contentType: 'file',
+-        contentPreview: req.file.originalname,
+-        contentSize: req.file.size,
++        filename: first.filename,
++        originalName: first.file.originalname,
++        size: first.file.size,
++        mimeType: first.file.mimetype,
+         createdAt: item.created_at,
+-        sourceDeviceId,
+-      },
++        ...(isSingle
++          ? {}
++          : {
++              files: saved.map((s) => ({
++                fileId: s.filename,
++                filename: s.filename,
++                name: s.file.originalname,
++                size: s.file.size,
++                mimeType: s.file.mimetype,
++              })),
++              totalSize,
++              totalCount: saved.length,
++            }),
++      });
++    } catch (err) {
++      logger.error('Upload file error', { error: err.message });
++      res.status(500).json({ error: 'File upload failed' });
++    } finally {
++      // 临时文件清理：rename 成功则对应 temp 已不存在（ENOENT 被忽略）；失败则清理残留
++      await Promise.all(tmpPaths.map((p) => fs.unlink(p).catch(() => {})));
++      // 异常路径回滚：删除已 rename 进正式目录的文件，防止半成品泄漏（落库成功时跳过）
++      if (!succeeded) {
++        await Promise.all(movedPaths.map((p) => fs.unlink(p).catch(() => {})));
++      }
++    }
++  }
++);
++
++// ─── F1.3：download 多文件支持 ──────────────────────────────────────────────
++// zip 打包预检上限：metadata.files[].size 总和超过该值 → 400，要求按 fileIndex 逐个下载
++const MULTIFILE_ZIP_MAX_BYTES = 100 * 1024 * 1024; // 100MB
++
++// 磁盘文件存在性检查（与旧 download 内联 access+stat.isFile 检查逐行为等价的抽象：
++// 目录 / 缺失 / 空文件名拼出目录本身等情况均返回 false → 404）
++async function isReadableFileOnDisk(filePath) {
++  try {
++    await fs.access(filePath);
++    const existsStat = await fs.stat(filePath);
++    return existsStat.isFile();
++  } catch {
++    return false;
++  }
++}
++
++// fileIndex 查询参数校验：undefined → 未传(null)；非负整数字符串且 < total → 有效下标；
++// 其余（非数字 / 负号 / 空串 / 数组重复参数 / 越界）→ 无效(-1)
++function parseFileIndex(rawIndex, total) {
++  if (rawIndex === undefined) return null;
++  if (!/^\d+$/.test(String(rawIndex))) return -1;
++  const idx = parseInt(rawIndex, 10);
++  return idx < total ? idx : -1;
++}
++
++// 单文件下载（200 全量 / 206 Range）。逻辑与改造前 download 的两个分支逐行等价，
++// 仅把 mimeType / 下载名参数化：旧条目传 metadata 口径，多文件条目传 files[n] 口径。
++async function serveFileWithRange(req, res, filePath, { mimeType, downloadName }) {
++  const stat = await fs.stat(filePath);
++  const fileSize = stat.size;
++  const range = req.headers.range;
++
++  if (range) {
++    // Range request for partial content (resume support)
++    const parts = range.replace(/bytes=/, '').split('-');
++    const start = parseInt(parts[0], 10);
++    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
++    const chunkSize = end - start + 1;
++
++    res.writeHead(206, {
++      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
++      'Accept-Ranges': 'bytes',
++      'Content-Length': chunkSize,
++      'Content-Type': mimeType || 'application/octet-stream',
++      'Content-Disposition': `attachment; filename="${encodeURIComponent(downloadName || 'download')}"`,
+     });
+ 
+-    logger.info('File uploaded', { itemId: item.id, filename, size: req.file.size });
+-    
+-    // 审计日志：记录文件上传
+-    await logAuditEvent({
+-      userId: req.user?.userId,
+-      action: AUDIT_ACTIONS.UPLOAD_FILE,
+-      resourceType: 'clipboard_item',
+-      resourceId: item.id,
+-      details: {
+-        contentType: 'file',
+-        filename,
+-        originalName: req.file.originalname,
+-        size: req.file.size,
+-        mimeType: req.file.mimetype,
+-      },
+-      ipAddress: req.ip,
+-      userAgent: req.get('user-agent'),
+-    }).catch(err => logger.error('Audit log failed', { error: err.message }));
+-    
+-    res.status(201).json({
+-      id: item.id,
+-      contentType: 'file',
+-      filename,
+-      originalName: req.file.originalname,
+-      size: req.file.size,
+-      mimeType: req.file.mimetype,
+-      createdAt: item.created_at,
++    const stream = createReadStream(filePath, { start, end });
++    stream.on('error', (streamErr) => {
++      logger.error('Download stream error', { error: streamErr.message, filePath });
++      res.destroy();
+     });
+-  } catch (err) {
+-    logger.error('Upload file error', { error: err.message });
+-    res.status(500).json({ error: 'File upload failed' });
+-  } finally {
+-    // rename 成功则 temp 已不存在（ENOENT 被忽略）；失败则清理残留临时文件
+-    if (tmpPath) await fs.unlink(tmpPath).catch(() => {});
++    stream.pipe(res);
++  } else {
++    res.writeHead(200, {
++      'Content-Length': fileSize,
++      'Content-Type': mimeType || 'application/octet-stream',
++      'Content-Disposition': `attachment; filename="${encodeURIComponent(downloadName || 'download')}"`,
++      'Accept-Ranges': 'bytes',
++    });
++
++    createReadStream(filePath)
++      .on('error', (streamErr) => {
++        logger.error('Download stream error', { error: streamErr.message, filePath });
++        res.destroy();
++      })
++      .pipe(res);
+   }
+-});
++}
+ 
+ // GET /api/media/:id/download - Download file/image (with Range support)
++// F1.3 多文件条目（metadata.files，F1.2 上传契约）扩展：
++//   - ?fileIndex=n → 下载第 n 个文件（Range 逻辑与单文件完全一致），非法/越界 → 400
++//   - 无 fileIndex 且 files.length>1 → 流式 zip 打包（archiver zlib level=1，不落临时
++//     文件、不缓冲整体；打包前按 metadata.files[].size 预检 ≤100MB；忽略 Range 头）
++// 旧单文件条目（无 metadata.files）与 image 走原路径，行为 100% 不变。
+ router.get('/:id/download', apiLimiter, async (req, res) => {
+   try {
+     const { id } = req.params;
+@@ -396,6 +642,97 @@ router.get('/:id/download', apiLimiter, async (req, res) => {
+     const filename = item.content_encrypted; // stored filename
+     const metadata = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+ 
++    // F1.3：仅 file 条目且 metadata.files 为数组时进入多文件分支；其余条目原样走旧路径
++    const multiFiles =
++      item.content_type === 'file' && Array.isArray(metadata?.files) ? metadata.files : null;
++
++    if (multiFiles) {
++      const idx = parseFileIndex(req.query.fileIndex, multiFiles.length);
++
++      // ── 分支 1：fileIndex 指定单个文件下载 ──
++      if (req.query.fileIndex !== undefined) {
++        if (idx === -1) {
++          return res.status(400).json({ error: 'Invalid fileIndex' });
++        }
++        const entry = multiFiles[idx];
++        // fileId 是服务端生成的落盘文件名，防御性按安全文件名口径校验（防 DB 数据被注入路径）
++        if (!isSafeStoredFilename(entry?.fileId)) {
++          return res.status(404).json({ error: 'File not found on disk' });
++        }
++        const entryPath = path.join(FILE_DIR, entry.fileId);
++        if (!(await isReadableFileOnDisk(entryPath))) {
++          return res.status(404).json({ error: 'File not found on disk' });
++        }
++        // 下载名 / Content-Type 取该文件自身口径（metadata.originalName/mimeType 是首文件口径）
++        await serveFileWithRange(req, res, entryPath, {
++          mimeType: entry.mimeType,
++          downloadName: entry.name,
++        });
++        return;
++      }
++
++      // ── 分支 2：多文件（>1）无 fileIndex → 流式 zip ──
++      // files.length===1 的聚合形状按 F1.2 契约不会产生（上传端单文件写旧 metadata），
++      // 防御性落到下方旧路径：content_encrypted 即该文件，口径一致。
++      if (multiFiles.length > 1) {
++        // 打包前预检（只读 metadata，不读文件内容）：files[].size 总和 ≤ 100MB
++        const totalBytes = multiFiles.reduce((sum, f) => sum + (Number(f?.size) || 0), 0);
++        if (totalBytes > MULTIFILE_ZIP_MAX_BYTES) {
++          return res.status(400).json({
++            error: 'zip too large, please download files individually by fileIndex',
++          });
++        }
++
++        // 逐个校验落盘文件存在（任一缺失 → 404，避免 zip 中途截断）；zip 内条目名做
++        // basename 归一化（剥离 / \ 与路径段，防 zip-slip 下游解压风险，正常文件名无损）
++        const zipEntries = [];
++        for (const f of multiFiles) {
++          if (!isSafeStoredFilename(f?.fileId)) {
++            return res.status(404).json({ error: 'File not found on disk' });
++          }
++          const entryPath = path.join(FILE_DIR, f.fileId);
++          if (!(await isReadableFileOnDisk(entryPath))) {
++            return res.status(404).json({ error: 'File not found on disk' });
++          }
++          const entryName =
++            String(f?.name || '').split(/[\\/]/).pop() || `file-${zipEntries.length + 1}`;
++          zipEntries.push({ entryPath, entryName });
++        }
++
++        const zipName = metadata?.originalName ? `${metadata.originalName}.zip` : `${id}.zip`;
++        res.writeHead(200, {
++          'Content-Type': 'application/zip',
++          'Content-Disposition': `attachment; filename="${encodeURIComponent(zipName)}"`,
++        });
++
++        const archive = new ZipArchive({ zlib: { level: 1 } });
++        // archive 内部逐文件 createReadStream，读盘/压缩错误统一走 'error' → 销毁连接
++        archive.on('error', (archiveErr) => {
++          logger.error('Zip archive error', { error: archiveErr.message, itemId: id });
++          res.destroy();
++        });
++        archive.on('warning', (warnErr) => {
++          logger.warn('Zip archive warning', { error: warnErr.message, itemId: id });
++        });
++        // 客户端中断（连接关闭且响应未写完）：中止归档，防止内部文件流继续读取（fd 泄漏）
++        res.on('close', () => {
++          if (!res.writableEnded) {
++            logger.warn('Zip download aborted by client', { itemId: id });
++            archive.abort();
++          }
++        });
++
++        for (const { entryPath, entryName } of zipEntries) {
++          archive.file(entryPath, { name: entryName });
++        }
++        archive.pipe(res);
++        // 必须显式 finalize：宣告条目追加完毕，写出 central directory 并结束归档，
++        // 否则响应永不结束（客户端超时挂起）
++        archive.finalize();
++        return;
++      }
++    }
++
+     let filePath;
+     if (item.content_type === 'image') {
+       filePath = path.join(IMAGE_DIR, filename);
+@@ -406,45 +743,18 @@ router.get('/:id/download', apiLimiter, async (req, res) => {
+     }
+ 
+     // Check file exists
+-    try {
+-      await fs.access(filePath);
+-    } catch {
++    // 注意：filename 为空时 path.join(IMAGE_DIR, '') 会拼出目录本身，而 fs.access(目录)
++    // 同样返回成功，随后 createReadStream 读目录会抛 EISDIR。该错误走流的 'error' 事件
++    // 而非 throw，try/catch 接不住；若不监听就会 uncaughtException 崩掉整个后端进程。
++    //（isReadableFileOnDisk 与原内联检查等价：目录 stat.isFile() === false → 404）
++    if (!(await isReadableFileOnDisk(filePath))) {
+       return res.status(404).json({ error: 'File not found on disk' });
+     }
+ 
+-    const stat = await fs.stat(filePath);
+-    const fileSize = stat.size;
+-    const range = req.headers.range;
+-
+-    if (range) {
+-      // Range request for partial content (resume support)
+-      const parts = range.replace(/bytes=/, '').split('-');
+-      const start = parseInt(parts[0], 10);
+-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+-      const chunkSize = end - start + 1;
+-
+-      res.writeHead(206, {
+-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+-        'Accept-Ranges': 'bytes',
+-        'Content-Length': chunkSize,
+-        'Content-Type': metadata?.mimeType || 'application/octet-stream',
+-        'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata?.originalName || 'download')}"`,
+-      });
+-
+-      const { createReadStream } = await import('fs');
+-      const stream = createReadStream(filePath, { start, end });
+-      stream.pipe(res);
+-    } else {
+-      res.writeHead(200, {
+-        'Content-Length': fileSize,
+-        'Content-Type': metadata?.mimeType || 'application/octet-stream',
+-        'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata?.originalName || 'download')}"`,
+-        'Accept-Ranges': 'bytes',
+-      });
+-
+-      const { createReadStream } = await import('fs');
+-      createReadStream(filePath).pipe(res);
+-    }
++    await serveFileWithRange(req, res, filePath, {
++      mimeType: metadata?.mimeType,
++      downloadName: metadata?.originalName,
++    });
+   } catch (err) {
+     logger.error('Download error', { error: err.message });
+     res.status(500).json({ error: 'Download failed' });
+@@ -477,23 +787,67 @@ router.get('/:id/preview', apiLimiter, async (req, res) => {
+     }
+ 
+     // Serve thumbnail
+-    const thumbPath = path.join(IMAGE_DIR, 'thumbnails', metadata?.thumbnail || '');
+-    try {
+-      await fs.access(thumbPath);
+-      res.setHeader('Content-Type', 'image/jpeg');
+-      res.setHeader('Cache-Control', 'public, max-age=86400');
+-      const { createReadStream } = await import('fs');
+-      createReadStream(thumbPath).pipe(res);
+-    } catch {
++    // 注意（崩溃根因）：metadata.thumbnail 为空时，path.join(..., 'thumbnails', '')
++    // 会拼出 thumbnails 目录本身，而 fs.access(目录) 同样返回成功，随后
++    // createReadStream 读目录即抛 EISDIR。该错误走流的 'error' 事件而非 throw，
++    // try/catch 接不住；若无 .on('error') 监听就会 uncaughtException 崩掉整个后端进程。
++    const thumbName = metadata?.thumbnail;
++    const thumbPath = thumbName ? path.join(IMAGE_DIR, 'thumbnails', thumbName) : null;
++    let served = false;
++
++    if (thumbPath) {
++      try {
++        await fs.access(thumbPath);
++        const thumbStat = await fs.stat(thumbPath);
++        if (thumbStat.isFile()) {
++          res.setHeader('Content-Type', 'image/jpeg');
++          res.setHeader('Cache-Control', 'public, max-age=86400');
++          const { createReadStream } = await import('fs');
++          createReadStream(thumbPath)
++            .on('error', (streamErr) => {
++              logger.error('Preview thumbnail stream error', {
++                error: streamErr.message,
++                thumbPath,
++              });
++              res.destroy();
++            })
++            .pipe(res);
++          served = true;
++        }
++      } catch {
++        /* 缩略图不可用，回退到原图 */
++      }
++    }
++
++    if (!served) {
+       // Fallback to full image
+-      const imgPath = path.join(IMAGE_DIR, item.content_encrypted);
++      const imgName = item.content_encrypted;
++      const imgPath = imgName ? path.join(IMAGE_DIR, imgName) : null;
+       try {
+-        await fs.access(imgPath);
+-        res.setHeader('Content-Type', metadata?.mimeType || 'image/jpeg');
+-        res.setHeader('Cache-Control', 'public, max-age=86400');
+-        const { createReadStream } = await import('fs');
+-        createReadStream(imgPath).pipe(res);
++        if (imgPath) {
++          await fs.access(imgPath);
++          const imgStat = await fs.stat(imgPath);
++          if (imgStat.isFile()) {
++            res.setHeader('Content-Type', metadata?.mimeType || 'image/jpeg');
++            res.setHeader('Cache-Control', 'public, max-age=86400');
++            const { createReadStream } = await import('fs');
++            createReadStream(imgPath)
++              .on('error', (streamErr) => {
++                logger.error('Preview image stream error', {
++                  error: streamErr.message,
++                  imgPath,
++                });
++                res.destroy();
++              })
++              .pipe(res);
++            served = true;
++          }
++        }
+       } catch {
++        /* 落到 404 */
++      }
++
++      if (!served) {
+         return res.status(404).json({ error: 'Image not found' });
+       }
+     }
+@@ -549,12 +903,32 @@ router.get('/:id/text-preview', apiLimiter, async (req, res) => {
+       return res.status(400).json({ error: 'Only file types support text preview' });
+     }
+ 
+-    const ext = (metadata?.extension || '').toLowerCase();
++    // F1.3：多文件条目（metadata.files，F1.2 契约）支持 ?fileIndex=n——缺省时与改造前
++    // 完全一致（metadata.extension / content_encrypted 均为首文件口径）；fileIndex 指定
++    // 时预览对应文件（落盘名 files[n].fileId，扩展名/展示名取 files[n].name）。
++    let ext = (metadata?.extension || '').toLowerCase();
++    let storedName = item.content_encrypted;
++    let previewFileName = metadata?.originalName || item.content_preview;
++
++    if (Array.isArray(metadata?.files) && req.query.fileIndex !== undefined) {
++      const idx = parseFileIndex(req.query.fileIndex, metadata.files.length);
++      if (idx === -1) {
++        return res.status(400).json({ error: 'Invalid fileIndex' });
++      }
++      const entry = metadata.files[idx];
++      if (!isSafeStoredFilename(entry?.fileId)) {
++        return res.status(404).json({ error: 'File not found on disk' });
++      }
++      storedName = entry.fileId;
++      ext = path.extname(String(entry?.name || '')).toLowerCase();
++      previewFileName = entry?.name || previewFileName;
++    }
++
+     if (!TEXT_PREVIEW_EXTENSIONS.has(ext)) {
+       return res.status(400).json({ error: 'This file type does not support text preview', ext });
+     }
+ 
+-    const filePath = path.join(FILE_DIR, item.content_encrypted);
++    const filePath = path.join(FILE_DIR, storedName);
+     try {
+       await fs.access(filePath);
+     } catch {
+@@ -605,7 +979,7 @@ router.get('/:id/text-preview', apiLimiter, async (req, res) => {
+ 
+     res.json({
+       id: item.id,
+-      fileName: metadata?.originalName || item.content_preview,
++      fileName: previewFileName,
+       extension: ext,
+       language: CODE_SYNTAX_MAP[ext] || 'text',
+       encoding,
+@@ -647,12 +1021,18 @@ router.delete('/:id', apiLimiter, async (req, res) => {
+     // Delete physical file
+     if (item.content_type === 'image') {
+       const imgPath = path.join(IMAGE_DIR, item.content_encrypted);
+-      const thumbPath = path.join(IMAGE_DIR, 'thumbnails', metadata?.thumbnail || '');
+       await fs.unlink(imgPath).catch(() => {});
+-      await fs.unlink(thumbPath).catch(() => {});
++      // F1.3 加固：缩略图名经安全文件名校验后再删（空值 / 含路径注入时跳过，防误删目录外文件）
++      if (isSafeStoredFilename(metadata?.thumbnail || '')) {
++        await fs.unlink(path.join(IMAGE_DIR, 'thumbnails', metadata.thumbnail)).catch(() => {});
++      }
+     } else if (item.content_type === 'file') {
+-      const filePath = path.join(FILE_DIR, item.content_encrypted);
+-      await fs.unlink(filePath).catch(() => {});
++      // F1.3：多文件条目需删除全部落盘文件——复用 fileRetentionCleanup.deleteStoredClipFiles：
++      // 覆盖 content_encrypted（首文件落盘名）+ metadata.files[].fileId 逐个（Set 去重），
++      // 均经 isSafeStoredFilename 口径校验（无路径分隔符、非 data:、basename 归一化等值，
++      // 杜绝 path traversal），单个 unlink 失败不中断。旧单文件条目（无 metadata.files）
++      // 只删 content_encrypted，与改造前行为一致。
++      await deleteStoredClipFiles(item);
+     }
+ 
+     // Delete from DB
+diff --git a/src/server/src/routes/subscriptions.js b/src/server/src/routes/subscriptions.js
+index cb310d0..f7cb210 100644
+--- a/src/server/src/routes/subscriptions.js
++++ b/src/server/src/routes/subscriptions.js
+@@ -4,6 +4,7 @@ import { authenticateToken } from '../middleware/auth.js';
+ import { logger } from '../utils/logger.js';
+ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+ import { sendNotification } from '../ws/server.js';
++import { getPlanLimits, getUsedStorageBytes } from '../utils/planLimits.js';
+ 
+ const router = Router();
+ 
+@@ -46,6 +47,22 @@ router.get('/current', authenticateToken, async (req, res) => {
+   try {
+     const userId = req.user.userId;
+ 
++    // F0.3：并行取套餐新字段与已用容量。
++    //  - getPlanLimits 自带旧库缺列容错（information_schema 检测，缺 max_files_per_clip /
++    //    file_retention_days 列时返回 null），不会因迁移未跑而崩；
++    //  - 它只认 status='active' 的订阅，trial 用户会兜底到 Free 行 —— 这与上传配额
++    //    校验（checkUploadQuota）的实际执行口径一致，故此处展示值即生效值；
++    //  - plan 的 id/name 仍以下方订阅查询为准，这里只复用新字段，避免语义冲突。
++    const [planLimits, usedBytes] = await Promise.all([
++      getPlanLimits(userId),
++      getUsedStorageBytes(userId),
++    ]);
++    // 字节转 MB：向上取整到 0.1MB 精度（ceil(x*10)/10），展示余量偏保守；
++    // usedBytes 为 null（用量查询失败）时 storageUsedMb 置 null，由前端显示未知
++    const storageUsedMb = usedBytes != null
++      ? Math.ceil((usedBytes / (1024 * 1024)) * 10) / 10
++      : null;
++
+     // 获取用户当前订阅
+     const subscriptionResult = await pool.query(`
+       SELECT
+@@ -80,6 +97,9 @@ router.get('/current', authenticateToken, async (req, res) => {
+           maxClipboardItems: freePlan.rows[0].max_clipboard_items,
+           maxFileSizeMb: freePlan.rows[0].max_file_size_mb,
+           maxStorageMb: freePlan.rows[0].max_storage_mb,
++          maxFilesPerClip: planLimits.maxFilesPerClip,
++          fileRetentionDays: planLimits.fileRetentionDays,
++          storageUsedMb,
+           features: freePlan.rows[0].features,
+         } : null,
+       });
+@@ -106,6 +126,9 @@ router.get('/current', authenticateToken, async (req, res) => {
+         maxClipboardItems: subscription.max_clipboard_items,
+         maxFileSizeMb: subscription.max_file_size_mb,
+         maxStorageMb: subscription.max_storage_mb,
++        maxFilesPerClip: planLimits.maxFilesPerClip,
++        fileRetentionDays: planLimits.fileRetentionDays,
++        storageUsedMb,
+         features: subscription.features,
+       }
+     });

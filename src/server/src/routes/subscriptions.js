@@ -4,6 +4,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { sendNotification } from '../ws/server.js';
+import { getPlanLimits, getUsedStorageBytes } from '../utils/planLimits.js';
 
 const router = Router();
 
@@ -46,6 +47,22 @@ router.get('/current', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
 
+    // F0.3：并行取套餐新字段与已用容量。
+    //  - getPlanLimits 自带旧库缺列容错（information_schema 检测，缺 max_files_per_clip /
+    //    file_retention_days 列时返回 null），不会因迁移未跑而崩；
+    //  - 它只认 status='active' 的订阅，trial 用户会兜底到 Free 行 —— 这与上传配额
+    //    校验（checkUploadQuota）的实际执行口径一致，故此处展示值即生效值；
+    //  - plan 的 id/name 仍以下方订阅查询为准，这里只复用新字段，避免语义冲突。
+    const [planLimits, usedBytes] = await Promise.all([
+      getPlanLimits(userId),
+      getUsedStorageBytes(userId),
+    ]);
+    // 字节转 MB：向上取整到 0.1MB 精度（ceil(x*10)/10），展示余量偏保守；
+    // usedBytes 为 null（用量查询失败）时 storageUsedMb 置 null，由前端显示未知
+    const storageUsedMb = usedBytes != null
+      ? Math.ceil((usedBytes / (1024 * 1024)) * 10) / 10
+      : null;
+
     // 获取用户当前订阅
     const subscriptionResult = await pool.query(`
       SELECT
@@ -80,6 +97,9 @@ router.get('/current', authenticateToken, async (req, res) => {
           maxClipboardItems: freePlan.rows[0].max_clipboard_items,
           maxFileSizeMb: freePlan.rows[0].max_file_size_mb,
           maxStorageMb: freePlan.rows[0].max_storage_mb,
+          maxFilesPerClip: planLimits.maxFilesPerClip,
+          fileRetentionDays: planLimits.fileRetentionDays,
+          storageUsedMb,
           features: freePlan.rows[0].features,
         } : null,
       });
@@ -106,6 +126,9 @@ router.get('/current', authenticateToken, async (req, res) => {
         maxClipboardItems: subscription.max_clipboard_items,
         maxFileSizeMb: subscription.max_file_size_mb,
         maxStorageMb: subscription.max_storage_mb,
+        maxFilesPerClip: planLimits.maxFilesPerClip,
+        fileRetentionDays: planLimits.fileRetentionDays,
+        storageUsedMb,
         features: subscription.features,
       }
     });

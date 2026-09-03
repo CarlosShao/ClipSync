@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_view/photo_view.dart';
@@ -14,6 +15,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/clipboard_item.dart';
 import '../../providers/clipboard_provider.dart';
+import '../../router/app_router.dart';
 import '../../services/api_service.dart';
 import '../../services/app_exception.dart';
 import '../../services/item_actions_api_service.dart';
@@ -21,6 +23,7 @@ import '../../services/server_config.dart';
 import '../../services/shared_links_api_service.dart';
 import '../../services/token_store.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/file_opener.dart';
 import '../../widgets/clipboard_card.dart'
     show ClipboardTagChips, ExpiryChoice, showExpiryPickerDialog, showTagsEditorDialog;
 
@@ -31,8 +34,10 @@ enum _TextLoadState { loading, loaded, error }
 ///
 /// 页面输入为 [ClipboardItem]（构造传入），按类型分发内容区：
 /// - image：PhotoView 双指缩放查看（GET /api/media/:id/preview，Bearer 鉴权）；
-/// - file：文件卡片（文件名取 metadata、大小格式化）+ 打开按钮
-///   （调 GET /api/media/:id/download 下载到本机临时目录）；
+/// - file：多文件条目（metadata.files）渲染文件列表（每行图标+名称+大小
+///   +mimeType，操作区【下载/打开/分享】，未下载时打开与分享自动先下载），
+///   顶部【全部下载（zip）】打包下载（不带 fileIndex → 服务端流式 zip）；
+///   单文件保持卡片样式 + 三按钮。下载均流式写盘至临时目录并显示百分比进度；
 /// - text/link/code：全文展示（code 等宽字体），SelectionArea 支持选择复制。
 ///
 /// 受保护条目（C3，protectionLevel 非 none）：进入即锁定，不渲染任何内容，
@@ -72,15 +77,33 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   // 双通道：旧桌面版本把图片存成 dataURL（无 media 记录）→ MemoryImage；
   // 新版本走 media 端点 → CachedNetworkImageProvider（带鉴权头）
   ImageProvider<Object>? _imageProvider;
-  bool _isInlineDataImage = false;
 
   // 操作栏忙碌状态
   bool _favoriteBusy = false;
-  bool _downloadBusy = false;
   bool _shareLinkBusy = false;
 
-  // 文件条目降级（F4）：content 为来源设备本机路径 / 下载失败时置位，
-  // 文件卡片切换为「复制文件名」+ 降级提示，不再提供跨设备下载入口。
+  // F2.2：下载忙碌与进度（键控，替代原 bool _downloadBusy，可显示百分比）。key：
+  // 'file:<index>' —— 新格式条目单文件下载（index 为 metadata.files 下标）；
+  // 'file:-1' —— 存量单文件条目（不带 fileIndex 的整条下载）；
+  // 'zip' —— F2.3 多文件打包下载。
+  static const String _zipKey = 'zip';
+  final Set<String> _downloadBusy = <String>{};
+  final Map<String, double> _downloadProgress = <String, double>{};
+
+  // F2.2：已下载文件的本地路径（key 同上）——【打开】/【分享】直接复用，
+  // 避免重复下载；路径文件被系统清理时回退重新下载。
+  final Map<String, String> _downloadedPaths = <String, String>{};
+
+  // F2.1：多文件条目逐文件下载失败标记（key: 'file:<index>'），
+  // 仅该行操作区切换降级（复制文件名 + 提示），不影响其余文件行。
+  final Set<String> _degradedFileKeys = <String>{};
+
+  // 文件条目降级（F4/F2.2）：仅存量条目（无 metadata.files）在
+  // ① content 探测为来源设备本机路径（_probeFileContent）或
+  // ② 下载确实失败（_downloadByKey）时置位，文件卡片切换为
+  // 「复制文件名」+ 降级提示，不再提供跨设备下载入口。
+  // 新格式 files 条目不执行路径探测（content 语义不同，易误判），
+  // 且下载失败只降级对应文件行，永不置位本标记。
   bool _fileDegraded = false;
 
   // C3：受保护条目锁定态（解锁前不渲染内容区）
@@ -152,7 +175,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   /// 展示文件名 + 降级提示，不提供下载入口、不进加载失败态。
   /// 探测失败不致命：保留下载入口，由用户点击后按下载失败路径降级。
   Future<void> _probeFileContent() async {
-    if (_fileDegraded) {
+    // F2.1：新格式 files 条目由服务端托管存储，content 可能是正文/落盘名
+    // 等非路径语义，路径探测不适用——跳过（不降级，由下载失败路径兜底）。
+    if (_fileDegraded || _item.files != null) {
       return;
     }
     String? content = _item.fullContent;
@@ -217,7 +242,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       setState(() {
         _headersReady = true;
         _imageFailed = false;
-        _isInlineDataImage = true;
         _imageProvider = MemoryImage(bytes);
       });
       return;
@@ -229,7 +253,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       setState(() {
         _headersReady = true;
         _imageFailed = true;
-        _isInlineDataImage = false;
         _imageProvider = null;
       });
       return;
@@ -238,7 +261,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       _mediaHeaders = <String, String>{'Authorization': 'Bearer $token'};
       _headersReady = true;
       _imageFailed = false;
-      _isInlineDataImage = false;
       _imageProvider = _buildImageProvider();
     });
   }
@@ -628,64 +650,300 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     }
   }
 
-  /// 文件下载：GET /api/media/:id/download（Bearer）→ 保存到临时目录 downloads/
-  /// 并以SnackBar 告知保存路径。同名校验存在时追加序号避免覆盖。
-  ///
-  /// F4：任何下载失败（404 / 网络异常等）都按「文件在来源设备本机」降级——
-  /// SnackBar 提示跨设备暂不可取，文件卡片切换为「复制文件名」。
-  Future<void> _downloadFile() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final AppLocalizations l10n = AppLocalizations.of(context);
-    setState(() => _downloadBusy = true);
-    try {
-      final token = await TokenStore.getAccessToken();
-      if (token == null || token.isEmpty) {
-        throw const AppException(AppErrorCodes.noToken);
-      }
-      final response = await http
-          .get(
-            Uri.parse('${ServerConfig.baseUrl}/api/media/${_item.id}/download'),
-            headers: <String, String>{'Authorization': 'Bearer $token'},
-          )
-          .timeout(const Duration(seconds: 120));
-      if (response.statusCode != 200) {
-        throw AppException(AppErrorCodes.downloadFailed, 'HTTP ${response.statusCode}');
-      }
-      final dir = await getTemporaryDirectory();
-      final saveDir = Directory('${dir.path}${Platform.pathSeparator}downloads');
-      await saveDir.create(recursive: true);
+  // ---------------------------------------------------------------------------
+  // 文件下载 / 打开 / 分享（F2.2 / F2.3）
+  // ---------------------------------------------------------------------------
 
-      final baseName = _safeFileName();
-      var target = File('${saveDir.path}${Platform.pathSeparator}$baseName');
-      var seq = 1;
-      while (target.existsSync()) {
-        final dot = baseName.lastIndexOf('.');
-        final stem = dot > 0 ? baseName.substring(0, dot) : baseName;
-        final ext = dot > 0 ? baseName.substring(dot) : '';
-        target = File('${saveDir.path}${Platform.pathSeparator}$stem(${seq++})$ext');
+  /// 按 key 触发下载（统一入口）：维护忙碌集合、进度与降级标记。
+  ///
+  /// - [fileIndex] >= 0：多文件条目单文件下载（?fileIndex=n，key 'file:<index>'）；
+  /// - [fileIndex] < 0：整条下载（不带 fileIndex；存量单文件 key 'file:-1'，
+  ///   多文件打包 zip key 'zip'，[zipName] 指定 zip 保存名）。
+  ///
+  /// 失败降级策略（仅下载确实失败时置位）：
+  /// - 存量条目（无 metadata.files）→ 整卡降级（_fileDegraded，F4 语义）；
+  /// - 新格式单文件行 → 该行降级（_degradedFileKeys），不影响其余行；
+  /// - 多文件打包 zip → 仅 SnackBar 提示，不影响文件列表。
+  /// 成功返回本地路径，失败返回 null。
+  Future<String?> _downloadByKey(
+    String key, {
+    required int fileIndex,
+    String? zipName,
+  }) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    if (_downloadBusy.contains(key)) {
+      return null;
+    }
+    setState(() {
+      _downloadBusy.add(key);
+      _downloadProgress.remove(key);
+    });
+    try {
+      final path = await _streamDownload(
+        busyKey: key,
+        fileIndex: fileIndex,
+        fileName: fileIndex < 0 ? zipName : null,
+      );
+      if (mounted) {
+        setState(() {
+          _downloadedPaths[key] = path;
+          _downloadProgress.remove(key);
+        });
       }
-      await target.writeAsBytes(response.bodyBytes);
       messenger.showSnackBar(
         SnackBar(
-          content: Text(l10n.fileSavedTo(target.path)),
+          content: Text(l10n.fileSavedTo(path)),
           duration: const Duration(seconds: 3),
         ),
       );
-    } catch (_) {
+      return path;
+    } on Exception {
+      final bool hasFiles = _item.files != null;
       if (mounted) {
-        setState(() => _fileDegraded = true);
+        setState(() {
+          _downloadProgress.remove(key);
+          if (!hasFiles) {
+            _fileDegraded = true;
+          } else if (fileIndex >= 0) {
+            _degradedFileKeys.add(key);
+          }
+        });
       }
       messenger.showSnackBar(
-        SnackBar(content: Text(l10n.fileLocalOnlyHint), duration: const Duration(seconds: 3)),
+        SnackBar(
+          content: Text(l10n.fileLocalOnlyHint),
+          duration: const Duration(seconds: 3),
+        ),
       );
+      return null;
     } finally {
       if (mounted) {
-        setState(() => _downloadBusy = false);
+        setState(() => _downloadBusy.remove(key));
       }
     }
   }
 
-  /// F4：复制文件名（降级态下替代下载入口的动作）。
+  /// 流式下载实现（F2.2）：GET /api/media/:id/download（Bearer），
+  /// 经 http.Client().send() → StreamedResponse 边收边写盘到临时目录
+  /// downloads/，按 Content-Length 上报进度（0~1，变化 >=1% 才 setState）
+  /// 替代旧实现的 bodyBytes 整包缓冲。失败抛 AppException（调用方降级）。
+  Future<String> _streamDownload({
+    required String busyKey,
+    required int fileIndex,
+    String? fileName,
+  }) async {
+    final token = await TokenStore.getAccessToken();
+    if (token == null || token.isEmpty) {
+      throw const AppException(AppErrorCodes.noToken);
+    }
+    var url = '${ServerConfig.baseUrl}/api/media/${_item.id}/download';
+    if (fileIndex >= 0) {
+      url = '$url?fileIndex=$fileIndex';
+    }
+    final request = http.Request('GET', Uri.parse(url))
+      ..headers['Authorization'] = 'Bearer $token';
+    final client = http.Client();
+    File? target;
+    try {
+      final streamed =
+          await client.send(request).timeout(const Duration(seconds: 120));
+      if (streamed.statusCode != 200) {
+        throw AppException(
+          AppErrorCodes.downloadFailed,
+          'HTTP ${streamed.statusCode}',
+        );
+      }
+      final dir = await getTemporaryDirectory();
+      final saveDir =
+          Directory('${dir.path}${Platform.pathSeparator}downloads');
+      await saveDir.create(recursive: true);
+      target = File(
+        '${saveDir.path}${Platform.pathSeparator}'
+        '${_uniqueSaveName(fileName ?? _fallbackDownloadName(fileIndex), saveDir)}',
+      );
+      final total = streamed.contentLength ?? 0;
+      final sink = target.openWrite();
+      var received = 0;
+      try {
+        // 响应正文停滞超时（M-1）：send().timeout(120s) 只覆盖到响应头，
+        // 落盘循环需对正文流单独加 30s「停滞」超时——服务端中途断流
+        // （TCP 半开 / 代理挂起）时正文流永久无事件，不加超时将永久
+        // 挂起：busy key 永不释放、半截文件永不清理。注意这是停滞
+        // 超时而非总时长：每收到一个 chunk 即重置计时，大文件慢速
+        // 持续推进的正常下载不受影响；停滞满 30s 注入 TimeoutException
+        // → await for 抛出 → 外层 catch 删半截文件 → rethrow →
+        // _downloadByKey on Exception 降级 + finally 复位 busy。
+        await for (final chunk in streamed.stream.timeout(
+          const Duration(seconds: 30),
+          onTimeout: (EventSink<List<int>> stallSink) {
+            stallSink.addError(TimeoutException('download body stalled'));
+          },
+        )) {
+          received += chunk.length;
+          sink.add(chunk);
+          if (total > 0) {
+            final next = (received / total).clamp(0.0, 1.0);
+            final last = _downloadProgress[busyKey];
+            if (last == null || (next - last) >= 0.01 || next >= 1.0) {
+              if (mounted) {
+                setState(() => _downloadProgress[busyKey] = next);
+              }
+            }
+          }
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
+      return target.path;
+    } catch (_) {
+      // 流式中断清理半截文件，避免残留损坏文件被后续打开误用
+      try {
+        if (target != null && target.existsSync()) {
+          await target.delete();
+        }
+      } catch (_) {
+        // 清理失败不影响错误上抛
+      }
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 下载保存名兜底：多文件取该文件名；单文件/zip 取条目名（fileName →
+  /// contentPreview 首行）或条目 id。净化与同名追加序号见 _uniqueSaveName。
+  String _fallbackDownloadName(int fileIndex) {
+    final files = _item.files;
+    if (fileIndex >= 0 && files != null && fileIndex < files.length) {
+      return files[fileIndex].name;
+    }
+    final raw = (_item.fileName ?? _item.contentPreview).trim();
+    final firstLine = raw.split('\n').first.trim();
+    if (firstLine.isNotEmpty) {
+      return firstLine.length > 80 ? firstLine.substring(0, 80) : firstLine;
+    }
+    return 'clip-file-${_item.id}';
+  }
+
+  /// 文件名净化（去路径分隔符/非法字符防穿越）+ 同名追加序号防覆盖。
+  String _uniqueSaveName(String rawName, Directory saveDir) {
+    var baseName = rawName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    if (baseName.isEmpty) {
+      baseName = 'clip-file-${_item.id}';
+    }
+    final dot = baseName.lastIndexOf('.');
+    final stem = dot > 0 ? baseName.substring(0, dot) : baseName;
+    final ext = dot > 0 ? baseName.substring(dot) : '';
+    var candidate = File('${saveDir.path}${Platform.pathSeparator}$baseName');
+    var seq = 1;
+    while (candidate.existsSync()) {
+      candidate =
+          File('${saveDir.path}${Platform.pathSeparator}$stem(${seq++})$ext');
+    }
+    return candidate.uri.pathSegments.last;
+  }
+
+  /// F2.3：多文件条目打包下载——不带 fileIndex 的 download 端点返回
+  /// 服务端流式 zip（Content-Type: application/zip），存临时目录后
+  /// SnackBar 告知路径。决策：不自动解压——【打开】/【分享】zip 即可消费，
+  /// 解压需引入 archive 依赖且临时目录体积翻倍，现阶段无必要。
+  Future<void> _downloadZip() async {
+    await _downloadByKey(_zipKey, fileIndex: -1, zipName: _zipFallbackName());
+  }
+
+  /// zip 包名：条目名 stem + .zip（fileName → contentPreview 兜底条目 id）。
+  String _zipFallbackName() {
+    final raw = (_item.fileName ?? _item.contentPreview).trim();
+    final firstLine = raw.split('\n').first.trim();
+    final base = firstLine.isEmpty ? 'clip-files-${_item.id}' : firstLine;
+    final dot = base.lastIndexOf('.');
+    final stem = dot > 0 ? base.substring(0, dot) : base;
+    return '$stem.zip';
+  }
+
+  /// F2.2：打开文件（未下载 / 缓存失效时先下载再打开；
+  /// 失败提示无可用应用，不降级——文件本身已可用）。
+  Future<void> _openFile(
+    String key, {
+    required int fileIndex,
+    String? zipName,
+  }) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    if (_downloadBusy.contains(key)) {
+      return;
+    }
+    var path = _downloadedPaths[key];
+    if (path == null || !File(path).existsSync()) {
+      path = await _downloadByKey(key, fileIndex: fileIndex, zipName: zipName);
+      if (path == null) {
+        return; // 下载失败已提示并按需降级
+      }
+    }
+    final bool opened = await FileOpener.open(path);
+    if (!mounted || opened) {
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(l10n.openFileFailed),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  /// F2.2：分享文件（未下载时先下载再分享；mimeType 尽力提供）。
+  Future<void> _shareFile(
+    String key, {
+    required int fileIndex,
+    String? zipName,
+    String? mimeType,
+  }) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    if (_downloadBusy.contains(key)) {
+      return;
+    }
+    var path = _downloadedPaths[key];
+    if (path == null || !File(path).existsSync()) {
+      path = await _downloadByKey(key, fileIndex: fileIndex, zipName: zipName);
+      if (path == null) {
+        return;
+      }
+    }
+    try {
+      await FileOpener.share(path, mimeType: mimeType);
+    } catch (_) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(l10n.shareFailed),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  /// F2.1：复制多文件列表行文件名（该行降级态动作）。
+  Future<void> _copyClipFileName(ClipFileInfo info) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    if (info.name.isEmpty) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: info.name));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(l10n.copied),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// F4：复制文件名（单文件卡降级态下替代下载入口的动作）。
   Future<void> _copyFileName() async {
     final messenger = ScaffoldMessenger.of(context);
     final AppLocalizations l10n = AppLocalizations.of(context);
@@ -701,6 +959,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
 
   /// 文件展示名（F4）：metadata 文件名优先；缺失时从路径型 content/预览
   /// 推导基名（含 \ 或 / 时取末段），避免把整条来源路径当文件名展示。
+  /// （F2.1 后 fileName getter 已含新格式 files 首文件名兜底。）
   String get _fileDisplayName {
     final name = _item.fileName;
     if (name != null && name.isNotEmpty) {
@@ -714,13 +973,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       }
     }
     return AppLocalizations.of(context).unknownFile;
-  }
-
-  /// 文件名净化：去掉路径分隔符与非法字符，避免写入时路径穿越。
-  String _safeFileName() {
-    final raw = _item.fileName ?? _item.contentPreview;
-    final name = raw.isEmpty ? 'clip-file-${_item.id}' : raw;
-    return name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
   }
 
   // ---------------------------------------------------------------------------
@@ -764,6 +1016,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       ),
       body: Column(
         children: <Widget>[
+          // F3.2：套餐限制提示条（metadata.limitReason 有值时展示；
+          // getter 仅非空短码返回非 null，空值已容错）
+          if (!_locked && _item.limitReason != null) _buildLimitBanner(theme),
           // G2 标签展示：有标签时在内容区顶部渲染 chips（横排可滚动，
           // 最多 3 个 + "+N"）；受保护条目解锁前不渲染任何内容，含标签
           if (!_locked && _item.tags.isNotEmpty)
@@ -904,34 +1159,309 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
 
   // --------------------------- file ---------------------------
 
+  /// 文件内容区分发（F2.1）：多文件条目（files 可解析且 totalCount>1）
+  /// 渲染文件列表；单文件 / 存量条目保持卡片样式。
   Widget _buildFileView(ThemeData theme) {
+    final files = _item.files;
+    if (files != null && _item.totalCount > 1) {
+      return _buildFileListView(theme, files);
+    }
+    return _buildSingleFileCard(theme, files);
+  }
+
+  /// F2.1：多文件条目列表——头部（文件数 · 总大小 + 打包 zip 下载）+
+  /// 逐文件行（图标 + 名称 + 大小 + mimeType + 下载/打开/分享操作区）。
+  Widget _buildFileListView(ThemeData theme, List<ClipFileInfo> files) {
     final scheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
-    final displayName = _fileDisplayName;
-    final mime = _item.metadata['mimeType'];
-    final mimeText = mime is String && mime.isNotEmpty ? ' · $mime' : '';
+    final totalBytes =
+        _item.totalSize > 0 ? _item.totalSize : _sumFileSizes(files);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${l10n.filesCount(files.length)} · ${_formatBytes(totalBytes)}',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                  ),
+                  _buildZipDownloadControl(theme),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              const Divider(),
+              for (var i = 0; i < files.length; i++)
+                _buildFileRow(theme, files[i], i),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                l10n.fileDownloadHint,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-    // F4 降级态：不提供下载入口，改为「复制文件名」+ 来源设备本机提示
-    final Widget actionButton = _fileDegraded
-        ? FilledButton.tonalIcon(
-            onPressed: _copyFileName,
-            icon: const Icon(Icons.copy_rounded),
-            label: Text(l10n.copyFileName),
-          )
-        : FilledButton.tonalIcon(
-            onPressed: _downloadBusy ? null : _downloadFile,
-            icon: _downloadBusy
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.download_rounded),
-            label: Text(_downloadBusy ? l10n.downloading : l10n.openDownload),
-          );
-    final String actionHint = _fileDegraded
-        ? l10n.fileLocalOnlyHint
-        : l10n.fileDownloadHint;
+  /// F2.3：打包下载控件——忙碌时显示进度条 + 百分比，空闲显示按钮。
+  Widget _buildZipDownloadControl(ThemeData theme) {
+    final l10n = AppLocalizations.of(context);
+    final scheme = theme.colorScheme;
+    if (_downloadBusy.contains(_zipKey)) {
+      final progress = _downloadProgress[_zipKey];
+      final percent = progress == null ? null : (progress * 100).round();
+      return SizedBox(
+        width: 128,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            LinearProgressIndicator(value: progress),
+            const SizedBox(height: 4),
+            Text(
+              percent != null
+                  ? l10n.downloadingPercent(percent)
+                  : l10n.downloading,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return FilledButton.tonalIcon(
+      onPressed: () => unawaited(_downloadZip()),
+      icon: const Icon(Icons.folder_zip_outlined, size: 18),
+      label: Text(l10n.downloadAllZip),
+    );
+  }
+
+  /// F2.1：文件行——图标 + 名称 + 大小 + mimeType；操作区三按钮
+  /// （下载 / 打开 / 分享，未下载时打开与分享自动先下载再执行）；
+  /// 下载中行内进度条 + 百分比；下载失败该行降级（复制文件名 + 提示）。
+  Widget _buildFileRow(ThemeData theme, ClipFileInfo info, int index) {
+    final scheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+    final key = 'file:$index';
+    final busy = _downloadBusy.contains(key);
+    final progress = _downloadProgress[key];
+    final degraded = _degradedFileKeys.contains(key);
+    final displayName = info.name.isNotEmpty ? info.name : l10n.unknownFile;
+    final mimeText = (info.mimeType != null && info.mimeType!.isNotEmpty)
+        ? ' · ${info.mimeType}'
+        : '';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                ),
+                child: Icon(
+                  _iconForFile(info),
+                  size: 20,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '${_formatBytes(info.size)}$mimeText',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          if (busy)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LinearProgressIndicator(value: progress),
+                const SizedBox(height: 4),
+                Text(
+                  progress == null
+                      ? l10n.downloading
+                      : l10n.downloadingPercent((progress * 100).round()),
+                  textAlign: TextAlign.end,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            )
+          else if (degraded)
+            Row(
+              children: [
+                Icon(Icons.error_outline, size: 16, color: scheme.error),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    l10n.fileLocalOnlyHint,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => unawaited(_copyClipFileName(info)),
+                  icon: const Icon(Icons.copy_rounded, size: 16),
+                  label: Text(l10n.copyFileName),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: () =>
+                      unawaited(_downloadByKey(key, fileIndex: index)),
+                  icon: const Icon(Icons.download_rounded, size: 18),
+                  label: Text(l10n.download),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      unawaited(_openFile(key, fileIndex: index)),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  label: Text(l10n.open),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                IconButton.outlined(
+                  tooltip: l10n.share,
+                  onPressed: () => unawaited(
+                    _shareFile(key, fileIndex: index, mimeType: info.mimeType),
+                  ),
+                  icon: const Icon(Icons.share_rounded, size: 18),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 单文件卡片（F2.1/F2.2）：存量条目（无 files）与 totalCount==1 的
+  /// 新格式条目共用。按钮从「打开（下载到本机）」升级为三按钮
+  /// （下载 / 打开 / 分享，未下载时打开与分享自动先下载再执行）；
+  /// 下载中进度条 + 百分比；降级态保持 F4 行为（复制文件名 + 提示）。
+  Widget _buildSingleFileCard(ThemeData theme, List<ClipFileInfo>? files) {
+    final scheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+    final ClipFileInfo? first =
+        (files != null && files.isNotEmpty) ? files.first : null;
+    final displayName = (first != null && first.name.isNotEmpty)
+        ? first.name
+        : _fileDisplayName;
+    final String? mime;
+    if (first != null) {
+      mime = first.mimeType;
+    } else {
+      final dynamic legacyMime = _item.metadata['mimeType'];
+      mime = legacyMime is String && legacyMime.isNotEmpty ? legacyMime : null;
+    }
+    final mimeText = (mime != null && mime.isNotEmpty) ? ' · $mime' : '';
+    final sizeBytes =
+        (first != null && first.size > 0) ? first.size : _item.contentSize;
+
+    // 新格式单文件下载带 fileIndex=0；存量条目不带 fileIndex（key 'file:-1'）
+    final fileIndex = files != null ? 0 : -1;
+    final fileKey = 'file:$fileIndex';
+    final busy = _downloadBusy.contains(fileKey);
+    final progress = _downloadProgress[fileKey];
+
+    final Widget actionArea;
+    if (_fileDegraded) {
+      actionArea = FilledButton.tonalIcon(
+        onPressed: _copyFileName,
+        icon: const Icon(Icons.copy_rounded),
+        label: Text(l10n.copyFileName),
+      );
+    } else if (busy) {
+      final percent = progress == null ? null : (progress * 100).round();
+      actionArea = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LinearProgressIndicator(value: progress),
+          const SizedBox(height: 6),
+          Text(
+            percent != null
+                ? l10n.downloadingPercent(percent)
+                : l10n.downloading,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      );
+    } else {
+      actionArea = Row(
+        children: [
+          Expanded(
+            child: FilledButton.tonalIcon(
+              onPressed: () =>
+                  unawaited(_downloadByKey(fileKey, fileIndex: fileIndex)),
+              icon: const Icon(Icons.download_rounded, size: 18),
+              label: Text(l10n.download),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: () =>
+                  unawaited(_openFile(fileKey, fileIndex: fileIndex)),
+              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              label: Text(l10n.open),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          IconButton.filledTonal(
+            tooltip: l10n.share,
+            onPressed: () => unawaited(
+              _shareFile(fileKey, fileIndex: fileIndex,
+                  mimeType: first?.mimeType),
+            ),
+            icon: const Icon(Icons.share_rounded),
+          ),
+        ],
+      );
+    }
+    final String actionHint =
+        _fileDegraded ? l10n.fileLocalOnlyHint : l10n.fileDownloadHint;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -951,7 +1481,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                       borderRadius: BorderRadius.circular(AppRadius.md),
                     ),
                     child: Icon(
-                      Icons.insert_drive_file_rounded,
+                      first != null
+                          ? _iconForFile(first)
+                          : Icons.insert_drive_file_rounded,
                       color: scheme.onPrimaryContainer,
                     ),
                   ),
@@ -968,7 +1500,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         Text(
-                          '${_formatBytes(_item.contentSize)}$mimeText',
+                          '${_formatBytes(sizeBytes)}$mimeText',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: scheme.onSurfaceVariant,
                           ),
@@ -979,7 +1511,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                 ],
               ),
               const SizedBox(height: AppSpacing.lg),
-              actionButton,
+              actionArea,
               const SizedBox(height: AppSpacing.sm),
               Text(
                 actionHint,
@@ -991,6 +1523,84 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// 文件行图标：按 mime / 扩展名粗分类（图/视频/音频/pdf/压缩包/默认）。
+  IconData _iconForFile(ClipFileInfo info) {
+    final mime = (info.mimeType ?? '').toLowerCase();
+    final name = info.name.toLowerCase();
+    if (mime.startsWith('image/') ||
+        RegExp(r'\.(png|jpe?g|gif|webp|bmp)$').hasMatch(name)) {
+      return Icons.image_outlined;
+    }
+    if (mime.startsWith('video/') ||
+        RegExp(r'\.(mp4|mov|avi|mkv|webm)$').hasMatch(name)) {
+      return Icons.movie_outlined;
+    }
+    if (mime.startsWith('audio/') ||
+        RegExp(r'\.(mp3|wav|flac|aac|ogg|m4a)$').hasMatch(name)) {
+      return Icons.music_note_outlined;
+    }
+    if (mime == 'application/pdf' || name.endsWith('.pdf')) {
+      return Icons.picture_as_pdf_outlined;
+    }
+    if (mime.contains('zip') ||
+        RegExp(r'\.(zip|rar|7z|tar|gz)$').hasMatch(name)) {
+      return Icons.folder_zip_outlined;
+    }
+    return Icons.insert_drive_file_rounded;
+  }
+
+  /// 文件列表总大小兜底（totalSize 缺失 / 为 0 时逐文件求和）。
+  int _sumFileSizes(List<ClipFileInfo> files) {
+    var sum = 0;
+    for (final f in files) {
+      sum += f.size;
+    }
+    return sum;
+  }
+
+  /// F3.2：套餐限制提示条——条目在来源设备超限未同步云端时展示，
+  /// 【了解套餐】跳订阅管理页（/subscriptions，go_router）。
+  Widget _buildLimitBanner(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        0,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, size: 18, color: scheme.error),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              l10n.limitSyncNotice,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          TextButton(
+            onPressed: () =>
+                unawaited(context.push(AppRoutes.subscriptionManagement)),
+            child: Text(l10n.viewPlans),
+          ),
+        ],
       ),
     );
   }

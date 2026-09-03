@@ -1367,4 +1367,33 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get clipboardWritebackDesc =>
       'When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly';
+
+  @override
+  String get download => 'Download';
+
+  @override
+  String get open => 'Open';
+
+  @override
+  String get downloadAllZip => 'Download all (zip)';
+
+  @override
+  String filesCount(int count) {
+    return '$count files';
+  }
+
+  @override
+  String downloadingPercent(int percent) {
+    return 'Downloading $percent%';
+  }
+
+  @override
+  String get openFileFailed => 'No app found to open this file';
+
+  @override
+  String get limitSyncNotice =>
+      'This file exceeded the plan limit on the source device and was not synced to the cloud';
+
+  @override
+  String get viewPlans => 'View plans';
 }

@@ -99,6 +99,18 @@ export function trimToMaxHistory() {
   items.value = kept
 }
 
+/**
+ * 字节量展示格式化（与 clipboardUpload 内部实现同形）。
+ * 就地实现而不从 clipboardUpload 导入：该模块已 import 本模块的 trimToMaxHistory，
+ * 反向导入会形成循环依赖。
+ */
+function formatBytesSafe(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 B'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
 export async function loadClipboardItems(opts?: {
   page?: number
   append?: boolean
@@ -206,7 +218,22 @@ export async function loadClipboardItems(opts?: {
               // metadata may be a JSON string (from API) or already-parsed object (from pg driver)
               const rawMeta = typeof i.metadata === 'string' ? i.metadata : JSON.stringify(i.metadata || {})
               const meta = JSON.parse(rawMeta || '{}')
-              if (meta.paths && Array.isArray(meta.paths) && meta.paths.length > 0) {
+              // F1.4 新格式（服务端统一落盘）：metadata.files 存在 → 用结构化展示 JSON 重建
+              // content（files[].name 展示名 / fileId 服务端落盘名），绝不把 contentPreview
+              //（旧文本正文或落盘文件名）当正文展示。旧格式（路径数组）走原分支。
+              if (Array.isArray(meta.files) && meta.files.length > 0) {
+                content = JSON.stringify({
+                  name: (meta.files[0] && meta.files[0].name) || meta.originalName || '',
+                  files: meta.files.map((f: any) => ({
+                    fileId: f.fileId || f.filename || '',
+                    name: f.name || '',
+                    size: formatBytesSafe(Number(f.size) || 0),
+                    mimeType: f.mimeType || '',
+                  })),
+                  totalSize: formatBytesSafe(Number(meta.totalSize) || 0),
+                  totalCount: Number(meta.totalCount) || meta.files.length,
+                })
+              } else if (meta.paths && Array.isArray(meta.paths) && meta.paths.length > 0) {
                 content = JSON.stringify({ name: meta.originalName || content, paths: meta.paths })
               }
             } catch {
@@ -214,16 +241,16 @@ export async function loadClipboardItems(opts?: {
             }
           }
           // For file items: ensure content is a displayable filename, not raw content
-          // BUT preserve paths field if it was reconstructed from metadata
-          const hasPaths = (() => {
+          // BUT preserve structured display JSON（paths / files）if it was reconstructed from metadata
+          const hasStructuredDisplay = (() => {
             try {
               const p = JSON.parse(content)
-              return p && typeof p === 'object' && Array.isArray(p.paths)
+              return p && typeof p === 'object' && (Array.isArray(p.paths) || Array.isArray(p.files))
             } catch {
               return false
             }
           })()
-          if ((i.contentType || i.type) === 'file' && content.length > 200 && !hasPaths) {
+          if ((i.contentType || i.type) === 'file' && content.length > 200 && !hasStructuredDisplay) {
             // content is too long to be a filename — extract from metadata
             try {
               const rawMeta = typeof i.metadata === 'string' ? i.metadata : JSON.stringify(i.metadata || {})

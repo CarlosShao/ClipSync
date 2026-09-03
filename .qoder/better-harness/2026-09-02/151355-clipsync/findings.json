@@ -1,0 +1,194 @@
+{
+  "summary": {
+    "projectName": "ClipSync",
+    "locale": "zh-CN",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 26,
+    "overview": "项目拥有 CI/CD 工作流和丰富的全局 Skills，但缺少项目级 Agent 指令和测试覆盖，导致 AI 辅助开发缺乏架构上下文和变更验证能力。",
+    "aiAgentPractice": {
+      "inspectedSurfaces": [
+        "Skills",
+        "Hooks",
+        "MCP",
+        "Workflows",
+        "Plugins",
+        "Rules",
+        "Commands",
+        "Custom Agents",
+        "Memories"
+      ],
+      "coverageRows": [
+        {
+          "surface": "Skills",
+          "scopes": [
+            "Global",
+            "Plugin"
+          ],
+          "count": 56,
+          "paths": [
+            "~/.agents/skills/ai-coding-lifecycle/SKILL.md",
+            "~/.agents/skills/code-review/SKILL.md",
+            "~/.agents/skills/codebase-design/SKILL.md"
+          ]
+        },
+        {
+          "surface": "Hooks",
+          "scopes": [
+            "Plugin"
+          ],
+          "count": 5,
+          "paths": [
+            "~/.qoder/plugins/cache/qoderapp-bundler/qoder-context/hooks/hooks.json"
+          ]
+        },
+        {
+          "surface": "MCP",
+          "scopes": [
+            "Plugin"
+          ],
+          "count": 1,
+          "paths": [
+            "~/.qoder/plugins/cache/qoderapp-bundler/qoder-context/mcp.json"
+          ]
+        },
+        {
+          "surface": "Workflows",
+          "scopes": [
+            "Project"
+          ],
+          "count": 2,
+          "paths": [
+            ".github/workflows/ci.yml",
+            ".github/workflows/deploy.yml"
+          ]
+        },
+        {
+          "surface": "Plugins",
+          "scopes": [
+            "Plugin"
+          ],
+          "count": 1,
+          "paths": [
+            "~/.qoder/plugins/cache/qoderapp-bundler/qoder-context/.qoder-plugin/plugin.json"
+          ]
+        },
+        {
+          "surface": "Rules",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Commands",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Memories",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        }
+      ]
+    },
+    "assignmentSummaries": [],
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "任务理解",
+        "score": 25,
+        "summary": "项目有 README 和架构文档，但缺少 AGENTS.md 和项目级 Memory，AI Agent 无法获取模块边界、编码约定和项目特定上下文。",
+        "findingRefs": [
+          "missing-project-agent-instructions"
+        ]
+      },
+      {
+        "id": "controlled-execution",
+        "label": "可控执行",
+        "score": 20,
+        "summary": "存在 CI 工作流和 manifest 脚本，但项目级 Rules、Commands 和 Custom Agents 均为零，所有操作依赖通用全局行为。",
+        "findingRefs": [
+          "no-project-level-rules-commands-agents"
+        ]
+      },
+      {
+        "id": "change-validation",
+        "label": "改动验证",
+        "score": 15,
+        "summary": "204 个源文件仅 22 个测试文件，86 个 TypeScript 源文件零测试覆盖，高频变更的桌面端组合式函数和状态管理缺乏聚焦验证。",
+        "findingRefs": [
+          "typescript-zero-test-coverage"
+        ]
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "可靠交付",
+        "score": 30,
+        "summary": "CI 和部署工作流存在，但无会话证据证实其实际运行效果，交付边界未被观察。",
+        "findingRefs": []
+      },
+      {
+        "id": "learning-capture",
+        "label": "经验沉淀",
+        "score": 35,
+        "summary": "无可比较的会话窗口，无法评估学习改进效果；项目级 Memory 为零，知识持久化路径未建立。",
+        "findingRefs": []
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "missing-project-agent-instructions",
+      "title": "多模块仓库缺少 AGENTS.md 项目级 Agent 指令文件",
+      "severity": "Medium",
+      "reason": "ClipSync 拥有 204 个源文件、5 种语言（JavaScript、TypeScript、C、C++、Kotlin）和 3 个主要模块（desktop、server、mobile），但没有任何 AGENTS.md 文件。AI Agent 在编辑代码时无法获取模块边界、架构约定、编码规范或模块间关系，只能依赖通用推理而非项目权威上下文。证据表明 agentInstructions 状态为 missing，建议至少覆盖 src/desktop（90 文件）和 src/server（89 文件）两个核心模块。",
+      "expectedOutput": [
+        "Update the existing Document owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Document",
+      "aiFixPrompt": "/better-harness fix this issue\n\n为 ClipSync 仓库创建根级 AGENTS.md，覆盖项目概述、模块架构（desktop/server/mobile）、技术栈约定、开发命令和核心代码边界。\n\n## 验证\n\n- 确认 AGENTS.md 被 git 跟踪\n- 确认每个源模块在文件中有对应的架构说明",
+      "dimensionRefs": [
+        "task-understanding"
+      ]
+    },
+    {
+      "id": "no-project-level-rules-commands-agents",
+      "title": "项目级 Rules、Commands 和 Custom Agents 均为零，所有操作依赖通用全局行为",
+      "severity": "Medium",
+      "reason": "证据包显示项目级 Rules=0、Commands=0、Custom Agents=0。虽然全局有 56 个 Skills 和 5 个 Hooks，但没有任何项目特定的规则来约束编码约定、API 规范、安全策略或工作流。204 个源文件跨越 5 种语言，没有项目级执行约束意味着 AI Agent 的每次操作都依赖通用行为，缺乏针对 ClipSync 特定约定的引导。",
+      "expectedOutput": [
+        "Update the existing Rule owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Rule",
+      "aiFixPrompt": "/better-harness fix this issue\n\n为 ClipSync 创建项目级 Rules，至少覆盖：代码风格约定（ESLint/Prettier 配置引用）、API 路由命名规范、TypeScript 类型定义约定、以及跨模块通信模式。\n\n## 验证\n\n- 确认 Rules 文件被 git 跟踪\n- 确认规则内容引用了项目实际配置文件路径",
+      "dimensionRefs": [
+        "controlled-execution"
+      ]
+    },
+    {
+      "id": "typescript-zero-test-coverage",
+      "title": "86 个 TypeScript 源文件零测试覆盖，高频变更模块缺乏聚焦验证",
+      "severity": "Medium",
+      "reason": "项目有 204 个源文件和 22 个测试文件，但 86 个 TypeScript 文件（全部位于 src/desktop）没有对应的测试文件。30 天热点文件显示 useAiChat.ts（15 commits, churn 845）、clipboardLoad.ts（13 commits, churn 371）和 configStore.ts（12 commits, churn 605）是变更最频繁的模块，但均无聚焦测试。90 天数据中 useClipboard.ts 以 57 commits 和 churn 4098 位居榜首，同样缺乏测试覆盖。变更验证维度因此无法对桌面端核心逻辑做出任何有证据支持的判断。",
+      "expectedOutput": [
+        "Update the existing Test owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Test",
+      "aiFixPrompt": "/better-harness fix this issue\n\n为 src/desktop 中变更最频繁的 3 个 TypeScript 模块（useAiChat.ts、clipboardLoad.ts、configStore.ts）创建聚焦单元测试。\n\n## 验证\n\n- 运行 src/desktop 的测试命令并确认新测试通过\n- 确认测试覆盖了核心公共 API 而非内部实现细节",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    }
+  ]
+}

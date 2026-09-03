@@ -699,5 +699,27 @@
     }
   },
   "clipboardWriteback": "Auto write to system clipboard",
-  "clipboardWritebackDesc": "When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly"
+  "clipboardWritebackDesc": "When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly",
+  "download": "Download",
+  "open": "Open",
+  "downloadAllZip": "Download all (zip)",
+  "filesCount": "{count} files",
+  "@filesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "downloadingPercent": "Downloading {percent}%",
+  "@downloadingPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "openFileFailed": "No app found to open this file",
+  "limitSyncNotice": "This file exceeded the plan limit on the source device and was not synced to the cloud",
+  "viewPlans": "View plans"
 }

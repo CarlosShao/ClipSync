@@ -3,6 +3,7 @@ import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs/promises';
+import { createReadStream, createWriteStream } from 'fs';
 import { fileURLToPath } from 'url';
 import pool from '../db/pool.js';
 import { authenticateToken } from '../middleware/auth.js';
@@ -12,6 +13,7 @@ import { storeUploadSession, getUploadSession, deleteUploadSession } from '../ut
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { writeChunk, readChunk, mergeChunks, deleteChunks, getFilePath } from '../utils/storage.js';
 import { broadcastToUser } from '../ws/server.js';
+import { getPlanLimits, checkUploadQuota, quotaHttpBody } from '../utils/planLimits.js';
 
 // 允许的文件 MIME类型（安全白名单）
 const ALLOWED_MIME_TYPES = new Set([
@@ -68,10 +70,17 @@ const __dirname = path.dirname(__filename);
 
 const router = Router();
 
-// 分片上传目录
-const CHUNK_DIR = path.join(__dirname, '../../uploads/chunks');
-const UPLOAD_DIR = path.join(__dirname, '../../uploads');
-// multer 临时落盘目录（分片先写这里，再由 writeChunk 持久化到最终位置）
+// 存储后端（与 storage.js 同默认值）：非 local（如 s3）时分片目标不在本地盘，
+// chunk 阶段保留 readFile→writeChunk 旧链路，rename/pipe 优化仅对 local 生效
+const STORAGE_BACKEND = process.env.STORAGE_TYPE || 'local';
+
+// L-1：上传根目录与分片目录对齐 utils/storage.js 口径（process.env.UPLOAD_DIR
+// 优先，默认 src/server/uploads）——原 CHUNK_DIR 硬编码 `../../uploads/chunks`
+// 与 storage.js 的 UPLOAD_DIR 读取分裂，设置了 UPLOAD_DIR 时分片/合并产物
+// 会写错目录。MULTER_TMP 派生自 CHUNK_DIR，随之跟随。
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads');
+const CHUNK_DIR = path.join(UPLOAD_DIR, 'chunks');
+// multer 临时落盘目录（分片先写这里，再由 rename/pipe 零内存拷贝到分片目标）
 const MULTER_TMP = path.join(CHUNK_DIR, '.multer-tmp');
 
 // 确保目录存在  
@@ -141,7 +150,7 @@ async function removeUploadSession(uploadId) {
   }
 }
 
-// 磁盘存储分片：每个分片先落临时盘（MULTER_TMP），再由 writeChunk 持久化到最终位置，
+// 磁盘存储分片：每个分片先落临时盘（MULTER_TMP），再由 rename/pipe 零内存拷贝到分片目标，
 // 避免大文件分片全部缓冲进 Node 内存导致 OOM（原 memoryStorage 的隐患）
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, MULTER_TMP),
@@ -188,41 +197,26 @@ router.post('/init', authenticateToken, apiLimiter, async (req, res) => {
       });
     }
 
-    // ========== 文件大小验证（直接查数据库，不依赖中间件缓存）==========
-    let maxMb = 128; // 默认 Free 128MB
+    // ========== 套餐配额校验（F0.2）：阈值读 DB，admin 不受限，超限统一 413 ==========
     try {
-      const userRes = await pool.query(
-        `SELECT u.is_admin, us.plan_id, sp.max_file_size_mb
-         FROM users u
-         LEFT JOIN user_subscriptions us ON u.id = us.user_id AND us.status = 'active'
-         LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
-         WHERE u.id = $1`,
-        [req.userId]
-      );
-      if (userRes.rows.length > 0) {
-        const row = userRes.rows[0];
-        if (row.is_admin) {
-          maxMb = 1024; // Admin = 1GB
-        } else if (row.max_file_size_mb) {
-          maxMb = row.max_file_size_mb;
-        }
-      }
-    } catch (e) {
-      logger.warn('[Upload/init] Failed to fetch plan, using default:', { error: e.message });
-    }
-
-    const MAX_FILE_SIZE = maxMb * 1024 * 1024;
-    logger.info('[Upload/init] Validation:', {
-      filename, fileSize, mimeType, totalChunks,
-      maxMb, MAX_FILE_SIZE, userId: req.userId
-    });
-    if (fileSize > MAX_FILE_SIZE) {
-      logger.warn('[Upload/init] File too large:', { fileSize, MAX_FILE_SIZE });
-      return res.status(400).json({
-        error: 'File too large',
-        maxSize: MAX_FILE_SIZE,
-        receivedSize: fileSize
+      const limits = await getPlanLimits(req.userId);
+      logger.info('[Upload/init] Plan limits:', {
+        filename, fileSize, mimeType, totalChunks,
+        plan: limits.plan, isUnlimited: limits.isUnlimited,
+        maxFileSizeBytes: limits.maxFileSizeBytes,
+        userId: req.userId
       });
+      // init 阶段按待传文件大小校验单文件 / 单次总大小 / 已用容量（文件数=1）
+      const verdict = await checkUploadQuota(req.userId, [{ size: fileSize, count: 1 }], limits);
+      if (!verdict.allowed) {
+        logger.warn('[Upload/init] Upload rejected by plan quota:', {
+          userId: req.userId, code: verdict.code, fileSize, plan: verdict.plan
+        });
+        return res.status(413).json(quotaHttpBody(verdict));
+      }
+    } catch (quotaErr) {
+      // planLimits 内部已 fail-open，此处异常不应阻塞上传主流程
+      logger.error('[Upload/init] Plan quota check failed unexpectedly', { error: quotaErr.message });
     }
     
     const uploadId = uuidv4();
@@ -290,11 +284,46 @@ router.post('/chunk/:uploadId/:chunkIndex', authenticateToken, apiLimiter, uploa
       return res.status(400).json({ error: 'No chunk data found' });
     }
     
-    // 保存分片（通过存储服务）
-    // diskStorage 模式下 req.file 仅含 .path（无 .buffer），需读盘后写入并清理临时文件
-    const chunkBuffer = await fs.readFile(req.file.path);
-    await writeChunk(uploadId, chunkIndexNum, chunkBuffer);
-    await fs.unlink(req.file.path).catch(() => {});
+    // 保存分片：multer 已将分片落盘至 MULTER_TMP（req.file.path），零内存拷贝搬到分片目标。
+    // 优化前链路（readFile 整片进内存 → writeChunk 二次写盘）存在双倍磁盘 IO + 一次全分片
+    // 内存缓冲；现在 local 后端优先 fs.rename（MULTER_TMP 在 CHUNK_DIR 之下，同盘 rename
+    // 原子且零拷贝），EXDEV（uploads/chunks 为独立挂载点等跨盘场景）降级为流式 pipe（恒定小
+    // 内存）；非 local 后端（如 s3）分片目标不在本地盘，保留原 readFile→writeChunk 链路。
+    if (STORAGE_BACKEND !== 'local') {
+      const chunkBuffer = await fs.readFile(req.file.path);
+      await writeChunk(uploadId, chunkIndexNum, chunkBuffer);
+    } else {
+      const chunkDir = path.join(CHUNK_DIR, uploadId);
+      await fs.mkdir(chunkDir, { recursive: true });
+      const targetPath = path.join(chunkDir, `chunk_${chunkIndexNum}`);
+      try {
+        await fs.rename(req.file.path, targetPath);
+      } catch (renameErr) {
+        if (renameErr?.code !== 'EXDEV') throw renameErr;
+        try {
+          await new Promise((resolve, reject) => {
+            const rs = createReadStream(req.file.path);
+            const ws = createWriteStream(targetPath);
+            let failed = false;
+            const fail = (err) => {
+              if (failed) return;
+              failed = true;
+              rs.destroy();
+              ws.destroy();
+              reject(err);
+            };
+            rs.on('error', fail);
+            ws.on('error', fail);
+            ws.on('finish', resolve);
+            rs.pipe(ws);
+          });
+        } catch (pipeErr) {
+          // 流式复制失败：清理半成品目标文件，避免 mergeChunks 拿到不完整分片
+          await fs.unlink(targetPath).catch(() => {});
+          throw pipeErr;
+        }
+      }
+    }
     
     // 记录已上传的分片（使用数组，避免重复）  
     if (!session.uploadedChunks.includes(chunkIndexNum)) {
@@ -315,6 +344,10 @@ router.post('/chunk/:uploadId/:chunkIndex', authenticateToken, apiLimiter, uploa
   } catch (err) {
     logger.error('Chunk upload error', { error: err.message });
     res.status(500).json({ error: 'Failed to upload chunk' });
+  } finally {
+    // multer 中间件先于会话/参数校验就把分片落盘 MULTER_TMP：校验失败早退（404/403/410/400）、
+    // 保存成功（rename 后临时文件已不存在，ENOENT 忽略）、异常路径统一在此清理，防临时文件泄漏
+    if (req.file) await fs.unlink(req.file.path).catch(() => {});
   }
 });
 
@@ -461,6 +494,39 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
       const prevMeta = typeof ownership.rows[0].metadata === 'string'
         ? (() => { try { return JSON.parse(ownership.rows[0].metadata || '{}'); } catch { return {}; } })()
         : (ownership.rows[0].metadata || {});
+
+      // ── metadata.files 回填（对齐 media.js POST /file 多文件契约，字段名逐字一致）：
+      //    files:[{fileId:落盘名, name:原始文件名, size:字节, mimeType}] + totalSize + totalCount。
+      //    原始文件名/mime 取 init 表单字段（session.filename / session.mimeType，init 必填已
+      //    收集，无需新增字段）。两种情形：
+      //    - 条目无 files（localOnly 占位条目，单文件 chunked 主路径）→ 写入单元素 files 数组；
+      //    - 条目已有 files（多文件+chunked 混合场景）→ 按 fileId 增量合并：同 fileId 就地更新、
+      //      否则追加，绝不删除/覆盖其他文件项；totalSize/totalCount 按 files[] 重算保持一致。
+      //    并发边界：complete 对同一 uploadId 只会执行一次（成功后即删会话），桌面端两步流程
+      //    串行（建条目→分片→complete），同一条目同一时刻仅本 uploadId 在写 metadata，
+      //    简单读改写可接受；若未来允许多 uploadId 并发回填同一条目，需升级为 JSONB 原子
+      //    操作（jsonb_set / ||）或行级锁。
+      const chunkFileEntry = {
+        fileId: finalFilename,
+        name: session.filename,
+        size: session.fileSize,
+        mimeType: session.mimeType,
+      };
+      const prevFiles = Array.isArray(prevMeta.files)
+        ? prevMeta.files.filter((f) => f && typeof f === 'object')
+        : null;
+      let nextFiles;
+      if (prevFiles) {
+        const existedIdx = prevFiles.findIndex((f) => f.fileId === finalFilename);
+        nextFiles = prevFiles.slice();
+        if (existedIdx >= 0) {
+          nextFiles[existedIdx] = { ...prevFiles[existedIdx], ...chunkFileEntry };
+        } else {
+          nextFiles.push(chunkFileEntry);
+        }
+      } else {
+        nextFiles = [chunkFileEntry];
+      }
       const mergedMetadata = {
         ...prevMeta,
         originalName: session.filename,
@@ -470,7 +536,10 @@ router.post('/complete/:uploadId', authenticateToken, apiLimiter, async (req, re
         fileSize: session.fileSize,
         localOnly: false,
         fileEncoding: 'server',
-        source: 'auto-sync'
+        source: 'auto-sync',
+        files: nextFiles,
+        totalSize: nextFiles.reduce((sum, f) => sum + (Number(f.size) || 0), 0),
+        totalCount: nextFiles.length,
       };
       const updated = await pool.query(
         `UPDATE clipboard_items

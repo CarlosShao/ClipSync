@@ -25,18 +25,20 @@ import twoFactorRoutes from './routes/two-factor.js';
 import deviceRoutes, { pairingRouter } from './routes/device.js';
 import clipboardRoutes from './routes/clipboard.js';
 import mediaRoutes from './routes/media.js';
+import storageRoutes from './routes/storage.js';
 import syncRoutes from './routes/sync.js';
 import wsRoutes from './routes/ws.js';
 import authRefreshRoutes from './routes/auth-refresh.js';
 import { startCleanupScheduler } from './db/cleanup.js';
 import { startVersionCleanupScheduler } from './utils/versionManager.js';
+import { startFileRetentionCleanup } from './services/fileRetentionCleanup.js';
 import pool from './db/pool.js';
 import migrate from './db/migrate.js';
 import { csrfProtection, handleGetCsrfToken } from './middleware/csrf.js';
 import chunkedUploadRoutes from './routes/chunked-upload.js';
 import versionRoutes from './routes/versions.js';
 import appRoutes from './routes/app.js';
-import { subscriptionCheck, requireFeature, checkDeviceLimit, checkClipboardLimit, checkFileSizeLimit } from './middleware/subscriptionCheck.js';
+import { subscriptionCheck, requireFeature, checkDeviceLimit, checkClipboardLimit } from './middleware/subscriptionCheck.js';
 import sessionRoutes from './routes/sessions.js';
 import notificationRoutes from './routes/notifications.js';
 import subscriptionRoutes from './routes/subscriptions.js';
@@ -377,6 +379,11 @@ app.use('/api/sync', authenticateToken, apiLimiter, csrfProtection, subscription
   req.userId = req.user.userId;
   next();
 }, syncRoutes);
+// 存储用量查询（F0.3）：中间件组合与 media 路由对齐（csrf 对 GET/Bearer 自动放行）
+app.use('/api/storage', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, storageRoutes);
 
 app.use('/api/upload', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
@@ -573,6 +580,10 @@ if (!isClusteredPrimary) {
     // 版本历史自动清理：服务端已在 PUT /api/clipboard/:id 覆盖前自动落版本，
     // 若无人清理 file_versions 会随每次内容变更无上限膨胀（autoCleanupInterval 此前零引用）
     startVersionCleanupScheduler();
+
+    // 文件保留期自动清理（F3.3）：按套餐 file_retention_days 删除过期 file 条目
+    // （DB 行 + 磁盘文件），顺带清扫分片/上传临时目录的 24h 遗留物
+    startFileRetentionCleanup();
 
     // 启用查询性能监控（非生产环境或明确启用时）
     if (config.nodeEnv !== 'production' || process.env.ENABLE_QUERY_MONITORING === 'true') {

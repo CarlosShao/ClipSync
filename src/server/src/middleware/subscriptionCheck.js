@@ -217,33 +217,6 @@ async function checkClipboardLimit(req, res, next) {
 }
 
 /**
- * 文件大小限制中间件
- */
-function checkFileSizeLimit(maxSizeMb) {
-  return async (req, res, next) => {
-    try {
-      const plan = req.user.plan;
-      
-      if (!plan) return next();
-      
-      if (maxSizeMb > plan.maxFileSizeMb) {
-        return res.status(403).json({
-          error: `File size exceeds plan limit (max ${plan.maxFileSizeMb}MB)`,
-          fileSize: maxSizeMb,
-          maxFileSize: plan.maxFileSizeMb,
-          upgradeUrl: '/subscribe',
-        });
-      }
-      
-      next();
-    } catch (err) {
-      logger.error('File size limit check error:', err);
-      res.status(500).json({ error: 'File size limit check failed' });
-    }
-  };
-}
-
-/**
  * 试用期管理：检查是否新用户（给7天Pro试用）
  */
 async function checkTrialEligibility(req, res, next) {
@@ -323,7 +296,6 @@ export {
   requireFeature,
   checkDeviceLimit,
   checkClipboardLimit,
-  checkFileSizeLimit,
   checkTrialEligibility,
   downgradeToFree,
   getPlanByName,

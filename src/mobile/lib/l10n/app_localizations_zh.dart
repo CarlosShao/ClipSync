@@ -1315,4 +1315,32 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get clipboardWritebackDesc => '其他设备同步来的新内容自动写入本机剪贴板，任意应用可直接粘贴';
+
+  @override
+  String get download => '下载';
+
+  @override
+  String get open => '打开';
+
+  @override
+  String get downloadAllZip => '全部下载（zip）';
+
+  @override
+  String filesCount(int count) {
+    return '$count 个文件';
+  }
+
+  @override
+  String downloadingPercent(int percent) {
+    return '下载中 $percent%';
+  }
+
+  @override
+  String get openFileFailed => '没有找到可打开此文件的应用';
+
+  @override
+  String get limitSyncNotice => '该文件在来源设备超出套餐限制，未同步到云端';
+
+  @override
+  String get viewPlans => '了解套餐';
 }

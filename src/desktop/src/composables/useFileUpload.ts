@@ -2,7 +2,8 @@ import { ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useClipboard } from '@/composables/useClipboard'
-import { planMaxUploadBytes } from '@/composables/clipboardUpload'
+import { usePlanLimits } from '@/composables/usePlanLimits'
+import { isHandledQuotaError } from '@/composables/useUploadLimitNotice'
 
 /**
  * 剪贴板文件上传：触发文件选择、按套餐限制大小、调用 useClipboard.uploadFileItem。
@@ -18,19 +19,18 @@ export function useFileUpload() {
     fileInputRef.value?.click()
   }
 
-  // 套餐大小上限统一走 clipboardUpload.planMaxUploadBytes（Free 128MB / Pro 256MB / Ent 1GB），
-  // 与剪贴板自动捕获（D1）共用同一份阈值，避免两处漂移。
-  const planMaxBytes = planMaxUploadBytes
-
   async function handleFileUpload(e: Event) {
     const input = e.target as HTMLInputElement
     if (!input.files?.length) return
     const files = Array.from(input.files)
     input.value = ''
 
+    // 套餐大小上限由后端下发（F0.4）：整批只取一次（usePlanLimits 内部有 5 分钟缓存），
+    // 与剪贴板自动捕获（D1）共用同一份后端阈值，避免两处漂移。
+    const maxBytes = await usePlanLimits().getMaxUploadBytes()
+
     let errorCount = 0
     for (const file of files) {
-      const maxBytes = planMaxBytes()
       if (file.size > maxBytes) {
         const maxMb = Math.round(maxBytes / 1024 / 1024)
         const sizeStr =
@@ -43,7 +43,11 @@ export function useFileUpload() {
         await clip.uploadFileItem(file)
       } catch (err: any) {
         errorCount++
-        toast.show(`${file.name}: ${err.message || t('upload_fail')}`, 'error')
+        // F3.1：413 配额错误已在 uploadFileItem 内弹出升级引导（24h 节流），
+        // 这里跳过通用 upload_fail，避免同一错误双 toast
+        if (!isHandledQuotaError(err)) {
+          toast.show(`${file.name}: ${err.message || t('upload_fail')}`, 'error')
+        }
       }
     }
 

@@ -328,6 +328,17 @@ async function renderPdf(arrayBuffer: ArrayBuffer) {
   pdfLoading.value = false
 }
 
+/** text-preview 返回的行是 HTML 转义文本（服务端防注入），预览按纯文本插值渲染，需先解码。
+ *  注意 &amp; 必须最后替换，避免二次解码。 */
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
 /** Load file content from server for file-type preview */
 async function loadFileContent(item: any) {
   if (!item?.id) return
@@ -590,28 +601,77 @@ async function loadFileContent(item: any) {
         }
       }
     } else {
-      // Text-based files: fetch content via lightweight endpoint
-      const content = await getClipboardItemContent(item.id)
-      if (content) {
-        // If content is a file path array (old uploads), read actual file via Tauri
-        let finalContent = content
+      // Text-based files（F1.1 统一落盘后的三级回退）：
+      // ① 本机 metadata.paths[0] 可读 → Tauri 读原文件（原设备最准，含完整内容）；
+      // ② 服务端落盘条目（fileEncoding !== 'text'）→ GET /api/media/:id/text-preview
+      //    （preview.lines 为 HTML 转义文本需解码；旧 uuid.ext 落盘文本条目同样受益）；
+      // ③ 旧文本正文条目（contentEncrypted=正文）/ 路径数组条目 → 保留原 getClipboardItemContent 链。
+      const itemMeta: Record<string, any> = (() => {
+        const m = (item as any)?.metadata
+        if (!m) return {}
+        if (typeof m === 'string') {
+          try {
+            return JSON.parse(m) || {}
+          } catch {
+            return {}
+          }
+        }
+        return m && typeof m === 'object' ? m : {}
+      })()
+      const localPaths: string[] = Array.isArray(itemMeta.paths)
+        ? itemMeta.paths.filter((p: unknown) => typeof p === 'string' && (p as string).length > 0)
+        : []
+      if (localPaths.length > 0) {
         try {
-          const parsed = JSON.parse(content)
-          if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string' && parsed[0].includes('\\')) {
-            // Path array — try reading actual file content
-            try {
-              const fileContent = await tauri.readFileContent(parsed[0])
-              if (fileContent) finalContent = fileContent
-            } catch {
-              /* file not readable */
-            }
+          const localText = await tauri.readFileContent(localPaths[0])
+          if (localText) {
+            previewContent.value = localText
+            if (docType === 'Markdown') previewToc.value = extractToc(localText)
+            fileContentLoading.value = false
+            return
           }
         } catch {
-          /* not JSON, use as-is */
+          /* 本机文件已不存在 → 继续服务端回退 */
         }
-        previewContent.value = finalContent
+      }
+      let loadedText = ''
+      if (itemMeta.fileEncoding !== 'text') {
+        try {
+          const tp = await api('GET', `/api/media/${item.id}/text-preview`)
+          const lines = tp?.data?.preview?.lines
+          if (tp.ok && Array.isArray(lines) && lines.length > 0) {
+            loadedText = lines.map((l: any) => decodeHtmlEntities(String(l))).join('\n')
+          }
+        } catch {
+          /* text-preview 不可用（非白名单扩展 / 旧服务端）→ 走旧链路 */
+        }
+      }
+      if (!loadedText) {
+        const content = await getClipboardItemContent(item.id)
+        if (content) {
+          // If content is a file path array (old uploads), read actual file via Tauri
+          let finalContent = content
+          try {
+            const parsed = JSON.parse(content)
+            if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string' && parsed[0].includes('\\')) {
+              // Path array — try reading actual file content
+              try {
+                const fileContent = await tauri.readFileContent(parsed[0])
+                if (fileContent) finalContent = fileContent
+              } catch {
+                /* file not readable */
+              }
+            }
+          } catch {
+            /* not JSON, use as-is */
+          }
+          loadedText = finalContent
+        }
+      }
+      if (loadedText) {
+        previewContent.value = loadedText
         if (docType === 'Markdown') {
-          previewToc.value = extractToc(finalContent)
+          previewToc.value = extractToc(loadedText)
         }
       } else {
         previewContent.value = t('preview_unable')

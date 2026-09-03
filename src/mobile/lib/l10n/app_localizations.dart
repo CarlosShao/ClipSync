@@ -2551,6 +2551,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'When a new item syncs from other devices, write it into this device clipboard so you can paste anywhere directly'**
   String get clipboardWritebackDesc;
+
+  /// No description provided for @download.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get download;
+
+  /// No description provided for @open.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get open;
+
+  /// No description provided for @downloadAllZip.
+  ///
+  /// In en, this message translates to:
+  /// **'Download all (zip)'**
+  String get downloadAllZip;
+
+  /// No description provided for @filesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} files'**
+  String filesCount(int count);
+
+  /// No description provided for @downloadingPercent.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading {percent}%'**
+  String downloadingPercent(int percent);
+
+  /// No description provided for @openFileFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'No app found to open this file'**
+  String get openFileFailed;
+
+  /// No description provided for @limitSyncNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'This file exceeded the plan limit on the source device and was not synced to the cloud'**
+  String get limitSyncNotice;
+
+  /// No description provided for @viewPlans.
+  ///
+  /// In en, this message translates to:
+  /// **'View plans'**
+  String get viewPlans;
 }
 
 class _AppLocalizationsDelegate

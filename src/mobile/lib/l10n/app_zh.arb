@@ -408,5 +408,13 @@
   "moveToCollection": "移动到…",
   "moveSuccess": "已移动 {count} 项",
   "clipboardWriteback": "自动回写系统剪贴板",
-  "clipboardWritebackDesc": "其他设备同步来的新内容自动写入本机剪贴板，任意应用可直接粘贴"
+  "clipboardWritebackDesc": "其他设备同步来的新内容自动写入本机剪贴板，任意应用可直接粘贴",
+  "download": "下载",
+  "open": "打开",
+  "downloadAllZip": "全部下载（zip）",
+  "filesCount": "{count} 个文件",
+  "downloadingPercent": "下载中 {percent}%",
+  "openFileFailed": "没有找到可打开此文件的应用",
+  "limitSyncNotice": "该文件在来源设备超出套餐限制，未同步到云端",
+  "viewPlans": "了解套餐"
 }
