@@ -150,6 +150,27 @@ class SyncService {
     } catch (_) {}
   }
 
+  /// 将服务配置（URL、token、deviceId、autoSyncScreenshots）同步给原生前台服务，
+  /// 使得即使用户锁屏、杀死 Activity 或划掉任务卡，原生服务依然能够自主执行后台图片上传
+  Future<void> updateSyncConfig({
+    required String baseUrl,
+    required String? token,
+    required String? deviceId,
+    required bool autoSyncScreenshots,
+  }) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod('updateSyncConfig', {
+        'baseUrl': baseUrl,
+        'token': token,
+        'deviceId': deviceId,
+        'autoSyncScreenshots': autoSyncScreenshots,
+      });
+    } catch (e) {
+      debugPrint('[SyncService] updateSyncConfig failed: $e');
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // 离线重放（B2：剪贴板采集离线持久化队列）
   // ---------------------------------------------------------------------------

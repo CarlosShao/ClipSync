@@ -88,6 +88,14 @@ class MainActivity : FlutterFragmentActivity() {
                     SyncForegroundService.releaseWakeLock()
                     result.success(true)
                 }
+                "updateSyncConfig" -> {
+                    val baseUrl = call.argument<String>("baseUrl")
+                    val token = call.argument<String>("token")
+                    val deviceId = call.argument<String>("deviceId")
+                    val autoSyncScreenshots = call.argument<Boolean>("autoSyncScreenshots") ?: true
+                    SyncForegroundService.saveSyncConfig(this, baseUrl, token, deviceId, autoSyncScreenshots)
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }

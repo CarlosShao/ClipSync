@@ -78,6 +78,30 @@ void main() async {
   );
   SyncService.instance.attach(authProvider);
 
+  // 同步当前配置至原生 SharedPreferences（使锁屏/后台服务脱离 Flutter Activity 依然能直接上传截图）
+  void syncConfigToNative() async {
+    try {
+      final token = await TokenStore.getAccessToken();
+      final deviceId = authProvider.deviceId ?? await authProvider.ensureDeviceId();
+      final baseUrl = ServerConfig.baseUrl;
+      final autoSync = settingsProvider.autoSyncScreenshots;
+      if (deviceId != null && deviceId.isNotEmpty) {
+        await SyncService.instance.updateSyncConfig(
+          baseUrl: baseUrl,
+          token: token,
+          deviceId: deviceId,
+          autoSyncScreenshots: autoSync,
+        );
+      }
+    } catch (e) {
+      debugPrint('[NativeSyncConfig] error: $e');
+    }
+  }
+
+  syncConfigToNative();
+  authProvider.addListener(syncConfigToNative);
+  settingsProvider.addListener(syncConfigToNative);
+
   // B3：网络恢复 → WS 自动重连。WsService 连续重连 10 次失败会按既有策略
   // 永久放弃，此处由 SyncService 的 connectivity 恢复事件重新发起连接；
   // WsProvider 在 main() 创建（.value 注入），供本钩子与 UI 共用同一实例。

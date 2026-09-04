@@ -1,5 +1,6 @@
 package com.clipsync.clipsync_mobile
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -24,6 +25,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
@@ -90,6 +92,18 @@ class SyncForegroundService : Service() {
         /** 外部（如 Dart 侧完成图片上传）通知释放唤醒锁 */
         fun releaseWakeLock() {
             instance?.releaseWakeLock()
+        }
+
+        /** 保存同步凭据（服务端地址、JWT token、设备 ID、自动同步开关），供服务脱离 Flutter 后台独立上传 */
+        fun saveSyncConfig(context: Context, baseUrl: String?, token: String?, deviceId: String?, autoSyncScreenshots: Boolean) {
+            val sp = context.getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
+            sp.edit()
+                .putString("baseUrl", baseUrl)
+                .putString("token", token)
+                .putString("deviceId", deviceId)
+                .putBoolean("autoSyncScreenshots", autoSyncScreenshots)
+                .apply()
+            Log.i(TAG, "Sync config saved: baseUrl=$baseUrl, deviceId=$deviceId, autoSync=$autoSyncScreenshots")
         }
 
         /** 启动前台服务（由 Dart 经 MainActivity 通道调用；应用前台场景无 FGS 启动限制） */
@@ -325,10 +339,29 @@ class SyncForegroundService : Service() {
                 val lower = fileName.lowercase()
                 if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) {
                     Log.i(TAG, "[FileObserver] Screenshot file written: $fileName in ${dir.name}")
-                    acquireWakeLock(15000L)
+                    acquireWakeLock(20000L)
+                    val file = File(dir, fileName)
+                    if (file.exists()) {
+                        // 1. 立即触发系统扫描，解决锁屏/后台休眠下 MediaStore 延迟索引问题
+                        MediaScannerConnection.scanFile(
+                            applicationContext,
+                            arrayOf(file.absolutePath),
+                            arrayOf("image/*")
+                        ) { path, uri ->
+                            Log.i(TAG, "MediaScanner scanned: $path -> $uri")
+                            acquireWakeLock(15000L)
+                            screenshotHandler?.post(checkScreenshotRunnable)
+                        }
+                        // 2. 避免等 MediaStore 延迟，文件已完成写入时延时 200ms 直接直读文件处理
+                        if (!fileName.startsWith(".") && file.length() > 1024) {
+                            screenshotHandler?.postDelayed({
+                                handleFileScreenshotDirectly(file)
+                            }, 200L)
+                        }
+                    }
                     val h = screenshotHandler ?: mainHandler
                     h.removeCallbacks(checkScreenshotRunnable)
-                    h.postDelayed(checkScreenshotRunnable, 40L)
+                    h.postDelayed(checkScreenshotRunnable, 300L)
                 }
             }
             obs.start()
@@ -397,6 +430,30 @@ class SyncForegroundService : Service() {
         }
         // START_STICKY：进程被系统回收后尝试重启服务（重启后 onCreate 重新挂监听/轮询）
         return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.i(TAG, "onTaskRemoved called - keeping foreground sync service alive")
+        try {
+            val restartIntent = Intent(applicationContext, SyncForegroundService::class.java).also {
+                it.setPackage(packageName)
+            }
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_ONE_SHOT
+            }
+            val pendingIntent = PendingIntent.getService(applicationContext, 1001, restartIntent, flags)
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            alarmManager?.set(
+                AlarmManager.ELAPSED_REALTIME,
+                SystemClock.elapsedRealtime() + 1000L,
+                pendingIntent
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "onTaskRemoved restart alarm failed", e)
+        }
     }
 
     override fun onDestroy() {
@@ -808,24 +865,27 @@ class SyncForegroundService : Service() {
                     return@post
                 }
                 pendingScreenshotIds.remove(id)
-                mainHandler.post {
-                    val channel = dartChannel
-                    if (channel == null) {
-                        Log.w(TAG, "dartChannel is null, dropping onScreenshotCaptured: $fileName")
-                        return@post
+                processedFileNames.add(fileName)
+                val channel = dartChannel
+                if (channel != null) {
+                    mainHandler.post {
+                        val args = mapOf<String, Any>(
+                            "bytes" to bytes,
+                            "fileName" to fileName,
+                            "mimeType" to mime,
+                            "capturedAt" to System.currentTimeMillis()
+                        )
+                        Log.i(TAG, "Dispatching onScreenshotCaptured to Dart: $fileName (${bytes.size} bytes)")
+                        try {
+                            channel.invokeMethod("onScreenshotCaptured", args)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "invoke onScreenshotCaptured failed, falling back to native upload", e)
+                            uploadScreenshotNatively(bytes, fileName, mime)
+                        }
                     }
-                    val args = mapOf<String, Any>(
-                        "bytes" to bytes,
-                        "fileName" to fileName,
-                        "mimeType" to mime,
-                        "capturedAt" to System.currentTimeMillis()
-                    )
-                    Log.i(TAG, "Dispatching onScreenshotCaptured to Dart: $fileName (${bytes.size} bytes)")
-                    try {
-                        channel.invokeMethod("onScreenshotCaptured", args)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "invoke onScreenshotCaptured failed", e)
-                    }
+                } else {
+                    Log.i(TAG, "dartChannel is null, uploading screenshot natively from MediaStore: $fileName (${bytes.size} bytes)")
+                    uploadScreenshotNatively(bytes, fileName, mime)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "read screenshot bytes failed", e)
@@ -840,6 +900,141 @@ class SyncForegroundService : Service() {
                     }
                 }
             }
+        }
+    }
+
+    private val processedFileNames = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    private fun handleFileScreenshotDirectly(file: File) {
+        try {
+            if (!file.exists() || !file.canRead() || file.length() < 1024) return
+            val name = file.name
+            if (name.startsWith(".") || processedFileNames.contains(name)) return
+
+            val lastModSec = file.lastModified() / 1000
+            val nowSec = System.currentTimeMillis() / 1000
+            if (lastModSec > 0 && Math.abs(nowSec - lastModSec) > 3600) return
+
+            acquireWakeLock(20000L)
+            val bytes = file.readBytes()
+            if (bytes.isEmpty()) return
+            processedFileNames.add(name)
+
+            val lower = name.lowercase()
+            val mime = when {
+                lower.endsWith(".png") -> "image/png"
+                lower.endsWith(".webp") -> "image/webp"
+                lower.endsWith(".gif") -> "image/gif"
+                else -> "image/jpeg"
+            }
+
+            val channel = dartChannel
+            if (channel != null) {
+                mainHandler.post {
+                    val args = mapOf<String, Any>(
+                        "bytes" to bytes,
+                        "fileName" to name,
+                        "mimeType" to mime,
+                        "capturedAt" to System.currentTimeMillis()
+                    )
+                    Log.i(TAG, "Dispatching file screenshot directly to Dart: $name (${bytes.size} bytes)")
+                    try {
+                        channel.invokeMethod("onScreenshotCaptured", args)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "invoke onScreenshotCaptured failed, falling back to native upload", e)
+                        uploadScreenshotNatively(bytes, name, mime)
+                    }
+                }
+            } else {
+                Log.i(TAG, "dartChannel is null, uploading screenshot natively from direct file: $name (${bytes.size} bytes)")
+                uploadScreenshotNatively(bytes, name, mime)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "handleFileScreenshotDirectly failed for ${file.absolutePath}", t)
+        }
+    }
+
+    private fun uploadScreenshotNatively(bytes: ByteArray, fileName: String, mimeType: String) {
+        val sp = getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
+        val autoSync = sp.getBoolean("autoSyncScreenshots", true)
+        if (!autoSync) {
+            Log.d(TAG, "uploadScreenshotNatively skipped: autoSync is false")
+            releaseWakeLock()
+            return
+        }
+        val baseUrl = sp.getString("baseUrl", null)?.trimEnd('/')
+        val token = sp.getString("token", null)
+        val deviceId = sp.getString("deviceId", null)
+        if (baseUrl.isNullOrEmpty() || token.isNullOrEmpty() || deviceId.isNullOrEmpty()) {
+            Log.w(TAG, "uploadScreenshotNatively skipped: missing config (baseUrl=$baseUrl, tokenPresent=${!token.isNullOrEmpty()}, deviceId=$deviceId)")
+            releaseWakeLock()
+            return
+        }
+
+        screenshotHandler?.post {
+            acquireWakeLock(30000L)
+            var success = false
+            for (attempt in 1..3) {
+                var conn: java.net.HttpURLConnection? = null
+                try {
+                    val boundary = "====" + System.currentTimeMillis() + "===="
+                    val url = java.net.URL("$baseUrl/api/media/image")
+                    conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.connectTimeout = 12000
+                    conn.readTimeout = 15000
+                    conn.doOutput = true
+                    conn.doInput = true
+                    conn.useCaches = false
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                    conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+
+                    val os = conn.outputStream
+                    val writer = java.io.PrintWriter(java.io.OutputStreamWriter(os, "UTF-8"), true)
+
+                    // 1. sourceDeviceId field
+                    writer.append("--$boundary\r\n")
+                    writer.append("Content-Disposition: form-data; name=\"sourceDeviceId\"\r\n\r\n")
+                    writer.append("$deviceId\r\n")
+                    writer.flush()
+
+                    // 2. image file field
+                    val mime = if (mimeType.isNotBlank()) mimeType else "image/png"
+                    val safeName = if (fileName.isNotBlank()) fileName else "Screenshot_${System.currentTimeMillis()}.png"
+                    writer.append("--$boundary\r\n")
+                    writer.append("Content-Disposition: form-data; name=\"image\"; filename=\"$safeName\"\r\n")
+                    writer.append("Content-Type: $mime\r\n\r\n")
+                    writer.flush()
+
+                    os.write(bytes)
+                    os.flush()
+
+                    writer.append("\r\n--$boundary--\r\n")
+                    writer.flush()
+                    writer.close()
+
+                    val code = conn.responseCode
+                    if (code == 201) {
+                        Log.i(TAG, "uploadScreenshotNatively SUCCESS: $safeName (${bytes.size} bytes)")
+                        success = true
+                        break
+                    } else {
+                        val errBody = try {
+                            conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+                        } catch (_: Throwable) { "" }
+                        Log.w(TAG, "uploadScreenshotNatively attempt $attempt failed with code $code: $errBody")
+                        if (code in 400..499) break
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "uploadScreenshotNatively attempt $attempt error: ${t.message}")
+                    if (attempt < 3) {
+                        try { Thread.sleep(600L * attempt) } catch (_: Throwable) {}
+                    }
+                } finally {
+                    try { conn?.disconnect() } catch (_: Throwable) {}
+                }
+            }
+            releaseWakeLock()
         }
     }
 

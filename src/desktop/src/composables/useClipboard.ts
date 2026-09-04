@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import * as tauri from '@/lib/tauri'
-import { api, apiForm } from '@/api/client'
+import { api, apiForm, apiBlob } from '@/api/client'
 import { recordUse } from '@/api/clipboard'
 import { useItemPassword } from '@/composables/useItemPassword'
 import { usePlanLimits } from '@/composables/usePlanLimits'
@@ -550,8 +550,24 @@ export function useClipboard() {
         return false
       }
       if (item.type === 'image') {
-        // 图片：优先用本地完整 data URL，否则从服务器下载高清全量原图
+        // 图片：优先用本地完整 data URL，若为 blob URL 直接读取转为 base64 data URL
         let dataUrl = item.content || item.preview || ''
+        if (dataUrl.startsWith('blob:')) {
+          try {
+            const resp = await fetch(dataUrl)
+            if (resp.ok) {
+              const blob = await resp.blob()
+              dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader()
+                reader.onloadend = () => resolve(reader.result as string)
+                reader.onerror = reject
+                reader.readAsDataURL(blob)
+              })
+            }
+          } catch {
+            /* fallback to apiBlob */
+          }
+        }
         if (!dataUrl || dataUrl.startsWith('[Image') || !dataUrl.startsWith('data:')) {
           try {
             // 优先从 /download 下载全量原图
