@@ -84,6 +84,10 @@ class MainActivity : FlutterFragmentActivity() {
                         result.error("INVALID_ARGS", "bytes cannot be null", null)
                     }
                 }
+                "finishScreenshotProcessing" -> {
+                    SyncForegroundService.releaseWakeLock()
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }

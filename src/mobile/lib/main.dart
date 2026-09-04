@@ -152,6 +152,9 @@ void main() async {
       }
     } catch (e, stack) {
       debugPrint('[ScreenshotCapture] Upload failed: $e\n$stack');
+    } finally {
+      // 无论上传成功还是异常，通知原生端释放 WakeLock
+      SyncService.instance.finishScreenshotProcessing();
     }
   };
 

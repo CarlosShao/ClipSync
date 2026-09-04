@@ -17,6 +17,7 @@ import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.FileObserver
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
@@ -83,6 +84,11 @@ class SyncForegroundService : Service() {
                     }
                 }
             }
+        }
+
+        /** 外部（如 Dart 侧完成图片上传）通知释放唤醒锁 */
+        fun releaseWakeLock() {
+            instance?.releaseWakeLock()
         }
 
         /** 启动前台服务（由 Dart 经 MainActivity 通道调用；应用前台场景无 FGS 启动限制） */
@@ -207,6 +213,113 @@ class SyncForegroundService : Service() {
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private var pollTimer: Timer? = null
 
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    private fun acquireWakeLock(durationMs: Long = 15000L) {
+        try {
+            if (wakeLock == null) {
+                val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "clipsync:screenshot_sync_lock")?.apply {
+                    setReferenceCounted(false)
+                }
+            }
+            wakeLock?.acquire(durationMs)
+            Log.d(TAG, "WakeLock acquired for ${durationMs}ms")
+        } catch (t: Throwable) {
+            Log.w(TAG, "acquireWakeLock failed", t)
+        }
+    }
+
+    fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+                Log.d(TAG, "WakeLock released")
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "releaseWakeLock failed", t)
+        }
+    }
+
+    private class DirectoryFileObserver(
+        private val dir: File,
+        private val onFileEvent: (String) -> Unit
+    ) {
+        private var observer: FileObserver? = null
+
+        fun start() {
+            if (!dir.exists()) {
+                try {
+                    dir.mkdirs()
+                } catch (_: Throwable) {}
+            }
+            try {
+                val mask = FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO
+                val obs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    object : FileObserver(dir, mask) {
+                        override fun onEvent(event: Int, path: String?) {
+                            if (path != null) onFileEvent(path)
+                        }
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    object : FileObserver(dir.absolutePath, mask) {
+                        override fun onEvent(event: Int, path: String?) {
+                            if (path != null) onFileEvent(path)
+                        }
+                    }
+                }
+                obs.startWatching()
+                observer = obs
+                Log.i(TAG, "DirectoryFileObserver watching: ${dir.absolutePath}")
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to start DirectoryFileObserver for ${dir.absolutePath}", t)
+            }
+        }
+
+        fun stop() {
+            try {
+                observer?.stopWatching()
+            } catch (_: Throwable) {}
+            observer = null
+        }
+    }
+
+    private val fileObservers = mutableListOf<DirectoryFileObserver>()
+
+    private fun startFileObservers() {
+        // 覆盖主流安卓品牌截屏存储目录：
+        // 1. Pictures/Screenshots：AOSP、MIUI/HyperOS、ColorOS、OriginOS、HarmonyOS、Pixel
+        // 2. DCIM/Screenshots：三星 OneUI、部分机型相册默认
+        // 3. Pictures/ScreenCapture：部分华为/荣耀机型
+        val dirs = listOf(
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots"),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Screenshots"),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "ScreenCapture")
+        )
+        for (dir in dirs) {
+            val obs = DirectoryFileObserver(dir) { fileName ->
+                val lower = fileName.lowercase()
+                if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) {
+                    Log.i(TAG, "[FileObserver] Screenshot file written: $fileName in ${dir.name}")
+                    acquireWakeLock(15000L)
+                    val h = screenshotHandler ?: mainHandler
+                    h.removeCallbacks(checkScreenshotRunnable)
+                    h.postDelayed(checkScreenshotRunnable, 40L)
+                }
+            }
+            obs.start()
+            fileObservers.add(obs)
+        }
+    }
+
+    private fun stopFileObservers() {
+        for (obs in fileObservers) {
+            obs.stop()
+        }
+        fileObservers.clear()
+    }
+
     private var screenshotObserver: ContentObserver? = null
     private var lastProcessedScreenshotId: Long = -1L
     private var lastScreenshotTime: Long = 0
@@ -236,6 +349,11 @@ class SyncForegroundService : Service() {
         createNotificationChannel()
         startForegroundCompat()
 
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "clipsync:screenshot_sync_lock")?.apply {
+            setReferenceCounted(false)
+        }
+
         val sThread = HandlerThread("clipsync-screenshot-worker").apply { start() }
         screenshotThread = sThread
         screenshotHandler = Handler(sThread.looper)
@@ -243,6 +361,7 @@ class SyncForegroundService : Service() {
         initLastScreenshotId()
         registerClipListener()
         registerScreenshotObserver()
+        startFileObservers()
         startPolling()
         screenshotHandler?.post(screenshotRunnable)
         Log.i(TAG, "foreground service started")
@@ -258,6 +377,10 @@ class SyncForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        stopFileObservers()
+        releaseWakeLock()
+        wakeLock = null
+
         pollTimer?.cancel()
         pollTimer = null
 
@@ -428,8 +551,37 @@ class SyncForegroundService : Service() {
     }
 
     // -------------------------------------------------------------------------
-    // 移动端系统截图感知监听（MediaStore.Images.Media ContentObserver + 异步 HandlerThread 轮询）
+    // 移动端系统截图感知监听（MediaStore.Images.Media ContentObserver + FileObserver + 异步 HandlerThread 轮询）
     // -------------------------------------------------------------------------
+
+    private data class ScreenshotCandidate(
+        val id: Long,
+        val name: String,
+        val mime: String,
+        val dateAdded: Long
+    )
+
+    private val checkScreenshotRunnable = Runnable {
+        try {
+            checkLatestScreenshot()
+        } catch (t: Throwable) {
+            Log.w(TAG, "checkLatestScreenshot error", t)
+        }
+    }
+
+    private val fastRetryRunnable = Runnable {
+        try {
+            checkLatestScreenshot()
+        } catch (t: Throwable) {
+            Log.w(TAG, "fastRetry checkLatestScreenshot error", t)
+        }
+    }
+
+    private fun scheduleFastRetry() {
+        val h = screenshotHandler ?: return
+        h.removeCallbacks(fastRetryRunnable)
+        h.postDelayed(fastRetryRunnable, 80L)
+    }
 
     private fun initLastScreenshotId() {
         try {
@@ -456,14 +608,14 @@ class SyncForegroundService : Service() {
     }
 
     private fun registerScreenshotObserver() {
-        val handler = Handler(Looper.getMainLooper())
-        val observer = object : ContentObserver(handler) {
+        // 使用专用的 HandlerThread Looper，即使应用切到后台主线程被系统休眠，工作线程仍能立即响应 ContentObserver 事件
+        val h = screenshotHandler ?: Handler(Looper.getMainLooper())
+        val observer = object : ContentObserver(h) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
                 super.onChange(selfChange, uri)
-                // 系统截图生成时可能触发多次，由异步 HandlerThread 防抖 350ms 处理
-                screenshotHandler?.postDelayed({
-                    checkLatestScreenshot()
-                }, 350)
+                acquireWakeLock(15000L)
+                h.removeCallbacks(checkScreenshotRunnable)
+                h.postDelayed(checkScreenshotRunnable, 50L)
             }
         }
         screenshotObserver = observer
@@ -473,7 +625,7 @@ class SyncForegroundService : Service() {
                 true,
                 observer
             )
-            Log.i(TAG, "ScreenshotObserver registered")
+            Log.i(TAG, "ScreenshotObserver registered on worker looper")
         } catch (e: Exception) {
             Log.w(TAG, "register ScreenshotObserver failed", e)
         }
@@ -509,7 +661,10 @@ class SyncForegroundService : Service() {
                 sortOrder
             )?.use { cursor ->
                 var rowsChecked = 0
-                while (cursor.moveToNext() && rowsChecked < 10) {
+                var hasPending = false
+                val candidates = mutableListOf<ScreenshotCandidate>()
+
+                while (cursor.moveToNext() && rowsChecked < 15) {
                     rowsChecked++
                     val idIndex = cursor.getColumnIndex(MediaStore.Images.Media._ID)
                     val nameIndex = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
@@ -531,9 +686,10 @@ class SyncForegroundService : Service() {
                         continue
                     }
 
-                    // 2. 如果系统还在异步落盘写入（is_pending == 1），跳过本次等待下一次检测，切勿标记为已处理
+                    // 2. 如果系统还在异步落盘写入（is_pending == 1），标记需要快速重试，切勿跳过并永久丢弃
                     if (pendingIndex >= 0 && cursor.getInt(pendingIndex) == 1) {
-                        Log.d(TAG, "Screenshot id=$id is still pending, waiting next check")
+                        Log.d(TAG, "Screenshot id=$id is still pending, scheduling fast retry")
+                        hasPending = true
                         continue
                     }
 
@@ -553,6 +709,13 @@ class SyncForegroundService : Service() {
                     val lowerData = data.lowercase()
                     val lowerRelative = relative.lowercase()
 
+                    // 全品牌厂商截屏命名与路径规则覆盖：
+                    // 小米/MIUI/HyperOS: Screenshot_2026-09-04-17-12-13.png / Pictures/Screenshots
+                    // 华为/荣耀/HarmonyOS: Screenshot_... 或 截屏_...
+                    // OPPO/一加/ColorOS: Screenshot_...
+                    // vivo/iQOO/OriginOS: Screenshot_...
+                    // 三星/OneUI: DCIM/Screenshots/Screenshot_...
+                    // Pixel/AOSP: Pictures/Screenshots/Screenshot_...
                     val isScreenshot = lowerName.contains("screenshot") ||
                         lowerName.contains("截屏") ||
                         lowerName.contains("screen_shot") ||
@@ -566,12 +729,24 @@ class SyncForegroundService : Service() {
                         lowerRelative.contains("截屏")
 
                     if (isScreenshot) {
-                        pendingScreenshotIds.add(id)
-                        lastProcessedScreenshotId = Math.max(lastProcessedScreenshotId, id)
+                        candidates.add(ScreenshotCandidate(id, name, mime, dateAdded))
+                    }
+                }
+
+                if (hasPending) {
+                    scheduleFastRetry()
+                }
+
+                if (candidates.isNotEmpty()) {
+                    acquireWakeLock(15000L)
+                    // 按 ID 升序依次分发，保证连续多张截图按拍摄时间顺序上传，且不会丢弃中间的截图
+                    candidates.sortBy { it.id }
+                    for (candidate in candidates) {
+                        pendingScreenshotIds.add(candidate.id)
+                        lastProcessedScreenshotId = Math.max(lastProcessedScreenshotId, candidate.id)
                         lastScreenshotTime = System.currentTimeMillis()
-                        Log.i(TAG, "[ScreenshotObserver] Detected new screenshot: $name (id=$id, mime=$mime)")
-                        dispatchScreenshotCaptured(id, name, mime, 0)
-                        break
+                        Log.i(TAG, "[ScreenshotObserver] Detected new screenshot: ${candidate.name} (id=${candidate.id}, mime=${candidate.mime})")
+                        dispatchScreenshotCaptured(candidate.id, candidate.name, candidate.mime, 0)
                     }
                 }
             }
@@ -588,18 +763,19 @@ class SyncForegroundService : Service() {
         }
         sHandler.post {
             try {
+                acquireWakeLock(15000L)
                 val uri = ContentUris.withAppendedId(
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     id
                 )
                 val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 if (bytes == null || bytes.isEmpty()) {
-                    if (retryCount < 8) {
+                    if (retryCount < 10) {
                         sHandler.postDelayed({
                             dispatchScreenshotCaptured(id, fileName, mime, retryCount + 1)
-                        }, 400)
+                        }, 100L)
                     } else {
-                        Log.w(TAG, "read screenshot bytes empty after 8 retries: $fileName (id=$id)")
+                        Log.w(TAG, "read screenshot bytes empty after 10 retries: $fileName (id=$id)")
                         pendingScreenshotIds.remove(id)
                         if (lastProcessedScreenshotId == id) {
                             lastProcessedScreenshotId = id - 1
@@ -629,10 +805,10 @@ class SyncForegroundService : Service() {
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "read screenshot bytes failed", e)
-                if (retryCount < 8) {
+                if (retryCount < 10) {
                     sHandler.postDelayed({
                         dispatchScreenshotCaptured(id, fileName, mime, retryCount + 1)
-                    }, 400)
+                    }, 100L)
                 } else {
                     pendingScreenshotIds.remove(id)
                     if (lastProcessedScreenshotId == id) {

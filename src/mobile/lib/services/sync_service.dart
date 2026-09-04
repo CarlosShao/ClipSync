@@ -143,6 +143,13 @@ class SyncService {
     }
   }
 
+  /// 通知原生端截图上传或处理完成，可释放 WakeLock
+  Future<void> finishScreenshotProcessing() async {
+    try {
+      await _channel.invokeMethod('finishScreenshotProcessing');
+    } catch (_) {}
+  }
+
   // ---------------------------------------------------------------------------
   // 离线重放（B2：剪贴板采集离线持久化队列）
   // ---------------------------------------------------------------------------
