@@ -57,7 +57,7 @@ class SyncForegroundService : Service() {
         private const val NOTIFICATION_ID = 1001
 
         /** 采集轮询间隔（毫秒） */
-        private const val POLL_INTERVAL_MS = 2000L
+        private const val POLL_INTERVAL_MS = 1500L
 
         /** Dart 引擎侧通道（MainActivity.configureFlutterEngine 注入；服务经它向 Dart 推送采集文本） */
         @Volatile
@@ -69,6 +69,15 @@ class SyncForegroundService : Service() {
 
         /** 运行中实例（优雅停止用） */
         private var instance: SyncForegroundService? = null
+
+        /** 外部（如 Activity 回到前台或 ScreenCaptureCallback 触发）请求主动检测截屏 */
+        fun triggerScreenshotCheck() {
+            instance?.let { service ->
+                service.mainHandler.post {
+                    service.checkLatestScreenshot()
+                }
+            }
+        }
 
         /** 启动前台服务（由 Dart 经 MainActivity 通道调用；应用前台场景无 FGS 启动限制） */
         fun start(context: Context) {
@@ -152,6 +161,9 @@ class SyncForegroundService : Service() {
                     try {
                         val id = ContentUris.parseId(uri)
                         recentlySavedImageIds.add(id)
+                        instance?.let { service ->
+                            service.lastProcessedScreenshotId = Math.max(service.lastProcessedScreenshotId, id)
+                        }
                     } catch (_: Exception) {}
 
                     // 触发媒体扫描，让第三方应用（如微信）相册选择器立即刷新呈现
@@ -201,6 +213,7 @@ class SyncForegroundService : Service() {
         isRunning = true
         createNotificationChannel()
         startForegroundCompat()
+        initLastScreenshotId()
         registerClipListener()
         registerScreenshotObserver()
         startPolling()
@@ -317,11 +330,12 @@ class SyncForegroundService : Service() {
     }
 
     private fun startPolling() {
-        // 轮询兜底：监听器在某些 ROM / Android 10+ 焦点受限场景不触发
+        // 轮询兜底：监听器在某些 ROM / Android 10+ 焦点受限场景不触发；同时轮询感知系统截屏
         pollTimer = Timer("clipsync-clipboard-poll", true)
         pollTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
                 readClipboard("poll")
+                checkLatestScreenshot()
             }
         }, POLL_INTERVAL_MS, POLL_INTERVAL_MS)
     }
@@ -380,6 +394,30 @@ class SyncForegroundService : Service() {
     // 移动端系统截图感知监听（MediaStore.Images.Media ContentObserver）
     // -------------------------------------------------------------------------
 
+    private fun initLastScreenshotId() {
+        try {
+            val projection = arrayOf(MediaStore.Images.Media._ID)
+            val sortOrder = "${MediaStore.Images.Media._ID} DESC"
+            contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                null,
+                null,
+                sortOrder
+            )?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(MediaStore.Images.Media._ID)
+                    if (idx >= 0) {
+                        lastProcessedScreenshotId = c.getLong(idx)
+                        Log.i(TAG, "Initialized lastProcessedScreenshotId to $lastProcessedScreenshotId")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "initLastScreenshotId failed", e)
+        }
+    }
+
     private val checkScreenshotRunnable = Runnable {
         checkLatestScreenshot()
     }
@@ -408,7 +446,7 @@ class SyncForegroundService : Service() {
         }
     }
 
-    private fun checkLatestScreenshot() {
+    fun checkLatestScreenshot() {
         try {
             val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 arrayOf(
@@ -428,7 +466,7 @@ class SyncForegroundService : Service() {
                     MediaStore.Images.Media.MIME_TYPE
                 )
             }
-            val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+            val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC, ${MediaStore.Images.Media._ID} DESC"
             contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 projection,
@@ -436,7 +474,9 @@ class SyncForegroundService : Service() {
                 null,
                 sortOrder
             )?.use { cursor ->
-                if (cursor.moveToFirst()) {
+                var rowsChecked = 0
+                while (cursor.moveToNext() && rowsChecked < 5) {
+                    rowsChecked++
                     val idIndex = cursor.getColumnIndex(MediaStore.Images.Media._ID)
                     val nameIndex = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
                     val dataIndex = cursor.getColumnIndex(MediaStore.Images.Media.DATA)
@@ -447,6 +487,13 @@ class SyncForegroundService : Service() {
                     val mimeIndex = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE)
 
                     val id = if (idIndex >= 0) cursor.getLong(idIndex) else -1L
+                    if (id <= 0) continue
+
+                    // 过滤已处理项与由 ClipSync 本地刚刚保存的图片，防止回环
+                    if (id <= lastProcessedScreenshotId || recentlySavedImageIds.contains(id)) {
+                        continue
+                    }
+
                     val name = if (nameIndex >= 0) cursor.getString(nameIndex) ?: "" else ""
                     val data = if (dataIndex >= 0) cursor.getString(dataIndex) ?: "" else ""
                     val relative = if (relativeIndex >= 0) cursor.getString(relativeIndex) ?: "" else ""
@@ -454,35 +501,33 @@ class SyncForegroundService : Service() {
                     val mime = if (mimeIndex >= 0) cursor.getString(mimeIndex) ?: "image/png" else "image/png"
 
                     val nowSec = System.currentTimeMillis() / 1000
-                    // 时间窗口判定：30秒以内新增（容忍±5秒时钟偏差）
-                    if (id >= 0 && Math.abs(nowSec - dateAdded) <= 30) {
-                        // 过滤由 ClipSync 本地刚刚保存的图片，防止回环
-                        if (recentlySavedImageIds.contains(id)) {
-                            return
-                        }
+                    // 时间窗口判定：60秒以内新增（容忍±10秒时钟偏差）
+                    if (Math.abs(nowSec - dateAdded) > 60) {
+                        continue
+                    }
 
-                        val lowerName = name.lowercase()
-                        val lowerData = data.lowercase()
-                        val lowerRelative = relative.lowercase()
+                    val lowerName = name.lowercase()
+                    val lowerData = data.lowercase()
+                    val lowerRelative = relative.lowercase()
 
-                        val isScreenshot = lowerName.contains("screenshot") ||
-                            lowerName.contains("截屏") ||
-                            lowerName.contains("screen_shot") ||
-                            lowerName.contains("screencap") ||
-                            lowerData.contains("screenshot") ||
-                            lowerData.contains("截屏") ||
-                            lowerData.contains("screen_shot") ||
-                            lowerRelative.contains("screenshot") ||
-                            lowerRelative.contains("截屏")
+                    val isScreenshot = lowerName.contains("screenshot") ||
+                        lowerName.contains("截屏") ||
+                        lowerName.contains("screen_shot") ||
+                        lowerName.contains("screencap") ||
+                        lowerName.contains("screen-shot") ||
+                        lowerData.contains("screenshot") ||
+                        lowerData.contains("截屏") ||
+                        lowerData.contains("screen_shot") ||
+                        lowerData.contains("screencap") ||
+                        lowerRelative.contains("screenshot") ||
+                        lowerRelative.contains("截屏")
 
-                        if (isScreenshot && id != lastProcessedScreenshotId &&
-                            (System.currentTimeMillis() - lastScreenshotTime > 1500)
-                        ) {
-                            lastProcessedScreenshotId = id
-                            lastScreenshotTime = System.currentTimeMillis()
-                            Log.i(TAG, "Detected new screenshot: $name (id=$id)")
-                            dispatchScreenshotCaptured(id, name, mime, 0)
-                        }
+                    if (isScreenshot && (System.currentTimeMillis() - lastScreenshotTime > 1200)) {
+                        lastProcessedScreenshotId = Math.max(lastProcessedScreenshotId, id)
+                        lastScreenshotTime = System.currentTimeMillis()
+                        Log.i(TAG, "[ScreenshotObserver] Detected new screenshot: $name (id=$id, mime=$mime)")
+                        dispatchScreenshotCaptured(id, name, mime, 0)
+                        break
                     }
                 }
             }
@@ -501,21 +546,28 @@ class SyncForegroundService : Service() {
             )
             val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
             if (bytes == null || bytes.isEmpty()) {
-                if (retryCount < 3) {
+                if (retryCount < 5) {
                     mainHandler.postDelayed({
                         dispatchScreenshotCaptured(id, fileName, mime, retryCount + 1)
                     }, 300)
+                } else {
+                    Log.w(TAG, "read screenshot bytes empty after 5 retries: $fileName (id=$id)")
                 }
                 return
             }
             mainHandler.post {
-                val channel = dartChannel ?: return@post
+                val channel = dartChannel
+                if (channel == null) {
+                    Log.w(TAG, "dartChannel is null, dropping onScreenshotCaptured: $fileName")
+                    return@post
+                }
                 val args = mapOf<String, Any>(
                     "bytes" to bytes,
                     "fileName" to fileName,
                     "mimeType" to mime,
                     "capturedAt" to System.currentTimeMillis()
                 )
+                Log.i(TAG, "Dispatching onScreenshotCaptured to Dart: $fileName (${bytes.size} bytes)")
                 try {
                     channel.invokeMethod("onScreenshotCaptured", args)
                 } catch (e: Exception) {

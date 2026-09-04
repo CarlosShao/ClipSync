@@ -115,10 +115,9 @@ void main() async {
   // 手机端原生截屏感知 → 自动上传至服务端（PC 端与移动端列表即时呈现）。
   // 原生侧已按 content:// 读取好图片字节（Android 10+ 分区存储下文件路径
   // 可能不可直读，统一由原生读取最稳）。
-  // 手机端原生截屏感知 → 自动上传至服务端（PC 端与移动端列表即时呈现）。
-  // 原生侧已按 content:// 读取好图片字节（Android 10+ 分区存储下文件路径
-  // 可能不可直读，统一由原生读取最稳）。
   SyncService.instance.onScreenshotCaptured = (bytes, fileName, mimeType) async {
+    debugPrint(
+        '[ScreenshotCapture] onScreenshotCaptured received from native: fileName=$fileName, mime=$mimeType, bytes=${bytes.length}');
     if (!settingsProvider.autoSyncScreenshots) {
       debugPrint('[ScreenshotCapture] skipped: autoSyncScreenshots is off');
       return;
@@ -129,7 +128,10 @@ void main() async {
       return;
     }
     try {
-      if (bytes.isEmpty) return;
+      if (bytes.isEmpty) {
+        debugPrint('[ScreenshotCapture] dropped: bytes is empty');
+        return;
+      }
       final filename = (fileName == null || fileName.isEmpty)
           ? 'screenshot_${DateTime.now().millisecondsSinceEpoch}.png'
           : fileName;
@@ -148,8 +150,8 @@ void main() async {
       } else {
         debugPrint('[ScreenshotCapture] uploadImage returned null');
       }
-    } catch (e) {
-      debugPrint('[ScreenshotCapture] Upload failed: $e');
+    } catch (e, stack) {
+      debugPrint('[ScreenshotCapture] Upload failed: $e\n$stack');
     }
   };
 

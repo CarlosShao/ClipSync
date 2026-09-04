@@ -363,10 +363,13 @@ class ApiService {
       contentType: MediaType.parse(_resolveImageMime(mimeType, filename)),
     ));
 
-    final response = await request.send();
-    if (response.statusCode == 201) {
-      return _decodeMap(await response.stream.bytesToString());
+    final streamedResponse = await request.send();
+    final responseBody = await streamedResponse.stream.bytesToString();
+    if (streamedResponse.statusCode == 201) {
+      return _decodeMap(responseBody);
     }
+    // ignore: avoid_print
+    print('[ApiService.uploadImage] Failed (${streamedResponse.statusCode}): $responseBody');
     return null;
   }
 

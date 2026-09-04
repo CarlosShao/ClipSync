@@ -1,11 +1,13 @@
 package com.clipsync.clipsync_mobile
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -29,9 +31,12 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterFragmentActivity() {
 
     companion object {
+        private const val TAG = "MainActivity"
         private const val NOTIFICATION_PERMISSION_REQUEST = 7301
         private const val MEDIA_READ_PERMISSION_REQUEST = 7302
     }
+
+    private var screenCaptureCallback: Activity.ScreenCaptureCallback? = null
 
     /** 进行中的通知权限申请结果回调（通道调用发生在主线程） */
     private var pendingNotificationResult: MethodChannel.Result? = null
@@ -139,6 +144,45 @@ class MainActivity : FlutterFragmentActivity() {
                 return false
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            if (screenCaptureCallback == null) {
+                val callback = Activity.ScreenCaptureCallback {
+                    Log.i(TAG, "ScreenCaptureCallback triggered")
+                    SyncForegroundService.triggerScreenshotCheck()
+                }
+                screenCaptureCallback = callback
+                try {
+                    registerScreenCaptureCallback(mainExecutor, callback)
+                } catch (e: Exception) {
+                    Log.w(TAG, "registerScreenCaptureCallback failed", e)
+                }
+            }
+        }
+        SyncForegroundService.triggerScreenshotCheck()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        SyncForegroundService.triggerScreenshotCheck()
+    }
+
+    override fun onStop() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val callback = screenCaptureCallback
+            if (callback != null) {
+                try {
+                    unregisterScreenCaptureCallback(callback)
+                } catch (e: Exception) {
+                    Log.w(TAG, "unregisterScreenCaptureCallback failed", e)
+                }
+                screenCaptureCallback = null
+            }
+        }
+        super.onStop()
     }
 
     override fun onDestroy() {
