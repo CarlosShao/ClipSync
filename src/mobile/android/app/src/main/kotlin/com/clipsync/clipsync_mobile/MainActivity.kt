@@ -36,8 +36,6 @@ class MainActivity : FlutterFragmentActivity() {
         private const val MEDIA_READ_PERMISSION_REQUEST = 7302
     }
 
-    private var screenCaptureCallback: Activity.ScreenCaptureCallback? = null
-
     /** 进行中的通知权限申请结果回调（通道调用发生在主线程） */
     private var pendingNotificationResult: MethodChannel.Result? = null
 
@@ -148,41 +146,12 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            if (screenCaptureCallback == null) {
-                val callback = Activity.ScreenCaptureCallback {
-                    Log.i(TAG, "ScreenCaptureCallback triggered")
-                    SyncForegroundService.triggerScreenshotCheck()
-                }
-                screenCaptureCallback = callback
-                try {
-                    registerScreenCaptureCallback(mainExecutor, callback)
-                } catch (e: Exception) {
-                    Log.w(TAG, "registerScreenCaptureCallback failed", e)
-                }
-            }
-        }
         SyncForegroundService.triggerScreenshotCheck()
     }
 
     override fun onResume() {
         super.onResume()
         SyncForegroundService.triggerScreenshotCheck()
-    }
-
-    override fun onStop() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val callback = screenCaptureCallback
-            if (callback != null) {
-                try {
-                    unregisterScreenCaptureCallback(callback)
-                } catch (e: Exception) {
-                    Log.w(TAG, "unregisterScreenCaptureCallback failed", e)
-                }
-                screenCaptureCallback = null
-            }
-        }
-        super.onStop()
     }
 
     override fun onDestroy() {

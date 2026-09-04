@@ -110,7 +110,7 @@ class SyncService {
             final bytes = args['bytes'];
             final fileName = args['fileName'];
             final mimeType = args['mimeType'];
-            if (bytes is Uint8List && bytes.isNotEmpty && await _isCaptureEnabled()) {
+            if (bytes is Uint8List && bytes.isNotEmpty) {
               onScreenshotCaptured?.call(bytes, fileName as String?, mimeType as String?);
             }
           }
