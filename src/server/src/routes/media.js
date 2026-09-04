@@ -221,13 +221,13 @@ router.post('/image', apiLimiter, idempotencyMiddleware, imageUpload.single('ima
         id: item.id,
         contentType: 'image',
         contentPreview: req.file.originalname,
-        contentSize: compressed.length,
+        contentSize: storedSize,
         createdAt: item.created_at,
         sourceDeviceId,
       },
     });
 
-    logger.info('Image uploaded', { itemId: item.id, filename, size: compressed.length });
+    logger.info('Image uploaded', { itemId: item.id, filename, size: storedSize });
     
     // 审计日志：记录图片上传
     await logAuditEvent({
@@ -240,7 +240,7 @@ router.post('/image', apiLimiter, idempotencyMiddleware, imageUpload.single('ima
         filename,
         originalName: req.file.originalname,
         originalSize: req.file.size,
-        compressedSize: compressed.length,
+        compressedSize: storedSize,
         width: metadata.width,
         height: metadata.height,
       },
@@ -255,7 +255,7 @@ router.post('/image', apiLimiter, idempotencyMiddleware, imageUpload.single('ima
       thumbnail: thumbFilename,
       originalName: req.file.originalname,
       originalSize: req.file.size,
-      compressedSize: compressed.length,
+      compressedSize: storedSize,
       width: metadata.width,
       height: metadata.height,
       createdAt: item.created_at,
