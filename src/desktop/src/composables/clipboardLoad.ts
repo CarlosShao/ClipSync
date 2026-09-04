@@ -492,12 +492,19 @@ export async function loadImagesFromQueue(queue: ClipItem[]) {
           renderSrc = raw
         } else {
           try {
-            const imgRes = await apiBlob('GET', `/api/media/${item.id}/preview`)
+            // 优先从 /download 端点加载全分辨率原图，杜绝缩略图 150x150 放大模糊！
+            const imgRes = await apiBlob('GET', `/api/media/${item.id}/download`)
             if (imgRes && imgRes.ok) {
               const blob = await imgRes.blob()
               renderSrc = URL.createObjectURL(blob)
             } else {
-              renderSrc = ''
+              const prevRes = await apiBlob('GET', `/api/media/${item.id}/preview`)
+              if (prevRes && prevRes.ok) {
+                const blob = await prevRes.blob()
+                renderSrc = URL.createObjectURL(blob)
+              } else {
+                renderSrc = ''
+              }
             }
           } catch {
             renderSrc = ''

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import '../models/clipboard_item.dart';
@@ -350,26 +351,40 @@ class ApiService {
     required String filename,
     String? mimeType,
   }) async {
-    final uri = Uri.parse('$baseUrl/api/media/image');
-    final request = http.MultipartRequest('POST', uri);
-    request.headers['Authorization'] = 'Bearer ${await _resolveToken(token)}';
-    request.fields['sourceDeviceId'] = deviceId;
-    request.files.add(http.MultipartFile.fromBytes(
-      'image',
-      imageBytes,
-      filename: filename,
-      // 必须带正确的图片 MIME：服务端 multer fileFilter 只放行 image/*，
-      // 缺省 application/octet-stream 会被拒收（截图同步曾因此静默失败）。
-      contentType: MediaType.parse(_resolveImageMime(mimeType, filename)),
-    ));
+    const maxAttempts = 3;
+    final resolvedToken = await _resolveToken(token);
+    final contentType = MediaType.parse(_resolveImageMime(mimeType, filename));
 
-    final streamedResponse = await request.send();
-    final responseBody = await streamedResponse.stream.bytesToString();
-    if (streamedResponse.statusCode == 201) {
-      return _decodeMap(responseBody);
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final uri = Uri.parse('$baseUrl/api/media/image');
+        final request = http.MultipartRequest('POST', uri);
+        request.headers['Authorization'] = 'Bearer $resolvedToken';
+        request.fields['sourceDeviceId'] = deviceId;
+        request.files.add(http.MultipartFile.fromBytes(
+          'image',
+          imageBytes,
+          filename: filename,
+          contentType: contentType,
+        ));
+
+        final streamedResponse = await request.send().timeout(const Duration(seconds: 12));
+        final responseBody = await streamedResponse.stream.bytesToString().timeout(const Duration(seconds: 12));
+        if (streamedResponse.statusCode == 201) {
+          return _decodeMap(responseBody);
+        }
+        debugPrint('[ApiService.uploadImage] Failed (${streamedResponse.statusCode}) attempt $attempt: $responseBody');
+        if (streamedResponse.statusCode >= 400 && streamedResponse.statusCode < 500) {
+          return null;
+        }
+      } catch (e) {
+        debugPrint('[ApiService.uploadImage] Exception on attempt $attempt: $e');
+        if (attempt == maxAttempts) {
+          return null;
+        }
+        await Future<void>.delayed(Duration(milliseconds: 500 * attempt));
+      }
     }
-    // ignore: avoid_print
-    print('[ApiService.uploadImage] Failed (${streamedResponse.statusCode}): $responseBody');
     return null;
   }
 
@@ -393,19 +408,33 @@ class ApiService {
     required String filename,
     String? mimeType,
   }) async {
-    final uri = Uri.parse('$baseUrl/api/media/file');
-    final request = http.MultipartRequest('POST', uri);
-    request.headers['Authorization'] = 'Bearer ${await _resolveToken(token)}';
-    request.fields['sourceDeviceId'] = deviceId;
-    request.files.add(http.MultipartFile.fromBytes(
-      'file',
-      fileBytes,
-      filename: filename,
-    ));
+    const maxAttempts = 2;
+    final resolvedToken = await _resolveToken(token);
 
-    final response = await request.send();
-    if (response.statusCode == 201) {
-      return _decodeMap(await response.stream.bytesToString());
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final uri = Uri.parse('$baseUrl/api/media/file');
+        final request = http.MultipartRequest('POST', uri);
+        request.headers['Authorization'] = 'Bearer $resolvedToken';
+        request.fields['sourceDeviceId'] = deviceId;
+        request.files.add(http.MultipartFile.fromBytes(
+          'file',
+          fileBytes,
+          filename: filename,
+        ));
+
+        final response = await request.send().timeout(const Duration(seconds: 30));
+        if (response.statusCode == 201) {
+          final body = await response.stream.bytesToString().timeout(const Duration(seconds: 30));
+          return _decodeMap(body);
+        }
+      } catch (e) {
+        debugPrint('[ApiService.uploadFile] Exception on attempt $attempt: $e');
+        if (attempt == maxAttempts) {
+          return null;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+      }
     }
     return null;
   }

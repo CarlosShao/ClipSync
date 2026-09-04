@@ -34,6 +34,7 @@ export const getClipboardContent = () => invoke<string>('get_clipboard_content')
 export const setClipboardContent = (content: string) => invoke('set_clipboard_content', { content })
 export const getClipboardFiles = () => invoke<string[]>('get_clipboard_files')
 export const setClipboardFiles = (paths: string[]) => invoke('set_clipboard_files', { paths })
+export const setClipboardImage = (data: string) => invoke('set_clipboard_image', { data })
 export const readFileContent = (path: string) => invoke<string>('read_file_content', { path })
 export const readFileContentBase64 = (path: string) => invoke<string>('read_file_content_base64', { path })
 // D1 文件自动同步桥：>10MB 捕获文件分片上传前先查大小（套餐校验）再按切片读字节

@@ -303,6 +303,61 @@ fn set_clipboard_files(paths: Vec<String>) -> Result<(), String> {
     result.map_err(|e| format!("set_file_list failed: {}", e))
 }
 
+/// Write image data (data URL or base64) to the Windows clipboard as native CF_DIB (8) and registered PNG
+#[tauri::command]
+fn set_clipboard_image(data: String) -> Result<(), String> {
+    use base64::Engine;
+    use clipboard_win::raw;
+
+    let bytes = if let Some(comma) = data.find(',') {
+        base64::engine::general_purpose::STANDARD
+            .decode(&data[comma + 1..])
+            .map_err(|e| format!("base64 decode failed: {}", e))?
+    } else {
+        base64::engine::general_purpose::STANDARD
+            .decode(&data)
+            .map_err(|e| format!("base64 decode failed: {}", e))?
+    };
+
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| format!("image decode failed: {}", e))?;
+
+    // Encode to BMP to extract DIB (CF_DIB)
+    let mut bmp_bytes = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut bmp_bytes), image::ImageFormat::Bmp)
+        .map_err(|e| format!("bmp encode failed: {}", e))?;
+
+    if bmp_bytes.len() <= 14 {
+        return Err("BMP data too short".to_string());
+    }
+    let dib_bytes = &bmp_bytes[14..];
+
+    // Encode to PNG for registered PNG format
+    let mut png_bytes = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png)
+        .map_err(|e| format!("png encode failed: {}", e))?;
+
+    // Tell the monitor to ignore next clipboard event for this image to prevent feedback loop
+    let png_b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
+    let png_data_url = format!("data:image/png;base64,{}", png_b64);
+    let png_hash = fnv64(png_data_url.as_bytes());
+    clipboard_monitor::ignore_next_image_hash(png_hash);
+
+    raw::open().map_err(|e| format!("open: {}", e))?;
+    let _ = raw::empty();
+
+    // Set CF_DIB (format 8) - universal format for WeChat, Office, Paint, etc.
+    let dib_res = raw::set(8, dib_bytes);
+
+    // Set PNG format - for modern browsers, electron apps, etc.
+    if let Some(png_fmt) = raw::register_format("PNG") {
+        let _ = raw::set(png_fmt.get(), &png_bytes);
+    }
+
+    let _ = raw::close();
+    dib_res.map_err(|e| format!("set CF_DIB failed: {}", e))
+}
+
 /// Read a file's content as UTF-8 text. Used for previewing clipboard-copied files.
 /// Returns the file content string, or an error if the file can't be read.
 #[tauri::command]
@@ -1856,6 +1911,7 @@ pub fn run() {
             get_clipboard_content,
             set_clipboard_content,
             set_clipboard_files,
+            set_clipboard_image,
             read_file_content,
             read_file_content_base64,
             get_file_size,

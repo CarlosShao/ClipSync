@@ -550,24 +550,50 @@ export function useClipboard() {
         return false
       }
       if (item.type === 'image') {
-        // 图片：优先用本地完整 data URL，否则从服务器获取完整内容
+        // 图片：优先用本地完整 data URL，否则从服务器下载高清全量原图
         let dataUrl = item.content || item.preview || ''
-        if (!dataUrl || dataUrl.startsWith('[Image')) {
+        if (!dataUrl || dataUrl.startsWith('[Image') || !dataUrl.startsWith('data:')) {
           try {
-            const full = await api('GET', `/api/clipboard/${item.id}`)
-            dataUrl = full.data?.contentEncrypted || full.data?.contentPreview || dataUrl
+            // 优先从 /download 下载全量原图
+            const res = await apiBlob('GET', `/api/media/${item.id}/download`)
+            if (res && res.ok) {
+              const blob = await res.blob()
+              dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader()
+                reader.onloadend = () => resolve(reader.result as string)
+                reader.onerror = reject
+                reader.readAsDataURL(blob)
+              })
+            }
           } catch {
             /* ignore */
           }
         }
-        if (dataUrl && !dataUrl.startsWith('[Image')) {
-          // 优先写入实际图片格式
+        if (!dataUrl || !dataUrl.startsWith('data:')) {
           try {
-            const resp = await fetch(dataUrl)
-            const blob = await resp.blob()
-            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+            const full = await api('GET', `/api/clipboard/${item.id}`)
+            const enc = full.data?.contentEncrypted
+            if (enc && enc.startsWith('data:')) {
+              dataUrl = enc
+            }
           } catch {
-            await tauri.setClipboardContent(dataUrl)
+            /* ignore */
+          }
+        }
+        if (dataUrl && dataUrl.startsWith('data:')) {
+          // 通过 Rust 原生接口写入 Windows 剪贴板真实位图（CF_DIB + PNG），彻底杜绝 blob: 文本污染！
+          try {
+            await tauri.setClipboardImage(dataUrl)
+          } catch (e) {
+            console.error('[useClipboard] tauri.setClipboardImage error:', e)
+            try {
+              const resp = await fetch(dataUrl)
+              const blob = await resp.blob()
+              const mime = blob.type || 'image/png'
+              await navigator.clipboard.write([new ClipboardItem({ [mime]: blob })])
+            } catch {
+              /* 绝不向系统剪贴板写入 blob: 文本！ */
+            }
           }
           // 写入后登记两族哈希，避免兜底轮询/事件路径把它当作新截图重新上传：
           //   - JS 族（simpleHash(dataUrl)）：事件与兜底轮询实际比较的键

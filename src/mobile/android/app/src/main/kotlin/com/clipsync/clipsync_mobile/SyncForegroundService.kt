@@ -15,6 +15,7 @@ import android.content.pm.ServiceInfo
 import android.database.ContentObserver
 import android.media.MediaScannerConnection
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Environment
 import android.os.FileObserver
@@ -214,6 +215,7 @@ class SyncForegroundService : Service() {
     private var pollTimer: Timer? = null
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     private fun acquireWakeLock(durationMs: Long = 15000L) {
         try {
@@ -225,8 +227,25 @@ class SyncForegroundService : Service() {
             }
             wakeLock?.acquire(durationMs)
             Log.d(TAG, "WakeLock acquired for ${durationMs}ms")
+
+            if (wifiLock == null) {
+                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                @Suppress("DEPRECATION")
+                val wifiMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
+                wifiLock = wm?.createWifiLock(wifiMode, "clipsync:screenshot_wifi_lock")?.apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wifiLock?.isHeld != true) {
+                wifiLock?.acquire()
+                Log.d(TAG, "WifiLock acquired")
+            }
         } catch (t: Throwable) {
-            Log.w(TAG, "acquireWakeLock failed", t)
+            Log.w(TAG, "acquireWakeLock/wifiLock failed", t)
         }
     }
 
@@ -236,8 +255,12 @@ class SyncForegroundService : Service() {
                 wakeLock?.release()
                 Log.d(TAG, "WakeLock released")
             }
+            if (wifiLock?.isHeld == true) {
+                wifiLock?.release()
+                Log.d(TAG, "WifiLock released")
+            }
         } catch (t: Throwable) {
-            Log.w(TAG, "releaseWakeLock failed", t)
+            Log.w(TAG, "releaseWakeLock/wifiLock failed", t)
         }
     }
 
@@ -380,6 +403,7 @@ class SyncForegroundService : Service() {
         stopFileObservers()
         releaseWakeLock()
         wakeLock = null
+        wifiLock = null
 
         pollTimer?.cancel()
         pollTimer = null

@@ -59,11 +59,18 @@ pub fn request_stop_monitor() {
 /// pop the AI summary float for our own write. We stash the content here right
 /// before writing; the monitor consumes & clears it on the next matching change.
 static IGNORE_NEXT: Mutex<Option<String>> = Mutex::new(None);
+static IGNORE_NEXT_IMAGE_HASH: Mutex<Option<u64>> = Mutex::new(None);
 
 /// Tell the monitor to ignore the next clipboard change equal to `content`.
 /// Called from `set_clipboard_content` (and friends) before/around the write.
 pub fn ignore_next_clipboard(content: &str) {
     *IGNORE_NEXT.lock().unwrap() = Some(content.to_string());
+}
+
+/// Tell the monitor to ignore the next clipboard change matching this image hash.
+/// Called from `set_clipboard_image` before writing an image to the clipboard.
+pub fn ignore_next_image_hash(hash: u64) {
+    *IGNORE_NEXT_IMAGE_HASH.lock().unwrap() = Some(hash);
 }
 
 /// Monitors clipboard changes and emits `clipboard-changed` events.
@@ -163,6 +170,18 @@ pub fn start_monitor(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                     // writing the same bytes back to the clipboard). Using it guarantees every
                     // distinct screenshot in a burst syncs.
                     let png_content_hash = fnv64(data_url.as_bytes());
+                    {
+                        let mut ig = IGNORE_NEXT_IMAGE_HASH.lock().unwrap();
+                        if let Some(ignored) = ig.take() {
+                            if ignored == png_content_hash {
+                                debug!("[ClipMon] IMAGE: echo png_content_hash={:016x} matched IGNORE_NEXT_IMAGE_HASH, skip emit", png_content_hash);
+                                last_image_png_hash = png_content_hash;
+                                continue;
+                            } else {
+                                *ig = Some(ignored);
+                            }
+                        }
+                    }
                     if png_content_hash != last_image_png_hash {
                         last_image_png_hash = png_content_hash;
                         debug!("[ClipMon] IMAGE: {} bytes, png_hash={:016x}, emit", size, png_content_hash);

@@ -105,12 +105,12 @@ const fileUpload = multer({
   },
 });
 
-// Generate thumbnail for images
+// Generate thumbnail for images（600x600 高清缩略图，适应现代高清/Retina屏幕，杜绝模糊）
 async function generateThumbnail(input, filename) {
   const thumbPath = path.join(IMAGE_DIR, 'thumbnails', `thumb_${filename}`);
   await sharp(input)
-    .resize(150, 150, { fit: 'cover' })
-    .jpeg({ quality: 80 })
+    .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 92 })
     .toFile(thumbPath);
   return thumbPath;
 }
@@ -160,27 +160,24 @@ router.post('/image', apiLimiter, idempotencyMiddleware, imageUpload.single('ima
       return res.status(404).json({ error: 'Device not found' });
     }
 
-    // Compress image（从临时文件直接读取，避免双份内存缓冲）
-    const compressed = await compressImage(req.file.path, req.file.mimetype);
+    // 高保真存储：保留原始上传图片字节，不主动进行有损二次压缩，确保跨端原画质同步
     const ext = req.file.mimetype === 'image/png' ? '.png' :
                 req.file.mimetype === 'image/webp' ? '.webp' :
                 req.file.mimetype === 'image/gif' ? '.gif' : '.jpg';
     const filename = `${uuidv4()}${ext}`;
     const filePath = path.join(IMAGE_DIR, filename);
 
-    // Save compressed image
-    await fs.writeFile(filePath, compressed);
+    // 直接持久化原始全分辨率图片
+    await fs.copyFile(req.file.path, filePath);
+    const fileStats = await fs.stat(filePath);
+    const storedSize = fileStats.size;
 
-    // Generate thumbnail
+    // Generate thumbnail (生成 600x600 高清缩略图用于快速列表流加载)
     const thumbFilename = `thumb_${uuidv4()}.jpg`;
-    const thumbPath = path.join(IMAGE_DIR, 'thumbnails', thumbFilename);
-    await sharp(compressed)
-      .resize(150, 150, { fit: 'cover' })
-      .jpeg({ quality: 80 })
-      .toFile(thumbPath);
+    await generateThumbnail(filePath, thumbFilename);
 
     // Get image metadata
-    const metadata = await sharp(compressed).metadata();
+    const metadata = await sharp(filePath).metadata();
 
     // Save to database
     const result = await pool.query(
@@ -192,12 +189,12 @@ router.post('/image', apiLimiter, idempotencyMiddleware, imageUpload.single('ima
         sourceDeviceId,
         filename, // store filename as "encrypted" content reference
         req.file.originalname,
-        compressed.length,
+        storedSize,
         JSON.stringify({
           originalName: req.file.originalname,
           mimeType: req.file.mimetype,
           originalSize: req.file.size,
-          compressedSize: compressed.length,
+          compressedSize: storedSize,
           width: metadata.width,
           height: metadata.height,
           thumbnail: thumbFilename,
@@ -838,8 +835,8 @@ router.get('/:id/preview', apiLimiter, async (req, res) => {
       if (matches) {
         const buffer = Buffer.from(matches[2], 'base64');
         const thumb = await sharp(buffer)
-          .resize(150, 150, { fit: 'cover' })
-          .jpeg({ quality: 80 })
+          .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 92 })
           .toBuffer();
         res.set('Content-Type', 'image/jpeg');
         res.set('Cache-Control', 'public, max-age=86400');
