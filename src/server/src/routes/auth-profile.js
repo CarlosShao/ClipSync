@@ -68,7 +68,9 @@ router.put('/profile', authenticateToken, async (req, res) => {
 
     if (avatarUrl !== undefined) {
       updates.push(`avatar_url = $${paramIndex++}`);
-      values.push(sanitizeString(avatarUrl));
+      // avatarUrl 为 dataURL（base64）或图片 URL，仅作存储/前端取用，
+      // 不经过 sanitizeString 的 HTML 实体转义（会破坏 base64 的 / 字符）。
+      values.push(typeof avatarUrl === 'string' ? avatarUrl.trim() : '');
     }
 
     if (updates.length === 0) {

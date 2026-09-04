@@ -770,6 +770,17 @@ router.get('/:id/download', apiLimiter, async (req, res) => {
 
     let filePath;
     if (item.content_type === 'image') {
+      if (filename && filename.startsWith('data:image')) {
+        const matches = filename.match(/^data:([^;]+);base64,(.+)$/);
+        if (matches) {
+          const mime = matches[1];
+          const buffer = Buffer.from(matches[2], 'base64');
+          res.set('Content-Type', mime);
+          res.set('Content-Length', buffer.length);
+          res.set('Content-Disposition', `inline; filename="image.${mime.split('/')[1] || 'png'}"`);
+          return res.send(buffer);
+        }
+      }
       filePath = path.join(IMAGE_DIR, filename);
     } else if (item.content_type === 'file') {
       filePath = path.join(FILE_DIR, filename);
@@ -819,6 +830,21 @@ router.get('/:id/preview', apiLimiter, async (req, res) => {
 
     if (item.content_type !== 'image') {
       return res.status(400).json({ error: 'Only images support preview' });
+    }
+
+    // 如果是 dataURL 图片（如桌面端上传的剪贴板截图），直接从 base64 内存实时生成缩略图
+    if (item.content_encrypted && item.content_encrypted.startsWith('data:image')) {
+      const matches = item.content_encrypted.match(/^data:([^;]+);base64,(.+)$/);
+      if (matches) {
+        const buffer = Buffer.from(matches[2], 'base64');
+        const thumb = await sharp(buffer)
+          .resize(150, 150, { fit: 'cover' })
+          .jpeg({ quality: 80 })
+          .toBuffer();
+        res.set('Content-Type', 'image/jpeg');
+        res.set('Cache-Control', 'public, max-age=86400');
+        return res.send(thumb);
+      }
     }
 
     // Serve thumbnail

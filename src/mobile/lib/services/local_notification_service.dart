@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 本地通知文案配置（A3 解耦：服务层无 BuildContext，由 main.dart 在
@@ -202,19 +204,39 @@ class LocalNotificationService {
       return;
     }
 
-    final body = preview.isEmpty ? texts.newClipboardBody : preview;
+    String body = preview.isEmpty ? texts.newClipboardBody : preview;
+    // 去除 [Image 12345 bytes] 这类冷冰冰的原始描述，转换为友好的 [图片]
+    if (body.startsWith('[Image ') && body.endsWith('bytes]')) {
+      body = '[图片]';
+    }
 
     StyleInformation? styleInformation;
-    if (imagePath != null && imagePath.isNotEmpty) {
+    if (imageBytes != null && imageBytes.isNotEmpty) {
+      try {
+        // 关键修复：Android Notification Binder 存在 1MB 事务上限，直接传 ByteArrayAndroidBitmap
+        // 容易触发 TransactionTooLargeException 或在部分机型上静默丢弃大图样式。
+        // 将图片字节写至应用私有缓存目录并通过 FilePathAndroidBitmap 供系统安全解码，100% 稳定呈现大图。
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File('${tempDir.path}/clipsync_notif_preview.png');
+        await tempFile.writeAsBytes(imageBytes, flush: true);
+        styleInformation = BigPictureStyleInformation(
+          FilePathAndroidBitmap(tempFile.path),
+          contentTitle: texts.clipboardUpdatedTitle,
+          summaryText: sourceDevice != null ? '来自 $sourceDevice' : body,
+          hideExpandedLargeIcon: true,
+        );
+      } catch (e) {
+        debugPrint('[LocalNotification] write temp file failed: $e');
+        styleInformation = BigPictureStyleInformation(
+          ByteArrayAndroidBitmap(imageBytes),
+          contentTitle: texts.clipboardUpdatedTitle,
+          summaryText: sourceDevice != null ? '来自 $sourceDevice' : body,
+          hideExpandedLargeIcon: true,
+        );
+      }
+    } else if (imagePath != null && imagePath.isNotEmpty && !imagePath.startsWith('content://')) {
       styleInformation = BigPictureStyleInformation(
         FilePathAndroidBitmap(imagePath),
-        contentTitle: texts.clipboardUpdatedTitle,
-        summaryText: sourceDevice != null ? '来自 $sourceDevice' : body,
-        hideExpandedLargeIcon: true,
-      );
-    } else if (imageBytes != null && imageBytes.isNotEmpty) {
-      styleInformation = BigPictureStyleInformation(
-        ByteArrayAndroidBitmap(imageBytes),
         contentTitle: texts.clipboardUpdatedTitle,
         summaryText: sourceDevice != null ? '来自 $sourceDevice' : body,
         hideExpandedLargeIcon: true,
@@ -266,6 +288,9 @@ class LocalNotificationService {
     final dynamic preview = item['contentPreview'] ?? item['preview'];
     if (preview is! String || preview.trim().isEmpty) return '';
     final trimmed = preview.trim().replaceAll('\n', ' ');
+    if (trimmed.startsWith('[Image ') && trimmed.endsWith('bytes]')) {
+      return '[图片]';
+    }
     return trimmed.length > 80 ? '${trimmed.substring(0, 80)}…' : trimmed;
   }
 }

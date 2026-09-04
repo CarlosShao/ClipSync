@@ -570,7 +570,7 @@ class _ClipboardCardState extends State<ClipboardCard> {
       _thumbHeaders =
           (token == null || token.isEmpty)
               ? null
-              : <String, String>{'Authorization': 'Bearer '};
+              : <String, String>{'Authorization': 'Bearer $token'};
     });
   }
 

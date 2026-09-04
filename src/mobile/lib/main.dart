@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
@@ -111,30 +112,85 @@ void main() async {
     appRouter.go(AppRoutes.home);
   };
 
-  // 手机端原生截屏感知 → 自动上传至服务端（PC 端与移动端列表即时呈现）
-  SyncService.instance.onScreenshotCaptured = (path) async {
-    final myDevice = authProvider.deviceId;
-    if (myDevice == null || myDevice.isEmpty) return;
+  // 手机端原生截屏感知 → 自动上传至服务端（PC 端与移动端列表即时呈现）。
+  // 原生侧已按 content:// 读取好图片字节（Android 10+ 分区存储下文件路径
+  // 可能不可直读，统一由原生读取最稳）。
+  // 手机端原生截屏感知 → 自动上传至服务端（PC 端与移动端列表即时呈现）。
+  // 原生侧已按 content:// 读取好图片字节（Android 10+ 分区存储下文件路径
+  // 可能不可直读，统一由原生读取最稳）。
+  SyncService.instance.onScreenshotCaptured = (bytes, fileName, mimeType) async {
+    if (!settingsProvider.autoSyncScreenshots) {
+      debugPrint('[ScreenshotCapture] skipped: autoSyncScreenshots is off');
+      return;
+    }
+    final myDevice = authProvider.deviceId ?? await authProvider.ensureDeviceId();
+    if (myDevice == null || myDevice.isEmpty) {
+      debugPrint('[ScreenshotCapture] dropped: deviceId is null');
+      return;
+    }
     try {
-      final file = File(path);
-      if (!await file.exists()) return;
-      final bytes = await file.readAsBytes();
-      final filename = path.split(Platform.pathSeparator).last;
-      debugPrint('[ScreenshotCapture] Uploading screenshot: $filename (${bytes.length} bytes)');
+      if (bytes.isEmpty) return;
+      final filename = (fileName == null || fileName.isEmpty)
+          ? 'screenshot_${DateTime.now().millisecondsSinceEpoch}.png'
+          : fileName;
+      debugPrint(
+          '[ScreenshotCapture] Uploading screenshot: $filename (${bytes.length} bytes) from device $myDevice');
       final result = await ApiService().uploadImage(
         null,
         myDevice,
         imageBytes: bytes,
         filename: filename,
+        mimeType: mimeType,
       );
       if (result != null) {
-        debugPrint('[ScreenshotCapture] Uploaded screenshot successfully');
+        debugPrint('[ScreenshotCapture] Uploaded screenshot successfully: ${result['id']}');
         await clipboardProvider.refresh(forceRefresh: true);
+      } else {
+        debugPrint('[ScreenshotCapture] uploadImage returned null');
       }
     } catch (e) {
       debugPrint('[ScreenshotCapture] Upload failed: $e');
     }
   };
+
+  // 辅助方法：拉取条目图片字节（兼容 PC base64 dataUrl 与服务端媒体文件）
+  Future<Map<String, dynamic>?> fetchItemImage(String itemId) async {
+    // 1. 优先尝试从 /api/clipboard/:id/content 获取（PC 截图以 base64 dataUrl 存入 content_encrypted）
+    try {
+      final content = await ApiService().getItemContent(null, itemId);
+      if (content != null && content.startsWith('data:')) {
+        final comma = content.indexOf(',');
+        if (comma > 0) {
+          final m = RegExp(r'^data:([^;]+)').firstMatch(content);
+          final mime = m?.group(1) ?? 'image/png';
+          final bytes = Uint8List.fromList(base64Decode(content.substring(comma + 1)));
+          if (bytes.isNotEmpty) {
+            return {'bytes': bytes, 'mime': mime};
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[FetchImage] getItemContent error: $e');
+    }
+
+    // 2. 若 content 不是 dataUrl（例如移动端通过 /api/media/image 上传的文件），走 /api/media/:id/download
+    try {
+      final token = await TokenStore.getAccessToken();
+      final downloadUrl = '${ServerConfig.baseUrl}/api/media/$itemId/download';
+      final response = await http.get(
+        Uri.parse(downloadUrl),
+        headers: token != null ? {'Authorization': 'Bearer $token'} : {},
+      );
+      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+        final mime = response.headers['content-type']?.split(';').first ?? 'image/png';
+        return {'bytes': response.bodyBytes, 'mime': mime};
+      }
+    } catch (e) {
+      debugPrint('[FetchImage] media download error: $e');
+    }
+
+    return null;
+  }
 
   // WS new_clipboard 全局钩子：图片自动保存相册 + 富媒体大图通知 + 文本回写剪贴板
   WsService.globalNewClipboardHook = (msg) {
@@ -151,36 +207,42 @@ void main() async {
       final writebackOn = settingsProvider.clipboardWritebackEnabled;
 
       if (isRemote && itemId != null && type == 'image') {
-        // 核心场景：PC 截图/图片 → 自动保存手机相册 + 弹出大图预览通知
+        // 核心场景：PC 截图/图片 → 自动保存手机相册 + 弹出大图预览通知。
         Future(() async {
           try {
-            final token = await TokenStore.getAccessToken();
-            final downloadUrl = '${ServerConfig.baseUrl}/api/media/$itemId/download';
-            final response = await http.get(
-              Uri.parse(downloadUrl),
-              headers: token != null ? {'Authorization': 'Bearer $token'} : {},
-            );
-            if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
-              final imageBytes = response.bodyBytes;
-              String? savedAlbumPath;
-              if (settingsProvider.autoSaveImagesToAlbum) {
-                final filename = 'ClipSync_${DateTime.now().millisecondsSinceEpoch}.png';
-                savedAlbumPath = await SyncService.instance.saveImageToAlbum(
-                  imageBytes,
-                  fileName: filename,
-                  mimeType: 'image/png',
-                );
-                debugPrint('[AutoSaveImage] Saved to album: $savedAlbumPath');
-              }
-              await LocalNotificationService.instance.showClipboardUpdated(
-                preview,
-                imagePath: savedAlbumPath,
-                imageBytes: savedAlbumPath == null ? imageBytes : null,
-                sourceDevice: sourceDeviceName,
-              );
-            } else {
+            final imgData = await fetchItemImage(itemId);
+            if (imgData == null) {
+              debugPrint('[AutoSaveImage] no image bytes fetched for item $itemId');
               await LocalNotificationService.instance.handleWsNewClipboard(msg);
+              return;
             }
+
+            final imageBytes = imgData['bytes'] as Uint8List;
+            final imageMime = imgData['mime'] as String;
+
+            if (settingsProvider.autoSaveImagesToAlbum) {
+              final ext = imageMime.contains('jpeg')
+                  ? 'jpg'
+                  : imageMime.contains('webp')
+                      ? 'webp'
+                      : imageMime.contains('gif')
+                          ? 'gif'
+                          : 'png';
+              final filename = 'Screenshot_${DateTime.now().millisecondsSinceEpoch}.$ext';
+              final savedAlbumPath = await SyncService.instance.saveImageToAlbum(
+                imageBytes,
+                fileName: filename,
+                mimeType: imageMime,
+              );
+              debugPrint('[AutoSaveImage] Saved to album: $savedAlbumPath');
+            }
+
+            // 大图预览由 showClipboardUpdated 写至应用私有临时文件供系统加载
+            await LocalNotificationService.instance.showClipboardUpdated(
+              preview,
+              imageBytes: imageBytes,
+              sourceDevice: sourceDeviceName,
+            );
           } catch (e) {
             debugPrint('[AutoSaveImage] failed: $e');
             await LocalNotificationService.instance.handleWsNewClipboard(msg);

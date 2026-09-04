@@ -30,10 +30,14 @@ class MainActivity : FlutterFragmentActivity() {
 
     companion object {
         private const val NOTIFICATION_PERMISSION_REQUEST = 7301
+        private const val MEDIA_READ_PERMISSION_REQUEST = 7302
     }
 
     /** 进行中的通知权限申请结果回调（通道调用发生在主线程） */
     private var pendingNotificationResult: MethodChannel.Result? = null
+
+    /** 进行中的媒体读取权限申请结果回调（截图同步用） */
+    private var pendingMediaReadResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -62,6 +66,8 @@ class MainActivity : FlutterFragmentActivity() {
                     result.success(true)
                 }
                 "requestNotificationPermission" -> requestNotificationPermission(result)
+                "hasMediaReadPermission" -> result.success(hasMediaReadPermission())
+                "requestMediaReadPermission" -> requestMediaReadPermission(result)
                 "openAutoStartSettings" -> result.success(openAutoStartSettings())
                 "openAppNotificationSettings" -> result.success(openAppNotificationSettings())
                 "saveImageToAlbum" -> {
@@ -182,6 +188,45 @@ class MainActivity : FlutterFragmentActivity() {
             result?.success(granted)
             return
         }
+        if (requestCode == MEDIA_READ_PERMISSION_REQUEST) {
+            val result = pendingMediaReadResult
+            pendingMediaReadResult = null
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            result?.success(granted)
+            return
+        }
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+    // -------------------------------------------------------------------------
+    // 媒体读取运行时权限（截图同步：Android 13+ READ_MEDIA_IMAGES，
+    // ≤12 用 READ_EXTERNAL_STORAGE）。拒绝不阻塞主流程，仅截图同步不可用。
+    // -------------------------------------------------------------------------
+
+    private fun hasMediaReadPermission(): Boolean {
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestMediaReadPermission(result: MethodChannel.Result) {
+        if (hasMediaReadPermission()) {
+            result.success(true)
+            return
+        }
+        if (pendingMediaReadResult != null) {
+            pendingMediaReadResult?.success(false)
+        }
+        pendingMediaReadResult = result
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        requestPermissions(arrayOf(permission), MEDIA_READ_PERMISSION_REQUEST)
     }
 }

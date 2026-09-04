@@ -2683,6 +2683,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Active Sessions'**
   String get sectionActiveSessions;
+
+  /// No description provided for @autoSyncScreenshotsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-sync Phone Screenshots'**
+  String get autoSyncScreenshotsTitle;
+
+  /// No description provided for @autoSyncScreenshotsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatically sync screenshots taken on phone to PC and other devices'**
+  String get autoSyncScreenshotsDesc;
+
+  /// No description provided for @mediaPermissionRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Media permission required to detect and sync screenshots. Please enable it in system settings.'**
+  String get mediaPermissionRequired;
 }
 
 class _AppLocalizationsDelegate

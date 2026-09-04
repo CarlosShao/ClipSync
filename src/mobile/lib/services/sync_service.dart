@@ -107,9 +107,11 @@ class SyncService {
         case 'onScreenshotCaptured':
           final args = call.arguments;
           if (args is Map) {
-            final path = args['path'];
-            if (path is String && await _isCaptureEnabled()) {
-              onScreenshotCaptured?.call(path);
+            final bytes = args['bytes'];
+            final fileName = args['fileName'];
+            final mimeType = args['mimeType'];
+            if (bytes is Uint8List && bytes.isNotEmpty && await _isCaptureEnabled()) {
+              onScreenshotCaptured?.call(bytes, fileName as String?, mimeType as String?);
             }
           }
           return null;
@@ -119,8 +121,8 @@ class SyncService {
     });
   }
 
-  /// 手机截屏侦听回调（由 main.dart 挂接上传管线）
-  void Function(String filePath)? onScreenshotCaptured;
+  /// 手机截屏侦听回调（原生已读取图片字节；由 main.dart 挂接上传管线）
+  void Function(Uint8List bytes, String? fileName, String? mimeType)? onScreenshotCaptured;
 
   /// 调用原生 MediaStore 接口将图片保存至公共相册 Pictures/ClipSync
   Future<String?> saveImageToAlbum(
@@ -245,6 +247,9 @@ class SyncService {
   Future<void> _start() async {
     // Android 13+ 通知运行时权限（T3.1）：拒绝也不阻塞前台服务启动
     await _requestNotificationPermission();
+    // 截图同步媒体读取权限（Android 13+ READ_MEDIA_IMAGES / ≤12 READ_EXTERNAL_STORAGE）：
+    // 无权限时 MediaStore 查询不到系统截图，截屏同步失效；拒绝不阻塞服务启动。
+    await requestMediaReadPermission();
     try {
       await _channel.invokeMethod<bool>('startService');
     } on PlatformException catch (e) {
@@ -274,6 +279,32 @@ class SyncService {
     }
   }
 
+  /// 查询是否已拥有媒体读取权限（截图同步用）。非 Android 平台恒 true。
+  Future<bool> hasMediaReadPermission() async {
+    try {
+      return await _channel.invokeMethod<bool>('hasMediaReadPermission') ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('[SyncService] hasMediaReadPermission failed: ${e.message}');
+    } on MissingPluginException {
+      // 非 Android 平台
+    }
+    return true;
+  }
+
+  /// 申请媒体读取权限（截图同步用）。返回是否授予；非 Android 平台恒 true。
+  Future<bool> requestMediaReadPermission() async {
+    try {
+      return await _channel
+              .invokeMethod<bool>('requestMediaReadPermission') ??
+          false;
+    } on PlatformException catch (e) {
+      debugPrint('[SyncService] media read permission failed: ${e.message}');
+    } on MissingPluginException {
+      // 非 Android 平台
+    }
+    return false;
+  }
+
   // ---------------------------------------------------------------------------
   // 电池优化查询/引导（T3.4 引导页消费）
   // ---------------------------------------------------------------------------
@@ -301,5 +332,17 @@ class SyncService {
     } on MissingPluginException {
       // 非 Android 平台
     }
+  }
+
+  /// 跳转系统应用设置页（用于引导手动开启相册读取或通知权限）
+  Future<bool> openAppNotificationSettings() async {
+    try {
+      return await _channel.invokeMethod<bool>('openAppNotificationSettings') ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('[SyncService] openAppNotificationSettings failed: ${e.message}');
+    } on MissingPluginException {
+      // 非 Android 平台
+    }
+    return false;
   }
 }

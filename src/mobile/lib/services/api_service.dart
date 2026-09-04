@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import '../models/clipboard_item.dart';
 import '../models/device.dart';
 import '../models/session.dart';
@@ -357,6 +358,9 @@ class ApiService {
       'image',
       imageBytes,
       filename: filename,
+      // 必须带正确的图片 MIME：服务端 multer fileFilter 只放行 image/*，
+      // 缺省 application/octet-stream 会被拒收（截图同步曾因此静默失败）。
+      contentType: MediaType.parse(_resolveImageMime(mimeType, filename)),
     ));
 
     final response = await request.send();
@@ -364,6 +368,19 @@ class ApiService {
       return _decodeMap(await response.stream.bytesToString());
     }
     return null;
+  }
+
+  /// 解析上传图片 MIME：显式 mimeType 优先，否则按文件扩展名推断。
+  static String _resolveImageMime(String? mimeType, String filename) {
+    final explicit = mimeType?.trim();
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+    final lower = filename.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.bmp')) return 'image/bmp';
+    if (lower.endsWith('.jpeg') || lower.endsWith('.jpg')) return 'image/jpeg';
+    return 'image/jpeg';
   }
 
   Future<Map<String, dynamic>?> uploadFile(

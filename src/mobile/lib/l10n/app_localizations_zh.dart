@@ -1386,4 +1386,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sectionActiveSessions => '活跃会话';
+
+  @override
+  String get autoSyncScreenshotsTitle => '自动同步手机截图';
+
+  @override
+  String get autoSyncScreenshotsDesc => '手机截屏后自动同步至电脑及其他端，秒级多端互通';
+
+  @override
+  String get mediaPermissionRequired => '需要相册读取权限才能检测并同步手机截图，请前往系统设置开启';
 }

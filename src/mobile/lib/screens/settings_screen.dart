@@ -1,3 +1,5 @@
+import "dart:io";
+
 import "package:flutter/material.dart";
 import "package:go_router/go_router.dart";
 import "package:provider/provider.dart";
@@ -12,6 +14,7 @@ import "package:clipsync_mobile/screens/notification_settings_screen.dart";
 import "package:clipsync_mobile/screens/templates/templates_screen.dart";
 import "package:clipsync_mobile/services/biometric_service.dart";
 import "package:clipsync_mobile/services/server_config.dart";
+import "package:clipsync_mobile/services/sync_service.dart";
 import "package:clipsync_mobile/theme/app_theme.dart";
 import "package:clipsync_mobile/utils/avatar_utils.dart";
 import "package:clipsync_mobile/widgets/common/app_card.dart";
@@ -705,6 +708,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: context.watch<SettingsProvider>().autoSaveImagesToAlbum,
           onChanged: (value) {
             context.read<SettingsProvider>().setAutoSaveImagesToAlbum(value);
+          },
+        ),
+        // 核心场景：手机截屏 → 自动同步至电脑及其他端
+        SwitchListTile(
+          secondary: const Icon(Icons.screenshot_outlined),
+          title: Text(l10n.autoSyncScreenshotsTitle),
+          subtitle: Text(l10n.autoSyncScreenshotsDesc),
+          value: context.watch<SettingsProvider>().autoSyncScreenshots,
+          onChanged: (value) async {
+            if (value && Platform.isAndroid) {
+              final hasPerm = await SyncService.instance.hasMediaReadPermission();
+              if (!hasPerm) {
+                final granted = await SyncService.instance.requestMediaReadPermission();
+                if (!granted && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(l10n.mediaPermissionRequired),
+                      action: SnackBarAction(
+                        label: l10n.tabSettings,
+                        onPressed: () => SyncService.instance.openAppNotificationSettings(),
+                      ),
+                    ),
+                  );
+                }
+              }
+            }
+            if (mounted) {
+              context.read<SettingsProvider>().setAutoSyncScreenshots(value);
+            }
           },
         ),
       ],

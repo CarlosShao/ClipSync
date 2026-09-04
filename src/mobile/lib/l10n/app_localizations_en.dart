@@ -1440,4 +1440,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sectionActiveSessions => 'Active Sessions';
+
+  @override
+  String get autoSyncScreenshotsTitle => 'Auto-sync Phone Screenshots';
+
+  @override
+  String get autoSyncScreenshotsDesc =>
+      'Automatically sync screenshots taken on phone to PC and other devices';
+
+  @override
+  String get mediaPermissionRequired =>
+      'Media permission required to detect and sync screenshots. Please enable it in system settings.';
 }

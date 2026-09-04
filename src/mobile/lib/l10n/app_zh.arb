@@ -430,5 +430,8 @@
   "quickPaste": "快速粘贴",
   "recentCopied": "最近复制",
   "pinnedSection": "置顶",
-  "sectionActiveSessions": "活跃会话"
+  "sectionActiveSessions": "活跃会话",
+  "autoSyncScreenshotsTitle": "自动同步手机截图",
+  "autoSyncScreenshotsDesc": "手机截屏后自动同步至电脑及其他端，秒级多端互通",
+  "mediaPermissionRequired": "需要相册读取权限才能检测并同步手机截图，请前往系统设置开启"
 }

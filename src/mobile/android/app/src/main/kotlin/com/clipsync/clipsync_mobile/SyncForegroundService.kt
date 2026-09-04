@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.ClipDescription
 import android.content.ClipboardManager
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -116,34 +117,54 @@ class SyncForegroundService : Service() {
             }
         }
 
-        /** 保存图片至系统公共相册 Pictures/ClipSync（支持 Android 10+ 分区存储与低版本兼容） */
+        /** 本地保存过的图片 ID 集合，防止触发本地截图检测形成回环 */
+        val recentlySavedImageIds = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
+
+        /** 保存图片至系统相册（存入 Pictures/Screenshots 确保出现在手机截屏专有相册与首位） */
         fun saveImageToAlbum(context: Context, bytes: ByteArray, name: String?, mime: String?): String? {
-            val fileName = if (!name.isNullOrBlank()) name else "ClipSync_${System.currentTimeMillis()}.png"
+            val fileName = if (!name.isNullOrBlank()) name else "Screenshot_${System.currentTimeMillis()}.png"
             val mimeType = if (!mime.isNullOrBlank()) mime else "image/png"
+            val nowMs = System.currentTimeMillis()
+            val nowSec = nowMs / 1000
             return try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val resolver = context.contentResolver
                     val contentValues = ContentValues().apply {
-                        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/ClipSync")
-                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                        put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                        put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                        // 写入 Pictures/Screenshots，各大安卓厂商（OPPO、小米、vivo、华为）均归类为系统截屏相册
+                        put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Screenshots")
+                        put(MediaStore.Images.Media.DATE_ADDED, nowSec)
+                        put(MediaStore.Images.Media.DATE_MODIFIED, nowSec)
+                        put(MediaStore.Images.Media.DATE_TAKEN, nowMs)
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
                     }
                     val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
                         ?: return null
-                    resolver.openOutputStream(uri)?.use { os ->
+                    resolver.openOutputStream(uri, "w")?.use { os ->
                         os.write(bytes)
                         os.flush()
                     }
                     contentValues.clear()
-                    contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
                     resolver.update(uri, contentValues, null, null)
+
+                    try {
+                        val id = ContentUris.parseId(uri)
+                        recentlySavedImageIds.add(id)
+                    } catch (_: Exception) {}
+
+                    // 触发媒体扫描，让第三方应用（如微信）相册选择器立即刷新呈现
+                    try {
+                        MediaScannerConnection.scanFile(context, arrayOf(uri.toString()), arrayOf(mimeType), null)
+                    } catch (_: Exception) {}
+
                     uri.toString()
                 } else {
                     val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-                    val clipSyncDir = File(picturesDir, "ClipSync")
-                    if (!clipSyncDir.exists()) clipSyncDir.mkdirs()
-                    val destFile = File(clipSyncDir, fileName)
+                    val screenshotsDir = File(picturesDir, "Screenshots")
+                    if (!screenshotsDir.exists()) screenshotsDir.mkdirs()
+                    val destFile = File(screenshotsDir, fileName)
                     FileOutputStream(destFile).use { fos ->
                         fos.write(bytes)
                         fos.flush()
@@ -169,7 +190,7 @@ class SyncForegroundService : Service() {
     private var pollTimer: Timer? = null
 
     private var screenshotObserver: ContentObserver? = null
-    private var lastProcessedScreenshotPath: String? = null
+    private var lastProcessedScreenshotId: Long = -1L
     private var lastScreenshotTime: Long = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -359,12 +380,19 @@ class SyncForegroundService : Service() {
     // 移动端系统截图感知监听（MediaStore.Images.Media ContentObserver）
     // -------------------------------------------------------------------------
 
+    private val checkScreenshotRunnable = Runnable {
+        checkLatestScreenshot()
+    }
+
     private fun registerScreenshotObserver() {
         val handler = Handler(Looper.getMainLooper())
         val observer = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
                 super.onChange(selfChange, uri)
-                checkLatestScreenshot()
+                // 系统截图生成时可能触发多次（插入记录、写入数据、缩略图等）
+                // 防抖 500ms 等待系统完成磁盘写入与 MediaStore 元数据落库，避免读到 0 字节
+                mainHandler.removeCallbacks(checkScreenshotRunnable)
+                mainHandler.postDelayed(checkScreenshotRunnable, 500)
             }
         }
         screenshotObserver = observer
@@ -382,12 +410,24 @@ class SyncForegroundService : Service() {
 
     private fun checkLatestScreenshot() {
         try {
-            val projection = arrayOf(
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DATA,
-                MediaStore.Images.Media.DATE_ADDED,
-                MediaStore.Images.Media.MIME_TYPE
-            )
+            val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                arrayOf(
+                    MediaStore.Images.Media._ID,
+                    MediaStore.Images.Media.DISPLAY_NAME,
+                    MediaStore.Images.Media.DATA,
+                    MediaStore.Images.Media.RELATIVE_PATH,
+                    MediaStore.Images.Media.DATE_ADDED,
+                    MediaStore.Images.Media.MIME_TYPE
+                )
+            } else {
+                arrayOf(
+                    MediaStore.Images.Media._ID,
+                    MediaStore.Images.Media.DISPLAY_NAME,
+                    MediaStore.Images.Media.DATA,
+                    MediaStore.Images.Media.DATE_ADDED,
+                    MediaStore.Images.Media.MIME_TYPE
+                )
+            }
             val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
             contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -397,27 +437,51 @@ class SyncForegroundService : Service() {
                 sortOrder
             )?.use { cursor ->
                 if (cursor.moveToFirst()) {
-                    val pathIndex = cursor.getColumnIndex(MediaStore.Images.Media.DATA)
+                    val idIndex = cursor.getColumnIndex(MediaStore.Images.Media._ID)
+                    val nameIndex = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
+                    val dataIndex = cursor.getColumnIndex(MediaStore.Images.Media.DATA)
+                    val relativeIndex = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        cursor.getColumnIndex(MediaStore.Images.Media.RELATIVE_PATH)
+                    } else -1
                     val dateAddedIndex = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
                     val mimeIndex = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE)
 
-                    val path = if (pathIndex >= 0) cursor.getString(pathIndex) else null
+                    val id = if (idIndex >= 0) cursor.getLong(idIndex) else -1L
+                    val name = if (nameIndex >= 0) cursor.getString(nameIndex) ?: "" else ""
+                    val data = if (dataIndex >= 0) cursor.getString(dataIndex) ?: "" else ""
+                    val relative = if (relativeIndex >= 0) cursor.getString(relativeIndex) ?: "" else ""
                     val dateAdded = if (dateAddedIndex >= 0) cursor.getLong(dateAddedIndex) else 0L
-                    val mime = if (mimeIndex >= 0) cursor.getString(mimeIndex) else "image/png"
+                    val mime = if (mimeIndex >= 0) cursor.getString(mimeIndex) ?: "image/png" else "image/png"
 
                     val nowSec = System.currentTimeMillis() / 1000
-                    // 仅检测最近 15 秒内新增的图片，且路径或文件名包含截屏特征
-                    if (path != null && (nowSec - dateAdded) in 0..15) {
-                        val lower = path.lowercase()
-                        val isScreenshot = lower.contains("screenshot") ||
-                            lower.contains("截屏") ||
-                            lower.contains("screen_shot") ||
-                            lower.contains("screencap")
-                        if (isScreenshot && path != lastProcessedScreenshotPath && (System.currentTimeMillis() - lastScreenshotTime > 1500)) {
-                            lastProcessedScreenshotPath = path
+                    // 时间窗口判定：30秒以内新增（容忍±5秒时钟偏差）
+                    if (id >= 0 && Math.abs(nowSec - dateAdded) <= 30) {
+                        // 过滤由 ClipSync 本地刚刚保存的图片，防止回环
+                        if (recentlySavedImageIds.contains(id)) {
+                            return
+                        }
+
+                        val lowerName = name.lowercase()
+                        val lowerData = data.lowercase()
+                        val lowerRelative = relative.lowercase()
+
+                        val isScreenshot = lowerName.contains("screenshot") ||
+                            lowerName.contains("截屏") ||
+                            lowerName.contains("screen_shot") ||
+                            lowerName.contains("screencap") ||
+                            lowerData.contains("screenshot") ||
+                            lowerData.contains("截屏") ||
+                            lowerData.contains("screen_shot") ||
+                            lowerRelative.contains("screenshot") ||
+                            lowerRelative.contains("截屏")
+
+                        if (isScreenshot && id != lastProcessedScreenshotId &&
+                            (System.currentTimeMillis() - lastScreenshotTime > 1500)
+                        ) {
+                            lastProcessedScreenshotId = id
                             lastScreenshotTime = System.currentTimeMillis()
-                            Log.i(TAG, "Detected new screenshot: $path")
-                            dispatchScreenshotCaptured(path, mime)
+                            Log.i(TAG, "Detected new screenshot: $name (id=$id)")
+                            dispatchScreenshotCaptured(id, name, mime, 0)
                         }
                     }
                 }
@@ -427,19 +491,39 @@ class SyncForegroundService : Service() {
         }
     }
 
-    private fun dispatchScreenshotCaptured(path: String, mime: String) {
-        mainHandler.post {
-            val channel = dartChannel ?: return@post
-            val args = mapOf<String, Any>(
-                "path" to path,
-                "mimeType" to mime,
-                "capturedAt" to System.currentTimeMillis()
+    private fun dispatchScreenshotCaptured(id: Long, fileName: String, mime: String, retryCount: Int) {
+        // 用 content:// URI 读取字节：Android 10+ 分区存储下 _data 路径
+        // 可能不可用/不可 File 直读，统一走 ContentResolver 最稳。
+        try {
+            val uri = ContentUris.withAppendedId(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                id
             )
-            try {
-                channel.invokeMethod("onScreenshotCaptured", args)
-            } catch (e: Exception) {
-                Log.w(TAG, "invoke onScreenshotCaptured failed", e)
+            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            if (bytes == null || bytes.isEmpty()) {
+                if (retryCount < 3) {
+                    mainHandler.postDelayed({
+                        dispatchScreenshotCaptured(id, fileName, mime, retryCount + 1)
+                    }, 300)
+                }
+                return
             }
+            mainHandler.post {
+                val channel = dartChannel ?: return@post
+                val args = mapOf<String, Any>(
+                    "bytes" to bytes,
+                    "fileName" to fileName,
+                    "mimeType" to mime,
+                    "capturedAt" to System.currentTimeMillis()
+                )
+                try {
+                    channel.invokeMethod("onScreenshotCaptured", args)
+                } catch (e: Exception) {
+                    Log.w(TAG, "invoke onScreenshotCaptured failed", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "read screenshot bytes failed", e)
         }
     }
 

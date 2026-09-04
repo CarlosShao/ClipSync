@@ -1,4 +1,5 @@
 import "dart:async";
+import "dart:io";
 
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
@@ -10,7 +11,9 @@ import "package:clipsync_mobile/models/device.dart";
 import "package:clipsync_mobile/providers/auth_provider.dart";
 import "package:clipsync_mobile/providers/clipboard_provider.dart";
 import "package:clipsync_mobile/providers/device_provider.dart";
+import "package:clipsync_mobile/providers/settings_provider.dart";
 import "package:clipsync_mobile/providers/ws_provider.dart";
+import "package:clipsync_mobile/services/sync_service.dart";
 import "package:clipsync_mobile/screens/devices/sessions_section.dart";
 import "package:clipsync_mobile/screens/favorites/favorites_screen.dart";
 import "package:clipsync_mobile/services/app_exception.dart";
@@ -119,6 +122,17 @@ class _HomeScreenState extends State<HomeScreen> {
           deviceId: (auth.user?['id'] ?? 'mobile').toString(),
           clipboardProvider: context.read<ClipboardProvider>(),
         );
+      }
+    }
+
+    // Android 截图同步权限引导：首帧渲染后若开启了截图同步但未授权，温和触发系统授权弹窗
+    if (Platform.isAndroid && mounted) {
+      final settings = context.read<SettingsProvider>();
+      if (settings.autoSyncScreenshots) {
+        final hasPerm = await SyncService.instance.hasMediaReadPermission();
+        if (!hasPerm && mounted) {
+          unawaited(SyncService.instance.requestMediaReadPermission());
+        }
       }
     }
   }
