@@ -1,0 +1,6 @@
+# ClipSync 官网 robots
+# 注：Sitemap 域名沿用工程方案默认 www.clipstream.work，域名定稿（工程方案 §5）后如有变更需同步此处与 sitemap.xml
+User-agent: *
+Allow: /
+
+Sitemap: https://www.clipstream.work/sitemap.xml

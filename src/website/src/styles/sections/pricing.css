@@ -1,0 +1,20 @@
+/* ═══ 04 定价表（基线「定价表」段）═══ */
+.ptable{border:1px solid var(--line-strong);border-radius:14px;overflow:hidden;background:#fff;margin-top:10px}
+.pt-head{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;background:#fafaf7;border-bottom:1px solid var(--line)}
+.pt-head>div{padding:18px 20px}
+.pt-head .pn{font-weight:600;font-size:14px}
+.pt-head .price{font-size:24px;font-weight:640;letter-spacing:.3px}
+.pt-head .price small{font-size:11.5px;color:var(--ink-3);font-weight:400}
+.pt-head .tag{display:inline-block;font-size:10px;background:var(--accent-soft);color:var(--accent);border:1px solid #d8d1f8;border-radius:20px;padding:1px 9px;margin-left:8px;vertical-align:3px}
+.pt-col{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;border-top:1px solid var(--line);font-size:13px}
+.pt-col>div{padding:12px 20px;color:var(--ink-2)}
+.pt-col>div:first-child{color:var(--ink)}
+.pt-col .yes{color:var(--accent)}
+.pt-col .no{color:var(--line-strong)}
+.pt-foot{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;border-top:1px solid var(--line)}
+.pt-foot>div{padding:16px 20px}
+.pt-note{font-size:11.5px;color:var(--ink-3);margin-top:14px;font-family:var(--mono)}
+
+@media (max-width:960px){
+  .pt-head,.pt-col,.pt-foot{grid-template-columns:1fr}
+}

@@ -1,0 +1,18 @@
+/* ═══ 02 加密段（基线「加密段」段）═══ */
+.enc-grid{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center;margin-top:8px}
+.enc-card{border:1px solid var(--line-strong);border-radius:14px;background:#fff;padding:26px;font-size:13px}
+.enc-card .row{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px dashed var(--line)}
+.enc-card .row:last-child{border-bottom:none}
+.enc-card .who{width:70px;font-family:var(--mono);font-size:10.5px;color:var(--ink-3);flex-shrink:0}
+.enc-card .box{flex:1;border-radius:9px;padding:10px 13px}
+.enc-card .box.plain{background:#f7f6f2;border:1px solid var(--line);color:var(--ink)}
+.enc-card .box.cipher{background:var(--accent-soft);border:1px solid #d8d1f8;color:var(--accent);font-family:var(--mono);font-size:10.5px;word-break:break-all}
+.enc-card .arrow-line{text-align:center;color:var(--ink-3);font-size:11px;padding:2px 0}
+.check-list{display:flex;flex-direction:column;gap:16px;margin-top:6px}
+.check-item{display:flex;gap:13px;font-size:14px;color:var(--ink-2);align-items:flex-start}
+.check-item b{color:var(--ink)}
+.check-item .no{font-family:var(--mono);font-size:11px;color:var(--accent);border:1px solid #d8d1f8;background:var(--accent-soft);border-radius:6px;padding:1px 7px;margin-top:2px;flex-shrink:0}
+
+@media (max-width:960px){
+  .enc-grid{grid-template-columns:1fr}
+}

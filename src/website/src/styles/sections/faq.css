@@ -1,0 +1,7 @@
+/* ═══ 06 FAQ（基线「FAQ」段；原生 <details>，无 JS 参与）═══ */
+.faq{max-width:760px}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{cursor:pointer;list-style:none;padding:19px 2px;font-size:15px;font-weight:550;display:flex;justify-content:space-between;align-items:center}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary .pl{font-family:var(--mono);color:var(--accent);font-weight:400}
+.faq .ans{padding:0 2px 20px;font-size:13.5px;color:var(--ink-2);max-width:640px}

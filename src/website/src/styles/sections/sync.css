@@ -1,0 +1,19 @@
+/* ═══ 编号章节骨架 + 功能行（基线「编号章节」「功能行」两段）═══
+   .sec/.sec-no/h2/.desc 为 01–06 全部编号 section 共用；.frow 为 01 同步 / 03 AI 共用。
+   因 01 节首次使用，随本文件引入，02–06 节依赖本文件先于其加载（引入顺序见 src/main.ts）。 */
+.sec{display:grid;grid-template-columns:220px 1fr;gap:60px;padding:90px 0;border-bottom:1px solid var(--line)}
+.sec-no{font-family:var(--mono);font-size:12px;color:var(--ink-3);display:flex;gap:12px;align-items:baseline}
+.sec-no b{font-size:30px;color:var(--ink);font-weight:400;font-family:var(--serif);font-style:italic}
+h2{font-size:32px;font-weight:620;letter-spacing:.3px;line-height:1.32;margin-bottom:14px}
+.sec .desc{font-size:14.5px;color:var(--ink-2);max-width:520px;margin-bottom:34px}
+
+.frow{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line);padding:22px 4px;gap:30px;align-items:baseline;transition:background .15s}
+.frow:hover{background:#f5f4ef}
+.frow h3{font-size:16.5px;font-weight:600;display:flex;align-items:center;gap:10px}
+.frow h3 .idx{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:400}
+.frow p{font-size:13px;color:var(--ink-2)}
+
+@media (max-width:960px){
+  .sec{grid-template-columns:1fr;gap:26px;padding:60px 0}
+  .frow{grid-template-columns:1fr;gap:8px}
+}

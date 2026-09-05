@@ -1,0 +1,48 @@
+# ClipSync 官网构建流水线：npm ci → build → check → 上传 dist artifact
+# 触发范围限定在 src/website/** 与本 workflow，避免打扰后端/移动端 CI
+name: website-build
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'src/website/**'
+      - '.github/workflows/website.yml'
+  pull_request:
+    paths:
+      - 'src/website/**'
+      - '.github/workflows/website.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: src/website
+
+jobs:
+  build:
+    name: Build clipsync-website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (tsc --noEmit + vite build)
+        run: npm run build
+
+      - name: Check dist artifacts
+        run: npm run check
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-dist
+          path: src/website/dist
+          retention-days: 7
