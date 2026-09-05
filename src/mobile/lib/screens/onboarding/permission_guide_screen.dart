@@ -211,6 +211,10 @@ class _PermissionGuideScreenState extends State<PermissionGuideScreen> {
 
                 // 权限卡片 3：自启动与后台保护
                 _buildAutoStartCard(theme, isDark),
+                const SizedBox(height: AppSpacing.md),
+
+                // 权限卡片 4：保活锚点（通知使用权，系统托管绑定）
+                _buildKeepAliveCard(theme, isDark),
                 const SizedBox(height: AppSpacing.xxl),
 
                 // 底部主按钮与跳过按钮
@@ -307,6 +311,32 @@ class _PermissionGuideScreenState extends State<PermissionGuideScreen> {
       actionLabel: l10n.gotoAutoStartSettings,
       onAction: _openAutoStartSettings,
     );
+  }
+
+  Widget _buildKeepAliveCard(ThemeData theme, bool isDark) {
+    final l10n = AppLocalizations.of(context);
+    final accent = isDark ? AppColorsV2.typeLinkDark : AppColorsV2.typeLinkLight;
+    return _GuideCard(
+      icon: Icons.anchor_rounded,
+      accentColor: accent,
+      title: l10n.stepKeepAliveTitle,
+      description: l10n.stepKeepAliveDesc,
+      statusText: l10n.notifListenerStatusHint,
+      statusColor: theme.colorScheme.onSurfaceVariant,
+      actionLabel: l10n.gotoNotificationListenerSettings,
+      onAction: _openNotificationListenerSettings,
+    );
+  }
+
+  Future<void> _openNotificationListenerSettings() async {
+    final ok = await _NativeBridge.openNotificationListenerSettings();
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).unknown)),
+        );
+      }
+    }
   }
 
   String _statusLabel(bool? value, String yes, String no) {
@@ -474,6 +504,18 @@ class _NativeBridge {
     }
     try {
       await _channel.invokeMethod<void>('openAutoStartSettings');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> openNotificationListenerSettings() async {
+    if (!Platform.isAndroid) {
+      return false;
+    }
+    try {
+      await _channel.invokeMethod<void>('openNotificationListenerSettings');
       return true;
     } catch (_) {
       return false;

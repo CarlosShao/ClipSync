@@ -160,13 +160,15 @@ class SyncService {
     } catch (_) {}
   }
 
-  /// 将服务配置（URL、token、deviceId、autoSyncScreenshots）同步给原生前台服务，
-  /// 使得即使用户锁屏、杀死 Activity 或划掉任务卡，原生服务依然能够自主执行后台图片上传
+  /// 将服务配置（URL、token、deviceId、开关组）同步给原生前台服务，
+  /// 使得即使用户锁屏、杀死 Activity 或划掉任务卡，原生服务依然能够自主
+  /// 上传截图 / 拉取 PC 图片入相册（2026-09：PC→相册下沉到原生轮询）
   Future<void> updateSyncConfig({
     required String baseUrl,
     required String? token,
     required String? deviceId,
     required bool autoSyncScreenshots,
+    bool autoSaveImagesToAlbum = true,
   }) async {
     if (!Platform.isAndroid) return;
     try {
@@ -175,10 +177,23 @@ class SyncService {
         'token': token,
         'deviceId': deviceId,
         'autoSyncScreenshots': autoSyncScreenshots,
+        'autoSaveImagesToAlbum': autoSaveImagesToAlbum,
       });
     } catch (e) {
       debugPrint('[SyncService] updateSyncConfig failed: $e');
     }
+  }
+
+  /// 跳转「通知使用权」设置页（KeepAliveNotificationListener 保活锚点授权入口）
+  Future<bool> openNotificationListenerSettings() async {
+    try {
+      return await _channel.invokeMethod<bool>('openNotificationListenerSettings') ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('[SyncService] notification listener settings failed: ${e.message}');
+    } on MissingPluginException {
+      // 非 Android 平台
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------------------

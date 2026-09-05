@@ -78,19 +78,22 @@ void main() async {
   );
   SyncService.instance.attach(authProvider);
 
-  // 同步当前配置至原生 SharedPreferences（使锁屏/后台服务脱离 Flutter Activity 依然能直接上传截图）
+  // 同步当前配置至原生 SharedPreferences（使锁屏/后台服务脱离 Flutter Activity
+  // 依然能直接上传截图、拉取 PC 图片入相册）
   void syncConfigToNative() async {
     try {
       final token = await TokenStore.getAccessToken();
       final deviceId = authProvider.deviceId ?? await authProvider.ensureDeviceId();
       final baseUrl = ServerConfig.baseUrl;
       final autoSync = settingsProvider.autoSyncScreenshots;
+      final autoSaveAlbum = settingsProvider.autoSaveImagesToAlbum;
       if (deviceId != null && deviceId.isNotEmpty) {
         await SyncService.instance.updateSyncConfig(
           baseUrl: baseUrl,
           token: token,
           deviceId: deviceId,
           autoSyncScreenshots: autoSync,
+          autoSaveImagesToAlbum: autoSaveAlbum,
         );
       }
     } catch (e) {
@@ -270,7 +273,10 @@ void main() async {
                       : imageMime.contains('gif')
                           ? 'gif'
                           : 'png';
-              final filename = 'Screenshot_${DateTime.now().millisecondsSinceEpoch}.$ext';
+              // 确定性文件名（itemId 前 8 位）：原生轮询路径与 Dart 推送路径可能先后
+              // 处理同一条目，同名 + saveImageToAlbum 的存在性检查保证相册不重复落盘
+              final idPart = itemId.length >= 8 ? itemId.substring(0, 8) : itemId;
+              final filename = 'Sync_PC_$idPart.$ext';
               final savedAlbumPath = await SyncService.instance.saveImageToAlbum(
                 imageBytes,
                 fileName: filename,

@@ -73,6 +73,7 @@ class MainActivity : FlutterFragmentActivity() {
                 "requestMediaReadPermission" -> requestMediaReadPermission(result)
                 "openAutoStartSettings" -> result.success(openAutoStartSettings())
                 "openAppNotificationSettings" -> result.success(openAppNotificationSettings())
+                "openNotificationListenerSettings" -> result.success(openNotificationListenerSettings())
                 "saveImageToAlbum" -> {
                     val bytes = call.argument<ByteArray>("bytes")
                     val fileName = call.argument<String>("fileName")
@@ -93,7 +94,10 @@ class MainActivity : FlutterFragmentActivity() {
                     val token = call.argument<String>("token")
                     val deviceId = call.argument<String>("deviceId")
                     val autoSyncScreenshots = call.argument<Boolean>("autoSyncScreenshots") ?: true
-                    SyncForegroundService.saveSyncConfig(this, baseUrl, token, deviceId, autoSyncScreenshots)
+                    val autoSaveImagesToAlbum = call.argument<Boolean>("autoSaveImagesToAlbum") ?: true
+                    SyncForegroundService.saveSyncConfig(
+                        this, baseUrl, token, deviceId, autoSyncScreenshots, autoSaveImagesToAlbum
+                    )
                     result.success(true)
                 }
                 else -> result.notImplemented()
@@ -160,13 +164,36 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // 通知使用权设置页（KeepAliveNotificationListener 保活锚点的授权入口：
+    // 系统托管绑定在进程死亡后自动重绑，是 force-stop 级清理下的最后保活手段）
+    // -------------------------------------------------------------------------
+
+    private fun openNotificationListenerSettings(): Boolean {
+        return try {
+            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "open notification listener settings failed", e)
+            false
+        }
+    }
+
     override fun onStart() {
         super.onStart()
+        // 2026-09 修复「打开 App 才同步」：厂商 ROM 可能只停掉前台服务而保留进程，
+        // 此时 onStart 只有 triggerScreenshotCheck（instance 为 null 时是空操作），
+        // 服务不会重建 → 截图无人检测。必须幂等确保服务在跑（isRunning 守卫，重复调用无副作用），
+        // 服务 onCreate 会恢复持久化游标并补扫断档期的截图。
+        SyncForegroundService.start(this)
         SyncForegroundService.triggerScreenshotCheck()
     }
 
     override fun onResume() {
         super.onResume()
+        SyncForegroundService.start(this)
         SyncForegroundService.triggerScreenshotCheck()
     }
 

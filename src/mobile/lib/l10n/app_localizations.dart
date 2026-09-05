@@ -1592,6 +1592,30 @@ abstract class AppLocalizations {
   /// **'Go to auto-start settings'**
   String get gotoAutoStartSettings;
 
+  /// No description provided for @stepKeepAliveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'4. Keep-alive anchor (recommended)'**
+  String get stepKeepAliveTitle;
+
+  /// No description provided for @stepKeepAliveDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Grant notification access so the system automatically restarts ClipSync when its process is killed by aggressive battery managers — the same mechanism IMEs rely on. ClipSync never reads your notifications.'**
+  String get stepKeepAliveDesc;
+
+  /// No description provided for @notifListenerStatusHint.
+  ///
+  /// In en, this message translates to:
+  /// **'System-managed binding, permanent once granted'**
+  String get notifListenerStatusHint;
+
+  /// No description provided for @gotoNotificationListenerSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Go to notification access'**
+  String get gotoNotificationListenerSettings;
+
   /// No description provided for @unknown.
   ///
   /// In en, this message translates to:

@@ -811,6 +811,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get gotoAutoStartSettings => '前往自启动设置';
 
   @override
+  String get stepKeepAliveTitle => '4. 保活锚点（推荐）';
+
+  @override
+  String get stepKeepAliveDesc =>
+      '授予通知使用权后，系统会在进程被清理时自动重新拉起 ClipSync——与输入法同类机制，对抗各厂商的深度清理。ClipSync 不会读取任何通知内容。';
+
+  @override
+  String get notifListenerStatusHint => '系统托管绑定，授权后永久生效';
+
+  @override
+  String get gotoNotificationListenerSettings => '前往通知使用权';
+
+  @override
   String get unknown => '未知';
 
   @override

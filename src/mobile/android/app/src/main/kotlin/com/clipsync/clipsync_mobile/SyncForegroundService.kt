@@ -34,7 +34,10 @@ import android.util.Log
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.util.Timer
+import java.util.TimeZone
 import java.util.TimerTask
 
 /**
@@ -69,8 +72,17 @@ class SyncForegroundService : Service() {
         /** 采集轮询间隔（毫秒） */
         private const val POLL_INTERVAL_MS = 1500L
 
-        /** 自愈自检间隔（毫秒）：进程被厂商 ROM 杀死（非 force-stop 场景）后由此拉起 */
-        private const val KEEPALIVE_INTERVAL_MS = 5 * 60 * 1000L
+        /** 自愈自检间隔（毫秒）：进程被厂商 ROM 杀死（非 force-stop 场景）后由此拉起。
+         *  2 分钟：亮屏/解锁瞬间的 SCREEN_ON/USER_PRESENT 补扫覆盖了主要场景，
+         *  这里只兜「进程死了但没被 force-stop」的窗口期，越短复活越快 */
+        private const val KEEPALIVE_INTERVAL_MS = 2 * 60 * 1000L
+
+        /** PC 图片拉取间隔：亮屏 4 秒（「相册第一时间看到」），灭屏 30 秒（省电） */
+        private const val REMOTE_PULL_INTERVAL_SCREEN_ON_MS = 4000L
+        private const val REMOTE_PULL_INTERVAL_SCREEN_OFF_MS = 30000L
+
+        /** PC 图片落盘大小上限（30MB） */
+        private const val REMOTE_PULL_MAX_BYTES = 30 * 1024 * 1024
 
         private const val REQUEST_CODE_RESTART = 1001
         private const val REQUEST_CODE_KEEPALIVE = 1002
@@ -80,6 +92,9 @@ class SyncForegroundService : Service() {
 
         /** 开机自启门控键：用户启动过服务=true（stop 时清除） */
         private const val PREF_KEY_SERVICE_WANTED = "serviceWanted"
+
+        /** PC 图片拉取游标（epoch ms）：只存比它更新的远程图片 */
+        private const val PREF_KEY_LAST_REMOTE_PULL_AT = "lastRemoteImageAtMs"
 
         /** 用户是否仍希望服务运行（BootCompletedReceiver / SyncKeepAliveReceiver 消费） */
         fun isServiceWanted(context: Context): Boolean {
@@ -149,16 +164,24 @@ class SyncForegroundService : Service() {
             instance?.releaseWakeLock()
         }
 
-        /** 保存同步凭据（服务端地址、JWT token、设备 ID、自动同步开关），供服务脱离 Flutter 后台独立上传 */
-        fun saveSyncConfig(context: Context, baseUrl: String?, token: String?, deviceId: String?, autoSyncScreenshots: Boolean) {
+        /** 保存同步凭据（服务端地址、JWT token、设备 ID、开关组），供服务脱离 Flutter 后台独立工作 */
+        fun saveSyncConfig(
+            context: Context,
+            baseUrl: String?,
+            token: String?,
+            deviceId: String?,
+            autoSyncScreenshots: Boolean,
+            autoSaveImagesToAlbum: Boolean = true
+        ) {
             val sp = context.getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
             sp.edit()
                 .putString("baseUrl", baseUrl)
                 .putString("token", token)
                 .putString("deviceId", deviceId)
                 .putBoolean("autoSyncScreenshots", autoSyncScreenshots)
+                .putBoolean("autoSaveImagesToAlbum", autoSaveImagesToAlbum)
                 .apply()
-            Log.i(TAG, "Sync config saved: baseUrl=$baseUrl, deviceId=$deviceId, autoSync=$autoSyncScreenshots")
+            Log.i(TAG, "Sync config saved: baseUrl=$baseUrl, deviceId=$deviceId, autoSync=$autoSyncScreenshots, autoSaveAlbum=$autoSaveImagesToAlbum")
         }
 
         /** 启动前台服务（由 Dart 经 MainActivity 通道调用；应用前台场景无 FGS 启动限制） */
@@ -230,6 +253,28 @@ class SyncForegroundService : Service() {
             return try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val resolver = context.contentResolver
+                    // 幂等落盘：同名文件已存在于 Pictures/Screenshots 时直接复用。
+                    // Dart 推送路径与原生轮询路径可能先后处理同一条目，确定性文件名
+                    // （Sync_PC_<itemId前8位>）+ 此检查保证相册不出现重复图片。
+                    // 注意 RELATIVE_PATH 存储值带尾部斜杠（"Pictures/Screenshots/"），
+                    // 比较值必须一致，否则存在性检查永远落空、MediaStore 会生成 "(1)" 副本。
+                    resolver.query(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        arrayOf(MediaStore.Images.Media._ID),
+                        "${MediaStore.Images.Media.DISPLAY_NAME}=? AND ${MediaStore.Images.Media.RELATIVE_PATH}=?",
+                        arrayOf(fileName, Environment.DIRECTORY_PICTURES + "/Screenshots/"),
+                        null
+                    )?.use { c ->
+                        if (c.moveToFirst()) {
+                            val idx = c.getColumnIndex(MediaStore.Images.Media._ID)
+                            if (idx >= 0) {
+                                return ContentUris.withAppendedId(
+                                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                    c.getLong(idx)
+                                ).toString()
+                            }
+                        }
+                    }
                     val contentValues = ContentValues().apply {
                         put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
                         put(MediaStore.Images.Media.MIME_TYPE, mimeType)
@@ -493,6 +538,7 @@ class SyncForegroundService : Service() {
         startPolling()
         scheduleKeepAliveAlarm(applicationContext)
         screenshotHandler?.post(screenshotRunnable)
+        screenshotHandler?.post(remotePullRunnable)
         Log.i(TAG, "foreground service started")
     }
 
@@ -663,6 +709,10 @@ class SyncForegroundService : Service() {
 
     private var screenStateReceiver: BroadcastReceiver? = null
 
+    /** 当前屏幕状态（SCREEN_ON/OFF 维护；决定 PC 图片拉取频率） */
+    @Volatile
+    private var screenOn: Boolean = true
+
     /**
      * 亮屏/解锁广播：用户按下电源键或解锁的瞬间立即补扫截图并唤醒同步，
      * 不要求打开 App。Doze 深度休眠期间 ContentObserver/1.5s 轮询可能整体停摆
@@ -675,6 +725,7 @@ class SyncForegroundService : Service() {
                 when (intent?.action) {
                     Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
                         Log.i(TAG, "Screen on / user present — immediate screenshot catch-up")
+                        screenOn = true
                         acquireWakeLock(20000L)
                         val h = screenshotHandler ?: return
                         h.removeCallbacks(checkScreenshotRunnable)
@@ -682,6 +733,12 @@ class SyncForegroundService : Service() {
                         // MediaStore 索引可能滞后于解锁瞬间，追加两次复查
                         h.postDelayed(checkScreenshotRunnable, 2500L)
                         h.postDelayed(checkScreenshotRunnable, 6000L)
+                        // 亮屏/解锁同时立即拉一次 PC 端新图片（相册第一时间可见）
+                        h.removeCallbacks(remotePullRunnable)
+                        h.post(remotePullRunnable)
+                    }
+                    Intent.ACTION_SCREEN_OFF -> {
+                        screenOn = false
                     }
                 }
             }
@@ -689,6 +746,7 @@ class SyncForegroundService : Service() {
         screenStateReceiver = receiver
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
         }
         try {
@@ -697,9 +755,166 @@ class SyncForegroundService : Service() {
             } else {
                 registerReceiver(receiver, filter)
             }
-            Log.i(TAG, "Screen state receiver registered (SCREEN_ON / USER_PRESENT)")
+            Log.i(TAG, "Screen state receiver registered (SCREEN_ON / SCREEN_OFF / USER_PRESENT)")
         } catch (e: Exception) {
             Log.w(TAG, "register screen state receiver failed", e)
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // PC 截图/图片 → 手机相册（原生轮询，2026-09：不再依赖 Flutter 引擎存活。
+    // 后台/冻结时 Dart 层收不到 WS 推送，只有原生轮询能保证「相册第一时间可见」。
+    // 与 Dart 推送路径通过确定性文件名（Sync_PC_<itemId前8位>）+ MediaStore 存在性
+    // 检查去重，两边谁先到都不会重复落盘。）
+    // -------------------------------------------------------------------------
+
+    private val remotePullRunnable = object : Runnable {
+        override fun run() {
+            try {
+                pullRemoteImages()
+            } catch (t: Throwable) {
+                Log.w(TAG, "pullRemoteImages error", t)
+            } finally {
+                val interval = if (screenOn) REMOTE_PULL_INTERVAL_SCREEN_ON_MS else REMOTE_PULL_INTERVAL_SCREEN_OFF_MS
+                screenshotHandler?.postDelayed(this, interval)
+            }
+        }
+    }
+
+    private val remotePullInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private fun pullRemoteImages() {
+        if (!remotePullInFlight.compareAndSet(false, true)) return
+        try {
+            val sp = getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
+            if (!sp.getBoolean("autoSaveImagesToAlbum", true)) return
+            val baseUrl = sp.getString("baseUrl", null)?.trimEnd('/') ?: return
+            val token = sp.getString("token", null) ?: return
+            val myDeviceId = sp.getString("deviceId", null) ?: return
+
+            // 首次运行游标初始化为当前时间：绝不把历史图片倒进相册
+            if (!sp.contains(PREF_KEY_LAST_REMOTE_PULL_AT)) {
+                sp.edit().putLong(PREF_KEY_LAST_REMOTE_PULL_AT, System.currentTimeMillis()).apply()
+                return
+            }
+            val cursorMs = sp.getLong(PREF_KEY_LAST_REMOTE_PULL_AT, 0L)
+
+            acquireWakeLock(15000L)
+            val listUrl = "$baseUrl/api/clipboard?page=1&limit=10&contentType=image"
+            val body = httpGetString(listUrl, token) ?: return
+            val root = org.json.JSONObject(body)
+            val items = root.optJSONArray("items") ?: return
+
+            var newestMs = cursorMs
+            var savedAny = false
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val createdAtMs = parseIsoToEpochMs(item.optString("createdAt")) ?: continue
+                if (createdAtMs > newestMs) newestMs = createdAtMs
+                if (createdAtMs <= cursorMs) continue
+                val sourceId = item.optJSONObject("sourceDevice")?.optString("id") ?: ""
+                if (sourceId.isEmpty() || sourceId == myDeviceId) continue
+                val itemId = item.optString("id")
+                if (itemId.isEmpty()) continue
+
+                val media = httpGetBytes("$baseUrl/api/media/$itemId/download", token) ?: continue
+                if (media.first.isEmpty()) continue
+                val ext = when {
+                    media.second.contains("jpeg") || media.second.contains("jpg") -> "jpg"
+                    media.second.contains("webp") -> "webp"
+                    media.second.contains("gif") -> "gif"
+                    else -> "png"
+                }
+                val fileName = "Sync_PC_${itemId.take(8)}.$ext"
+                val saved = saveImageToAlbum(applicationContext, media.first, fileName, media.second)
+                if (saved != null) {
+                    savedAny = true
+                    Log.i(TAG, "[RemotePull] saved PC image to album: $fileName (${media.first.size} bytes)")
+                }
+            }
+            if (newestMs > cursorMs) {
+                sp.edit().putLong(PREF_KEY_LAST_REMOTE_PULL_AT, newestMs).apply()
+            }
+            if (savedAny) {
+                // 相册变更后触发一次截图检测：saveImageToAlbum 已登记 recentlySavedImageIds，
+                // 这里只是让状态机立即消化掉本次 MediaStore 变更，避免多余的 fast-retry
+                screenshotHandler?.post(checkScreenshotRunnable)
+            }
+        } finally {
+            remotePullInFlight.set(false)
+        }
+    }
+
+    private fun httpGetString(url: String, token: String): String? {
+        var conn: java.net.HttpURLConnection? = null
+        return try {
+            conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 8000
+                readTimeout = 8000
+                setRequestProperty("Authorization", "Bearer $token")
+            }
+            if (conn.responseCode != 200) {
+                Log.w(TAG, "[RemotePull] GET $url -> ${conn.responseCode}")
+                null
+            } else {
+                conn.inputStream.bufferedReader().use { it.readText() }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "[RemotePull] GET failed: ${t.message}")
+            null
+        } finally {
+            try { conn?.disconnect() } catch (_: Throwable) {}
+        }
+    }
+
+    private fun httpGetBytes(url: String, token: String): Pair<ByteArray, String>? {
+        var conn: java.net.HttpURLConnection? = null
+        return try {
+            conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 8000
+                readTimeout = 15000
+                setRequestProperty("Authorization", "Bearer $token")
+            }
+            if (conn.responseCode != 200) return null
+            val mime = conn.getHeaderField("Content-Type") ?: "image/png"
+            val bytes = conn.inputStream.use { input ->
+                val buf = java.io.ByteArrayOutputStream()
+                val chunk = ByteArray(64 * 1024)
+                var n: Int
+                var total = 0
+                while (input.read(chunk).also { n = it } > 0) {
+                    total += n
+                    if (total > REMOTE_PULL_MAX_BYTES) return null
+                    buf.write(chunk, 0, n)
+                }
+                buf.toByteArray()
+            }
+            Pair(bytes, mime)
+        } catch (t: Throwable) {
+            Log.w(TAG, "[RemotePull] download failed: ${t.message}")
+            null
+        } finally {
+            try { conn?.disconnect() } catch (_: Throwable) {}
+        }
+    }
+
+    /** 解析服务端 ISO8601 时间（2026-09-05T14:28:13.806873+08:00 / ...Z）为 epoch 毫秒 */
+    private fun parseIsoToEpochMs(iso: String): Long? {
+        return try {
+            val m = Regex("^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?$").find(iso.trim())
+                ?: return null
+            val secPart = m.groupValues[1]
+            var offPart = m.groupValues[2]
+            if (offPart.isEmpty()) offPart = "Z"
+            if (offPart == "Z") offPart = "+00:00"
+            val normalized = if (offPart.length == 5) offPart.substring(0, 3) + offPart.substring(3) else offPart
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
+            sdf.timeZone = TimeZone.getTimeZone("GMT${normalized}")
+            sdf.parse("${secPart}${normalized}")?.time
+        } catch (_: Throwable) {
+            null
         }
     }
 

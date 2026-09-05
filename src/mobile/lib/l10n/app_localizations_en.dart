@@ -849,6 +849,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get gotoAutoStartSettings => 'Go to auto-start settings';
 
   @override
+  String get stepKeepAliveTitle => '4. Keep-alive anchor (recommended)';
+
+  @override
+  String get stepKeepAliveDesc =>
+      'Grant notification access so the system automatically restarts ClipSync when its process is killed by aggressive battery managers — the same mechanism IMEs rely on. ClipSync never reads your notifications.';
+
+  @override
+  String get notifListenerStatusHint =>
+      'System-managed binding, permanent once granted';
+
+  @override
+  String get gotoNotificationListenerSettings => 'Go to notification access';
+
+  @override
   String get unknown => 'Unknown';
 
   @override
