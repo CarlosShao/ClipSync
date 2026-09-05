@@ -304,6 +304,8 @@ void main() async {
             if (content != null && content.isNotEmpty) {
               if (writebackOn) {
                 await Clipboard.setData(ClipboardData(text: content));
+                // 回声登记：抑制无障碍采集路径把 PC 推来的文本再传回服务端（回环）
+                await SyncService.instance.registerClipboardEcho(content);
                 debugPrint('[Writeback] clipboard written from item $itemId');
               }
               await LocalNotificationService.instance.showClipboardUpdated(

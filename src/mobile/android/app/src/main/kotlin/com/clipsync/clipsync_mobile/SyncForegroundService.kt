@@ -933,6 +933,9 @@ class SyncForegroundService : Service() {
     }
 
     private fun readClipboard(source: String) {
+        // 无障碍采集服务已接管（系统信任豁免，后台可读）：
+        // 经典路径受 Android 10+ 焦点限制只能在 App 前台工作，交给无障碍路径统一采集
+        if (ClipboardAccessibilityService.isConnected) return
         val cm = clipboardManager ?: return
         // Android 10+ 无焦点时 primaryClip 返回 null / 个别 ROM 抛异常，一律静默降级
         val clip = try {

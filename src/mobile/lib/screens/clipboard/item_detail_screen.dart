@@ -24,6 +24,7 @@ import 'package:clipsync_mobile/widgets/common/mono_text.dart';
 import 'package:clipsync_mobile/widgets/common/section_divider.dart';
 import 'package:clipsync_mobile/widgets/common/sync_pulse_indicator.dart';
 import 'package:clipsync_mobile/widgets/common/type_badge.dart';
+import 'package:clipsync_mobile/services/sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -430,6 +431,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     }
     await HapticFeedback.lightImpact();
     await Clipboard.setData(ClipboardData(text: masked));
+    // 登记剪贴板回声：抑制无障碍采集路径重复上传自家条目
+    unawaited(SyncService.instance.registerClipboardEcho(masked));
     messenger.showSnackBar(
       SnackBar(
         content: Text(isZh ? '已复制脱敏文本 ($masked)' : 'Masked text copied ($masked)'),
@@ -470,6 +473,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       }
     });
     await Clipboard.setData(ClipboardData(text: text));
+    // 登记剪贴板回声：抑制无障碍采集路径重复上传自家条目
+    unawaited(SyncService.instance.registerClipboardEcho(text));
     messenger.showSnackBar(
       SnackBar(content: Text(l10n.copied), duration: const Duration(seconds: 2)),
     );
@@ -530,6 +535,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       final link = await SharedLinksApiService()
           .createLinkFromClipboardItem(_item);
       await Clipboard.setData(ClipboardData(text: link.url));
+      // 登记剪贴板回声：抑制无障碍采集路径重复上传自家条目
+      unawaited(SyncService.instance.registerClipboardEcho(link.url));
       messenger.showSnackBar(
         SnackBar(
           content: Text(l10n.sharedLinkCreated),
@@ -1000,6 +1007,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       return;
     }
     await Clipboard.setData(ClipboardData(text: info.name));
+    // 登记剪贴板回声：抑制无障碍采集路径重复上传自家条目
+    unawaited(SyncService.instance.registerClipboardEcho(info.name));
     messenger.showSnackBar(
       SnackBar(
         content: Text(l10n.copied),
@@ -1016,6 +1025,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       return;
     }
     await Clipboard.setData(ClipboardData(text: name));
+    // 登记剪贴板回声：抑制无障碍采集路径重复上传自家条目
+    unawaited(SyncService.instance.registerClipboardEcho(name));
     messenger.showSnackBar(
       SnackBar(content: Text(l10n.copied), duration: const Duration(seconds: 2)),
     );

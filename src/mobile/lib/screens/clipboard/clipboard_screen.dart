@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../services/sync_service.dart';
 import '../../models/clipboard_item.dart';
 import '../../providers/clipboard_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -230,6 +231,8 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
         return;
       }
       await Clipboard.setData(ClipboardData(text: text));
+    // 登记剪贴板回声：抑制无障碍采集路径重复上传自家条目
+    unawaited(SyncService.instance.registerClipboardEcho(text));
       await HapticFeedback.lightImpact();
       if (mounted) {
         setState(() {

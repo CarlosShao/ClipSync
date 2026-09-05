@@ -89,6 +89,11 @@ class MainActivity : FlutterFragmentActivity() {
                     SyncForegroundService.releaseWakeLock()
                     result.success(true)
                 }
+                "registerClipboardEcho" -> {
+                    // Dart 回写/上传剪贴板文本时登记回声，抑制无障碍采集路径重复上传
+                    ClipboardAccessibilityService.registerEcho(call.argument<String>("text") ?: "")
+                    result.success(true)
+                }
                 "updateSyncConfig" -> {
                     val baseUrl = call.argument<String>("baseUrl")
                     val token = call.argument<String>("token")

@@ -101,6 +101,9 @@ class SyncService {
             // 只是不再采集上传系统剪贴板）
             if (text is String && await _isCaptureEnabled()) {
               ClipboardCaptureService.instance.handleCapturedText(text);
+              // 登记原生回声：无障碍采集路径据此跳过本条（Dart 已上传，
+              // 服务端按内容哈希去重兜底，这里省一次重复请求）
+              unawaited(registerClipboardEcho(text));
             }
           }
           return null;
@@ -194,6 +197,20 @@ class SyncService {
       // 非 Android 平台
     }
     return false;
+  }
+
+  /// 登记剪贴板文本回声（无障碍采集路径的回环抑制）：
+  /// Dart 往系统剪贴板写入 PC 推来的文本（回写）或已上传采集文本时调用，
+  /// 无障碍服务在 60 秒窗口内读到同内容不再上传，杜绝「PC → 手机 → PC」回环
+  Future<void> registerClipboardEcho(String text) async {
+    if (!Platform.isAndroid || text.isEmpty) return;
+    try {
+      await _channel.invokeMethod('registerClipboardEcho', {'text': text});
+    } on PlatformException catch (e) {
+      debugPrint('[SyncService] registerClipboardEcho failed: ${e.message}');
+    } on MissingPluginException {
+      // 非 Android 平台
+    }
   }
 
   // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../services/sync_service.dart';
 import '../../models/clipboard_item.dart';
 import '../../services/api_service.dart';
 import '../../services/app_exception.dart';
@@ -81,6 +82,8 @@ class _SharedLinksScreenState extends State<SharedLinksScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final l10n = AppLocalizations.of(context);
     await Clipboard.setData(ClipboardData(text: link.url));
+    // 登记剪贴板回声：抑制无障碍采集路径重复上传自家条目
+    unawaited(SyncService.instance.registerClipboardEcho(link.url));
     messenger.showSnackBar(
       SnackBar(content: Text(l10n.linkCopied), duration: const Duration(seconds: 2)),
     );
@@ -199,6 +202,8 @@ class _SharedLinksScreenState extends State<SharedLinksScreen> {
         expiresInHours: _expiryHours(option),
       );
       await Clipboard.setData(ClipboardData(text: created.url));
+    // 登记剪贴板回声：抑制无障碍采集路径重复上传自家条目
+    unawaited(SyncService.instance.registerClipboardEcho(created.url));
       await _load();
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.sharedLinkCreated)),

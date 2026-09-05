@@ -22,6 +22,7 @@ import 'package:clipsync_mobile/widgets/common/skeleton_list.dart';
 import 'package:clipsync_mobile/widgets/common/swipe_action_row.dart';
 import 'package:clipsync_mobile/widgets/common/type_badge.dart';
 import 'package:clipsync_mobile/widgets/favorites/collection_picker.dart';
+import 'package:clipsync_mobile/services/sync_service.dart';
 
 /// 收藏夹组内条目页（树形层级导航二级页，两段式布局，Obsidian v2）。
 ///
@@ -304,6 +305,8 @@ class _CollectionItemsScreenState extends State<CollectionItemsScreen> {
         return;
       }
       await Clipboard.setData(ClipboardData(text: text));
+      // 登记剪贴板回声：抑制无障碍采集路径重复上传自家条目
+      unawaited(SyncService.instance.registerClipboardEcho(text));
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(l10n.copied)));
