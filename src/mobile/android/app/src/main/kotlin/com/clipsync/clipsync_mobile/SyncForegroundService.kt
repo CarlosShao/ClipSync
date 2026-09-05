@@ -673,6 +673,13 @@ class SyncForegroundService : Service() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val contentIntent = PendingIntent.getActivity(this, 0, tapIntent, pendingFlags)
+        // 一键同步：通知按钮 → 透明 Activity 借焦点读取并同步剪贴板（不切换应用）
+        val quickSyncIntent = PendingIntent.getActivity(
+            this,
+            1002,
+            Intent(this, QuickSyncActivity::class.java),
+            pendingFlags
+        )
 
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
@@ -687,6 +694,13 @@ class SyncForegroundService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(contentIntent)
+            .addAction(
+                Notification.Action.Builder(
+                    null as android.graphics.drawable.Icon?,
+                    "同步剪贴板",
+                    quickSyncIntent
+                ).build()
+            )
             .build()
     }
 
@@ -800,7 +814,7 @@ class SyncForegroundService : Service() {
             val cursorMs = sp.getLong(PREF_KEY_LAST_REMOTE_PULL_AT, 0L)
 
             acquireWakeLock(15000L)
-            val listUrl = "$baseUrl/api/clipboard?page=1&limit=10&contentType=image"
+            val listUrl = "$baseUrl/api/clipboard?page=1&limit=10"
             val body = httpGetString(listUrl, token) ?: return
             val root = org.json.JSONObject(body)
             val items = root.optJSONArray("items") ?: return
@@ -817,19 +831,42 @@ class SyncForegroundService : Service() {
                 val itemId = item.optString("id")
                 if (itemId.isEmpty()) continue
 
-                val media = httpGetBytes("$baseUrl/api/media/$itemId/download", token) ?: continue
-                if (media.first.isEmpty()) continue
-                val ext = when {
-                    media.second.contains("jpeg") || media.second.contains("jpg") -> "jpg"
-                    media.second.contains("webp") -> "webp"
-                    media.second.contains("gif") -> "gif"
-                    else -> "png"
-                }
-                val fileName = "Sync_PC_${itemId.take(8)}.$ext"
-                val saved = saveImageToAlbum(applicationContext, media.first, fileName, media.second)
-                if (saved != null) {
-                    savedAny = true
-                    Log.i(TAG, "[RemotePull] saved PC image to album: $fileName (${media.first.size} bytes)")
+                when (item.optString("contentType")) {
+                    "image" -> {
+                        val media = httpGetBytes("$baseUrl/api/media/$itemId/download", token) ?: continue
+                        if (media.first.isEmpty()) continue
+                        val ext = when {
+                            media.second.contains("jpeg") || media.second.contains("jpg") -> "jpg"
+                            media.second.contains("webp") -> "webp"
+                            media.second.contains("gif") -> "gif"
+                            else -> "png"
+                        }
+                        val fileName = "Sync_PC_${itemId.take(8)}.$ext"
+                        val saved = saveImageToAlbum(applicationContext, media.first, fileName, media.second)
+                        if (saved != null) {
+                            savedAny = true
+                            Log.i(TAG, "[RemotePull] saved PC image to album: $fileName (${media.first.size} bytes)")
+                        }
+                    }
+                    "text", "link" -> {
+                        // PC 文本/链接 → 手机剪贴板（后台回写；FGS 状态下系统允许写剪贴板，
+                        // AppOps 实测 [fgsvc-s] 写入成功）。列表里是截断的 preview，
+                        // 长文本需拉全量 content。回写前登记回声，抑制无障碍采集回环。
+                        val content = fetchRemoteItemContent(baseUrl, token, itemId) ?: continue
+                        if (content.isNotEmpty() && content.length <= 100_000 &&
+                            !ClipboardAccessibilityService.isEcho(content)
+                        ) {
+                            ClipboardAccessibilityService.registerEcho(content)
+                            try {
+                                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                cm?.setPrimaryClip(android.content.ClipData.newPlainText("clipsync", content))
+                                savedAny = true
+                                Log.i(TAG, "[RemotePull] wrote PC text to clipboard (${content.length} chars)")
+                            } catch (t: Throwable) {
+                                Log.w(TAG, "[RemotePull] clipboard write denied: ${t.message}")
+                            }
+                        }
+                    }
                 }
             }
             if (newestMs > cursorMs) {
@@ -842,6 +879,18 @@ class SyncForegroundService : Service() {
             }
         } finally {
             remotePullInFlight.set(false)
+        }
+    }
+
+    /** 拉取远程条目全量内容（GET /api/clipboard/:id/content → contentEncrypted） */
+    private fun fetchRemoteItemContent(baseUrl: String, token: String, itemId: String): String? {
+        val body = httpGetString("$baseUrl/api/clipboard/$itemId/content", token) ?: return null
+        return try {
+            val obj = org.json.JSONObject(body)
+            val content = obj.optString("contentEncrypted")
+            if (content.isEmpty() || content == "null") null else content
+        } catch (_: Throwable) {
+            null
         }
     }
 

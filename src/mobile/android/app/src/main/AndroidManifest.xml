@@ -108,6 +108,24 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config"/>
         </service>
+        <!-- 一键同步剪贴板：透明 Activity 借焦点读取剪贴板并上传（入口=通知按钮/快捷磁贴） -->
+        <activity
+            android:name=".QuickSyncActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+        <!-- 快捷设置磁贴：下拉面板一键同步剪贴板 -->
+        <service
+            android:name=".QuickSyncTile"
+            android:exported="true"
+            android:icon="@android:drawable/stat_notify_sync"
+            android:label="同步剪贴板"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.tile"/>
+            </intent-filter>
+        </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

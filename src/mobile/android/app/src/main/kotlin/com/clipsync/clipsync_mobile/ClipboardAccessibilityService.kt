@@ -64,7 +64,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
             pruneEcho()
         }
 
-        private fun isEcho(text: String): Boolean {
+        fun isEcho(text: String): Boolean {
             val seenAt = echoHashes[sha256(text)] ?: return false
             if (System.currentTimeMillis() - seenAt > ECHO_TTL_MS) {
                 echoHashes.remove(sha256(text))
@@ -204,67 +204,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
     }
 
     private fun uploadTextNatively(text: String) {
-        val sp = getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
-        val baseUrl = sp.getString("baseUrl", null)?.trimEnd('/') ?: return
-        val token = sp.getString("token", null) ?: return
-        val deviceId = sp.getString("deviceId", null) ?: return
-
-        if (!uploadInFlight.compareAndSet(false, true)) return
-        Thread {
-            var success = false
-            try {
-                for (attempt in 1..3) {
-                    var conn: java.net.HttpURLConnection? = null
-                    try {
-                        conn = (java.net.URL("$baseUrl/api/clipboard").openConnection() as java.net.HttpURLConnection)
-                        conn.requestMethod = "POST"
-                        conn.connectTimeout = 10000
-                        conn.readTimeout = 15000
-                        conn.doOutput = true
-                        conn.setRequestProperty("Authorization", "Bearer $token")
-                        conn.setRequestProperty("Content-Type", "application/json")
-                        conn.setRequestProperty(
-                            "Idempotency-Key",
-                            "mobile-a11y-${System.nanoTime()}"
-                        )
-
-                        val payload = org.json.JSONObject().apply {
-                            put("sourceDeviceId", deviceId)
-                            put("contentType", "text")
-                            put("contentEncrypted", text)
-                            put("contentPreview", text)
-                            put("contentSize", text.length)
-                            put("metadata", org.json.JSONObject())
-                        }
-                        conn.outputStream.use { os ->
-                            os.write(payload.toString().toByteArray(Charsets.UTF_8))
-                            os.flush()
-                        }
-
-                        val code = conn.responseCode
-                        if (code == 201 || code == 200) {
-                            success = true
-                            Log.i(TAG, "text uploaded (${text.length} chars, code=$code)")
-                            break
-                        }
-                        Log.w(TAG, "text upload attempt $attempt code=$code")
-                        if (code in 400..499) break
-                    } catch (t: Throwable) {
-                        Log.w(TAG, "text upload attempt $attempt error: ${t.message}")
-                        if (attempt < 3) {
-                            try { Thread.sleep(800L * attempt) } catch (_: Throwable) {}
-                        }
-                    } finally {
-                        try { conn?.disconnect() } catch (_: Throwable) {}
-                    }
-                }
-            } finally {
-                uploadInFlight.set(false)
-                if (!success) {
-                    // 上传失败：解除本条去重，下一个轮询周期重试
-                    mainHandler.post { lastUploadedHash = null }
-                }
-            }
-        }.start()
+        // 上传契约收敛到 NativeClipboardUploader（QuickSyncActivity 共用）
+        NativeClipboardUploader.uploadAsync(applicationContext, text)
     }
 }
