@@ -346,16 +346,41 @@ fn set_clipboard_image(data: String) -> Result<(), String> {
     raw::open().map_err(|e| format!("open: {}", e))?;
     let _ = raw::empty();
 
-    // Set CF_DIB (format 8) - universal format for WeChat, Office, Paint, etc.
-    let dib_res = raw::set(8, dib_bytes);
+    // 2026-09 修复「只有微信能粘贴图片」：clipboard-win 的 raw::set 每次内部都会先
+    // empty() 剪贴板（DoClear），第二个格式的 set 会把刚写入的 CF_DIB 清掉，导致
+    // 剪贴板只剩 PNG 注册格式（恰好微信读 PNG，其余只认 CF_DIB 的应用全灭）。
+    // 必须用 set_without_clear 在同一次 empty() 之后写入全部格式，
+    // 对齐系统截图工具（Win+Shift+S）的格式集：CF_DIB / CF_DIBV5 / PNG。
+    let dib_res = raw::set_without_clear(8, dib_bytes)
+        .map_err(|e| format!("set CF_DIB failed: {}", e));
 
-    // Set PNG format - for modern browsers, electron apps, etc.
+    // CF_DIBV5（17）：Office 等应用优先读 V5 以保留 alpha 通道。
+    // V5 头 = V4 头(108B) + Intent/ProfileData/ProfileSize/Reserved(16B)。
+    if dib_bytes.len() > 108
+        && u32::from_le_bytes(dib_bytes[0..4].try_into().unwrap_or([0, 0, 0, 0])) >= 108
+    {
+        let mut dib_v5 = Vec::with_capacity(dib_bytes.len() + 16);
+        dib_v5.extend_from_slice(&dib_bytes[..108]);
+        dib_v5.extend_from_slice(&124u32.to_le_bytes()); // bV5Size
+        dib_v5.extend_from_slice(&4u32.to_le_bytes()); // bV5Intent = LCS_GM_IMAGES
+        dib_v5.extend_from_slice(&0u32.to_le_bytes()); // bV5ProfileData
+        dib_v5.extend_from_slice(&0u32.to_le_bytes()); // bV5ProfileSize
+        dib_v5.extend_from_slice(&0u32.to_le_bytes()); // bV5Reserved
+        dib_v5.extend_from_slice(&dib_bytes[108..]);
+        let _ = raw::set_without_clear(17, &dib_v5);
+    }
+
+    // PNG 注册格式：现代浏览器 / Electron / WebView2 读取
     if let Some(png_fmt) = raw::register_format("PNG") {
-        let _ = raw::set(png_fmt.get(), &png_bytes);
+        let _ = raw::set_without_clear(png_fmt.get(), &png_bytes);
+    }
+    // "image/png" 命名变体：PowerToys / 部分跨平台应用按这个名字查找
+    if let Some(png_fmt2) = raw::register_format("image/png") {
+        let _ = raw::set_without_clear(png_fmt2.get(), &png_bytes);
     }
 
     let _ = raw::close();
-    dib_res.map_err(|e| format!("set CF_DIB failed: {}", e))
+    dib_res
 }
 
 /// Read a file's content as UTF-8 text. Used for previewing clipboard-copied files.
@@ -2087,3 +2112,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running ClipSync");
 }
+
