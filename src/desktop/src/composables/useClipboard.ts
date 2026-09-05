@@ -639,6 +639,11 @@ export function useClipboard() {
           } catch {
             /* ignore */
           }
+          // 写入完成后重新武装采集跳过窗口（2026-09 回声修复第二层）：
+          // 函数开头的 skipNextPolls 在图片下载/写剪贴板期间可能已耗尽（autoFromRemote
+          // 只有 3s，下载大图经常超），monitor 对本次写入的 WM_CLIPBOARDUPDATE
+          // 事件就会穿过 dedup → 把自己当成外部新截图再上传一次（成对重复条目）。
+          skipNextPolls(opts?.autoFromRemote ? 5000 : 3000)
           recordUseIfServer()
           return true
         }

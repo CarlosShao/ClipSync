@@ -337,11 +337,15 @@ fn set_clipboard_image(data: String) -> Result<(), String> {
     img.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png)
         .map_err(|e| format!("png encode failed: {}", e))?;
 
-    // Tell the monitor to ignore next clipboard event for this image to prevent feedback loop
-    let png_b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
-    let png_data_url = format!("data:image/png;base64,{}", png_b64);
-    let png_hash = fnv64(png_data_url.as_bytes());
-    clipboard_monitor::ignore_next_image_hash(png_hash);
+    // Tell the monitor to ignore next clipboard event for this image to prevent feedback loop.
+    // 2026-09 关键修复：回声哈希必须用「monitor 读回时会看到的那份字节」计算——
+    // monitor 读剪贴板时 CF_DIB 优先，会把 DIB 重新编码成 PNG，字节与本次写入的
+    // png_bytes 不同 → 用 png_data_url 算的哈希永远对不上，回声抑制失效 →
+    // 每张同步来的截图被 monitor 当成外部新截图再上传一次（列表里 vivo/Desktop 成对重复）。
+    // 现在用与 monitor 完全相同的编码路径（dib_bytes + "CF_DIB/CF_BITMAP"）预计算哈希。
+    if let Some((echo_data_url, _)) = encode_clipboard_raw_to_png(dib_bytes, "CF_DIB/CF_BITMAP") {
+        clipboard_monitor::ignore_next_image_hash(fnv64(echo_data_url.as_bytes()));
+    }
 
     raw::open().map_err(|e| format!("open: {}", e))?;
     let _ = raw::empty();
