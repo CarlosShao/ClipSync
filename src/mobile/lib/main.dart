@@ -182,6 +182,19 @@ void main() async {
     }
   };
 
+  // 原生直传完成（2026-09 锁屏修复）：锁屏/灭屏下截图由原生服务直接上传
+  // （凭据在 SharedPreferences，不依赖 Flutter 引擎存活），Dart 仅刷新列表 UI。
+  SyncService.instance.onScreenshotUploadedNative = () async {
+    try {
+      await clipboardProvider.refresh(forceRefresh: true);
+      debugPrint('[ScreenshotCapture] native-uploaded screenshot, list refreshed');
+    } catch (e) {
+      debugPrint('[ScreenshotCapture] refresh after native upload failed: $e');
+    } finally {
+      SyncService.instance.finishScreenshotProcessing();
+    }
+  };
+
   // 辅助方法：拉取条目图片字节（兼容 PC base64 dataUrl 与服务端媒体文件）
   Future<Map<String, dynamic>?> fetchItemImage(String itemId) async {
     // 1. 优先尝试从 /api/clipboard/:id/content 获取（PC 截图以 base64 dataUrl 存入 content_encrypted）

@@ -107,6 +107,12 @@ class SyncService {
         case 'onScreenshotCaptured':
           final args = call.arguments;
           if (args is Map) {
+            // 原生直传已完成（2026-09 锁屏修复）：锁屏/灭屏下截图由原生服务直接上传
+            // （不依赖 Flutter 引擎存活），Dart 只负责刷新列表 + 释放 WakeLock
+            if (args['uploaded'] == true) {
+              onScreenshotUploadedNative?.call();
+              return null;
+            }
             final bytes = args['bytes'];
             final fileName = args['fileName'];
             final mimeType = args['mimeType'];
@@ -123,6 +129,10 @@ class SyncService {
 
   /// 手机截屏侦听回调（原生已读取图片字节；由 main.dart 挂接上传管线）
   void Function(Uint8List bytes, String? fileName, String? mimeType)? onScreenshotCaptured;
+
+  /// 原生直传完成回调（2026-09 锁屏修复）：原生服务独立上传截图成功后通知，
+  /// Dart 仅刷新列表 UI；引擎冻结期间该通知会排队到引擎恢复后执行
+  void Function()? onScreenshotUploadedNative;
 
   /// 调用原生 MediaStore 接口将图片保存至公共相册 Pictures/ClipSync
   Future<String?> saveImageToAlbum(

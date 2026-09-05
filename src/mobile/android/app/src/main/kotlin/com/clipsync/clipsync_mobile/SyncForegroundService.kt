@@ -6,12 +6,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.database.ContentObserver
 import android.media.MediaScannerConnection
@@ -64,6 +66,12 @@ class SyncForegroundService : Service() {
         /** 采集轮询间隔（毫秒） */
         private const val POLL_INTERVAL_MS = 1500L
 
+        /** 截图处理游标持久化键（服务重启后恢复，避免死亡期间的截图被静默跳过） */
+        private const val PREF_KEY_LAST_SCREENSHOT_ID = "lastProcessedScreenshotId"
+
+        /** 开机自启门控键：用户启动过服务=true（stop 时清除） */
+        private const val PREF_KEY_SERVICE_WANTED = "serviceWanted"
+
         /** Dart 引擎侧通道（MainActivity.configureFlutterEngine 注入；服务经它向 Dart 推送采集文本） */
         @Volatile
         var dartChannel: MethodChannel? = null
@@ -109,6 +117,11 @@ class SyncForegroundService : Service() {
         /** 启动前台服务（由 Dart 经 MainActivity 通道调用；应用前台场景无 FGS 启动限制） */
         fun start(context: Context) {
             if (isRunning) return
+            // 记录"用户想要服务运行"：BootCompletedReceiver 据此决定开机是否自启（登出后不再拉起）
+            try {
+                context.getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
+                    .edit().putBoolean(PREF_KEY_SERVICE_WANTED, true).apply()
+            } catch (_: Throwable) {}
             val intent = Intent(context, SyncForegroundService::class.java)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -123,6 +136,11 @@ class SyncForegroundService : Service() {
 
         /** 停止前台服务并移除常驻通知 */
         fun stop(context: Context) {
+            // 清除开机自启意图：用户主动停止（含登出）后，下次开机不再自动拉起
+            try {
+                context.getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
+                    .edit().putBoolean(PREF_KEY_SERVICE_WANTED, false).apply()
+            } catch (_: Throwable) {}
             val running = instance
             if (running != null) {
                 running.stopGracefully()
@@ -190,6 +208,12 @@ class SyncForegroundService : Service() {
                         recentlySavedImageIds.add(id)
                         instance?.let { service ->
                             service.lastProcessedScreenshotId = Math.max(service.lastProcessedScreenshotId, id)
+                            try {
+                                context.getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putLong(PREF_KEY_LAST_SCREENSHOT_ID, service.lastProcessedScreenshotId)
+                                    .apply()
+                            } catch (_: Exception) {}
                         }
                     } catch (_: Exception) {}
 
@@ -418,6 +442,7 @@ class SyncForegroundService : Service() {
         registerClipListener()
         registerScreenshotObserver()
         startFileObservers()
+        registerScreenStateReceiver()
         startPolling()
         screenshotHandler?.post(screenshotRunnable)
         Log.i(TAG, "foreground service started")
@@ -490,6 +515,16 @@ class SyncForegroundService : Service() {
             screenshotObserver = null
         }
 
+        val ssReceiver = screenStateReceiver
+        if (ssReceiver != null) {
+            try {
+                unregisterReceiver(ssReceiver)
+            } catch (e: Exception) {
+                Log.w(TAG, "unregister screen state receiver failed", e)
+            }
+            screenStateReceiver = null
+        }
+
         instance = null
         isRunning = false
         Log.i(TAG, "foreground service destroyed")
@@ -516,8 +551,17 @@ class SyncForegroundService : Service() {
 
     private fun startForegroundCompat() {
         val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // API 34+ 要求显式传与 Manifest 声明一致的 foregroundServiceType
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // API 34+：specialUse 类型没有 dataSync 的「6 小时/24 小时」运行上限，
+            // 且允许从 BOOT_COMPLETED 启动（dataSync 在 Android 15 起被禁止）——
+            // 这两点是剪贴板同步服务「永久常驻」的前提。子类型用途在 Manifest 声明。
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // API 29-33：要求显式传与 Manifest 声明一致的 foregroundServiceType
             startForeground(
                 NOTIFICATION_ID,
                 notification,
@@ -564,6 +608,48 @@ class SyncForegroundService : Service() {
             cm.addPrimaryClipChangedListener(listener)
         } catch (e: Exception) {
             Log.w(TAG, "register clipboard listener failed", e)
+        }
+    }
+
+    private var screenStateReceiver: BroadcastReceiver? = null
+
+    /**
+     * 亮屏/解锁广播：用户按下电源键或解锁的瞬间立即补扫截图并唤醒同步，
+     * 不要求打开 App。Doze 深度休眠期间 ContentObserver/1.5s 轮询可能整体停摆
+     * （Handler 需要 CPU 唤醒才能 tick），SCREEN_ON 是系统必然唤醒进程的时刻，
+     * 也是「锁屏期间漏掉的截图」最可靠的补传触发点。
+     */
+    private fun registerScreenStateReceiver() {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                        Log.i(TAG, "Screen on / user present — immediate screenshot catch-up")
+                        acquireWakeLock(20000L)
+                        val h = screenshotHandler ?: return
+                        h.removeCallbacks(checkScreenshotRunnable)
+                        h.post(checkScreenshotRunnable)
+                        // MediaStore 索引可能滞后于解锁瞬间，追加两次复查
+                        h.postDelayed(checkScreenshotRunnable, 2500L)
+                        h.postDelayed(checkScreenshotRunnable, 6000L)
+                    }
+                }
+            }
+        }
+        screenStateReceiver = receiver
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(receiver, filter)
+            }
+            Log.i(TAG, "Screen state receiver registered (SCREEN_ON / USER_PRESENT)")
+        } catch (e: Exception) {
+            Log.w(TAG, "register screen state receiver failed", e)
         }
     }
 
@@ -664,7 +750,30 @@ class SyncForegroundService : Service() {
         h.postDelayed(fastRetryRunnable, 80L)
     }
 
+    private fun persistLastScreenshotId() {
+        try {
+            getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
+                .edit()
+                .putLong(PREF_KEY_LAST_SCREENSHOT_ID, lastProcessedScreenshotId)
+                .apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "persistLastScreenshotId failed", e)
+        }
+    }
+
     private fun initLastScreenshotId() {
+        // 优先恢复持久化游标，而不是"重置为当前最新 id"：服务死亡/被杀期间的截图
+        // id 必然大于上次持久化的游标，服务重启后轮询与解锁补扫会自动补传它们；
+        // 旧逻辑直接推到最新，等于把断档期的截图静默永久丢弃。
+        val sp = getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
+        val persisted = try {
+            sp.getLong(PREF_KEY_LAST_SCREENSHOT_ID, -1L)
+        } catch (_: Throwable) { -1L }
+        if (persisted > 0) {
+            lastProcessedScreenshotId = persisted
+            Log.i(TAG, "Restored lastProcessedScreenshotId=$persisted from prefs")
+            return
+        }
         try {
             val projection = arrayOf(MediaStore.Images.Media._ID)
             val sortOrder = "${MediaStore.Images.Media._ID} DESC"
@@ -679,6 +788,7 @@ class SyncForegroundService : Service() {
                     val idx = c.getColumnIndex(MediaStore.Images.Media._ID)
                     if (idx >= 0) {
                         lastProcessedScreenshotId = c.getLong(idx)
+                        persistLastScreenshotId()
                         Log.i(TAG, "Initialized lastProcessedScreenshotId to $lastProcessedScreenshotId")
                     }
                 }
@@ -825,6 +935,7 @@ class SyncForegroundService : Service() {
                     for (candidate in candidates) {
                         pendingScreenshotIds.add(candidate.id)
                         lastProcessedScreenshotId = Math.max(lastProcessedScreenshotId, candidate.id)
+                        persistLastScreenshotId()
                         lastScreenshotTime = System.currentTimeMillis()
                         Log.i(TAG, "[ScreenshotObserver] Detected new screenshot: ${candidate.name} (id=${candidate.id}, mime=${candidate.mime})")
                         dispatchScreenshotCaptured(candidate.id, candidate.name, candidate.mime, 0)
@@ -866,27 +977,12 @@ class SyncForegroundService : Service() {
                 }
                 pendingScreenshotIds.remove(id)
                 processedFileNames.add(fileName)
-                val channel = dartChannel
-                if (channel != null) {
-                    mainHandler.post {
-                        val args = mapOf<String, Any>(
-                            "bytes" to bytes,
-                            "fileName" to fileName,
-                            "mimeType" to mime,
-                            "capturedAt" to System.currentTimeMillis()
-                        )
-                        Log.i(TAG, "Dispatching onScreenshotCaptured to Dart: $fileName (${bytes.size} bytes)")
-                        try {
-                            channel.invokeMethod("onScreenshotCaptured", args)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "invoke onScreenshotCaptured failed, falling back to native upload", e)
-                            uploadScreenshotNatively(bytes, fileName, mime)
-                        }
-                    }
-                } else {
-                    Log.i(TAG, "dartChannel is null, uploading screenshot natively from MediaStore: $fileName (${bytes.size} bytes)")
-                    uploadScreenshotNatively(bytes, fileName, mime)
-                }
+                // 原生直传为主路径（2026-09 锁屏修复）：灭屏后 Flutter 引擎可能被进程冻结，
+                // invokeMethod 只是 post 到主线程队列、不会抛异常，Dart 上传会静默卡死到用户
+                // 打开 App 才补传。凭据已下沉 SharedPreferences，原生上传完全不依赖引擎存活；
+                // 上传成功后再尽力通知 Dart（仅元数据、不带图片字节）刷新列表 UI。
+                Log.i(TAG, "Uploading screenshot natively: $fileName (${bytes.size} bytes)")
+                uploadScreenshotNatively(bytes, fileName, mime)
             } catch (e: Exception) {
                 Log.w(TAG, "read screenshot bytes failed", e)
                 if (retryCount < 10) {
@@ -928,27 +1024,10 @@ class SyncForegroundService : Service() {
                 else -> "image/jpeg"
             }
 
-            val channel = dartChannel
-            if (channel != null) {
-                mainHandler.post {
-                    val args = mapOf<String, Any>(
-                        "bytes" to bytes,
-                        "fileName" to name,
-                        "mimeType" to mime,
-                        "capturedAt" to System.currentTimeMillis()
-                    )
-                    Log.i(TAG, "Dispatching file screenshot directly to Dart: $name (${bytes.size} bytes)")
-                    try {
-                        channel.invokeMethod("onScreenshotCaptured", args)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "invoke onScreenshotCaptured failed, falling back to native upload", e)
-                        uploadScreenshotNatively(bytes, name, mime)
-                    }
-                }
-            } else {
-                Log.i(TAG, "dartChannel is null, uploading screenshot natively from direct file: $name (${bytes.size} bytes)")
-                uploadScreenshotNatively(bytes, name, mime)
-            }
+            // 与 dispatchScreenshotCaptured 同口径（2026-09 锁屏修复）：
+            // 原生直传为主路径，Dart 引擎冻结时上传不再被卡死；Dart 只做 UI 刷新
+            Log.i(TAG, "Uploading direct file screenshot natively: $name (${bytes.size} bytes)")
+            uploadScreenshotNatively(bytes, name, mime)
         } catch (t: Throwable) {
             Log.w(TAG, "handleFileScreenshotDirectly failed for ${file.absolutePath}", t)
         }
@@ -977,7 +1056,9 @@ class SyncForegroundService : Service() {
             for (attempt in 1..3) {
                 var conn: java.net.HttpURLConnection? = null
                 try {
-                    val boundary = "====" + System.currentTimeMillis() + "===="
+                    // boundary 不能用 "=" 开头/结尾（旧实现 "====ts====" 会被 multer/busboy
+                    // 的参数解析吞掉第一个 "=" 导致永远找不到 file part，真机实测 400）
+                    val boundary = "----clipsync" + System.currentTimeMillis()
                     val url = java.net.URL("$baseUrl/api/media/image")
                     conn = url.openConnection() as java.net.HttpURLConnection
                     conn.requestMethod = "POST"
@@ -1017,6 +1098,7 @@ class SyncForegroundService : Service() {
                     if (code == 201) {
                         Log.i(TAG, "uploadScreenshotNatively SUCCESS: $safeName (${bytes.size} bytes)")
                         success = true
+                        notifyScreenshotUploadedToDart(safeName, mime, bytes.size)
                         break
                     } else {
                         val errBody = try {
@@ -1035,6 +1117,27 @@ class SyncForegroundService : Service() {
                 }
             }
             releaseWakeLock()
+        }
+    }
+
+    /** 原生直传成功后尽力通知 Dart 刷新列表（仅元数据、不携带图片字节；引擎冻结时静默失败） */
+    private fun notifyScreenshotUploadedToDart(fileName: String, mimeType: String, size: Int) {
+        val channel = dartChannel ?: return
+        mainHandler.post {
+            try {
+                channel.invokeMethod(
+                    "onScreenshotCaptured",
+                    mapOf<String, Any>(
+                        "fileName" to fileName,
+                        "mimeType" to mimeType,
+                        "capturedAt" to System.currentTimeMillis(),
+                        "size" to size,
+                        "uploaded" to true
+                    )
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "notify onScreenshotCaptured(uploaded) failed", e)
+            }
         }
     }
 
