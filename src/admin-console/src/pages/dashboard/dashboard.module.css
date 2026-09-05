@@ -1,0 +1,204 @@
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.kpiIco {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  flex-shrink: 0;
+}
+
+.icoBrand {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.icoGreen {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.icoBlue {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.icoAmber {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.kpiLabel {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.kpiValue {
+  font-size: 22px;
+  font-weight: 650;
+  margin: 2px 0;
+  letter-spacing: 0.2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpiDelta {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.kpiDelta b {
+  font-weight: 550;
+}
+
+.up {
+  color: var(--green);
+}
+
+.down {
+  color: var(--red);
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.ringWrap {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 18px 16px;
+}
+
+.ringCenter {
+  font-size: 20px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.ringLabel {
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+.planRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.planRowLast {
+  margin-bottom: 0;
+}
+
+.planLabel {
+  width: 52px;
+  color: var(--text-2);
+}
+
+.planTrack {
+  flex: 1;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.planFill {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.planValue {
+  width: 60px;
+  text-align: right;
+  color: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.planNote {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 12px;
+}
+
+.channelRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 13px;
+  font-size: 12px;
+}
+
+.channelRowLast {
+  margin-bottom: 0;
+}
+
+.channelLabel {
+  width: 64px;
+  color: var(--text-2);
+}
+
+.channelTrack {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.channelFill {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.channelValue {
+  width: 60px;
+  text-align: right;
+  color: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pendingTarget {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+@media (max-width: 1200px) {
+  .kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+}

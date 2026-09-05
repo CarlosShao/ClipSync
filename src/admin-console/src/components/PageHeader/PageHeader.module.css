@@ -1,0 +1,25 @@
+.head {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.desc {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.extra {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}

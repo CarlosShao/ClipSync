@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+*.local
+.env.local
+.vite
+
+# 测试产物
+test-results
+playwright-report
+blob-report
+
+# husky 内部文件
+.husky/_

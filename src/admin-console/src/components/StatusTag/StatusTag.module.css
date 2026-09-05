@@ -1,0 +1,72 @@
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 1.5px 9px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.green {
+  background: var(--green-soft);
+  color: var(--green);
+  border-color: #cdeeda;
+}
+.green .dot {
+  background: var(--green);
+}
+
+.amber {
+  background: var(--amber-soft);
+  color: var(--amber);
+  border-color: #f3ddb0;
+}
+.amber .dot {
+  background: var(--amber);
+}
+
+.red {
+  background: var(--red-soft);
+  color: var(--red);
+  border-color: #f3c1c1;
+}
+.red .dot {
+  background: var(--red);
+}
+
+.blue {
+  background: var(--blue-soft);
+  color: var(--blue);
+  border-color: #c9dafb;
+}
+.blue .dot {
+  background: var(--blue);
+}
+
+.gray {
+  background: var(--surface-2);
+  color: var(--text-2);
+  border-color: var(--border);
+}
+.gray .dot {
+  background: var(--text-3);
+}
+
+.brand {
+  background: var(--brand-soft);
+  color: var(--brand);
+  border-color: var(--brand-border);
+}
+.brand .dot {
+  background: var(--brand);
+}

@@ -1,0 +1,173 @@
+.wrap {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  background: var(--surface);
+}
+
+.hero {
+  background: linear-gradient(160deg, #241f4e 0%, #3b2f8f 55%, #5a4bd1 120%);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 64px;
+  position: relative;
+  overflow: hidden;
+}
+
+.orbTop {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  background: #7c6cf0;
+  filter: blur(70px);
+  opacity: 0.5;
+  top: -120px;
+  right: -80px;
+}
+
+.orbBottom {
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: #4338ca;
+  filter: blur(70px);
+  opacity: 0.5;
+  bottom: -100px;
+  left: -60px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-size: 12px;
+  margin-bottom: 26px;
+  position: relative;
+  backdrop-filter: blur(4px);
+}
+
+.heroTitle {
+  position: relative;
+  font-size: 30px;
+  line-height: 1.35;
+  font-weight: 650;
+  margin: 0 0 14px;
+}
+
+.heroDesc {
+  position: relative;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+  max-width: 400px;
+  margin: 0;
+}
+
+.panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.card {
+  width: 360px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+}
+
+.logoMark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #6e5ce8, #5a4bd1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cardTitle {
+  font-size: 20px;
+  font-weight: 650;
+  margin: 18px 0 4px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-bottom: 22px;
+}
+
+.fieldLabel {
+  display: block;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.otpRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.otpField {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.otpBtnCell {
+  padding-bottom: 1px;
+}
+
+.otpInput {
+  text-align: center;
+  font-size: 17px;
+  font-family: var(--font-mono);
+  letter-spacing: 8px;
+}
+
+.otpBtn {
+  color: var(--text-2);
+}
+
+.submit {
+  width: 100%;
+  margin-top: 20px;
+  justify-content: center;
+  height: 38px;
+  font-size: 14px;
+  letter-spacing: 4px;
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-top: 10px;
+}
+
+@media (max-width: 960px) {
+  .wrap {
+    grid-template-columns: 1fr;
+  }
+  .hero {
+    display: none;
+  }
+}
