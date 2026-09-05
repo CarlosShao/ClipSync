@@ -107,11 +107,15 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun openAutoStartSettings(): Boolean {
         val components = listOf(
+            // vivo/OriginOS（新版权限管理器优先，真机 V2243A 验证场景）
+            "com.vivo.permissionmanager/com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
+            "com.vivo.permissionmanager/com.vivo.permissionmanager.activity.PurviewTabActivity",
+            "com.iqoo.secure/com.iqoo.secure.ui.phoneoptimize.BgStartUpManager",
+            // 小米/华为/OPPO/一加既有入口
             "com.miui.securitycenter/com.miui.permcenter.autostart.AutoStartManagementActivity",
             "com.huawei.systemmanager/com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
             "com.coloros.safecenter/com.coloros.safecenter.permission.startup.StartupAppListActivity",
             "com.oppo.safe/com.oppo.safe.permission.startup.StartupAppListActivity",
-            "com.iqoo.secure/com.iqoo.secure.ui.phoneoptimize.BgStartUpManager",
             "com.oneplus.security/com.oneplus.security.chainlaunch.ChainLaunchAppListActivity"
         )
         for (component in components) {

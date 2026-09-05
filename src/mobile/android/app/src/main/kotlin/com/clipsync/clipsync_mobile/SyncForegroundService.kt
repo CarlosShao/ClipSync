@@ -60,17 +60,64 @@ class SyncForegroundService : Service() {
         /** Dart 侧主动停止服务时经 startService 下发的 action */
         const val ACTION_STOP = "com.clipsync.clipsync_mobile.action.STOP_SYNC"
 
+        /** SyncKeepAliveReceiver 周期自检 action */
+        const val ACTION_KEEPALIVE_CHECK = "com.clipsync.clipsync_mobile.action.KEEPALIVE_CHECK"
+
         private const val NOTIFICATION_CHANNEL_ID = "clipsync_sync"
         private const val NOTIFICATION_ID = 1001
 
         /** 采集轮询间隔（毫秒） */
         private const val POLL_INTERVAL_MS = 1500L
 
+        /** 自愈自检间隔（毫秒）：进程被厂商 ROM 杀死（非 force-stop 场景）后由此拉起 */
+        private const val KEEPALIVE_INTERVAL_MS = 5 * 60 * 1000L
+
+        private const val REQUEST_CODE_RESTART = 1001
+        private const val REQUEST_CODE_KEEPALIVE = 1002
+
         /** 截图处理游标持久化键（服务重启后恢复，避免死亡期间的截图被静默跳过） */
         private const val PREF_KEY_LAST_SCREENSHOT_ID = "lastProcessedScreenshotId"
 
         /** 开机自启门控键：用户启动过服务=true（stop 时清除） */
         private const val PREF_KEY_SERVICE_WANTED = "serviceWanted"
+
+        /** 用户是否仍希望服务运行（BootCompletedReceiver / SyncKeepAliveReceiver 消费） */
+        fun isServiceWanted(context: Context): Boolean {
+            return try {
+                context.getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
+                    .getBoolean(PREF_KEY_SERVICE_WANTED, false)
+            } catch (_: Throwable) {
+                false
+            }
+        }
+
+        /**
+         * 排下一个自愈自检闹钟（5 分钟后）。由服务 onCreate 与 SyncKeepAliveReceiver 续排，
+         * 形成 WAKEUP 闹钟链：进程被 ROM 杀掉（LMK/厂商清理等非 force-stop 场景）后由
+         * 下一次自检拉起；用户登出（serviceWanted=false）后 Receiver 不再续排，链条终止。
+         */
+        fun scheduleKeepAliveAlarm(context: Context) {
+            try {
+                val intent = Intent(context, SyncKeepAliveReceiver::class.java).apply {
+                    action = ACTION_KEEPALIVE_CHECK
+                    setPackage(context.packageName)
+                }
+                val pi = PendingIntent.getBroadcast(
+                    context,
+                    REQUEST_CODE_KEEPALIVE,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+                am?.setAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + KEEPALIVE_INTERVAL_MS,
+                    pi
+                )
+            } catch (t: Throwable) {
+                Log.w(TAG, "scheduleKeepAliveAlarm failed", t)
+            }
+        }
 
         /** Dart 引擎侧通道（MainActivity.configureFlutterEngine 注入；服务经它向 Dart 推送采集文本） */
         @Volatile
@@ -444,6 +491,7 @@ class SyncForegroundService : Service() {
         startFileObservers()
         registerScreenStateReceiver()
         startPolling()
+        scheduleKeepAliveAlarm(applicationContext)
         screenshotHandler?.post(screenshotRunnable)
         Log.i(TAG, "foreground service started")
     }
@@ -471,8 +519,10 @@ class SyncForegroundService : Service() {
             }
             val pendingIntent = PendingIntent.getService(applicationContext, 1001, restartIntent, flags)
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-            alarmManager?.set(
-                AlarmManager.ELAPSED_REALTIME,
+            // WAKEUP + AllowWhileIdle：厂商杀进程/Doze 下也能准时唤醒重建（原 set 不唤醒 CPU，
+            // 灭屏划卡片后要等下次亮屏才重启，期间同步完全中断）
+            alarmManager?.setAndAllowWhileIdle(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
                 SystemClock.elapsedRealtime() + 1000L,
                 pendingIntent
             )
