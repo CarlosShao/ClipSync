@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import * as tauri from '@/lib/tauri'
 import { api, apiForm, apiBlob } from '@/api/client'
+import { useConfigStore } from '@/stores/configStore'
 import { recordUse } from '@/api/clipboard'
 import { useItemPassword } from '@/composables/useItemPassword'
 import { usePlanLimits } from '@/composables/usePlanLimits'
@@ -396,7 +397,7 @@ export function useClipboard() {
     trimToMaxHistory()
   }
 
-  async function copyItem(item: ClipItem) {
+  async function copyItem(item: ClipItem, opts?: { autoFromRemote?: boolean }) {
     lastCopyError.value = null
     try {
       // === 条目级密码保护：受保护且未解锁的条目禁止复制 ===
@@ -410,9 +411,11 @@ export function useClipboard() {
       }
 
       // 精确内容去重：复制时记录会写入剪贴板的实际内容/路径，monitor 检测到相同内容时跳过。
-      // 窗口必须覆盖兜底轮询间隔（10s）+ 余量，否则 3s 的旧窗口会让下一次兜底轮询
+      // 窗口必须覆盖兜底轮询间隔（10s）+ 余量，否则复制后下一次兜底轮询
       // 落在窗口外，把刚写回的图片/文本当成外部新内容重新上传。
-      skipNextPolls(COPY_SKIP_MS)
+      // 远程自动写入（autoFromRemote）走短窗口：精确内容去重（copiedTexts/双族图片哈希）
+      // 已覆盖回环，长窗口反而会让"远程同步刚到达时用户在 PC 上的复制"丢失 13 秒采集。
+      skipNextPolls(opts?.autoFromRemote ? 3000 : COPY_SKIP_MS)
       markContentCopiedFromClipSync(item)
 
       // 预测粘贴：复制成功后记录使用（仅 server item；local 临时 id 后端静默跳过）
@@ -1088,6 +1091,46 @@ export function useClipboard() {
     }
   }
 
+  /**
+   * 远程条目自动写入系统剪贴板（2026-09：手机复制/截图 → PC 无需打开本应用直接 Ctrl+V）。
+   * 由 HomeView 在收到 WS new_clipboard（他机来源）后调用。
+   * - 复用 copyItem 全链路：文本自动拉全量、图片走 /download 下载 → 原生 CF_DIB+PNG 写入、
+   *   双族哈希去重登记（防止本机监听把这次写入当成新内容再上传形成回环）
+   * - 仅文本/图片/链接；文件条目需要落盘下载，保持手动
+   * - 条目级密码保护（metadata.protected）不自动写入：内容是密文且属敏感数据
+   * - 受「自动同步剪贴板」总开关（configStore.autoSync）控制
+   * - WS 推送可能先于列表刷新落地：条目不在内存时刷新列表并少量重试
+   */
+  async function autoCopyRemoteItem(itemId: string, attempt = 0): Promise<boolean> {
+    try {
+      const config = useConfigStore()
+      if (!config.autoSync) {
+        logger.debug('[Clipboard] auto-copy skipped: autoSync is off')
+        return false
+      }
+      let item = items.value.find((i) => i.id === itemId)
+      if (!item && attempt < 3) {
+        await Promise.resolve(loadClipboardItems({ page: 1, append: false })).catch(() => {})
+        item = items.value.find((i) => i.id === itemId)
+        if (!item) {
+          await new Promise((resolve) => setTimeout(resolve, 600))
+          return autoCopyRemoteItem(itemId, attempt + 1)
+        }
+      }
+      if (!item || isLocalItemId(item.id)) return false
+      if (item.type === 'file') return false
+      if (useItemPassword().isItemProtected(item)) {
+        logger.debug('[Clipboard] auto-copy skipped: item is password protected')
+        return false
+      }
+      logger.debug('[Clipboard] auto-copy remote item into system clipboard:', itemId, item.type)
+      return await copyItem(item, { autoFromRemote: true })
+    } catch (e) {
+      console.warn('[Clipboard] autoCopyRemoteItem failed:', e)
+      return false
+    }
+  }
+
   return {
     items,
     filteredItems,
@@ -1113,6 +1156,7 @@ export function useClipboard() {
     lastCopyError,
     copyItem,
     copyText,
+    autoCopyRemoteItem,
     toggleSelectAll,
     clearSelection,
     batchDelete,

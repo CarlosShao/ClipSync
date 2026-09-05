@@ -313,6 +313,17 @@ onMounted(async () => {
       } catch {
         /* ignore */
       }
+      // 远程条目自动写入系统剪贴板（2026-09：手机复制/截图 → PC 无需打开本应用直接 Ctrl+V）。
+      // 服务端 broadcastToUser 包含来源设备自身，必须按 deviceId 过滤自己的上传回声；
+      // 延迟到列表刷新之后执行（autoCopyRemoteItem 内部找不到条目还会刷新+重试），
+      // 真实条目才带 metadata，密码保护判定才有依据。
+      const incoming = data.item
+      const myDeviceId = localStorage.getItem('clipsync-device-id')
+      if (incoming?.id && incoming?.sourceDeviceId && incoming.sourceDeviceId !== myDeviceId) {
+        setTimeout(() => {
+          clip.autoCopyRemoteItem(incoming.id).catch(() => {})
+        }, 500)
+      }
     } else if (
       data?.type === 'clipboard_updated' ||
       data?.type === 'clipboard_favorite' ||
