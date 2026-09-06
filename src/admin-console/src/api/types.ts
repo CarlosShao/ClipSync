@@ -325,3 +325,37 @@ export interface LoginResp {
 export interface RefreshPayload {
   refreshToken: string;
 }
+
+// ─────────────── T-A4 追加：订单查询扩展 + 对账报告（只增不改） ───────────────
+
+/**
+ * 订单状态筛选取值：原生 OrderStatus 之上扩展伪状态 refunding（退款处理中）。
+ * 约定：已发起退款但资金尚未退回的订单 = status='refunded' 且 refundAmount=null；
+ * 退款完成后 refundAmount 落为具体金额、进入「已退款」。
+ * 后端 T-A3 实现 GET /orders 时需支持该取值。
+ */
+export type OrderStatusFilter = OrderStatus | 'all' | 'refunding';
+
+/** 订单列表查询参数（status 含 refunding 伪状态） */
+export interface OrderListQuery extends Omit<OrderListParams, 'status'> {
+  status?: OrderStatusFilter;
+}
+
+/** 对账报告 · 单渠道行 */
+export interface ReconciliationRow {
+  channel: PaymentChannel;
+  label: string;
+  /** 已支付笔数（含事后退款订单） */
+  paidCount: number;
+  /** 成交额（元） */
+  paidAmount: number;
+  /** 退款额（元） */
+  refundAmount: number;
+}
+
+/** 对账报告（GET /api/admin/reconciliation，日终对账快照） */
+export interface ReconciliationReport {
+  /** 快照生成时间，如 2026-09-05 02:00 */
+  generatedAt: string;
+  rows: ReconciliationRow[];
+}

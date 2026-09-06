@@ -4,8 +4,10 @@ import type {
   ApiResp,
   AuditLog,
   LoginResp,
+  Order,
   OverviewData,
   PageData,
+  ReconciliationReport,
   UserDetail,
 } from '@/api/types';
 import {
@@ -63,6 +65,31 @@ function numParam(url: URL, key: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/** 写操作审计记录（unshift 到队首，敏感操作红底高亮） */
+function pushAudit(
+  action: string,
+  resourceType: string,
+  resourceId: string,
+  details: string,
+  sensitive = true,
+): void {
+  mockAuditLogs.unshift({
+    id: `aud_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    operator: 'Carlos',
+    operatorRole: 'super_admin',
+    userId: 'usr_carlos',
+    action,
+    resourceType,
+    resourceId,
+    details,
+    ipAddress: '116.24.*.*',
+    userAgent: 'ClipSync Admin',
+    status: 'success',
+    sensitive,
+    createdAt: '2026-09-05 20:47:00',
+  });
+}
+
 // ───────────────────────── 鉴权 ─────────────────────────
 
 const authHandlers = [
@@ -104,20 +131,22 @@ const overview: OverviewData = {
     trialingUsers: 96,
   },
   orders14d: [
-    { date: '2026-08-23', amount: 2600, refund: 80 },
-    { date: '2026-08-24', amount: 3200, refund: 0 },
-    { date: '2026-08-25', amount: 2300, refund: 0 },
-    { date: '2026-08-26', amount: 3800, refund: 120 },
-    { date: '2026-08-27', amount: 3000, refund: 0 },
-    { date: '2026-08-28', amount: 4400, refund: 0 },
-    { date: '2026-08-29', amount: 3500, refund: 0 },
-    { date: '2026-08-30', amount: 5100, refund: 0 },
-    { date: '2026-08-31', amount: 4200, refund: 0 },
-    { date: '2026-09-01', amount: 5700, refund: 90 },
-    { date: '2026-09-02', amount: 4800, refund: 0 },
-    { date: '2026-09-03', amount: 6300, refund: 0 },
-    { date: '2026-09-04', amount: 5500, refund: 110 },
-    { date: '2026-09-05', amount: 7100, refund: 0 },
+    // T-A4 修复：金额压回 ¥1,200–4,200 区间缓升走势（约 1800→3900），柱高与草图形态一致；
+    // 其中 4 天含退款 ¥9.9–¥99（浅紫叠加只占柱底一小条）
+    { date: '2026-08-23', amount: 1820, refund: 0 },
+    { date: '2026-08-24', amount: 2050, refund: 0 },
+    { date: '2026-08-25', amount: 1740, refund: 0 },
+    { date: '2026-08-26', amount: 2280, refund: 39.6 },
+    { date: '2026-08-27', amount: 2460, refund: 0 },
+    { date: '2026-08-28', amount: 2210, refund: 0 },
+    { date: '2026-08-29', amount: 2650, refund: 0 },
+    { date: '2026-08-30', amount: 2480, refund: 9.9 },
+    { date: '2026-08-31', amount: 2890, refund: 0 },
+    { date: '2026-09-01', amount: 3120, refund: 0 },
+    { date: '2026-09-02', amount: 2950, refund: 0 },
+    { date: '2026-09-03', amount: 3460, refund: 99 },
+    { date: '2026-09-04', amount: 3680, refund: 0 },
+    { date: '2026-09-05', amount: 3920, refund: 19.8 },
   ],
   planDistribution: [
     { plan: 'free', count: 11604 },
@@ -263,6 +292,13 @@ const usersHandlers = [
 
 // ───────────────────────── 订单 ─────────────────────────
 
+/** 状态过滤：refunding 为伪状态 = 已发起退款但资金未退回（status='refunded' 且 refundAmount=null） */
+function matchOrderStatus(order: Order, status: string): boolean {
+  if (status === 'refunding') return order.status === 'refunded' && order.refundAmount === null;
+  if (status === 'refunded') return order.status === 'refunded' && order.refundAmount !== null;
+  return order.status === status;
+}
+
 const ordersHandlers = [
   http.get('/api/admin/orders', async ({ request }) => {
     await delay(200);
@@ -272,6 +308,8 @@ const ordersHandlers = [
     const q = url.searchParams.get('q')?.trim() ?? '';
     const status = url.searchParams.get('status');
     const channel = url.searchParams.get('channel');
+    const dateFrom = url.searchParams.get('dateFrom') ?? '';
+    const dateTo = url.searchParams.get('dateTo') ?? '';
 
     const filtered = mockOrders.filter((o) => {
       if (
@@ -281,13 +319,23 @@ const ordersHandlers = [
         !(o.transactionId ?? '').includes(q)
       )
         return false;
-      if (status && status !== 'all' && o.status !== status) return false;
+      if (status && status !== 'all' && !matchOrderStatus(o, status)) return false;
       if (channel && channel !== 'all' && o.channel !== channel) return false;
+      if (dateFrom && o.createdAt.slice(0, 10) < dateFrom) return false;
+      if (dateTo && o.createdAt.slice(0, 10) > dateTo) return false;
       return true;
     });
 
     const total = !q && (!status || status === 'all') && (!channel || channel === 'all') ? 128 : filtered.length;
     return ok(pageOf(filtered, page, pageSize, total));
+  }),
+
+  http.get('/api/admin/orders/:orderNo', async ({ params }) => {
+    await delay(120);
+    const orderNo = params['orderNo'] as string;
+    const order = mockOrders.find((o) => o.orderNo === orderNo);
+    if (!order) return fail(404, 40404, '订单不存在');
+    return ok(order);
   }),
 
   http.post('/api/admin/orders/:orderNo/refund', async ({ request, params }) => {
@@ -304,22 +352,27 @@ const ordersHandlers = [
     }
     order.status = 'refunded';
     order.refundAmount = amount;
-    mockAuditLogs.unshift({
-      id: `aud_${Date.now()}`,
-      operator: 'Carlos',
-      operatorRole: 'super_admin',
-      userId: 'usr_carlos',
-      action: 'admin.refund.execute',
-      resourceType: 'payment_order',
-      resourceId: orderNo,
-      details: `amount=${amount.toFixed(2)}, reason="${body.reason}"`,
-      ipAddress: '116.24.*.*',
-      userAgent: 'ClipSync Admin',
-      status: 'success',
-      sensitive: true,
-      createdAt: '2026-09-05 20:46:00',
-    });
+    pushAudit(
+      'admin.refund.execute',
+      'payment_order',
+      orderNo,
+      `amount=${amount.toFixed(2)}, reason="${body.reason.trim()}"`,
+    );
     return ok(order, '退款已提交');
+  }),
+
+  // 对账报告（日终快照，数据量级对照草图：本月 128 笔 · 成交 ¥41,286）
+  http.get('/api/admin/reconciliation', async () => {
+    await delay(200);
+    const report: ReconciliationReport = {
+      generatedAt: '2026-09-05 02:00',
+      rows: [
+        { channel: 'wechat', label: '微信支付', paidCount: 86, paidAmount: 28410.0, refundAmount: 119.6 },
+        { channel: 'alipay', label: '支付宝', paidCount: 28, paidAmount: 9754.0, refundAmount: 0 },
+        { channel: 'stripe', label: 'Stripe', paidCount: 14, paidAmount: 3122.0, refundAmount: 99.0 },
+      ],
+    };
+    return ok(report);
   }),
 ];
 
@@ -370,15 +423,24 @@ const configHandlers = [
     return ok(mockConfigs);
   }),
 
-  http.patch('/api/admin/configs', async ({ request }) => {
+  // 逐项 PATCH：maintenance_mode 必须带 reason（写入审计）
+  http.patch('/api/admin/configs/:key', async ({ request, params }) => {
     await delay(200);
-    const body = (await request.json()) as { key?: string; value?: string };
-    const config = mockConfigs.find((c) => c.key === body.key);
+    const key = params['key'] as string;
+    const body = (await request.json()) as { value?: string; reason?: string };
+    const config = mockConfigs.find((c) => c.key === key);
     if (!config) return fail(404, 40404, '配置项不存在');
     if (!body.value) return fail(400, 40002, 'value 不能为空');
+    if (key === 'maintenance_mode' && !body.reason?.trim()) {
+      return fail(400, 40003, '维护模式切换必须填写原因（写入审计日志）');
+    }
     config.value = body.value;
-    config.updatedAt = '2026-09-05 20:46';
-    return ok(config, '配置已更新并写入审计');
+    config.updatedAt = '2026-09-05 20:47';
+    const details = body.reason?.trim()
+      ? `value="${body.value}", reason="${body.reason.trim()}"`
+      : `value="${body.value}"`;
+    pushAudit('admin.config.update', 'system_config', key, details);
+    return ok(config, key === 'maintenance_mode' ? '维护模式已更新' : '配置已更新并写入审计');
   }),
 
   http.get('/api/admin/flags', async () => {
@@ -386,13 +448,15 @@ const configHandlers = [
     return ok(mockFlags);
   }),
 
-  http.patch('/api/admin/flags', async ({ request }) => {
+  http.patch('/api/admin/flags/:key', async ({ request, params }) => {
     await delay(200);
-    const body = (await request.json()) as { key?: string; enabled?: boolean };
-    const flag = mockFlags.find((f) => f.key === body.key);
+    const key = params['key'] as string;
+    const body = (await request.json()) as { enabled?: boolean };
+    const flag = mockFlags.find((f) => f.key === key);
     if (!flag) return fail(404, 40404, '功能开关不存在');
     if (typeof body.enabled !== 'boolean') return fail(400, 40002, 'enabled 必须为布尔值');
     flag.enabled = body.enabled;
+    pushAudit('admin.flag.update', 'feature_flag', key, `enabled=${body.enabled}`);
     return ok(flag, '开关已切换并写入审计');
   }),
 
@@ -413,11 +477,18 @@ const configHandlers = [
       content: body.content,
       audience: body.audience ?? 'all',
       displayMode: body.displayMode ?? 'once',
-      sentAt: '2026-09-05 20:46',
+      sentAt: '2026-09-05 20:47',
       deliveredCount: 12102,
       clickedCount: 0,
     };
     mockAnnouncements.unshift(created);
+    pushAudit(
+      'admin.announcement.send',
+      'announcement',
+      created.id,
+      `title="${created.title}", audience=${created.audience}, display=${created.displayMode}`,
+      false,
+    );
     return ok(created, '公告已下发');
   }),
 ];
