@@ -15,8 +15,8 @@
 -- maintenance_mode 取值对齐前端设置页词汇表（settings/index.tsx：value === 'on' 判定开关），
 -- 故种 '"off"' 而非布尔 false（SystemConfig.value 契约为字符串 on/off）。
 INSERT INTO system_configs (config_key, config_value, description, category) VALUES
-  ('maintenance_mode',          '"off"'::jsonb, '开启后客户端暂停同步并显示维护公告（仅 super_admin）', 'security'),
-  ('audit_log_retention_days',  '365'::jsonb,   'audit_logs 保留策略，超期归档后删除',                  'security')
+  ('maintenance_mode',          '"off"'::jsonb, '开启后客户端暂停同步并显示维护公告', 'security'),
+  ('audit_log_retention_days',  '365'::jsonb,   '审计日志的保留时长，超期归档后删除',                  'security')
 ON CONFLICT (config_key) DO NOTHING;
 
 -- ---- 2. feature_flags 补种（前端设置页第 5 个开关：注册审核，默认关闭）----

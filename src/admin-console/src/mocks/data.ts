@@ -891,7 +891,7 @@ export const mockConfigs: SystemConfig[] = [
     key: 'maintenance_mode',
     name: '维护模式',
     value: 'off',
-    description: '开启后客户端暂停同步并显示维护公告（仅 super_admin）',
+    description: '开启后客户端暂停同步并显示维护公告',
     updatedAt: '2026-09-04 14:05',
   },
   // T-A4：系统参数卡固定四行（工单指定基线值）
@@ -920,7 +920,7 @@ export const mockConfigs: SystemConfig[] = [
     key: 'audit_log_retention_days',
     name: '审计日志保留天数',
     value: '365',
-    description: 'audit_logs 保留策略，超期归档后删除',
+    description: '审计日志的保留时长，超期归档后删除',
     updatedAt: '2026-08-12 10:20',
   },
 ];

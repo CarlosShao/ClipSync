@@ -164,14 +164,12 @@ export default function SettingsPage() {
         {/* 功能开关 */}
         <Card
           title="功能开关"
-          extra={<span className={styles.cardSub}>feature_flags · 影响全部客户端</span>}
+          extra={<span className={styles.cardSub}>影响全部客户端</span>}
         >
           {(flags ?? []).map((flag) => (
             <div className={styles.flagRow} key={flag.key}>
               <div className={styles.flagInfo}>
-                <b className={styles.flagName}>
-                  {flag.name} <span className={styles.flagKey}>{flag.key}</span>
-                </b>
+                <b className={styles.flagName}>{flag.name}</b>
                 <span className={styles.flagDesc}>{flag.description}</span>
               </div>
               <Switch
@@ -186,7 +184,7 @@ export default function SettingsPage() {
         {/* 维护模式 */}
         <Card
           title="维护模式"
-          extra={<span className={styles.cardSub}>maintenance_mode · 仅 super_admin</span>}
+          extra={<span className={styles.cardSub}>仅超级管理员可操作</span>}
         >
           <div className={styles.maintRow}>
             <Switch
@@ -275,9 +273,7 @@ export default function SettingsPage() {
         <Card
           title="系统参数"
           extra={
-            <span className={styles.cardSub}>
-              system_configs · 保存后立即生效（记入审计）
-            </span>
+            <span className={styles.cardSub}>保存后立即生效 · 变更记入审计日志</span>
           }
         >
           <Form form={configForm} requiredMark={false} labelWrap>
@@ -285,11 +281,7 @@ export default function SettingsPage() {
               <Form.Item
                 key={config.key}
                 name={config.key}
-                label={
-                  <span className={styles.paramLabel}>
-                    {config.name} <span className={styles.flagKey}>{config.key}</span>
-                  </span>
-                }
+                label={config.name}
                 extra={config.description}
                 rules={[{ required: true, message: '取值不能为空' }]}
                 className={styles.paramItem}
