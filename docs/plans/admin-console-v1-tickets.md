@@ -125,11 +125,15 @@
 
 | 工单 | 状态 | 派发波次 | 备注 |
 |------|------|----------|------|
-| T-A0 脚手架+MSW | ✅ 完成（2026-09-05） | Wave 1 | 与 T-W0 并行；lint/typecheck/build/test 全绿，浏览器目检通过（登录→看板→用户抽屉）；遗留：看板柱图 mock 数据比例失真（Y 轴 8k 柱贴底），已并入 T-A4 修复 |
-| ~~T-A2 看板+用户页~~ | ✅ 并入 T-A0 交付 | Wave 1 | 脚手架代理一并完成，勿重复实现 |
-| T-A1 后端地基 | 待派发 | Wave 2 | 与 T-A4 并行 |
-| T-A3 订单后端 | 待派发 | Wave 3 | |
-| T-A4 订单+设置页 | 待派发 | Wave 2 | 含看板柱图 mock 修复 |
-| T-A5 治理后端 | 待派发 | Wave 4 | |
-| T-A6 审计/角色/设备/订阅页 | 待派发 | Wave 4 | 审计/角色先做，设备/订阅随后 |
-| T-A7 集成验收 | 待派发 | Wave 5 | 编排者主导 |
+| T-A0 脚手架+MSW | ✅ 完成（09-05） | Wave 1 | lint/typecheck/build/test 全绿，目检通过 |
+| ~~T-A2 看板+用户页~~ | ✅ 并入 T-A0 | Wave 1 | |
+| T-A1 后端地基 | ✅ 完成（09-06） | Wave 2 | 043 迁移 + requireRole/requirePerm + whoami，18 测试 |
+| T-A4 订单+设置页 | ✅ 完成（09-06） | Wave 2 | 退款/对账/开关/维护/公告，25 测试；含柱图修复 |
+| T-A3 订单后端 | ✅ 完成（09-06） | Wave 3 | orders/refund/reconciliation/subscriptions/plans，与前端 refunding 契约对齐 |
+| 审计+角色页 | ✅ 完成（09-06） | Wave 3 | 敏感高亮/CSV 导出/权限树/级别约束，38 测试 |
+| T-A5 治理后端 | ✅ 完成（09-06） | Wave 4 | audit/roles/configs/flags/announcements + 044 迁移 |
+| 设备/订阅页 | ✅ 完成（09-06） | Wave 4 | 平台分布/远程下线/赠期弹窗，48 测试 |
+| T-A1.5 用户/设备/overview 后端 | ✅ 完成（09-06，补票） | Wave 5 | 排票遗漏补齐；users/devices/overview 全套 |
+| T-A7 集成验收 | ✅ 完成（09-06） | Wave 5 | 043/044 已应用 dev 库；联调容器 clipsync-admin-int(:3003)；真后端登录/whoami/全页面走查通过；登录改造为验证码+密码双模式 |
+
+**遗留事项（后续迭代）**：① 设备远程下线仅 DB 标记离线，真实密钥吊销待做；② 公告群发未接 notificationService（落表+TODO）；③ auth-refresh 真实契约未对齐（401 直接回登录页）；④ E2E smoke 为 skip 态骨架；⑤ dev 库 phone 列存在脏数据（如 `135****rged`），打码函数对非数字串显示原样。
