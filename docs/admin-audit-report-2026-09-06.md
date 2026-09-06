@@ -32,6 +32,7 @@
 | B4 | 无效/伪造 JWT 返回 403 而非 401，管理台 401 拦截器不生效 → **会话失效后页面卡死**（无登出无跳转） | 中 | authenticateToken 统一 401（403 语义保留给"已认证但权限不足"） |
 | B5 | 管理端赠期后 `users.subscription_status` 不同步（停留 trial）→ 订阅检查中间件读旧状态 | 中 | grant 路由同步 users 快照（与 subscribe 同口径） |
 | B6 | 1280 视口顶栏溢出，**退出登录按钮在视口外不可点** | 低（P3） | `.right` flex-shrink:0 + 搜索框 clamp 自适应 |
+| B7 | **角色权限页大面积暴露内部权限键名**（admin.users.view ×13、分组键 users_devices、审计动作键 admin.roles.update、角色键 super_admin），违背 29b2ea9"界面只说人话"整治标准 | 中（P2，用户体验/信息安全观感） | 权限树/分组标题/提示条/toast 全部去键名仅说人话；description 与 name 相同不再重复渲染；全站扫描确认无其他页面残留 |
 
 ## 三、确认真实有效的功能（实测证据）
 
