@@ -171,6 +171,14 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // 等待名单账号拦截（signup_waitlist 开关期间注册，待管理员审核）
+    if (user.registration_status === 'waitlist') {
+      return res.status(403).json({
+        error: '账号待管理员审核，通过后即可登录',
+        pendingReview: true,
+      });
+    }
+
     // 创建会话并生成token
     const { token, sessionId } = await createSessionAndGenerateToken(user, req);
 

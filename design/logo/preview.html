@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync Logo 提案 · 4 方向</title>
+<style>
+  :root{
+    --bg:#fbfbf9; --ink:#141414; --ink-2:#57554e; --ink-3:#98958a;
+    --line:#e8e6df; --purple:#5a4bd1; --purple-hi:#7c6cf0;
+    --grad:linear-gradient(135deg,#7c6cf0 0%,#5a4bd1 58%,#4f3fc0 100%);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto;padding:56px 32px 96px}
+  header.top h1{font-size:28px;font-weight:800;letter-spacing:-.02em}
+  header.top p{color:var(--ink-2);margin-top:10px;font-size:14.5px;line-height:1.7;max-width:640px}
+  .old-vs-new{display:flex;align-items:center;gap:18px;margin-top:22px;padding:16px 20px;border:1px solid var(--line);border-radius:14px;background:#fff}
+  .old-vs-new .lbl{font-size:12.5px;color:var(--ink-3)}
+  .sect{margin-top:64px}
+  .sect>.no{font-size:12px;font-weight:700;color:var(--purple);letter-spacing:.14em}
+  .sect>h2{font-size:21px;font-weight:800;letter-spacing:-.01em;margin-top:6px}
+  .sect>.desc{color:var(--ink-2);font-size:14px;line-height:1.75;margin-top:8px;max-width:660px}
+  .grid{display:grid;grid-template-columns:1.25fr 1fr;gap:20px;margin-top:26px}
+  .card{border:1px solid var(--line);border-radius:16px;background:#fff;padding:28px}
+  .card.dark{background:var(--ink);border-color:var(--ink)}
+  .cap{font-size:11.5px;color:var(--ink-3);letter-spacing:.08em;margin-bottom:18px;font-weight:600}
+  .card.dark .cap{color:#8a877d}
+  .lockup{display:flex;align-items:center;gap:16px}
+  .lockup .word{font-size:34px;font-weight:800;letter-spacing:-.035em}
+  .ladder{display:flex;align-items:flex-end;gap:26px}
+  .ladder .item{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .ladder .s{font-size:11px;color:var(--ink-3)}
+  .ctx{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .navbar{display:flex;align-items:center;gap:24px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 18px;font-size:13.5px;font-weight:600}
+  .navbar .lk{color:var(--ink-2);font-weight:500}
+  .sidebar{display:inline-flex;flex-direction:column;gap:8px;background:var(--ink);border-radius:12px;padding:14px 16px;font-size:13px;color:#a5a29a}
+  .sidebar .it{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px}
+  .sidebar .it.on{background:#2a2a28;color:#fff;font-weight:600}
+  .phone{width:118px;border-radius:22px;background:var(--grad);padding:10px 0 14px;display:flex;flex-direction:column;align-items:center;gap:8px;color:#fff}
+  .phone .nm{font-size:11px;font-weight:600;opacity:.95}
+  .phone .bar{width:34px;height:4px;border-radius:2px;background:rgba(255,255,255,.85);margin-top:6px}
+  .strip{display:flex;gap:0;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff}
+  .strip .cell{flex:1;padding:26px 18px;display:flex;flex-direction:column;align-items:center;gap:14px;border-right:1px solid var(--line)}
+  .strip .cell:last-child{border-right:none}
+  .strip .cell b{font-size:13px;font-weight:700}
+  .strip .cell span{font-size:11.5px;color:var(--ink-3);text-align:center;line-height:1.6}
+  footer.note{margin-top:56px;color:var(--ink-3);font-size:12.5px;line-height:1.8;border-top:1px solid var(--line);padding-top:20px}
+  svg{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>ClipSync Logo 提案</h1>
+  <p>现状：通用「剪贴板 + 对勾」线性图标，无独占性、无记忆点。以下 4 个方向分别对应四种品牌气质——
+  <b>① 飞掠</b>（产品叙事：秒传瞬间）、<b>② 回环</b>（符号型：Clip+Sync 双环互扣）、
+  <b>③ 通道</b>(Paper 极简：内容穿门而过)、<b>④ 叠影</b>（复制语义高级化）。
+  每案均给出：主锁定排版 / 尺寸阶梯 / 深浅双底 / 官网导航 & 后台侧栏 & 手机桌面的真实场景。</p>
+  <div class="old-vs-new">
+    <span class="lbl">现行</span>
+    <svg width="44" height="44" viewBox="0 0 28 28"><defs><linearGradient id="og" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6e5ce8"/><stop offset="1" stop-color="#5a4bd1"/></linearGradient></defs><rect width="28" height="28" rx="8" fill="url(#og)"/><g fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="10.5" y="4.5" width="7" height="4" rx="1"/><path d="M10.5 6.5H9a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-13a2 2 0 0 0-2-2h-1.5"/><path d="m10.5 15.5 2.5 2.5 4.5-4.5"/></g></svg>
+    <span class="lbl" style="margin-right:8px">→</span>
+    <span class="lbl" style="color:var(--ink-2)">问题：图标库通用符号，与「同步」无关；对勾语义偏「任务完成」而非「复制粘贴」；48px 以下细节糊成一团。</span>
+  </div>
+</header>
+
+<!-- ════════════════════ ① 飞掠 ════════════════════ -->
+<section class="sect" id="fly">
+  <div class="no">方向 ①</div>
+  <h2>飞掠 Fly — 内容抵达桌面的那一帧</h2>
+  <p class="desc">把 app 图标瓷片本身当作「电脑屏幕」：一枚白色内容方块正掠入画面，身后沿对角线拖着三段渐隐的轨迹。不讲剪贴板，只讲产品的核心瞬间——<b>手机复制，电脑秒粘</b>。16px 下依然读得出「运动 + 抵达」。</p>
+  <div class="grid">
+    <div class="card">
+      <div class="cap">主锁定排版 · 浅底</div>
+      <div class="lockup">
+        <svg width="88" height="88" viewBox="0 0 48 48"><defs><linearGradient id="fa" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c6cf0"/><stop offset=".58" stop-color="#5a4bd1"/><stop offset="1" stop-color="#4f3fc0"/></linearGradient></defs><rect width="48" height="48" rx="11" fill="url(#fa)"/><rect x="25.5" y="10.5" width="12" height="12" rx="3.2" fill="#fff"/><line x1="23" y1="25" x2="20.5" y2="27.5" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".95"/><line x1="18" y1="30" x2="16.3" y2="31.7" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".5"/><line x1="14.3" y1="33.7" x2="13.4" y2="34.6" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".24"/></svg>
+        <span class="word">ClipSync</span>
+      </div>
+      <div class="cap" style="margin-top:26px">墨色版（官网 Paper 用）</div>
+      <div class="lockup">
+        <svg width="88" height="88" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#141414"/><rect x="25.5" y="10.5" width="12" height="12" rx="3.2" fill="#fff"/><line x1="23" y1="25" x2="20.5" y2="27.5" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".95"/><line x1="18" y1="30" x2="16.3" y2="31.7" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".5"/><line x1="14.3" y1="33.7" x2="13.4" y2="34.6" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".24"/></svg>
+        <span class="word">ClipSync</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cap">尺寸阶梯（48 / 28 / 16 px）</div>
+      <div class="ladder">
+        <div class="item"><svg width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#fa)"/><rect x="25.5" y="10.5" width="12" height="12" rx="3.2" fill="#fff"/><line x1="23" y1="25" x2="20.5" y2="27.5" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".95"/><line x1="18" y1="30" x2="16.3" y2="31.7" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".5"/><line x1="14.3" y1="33.7" x2="13.4" y2="34.6" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".24"/></svg><span class="s">48</span></div>
+        <div class="item"><svg width="28" height="28" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#fa)"/><rect x="25.5" y="10.5" width="12" height="12" rx="3.2" fill="#fff"/><line x1="23" y1="25" x2="20.5" y2="27.5" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".95"/><line x1="18" y1="30" x2="16.3" y2="31.7" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".5"/><line x1="14.3" y1="33.7" x2="13.4" y2="34.6" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".24"/></svg><span class="s">28</span></div>
+        <div class="item"><svg width="16" height="16" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#fa)"/><rect x="25.5" y="10.5" width="12" height="12" rx="3.2" fill="#fff"/><line x1="23" y1="25" x2="20.5" y2="27.5" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".95"/><line x1="18" y1="30" x2="16.3" y2="31.7" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".5"/><line x1="14.3" y1="33.7" x2="13.4" y2="34.6" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".24"/></svg><span class="s">16</span></div>
+      </div>
+      <div class="cap" style="margin-top:26px">深底</div>
+      <svg width="64" height="64" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#fff"/><rect x="25.5" y="10.5" width="12" height="12" rx="3.2" fill="#5a4bd1"/><line x1="23" y1="25" x2="20.5" y2="27.5" stroke="#5a4bd1" stroke-width="4.2" stroke-linecap="round" opacity=".95"/><line x1="18" y1="30" x2="16.3" y2="31.7" stroke="#5a4bd1" stroke-width="4.2" stroke-linecap="round" opacity=".5"/><line x1="14.3" y1="33.7" x2="13.4" y2="34.6" stroke="#5a4bd1" stroke-width="4.2" stroke-linecap="round" opacity=".24"/></svg>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <div class="cap">官网导航 mock</div>
+      <div class="navbar">
+        <svg width="24" height="24" viewBox="0 0 48 48" style="border-radius:6px"><rect width="48" height="48" rx="11" fill="#141414"/><rect x="25.5" y="10.5" width="12" height="12" rx="3.2" fill="#fff"/><line x1="23" y1="25" x2="20.5" y2="27.5" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".95"/><line x1="18" y1="30" x2="16.3" y2="31.7" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".5"/><line x1="14.3" y1="33.7" x2="13.4" y2="34.6" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".24"/></svg>
+        <b>ClipSync</b><span class="lk">功能</span><span class="lk">下载</span><span class="lk">定价</span>
+      </div>
+      <div class="cap" style="margin-top:18px">后台侧栏 mock</div>
+      <div class="sidebar">
+        <div class="it on"><svg width="16" height="16" viewBox="0 0 48 48" style="border-radius:4px"><rect width="48" height="48" rx="11" fill="url(#fa)"/><rect x="25.5" y="10.5" width="12" height="12" rx="3.2" fill="#fff"/><line x1="23" y1="25" x2="20.5" y2="27.5" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".95"/><line x1="18" y1="30" x2="16.3" y2="31.7" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".5"/><line x1="14.3" y1="33.7" x2="13.4" y2="34.6" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".24"/></svg>ClipSync 管理台</div>
+        <div class="it">数据看板</div><div class="it">用户管理</div>
+      </div>
+    </div>
+    <div class="card" style="display:flex;align-items:center;justify-content:center;gap:26px">
+      <div class="phone"><svg width="56" height="56" viewBox="0 0 48 48" style="border-radius:13px"><rect width="48" height="48" rx="11" fill="#fff"/><rect x="25.5" y="10.5" width="12" height="12" rx="3.2" fill="#5a4bd1"/><line x1="23" y1="25" x2="20.5" y2="27.5" stroke="#5a4bd1" stroke-width="4.2" stroke-linecap="round" opacity=".95"/><line x1="18" y1="30" x2="16.3" y2="31.7" stroke="#5a4bd1" stroke-width="4.2" stroke-linecap="round" opacity=".5"/><line x1="14.3" y1="33.7" x2="13.4" y2="34.6" stroke="#5a4bd1" stroke-width="4.2" stroke-linecap="round" opacity=".24"/></svg><span class="nm">ClipSync</span><span class="bar"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ ② 回环 ════════════════════ -->
+<section class="sect" id="loop">
+  <div class="no">方向 ②</div>
+  <h2>回环 Loop — Clip 与 Sync 的双环互扣</h2>
+  <p class="desc">两个互相穿插的圆环 = <b>Clip 一环，Sync 一环</b>；交叠处的上下穿插（编织关系）暗示「数据在两台设备间循环流转」，斜看又是无穷符号 ∞。笔画单纯、剪影独特，任意尺寸不减细节，是最「耐看」的一案。</p>
+  <div class="grid">
+    <div class="card">
+      <div class="cap">主锁定排版 · 浅底</div>
+      <div class="lockup">
+        <svg width="88" height="88" viewBox="0 0 48 48"><defs><linearGradient id="la" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c6cf0"/><stop offset=".58" stop-color="#5a4bd1"/><stop offset="1" stop-color="#4f3fc0"/></linearGradient></defs><rect width="48" height="48" rx="11" fill="url(#la)"/><g fill="none" stroke="#fff" stroke-width="5"><circle cx="28.6" cy="28.6" r="10"/><circle cx="19.4" cy="19.4" r="10"/></g><path d="M 19.35 32.40 A 10 10 0 0 1 18.86 26.17" fill="none" stroke="#fff" stroke-width="5"/></svg>
+        <span class="word">ClipSync</span>
+      </div>
+      <div class="cap" style="margin-top:26px">墨色版（官网 Paper 用）</div>
+      <div class="lockup">
+        <svg width="88" height="88" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#141414"/><g fill="none" stroke="#fff" stroke-width="5"><circle cx="28.6" cy="28.6" r="10"/><circle cx="19.4" cy="19.4" r="10"/></g><path d="M 19.35 32.40 A 10 10 0 0 1 18.86 26.17" fill="none" stroke="#fff" stroke-width="5"/></svg>
+        <span class="word">ClipSync</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cap">尺寸阶梯（48 / 28 / 16 px）</div>
+      <div class="ladder">
+        <div class="item"><svg width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#la)"/><g fill="none" stroke="#fff" stroke-width="5"><circle cx="28.6" cy="28.6" r="10"/><circle cx="19.4" cy="19.4" r="10"/></g><path d="M 19.35 32.40 A 10 10 0 0 1 18.86 26.17" fill="none" stroke="#fff" stroke-width="5"/></svg><span class="s">48</span></div>
+        <div class="item"><svg width="28" height="28" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#la)"/><g fill="none" stroke="#fff" stroke-width="5"><circle cx="28.6" cy="28.6" r="10"/><circle cx="19.4" cy="19.4" r="10"/></g><path d="M 19.35 32.40 A 10 10 0 0 1 18.86 26.17" fill="none" stroke="#fff" stroke-width="5"/></svg><span class="s">28</span></div>
+        <div class="item"><svg width="16" height="16" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#la)"/><g fill="none" stroke="#fff" stroke-width="5"><circle cx="28.6" cy="28.6" r="10"/><circle cx="19.4" cy="19.4" r="10"/></g><path d="M 19.35 32.40 A 10 10 0 0 1 18.86 26.17" fill="none" stroke="#fff" stroke-width="5"/></svg><span class="s">16</span></div>
+      </div>
+      <div class="cap" style="margin-top:26px">深底</div>
+      <svg width="64" height="64" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#fff"/><g fill="none" stroke="#5a4bd1" stroke-width="5"><circle cx="28.6" cy="28.6" r="10"/><circle cx="19.4" cy="19.4" r="10"/></g><path d="M 19.35 32.40 A 10 10 0 0 1 18.86 26.17" fill="none" stroke="#5a4bd1" stroke-width="5"/></svg>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <div class="cap">官网导航 mock</div>
+      <div class="navbar">
+        <svg width="24" height="24" viewBox="0 0 48 48" style="border-radius:6px"><rect width="48" height="48" rx="11" fill="#141414"/><g fill="none" stroke="#fff" stroke-width="5"><circle cx="28.6" cy="28.6" r="10"/><circle cx="19.4" cy="19.4" r="10"/></g><path d="M 19.35 32.40 A 10 10 0 0 1 18.86 26.17" fill="none" stroke="#fff" stroke-width="5"/></svg>
+        <b>ClipSync</b><span class="lk">功能</span><span class="lk">下载</span><span class="lk">定价</span>
+      </div>
+      <div class="cap" style="margin-top:18px">后台侧栏 mock</div>
+      <div class="sidebar">
+        <div class="it on"><svg width="16" height="16" viewBox="0 0 48 48" style="border-radius:4px"><rect width="48" height="48" rx="11" fill="url(#la)"/><g fill="none" stroke="#fff" stroke-width="5"><circle cx="28.6" cy="28.6" r="10"/><circle cx="19.4" cy="19.4" r="10"/></g><path d="M 19.35 32.40 A 10 10 0 0 1 18.86 26.17" fill="none" stroke="#fff" stroke-width="5"/></svg>ClipSync 管理台</div>
+        <div class="it">数据看板</div><div class="it">用户管理</div>
+      </div>
+    </div>
+    <div class="card" style="display:flex;align-items:center;justify-content:center;gap:26px">
+      <div class="phone"><svg width="56" height="56" viewBox="0 0 48 48" style="border-radius:13px"><rect width="48" height="48" rx="11" fill="#fff"/><g fill="none" stroke="#5a4bd1" stroke-width="5"><circle cx="28.6" cy="28.6" r="10"/><circle cx="19.4" cy="19.4" r="10"/></g><path d="M 19.35 32.40 A 10 10 0 0 1 18.86 26.17" fill="none" stroke="#5a4bd1" stroke-width="5"/></svg><span class="nm">ClipSync</span><span class="bar"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ ③ 通道 ════════════════════ -->
+<section class="sect" id="gate">
+  <div class="no">方向 ③ · 已定稿 ✓（2026-09-06）</div>
+  <h2>通道 Gate — 内容穿门而过</h2>
+  <p class="desc">两根<b>错位相对</b>的立柱是两台设备（左上与右下，错位即「两地」），白色方块是你的内容，正带着一小段速度线从两柱之间穿行而过。全场只用一枚圆角方块讲完同步的故事，是四案中最「Paper」的一枚，气质最克制高级。</p>
+  <div class="grid">
+    <div class="card">
+      <div class="cap">主锁定排版 · 浅底</div>
+      <div class="lockup">
+        <svg width="88" height="88" viewBox="0 0 48 48"><defs><linearGradient id="ga" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c6cf0"/><stop offset=".58" stop-color="#5a4bd1"/><stop offset="1" stop-color="#4f3fc0"/></linearGradient></defs><rect width="48" height="48" rx="11" fill="url(#ga)"/><rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#fff"/><line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#fff" stroke-width="3.4" stroke-linecap="round" opacity=".55"/></svg>
+        <span class="word">ClipSync</span>
+      </div>
+      <div class="cap" style="margin-top:26px">墨色版（官网 Paper 用 · 紫点唯一色）</div>
+      <div class="lockup">
+        <svg width="88" height="88" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#141414"/><rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#7c6cf0"/><line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#7c6cf0" stroke-width="3.4" stroke-linecap="round" opacity=".55"/></svg>
+        <span class="word">ClipSync</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cap">尺寸阶梯（48 / 28 / 16 px）</div>
+      <div class="ladder">
+        <div class="item"><svg width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#ga)"/><rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#fff"/><line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#fff" stroke-width="3.4" stroke-linecap="round" opacity=".55"/></svg><span class="s">48</span></div>
+        <div class="item"><svg width="28" height="28" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#ga)"/><rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#fff"/><line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#fff" stroke-width="3.4" stroke-linecap="round" opacity=".55"/></svg><span class="s">28</span></div>
+        <div class="item"><svg width="16" height="16" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#ga)"/><rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#fff"/><line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#fff" stroke-width="3.4" stroke-linecap="round" opacity=".55"/></svg><span class="s">16</span></div>
+      </div>
+      <div class="cap" style="margin-top:26px">深底</div>
+      <svg width="64" height="64" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#fff"/><rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#141414"/><rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#141414"/><rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#5a4bd1"/><line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#5a4bd1" stroke-width="3.4" stroke-linecap="round" opacity=".55"/></svg>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <div class="cap">官网导航 mock</div>
+      <div class="navbar">
+        <svg width="24" height="24" viewBox="0 0 48 48" style="border-radius:6px"><rect width="48" height="48" rx="11" fill="#141414"/><rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#7c6cf0"/><line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#7c6cf0" stroke-width="3.4" stroke-linecap="round" opacity=".55"/></svg>
+        <b>ClipSync</b><span class="lk">功能</span><span class="lk">下载</span><span class="lk">定价</span>
+      </div>
+      <div class="cap" style="margin-top:18px">后台侧栏 mock</div>
+      <div class="sidebar">
+        <div class="it on"><svg width="16" height="16" viewBox="0 0 48 48" style="border-radius:4px"><rect width="48" height="48" rx="11" fill="url(#ga)"/><rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#fff"/><line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#fff" stroke-width="3.4" stroke-linecap="round" opacity=".55"/></svg>ClipSync 管理台</div>
+        <div class="it">数据看板</div><div class="it">用户管理</div>
+      </div>
+    </div>
+    <div class="card" style="display:flex;align-items:center;justify-content:center;gap:26px">
+      <div class="phone"><svg width="56" height="56" viewBox="0 0 48 48" style="border-radius:13px"><rect width="48" height="48" rx="11" fill="#fff"/><rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#141414"/><rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#141414"/><rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#5a4bd1"/><line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#5a4bd1" stroke-width="3.4" stroke-linecap="round" opacity=".55"/></svg><span class="nm">ClipSync</span><span class="bar"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ ④ 叠影 ════════════════════ -->
+<section class="sect" id="copy">
+  <div class="no">方向 ④</div>
+  <h2>叠影 Twin — 复制语义的高级化</h2>
+  <p class="desc">人人都认得的「复制」双方块，做出纵深与色彩层级：<b>前面一块实心（此端的剪贴板），后面一块描边（彼端的剪贴板）</b>，斜向错位 45°、圆角一致。语义零学习成本，favicon 16px 下是四案中最清晰的一枚。</p>
+  <div class="grid">
+    <div class="card">
+      <div class="cap">主锁定排版 · 浅底</div>
+      <div class="lockup">
+        <svg width="88" height="88" viewBox="0 0 48 48"><defs><linearGradient id="ta" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c6cf0"/><stop offset=".58" stop-color="#5a4bd1"/><stop offset="1" stop-color="#4f3fc0"/></linearGradient></defs><rect width="48" height="48" rx="11" fill="url(#ta)"/><rect x="9" y="9" width="19.5" height="19.5" rx="5" fill="none" stroke="#fff" stroke-width="3.6" opacity=".55"/><rect x="19.5" y="19.5" width="19.5" height="19.5" rx="5" fill="#fff"/></svg>
+        <span class="word">ClipSync</span>
+      </div>
+      <div class="cap" style="margin-top:26px">墨色版（官网 Paper 用）</div>
+      <div class="lockup">
+        <svg width="88" height="88" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#141414"/><rect x="9" y="9" width="19.5" height="19.5" rx="5" fill="none" stroke="#fff" stroke-width="3.6" opacity=".55"/><rect x="19.5" y="19.5" width="19.5" height="19.5" rx="5" fill="#fff"/></svg>
+        <span class="word">ClipSync</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cap">尺寸阶梯（48 / 28 / 16 px）</div>
+      <div class="ladder">
+        <div class="item"><svg width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#ta)"/><rect x="9" y="9" width="19.5" height="19.5" rx="5" fill="none" stroke="#fff" stroke-width="3.6" opacity=".55"/><rect x="19.5" y="19.5" width="19.5" height="19.5" rx="5" fill="#fff"/></svg><span class="s">48</span></div>
+        <div class="item"><svg width="28" height="28" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#ta)"/><rect x="9" y="9" width="19.5" height="19.5" rx="5" fill="none" stroke="#fff" stroke-width="3.6" opacity=".55"/><rect x="19.5" y="19.5" width="19.5" height="19.5" rx="5" fill="#fff"/></svg><span class="s">28</span></div>
+        <div class="item"><svg width="16" height="16" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#ta)"/><rect x="9" y="9" width="19.5" height="19.5" rx="5" fill="none" stroke="#fff" stroke-width="3.6" opacity=".55"/><rect x="19.5" y="19.5" width="19.5" height="19.5" rx="5" fill="#fff"/></svg><span class="s">16</span></div>
+      </div>
+      <div class="cap" style="margin-top:26px">深底</div>
+      <svg width="64" height="64" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#fff"/><rect x="9" y="9" width="19.5" height="19.5" rx="5" fill="none" stroke="#5a4bd1" stroke-width="3.6" opacity=".55"/><rect x="19.5" y="19.5" width="19.5" height="19.5" rx="5" fill="#5a4bd1"/></svg>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <div class="cap">官网导航 mock</div>
+      <div class="navbar">
+        <svg width="24" height="24" viewBox="0 0 48 48" style="border-radius:6px"><rect width="48" height="48" rx="11" fill="#141414"/><rect x="9" y="9" width="19.5" height="19.5" rx="5" fill="none" stroke="#fff" stroke-width="3.6" opacity=".55"/><rect x="19.5" y="19.5" width="19.5" height="19.5" rx="5" fill="#fff"/></svg>
+        <b>ClipSync</b><span class="lk">功能</span><span class="lk">下载</span><span class="lk">定价</span>
+      </div>
+      <div class="cap" style="margin-top:18px">后台侧栏 mock</div>
+      <div class="sidebar">
+        <div class="it on"><svg width="16" height="16" viewBox="0 0 48 48" style="border-radius:4px"><rect width="48" height="48" rx="11" fill="url(#ta)"/><rect x="9" y="9" width="19.5" height="19.5" rx="5" fill="none" stroke="#fff" stroke-width="3.6" opacity=".55"/><rect x="19.5" y="19.5" width="19.5" height="19.5" rx="5" fill="#fff"/></svg>ClipSync 管理台</div>
+        <div class="it">数据看板</div><div class="it">用户管理</div>
+      </div>
+    </div>
+    <div class="card" style="display:flex;align-items:center;justify-content:center;gap:26px">
+      <div class="phone"><svg width="56" height="56" viewBox="0 0 48 48" style="border-radius:13px"><rect width="48" height="48" rx="11" fill="#fff"/><rect x="9" y="9" width="19.5" height="19.5" rx="5" fill="none" stroke="#5a4bd1" stroke-width="3.6" opacity=".55"/><rect x="19.5" y="19.5" width="19.5" height="19.5" rx="5" fill="#5a4bd1"/></svg><span class="nm">ClipSync</span><span class="bar"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ 对比 ════════════════════ -->
+<section class="sect">
+  <div class="no">横向对比</div>
+  <h2>16px 棋盘一图流</h2>
+  <p class="desc">favicon 的真实战场。请重点看：剪影是否可辨、是否糊边、与浏览器标签页里其他站点放在一起时是否跳得出来。</p>
+  <div class="strip" style="margin-top:24px">
+    <div class="cell"><svg width="16" height="16" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#fa)"/><rect x="25.5" y="10.5" width="12" height="12" rx="3.2" fill="#fff"/><line x1="23" y1="25" x2="20.5" y2="27.5" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".95"/><line x1="18" y1="30" x2="16.3" y2="31.7" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".5"/><line x1="14.3" y1="33.7" x2="13.4" y2="34.6" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity=".24"/></svg><b>① 飞掠</b><span>叙事动态<br>气质：轻盈/速度</span></div>
+    <div class="cell"><svg width="16" height="16" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#la)"/><g fill="none" stroke="#fff" stroke-width="5"><circle cx="28.6" cy="28.6" r="10"/><circle cx="19.4" cy="19.4" r="10"/></g><path d="M 19.35 32.40 A 10 10 0 0 1 18.86 26.17" fill="none" stroke="#fff" stroke-width="5"/></svg><b>② 回环</b><span>符号耐看<br>气质：专业/连接</span></div>
+    <div class="cell"><svg width="16" height="16" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#ga)"/><rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/><rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#fff"/><line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#fff" stroke-width="3.4" stroke-linecap="round" opacity=".55"/></svg><b>③ 通道</b><span>极简克制<br>气质：Paper/高级</span></div>
+    <div class="cell"><svg width="16" height="16" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#ta)"/><rect x="9" y="9" width="19.5" height="19.5" rx="5" fill="none" stroke="#fff" stroke-width="3.6" opacity=".55"/><rect x="19.5" y="19.5" width="19.5" height="19.5" rx="5" fill="#fff"/></svg><b>④ 叠影</b><span>语义直白<br>气质：工具/清晰</span></div>
+  </div>
+</section>
+
+<footer class="note">
+  色彩系统：品牌紫 #5a4bd1（管理台主色）· 渐变 #7c6cf0 → #4f3fc0（仅用于 app 图标瓷片与高亮场景）· 官网墨 #141414 / 纸 #fbfbf9。<br>
+  每一案的完整资产（主 SVG / 单色 SVG / favicon.svg / ico 派生）将在定稿后统一落盘替换：官网 favicon + 导航 logo-mark、管理台 favicon + 侧栏、桌面端 icon.ico。
+</footer>
+
+</div>
+</body>
+</html>

@@ -13,6 +13,11 @@ import {
 // 延迟导入 app，避免触发 server.listen()
 let app;
 beforeAll(async () => {
+  // 防打真库护栏：E2E 只允许连测试库运行（历史上曾误打 dev 库留下脏设备/账号）
+  const dbName = (await pool.query('SELECT current_database() AS db')).rows[0].db;
+  if (dbName !== 'clipsync_test') {
+    throw new Error(`[e2e] 仅允许在 clipsync_test 库运行，当前连接的是 ${dbName}，已拒绝执行`);
+  }
   const mod = await import('../src/index.js');
   app = mod.app;
 });

@@ -1,0 +1,10 @@
+/* ═══ 设计 token ═══
+   照抄基线 design/mockups/website-v2-minimal.html :root 段，勿单独改动（改动=视觉偏离基线） */
+:root{
+  --bg:#fbfbf9; --ink:#141414; --ink-2:#57554e; --ink-3:#98958a;
+  --line:#e6e4dc; --line-strong:#d5d2c6;
+  --accent:#5a4bd1; --accent-soft:#efecfc;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --serif:Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,"Cascadia Mono","JetBrains Mono",Consolas,monospace;
+}

@@ -1,0 +1,17 @@
+{
+  "name": "clipsync-website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ClipSync 官网（Paper 极简 · 静态站，视觉基线 design/mockups/website-v2-minimal.html）",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "check": "node scripts/check-dist.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vite": "^6.3.5"
+  }
+}

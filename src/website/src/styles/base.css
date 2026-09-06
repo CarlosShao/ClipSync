@@ -1,0 +1,14 @@
+/* ═══ 基础 reset 与全局排版 ═══
+   照抄基线全局部分（reset / html / body / a / .wrap / 工具类） */
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1160px;margin:0 auto;padding:0 32px}
+.mono{font-family:var(--mono)}
+.num{font-variant-numeric:tabular-nums}
+.en{font-family:var(--serif);font-style:italic;letter-spacing:.3px}
+
+/* ═══ 入场动效（基线 .reveal 段；由 src/main.ts 的 IntersectionObserver 加 .in 触发）═══ */
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .7s ease,transform .7s ease}
+.reveal.in{opacity:1;transform:none}

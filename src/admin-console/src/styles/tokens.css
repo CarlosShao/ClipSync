@@ -1,0 +1,35 @@
+/**
+ * 品牌设计变量（与 antd token 同源，取自视觉基线 design/mockups/admin-v2-light.html）
+ * 状态色语义：成功 / 警告 / 危险 / 信息 / 品牌
+ */
+:root {
+  --bg: #f4f5fa;
+  --surface: #ffffff;
+  --surface-2: #f7f8fc;
+  --border: #e6e8f0;
+  --border-strong: #d4d7e3;
+
+  --text: #22252e;
+  --text-2: #5a5f6e;
+  --text-3: #9298a8;
+
+  --brand: #5a4bd1;
+  --brand-hover: #4c3ec2;
+  --brand-soft: #efecfc;
+  --brand-border: #d8d1f8;
+
+  --green: #16a34a;
+  --green-soft: #e8f7ee;
+  --amber: #d97706;
+  --amber-soft: #fdf3e3;
+  --red: #dc2626;
+  --red-soft: #fdecec;
+  --blue: #2563eb;
+  --blue-soft: #e9f0fe;
+
+  --radius: 8px;
+  --font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}

@@ -1,0 +1,21 @@
+/* ═══ 导航（基线「导航」段；.btn 亦被 hero / pricing / cta 复用，故最先引入）═══ */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,251,249,.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.nav-in{max-width:1160px;margin:0 auto;padding:0 32px;height:58px;display:flex;align-items:center;gap:26px}
+.logo{display:flex;align-items:center;gap:9px;font-weight:650;font-size:14.5px;letter-spacing:.2px}
+.logo-mark{width:24px;height:24px;border-radius:7px;background:var(--ink);display:flex;align-items:center;justify-content:center}
+.nav-links{display:flex;gap:24px;font-size:13px;color:var(--ink-2);margin-left:8px}
+.nav-links a:hover{color:var(--ink)}
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:8px 18px;font-size:13px;cursor:pointer;border:1px solid var(--ink);background:var(--ink);color:#fff;transition:.18s}
+.btn:hover{background:#2c2c2c}
+.btn.line{background:transparent;color:var(--ink);border-color:var(--line-strong)}
+.btn.line:hover{border-color:var(--ink)}
+nav .btn{margin-left:auto;padding:6px 15px;font-size:12.5px}
+
+/* 工程化新增（唯一超出基线的样式）：导航滚动状态。
+   基线为静态稿无滚动态；工程方案 §2 将「导航滚动状态」划入 main.ts 职责，
+   由 main.ts 在 scrollY>4 时加 .nav--scrolled，仅补一层极淡投影增强可读性。 */
+nav.nav--scrolled{box-shadow:0 8px 24px rgba(20,20,20,.06)}
+
+@media (max-width:960px){
+  .nav-links{display:none}
+}

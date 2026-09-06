@@ -413,6 +413,27 @@ export function broadcastToUser(userId, message) {
   }
 }
 
+// Broadcast to every connected client on this instance（多实例部署时配合客户端轮询兜底）。
+// 用于全局配置变更广播，如 feature_flags.updated——开关类消息允许最终一致（客户端 5s TTL 兜底）。
+export function broadcastToAllClients(message) {
+  let count = 0;
+  const payload = JSON.stringify(message);
+  for (const [, devices] of connections) {
+    for (const [, ws] of devices) {
+      if (ws.readyState === 1) {
+        try {
+          ws.send(payload);
+          count++;
+        } catch {
+          // 忽略发送失败
+        }
+      }
+    }
+  }
+  logger.info(`[WebSocket] broadcastToAllClients: ${message?.type || 'unknown'} → ${count} clients`);
+  return count;
+}
+
 // Send notification to all devices of a user
 // 同时持久化到 notification_history（此前只推 WS 不落库，导致 GET /history 永远为空）
 export async function sendNotification(userId, notification) {

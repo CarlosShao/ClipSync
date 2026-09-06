@@ -1,4 +1,5 @@
 import pool from '../db/pool.js';
+import { isFlagEnabled } from '../utils/featureFlags.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -46,6 +47,16 @@ async function subscriptionCheck(req, res, next) {
       };
       return next();
     }
+
+    // enable_subscription 开关关闭：全员临时按 Free 配额执行。
+    // 只影响本次请求的权益判定，不改库、不碰已有订单与订阅记录（与开关描述一致）。
+    if (!(await isFlagEnabled('enable_subscription'))) {
+      req.user.subscriptionStatus = 'free';
+      req.user.plan = await getPlanByName('Free');
+      req.user.subscriptionDisabledByFlag = true;
+      return next();
+    }
+
     req.user.subscriptionStatus = user.subscription_status || 'free';
     req.user.currentSubscriptionId = user.current_subscription_id;
     

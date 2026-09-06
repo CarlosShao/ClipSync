@@ -1,8 +1,31 @@
 import { Router } from 'express';
 import fs from 'fs/promises';
 import path from 'path';
+import { getFeatureFlags } from '../utils/featureFlags.js';
 
 const router = Router();
+
+// GET /api/app/feature-flags — 面向客户端的功能开关快照（公开只读）。
+// 仅暴露面向客户端的 5 个开关键；客户端启动时拉取一次，并监听 WS `feature_flags.updated` 即时刷新。
+const CLIENT_FLAG_KEYS = Object.freeze([
+  'enable_subscription',
+  'enable_ai_agent',
+  'enable_public_sharing',
+  'enable_2fa',
+  'signup_waitlist',
+]);
+
+router.get('/feature-flags', async (_req, res) => {
+  try {
+    const all = await getFeatureFlags();
+    const flags = Object.fromEntries(
+      CLIENT_FLAG_KEYS.filter((k) => k in all).map((k) => [k, all[k]])
+    );
+    res.json({ flags, updatedAt: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to read feature flags' });
+  }
+});
 
 // GET /api/app/version - 返回当前版本信息
 router.get('/version', async (req, res) => {

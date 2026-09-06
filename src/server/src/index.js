@@ -14,6 +14,7 @@ import { authenticateToken } from './middleware/auth.js';
 import superAdminAudit from './middleware/superAdminAudit.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { metricsMiddleware, getMetrics, getPrometheusMetrics } from './middleware/metrics.js';
+import { requireFlag } from './utils/featureFlags.js';
 import { requestLogger, errorLogger, logger } from './utils/logger.js';
 import { requestTimeout, requestId } from './middleware/request-timeout.js';
 import authRoutes from './routes/auth.js';
@@ -60,6 +61,7 @@ import aiSettingsRoutes from './routes/aiSettings.js';
 import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
 import metricsRoutes from './routes/metrics.js';
+import adminRoutes from './routes/admin/index.js';
 
 const app = express();
 const server = createServer(app);
@@ -449,13 +451,15 @@ app.use('/api/search-history', authenticateToken, apiLimiter, csrfProtection, (r
 // 注意：aiProviders/aiChat 路由内部自带 /providers、/chat 前缀，故挂在 /api/ai 即可；
 // 而 aiConversationsRoutes 内部以根 / 定义（list=GET /、create=POST /、detail=GET /:id…），
 // 必须挂在 /api/ai/conversations 才能与前端调用的 /api/ai/conversations 对齐，否则全部 404。
-app.use('/api/ai', authenticateToken, apiLimiter, csrfProtection, superAdminAudit, (req, res, next) => {
+// 四个挂载点统一受 enable_ai_agent 开关强制：关闭时服务端直接 403（featureFlags.requireFlag）。
+const aiFlagGuard = requireFlag('enable_ai_agent', 'AI 助手已由管理员关闭，如需使用请联系管理员开启');
+app.use('/api/ai', authenticateToken, apiLimiter, csrfProtection, superAdminAudit, aiFlagGuard, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, aiProvidersRoutes, aiChatRoutes);
 
 // 对话路由：单独挂子路径 /api/ai/conversations（与前端路径一致）。
-app.use('/api/ai/conversations', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+app.use('/api/ai/conversations', authenticateToken, apiLimiter, csrfProtection, aiFlagGuard, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, aiConversationsRoutes);
@@ -467,13 +471,13 @@ app.use('/api/workflow-rules', authenticateToken, apiLimiter, csrfProtection, (r
 }, workflowRulesRoutes);
 
 // AI 长程记忆路由（单独子路径，避免与 /api/ai/conversations 的 / 与 /:id 冲突）
-app.use('/api/ai/memories', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+app.use('/api/ai/memories', authenticateToken, apiLimiter, csrfProtection, aiFlagGuard, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, aiMemoriesRoutes);
 
 // AI 用户偏好设置（默认供应商/模型/模式/思考/并行等，入库持久化）
-app.use('/api/ai/settings', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+app.use('/api/ai/settings', authenticateToken, apiLimiter, csrfProtection, aiFlagGuard, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, aiSettingsRoutes);
@@ -481,6 +485,9 @@ app.use('/api/ai/settings', authenticateToken, apiLimiter, csrfProtection, (req,
 // 分享链接路由（免费功能）。公开取用 /public/:token 无登录，故鉴权在路由内逐条处理；
 // 此处仅挂 apiLimiter，csrf 对 GET/Bearer 自动放行。
 app.use('/api/shared-links', apiLimiter, sharedLinksRoutes);
+
+// 后台管理 API（Admin Console · T-A1）：authenticateToken/requireRole(50)/superAdminAudit 由 router 内部统一挂载
+app.use('/api/admin', adminRoutes);
 
 // ============================================
 // 404 Handler

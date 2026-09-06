@@ -1,0 +1,166 @@
+.layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.roleListCard {
+  width: 250px;
+  flex-shrink: 0;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cardHeadTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cardHeadSub {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headRight {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.roleItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.roleItem:last-child {
+  border-bottom: none;
+}
+
+.roleItem:hover {
+  background: var(--surface-2);
+}
+
+.roleItemOn,
+.roleItemOn:hover {
+  background: var(--brand-soft);
+}
+
+.roleIcon {
+  font-size: 15px;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.roleMeta {
+  min-width: 0;
+}
+
+.roleName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.roleSub {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.callout {
+  margin: 14px 16px 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--amber-soft);
+  border: 1px solid #f3ddb0;
+  color: #92600a;
+  font-size: 11.5px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.callout :global(.anticon) {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.hintBar {
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.permTree {
+  padding: 0 0 8px;
+}
+
+.treeCat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.treeCat:first-child {
+  border-top: none;
+}
+
+.treeCatKey {
+  font-family: var(--font-mono);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.treeItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 8px 26px;
+  font-size: 12.5px;
+}
+
+.permKey {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.permDesc {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-left: 8px;
+}
+
+/* 超管角色：整树置灰不可编辑 */
+.treeDisabled {
+  opacity: 0.55;
+}

@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync 官网 · 方案 V1「Aurora 夜航」</title>
+<style>
+:root{
+  --bg:#0a0a12; --bg-2:#0e0e1a;
+  --surface:rgba(255,255,255,.035); --surface-h:rgba(255,255,255,.06);
+  --border:rgba(255,255,255,.09); --border-h:rgba(255,255,255,.16);
+  --text:#f2f2f8; --text-2:#a8a8bd; --text-3:#6f6f88;
+  --brand:#8b7cf6; --brand-2:#c3b6ff; --brand-deep:#5a4bd1;
+  --green:#5fd4a0;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,"Cascadia Mono","JetBrains Mono",Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+.num{font-variant-numeric:tabular-nums}
+.wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+
+/* 光晕背景 */
+.aurora{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5}
+.orb.a{width:640px;height:640px;background:radial-gradient(circle,#5a4bd1 0%,transparent 65%);top:-260px;left:-120px;animation:drift 18s ease-in-out infinite alternate}
+.orb.b{width:520px;height:520px;background:radial-gradient(circle,#8b5cf6 0%,transparent 65%);top:10%;right:-180px;opacity:.32;animation:drift 22s ease-in-out infinite alternate-reverse}
+.orb.c{width:700px;height:700px;background:radial-gradient(circle,#312e81 0%,transparent 70%);bottom:-300px;left:30%;opacity:.6}
+@keyframes drift{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,40px) scale(1.08)}}
+.grain{position:fixed;inset:0;z-index:-1;opacity:.5;background-image:radial-gradient(rgba(255,255,255,.028) 1px,transparent 1px);background-size:3px 3px;pointer-events:none}
+
+/* 导航 */
+nav{position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:blur(14px);background:rgba(10,10,18,.6);border-bottom:1px solid rgba(255,255,255,.06)}
+.nav-in{max-width:1120px;margin:0 auto;padding:0 28px;height:60px;display:flex;align-items:center;gap:28px}
+.logo{display:flex;align-items:center;gap:9px;font-weight:650;font-size:15px;letter-spacing:.2px}
+.logo-mark{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#8b7cf6,#5a4bd1);display:flex;align-items:center;justify-content:center;box-shadow:0 0 18px rgba(139,124,246,.5)}
+.nav-links{display:flex;gap:24px;font-size:13px;color:var(--text-2)}
+.nav-links a:hover{color:var(--text)}
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:10px;padding:8px 18px;font-size:13px;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text);transition:.18s}
+.btn:hover{border-color:var(--border-h);background:var(--surface-h)}
+.btn.primary{background:linear-gradient(135deg,#8b7cf6,#6a58e8);border-color:transparent;color:#fff;font-weight:550;box-shadow:0 4px 20px rgba(124,108,240,.4)}
+.btn.primary:hover{box-shadow:0 6px 28px rgba(124,108,240,.55);transform:translateY(-1px)}
+.btn.lg{padding:11px 26px;font-size:14px;border-radius:12px}
+nav .btn{margin-left:auto}
+
+/* Hero */
+.hero{padding:150px 0 80px;text-align:center;position:relative}
+.badge{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--brand-2);background:rgba(139,124,246,.1);border:1px solid rgba(139,124,246,.28);border-radius:20px;padding:5px 14px;margin-bottom:26px}
+.badge .pulse{width:6px;height:6px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 0 rgba(139,124,246,.6);animation:pulse 2s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 7px rgba(139,124,246,0)}}
+h1{font-size:56px;line-height:1.18;font-weight:680;letter-spacing:.5px}
+h1 .grad{background:linear-gradient(100deg,#c3b6ff 10%,#8b7cf6 45%,#6ee7d8 90%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p.sub{font-size:17px;color:var(--text-2);max-width:640px;margin:20px auto 34px}
+.hero-cta{display:flex;gap:12px;justify-content:center;margin-bottom:14px}
+.hero-note{font-size:12px;color:var(--text-3)}
+
+/* 同步演示动画 */
+.sync-demo{margin:64px auto 0;max-width:760px;display:flex;align-items:center;justify-content:center;gap:0;position:relative}
+.device{width:190px;height:290px;border-radius:26px;border:1px solid var(--border-h);background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02));position:relative;flex-shrink:0;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.device.pc{width:330px;height:210px;border-radius:16px;display:flex;flex-direction:column}
+.device .cam{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:52px;height:5px;border-radius:3px;background:rgba(255,255,255,.14)}
+.device .screen{position:absolute;inset:8px;border-radius:20px;background:linear-gradient(180deg,#12121f,#0d0d17);overflow:hidden;padding:14px}
+.device.pc .screen{position:static;border-radius:10px;flex:1}
+.screen .bar{display:flex;gap:5px;margin-bottom:10px}
+.screen .bar i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.16)}
+.clip{border-radius:10px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.05);padding:9px 11px;margin-bottom:9px;font-size:10.5px;color:var(--text-2);display:flex;gap:8px;align-items:center}
+.clip .ico{width:22px;height:22px;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px}
+.clip.hl{border-color:rgba(139,124,246,.55);background:rgba(139,124,246,.13);color:#e6e0ff;box-shadow:0 0 22px rgba(139,124,246,.25)}
+.clip.mono-code{font-family:var(--mono);font-size:9.5px}
+.clip-img{height:44px;border-radius:8px;background:linear-gradient(120deg,#3b2f8f,#6d5ce8 60%,#8b7cf6);margin-bottom:9px;position:relative;overflow:hidden}
+.clip-img::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 70% 30%,rgba(255,255,255,.35),transparent 40%)}
+.link-line{flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(139,124,246,.5),transparent);position:relative;margin:0 8px;min-width:120px}
+.packet{position:absolute;top:-5px;left:0;width:10px;height:10px;border-radius:3px;background:#c3b6ff;box-shadow:0 0 14px #8b7cf6;animation:fly 2.6s cubic-bezier(.45,0,.55,1) infinite}
+.packet.d2{animation-delay:1.3s;background:#6ee7d8;box-shadow:0 0 14px #6ee7d8}
+@keyframes fly{0%{left:0;opacity:0}8%{opacity:1}92%{opacity:1}100%{left:calc(100% - 10px);opacity:0}}
+.demo-caption{margin-top:26px;font-size:12.5px;color:var(--text-3)}
+.demo-caption b{color:var(--brand-2);font-weight:550}
+
+/* 信任条 */
+.trust{border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:rgba(255,255,255,.015)}
+.trust-in{max-width:1120px;margin:0 auto;padding:20px 28px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:18px}
+.trust-item{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text-2)}
+.trust-item svg{color:var(--brand)}
+
+/* 章节通用 */
+section{padding:90px 0}
+.sec-tag{font-size:12px;color:var(--brand-2);letter-spacing:2px;margin-bottom:14px;font-family:var(--mono)}
+h2{font-size:34px;font-weight:660;letter-spacing:.3px;line-height:1.3}
+.sec-sub{color:var(--text-2);font-size:15px;margin-top:12px;max-width:560px}
+
+/* 功能网格 */
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:44px}
+.feat{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:26px;transition:.2s;position:relative;overflow:hidden}
+.feat:hover{border-color:rgba(139,124,246,.4);background:var(--surface-h);transform:translateY(-3px)}
+.feat-ico{width:40px;height:40px;border-radius:11px;background:rgba(139,124,246,.13);border:1px solid rgba(139,124,246,.25);display:flex;align-items:center;justify-content:center;color:#c3b6ff;margin-bottom:16px}
+.feat h3{font-size:16px;font-weight:600;margin-bottom:8px}
+.feat p{font-size:13px;color:var(--text-2)}
+.feat .ghost-hl{position:absolute;top:-40px;right:-40px;width:130px;height:130px;border-radius:50%;background:radial-gradient(circle,rgba(139,124,246,.2),transparent 70%);opacity:0;transition:.25s}
+.feat:hover .ghost-hl{opacity:1}
+
+/* 安全区 */
+.sec-grid{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center}
+.check-list{margin-top:24px;display:flex;flex-direction:column;gap:13px}
+.check-item{display:flex;gap:12px;align-items:flex-start;font-size:14px;color:var(--text-2)}
+.check-item b{color:var(--text);font-weight:560}
+.check-item .ck{width:20px;height:20px;border-radius:50%;background:rgba(95,212,160,.12);border:1px solid rgba(95,212,160,.35);color:var(--green);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.enc-visual{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:34px;position:relative;overflow:hidden}
+.enc-visual .rowline{display:flex;align-items:center;gap:12px;margin-bottom:18px;position:relative;z-index:1}
+.enc-visual .lbl{width:64px;font-size:11px;color:var(--text-3);font-family:var(--mono);flex-shrink:0}
+.plain{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:13px}
+.cipher{flex:1;background:rgba(139,124,246,.08);border:1px solid rgba(139,124,246,.3);border-radius:10px;padding:12px 14px;font-family:var(--mono);font-size:11px;color:#a99cff;word-break:break-all;line-height:1.7}
+.lock-flow{display:flex;align-items:center;gap:10px;margin:6px 0 18px;position:relative;z-index:1}
+.lock-flow .arrow{flex:1;height:1px;background:linear-gradient(90deg,rgba(255,255,255,.2),rgba(139,124,246,.6))}
+.lock-badge{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:#c3b6ff;background:rgba(139,124,246,.12);border:1px solid rgba(139,124,246,.3);padding:4px 12px;border-radius:20px;font-family:var(--mono)}
+
+/* 定价 */
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:48px;align-items:stretch}
+.plan{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:30px;display:flex;flex-direction:column;position:relative}
+.plan.hot{border-color:rgba(139,124,246,.5);background:linear-gradient(180deg,rgba(139,124,246,.1),rgba(255,255,255,.03));box-shadow:0 20px 60px rgba(139,124,246,.15)}
+.plan .hot-tag{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#8b7cf6,#6a58e8);font-size:11px;font-weight:550;padding:4px 14px;border-radius:14px;color:#fff;letter-spacing:1px}
+.plan h3{font-size:15px;font-weight:600;color:var(--text-2)}
+.plan .price{font-size:40px;font-weight:680;margin:14px 0 2px;letter-spacing:.5px}
+.plan .price small{font-size:13px;color:var(--text-3);font-weight:400}
+.plan .per{font-size:12px;color:var(--text-3);margin-bottom:22px}
+.plan ul{list-style:none;display:flex;flex-direction:column;gap:11px;margin-bottom:28px;flex:1}
+.plan li{display:flex;gap:9px;font-size:13px;color:var(--text-2);align-items:flex-start}
+.plan li svg{color:var(--brand);margin-top:3px;flex-shrink:0}
+.plan .btn{width:100%;justify-content:center}
+
+/* 下载 */
+.dl-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:44px}
+.dl-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;cursor:pointer;transition:.18s;text-align:left}
+.dl-card:hover{border-color:rgba(139,124,246,.45);background:var(--surface-h);transform:translateY(-2px)}
+.dl-card .os{color:var(--brand-2);margin-bottom:12px}
+.dl-card b{display:block;font-size:15px;font-weight:600}
+.dl-card span{font-size:11.5px;color:var(--text-3)}
+
+/* FAQ */
+.faq{max-width:720px;margin:44px auto 0}
+.faq-item{border-bottom:1px solid var(--border)}
+.faq-item summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;padding:20px 4px;font-size:15px;font-weight:550}
+.faq-item summary::-webkit-details-marker{display:none}
+.faq-item summary .plus{color:var(--brand);font-size:18px;transition:.2s}
+.faq-item[open] summary .plus{transform:rotate(45deg)}
+.faq-item .ans{padding:0 4px 20px;color:var(--text-2);font-size:13.5px;max-width:640px}
+
+/* CTA 尾部 */
+.cta-band{background:linear-gradient(135deg,rgba(139,124,246,.16),rgba(110,231,216,.07));border:1px solid rgba(139,124,246,.3);border-radius:24px;padding:60px 40px;text-align:center;position:relative;overflow:hidden}
+.cta-band h2{margin-bottom:12px}
+.cta-band p{color:var(--text-2);margin-bottom:28px}
+
+footer{border-top:1px solid var(--border);padding:40px 0 60px;margin-top:90px}
+.foot-in{display:flex;justify-content:space-between;gap:40px;flex-wrap:wrap}
+.foot-col h4{font-size:12px;color:var(--text-3);letter-spacing:1px;margin-bottom:14px}
+.foot-col a{display:block;font-size:13px;color:var(--text-2);padding:4px 0}
+.foot-col a:hover{color:var(--text)}
+.foot-bottom{margin-top:36px;padding-top:22px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:12px;color:var(--text-3);flex-wrap:wrap;gap:10px}
+
+/* 滚动入场 */
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .7s ease,transform .7s ease}
+.reveal.in{opacity:1;transform:none}
+@media (max-width:900px){
+  h1{font-size:38px}.feat-grid{grid-template-columns:1fr 1fr}.plans{grid-template-columns:1fr}.sec-grid{grid-template-columns:1fr}.dl-grid{grid-template-columns:1fr 1fr}
+  .sync-demo{flex-direction:column;gap:26px}.link-line{min-width:0;width:1px;height:60px;background:linear-gradient(180deg,transparent,rgba(139,124,246,.5),transparent)}
+  .nav-links{display:none}
+}
+</style>
+</head>
+<body>
+<div class="aurora"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+<div class="grain"></div>
+
+<nav>
+  <div class="nav-in">
+    <div class="logo">
+      <div class="logo-mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 4H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 13 2 2 4-4"/></svg></div>
+      ClipSync
+    </div>
+    <div class="nav-links">
+      <a href="#features">功能</a><a href="#security">安全</a><a href="#pricing">定价</a><a href="#download">下载</a><a href="#faq">FAQ</a>
+    </div>
+    <button class="btn primary" style="padding:7px 16px;font-size:12.5px">免费下载</button>
+  </div>
+</nav>
+
+<!-- ═══ Hero ═══ -->
+<header class="hero">
+  <div class="wrap">
+    <div class="badge"><span class="pulse"></span>v1.5 现已发布 · 模板变量与验证码接力</div>
+    <h1>手机复制，<span class="grad">电脑秒粘</span></h1>
+    <p class="sub">ClipSync 在你的手机与电脑之间，建立一条端到端加密的剪贴板通道。复制即同步，粘贴即完成——验证码、链接、截图、文件，一个都不落地。</p>
+    <div class="hero-cta">
+      <button class="btn primary lg">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/></svg>
+        免费下载
+      </button>
+      <a class="btn lg" href="#pricing">查看定价</a>
+    </div>
+    <div class="hero-note">Windows · macOS · Linux · Android ｜ 无需注册即可体验 2 台设备</div>
+
+    <!-- 同步演示 -->
+    <div class="sync-demo reveal">
+      <div class="device">
+        <div class="cam"></div>
+        <div class="screen">
+          <div class="clip" style="opacity:.55"><span style="color:var(--text-3)">昨天</span> 会议纪要.docx</div>
+          <div class="clip hl mono-code">G-7K4QX</div>
+          <div style="font-size:9px;color:var(--text-3);text-align:center;margin-top:6px">已复制 · 验证码</div>
+        </div>
+      </div>
+      <div class="link-line">
+        <div class="packet"></div>
+        <div class="packet d2"></div>
+      </div>
+      <div class="device pc">
+        <div class="screen">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <div class="clip hl mono-code" style="margin-bottom:10px">G-7K4QX <span style="margin-left:auto;font-size:8.5px;color:#8b7cf6">刚刚 · 来自 Xiaomi 14</span></div>
+          <div class="clip" style="opacity:.7">https://github.com/clipsync</div>
+          <div class="clip-img"></div>
+          <div style="font-size:9.5px;color:var(--text-3)">⌘V 粘贴即可 · 历史保留 500 条</div>
+        </div>
+      </div>
+    </div>
+    <div class="demo-caption reveal">复制到手机的验证码，<b>1 秒后已出现在电脑剪贴板</b>——按下 ⌘V / Ctrl+V 的那一刻，它就在那里。</div>
+  </div>
+</header>
+
+<!-- 信任条 -->
+<div class="trust">
+  <div class="trust-in">
+    <div class="trust-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>AES-256-GCM 端到端加密</div>
+    <div class="trust-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/><path d="M15 3.13a4 4 0 0 1 0 7.75"/></svg>4 平台 · 多设备同时在线</div>
+    <div class="trust-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>最大 50MB 文件直传</div>
+    <div class="trust-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>断网可用 · 联网自动补同步</div>
+  </div>
+</div>
+
+<!-- ═══ 功能 ═══ -->
+<section id="features">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="sec-tag">FEATURES</div>
+      <h2>不只是同步，<br>是给剪贴板装上记忆与判断力</h2>
+      <p class="sec-sub">从一条文本到一部手机的相册，ClipSync 处理的是你每天复制粘贴的完整流。</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat reveal"><div class="ghost-hl"></div>
+        <div class="feat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11L9.5 22 19 9.5h-6.5L13 2z"/></svg></div>
+        <h3>实时同步</h3>
+        <p>基于 WebSocket 的毫秒级推送。手机上按下复制，电脑剪贴板在同一瞬间完成更新——没有「刷新」，没有「手动发送」。</p>
+      </div>
+      <div class="feat reveal"><div class="ghost-hl"></div>
+        <div class="feat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6M9 13h4"/><circle cx="17" cy="17" r="1"/></svg></div>
+        <h3>AI 智能分类</h3>
+        <p>自动识别验证码、链接、代码、地址与图片。验证码类内容会置顶并加急提醒，重要内容不再淹没在历史里。</p>
+      </div>
+      <div class="feat reveal"><div class="ghost-hl"></div>
+        <div class="feat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/><path d="M8.5 11h5"/></svg></div>
+        <h3>历史与全文搜索</h3>
+        <p>最多保留 5,000 条历史，支持全文检索与收藏夹归类。上个月复制过的那段配置，两秒找回来。</p>
+      </div>
+      <div class="feat reveal"><div class="ghost-hl"></div>
+        <div class="feat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="8.5" cy="10" r="1.5"/><path d="m5 17 4.5-5 3.5 4 3-3 3 4"/></svg></div>
+        <h3>图片与文件</h3>
+        <p>截图从电脑直接落进手机相册，最大 50MB 的文件分块直传。设计稿、压缩包、录屏，跨设备不再需要数据线。</p>
+      </div>
+      <div class="feat reveal"><div class="ghost-hl"></div>
+        <div class="feat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/><path d="M12 4v16"/><rect x="2" y="7" width="20" height="10" rx="2"/></svg></div>
+        <h3>模板与变量</h3>
+        <p>把常用回复、签名、代码片段存成模板，配合变量占位一键插入。客服、开发、运营的重复输入终结者。</p>
+      </div>
+      <div class="feat reveal"><div class="ghost-hl"></div>
+        <div class="feat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></div>
+        <h3>离线优先</h3>
+        <p>飞机上、地库里照常复制粘贴。所有操作进入本地队列，恢复联网后按序补同步，一条不丢。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 安全 ═══ -->
+<section id="security" style="background:rgba(255,255,255,.015);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+  <div class="wrap">
+    <div class="sec-grid">
+      <div class="reveal">
+        <div class="sec-tag">END-TO-END ENCRYPTION</div>
+        <h2>我们看不到你的内容，<br>连服务器的运维也看不到</h2>
+        <div class="check-list">
+          <div class="check-item"><span class="ck"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg></span><span><b>端到端加密</b>：AES-256-GCM 在你的设备上完成加解密，密钥永不离开设备</span></div>
+          <div class="check-item"><span class="ck"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg></span><span><b>服务器只存密文</b>：中转服务无明文内容，数据泄露也无内容可泄露</span></div>
+          <div class="check-item"><span class="ck"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg></span><span><b>扫码配对</b>：新设备通过密钥交换加入，随时可远程下线</span></div>
+          <div class="check-item"><span class="ck"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg></span><span><b>自动过期</b>：剪贴板内容按策略自动销毁，不留尾巴</span></div>
+        </div>
+      </div>
+      <div class="enc-visual reveal">
+        <div class="rowline"><span class="lbl">你的设备</span><div class="plain">验证码 G-7K4QX</div></div>
+        <div class="lock-flow"><div class="arrow"></div><span class="lock-badge">🔒 AES-256-GCM</span><div class="arrow" style="transform:scaleX(-1)"></div></div>
+        <div class="rowline"><span class="lbl">传输中</span><div class="cipher">9f:A7~kQ2$vN… 8dK|qZ&amp;1mT4x W#pL0z==</div></div>
+        <div class="lock-flow"><div class="arrow"></div><span class="lock-badge">🔓 仅目标设备可解</span><div class="arrow" style="transform:scaleX(-1)"></div></div>
+        <div class="rowline" style="margin-bottom:0"><span class="lbl">对方设备</span><div class="plain">验证码 G-7K4QX ✓ 已就绪</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 定价 ═══ -->
+<section id="pricing">
+  <div class="wrap">
+    <div class="reveal" style="text-align:center">
+      <div class="sec-tag">PRICING</div>
+      <h2>先免费用，值了再升级</h2>
+      <p class="sec-sub" style="margin-left:auto;margin-right:auto">免费版永久可用。所有付费方案均含 7 天 Pro 免费试用，随时取消。</p>
+    </div>
+    <div class="plans">
+      <div class="plan reveal">
+        <h3>Free 免费版</h3>
+        <div class="price num">¥0</div>
+        <div class="per">永久免费</div>
+        <ul>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>2 台设备实时同步</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>50 条剪贴板历史</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>端到端加密 · AI 分类</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>1MB 文件 · 100MB 存储</li>
+        </ul>
+        <button class="btn">免费开始</button>
+      </div>
+      <div class="plan hot reveal">
+        <div class="hot-tag">最受欢迎</div>
+        <h3>Pro 专业版</h3>
+        <div class="price num">¥9.9 <small>/ 月</small></div>
+        <div class="per">或 ¥99 / 年（省 17%）</div>
+        <ul>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>10 台设备同时在线</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>500 条历史 · 全文搜索 · 30 天版本回溯</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>10MB 文件 · 1GB 存储 · 推送提醒</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>模板变量 · 优先同步通道</li>
+        </ul>
+        <button class="btn primary">开始 7 天免费试用</button>
+      </div>
+      <div class="plan reveal">
+        <h3>Enterprise 企业版</h3>
+        <div class="price num">¥19.9 <small>/ 月</small></div>
+        <div class="per">或 ¥199 / 年（省 17%）</div>
+        <ul>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>100 台设备 · 5,000 条历史</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>50MB 文件 · 10GB 存储 · 365 天版本</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>团队管理 · 审计日志</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>优先技术支持</li>
+        </ul>
+        <button class="btn">联系团队</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 下载 ═══ -->
+<section id="download" style="padding-top:40px">
+  <div class="wrap">
+    <div class="reveal" style="text-align:center">
+      <div class="sec-tag">DOWNLOAD</div>
+      <h2>三个平台，一次装好</h2>
+    </div>
+    <div class="dl-grid">
+      <button class="dl-card reveal">
+        <div class="os"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 5.5 10.5 4.4v7.1H3zM12.5 4.2 21 3v8.5h-8.5zM3 13.5h7.5v7.1L3 19.5zM12.5 13.5H21V22l-8.5-1.2z"/></svg></div>
+        <b>Windows</b><span>Windows 10 及以上 · MSI 安装包</span>
+      </button>
+      <button class="dl-card reveal">
+        <div class="os"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M16.7 12.9c0-2.4 2-3.6 2.1-3.7-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.9-1.6 0-3.1 1-4 2.4-1.7 2.9-.4 7.3 1.2 9.7.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8-.1 0-2.6-1-2.6-3.7zM14.4 5.6c.7-.8 1.1-1.9 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg></div>
+        <b>macOS</b><span>macOS 13+ · Apple Silicon / Intel</span>
+      </button>
+      <button class="dl-card reveal">
+        <div class="os"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12.9 3-8 13.8"/><path d="M4.9 3h14.2L12.9 16.8 8.5 24"/><path d="m8.5 24 4.4-7.2L17.3 24"/><circle cx="12.9" cy="3" r="1.2"/></svg></div>
+        <b>Linux</b><span>AppImage / deb / rpm</span>
+      </button>
+      <button class="dl-card reveal">
+        <div class="os"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 3.5v17c0 .8.9 1.3 1.6.9l14.2-8.5c.7-.4.7-1.4 0-1.8L6.6 2.6C5.9 2.2 5 2.7 5 3.5z" transform="rotate(8 12 12)"/></svg></div>
+        <b>Android</b><span>Android 10+ · APK / 应用商店</span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ FAQ ═══ -->
+<section id="faq">
+  <div class="wrap">
+    <div class="reveal" style="text-align:center">
+      <div class="sec-tag">FAQ</div>
+      <h2>你可能想问</h2>
+    </div>
+    <div class="faq">
+      <details class="faq-item reveal">
+        <summary>端到端加密下，我换新手机怎么办？<span class="plus">＋</span></summary>
+        <div class="ans">新设备扫码配对时，密钥通过加密握手安全迁移；旧设备可在「设备管理」中随时下线。你也可以选择不迁移密钥、从全新密钥开始。</div>
+      </details>
+      <details class="faq-item reveal">
+        <summary>免费版和付费版最大的区别？<span class="plus">＋</span></summary>
+        <div class="ans">免费版核心同步与加密能力完整可用（2 台设备、50 条历史）。Pro 解锁多设备、大文件、全文搜索与更长版本历史。详见上方定价表。</div>
+      </details>
+      <details class="faq-item reveal">
+        <summary>支持 iOS 吗？<span class="plus">＋</span></summary>
+        <div class="ans">iOS 版在规划中。当前支持 Windows / macOS / Linux / Android，同一账号的剪贴板在已支持设备间实时同步。</div>
+      </details>
+      <details class="faq-item reveal">
+        <summary>我的剪贴板历史存在哪里？<span class="plus">＋</span></summary>
+        <div class="ans">内容以密文形式存储在服务器用于多设备同步，本机也保留本地副本。历史按套餐上限与过期策略自动清理，删除即彻底删除。</div>
+      </details>
+      <details class="faq-item reveal">
+        <summary>可以退订吗？<span class="plus">＋</span></summary>
+        <div class="ans">可以。订阅随时取消，取消当期结束前仍可继续使用；7 天试用期内取消不产生任何费用。</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ CTA ═══ -->
+<section style="padding-top:20px">
+  <div class="wrap">
+    <div class="cta-band reveal">
+      <h2>今晚第一次「手机复制，电脑秒粘」</h2>
+      <p>两台设备、两分钟装好，从此告别微信文件传输助手和「发给自己」的邮件。</p>
+      <button class="btn primary lg">免费下载 ClipSync</button>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-in">
+      <div style="max-width:280px">
+        <div class="logo" style="margin-bottom:12px">
+          <div class="logo-mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 4H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 13 2 2 4-4"/></svg></div>
+          ClipSync
+        </div>
+        <p style="font-size:12.5px;color:var(--text-3)">跨设备剪贴板同步工具。端到端加密，让每一次复制粘贴都安全抵达。</p>
+      </div>
+      <div class="foot-col"><h4>产品</h4><a href="#features">功能</a><a href="#pricing">定价</a><a href="#download">下载</a><a href="#">更新日志</a></div>
+      <div class="foot-col"><h4>支持</h4><a href="#faq">常见问题</a><a href="#">使用指南</a><a href="#">联系我们</a></div>
+      <div class="foot-col"><h4>关注</h4><a href="#">GitHub</a><a href="#">微信公众号</a><a href="#">X / Twitter</a></div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 ClipSync · 让剪贴板流动起来</span>
+      <span>服务协议 · 隐私政策 · 粤ICP备XXXXXXXX号</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>

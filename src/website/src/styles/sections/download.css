@@ -1,0 +1,21 @@
+/* ═══ 05 下载行（基线「下载行」段）═══ */
+.dl-row{display:flex;gap:0;border:1px solid var(--line-strong);border-radius:14px;overflow:hidden;margin-top:10px;background:#fff}
+.dl-cell{flex:1;padding:26px 22px;border-right:1px solid var(--line);cursor:pointer;transition:background .15s;position:relative}
+.dl-cell:last-child{border-right:none}
+.dl-cell:hover{background:#fafaf7}
+.dl-cell .os{margin-bottom:14px;color:var(--ink)}
+.dl-cell b{display:block;font-size:14.5px;font-weight:600}
+.dl-cell span{font-size:11.5px;color:var(--ink-3)}
+.dl-cell .go{position:absolute;top:20px;right:18px;color:var(--ink-3);font-size:14px;transition:.15s}
+.dl-cell:hover .go{color:var(--accent);transform:translateX(3px)}
+/* 工程化新增（T-W1）：占位链接的禁用态（main.ts 对 href="#" 的卡片置 aria-disabled）。
+   仅弱化箭头与指针提示，不改变卡片排版（视觉基线不受影响，真实链接上线后自动失效） */
+a.dl-cell[aria-disabled="true"]{cursor:default}
+a.dl-cell[aria-disabled="true"]:hover{background:#fff}
+a.dl-cell[aria-disabled="true"] .go{opacity:.4}
+a.dl-cell[aria-disabled="true"]:hover .go{color:var(--ink-3);transform:none}
+
+@media (max-width:960px){
+  .dl-row{flex-direction:column}
+  .dl-cell{border-right:none;border-bottom:1px solid var(--line)}
+}

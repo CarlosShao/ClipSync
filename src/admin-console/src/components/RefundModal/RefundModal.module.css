@@ -1,0 +1,10 @@
+.orderLine {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.7;
+}
+
+.orderLine b {
+  color: var(--text);
+}

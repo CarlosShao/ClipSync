@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync Admin · 方案 B「Daylight」亮色企业风</title>
+<style>
+:root{
+  --bg:#f4f5fa; --surface:#ffffff; --surface-2:#f7f8fc;
+  --border:#e6e8f0; --border-strong:#d4d7e3;
+  --text:#22252e; --text-2:#5a5f6e; --text-3:#9298a8;
+  --brand:#5a4bd1; --brand-hover:#4c3ec2; --brand-soft:#efecfc; --brand-border:#d8d1f8;
+  --green:#16a34a; --green-soft:#e8f7ee;
+  --amber:#d97706; --amber-soft:#fdf3e3;
+  --red:#dc2626; --red-soft:#fdecec;
+  --blue:#2563eb; --blue-soft:#e9f0fe;
+  --radius:8px;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums}
+button{font-family:inherit}
+svg{flex-shrink:0}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#cdd1de;border-radius:5px;border:2px solid var(--bg)}
+
+.app{display:none;min-height:100vh}
+.app.active{display:block}
+/* 顶部主导航 */
+.topnav{height:52px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:20px;position:sticky;top:0;z-index:30}
+.topnav .brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14px}
+.logo-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#6e5ce8,#5a4bd1);display:flex;align-items:center;justify-content:center}
+.topnav .brand span{color:var(--text-3);font-weight:400;font-size:11px;margin-left:2px}
+.topnav .divider{width:1px;height:20px;background:var(--border)}
+.top-search{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:7px;padding:6px 12px;width:300px;color:var(--text-3);font-size:12px}
+.topnav .right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#ef4444);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#fff}
+.env-tag{font-size:10px;color:var(--amber);background:var(--amber-soft);border:1px solid #f3ddb0;padding:2px 8px;border-radius:6px}
+
+/* 面包屑行 */
+.crumbbar{padding:14px 24px 0;display:flex;align-items:center;color:var(--text-3);font-size:12px}
+.crumbbar b{color:var(--text);font-weight:550}
+.crumbbar .acts{margin-left:auto;display:flex;gap:8px}
+
+.content{padding:14px 24px 32px}
+
+/* 侧页签（设置页用） */
+.layout{display:flex;gap:16px;align-items:flex-start}
+
+/* 组件 */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
+.card-h{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
+.card-h h3{font-size:13.5px;font-weight:600}
+.card-h .sub{font-size:11px;color:var(--text-3);margin-left:10px}
+.card-h .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:5px 13px;border-radius:7px;font-size:12px;cursor:pointer;border:1px solid var(--border-strong);background:var(--surface);color:var(--text-2)}
+.btn:hover{color:var(--brand);border-color:var(--brand-border)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:500}
+.btn.primary:hover{background:var(--brand-hover)}
+.btn.danger{color:var(--red);border-color:#f3c1c1;background:var(--red-soft)}
+.btn.sm{padding:3px 9px;font-size:11px;border-radius:6px}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.ghost:hover{background:var(--surface-2)}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:1.5px 9px;border-radius:5px;border:1px solid transparent}
+.tag .d{width:5px;height:5px;border-radius:50%}
+.tag.green{background:var(--green-soft);color:var(--green);border-color:#cdeeda}.tag.green .d{background:var(--green)}
+.tag.amber{background:var(--amber-soft);color:var(--amber);border-color:#f3ddb0}.tag.amber .d{background:var(--amber)}
+.tag.red{background:var(--red-soft);color:var(--red);border-color:#f3c1c1}.tag.red .d{background:var(--red)}
+.tag.blue{background:var(--blue-soft);color:var(--blue);border-color:#c9dafb}.tag.blue .d{background:var(--blue)}
+.tag.gray{background:var(--surface-2);color:var(--text-2);border-color:var(--border)}.tag.gray .d{background:var(--text-3)}
+.tag.brand{background:var(--brand-soft);color:var(--brand);border-color:var(--brand-border)}.tag.brand .d{background:var(--brand)}
+.input{background:var(--surface);border:1px solid var(--border-strong);border-radius:7px;padding:6px 11px;font-size:12px;color:var(--text);font-family:inherit;width:170px}
+.input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 2.5px var(--brand-soft)}
+select.input{width:auto;cursor:pointer}
+
+table{width:100%;border-collapse:collapse}
+th{font-size:11.5px;font-weight:550;color:var(--text-2);text-align:left;padding:9px 14px;background:var(--surface-2);border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text-2);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:#fafbff}
+td.strong{color:var(--text);font-weight:500}
+td.r,th.r{text-align:right}
+.mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:11.5px}
+thead .th-filter{font-weight:400;color:var(--text-3)}
+thead .th-filter select{border:none;background:transparent;font-size:11.5px;color:var(--text-3);cursor:pointer;font-family:inherit}
+.pager{display:flex;align-items:center;justify-content:flex-end;gap:5px;padding:10px 14px;color:var(--text-3);font-size:11px}
+.pager .pg{min-width:24px;height:24px;border-radius:5px;border:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.pager .pg.on{background:var(--brand);border-color:var(--brand);color:#fff}
+
+/* 页头 */
+.page-head{margin-bottom:14px}
+.page-head h2{font-size:18px;font-weight:600}
+.page-head p{font-size:12px;color:var(--text-3);margin-top:2px}
+
+/* 统计卡（AntD 风格：左侧色块图标） */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;display:flex;gap:14px;align-items:flex-start}
+.kpi-ico{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.kpi .lb{font-size:11.5px;color:var(--text-2)}
+.kpi .v{font-size:22px;font-weight:650;margin:2px 0;letter-spacing:.2px}
+.kpi .delta{font-size:11px;color:var(--text-3)}
+.kpi .delta b{font-weight:550}
+.kpi .delta .up{color:var(--green)}
+.kpi .delta .down{color:var(--red)}
+
+.tabs{display:flex;gap:22px;border-bottom:1px solid var(--border);background:var(--surface);padding:0 16px;border-radius:var(--radius) var(--radius) 0 0}
+.tab{padding:11px 2px;font-size:13px;color:var(--text-2);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:550}
+.tab .n{font-size:11px;color:var(--text-3);margin-left:3px}
+.tab.on .n{color:var(--brand)}
+
+.grid-2{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
+.legend{display:flex;gap:14px;font-size:11px;color:var(--text-2)}
+.legend i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:-1px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:13px;font-size:12px}
+.bar-row .bl{width:64px;color:var(--text-2)}
+.bar-track{flex:1;height:8px;border-radius:4px;background:var(--surface-2);border:1px solid var(--border);overflow:hidden}
+.bar-fill{height:100%;border-radius:4px}
+.bar-row .bv{width:60px;text-align:right;color:var(--text-3);font-size:11px}
+.ring-wrap{display:flex;gap:20px;align-items:center;padding:18px 16px}
+.ring{position:relative;width:110px;height:110px}
+.ring svg{transform:rotate(-90deg)}
+.ring .c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .c b{font-size:20px;font-weight:650}
+.ring .c span{font-size:10px;color:var(--text-3)}
+
+/* 抽屉 */
+.drawer-mask{position:fixed;inset:0;background:rgba(30,30,50,.35);z-index:50;display:none}
+.drawer{position:fixed;top:0;right:-480px;width:460px;height:100vh;background:var(--surface);border-left:1px solid var(--border);z-index:51;transition:right .25s ease;display:flex;flex-direction:column;box-shadow:-12px 0 40px rgba(30,30,60,.08)}
+.drawer.open{right:0}
+.drawer-mask.open{display:block}
+.drawer-h{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--surface-2)}
+.drawer-b{flex:1;overflow-y:auto;padding:18px}
+.kv{display:grid;grid-template-columns:92px 1fr;row-gap:9px;font-size:12px;margin-bottom:16px}
+.kv dt{color:var(--text-3)}
+.kv dd{color:var(--text)}
+.sect-title{font-size:12px;font-weight:600;color:var(--text-2);margin:16px 0 10px;display:flex;align-items:center;gap:8px}
+.sect-title::after{content:"";flex:1;height:1px;background:var(--border)}
+
+/* 弹窗 */
+.modal-mask{position:fixed;inset:0;background:rgba(30,30,50,.4);z-index:60;display:none;align-items:center;justify-content:center}
+.modal-mask.open{display:flex}
+.modal{width:430px;background:var(--surface);border-radius:12px;padding:20px;box-shadow:0 24px 70px rgba(30,30,60,.22)}
+.modal h4{font-size:14.5px;font-weight:600;margin-bottom:6px}
+.modal p{font-size:12px;color:var(--text-2);margin-bottom:13px}
+.modal .field{margin-bottom:13px}
+.modal .field label{display:block;font-size:11.5px;color:var(--text-2);margin-bottom:5px}
+.modal .field .input{width:100%}
+.modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+.callout{border-radius:8px;background:var(--amber-soft);border:1px solid #f3ddb0;color:#92600a;font-size:11.5px;padding:9px 12px;display:flex;gap:8px;margin-bottom:14px}
+
+/* 开关 */
+.switch{width:34px;height:19px;border-radius:10px;background:#d4d7e3;position:relative;cursor:pointer;transition:.15s;flex-shrink:0}
+.switch::after{content:"";position:absolute;width:15px;height:15px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.switch.on{background:var(--brand)}
+.switch.on::after{left:17px}
+
+/* 登录 */
+.login-wrap{min-height:100vh;display:grid;grid-template-columns:1.1fr 1fr;background:var(--surface)}
+.login-hero{background:linear-gradient(160deg,#241f4e 0%,#3b2f8f 55%,#5a4bd1 120%);color:#fff;display:flex;flex-direction:column;justify-content:center;padding:64px;position:relative;overflow:hidden}
+.login-hero .orb{position:absolute;border-radius:50%;filter:blur(70px);opacity:.5}
+.login-hero h1{font-size:30px;line-height:1.35;font-weight:650;margin-bottom:14px;position:relative}
+.login-hero p{color:rgba(255,255,255,.75);font-size:14px;max-width:400px;position:relative}
+.hero-chip{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:5px 14px;font-size:12px;margin-bottom:26px;position:relative;backdrop-filter:blur(4px)}
+.login-panel{display:flex;align-items:center;justify-content:center}
+.login-card{width:360px}
+.login-card h2{font-size:20px;font-weight:650;margin:18px 0 4px}
+.login-card .hint{font-size:12px;color:var(--text-3);margin-bottom:22px}
+.field{margin-bottom:15px}
+.field label{display:block;font-size:12px;color:var(--text-2);margin-bottom:6px;font-weight:500}
+.field .input{width:100%;padding:9px 12px}
+.otp-row{display:flex;gap:8px}
+.otp-row .otp{flex:1;text-align:center;font-size:17px;font-family:ui-monospace,Consolas,monospace;letter-spacing:8px}
+.login-foot{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-3);margin-top:10px}
+
+/* 设置页垂直页签 */
+.vtabs{width:170px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;flex-shrink:0}
+.vtab{padding:11px 16px;font-size:12.5px;color:var(--text-2);cursor:pointer;border-left:2px solid transparent}
+.vtab:hover{background:var(--surface-2)}
+.vtab.on{background:var(--brand-soft);color:var(--brand);border-left-color:var(--brand);font-weight:550}
+.flag-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.flag-row:last-child{border-bottom:none}
+.flag-row .fi{flex:1}
+.flag-row .fi b{font-size:12.5px;font-weight:550;display:block}
+.flag-row .fi span{font-size:11px;color:var(--text-3)}
+.form-row{display:grid;grid-template-columns:130px 1fr;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border);font-size:12px}
+.form-row:last-child{border-bottom:none}
+.form-row label{color:var(--text-2)}
+
+/* 角色页布局 */
+.role-list{width:250px;flex-shrink:0}
+.role-item{padding:13px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:10px}
+.role-item:last-child{border-bottom:none}
+.role-item:hover{background:var(--surface-2)}
+.role-item.on{background:var(--brand-soft)}
+.role-item b{font-size:13px;display:block}
+.role-item span{font-size:11px;color:var(--text-3)}
+.perm-tree{padding:8px 0}
+.tree-cat{padding:9px 16px;font-size:11px;color:var(--text-3);background:var(--surface-2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.tree-item{display:flex;align-items:center;gap:10px;padding:8px 16px 8px 26px;font-size:12.5px}
+.tree-item .desc{color:var(--text-3);font-size:11px;margin-left:auto}
+.tree-item input{accent-color:var(--brand);width:14px;height:14px}
+.tree-item.half{color:var(--text-2)}
+.tree-item.half input{opacity:.5}
+</style>
+</head>
+<body>
+
+<!-- ═════════ 登录页 ═════════ -->
+<div class="app active" id="view-login">
+  <div class="login-wrap">
+    <div class="login-hero">
+      <div class="orb" style="width:420px;height:420px;background:#7c6cf0;top:-120px;right:-80px"></div>
+      <div class="orb" style="width:300px;height:300px;background:#4338ca;bottom:-100px;left:-60px"></div>
+      <div class="hero-chip">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c3b6ff" stroke-width="2" stroke-linecap="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        端到端加密 · 管理数据同样受保护
+      </div>
+      <h1>ClipSync 运营管理台<br>用户 · 支付 · 审计 · 权限，一处尽览</h1>
+      <p>为 ClipSync 团队打造的统一后台：看板洞察、订单退款、账户治理与平台配置，全部操作留痕可溯。</p>
+    </div>
+    <div class="login-panel">
+      <div class="login-card">
+        <div class="brand" style="display:flex;align-items:center;gap:9px">
+          <div class="logo-mark">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 4H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 13 2 2 4-4"/></svg>
+          </div>
+          <b style="font-size:14px">ClipSync Admin</b>
+        </div>
+        <h2>欢迎回来</h2>
+        <div class="hint">请使用管理员账号登录，登录后将验证两步验证码</div>
+        <div class="field"><label>账号</label><input class="input" value="carlos@clipstream.work" readonly style="color:var(--text-2)"></div>
+        <div class="field"><label>密码</label><input class="input" type="password" value="·ize9!K2VvQ#" readonly style="color:var(--text-2)"></div>
+        <div class="field">
+          <label>两步验证码（6 位动态码）</label>
+          <div class="otp-row">
+            <input class="input otp" value="482917" readonly>
+            <button class="btn" title="剩余 24 秒">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            </button>
+          </div>
+        </div>
+        <button class="btn primary" style="width:100%;justify-content:center;padding:9px" onclick="go('dashboard')">登 录</button>
+        <div class="login-foot"><span>忘记密码？</span><span>登录即代表同意《运营安全规范》</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════ 主应用 ═════════ -->
+<div class="app" id="view-app">
+  <div class="topnav">
+    <div class="brand">
+      <div class="logo-mark">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 4H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 13 2 2 4-4"/></svg>
+      </div>
+      ClipSync Admin <span>v0.1</span>
+    </div>
+    <div class="divider"></div>
+    <nav style="display:flex;gap:4px" id="topnav">
+      <button class="btn ghost" data-page="dashboard" style="color:var(--text)">数据看板</button>
+      <button class="btn ghost" data-page="users">用户管理</button>
+      <button class="btn ghost" data-page="orders">订单与支付</button>
+      <button class="btn ghost" data-page="audit">审计日志</button>
+      <button class="btn ghost" data-page="roles">角色权限</button>
+      <button class="btn ghost" data-page="settings">系统设置</button>
+    </nav>
+    <div class="right">
+      <span class="env-tag">DEV 环境</span>
+      <div class="top-search" style="width:220px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+        搜索：用户 / 订单 / IP
+      </div>
+      <button class="btn ghost" title="通知" style="position:relative;padding:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+        <span style="position:absolute;top:4px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--red)"></span>
+      </button>
+      <div class="avatar">CS</div>
+      <button class="btn ghost" onclick="go('login')" title="退出">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="content">
+    <!-- ═══ 看板 ═══ -->
+    <div class="page" id="page-dashboard">
+      <div class="page-head"><h2>数据看板</h2><p>统计截至 2026-09-05 20:41 · 每日 02:00 生成离线快照</p></div>
+      <div class="kpis">
+        <div class="kpi">
+          <div class="kpi-ico" style="background:var(--brand-soft);color:var(--brand)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="9.5" r="2.5"/><path d="M17 14.5c2.8.3 4.5 2.3 4.5 5"/></svg></div>
+          <div><div class="lb">注册用户</div><div class="v num">12,847</div><div class="delta">本周 <b class="up">+86</b> · 环比 +3.1%</div></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-ico" style="background:var(--green-soft);color:var(--green)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 6-8 3 4"/><path d="M14 6h7v7"/></svg></div>
+          <div><div class="lb">本月营收</div><div class="v num">¥41,286</div><div class="delta">环比 <b class="up">+8.2%</b> · 退款率 0.8%</div></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-ico" style="background:var(--blue-soft);color:var(--blue)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></div>
+          <div><div class="lb">MRR（月度经常性收入）</div><div class="v num">¥12,480</div><div class="delta">年付占比 <b>41%</b></div></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-ico" style="background:var(--amber-soft);color:var(--amber)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/></svg></div>
+          <div><div class="lb">在线设备（实时）</div><div class="v num">348</div><div class="delta">昨日同时段 <b class="down">-12</b></div></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-h">
+            <h3>近 14 天订单金额</h3>
+            <div class="right legend"><span><i style="background:#5a4bd1"></i>订单金额</span><span><i style="background:#c3b6ff"></i>退款金额</span></div>
+          </div>
+          <div style="padding:14px 10px 6px">
+            <svg width="100%" height="190" viewBox="0 0 760 190" preserveAspectRatio="none">
+              <g stroke="#eef0f6" stroke-width="1">
+                <line x1="0" y1="35" x2="760" y2="35"/><line x1="0" y1="75" x2="760" y2="75"/><line x1="0" y1="115" x2="760" y2="115"/><line x1="0" y1="155" x2="760" y2="155"/>
+              </g>
+              <g fill="#5a4bd1">
+                <rect x="14" y="120" width="26" height="52" rx="3"/><rect x="68" y="108" width="26" height="64" rx="3"/><rect x="122" y="126" width="26" height="46" rx="3"/><rect x="176" y="96" width="26" height="76" rx="3"/><rect x="230" y="112" width="26" height="60" rx="3"/><rect x="284" y="84" width="26" height="88" rx="3"/><rect x="338" y="102" width="26" height="70" rx="3"/><rect x="392" y="70" width="26" height="102" rx="3"/><rect x="446" y="88" width="26" height="84" rx="3"/><rect x="500" y="58" width="26" height="114" rx="3"/><rect x="554" y="76" width="26" height="96" rx="3"/><rect x="608" y="46" width="26" height="126" rx="3"/><rect x="662" y="62" width="26" height="110" rx="3"/><rect x="716" y="30" width="26" height="142" rx="3"/>
+              </g>
+              <g fill="#c3b6ff">
+                <rect x="14" y="176" width="26" height="3" rx="1.5"/><rect x="230" y="174" width="26" height="4" rx="2"/><rect x="500" y="175" width="26" height="3" rx="1.5"/><rect x="662" y="174" width="26" height="4" rx="2"/>
+              </g>
+              <g fill="#9298a8" font-size="10" font-family="ui-monospace,Consolas,monospace">
+                <text x="14" y="186">08-23</text><text x="392" y="186">08-30</text><text x="716" y="186">09-05</text>
+              </g>
+            </svg>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="card">
+            <div class="card-h"><h3>付费转化</h3></div>
+            <div class="ring-wrap">
+              <div class="ring">
+                <svg width="110" height="110" viewBox="0 0 110 110">
+                  <circle cx="55" cy="55" r="46" fill="none" stroke="#eef0f6" stroke-width="10"/>
+                  <circle cx="55" cy="55" r="46" fill="none" stroke="#5a4bd1" stroke-width="10" stroke-linecap="round" stroke-dasharray="281" stroke-dashoffset="254"/>
+                </svg>
+                <div class="c"><b class="num">9.7%</b><span>付费转化率</span></div>
+              </div>
+              <div style="flex:1">
+                <div class="bar-row" style="margin-bottom:10px"><span class="bl" style="width:52px">Pro</span><div class="bar-track" style="height:7px"><div class="bar-fill" style="width:85%;background:#5a4bd1"></div></div><span class="bv num">1,052</span></div>
+                <div class="bar-row" style="margin-bottom:0"><span class="bl" style="width:52px">Enterprise</span><div class="bar-track" style="height:7px"><div class="bar-fill" style="width:15%;background:#2563eb"></div></div><span class="bv num">191</span></div>
+                <div style="font-size:11px;color:var(--text-3);margin-top:12px">付费用户 1,243 / 12,847 · 试用中 96</div>
+              </div>
+            </div>
+          </div>
+          <div class="card" style="flex:1">
+            <div class="card-h"><h3>支付渠道占比</h3><span class="sub">近 30 天</span></div>
+            <div style="padding:16px">
+              <div class="bar-row"><span class="bl">微信支付</span><div class="bar-track"><div class="bar-fill" style="width:64%;background:#16a34a"></div></div><span class="bv num">64%</span></div>
+              <div class="bar-row"><span class="bl">支付宝</span><div class="bar-track"><div class="bar-fill" style="width:22%;background:#2563eb"></div></div><span class="bv num">22%</span></div>
+              <div class="bar-row" style="margin-bottom:0"><span class="bl">Stripe</span><div class="bar-track"><div class="bar-fill" style="width:14%;background:#d97706"></div></div><span class="bv num">14%</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>待处理事项</h3><span class="sub">按优先级排序</span></div>
+        <table>
+          <thead><tr><th>事项</th><th>类型</th><th>关联对象</th><th>发生时间</th><th style="width:150px">操作</th></tr></thead>
+          <tbody>
+            <tr><td class="strong">退款申请待审核 × 2</td><td><span class="tag red">支付</span></td><td class="mono">CS2026090517… / CS2026090412…</td><td class="mono">2 小时前</td><td><button class="btn sm primary" onclick="go('orders')">去处理</button></td></tr>
+            <tr><td class="strong">7 天试用即将到期用户 × 96</td><td><span class="tag amber">订阅</span></td><td>试用转化待跟进</td><td class="mono">每日 09:00 汇总</td><td><button class="btn sm" onclick="go('users')">查看名单</button></td></tr>
+            <tr><td class="strong">对账差异 1 笔（Stripe）</td><td><span class="tag amber">对账</span></td><td class="mono">pi_3QkR7a… 金额差 ¥0.01</td><td class="mono">今日 02:00</td><td><button class="btn sm">查看详情</button></td></tr>
+            <tr><td class="strong">新设备异常登录 IP 群 × 1 用户</td><td><span class="tag blue">安全</span></td><td class="mono">usr_2e91…（+86 159****8834）</td><td class="mono">昨日 22:41</td><td><button class="btn sm" onclick="go('audit')">审计日志</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ 用户管理 ═══ -->
+    <div class="page" id="page-users" style="display:none">
+      <div class="page-head"><h2>用户管理</h2><p>共 12,847 名用户 · 今日新增 86 · 停用 41</p></div>
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;gap:10px;padding:12px 14px;align-items:center;border-bottom:1px solid var(--border)">
+          <input class="input" placeholder="搜索手机号 / 昵称 / 用户 ID" style="width:250px">
+          <select class="input"><option>套餐：全部</option><option>Free</option><option>Pro</option><option>Enterprise</option></select>
+          <select class="input"><option>状态：全部</option><option>正常</option><option>已停用</option></select>
+          <select class="input"><option>注册时间：全部</option><option>近 7 天</option><option>近 30 天</option></select>
+          <button class="btn primary" style="margin-left:auto">查询</button>
+          <button class="btn">重置</button>
+        </div>
+        <table>
+          <thead><tr><th style="width:34px"><input type="checkbox"></th><th>用户 <span class="th-filter">↕</span></th><th>手机号 <span class="th-filter">🔒 打码</span></th><th>套餐 <span class="th-filter"><select onchange=""><option>全部</option><option>Free</option><option>Pro</option></select></span></th><th>设备</th><th>累计消费</th><th>注册时间 <span class="th-filter">↕</span></th><th>状态</th><th style="width:170px">操作</th></tr></thead>
+          <tbody onclick="openDrawer(event)">
+            <tr><td><input type="checkbox"></td><td class="strong">林清和</td><td class="mono">138****2765</td><td><span class="tag brand"><i class="d"></i>Pro</span></td><td class="num">4</td><td class="r num strong">¥426.60</td><td class="mono">2025-11-02</td><td><span class="tag green"><i class="d"></i>正常</span></td><td><button class="btn sm">详情</button><button class="btn sm">改套餐</button><button class="btn sm danger">停用</button></td></tr>
+            <tr><td><input type="checkbox"></td><td class="strong">chen_ming</td><td class="mono">186****4402</td><td><span class="tag blue"><i class="d"></i>Enterprise</span></td><td class="num">12</td><td class="r num strong">¥1,788.00</td><td class="mono">2025-08-19</td><td><span class="tag green"><i class="d"></i>正常</span></td><td><button class="btn sm">详情</button><button class="btn sm">改套餐</button><button class="btn sm danger">停用</button></td></tr>
+            <tr><td><input type="checkbox"></td><td class="strong">王小雨</td><td class="mono">159****8834</td><td><span class="tag gray"><i class="d"></i>Free</span></td><td class="num">1</td><td class="r num">¥0.00</td><td class="mono">2026-09-04</td><td><span class="tag green"><i class="d"></i>正常</span></td><td><button class="btn sm">详情</button><button class="btn sm">改套餐</button><button class="btn sm danger">停用</button></td></tr>
+            <tr><td><input type="checkbox"></td><td class="strong">yuki_dev</td><td class="mono">137****5521</td><td><span class="tag amber"><i class="d"></i>试用 · 剩 4 天</span></td><td class="num">3</td><td class="r num">¥0.00</td><td class="mono">2026-01-27</td><td><span class="tag green"><i class="d"></i>正常</span></td><td><button class="btn sm">详情</button><button class="btn sm">转正套餐</button><button class="btn sm danger">停用</button></td></tr>
+            <tr><td><input type="checkbox"></td><td class="strong">赵拓</td><td class="mono">188****1097</td><td><span class="tag gray"><i class="d"></i>Free</span></td><td class="num">2</td><td class="r num">¥0.00</td><td class="mono">2026-03-15</td><td><span class="tag red"><i class="d"></i>已停用</span></td><td><button class="btn sm">详情</button><button class="btn sm">启用</button><button class="btn sm danger">删除</button></td></tr>
+            <tr><td><input type="checkbox"></td><td class="strong">Sylvia W.</td><td class="mono">+44****9201</td><td><span class="tag brand"><i class="d"></i>Pro · 年付</span></td><td class="num">5</td><td class="r num strong">¥198.00</td><td class="mono">2025-12-08</td><td><span class="tag green"><i class="d"></i>正常</span></td><td><button class="btn sm">详情</button><button class="btn sm">改套餐</button><button class="btn sm danger">停用</button></td></tr>
+            <tr><td><input type="checkbox"></td><td class="strong">lee.dev</td><td class="mono">150****6643</td><td><span class="tag gray"><i class="d"></i>Free</span></td><td class="num">1</td><td class="r num">¥19.90</td><td class="mono">2026-08-30</td><td><span class="tag green"><i class="d"></i>正常</span></td><td><button class="btn sm">详情</button><button class="btn sm">改套餐</button><button class="btn sm danger">停用</button></td></tr>
+          </tbody>
+        </table>
+        <div class="pager">共选择 0 项 · 12,847 条 <button class="btn sm" style="margin:0 8px">批量停用</button> <span class="pg">‹</span><span class="pg on">1</span><span class="pg">2</span><span class="pg">3</span><span class="pg">…</span><span class="pg">1285</span><span class="pg">›</span></div>
+      </div>
+    </div>
+
+    <!-- ═══ 订单与支付 ═══ -->
+    <div class="page" id="page-orders" style="display:none">
+      <div class="page-head"><h2>订单与支付</h2><p>本月 128 笔 · 成交 ¥41,286 · 待处理退款 2 笔</p></div>
+      <div class="card">
+        <div class="tabs">
+          <div class="tab on">全部 <span class="n">128</span></div>
+          <div class="tab">待支付 <span class="n">6</span></div>
+          <div class="tab">已支付 <span class="n">114</span></div>
+          <div class="tab">退款处理中 <span class="n">2</span></div>
+          <div class="tab">已退款 <span class="n">4</span></div>
+          <div class="tab">已失败 <span class="n">4</span></div>
+        </div>
+        <div style="display:flex;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);align-items:center">
+          <input class="input" placeholder="订单号 / 第三方流水号" style="width:230px">
+          <select class="input"><option>渠道：全部</option><option>微信支付</option><option>支付宝</option><option>Stripe</option></select>
+          <select class="input"><option>时间：近 7 天</option><option>近 30 天</option></select>
+          <button class="btn" style="margin-left:auto">对账报告</button>
+          <button class="btn">导出</button>
+        </div>
+        <table>
+          <thead><tr><th>订单号</th><th>用户</th><th>套餐</th><th>渠道</th><th class="r">金额</th><th class="r">退款</th><th>支付时间</th><th>状态</th><th style="width:190px">操作</th></tr></thead>
+          <tbody>
+            <tr><td class="mono strong">CS20260905204188</td><td>林***</td><td>Pro · 年付</td><td>微信支付</td><td class="r num strong">¥99.00</td><td class="r">—</td><td class="mono">09-05 20:41</td><td><span class="tag green"><i class="d"></i>已支付</span></td><td><button class="btn sm">详情</button><button class="btn sm">发票</button><button class="btn sm danger" onclick="openModal(event)">退款</button></td></tr>
+            <tr><td class="mono strong">CS20260905184402</td><td>chen***</td><td>Enterprise · 年付</td><td>Stripe</td><td class="r num strong">¥199.00</td><td class="r">—</td><td class="mono">—</td><td><span class="tag amber"><i class="d"></i>待支付</span></td><td><button class="btn sm">详情</button><button class="btn sm">催付</button><button class="btn sm ghost">关闭</button></td></tr>
+            <tr><td class="mono strong">CS20260905172256</td><td>159****8834</td><td>Pro · 月付</td><td>微信支付</td><td class="r num strong">¥9.90</td><td class="r num">¥9.90</td><td class="mono">09-05 17:20</td><td><span class="tag red"><i class="d"></i>已退款</span></td><td><button class="btn sm">详情</button><button class="btn sm">审计</button></td></tr>
+            <tr><td class="mono strong">CS20260905161093</td><td>wang***</td><td>Pro · 月付</td><td>微信支付</td><td class="r num strong">¥9.90</td><td class="r">—</td><td class="mono">09-05 16:10</td><td><span class="tag green"><i class="d"></i>已支付</span></td><td><button class="btn sm">详情</button><button class="btn sm">发票</button><button class="btn sm danger" onclick="openModal(event)">退款</button></td></tr>
+            <tr><td class="mono strong">CS20260905152871</td><td>+44****9201</td><td>Pro · 年付</td><td>Stripe</td><td class="r num strong">¥99.00</td><td class="r">—</td><td class="mono">09-05 15:28</td><td><span class="tag green"><i class="d"></i>已支付</span></td><td><button class="btn sm">详情</button><button class="btn sm">发票</button><button class="btn sm danger" onclick="openModal(event)">退款</button></td></tr>
+            <tr><td class="mono strong">CS20260904234710</td><td>137****5521</td><td>Pro · 月付</td><td>支付宝</td><td class="r num strong">¥9.90</td><td class="r">—</td><td class="mono">—</td><td><span class="tag gray"><i class="d"></i>已关闭</span></td><td><button class="btn sm">详情</button></td></tr>
+            <tr><td class="mono strong">CS20260904211244</td><td>lee.dev</td><td>Enterprise · 月付</td><td>支付宝</td><td class="r num strong">¥19.90</td><td class="r">—</td><td class="mono">09-04 21:12</td><td><span class="tag green"><i class="d"></i>已支付</span></td><td><button class="btn sm">详情</button><button class="btn sm">发票</button><button class="btn sm danger" onclick="openModal(event)">退款</button></td></tr>
+          </tbody>
+        </table>
+        <div class="pager">128 条 <span class="pg">‹</span><span class="pg on">1</span><span class="pg">2</span><span class="pg">3</span><span class="pg">…</span><span class="pg">13</span><span class="pg">›</span></div>
+      </div>
+    </div>
+
+    <!-- ═══ 审计日志 ═══ -->
+    <div class="page" id="page-audit" style="display:none">
+      <div class="page-head"><h2>审计日志</h2><p>保留 1 年 · 共 2,431,088 条 · 今日 4,112 条 · <b style="color:var(--red)">红点为敏感操作</b></p></div>
+      <div class="card">
+        <div style="display:flex;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);align-items:center;background:var(--surface-2);border-radius:8px 8px 0 0">
+          <select class="input"><option>动作：全部</option><option>登录/登出</option><option>敏感操作</option><option>支付相关</option></select>
+          <select class="input"><option>操作者：全部</option><option>Carlos（超管）</option><option>Yuki（管理员）</option><option>终端用户</option></select>
+          <select class="input"><option>结果：全部</option><option>成功</option><option>失败</option></select>
+          <input class="input" placeholder="IP 地址，如 116.24.*.*">
+          <input class="input" placeholder="日期范围：09-01 ~ 09-05" style="width:200px">
+          <button class="btn primary">查询</button>
+          <button class="btn" style="margin-left:auto">导出 CSV</button>
+        </div>
+        <table>
+          <thead><tr><th style="width:26px"></th><th>时间</th><th>操作者</th><th>动作</th><th>资源</th><th>详情摘要</th><th>IP</th><th>结果</th></tr></thead>
+          <tbody>
+            <tr style="background:var(--red-soft)"><td><span style="color:var(--red)">●</span></td><td class="mono">09-05 20:31:12</td><td class="strong">Carlos <span class="tag brand" style="margin-left:3px">超管</span></td><td class="mono strong" style="color:var(--red)">admin.refund.execute</td><td class="mono">CS20260905172256</td><td style="color:var(--text-2)">amount=9.90, reason="用户重复支付"</td><td class="mono">116.24.*.*</td><td><span class="tag green">成功</span></td></tr>
+            <tr style="background:var(--red-soft)"><td><span style="color:var(--red)">●</span></td><td class="mono">09-05 19:58:03</td><td class="strong">Yuki <span class="tag blue" style="margin-left:3px">管理员</span></td><td class="mono strong" style="color:var(--red)">user.deactivate</td><td class="mono">usr_8f31…c2</td><td style="color:var(--text-2)">reason="违反社区规范 #3"</td><td class="mono">223.104.*.*</td><td><span class="tag green">成功</span></td></tr>
+            <tr><td></td><td class="mono">09-05 19:12:44</td><td>138****2765</td><td class="mono">user.login</td><td class="mono">session</td><td style="color:var(--text-2)">2FA=TOTP, device="Windows 11"</td><td class="mono">116.24.*.*</td><td><span class="tag green">成功</span></td></tr>
+            <tr><td></td><td class="mono">09-05 18:47:09</td><td>159****8834</td><td class="mono">user.login</td><td class="mono">session</td><td style="color:var(--text-2)">method=password</td><td class="mono">112.10.*.*</td><td><span class="tag red">失败</span></td></tr>
+            <tr style="background:var(--red-soft)"><td><span style="color:var(--red)">●</span></td><td class="mono">09-05 17:35:51</td><td class="strong">Carlos <span class="tag brand" style="margin-left:3px">超管</span></td><td class="mono strong" style="color:var(--red)">role.assign</td><td class="mono">usr_yuki…</td><td style="color:var(--text-2)">role="admin", granted_by="super_admin"</td><td class="mono">116.24.*.*</td><td><span class="tag green">成功</span></td></tr>
+            <tr><td></td><td class="mono">09-05 16:02:30</td><td>186****4402</td><td class="mono">data.export</td><td class="mono">clipboard</td><td style="color:var(--text-2)">count=214, format=csv</td><td class="mono">101.87.*.*</td><td><span class="tag green">成功</span></td></tr>
+            <tr><td></td><td class="mono">09-05 15:41:18</td><td>150****6643</td><td class="mono">device.pair</td><td class="mono">dev_3a8f…</td><td style="color:var(--text-2)">platform=android, app=1.4.2</td><td class="mono">117.136.*.*</td><td><span class="tag green">成功</span></td></tr>
+          </tbody>
+        </table>
+        <div class="pager">显示 7 / 4,112 条 <span class="pg">‹</span><span class="pg on">1</span><span class="pg">2</span><span class="pg">3</span><span class="pg">…</span><span class="pg">588</span><span class="pg">›</span></div>
+      </div>
+    </div>
+
+    <!-- ═══ 角色权限 ═══ -->
+    <div class="page" id="page-roles" style="display:none">
+      <div class="page-head"><h2>角色与权限</h2><p>左侧选择角色，右侧编辑其权限 · 级别约束：低级别不可管理高级别</p></div>
+      <div class="layout">
+        <div class="card role-list">
+          <div class="card-h"><h3>角色</h3><div class="right"><button class="btn sm primary">+ 新建</button></div></div>
+          <div class="role-item on">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5a4bd1" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="5"/><path d="m8.5 12.5-2 8 5.5-3 5.5 3-2-8"/></svg>
+            <div><b>超级管理员</b><span>level 100 · 1 人 · 系统内置</span></div>
+          </div>
+          <div class="role-item">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/><path d="M15 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <div><b>管理员</b><span>level 50 · 3 人 · 系统内置</span></div>
+          </div>
+          <div class="role-item">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9298a8" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
+            <div><b>普通用户</b><span>level 10 · 12,843 人 · 默认</span></div>
+          </div>
+          <div class="role-item">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="1.8" stroke-linecap="round"><path d="M12 2 14.9 8.6 22 9.3l-5.4 4.7 1.6 6.9-6.2-3.7-6.2 3.7 1.6-6.9L2 9.3l7.1-.7z"/></svg>
+            <div><b>客服专员 <span class="tag amber" style="margin-left:4px">自定义</span></b><span>level 30 · 2 人 · 可分配</span></div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div class="card">
+            <div class="card-h">
+              <h3>超级管理员 · 权限配置</h3>
+              <span class="sub">共 24 项权限 · 已选 24 项</span>
+              <div class="right"><button class="btn sm">重置</button><button class="btn sm primary">保存（记入审计）</button></div>
+            </div>
+            <div class="callout" style="margin:14px 16px 0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-top:1px"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+              超级管理员拥有全部权限且不可修改；系统角色由 <b>super_admin</b> 专属维护。数据库触发器保证超管全局唯一。
+            </div>
+            <div class="perm-tree">
+              <div class="tree-cat">用户与设备（admin.users / admin.devices）</div>
+              <div class="tree-item"><input type="checkbox" checked>查看用户列表与详情<span class="desc">admin.users.view</span></div>
+              <div class="tree-item"><input type="checkbox" checked>停用 / 启用 / 强制下线<span class="desc">admin.users.manage</span></div>
+              <div class="tree-item"><input type="checkbox" checked>删除账户（高危）<span class="desc">admin.users.delete</span></div>
+              <div class="tree-item"><input type="checkbox" checked>设备远程下线 / 解绑<span class="desc">admin.devices.manage</span></div>
+              <div class="tree-cat">订阅与支付（admin.subscriptions / admin.orders）</div>
+              <div class="tree-item"><input type="checkbox" checked>人工赠期 / 调整套餐<span class="desc">admin.subscriptions.grant</span></div>
+              <div class="tree-item"><input type="checkbox" checked>执行退款（高危）<span class="desc">admin.orders.refund</span></div>
+              <div class="tree-item"><input type="checkbox" checked>套餐与价格管理<span class="desc">admin.plans.manage</span></div>
+              <div class="tree-item"><input type="checkbox" checked>查看对账报告<span class="desc">admin.orders.reconcile</span></div>
+              <div class="tree-cat">审计与安全（admin.audit / admin.roles / admin.keys）</div>
+              <div class="tree-item"><input type="checkbox" checked>查看审计日志<span class="desc">admin.audit.view</span></div>
+              <div class="tree-item"><input type="checkbox" checked>角色与权限管理（高危）<span class="desc">admin.roles.manage</span></div>
+              <div class="tree-item"><input type="checkbox" checked>设备密钥细节（🔒 仅超管）<span class="desc">admin.keys.view</span></div>
+              <div class="tree-cat">平台运营（admin.configs / admin.announce）</div>
+              <div class="tree-item"><input type="checkbox" checked>系统参数与功能开关<span class="desc">admin.configs.manage</span></div>
+              <div class="tree-item"><input type="checkbox" checked>公告与通知下发<span class="desc">admin.announce.send</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 系统设置 ═══ -->
+    <div class="page" id="page-settings" style="display:none">
+      <div class="page-head"><h2>系统设置</h2><p>所有修改实时生效并写入审计日志</p></div>
+      <div class="layout">
+        <div class="vtabs">
+          <div class="vtab on">功能开关</div>
+          <div class="vtab">系统参数</div>
+          <div class="vtab">公告下发</div>
+          <div class="vtab">维护模式</div>
+          <div class="vtab">操作留痕</div>
+        </div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+          <div class="card">
+            <div class="card-h"><h3>功能开关</h3><span class="sub">feature_flags · 影响全部客户端</span></div>
+            <div class="flag-row"><div class="fi"><b>订阅功能 enable_subscription</b><span>关闭后所有用户临时按 Free 配额处理（不影响已有订单）</span></div><div class="switch on"></div></div>
+            <div class="flag-row"><div class="fi"><b>AI 助手 enable_ai_agent</b><span>AI 侧边栏、智能分类与写作工具</span></div><div class="switch on"></div></div>
+            <div class="flag-row"><div class="fi"><b>公开分享 enable_public_sharing</b><span>共享链接能力（含文件分享）</span></div><div class="switch on"></div></div>
+            <div class="flag-row"><div class="fi"><b>两步验证 enable_2fa</b><span>用户级 TOTP；关闭不影响已开启用户</span></div><div class="switch on"></div></div>
+            <div class="flag-row"><div class="fi"><b>注册审核 signup_waitlist</b><span>新注册进入等待名单（运营灰度）</span></div><div class="switch"></div></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>维护模式</h3><span class="sub">maintenance_mode · 仅 super_admin</span></div>
+            <div style="padding:14px 16px;display:flex;align-items:center;gap:14px">
+              <div class="switch" id="mntSwitch"></div>
+              <div style="flex:1">
+                <b style="font-size:12.5px">当前：<span style="color:var(--green)">正常运行</span></b>
+                <div style="font-size:11px;color:var(--text-3)">开启后客户端暂停同步并显示维护公告；最近一次演练：昨天 14:05（持续 3 分钟）</div>
+              </div>
+              <button class="btn danger sm">开启维护</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>公告下发</h3><span class="sub">经通知服务推送 · 支持按套餐定向</span></div>
+            <div style="padding:14px 16px">
+              <input class="input" style="width:100%;margin-bottom:10px" placeholder="公告标题，例如：ClipSync v1.5 已发布">
+              <textarea class="input" style="width:100%;height:70px;resize:none;font-family:inherit" placeholder="公告内容…">今晚 02:00–02:15 将进行数据库升级，期间同步可能短暂中断。</textarea>
+              <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+                <select class="input"><option>全部用户</option><option>仅 Pro 及以上</option><option>仅 Free</option></select>
+                <select class="input"><option>显示 1 次</option><option>常驻至关闭</option></select>
+                <button class="btn primary" style="margin-left:auto">发送公告</button>
+              </div>
+              <div style="font-size:11px;color:var(--text-3);margin-top:10px">最近发送：09-01「v1.5 更新说明」→ 全部用户 · 送达 12,102 · 点击 3,847</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 用户详情抽屉 -->
+<div class="drawer-mask" id="drawerMask" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-h">
+    <div class="avatar" style="background:linear-gradient(135deg,#6e5ce8,#5a4bd1)">林</div>
+    <div style="flex:1">
+      <div style="font-weight:600;font-size:14px">林清和 <span class="tag brand" style="margin-left:4px"><i class="d"></i>Pro</span></div>
+      <div style="font-size:11px;color:var(--text-3)" class="mono">usr_7c2f9e41-88d2-4b3a-a1c4</div>
+    </div>
+    <button class="btn sm ghost" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-b">
+    <dl class="kv">
+      <dt>手机号</dt><dd class="mono">138****2765 <button class="btn sm ghost" style="padding:0 6px">明文🔍</button></dd>
+      <dt>邮箱</dt><dd>lin***@gmail.com</dd>
+      <dt>注册时间</dt><dd class="num">2025-11-02 14:22</dd>
+      <dt>最近活跃</dt><dd>8 分钟前 · Windows 客户端</dd>
+      <dt>订阅</dt><dd><span class="tag brand"><i class="d"></i>Pro · 月付 · 2026-10-02 到期</span></dd>
+      <dt>累计消费</dt><dd class="num strong">¥426.60 · 43 笔订单</dd>
+      <dt>风险标记</dt><dd><span class="tag green"><i class="d"></i>无</span></dd>
+    </dl>
+    <div class="sect-title">设备（4 台）</div>
+    <table style="font-size:12px">
+      <thead><tr><th>设备</th><th>平台</th><th>状态</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>DESKTOP-7A2</td><td>Windows 11</td><td><span class="tag green"><i class="d"></i>在线</span></td><td><button class="btn sm ghost">下线</button></td></tr>
+        <tr><td>Xiaomi 14</td><td>Android 15</td><td><span class="tag gray"><i class="d"></i>离线</span></td><td></td></tr>
+        <tr><td>MacBook Pro</td><td>macOS 26</td><td><span class="tag green"><i class="d"></i>在线</span></td><td></td></tr>
+        <tr><td>iPad Air</td><td>iPadOS 26</td><td><span class="tag gray"><i class="d"></i>离线</span></td><td></td></tr>
+      </tbody>
+    </table>
+    <div class="sect-title">管理操作</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <button class="btn">调整套餐</button>
+      <button class="btn">赠期 1 个月</button>
+      <button class="btn">强制下线</button>
+      <button class="btn danger" onclick="openModal(event)">停用账号</button>
+      <button class="btn danger">删除账户</button>
+    </div>
+  </div>
+</aside>
+
+<!-- 退款弹窗 -->
+<div class="modal-mask" id="modalMask" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h4>执行退款</h4>
+    <p style="margin-bottom:10px">订单 <b class="mono">CS20260905161093</b> · 微信支付 · ¥9.90<br>退款将通过原渠道退回，1–3 个工作日到账。</p>
+    <div class="field"><label>退款金额（不超过 ¥9.90）</label><input class="input" value="¥ 9.90"></div>
+    <div class="field"><label>退款原因（必填，写入审计日志）</label><input class="input" placeholder="例如：用户重复支付"></div>
+    <div class="row">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn danger" onclick="closeModal()">确认退款</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function go(page){
+  document.querySelectorAll('.app').forEach(a=>a.classList.remove('active'));
+  if(page==='login'){document.getElementById('view-login').classList.add('active');return;}
+  document.getElementById('view-app').classList.add('active');
+  document.querySelectorAll('.page').forEach(p=>p.style.display='none');
+  document.getElementById('page-'+page).style.display='block';
+  document.querySelectorAll('#topnav .btn').forEach(b=>{
+    const on=b.dataset.page===page;
+    b.style.background=on?'var(--brand-soft)':'transparent';
+    b.style.color=on?'var(--brand)':'var(--text-2)';
+    b.style.borderColor=on?'var(--brand-border)':'transparent';
+  });
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('#topnav [data-page]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.page)));
+go('login');
+function openDrawer(e){if(e.target.closest('button'))return;document.getElementById('drawer').classList.add('open');document.getElementById('drawerMask').classList.add('open');}
+function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('drawerMask').classList.remove('open');}
+function openModal(e){e.stopPropagation();document.getElementById('modalMask').classList.add('open');}
+function closeModal(){document.getElementById('modalMask').classList.remove('open');}
+document.querySelectorAll('.switch').forEach(s=>s.addEventListener('click',()=>s.classList.toggle('on')));
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');}));
+</script>
+</body>
+</html>

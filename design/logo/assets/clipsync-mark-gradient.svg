@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- ClipSync 定稿 logo「通道 Gate」渐变版：管理台 favicon / 桌面端应用图标源 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c6cf0"/>
+      <stop offset=".58" stop-color="#5a4bd1"/>
+      <stop offset="1" stop-color="#4f3fc0"/>
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="11" fill="url(#bg)"/>
+  <rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/>
+  <rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/>
+  <rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#fff"/>
+  <line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#fff" stroke-width="3.4" stroke-linecap="round" opacity=".55"/>
+</svg>

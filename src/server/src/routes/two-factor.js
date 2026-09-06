@@ -10,6 +10,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import pool from '../db/pool.js';
+import { requireFlag } from '../utils/featureFlags.js';
 import config from '../config.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
@@ -49,7 +50,8 @@ router.get('/2fa/status', authenticateToken, async (req, res) => {
 });
 
 // 开启设置：生成待确认密钥（pending），返回 otpauth URI 供扫码
-router.post('/2fa/setup', authenticateToken, async (req, res) => {
+// enable_2fa 关闭时禁止新的开启流程；已开启用户的 verify-login/disable/status 不受影响
+router.post('/2fa/setup', authenticateToken, requireFlag('enable_2fa', '两步验证已由管理员关闭，已开启的用户不受影响'), async (req, res) => {
   try {
     const userId = req.user.userId;
     const secret = generateSecret();
@@ -66,7 +68,7 @@ router.post('/2fa/setup', authenticateToken, async (req, res) => {
 });
 
 // 确认开启：校验动态码，落盘正式密钥 + 生成备份码
-router.post('/2fa/enable', authenticateToken, async (req, res) => {
+router.post('/2fa/enable', authenticateToken, requireFlag('enable_2fa', '两步验证已由管理员关闭，已开启的用户不受影响'), async (req, res) => {
   try {
     const userId = req.user.userId;
     const { code } = req.body;

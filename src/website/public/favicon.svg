@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- ClipSync 定稿 logo「通道 Gate」墨色版：官网 favicon / 浅底场景。错位双柱=两端设备，紫点=穿行的内容 -->
+  <rect width="48" height="48" rx="11" fill="#141414"/>
+  <rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/>
+  <rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/>
+  <rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#7c6cf0"/>
+  <line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#7c6cf0" stroke-width="3.4" stroke-linecap="round" opacity=".55"/>
+</svg>

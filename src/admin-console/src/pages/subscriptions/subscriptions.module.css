@@ -1,0 +1,85 @@
+.statBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.statItem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.statItem b {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.greenNum {
+  color: var(--green) !important;
+}
+
+.amberNum {
+  color: var(--amber) !important;
+}
+
+.brandNum {
+  color: var(--brand) !important;
+}
+
+.statDivider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+.filterBar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ownerCell {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.45;
+}
+
+.ownerName {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.ownerPhone {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.mutedCell {
+  color: var(--text-2);
+}
+
+.monoCell {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.periodCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}

@@ -1,0 +1,17 @@
+.money {
+  font-weight: 550;
+  color: var(--text);
+}
+
+.note {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.7;
+}
+
+.total {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--text-2);
+}

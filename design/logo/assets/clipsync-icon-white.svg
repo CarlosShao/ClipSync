@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- ClipSync「通道 Gate」纯图标（无瓷片底）：内联在 CSS 渐变/墨色圆角块中的单色版 -->
+  <rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff"/>
+  <rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff"/>
+  <rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#fff"/>
+  <line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#fff" stroke-width="3.4" stroke-linecap="round" opacity=".55"/>
+</svg>
