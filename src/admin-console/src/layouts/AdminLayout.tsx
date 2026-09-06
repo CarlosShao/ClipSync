@@ -22,20 +22,11 @@ const NAV_ITEMS = [
 function LogoMark() {
   return (
     <div className={styles.logoMark}>
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="#fff"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        <rect x="9" y="2" width="6" height="4" rx="1" />
-        <path d="M9 4H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2" />
-        <path d="m9 13 2 2 4-4" />
+      <svg width="16" height="16" viewBox="0 0 48 48" fill="none" aria-hidden>
+        <rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff" />
+        <rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff" />
+        <rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#fff" />
+        <line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" opacity=".55" />
       </svg>
     </div>
   );
