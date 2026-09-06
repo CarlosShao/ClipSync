@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 官网 v1 为单页 sitemap；域名定稿（工程方案 §5）后如变更需与 robots.txt 同步 -->
+<!-- 官网 v1 为单页 sitemap；域名假设值 https://www.clipstream.work（工程方案 §5 待拍板）。
+     域名定稿后如变更，需同步 3 处：robots.txt 的 Sitemap 行、本文件 <loc>、
+     index.html 的 og:image / twitter:image（当前相对路径，改绝对地址时才涉及） -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://www.clipstream.work/</loc>

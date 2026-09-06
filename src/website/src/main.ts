@@ -7,6 +7,8 @@
  *  3. 锚点平滑滚动 —— 现代浏览器由 base.css 的 html{scroll-behavior:smooth} 覆盖，
  *     此处仅为不支持该属性的旧浏览器提供 scrollIntoView 兜底
  *  4. FAQ 折叠 —— 基线使用原生 <details>/<summary>，无需 JS，保持基线行为不变
+ *  5. 下载卡片接线（T-W1）—— .dl-cell 的 href 由 data/download-links.ts 单一来源赋值；
+ *     链接仍为占位 "#" 时渲染为禁用态（aria-disabled + title「即将开放」）
  */
 import './styles/tokens.css';
 import './styles/base.css';
@@ -20,6 +22,7 @@ import './styles/sections/pricing.css';
 import './styles/sections/download.css';
 import './styles/sections/faq.css';
 import './styles/sections/cta-footer.css';
+import { DOWNLOAD_LINKS } from './data/download-links';
 
 /** 入场动画：.reveal 进入视口后加 .in（基线 IO 参数 threshold:.12 原样保留） */
 function initReveal(): void {
@@ -69,10 +72,36 @@ function initSmoothAnchors(): void {
   });
 }
 
+/**
+ * 下载卡片接线（T-W1）：index.html 05 下载区四个 a.dl-cell[data-platform] 不写死 href，
+ * 由本函数按 DOWNLOAD_LINKS（src/data/download-links.ts，链接单一来源）赋值。
+ *  - 常量为真实 http(s) 地址 → 赋 href，新标签打开并带 rel 安全位；
+ *  - 常量仍为占位 "#"        → 置禁用态（aria-disabled="true" + title「即将开放」）：
+ *    不赋 href 即不可点击，避免占位锚点把用户甩回页顶（静态站无 message 提示可用）。
+ * 接入真实链接只需改 download-links.ts，本逻辑自动切换为可点击外链。
+ */
+function initDownloadLinks(): void {
+  const cells = document.querySelectorAll<HTMLAnchorElement>('.dl-cell[data-platform]');
+  cells.forEach((cell) => {
+    const platform = cell.dataset.platform;
+    const link = DOWNLOAD_LINKS.find((l) => l.platform === platform);
+    if (!link) return;
+    if (link.href && link.href !== '#') {
+      cell.setAttribute('href', link.href);
+      cell.setAttribute('target', '_blank');
+      cell.setAttribute('rel', 'noopener noreferrer');
+    } else {
+      cell.setAttribute('aria-disabled', 'true');
+      cell.setAttribute('title', '即将开放');
+    }
+  });
+}
+
 function main(): void {
   initReveal();
   initNavScrollState();
   initSmoothAnchors();
+  initDownloadLinks();
 }
 
 if (document.readyState === 'loading') {

@@ -8,6 +8,12 @@
 .dl-cell span{font-size:11.5px;color:var(--ink-3)}
 .dl-cell .go{position:absolute;top:20px;right:18px;color:var(--ink-3);font-size:14px;transition:.15s}
 .dl-cell:hover .go{color:var(--accent);transform:translateX(3px)}
+/* 工程化新增（T-W1）：占位链接的禁用态（main.ts 对 href="#" 的卡片置 aria-disabled）。
+   仅弱化箭头与指针提示，不改变卡片排版（视觉基线不受影响，真实链接上线后自动失效） */
+a.dl-cell[aria-disabled="true"]{cursor:default}
+a.dl-cell[aria-disabled="true"]:hover{background:#fff}
+a.dl-cell[aria-disabled="true"] .go{opacity:.4}
+a.dl-cell[aria-disabled="true"]:hover .go{color:var(--ink-3);transform:none}
 
 @media (max-width:960px){
   .dl-row{flex-direction:column}

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>404 — ClipSync</title>
+<!-- 404 页不应被索引；description 供错误页被外链打开时的兜底文案 -->
+<meta name="robots" content="noindex">
+<meta name="description" content="页面不存在。返回 ClipSync 首页：手机复制，电脑秒粘，端到端加密。">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<!-- 独立于主站 CSS 产物（不引 main.ts，零 JS）：token 值摘自 src/styles/tokens.css，两处改动需同步。
+     链接用根绝对路径（404 页会被任意路径命中，相对路径会失效），仅适配根路径部署（与域名方案一致）。 -->
+<style>
+:root{
+  --bg:#fbfbf9; --ink:#141414; --ink-2:#57554e; --ink-3:#98958a; --line:#e6e4dc;
+  --accent:#5a4bd1;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --serif:Georgia,"Times New Roman",serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.65;
+  -webkit-font-smoothing:antialiased;min-height:100vh;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:24px}
+a{color:inherit;text-decoration:none}
+.code{font-family:var(--serif);font-style:italic;font-size:120px;line-height:1;letter-spacing:4px}
+p{margin:18px 0 30px;font-size:15px;color:var(--ink-2)}
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:9px 20px;font-size:13.5px;
+  cursor:pointer;border:1px solid var(--ink);background:var(--ink);color:#fff;transition:.18s}
+.btn:hover{background:#2c2c2c}
+</style>
+</head>
+<body>
+<main>
+  <div class="code">404</div>
+  <p>这一页不在剪贴板里——可能已被清除，或从未存在。</p>
+  <a class="btn" href="/">← 返回首页</a>
+</main>
+</body>
+</html>
