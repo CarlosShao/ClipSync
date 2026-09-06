@@ -278,7 +278,7 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     // Find or create user
     // 先尝试明文查询
     let userResult = await pool.query(
-      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, two_factor_enabled, registration_status FROM users WHERE phone = $1',
+      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, two_factor_enabled, registration_status, is_active FROM users WHERE phone = $1',
       [cleanPhone]
     );
 
@@ -287,7 +287,7 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
       const phoneHash = computeFieldHash(cleanPhone);
       if (phoneHash) {
         userResult = await pool.query(
-          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, registration_status FROM users WHERE phone_hash = $1',
+          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, registration_status, is_active FROM users WHERE phone_hash = $1',
           [phoneHash]
         );
       }
@@ -369,6 +369,14 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
 
     const user = userResult.rows[0];
 
+    // 停用账号拦截（管理员停用 is_active=false：登录不发会话与令牌）
+    if (user.is_active === false) {
+      return res.status(403).json({
+        error: '账号已被管理员停用，如有疑问请联系客服',
+        deactivated: true,
+      });
+    }
+
     // 等待名单账号拦截（signup_waitlist 开关期间注册，待管理员审核）
     if (user.registration_status === 'waitlist') {
       return res.status(403).json({
@@ -399,7 +407,7 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
       return res.json({ twoFactorRequired: true, challengeToken });
     }
 
-    const { token } = await createSessionAndGenerateToken(user, req);
+    const { token, refreshToken } = await createSessionAndGenerateToken(user, req);
 
     // ========= P1-4: 审计日志（登录成功）=========
     await logAuditEvent({
@@ -427,6 +435,7 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
 
 
       token,
+      refreshToken,
       user: {
         id: user.id,
         phone: phoneDecrypted,
@@ -519,7 +528,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
 
     // ===== 查找或创建用户（身份关联：先按 email/email_hash 查已有账号）=====
     let userResult = await pool.query(
-      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, two_factor_enabled, registration_status FROM users WHERE email = $1',
+      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, two_factor_enabled, registration_status, is_active FROM users WHERE email = $1',
       [cleanEmail]
     );
 
@@ -528,7 +537,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
       const emailHash = computeFieldHash(cleanEmail);
       if (emailHash) {
         userResult = await pool.query(
-          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, registration_status FROM users WHERE email_hash = $1',
+          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, registration_status, is_active FROM users WHERE email_hash = $1',
           [emailHash]
         );
       }
@@ -585,6 +594,14 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
 
     const user = userResult.rows[0];
 
+    // 停用账号拦截（管理员停用 is_active=false：登录不发会话与令牌）
+    if (user.is_active === false) {
+      return res.status(403).json({
+        error: '账号已被管理员停用，如有疑问请联系客服',
+        deactivated: true,
+      });
+    }
+
     // 等待名单账号拦截（signup_waitlist 开关期间注册，待管理员审核）
     if (user.registration_status === 'waitlist') {
       return res.status(403).json({
@@ -605,7 +622,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
     });
 
     // 创建会话并生成JWT
-    const { token } = await createSessionAndGenerateToken(user, req);
+    const { token, refreshToken } = await createSessionAndGenerateToken(user, req);
 
     // 解密敏感字段
 
@@ -623,6 +640,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
 
 
       token,
+      refreshToken,
       user: {
         id: user.id,
         phone: phoneDecrypted,
@@ -949,7 +967,7 @@ router.post('/register', sendCodeLimiter, async (req, res) => {
     }
 
     // 创建会话 + JWT
-    const { token } = await createSessionAndGenerateToken(user, req);
+    const { token, refreshToken } = await createSessionAndGenerateToken(user, req);
 
     res.json({
       token,
@@ -1040,7 +1058,7 @@ router.post('/set-password', async (req, res) => {
       ip: req.ip || req.connection.remoteAddress,
     });
 
-    const { token } = await createSessionAndGenerateToken(user, req);
+    const { token, refreshToken } = await createSessionAndGenerateToken(user, req);
 
     res.json({
       token,
@@ -1187,7 +1205,7 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
     }
 
     // 创建会话并生成JWT
-    const { token } = await createSessionAndGenerateToken(user, req);
+    const { token, refreshToken } = await createSessionAndGenerateToken(user, req);
 
     // 解密敏感字段
     const phoneDecrypted = decryptField(user.phone_encrypted) || user.phone;

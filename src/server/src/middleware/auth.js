@@ -90,7 +90,9 @@ export async function authenticateToken(req, res, next) {
     if (err.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired' });
     }
-    return res.status(403).json({ error: 'Invalid token', detail: err.message });
+    // 无效/伪造 token 同属认证失败，统一 401（前端 401 拦截器据此走刷新→跳登录链路；
+    // 403 语义保留给「认证通过但权限不足」，此前 403 会导致管理台卡在页面无法回登录）
+    return res.status(401).json({ error: 'Invalid token', detail: err.message });
   }
 }
 

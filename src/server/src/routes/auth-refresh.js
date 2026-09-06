@@ -43,11 +43,15 @@ router.post('/refresh', apiLimiter, async (req, res) => {
       }
     }
 
-    const userRow = await pool.query('SELECT id, phone, email FROM users WHERE id = $1', [payload.userId]);
+    const userRow = await pool.query('SELECT id, phone, email, is_active FROM users WHERE id = $1', [payload.userId]);
     if (userRow.rows.length === 0) {
       return res.status(401).json({ error: 'User not found' });
     }
     const user = userRow.rows[0];
+    // 停用账号不得刷新（与 send-code 登录拦截口径一致，防止被停用用户无限续命令牌对）
+    if (user.is_active === false) {
+      return res.status(401).json({ error: 'Account deactivated' });
+    }
 
     // 新 access token：复用同一 sessionId 作为 jti，吊销链路（黑名单/会话活性）与现有一致
     const token = jwt.sign(

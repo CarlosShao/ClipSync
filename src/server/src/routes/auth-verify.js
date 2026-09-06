@@ -172,6 +172,13 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
       user = { id: userId, phone: cleanPhone, nickname };
     } else {
       user = userResult.rows[0];
+      // 停用账号拦截（管理员停用 is_active=false：登录不发会话与令牌）
+      if (user.is_active === false) {
+        return res.status(403).json({
+          error: '账号已被管理员停用，如有疑问请联系客服',
+          deactivated: true,
+        });
+      }
       if (user.registration_status === 'waitlist') {
         return res.status(403).json({
           error: '账号待管理员审核，通过后即可登录',
@@ -181,13 +188,14 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     }
 
     // 创建会话并生成token
-    const { token, sessionId } = await createSessionAndGenerateToken(user, req);
+    const { token, sessionId, refreshToken } = await createSessionAndGenerateToken(user, req);
 
     // 清除登录失败计数
     await clearLoginFailed(cleanPhone);
 
     res.json({
       token,
+      refreshToken,
       sessionId,
       user: { id: user.id, phone: user.phone, nickname: user.nickname }
     });
@@ -255,6 +263,13 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
       user = { id: userId, email: cleanEmail, nickname };
     } else {
       user = userResult.rows[0];
+      // 停用账号拦截（管理员停用 is_active=false：登录不发会话与令牌）
+      if (user.is_active === false) {
+        return res.status(403).json({
+          error: '账号已被管理员停用，如有疑问请联系客服',
+          deactivated: true,
+        });
+      }
       if (user.registration_status === 'waitlist') {
         return res.status(403).json({
           error: '账号待管理员审核，通过后即可登录',
@@ -263,10 +278,11 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
       }
     }
 
-    const { token, sessionId } = await createSessionAndGenerateToken(user, req);
+    const { token, sessionId, refreshToken } = await createSessionAndGenerateToken(user, req);
 
     res.json({
       token,
+      refreshToken,
       sessionId,
       user: { id: user.id, email: user.email, nickname: user.nickname }
     });

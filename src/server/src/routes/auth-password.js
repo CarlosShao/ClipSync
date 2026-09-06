@@ -171,6 +171,14 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // 停用账号拦截（管理员停用 is_active=false：登录不发会话与令牌）
+    if (user.is_active === false) {
+      return res.status(403).json({
+        error: '账号已被管理员停用，如有疑问请联系客服',
+        deactivated: true,
+      });
+    }
+
     // 等待名单账号拦截（signup_waitlist 开关期间注册，待管理员审核）
     if (user.registration_status === 'waitlist') {
       return res.status(403).json({
@@ -180,11 +188,12 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
     }
 
     // 创建会话并生成token
-    const { token, sessionId } = await createSessionAndGenerateToken(user, req);
+    const { token, sessionId, refreshToken } = await createSessionAndGenerateToken(user, req);
 
     res.json({
       token,
       sessionId,
+      refreshToken,
       user: {
         id: user.id,
         phone: user.phone,

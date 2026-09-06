@@ -57,6 +57,7 @@ const USER_SELECT = `
     u.deactivation_reason,
     u.created_at,
     r.role_key,
+    r.level AS role_level,
     (SELECT COUNT(*)::int FROM devices d WHERE d.user_id = u.id) AS device_count,
     (SELECT MAX(d.last_seen_at) FROM devices d WHERE d.user_id = u.id) AS last_active_at,
     (SELECT d.platform FROM devices d WHERE d.user_id = u.id AND d.last_seen_at IS NOT NULL
@@ -448,6 +449,31 @@ async function fetchUserById(id) {
 }
 
 /**
+ * 越级防护（与 roles.js「级别不能超过操作者」同一层级规则的反向约束）：
+ * 敏感用户操作（停用/启用/强制下线/重置2FA/分配角色/删除）要求操作者角色等级
+ * 严格高于目标用户——admin(50) 只能管理普通用户(10)，无法操作同级 admin(50)
+ * 或 super_admin(100)；super_admin(100) 可操作所有人。
+ * 无角色用户按最低级 10 处理（fail-closed）。
+ * 返回 null 表示通过，否则为可直接返回的 403 响应体。
+ */
+function targetLevelGuardError(req, targetUser) {
+  const operatorLevel = typeof req.user?.roleLevel === 'number' ? req.user.roleLevel : 0;
+  const targetLevel = Number.isFinite(Number(targetUser?.role_level))
+    ? Number(targetUser.role_level)
+    : 10;
+  if (targetLevel >= operatorLevel) {
+    return {
+      status: 403,
+      body: {
+        code: 40302,
+        message: `越级防护：目标用户角色等级(${targetLevel})不低于操作者(${operatorLevel})，禁止执行该操作`,
+      },
+    };
+  }
+  return null;
+}
+
+/**
  * PATCH /api/admin/users/:id/status  body { status, reason }
  * 停用/启用账号（requirePerm admin.users.manage）：
  *  - status=disabled 停用：is_active=false + 落 deactivated_at/deactivation_reason，
@@ -475,6 +501,11 @@ router.patch('/:id/status', requirePerm('admin.users.manage'), async (req, res) 
     const user = await fetchUserById(id);
     if (!user) {
       return res.status(404).json({ code: 40404, message: '用户不存在' });
+    }
+
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
     }
 
     const disabling = status === 'disabled';
@@ -599,6 +630,12 @@ router.patch('/:id/role', requirePerm('admin.roles.manage'), async (req, res) =>
       return res.status(404).json({ code: 40404, message: '用户不存在' });
     }
 
+    // 越级防护一：不可对同级/更高级用户改角色（防 admin 降级 super_admin）
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
+    }
+
     const { rows: roleRows } = await pool.query(
       `SELECT id, role_key, name, level FROM roles WHERE id::text = $1`,
       [roleId]
@@ -611,6 +648,13 @@ router.patch('/:id/role', requirePerm('admin.roles.manage'), async (req, res) =>
       return res
         .status(403)
         .json({ code: 40301, message: '超级管理员角色不可授予其他用户（数据库触发器保证超管唯一）' });
+    }
+    // 越级防护二：不可授予不低于操作者自身等级的角色（防 admin 批量制造同级管理员）
+    if (Number(role.level) >= (typeof req.user?.roleLevel === 'number' ? req.user.roleLevel : 0)) {
+      return res.status(403).json({
+        code: 40303,
+        message: `越级防护：不能授予等级不低于操作者(${req.user?.roleLevel})的角色(${role.level})`,
+      });
     }
 
     await pool.query(`UPDATE users SET role_id = $2, updated_at = NOW() WHERE id = $1`, [
@@ -667,6 +711,10 @@ router.post('/:id/force-logout', requirePerm('admin.users.manage'), async (req, 
     if (!user) {
       return res.status(404).json({ code: 40404, message: '用户不存在' });
     }
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
+    }
 
     const { rowCount } = await pool.query(
       `UPDATE user_sessions SET is_active = FALSE, revoked_at = NOW()
@@ -719,6 +767,10 @@ router.post('/:id/reset-2fa', requirePerm('admin.users.manage'), async (req, res
     const user = await fetchUserById(id);
     if (!user) {
       return res.status(404).json({ code: 40404, message: '用户不存在' });
+    }
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
     }
 
     await pool.query(
@@ -777,6 +829,10 @@ router.delete('/:id', requirePerm('admin.users.delete'), async (req, res) => {
     }
     if (user.role_key === 'super_admin') {
       return res.status(403).json({ code: 40301, message: '超级管理员账户不可删除' });
+    }
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
     }
 
     await pool.query(
