@@ -86,7 +86,7 @@ export default function SubscriptionsPage() {
       // 失效 ['subscriptions'] 前缀：列表与页头统计同时刷新
       void queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
       void message.success(
-        `已为 ${updated.nickname} 调整为 ${planLabel[updated.plan]} 并赠期 ${variables.months} 个月`,
+        `已为 ${updated.userLabel} 调整为 ${planLabel[updated.planKey?.toLowerCase() as PlanKey] ?? updated.planName} 并赠期 ${variables.months} 个月`,
       );
       setGrantTarget(null);
     },
@@ -112,19 +112,18 @@ export default function SubscriptionsPage() {
       title: '用户',
       dataIndex: 'nickname',
       render: (_: string, record) => (
-        <div className={styles.ownerCell}>
-          <span className={styles.ownerName}>{record.nickname}</span>
-          <span className={styles.ownerPhone}>{record.phone}</span>
-        </div>
+        <span className={styles.ownerName}>{record.userLabel}</span>
       ),
     },
     {
       title: '当前套餐',
-      dataIndex: 'plan',
+      dataIndex: 'planKey',
       width: 110,
-      render: (value: PlanKey) => (
-        <StatusTag tone={planTone[value]}>{planLabel[value]}</StatusTag>
-      ),
+      render: (value: string, record) => {
+        const key = (value || '').toLowerCase() as PlanKey;
+        const label = planLabel[key] ?? record.planName ?? '—';
+        return <StatusTag tone={planTone[key] ?? 'gray'}>{label}</StatusTag>;
+      },
     },
     {
       title: '计费周期',
@@ -140,9 +139,9 @@ export default function SubscriptionsPage() {
       title: '状态',
       dataIndex: 'status',
       width: 130,
-      render: (value: SubscriptionStatus, record) => (
+      render: (value: SubscriptionStatus) => (
         <StatusTag tone={statusTone[value]}>
-          {value === 'trialing' ? `试用 · 剩 ${record.trialDaysLeft ?? 0} 天` : statusLabel[value]}
+          {value === 'trialing' ? statusLabel.trialing : statusLabel[value] ?? value}
         </StatusTag>
       ),
     },
@@ -164,7 +163,7 @@ export default function SubscriptionsPage() {
     },
     {
       title: '开始时间',
-      dataIndex: 'startedAt',
+      dataIndex: 'createdAt',
       width: 115,
       render: (value: string) => <span className={styles.monoCell}>{fmtDate(value)}</span>,
     },

@@ -153,7 +153,7 @@ describe('GET /api/admin/subscriptions（订阅页契约）', () => {
     expect(statuses.has('past_due')).toBe(true);
     expect(statuses.has('canceled')).toBe(true);
     for (const sub of data.list) {
-      expect(sub.phone).toContain('*');
+      expect(sub.userLabel).toBeTruthy();
     }
   });
 
@@ -168,15 +168,15 @@ describe('GET /api/admin/subscriptions（订阅页契约）', () => {
       await get<PageData<AdminSubscription>>('/api/admin/subscriptions?plan=pro&status=active&pageSize=50'),
     ).data;
     for (const sub of proActive.list) {
-      expect(sub.plan).toBe('pro');
+      expect(sub.planKey.toLowerCase()).toBe('pro');
       expect(sub.status).toBe('active');
     }
 
-    const byPhone = expectOk(
-      await get<PageData<AdminSubscription>>('/api/admin/subscriptions?q=139****8842'),
+    const byLabel = expectOk(
+      await get<PageData<AdminSubscription>>('/api/admin/subscriptions?q=刘晓蕾'),
     ).data;
-    expect(byPhone.total).toBe(1);
-    expect(byPhone.list[0]?.nickname).toBe('刘晓蕾');
+    expect(byLabel.total).toBe(1);
+    expect(byLabel.list[0]?.userLabel).toBe('刘晓蕾');
   });
 });
 
@@ -205,7 +205,7 @@ describe('GET /api/admin/subscriptions/stats + 赠期', () => {
         reason: '大客户补偿（测试）',
       }),
     );
-    expect(data.plan).toBe('enterprise');
+    expect(data.planKey.toLowerCase()).toBe('enterprise');
     expect(data.status).toBe('active');
     expect(data.billingCycle).toBe('monthly');
     expect(data.currentPeriodEnd).toBe('2027-03-08');

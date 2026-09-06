@@ -735,15 +735,15 @@ function grantInPlace(sub: AdminSubscription, payload: GrantSubscriptionPayload)
   const now = dayjs();
   const current = sub.currentPeriodEnd ? dayjs(sub.currentPeriodEnd) : null;
   const base = current !== null && current.isAfter(now) ? current : now;
-  sub.plan = payload.planId;
+  sub.planKey = payload.planId === 'enterprise' ? 'Enterprise' : 'Pro';
+  sub.planName = payload.planId === 'enterprise' ? '企业版' : '专业版';
   sub.billingCycle = 'monthly';
   sub.status = 'active';
   sub.currentPeriodEnd = base.add(payload.months, 'month').format('YYYY-MM-DD');
-  delete sub.trialDaysLeft;
   // 同步 mockUsers 里的订阅摘要，保持用户页/订阅页数据一致
   const user = mockUsers.find((u) => u.id === sub.userId);
   if (user) {
-    user.subscription.plan = sub.plan;
+    user.subscription.plan = payload.planId;
     user.subscription.billingCycle = sub.billingCycle;
     user.subscription.status = sub.status;
     user.subscription.currentPeriodEnd = sub.currentPeriodEnd;
@@ -768,8 +768,8 @@ const subscriptionsHandlers = [
     const status = url.searchParams.get('status');
 
     const filtered = mockSubscriptions.filter((s) => {
-      if (q && !s.nickname.includes(q) && !s.phone.includes(q) && !s.userId.includes(q)) return false;
-      if (plan && plan !== 'all' && s.plan !== plan) return false;
+      if (q && !s.userLabel.includes(q) && !s.userId.includes(q)) return false;
+      if (plan && plan !== 'all' && s.planKey.toLowerCase() !== plan) return false;
       if (status && status !== 'all' && s.status !== status) return false;
       return true;
     });
@@ -797,9 +797,9 @@ const subscriptionsHandlers = [
       'admin.subscriptions.grant',
       'user_subscription',
       sub.id,
-      `user="${sub.nickname}", plan=${sub.plan}, months=${months}, reason="${body.reason.trim()}"`,
+      `user="${sub.userLabel}", plan=${sub.planKey}, months=${months}, reason="${body.reason.trim()}"`,
     );
-    return ok(sub, `已为 ${sub.nickname} 赠期 ${months} 个月`);
+    return ok(sub, `已为 ${sub.userLabel} 赠期 ${months} 个月`);
   }),
 ];
 

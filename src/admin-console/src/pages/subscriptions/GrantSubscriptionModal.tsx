@@ -2,7 +2,7 @@ import { Form, Input, InputNumber, Modal, Select } from 'antd';
 import { useEffect, useState } from 'react';
 import { planLabel } from '@/components/StatusTag/mappers';
 import { fmtDate } from '@/utils/format';
-import type { AdminSubscription, GrantSubscriptionPayload } from '@/api/types';
+import type { AdminSubscription, GrantSubscriptionPayload, PlanKey } from '@/api/types';
 import styles from './GrantSubscriptionModal.module.css';
 
 const { TextArea } = Input;
@@ -46,7 +46,7 @@ export function GrantSubscriptionModal({
   useEffect(() => {
     if (open && subscription) {
       form.setFieldsValue({
-        planId: subscription.plan === 'enterprise' ? 'enterprise' : 'pro',
+        planId: subscription.planKey?.toLowerCase() === 'enterprise' ? 'enterprise' : 'pro',
         months: 1,
         reason: '',
       });
@@ -73,14 +73,14 @@ export function GrantSubscriptionModal({
 
   const summary = subscription
     ? [
-        `当前 ${planLabel[subscription.plan]}`,
+        `当前 ${planLabel[subscription.planKey?.toLowerCase() as PlanKey] ?? subscription.planName}`,
         subscription.billingCycle
           ? subscription.billingCycle === 'yearly'
             ? '年付'
             : '月付'
           : null,
         subscription.status === 'trialing'
-          ? `试用 · 剩 ${subscription.trialDaysLeft ?? 0} 天`
+          ? '试用中'
           : subscription.currentPeriodEnd
             ? `${fmtDate(subscription.currentPeriodEnd)} 到期`
             : null,
@@ -105,7 +105,7 @@ export function GrantSubscriptionModal({
       {subscription ? (
         <>
           <p className={styles.subLine}>
-            <b>{subscription.nickname}</b>（{subscription.phone}）· {summary}
+            <b>{subscription.userLabel}</b> · {summary}
           </p>
           <p className={styles.hintLine}>
             赠期后订阅转为生效中：周期止 = 现周期止（或今天，取较晚者）+ 延长月数，计费周期按月计。

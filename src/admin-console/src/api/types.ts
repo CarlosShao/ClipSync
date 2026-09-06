@@ -458,22 +458,23 @@ export interface DeviceOfflinePayload {
   reason: string;
 }
 
-/** 管理端订阅行（GET /api/admin/subscriptions，含用户摘要） */
+/** 管理端订阅行（GET /api/admin/subscriptions，与后端 mapSubscriptionRow 逐字段对齐） */
 export interface AdminSubscription {
   id: string;
   userId: string;
-  nickname: string;
-  /** 打码手机号 */
-  phone: string;
-  plan: PlanKey;
+  /** 用户摘要：昵称优先，否则打码手机号 */
+  userLabel: string;
+  planId: string;
+  /** 套餐显示名（免费版/专业版/企业版） */
+  planName: string;
+  /** 套餐英文标识（Free/Pro/Enterprise） */
+  planKey: string;
   billingCycle: BillingCycle | null;
   status: SubscriptionStatus;
-  /** YYYY-MM-DD */
+  currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
   autoRenew: boolean;
-  /** 订阅开始时间 YYYY-MM-DD */
-  startedAt: string;
-  trialDaysLeft?: number;
+  createdAt: string;
 }
 
 export interface SubscriptionListParams extends ListParams {
