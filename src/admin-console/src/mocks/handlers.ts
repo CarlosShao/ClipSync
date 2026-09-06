@@ -3,13 +3,16 @@ import type {
   Announcement,
   ApiResp,
   AuditLog,
+  CreateRolePayload,
   LoginResp,
   Order,
   OverviewData,
   PageData,
   ReconciliationReport,
+  Role,
   UserDetail,
 } from '@/api/types';
+import { isSensitiveAction } from '@/pages/audit/sensitive';
 import {
   mockAnnouncements,
   mockAuditLogs,
@@ -283,7 +286,7 @@ const usersHandlers = [
       ipAddress: '116.24.*.*',
       userAgent: 'ClipSync Admin',
       status: 'success',
-      sensitive: true,
+      sensitive: body.status === 'disabled',
       createdAt: '2026-09-05 20:45:00',
     });
     return ok(user, body.status === 'disabled' ? '账号已停用' : '账号已启用');
@@ -378,6 +381,26 @@ const ordersHandlers = [
 
 // ───────────────────────── 审计 ─────────────────────────
 
+/** 动作筛选：all=全部；auth=登录/登出；sensitive=敏感操作；payment=支付相关；其余按 includes 匹配具体 action */
+function matchAuditAction(log: AuditLog, action: string): boolean {
+  if (!action || action === 'all') return true;
+  if (action === 'sensitive') return isSensitiveAction(log.action);
+  if (action === 'auth') {
+    return log.action.startsWith('user.login') || log.action.startsWith('user.logout');
+  }
+  if (action === 'payment') {
+    return log.action.startsWith('payment.') || log.action.startsWith('admin.refund');
+  }
+  return log.action.includes(action);
+}
+
+/** 操作者筛选：end_user=终端用户（operatorRole=user）；其余按操作者名精确匹配 */
+function matchAuditOperator(log: AuditLog, operator: string): boolean {
+  if (!operator || operator === 'all') return true;
+  if (operator === 'end_user') return log.operatorRole === 'user';
+  return log.operator === operator;
+}
+
 const auditHandlers = [
   http.get('/api/admin/audit-logs', async ({ request }) => {
     await delay(200);
@@ -388,16 +411,22 @@ const auditHandlers = [
     const operator = url.searchParams.get('operator')?.trim() ?? '';
     const result = url.searchParams.get('result');
     const ip = url.searchParams.get('ip')?.trim() ?? '';
+    const dateFrom = url.searchParams.get('dateFrom') ?? '';
+    const dateTo = url.searchParams.get('dateTo') ?? '';
 
     const filtered = mockAuditLogs.filter((a) => {
-      if (action && action !== 'all' && !a.action.includes(action)) return false;
-      if (operator && operator !== 'all' && !a.operator.includes(operator)) return false;
+      if (!matchAuditAction(a, action)) return false;
+      if (!matchAuditOperator(a, operator)) return false;
       if (result && result !== 'all' && a.status !== result) return false;
       if (ip && !a.ipAddress.includes(ip)) return false;
+      if (dateFrom && a.createdAt.slice(0, 10) < dateFrom) return false;
+      if (dateTo && a.createdAt.slice(0, 10) > dateTo) return false;
       return true;
     });
 
-    const noFilter = !action && !operator && (!result || result === 'all') && !ip;
+    // 无任何筛选时对齐草图：total = 2,431,088（保留 1 年量级）
+    const noFilter =
+      !action && !operator && (!result || result === 'all') && !ip && !dateFrom && !dateTo;
     return ok(pageOf(filtered, page, pageSize, noFilter ? 2431088 : filtered.length));
   }),
 ];
@@ -412,6 +441,77 @@ const roleHandlers = [
   http.get('/api/admin/permissions', async () => {
     await delay(120);
     return ok(mockPermissions);
+  }),
+
+  // 保存角色权限集合：super_admin 不可改（触发器保证超管唯一）；写审计 admin.roles.update（敏感）
+  http.patch('/api/admin/roles/:id/permissions', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const role = mockRoles.find((r) => r.id === id);
+    if (!role) return fail(404, 40404, '角色不存在');
+    if (role.roleKey === 'super_admin' || role.level >= 100) {
+      return fail(403, 40301, '超级管理员权限不可修改（数据库触发器保证超管唯一）');
+    }
+    const body = (await request.json()) as { permissions?: unknown };
+    if (
+      !Array.isArray(body.permissions) ||
+      body.permissions.some((key) => typeof key !== 'string')
+    ) {
+      return fail(400, 40002, 'permissions 必须为字符串数组');
+    }
+    const permissionSet = new Set(mockPermissions.map((p) => p.permKey));
+    const unknown = (body.permissions as string[]).filter((key) => !permissionSet.has(key));
+    if (unknown.length > 0) {
+      return fail(400, 40007, `未知权限键：${unknown.join(', ')}`);
+    }
+    const before = role.permissions;
+    const added = (body.permissions as string[]).filter((key) => !before.includes(key));
+    const removed = before.filter((key) => !(body.permissions as string[]).includes(key));
+    role.permissions = body.permissions as string[];
+    pushAudit(
+      'admin.roles.update',
+      'role',
+      role.roleKey,
+      `role="${role.roleKey}", added=[${added.join('|')}], removed=[${removed.join('|')}]`,
+    );
+    return ok(role, '权限已保存并写入审计日志');
+  }),
+
+  // 创建自定义角色：role_key 必须 custom_ 前缀；级别 1–99（超管 level 100 不可创建）
+  http.post('/api/admin/roles', async ({ request }) => {
+    await delay(300);
+    const body = (await request.json()) as Partial<CreateRolePayload>;
+    if (!body.roleKey?.trim() || !body.name?.trim()) {
+      return fail(400, 40002, '角色标识与名称不能为空');
+    }
+    if (!/^custom_[a-z0-9_]+$/.test(body.roleKey.trim())) {
+      return fail(400, 40007, '角色标识必须以 custom_ 开头，仅含小写字母 / 数字 / 下划线');
+    }
+    if (mockRoles.some((r) => r.roleKey === body.roleKey?.trim())) {
+      return fail(400, 40008, `角色标识 ${body.roleKey.trim()} 已存在`);
+    }
+    const level = Number(body.level);
+    if (!Number.isInteger(level) || level < 1 || level >= 100) {
+      return fail(400, 40009, '级别须为 1–99 的整数（超级管理员 level 100 由系统保留）');
+    }
+    const created: Role = {
+      id: `role_${body.roleKey.trim()}`,
+      roleKey: body.roleKey.trim(),
+      name: body.name.trim(),
+      level,
+      memberCount: 0,
+      isBuiltIn: false,
+      description: body.description?.trim() || '自定义角色，可分配',
+      permissions: [],
+    };
+    mockRoles.push(created);
+    pushAudit(
+      'admin.roles.create',
+      'role',
+      created.roleKey,
+      `role_key="${created.roleKey}", name="${created.name}", level=${level}`,
+    );
+    return ok(created, '角色已创建');
   }),
 ];
 
@@ -487,7 +587,7 @@ const configHandlers = [
       'announcement',
       created.id,
       `title="${created.title}", audience=${created.audience}, display=${created.displayMode}`,
-      false,
+      true,
     );
     return ok(created, '公告已下发');
   }),

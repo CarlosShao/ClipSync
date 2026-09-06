@@ -359,3 +359,28 @@ export interface ReconciliationReport {
   generatedAt: string;
   rows: ReconciliationRow[];
 }
+
+// ─────────────── T-A6 追加：审计筛选组 + 角色写操作（只增不改） ───────────────
+
+/**
+ * 审计动作筛选项（对照草图下拉）：
+ * all=全部；auth=登录/登出（user.login* / user.logout*）；sensitive=敏感操作（前端判定规则）；
+ * payment=支付相关（payment.* / admin.refund.*）；后端亦支持传具体 action 串做 includes 匹配。
+ */
+export type AuditActionFilter = 'all' | 'auth' | 'sensitive' | 'payment';
+
+/** 审计操作者筛选项：end_user=终端用户（operatorRole=user，含打码手机号） */
+export type AuditOperatorFilter = 'all' | 'Carlos' | 'Yuki' | 'end_user';
+
+/** POST /api/admin/roles：创建自定义角色（roleKey 必须 custom_ 前缀，level 1–99） */
+export interface CreateRolePayload {
+  roleKey: string;
+  name: string;
+  level: number;
+  description?: string;
+}
+
+/** PATCH /api/admin/roles/:id/permissions：整体保存角色权限键集合（写入审计） */
+export interface UpdateRolePermissionsPayload {
+  permissions: string[];
+}
