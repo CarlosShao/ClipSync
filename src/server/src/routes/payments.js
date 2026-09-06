@@ -23,8 +23,15 @@ router.post('/create-order', authenticateToken, async (req, res) => {
     }
     
     // 验证订阅是否存在
+    // subscription_plans 无 price/currency 列（只有 price_monthly/price_yearly），
+    // 按订阅的计费周期取对应价格；币种统一 CNY（与 subscribe 路由口径一致）
     const subscriptionResult = await pool.query(
-      'SELECT us.*, sp.price, sp.currency FROM user_subscriptions us JOIN subscription_plans sp ON us.plan_id = sp.id WHERE us.id = $1 AND us.user_id = $2',
+      `SELECT us.*,
+              CASE WHEN us.billing_cycle = 'yearly' THEN sp.price_yearly ELSE sp.price_monthly END AS price,
+              'CNY' AS currency
+       FROM user_subscriptions us
+       JOIN subscription_plans sp ON us.plan_id = sp.id
+       WHERE us.id = $1 AND us.user_id = $2`,
       [subscriptionId, userId]
     );
     
@@ -83,7 +90,7 @@ router.post('/create-order', authenticateToken, async (req, res) => {
       // 创建发票
       const invoiceNo = `INV${Date.now()}${Math.random().toString(36).substr(2, 4)}`;
       await pool.query(`
-        INSERT INTO invoices (user_id, order_id, invoice_no, amount, tax, status)
+        INSERT INTO invoices (user_id, payment_order_id, invoice_no, amount, tax_amount, status)
         VALUES ($1, $2, $3, $4, $5, $6)
       `, [userId, order.id, invoiceNo, order.amount, 0, 'issued']);
       
@@ -355,7 +362,7 @@ router.get('/invoices/:id/download', authenticateToken, async (req, res) => {
     // 查询订单
     const orderResult = await pool.query(
       'SELECT * FROM payment_orders WHERE id = $1 AND user_id = $2',
-      [invoice.order_id, userId]
+      [invoice.payment_order_id, userId]
     );
     
     if (orderResult.rows.length === 0) {
@@ -435,7 +442,7 @@ router.post('/refund', authenticateToken, async (req, res) => {
     await pool.query(`
       UPDATE user_subscriptions 
       SET status = 'canceled', canceled_at = NOW(), updated_at = NOW()
-      WHERE order_id = $1
+      WHERE payment_order_id = $1
     `, [orderId]);
     
     logger.info(`Refund successful for order ${order.order_no}, user: ${userId}`);

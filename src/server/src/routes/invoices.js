@@ -28,7 +28,7 @@ router.get('/', authenticateToken, async (req, res) => {
         po.payment_method,
         sp.name as plan_name
       FROM invoices i
-      LEFT JOIN payment_orders po ON i.order_id = po.id
+      LEFT JOIN payment_orders po ON i.payment_order_id = po.id
       LEFT JOIN user_subscriptions us ON po.subscription_id = us.id
       LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
       WHERE i.user_id = $1
@@ -140,7 +140,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
         sp.name as plan_name,
         sp.price as plan_price
       FROM invoices i
-      LEFT JOIN payment_orders po ON i.order_id = po.id
+      LEFT JOIN payment_orders po ON i.payment_order_id = po.id
       LEFT JOIN user_subscriptions us ON po.subscription_id = us.id
       LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
       WHERE i.id = $1 AND i.user_id = $2
