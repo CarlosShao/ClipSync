@@ -21,6 +21,11 @@ import superAdminAudit from '../../middleware/superAdminAudit.js';
 import ordersAdminRoutes, { reconciliationRouter } from './orders.js';
 import subscriptionsAdminRoutes from './subscriptions.js';
 import plansAdminRoutes from './plans.js';
+// T-A5：审计日志 + 角色权限 + 系统配置/功能开关 + 公告下发
+import auditAdminRoutes from './audit.js';
+import rolesAdminRoutes, { permissionsRouter as permissionsAdminRoutes } from './roles.js';
+import configsAdminRoutes, { flagsRouter as flagsAdminRoutes } from './configs.js';
+import announcementsAdminRoutes from './announcements.js';
 
 const adminRouter = Router();
 
@@ -68,6 +73,15 @@ adminRouter.use('/reconciliation', reconciliationRouter);
 adminRouter.use('/subscriptions', subscriptionsAdminRoutes);
 adminRouter.use('/plans', plansAdminRoutes);
 
-// TODO(T-A5): audit/roles/configs/announcements —— 审计日志 + 角色权限 + 系统配置/功能开关 + 公告下发 APIs（audit.view, roles.manage, configs.manage, announce.send）
+// ---- T-A5：审计日志 + 角色权限 + 系统配置/功能开关 + 公告下发 ----
+// 权限：审计查看 requirePerm('admin.audit.view')、角色写操作 requirePerm('admin.roles.manage')、
+//       配置/开关写操作 requirePerm('admin.configs.manage')、公告下发 requirePerm('admin.announce.send')；
+//       各 GET 列表仅要求 requireRole(50) 门槛（权限目录中除 audit.view 外无对应 view 权限点）。
+adminRouter.use('/audit-logs', auditAdminRoutes);
+adminRouter.use('/roles', rolesAdminRoutes);
+adminRouter.use('/permissions', permissionsAdminRoutes);
+adminRouter.use('/configs', configsAdminRoutes);
+adminRouter.use('/flags', flagsAdminRoutes);
+adminRouter.use('/announcements', announcementsAdminRoutes);
 
 export default adminRouter;
