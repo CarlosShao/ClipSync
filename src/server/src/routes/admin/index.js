@@ -17,6 +17,10 @@ import { logger } from '../../utils/logger.js';
 import { authenticateToken } from '../../middleware/auth.js';
 import { requireRole } from '../../middleware/adminAuth.js';
 import superAdminAudit from '../../middleware/superAdminAudit.js';
+// T-A1.5：数据看板 + 用户管理 + 设备管理
+import overviewAdminRoutes from './overview.js';
+import usersAdminRoutes from './users.js';
+import devicesAdminRoutes from './devices.js';
 // T-A3：订单/退款/对账 + 订阅赠期 + 套餐管理
 import ordersAdminRoutes, { reconciliationRouter } from './orders.js';
 import subscriptionsAdminRoutes from './subscriptions.js';
@@ -62,7 +66,14 @@ adminRouter.get('/whoami', async (req, res) => {
   }
 });
 
-// TODO(T-A1.5): users/devices —— 用户管理与设备管理 APIs（users.view/manage/delete, devices.manage）
+// ---- T-A1.5：数据看板 + 用户管理 + 设备管理 ----
+// 权限：用户查看 requirePerm('admin.users.view')、停用/启用/强制下线/重置2FA
+//       requirePerm('admin.users.manage')、角色分配 requirePerm('admin.roles.manage')、
+//       删除账户 requirePerm('admin.users.delete')、设备远程下线 requirePerm('admin.devices.manage')；
+//       看板聚合与设备列表/统计仅要求 requireRole(50) 门槛（权限目录中无对应 view 权限点）。
+adminRouter.use('/overview', overviewAdminRoutes);
+adminRouter.use('/users', usersAdminRoutes);
+adminRouter.use('/devices', devicesAdminRoutes);
 
 // ---- T-A3：订单/退款/对账 + 订阅赠期 + 套餐管理 ----
 // 权限：退款 requirePerm('admin.orders.refund')、对账 requirePerm('admin.orders.reconcile')、
