@@ -17,6 +17,10 @@ import { logger } from '../../utils/logger.js';
 import { authenticateToken } from '../../middleware/auth.js';
 import { requireRole } from '../../middleware/adminAuth.js';
 import superAdminAudit from '../../middleware/superAdminAudit.js';
+// T-A3：订单/退款/对账 + 订阅赠期 + 套餐管理
+import ordersAdminRoutes, { reconciliationRouter } from './orders.js';
+import subscriptionsAdminRoutes from './subscriptions.js';
+import plansAdminRoutes from './plans.js';
 
 const adminRouter = Router();
 
@@ -54,7 +58,16 @@ adminRouter.get('/whoami', async (req, res) => {
 });
 
 // TODO(T-A1.5): users/devices —— 用户管理与设备管理 APIs（users.view/manage/delete, devices.manage）
-// TODO(T-A3): orders/subscriptions/plans —— 订单/退款/对账 + 订阅赠期/套餐管理 APIs（orders.refund/reconcile, subscriptions.grant, plans.manage）
+
+// ---- T-A3：订单/退款/对账 + 订阅赠期 + 套餐管理 ----
+// 权限：退款 requirePerm('admin.orders.refund')、对账 requirePerm('admin.orders.reconcile')、
+//       赠期 requirePerm('admin.subscriptions.grant')、套餐编辑 requirePerm('admin.plans.manage')；
+//       各 GET 列表仅要求 requireRole(50) 门槛（权限目录中无对应 view 权限点）。
+adminRouter.use('/orders', ordersAdminRoutes);
+adminRouter.use('/reconciliation', reconciliationRouter);
+adminRouter.use('/subscriptions', subscriptionsAdminRoutes);
+adminRouter.use('/plans', plansAdminRoutes);
+
 // TODO(T-A5): audit/roles/configs/announcements —— 审计日志 + 角色权限 + 系统配置/功能开关 + 公告下发 APIs（audit.view, roles.manage, configs.manage, announce.send）
 
 export default adminRouter;
