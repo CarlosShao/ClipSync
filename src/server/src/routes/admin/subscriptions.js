@@ -215,6 +215,15 @@ router.post('/:id/grant', requirePerm('admin.subscriptions.grant'), async (req, 
     );
     const updated = updatedRows[0];
 
+    // 同步 users 订阅快照（与 subscribe 路由口径一致：subscription_status = 套餐名小写，
+    // current_subscription_id 指向被调整的订阅）——否则订阅检查中间件读到旧状态
+    await pool.query(
+      `UPDATE users
+       SET subscription_status = $2, current_subscription_id = $1, updated_at = NOW()
+       WHERE id = $3`,
+      [updated.id, (plan.name || '').toLowerCase() || 'active', subscription.user_id]
+    );
+
     await logAuditEvent({
       userId: req.user?.userId,
       action: 'admin.subscriptions.grant',
