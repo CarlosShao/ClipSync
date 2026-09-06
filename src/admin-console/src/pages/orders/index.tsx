@@ -191,7 +191,10 @@ export default function OrdersPage() {
 
   return (
     <>
-      <PageHeader title="订单与支付" description="本月 128 笔 · 成交 ¥41,286 · 待处理退款 2 笔" />
+      <PageHeader
+        title="订单与支付"
+        description="订单与退款流水 · 支持按状态/渠道/时间筛选 · 退款等敏感操作写入审计日志"
+      />
 
       <Card styles={{ body: { padding: 0 } }}>
         <Tabs

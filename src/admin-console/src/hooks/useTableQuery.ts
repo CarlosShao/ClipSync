@@ -86,7 +86,7 @@ export function useTableQuery<T, F extends object>(
     [filters, pageSize, sort, writeParams],
   );
 
-  /** antd Table onChange（排序） */
+  /** antd Table onChange（仅排序变更时写 URL；翻页由 pagination.onChange 负责，否则会用旧 page 覆盖回去） */
   const onSorterChange = useCallback(
     (_pagination: unknown, _filters: Record<string, FilterValue | null>, sorter: SorterResult<T> | SorterResult<T>[]) => {
       const item = Array.isArray(sorter) ? sorter[0] : sorter;
@@ -95,9 +95,10 @@ export function useTableQuery<T, F extends object>(
         : String(item?.field ?? '');
       const nextSort =
         item && item.order ? `${field}_${item.order === 'ascend' ? 'asc' : 'desc'}` : undefined;
-      writeParams(page, pageSize, filters, nextSort);
+      if ((nextSort ?? undefined) === (sort ?? undefined)) return;
+      writeParams(1, pageSize, filters, nextSort);
     },
-    [filters, page, pageSize, writeParams],
+    [filters, pageSize, sort, writeParams],
   );
 
   const tableProps = useMemo(

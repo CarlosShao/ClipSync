@@ -40,6 +40,7 @@ export function AuditDetailModal({ open, log, onClose }: AuditDetailModalProps) 
             size="small"
             column={2}
             bordered
+            labelStyle={{ whiteSpace: 'nowrap', width: 92 }}
             items={[
               { key: 'time', label: '时间', span: 2, children: <span className={styles.monoCell}>{log.createdAt}</span> },
               {
@@ -58,10 +59,10 @@ export function AuditDetailModal({ open, log, onClose }: AuditDetailModalProps) 
               },
               { key: 'result', label: '结果', children: log.status === 'success' ? <StatusTag tone="green">成功</StatusTag> : <StatusTag tone="red">失败</StatusTag> },
               { key: 'action', label: '动作', span: 2, children: <span className={`${styles.actionCell} ${sensitive ? styles.actionSensitive : ''}`}>{log.action}</span> },
-              { key: 'resourceType', label: '资源类型', children: <span className={styles.monoCell}>{log.resourceType}</span> },
-              { key: 'resourceId', label: '资源 ID', children: <span className={styles.monoCell}>{log.resourceId}</span> },
-              { key: 'ip', label: 'IP', children: <span className={styles.monoCell}>{log.ipAddress}</span> },
-              { key: 'ua', label: 'User-Agent', children: <span className={styles.monoCell}>{log.userAgent ?? '—'}</span> },
+              { key: 'resourceType', label: '资源类型', children: <span className={styles.monoCell}>{log.resourceType || '—'}</span> },
+              { key: 'resourceId', label: '资源 ID', children: <span className={styles.monoCell}>{log.resourceId || '—'}</span> },
+              { key: 'ip', label: 'IP', children: <span className={styles.monoCell}>{log.ipAddress || '—'}</span> },
+              { key: 'ua', label: 'User-Agent', children: <span className={styles.monoCell}>{log.userAgent || '—'}</span> },
             ]}
           />
           <div className={styles.detailJsonLabel}>details（JSON）</div>

@@ -135,5 +135,15 @@
 | 设备/订阅页 | ✅ 完成（09-06） | Wave 4 | 平台分布/远程下线/赠期弹窗，48 测试 |
 | T-A1.5 用户/设备/overview 后端 | ✅ 完成（09-06，补票） | Wave 5 | 排票遗漏补齐；users/devices/overview 全套 |
 | T-A7 集成验收 | ✅ 完成（09-06） | Wave 5 | 043/044 已应用 dev 库；联调容器 clipsync-admin-int(:3003)；真后端登录/whoami/全页面走查通过；登录改造为验证码+密码双模式 |
+| 真后端点击测试修复轮 | ✅ 完成（09-05） | Wave 5 补充 | 分页竞态/审计详情排版/假数据清除/审计 resource_id 迁移 045/设备 browser 平台/订阅 stats 端点/角色写路径实测（保存→审计→还原） |
 
 **遗留事项（后续迭代）**：① 设备远程下线仅 DB 标记离线，真实密钥吊销待做；② 公告群发未接 notificationService（落表+TODO）；③ auth-refresh 真实契约未对齐（401 直接回登录页）；④ E2E smoke 为 skip 态骨架；⑤ dev 库 phone 列存在脏数据（如 `135****rged`），打码函数对非数字串显示原样。
+
+**真后端点击测试修复记录（09-05，编排者实测）**：
+- **分页点不动**：`useTableQuery.onSorterChange` 在纯翻页时用闭包旧 page 二次写 URL 覆盖回去——改为排序未变化时直接 return，翻页只走 `pagination.onChange`；
+- **审计写入静默丢失**：`audit_logs.resource_id` 是 UUID 列而 admin 路由传开关键/路径，INSERT 报 invalid uuid 被吞——迁移 045 转 TEXT + `logAuditEvent` 截断/降级重试兜底；实测真实开关切换与角色保存均落审计（admin.flag.update ×2、admin.roles.update ×2）；
+- **假数据清除**（用户明令）：订单/用户/审计页头写死数字、看板「离线快照」说明、设置页编造演练记录 → 全部改真实数据或中性描述；
+- **设备页 browser 平台白屏**：真实库 platform='browser' 不在映射表 → React 崩溃 → 补映射与类型；
+- **订阅页统计 404**：后端补 GET /admin/subscriptions/stats；
+- **看板环比「+-100%」**：fmtSignedRate 带符号格式化；
+- **角色写路径实测**：管理员勾选变更→保存→toast+审计→还原→DB 复核 7 项权限与 043 迁移一致。

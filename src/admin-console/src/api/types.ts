@@ -398,9 +398,18 @@ export interface UpdateRolePermissionsPayload {
 
 /**
  * 管理端设备平台（页头平台分布徽章取 windows/macos/android/ios/linux 五类；
- * ipados/web 为扩展位：平板类设备平台归入 ios，浏览器端归入 web）。
+ * ipados/web 为扩展位；browser 为设备表 CHECK 约束的真实枚举值（迁移 001），
+ * 与 web 同义——真实后端返回 browser，映射表两者都提供）。
  */
-export type DevicePlatform = 'windows' | 'macos' | 'android' | 'ios' | 'linux' | 'ipados' | 'web';
+export type DevicePlatform =
+  | 'windows'
+  | 'macos'
+  | 'android'
+  | 'ios'
+  | 'linux'
+  | 'ipados'
+  | 'web'
+  | 'browser';
 
 /** 设备形态 */
 export type DeviceKind = 'desktop' | 'mobile' | 'tablet' | 'browser';

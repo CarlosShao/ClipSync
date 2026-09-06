@@ -37,7 +37,7 @@ const AI_PROVIDER_OPTIONS = ['openrouter', 'openai', 'anthropic', 'deepseek'].ma
   label: v,
 }));
 
-const MAINTENANCE_HINT = '开启后客户端暂停同步并显示维护公告；最近一次演练：昨天 14:05（持续 3 分钟）';
+const MAINTENANCE_HINT = '开启后客户端将暂停剪贴板同步并展示维护公告，期间同步请求返回维护提示';
 
 /** 设置页查询共用 staleTime：避免窗口聚焦自动重取时打断表单编辑 */
 const SETTINGS_STALE_TIME = 5 * 60_000;

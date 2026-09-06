@@ -8,8 +8,15 @@ import {
 import type { ComponentType, CSSProperties } from 'react';
 import type { DeviceKind, DevicePlatform } from '@/api/types';
 
-/** 页头平台徽章的展示顺序（Windows → Linux，与工单一致） */
-export const PLATFORM_ORDER: DevicePlatform[] = ['windows', 'macos', 'android', 'ios', 'linux'];
+/** 页头平台徽章的展示顺序（Windows → Linux，与工单一致；browser 为设备表真实枚举） */
+export const PLATFORM_ORDER: DevicePlatform[] = [
+  'windows',
+  'macos',
+  'android',
+  'ios',
+  'linux',
+  'browser',
+];
 
 export const platformLabel: Record<DevicePlatform, string> = {
   windows: 'Windows',
@@ -19,6 +26,7 @@ export const platformLabel: Record<DevicePlatform, string> = {
   linux: 'Linux',
   ipados: 'iPadOS',
   web: 'Web',
+  browser: '浏览器',
 };
 
 /** 平台图标：iOS/iPadOS 共用 Apple 图标，浏览器端用地球 */
@@ -30,6 +38,7 @@ export const platformIcon: Record<DevicePlatform, ComponentType<{ className?: st
   linux: LinuxOutlined,
   ipados: AppleOutlined,
   web: GlobalOutlined,
+  browser: GlobalOutlined,
 };
 
 export const kindLabel: Record<DeviceKind, string> = {

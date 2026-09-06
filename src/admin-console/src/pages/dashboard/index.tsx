@@ -92,6 +92,11 @@ function KpiCard({ tone, icon, label, value, delta }: KpiCardProps) {
 const CONVERSION_RING_RADIUS = 46;
 const CONVERSION_RING_C = 2 * Math.PI * CONVERSION_RING_RADIUS;
 
+/** 带符号百分比：负数显示 -x%，正数显示 +x%，避免出现「+-100%」 */
+function fmtSignedRate(value: number): string {
+  return `${value >= 0 ? '+' : ''}${value}%`;
+}
+
 /** 数据看板（对照草图 B）：4 KPI 卡 + 近 14 天订单柱图 + 付费转化/渠道占比 + 待处理事项 */
 export default function DashboardPage() {
   const { data, isLoading } = useQuery({
@@ -117,10 +122,7 @@ export default function DashboardPage() {
 
   return (
     <>
-      <PageHeader
-        title="数据看板"
-        description={`统计截至 ${data.statsAt} · 每日 02:00 生成离线快照`}
-      />
+      <PageHeader title="数据看板" description={`统计截至 ${data.statsAt} · 实时聚合自生产数据库`} />
 
       <div className={styles.kpis}>
         <KpiCard
@@ -130,8 +132,8 @@ export default function DashboardPage() {
           value={kpis.totalUsers.toLocaleString('zh-CN')}
           delta={
             <>
-              本周 <b className={styles.up}>+{kpis.weekNewUsers}</b> · 环比 +
-              {kpis.weekGrowthRate}%
+              本周 <b className={styles.up}>+{kpis.weekNewUsers}</b> · 环比{' '}
+              {fmtSignedRate(kpis.weekGrowthRate)}
             </>
           }
         />
@@ -142,8 +144,7 @@ export default function DashboardPage() {
           value={`¥${kpis.monthRevenue.toLocaleString('zh-CN')}`}
           delta={
             <>
-              环比 <b className={styles.up}>+{kpis.revenueGrowthRate}%</b> · 退款率{' '}
-              {kpis.refundRate}%
+              环比 {fmtSignedRate(kpis.revenueGrowthRate)} · 退款率 {kpis.refundRate}%
             </>
           }
         />

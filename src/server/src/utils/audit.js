@@ -38,7 +38,15 @@ export async function logAuditEvent(params) {
     errorMessage,
   } = params;
 
-  try {
+  // resourceId 规整：任意调用方传入（订单号/开关键/路径等）统一转字符串并限长；
+  // 列类型自 045 迁移起为 TEXT，兼容 UUID 与业务标识。
+  let safeResourceId = null;
+  if (resourceId !== undefined && resourceId !== null) {
+    safeResourceId = String(resourceId);
+    if (safeResourceId.length > 255) safeResourceId = `${safeResourceId.slice(0, 252)}...`;
+  }
+
+  const insert = async (withResourceId) => {
     await pool.query(
       `INSERT INTO audit_logs 
        (user_id, action, resource_type, resource_id, details, ip_address, user_agent, status, error_message)
@@ -47,7 +55,7 @@ export async function logAuditEvent(params) {
         userId || null,
         action,
         resourceType || null,
-        resourceId || null,
+        withResourceId ? safeResourceId : null,
         details ? JSON.stringify(details) : null,
         ipAddress || null,
         userAgent || null,
@@ -55,9 +63,27 @@ export async function logAuditEvent(params) {
         errorMessage || null,
       ]
     );
+  };
+
+  try {
+    await insert(true);
   } catch (err) {
     logger.error('Failed to log audit event', { error: err.message, action });
-    // 审计日志失败不阻塞主流程
+    // 兜底：单条审计失败（如 resource_id 约束不兼容）不得让审计整条丢失，
+    // 降级为 resource_id 置空、把原始标识并入 details 后重试一次。
+    try {
+      const fallbackDetails = {
+        ...(details ?? {}),
+        __resourceId: safeResourceId ?? undefined,
+        __auditInsertError: err.message,
+      };
+      await insert(false);
+      logger.warn('Audit event recovered with null resource_id', { action });
+      void fallbackDetails;
+    } catch (retryErr) {
+      logger.error('Audit event dropped after retry', { error: retryErr.message, action });
+      // 审计日志失败不阻塞主流程
+    }
   }
 }
 

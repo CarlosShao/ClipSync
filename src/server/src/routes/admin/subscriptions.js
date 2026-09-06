@@ -121,6 +121,42 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ───────────────────────── 页头统计 ─────────────────────────
+
+/**
+ * GET /api/admin/subscriptions/stats
+ * 订阅页头统计：{ active, trialing, expiringThisMonth }。
+ * expiringThisMonth = current_period_end 落在当前自然月内（含 trialing/past_due）。
+ * 必须声明在 /:id/grant 之前无关（方法不同），但保持路径字面量优先。
+ */
+router.get('/stats', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE status = 'active')::int AS active,
+         COUNT(*) FILTER (WHERE status = 'trialing')::int AS trialing,
+         COUNT(*) FILTER (
+           WHERE current_period_end IS NOT NULL
+             AND current_period_end < date_trunc('month', NOW()) + INTERVAL '1 month'
+             AND current_period_end >= date_trunc('month', NOW())
+         )::int AS expiring_this_month
+       FROM user_subscriptions`
+    );
+    const row = rows[0] ?? {};
+    return res.json({
+      code: 0,
+      data: {
+        active: Number(row.active ?? 0),
+        trialing: Number(row.trialing ?? 0),
+        expiringThisMonth: Number(row.expiring_this_month ?? 0),
+      },
+    });
+  } catch (err) {
+    logger.error('[admin/subscriptions] stats failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '获取订阅统计失败' });
+  }
+});
+
 // ───────────────────────── 人工赠期/调整套餐 ─────────────────────────
 
 /**
