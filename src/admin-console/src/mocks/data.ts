@@ -1,4 +1,6 @@
 import type {
+  AdminDevice,
+  AdminSubscription,
   AdminUser,
   Announcement,
   AuditLog,
@@ -934,4 +936,48 @@ export const mockAnnouncements: Announcement[] = [
     deliveredCount: 12102,
     clickedCount: 3847,
   },
+];
+
+// ─────────────── T-A6 追加：设备 / 订阅（管理端全量列表） ───────────────
+
+/**
+ * 管理端设备 14 台：覆盖 5 平台（Windows 3 / macOS 5 / Android 3 / iOS 2 / Linux 1）、
+ * 在线 8 / 离线 6、属主 6 人（昵称/打码手机号与 mockUsers 对齐）。
+ */
+export const mockDevices: AdminDevice[] = [
+  { id: 'dev_3a8f', name: 'DESKTOP-7A2', platform: 'windows', kind: 'desktop', os: 'Windows 11', appVersion: '1.4.2', ownerId: 'usr_7c2f9e41-88d2-4b3a-a1c4', ownerNickname: '林清和', ownerPhone: '138****2765', lastActiveAt: '2026-09-05 20:33', status: 'online' },
+  { id: 'dev_7c64', name: 'MacBook Pro', platform: 'macos', kind: 'desktop', os: 'macOS 26', appVersion: '1.4.2', ownerId: 'usr_7c2f9e41-88d2-4b3a-a1c4', ownerNickname: '林清和', ownerPhone: '138****2765', lastActiveAt: '2026-09-05 19:48', status: 'online' },
+  { id: 'dev_5b21', name: 'Xiaomi 14', platform: 'android', kind: 'mobile', os: 'Android 15', appVersion: '1.4.2', ownerId: 'usr_7c2f9e41-88d2-4b3a-a1c4', ownerNickname: '林清和', ownerPhone: '138****2765', lastActiveAt: '2026-09-05 09:12', status: 'offline' },
+  { id: 'dev_a101', name: 'MacBook Pro 16', platform: 'macos', kind: 'desktop', os: 'macOS 26', appVersion: '1.4.2', ownerId: 'usr_8f31a2c0-6d55-4e21-9f7b-c2', ownerNickname: 'chen_ming', ownerPhone: '186****4402', lastActiveAt: '2026-09-05 19:02', status: 'online' },
+  { id: 'dev_a102', name: 'iMac Studio', platform: 'macos', kind: 'desktop', os: 'macOS 26', appVersion: '1.4.2', ownerId: 'usr_8f31a2c0-6d55-4e21-9f7b-c2', ownerNickname: 'chen_ming', ownerPhone: '186****4402', lastActiveAt: '2026-09-05 18:44', status: 'online' },
+  { id: 'dev_a103', name: 'Pixel 9 Pro', platform: 'android', kind: 'mobile', os: 'Android 16', appVersion: '1.4.2', ownerId: 'usr_8f31a2c0-6d55-4e21-9f7b-c2', ownerNickname: 'chen_ming', ownerPhone: '186****4402', lastActiveAt: '2026-09-04 20:15', status: 'offline' },
+  { id: 'dev_b201', name: 'THINKPAD-X1', platform: 'windows', kind: 'desktop', os: 'Windows 10', appVersion: '1.3.9', ownerId: 'usr_5b19d7a3-21c8-4c46-b8aa-01', ownerNickname: '王小雨', ownerPhone: '159****8834', lastActiveAt: '2026-09-05 17:26', status: 'online' },
+  { id: 'dev_b202', name: 'MI 9', platform: 'android', kind: 'mobile', os: 'Android 12', appVersion: '1.2.0', ownerId: 'usr_5b19d7a3-21c8-4c46-b8aa-01', ownerNickname: '王小雨', ownerPhone: '159****8834', lastActiveAt: '2026-08-30 08:41', status: 'offline' },
+  { id: 'dev_c301', name: 'yuki-win', platform: 'windows', kind: 'desktop', os: 'Windows 11', appVersion: '1.4.2', ownerId: 'usr_yuki77e1-4a20-4bfe-8d33-77', ownerNickname: 'yuki_dev', ownerPhone: '137****5521', lastActiveAt: '2026-09-05 17:35', status: 'online' },
+  { id: 'dev_c302', name: 'yuki-mac', platform: 'macos', kind: 'desktop', os: 'macOS 15', appVersion: '1.4.1', ownerId: 'usr_yuki77e1-4a20-4bfe-8d33-77', ownerNickname: 'yuki_dev', ownerPhone: '137****5521', lastActiveAt: '2026-09-04 11:20', status: 'offline' },
+  { id: 'dev_d401', name: 'ubuntu-dev', platform: 'linux', kind: 'desktop', os: 'Ubuntu 24.04 LTS', appVersion: '1.4.2', ownerId: 'usr_1a6f5c9d-84b2-4e37-a2d1-63', ownerNickname: 'lee.dev', ownerPhone: '150****6643', lastActiveAt: '2026-09-05 15:38', status: 'online' },
+  { id: 'dev_d402', name: 'iPhone 15', platform: 'ios', kind: 'mobile', os: 'iOS 26', appVersion: '1.4.2', ownerId: 'usr_1a6f5c9d-84b2-4e37-a2d1-63', ownerNickname: 'lee.dev', ownerPhone: '150****6643', lastActiveAt: '2026-09-05 12:04', status: 'offline' },
+  { id: 'dev_e501', name: 'iPad Air', platform: 'ios', kind: 'tablet', os: 'iPadOS 26', appVersion: '1.4.1', ownerId: 'usr_9d44b8e2-30f1-4a9e-b7c4-52', ownerNickname: 'Sylvia W.', ownerPhone: '+44****9201', lastActiveAt: '2026-09-03 21:30', status: 'offline' },
+  { id: 'dev_e502', name: 'MacBook Air', platform: 'macos', kind: 'desktop', os: 'macOS 26', appVersion: '1.4.2', ownerId: 'usr_9d44b8e2-30f1-4a9e-b7c4-52', ownerNickname: 'Sylvia W.', ownerPhone: '+44****9201', lastActiveAt: '2026-09-05 16:20', status: 'online' },
+];
+
+/**
+ * 管理端订阅 13 条：active 5 / trialing 2 / past_due 1 / canceled 1 / expired 4；
+ * 前 8 条与 mockUsers 的 subscription 摘要对齐，后 5 条为其他注册用户。
+ * 「本月到期」以 2026-09 计：chen_ming(09-19) / yuki(09-09) / 周辰(09-06) / 韩雪(09-30)。
+ */
+export const mockSubscriptions: AdminSubscription[] = [
+  { id: 'sub_01', userId: 'usr_7c2f9e41-88d2-4b3a-a1c4', nickname: '林清和', phone: '138****2765', plan: 'pro', billingCycle: 'monthly', status: 'active', currentPeriodEnd: '2026-10-02', autoRenew: true, startedAt: '2025-11-02' },
+  { id: 'sub_02', userId: 'usr_8f31a2c0-6d55-4e21-9f7b-c2', nickname: 'chen_ming', phone: '186****4402', plan: 'enterprise', billingCycle: 'yearly', status: 'active', currentPeriodEnd: '2026-09-19', autoRenew: true, startedAt: '2025-09-19' },
+  { id: 'sub_03', userId: 'usr_9d44b8e2-30f1-4a9e-b7c4-52', nickname: 'Sylvia W.', phone: '+44****9201', plan: 'pro', billingCycle: 'yearly', status: 'active', currentPeriodEnd: '2026-12-08', autoRenew: false, startedAt: '2025-12-08' },
+  { id: 'sub_04', userId: 'usr_yuki77e1-4a20-4bfe-8d33-77', nickname: 'yuki_dev', phone: '137****5521', plan: 'free', billingCycle: null, status: 'trialing', currentPeriodEnd: '2026-09-09', autoRenew: false, startedAt: '2026-01-27', trialDaysLeft: 4 },
+  { id: 'sub_05', userId: 'usr_5b19d7a3-21c8-4c46-b8aa-01', nickname: '王小雨', phone: '159****8834', plan: 'free', billingCycle: null, status: 'expired', currentPeriodEnd: null, autoRenew: false, startedAt: '2026-09-04' },
+  { id: 'sub_06', userId: 'usr_2e91c3f8-77aa-4d52-9c1e-09', nickname: '赵拓', phone: '188****1097', plan: 'free', billingCycle: null, status: 'expired', currentPeriodEnd: null, autoRenew: false, startedAt: '2026-03-15' },
+  { id: 'sub_07', userId: 'usr_1a6f5c9d-84b2-4e37-a2d1-63', nickname: 'lee.dev', phone: '150****6643', plan: 'free', billingCycle: null, status: 'expired', currentPeriodEnd: null, autoRenew: false, startedAt: '2026-08-30' },
+  { id: 'sub_08', userId: 'usr_4c80e2b1-59d3-4f88-8ba2-31', nickname: '何岸', phone: '177****0521', plan: 'free', billingCycle: null, status: 'expired', currentPeriodEnd: null, autoRenew: false, startedAt: '2026-05-21' },
+  { id: 'sub_09', userId: 'usr_11aa8842-5f30-4c11-8e22-71', nickname: '刘晓蕾', phone: '139****8842', plan: 'pro', billingCycle: 'monthly', status: 'past_due', currentPeriodEnd: '2026-08-28', autoRenew: true, startedAt: '2025-08-28' },
+  { id: 'sub_10', userId: 'usr_22bb2077-9a14-4d03-b7c1-08', nickname: 'Marks T.', phone: '131****2077', plan: 'enterprise', billingCycle: 'monthly', status: 'canceled', currentPeriodEnd: '2026-10-15', autoRenew: false, startedAt: '2026-04-15' },
+  { id: 'sub_11', userId: 'usr_33cc3361-2e75-49ba-a1d5-92', nickname: '周辰', phone: '155****3361', plan: 'pro', billingCycle: 'monthly', status: 'active', currentPeriodEnd: '2026-09-06', autoRenew: true, startedAt: '2026-03-06' },
+  { id: 'sub_12', userId: 'usr_44dd6620-7c19-4f8e-9b02-33', nickname: '韩雪', phone: '187****6620', plan: 'pro', billingCycle: 'yearly', status: 'active', currentPeriodEnd: '2026-09-30', autoRenew: false, startedAt: '2025-09-30' },
+  { id: 'sub_13', userId: 'usr_55ee9017-4b62-41c7-a3f0-16', nickname: '覃秋', phone: '133****9017', plan: 'free', billingCycle: null, status: 'trialing', currentPeriodEnd: '2026-09-11', autoRenew: false, startedAt: '2026-09-05', trialDaysLeft: 6 },
 ];

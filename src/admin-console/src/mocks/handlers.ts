@@ -1,15 +1,21 @@
 import { HttpResponse, delay, http } from 'msw';
+import dayjs from 'dayjs';
 import type {
+  AdminDevice,
+  AdminSubscription,
   Announcement,
   ApiResp,
   AuditLog,
   CreateRolePayload,
+  DeviceStats,
+  GrantSubscriptionPayload,
   LoginResp,
   Order,
   OverviewData,
   PageData,
   ReconciliationReport,
   Role,
+  SubscriptionStats,
   UserDetail,
 } from '@/api/types';
 import { isSensitiveAction } from '@/pages/audit/sensitive';
@@ -17,10 +23,12 @@ import {
   mockAnnouncements,
   mockAuditLogs,
   mockConfigs,
+  mockDevices,
   mockFlags,
   mockOrders,
   mockPermissions,
   mockRoles,
+  mockSubscriptions,
   mockUserDevices,
   mockUsers,
 } from '@/mocks/data';
@@ -593,6 +601,159 @@ const configHandlers = [
   }),
 ];
 
+// ─────────────── T-A6 追加：设备管理 ───────────────
+
+function collectDeviceStats(): DeviceStats {
+  const counts = new Map<string, number>();
+  for (const device of mockDevices) {
+    counts.set(device.platform, (counts.get(device.platform) ?? 0) + 1);
+  }
+  return {
+    total: mockDevices.length,
+    online: mockDevices.filter((d) => d.status === 'online').length,
+    byPlatform: [...counts.entries()].map(([platform, count]) => ({
+      platform: platform as AdminDevice['platform'],
+      count,
+    })),
+  };
+}
+
+const devicesHandlers = [
+  http.get('/api/admin/devices/stats', async () => {
+    await delay(120);
+    return ok(collectDeviceStats());
+  }),
+
+  http.get('/api/admin/devices', async ({ request }) => {
+    await delay(200);
+    const url = new URL(request.url);
+    const page = numParam(url, 'page', 1);
+    const pageSize = numParam(url, 'pageSize', 10);
+    const q = url.searchParams.get('q')?.trim() ?? '';
+    const platform = url.searchParams.get('platform');
+    const status = url.searchParams.get('status');
+
+    const filtered = mockDevices.filter((d) => {
+      if (q && !d.name.toLowerCase().includes(q.toLowerCase()) && !d.ownerNickname.includes(q) && !d.ownerPhone.includes(q) && !d.ownerId.includes(q)) {
+        return false;
+      }
+      if (platform && platform !== 'all' && d.platform !== platform) return false;
+      if (status && status !== 'all' && d.status !== status) return false;
+      return true;
+    });
+
+    return ok(pageOf(filtered, page, pageSize));
+  }),
+
+  // 远程下线：仅在线设备可下线；原因必填，写审计 admin.device.offline（敏感）
+  http.post('/api/admin/devices/:id/offline', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const device = mockDevices.find((d) => d.id === id);
+    if (!device) return fail(404, 40404, '设备不存在');
+    if (device.status !== 'online') return fail(400, 40005, '仅在线设备可执行远程下线');
+    const body = (await request.json()) as { reason?: string };
+    if (!body.reason?.trim()) return fail(400, 40003, '远程下线必须填写原因（写入审计日志）');
+    device.status = 'offline';
+    device.lastActiveAt = '2026-09-05 20:47';
+    pushAudit(
+      'admin.device.offline',
+      'device',
+      device.id,
+      `device="${device.name}", owner="${device.ownerNickname}", reason="${body.reason.trim()}"`,
+    );
+    return ok(device, '设备已远程下线');
+  }),
+];
+
+// ─────────────── T-A6 追加：订阅管理 ───────────────
+
+/** 「本月」以 mock 时间锚（2026-09）计，与种子数据的周期止日期保持同一宇宙 */
+const MOCK_CURRENT_MONTH = '2026-09';
+
+function collectSubscriptionStats(): SubscriptionStats {
+  return {
+    active: mockSubscriptions.filter((s) => s.status === 'active').length,
+    trialing: mockSubscriptions.filter((s) => s.status === 'trialing').length,
+    expiringThisMonth: mockSubscriptions.filter((s) =>
+      Boolean(s.currentPeriodEnd?.startsWith(MOCK_CURRENT_MONTH)),
+    ).length,
+  };
+}
+
+/** 赠期落账：周期止 = max(当前时间, 现周期止) + months 个月（dayjs 日历月） */
+function grantInPlace(sub: AdminSubscription, payload: GrantSubscriptionPayload): AdminSubscription {
+  const now = dayjs();
+  const current = sub.currentPeriodEnd ? dayjs(sub.currentPeriodEnd) : null;
+  const base = current !== null && current.isAfter(now) ? current : now;
+  sub.plan = payload.planId;
+  sub.billingCycle = 'monthly';
+  sub.status = 'active';
+  sub.currentPeriodEnd = base.add(payload.months, 'month').format('YYYY-MM-DD');
+  delete sub.trialDaysLeft;
+  // 同步 mockUsers 里的订阅摘要，保持用户页/订阅页数据一致
+  const user = mockUsers.find((u) => u.id === sub.userId);
+  if (user) {
+    user.subscription.plan = sub.plan;
+    user.subscription.billingCycle = sub.billingCycle;
+    user.subscription.status = sub.status;
+    user.subscription.currentPeriodEnd = sub.currentPeriodEnd;
+    user.subscription.autoRenew = sub.autoRenew;
+  }
+  return sub;
+}
+
+const subscriptionsHandlers = [
+  http.get('/api/admin/subscriptions/stats', async () => {
+    await delay(120);
+    return ok(collectSubscriptionStats());
+  }),
+
+  http.get('/api/admin/subscriptions', async ({ request }) => {
+    await delay(200);
+    const url = new URL(request.url);
+    const page = numParam(url, 'page', 1);
+    const pageSize = numParam(url, 'pageSize', 10);
+    const q = url.searchParams.get('q')?.trim() ?? '';
+    const plan = url.searchParams.get('plan');
+    const status = url.searchParams.get('status');
+
+    const filtered = mockSubscriptions.filter((s) => {
+      if (q && !s.nickname.includes(q) && !s.phone.includes(q) && !s.userId.includes(q)) return false;
+      if (plan && plan !== 'all' && s.plan !== plan) return false;
+      if (status && status !== 'all' && s.status !== status) return false;
+      return true;
+    });
+
+    return ok(pageOf(filtered, page, pageSize));
+  }),
+
+  // 赠期 / 调整套餐：planId 仅接受 pro/enterprise；月数 1–12；原因必填并写审计（敏感）
+  http.post('/api/admin/subscriptions/:id/grant', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const sub = mockSubscriptions.find((s) => s.id === id);
+    if (!sub) return fail(404, 40404, '订阅不存在');
+    const body = (await request.json()) as Partial<GrantSubscriptionPayload>;
+    if (body.planId !== 'pro' && body.planId !== 'enterprise') {
+      return fail(400, 40002, '目标套餐仅支持 Pro / Enterprise（Free 无计费周期，不提供赠期）');
+    }
+    const months = Number(body.months);
+    if (!Number.isInteger(months) || months < 1 || months > 12) {
+      return fail(400, 40002, '延长月数须为 1–12 的整数');
+    }
+    if (!body.reason?.trim()) return fail(400, 40003, '赠期原因必填（写入审计日志）');
+    grantInPlace(sub, body as GrantSubscriptionPayload);
+    pushAudit(
+      'admin.subscriptions.grant',
+      'user_subscription',
+      sub.id,
+      `user="${sub.nickname}", plan=${sub.plan}, months=${months}, reason="${body.reason.trim()}"`,
+    );
+    return ok(sub, `已为 ${sub.nickname} 赠期 ${months} 个月`);
+  }),
+];
+
 export const handlers = [
   ...authHandlers,
   ...overviewHandlers,
@@ -601,4 +762,6 @@ export const handlers = [
   ...auditHandlers,
   ...roleHandlers,
   ...configHandlers,
+  ...devicesHandlers,
+  ...subscriptionsHandlers,
 ];

@@ -384,3 +384,100 @@ export interface CreateRolePayload {
 export interface UpdateRolePermissionsPayload {
   permissions: string[];
 }
+
+// ─────────────── T-A6 追加：设备管理 + 订阅管理（只增不改） ───────────────
+
+/**
+ * 管理端设备平台（页头平台分布徽章取 windows/macos/android/ios/linux 五类；
+ * ipados/web 为扩展位：平板类设备平台归入 ios，浏览器端归入 web）。
+ */
+export type DevicePlatform = 'windows' | 'macos' | 'android' | 'ios' | 'linux' | 'ipados' | 'web';
+
+/** 设备形态 */
+export type DeviceKind = 'desktop' | 'mobile' | 'tablet' | 'browser';
+
+/** 管理端设备行（GET /api/admin/devices；比用户抽屉的轻量 Device 多属主/版本字段） */
+export interface AdminDevice {
+  id: string;
+  /** 设备名，如 DESKTOP-7A2 / Xiaomi 14 */
+  name: string;
+  platform: DevicePlatform;
+  kind: DeviceKind;
+  /** 系统版本，如 Windows 11 / macOS 26 / Ubuntu 24.04 LTS */
+  os: string;
+  /** 客户端应用版本，如 1.4.2 */
+  appVersion: string;
+  ownerId: string;
+  /** 属主昵称 */
+  ownerNickname: string;
+  /** 属主打码手机号 */
+  ownerPhone: string;
+  lastActiveAt: string | null;
+  status: 'online' | 'offline';
+}
+
+export interface DeviceListParams extends ListParams {
+  platform?: DevicePlatform | 'all';
+  status?: 'online' | 'offline' | 'all';
+}
+
+/** GET /api/admin/devices/stats：设备页头统计 */
+export interface DeviceStats {
+  total: number;
+  online: number;
+  /** 平台分布（页头小徽章，count 之和 = total） */
+  byPlatform: Array<{ platform: DevicePlatform; count: number }>;
+}
+
+/**
+ * POST /api/admin/devices/:id/offline：远程下线（原因必填，写审计 admin.device.offline 敏感）。
+ * 约定用 POST 而非 DELETE /devices/:id：下线为状态变更（设备记录保留），非删除资源。
+ */
+export interface DeviceOfflinePayload {
+  reason: string;
+}
+
+/** 管理端订阅行（GET /api/admin/subscriptions，含用户摘要） */
+export interface AdminSubscription {
+  id: string;
+  userId: string;
+  nickname: string;
+  /** 打码手机号 */
+  phone: string;
+  plan: PlanKey;
+  billingCycle: BillingCycle | null;
+  status: SubscriptionStatus;
+  /** YYYY-MM-DD */
+  currentPeriodEnd: string | null;
+  autoRenew: boolean;
+  /** 订阅开始时间 YYYY-MM-DD */
+  startedAt: string;
+  trialDaysLeft?: number;
+}
+
+export interface SubscriptionListParams extends ListParams {
+  plan?: PlanKey | 'all';
+  status?: SubscriptionStatus | 'all';
+}
+
+/** GET /api/admin/subscriptions/stats：订阅页头统计 */
+export interface SubscriptionStats {
+  /** 生效中（status=active） */
+  active: number;
+  /** 试用中（status=trialing） */
+  trialing: number;
+  /** 本月到期：currentPeriodEnd 落在当前自然月（含 trialing/past_due 行） */
+  expiringThisMonth: number;
+}
+
+/**
+ * POST /api/admin/subscriptions/:id/grant：赠期 / 调整套餐（原因必填，写审计 admin.subscriptions.grant 敏感）。
+ * 语义：plan ← planId；billingCycle ← monthly（赠期按月计）；currentPeriodEnd ← max(当前时间, 现周期止) + months；
+ * status ← active。planId 仅接受 pro / enterprise（Free 无计费周期，不提供赠期）。
+ */
+export interface GrantSubscriptionPayload {
+  planId: PlanKey;
+  /** 延长月数 1–12 */
+  months: number;
+  reason: string;
+}

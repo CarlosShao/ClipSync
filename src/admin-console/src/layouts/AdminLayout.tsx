@@ -11,7 +11,9 @@ import styles from './AdminLayout.module.css';
 const NAV_ITEMS = [
   { key: '/dashboard', label: '数据看板' },
   { key: '/users', label: '用户管理' },
+  { key: '/devices', label: '设备管理' },
   { key: '/orders', label: '订单与支付' },
+  { key: '/subscriptions', label: '订阅管理' },
   { key: '/audit', label: '审计日志' },
   { key: '/roles', label: '角色权限' },
   { key: '/settings', label: '系统设置' },

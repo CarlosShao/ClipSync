@@ -7,7 +7,9 @@ import { RequireRole } from '@/router/RequireRole';
 const LoginPage = lazy(() => import('@/pages/login'));
 const DashboardPage = lazy(() => import('@/pages/dashboard'));
 const UsersPage = lazy(() => import('@/pages/users'));
+const DevicesPage = lazy(() => import('@/pages/devices'));
 const OrdersPage = lazy(() => import('@/pages/orders'));
+const SubscriptionsPage = lazy(() => import('@/pages/subscriptions'));
 const AuditPage = lazy(() => import('@/pages/audit'));
 const RolesPage = lazy(() => import('@/pages/roles'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
@@ -50,7 +52,9 @@ export function AppRoutes() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={lazyNode(<DashboardPage />)} />
         <Route path="/users" element={lazyNode(<UsersPage />)} />
+        <Route path="/devices" element={lazyNode(<DevicesPage />)} />
         <Route path="/orders" element={lazyNode(<OrdersPage />)} />
+        <Route path="/subscriptions" element={lazyNode(<SubscriptionsPage />)} />
         <Route path="/audit" element={lazyNode(<AuditPage />)} />
         <Route path="/roles" element={lazyNode(<RolesPage />)} />
         <Route path="/settings" element={lazyNode(<SettingsPage />)} />
