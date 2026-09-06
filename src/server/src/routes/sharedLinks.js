@@ -9,6 +9,7 @@ import { apiLimiter } from '../middleware/rateLimiter.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { csrfProtection } from '../middleware/csrf.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
+import { requireFlag } from '../utils/featureFlags.js';
 import { logger } from '../utils/logger.js';
 import { fileURLToPath } from 'url';
 
@@ -151,7 +152,8 @@ function renderSharePage({ title, content, contentType, views, createdAt, fileNa
 }
 
 // POST /api/shared-links/upload-file — 预上传要分享的文件（不创建链接，只落盘）
-router.post('/upload-file', ...protect, apiLimiter, sharedFileUpload.single('file'), async (req, res) => {
+// enable_public_sharing 关闭时禁止上传与新建；已创建链接保持可访问
+router.post('/upload-file', ...protect, apiLimiter, requireFlag('enable_public_sharing', '共享链接功能已由管理员关闭，已创建的链接不受影响'), sharedFileUpload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'file is required' });
@@ -177,7 +179,7 @@ router.post('/upload-file', ...protect, apiLimiter, sharedFileUpload.single('fil
 });
 
 // POST /api/shared-links — 创建一条分享链接（内容 at-rest 加密）
-router.post('/', ...protect, apiLimiter, async (req, res) => {
+router.post('/', ...protect, apiLimiter, requireFlag('enable_public_sharing', '共享链接功能已由管理员关闭，已创建的链接不受影响'), async (req, res) => {
   try {
     const { content, title, contentType, expiresInHours, fileKey, fileName, fileSize } = req.body || {};
     const safeType = typeof contentType === 'string' ? contentType.slice(0, MAX_TYPE) : 'text';

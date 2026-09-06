@@ -7,7 +7,7 @@ import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { PageHeader } from '@/components/PageHeader';
 import { StatusTag } from '@/components/StatusTag';
 import { planLabel, planTone, userStatusLabel, userStatusTone } from '@/components/StatusTag/mappers';
-import { getUsers, updateUserStatus } from '@/api/users';
+import { getUsers, approveUser, updateUserStatus } from '@/api/users';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import { queryKeys } from '@/queryKeys';
 import { fmtDate, fmtMoney } from '@/utils/format';
@@ -17,7 +17,7 @@ import styles from './users.module.css';
 interface UserFilters {
   q: string | undefined;
   plan: PlanKey | 'all' | undefined;
-  status: UserStatus | 'all' | undefined;
+  status: UserStatus | 'waitlist' | 'all' | undefined;
   registeredIn: '7d' | '30d' | 'all' | undefined;
 }
 
@@ -58,6 +58,15 @@ export default function UsersPage() {
       void queryClient.invalidateQueries({ queryKey: ['users'] });
       void message.success('账号已停用');
       setDeactivateUser(null);
+    },
+  });
+
+  // 审批通过等待名单用户（signup_waitlist 开关落地）
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => approveUser(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void message.success('已通过审核，用户现在可以登录');
     },
   });
 
@@ -131,9 +140,12 @@ export default function UsersPage() {
       title: '状态',
       dataIndex: 'status',
       width: 90,
-      render: (value: UserStatus) => (
-        <StatusTag tone={userStatusTone[value]}>{userStatusLabel[value]}</StatusTag>
-      ),
+      render: (value: UserStatus, record) =>
+        record.registrationStatus === 'waitlist' ? (
+          <StatusTag tone="amber">待审核</StatusTag>
+        ) : (
+          <StatusTag tone={userStatusTone[value]}>{userStatusLabel[value]}</StatusTag>
+        ),
     },
     {
       title: '操作',
@@ -141,9 +153,20 @@ export default function UsersPage() {
       width: 210,
       render: (_: string, record) => (
         <span onClick={(e) => e.stopPropagation()}>
-          <Button size="small" onClick={() => setDrawerUserId(record.id)}>
-            详情
-          </Button>
+          {record.registrationStatus === 'waitlist' ? (
+            <Button
+              size="small"
+              type="primary"
+              loading={approveMutation.isPending && approveMutation.variables === record.id}
+              onClick={() => approveMutation.mutate(record.id)}
+            >
+              通过审核
+            </Button>
+          ) : (
+            <Button size="small" onClick={() => setDrawerUserId(record.id)}>
+              详情
+            </Button>
+          )}
           {record.status === 'active' ? (
             <>
               {record.subscription.status === 'trialing' ? (
@@ -225,7 +248,7 @@ export default function UsersPage() {
               { value: 'enterprise', label: 'Enterprise' },
             ]}
           />
-          <Select<UserStatus | 'all'>
+          <Select<UserStatus | 'waitlist' | 'all'>
             style={{ width: 130 }}
             value={draft.status ?? 'all'}
             onChange={(v) => setDraft((d) => ({ ...d, status: v }))}
@@ -233,6 +256,7 @@ export default function UsersPage() {
               { value: 'all', label: '状态：全部' },
               { value: 'active', label: '正常' },
               { value: 'disabled', label: '已停用' },
+              { value: 'waitlist', label: '待审核' },
             ]}
           />
           <Select<'7d' | '30d' | 'all'>

@@ -27,6 +27,7 @@ export const mockUsers: AdminUser[] = [
     nickname: '林清和',
     email: 'lin***@gmail.com',
     isActive: true,
+    registrationStatus: 'approved',
     status: 'active',
     subscription: {
       plan: 'pro',
@@ -50,6 +51,7 @@ export const mockUsers: AdminUser[] = [
     nickname: 'chen_ming',
     email: 'chen***@outlook.com',
     isActive: true,
+    registrationStatus: 'approved',
     status: 'active',
     subscription: {
       plan: 'enterprise',
@@ -72,6 +74,7 @@ export const mockUsers: AdminUser[] = [
     phone: '159****8834',
     nickname: '王小雨',
     isActive: true,
+    registrationStatus: 'approved',
     status: 'active',
     subscription: {
       plan: 'free',
@@ -95,6 +98,7 @@ export const mockUsers: AdminUser[] = [
     nickname: 'yuki_dev',
     email: 'yuki***@clipstream.work',
     isActive: true,
+    registrationStatus: 'approved',
     status: 'active',
     subscription: {
       plan: 'free',
@@ -118,6 +122,7 @@ export const mockUsers: AdminUser[] = [
     phone: '188****1097',
     nickname: '赵拓',
     isActive: false,
+    registrationStatus: 'approved',
     status: 'disabled',
     subscription: {
       plan: 'free',
@@ -141,6 +146,7 @@ export const mockUsers: AdminUser[] = [
     nickname: 'Sylvia W.',
     email: 'sylvia***@fastmail.com',
     isActive: true,
+    registrationStatus: 'approved',
     status: 'active',
     subscription: {
       plan: 'pro',
@@ -163,6 +169,7 @@ export const mockUsers: AdminUser[] = [
     phone: '150****6643',
     nickname: 'lee.dev',
     isActive: true,
+    registrationStatus: 'approved',
     status: 'active',
     subscription: {
       plan: 'free',
@@ -185,6 +192,7 @@ export const mockUsers: AdminUser[] = [
     phone: '177****0521',
     nickname: '何岸',
     isActive: true,
+    registrationStatus: 'approved',
     status: 'active',
     subscription: {
       plan: 'free',

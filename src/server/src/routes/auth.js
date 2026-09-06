@@ -12,6 +12,7 @@ import { issueRefreshToken } from '../utils/refreshToken.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 import { logger } from '../utils/logger.js';
+import { isFlagEnabled } from '../utils/featureFlags.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { sendNotification, detectAndNotifyNewLogin } from '../ws/server.js';
 import crypto from 'crypto';
@@ -277,16 +278,16 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     // Find or create user
     // 先尝试明文查询
     let userResult = await pool.query(
-      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, two_factor_enabled FROM users WHERE phone = $1',
+      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, two_factor_enabled, registration_status FROM users WHERE phone = $1',
       [cleanPhone]
     );
-    
+
     // 如果明文查询失败，通过 phone_hash 查询（O(1)，不加载全表）
     if (userResult.rows.length === 0) {
       const phoneHash = computeFieldHash(cleanPhone);
       if (phoneHash) {
         userResult = await pool.query(
-          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted FROM users WHERE phone_hash = $1',
+          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, registration_status FROM users WHERE phone_hash = $1',
           [phoneHash]
         );
       }
@@ -347,16 +348,34 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
       // 加密手机号
       const phoneEncrypted = encryptField(cleanPhone);
       const phoneHash = computeFieldHash(cleanPhone);
-      
+
+      // signup_waitlist 开关开启期间：新注册进入待审核（不发会话与令牌，待管理员审批）
+      const waitlistMode = await isFlagEnabled('signup_waitlist', false);
+
       userResult = await pool.query(
-        `INSERT INTO users (phone, phone_encrypted, phone_hash, tos_accepted_at, privacy_accepted_at, marketing_consent, birth_date, age_verified)
-         VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6)
+        `INSERT INTO users (phone, phone_encrypted, phone_hash, tos_accepted_at, privacy_accepted_at, marketing_consent, birth_date, age_verified, registration_status)
+         VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $7)
          RETURNING id, phone, email, nickname, avatar_url`,
-        [cleanPhone, phoneEncrypted, phoneHash, marketing_consent || false, birth_date || null, birth_date ? true : false]
+        [cleanPhone, phoneEncrypted, phoneHash, marketing_consent || false, birth_date || null, birth_date ? true : false, waitlistMode ? 'waitlist' : 'approved']
       );
+
+      if (waitlistMode) {
+        return res.json({
+          pendingReview: true,
+          message: '注册成功，账号待管理员审核通过后即可登录',
+        });
+      }
     }
 
     const user = userResult.rows[0];
+
+    // 等待名单账号拦截（signup_waitlist 开关期间注册，待管理员审核）
+    if (user.registration_status === 'waitlist') {
+      return res.status(403).json({
+        error: '账号待管理员审核，通过后即可登录',
+        pendingReview: true,
+      });
+    }
 
     // 身份合并：手机号注册/登录时，检查是否有同 email/nickname 的重复账号需合并
     await mergeDuplicateAccounts(user.id, user).catch((err) => {
@@ -500,7 +519,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
 
     // ===== 查找或创建用户（身份关联：先按 email/email_hash 查已有账号）=====
     let userResult = await pool.query(
-      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, two_factor_enabled FROM users WHERE email = $1',
+      'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, two_factor_enabled, registration_status FROM users WHERE email = $1',
       [cleanEmail]
     );
 
@@ -509,7 +528,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
       const emailHash = computeFieldHash(cleanEmail);
       if (emailHash) {
         userResult = await pool.query(
-          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted FROM users WHERE email_hash = $1',
+          'SELECT id, phone, email, nickname, avatar_url, phone_encrypted, email_encrypted, registration_status FROM users WHERE email_hash = $1',
           [emailHash]
         );
       }
@@ -546,15 +565,33 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
       const emailEncrypted = encryptField(cleanEmail);
       const emailHash2 = computeFieldHash(cleanEmail);
 
+      // signup_waitlist 开关开启期间：新注册进入待审核（不发会话与令牌，待管理员审批）
+      const waitlistMode = await isFlagEnabled('signup_waitlist', false);
+
       userResult = await pool.query(
-        `INSERT INTO users (email, email_encrypted, email_hash, tos_accepted_at, privacy_accepted_at, marketing_consent, birth_date, age_verified)
-         VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6)
+        `INSERT INTO users (email, email_encrypted, email_hash, tos_accepted_at, privacy_accepted_at, marketing_consent, birth_date, age_verified, registration_status)
+         VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $7)
          RETURNING id, phone, email, nickname, avatar_url`,
-        [cleanEmail, emailEncrypted, emailHash2, marketing_consent || false, birth_date || null, birth_date ? true : false]
+        [cleanEmail, emailEncrypted, emailHash2, marketing_consent || false, birth_date || null, birth_date ? true : false, waitlistMode ? 'waitlist' : 'approved']
       );
+
+      if (waitlistMode) {
+        return res.json({
+          pendingReview: true,
+          message: '注册成功，账号待管理员审核通过后即可登录',
+        });
+      }
     }
 
     const user = userResult.rows[0];
+
+    // 等待名单账号拦截（signup_waitlist 开关期间注册，待管理员审核）
+    if (user.registration_status === 'waitlist') {
+      return res.status(403).json({
+        error: '账号待管理员审核，通过后即可登录',
+        pendingReview: true,
+      });
+    }
 
     // 身份合并：邮箱注册/登录时，检查是否有同 email/nickname 的重复账号需合并
     await mergeDuplicateAccounts(user.id, user).catch((err) => {
@@ -873,20 +910,22 @@ router.post('/register', sendCodeLimiter, async (req, res) => {
     const emailHash = cleanEmail ? computeFieldHash(cleanEmail) : null;
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // === 创建用户 ===
+    // === 创建用户（signup_waitlist 开关开启期间进入待审核，不发会话与令牌）===
+    const waitlistMode = await isFlagEnabled('signup_waitlist', false);
     const userResult = await pool.query(
       `INSERT INTO users (
         phone, phone_encrypted, phone_hash,
         email, email_encrypted, email_hash,
         nickname, password_hash,
         tos_accepted_at, privacy_accepted_at,
-        subscription_status, is_active
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW(), 'free', TRUE)
+        subscription_status, is_active, registration_status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW(), 'free', TRUE, $9)
       RETURNING id, phone, email, nickname, avatar_url`,
       [
         cleanPhone, phoneEncrypted, phoneHash,
         cleanEmail, emailEncrypted, emailHash,
-        cleanNickname || '', passwordHash
+        cleanNickname || '', passwordHash,
+        waitlistMode ? 'waitlist' : 'approved'
       ]
     );
 
@@ -899,8 +938,15 @@ router.post('/register', sendCodeLimiter, async (req, res) => {
       ipAddress: req.ip || req.connection.remoteAddress,
       userAgent: req.get('User-Agent') || '',
       status: 'success',
-      details: { phone: cleanPhone, isNewUser: true },
+      details: { phone: cleanPhone, isNewUser: true, registrationStatus: waitlistMode ? 'waitlist' : 'approved' },
     }).catch(() => {});
+
+    if (waitlistMode) {
+      return res.json({
+        pendingReview: true,
+        message: '注册成功，账号待管理员审核通过后即可登录',
+      });
+    }
 
     // 创建会话 + JWT
     const { token } = await createSessionAndGenerateToken(user, req);

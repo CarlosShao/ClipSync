@@ -51,6 +51,7 @@ const USER_SELECT = `
     u.email,
     u.nickname,
     u.is_active,
+    u.registration_status,
     u.subscription_status,
     u.role_id,
     u.deactivation_reason,
@@ -213,6 +214,7 @@ function mapUserRow(row) {
     nickname: row.nickname || '',
     email: maskEmail(row.email),
     isActive: Boolean(row.is_active),
+    registrationStatus: row.registration_status || 'approved',
     status: row.is_active ? 'active' : 'disabled',
     subscription: {
       plan,
@@ -288,6 +290,8 @@ function buildUserFilters(query, params) {
       where.push('u.is_active = TRUE');
     } else if (status === 'disabled') {
       where.push('u.is_active = FALSE');
+    } else if (status === 'waitlist') {
+      where.push("u.registration_status = 'waitlist'");
     } else {
       return null;
     }
@@ -516,6 +520,56 @@ router.patch('/:id/status', requirePerm('admin.users.manage'), async (req, res) 
   } catch (err) {
     logger.error('[admin/users] update status failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '更新用户状态失败' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/approve  body { reason? }
+ * 审批通过等待名单用户（requirePerm admin.users.manage）：
+ *  - registration_status: 'waitlist' → 'approved'（signup_waitlist 开关落地，见 046 迁移）；
+ *  - 仅对待审核用户生效，重复审批幂等返回当前状态；
+ *  - 审计 admin.users.approve（敏感操作）。
+ */
+router.post('/:id/approve', requirePerm('admin.users.manage'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '用户 ID 不合法' });
+    }
+    const user = await fetchUserById(id);
+    if (!user) {
+      return res.status(404).json({ code: 40404, message: '用户不存在' });
+    }
+    // fetchUserById 返回原始行（蛇形键），camelCase 映射仅在 mapUserRow
+    if (user.registration_status !== 'waitlist') {
+      return res.status(409).json({ code: 4090, message: '该用户不在等待名单中' });
+    }
+
+    await pool.query(
+      `UPDATE users SET registration_status = 'approved', updated_at = NOW() WHERE id = $1`,
+      [user.id]
+    );
+
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.users.approve',
+      resourceType: 'user',
+      resourceId: String(user.id),
+      details: { targetUserId: user.id, nickname: user.nickname || '', ...(reason ? { reason } : {}) },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    const updated = await fetchUserById(id);
+    return res.json({
+      code: 0,
+      data: mapUserRow(updated || user),
+      message: '已通过审核，用户现在可以登录',
+    });
+  } catch (err) {
+    logger.error('[admin/users] approve failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '审批操作失败' });
   }
 });
 

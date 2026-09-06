@@ -29,6 +29,8 @@
 
 import { Router } from 'express';
 import { pool } from '../../db/pool.js';
+import { broadcastToAllClients } from '../../ws/server.js';
+import { invalidateFlagsCache, getFeatureFlags } from '../../utils/featureFlags.js';
 import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
@@ -72,27 +74,27 @@ const FLAG_CATALOG = [
   {
     key: 'enable_subscription',
     name: '订阅功能',
-    description: '关闭后所有用户临时按 Free 配额处理（不影响已有订单）',
+    description: '关闭后全部用户立即按 Free 配额执行（不改库、不影响已有订单与订阅记录）',
   },
   {
     key: 'enable_ai_agent',
     name: 'AI 助手',
-    description: 'AI 侧边栏、智能分类与写作工具',
+    description: '关闭后 AI 全部接口（对话/记忆/设置/供应商）服务端直接拒绝，客户端即时感知',
   },
   {
     key: 'enable_public_sharing',
     name: '公开分享',
-    description: '共享链接能力（含文件分享）',
+    description: '关闭后禁止新建共享链接与文件分享；已创建的链接保持可访问',
   },
   {
     key: 'enable_2fa',
     name: '两步验证',
-    description: '用户级 TOTP；关闭不影响已开启用户',
+    description: '关闭后禁止新开启两步验证；已开启用户的登录验证与关闭操作不受影响',
   },
   {
     key: 'signup_waitlist',
     name: '注册审核',
-    description: '新注册进入等待名单（运营灰度）',
+    description: '开启后新注册进入待审核状态，登录被拦截，需在「用户管理」审批通过',
   },
 ];
 
@@ -273,6 +275,12 @@ flagsRouter.patch('/:key', requirePerm('admin.configs.manage'), async (req, res)
       return res.status(404).json({ code: 40404, message: '功能开关不存在' });
     }
     const row = rows[0];
+
+    // 立即失效本进程缓存并向全部在线客户端广播新开关快照；
+    // 未连 WS 的客户端最迟在下一个请求被服务端 requireFlag 拦截（≤5s TTL 兜底）。
+    invalidateFlagsCache();
+    const flags = await getFeatureFlags();
+    broadcastToAllClients({ type: 'feature_flags.updated', flags });
 
     // 审计：admin.flag.update（敏感操作）
     await logAuditEvent({

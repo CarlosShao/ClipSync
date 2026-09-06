@@ -1,4 +1,5 @@
-import { App as AntdApp, Button, Card, Form, Input, InputNumber, Select, Switch } from 'antd';
+import { App as AntdApp, Button, Card, Form, Input, InputNumber, Select, Switch, Tooltip } from 'antd';
+import { QuestionCircleOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
@@ -38,6 +39,34 @@ const AI_PROVIDER_OPTIONS = ['openrouter', 'openai', 'anthropic', 'deepseek'].ma
 }));
 
 const MAINTENANCE_HINT = '开启后客户端将暂停剪贴板同步并展示维护公告，期间同步请求返回维护提示';
+
+/**
+ * 功能开关的生效范围与优先级说明（与后端 utils/featureFlags.js 的生效链路一一对应）。
+ * 生效链路：管理台写库（持久化）→ 服务端 requireFlag 强制拦截（≤5s）→ WS 全端广播 →
+ * 客户端拉取 GET /api/app/feature-flags 或收 WS 推送即时感知；未适配客户端由服务端兜底 403。
+ */
+const FLAG_META: Record<string, { scope: string; priority: string }> = {
+  enable_subscription: {
+    scope: '全部非管理员用户的配额与套餐权益：关闭期间一律按 Free 配额校验；已有订单与订阅记录不受影响，重新开启即恢复',
+    priority: '服务端 ≤5s 强制生效（重启不丢失）；客户端在下次请求时被按 Free 校验',
+  },
+  enable_ai_agent: {
+    scope: '全部 AI 能力接口：AI 对话、长程记忆、AI 设置、供应商代理；关闭后服务端直接拒绝（403）',
+    priority: '服务端 ≤5s 强制生效；适配后的客户端经 WS 推送即时灰显 AI 入口，未适配客户端在下次请求时收到禁用提示',
+  },
+  enable_public_sharing: {
+    scope: '仅限制新建：关闭后无法创建共享链接与上传分享文件；已创建的链接保持可访问（不做吊销）',
+    priority: '服务端 ≤5s 强制生效，客户端创建入口在下次调用时收到禁用提示',
+  },
+  enable_2fa: {
+    scope: '仅限制新开启：关闭后无法走两步验证绑定流程；已开启用户的登录验证、关闭操作不受影响',
+    priority: '服务端 ≤5s 强制生效，客户端绑定入口在下次调用时收到禁用提示',
+  },
+  signup_waitlist: {
+    scope: '仅影响新注册：开启后新用户进入待审核（登录被拦截），审批入口在「用户管理」页；存量用户不受影响',
+    priority: '服务端实时强制；审批通过后用户立即可登录',
+  },
+};
 
 /** 设置页查询共用 staleTime：避免窗口聚焦自动重取时打断表单编辑 */
 const SETTINGS_STALE_TIME = 5 * 60_000;
@@ -166,10 +195,39 @@ export default function SettingsPage() {
           title="功能开关"
           extra={<span className={styles.cardSub}>影响全部客户端</span>}
         >
-          {(flags ?? []).map((flag) => (
+          <div className={styles.cardSub} style={{ marginBottom: 14, lineHeight: 1.7 }}>
+            开关持久化保存于数据库并写入审计日志；服务端约 5 秒内强制生效（重启不丢失），并通过
+            WebSocket 向全部在线客户端广播，客户端也可经 /api/app/feature-flags 拉取；未适配的客户端由服务端兜底拦截。
+            每个开关的生效范围见条目右侧说明。
+          </div>
+          {(flags ?? []).map((flag) => {
+            const meta = FLAG_META[flag.key];
+            return (
             <div className={styles.flagRow} key={flag.key}>
               <div className={styles.flagInfo}>
-                <b className={styles.flagName}>{flag.name}</b>
+                <b className={styles.flagName}>
+                  {flag.name}
+                  {meta ? (
+                    <Tooltip
+                      title={
+                        <div style={{ lineHeight: 1.7 }}>
+                          <div>
+                            <b>生效范围：</b>
+                            {meta.scope}
+                          </div>
+                          <div style={{ marginTop: 6 }}>
+                            <b>生效方式：</b>
+                            {meta.priority}
+                          </div>
+                        </div>
+                      }
+                    >
+                      <QuestionCircleOutlined
+                        style={{ marginLeft: 6, color: 'var(--text-3)', fontSize: 12 }}
+                      />
+                    </Tooltip>
+                  ) : null}
+                </b>
                 <span className={styles.flagDesc}>{flag.description}</span>
               </div>
               <Switch
@@ -178,7 +236,8 @@ export default function SettingsPage() {
                 onChange={(enabled) => flagMutation.mutate({ key: flag.key, enabled })}
               />
             </div>
-          ))}
+            );
+          })}
         </Card>
 
         {/* 维护模式 */}

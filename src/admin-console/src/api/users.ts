@@ -1,4 +1,4 @@
-import { apiGet, apiPatch } from '@/api/client';
+import { apiGet, apiPatch, apiPost } from '@/api/client';
 import type {
   AdminUser,
   PageData,
@@ -20,4 +20,9 @@ export function getUserDetail(id: string): Promise<UserDetail> {
 /** 停用 / 启用账号（停用必须带 reason，写入审计日志） */
 export function updateUserStatus(id: string, payload: UpdateUserStatusPayload): Promise<AdminUser> {
   return apiPatch<AdminUser>(`/admin/users/${id}/status`, payload);
+}
+
+/** 审批通过等待名单用户（signup_waitlist 开关落地），写入审计日志 */
+export function approveUser(id: string): Promise<AdminUser> {
+  return apiPost<AdminUser>(`/admin/users/${id}/approve`, {});
 }

@@ -40,6 +40,8 @@ export interface ListParams {
 // ───────────────────────── 用户域 ─────────────────────────
 
 export type UserStatus = 'active' | 'disabled';
+/** users.registration_status：signup_waitlist 开关期间注册的用户为 waitlist（待管理员审批） */
+export type RegistrationStatus = 'approved' | 'waitlist';
 export type PlanKey = 'free' | 'pro' | 'enterprise';
 /** user_subscriptions.status */
 export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'expired' | 'trialing';
@@ -63,6 +65,7 @@ export interface AdminUser {
   nickname: string;
   email?: string;
   isActive: boolean;
+  registrationStatus: RegistrationStatus;
   status: UserStatus;
   subscription: Subscription;
   deviceCount: number;
@@ -94,7 +97,7 @@ export interface UserDetail {
 
 export interface UserListParams extends ListParams {
   plan?: PlanKey | 'all';
-  status?: UserStatus | 'all';
+  status?: UserStatus | 'waitlist' | 'all';
   /** 注册时间范围 */
   registeredIn?: '7d' | '30d' | 'all';
 }

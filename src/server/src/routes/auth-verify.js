@@ -7,6 +7,7 @@ import { isValidPhone, isValidCode, sanitizeString } from '../validation/validat
 import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed } from '../middleware/rateLimiter.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 import { issueRefreshToken } from '../utils/refreshToken.js';
+import { isFlagEnabled } from '../utils/featureFlags.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -153,17 +154,30 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     const userResult = await pool.query('SELECT * FROM users WHERE phone = $1', [cleanPhone]);
 
     if (userResult.rows.length === 0) {
-      // 创建新用户
+      // signup_waitlist 开关开启期间：新注册进入待审核，不发会话与令牌
+      const waitlistMode = await isFlagEnabled('signup_waitlist', false);
       const userId = uuidv4();
       const nickname = `User_${cleanPhone.slice(-4)}`;
       await pool.query(
-        `INSERT INTO users (id, phone, nickname, created_at)
-         VALUES ($1, $2, $3, NOW())`,
-        [userId, cleanPhone, nickname]
+        `INSERT INTO users (id, phone, nickname, registration_status, created_at)
+         VALUES ($1, $2, $3, $4, NOW())`,
+        [userId, cleanPhone, nickname, waitlistMode ? 'waitlist' : 'approved']
       );
+      if (waitlistMode) {
+        return res.json({
+          pendingReview: true,
+          message: '注册成功，账号待管理员审核通过后即可登录',
+        });
+      }
       user = { id: userId, phone: cleanPhone, nickname };
     } else {
       user = userResult.rows[0];
+      if (user.registration_status === 'waitlist') {
+        return res.status(403).json({
+          error: '账号待管理员审核，通过后即可登录',
+          pendingReview: true,
+        });
+      }
     }
 
     // 创建会话并生成token
@@ -223,16 +237,30 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
     const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
 
     if (userResult.rows.length === 0) {
+      // signup_waitlist 开关开启期间：新注册进入待审核，不发会话与令牌
+      const waitlistMode = await isFlagEnabled('signup_waitlist', false);
       const userId = uuidv4();
       const nickname = `User_${cleanEmail.split('@')[0]}`;
       await pool.query(
-        `INSERT INTO users (id, email, nickname, created_at)
-         VALUES ($1, $2, $3, NOW())`,
-        [userId, cleanEmail, nickname]
+        `INSERT INTO users (id, email, nickname, registration_status, created_at)
+         VALUES ($1, $2, $3, $4, NOW())`,
+        [userId, cleanEmail, nickname, waitlistMode ? 'waitlist' : 'approved']
       );
+      if (waitlistMode) {
+        return res.json({
+          pendingReview: true,
+          message: '注册成功，账号待管理员审核通过后即可登录',
+        });
+      }
       user = { id: userId, email: cleanEmail, nickname };
     } else {
       user = userResult.rows[0];
+      if (user.registration_status === 'waitlist') {
+        return res.status(403).json({
+          error: '账号待管理员审核，通过后即可登录',
+          pendingReview: true,
+        });
+      }
     }
 
     const { token, sessionId } = await createSessionAndGenerateToken(user, req);
