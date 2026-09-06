@@ -80,7 +80,7 @@ export default function RolesPage() {
       updateRolePermissions(payload.id, { permissions: payload.permissions }),
     onSuccess: async (updated) => {
       await queryClient.invalidateQueries({ queryKey: ['roles'] });
-      void message.success(`「${updated.name}」权限已保存并写入审计日志（admin.roles.update）`);
+      void message.success(`「${updated.name}」权限已保存并写入审计日志`);
     },
   });
 
@@ -106,8 +106,7 @@ export default function RolesPage() {
 
   const grouped = CATEGORY_ORDER.map((category) => {
     const items = permissions.filter((p) => p.category === category);
-    const prefixes = [...new Set(items.map((p) => p.permKey.split('.').slice(0, 2).join('.')))];
-    return { category, items, prefixes: prefixes.join(' / ') };
+    return { category, items };
   }).filter((group) => group.items.length > 0);
 
   const loading = rolesQuery.isLoading || permsQuery.isLoading;
@@ -189,16 +188,13 @@ export default function RolesPage() {
                 <div className={styles.callout}>
                   <InfoCircleOutlined />
                   <span>
-                    超级管理员拥有全部权限且不可修改；系统角色由 <b>super_admin</b>{' '}
-                    专属维护。数据库触发器保证超管全局唯一。
+                    超级管理员拥有全部权限且不可修改；系统角色由超级管理员专属维护，
+                    数据库保证超管全局唯一。
                   </span>
                 </div>
               ) : (
                 <div className={styles.hintBar}>
                   级别约束：标注「高危 / 仅超管」的权限仅超级管理员（level 100）可持有；保存后写入审计日志
-                  <span className={styles.permKey} style={{ marginLeft: 6 }}>
-                    admin.roles.update
-                  </span>
                 </div>
               )
             ) : null}
@@ -208,10 +204,7 @@ export default function RolesPage() {
                 {grouped.map((group) => (
                   <div key={group.category}>
                     <div className={styles.treeCat}>
-                      <span>
-                        {CATEGORY_LABELS[group.category]}（{group.category}）
-                      </span>
-                      <span className={styles.treeCatKey}>{group.prefixes}</span>
+                      <span>{CATEGORY_LABELS[group.category]}</span>
                     </div>
                     {group.items.map((perm) => (
                       <div key={perm.permKey} className={styles.treeItem}>
@@ -221,11 +214,10 @@ export default function RolesPage() {
                           onChange={(e) => toggle(perm, e.target.checked)}
                         >
                           {perm.name}
-                          {perm.description ? (
+                          {perm.description && perm.description !== perm.name ? (
                             <span className={styles.permDesc}>{perm.description}</span>
                           ) : null}
                         </Checkbox>
-                        <span className={styles.permKey}>{perm.permKey}</span>
                       </div>
                     ))}
                   </div>

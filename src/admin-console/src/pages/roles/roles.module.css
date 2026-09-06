@@ -132,26 +132,12 @@
   border-top: none;
 }
 
-.treeCatKey {
-  font-family: var(--font-mono);
-  margin-left: auto;
-  white-space: nowrap;
-}
-
 .treeItem {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 16px 8px 26px;
   font-size: 12.5px;
-}
-
-.permKey {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-3);
-  white-space: nowrap;
 }
 
 .permDesc {
