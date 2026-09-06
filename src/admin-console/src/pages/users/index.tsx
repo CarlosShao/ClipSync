@@ -199,7 +199,10 @@ export default function UsersPage() {
 
   return (
     <>
-      <PageHeader title="用户管理" description="共 12,847 名用户 · 今日新增 86 · 停用 41" />
+      <PageHeader
+        title="用户管理"
+        description={`共 ${((tableProps.pagination as { total?: number } | undefined)?.total ?? 0).toLocaleString('zh-CN')} 名注册用户 · 手机号默认打码，明文查看将记入审计`}
+      />
 
       <Card styles={{ body: { padding: 0 } }}>
         <div className={styles.filterBar}>

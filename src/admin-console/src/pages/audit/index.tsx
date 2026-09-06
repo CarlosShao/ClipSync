@@ -195,13 +195,16 @@ export default function AuditPage() {
     },
   ];
 
+  const auditTotal =
+    (tableProps.pagination as { total?: number } | undefined)?.total ?? 0;
+
   return (
     <>
       <PageHeader
         title="审计日志"
         description={
           <>
-            保留 1 年 · 共 2,431,088 条 · 今日 4,112 条 ·{' '}
+            保留 1 年 · 共 {auditTotal.toLocaleString('zh-CN')} 条（当前筛选范围）·{' '}
             <b style={{ color: 'var(--red)' }}>红点为敏感操作</b>
           </>
         }

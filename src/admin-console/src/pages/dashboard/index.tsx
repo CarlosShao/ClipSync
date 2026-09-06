@@ -107,13 +107,13 @@ export default function DashboardPage() {
       </>
     );
   }
-
   const { kpis } = data;
   const conversionOffset = CONVERSION_RING_C * (1 - kpis.conversionRate / 100);
-  const proShare =
-    kpis.paidUsers > 0
-      ? Math.round(((data.planDistribution.find((p) => p.plan === 'pro')?.count ?? 0) / kpis.paidUsers) * 100)
-      : 0;
+  const planCount = (plan: string) => data.planDistribution.find((p) => p.plan === plan)?.count ?? 0;
+  const paidShare = (plan: string) =>
+    kpis.paidUsers > 0 ? Math.round((planCount(plan) / kpis.paidUsers) * 100) : 0;
+  const proShare = paidShare('pro');
+  const entShare = paidShare('enterprise');
 
   return (
     <>
@@ -221,7 +221,7 @@ export default function DashboardPage() {
                     />
                   </div>
                   <span className={styles.planValue}>
-                    {(data.planDistribution.find((p) => p.plan === 'pro')?.count ?? 0).toLocaleString('zh-CN')}
+                    {planCount('pro').toLocaleString('zh-CN')}
                   </span>
                 </div>
                 <div className={`${styles.planRow} ${styles.planRowLast}`}>
@@ -229,11 +229,11 @@ export default function DashboardPage() {
                   <div className={styles.planTrack}>
                     <div
                       className={styles.planFill}
-                      style={{ width: `${100 - proShare}%`, background: '#2563eb' }}
+                      style={{ width: `${entShare}%`, background: '#2563eb' }}
                     />
                   </div>
                   <span className={styles.planValue}>
-                    {(data.planDistribution.find((p) => p.plan === 'enterprise')?.count ?? 0).toLocaleString('zh-CN')}
+                    {planCount('enterprise').toLocaleString('zh-CN')}
                   </span>
                 </div>
                 <div className={styles.planNote}>

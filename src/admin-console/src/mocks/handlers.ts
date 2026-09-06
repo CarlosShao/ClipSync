@@ -102,18 +102,67 @@ function pushAudit(
 }
 
 // ───────────────────────── 鉴权 ─────────────────────────
+// T-A7 对齐真实契约：登录返回 { token, sessionId, user }，角色经 GET /admin/whoami 获取。
+
+const DEMO_TOKEN = 'mock-admin-access-token-20260905';
+
+function demoWhoami(): { userId: string; roleKey: string; roleLevel: number; permissions: string[] } {
+  return {
+    userId: 'usr_carlos',
+    roleKey: 'super_admin',
+    roleLevel: 100,
+    permissions: [
+      'admin.users.view', 'admin.users.manage', 'admin.users.delete', 'admin.devices.manage',
+      'admin.subscriptions.grant', 'admin.orders.refund', 'admin.orders.reconcile',
+      'admin.plans.manage', 'admin.audit.view', 'admin.roles.manage', 'admin.configs.manage',
+      'admin.announce.send', 'admin.keys.view',
+    ],
+  };
+}
 
 const authHandlers = [
   http.post('/api/auth/login', async ({ request }) => {
     await delay(400);
-    const body = (await request.json()) as { account?: string; password?: string; totp?: string };
-    if (!body.account || !body.password) {
+    const body = (await request.json()) as { email?: string; phone?: string; password?: string; totp?: string };
+    const account = body.email ?? body.phone;
+    if (!account || !body.password) {
       return fail(400, 40001, '请输入账号和密码');
     }
-    if (!body.totp || body.totp !== VALID_TOTP) {
+    // MSW 保留 TOTP 演练：填写时必须为 482917，留空放行（与真实链路的可选语义一致）
+    if (body.totp && body.totp !== VALID_TOTP) {
       return fail(401, 40101, '两步验证码错误，请重新输入');
     }
-    return ok(DEMO_ADMIN, '登录成功');
+    return ok(
+      { token: DEMO_TOKEN, sessionId: 'mock-session', user: { id: 'usr_carlos', nickname: 'Carlos', email: account } },
+      '登录成功',
+    );
+  }),
+
+  http.post('/api/auth/send-code', async ({ request }) => {
+    await delay(300);
+    const body = (await request.json()) as { phone?: string };
+    if (!body.phone || !/^\d{11}$/.test(body.phone)) {
+      return fail(400, 40001, '请输入 11 位手机号');
+    }
+    return ok({ message: 'Verification code sent (MVP: 888888)' });
+  }),
+
+  http.post('/api/auth/verify-code', async ({ request }) => {
+    await delay(400);
+    const body = (await request.json()) as { phone?: string; code?: string };
+    if (!body.phone || !body.code) {
+      return fail(400, 40001, '请输入手机号和验证码');
+    }
+    // 与真实 dev 后端一致的 MVP 固定码
+    if (body.code !== '888888') {
+      return fail(401, 40102, '验证码错误或已过期');
+    }
+    return ok({ token: DEMO_TOKEN, sessionId: 'mock-session', user: { id: 'usr_carlos', nickname: 'Carlos', phone: body.phone } });
+  }),
+
+  http.get('/api/admin/whoami', async () => {
+    await delay(150);
+    return ok(demoWhoami());
   }),
 
   http.post('/api/auth/refresh', async () => {

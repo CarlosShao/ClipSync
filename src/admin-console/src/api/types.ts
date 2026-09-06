@@ -313,12 +313,21 @@ export interface LoginPayload {
 
 export interface LoginResp {
   accessToken: string;
-  refreshToken: string;
+  /** 真实后端登录（密码/验证码）暂不返回刷新令牌，401 时直接回登录页 */
+  refreshToken: string | null;
   account: string;
   nickname: string;
   /** 已知内置角色：super_admin / admin / user；自定义角色为 custom_* */
   roleKey: string;
   /** 权限键列表；super_admin 传 ['*'] */
+  permissions: string[];
+}
+
+/** GET /admin/whoami 响应（T-A1）——登录成功后取角色信息用 */
+export interface WhoamiResp {
+  userId: string;
+  roleKey: string;
+  roleLevel: number;
   permissions: string[];
 }
 

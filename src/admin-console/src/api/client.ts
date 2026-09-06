@@ -107,12 +107,13 @@ client.interceptors.response.use(
       }
       return body.data as never;
     }
-    return resp;
+    // 非壳响应（真实后端 auth 路由返回 { token, ... } 等裸结构）→ 原样返回响应体
+    return resp.data as never;
   },
   async (error: AxiosError) => {
     const config = error.config as (AxiosRequestConfig & { _retried?: boolean }) | undefined;
     const status = error.response?.status;
-    const errBody = error.response?.data as ApiErrorBody | undefined;
+    const errBody = error.response?.data as (ApiErrorBody & { error?: string }) | undefined;
 
     // 401：单次刷新令牌后重放；鉴权接口本身不重试
     if (status === 401 && config && !config._retried && !config.url?.includes('/auth/')) {
@@ -128,7 +129,9 @@ client.interceptors.response.use(
       redirectToLogin();
     }
 
-    notifyError(errBody?.message ?? HTTP_STATUS_MESSAGES[status ?? 0] ?? `请求失败（${status ?? '网络异常'}）`);
+    notifyError(
+      errBody?.message ?? errBody?.error ?? HTTP_STATUS_MESSAGES[status ?? 0] ?? `请求失败（${status ?? '网络异常'}）`,
+    );
     return Promise.reject(error);
   },
 );
