@@ -68,3 +68,13 @@ export async function loginByCode(phone: string, code: string): Promise<LoginRes
 export function refresh(payload: RefreshPayload): Promise<LoginResp> {
   return apiPost<LoginResp>('/auth/refresh', payload);
 }
+
+/**
+ * 管理台单点登录（RB-SSO）：桌面端超管点击「管理控制台」签发一次性 code（60s），
+ * 浏览器带 code 打开 /sso 页面后调本接口兑换正式会话（后端 GETDEL 原子消费，防重放）。
+ */
+export async function ssoExchange(code: string): Promise<LoginResp> {
+  const real = await apiPost<RealLoginResp>('/auth/sso-exchange', { code });
+  const account = real.user?.phone || real.user?.email || 'sso';
+  return finalizeSession(real, account);
+}

@@ -140,8 +140,9 @@ function buildDeviceFilters(query, params) {
 /**
  * GET /api/admin/devices/stats
  * 设备页头统计：总数 / 在线数 / 平台分布（count 之和 = total）。
+ * RB-06：读侧细粒度权限 requirePerm('admin.devices.view')。
  */
-router.get('/stats', async (req, res) => {
+router.get('/stats', requirePerm('admin.devices.view'), async (req, res) => {
   try {
     const { rows: totals } = await pool.query(`
       SELECT COUNT(*)::int AS total,
@@ -175,8 +176,9 @@ router.get('/stats', async (req, res) => {
 /**
  * GET /api/admin/devices?page=&pageSize=&q=&platform=&status=
  * 设备分页列表（设备名/属主关键词 + 平台/在线状态筛选），按最近活跃倒序。
+ * RB-06：读侧细粒度权限 requirePerm('admin.devices.view')（与 /stats 一致）。
  */
-router.get('/', async (req, res) => {
+router.get('/', requirePerm('admin.devices.view'), async (req, res) => {
   try {
     const { page, pageSize, offset } = parsePaging(req.query);
     const params = [];

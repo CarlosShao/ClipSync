@@ -11,12 +11,14 @@ import { getRedisClient } from './middleware/rateLimiter.js';
 import config from './config.js';
 import { setupWebSocket, gracefulShutdown as gracefulShutdownWs } from './ws/server.js';
 import { authenticateToken } from './middleware/auth.js';
+import { requireRole } from './middleware/adminAuth.js';
 import superAdminAudit from './middleware/superAdminAudit.js';
-import { apiLimiter } from './middleware/rateLimiter.js';
+import { apiLimiter, uploadLimiter } from './middleware/rateLimiter.js';
+import { maintenanceGuard } from './middleware/maintenance.js';
 import { metricsMiddleware, getMetrics, getPrometheusMetrics } from './middleware/metrics.js';
 import { requireFlag } from './utils/featureFlags.js';
 import { requestLogger, errorLogger, logger } from './utils/logger.js';
-import { requestTimeout, requestId } from './middleware/request-timeout.js';
+import { requestId } from './middleware/request-id.js';
 import authRoutes from './routes/auth.js';
 import authVerifyRoutes from './routes/auth-verify.js';
 import authPasswordRoutes from './routes/auth-password.js';
@@ -58,9 +60,8 @@ import aiConversationsRoutes from './routes/aiConversations.js';
 import workflowRulesRoutes from './routes/workflowRules.js';
 import aiMemoriesRoutes from './routes/aiMemories.js';
 import aiSettingsRoutes from './routes/aiSettings.js';
-import { enableQueryMonitoring, getSlowQueries, getPoolStatus } from './utils/query-monitor.js';
+import { enableQueryMonitoring } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
-import metricsRoutes from './routes/metrics.js';
 import adminRoutes from './routes/admin/index.js';
 
 const app = express();
@@ -283,7 +284,9 @@ app.get('/api/ready', async (req, res) => {
   // 3. 检查文件系统（上传目录）
   try {
     const fs = await import('fs/promises');
-    await fs.access(config.upload.dir, fs.constants.W_OK);
+    // CO-01: config.upload.dir 在任何环境配置中都未定义（config.upload.dir === undefined），
+    // fs.access(undefined) 会抛 TypeError 导致 /api/ready 恒 503，此处加兜底（对齐 routes/health.js:73 写法）
+    await fs.access(config.upload.dir || './uploads', fs.constants.W_OK);
     checks.filesystem = true;
     details.filesystem = 'writable';
   } catch (err) {
@@ -304,49 +307,37 @@ app.get('/api/ready', async (req, res) => {
 
 // ============================================
 // Metrics (JSON + Prometheus)
+// CO-03: 端点鉴权 —— Prometheus 抓取用 Bearer METRICS_TOKEN 直通；
+// 其余请求要求 authenticateToken + requireRole(50)（admin 及以上）。
+// 注意：docker-compose.dev.yml 的 clipsync 服务需同步注入 METRICS_TOKEN，
+// 未注入时使用下方 dev 默认值；生产环境必须覆盖默认值。
 // ============================================
-app.get('/api/metrics', (req, res) => {
+const METRICS_TOKEN = process.env.METRICS_TOKEN || 'clipsync-metrics-dev-token';
+
+function metricsAuth(req, res, next) {
+  // 测试环境跳过鉴权（与 authenticateToken 的测试旁路保持一致，e2e 用例依赖匿名访问）
+  if (process.env.NODE_ENV === 'test') {
+    return next();
+  }
+  const header = req.headers.authorization || '';
+  if (header === `Bearer ${METRICS_TOKEN}`) {
+    return next();
+  }
+  authenticateToken(req, res, () => requireRole(50)(req, res, next));
+}
+
+app.get('/api/metrics', metricsAuth, (req, res) => {
   res.json(getMetrics());
 });
 
-app.get('/api/metrics/prometheus', (req, res) => {
+app.get('/api/metrics/prometheus', metricsAuth, (req, res) => {
   res.setHeader('Content-Type', 'text/plain; version=0.0.4');
   res.send(getPrometheusMetrics());
 });
 
 // ============================================
-// Admin API（慢查询、连接池状态）
+// Admin API（RB-08：慢查询/连接池端点已归位 routes/admin/index.js，走统一 RBAC 链）
 // ============================================
-app.get('/api/admin/slow-queries', authenticateToken, async (req, res) => {
-  // ✅ Red Team 修复 P0-4: 管理员权限检查
-  // 方案：检查 users.is_admin 字段（需在数据库中 ALTER TABLE ADD COLUMN is_admin BOOLEAN DEFAULT FALSE）
-  // 临时方案：检查 JWT 中的管理员声明（需手动设置 JWT secret 为特定值）
-  // 生产环境建议使用专门的管理员认证中间件
-  try {
-    const adminCheck = await pool.query('SELECT is_admin FROM users WHERE id = $1', [req.user.userId]);
-    if (!adminCheck.rows[0]?.is_admin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-  } catch (err) {
-    logger.error('Admin check failed:', { error: err.message });
-    return res.status(500).json({ error: 'Admin check failed' });
-  }
-  try {
-    const limit = parseInt(req.query.limit) || 20;
-    const minTime = parseInt(req.query.minTime) || 1000;
-    const slowQueries = await getSlowQueries(limit, minTime);
-    const poolStatus = await getPoolStatus();
-
-    res.json({
-      slowQueries,
-      poolStatus,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err) {
-    logger.error('Failed to get slow queries:', { error: err.message });
-    res.status(500).json({ error: 'Failed to get slow queries' });
-  }
-});
 
 // ============================================
 // API Routes（全局速率限制）
@@ -369,15 +360,15 @@ app.use('/api/devices', authenticateToken, apiLimiter, csrfProtection, subscript
   req.userId = req.user.userId;
   next();
 }, deviceRoutes);
-app.use('/api/clipboard', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
+app.use('/api/clipboard', authenticateToken, maintenanceGuard, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, clipboardRoutes);
-app.use('/api/media', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
+app.use('/api/media', authenticateToken, maintenanceGuard, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, mediaRoutes);
-app.use('/api/sync', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
+app.use('/api/sync', authenticateToken, maintenanceGuard, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, syncRoutes);
@@ -387,7 +378,8 @@ app.use('/api/storage', authenticateToken, apiLimiter, csrfProtection, subscript
   next();
 }, storageRoutes);
 
-app.use('/api/upload', authenticateToken, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
+// CO-12：上传接口独立限流（阈值由管理台 rate_limit_upload_per_min 运行时可调）
+app.use('/api/upload', authenticateToken, maintenanceGuard, uploadLimiter, apiLimiter, csrfProtection, subscriptionCheck, (req, res, next) => {
   req.userId = req.user.userId;
   next();
 }, chunkedUploadRoutes);

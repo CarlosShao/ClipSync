@@ -8,10 +8,14 @@ import type {
   ApiResp,
   AuditLog,
   FeatureFlag,
+  OpsBackups,
+  OpsOverview,
   Order,
   PageData,
+  Permission,
   ReconciliationReport,
   Role,
+  SlowQueriesResp,
   SystemConfig,
 } from '@/api/types';
 
@@ -165,10 +169,12 @@ describe('订单详情与退款', () => {
 });
 
 describe('功能开关与系统参数（设置页契约）', () => {
-  test('GET /flags 返回 5 个开关', async () => {
+  test('GET /flags 返回 6 个开关（含 051 enable_signup 注册总开关）', async () => {
     const { data } = expectOk(await get<FeatureFlag[]>('/api/admin/flags'));
-    expect(data).toHaveLength(5);
+    expect(data).toHaveLength(6);
     expect(data[0]).toMatchObject({ key: 'enable_subscription', enabled: true });
+    const signup = data.find((f) => f.key === 'enable_signup');
+    expect(signup).toMatchObject({ name: '注册总开关', enabled: true });
   });
 
   test('PATCH /flags/:key 切换开关并写审计', async () => {
@@ -181,7 +187,7 @@ describe('功能开关与系统参数（设置页契约）', () => {
     expect(mockAuditLogs[0]?.resourceId).toBe('enable_ai_agent');
   });
 
-  test('GET /configs 含系统参数四项 + maintenance_mode', async () => {
+  test('GET /configs 含系统参数 + 050 新键（限流/日志/SMTP/菜单覆盖）', async () => {
     const { data } = expectOk(await get<SystemConfig[]>('/api/admin/configs'));
     const keys = data.map((c) => c.key);
     expect(keys).toEqual(
@@ -191,11 +197,30 @@ describe('功能开关与系统参数（设置页契约）', () => {
         'session_timeout_minutes',
         'audit_log_retention_days',
         'maintenance_mode',
+        // CO-11 限流 5 键
+        'rate_limit_api_per_min',
+        'rate_limit_send_code_per_hour',
+        'rate_limit_login_failed_per_15min',
+        'rate_limit_upload_per_min',
+        'rate_limit_disabled',
+        // CO-41 日志级别
+        'log_level',
+        // CO-30 SMTP 键组
+        'smtp_host',
+        'smtp_port',
+        'smtp_user',
+        'smtp_pass',
+        'smtp_from',
+        'smtp_secure',
+        // 菜单覆盖
+        'menu_overrides',
       ]),
     );
+    const smtpPass = data.find((c) => c.key === 'smtp_pass');
+    expect(smtpPass?.value).toBe('未配置');
   });
 
-  test('PATCH /configs/:key 逐项更新；maintenance_mode 缺原因返回 400', async () => {
+  test('PATCH /configs/:key 逐项更新；maintenance_mode 缺原因返回 400；log_level 白名单校验', async () => {
     const updated = expectOk(
       await patch<SystemConfig>('/api/admin/configs/ai_max_tokens', { value: '8192' }),
     );
@@ -214,11 +239,45 @@ describe('功能开关与系统参数（设置页契约）', () => {
       }),
     );
     expect(okResp.data.value).toBe('on');
+
+    // CO-41：log_level 仅允许 debug/info/warn/error
+    const badLevel = await patch<SystemConfig>('/api/admin/configs/log_level', { value: 'verbose' });
+    expect(badLevel.status).toBe(400);
+    expect(expectFail(badLevel).code).toBe(40002);
+
+    // CO-30：smtp_pass 写入后回显脱敏状态而非明文
+    const passResp = expectOk(
+      await patch<SystemConfig>('/api/admin/configs/smtp_pass', { value: 'super-secret' }),
+    );
+    expect(passResp.data.value).toBe('已配置');
+  });
+
+  test('PATCH /configs/rate_limit_disabled 生产环境写 true 返回 400（CO-11）', async () => {
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const resp = await patch<SystemConfig>('/api/admin/configs/rate_limit_disabled', {
+        value: 'true',
+      });
+      expect(resp.status).toBe(400);
+      expect(expectFail(resp).code).toBe(40002);
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+    }
   });
 });
 
 describe('公告下发', () => {
-  test('POST /announcements 创建记录（unshift 至最近发送）', async () => {
+  test('GET /announcements 历史行含真实已读触达 read_count（CO-35）', async () => {
+    const { data } = expectOk(await get<Announcement[]>('/api/admin/announcements'));
+    expect(data.length).toBeGreaterThan(0);
+    for (const item of data) {
+      expect(typeof item.readCount).toBe('number');
+      expect(item.readCount ?? 0).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  test('POST /announcements 创建记录（unshift 至最近发送，readCount 从 0 起计）', async () => {
     const { data } = expectOk(
       await post<Announcement>('/api/admin/announcements', {
         title: '维护通知（测试）',
@@ -228,6 +287,7 @@ describe('公告下发', () => {
       }),
     );
     expect(data.deliveredCount ?? 0).toBeGreaterThan(0);
+    expect(data.readCount).toBe(0);
   });
 
   test('标题/内容为空返回 400 错误壳', async () => {
@@ -331,15 +391,131 @@ describe('GET /api/admin/audit-logs（审计页契约 T-A6）', () => {
   });
 });
 
+describe('GET /api/admin/ops/overview（运维监控页契约 CO-40）', () => {
+  test('返回状态/版本/运行时长/探针/内存/指标聚合', async () => {
+    const { data } = expectOk(await get<OpsOverview>('/api/admin/ops/overview'));
+    expect(['ok', 'degraded', 'error']).toContain(data.status);
+    expect(typeof data.version).toBe('string');
+    expect(data.uptimeSec).toBeGreaterThan(0);
+    expect(data.db.ok).toBe(true);
+    expect(data.redis.ok).toBe(true);
+    expect(data.memory.rss).toBeGreaterThan(0);
+    expect(data.metrics).not.toBeNull();
+    expect(data.metrics!.requests).toBeGreaterThan(0);
+    expect(data.metrics!.errors).toBeGreaterThanOrEqual(0);
+    expect(data.metrics!.p95).toBeGreaterThan(0);
+  });
+
+  test('CO-42：含 deployment 部署形态（k8s / docker-compose）', async () => {
+    const { data } = expectOk(await get<OpsOverview>('/api/admin/ops/overview'));
+    expect(data.deployment).toBeDefined();
+    expect(['k8s', 'docker-compose']).toContain(data.deployment!.type);
+  });
+});
+
+describe('CO-33/CO-41：备份概览与慢查询', () => {
+  test('GET /ops/backups 返回 items + summary（份数/总大小/最近备份时间）', async () => {
+    const { data } = expectOk(await get<OpsBackups>('/api/admin/ops/backups'));
+    expect(data.items.length).toBeGreaterThan(0);
+    expect(data.summary.total).toBe(data.items.length);
+    expect(data.summary.totalBytes).toBe(data.items.reduce((sum, item) => sum + item.sizeBytes, 0));
+    expect(data.summary.lastBackupAt).toBeTruthy();
+    for (const item of data.items) {
+      expect(item.file).toBeTruthy();
+      expect(item.sizeBytes).toBeGreaterThan(0);
+      expect(['db', 'redis', 'uploads']).toContain(item.kind);
+    }
+  });
+
+  test('GET /slow-queries 返回慢查询行 + 连接池状态（admin.audit.view 域）', async () => {
+    const { data } = expectOk(await get<SlowQueriesResp>('/api/admin/slow-queries'));
+    expect(data.slowQueries.length).toBeGreaterThan(0);
+    for (const row of data.slowQueries) {
+      expect(row.query).toBeTruthy();
+      expect(row.meanExecTime).toContain('ms');
+      expect(row.calls).toBeGreaterThan(0);
+    }
+    expect(data.poolStatus).not.toBeNull();
+    expect(typeof data.timestamp).toBe('string');
+  });
+});
+
+describe('POST /api/admin/configs/smtp/test（CO-30 SMTP 测试邮件）', () => {
+  test('未配置 SMTP 返回 409/4090 错误壳', async () => {
+    const resp = await post<{ messageId: string }>('/api/admin/configs/smtp/test', {
+      to: 'carlos@clipstream.work',
+    });
+    expect(resp.status).toBe(409);
+    expect(expectFail(resp).code).toBe(4090);
+  });
+
+  test('配置 smtp_host + smtp_pass 后发送成功返回 messageId', async () => {
+    await patch('/api/admin/configs/smtp_host', { value: 'smtp.clipstream.work' });
+    await patch('/api/admin/configs/smtp_pass', { value: 'mock-auth-code' });
+    const resp = await post<{ messageId: string }>('/api/admin/configs/smtp/test', {});
+    expect(resp.status).toBe(200);
+    expect(expectOk(resp).data.messageId).toContain('@clipstream.work');
+  });
+
+  test('发送失败（收件人含 fail）返回 5xx 错误壳', async () => {
+    const resp = await post<{ messageId: string }>('/api/admin/configs/smtp/test', {
+      to: 'fail@clipstream.work',
+    });
+    expect(resp.status).toBe(500);
+    expect(expectFail(resp).code).toBe(5001);
+  });
+});
+
 describe('角色权限写路径（T-A6）', () => {
-  test('GET /roles 返回 4 角色（含权限集合与人数），GET /permissions 返回 13 项目录', async () => {
+  test('GET /roles 返回 4 角色（含权限集合与人数），GET /permissions 返回 30 项目录（RB-06/RB-11 扩充）', async () => {
     const roles = expectOk(await get<Role[]>('/api/admin/roles')).data;
     expect(roles).toHaveLength(4);
     const superAdmin = roles.find((r) => r.roleKey === 'super_admin');
-    expect(superAdmin?.permissions.length).toBe(13);
+    expect(superAdmin?.permissions.length).toBe(30);
 
-    const permissions = expectOk(await get<{ permKey: string }[]>('/api/admin/permissions')).data;
-    expect(permissions).toHaveLength(13);
+    const permissions = expectOk(await get<Permission[]>('/api/admin/permissions')).data;
+    expect(permissions).toHaveLength(30);
+
+    // RB-06：读侧 view 键 7 项 + admin.ops.view 均在目录内
+    const permKeys = permissions.map((p) => p.permKey);
+    expect(permKeys).toEqual(
+      expect.arrayContaining([
+        'admin.devices.view',
+        'admin.orders.view',
+        'admin.subscriptions.view',
+        'admin.plans.view',
+        'admin.roles.view',
+        'admin.configs.view',
+        'admin.announce.view',
+        'admin.ops.view',
+      ]),
+    );
+    expect(permissions.find((p) => p.permKey === 'admin.ops.view')?.superAdminOnly).toBe(true);
+
+    // RB-11：AI 组 9 键，category='ai' 且均非 superAdminOnly
+    const aiPerms = permissions.filter((p) => p.category === 'ai');
+    expect(aiPerms).toHaveLength(9);
+    for (const perm of aiPerms) expect(perm.superAdminOnly).toBe(false);
+    expect(permKeys).toEqual(
+      expect.arrayContaining([
+        'ai.manage_users',
+        'ai.manage_devices',
+        'ai.manage_system',
+        'ai.view_security_data',
+        'ai.view_deployment',
+        'ai.view_source_code',
+        'ai.view_database_schema',
+        'ai.access_other_user_data',
+        'ai.explain_internal',
+      ]),
+    );
+
+    // 内置 admin 角色：全部 view 键 + ai.manage_devices（049/052/053 授予策略镜像）
+    const adminRole = roles.find((r) => r.roleKey === 'admin');
+    expect(adminRole?.permissions).toContain('admin.devices.view');
+    expect(adminRole?.permissions).toContain('ai.manage_devices');
+    expect(adminRole?.permissions).not.toContain('admin.ops.view');
+    expect(adminRole?.permissions.filter((k) => k.startsWith('ai.'))).toEqual(['ai.manage_devices']);
   });
 
   test('PATCH /roles/:id/permissions 更新内存并写审计（admin.roles.update 敏感）', async () => {

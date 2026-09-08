@@ -7,6 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/subscription_plan.dart';
 import '../../models/user_subscription.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/feature_flags_provider.dart';
 import '../../services/app_exception.dart';
 import '../../services/subscription_api_service.dart';
 import '../../theme/app_theme.dart';
@@ -69,6 +70,11 @@ class _SubscriptionManagementScreenState
       if (!mounted) {
         return;
       }
+      // MA-05：plan.features 快照注入菜单能力层（share.create 的
+      // team_management 等套餐墙据此提前显隐，服务端 403 兜底）
+      context
+          .read<FeatureFlagsProvider>()
+          .applyPlanFeatures(current.planFeatures);
       setState(() {
         _current = current;
         _plans = plans;
@@ -106,6 +112,10 @@ class _SubscriptionManagementScreenState
     if (!mounted) {
       return;
     }
+    // MA-05：取消/恢复后的最新套餐 features 同步进菜单能力层
+    context
+        .read<FeatureFlagsProvider>()
+        .applyPlanFeatures(current.planFeatures);
     setState(() {
       _current = current;
     });

@@ -43,6 +43,15 @@ export function metricsMiddleware(req, res, next) {
   next();
 }
 
+// CO-02：WS 连接数 Prometheus gauge 上报入口（ws/server.js 连接/断开时调用）
+let wsConnectionsGauge = 0;
+
+export function setWsConnections(count) {
+  wsConnectionsGauge = count;
+  metrics.wsConnections.current = count;
+  metrics.wsConnections.total = Math.max(metrics.wsConnections.total, count);
+}
+
 function getPercentile(arr, p) {
   if (arr.length === 0) return 0;
   const sorted = [...arr].sort((a, b) => a - b);
@@ -115,6 +124,11 @@ export function getPrometheusMetrics() {
   lines.push(`# HELP clipsync_errors_total Total server errors`);
   lines.push(`# TYPE clipsync_errors_total counter`);
   lines.push(`clipsync_errors_total ${m.errors.total}`);
+
+  // CO-02：当前实例活跃 WS 连接数（告警规则 clipsync_alerts.yml 用）
+  lines.push(`# HELP clipsync_ws_connections Current live WebSocket connections`);
+  lines.push(`# TYPE clipsync_ws_connections gauge`);
+  lines.push(`clipsync_ws_connections ${wsConnectionsGauge}`);
 
   lines.push(`# HELP clipsync_memory_bytes Memory usage`);
   lines.push(`# TYPE clipsync_memory_bytes gauge`);

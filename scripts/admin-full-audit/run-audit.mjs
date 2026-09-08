@@ -1,14 +1,17 @@
 // =============================================================
 // ClipSync 后台管理系统全链路审计脚本（test/admin-full-audit 分支）
-// 用法: node run-audit.mjs <phase...>   phase = auth|overview|users|devices|subs|orders|plans|audit|roles|configs|announce|rbac|all
-// 依赖: 运行中的 dev 后端 http://localhost:3001（docker-compose.dev.yml）
+// 用法: node run-audit.mjs <phase...>   phase = auth|overview|users|devices|subs|orders|plans|audit|roles|configs|announce|rbac|rb06|ailevel|all
+// 依赖: 运行中的 dev 后端 http://127.0.0.1:3001（docker-compose.dev.yml）
 // 说明: dev 环境验证码固定 888888（src/routes/auth.js send-code）；
 //       验证码限流 5 次/小时/手机号（进程内存态，docker restart clipsync 可清零）
+//       ⚠️ 127.0.0.1 而非 localhost：wslrelay 抢占 [::1]:3001，localhost 会进转发黑洞挂起（CO-52）
 // =============================================================
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
+// RB-01 函数级断言用：levelKeyForRole 未导出，assertToolAllowed 为其等价导出探针
+import { assertToolAllowed } from '../../src/server/src/utils/aiSystemPrompt.js';
 
-const BASE = 'http://localhost:3001/api';
+const BASE = 'http://127.0.0.1:3001/api';
 const ADMIN_PHONE = '13505110772'; // super_admin swqcarlos@gmail.com
 const TEST_PHONE = '13900001111'; // 测试用户（AuditBot）
 const DEV_CODE = '888888';
@@ -533,6 +536,80 @@ async function phaseRbac() {
   check(P, '还原 13900001113 为普通用户', true);
 }
 
+// RB-06：管理读端点细粒度权限矩阵（049 落库 admin.*.view）。
+// 空权限自定义角色（level 50 可过 requireRole(50) 门槛）访问读端点必须 403；
+// 授予 admin.devices.view 后设备读端点恢复 200。
+// 幂等：复用角色 custom_audit_rb06 + 探针账号 13900001114；
+// roles PATCH permissions 后服务端权限缓存立即清空（roles.js clearPermCache），
+// 故「先拒后准」可在同一角色上顺序断言。
+async function phaseRb06() {
+  const P = 'rb06';
+  const ROLE_KEY = 'custom_audit_rb06';
+  const PROBE_PHONE = '13900001114';
+
+  let roleId = psql(`SELECT id FROM roles WHERE role_key='${ROLE_KEY}'`);
+  if (!roleId) {
+    const rc = await req('POST', '/admin/roles', { token: adminToken, body: { roleKey: ROLE_KEY, name: 'RB06矩阵角色', description: 'audit rb06', level: 50 } });
+    check(P, '创建 RB06 矩阵角色 → 201', rc.status === 201 && rc.json?.code === 0, `status=${rc.status} body=${JSON.stringify(rc.json)?.slice(0, 120)}`);
+    roleId = rc.json?.data?.id;
+  }
+  check(P, 'RB06 角色 ID 就绪', /^[0-9a-f-]{36}$/.test(roleId || ''), `id=${roleId}`);
+
+  // 探针账号就绪并指派矩阵角色（authenticateToken 每请求实时回查 DB 角色，改角色即生效）
+  const u1 = psql(`SELECT id FROM users WHERE phone='${PROBE_PHONE}'`);
+  if (!u1) await loginByCode(PROBE_PHONE);
+  const userId1 = psql(`SELECT id FROM users WHERE phone='${PROBE_PHONE}'`);
+  const ra = await req('PATCH', `/admin/users/${userId1}/role`, { token: adminToken, body: { roleId } });
+  check(P, '指派 RB06 角色 → 200', ra.status === 200 && ra.json?.code === 0, `status=${ra.status} body=${JSON.stringify(ra.json)?.slice(0, 120)}`);
+  const t1 = await getUserToken(PROBE_PHONE);
+
+  // ① 权限归零 → 读端点全 403（归零 PATCH 会清服务端权限缓存，断言不受历史缓存污染）
+  const rclr = await req('PATCH', `/admin/roles/${roleId}/permissions`, { token: adminToken, body: { permissions: [] } });
+  check(P, '角色权限归零 → 200', rclr.status === 200 && rclr.json?.code === 0, `status=${rclr.status}`);
+
+  const rDev = await req('GET', '/admin/devices', { token: t1 });
+  check(P, '空权限角色 GET /admin/devices → 403（RB-06 验收口径）', rDev.status === 403, `status=${rDev.status} body=${JSON.stringify(rDev.json)?.slice(0, 100)}`);
+  const rStats = await req('GET', '/admin/devices/stats', { token: t1 });
+  check(P, '空权限角色 GET /admin/devices/stats → 403', rStats.status === 403, `status=${rStats.status}`);
+  const rOrd = await req('GET', '/admin/orders', { token: t1 });
+  check(P, '空权限角色 GET /admin/orders → 403', rOrd.status === 403, `status=${rOrd.status}（049 已落库 admin.orders.view；若失败说明 orders 读端点尚未挂 requirePerm）`);
+
+  // ② 授予 admin.devices.view → 设备读端点 200
+  const rg = await req('PATCH', `/admin/roles/${roleId}/permissions`, { token: adminToken, body: { permissions: ['admin.devices.view'] } });
+  check(P, '授予 admin.devices.view → 200', rg.status === 200 && rg.json?.code === 0, `status=${rg.status}`);
+  const rDevOk = await req('GET', '/admin/devices', { token: t1 });
+  check(P, '含 admin.devices.view 角色 GET /admin/devices → 200', rDevOk.status === 200 && rDevOk.json?.code === 0, `status=${rDevOk.status}`);
+  const rStatsOk = await req('GET', '/admin/devices/stats', { token: t1 });
+  check(P, '含 admin.devices.view 角色 GET /admin/devices/stats → 200', rStatsOk.status === 200 && rStatsOk.json?.code === 0, `status=${rStatsOk.status}`);
+
+  // 还原：探针账号回普通角色（角色权限保留，供下次运行幂等归零）
+  const userRoleId = psql(`SELECT id FROM roles WHERE role_key='user'`);
+  await req('PATCH', `/admin/users/${userId1}/role`, { token: adminToken, body: { roleId: userRoleId } });
+  check(P, '还原探针账号为普通角色', true, psql(`SELECT r.role_key FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id='${userId1}'`));
+}
+
+// RB-01：AI 等级映射函数级断言（不走 HTTP，直接 import 服务端模块）。
+// levelKeyForRole(role, roleLevel) 未导出（aiSystemPrompt.js :168，模块私有），
+// 用等价导出 assertToolAllowed 探测：allowed=true 时返回的 level 即角色等级键。
+// 'ask_user' 登记为 L1 工具（levels.L1），L1/L2/L3 角色均放行，返回 level = 角色等级键。
+async function phaseAiLevel() {
+  const P = 'ailevel';
+  const PROBE_TOOL = 'ask_user';
+
+  const l1 = assertToolAllowed('user', PROBE_TOOL, 10);
+  check(P, 'RB-01: roleLevel=10（user）→ L1', l1.allowed === true && l1.level === 'L1', JSON.stringify(l1));
+
+  const l2 = assertToolAllowed('custom', PROBE_TOOL, 50);
+  check(P, 'RB-01: roleLevel=50（custom/admin）→ L2', l2.allowed === true && l2.level === 'L2', JSON.stringify(l2));
+
+  const l3 = assertToolAllowed('super_admin', PROBE_TOOL, 100);
+  check(P, 'RB-01: roleLevel=100（super_admin）→ L3', l3.allowed === true && l3.level === 'L3', JSON.stringify(l3));
+
+  // 负向：L2 角色不可触达 L3 工具（'list_users' 登记于 levels.L3）
+  const deny = assertToolAllowed('custom', 'list_users', 50);
+  check(P, 'RB-01: roleLevel=50 触达 L3 工具 list_users → 拒绝', deny.allowed === false, JSON.stringify(deny));
+}
+
 // ---------- 主流程 ----------
 const phases = process.argv.slice(2);
 const ALL = ['auth', 'overview', 'users', 'devices', 'subs', 'orders', 'plans', 'audit', 'roles', 'configs', 'announce', 'rbac'];
@@ -547,7 +624,7 @@ if (!run.includes('auth')) {
   }
 }
 
-const runners = { auth: phaseAuth, overview: phaseOverview, users: phaseUsers, devices: phaseDevices, subs: phaseSubs, orders: phaseOrders, plans: phasePlans, audit: phaseAudit, roles: phaseRoles, configs: phaseConfigs, announce: phaseAnnounce, rbac: phaseRbac };
+const runners = { auth: phaseAuth, overview: phaseOverview, users: phaseUsers, devices: phaseDevices, subs: phaseSubs, orders: phaseOrders, plans: phasePlans, audit: phaseAudit, roles: phaseRoles, configs: phaseConfigs, announce: phaseAnnounce, rbac: phaseRbac, rb06: phaseRb06, ailevel: phaseAiLevel };
 for (const p of run) {
   console.log(`\n===== PHASE ${p.toUpperCase()} =====`);
   try {

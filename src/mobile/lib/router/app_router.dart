@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
+import '../providers/feature_flags_provider.dart';
+import '../screens/announcements/announcements_screen.dart';
 import '../screens/clipboard/clipboard_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/lock_screen.dart';
@@ -56,6 +58,9 @@ class AppRoutes {
 
   /// C5：通知中心页（设置页「通知中心」入口；亦支持深链直达）
   static const notifications = '/notifications';
+
+  /// CO-35：系统公告页（设置页「公告」入口；亦支持深链直达）
+  static const announcements = '/announcements';
 
   /// 个人资料页（设置页「账号」入口；头像/昵称编辑）
   static const profile = '/profile';
@@ -131,10 +136,15 @@ class BiometricLockGate {
 /// 3. 无 token → `/login`（并复位生物锁布防，T4.6）；
 /// 4. 有 token 且生物锁已布防（冷启动/后台回前台）→ `/lock`（T4.6）；
 /// 5. 已登录未布防时访问 `/` / `/login` / `/onboarding` / `/home` /
-///    已解锁的 `/lock` → `/home/clipboard`。
+///    已解锁的 `/lock` → `/home/clipboard`；
+/// 6. MA-04 深链能力守卫：`/subscriptions`（nav.subscription）、
+///    `/shared-links`（share.create）对应能力关闭时回落设置 tab
+///    `/home/settings`（对齐桌面端回落设置页惯例；flags 变化经
+///    refreshListenable 即时重估，服务端 403 权威兜底）。
 GoRouter createAppRouter({
   required AuthProvider authProvider,
   required RouteGuardState guardState,
+  required FeatureFlagsProvider featureFlagsProvider,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -145,6 +155,9 @@ GoRouter createAppRouter({
       PermissionGuideGate.pending,
       // T4.6：生物锁布防/解除（locked 翻转）后刷新重定向
       BiometricLockGate.locked,
+      // MA-04：功能开关/能力快照更新（启动拉取、WS feature_flags.updated）
+      // 后刷新重定向，深链守卫即时重估
+      featureFlagsProvider,
     ]),
     redirect: (context, state) {
       final location = state.matchedLocation;
@@ -185,6 +198,19 @@ GoRouter createAppRouter({
       if (PermissionGuideGate.pending.value &&
           location != AppRoutes.permissionGuide) {
         return AppRoutes.permissionGuide;
+      }
+
+      // 3.6 MA-04 深链能力守卫：能力关闭时深链直达回落设置 tab（对齐桌面端
+      //     回落设置页惯例）。flags 快照经 provider 同步可读（不做异步等待），
+      //     快照未加载 / 未知键 fail-open 放行，服务端 403 权威兜底；
+      //     featureFlagsProvider 已并入 refreshListenable，开关变化即时重估。
+      if (location == AppRoutes.subscriptionManagement &&
+          !featureFlagsProvider.can(MenuAccessKeys.navSubscription)) {
+        return AppRoutes.homeSettings;
+      }
+      if (location == AppRoutes.sharedLinks &&
+          !featureFlagsProvider.can(MenuAccessKeys.shareCreate)) {
+        return AppRoutes.homeSettings;
       }
 
       // 4. 已登录：从加载页 / 登录页 / 引导页 / 裸 /home 进入主页默认分支
@@ -275,6 +301,14 @@ GoRouter createAppRouter({
         pageBuilder: (context, state) => buildObsidianTransitionPage(
           key: state.pageKey,
           child: const NotificationsScreen(),
+        ),
+      ),
+      // CO-35：系统公告（设置页 context.push 打开；列表/once 已读回执）
+      GoRoute(
+        path: AppRoutes.announcements,
+        pageBuilder: (context, state) => buildObsidianTransitionPage(
+          key: state.pageKey,
+          child: const AnnouncementsScreen(),
         ),
       ),
       // 个人资料（设置页「账号」context.push 打开；头像/昵称编辑，对齐桌面端）

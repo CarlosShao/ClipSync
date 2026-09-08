@@ -47,6 +47,11 @@ class SyncService {
   bool _attached = false;
   bool _handlerRegistered = false;
 
+  /// 维护模式暂停采集（CO-21）：true 时采集入口与离线重放一并拦截。
+  /// 由 main.dart 挂接 FeatureFlagsProvider 监听器写入（拉取快照与
+  /// WS maintenance.updated 两条路径都汇入）。
+  bool _maintenancePaused = false;
+
   /// 登录态挂钩：main() 创建 AuthProvider 后调用一次。
   /// - 监听认证态变化：已登录（含冷启动恢复登录）→ 启动；登出 → 停止
   /// - 同时注册原生 → Dart 的采集回传处理器
@@ -73,9 +78,20 @@ class SyncService {
     }
   }
 
+  /// 维护模式暂停/恢复采集（CO-21）。main.dart 挂接的监听器在每次
+  /// FeatureFlagsProvider 通知时调用，幂等（值不变无副作用）。
+  ///
+  /// 拦截范围：Dart 侧采集回传（前台服务 onClipboardCaptured）与离线重放。
+  /// 原生直传截图链路不经 Dart 决策，由服务端 maintenanceGuard 503 兜底。
+  void setMaintenancePaused(bool paused) {
+    _maintenancePaused = paused;
+  }
+
   /// 剪贴板采集开关实时读取（B3）：每次采集/重放前查 SharedPreferences，
-  /// 不缓存 stale 值；读取失败按默认开启处理（与 SettingsProvider 默认一致）
+  /// 不缓存 stale 值；读取失败按默认开启处理（与 SettingsProvider 默认一致）。
+  /// 维护模式（CO-21）开启时无条件关闭采集，优先级高于用户开关。
   Future<bool> _isCaptureEnabled() async {
+    if (_maintenancePaused) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool(_prefKeyCaptureEnabled) ?? true;

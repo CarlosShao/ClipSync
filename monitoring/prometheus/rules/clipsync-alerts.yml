@@ -1,13 +1,20 @@
 # Prometheus 告警规则 - ClipSync
 # 定义关键指标的告警条件
+#
+# CO-02 指标对齐说明：应用层指标以 src/server/src/middleware/metrics.js 实际导出为准：
+#   clipsync_requests_total / clipsync_errors_total / clipsync_response_time_seconds{quantile=...}
+#   / clipsync_memory_bytes / clipsync_uptime_seconds / clipsync_ws_connections
+# 原规则使用的 http_requests_total / http_request_duration_seconds_bucket / ws_active_connections
+# 均为应用从未导出的指标名，已全部替换；pg_pool_* / redis_* 两条规则的应用侧指标同样不存在，
+# 已改用 blackbox TCP 探测（probe_success）判定数据库/Redis 可达性。
 
 groups:
   - name: clipsync_alerts
     interval: 30s
     rules:
-      # 高错误率告警
+      # 高错误率告警（clipsync_errors_total 仅统计 5xx，clipsync_requests_total 为全部请求）
       - alert: HighErrorRate
-        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        expr: sum(rate(clipsync_errors_total[5m])) / sum(rate(clipsync_requests_total[5m])) > 0.05
         for: 5m
         labels:
           severity: critical
@@ -16,31 +23,31 @@ groups:
           summary: "高错误率: {{ $value | humanizePercentage }}"
           description: "ClipSync API 错误率超过 5%，持续时间超过 5 分钟"
 
-      # 数据库连接池耗尽告警
-      - alert: DatabaseConnectionPoolExhausted
-        expr: pg_pool_active_connections / pg_pool_max_connections > 0.8
-        for: 5m
-        labels:
-          severity: critical
-          service: clipsync
-        annotations:
-          summary: "数据库连接池即将耗尽"
-          description: "数据库连接池使用率超过 80%，当前: {{ $value | humanizePercentage }}"
-
-      # Redis 连接失败告警
-      - alert: RedisConnectionFailure
-        expr: redis_connected_clients == 0
+      # 数据库不可达告警（CO-02：应用从未导出 pg_pool_* 指标，改用 blackbox TCP 探测可达性）
+      - alert: DatabaseUnavailable
+        expr: probe_success{job="clipsync-db"} == 0
         for: 1m
         labels:
           severity: critical
           service: clipsync
         annotations:
-          summary: "Redis 连接失败"
-          description: "Redis 客户端连接数为 0，请检查 Redis 服务"
+          summary: "数据库不可达"
+          description: "blackbox TCP 探测数据库端口失败超过 1 分钟，请检查数据库服务"
 
-      # 高响应时间告警
+      # Redis 不可达告警（CO-02：应用从未导出 redis_connected_* 指标，改用 blackbox TCP 探测可达性）
+      - alert: RedisUnavailable
+        expr: probe_success{job="clipsync-redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: clipsync
+        annotations:
+          summary: "Redis 不可达"
+          description: "blackbox TCP 探测 Redis 端口失败超过 1 分钟，请检查 Redis 服务"
+
+      # 高响应时间告警（应用导出的是 summary 预计算分位，直接取 quantile，无需 rate/histogram_quantile）
       - alert: HighResponseTime
-        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        expr: clipsync_response_time_seconds{quantile="0.95"} > 2
         for: 5m
         labels:
           severity: warning
@@ -49,9 +56,9 @@ groups:
           summary: "高响应时间: P95 = {{ $value }}s"
           description: "API P95 响应时间超过 2 秒，当前: {{ $value }}s"
 
-      # WebSocket 连接数异常告警
+      # WebSocket 连接数异常告警（CO-02：gauge 由 ws/server.js 在连接建立/关闭时经 setWsConnections 上报）
       - alert: WebSocketConnectionAnomaly
-        expr: ws_active_connections > 1000
+        expr: clipsync_ws_connections > 1000
         for: 5m
         labels:
           severity: warning

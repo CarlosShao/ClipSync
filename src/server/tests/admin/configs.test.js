@@ -72,8 +72,10 @@ function findAuditCall(action) {
 // ───────────────────────── 系统配置 ─────────────────────────
 
 describe('GET /api/admin/configs —— 系统参数列表', () => {
-  it('目录 5 键按目录顺序输出，含 maintenance_mode / audit_log_retention_days，JSONB 值转字符串', async () => {
+  it('展示目录全键按目录顺序输出（CO-36 补录两键），JSONB 值转字符串', async () => {
     pool.query.mockImplementation(async (sql) => {
+      // RB-06：GET 读侧也走 requirePerm('admin.configs.view')，先放行权限查询
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.configs.view' }], rowCount: 1 };
       if (sql.includes('FROM system_configs')) {
         // pg 对 jsonb 返回已解析的 JS 值：'"off"' → 'off'、'4096' → 4096
         return {
@@ -92,13 +94,28 @@ describe('GET /api/admin/configs —— 系统参数列表', () => {
     expect(res.status).toBe(200);
     expect(res.body.code).toBe(0);
     const configs = res.body.data;
-    expect(configs).toHaveLength(5);
     expect(configs.map((c) => c.key)).toEqual([
       'maintenance_mode',
       'ai_max_tokens',
       'ai_default_provider',
       'session_timeout_minutes',
       'audit_log_retention_days',
+      // CO-36：038 种子键补录目录（此前已入库但管理台不可见）
+      'max_collection_depth',
+      'enable_audit_log',
+      'rate_limit_api_per_min',
+      'rate_limit_send_code_per_hour',
+      'rate_limit_login_failed_per_15min',
+      'rate_limit_upload_per_min',
+      'rate_limit_disabled',
+      'log_level',
+      'smtp_host',
+      'smtp_port',
+      'smtp_user',
+      'smtp_pass',
+      'smtp_from',
+      'smtp_secure',
+      'menu_overrides',
     ]);
 
     const maintenance = configs[0];
@@ -219,8 +236,9 @@ describe('PATCH /api/admin/configs/:key —— 更新系统参数', () => {
 // ───────────────────────── 功能开关 ─────────────────────────
 
 describe('GET /api/admin/flags —— 功能开关列表', () => {
-  it('目录 5 开关按目录顺序输出（首个 enable_subscription）', async () => {
+  it('功能开关目录按目录顺序输出（首个 enable_subscription，含 enable_signup）', async () => {
     pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.configs.view' }], rowCount: 1 };
       if (sql.includes('FROM feature_flags')) {
         return {
           rows: [
@@ -237,13 +255,14 @@ describe('GET /api/admin/flags —— 功能开关列表', () => {
 
     expect(res.status).toBe(200);
     const flags = res.body.data;
-    expect(flags).toHaveLength(5);
+    expect(flags).toHaveLength(6);
     expect(flags.map((f) => f.key)).toEqual([
       'enable_subscription',
       'enable_ai_agent',
       'enable_public_sharing',
       'enable_2fa',
       'signup_waitlist',
+      'enable_signup',
     ]);
     expect(flags[0]).toMatchObject({ key: 'enable_subscription', enabled: true });
     // DB 缺行的开关兜底 enabled=false，不阻塞设置页渲染

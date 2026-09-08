@@ -79,8 +79,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-clipsync123}
       JWT_SECRET: ${JWT_SECRET:-your-secret-key}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-32byte-encryption-key!!!!}
-      CSRF_SECRET: ${CSRF_SECRET:-your-csrf-secret}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      # CO-34：CSRF_SECRET/ALLOWED_ORIGINS 死变量已删（server 代码零读取；CSRF 走 csrfTokens 机制，CORS 白名单在 config 内置）
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "3001:3000"
@@ -124,8 +123,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-clipsync123}
       JWT_SECRET: ${JWT_SECRET:-your-secret-key}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-32byte-encryption-key!!!!}
-      CSRF_SECRET: ${CSRF_SECRET:-your-csrf-secret}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      # CO-34：CSRF_SECRET/ALLOWED_ORIGINS 死变量已删（同上）
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "3002:3000"

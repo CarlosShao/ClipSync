@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useConfigStore } from '@/stores/configStore'
+import { useMenuAccess } from '@/composables/useMenuAccess'
 import Switch from '@/components/ui/switch/Switch.vue'
 import CustomSelect from '@/components/ui/select/CustomSelect.vue'
 import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
@@ -11,6 +12,10 @@ import Button from '@/components/ui/button/Button.vue'
 const { t, currentLang, setLang } = useI18n()
 const toast = useSonner()
 const configStore = useConfigStore()
+// MA-03：无限历史的套餐门槛收敛到注册表 'history.unlimited'（minPlan: Pro, mode: disable），
+// 不再硬编码套餐名；不满足时禁用「不限」选项并保留「需升级」文案。
+const { can } = useMenuAccess()
+const canUnlimitedHistory = computed(() => can('history.unlimited'))
 
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
 
@@ -55,8 +60,8 @@ function resetServerUrl() {
 
 function onMaxHistoryChange() {
   const val = Number(maxHistoryModel.value)
-  if (val === 999999 && configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise') {
-    // Pro/Enterprise-only option selected without proper plan - reset to 500
+  if (val === 999999 && !canUnlimitedHistory.value) {
+    // 「无限」是 Pro/Enterprise 能力（history.unlimited）：不满足则拒绝选择，回落 500
     maxHistoryModel.value = String(configStore.maxHistory || 500)
     return
   }
@@ -230,13 +235,11 @@ watch(maxHistoryModel, () => onMaxHistoryChange())
           <CustomSelectOption
             value="999999"
             :selected="maxHistoryModel === '999999'"
-            :disabled="configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise'"
+            :disabled="!canUnlimitedHistory"
             @select="(v) => (maxHistoryModel = v)"
             >{{ t('hist_unl')
             }}{{
-              configStore.user.plan !== 'Pro' && configStore.user.plan !== 'Enterprise'
-                ? ` (${t('upgrade_required')})`
-                : ''
+              !canUnlimitedHistory ? ` (${t('upgrade_required')})` : ''
             }}</CustomSelectOption
           >
         </template>

@@ -14,7 +14,7 @@ import type {
 
 /**
  * MSW mock 数据 —— 全部取自视觉基线 design/mockups/admin-v2-light.html
- * （用户 8 名 / 订单 7 笔 / 审计 23 条 / 角色 4 个 / 权限 13 项 / 开关 5 个）。
+ * （用户 8 名 / 订单 7 笔 / 审计 23 条 / 角色 4 个 / 权限 30 项 / 开关 6 个）。
  * 数组为可变引用：PATCH 类 handler 直接改内存，配合前端 invalidate 复现真实行为。
  */
 
@@ -815,6 +815,10 @@ export const mockAuditLogs: AuditLog[] = [
 
 // ─────────────────────── 角色与权限 ───────────────────────
 
+/**
+ * 权限目录镜像（与后端 roles.js PERM_CATALOG 逐键一致，RB-06/RB-11 同步）：
+ * 13 项原有键 + 049 读侧 view 键 7 项 + 052 admin.ops.view + 053 AI 组 9 键（category 'ai'）。
+ */
 export const mockPermissions: Permission[] = [
   { permKey: 'admin.users.view', name: '查看用户列表与详情', category: 'users_devices' },
   { permKey: 'admin.users.manage', name: '停用 / 启用 / 强制下线', category: 'users_devices' },
@@ -829,6 +833,26 @@ export const mockPermissions: Permission[] = [
   { permKey: 'admin.keys.view', name: '设备密钥细节（仅超管）', category: 'audit_security', superAdminOnly: true },
   { permKey: 'admin.configs.manage', name: '系统参数与功能开关', category: 'operations', superAdminOnly: true },
   { permKey: 'admin.announce.send', name: '公告与通知下发', category: 'operations' },
+  // —— 读侧 view 键（049，RB-06）——
+  { permKey: 'admin.devices.view', name: '查看设备列表与统计', category: 'users_devices' },
+  { permKey: 'admin.orders.view', name: '查看订单与退款流水', category: 'subscriptions_orders' },
+  { permKey: 'admin.subscriptions.view', name: '查看订阅列表与统计', category: 'subscriptions_orders' },
+  { permKey: 'admin.plans.view', name: '查看套餐与价格', category: 'subscriptions_orders' },
+  { permKey: 'admin.roles.view', name: '查看角色与权限目录', category: 'audit_security' },
+  { permKey: 'admin.configs.view', name: '查看系统参数与功能开关', category: 'operations' },
+  { permKey: 'admin.announce.view', name: '查看公告下发历史', category: 'operations' },
+  // —— 运维监控（052，CO-40）——
+  { permKey: 'admin.ops.view', name: '运维监控页（仅超管）', category: 'audit_security', superAdminOnly: true },
+  // —— AI 能力组（053 + 028，RB-11；均非 superAdminOnly，自定义角色可精确授予）——
+  { permKey: 'ai.manage_users', name: 'AI：用户管理工具', category: 'ai', superAdminOnly: false },
+  { permKey: 'ai.manage_devices', name: 'AI：设备管理工具', category: 'ai', superAdminOnly: false },
+  { permKey: 'ai.manage_system', name: 'AI：系统配置工具', category: 'ai', superAdminOnly: false },
+  { permKey: 'ai.view_security_data', name: 'AI：查看安全数据', category: 'ai', superAdminOnly: false },
+  { permKey: 'ai.view_deployment', name: 'AI：查看部署信息', category: 'ai', superAdminOnly: false },
+  { permKey: 'ai.view_source_code', name: 'AI：查看源码细节', category: 'ai', superAdminOnly: false },
+  { permKey: 'ai.view_database_schema', name: 'AI：查看数据库结构', category: 'ai', superAdminOnly: false },
+  { permKey: 'ai.access_other_user_data', name: 'AI：跨用户数据访问', category: 'ai', superAdminOnly: false },
+  { permKey: 'ai.explain_internal', name: 'AI：解释内部实现', category: 'ai', superAdminOnly: false },
 ];
 
 const ALL_PERM_KEYS = mockPermissions.map((p) => p.permKey);
@@ -852,8 +876,18 @@ export const mockRoles: Role[] = [
     memberCount: 3,
     isBuiltIn: true,
     description: '系统内置，除删除/退款/角色/配置外全部权限',
-    permissions: ALL_PERM_KEYS.filter((k) =>
-      !['admin.users.delete', 'admin.orders.refund', 'admin.roles.manage', 'admin.configs.manage', 'admin.keys.view'].includes(k),
+    // 与 049/052/053 迁移的授予策略一致：admin 拿到全部 view 键 + ai.manage_devices，
+    // 不含 admin.users.delete / orders.refund / roles.manage / configs.manage / keys.view / ops.view
+    permissions: ALL_PERM_KEYS.filter(
+      (k) =>
+        ![
+          'admin.users.delete',
+          'admin.orders.refund',
+          'admin.roles.manage',
+          'admin.configs.manage',
+          'admin.keys.view',
+          'admin.ops.view',
+        ].includes(k) && (!k.startsWith('ai.') || k === 'ai.manage_devices'),
     ),
   },
   {
@@ -892,6 +926,13 @@ export const mockFlags: FeatureFlag[] = [
   { key: 'enable_public_sharing', name: '公开分享', description: '共享链接能力（含文件分享）', enabled: true },
   { key: 'enable_2fa', name: '两步验证', description: '用户级 TOTP；关闭不影响已开启用户', enabled: true },
   { key: 'signup_waitlist', name: '注册审核', description: '新注册进入等待名单（运营灰度）', enabled: false },
+  // 051 迁移（CO-31）：注册总开关，默认开启
+  {
+    key: 'enable_signup',
+    name: '注册总开关',
+    description: '关闭后完全禁止新用户注册（与注册审核正交：关闭 > 审核 > 开放），客户端注册入口同步隐藏',
+    enabled: true,
+  },
 ];
 
 export const mockConfigs: SystemConfig[] = [
@@ -931,6 +972,101 @@ export const mockConfigs: SystemConfig[] = [
     description: '审计日志的保留时长，超期归档后删除',
     updatedAt: '2026-08-12 10:20',
   },
+  // —— 限流配置（050，CO-11：默认值 = 原硬编码值）——
+  {
+    key: 'rate_limit_api_per_min',
+    name: '全局 API 限流（次/分钟）',
+    value: '300',
+    description: '滑动窗口限流阈值，按用户计数（匿名按 IP）',
+    updatedAt: '2026-08-12 10:20',
+  },
+  {
+    key: 'rate_limit_send_code_per_hour',
+    name: '验证码发送限流（次/小时）',
+    value: '5',
+    description: '单手机号验证码发送上限，短信成本保护',
+    updatedAt: '2026-08-12 10:20',
+  },
+  {
+    key: 'rate_limit_login_failed_per_15min',
+    name: '登录失败锁定（次/15分钟）',
+    value: '5',
+    description: '单手机号登录失败锁定阈值',
+    updatedAt: '2026-08-12 10:20',
+  },
+  {
+    key: 'rate_limit_upload_per_min',
+    name: '上传接口限流（次/分钟）',
+    value: '20',
+    description: '上传与大文件分片接口的独立限流',
+    updatedAt: '2026-08-12 10:20',
+  },
+  {
+    key: 'rate_limit_disabled',
+    name: '关闭限流（生产禁用）',
+    value: 'false',
+    description: '总开关：开启后全部限流失效；生产环境后端拒绝写入 true',
+    updatedAt: '2026-08-12 10:20',
+  },
+  // —— 运维（050，CO-41）——
+  {
+    key: 'log_level',
+    name: '运行时日志级别',
+    value: 'info',
+    description: 'debug / info / warn / error，保存后热生效（debug/info/warn/error）',
+    updatedAt: '2026-08-12 10:20',
+  },
+  // —— 邮件 SMTP（050，CO-30：smtp_pass 脱敏回显「已配置/未配置」）——
+  {
+    key: 'smtp_host',
+    name: 'SMTP 服务器地址',
+    value: '',
+    description: '为空时邮件走控制台兜底（不真实发送）',
+    updatedAt: '2026-08-12 10:20',
+  },
+  {
+    key: 'smtp_port',
+    name: 'SMTP 端口',
+    value: '465',
+    description: '465=SSL 直连 / 587=STARTTLS',
+    updatedAt: '2026-08-12 10:20',
+  },
+  {
+    key: 'smtp_user',
+    name: 'SMTP 用户名',
+    value: '',
+    description: '邮箱账号或 API 用户',
+    updatedAt: '2026-08-12 10:20',
+  },
+  {
+    key: 'smtp_pass',
+    name: 'SMTP 密码/授权码',
+    value: '未配置',
+    description: '加密存储，保存后仅显示是否已配置',
+    updatedAt: '2026-08-12 10:20',
+  },
+  {
+    key: 'smtp_from',
+    name: '发件人地址',
+    value: '',
+    description: '如 no-reply@example.com',
+    updatedAt: '2026-08-12 10:20',
+  },
+  {
+    key: 'smtp_secure',
+    name: 'SMTP SSL 直连',
+    value: 'true',
+    description: 'true=SSL(465) / false=STARTTLS(587)',
+    updatedAt: '2026-08-12 10:20',
+  },
+  // —— 菜单覆盖（050，方案一 MA-07）——
+  {
+    key: 'menu_overrides',
+    name: '菜单可见性覆盖',
+    value: '{}',
+    description: 'JSON 对象：{"nav.ai":{"minPlan":"Pro"}} 深合并进菜单注册表',
+    updatedAt: '2026-08-12 10:20',
+  },
 ];
 
 export const mockAnnouncements: Announcement[] = [
@@ -942,6 +1078,7 @@ export const mockAnnouncements: Announcement[] = [
     displayMode: 'once',
     sentAt: '2026-09-01 10:00',
     deliveredCount: 12102,
+    readCount: 8941,
     clickedCount: 3847,
   },
 ];

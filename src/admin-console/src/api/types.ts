@@ -198,7 +198,13 @@ export interface Role {
   permissions: string[];
 }
 
-export type PermissionCategory = 'users_devices' | 'subscriptions_orders' | 'audit_security' | 'operations';
+export type PermissionCategory =
+  | 'users_devices'
+  | 'subscriptions_orders'
+  | 'audit_security'
+  | 'operations'
+  /** RB-11：AI 工具能力组（ai.* 键，均非 superAdminOnly） */
+  | 'ai';
 
 export interface Permission {
   permKey: string;
@@ -235,6 +241,8 @@ export interface Announcement {
   sentAt: string;
   deliveredCount?: number;
   clickedCount?: number;
+  /** CO-35：真实已读触达数（admin_announcement_reads 回执聚合） */
+  readCount?: number;
 }
 
 export interface SendAnnouncementPayload {
@@ -242,6 +250,107 @@ export interface SendAnnouncementPayload {
   content: string;
   audience: Announcement['audience'];
   displayMode: Announcement['displayMode'];
+}
+
+// ───────────────────────── 运维监控（CO-40/CO-41） ─────────────────────────
+
+/** 单组件探针结果（db / redis；latencyMs 探测失败时为 null） */
+export interface OpsProbe {
+  ok: boolean;
+  latencyMs: number | null;
+}
+
+/**
+ * 应用层指标快照。核心三字段（requests/errors/p95）由 GET /api/admin/ops/overview 稳定下发；
+ * 其余字段（p50/p99/wsConnections/uptimeSec/memory）视 metrics 采集器版本可选，渲染时须判空。
+ */
+export interface OpsMetrics {
+  requests: number;
+  errors: number;
+  p95: number | null;
+  p50?: number | null;
+  p99?: number | null;
+  wsConnections?: number | null;
+  uptimeSec?: number | null;
+  memory?: number | string | null;
+}
+
+/** GET /api/admin/ops/overview 响应（admin.ops.view 权限） */
+export interface OpsOverview {
+  /** db error → error；db ok 且 redis 不可用 → degraded；否则 ok */
+  status: 'ok' | 'degraded' | 'error';
+  version: string;
+  /** process.uptime() 秒 */
+  uptimeSec: number;
+  db: OpsProbe;
+  redis: OpsProbe;
+  /** 进程内存（字节） */
+  memory: { rss: number; heapUsed: number };
+  metrics: OpsMetrics | null;
+  /** CO-42：部署形态（后端探测；旧版本后端可能不返回，渲染须判空） */
+  deployment?: OpsDeployment | null;
+}
+
+/** CO-42：部署形态探测结果 */
+export interface OpsDeployment {
+  type: 'k8s' | 'docker-compose';
+  /** k8s 副本数；探测不到为 null（docker-compose 无副本语义） */
+  replicas?: number | null;
+}
+
+// ─────────────── CO-33/CO-41：备份概览 + 慢查询 ───────────────
+
+/** 备份文件条目（GET /api/admin/ops/backups，备份目录扫描） */
+export interface BackupFile {
+  /** 文件名（含扩展名） */
+  file: string;
+  /** 文件大小（字节） */
+  sizeBytes: number;
+  /** 修改时间（ISO 字符串） */
+  mtime: string;
+  /** 备份类别（如 db / redis / uploads，由后端扫描目录划分） */
+  kind: string;
+}
+
+/** 备份汇总行 */
+export interface BackupsSummary {
+  total: number;
+  totalBytes: number;
+  /** 最近一次备份时间（ISO 字符串；目录为空时为 null） */
+  lastBackupAt: string | null;
+}
+
+/** GET /api/admin/ops/backups 响应（CO-33，admin.ops.view 权限） */
+export interface OpsBackups {
+  items: BackupFile[];
+  summary: BackupsSummary;
+}
+
+/** 慢查询行（pg_stat_statements 聚合；query 服务端已截断至 200 字符） */
+export interface SlowQueryRow {
+  query: string;
+  calls: number;
+  /** 服务端格式化字符串，如 "12.34 ms" */
+  totalExecTime: string;
+  meanExecTime: string;
+  rows: number;
+  /** "99.12%" 或 "N/A" */
+  hitPercent: string;
+}
+
+/** GET /api/admin/slow-queries 响应（admin.audit.view 权限） */
+export interface SlowQueriesResp {
+  slowQueries: SlowQueryRow[];
+  poolStatus: {
+    total: number;
+    active: number;
+    idle: number;
+    idleInTransaction: number;
+    poolSize: number;
+    idlePool: number;
+  } | null;
+  /** 统计快照时间（ISO 字符串） */
+  timestamp: string;
 }
 
 // ───────────────────────── 看板聚合 ─────────────────────────

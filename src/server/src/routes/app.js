@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import fs from 'fs/promises';
 import path from 'path';
+import { pool } from '../db/pool.js';
 import { getFeatureFlags } from '../utils/featureFlags.js';
+import { logger } from '../utils/logger.js';
+import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -42,6 +45,107 @@ router.get('/version', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to read version info' });
+  }
+});
+
+// ───────────────────────── 公告（CO-35） ─────────────────────────
+
+// 当前用户是否命中 pro_plus 受众（有生效中 Pro/Enterprise 订阅）
+async function userIsProPlus(userId) {
+  const { rows } = await pool.query(
+    `SELECT 1
+     FROM user_subscriptions us
+     JOIN subscription_plans sp ON sp.id = us.plan_id
+     WHERE us.user_id = $1
+       AND sp.name IN ('Pro', 'Enterprise')
+       AND us.status IN ('active', 'trialing', 'trial')
+     LIMIT 1`,
+    [userId],
+  );
+  return rows.length > 0;
+}
+
+/**
+ * GET /api/app/announcements — 客户端公告拉取（optionalAuth，公开可达）。
+ * 受众过滤：all 全部可见；pro_plus 仅 Pro/Enterprise（含未登录=false）；free 仅非 Pro+。
+ * 未登录只读 audience='all'；响应不含已读标记——已读状态由客户端本地管理，
+ * 回执走 POST /announcements/:id/read（登录后）。最新 20 条。
+ */
+router.get('/announcements', optionalAuth, async (req, res) => {
+  try {
+    const userId = req.user?.userId || null;
+
+    let isProPlus = false;
+    if (userId) {
+      try {
+        isProPlus = await userIsProPlus(userId);
+      } catch (err) {
+        logger.warn('[app/announcements] pro_plus probe failed', { error: err.message });
+      }
+    }
+
+    const { rows } = await pool.query(
+      `SELECT id, title, content, audience, display_mode, created_at
+       FROM admin_announcements
+       ORDER BY created_at DESC
+       LIMIT 20`,
+    );
+
+    const announcements = rows
+      .filter((row) => {
+        if (row.audience === 'all') return true;
+        if (!userId) return false;
+        if (row.audience === 'pro_plus') return isProPlus;
+        if (row.audience === 'free') return !isProPlus;
+        return false;
+      })
+      .map((row) => ({
+        id: row.id,
+        title: row.title,
+        content: row.content,
+        audience: row.audience,
+        displayMode: row.display_mode,
+        sentAt: row.created_at?.toISOString?.() ?? row.created_at,
+      }));
+
+    return res.json({ announcements });
+  } catch (err) {
+    logger.error('[app/announcements] list failed', { error: err.message });
+    return res.status(500).json({ error: 'Failed to load announcements' });
+  }
+});
+
+/**
+ * POST /api/app/announcements/:id/read — 公告已读回执（authenticateToken）。
+ * 幂等 upsert（PK 冲突即忽略）；click_count 仅首次回执时 +1（真实触达口径，052）。
+ */
+router.post('/announcements/:id/read', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      return res.status(400).json({ error: 'Invalid announcement id' });
+    }
+
+    const inserted = await pool.query(
+      `INSERT INTO admin_announcement_reads (announcement_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (announcement_id, user_id) DO NOTHING`,
+      [id, userId],
+    );
+    if (inserted.rowCount > 0) {
+      await pool.query(
+        'UPDATE admin_announcements SET click_count = click_count + 1 WHERE id = $1',
+        [id],
+      );
+    }
+    return res.json({ code: 0 });
+  } catch (err) {
+    logger.error('[app/announcements] read receipt failed', { error: err.message });
+    return res.status(500).json({ error: 'Failed to record read receipt' });
   }
 });
 

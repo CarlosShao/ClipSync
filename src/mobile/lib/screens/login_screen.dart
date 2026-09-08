@@ -152,8 +152,18 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleLoginResult(LoginResult result, AppLocalizations l10n) {
+    final auth = context.read<AuthProvider>();
     if (result == LoginResult.success) {
       context.go(AppRoutes.home);
+    } else if (result == LoginResult.pendingReview) {
+      // signup_waitlist（注册审核）模式：新注册进入待审核，展示服务端提示
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            auth.pendingReviewMessage ?? '注册成功，账号待管理员审核通过后即可登录',
+          ),
+        ),
+      );
     } else if (result == LoginResult.twoFactorRequired) {
       setState(() => _twoFactorRequired = true);
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -162,8 +172,11 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       });
     } else {
+      // 失败时优先展示服务端明确文案（waitlist 拦截/停用提示等）
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.loginFailed)),
+        SnackBar(
+          content: Text(auth.pendingReviewMessage ?? l10n.loginFailed),
+        ),
       );
     }
   }

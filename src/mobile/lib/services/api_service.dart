@@ -59,7 +59,17 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw const AppException(AppErrorCodes.loginFailed);
+      // 服务端有明确中文文案（如 waitlist 拦截「账号待管理员审核」、
+      // 停用提示等）时放进 detail，UI 层可展示而不是笼统的「登录失败」
+      String? detail;
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          final msg = decoded['message'] ?? decoded['error'];
+          if (msg is String && msg.isNotEmpty) detail = msg;
+        }
+      } catch (_) {}
+      throw AppException(AppErrorCodes.loginFailed, detail);
     }
 
     return _decodeMap(response.body);

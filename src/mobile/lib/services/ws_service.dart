@@ -43,6 +43,15 @@ class WsService {
   /// 本地通知由 main.dart 静态挂载本钩子，避免 WsProvider 介入。
   static void Function(Map<String, dynamic> msg)? globalNewClipboardHook;
 
+  /// 全局 feature_flags.updated 钩子：管理台切换功能开关后的全端广播。
+  /// 由 main.dart 挂载到 FeatureFlagsProvider.applyFlags，入口显隐即时生效。
+  static void Function(Map<String, dynamic> msg)? globalFeatureFlagsHook;
+
+  /// 全局 maintenance.updated 钩子（CO-21）：管理台切换维护模式的全端广播。
+  /// 由 main.dart 挂载到 FeatureFlagsProvider.applyMaintenance，
+  /// home_screen 维护横幅即时出现/消失。
+  static void Function(Map<String, dynamic> msg)? globalMaintenanceHook;
+
   bool get isConnected => _isConnected;
 
   void connect({required String token, required String deviceId}) {
@@ -211,6 +220,15 @@ class WsService {
           msg['itemId'] as String,
           msg['isFavorite'] as bool,
         );
+        break;
+      case 'feature_flags.updated':
+        // 管理台切换功能开关的全端广播 → FeatureFlagsProvider 即时更新
+        globalFeatureFlagsHook?.call(msg);
+        break;
+      case 'maintenance.updated':
+        // CO-21：维护模式切换的全端广播 → 横幅即时切换 + 暂停采集
+        // （模式照抄 feature_flags.updated：钩子由 main.dart 挂载，未挂载时空操作）
+        globalMaintenanceHook?.call(msg);
         break;
       case 'error':
         print('[WsDebug] server error: ${msg['message']}');

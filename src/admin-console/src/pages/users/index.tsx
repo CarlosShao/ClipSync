@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { App as AntdApp, Button, Card, Input, Select, Table } from 'antd';
+import { App as AntdApp, Button, Card, Input, Select, Table, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { UserDrawer } from '@/components/UserDrawer';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
@@ -10,6 +10,7 @@ import { planLabel, planTone, userStatusLabel, userStatusTone } from '@/componen
 import { getUsers, approveUser, updateUserStatus } from '@/api/users';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import { queryKeys } from '@/queryKeys';
+import { hasPerm } from '@/utils/permissions';
 import { fmtDate, fmtMoney } from '@/utils/format';
 import type { AdminUser, PlanKey, UserStatus } from '@/api/types';
 import styles from './users.module.css';
@@ -84,6 +85,10 @@ export default function UsersPage() {
     setFilters(DEFAULT_FILTERS);
   };
 
+  // RB-07 按钮级权限裁剪（对齐 devices 页 canOffline 模式）
+  const canManage = hasPerm('admin.users.manage');
+  const canDelete = hasPerm('admin.users.delete');
+
   const columns: ColumnsType<AdminUser> = [
     {
       title: '用户',
@@ -154,14 +159,19 @@ export default function UsersPage() {
       render: (_: string, record) => (
         <span onClick={(e) => e.stopPropagation()}>
           {record.registrationStatus === 'waitlist' ? (
-            <Button
-              size="small"
-              type="primary"
-              loading={approveMutation.isPending && approveMutation.variables === record.id}
-              onClick={() => approveMutation.mutate(record.id)}
-            >
-              通过审核
-            </Button>
+            <Tooltip title={canManage ? '' : '缺少权限'}>
+              <span>
+                <Button
+                  size="small"
+                  type="primary"
+                  disabled={!canManage}
+                  loading={approveMutation.isPending && approveMutation.variables === record.id}
+                  onClick={() => approveMutation.mutate(record.id)}
+                >
+                  通过审核
+                </Button>
+              </span>
+            </Tooltip>
           ) : (
             <Button size="small" onClick={() => setDrawerUserId(record.id)}>
               详情
@@ -186,33 +196,48 @@ export default function UsersPage() {
                   改套餐
                 </Button>
               )}
-              <Button
-                size="small"
-                danger
-                style={{ marginLeft: 6 }}
-                onClick={() => setDeactivateUser(record)}
-              >
-                停用
-              </Button>
+              <Tooltip title={canManage ? '' : '缺少权限'}>
+                <span>
+                  <Button
+                    size="small"
+                    danger
+                    style={{ marginLeft: 6 }}
+                    disabled={!canManage}
+                    onClick={() => setDeactivateUser(record)}
+                  >
+                    停用
+                  </Button>
+                </span>
+              </Tooltip>
             </>
           ) : (
             <>
-              <Button
-                size="small"
-                style={{ marginLeft: 6 }}
-                loading={enableMutation.isPending && enableMutation.variables === record.id}
-                onClick={() => enableMutation.mutate(record.id)}
-              >
-                启用
-              </Button>
-              <Button
-                size="small"
-                danger
-                style={{ marginLeft: 6 }}
-                onClick={() => void message.info('删除账户将在后续版本提供')}
-              >
-                删除
-              </Button>
+              <Tooltip title={canManage ? '' : '缺少权限'}>
+                <span>
+                  <Button
+                    size="small"
+                    style={{ marginLeft: 6 }}
+                    disabled={!canManage}
+                    loading={enableMutation.isPending && enableMutation.variables === record.id}
+                    onClick={() => enableMutation.mutate(record.id)}
+                  >
+                    启用
+                  </Button>
+                </span>
+              </Tooltip>
+              <Tooltip title={canDelete ? '' : '缺少权限'}>
+                <span>
+                  <Button
+                    size="small"
+                    danger
+                    style={{ marginLeft: 6 }}
+                    disabled={!canDelete}
+                    onClick={() => void message.info('删除账户将在后续版本提供')}
+                  >
+                    删除
+                  </Button>
+                </span>
+              </Tooltip>
             </>
           )}
         </span>

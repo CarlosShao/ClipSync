@@ -139,6 +139,9 @@ class AppErrorCodes {
   /// 站内通知标记已读失败（C5 通知中心页）
   static const String markNotificationReadFailed = 'markNotificationReadFailed';
 
+  /// 系统公告列表获取失败（CO-35 公告页）
+  static const String fetchAnnouncementsFailed = 'fetchAnnouncementsFailed';
+
   /// 搜索历史获取/记录/清空失败（C2；arb 无专属 key，映射 detail/errorUnknown）
   static const String fetchSearchHistoryFailed = 'fetchSearchHistoryFailed';
 
@@ -264,6 +267,9 @@ String? _localizedMessage(AppLocalizations l10n, String code) {
     case AppErrorCodes.fetchNotificationsFailed:
       // C5：arb 无独立 key，复用通知中心加载失败文案（notifLoadFailed）
       return l10n.notifLoadFailed;
+    case AppErrorCodes.fetchAnnouncementsFailed:
+      // CO-35：公告页加载失败（arb 专属 key announcementsLoadFailed）
+      return l10n.announcementsLoadFailed;
     // C5：fetchSharedLinksFailed / createSharedLinkFailed /
     // revokeSharedLinkFailed / markNotificationReadFailed 暂无对应 arb key
     // （arb 冻结不可加），经 message() 的 detail / errorUnknown 兜底展示。

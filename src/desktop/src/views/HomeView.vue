@@ -9,6 +9,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import { useDevice } from '@/composables/useDevice'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useNotifications } from '@/composables/useNotifications'
+import { useAnnouncements, type Announcement } from '@/composables/useAnnouncements'
 import { useSonner } from '@/composables/useSonner'
 import { usePrivacy } from '@/composables/usePrivacy'
 import {
@@ -43,9 +44,11 @@ import OnboardingView from '@/components/OnboardingView.vue'
 import CoachMarks from '@/components/CoachMarks.vue'
 import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
 import { perfFirstDataLoad } from '@/utils/perfMonitor'
-import { toggleSensitive } from '@/api/client'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
+import { useMenuAccess } from '@/composables/useMenuAccess'
+import { api, toggleSensitive } from '@/api/client'
 import { ensureDeviceId } from '@/composables/clipboardUpload'
-import { Lock } from 'lucide-vue-next'
+import { Lock, AlertTriangle, Megaphone, X } from 'lucide-vue-next'
 
 const configStore = useConfigStore()
 const { t } = useI18n()
@@ -53,11 +56,18 @@ const clip = useClipboard()
 const device = useDevice()
 const ws = useWebSocket()
 const notif = useNotifications()
+// CO-35 公告投递：启动/登录后拉取（HomeView 是登录后唯一壳视图，两种路径都经过这里）
+const ann = useAnnouncements()
 const { toggleMode } = useTheme()
 const toast = useSonner()
 const privacy = usePrivacy()
 const route = useRoute()
 const router = useRouter()
+// 功能开关 WS 推送写入快照（feature_flags.updated 分支用）
+const { applyFeatureFlags } = useFeatureFlags()
+// 菜单访问控制（MA-02）：AI/订阅入口显隐统一走注册表判定
+const { can } = useMenuAccess()
+const aiEnabled = computed(() => can('nav.ai'))
 
 const sidebarOpen = ref(true)
 const currentSub = ref('clipboard') // will be synced with route
@@ -118,7 +128,18 @@ const showCoachMarks = ref(false)
 const showSettingsDialog = ref(false)
 const settingsInitialCategory = ref('')
 const aiSidebarOpen = ref(false)
+// AI 功能开关集中守卫：开关关闭时快捷键/侧栏/托盘任何路径都无法打开 AI 面板，
+// 且开关切换为关闭时立即收起已打开的面板（全链路隐藏，服务端 403 兜底依旧有效）。
+function toggleAiPanel() {
+  if (!aiEnabled.value) return
+  aiSidebarOpen.value = !aiSidebarOpen.value
+}
+watch(aiEnabled, (on) => {
+  if (!on) aiSidebarOpen.value = false
+})
 function openAiSettings() {
+  // 开关关闭时不允许进入 AI 供应商配置页（防止「未配置供应商→添加供应商」死路）
+  if (!aiEnabled.value) return
   settingsInitialCategory.value = 'ai'
   showSettingsDialog.value = true
 }
@@ -213,6 +234,62 @@ let nativeNotifPermission = false
 // 托盘菜单事件（A7 由 Rust emit，前端只 listen）：卸载时统一摘除
 let trayUnlisteners: (() => void)[] = []
 
+// === CO-21 维护模式（桌面横幅 + 同步暂停）===
+// 数据源：启动时 GET /api/app/maintenance（公开快照端点，无需 token）+ WS maintenance.updated 推送。
+// 开启时暂停 clip 自动轮询与原生剪贴板监听（等价「自动同步暂停」），不改动用户 autoSync 偏好，
+// 恢复时反向；同步请求的强制拦截仍由服务端 maintenanceGuard（503）权威兜底。
+const maintenanceOn = ref(false)
+function setMaintenanceMode(mode: unknown) {
+  maintenanceOn.value = mode === 'on'
+}
+watch([maintenanceOn, () => configStore.autoSync], ([on, autoSync]) => {
+  if (on) {
+    // 维护开启：停轮询 + 停原生剪贴板监听（Rust 侧 start/stop 均幂等）
+    stopPolling?.()
+    stopPolling = null
+    tauri.stopClipboardMonitor().catch(() => {})
+  } else {
+    // 维护关闭（或维护期间用户拨动 autoSync 开关）：按当前偏好恢复
+    if (!stopPolling) stopPolling = clip.startPolling(1500)
+    if (autoSync) tauri.startClipboardMonitor().catch(() => {})
+  }
+})
+
+// === CO-35 公告横幅 + 全部公告弹窗 ===
+// 横幅只展示最新一条「persistent 且未读且未关闭」的公告；once 类只进列表。
+// 关闭记忆走 localStorage 键 dismissed-announcement-{id}（useAnnouncements 内读写），
+// 会话内用 ref 同步驱动响应式（isDismissed 读 localStorage 不具备响应性）。
+const bannerDismissedId = ref('')
+const bannerAnnouncement = computed<Announcement | null>(
+  () =>
+    ann.announcements.value.find(
+      (a) =>
+        a.displayMode === 'persistent' &&
+        !ann.isRead(a.id) &&
+        bannerDismissedId.value !== a.id &&
+        !ann.isDismissed(a.id),
+    ) || null,
+)
+const showAnnouncementList = ref(false)
+// 「我知道了」：写关闭记忆 + 上报已读回执
+function dismissAnnouncementBanner() {
+  if (!bannerAnnouncement.value) return
+  ann.dismissAnnouncement(bannerAnnouncement.value.id)
+  bannerDismissedId.value = bannerAnnouncement.value.id
+}
+// 「查看全部」：弹窗展示即视为阅读，未读逐条上报回执（fire-and-forget，
+// markRead 内部已读短路防重复）
+function openAnnouncementList() {
+  showAnnouncementList.value = true
+  ann.announcements.value.forEach((a) => {
+    if (!ann.isRead(a.id)) ann.markRead(a.id)
+  })
+}
+function formatAnnouncementTime(iso: string) {
+  const t = new Date(iso).getTime()
+  return Number.isFinite(t) ? new Date(t).toLocaleString() : ''
+}
+
 function detachTrayListeners() {
   trayUnlisteners.forEach((fn) => {
     try {
@@ -296,6 +373,14 @@ onMounted(async () => {
   device.loadDevices()
   ws.connect()
   notif.loadHistory()
+  // CO-35：公告快照（optionalAuth，未登录也能拉 audience='all'，失败静默）
+  ann.fetchAnnouncements()
+  // CO-21：维护模式初始快照（公开端点，无需 token）；后续变化走 WS maintenance.updated
+  api('GET', '/api/app/maintenance')
+    .then((res) => {
+      if (res.ok && res.data) setMaintenanceMode((res.data as any).maintenance)
+    })
+    .catch(() => {})
   // WebSocket 推送（设备注册后后端定向广播）→ 刷新列表 + 弹系统通知；通知推送 → 实时插入收件箱
   // 事件名与后端广播契约对齐：clipboard.js 广播 new_clipboard / clipboard_updated / clipboard_favorite / clipboard_deleted
   offWsMessage = ws.onMessage((data) => {
@@ -339,6 +424,14 @@ onMounted(async () => {
         .then(() => clip.refresh())
         .catch(() => {})
     }
+    if (data?.type === 'feature_flags.updated') {
+      // 管理台切换功能开关的全端广播：直接写快照，AI/分享等入口即时显隐
+      applyFeatureFlags(data.flags)
+    }
+    if (data?.type === 'maintenance.updated') {
+      // CO-21：管理台切换维护模式的全端广播（mode: 'on' | 'off'）→ 横幅 + 同步暂停即时切换
+      setMaintenanceMode(data.mode)
+    }
     if (data?.type === 'notification') {
       notif.pushRealtime(data)
       // Also push native notification for server-initiated alerts
@@ -360,7 +453,7 @@ onMounted(async () => {
     toggleMode()
   }
   ;(window as any).__toggleAiPanel = () => {
-    aiSidebarOpen.value = !aiSidebarOpen.value
+    toggleAiPanel()
   }
   ;(window as any).__isAiPanelOpen = () => aiSidebarOpen.value
 
@@ -459,7 +552,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'j') {
     e.preventDefault()
-    aiSidebarOpen.value = !aiSidebarOpen.value
+    toggleAiPanel()
   }
 }
 
@@ -532,6 +625,7 @@ function showConfirm(msg: string, cb: () => void) {
 }
 function handleLogout() {
   notif.reset()
+  ann.reset()
   // 先摘掉 WS handler 再断开：否则重新登录后新旧 handler 叠加，一条推送触发多次刷新
   detachWsHandler()
   configStore.logout()
@@ -562,11 +656,28 @@ function confirmAction() {
       @toggle="sidebarOpen = !sidebarOpen"
       @navigate="switchSub"
       @open-settings-dialog="showSettingsDialog = true"
-      @open-ai="aiSidebarOpen = !aiSidebarOpen"
+      @open-ai="toggleAiPanel"
       @logout="handleLogout"
     />
 
     <main class="main-content">
+      <!-- CO-21 维护模式横幅：维护期间轮询与自动同步已暂停（服务端 503 强制兜底） -->
+      <div v-if="maintenanceOn" class="maintenance-banner" role="alert">
+        <AlertTriangle :size="16" :stroke-width="2" />
+        <span>{{ t('maintenance_banner') }}</span>
+      </div>
+      <!-- CO-35 公告横幅：最新一条 persistent 未读公告，可关闭（记忆到 localStorage） -->
+      <div v-if="bannerAnnouncement" class="announcement-banner" role="status">
+        <Megaphone :size="16" :stroke-width="2" class="announcement-banner-icon" />
+        <span class="announcement-banner-title">{{ bannerAnnouncement.title }}</span>
+        <span class="announcement-banner-content">{{ bannerAnnouncement.content }}</span>
+        <button class="announcement-btn" @click="openAnnouncementList">
+          {{ t('ann_view_all', '查看全部') }}
+        </button>
+        <button class="announcement-btn announcement-btn--primary" @click="dismissAnnouncementBanner">
+          {{ t('ann_got_it', '我知道了') }}
+        </button>
+      </div>
       <ClipboardView
         v-if="currentSub === 'clipboard' || currentSub === 'archive'"
         :mode="currentSub === 'archive' ? 'archive' : 'default'"
@@ -594,11 +705,17 @@ function confirmAction() {
       <ProfileView v-else-if="currentSub === 'profile'" />
       <DevicesView v-else-if="currentSub === 'devices'" @open-modal="openModal" />
       <NotificationsView v-else-if="currentSub === 'notifications'" />
-      <SubscriptionView v-else-if="currentSub === 'subscription'" @open-modal="openModal" />
+      <!-- enable_subscription 关闭：订阅页不渲染（侧栏入口已隐藏，直接改 URL 也不可达） -->
+      <SubscriptionView
+        v-else-if="currentSub === 'subscription' && can('nav.subscription')"
+        @open-modal="openModal"
+      />
     </main>
 
-    <!-- AI 面板（右侧展开/折叠）：view 传入当前页面上下文，AI 回答可感知用户所在页面（#229） -->
+    <!-- AI 面板（右侧展开/折叠）：view 传入当前页面上下文，AI 回答可感知用户所在页面（#229）。
+         enable_ai_agent 关闭：面板不挂载，快捷键/侧栏入口均已守卫。 -->
     <AiChatPanel
+      v-if="aiEnabled"
       :open="aiSidebarOpen"
       :view="currentSub"
       @close="aiSidebarOpen = false"
@@ -608,8 +725,8 @@ function confirmAction() {
 
   <QuickPastePanel :open="showQuickPaste" @close="showQuickPaste = false" />
 
-  <!-- 复制剪贴板后 AI 摘要浮窗 -->
-  <AiSummaryFloat />
+  <!-- 复制剪贴板后 AI 摘要浮窗（AI 关闭时一并隐藏） -->
+  <AiSummaryFloat v-if="aiEnabled" />
 
   <ModalManager
     v-if="modalManagerActive"
@@ -673,6 +790,34 @@ function confirmAction() {
     </div>
   </div>
 
+  <!-- CO-35 全部公告弹窗：打开即逐条上报已读回执（fire-and-forget） -->
+  <div v-if="showAnnouncementList" class="ann-overlay" @click.self="showAnnouncementList = false">
+    <div class="ann-dialog">
+      <div class="ann-dialog-header">
+        <Megaphone :size="18" />
+        <span>{{ t('ann_list_title', '公告') }}</span>
+        <button class="ann-close" :title="t('common_close') || '关闭'" @click="showAnnouncementList = false">
+          <X :size="16" />
+        </button>
+      </div>
+      <div class="ann-dialog-body">
+        <div v-if="ann.loading.value && ann.announcements.value.length === 0" class="ann-empty">
+          {{ t('ai_loading', '加载中…') }}
+        </div>
+        <div v-else-if="ann.announcements.value.length === 0" class="ann-empty">
+          {{ t('ann_empty', '暂无公告') }}
+        </div>
+        <article v-for="a in ann.announcements.value" :key="a.id" class="ann-item">
+          <div class="ann-item-head">
+            <span class="ann-item-title">{{ a.title }}</span>
+            <span class="ann-item-time">{{ formatAnnouncementTime(a.sentAt) }}</span>
+          </div>
+          <p class="ann-item-content">{{ a.content }}</p>
+        </article>
+      </div>
+    </div>
+  </div>
+
   <!-- First-run experience -->
   <OnboardingView v-if="showOnboarding" @complete="onOnboardingComplete" />
   <CoachMarks v-if="showCoachMarks && !showOnboarding" @complete="onCoachMarksComplete" />
@@ -702,6 +847,175 @@ function confirmAction() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+/* CO-21 维护横幅：内容区顶部全宽警示条，用现有 warning 色板变量适配全部主题 */
+.maintenance-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 9px 16px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-bottom: 1px solid var(--warning);
+  font-size: 13px;
+  font-weight: 500;
+}
+/* CO-21：横幅存在时视图区让出其高度（视图根元素弹性填充剩余空间；
+   无横幅时单个视图子元素仍占满 main-content，行为不变） */
+.main-content > :not(.maintenance-banner):not(.announcement-banner) {
+  flex: 1;
+  min-height: 0;
+}
+/* CO-35 公告横幅：内容区顶部全宽提示条，用 accent 色板与维护警示条（warning）区分 */
+.announcement-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  font-size: 13px;
+}
+.announcement-banner-icon {
+  flex-shrink: 0;
+}
+.announcement-banner-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.announcement-banner-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.announcement-btn {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.announcement-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.announcement-btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+.announcement-btn--primary:hover {
+  opacity: 0.9;
+  background: var(--accent);
+  color: white;
+}
+
+/* CO-35 全部公告弹窗：复用 PIN 弹窗的遮罩/卡片骨架 */
+.ann-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-modal-overlay);
+  animation: fadeIn 0.15s ease;
+}
+.ann-dialog {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  width: 520px;
+  max-width: 90vw;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-modal);
+  animation: slideUp 0.2s ease;
+  overflow: hidden;
+}
+.ann-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-default);
+  font-size: 16px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.ann-close {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.ann-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ann-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ann-empty {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  text-align: center;
+  padding: 28px 0;
+}
+.ann-item {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+.ann-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ann-item-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ann-item-time {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.ann-item-content {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .btn-icon {
   display: inline-flex;

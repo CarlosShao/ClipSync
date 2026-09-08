@@ -11,6 +11,7 @@ import "package:clipsync_mobile/models/device.dart";
 import "package:clipsync_mobile/providers/auth_provider.dart";
 import "package:clipsync_mobile/providers/clipboard_provider.dart";
 import "package:clipsync_mobile/providers/device_provider.dart";
+import "package:clipsync_mobile/providers/feature_flags_provider.dart";
 import "package:clipsync_mobile/providers/settings_provider.dart";
 import "package:clipsync_mobile/providers/ws_provider.dart";
 import "package:clipsync_mobile/services/sync_service.dart";
@@ -97,6 +98,10 @@ class _HomeScreenState extends State<HomeScreen> {
       context.read<ClipboardProvider>().loadItems(token, refresh: true),
     );
 
+    // 功能开关快照：冷启动恢复与登录后两条路径都经过此处，
+    // 拉取 /api/app/feature-flags（公开端点）供分享/订阅等入口显隐
+    unawaited(context.read<FeatureFlagsProvider>().refresh());
+
     // Connect WebSocket for real-time sync
     final wsProvider = context.read<WsProvider>();
     if (!wsProvider.isConnected) {
@@ -156,13 +161,22 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final int currentIndex = widget.navigationShell.currentIndex;
     final tabTitles = _tabTitles(context);
+    // CO-21：维护模式开启时在内容区顶部显示横幅（快照来自
+    // FeatureFlagsProvider：启动拉取 + WS maintenance.updated 即时切换）
+    final bool maintenanceOn =
+        context.watch<FeatureFlagsProvider>().maintenanceMode;
     return PerformanceMonitor(
       name: 'HomeScreen',
       child: Scaffold(
         // 设置 tab 的内容自带 Scaffold + AppBar，shell 侧不再叠加标题栏
         appBar:
             currentIndex == _tabSettings ? null : _buildAppBar(currentIndex, tabTitles),
-        body: widget.navigationShell,
+        body: Column(
+          children: <Widget>[
+            if (maintenanceOn) _buildMaintenanceBanner(context),
+            Expanded(child: widget.navigationShell),
+          ],
+        ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: currentIndex,
           onDestinationSelected: _onDestinationSelected,
@@ -188,6 +202,40 @@ class _HomeScreenState extends State<HomeScreen> {
               label: tabTitles[3],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// CO-21：维护模式横幅（MaterialBanner 常驻形态——作为固定组件渲染在
+  /// 内容区顶部而非 ScaffoldMessenger 弹出层，避免随路由切换消失）。
+  /// 文案 l10n.maintenanceBanner；服务端 maintenanceGuard 503 仍兜底拦截。
+  Widget _buildMaintenanceBanner(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Material(
+      color: scheme.errorContainer,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.sm,
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.engineering_rounded,
+                  size: 20, color: scheme.onErrorContainer),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  AppLocalizations.of(context).maintenanceBanner,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: scheme.onErrorContainer),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

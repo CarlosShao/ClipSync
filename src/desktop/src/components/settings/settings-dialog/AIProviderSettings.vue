@@ -8,6 +8,7 @@ import Switch from '@/components/ui/switch/Switch.vue'
 import CustomSelect from '@/components/ui/select/CustomSelect.vue'
 import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
 import { RefreshCw, PlayCircle, Pencil, Trash2, Check, X, ChevronDown, Plus } from 'lucide-vue-next'
+import { useMenuAccess } from '@/composables/useMenuAccess'
 import {
   getProviders,
   getPresets,
@@ -23,6 +24,11 @@ import type { AiProvider, AiProviderPreset, AiApiFormat, AiSettings } from '@/ap
 
 const { t, tf, tMsg } = useI18n()
 const toast = useSonner()
+// MA-05：feature.ai_categories（服务端 plan.features.ai_classify 能力键）桌面端消费点。
+// capabilities 快照未加载时 can() fail-open 放行，越权由服务端 requireFeature 403 权威兜底。
+const { can } = useMenuAccess()
+// 如实展示能力状态：桌面端暂无独立分类 UI，ai_classify 由服务端 AI 工具链（AI 建议等）消费
+const aiCategoriesEnabled = computed(() => can('feature.ai_categories'))
 
 const providers = ref<AiProvider[]>([])
 const presets = ref<AiProviderPreset[]>([])
@@ -702,6 +708,37 @@ onMounted(() => {
         </div>
       </div>
     </section>
+
+    <!-- ===== AI 智能分类（MA-05：feature.ai_categories 消费，仅展示层引导）=====
+         ai_classify 能力键由服务端 AI 工具链消费，桌面端无本地开关可接，
+         这里如实展示当前套餐的能力可用状态；不满足时置灰 + 升级引导。 -->
+    <section class="ai-section">
+      <div class="ai-section-head">
+        <div class="ai-section-head-text">
+          <div class="ai-section-title">{{ t('ai_categories_title', 'AI 智能分类') }}</div>
+          <div class="ai-section-hint">
+            {{ t('ai_categories_hint', '当前套餐的智能分类能力状态（由服务端套餐能力控制）。') }}
+          </div>
+        </div>
+      </div>
+      <div class="ai-prefs-card">
+        <div class="ai-pref-row" :class="{ 'ai-pref-row--locked': !aiCategoriesEnabled }">
+          <div class="ai-pref-text">
+            <div class="ai-pref-name">{{ t('ai_categories_name', '智能分类') }}</div>
+            <div class="ai-pref-hint">
+              {{
+                aiCategoriesEnabled
+                  ? t('ai_categories_ok_hint', '当前套餐已包含该能力，AI 建议等服务端能力可使用智能分类。')
+                  : t('ai_categories_locked_hint', 'Pro 及以上套餐可用，升级后 AI 建议等服务端能力将支持智能分类。')
+              }}
+            </div>
+          </div>
+          <span class="ai-badge" :class="aiCategoriesEnabled ? 'ai-badge--key' : 'ai-badge--nokey'">
+            {{ aiCategoriesEnabled ? t('ai_categories_ok_badge', '可用') : t('ai_categories_locked_badge', '未开通') }}
+          </span>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -1044,6 +1081,14 @@ onMounted(() => {
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text-secondary);
+}
+/* MA-05：能力未开通时整行置灰（纯展示层，行内无交互控件） */
+.ai-pref-row--locked .ai-pref-name,
+.ai-pref-row--locked .ai-pref-hint {
+  color: var(--text-tertiary);
+}
+.ai-pref-row--locked {
+  opacity: 0.75;
 }
 .ai-pref-text {
   flex: 1;

@@ -150,3 +150,6 @@ DerivedData/
 # 移动端陈旧构建日志
 src/mobile/build_*.txt
 scripts/admin-full-audit/.tokens.json
+
+# 审计脚本缓存的会话令牌（禁止入库）
+scripts/feature-flags-audit/.tokens.json

@@ -1,4 +1,4 @@
-import { App as AntdApp, Button, Card, Input, Select, Table, Tabs } from 'antd';
+import { App as AntdApp, Button, Card, Input, Select, Table, Tabs, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -12,6 +12,7 @@ import { channelLabel, orderDisplayStatus } from '@/components/StatusTag/mappers
 import { getOrders, refundOrder } from '@/api/orders';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import { queryKeys } from '@/queryKeys';
+import { hasPerm } from '@/utils/permissions';
 import { fmtMoney } from '@/utils/format';
 import type {
   Order,
@@ -115,6 +116,9 @@ export default function OrdersPage() {
     },
   });
 
+  // RB-07：退款为高危操作（admin.orders.refund superAdminOnly），按钮按权限裁剪
+  const canRefund = hasPerm('admin.orders.refund');
+
   const applyQ = () => {
     setFilters({ q: draftQ.trim() || undefined });
   };
@@ -175,9 +179,19 @@ export default function OrdersPage() {
             详情
           </Button>
           {record.status === 'paid' ? (
-            <Button danger size="small" style={{ marginLeft: 6 }} onClick={() => setRefundTarget(record)}>
-              退款
-            </Button>
+            <Tooltip title={canRefund ? '' : '缺少权限'}>
+              <span>
+                <Button
+                  danger
+                  size="small"
+                  style={{ marginLeft: 6 }}
+                  disabled={!canRefund}
+                  onClick={() => setRefundTarget(record)}
+                >
+                  退款
+                </Button>
+              </span>
+            </Tooltip>
           ) : null}
           {record.status === 'pending' ? (
             <Button size="small" disabled style={{ marginLeft: 6 }} title="自动关单将在后续版本提供">

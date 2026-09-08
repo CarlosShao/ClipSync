@@ -17,12 +17,13 @@ import { CreateRoleModal } from './CreateRoleModal';
 import type { CreateRolePayload, Permission, PermissionCategory, Role } from '@/api/types';
 import styles from './roles.module.css';
 
-/** 分组顺序与组头文案（对照草图 perm-tree 四组） */
+/** 分组顺序与组头文案（对照草图 perm-tree 分组；ai 为 RB-11 新增的 AI 能力组） */
 const CATEGORY_ORDER: PermissionCategory[] = [
   'users_devices',
   'subscriptions_orders',
   'audit_security',
   'operations',
+  'ai',
 ];
 
 const CATEGORY_LABELS: Record<PermissionCategory, string> = {
@@ -30,6 +31,7 @@ const CATEGORY_LABELS: Record<PermissionCategory, string> = {
   subscriptions_orders: '订阅与支付',
   audit_security: '审计与安全',
   operations: '平台运营',
+  ai: 'AI 能力',
 };
 
 const ROLE_ICONS: Record<string, { icon: ReactNode; color: string }> = {

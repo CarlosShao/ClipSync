@@ -73,6 +73,7 @@ function makeDeviceRow(overrides = {}) {
 describe('GET /api/admin/devices —— 设备分页列表', () => {
   it('返回分页壳 { list, total, page, pageSize }，行字段符合 AdminDevice 契约', async () => {
     pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.devices.view' }], rowCount: 1 };
       if (sql.includes('COUNT(*)')) return { rows: [{ total: 2 }], rowCount: 1 };
       if (sql.includes('device_name')) {
         return {
@@ -124,6 +125,7 @@ describe('GET /api/admin/devices —— 设备分页列表', () => {
 
   it('q 关键词：设备名/属主昵称 ILIKE；纯数字关键词追加属主手机号后 4 位', async () => {
     pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.devices.view' }], rowCount: 1 };
       if (sql.includes('COUNT(*)')) return { rows: [{ total: 0 }], rowCount: 1 };
       if (sql.includes('device_name')) return { rows: [], rowCount: 0 };
       return { rows: [], rowCount: 0 };
@@ -144,6 +146,7 @@ describe('GET /api/admin/devices —— 设备分页列表', () => {
 
   it('platform/status 筛选分别落到 d.platform / d.is_online；非法 status 返回 400', async () => {
     pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.devices.view' }], rowCount: 1 };
       if (sql.includes('COUNT(*)')) return { rows: [{ total: 0 }], rowCount: 1 };
       if (sql.includes('device_name')) return { rows: [], rowCount: 0 };
       return { rows: [], rowCount: 0 };
@@ -165,6 +168,7 @@ describe('GET /api/admin/devices —— 设备分页列表', () => {
 describe('GET /api/admin/devices/stats —— 页头统计', () => {
   it('返回 { total, online, byPlatform }，平台分布计数为数值', async () => {
     pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.devices.view' }], rowCount: 1 };
       if (sql.includes('FILTER (WHERE is_online)')) {
         return { rows: [{ total: 14, online: 8 }], rowCount: 1 };
       }
@@ -198,6 +202,19 @@ describe('GET /api/admin/devices/stats —— 页头统计', () => {
         { platform: 'ios', count: 1 },
       ],
     });
+  });
+
+  it('无 admin.devices.view 权限返回 403 { code: 4030 }（RB-06）', async () => {
+    authState.user = { userId: 'u-admin', roleKey: 'admin', roleLevel: 50, isAdmin: true };
+    pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [], rowCount: 0 }; // 权限点未授予
+      return { rows: [], rowCount: 0 };
+    });
+
+    const res = await request(buildApp()).get('/api/admin/devices/stats');
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ code: 4030, message: '缺少权限: admin.devices.view' });
   });
 });
 

@@ -6,18 +6,27 @@ import {
 import { Badge, Button, Tooltip } from 'antd';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router';
 import { ADMIN_ROLE_KEYS, useAuthStore } from '@/stores/authStore';
+import { hasPerm } from '@/utils/permissions';
 import styles from './AdminLayout.module.css';
 
-const NAV_ITEMS = [
+/** 导航项权限点（RB-07）：perm 缺省 = 有 token 即可（如数据看板）；数组 = 任一满足即显示 */
+interface NavItem {
+  key: string;
+  label: string;
+  perm?: string | string[];
+}
+
+const NAV_ITEMS: NavItem[] = [
   { key: '/dashboard', label: '数据看板' },
-  { key: '/users', label: '用户管理' },
-  { key: '/devices', label: '设备管理' },
-  { key: '/orders', label: '订单与支付' },
-  { key: '/subscriptions', label: '订阅管理' },
-  { key: '/audit', label: '审计日志' },
-  { key: '/roles', label: '角色权限' },
-  { key: '/settings', label: '系统设置' },
-] as const;
+  { key: '/users', label: '用户管理', perm: 'admin.users.view' },
+  { key: '/devices', label: '设备管理', perm: 'admin.devices.view' },
+  { key: '/orders', label: '订单与支付', perm: 'admin.orders.view' },
+  { key: '/subscriptions', label: '订阅管理', perm: 'admin.subscriptions.view' },
+  { key: '/audit', label: '审计日志', perm: 'admin.audit.view' },
+  { key: '/roles', label: '角色权限', perm: 'admin.roles.view' },
+  { key: '/settings', label: '系统设置', perm: ['admin.configs.view', 'admin.announce.send'] },
+  { key: '/ops', label: '运维监控', perm: 'admin.ops.view' },
+];
 
 function LogoMark() {
   return (
@@ -60,7 +69,11 @@ export default function AdminLayout() {
         </div>
         <span className={styles.divider} />
         <nav className={styles.nav} aria-label="主导航">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter(
+            (item) =>
+              !item.perm ||
+              (Array.isArray(item.perm) ? item.perm.some((p) => hasPerm(p)) : hasPerm(item.perm)),
+          ).map((item) => {
             const active = location.pathname.startsWith(item.key);
             return (
               <button

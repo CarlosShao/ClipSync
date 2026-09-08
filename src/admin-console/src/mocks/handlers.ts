@@ -6,6 +6,7 @@ import type {
   Announcement,
   ApiResp,
   AuditLog,
+  BackupFile,
   CreateRolePayload,
   DeviceStats,
   GrantSubscriptionPayload,
@@ -15,6 +16,7 @@ import type {
   PageData,
   ReconciliationReport,
   Role,
+  SlowQueriesResp,
   SubscriptionStats,
   UserDetail,
 } from '@/api/types';
@@ -107,16 +109,12 @@ function pushAudit(
 const DEMO_TOKEN = 'mock-admin-access-token-20260905';
 
 function demoWhoami(): { userId: string; roleKey: string; roleLevel: number; permissions: string[] } {
+  // RB-10 对齐真实契约：whoami 只返回 category='admin' 的权限键，super_admin 归一 ['*']
   return {
     userId: 'usr_carlos',
     roleKey: 'super_admin',
     roleLevel: 100,
-    permissions: [
-      'admin.users.view', 'admin.users.manage', 'admin.users.delete', 'admin.devices.manage',
-      'admin.subscriptions.grant', 'admin.orders.refund', 'admin.orders.reconcile',
-      'admin.plans.manage', 'admin.audit.view', 'admin.roles.manage', 'admin.configs.manage',
-      'admin.announce.send', 'admin.keys.view',
-    ],
+    permissions: ['*'],
   };
 }
 
@@ -580,7 +578,8 @@ const configHandlers = [
     return ok(mockConfigs);
   }),
 
-  // 逐项 PATCH：maintenance_mode 必须带 reason（写入审计）
+  // 逐项 PATCH：maintenance_mode 必须带 reason（写入审计）；
+  // CO-11/CO-41/CO-30：rate_limit_disabled 生产拒绝、log_level 白名单、smtp_pass 脱敏回显
   http.patch('/api/admin/configs/:key', async ({ request, params }) => {
     await delay(200);
     const key = params['key'] as string;
@@ -591,11 +590,18 @@ const configHandlers = [
     if (key === 'maintenance_mode' && !body.reason?.trim()) {
       return fail(400, 40003, '维护模式切换必须填写原因（写入审计日志）');
     }
-    config.value = body.value;
+    if (key === 'rate_limit_disabled' && body.value === 'true' && process.env.NODE_ENV === 'production') {
+      return fail(400, 40002, '生产环境禁止关闭限流');
+    }
+    if (key === 'log_level' && !['debug', 'info', 'warn', 'error'].includes(body.value)) {
+      return fail(400, 40002, 'log_level 仅允许 debug / info / warn / error');
+    }
+    // smtp_pass 写入加密存储，读取路径只回显配置状态（与 mapConfigRow 契约一致）
+    config.value = key === 'smtp_pass' ? '已配置' : body.value;
     config.updatedAt = '2026-09-05 20:47';
     const details = body.reason?.trim()
-      ? `value="${body.value}", reason="${body.reason.trim()}"`
-      : `value="${body.value}"`;
+      ? `value="${key === 'smtp_pass' ? '***' : body.value}", reason="${body.reason.trim()}"`
+      : `value="${key === 'smtp_pass' ? '***' : body.value}"`;
     pushAudit('admin.config.update', 'system_config', key, details);
     return ok(config, key === 'maintenance_mode' ? '维护模式已更新' : '配置已更新并写入审计');
   }),
@@ -636,6 +642,7 @@ const configHandlers = [
       displayMode: body.displayMode ?? 'once',
       sentAt: '2026-09-05 20:47',
       deliveredCount: 12102,
+      readCount: 0,
       clickedCount: 0,
     };
     mockAnnouncements.unshift(created);
@@ -647,6 +654,100 @@ const configHandlers = [
       true,
     );
     return ok(created, '公告已下发');
+  }),
+
+  // CO-30：SMTP 测试邮件。未配置 SMTP（smtp_host 为空或 smtp_pass 未配置）→ 409 错误壳 code=4090；
+  // 收件人含 "fail" 模拟发送失败（5xx）；成功返回 messageId
+  http.post('/api/admin/configs/smtp/test', async ({ request }) => {
+    await delay(400);
+    const body = (await request.json()) as { to?: string };
+    const smtpHost = mockConfigs.find((c) => c.key === 'smtp_host')?.value ?? '';
+    const smtpPass = mockConfigs.find((c) => c.key === 'smtp_pass')?.value ?? '';
+    if (!smtpHost.trim() || smtpPass === '未配置') {
+      return fail(409, 4090, 'SMTP 尚未配置，请先在系统参数中填写 SMTP 服务器与授权码');
+    }
+    if (body.to?.includes('fail')) {
+      return fail(500, 5001, 'SMTP 服务器连接超时，请检查端口与授权码');
+    }
+    const to = body.to?.trim() || 'admin@clipstream.work';
+    return ok({ messageId: `<${Date.now()}@clipstream.work>` }, `测试邮件已发送至 ${to}`);
+  }),
+];
+
+// ─────────────── CO-40/CO-41：运维监控 ───────────────
+
+/** 运维概览 mock（admin.ops.view 权限）：健康探针 + 版本/运行时长 + 内存 + 请求指标 */
+const opsHandlers = [
+  http.get('/api/admin/ops/overview', async () => {
+    await delay(150);
+    return ok({
+      status: 'ok',
+      version: '0.2.0',
+      uptimeSec: 3 * 86_400 + 7 * 3_600 + 42 * 60,
+      db: { ok: true, latencyMs: 2 },
+      redis: { ok: true, latencyMs: 1 },
+      memory: { rss: 186_000_000, heapUsed: 92_000_000 },
+      metrics: {
+        requests: 128_402,
+        errors: 371,
+        p50: 12,
+        p95: 86,
+        p99: 154,
+        wsConnections: 1_284,
+        uptimeSec: 3 * 86_400 + 7 * 3_600 + 42 * 60,
+        memory: '186MB',
+      },
+      // CO-42：部署形态（与 monitoring 栈 docker-compose 部署一致）
+      deployment: { type: 'docker-compose', replicas: null },
+    });
+  }),
+
+  // CO-33：备份文件概览（items 为目录扫描最近文件，summary 为全量汇总）
+  http.get('/api/admin/ops/backups', async () => {
+    await delay(150);
+    const items: BackupFile[] = [
+      { file: 'clipsync_db_20260905_0200.sql.gz', sizeBytes: 48_311_296, mtime: '2026-09-05T02:00:00+08:00', kind: 'db' },
+      { file: 'uploads_20260905_0300.tar.gz', sizeBytes: 1_073_741_824, mtime: '2026-09-05T03:00:00+08:00', kind: 'uploads' },
+      { file: 'redis_dump_20260905_0200.rdb', sizeBytes: 6_291_456, mtime: '2026-09-05T02:05:00+08:00', kind: 'redis' },
+      { file: 'clipsync_db_20260904_0200.sql.gz', sizeBytes: 47_882_240, mtime: '2026-09-04T02:00:00+08:00', kind: 'db' },
+      { file: 'clipsync_db_20260903_0200.sql.gz', sizeBytes: 47_185_920, mtime: '2026-09-03T02:00:00+08:00', kind: 'db' },
+    ];
+    return ok({
+      items,
+      summary: {
+        total: 5,
+        totalBytes: items.reduce((sum, item) => sum + item.sizeBytes, 0),
+        lastBackupAt: '2026-09-05T03:00:00+08:00',
+      },
+    });
+  }),
+
+  // CO-41：慢查询 TOP（admin.audit.view 权限；行结构与 src/server/src/utils/query-monitor.js 逐字段一致）
+  http.get('/api/admin/slow-queries', async () => {
+    await delay(150);
+    const data: SlowQueriesResp = {
+      slowQueries: [
+        {
+          query: 'SELECT * FROM payment_orders WHERE user_id = $1 AND status IN (...) ORDER BY created_at DESC',
+          calls: 1284,
+          totalExecTime: '15678.90 ms',
+          meanExecTime: '12.21 ms',
+          rows: 42,
+          hitPercent: '99.12%',
+        },
+        {
+          query: 'UPDATE user_subscriptions SET status = $1, auto_renew = $2 WHERE id = $3',
+          calls: 86,
+          totalExecTime: '9420.00 ms',
+          meanExecTime: '109.53 ms',
+          rows: 1,
+          hitPercent: '98.40%',
+        },
+      ],
+      poolStatus: { total: 12, active: 2, idle: 9, idleInTransaction: 1, poolSize: 10, idlePool: 8 },
+      timestamp: '2026-09-05T20:47:00.000Z',
+    };
+    return ok(data);
   }),
 ];
 
@@ -811,6 +912,7 @@ export const handlers = [
   ...auditHandlers,
   ...roleHandlers,
   ...configHandlers,
+  ...opsHandlers,
   ...devicesHandlers,
   ...subscriptionsHandlers,
 ];

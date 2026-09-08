@@ -1,35 +1,98 @@
 import nodemailer from 'nodemailer';
-import config from '../config.js';
+import pool from '../db/pool.js';
 import { logger } from './logger.js';
 import { circuitBreakers } from './circuit-breaker.js';
+import { decryptField } from './encryption.js';
 
-// 邮件发送器
+// =============================================
+// 邮件发送（CO-30 SMTP 配置化）
+//
+// SMTP 配置来源：system_configs 的 smtp_host / smtp_port / smtp_user /
+// smtp_pass / smtp_from / smtp_secure（050 迁移；管理台经
+// PATCH /api/admin/configs/smtp_* 维护，smtp_pass 由 configs.js 加密落库）。
+//
+// 读取策略：发送前实时读取 + 进程内 5s TTL 缓存——管理台改完 SMTP 配置
+// 最迟 5s 生效；读库失败时沿用最近一次成功快照，无快照则走 console 兜底。
+// smtp_host 为空 = 未配置，维持既有 console 兜底（不真实发送，不报错）。
+// =============================================
+
+const SMTP_TTL_MS = 5000;
+const SMTP_KEYS = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_secure'];
+
+// { config: object|null, at: number } —— config 为 null 表示「已读库但未配置」
+let smtpCache = { config: undefined, at: 0 };
 let transporter = null;
+let transporterKey = '';
+
+function toTrimmedString(v) {
+  return typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim();
+}
+
+function toBool(v) {
+  return v === true || v === 'true' || v === 't' || v === 1 || v === '1';
+}
+
+/** 读取 system_configs 的 smtp_*（5s 进程内缓存）；无配置/读库失败返回 null */
+async function getSmtpConfig() {
+  const now = Date.now();
+  if (smtpCache.config !== undefined && now - smtpCache.at < SMTP_TTL_MS) {
+    return smtpCache.config;
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT config_key, config_value FROM system_configs WHERE config_key = ANY($1)`,
+      [SMTP_KEYS]
+    );
+    const raw = Object.fromEntries(rows.map((r) => [r.config_key, r.config_value]));
+    const cfg = {
+      host: toTrimmedString(raw.smtp_host),
+      port: parseInt(toTrimmedString(raw.smtp_port), 10) || 587,
+      user: toTrimmedString(raw.smtp_user),
+      // smtp_pass 由 configs.js 加密写入（AES-256-GCM），发送前解密；解密失败按未配置处理
+      pass: raw.smtp_pass ? decryptField(toTrimmedString(raw.smtp_pass)) || '' : '',
+      from: toTrimmedString(raw.smtp_from),
+      secure: toBool(raw.smtp_secure),
+    };
+    const resolved = cfg.host ? cfg : null;
+    smtpCache = { config: resolved, at: now };
+    return resolved;
+  } catch (err) {
+    logger.warn('[email] failed to read SMTP config, reusing last snapshot / console fallback', {
+      error: err.message,
+    });
+    // 读库失败：沿用上次快照（含「未配置」），从未读到过则走 console 兜底
+    return smtpCache.config ?? null;
+  }
+}
 
 /**
- * 初始化邮件发送器
+ * 获取（或按当前配置重建）邮件发送器；SMTP 未配置返回 null（console 兜底）
  */
-function getTransporter() {
-  if (transporter) {
-    return transporter;
-  }
+async function getTransporter() {
+  const emailConfig = await getSmtpConfig();
 
-  const emailConfig = config.email || {};
-
-  if (!emailConfig.host || !emailConfig.user || !emailConfig.pass) {
-    logger.warn('Email configuration missing, using console fallback');
+  if (!emailConfig || !emailConfig.host || !emailConfig.user || !emailConfig.pass) {
+    if (emailConfig && (!emailConfig.user || !emailConfig.pass)) {
+      logger.warn('Email configuration incomplete (host set but user/pass missing), using console fallback');
+    }
     return null;
   }
 
-  transporter = nodemailer.createTransport({
-    host: emailConfig.host,
-    port: emailConfig.port || 587,
-    secure: emailConfig.port === 465,
-    auth: {
-      user: emailConfig.user,
-      pass: emailConfig.pass
-    }
-  });
+  // 配置变更时重建 transporter（缓存 key 含全部连接参数，含解密后的凭据）
+  const key = [emailConfig.host, emailConfig.port, emailConfig.secure, emailConfig.user, emailConfig.pass].join('|');
+  if (!transporter || transporterKey !== key) {
+    transporter = nodemailer.createTransport({
+      host: emailConfig.host,
+      port: emailConfig.port,
+      secure: emailConfig.secure || emailConfig.port === 465,
+      auth: {
+        user: emailConfig.user,
+        pass: emailConfig.pass,
+      },
+    });
+    transporterKey = key;
+    logger.info('SMTP transporter created', { host: emailConfig.host, port: emailConfig.port });
+  }
 
   return transporter;
 }
@@ -46,7 +109,7 @@ function getTransporter() {
 export async function sendEmail(options) {
   const { to, subject, text, html } = options;
 
-  const transporter = getTransporter();
+  const transporter = await getTransporter();
 
   if (!transporter) {
     // Fallback: 输出到控制台
@@ -58,11 +121,14 @@ export async function sendEmail(options) {
     return { success: true, fallback: true };
   }
 
+  const smtpConfig = await getSmtpConfig();
+  const fromAddress = smtpConfig?.from || smtpConfig?.user;
+
   // 使用断路器保护
   try {
     const result = await circuitBreakers.email.execute(async () => {
       const mailOptions = {
-        from: `"ClipSync" <${config.email.user}>`,
+        from: `"ClipSync" <${fromAddress}>`,
         to,
         subject,
         text,
@@ -84,6 +150,27 @@ export async function sendEmail(options) {
     logger.error('Failed to send email', { error: err.message, to });
     return { success: false, error: err.message };
   }
+}
+
+/**
+ * 发送 SMTP 测试邮件（CO-30 管理台「发送测试邮件」POST /api/admin/configs/smtp/test）
+ * @param {string} to - 收件人邮箱
+ * @returns {Promise<Object>} { success, unconfigured?, messageId?, error?, circuitOpen? }
+ *   unconfigured:true 表示 SMTP 未配置/不完整（getTransporter 走 console 兜底）——
+ *   调用方（configs.js）应返回业务错误 4090，不能把 console 兜底当作「发送成功」。
+ */
+export async function sendTestMail(to) {
+  const transporterInstance = await getTransporter();
+  if (!transporterInstance) {
+    return { success: false, unconfigured: true };
+  }
+  const result = await sendEmail({
+    to,
+    subject: 'ClipSync SMTP 测试',
+    text: '这是一封 ClipSync SMTP 测试邮件。收到即说明当前 SMTP 配置正确。',
+    html: '<p>这是一封 <strong>ClipSync SMTP 测试邮件</strong>。收到即说明当前 SMTP 配置正确。</p>',
+  });
+  return { ...result, unconfigured: false };
 }
 
 /**

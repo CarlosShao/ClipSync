@@ -1184,6 +1184,31 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notifLoadFailed => 'Failed to load notifications';
 
   @override
+  String get maintenanceBanner =>
+      'System maintenance in progress — clipboard sync is paused';
+
+  @override
+  String get announcements => 'Announcements';
+
+  @override
+  String get announcementsDesc => 'View system announcements';
+
+  @override
+  String get noAnnouncements => 'No announcements';
+
+  @override
+  String get announcementsLoadFailed => 'Failed to load announcements';
+
+  @override
+  String get announcementMarkReadFailed => 'Failed to send read receipt';
+
+  @override
+  String get announcementOnce => 'One-time';
+
+  @override
+  String get announcementPersistent => 'Pinned';
+
+  @override
   String get accountSection => 'Account';
 
   @override

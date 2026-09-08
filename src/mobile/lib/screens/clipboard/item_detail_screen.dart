@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:clipsync_mobile/l10n/app_localizations.dart';
 import 'package:clipsync_mobile/models/clipboard_item.dart';
 import 'package:clipsync_mobile/providers/clipboard_provider.dart';
+import 'package:clipsync_mobile/providers/feature_flags_provider.dart';
 import 'package:clipsync_mobile/router/app_router.dart';
 import 'package:clipsync_mobile/services/api_service.dart';
 import 'package:clipsync_mobile/services/app_exception.dart';
@@ -86,6 +87,11 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   bool _favoriteBusy = false;
   bool _shareLinkBusy = false;
   bool _pulseTrigger = false;
+
+  /// share.create 注册表键关闭（flags.enable_public_sharing）：分享入口
+  /// 整体隐藏（MA-04；服务端 403 兜底）。watch 保证 WS 推送更新后本页即时重建。
+  bool get _shareLinkEntryVisible =>
+      context.watch<FeatureFlagsProvider>().can(MenuAccessKeys.shareCreate);
 
   // 下载忙碌与进度
   static const String _zipKey = 'zip';
@@ -1183,16 +1189,18 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                   ],
                 ),
               ),
-              PopupMenuItem<String>(
-                value: 'shared_link',
-                child: Row(
-                  children: [
-                    Icon(Icons.add_link_rounded, size: 18, color: theme.colorScheme.onSurfaceVariant),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text(l10n.createSharedLink),
-                  ],
+              // enable_public_sharing 关闭：分享入口隐藏（服务端 403 兜底）
+              if (_shareLinkEntryVisible)
+                PopupMenuItem<String>(
+                  value: 'shared_link',
+                  child: Row(
+                    children: [
+                      Icon(Icons.add_link_rounded, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(l10n.createSharedLink),
+                    ],
+                  ),
                 ),
-              ),
               const PopupMenuDivider(),
               PopupMenuItem<String>(
                 value: 'delete',
@@ -2366,18 +2374,21 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                   ),
           ),
           const SizedBox(width: AppSpacing.xs),
-          IconButton.filledTonal(
-            onPressed: (_shareLinkBusy || _locked) ? null : _createSharedLink,
-            tooltip: l10n.createSharedLink,
-            icon: _shareLinkBusy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.add_link_rounded, size: 18),
-          ),
-          const SizedBox(width: AppSpacing.xs),
+          // enable_public_sharing 关闭：分享入口隐藏（服务端 403 兜底）
+          if (_shareLinkEntryVisible) ...[
+            IconButton.filledTonal(
+              onPressed: (_shareLinkBusy || _locked) ? null : _createSharedLink,
+              tooltip: l10n.createSharedLink,
+              icon: _shareLinkBusy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_link_rounded, size: 18),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+          ],
           IconButton.filledTonal(
             onPressed: _handleDelete,
             tooltip: l10n.delete,

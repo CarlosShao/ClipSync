@@ -19,10 +19,12 @@ rule_files:
 
 # 抓取配置
 scrape_configs:
-  # ClipSync API 服务（自身指标）
+  # ClipSync API 服务（自身指标；CO-03 起需要 Bearer token）
   - job_name: 'clipsync-api'
     scrape_interval: 5s
     metrics_path: '/api/metrics/prometheus'
+    authorization:
+      credentials_file: /etc/prometheus/metrics-token
     static_configs:
       - targets: ['host.docker.internal:3000']
         labels:
@@ -44,6 +46,15 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
+  # cAdvisor（容器层指标，CO-42）
+  - job_name: 'cadvisor'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          env: 'production'
+          service: 'cadvisor'
+
   # Blackbox Exporter（HTTP/SSL 探测）
   - job_name: 'blackbox-http'
     metrics_path: /probe
@@ -60,13 +71,13 @@ scrape_configs:
       - target_label: __address__
         replacement: 'blackbox-exporter:9115'
 
-  # PostgreSQL 连接探测
+  # PostgreSQL 连接探测（端口对齐 docker-compose.dev.yml 宿主机映射 5433→5432）
   - job_name: 'clipsync-db'
     metrics_path: /probe
     params:
       module: [tcp_connect]
     static_configs:
-      - targets: ['host.docker.internal:5432']
+      - targets: ['host.docker.internal:5433']
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -75,13 +86,13 @@ scrape_configs:
       - target_label: __address__
         replacement: 'blackbox-exporter:9115'
 
-  # Redis 连接探测
+  # Redis 连接探测（端口对齐 docker-compose.dev.yml 宿主机映射 6380→6379）
   - job_name: 'clipsync-redis'
     metrics_path: /probe
     params:
       module: [tcp_connect]
     static_configs:
-      - targets: ['host.docker.internal:6379']
+      - targets: ['host.docker.internal:6380']
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

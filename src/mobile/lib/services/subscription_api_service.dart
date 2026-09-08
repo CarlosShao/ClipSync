@@ -14,13 +14,22 @@ import 'token_store.dart';
 ///   `subscription: null`，并在 [plan] 中携带 Free 套餐信息）；
 /// - [plan] 为当前生效套餐（无活跃订阅时为 Free 套餐，后端缺失时为 null）。
 class CurrentSubscriptionData {
-  const CurrentSubscriptionData({this.subscription, this.plan});
+  const CurrentSubscriptionData({
+    this.subscription,
+    this.plan,
+    this.planFeatures = const <String, bool>{},
+  });
 
   /// 当前活跃订阅；null 表示未订阅（Free）。
   final UserSubscription? subscription;
 
   /// 当前生效套餐（含未订阅时的 Free 套餐）。
   final SubscriptionPlan? plan;
+
+  /// 当前生效套餐的 features 布尔快照（MA-05：来自响应 plan.features
+  /// JSONB，服务端真实键如 ai_classify / team_management；非 true 值
+  /// 一律归 false）。
+  final Map<String, bool> planFeatures;
 }
 
 /// 订阅 API 服务（T4.4 去 mock 重写）。
@@ -152,7 +161,19 @@ class SubscriptionApiService {
       subscription:
           sub is Map<String, dynamic> ? UserSubscription.fromJson(sub) : null,
       plan: plan is Map<String, dynamic> ? _parsePlan(plan) : null,
+      planFeatures: _extractPlanFeatures(plan),
     );
+  }
+
+  /// 归一 plan.features（JSONB 对象，pg 已解析）为纯布尔表（MA-05）。
+  ///
+  /// 布尔门控只关心 === true：数字/字符串型键（如 version_history_days）
+  /// 一律归 false，对齐桌面端 usePlanLimits 的归一口径。
+  static Map<String, bool> _extractPlanFeatures(Object? plan) {
+    if (plan is! Map<String, dynamic>) return const <String, bool>{};
+    final Object? features = plan['features'];
+    if (features is! Map<String, dynamic>) return const <String, bool>{};
+    return features.map((k, v) => MapEntry(k, v == true));
   }
 
   /// 取消订阅（期末生效：到期前订阅仍可用，到期后自动降级）。

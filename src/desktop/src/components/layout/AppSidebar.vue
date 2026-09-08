@@ -15,13 +15,27 @@ import {
   Bell,
   Archive,
   Sparkles,
+  ExternalLink,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useI18n } from '@/composables/useI18n'
 import { useNotifications } from '@/composables/useNotifications'
+import { useMenuAccess } from '@/composables/useMenuAccess'
+import { useUser } from '@/composables/useUser'
+import { useConfigStore } from '@/stores/configStore'
+import { api } from '@/api/client'
+import { openUrl } from '@/lib/tauri'
 
 const { t } = useI18n()
 const { unreadCount } = useNotifications()
+// 菜单访问控制（MA-01/02）：开关关闭的入口直接隐藏（服务端 403 兜底依然存在）
+const { can } = useMenuAccess()
+// MA-06：管理控制台外链仅超管可见（roleKey === 'super_admin'，决策记录 2026-09-07）
+const { isSuperAdmin, fetchUser } = useUser()
+const configStore = useConfigStore()
+// 挂载即拉取当前用户 RBAC 角色（内部单飞去重，AI 面板等处复用同一份用户态）
+fetchUser()
+// 超管徽标在模板内联判定：roleKey=super_admin 显示「超级管理员」而非套餐名（"免费版"太误导）
 
 const props = defineProps<{
   sidebarOpen: boolean
@@ -73,9 +87,56 @@ const mainNavItems = computed(() => [
 
 const accountNavItems = computed(() => [
   { key: 'profile', label: t('nav_profile'), badge: '' },
-  { key: 'subscription', label: t('nav_subscription'), badge: '' },
+  // enable_subscription 关闭时隐藏订阅入口（服务端按 Free 配额强制，页面无意义）
+  ...(can('nav.subscription') ? [{ key: 'subscription', label: t('nav_subscription'), badge: '' }] : []),
   // Settings archived to backups/old-settings-v1/ — replaced by SettingsDialog
 ])
+
+// MA-06：管理控制台外链地址。
+// 优先取本地覆盖键 clipsync-admin-url（localStorage）；否则由当前服务器地址派生
+// 同主机 + 5273 端口（管理台约定端口）；地址为空/非法时回落 http://localhost:5273。
+// hostname 强制用 localhost（而非 serverUrl 的 127.0.0.1）：浏览器对 localhost 有
+// IPv6/IPv4 双栈回退，两种监听形态的管理台 dev server 都能命中。
+function resolveAdminConsoleUrl(): string {
+  const override = (localStorage.getItem('clipsync-admin-url') || '').trim()
+  if (override) return override
+  const server = configStore.serverUrl
+  if (server) {
+    try {
+      const u = new URL(server)
+      u.port = '5273'
+      u.hostname = 'localhost'
+      return u.origin
+    } catch {
+      /* 非法地址走默认回落 */
+    }
+  }
+  return 'http://localhost:5273'
+}
+
+// RB-SSO：单点登录打开管理台。
+// 流程：POST /api/admin/sso/token（仅超管，后端 requireRole(100)）签发一次性 code（60s，Redis GETDEL 防重放）
+// → 拼管理台 /sso?code=xxx → 管理台兑换页换正式会话，免密直达 dashboard。
+// 签发失败（非超管/网络/Redis 不可用）降级为纯外链，走常规登录页。
+async function openAdminConsole() {
+  try {
+    const resp = await api<{ code: number; data: { code: string; expiresIn: number } }>(
+      'POST',
+      '/api/admin/sso/token',
+    )
+    // api() 不解响应壳：resp.data 为响应体 { code, data }，真实凭据在 resp.data.data.code
+    const ssoCode = resp.ok ? resp.data?.data?.code : undefined
+    if (!ssoCode) throw new Error(resp.error || 'SSO 凭据签发失败')
+    const adminUrl = new URL(resolveAdminConsoleUrl())
+    adminUrl.pathname = '/sso'
+    adminUrl.searchParams.set('code', ssoCode)
+    openUrl(adminUrl.toString()).catch(() => {})
+  } catch (err) {
+    console.error('[SSO] failed to get code:', err)
+    // 降级为纯外链（登录页兜底）
+    openUrl(resolveAdminConsoleUrl()).catch(() => {})
+  }
+}
 </script>
 
 <template>
@@ -127,8 +188,10 @@ const accountNavItems = computed(() => [
 
       <!-- AI Agent entry: 面板开关而非路由视图。
            开启态只做弱强调（图标/文字转 accent），不占用“当前视图”的胶囊+左条选中语言，
-           避免与主导航当前项形成双选中。 -->
+           避免与主导航当前项形成双选中。
+           enable_ai_agent 关闭时整个入口隐藏（含折叠态图标），WS 推送即时生效。 -->
       <button
+        v-if="can('nav.ai')"
         class="sb-item sb-item--toggle"
         :class="{ 'toggle-on': props.aiOpen }"
         :title="isCollapsed ? t('nav_ai') : undefined"
@@ -154,6 +217,16 @@ const accountNavItems = computed(() => [
           <span v-show="!isCollapsed" class="sb-label">{{ item.label }}</span>
         </button>
       </template>
+      <!-- MA-06：管理控制台外链（仅超管）。外部浏览器打开，不参与 currentSub 选中语义 -->
+      <button
+        v-if="isSuperAdmin"
+        class="sb-item"
+        :title="isCollapsed ? t('nav_admin_console') : undefined"
+        @click="openAdminConsole"
+      >
+        <ExternalLink :size="20" :stroke-width="1.8" />
+        <span v-show="!isCollapsed" class="sb-label">{{ t('nav_admin_console') }}</span>
+      </button>
       <!-- Settings Dialog entry (replaces archived SettingsView) -->
       <button
         class="sb-item sb-item--new"
@@ -187,7 +260,9 @@ const accountNavItems = computed(() => [
         <div class="user-info">
           <div class="user-name">{{ userName || 'User' }}</div>
           <div v-if="userEmail" class="user-email">{{ userEmail }}</div>
-          <div class="user-role">{{ t('role_' + (userPlan || 'Free').toLowerCase()) }}</div>
+          <div class="user-role">{{
+            isSuperAdmin ? t('role_super_admin') : t('role_' + (userPlan || 'Free').toLowerCase())
+          }}</div>
         </div>
       </div>
       <!-- Popover menu (profile + logout) -->

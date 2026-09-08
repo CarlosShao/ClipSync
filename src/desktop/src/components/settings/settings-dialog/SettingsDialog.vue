@@ -34,8 +34,11 @@ import {
   X,
   ArrowLeft,
 } from 'lucide-vue-next'
+import { useMenuAccess } from '@/composables/useMenuAccess'
 
 const { t } = useI18n()
+// 菜单访问控制（MA-02）：AI / 订阅等设置分类的全链路显隐（原 isFlagEnabled 判定归一到注册表）
+const { can } = useMenuAccess()
 
 const props = defineProps<{ open: boolean; initialCategory?: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -77,9 +80,11 @@ const navItems = computed<NavItem[]>(() => [
   { key: 'shortcuts', label: t('sg_shortcuts'), icon: Keyboard },
   { key: 'privacy', label: t('sg_privacy'), icon: Shield },
   { key: 'data', label: t('sg_data'), icon: Database },
-  { key: 'subscription', label: t('sg_sub_bill'), icon: CreditCard },
+  // enable_subscription 关闭：订阅与账单分类整体隐藏
+  ...(can('settings.subscription') ? [{ key: 'subscription', label: t('sg_sub_bill'), icon: CreditCard }] : []),
   { key: 'variables', label: t('sg_tpl_vars'), icon: Variable },
-  { key: 'ai', label: t('sg_ai'), icon: Sparkles },
+  // enable_ai_agent 关闭：AI 供应商与工作流分类整体隐藏
+  ...(can('settings.ai') ? [{ key: 'ai', label: t('sg_ai'), icon: Sparkles }] : []),
   { key: 'about', label: t('sg_about') || '关于', icon: Info },
 ])
 
@@ -135,9 +140,15 @@ watch(
   () => props.open,
   async (isOpen) => {
     if (isOpen) {
-      // 若指定了初始分类（如从 AI 侧边栏"管理"跳入），直接定位
+      // 若指定了初始分类（如从 AI 侧边栏"管理"跳入），直接定位。
+      // 但开关已关闭的分类不可达（防 URL/事件绕过），回落 general。
       if (props.initialCategory) {
-        activeCategory.value = props.initialCategory
+        const hidden =
+          (props.initialCategory === 'ai' && !can('settings.ai')) ||
+          (props.initialCategory === 'subscription' && !can('settings.subscription'))
+        if (!hidden) {
+          activeCategory.value = props.initialCategory
+        }
         activeSubPage.value = ''
       }
       previousActiveElement.value = document.activeElement as HTMLElement

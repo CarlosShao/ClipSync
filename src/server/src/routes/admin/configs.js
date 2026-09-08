@@ -8,8 +8,9 @@
 //                                                PATCH /api/admin/flags/:key
 //
 // 上游链（index.js 顶层已装配）：authenticateToken → requireRole(50) → superAdminAudit
-// 本文件额外细粒度权限：PATCH /configs/:key、PATCH /flags/:key → requirePerm('admin.configs.manage')
-//   （权限目录中该点标记 superAdminOnly，043/044 仅授予 super_admin；GET 列表无额外权限点）
+// 本文件细粒度权限：PATCH /configs/:key、PATCH /flags/:key → requirePerm('admin.configs.manage')
+//   （权限目录中该点标记 superAdminOnly，043/044 仅授予 super_admin）；
+//   GET /configs、GET /flags → requirePerm('admin.configs.view')（RB-06 读侧细粒度校验）
 //
 // 响应契约（src/admin-console/src/api/types.ts SystemConfig / FeatureFlag 逐字段对齐）：
 //   SystemConfig: { key, name, value, description?, updatedAt? }  —— value 为字符串
@@ -24,6 +25,10 @@
 //   - PATCH 未知配置键/开关键 → 404 { code: 40404 }
 //   - value 空 / enabled 非布尔 → 400 { code: 40002 }
 //   - maintenance_mode 缺 reason → 400 { code: 40003 }（原因必填，写入审计日志）
+//   - rate_limit_disabled 写 true 且 NODE_ENV=production → 400（CO-11）
+//   - log_level 仅允许 debug/info/warn/error（CO-41）
+//   - smtp_pass 写入前 AES 加密、读取统一脱敏为「已配置/未配置」（CO-30）
+//   - maintenance_mode 更新成功 → 失效本进程缓存 + WS 广播 maintenance.updated（CO-20）
 //   - 写路径审计：admin.config.update（resourceType=system_config）/ admin.flag.update（feature_flag）
 // =============================================
 
@@ -31,9 +36,12 @@ import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { broadcastToAllClients } from '../../ws/server.js';
 import { invalidateFlagsCache, getFeatureFlags } from '../../utils/featureFlags.js';
+import { encryptField } from '../../utils/encryption.js';
+import { invalidateMaintenanceCache } from '../../middleware/maintenance.js';
 import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
+import { sendTestMail } from '../../utils/email.js';
 
 const router = Router();
 
@@ -64,6 +72,86 @@ const CONFIG_CATALOG = [
     key: 'audit_log_retention_days',
     name: '审计日志保留天数',
     description: '审计日志的保留时长，超期归档后删除',
+  },
+  // —— 收藏 / 审计（038 种子键补录展示目录，CO-36：此前键已入库但不在目录，管理台不可见不可改）——
+  {
+    key: 'max_collection_depth',
+    name: '收藏层级最大深度',
+    description: '收藏夹允许的最大嵌套层级（number，超出后禁止继续嵌套）',
+  },
+  {
+    key: 'enable_audit_log',
+    name: '审计日志开关',
+    description: '是否启用审计日志（boolean，关闭后新操作不再写入审计）',
+  },
+  // —— 限流配置（050，方案三 WP-A：运行时可调，rateLimiter.js 经 runtimeLimits 消费）——
+  {
+    key: 'rate_limit_api_per_min',
+    name: '全局 API 限流（次/分钟）',
+    description: '滑动窗口限流阈值，按用户计数（匿名按 IP）',
+  },
+  {
+    key: 'rate_limit_send_code_per_hour',
+    name: '验证码发送限流（次/小时）',
+    description: '单手机号验证码发送上限，短信成本保护',
+  },
+  {
+    key: 'rate_limit_login_failed_per_15min',
+    name: '登录失败锁定（次/15分钟）',
+    description: '单手机号登录失败锁定阈值',
+  },
+  {
+    key: 'rate_limit_upload_per_min',
+    name: '上传接口限流（次/分钟）',
+    description: '上传与大文件分片接口的独立限流',
+  },
+  {
+    key: 'rate_limit_disabled',
+    name: '关闭限流（生产禁用）',
+    description: '总开关：开启后全部限流失效；生产环境后端拒绝写入 true',
+  },
+  // —— 运维（050，CO-41：日志级别热调）——
+  {
+    key: 'log_level',
+    name: '运行时日志级别',
+    description: 'debug / info / warn / error，保存后热生效（debug/info/warn/error）',
+  },
+  // —— 邮件 SMTP（050，CO-30：smtp_pass 由管理台加密写入、脱敏展示）——
+  {
+    key: 'smtp_host',
+    name: 'SMTP 服务器地址',
+    description: '为空时邮件走控制台兜底（不真实发送）',
+  },
+  {
+    key: 'smtp_port',
+    name: 'SMTP 端口',
+    description: '465=SSL 直连 / 587=STARTTLS',
+  },
+  {
+    key: 'smtp_user',
+    name: 'SMTP 用户名',
+    description: '邮箱账号或 API 用户',
+  },
+  {
+    key: 'smtp_pass',
+    name: 'SMTP 密码/授权码',
+    description: '加密存储，保存后仅显示是否已配置',
+  },
+  {
+    key: 'smtp_from',
+    name: '发件人地址',
+    description: '如 no-reply@example.com',
+  },
+  {
+    key: 'smtp_secure',
+    name: 'SMTP SSL 直连',
+    description: 'true=SSL(465) / false=STARTTLS(587)',
+  },
+  // —— 菜单覆盖（050，方案一 MA-07：运行时可调菜单可见性）——
+  {
+    key: 'menu_overrides',
+    name: '菜单可见性覆盖',
+    description: 'JSON 对象：{"nav.ai":{"minPlan":"Pro"}} 深合并进菜单注册表',
   },
 ];
 
@@ -96,6 +184,11 @@ const FLAG_CATALOG = [
     name: '注册审核',
     description: '开启后新注册进入待审核状态，登录被拦截，需在「用户管理」审批通过',
   },
+  {
+    key: 'enable_signup',
+    name: '注册总开关',
+    description: '关闭后完全禁止新用户注册（与注册审核正交：关闭 > 审核 > 开放），客户端注册入口同步隐藏',
+  },
 ];
 
 const FLAG_CATALOG_MAP = new Map(FLAG_CATALOG.map((f) => [f.key, f]));
@@ -106,6 +199,8 @@ const FLAG_CATALOG_MAP = new Map(FLAG_CATALOG.map((f) => [f.key, f]));
 function jsonbValueToString(value) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
+  // 对象/数组（如 menu_overrides 的 050 种子 '{}'::jsonb）→ JSON 文本，避免前端显示 [object Object]
+  if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
 
@@ -119,10 +214,15 @@ function formatDateTimeMinute(value) {
 
 /** DB 配置行 + 目录元数据 → 前端 SystemConfig 契约 */
 function mapConfigRow(meta, row) {
+  let value = jsonbValueToString(row?.config_value);
+  // CO-30：smtp_pass 加密存储，任何读取路径（GET 列表 / PATCH 回显）只暴露配置状态，不回传密文
+  if (meta.key === 'smtp_pass') {
+    value = value ? '已配置' : '未配置';
+  }
   return {
     key: meta.key,
     name: meta.name,
-    value: jsonbValueToString(row?.config_value),
+    value,
     description: meta.description || row?.description || undefined,
     updatedAt: formatDateTimeMinute(row?.updated_at),
   };
@@ -133,8 +233,9 @@ function mapConfigRow(meta, row) {
 /**
  * GET /api/admin/configs
  * 系统参数列表（目录 5 键，目录顺序输出；DB 缺行时 value 兜底空串，不阻塞设置页渲染）。
+ * RB-06：读侧细粒度权限 requirePerm('admin.configs.view')。
  */
-router.get('/', async (_req, res) => {
+router.get('/', requirePerm('admin.configs.view'), async (_req, res) => {
   try {
     const keys = CONFIG_CATALOG.map((c) => c.key);
     const { rows } = await pool.query(
@@ -155,6 +256,10 @@ router.get('/', async (_req, res) => {
  * 更新单项系统参数（requirePerm('admin.configs.manage')）：
  *  - 仅目录内键可改（未知键 404）；value 必填（40002）
  *  - maintenance_mode 原因必填（40003，写入审计日志）
+ *  - rate_limit_disabled 写 true 且 NODE_ENV=production 拒绝（400，CO-11）
+ *  - log_level 仅允许 debug/info/warn/error（400，CO-41）
+ *  - smtp_pass 写入前加密（CO-30），读取路径统一脱敏（mapConfigRow）
+ *  - maintenance_mode 成功后失效维护缓存 + WS 广播 maintenance.updated（CO-20）
  *  - JSONB 写入 to_jsonb($2::text) 保持 value 字符串往返一致；updated_by 记录修改人
  *  - 审计 admin.config.update（敏感操作）
  */
@@ -179,24 +284,48 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
     }
 
     const valueStr = String(rawValue);
+
+    // CO-11：限流总开关在生产环境禁止关闭（配置写错路径即熔断全站保护）
+    if (key === 'rate_limit_disabled' && valueStr === 'true' && process.env.NODE_ENV === 'production') {
+      return res.status(400).json({ code: 40002, message: '生产环境禁止关闭限流' });
+    }
+
+    // CO-41：日志级别白名单校验（logger.js 热生效链路的脏数据防线）
+    if (key === 'log_level' && !['debug', 'info', 'warn', 'error'].includes(valueStr)) {
+      return res.status(400).json({ code: 40002, message: 'log_level 仅允许 debug / info / warn / error' });
+    }
+
+    // CO-30：smtp_pass 落库前加密（AES-256-GCM），其余键原样写入
+    const valueToStore = key === 'smtp_pass' ? encryptField(valueStr) : valueStr;
+
     const { rows } = await pool.query(
       `UPDATE system_configs
        SET config_value = to_jsonb($2::text), updated_by = $3, updated_at = NOW()
        WHERE config_key = $1
        RETURNING config_key, config_value, description, updated_at`,
-      [key, valueStr, req.user?.userId ?? null]
+      [key, valueToStore, req.user?.userId ?? null]
     );
     if (rows.length === 0) {
       return res.status(404).json({ code: 40404, message: '配置项不存在' });
     }
 
-    // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason）
+    // CO-20：维护模式切换 → 失效本进程缓存 + 全端广播（客户端即时出/收维护横幅；
+    // 未连 WS 的客户端最迟在同步链路被 maintenanceGuard 以 503 拦截（≤5s TTL 兜底）。
+    if (key === MAINTENANCE_MODE_KEY) {
+      invalidateMaintenanceCache();
+      const mode = valueStr.trim().toLowerCase() === 'on' ? 'on' : 'off';
+      broadcastToAllClients({ type: 'maintenance.updated', mode });
+    }
+
+    // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason；
+    // smtp_pass 不落明文——审计流水常驻库中，只记录「已更新」占位符）
+    const auditValue = key === 'smtp_pass' ? '***' : valueStr;
     await logAuditEvent({
       userId: req.user?.userId,
       action: 'admin.config.update',
       resourceType: 'system_config',
       resourceId: key,
-      details: reason ? { value: valueStr, reason } : { value: valueStr },
+      details: reason ? { value: auditValue, reason } : { value: auditValue },
       ipAddress: req.ip,
       userAgent: req.headers ? req.headers['user-agent'] : undefined,
     });
@@ -214,6 +343,62 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
   }
 });
 
+// ───────────────────────── SMTP 测试邮件（CO-30） ─────────────────────────
+
+/**
+ * POST /api/admin/configs/smtp/test  body { to?: string }
+ * 发送 SMTP 测试邮件（requirePerm('admin.configs.manage')，与配置写路径权限一致）：
+ *  - to 缺省取 system_configs.smtp_user；两者皆空/格式非法 → 400 { code: 40002 }
+ *  - 未配置 SMTP（host/user/pass 不全）→ 409 { code: 4090 }（当前验证码走控制台兜底，不算成功）
+ *  - 发送成功/失败均写审计 admin.config.smtp_test（与 admin.config.update 风格对齐）
+ */
+router.post('/smtp/test', requirePerm('admin.configs.manage'), async (req, res) => {
+  try {
+    let to = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
+    if (!to) {
+      const { rows } = await pool.query(
+        `SELECT config_value FROM system_configs WHERE config_key = 'smtp_user'`
+      );
+      to = jsonbValueToString(rows[0]?.config_value).trim();
+    }
+    if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      return res.status(400).json({ code: 40002, message: '收件人邮箱无效（未传 to 且 smtp_user 未配置）' });
+    }
+
+    const result = await sendTestMail(to);
+
+    if (result.unconfigured) {
+      return res.status(409).json({ code: 4090, message: '未配置 SMTP，当前验证码走控制台兜底' });
+    }
+
+    // 成功/失败均写审计（失败时 error 进入 details 便于排查）
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.config.smtp_test',
+      resourceType: 'system_config',
+      resourceId: 'smtp_test',
+      details: {
+        to,
+        success: result.success,
+        error: result.error || undefined,
+        messageId: result.messageId || undefined,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    if (!result.success) {
+      return res.status(500).json({ code: 5000, message: `测试邮件发送失败：${result.error || '未知错误'}` });
+    }
+
+    logger.info('[admin/configs] smtp test mail sent', { to, operator: req.user?.userId });
+    return res.json({ code: 0, data: { to, messageId: result.messageId || null }, message: '测试邮件已发送' });
+  } catch (err) {
+    logger.error('[admin/configs] smtp test failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '发送测试邮件失败' });
+  }
+});
+
 // ───────────────────────── 功能开关 ─────────────────────────
 
 const flagsRouter = Router();
@@ -221,8 +406,9 @@ const flagsRouter = Router();
 /**
  * GET /api/admin/flags
  * 功能开关列表（目录 5 开关，目录顺序输出）。
+ * RB-06：读侧细粒度权限 requirePerm('admin.configs.view')。
  */
-flagsRouter.get('/', async (_req, res) => {
+flagsRouter.get('/', requirePerm('admin.configs.view'), async (_req, res) => {
   try {
     const keys = FLAG_CATALOG.map((f) => f.key);
     const { rows } = await pool.query(

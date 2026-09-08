@@ -24,4 +24,8 @@ export const queryKeys = {
   configs: () => ['configs'] as const,
   flags: () => ['flags'] as const,
   announcements: () => ['announcements'] as const,
+
+  opsOverview: () => ['ops-overview'] as const,
+  opsBackups: () => ['ops-backups'] as const,
+  slowQueries: () => ['slow-queries'] as const,
 };

@@ -12,6 +12,7 @@ import 'l10n/app_localizations.dart';
 import 'providers/auth_provider.dart';
 import 'providers/clipboard_provider.dart';
 import 'providers/device_provider.dart';
+import 'providers/feature_flags_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/ws_provider.dart';
 import 'router/app_router.dart';
@@ -127,11 +128,41 @@ void main() async {
     );
   };
 
-  // 创建 go_router 路由表（守卫依赖 authProvider / guardState）
+  // 功能开关 Provider：管理台开关 → 全端入口显隐（分享/订阅/注册审核提示）。
+  // MA-04：先于路由表创建——createAppRouter 的深链能力守卫需同步读取
+  // flags 快照，并把本 Provider 并入 refreshListenable。
+  final featureFlagsProvider = FeatureFlagsProvider();
+  WsService.globalFeatureFlagsHook = (msg) {
+    featureFlagsProvider.applyFlags(msg['flags'] as Map<String, dynamic>?);
+  };
+
+  // 创建 go_router 路由表（守卫依赖 authProvider / guardState / featureFlagsProvider）
   final appRouter = createAppRouter(
     authProvider: authProvider,
     guardState: guardState,
+    featureFlagsProvider: featureFlagsProvider,
   );
+
+  // MA-04 菜单访问层数据源接线：plan / roleKey 来自 AuthProvider.user
+  // （初始一次 + 每次登录/登出/资料变更后同步，值不变不重复通知）
+  void syncUserProfileToMenuAccess() {
+    featureFlagsProvider.applyUserProfile(authProvider.user);
+  }
+
+  syncUserProfileToMenuAccess();
+  authProvider.addListener(syncUserProfileToMenuAccess);
+
+  // CO-21 维护模式：WS maintenance.updated → applyMaintenance（横幅即时切换）；
+  // 维护快照变化联动暂停/恢复剪贴板采集（SyncService.setMaintenancePaused，
+  // 启动拉取与 WS 推送两条路径都经 applyMaintenance → notifyListeners 汇入）。
+  WsService.globalMaintenanceHook = (msg) {
+    final mode = msg['mode'];
+    featureFlagsProvider.applyMaintenance(mode is String ? mode : null);
+  };
+  featureFlagsProvider.addListener(() {
+    SyncService.instance
+        .setMaintenancePaused(featureFlagsProvider.maintenanceMode);
+  });
 
   // T3.4：本地通知初始化（幂等；失败静默）+ 通知点击回首页
   await LocalNotificationService.instance.initialize();
@@ -352,6 +383,7 @@ void main() async {
     settingsProvider: settingsProvider,
     clipboardProvider: clipboardProvider,
     wsProvider: wsProvider,
+    featureFlagsProvider: featureFlagsProvider,
   ));
 }
 
@@ -384,6 +416,9 @@ class ClipSyncApp extends StatefulWidget {
   /// B3：WS Provider（main() 中创建，onNetworkRestored 钩子与 UI 共用）
   final WsProvider wsProvider;
 
+  /// 功能开关 Provider（main() 中创建，globalFeatureFlagsHook 钩子与 UI 共用）
+  final FeatureFlagsProvider featureFlagsProvider;
+
   const ClipSyncApp({
     super.key,
     required this.appRouter,
@@ -392,6 +427,7 @@ class ClipSyncApp extends StatefulWidget {
     required this.settingsProvider,
     required this.clipboardProvider,
     required this.wsProvider,
+    required this.featureFlagsProvider,
   });
 
   @override
@@ -448,6 +484,10 @@ class _ClipSyncAppState extends State<ClipSyncApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(create: (context) => DeviceProvider()),
         // B3：WsProvider 在 main() 创建（onNetworkRestored 钩子与 UI 共用）
         ChangeNotifierProvider<WsProvider>.value(value: widget.wsProvider),
+        // 功能开关快照（main() 创建，WS 钩子与 UI 共用）
+        ChangeNotifierProvider<FeatureFlagsProvider>.value(
+          value: widget.featureFlagsProvider,
+        ),
       ],
       // T4.5: i18n —— locale 由 SettingsProvider.language 驱动（设置页切换即时生效，
       // 持久化键 'language'；未迁移的硬编码文案不受影响，后续渐进迁移）

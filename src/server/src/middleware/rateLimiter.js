@@ -12,14 +12,18 @@
  */
 
 import { getRedisClient as getSharedRedisClient } from '../utils/redis-client.js';
+import { getRuntimeLimits, getCachedRuntimeLimits } from '../utils/runtimeLimits.js';
 import { logger } from '../utils/logger.js';
 
 // 内存存储（Redis 不可用时的降级方案）
 // 使用 Map<key, number[]> 存储时间戳列表
+// CO-51：每个 limiter 独立桶——strictLimiter/uploadLimiter 与 apiLimiter 互不污染
 const memoryStores = {
   api: new Map(),
   sendCode: new Map(),
   loginFailed: new Map(),
+  upload: new Map(),
+  strict: new Map(),
 };
 
 /**
@@ -152,33 +156,42 @@ function createRateLimiter(options) {
     keyGenerator = (req) => req.ip || req.connection?.remoteAddress,
     storeName = 'api',
     skipSuccessfulRequests = false,
+    // CO-10：动态阈值键（system_configs）；未声明则用固定 max
+    limitKey = null,
   } = options;
-  
+
   const useRedis = process.env.NODE_ENV === 'production' && process.env.REDIS_HOST;
   const memoryStore = memoryStores[storeName];
-  
+
   return async (req, res, next) => {
     // 测试环境跳过
     if (process.env.NODE_ENV === 'test' && storeName === 'api') {
       return next();
     }
-    
+
+    // CO-10：运行时阈值——每次限流检查取当前快照（getRuntimeLimits 自带 5s TTL 缓存，
+    // 命中缓存时只有一次 Promise resolve 的开销；读库失败 fail-closed 回退默认值）。
+    // rate_limit_disabled=true → 该 limiter 整体放行，不计数、不写响应头。
+    const snapshot = await getRuntimeLimits();
+    if (snapshot.disabled) return next();
+    const effectiveMax = limitKey ? (snapshot[limitKey] ?? max) : max;
+
     const key = keyGenerator(req);
     let result;
-    
+
     if (useRedis) {
-      result = await checkRateLimitRedis(key, windowMs, max, storeName);
+      result = await checkRateLimitRedis(key, windowMs, effectiveMax, storeName);
     } else {
-      result = checkRateLimitMemory(key, windowMs, max, storeName);
+      result = checkRateLimitMemory(key, windowMs, effectiveMax, storeName);
     }
-    
+
     // 设置响应头
     res.set({
-      'X-RateLimit-Limit': max,
-      'X-RateLimit-Remaining': Math.max(0, max - result.count),
+      'X-RateLimit-Limit': effectiveMax,
+      'X-RateLimit-Remaining': Math.max(0, effectiveMax - result.count),
       'X-RateLimit-Reset': new Date(result.resetTime).toISOString(),
     });
-    
+
     // 检查是否超限
     if (!result.allowed) {
       const retryAfter = Math.ceil((result.resetTime - Date.now()) / 1000);
@@ -188,7 +201,7 @@ function createRateLimiter(options) {
         retryAfter,
       });
     }
-    
+
     next();
   };
 }
@@ -201,7 +214,8 @@ export const apiLimiter = process.env.NODE_ENV === 'test'
   ? (req, res, next) => next()
   : createRateLimiter({
       windowMs: 60 * 1000,  // 1分钟
-      max: 300,             // 300次（桌面端同步需要更多请求）
+      max: 300,             // 兜底默认；运行时读 rate_limit_api_per_min（CO-10）
+      limitKey: 'apiPerMin',
       message: 'API rate limit exceeded, please try again later',
       keyGenerator: (req) => {
         // 已登录请求按用户限流（C5 修复）；匿名请求回退到 IP（兼容配对/匿名路由）
@@ -219,7 +233,8 @@ export const apiLimiter = process.env.NODE_ENV === 'test'
  */
 export const sendCodeLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,  // 1小时
-  max: 5,                     // 5次
+  max: 5,                     // 兜底默认；运行时读 rate_limit_send_code_per_hour（CO-10）
+  limitKey: 'sendCodePerHour',
   message: 'Verification code rate limit exceeded, please try again in 1 hour',
   keyGenerator: (req) => {
     const phone = req.body?.phone;
@@ -234,7 +249,8 @@ export const sendCodeLimiter = createRateLimiter({
  */
 export const loginFailedLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,  // 15分钟
-  max: 5,                     // 5次
+  max: 5,                     // 兜底默认；运行时读 rate_limit_login_failed_per_15min（CO-10）
+  limitKey: 'loginFailedPer15Min',
   message: 'Too many login attempts, please try again in 15 minutes',
   keyGenerator: (req) => {
     const phone = req.body?.phone;
@@ -271,6 +287,9 @@ export function clearLoginFailed(phone) {
 const wsConnections = new Map();
 
 export function checkWsConnectionLimit(userId, deviceId) {
+  // CO-10：限流总开关（同步快照）——disabled 时 WS 连接数限制放行
+  if (getCachedRuntimeLimits().disabled) return true;
+
   const key = `ws:${userId}`;
   const now = Date.now();
   const windowMs = 60 * 1000;
@@ -312,7 +331,7 @@ export const strictLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 10,
   message: 'Too many requests, please try again later',
-  storeName: 'api',
+  storeName: 'strict',
 });
 
 /**
@@ -321,9 +340,10 @@ export const strictLimiter = createRateLimiter({
  */
 export const uploadLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 20,
+  max: 20,                    // 兜底默认；运行时读 rate_limit_upload_per_min（CO-10）
+  limitKey: 'uploadPerMin',
   message: 'File upload rate limit exceeded, please try again later',
-  storeName: 'api',
+  storeName: 'upload',
 });
 
 /**

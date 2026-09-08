@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
-import { App as AntdApp, Avatar, Button, Drawer, Skeleton, Table } from 'antd';
+import { App as AntdApp, Avatar, Button, Drawer, Skeleton, Table, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { getUserDetail, updateUserStatus } from '@/api/users';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { StatusTag } from '@/components/StatusTag';
 import { planLabel, planTone } from '@/components/StatusTag/mappers';
 import { queryKeys } from '@/queryKeys';
+import { hasPerm } from '@/utils/permissions';
 import { fmtDate, fmtMoney, fmtTime } from '@/utils/format';
 import styles from './UserDrawer.module.css';
 
@@ -77,6 +78,10 @@ export function UserDrawer({ open, userId, onClose }: UserDrawerProps) {
   const user = data?.user;
   const disabled = user?.status === 'disabled';
 
+  // RB-07：管理操作按钮按权限键裁剪（对齐 devices 页 canOffline 模式）
+  const canManage = hasPerm('admin.users.manage');
+  const canDelete = hasPerm('admin.users.delete');
+
   const renderBody = () => {
     if (isLoading || !user) {
       return <Skeleton active paragraph={{ rows: 8 }} />;
@@ -144,25 +149,44 @@ export function UserDrawer({ open, userId, onClose }: UserDrawerProps) {
         <div className={styles.actions}>
           <Button onClick={() => void message.info('调整套餐将在后续版本提供')}>调整套餐</Button>
           <Button onClick={() => void message.info('赠期将在后续版本提供')}>赠期 1 个月</Button>
-          <Button onClick={() => void message.info('强制下线将在后续版本提供')}>强制下线</Button>
+          <Tooltip title={canManage ? '' : '缺少权限'}>
+            <span>
+              <Button disabled={!canManage} onClick={() => void message.info('强制下线将在后续版本提供')}>
+                强制下线
+              </Button>
+            </span>
+          </Tooltip>
           {disabled ? (
-            <Button
-              type="primary"
-              loading={statusMutation.isPending}
-              onClick={() =>
-                statusMutation.mutate({ id: user.id, status: 'active' })
-              }
-            >
-              启用账号
-            </Button>
+            <Tooltip title={canManage ? '' : '缺少权限'}>
+              <span>
+                <Button
+                  type="primary"
+                  disabled={!canManage}
+                  loading={statusMutation.isPending}
+                  onClick={() =>
+                    statusMutation.mutate({ id: user.id, status: 'active' })
+                  }
+                >
+                  启用账号
+                </Button>
+              </span>
+            </Tooltip>
           ) : (
-            <Button danger onClick={() => setDeactivateOpen(true)}>
-              停用账号
-            </Button>
+            <Tooltip title={canManage ? '' : '缺少权限'}>
+              <span>
+                <Button danger disabled={!canManage} onClick={() => setDeactivateOpen(true)}>
+                  停用账号
+                </Button>
+              </span>
+            </Tooltip>
           )}
-          <Button danger disabled onClick={() => void message.info('删除账户将在后续版本提供')}>
-            删除账户
-          </Button>
+          <Tooltip title={canDelete ? '' : '缺少权限'}>
+            <span>
+              <Button danger disabled onClick={() => void message.info('删除账户将在后续版本提供')}>
+                删除账户
+              </Button>
+            </span>
+          </Tooltip>
           <Button type="link" onClick={() => void navigate('/audit')}>
             查看审计日志
           </Button>

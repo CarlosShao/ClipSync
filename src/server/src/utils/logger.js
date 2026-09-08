@@ -9,7 +9,7 @@
  * 5. 文件持久化（生产环境）
  */
 
-import { createWriteStream, appendFileSync } from 'fs';
+import { createWriteStream, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -24,22 +24,66 @@ const LOG_LEVELS = {
   error: 3,
 };
 
-const currentLevel = LOG_LEVELS[process.env.LOG_LEVEL || 'info'] || LOG_LEVELS.info;
+let currentLevel = LOG_LEVELS[process.env.LOG_LEVEL || 'info'] || LOG_LEVELS.info;
 
-// 日志文件传输（生产环境）
+// 日志文件输出（生产环境，CO-04 按天滚动）
+// 文件名：clipsync-YYYYMMDD.log；保留 14 天；显式设置 LOG_FILE 时保持单文件不滚动（原有行为）
+const LOG_DIR = join(__dirname, '../../logs');
+const LOG_RETENTION_DAYS = 14;
+
 let logStream = null;
-const logFilePath = process.env.LOG_FILE || join(__dirname, '../../logs/clipsync.log');
+let logDateKey = null;
+
+function getLogDateKey(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
+// 启动时清理超过保留期的旧日志（仅匹配按天滚动命名，不误删自定义 LOG_FILE）
+function cleanupOldLogs() {
+  try {
+    const cutoff = Date.now() - LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    for (const name of readdirSync(LOG_DIR)) {
+      if (!/^clipsync-\d{8}\.log$/.test(name)) continue;
+      const full = join(LOG_DIR, name);
+      try {
+        if (statSync(full).mtimeMs < cutoff) {
+          unlinkSync(full);
+        }
+      } catch { /* 单个文件清理失败不阻塞启动 */ }
+    }
+  } catch (err) {
+    console.error('[Logger] Failed to cleanup old log files:', err.message);
+  }
+}
+
+function openLogStream() {
+  logDateKey = getLogDateKey();
+  const file = process.env.LOG_FILE || join(LOG_DIR, `clipsync-${logDateKey}.log`);
+  logStream = createWriteStream(file, { flags: 'a' });
+  logStream.on('error', (err) => {
+    console.error('[Logger] Failed to write to log file:', err.message);
+  });
+}
+
+// 跨天滚动：写入时检测日期变化，关闭旧流并打开新文件
+function rotateLogIfNeeded() {
+  if (process.env.LOG_FILE) return;
+  const today = getLogDateKey();
+  if (today === logDateKey) return;
+  try {
+    logStream?.end();
+  } catch { /* ignore */ }
+  openLogStream();
+}
 
 if (process.env.NODE_ENV === 'production') {
   try {
-    const { mkdirSync } = await import('fs');
-    const logDir = join(__dirname, '../../logs');
-    mkdirSync(logDir, { recursive: true });
-    
-    logStream = createWriteStream(logFilePath, { flags: 'a' });
-    logStream.on('error', (err) => {
-      console.error('[Logger] Failed to write to log file:', err.message);
-    });
+    mkdirSync(LOG_DIR, { recursive: true });
+    cleanupOldLogs();
+    openLogStream();
   } catch (err) {
     console.error('[Logger] Failed to initialize log file:', err.message);
   }
@@ -105,8 +149,9 @@ function writeLog(level, message, meta = {}) {
       break;
   }
   
-  // 文件输出（生产环境）
+  // 文件输出（生产环境，跨天自动滚动）
   if (logStream) {
+    rotateLogIfNeeded();
     const sanitized = sanitizeLog(JSON.parse(formatted));
     logStream.write(JSON.stringify(sanitized) + '\n');
   }
@@ -158,6 +203,22 @@ export const logger = {
     }
   },
 };
+
+/**
+ * CO-04: 运行时热调整日志级别（供管理台 configs PATCH log_level 后调用）。
+ * 仅接受 debug/info/warn/error（大小写不敏感），非法级别拒绝并返回 false。
+ * 调用方负责审计记录，本函数只做热生效。
+ * @param {string} level
+ * @returns {boolean} 是否生效
+ */
+export function setLogLevel(level) {
+  const normalized = typeof level === 'string' ? level.trim().toLowerCase() : '';
+  if (!Object.prototype.hasOwnProperty.call(LOG_LEVELS, normalized)) {
+    return false;
+  }
+  currentLevel = LOG_LEVELS[normalized];
+  return true;
+}
 
 /**
  * HTTP 请求日志中间件
@@ -255,4 +316,5 @@ export default {
   errorLogger,
   wsLogger,
   securityLogger,
+  setLogLevel,
 };

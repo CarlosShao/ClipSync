@@ -8,6 +8,7 @@ import "package:shared_preferences/shared_preferences.dart";
 import "package:clipsync_mobile/l10n/app_localizations.dart";
 import "package:clipsync_mobile/providers/auth_provider.dart";
 import "package:clipsync_mobile/providers/clipboard_provider.dart";
+import "package:clipsync_mobile/providers/feature_flags_provider.dart";
 import "package:clipsync_mobile/providers/settings_provider.dart";
 import "package:clipsync_mobile/router/app_router.dart";
 import "package:clipsync_mobile/screens/notification_settings_screen.dart";
@@ -195,6 +196,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     await context.read<AuthProvider>().logout();
     if (!mounted) return;
+    // 功能开关快照随账号清理，避免下一个账号继承旧状态
+    context.read<FeatureFlagsProvider>().reset();
     // go_router 导航回登录页（守卫同样会因失去 token 强制跳转）
     context.go(AppRoutes.login);
   }
@@ -203,6 +206,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     // T4.5: i18n —— 本页文案接 AppLocalizations，随设置页语言切换即时变化；
     final l10n = AppLocalizations.of(context);
+    // 功能开关快照：分享/订阅入口显隐（WS 推送即时刷新）
+    final flags = context.watch<FeatureFlagsProvider>();
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.tabSettings),
@@ -275,9 +280,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1),
                 _buildTemplatesTile(),
                 const Divider(height: 1),
-                _buildSharedLinksTile(),
-                const Divider(height: 1),
+                // MA-04：share.create 注册表键（flags.enable_public_sharing）
+                // 关闭时共享链接入口隐藏（服务端 403 兜底）
+                if (flags.can(MenuAccessKeys.shareCreate)) ...[
+                  _buildSharedLinksTile(),
+                  const Divider(height: 1),
+                ],
                 _buildNotificationsCenterTile(),
+                const Divider(height: 1),
+                // CO-35：系统公告入口（常显，不做「有无公告」复杂判断）
+                _buildAnnouncementsTile(),
               ],
             ),
           ),
@@ -298,13 +310,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: AppSpacing.md),
 
-          // 订阅管理
-          SectionDivider(title: l10n.sectionSubscription),
-          AppCard(
-            surfaceTier: SurfaceTier.low,
-            padding: EdgeInsets.zero,
-            child: _buildSubscriptionSetting(),
-          ),
+          // MA-04：nav.subscription 注册表键（flags.enable_subscription）
+          // 关闭时整块隐藏：服务端已按 Free 配额强制
+          if (flags.can(MenuAccessKeys.navSubscription)) ...[
+            SectionDivider(title: l10n.sectionSubscription),
+            AppCard(
+              surfaceTier: SurfaceTier.low,
+              padding: EdgeInsets.zero,
+              child: _buildSubscriptionSetting(),
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
 
           // 退出登录与关于
@@ -670,6 +685,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       subtitle: Text(l10n.notificationsCenterDesc),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => context.push(AppRoutes.notifications),
+    );
+  }
+
+  /// CO-35：系统公告入口（列表 / once 打开即上报已读回执；入口常显）
+  Widget _buildAnnouncementsTile() {
+    final l10n = AppLocalizations.of(context);
+    return ListTile(
+      leading: const Icon(Icons.campaign_outlined),
+      title: Text(l10n.announcements),
+      subtitle: Text(l10n.announcementsDesc),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => context.push(AppRoutes.announcements),
     );
   }
 

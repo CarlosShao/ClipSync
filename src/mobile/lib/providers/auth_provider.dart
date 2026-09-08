@@ -9,10 +9,11 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/api_service.dart';
+import '../services/app_exception.dart';
 import '../services/token_store.dart';
 
 /// login() 的结果：区分「成功」「需要两步验证」「失败」
-enum LoginResult { success, twoFactorRequired, failure }
+enum LoginResult { success, twoFactorRequired, pendingReview, failure }
 
 /// 认证状态管理
 ///
@@ -34,6 +35,12 @@ class AuthProvider extends ChangeNotifier {
 
   /// 2FA 登录挑战令牌（login 响应 twoFactorRequired 时下发，验证成功后清除）
   String? _pendingChallengeToken;
+
+  /// 注册审核（signup_waitlist）提示语：pendingReview 时携带服务端中文提示，
+  /// 供登录页 SnackBar 展示；普通失败场景如服务端有明确文案也一并带上
+  String? _pendingReviewMessage;
+
+  String? get pendingReviewMessage => _pendingReviewMessage;
 
   /// 本机在服务端注册的真实设备 id（secure storage 持久化）
   String? _deviceId;
@@ -115,6 +122,8 @@ class AuthProvider extends ChangeNotifier {
   /// 验证码登录。
   /// 返回 [LoginResult.twoFactorRequired] 表示账号开启了两步验证，
   /// 需要继续调用 [verifyTwoFactorLogin] 提交 6 位动态码完成登录。
+  /// 返回 [LoginResult.pendingReview] 表示 signup_waitlist（注册审核）开启期间
+  /// 新注册进入待审核（服务端 200 + pendingReview，无会话），见 [pendingReviewMessage]。
   Future<LoginResult> login(String phone, String code) async {
     try {
       final result = await _api.login(phone, code);
@@ -127,10 +136,23 @@ class AuthProvider extends ChangeNotifier {
         }
         return LoginResult.twoFactorRequired;
       }
+      // 注册审核（waitlist）模式：新用户首次验证码登录即注册，进入待审核
+      if (result['pendingReview'] == true) {
+        _pendingReviewMessage =
+            (result['message'] ?? '注册成功，账号待管理员审核通过后即可登录').toString();
+        notifyListeners();
+        return LoginResult.pendingReview;
+      }
+      _pendingReviewMessage = null;
       await _completeLogin(result);
       return LoginResult.success;
     } catch (e) {
       debugPrint('[AuthProvider] login failed: $e');
+      // 服务端 403 pendingReview（waitlist 用户登录被拦截）等场景，
+      // detail 携带服务端中文提示，供登录页展示
+      _pendingReviewMessage =
+          (e is AppException && (e.detail ?? '').isNotEmpty) ? e.detail : null;
+      notifyListeners();
       return LoginResult.failure;
     }
   }

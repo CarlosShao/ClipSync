@@ -4,6 +4,7 @@ import pool from '../db/pool.js';
 import config from '../config.js';
 import { logger } from '../utils/logger.js';
 import { getRedisClient, checkWsConnectionLimit, removeWsConnection } from '../middleware/rateLimiter.js';
+import { setWsConnections } from '../middleware/metrics.js';
 import { createNotification } from '../services/notificationService.js';
 import {
   initWsRedisPubSub,
@@ -14,6 +15,9 @@ import {
 
 // Map<userId, Map<deviceId, WebSocket>>
 const connections = new Map();
+
+// CO-02: 当前实例活跃 WS 连接数（含尚未注册/被拒的连接），经 setWsConnections 上报 Prometheus gauge
+let liveWsConnections = 0;
 
 // 防止同一 server 实例被多次调用（测试环境会导致内存泄漏）
 const _setupServers = new WeakMap();
@@ -75,7 +79,24 @@ export function setupWebSocket(server) {
   });
 
   wss.on('connection', async (ws, req) => {
+    // CO-02: 连接建立即计数，close 时递减；close 监听必须最先挂载，
+    // 否则 origin/token/CSRF 校验被提前 return 拒绝的连接只增不减导致 gauge 泄漏
+    liveWsConnections++;
+    setWsConnections(liveWsConnections);
+    ws.on('close', () => {
+      liveWsConnections = Math.max(0, liveWsConnections - 1);
+      setWsConnections(liveWsConnections);
+    });
+
     logger.info('WebSocket connection attempt');
+
+    // ========== CO-20: 维护模式拦截（仅握手阶段查一次，带 5s 缓存，不逐消息检查） ==========
+    // upgrade 不经 Express 中间件链，故在 connection 入口拒绝；isMaintenanceOn 读库失败内部兜底为放行
+    if (await isMaintenanceOn()) {
+      logger.warn('WebSocket connection rejected: Maintenance mode');
+      ws.close(4003, 'Maintenance mode');
+      return;
+    }
 
     // ========== 安全增强 #1: Origin 验证 ==========
     const origin = req.headers.origin;

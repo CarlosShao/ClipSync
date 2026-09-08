@@ -4,6 +4,7 @@
 // subscription_plans 表漂移；本模块统一改为后端下发 + 模块级缓存。
 // 契约：{ subscription: {...}|null, plan: { maxFileSizeMb, maxStorageMb,
 // maxFilesPerClip, fileRetentionDays, ... } }；admin 场景下部分字段可能为 null。
+import { ref } from 'vue'
 import { api } from '@/api/client'
 
 /**
@@ -40,7 +41,7 @@ const FALLBACK_LIMITS: PlanLimits = {
 const CACHE_TTL_MS = 5 * 60 * 1000
 
 // 模块级单例状态：所有调用方共享同一份缓存与在途请求，绝不重复请求后端
-let cached: PlanLimits | null = null
+let cached: PlanSnapshot | null = null
 let cachedAt = 0
 // L2：当前缓存是否来自兜底默认值（真实接口从未成功返回）。为 true 时客户端预检应放行
 //（兜底 20MB 会误拦 Pro 用户 20-128MB 的合法文件），交服务端 413 + handleQuotaResponse 兜底。
@@ -52,13 +53,25 @@ let generation = 0
 // 在途请求所属代数：invalidate 后新调用不复用旧代请求（避免拿到过期套餐值）
 let inflightGeneration = -1
 
+// === plan.features 快照（MA-01/MA-05）===
+// 与套餐限额同一次 GET /api/subscriptions/current 请求顺带提取（避免第二个请求），
+// 供 useMenuAccess 的 planFeature 判定消费。null = 从未成功获取（拉取失败/尚未加载）：
+// 消费方按 fail-open 处理（服务端 requireFeature 403 权威兜底），与 isFlagEnabled 哲学一致。
+// 响应式 ref：订阅变更 invalidatePlanLimits 后置 null，下次成功拉取自动回填。
+export const planFeaturesSnapshot = ref<Record<string, boolean> | null>(null)
+
 /** 后端字段归一：null / undefined / 非正的有限数（如 admin 的不限字段）→ Infinity */
 function normalizeLimit(v: unknown): number {
   const n = typeof v === 'string' ? Number(v) : v
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : Number.POSITIVE_INFINITY
 }
 
-async function fetchPlanLimits(): Promise<PlanLimits> {
+/** 内部快照：限额字段 + 同一次请求顺带提取的 plan.features 归一布尔表 */
+interface PlanSnapshot extends PlanLimits {
+  features: Record<string, boolean>
+}
+
+async function fetchPlanLimits(): Promise<PlanSnapshot> {
   // 与 SubscriptionView 相同的调用方式：GET /api/subscriptions/current（Bearer 由 api() 注入）
   const res = await api('GET', '/api/subscriptions/current')
   if (!res.ok || !res.data) {
@@ -69,11 +82,19 @@ async function fetchPlanLimits(): Promise<PlanLimits> {
   if (!plan || typeof plan !== 'object') {
     throw new Error('[usePlanLimits] response has no plan object')
   }
+  // plan.features（JSONB 对象，pg 已解析）：归一为纯布尔表，供 planFeature 门控消费
+  const features: Record<string, boolean> = {}
+  if (plan.features && typeof plan.features === 'object' && !Array.isArray(plan.features)) {
+    for (const [k, v] of Object.entries(plan.features as Record<string, unknown>)) {
+      features[k] = v === true
+    }
+  }
   return {
     maxFileSizeMb: normalizeLimit(plan.maxFileSizeMb),
     maxStorageMb: normalizeLimit(plan.maxStorageMb),
     maxFilesPerClip: normalizeLimit(plan.maxFilesPerClip),
     fileRetentionDays: normalizeLimit(plan.fileRetentionDays),
+    features,
   }
 }
 
@@ -109,14 +130,18 @@ async function doFetchPlanLimits(gen: number): Promise<PlanLimits> {
       cached = fresh
       cachedIsFallback = false
       cachedAt = Date.now()
+      // features 与限额同源同代：仅当代数一致才回写响应式快照（对齐 L-3 口径）
+      planFeaturesSnapshot.value = { ...fresh.features }
     }
     return { ...fresh }
   } catch (e) {
     console.warn('[usePlanLimits] 加载套餐限额失败，沿用上次缓存/兜底值：', e)
     if (gen === generation) {
-      // 沿用旧缓存（来自真实接口）→ 非兜底；首次失败（无缓存）才退到兜底默认值
+      // 沿用旧缓存（来自真实接口）→ 非兜底；首次失败（无缓存）才退到兜底默认值。
+      // 兜底快照的 features 为空表仅用于满足内部类型；planFeaturesSnapshot 保持 null
+      //（消费方 fail-open），此处不会把兜底值当真实 features 发布。
       cachedIsFallback = cached === null
-      cached = cached ?? FALLBACK_LIMITS
+      cached = cached ?? { ...FALLBACK_LIMITS, features: {} }
       cachedAt = Date.now()
     }
     return { ...(cached ?? FALLBACK_LIMITS) }
@@ -141,6 +166,8 @@ export function invalidatePlanLimits(): void {
   cached = null
   cachedAt = 0
   cachedIsFallback = false
+  // features 快照随缓存一起失效：回 null（fail-open），下次成功拉取自动回填
+  planFeaturesSnapshot.value = null
 }
 
 /**
@@ -165,11 +192,21 @@ export async function getMaxUploadBytes(): Promise<number> {
 }
 
 /**
+ * plan.features 快照（MA-01）：返回 null = 快照不可用（拉取失败/尚未加载），
+ * 消费方自行决定兜底策略（useMenuAccess 按 fail-open 放行，服务端权威校验兜底）。
+ * 复用 loadPlanLimits 的单飞请求与 TTL 缓存，不会发起第二个请求。
+ */
+export async function getPlanFeatures(): Promise<Record<string, boolean> | null> {
+  await loadPlanLimits()
+  return planFeaturesSnapshot.value
+}
+
+/**
  * usePlanLimits：Vue 组合式入口。状态全部在模块级（单例），
  * 多组件/多实例调用共享同一缓存与在途请求，不会重复请求后端。
  */
 export function usePlanLimits() {
-  return { getPlanLimits, getMaxUploadBytes, isPlanLimitsFallback, invalidatePlanLimits, getUpgradePlanBenefits }
+  return { getPlanLimits, getMaxUploadBytes, isPlanLimitsFallback, invalidatePlanLimits, getUpgradePlanBenefits, getPlanFeatures, planFeaturesSnapshot }
 }
 
 // ------------------------------------------------------------------------

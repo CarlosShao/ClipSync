@@ -2198,6 +2198,54 @@ abstract class AppLocalizations {
   /// **'Failed to load notifications'**
   String get notifLoadFailed;
 
+  /// No description provided for @maintenanceBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'System maintenance in progress — clipboard sync is paused'**
+  String get maintenanceBanner;
+
+  /// No description provided for @announcements.
+  ///
+  /// In en, this message translates to:
+  /// **'Announcements'**
+  String get announcements;
+
+  /// No description provided for @announcementsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'View system announcements'**
+  String get announcementsDesc;
+
+  /// No description provided for @noAnnouncements.
+  ///
+  /// In en, this message translates to:
+  /// **'No announcements'**
+  String get noAnnouncements;
+
+  /// No description provided for @announcementsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load announcements'**
+  String get announcementsLoadFailed;
+
+  /// No description provided for @announcementMarkReadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to send read receipt'**
+  String get announcementMarkReadFailed;
+
+  /// No description provided for @announcementOnce.
+  ///
+  /// In en, this message translates to:
+  /// **'One-time'**
+  String get announcementOnce;
+
+  /// No description provided for @announcementPersistent.
+  ///
+  /// In en, this message translates to:
+  /// **'Pinned'**
+  String get announcementPersistent;
+
   /// No description provided for @accountSection.
   ///
   /// In en, this message translates to:

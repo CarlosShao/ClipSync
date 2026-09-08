@@ -30,7 +30,7 @@ const double _kLoadMoreThreshold = 400;
 
 /// 首页剪贴板流 (Obsidian v2 / Ticket R2.2)。
 ///
-/// 遵循 docs/plans/mobile-ui-redesign.md 中 5.3 规格：
+/// 遵循 docs/plans/archive/mobile-ui-redesign.md 中 5.3 规格：
 /// - 顶部 SliverAppBar（大标题模式）：
 ///   * 折叠态：紧凑搜索栏 + 类型筛选 Chips（横滑，含 Filter 弹层入口 Chip）吸顶固定；
 ///   * 展开态：大标题「Clipboard」(displaySmall) + 最后同步状态/时间点（包裹 SyncPulseIndicator 脉冲圆点）。

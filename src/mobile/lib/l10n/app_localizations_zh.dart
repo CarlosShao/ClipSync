@@ -1133,6 +1133,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get notifLoadFailed => '通知加载失败';
 
   @override
+  String get maintenanceBanner => '系统维护中，剪贴板同步已暂停';
+
+  @override
+  String get announcements => '公告';
+
+  @override
+  String get announcementsDesc => '查看系统公告';
+
+  @override
+  String get noAnnouncements => '暂无公告';
+
+  @override
+  String get announcementsLoadFailed => '公告加载失败';
+
+  @override
+  String get announcementMarkReadFailed => '已读回执发送失败';
+
+  @override
+  String get announcementOnce => '一次性';
+
+  @override
+  String get announcementPersistent => '常驻';
+
+  @override
   String get accountSection => '账号';
 
   @override

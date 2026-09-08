@@ -38,3 +38,8 @@ export function sendAnnouncement(payload: SendAnnouncementPayload): Promise<Anno
 export function getAnnouncements(): Promise<Announcement[]> {
   return apiGet<Announcement[]>('/admin/announcements');
 }
+
+/** CO-30：发送 SMTP 测试邮件（未配置 SMTP 返回 4090 错误壳；to 缺省用服务端默认收件人） */
+export function testSmtp(to?: string): Promise<{ messageId: string }> {
+  return apiPost<{ messageId: string }>('/admin/configs/smtp/test', { to });
+}
