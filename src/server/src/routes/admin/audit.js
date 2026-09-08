@@ -123,7 +123,7 @@ function parsePaging(query) {
  */
 function buildAuditFilters(query, params) {
   const where = [];
-  const { action, operator, result, ip, dateFrom, dateTo, q } = query;
+  const { action, operator, result, ip, dateFrom, dateTo, q, userId } = query;
 
   if (action && action !== 'all') {
     if (action === 'auth') {
@@ -142,13 +142,19 @@ function buildAuditFilters(query, params) {
 
   if (operator && operator !== 'all') {
     if (operator === 'end_user') {
-      // 终端用户：操作者角色为 user（含打码手机号操作者）
-      where.push(`r.role_key = 'user'`);
+      // AF-33：终端用户 = 角色为 user 或无角色（role_id 为空，LEFT JOIN 不得漏掉）
+      where.push(`(r.role_key = 'user' OR u.role_id IS NULL)`);
     } else {
       // 具体操作者：昵称精确匹配（如 Carlos / Yuki）
       params.push(String(operator));
       where.push(`u.nickname = $${params.length}`);
     }
+  }
+
+  // AF-34：按用户过滤（用户抽屉「查看审计日志」跳转 /audit?userId=xxx）
+  if (userId && String(userId).trim()) {
+    params.push(String(userId).trim());
+    where.push(`al.user_id = $${params.length}`);
   }
 
   if (result && result !== 'all') {

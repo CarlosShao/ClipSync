@@ -77,7 +77,8 @@ export function RefundModal({
             订单 <b className="mono">{order.orderNo}</b> · {channelLabel[order.channel]} ·{' '}
             {fmtMoney(order.amount)}
             <br />
-            退款将通过原渠道退回，1–3 个工作日到账。
+            {/* AF-40：当前退款为「人工标记」——系统不调用支付网关，请确认已在线下完成原渠道退款 */}
+            确认前请先在线下完成原渠道退款；本操作仅将订单标记为已退款并记入审计。
           </p>
           <Form form={form} layout="vertical" requiredMark={false}>
             <Form.Item
@@ -90,7 +91,9 @@ export function RefundModal({
                     if (value === undefined || Number.isNaN(value)) return Promise.resolve();
                     if (value <= 0) return Promise.reject(new Error('退款金额必须大于 0'));
                     if (value > order.amount) {
-                      return Promise.reject(new Error(`退款金额不能超过 ${fmtMoney(order.amount)}`));
+                      return Promise.reject(
+                        new Error(`退款金额不能超过 ${fmtMoney(order.amount)}`)
+                      );
                     }
                     return Promise.resolve();
                   },

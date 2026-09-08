@@ -214,7 +214,7 @@ async function verifyPin() {
   pinVerifying.value = true
   try {
     await new Promise((r) => setTimeout(r, 200))
-    const ok = privacy.verifyPin(pinInput.value)
+    const ok = await privacy.verifyPin(pinInput.value)
     if (ok) {
       closePinDialog()
       toast.show(t('pin_verified') || 'PIN 验证成功', 'success')

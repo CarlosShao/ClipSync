@@ -12,7 +12,10 @@ import { issueRefreshToken } from '../utils/refreshToken.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 import { logger } from '../utils/logger.js';
-import { isFlagEnabled } from '../utils/featureFlags.js';
+import { isFlagEnabled, requireFlag } from '../utils/featureFlags.js';
+
+/** AF-04：注册总开关关闭时的统一响应（enable_signup=false → 注册 403，登录不受影响） */
+const SIGNUP_DISABLED_MESSAGE = '注册已由管理员关闭，如有疑问请联系客服';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { sendNotification, detectAndNotifyNewLogin } from '../ws/server.js';
 import crypto from 'crypto';
@@ -323,6 +326,10 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     const { accept_tos, accept_privacy, marketing_consent, birth_date } = req.body;
 
     if (isNewUser) {
+      // AF-04：注册总开关（与 signup_waitlist 正交：关闭 > 审核 > 开放）
+      if (!(await isFlagEnabled('enable_signup'))) {
+        return res.status(403).json({ error: SIGNUP_DISABLED_MESSAGE, flagDisabled: 'enable_signup' });
+      }
       // New user registration - require ToS and privacy acceptance
       if (!accept_tos || !accept_privacy) {
         return res.status(400).json({ error: 'You must accept the Terms of Service and Privacy Policy to register' });
@@ -548,6 +555,10 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
     const { accept_tos, accept_privacy, marketing_consent, birth_date } = req.body;
 
     if (isNewUser) {
+      // AF-04：注册总开关（与 signup_waitlist 正交：关闭 > 审核 > 开放）
+      if (!(await isFlagEnabled('enable_signup'))) {
+        return res.status(403).json({ error: SIGNUP_DISABLED_MESSAGE, flagDisabled: 'enable_signup' });
+      }
       // New user registration - require ToS and privacy acceptance
       if (!accept_tos || !accept_privacy) {
         return res.status(400).json({ error: 'You must accept the Terms of Service and Privacy Policy to register' });
@@ -848,7 +859,7 @@ router.post('/reset-password', async (req, res) => {
 });
 
 // ===== 注册（完整流程：验证码 + 密码 + 可选昵称/邮箱）=====
-router.post('/register', sendCodeLimiter, async (req, res) => {
+router.post('/register', sendCodeLimiter, requireFlag('enable_signup', SIGNUP_DISABLED_MESSAGE), async (req, res) => {
   try {
     const { phone, code, nickname, email, password, accept_tos, accept_privacy } = req.body;
 

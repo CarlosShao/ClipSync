@@ -11,6 +11,7 @@ const UsersPage = lazy(() => import('@/pages/users'));
 const DevicesPage = lazy(() => import('@/pages/devices'));
 const OrdersPage = lazy(() => import('@/pages/orders'));
 const SubscriptionsPage = lazy(() => import('@/pages/subscriptions'));
+const PlansPage = lazy(() => import('@/pages/plans'));
 const AuditPage = lazy(() => import('@/pages/audit'));
 const RolesPage = lazy(() => import('@/pages/roles'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
@@ -84,6 +85,14 @@ export function AppRoutes() {
           element={lazyNode(
             <RequireRole permission="admin.subscriptions.view">
               <SubscriptionsPage />
+            </RequireRole>,
+          )}
+        />
+        <Route
+          path="/plans"
+          element={lazyNode(
+            <RequireRole permission="admin.plans.view">
+              <PlansPage />
             </RequireRole>,
           )}
         />

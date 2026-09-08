@@ -56,7 +56,9 @@ function mapAnnouncementRow(row) {
     audience: row.audience,
     displayMode: row.display_mode,
     sentAt: formatDateTimeMinute(row.created_at),
+    // AF-22 口径：deliveredCount = 受众人数（非真实触达）；readCount = 真实已读（052 回执表）；clickCount = 点击
     deliveredCount: Number(row.delivered_count ?? 0),
+    readCount: Number(row.read_count ?? 0),
     clickedCount: Number(row.click_count ?? 0),
   };
 }
@@ -181,12 +183,15 @@ router.post('/', requirePerm('admin.announce.send'), async (req, res) => {
  * GET /api/admin/announcements
  * 公告发送历史（新记录在前；前端设置页一次性渲染，上限 100 条）。
  */
-router.get('/', async (_req, res) => {
+router.get('/', requirePerm('admin.announce.view'), async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, title, content, audience, display_mode, sent_by, delivered_count, click_count, created_at
-       FROM admin_announcements
-       ORDER BY created_at DESC
+      `SELECT a.id, a.title, a.content, a.audience, a.display_mode, a.sent_by,
+              a.delivered_count, a.click_count, a.created_at,
+              (SELECT COUNT(*)::int FROM admin_announcement_reads r
+                WHERE r.announcement_id = a.id) AS read_count
+       FROM admin_announcements a
+       ORDER BY a.created_at DESC
        LIMIT $1`,
       [HISTORY_LIMIT]
     );

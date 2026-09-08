@@ -3,6 +3,12 @@
 - **缺口来源**：[../../audit/admin-config-gap-2026-09-08.md](../../audit/admin-config-gap-2026-09-08.md)（功能 / 运维 / 代码 / 安全四维度）
 - **配套修复**：[admin-audit-fix-tickets.md](./admin-audit-fix-tickets.md)（先修坏的，再补缺的）
 - **状态标记**：⬜ 未开始 / 🔄 进行中 / ✅ 完成 / ⛔ 阻塞
+
+> **2026-09-08 执行回写**（lead 验收）：
+> - ✅ AN-01 套餐与价格管理页（/plans 渲染 3 档实测；PATCH 白名单核对补齐；mocks 契约同步）
+> - ✅ AN-09 配置键 consumer 登记（逐键 grep 查证后登记，ai_max_tokens/ai_default_provider 等如实标 null）+ settings「未接入」角标
+> - ✅ AN-20 E2E 冒烟放开（smoke 4 例 + settings 写操作闭环 3 例，真实后端 7/7 passed；playwright 指定本机 chromium-1234）
+> - 其余（AN-02~AN-08、AN-10~AN-15、AN-21~AN-22）⬜ 未开始，按文末批次表推进。
 - **范围说明**：本文件只收「**后台现在管不到 / 根本没有**」的新增能力；每条给出表结构、接口与 UI 草案，可直接指派
 
 ---

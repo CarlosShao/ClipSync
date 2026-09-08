@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { setupServer } from 'msw/node';
 import { handlers } from '@/mocks/handlers';
-import { mockAuditLogs, mockOrders, mockRoles } from '@/mocks/data';
+import { mockAuditLogs, mockOrders, mockPlans, mockRoles, mockSubscriptions } from '@/mocks/data';
 import type {
+  AdminPlan,
   Announcement,
   ApiErrorBody,
   ApiResp,
@@ -218,6 +219,21 @@ describe('功能开关与系统参数（设置页契约）', () => {
     );
     const smtpPass = data.find((c) => c.key === 'smtp_pass');
     expect(smtpPass?.value).toBe('未配置');
+
+    // AN-09：消费方登记随配置下发；无消费方的键 consumer 为 null（UI 打「未接入」角标）
+    const aiMaxTokens = data.find((c) => c.key === 'ai_max_tokens');
+    expect(aiMaxTokens?.consumer).toBeNull();
+    expect(aiMaxTokens?.consumer).not.toBe('');
+    const rateLimit = data.find((c) => c.key === 'rate_limit_api_per_min');
+    expect(rateLimit?.consumer).toContain('rateLimiter.js');
+    const smtpHost = data.find((c) => c.key === 'smtp_host');
+    expect(smtpHost?.consumer).toContain('email.js');
+    // 全量条目必须带 consumer 字段（null 或非空字符串，不接受 undefined/空串）
+    for (const item of data) {
+      expect(
+        item.consumer === null || (typeof item.consumer === 'string' && item.consumer !== ''),
+      ).toBe(true);
+    }
   });
 
   test('PATCH /configs/:key 逐项更新；maintenance_mode 缺原因返回 400；log_level 白名单校验', async () => {
@@ -572,5 +588,77 @@ describe('角色权限写路径（T-A6）', () => {
     expect(mockRoles.some((r) => r.roleKey === 'custom_ops')).toBe(true);
     expect(mockAuditLogs.length).toBe(auditBefore + 1);
     expect(mockAuditLogs[0]?.action).toBe('admin.roles.create');
+  });
+});
+
+describe('GET /api/admin/plans（套餐与价格页契约 AN-01）', () => {
+  test('返回 3 档套餐，042 方案 B 限额数值逐字段对齐（Free 20MB/200MB/3/3天 …）', async () => {
+    const resp = await get<{ list: AdminPlan[] }>('/api/admin/plans');
+    expect(resp.status).toBe(200);
+    const { data } = expectOk(resp);
+    expect(data.list).toHaveLength(3);
+
+    const free = data.list.find((p) => p.name === 'Free');
+    expect(free).toMatchObject({
+      id: 'plan_free_mock',
+      displayName: '免费版',
+      maxFileSizeMb: 20,
+      maxStorageMb: 200,
+      maxFilesPerClip: 3,
+      fileRetentionDays: 3,
+      isActive: true,
+    });
+
+    const pro = data.list.find((p) => p.name === 'Pro');
+    expect(pro).toMatchObject({
+      priceMonthly: 9.9,
+      priceYearly: 99,
+      maxFileSizeMb: 128,
+      maxStorageMb: 20480,
+      maxFilesPerClip: 10,
+      fileRetentionDays: 30,
+    });
+    expect(pro?.features).toEqual({ ai_classify: true });
+
+    const enterprise = data.list.find((p) => p.name === 'Enterprise');
+    expect(enterprise).toMatchObject({
+      maxFileSizeMb: 512,
+      maxStorageMb: 204800,
+      maxFilesPerClip: 50,
+      fileRetentionDays: 90,
+    });
+    expect(enterprise?.features).toEqual({ ai_classify: true, team_management: true });
+
+    // id 与 mockSubscriptions 的 planId 引用一致
+    const planIds = data.list.map((p) => p.id);
+    for (const planId of planIds) {
+      expect(mockSubscriptions.some((s) => s.planId === planId)).toBe(true);
+    }
+  });
+
+  test('PATCH /plans/:id 更新内存并写审计；features 非法 JSON 返回 400', async () => {
+    const auditBefore = mockAuditLogs.length;
+    const { data } = expectOk(
+      await patch<AdminPlan>('/api/admin/plans/plan_free_mock', {
+        max_file_size_mb: 25,
+        max_files_per_clip: 5,
+      }),
+    );
+    expect(data.maxFileSizeMb).toBe(25);
+    expect(data.maxFilesPerClip).toBe(5);
+    expect(mockPlans.find((p) => p.id === 'plan_free_mock')?.maxFileSizeMb).toBe(25);
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.plans.update');
+    expect(mockAuditLogs[0]?.resourceType).toBe('subscription_plan');
+
+    const badFeatures = await patch<AdminPlan>('/api/admin/plans/plan_free_mock', {
+      features: [1, 2],
+    });
+    expect(badFeatures.status).toBe(400);
+
+    const notFound = await patch<AdminPlan>('/api/admin/plans/plan_none_mock', {
+      max_file_size_mb: 1,
+    });
+    expect(notFound.status).toBe(404);
   });
 });

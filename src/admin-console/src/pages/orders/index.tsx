@@ -9,7 +9,8 @@ import { RefundModal } from '@/components/RefundModal';
 import { ReconciliationModal } from '@/components/ReconciliationModal';
 import { StatusTag } from '@/components/StatusTag';
 import { channelLabel, orderDisplayStatus } from '@/components/StatusTag/mappers';
-import { getOrders, refundOrder } from '@/api/orders';
+import { fetchAllOrders, getOrders, refundOrder } from '@/api/orders';
+import { buildOrdersCsv, buildOrdersCsvFilename, downloadTextFile } from './ordersCsv';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import { queryKeys } from '@/queryKeys';
 import { hasPerm } from '@/utils/permissions';
@@ -111,13 +112,27 @@ export default function OrdersPage() {
       refundOrder(payload.orderNo, payload.payload),
     onSuccess: (order) => {
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
-      void message.success(`退款已提交：${fmtMoney(order.refundAmount)}，1–3 个工作日到账`);
+      // AF-40：口径对齐——系统不做渠道退款，仅人工标记
+      void message.success(`已标记退款：${fmtMoney(order.refundAmount)}（线下退款完成后标记）`);
       setRefundTarget(null);
     },
   });
 
   // RB-07：退款为高危操作（admin.orders.refund superAdminOnly），按钮按权限裁剪
   const canRefund = hasPerm('admin.orders.refund');
+
+  // AF-14：导出当前筛选下的全部订单（pageSize=200 分页拉取，上限 1 万条）
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const orders = await fetchAllOrders(toOrderQuery({ ...filters, page: 1, pageSize: 1 }));
+      downloadTextFile(buildOrdersCsvFilename(), buildOrdersCsv(orders));
+      void message.success(`已导出 ${orders.length.toLocaleString('zh-CN')} 条订单`);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const applyQ = () => {
     setFilters({ q: draftQ.trim() || undefined });
@@ -128,7 +143,9 @@ export default function OrdersPage() {
       title: '订单号',
       dataIndex: 'orderNo',
       width: 175,
-      render: (value: string) => <span className={`${styles.monoCell} ${styles.strongCell}`}>{value}</span>,
+      render: (value: string) => (
+        <span className={`${styles.monoCell} ${styles.strongCell}`}>{value}</span>
+      ),
     },
     { title: '用户', dataIndex: 'userLabel', width: 130 },
     { title: '套餐', dataIndex: 'planLabel', width: 130 },
@@ -150,7 +167,9 @@ export default function OrdersPage() {
       dataIndex: 'refundAmount',
       width: 100,
       align: 'right',
-      render: (value: number | null) => <span className={styles.moneyPlain}>{fmtMoney(value)}</span>,
+      render: (value: number | null) => (
+        <span className={styles.moneyPlain}>{fmtMoney(value)}</span>
+      ),
     },
     {
       title: '支付时间',
@@ -194,7 +213,12 @@ export default function OrdersPage() {
             </Tooltip>
           ) : null}
           {record.status === 'pending' ? (
-            <Button size="small" disabled style={{ marginLeft: 6 }} title="自动关单将在后续版本提供">
+            <Button
+              size="small"
+              disabled
+              style={{ marginLeft: 6 }}
+              title="自动关单将在后续版本提供"
+            >
               关闭
             </Button>
           ) : null}
@@ -219,7 +243,8 @@ export default function OrdersPage() {
             key: tab.key,
             label: (
               <span>
-                {tab.label} <span className={styles.tabCount}>{countQueries[index]?.data?.total ?? 0}</span>
+                {tab.label}{' '}
+                <span className={styles.tabCount}>{countQueries[index]?.data?.total ?? 0}</span>
               </span>
             ),
           }))}
@@ -252,7 +277,10 @@ export default function OrdersPage() {
           <Button style={{ marginLeft: 'auto' }} onClick={() => setReconcileOpen(true)}>
             对账报告
           </Button>
-          <Button onClick={() => void message.info('导出功能将在后续版本提供')}>导出</Button>
+          {/* AF-14：导出已接线（此前为「后续版本提供」占位） */}
+          <Button loading={exporting} onClick={() => void handleExport()}>
+            导出
+          </Button>
         </div>
 
         <Table<Order>
@@ -271,7 +299,11 @@ export default function OrdersPage() {
         />
       </Card>
 
-      <OrderDetailModal open={Boolean(detailNo)} orderNo={detailNo} onClose={() => setDetailNo(null)} />
+      <OrderDetailModal
+        open={Boolean(detailNo)}
+        orderNo={detailNo}
+        onClose={() => setDetailNo(null)}
+      />
 
       <RefundModal
         open={Boolean(refundTarget)}

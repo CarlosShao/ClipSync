@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ssoExchange } from '@/api/auth';
 import { useAuthStore } from '@/stores/authStore';
 import type { LoginResp } from '@/api/types';
-import styles from '@/pages/login/login.module.css';
+import styles from '@/styles/login-brand.module.css';
 
 /**
  * SSO 凭据兑换页（RB-SSO）：桌面端超管点击「管理控制台」→ 后端签发一次性 code（60s）→
@@ -43,7 +43,7 @@ export default function SsoPage() {
         const session: LoginResp = await ssoExchange(code);
         setAuth(session);
         void message.success(`欢迎回来，${session.nickname}`);
-        navigate('/dashboard', { replace: true });
+        void navigate('/dashboard', { replace: true });
       } catch (err) {
         // 失败原因 client.ts 拦截器已 toast；此处落页面态给出出路
         setState('error');
@@ -91,7 +91,7 @@ export default function SsoPage() {
               title="单点登录未完成"
               subTitle={<span style={{ fontSize: 13 }}>{errorMsg}</span>}
               extra={
-                <Button type="primary" onClick={() => navigate('/login', { replace: true })}>
+                <Button type="primary" onClick={() => void navigate('/login', { replace: true })}>
                   返回登录页
                 </Button>
               }

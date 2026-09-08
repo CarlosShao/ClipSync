@@ -1,7 +1,8 @@
-import { App as AntdApp, Button, Card, DatePicker, Input, Select, Table } from 'antd';
+import { App as AntdApp, Button, Card, DatePicker, Input, Select, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { type Dayjs } from 'dayjs';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { PageHeader } from '@/components/PageHeader';
 import { StatusTag } from '@/components/StatusTag';
 import { operatorRoleLabel, operatorRoleTone } from '@/components/StatusTag/mappers';
@@ -11,12 +12,7 @@ import { queryKeys } from '@/queryKeys';
 import { buildAuditCsv, buildAuditCsvFilename, downloadTextFile } from './auditCsv';
 import { isSensitiveAction } from './sensitive';
 import { AuditDetailModal } from './AuditDetailModal';
-import type {
-  AuditActionFilter,
-  AuditLog,
-  AuditOperatorFilter,
-  AuditResult,
-} from '@/api/types';
+import type { AuditActionFilter, AuditLog, AuditOperatorFilter, AuditResult } from '@/api/types';
 import styles from './audit.module.css';
 
 /** CSS Modules + noUncheckedIndexedAccess：索引类名可能 undefined，兜底空串 */
@@ -27,6 +23,8 @@ interface AuditFilters {
   operator: AuditOperatorFilter;
   result: AuditResult | 'all';
   ip?: string;
+  /** AF-34：按用户过滤（用户抽屉「查看审计日志」跳转带入） */
+  userId?: string;
   dateFrom?: string;
   dateTo?: string;
 }
@@ -63,14 +61,23 @@ const RESULT_OPTIONS: { value: AuditResult | 'all'; label: string }[] = [
 /** 审计日志（对照草图 audit 区块）：筛选区 + 敏感行高亮表格 + CSV 导出 + 详情弹窗 */
 export default function AuditPage() {
   const { message } = AntdApp.useApp();
-  const [draft, setDraft] = useState<AuditFilters>(DEFAULT_FILTERS);
+  // AF-34：支持 /audit?userId=xxx（用户抽屉「查看审计日志」跳转）
+  const [searchParams] = useSearchParams();
+  const initialFilters = useMemo<AuditFilters>(
+    () => ({
+      ...DEFAULT_FILTERS,
+      userId: searchParams.get('userId')?.trim() || undefined,
+    }),
+    [searchParams]
+  );
+  const [draft, setDraft] = useState<AuditFilters>(initialFilters);
   const [detailLog, setDetailLog] = useState<AuditLog | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const { tableProps, filters, setFilters } = useTableQuery<AuditLog, AuditFilters>({
     buildKey: (params) => queryKeys.auditLogs(params),
     fetcher: (params) => getAuditLogs(params),
-    defaultFilters: DEFAULT_FILTERS,
+    defaultFilters: initialFilters,
     defaultPageSize: 10,
   });
 
@@ -89,7 +96,14 @@ export default function AuditPage() {
   };
 
   const resetFilters = () => {
-    const next: AuditFilters = { ...DEFAULT_FILTERS, ip: undefined };
+    const next: AuditFilters = { ...DEFAULT_FILTERS, ip: undefined, userId: undefined };
+    setDraft(next);
+    setFilters(next);
+  };
+
+  /** AF-34：清除用户过滤（tag ×） */
+  const clearUserFilter = () => {
+    const next: AuditFilters = { ...filters, userId: undefined };
     setDraft(next);
     setFilters(next);
   };
@@ -179,7 +193,11 @@ export default function AuditPage() {
       dataIndex: 'status',
       width: 78,
       render: (value: AuditResult) =>
-        value === 'success' ? <StatusTag tone="green">成功</StatusTag> : <StatusTag tone="red">失败</StatusTag>,
+        value === 'success' ? (
+          <StatusTag tone="green">成功</StatusTag>
+        ) : (
+          <StatusTag tone="red">失败</StatusTag>
+        ),
     },
     {
       title: '操作',
@@ -195,8 +213,7 @@ export default function AuditPage() {
     },
   ];
 
-  const auditTotal =
-    (tableProps.pagination as { total?: number } | undefined)?.total ?? 0;
+  const auditTotal = (tableProps.pagination as { total?: number } | undefined)?.total ?? 0;
 
   return (
     <>
@@ -256,7 +273,16 @@ export default function AuditPage() {
             查询
           </Button>
           <Button onClick={resetFilters}>重置</Button>
-          <Button style={{ marginLeft: 'auto' }} loading={exporting} onClick={() => void handleExport()}>
+          {filters.userId ? (
+            <Tag closable onClose={clearUserFilter} color="purple" style={{ marginInlineEnd: 0 }}>
+              仅看该用户相关日志
+            </Tag>
+          ) : null}
+          <Button
+            style={{ marginLeft: 'auto' }}
+            loading={exporting}
+            onClick={() => void handleExport()}
+          >
             导出 CSV
           </Button>
         </div>
@@ -278,7 +304,11 @@ export default function AuditPage() {
         />
       </Card>
 
-      <AuditDetailModal open={Boolean(detailLog)} log={detailLog} onClose={() => setDetailLog(null)} />
+      <AuditDetailModal
+        open={Boolean(detailLog)}
+        log={detailLog}
+        onClose={() => setDetailLog(null)}
+      />
     </>
   );
 }

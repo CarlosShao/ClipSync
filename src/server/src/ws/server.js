@@ -5,6 +5,7 @@ import config from '../config.js';
 import { logger } from '../utils/logger.js';
 import { getRedisClient, checkWsConnectionLimit, removeWsConnection } from '../middleware/rateLimiter.js';
 import { setWsConnections } from '../middleware/metrics.js';
+import { isMaintenanceOn } from '../middleware/maintenance.js';
 import { createNotification } from '../services/notificationService.js';
 import {
   initWsRedisPubSub,

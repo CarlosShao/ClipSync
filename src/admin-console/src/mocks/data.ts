@@ -1,5 +1,6 @@
 import type {
   AdminDevice,
+  AdminPlan,
   AdminSubscription,
   AdminUser,
   Announcement,
@@ -941,6 +942,8 @@ export const mockConfigs: SystemConfig[] = [
     name: '维护模式',
     value: 'off',
     description: '开启后客户端暂停同步并显示维护公告',
+    // AN-09：消费方登记与后端 CONFIG_CATALOG 逐键对齐（null = 未接入，UI 打角标）
+    consumer: 'src/server/src/middleware/maintenance.js（maintenanceGuard，index.js 挂载）+ ws/server.js',
     updatedAt: '2026-09-04 14:05',
   },
   // T-A4：系统参数卡固定四行（工单指定基线值）
@@ -949,6 +952,7 @@ export const mockConfigs: SystemConfig[] = [
     name: 'AI 单次最大 Token 数',
     value: '4096',
     description: 'AI 助手单次对话 / 补全的 token 上限',
+    consumer: null,
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -956,6 +960,7 @@ export const mockConfigs: SystemConfig[] = [
     name: 'AI 默认服务商',
     value: 'openrouter',
     description: 'AI 助手默认模型路由（openrouter / openai / anthropic / deepseek）',
+    consumer: null,
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -963,6 +968,7 @@ export const mockConfigs: SystemConfig[] = [
     name: '管理台会话超时（分钟）',
     value: '30',
     description: '管理员无操作自动登出时间',
+    consumer: 'src/admin-console/src/layouts/AdminLayout.tsx（空闲自动登出，前端消费）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -970,6 +976,7 @@ export const mockConfigs: SystemConfig[] = [
     name: '审计日志保留天数',
     value: '365',
     description: '审计日志的保留时长，超期归档后删除',
+    consumer: 'src/server/src/db/cleanup.js（审计归档任务 readAuditRetentionDays）',
     updatedAt: '2026-08-12 10:20',
   },
   // —— 限流配置（050，CO-11：默认值 = 原硬编码值）——
@@ -978,6 +985,7 @@ export const mockConfigs: SystemConfig[] = [
     name: '全局 API 限流（次/分钟）',
     value: '300',
     description: '滑动窗口限流阈值，按用户计数（匿名按 IP）',
+    consumer: 'src/server/src/middleware/rateLimiter.js（经 utils/runtimeLimits.js 读取）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -985,6 +993,7 @@ export const mockConfigs: SystemConfig[] = [
     name: '验证码发送限流（次/小时）',
     value: '5',
     description: '单手机号验证码发送上限，短信成本保护',
+    consumer: 'src/server/src/middleware/rateLimiter.js（经 utils/runtimeLimits.js 读取）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -992,6 +1001,7 @@ export const mockConfigs: SystemConfig[] = [
     name: '登录失败锁定（次/15分钟）',
     value: '5',
     description: '单手机号登录失败锁定阈值',
+    consumer: 'src/server/src/middleware/rateLimiter.js（经 utils/runtimeLimits.js 读取）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -999,6 +1009,7 @@ export const mockConfigs: SystemConfig[] = [
     name: '上传接口限流（次/分钟）',
     value: '20',
     description: '上传与大文件分片接口的独立限流',
+    consumer: 'src/server/src/middleware/rateLimiter.js（经 utils/runtimeLimits.js 读取）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -1006,6 +1017,7 @@ export const mockConfigs: SystemConfig[] = [
     name: '关闭限流（生产禁用）',
     value: 'false',
     description: '总开关：开启后全部限流失效；生产环境后端拒绝写入 true',
+    consumer: 'src/server/src/middleware/rateLimiter.js（经 utils/runtimeLimits.js 读取）',
     updatedAt: '2026-08-12 10:20',
   },
   // —— 运维（050，CO-41）——
@@ -1014,6 +1026,7 @@ export const mockConfigs: SystemConfig[] = [
     name: '运行时日志级别',
     value: 'info',
     description: 'debug / info / warn / error，保存后热生效（debug/info/warn/error）',
+    consumer: 'src/server/src/utils/logger.js（setLogLevel，configs PATCH 后热生效）',
     updatedAt: '2026-08-12 10:20',
   },
   // —— 邮件 SMTP（050，CO-30：smtp_pass 脱敏回显「已配置/未配置」）——
@@ -1022,6 +1035,7 @@ export const mockConfigs: SystemConfig[] = [
     name: 'SMTP 服务器地址',
     value: '',
     description: '为空时邮件走控制台兜底（不真实发送）',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -1029,6 +1043,7 @@ export const mockConfigs: SystemConfig[] = [
     name: 'SMTP 端口',
     value: '465',
     description: '465=SSL 直连 / 587=STARTTLS',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -1036,6 +1051,7 @@ export const mockConfigs: SystemConfig[] = [
     name: 'SMTP 用户名',
     value: '',
     description: '邮箱账号或 API 用户',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -1043,6 +1059,7 @@ export const mockConfigs: SystemConfig[] = [
     name: 'SMTP 密码/授权码',
     value: '未配置',
     description: '加密存储，保存后仅显示是否已配置',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -1050,6 +1067,7 @@ export const mockConfigs: SystemConfig[] = [
     name: '发件人地址',
     value: '',
     description: '如 no-reply@example.com',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -1057,14 +1075,16 @@ export const mockConfigs: SystemConfig[] = [
     name: 'SMTP SSL 直连',
     value: 'true',
     description: 'true=SSL(465) / false=STARTTLS(587)',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
     updatedAt: '2026-08-12 10:20',
   },
-  // —— 菜单覆盖（050，方案一 MA-07）——
+  // —— 菜单覆盖（050，方案一 MA-07；AF-42：客户端无读取通道，未接入）——
   {
     key: 'menu_overrides',
     name: '菜单可见性覆盖',
     value: '{}',
     description: 'JSON 对象：{"nav.ai":{"minPlan":"Pro"}} 深合并进菜单注册表',
+    consumer: null,
     updatedAt: '2026-08-12 10:20',
   },
 ];
@@ -1107,6 +1127,17 @@ export const mockDevices: AdminDevice[] = [
 ];
 
 /**
+ * AF-43：设备公钥脱敏摘要（GET /api/admin/devices/:id/keys 契约镜像，admin.keys.view）。
+ * 后端只回指纹（public_key SHA-256 前 16 位 hex），不回公钥原文/私钥；
+ * 此处仅登记有公钥的设备，未列出的设备一律按 { hasPublicKey: false, fingerprint: null } 返回。
+ */
+export const mockDeviceKeySummaries: Record<string, { hasPublicKey: boolean; fingerprint: string | null }> = {
+  dev_3a8f: { hasPublicKey: true, fingerprint: 'a3f1c9e27b84d506' },
+  dev_7c64: { hasPublicKey: true, fingerprint: '5d20bb8f14c97a03' },
+  dev_b201: { hasPublicKey: true, fingerprint: 'e94d6a1f0c2537b8' },
+};
+
+/**
  * 管理端订阅 13 条：active 5 / trialing 2 / past_due 1 / canceled 1 / expired 4；
  * 前 8 条与 mockUsers 的 subscription 摘要对齐，后 5 条为其他注册用户。
  * 「本月到期」以 2026-09 计：chen_ming(09-19) / yuki(09-09) / 周辰(09-06) / 韩雪(09-30)。
@@ -1125,4 +1156,63 @@ export const mockSubscriptions: AdminSubscription[] = [
   { id: 'sub_11', userId: 'usr_33cc3361-2e75-49ba-a1d5-92', userLabel: '周辰', planId: 'plan_pro_mock', planName: '专业版', planKey: 'Pro', billingCycle: 'monthly', status: 'active', currentPeriodStart: '2026-03-06', currentPeriodEnd: '2026-09-06', autoRenew: true, createdAt: '2026-03-06' },
   { id: 'sub_12', userId: 'usr_44dd6620-7c19-4f8e-9b02-33', userLabel: '韩雪', planId: 'plan_pro_mock', planName: '专业版', planKey: 'Pro', billingCycle: 'yearly', status: 'active', currentPeriodStart: '2025-09-30', currentPeriodEnd: '2026-09-30', autoRenew: false, createdAt: '2025-09-30' },
   { id: 'sub_13', userId: 'usr_55ee9017-4b62-41c7-a3f0-16', userLabel: '覃秋', planId: 'plan_free_mock', planName: '免费版', planKey: 'Free', billingCycle: null, status: 'trialing', currentPeriodStart: '2026-09-05', currentPeriodEnd: '2026-09-11', autoRenew: false, createdAt: '2026-09-05' },
+];
+
+/**
+ * 管理端套餐 3 档（AN-01，与 042 迁移方案 B 真实数值逐字段对齐）：
+ *   Free 20MB/200MB/3 个/3 天 · Pro 128MB/20GB/10 个/30 天 · Enterprise 512MB/200GB/50 个/90 天。
+ * id 与 mockSubscriptions 的 planId 引用保持一致；features 只含已挂墙键（ai_classify / team_management）。
+ */
+export const mockPlans: AdminPlan[] = [
+  {
+    id: 'plan_free_mock',
+    name: 'Free',
+    displayName: '免费版',
+    description: '个人基础版，满足日常剪贴板同步',
+    priceMonthly: 0,
+    priceYearly: 0,
+    maxDevices: 2,
+    maxClipboardItems: 50,
+    maxFileSizeMb: 20,
+    maxStorageMb: 200,
+    maxFilesPerClip: 3,
+    fileRetentionDays: 3,
+    features: {},
+    isActive: true,
+    createdAt: '2026-01-01',
+  },
+  {
+    id: 'plan_pro_mock',
+    name: 'Pro',
+    displayName: '专业版',
+    description: '进阶个人版，AI 智能分类与更大配额',
+    priceMonthly: 9.9,
+    priceYearly: 99,
+    maxDevices: 10,
+    maxClipboardItems: 5000,
+    maxFileSizeMb: 128,
+    maxStorageMb: 20480,
+    maxFilesPerClip: 10,
+    fileRetentionDays: 30,
+    features: { ai_classify: true },
+    isActive: true,
+    createdAt: '2026-01-01',
+  },
+  {
+    id: 'plan_enterprise_mock',
+    name: 'Enterprise',
+    displayName: '企业版',
+    description: '团队协作版，团队管理与大容量文件同步',
+    priceMonthly: 19.9,
+    priceYearly: 199,
+    maxDevices: 50,
+    maxClipboardItems: 100000,
+    maxFileSizeMb: 512,
+    maxStorageMb: 204800,
+    maxFilesPerClip: 50,
+    fileRetentionDays: 90,
+    features: { ai_classify: true, team_management: true },
+    isActive: true,
+    createdAt: '2026-01-01',
+  },
 ];

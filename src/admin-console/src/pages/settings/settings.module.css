@@ -5,6 +5,13 @@
   max-width: 960px;
 }
 
+/* 系统参数卡容器：Form 作为 .stack 的直接子项，需自持同样的纵向间距 */
+.paramForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .cardSub {
   font-size: 11px;
   color: var(--text-3);

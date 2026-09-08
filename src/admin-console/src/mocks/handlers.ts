@@ -2,6 +2,7 @@ import { HttpResponse, delay, http } from 'msw';
 import dayjs from 'dayjs';
 import type {
   AdminDevice,
+  AdminPlan,
   AdminSubscription,
   Announcement,
   ApiResp,
@@ -25,10 +26,12 @@ import {
   mockAnnouncements,
   mockAuditLogs,
   mockConfigs,
+  mockDeviceKeySummaries,
   mockDevices,
   mockFlags,
   mockOrders,
   mockPermissions,
+  mockPlans,
   mockRoles,
   mockSubscriptions,
   mockUserDevices,
@@ -814,6 +817,22 @@ const devicesHandlers = [
     );
     return ok(device, '设备已远程下线');
   }),
+
+  // AF-43：设备公钥脱敏摘要（admin.keys.view）——只回指纹，不回公钥原文/私钥
+  http.get('/api/admin/devices/:id/keys', async ({ params }) => {
+    await delay(150);
+    const id = params['id'] as string;
+    const device = mockDevices.find((d) => d.id === id);
+    if (!device) return fail(404, 40404, '设备不存在');
+    const summary = mockDeviceKeySummaries[id] ?? { hasPublicKey: false, fingerprint: null };
+    pushAudit(
+      'admin.device.keys_view',
+      'device',
+      device.id,
+      `device="${device.name}", hasPublicKey=${summary.hasPublicKey}`,
+    );
+    return ok({ deviceId: device.id, hasPublicKey: summary.hasPublicKey, fingerprint: summary.fingerprint });
+  }),
 ];
 
 // ─────────────── T-A6 追加：订阅管理 ───────────────
@@ -904,6 +923,62 @@ const subscriptionsHandlers = [
   }),
 ];
 
+// ─────────────── AN-01 追加：套餐与价格管理 ───────────────
+
+const plansHandlers = [
+  // 套餐全量列表（含停用；数量有限不分页）——响应壳 { list: Plan[] } 与后端 plans.js GET 一致
+  http.get('/api/admin/plans', async () => {
+    await delay(150);
+    return ok({ list: mockPlans });
+  }),
+
+  // 编辑套餐：白名单字段部分更新（snake_case）；features 须为 JSON 对象；空更新 400；写审计（敏感）
+  http.patch('/api/admin/plans/:id', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const plan = mockPlans.find((p) => p.id === id);
+    if (!plan) return fail(404, 40404, '套餐不存在');
+    const body = (await request.json()) as Record<string, unknown>;
+    if (body.max_file_size_mb !== undefined) {
+      const num = Number(body.max_file_size_mb);
+      if (!Number.isInteger(num) || num < 0) {
+        return fail(400, 4000, 'max_file_size_mb 必须为非负整数');
+      }
+    }
+    if (body.features !== undefined) {
+      const features = typeof body.features === 'string'
+        ? (() => { try { return JSON.parse(body.features) as Record<string, unknown>; } catch { return body.features; } })()
+        : body.features;
+      if (features === null || typeof features !== 'object' || Array.isArray(features)) {
+        return fail(400, 4000, 'features 必须是合法的 JSON 对象');
+      }
+      plan.features = features as AdminPlan['features'];
+    }
+    if (body.display_name !== undefined) {
+      const displayName = body.display_name;
+      if (typeof displayName !== 'string' || !displayName.trim()) {
+        return fail(400, 4000, 'display_name 必须为非空字符串');
+      }
+      plan.displayName = displayName.trim();
+    }
+    if (body.price_monthly !== undefined) {
+      plan.priceMonthly = body.price_monthly === null ? null : Number(body.price_monthly);
+    }
+    if (body.price_yearly !== undefined) {
+      plan.priceYearly = body.price_yearly === null ? null : Number(body.price_yearly);
+    }
+    if (body.max_devices !== undefined) plan.maxDevices = Number(body.max_devices);
+    if (body.max_clipboard_items !== undefined) plan.maxClipboardItems = Number(body.max_clipboard_items);
+    if (body.max_file_size_mb !== undefined) plan.maxFileSizeMb = Number(body.max_file_size_mb);
+    if (body.max_storage_mb !== undefined) plan.maxStorageMb = Number(body.max_storage_mb);
+    if (body.max_files_per_clip !== undefined) plan.maxFilesPerClip = Number(body.max_files_per_clip);
+    if (body.file_retention_days !== undefined) plan.fileRetentionDays = Number(body.file_retention_days);
+    if (body.is_active !== undefined) plan.isActive = Boolean(body.is_active);
+    pushAudit('admin.plans.update', 'subscription_plan', plan.id, `plan="${plan.name}"`);
+    return ok(plan, '套餐已更新并写入审计');
+  }),
+];
+
 export const handlers = [
   ...authHandlers,
   ...overviewHandlers,
@@ -915,4 +990,5 @@ export const handlers = [
   ...opsHandlers,
   ...devicesHandlers,
   ...subscriptionsHandlers,
+  ...plansHandlers,
 ];

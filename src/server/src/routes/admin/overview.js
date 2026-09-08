@@ -69,6 +69,14 @@ function formatStatsAt() {
   );
 }
 
+/** AF-20：timestamptz → 'YYYY-MM-DD HH:mm'（待办 occurredAt 展示口径，UTC 与 statsAt 一致） */
+function formatMinute(value) {
+  if (!value) return '';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().replace('T', ' ').slice(0, 16);
+}
+
 /**
  * GET /api/admin/overview
  * 看板聚合：KPI + 近 14 天订单（含退款叠加）+ 套餐分布 + 渠道占比 + 待处理事项。
@@ -180,6 +188,68 @@ router.get('/', async (req, res) => {
     const channelTotal = channelRows.reduce((sum, r) => sum + Number(r.cnt), 0);
     const channelMap = new Map(channelRows.map((r) => [r.channel, Number(r.cnt)]));
 
+    // ── 9. 待处理事项（AF-20）：待审核用户 + 退款处理中订单 + 超 24h 待支付订单 ──
+    const pendingItems = [];
+
+    // 9.1 待审核用户（signup_waitlist 开关期间注册）
+    const { rows: waitlistRows } = await pool.query(`
+      SELECT id, COALESCE(NULLIF(nickname, ''), phone) AS label, created_at
+      FROM users
+      WHERE registration_status = 'pending'
+      ORDER BY created_at DESC
+      LIMIT 5`);
+    for (const row of waitlistRows) {
+      pendingItems.push({
+        id: `approval-${row.id}`,
+        title: '用户等待审核',
+        type: 'approval',
+        target: row.label,
+        occurredAt: formatMinute(row.created_at),
+        actionLabel: '去审核',
+        actionTo: '/users?status=waitlist',
+      });
+    }
+
+    // 9.2 退款处理中：已发起退款但金额未落（与前端 orderDisplayStatus 口径一致）
+    const { rows: refundingRows } = await pool.query(`
+      SELECT order_no, amount::float8 AS amount, updated_at
+      FROM payment_orders
+      WHERE status = 'refunded'
+        AND metadata->>'refund_amount' IS NULL
+      ORDER BY updated_at DESC
+      LIMIT 5`);
+    for (const row of refundingRows) {
+      pendingItems.push({
+        id: `refund-${row.order_no}`,
+        title: '退款处理中',
+        type: 'payment',
+        target: `${row.order_no} · ¥${Number(row.amount).toFixed(2)}`,
+        occurredAt: formatMinute(row.updated_at),
+        actionLabel: '查看订单',
+        actionTo: '/orders?status=refunding',
+      });
+    }
+
+    // 9.3 待支付订单超 24 小时（占压订单，需人工确认是否关闭）
+    const { rows: stalePendingRows } = await pool.query(`
+      SELECT order_no, amount::float8 AS amount, created_at
+      FROM payment_orders
+      WHERE status = 'pending'
+        AND created_at < NOW() - INTERVAL '24 hours'
+      ORDER BY created_at DESC
+      LIMIT 5`);
+    for (const row of stalePendingRows) {
+      pendingItems.push({
+        id: `stale-${row.order_no}`,
+        title: '待支付订单超 24 小时',
+        type: 'payment',
+        target: `${row.order_no} · ¥${Number(row.amount).toFixed(2)}`,
+        occurredAt: formatMinute(row.created_at),
+        actionLabel: '查看订单',
+        actionTo: '/orders?status=pending',
+      });
+    }
+
     const data = {
       statsAt: formatStatsAt(),
       kpis: {
@@ -212,8 +282,8 @@ router.get('/', async (req, res) => {
         label,
         percent: channelTotal > 0 ? Math.round(((channelMap.get(channel) || 0) / channelTotal) * 100) : 0,
       })),
-      // 待处理事项（退款审核 / 试用到期 / 对账差异 / 异常登录）依赖后续工单的对账与风控数据，先返回空数组
-      pendingItems: [],
+      // AF-20：真实待办聚合（待审核用户 / 退款处理中 / 超 24h 待支付），无待办为空数组
+      pendingItems,
     };
 
     return res.json({ code: 0, data });

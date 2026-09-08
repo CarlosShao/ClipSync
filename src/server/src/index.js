@@ -11,7 +11,7 @@ import { getRedisClient } from './middleware/rateLimiter.js';
 import config from './config.js';
 import { setupWebSocket, gracefulShutdown as gracefulShutdownWs } from './ws/server.js';
 import { authenticateToken } from './middleware/auth.js';
-import { requireRole } from './middleware/adminAuth.js';
+import { requireRole, getRegisteredPermKeys } from './middleware/adminAuth.js';
 import superAdminAudit from './middleware/superAdminAudit.js';
 import { apiLimiter, uploadLimiter } from './middleware/rateLimiter.js';
 import { maintenanceGuard } from './middleware/maintenance.js';
@@ -35,6 +35,7 @@ import authRefreshRoutes from './routes/auth-refresh.js';
 import { startCleanupScheduler } from './db/cleanup.js';
 import { startVersionCleanupScheduler } from './utils/versionManager.js';
 import { startFileRetentionCleanup } from './services/fileRetentionCleanup.js';
+import { startDeviceOnlineSweep, stopDeviceOnlineSweep } from './services/deviceOnlineSweep.js';
 import pool from './db/pool.js';
 import migrate from './db/migrate.js';
 import { csrfProtection, handleGetCsrfToken } from './middleware/csrf.js';
@@ -63,6 +64,7 @@ import aiSettingsRoutes from './routes/aiSettings.js';
 import { enableQueryMonitoring } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
 import adminRoutes from './routes/admin/index.js';
+import { PERM_CATALOG } from './routes/admin/roles.js';
 
 const app = express();
 const server = createServer(app);
@@ -551,6 +553,24 @@ if (!isClusteredPrimary) {
       process.exit(1);
     }
 
+    // ============================================
+    // AF-53 权限键启动自检（不阻断启动）：
+    // 路由模块均为顶层 import（requirePerm 工厂调用即登记），到此登记已完成。
+    // 对比 PERM_CATALOG 与实际登记的键，找出「目录有键、代码无承载端点」的死键。
+    // ============================================
+    const registeredKeys = getRegisteredPermKeys();
+    const orphanPermKeys = PERM_CATALOG.filter((p) => !registeredKeys.has(p.permKey));
+    if (orphanPermKeys.length > 0) {
+      for (const perm of orphanPermKeys) {
+        logger.warn('[perm-audit] 权限键无承载端点', { key: perm.permKey });
+      }
+      logger.warn('[perm-audit] 权限键自检完成', {
+        total: PERM_CATALOG.length,
+        registered: registeredKeys.size,
+        orphan: orphanPermKeys.map((p) => p.permKey),
+      });
+    }
+
     if (process.env.NODE_ENV !== 'test') {
       wss = setupWebSocket(server);
 
@@ -584,6 +604,10 @@ if (!isClusteredPrimary) {
     // （DB 行 + 磁盘文件），顺带清扫分片/上传临时目录的 24h 遗留物
     startFileRetentionCleanup();
 
+    // 设备离线扫描（AF-50）：WS 非优雅退出（重启/崩溃）时 close 处理器不执行，
+    // is_online 残留 true；每 60s 将心跳超过 device_offline_timeout_minutes 的设备置离线
+    startDeviceOnlineSweep();
+
     // 启用查询性能监控（非生产环境或明确启用时）
     if (config.nodeEnv !== 'production' || process.env.ENABLE_QUERY_MONITORING === 'true') {
       enableQueryMonitoring();
@@ -610,6 +634,9 @@ async function gracefulShutdown(signal) {
   server.close(() => {
     logger.info('HTTP server closed (no longer accepting connections)');
   });
+
+  // 1.5 停止后台定时任务（设备离线扫描，AF-50），避免 shutdown 期间 timer 挂住进程
+  stopDeviceOnlineSweep();
 
   // 2. 通知所有 WebSocket 客户端准备重连
   try {

@@ -27,6 +27,13 @@ async function enableMocking(): Promise<void> {
   if (!import.meta.env.DEV || import.meta.env.VITE_ENABLE_MSW === 'false') return;
   const { worker } = await import('@/mocks/browser');
   await worker.start({ onUnhandledRequest: 'bypass' });
+  // AF-54：MSW 模式可见化——防止假数据被误当真实后端
+  const tag = document.createElement('div');
+  tag.textContent = 'MOCK 数据 · 未连接真实后端';
+  tag.style.cssText =
+    'position:fixed;left:8px;bottom:8px;z-index:9999;background:#e11d48;color:#fff;' +
+    'padding:2px 8px;border-radius:4px;font-size:12px;pointer-events:none;';
+  document.body.appendChild(tag);
 }
 
 void enableMocking()
@@ -44,6 +51,6 @@ void enableMocking()
             <App />
           </ConfigProvider>
         </QueryClientProvider>
-      </StrictMode>,
+      </StrictMode>
     );
   });

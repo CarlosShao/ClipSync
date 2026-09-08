@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App as AntdApp, Button, Card, Input, Select, Table } from 'antd';
+import { App as AntdApp, Button, Card, Descriptions, Empty, Input, Modal, Select, Spin, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
-import { deviceKeys, getDevices, getDeviceStats, offlineDevice } from '@/api/devices';
+import { deviceKeys, getDeviceKeys, getDevices, getDeviceStats, offlineDevice } from '@/api/devices';
 import type { AdminDevice, DeviceKind, DevicePlatform } from '@/api/types';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { PageHeader } from '@/components/PageHeader';
@@ -30,6 +30,7 @@ export default function DevicesPage() {
   const { message } = AntdApp.useApp();
   const queryClient = useQueryClient();
   const [offlineTarget, setOfflineTarget] = useState<AdminDevice | null>(null);
+  const [keysTarget, setKeysTarget] = useState<AdminDevice | null>(null);
   const [draft, setDraft] = useState<DeviceFilters>(DEFAULT_FILTERS);
 
   const { tableProps, setFilters } = useTableQuery<AdminDevice, DeviceFilters>({
@@ -41,6 +42,13 @@ export default function DevicesPage() {
 
   const statsQuery = useQuery({ queryKey: deviceKeys.stats(), queryFn: getDeviceStats });
   const stats = statsQuery.data;
+
+  // AF-43：密钥摘要（打开弹窗时才请求，admin.keys.view）
+  const keysQuery = useQuery({
+    queryKey: ['devices', 'keys', keysTarget?.id],
+    queryFn: () => getDeviceKeys(keysTarget!.id),
+    enabled: Boolean(keysTarget),
+  });
 
   const offlineMutation = useMutation({
     mutationFn: (payload: { id: string; reason: string }) => offlineDevice(payload.id, { reason: payload.reason }),
@@ -66,6 +74,7 @@ export default function DevicesPage() {
   };
 
   const canOffline = hasPerm('admin.devices.manage');
+  const canViewKeys = hasPerm('admin.keys.view');
 
   const columns: ColumnsType<AdminDevice> = [
     {
@@ -139,15 +148,27 @@ export default function DevicesPage() {
     {
       title: '操作',
       dataIndex: 'id',
-      width: 104,
-      render: (_: string, record) =>
-        record.status === 'online' && canOffline ? (
-          <Button size="small" danger onClick={() => setOfflineTarget(record)}>
-            远程下线
-          </Button>
-        ) : (
-          <span className={styles.mutedCell}>—</span>
-        ),
+      width: 168,
+      render: (_: string, record) => {
+        const showOffline = record.status === 'online' && canOffline;
+        if (!canViewKeys && !showOffline) {
+          return <span className={styles.mutedCell}>—</span>;
+        }
+        return (
+          <div style={{ display: 'flex', gap: 8 }}>
+            {canViewKeys && (
+              <Button size="small" onClick={() => setKeysTarget(record)}>
+                密钥
+              </Button>
+            )}
+            {showOffline && (
+              <Button size="small" danger onClick={() => setOfflineTarget(record)}>
+                远程下线
+              </Button>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -225,6 +246,36 @@ export default function DevicesPage() {
         <Table<AdminDevice> size="middle" columns={columns} {...tableProps} />
       </Card>
 
+      <Modal
+        open={Boolean(keysTarget)}
+        title={keysTarget ? `密钥摘要 · ${keysTarget.name}` : '密钥摘要'}
+        footer={null}
+        onCancel={() => setKeysTarget(null)}
+        destroyOnClose
+      >
+        {keysQuery.isPending ? (
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <Spin />
+          </div>
+        ) : keysQuery.isError ? (
+          <Empty description="密钥摘要加载失败，请重试" />
+        ) : keysQuery.data && !keysQuery.data.hasPublicKey ? (
+          <Empty description="该设备尚未上传公钥" />
+        ) : keysQuery.data ? (
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label="设备 ID">
+              <code>{keysQuery.data.deviceId}</code>
+            </Descriptions.Item>
+            <Descriptions.Item label="公钥指纹">
+              <code style={{ fontSize: 15 }}>{keysQuery.data.fingerprint}</code>
+            </Descriptions.Item>
+          </Descriptions>
+        ) : null}
+        <p style={{ marginTop: 12, marginBottom: 0, color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>
+          指纹为设备公钥 SHA-256 的前 16 位十六进制字符，仅用于核对设备身份；出于安全考虑，此处不提供公钥原文与任何私钥。
+        </p>
+      </Modal>
+
       <ConfirmReasonModal
         open={Boolean(offlineTarget)}
         title="远程下线设备"
@@ -233,7 +284,8 @@ export default function DevicesPage() {
             <>
               即将下线设备 <b>{offlineTarget.name}</b>（{offlineTarget.os} · 应用{' '}
               {offlineTarget.appVersion}，属主 {offlineTarget.ownerNickname}）。
-              下线后该设备立即退出登录，剪贴板同步中断。
+              {/* AF-41：如实描述——当前为标记离线，客户端下次心跳时退出登录，非实时断开 */}
+              该设备将被标记为离线并拒绝后续同步，客户端在下次心跳时退出登录（非实时断开）。
             </>
           ) : null
         }

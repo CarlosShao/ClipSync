@@ -66,7 +66,7 @@ async function refreshAccessToken(): Promise<string | null> {
     const resp = await axios.post<ApiResp<LoginResp>>(
       `${API_BASE}/auth/refresh`,
       { refreshToken },
-      { headers: { 'X-CSRF-Token': 'placeholder' } },
+      { headers: { 'X-CSRF-Token': 'placeholder' } }
     );
     const body = resp.data;
     if (body.code !== 0) return null;
@@ -130,10 +130,13 @@ client.interceptors.response.use(
     }
 
     notifyError(
-      errBody?.message ?? errBody?.error ?? HTTP_STATUS_MESSAGES[status ?? 0] ?? `请求失败（${status ?? '网络异常'}）`,
+      errBody?.message ??
+        errBody?.error ??
+        HTTP_STATUS_MESSAGES[status ?? 0] ??
+        `请求失败（${status ?? '网络异常'}）`
     );
     return Promise.reject(error);
-  },
+  }
 );
 
 // ── 薄封装：响应已被拦截器展开为 data，这里只做类型还原 ──
@@ -142,10 +145,26 @@ export async function apiGet<T>(url: string, config?: AxiosRequestConfig): Promi
   return (await client.get(url, config)) as T;
 }
 
-export async function apiPost<T>(url: string, body?: unknown, config?: AxiosRequestConfig): Promise<T> {
+export async function apiPost<T>(
+  url: string,
+  body?: unknown,
+  config?: AxiosRequestConfig
+): Promise<T> {
   return (await client.post(url, body, config)) as T;
 }
 
-export async function apiPatch<T>(url: string, body?: unknown, config?: AxiosRequestConfig): Promise<T> {
+export async function apiPatch<T>(
+  url: string,
+  body?: unknown,
+  config?: AxiosRequestConfig
+): Promise<T> {
   return (await client.patch(url, body, config)) as T;
+}
+
+export async function apiDelete<T>(
+  url: string,
+  body?: unknown,
+  config?: AxiosRequestConfig
+): Promise<T> {
+  return (await client.delete(url, { data: body, ...config })) as T;
 }

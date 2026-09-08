@@ -154,6 +154,13 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     const userResult = await pool.query('SELECT * FROM users WHERE phone = $1', [cleanPhone]);
 
     if (userResult.rows.length === 0) {
+      // AF-04：注册总开关关闭时拒绝新建账号（enable_signup=false，登录不受影响）
+      if (!(await isFlagEnabled('enable_signup'))) {
+        return res.status(403).json({
+          error: '注册已由管理员关闭，如有疑问请联系客服',
+          flagDisabled: 'enable_signup',
+        });
+      }
       // signup_waitlist 开关开启期间：新注册进入待审核，不发会话与令牌
       const waitlistMode = await isFlagEnabled('signup_waitlist', false);
       const userId = uuidv4();
@@ -245,6 +252,13 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
     const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
 
     if (userResult.rows.length === 0) {
+      // AF-04：注册总开关关闭时拒绝新建账号（enable_signup=false，登录不受影响）
+      if (!(await isFlagEnabled('enable_signup'))) {
+        return res.status(403).json({
+          error: '注册已由管理员关闭，如有疑问请联系客服',
+          flagDisabled: 'enable_signup',
+        });
+      }
       // signup_waitlist 开关开启期间：新注册进入待审核，不发会话与令牌
       const waitlistMode = await isFlagEnabled('signup_waitlist', false);
       const userId = uuidv4();

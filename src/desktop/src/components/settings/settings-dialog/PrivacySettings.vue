@@ -73,8 +73,8 @@ function handleSetPin() {
     return
   }
   pinSetting.value = true
-  setTimeout(() => {
-    privacy.setPin(pinNew.value)
+  setTimeout(async () => {
+    await privacy.setPin(pinNew.value)
     pinSetting.value = false
     resetPinForm()
     showPinSetup.value = false

@@ -12,6 +12,7 @@
 // 可编辑字段（PATCH body，snake_case 与工单一致）：
 //   display_name / description / price_monthly / price_yearly /
 //   max_devices / max_clipboard_items / max_file_size_mb / max_storage_mb /
+//   max_files_per_clip / file_retention_days（042 文件同步限额列）/
 //   features(JSONB，非法 JSON 400) / is_active
 // 其余字段（name/created_at 等）不可改；空更新 400。
 //
@@ -42,6 +43,8 @@ function mapPlanRow(row) {
     maxClipboardItems: row.max_clipboard_items,
     maxFileSizeMb: row.max_file_size_mb,
     maxStorageMb: row.max_storage_mb,
+    maxFilesPerClip: row.max_files_per_clip,
+    fileRetentionDays: row.file_retention_days,
     features: row.features ?? {},
     isActive: Boolean(row.is_active),
     createdAt: row.created_at,
@@ -118,6 +121,8 @@ const FIELD_VALIDATORS = {
   max_clipboard_items: validateNonNegativeInt,
   max_file_size_mb: validateNonNegativeInt,
   max_storage_mb: validateNonNegativeInt,
+  max_files_per_clip: validateNonNegativeInt,
+  file_retention_days: validateNonNegativeInt,
   is_active: validateBoolean,
   features: validateFeatures,
 };
@@ -129,7 +134,7 @@ const FIELD_VALIDATORS = {
  * 套餐全量列表（含 is_active=false 的停用套餐，管理页需要完整视图）。
  * 返回 { code: 0, data: { list: Plan[] } }（套餐数量有限，不做分页）。
  */
-router.get('/', async (req, res) => {
+router.get('/', requirePerm('admin.plans.view'), async (req, res) => {
   try {
     const { rows } = await pool.query(
       'SELECT * FROM subscription_plans ORDER BY price_monthly ASC NULLS LAST, created_at ASC'

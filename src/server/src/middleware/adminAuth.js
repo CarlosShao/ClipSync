@@ -26,6 +26,16 @@ const PERM_CACHE_TTL_MS = 60 * 1000;
 // key: `${userId}:${permKey}` -> { granted: boolean, expiresAt: number }
 const permCache = new Map();
 
+// AF-53 权限键启动自检：requirePerm() 工厂创建中间件时登记 permKey，
+// 启动阶段（index.js）用 getRegisteredPermKeys() 与 PERM_CATALOG 比对，
+// 找出「目录有键、代码无承载端点」的死键（如 AF-43 前的 admin.keys.view）。
+const registeredPermKeys = new Set();
+
+/** 全部已被 requirePerm() 登记的权限键集合（只读视图，启动自检用） */
+export function getRegisteredPermKeys() {
+  return registeredPermKeys;
+}
+
 /** 清空权限缓存（角色/权限分配变更后可调用；测试隔离用） */
 export function clearPermCache() {
   permCache.clear();
@@ -81,6 +91,8 @@ const PERM_CHECK_BY_ROLE_SQL = `
  * @param {string} permKey 权限点，如 'admin.users.manage'
  */
 export function requirePerm(permKey) {
+  // AF-53：工厂调用即登记（路由模块顶层调用，import 完成即登记完毕）
+  registeredPermKeys.add(permKey);
   return async function requirePermMiddleware(req, res, next) {
     const userId = req.user?.userId ?? req.userId;
     const roleId = req.user?.roleId;

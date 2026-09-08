@@ -154,7 +154,7 @@ async function handleUnlock() {
 
   if (props.currentLevel === 'pin') {
     // PIN 保护：本地验证 PIN，不走服务端
-    const ok = privacy.verifyPin(unlockPassword.value)
+    const ok = await privacy.verifyPin(unlockPassword.value)
     isUnlocking.value = false
     if (ok) {
       privacy.startPeek(props.itemId)

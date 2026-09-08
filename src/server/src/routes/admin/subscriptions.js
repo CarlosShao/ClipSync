@@ -91,7 +91,7 @@ function parsePaging(query) {
  * GET /api/admin/subscriptions?page=&pageSize=&q=
  * 全量订阅分页列表；q 模糊匹配昵称/手机号（用户摘要）。
  */
-router.get('/', async (req, res) => {
+router.get('/', requirePerm('admin.subscriptions.view'), async (req, res) => {
   try {
     const { page, pageSize, offset } = parsePaging(req.query);
 
@@ -129,7 +129,7 @@ router.get('/', async (req, res) => {
  * expiringThisMonth = current_period_end 落在当前自然月内（含 trialing/past_due）。
  * 必须声明在 /:id/grant 之前无关（方法不同），但保持路径字面量优先。
  */
-router.get('/stats', async (req, res) => {
+router.get('/stats', requirePerm('admin.subscriptions.view'), async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT

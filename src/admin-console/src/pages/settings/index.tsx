@@ -64,12 +64,14 @@ const MAINTENANCE_HINT =
  */
 const FLAG_META: Record<string, { scope: string; priority: string }> = {
   enable_subscription: {
-    scope: '全部非管理员用户的配额与套餐权益：关闭期间一律按 Free 配额校验；已有订单与订阅记录不受影响，重新开启即恢复',
+    scope:
+      '全部非管理员用户的配额与套餐权益：关闭期间一律按 Free 配额校验；已有订单与订阅记录不受影响，重新开启即恢复',
     priority: '服务端 ≤5s 强制生效（重启不丢失）；客户端在下次请求时被按 Free 校验',
   },
   enable_ai_agent: {
     scope: '全部 AI 能力接口：AI 对话、长程记忆、AI 设置、供应商代理；关闭后服务端直接拒绝（403）',
-    priority: '服务端 ≤5s 强制生效；适配后的客户端经 WS 推送即时灰显 AI 入口，未适配客户端在下次请求时收到禁用提示',
+    priority:
+      '服务端 ≤5s 强制生效；适配后的客户端经 WS 推送即时灰显 AI 入口，未适配客户端在下次请求时收到禁用提示',
   },
   enable_public_sharing: {
     scope: '仅限制新建：关闭后无法创建共享链接与上传分享文件；已创建的链接保持可访问（不做吊销）',
@@ -80,11 +82,13 @@ const FLAG_META: Record<string, { scope: string; priority: string }> = {
     priority: '服务端 ≤5s 强制生效，客户端绑定入口在下次调用时收到禁用提示',
   },
   signup_waitlist: {
-    scope: '仅影响新注册：开启后新用户进入待审核（登录被拦截），审批入口在「用户管理」页；存量用户不受影响',
+    scope:
+      '仅影响新注册：开启后新用户进入待审核（登录被拦截），审批入口在「用户管理」页；存量用户不受影响',
     priority: '服务端实时强制；审批通过后用户立即可登录',
   },
   enable_signup: {
-    scope: '注册接口总开关：关闭后新用户注册直接 403（登录不受影响），两端注册入口同步隐藏；与注册审核正交（关闭 > 审核 > 开放）',
+    scope:
+      '注册接口总开关：关闭后新用户注册直接 403（登录不受影响），两端注册入口同步隐藏；与注册审核正交（关闭 > 审核 > 开放）',
     priority: '服务端 ≤5s 强制生效；客户端经 WS 推送 / 拉取即时感知',
   },
 };
@@ -127,7 +131,9 @@ function configRules(key: string) {
             JSON.parse(value);
             return Promise.resolve();
           } catch {
-            return Promise.reject(new Error('须为合法 JSON（如 {} 或 {"nav.ai":{"minPlan":"Pro"}}）'));
+            return Promise.reject(
+              new Error('须为合法 JSON（如 {} 或 {"nav.ai":{"minPlan":"Pro"}}）')
+            );
           }
         },
       },
@@ -179,12 +185,13 @@ export default function SettingsPage() {
 
   // 功能开关：乐观更新 + 失败回滚
   const flagMutation = useMutation({
-    mutationFn: (payload: { key: string; enabled: boolean }) => patchFlag(payload.key, payload.enabled),
+    mutationFn: (payload: { key: string; enabled: boolean }) =>
+      patchFlag(payload.key, payload.enabled),
     onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.flags() });
       const previous = queryClient.getQueryData<FeatureFlag[]>(queryKeys.flags());
       queryClient.setQueryData<FeatureFlag[]>(queryKeys.flags(), (old) =>
-        old?.map((f) => (f.key === payload.key ? { ...f, enabled: payload.enabled } : f)),
+        old?.map((f) => (f.key === payload.key ? { ...f, enabled: payload.enabled } : f))
       );
       return { previous };
     },
@@ -241,7 +248,7 @@ export default function SettingsPage() {
   const maintenanceOn = maintenanceConfig?.value === 'on';
   const editableConfigs = (configs ?? []).filter((c) => c.key !== 'maintenance_mode');
   const rateLimitConfigs = RATE_LIMIT_KEYS.map((key) =>
-    editableConfigs.find((c) => c.key === key),
+    editableConfigs.find((c) => c.key === key)
   ).filter((c): c is SystemConfig => Boolean(c));
   const systemConfigs = editableConfigs.filter((c) => !isRateLimitKey(c.key));
 
@@ -249,9 +256,12 @@ export default function SettingsPage() {
   const PARAM_GROUPS: { title: string; keys: string[] }[] = [
     { title: 'AI 能力', keys: ['ai_max_tokens', 'ai_default_provider'] },
     { title: '安全与会话', keys: ['session_timeout_minutes', 'audit_log_retention_days'] },
-    { title: '邮件（SMTP）', keys: ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_secure'] },
+    {
+      title: '邮件（SMTP）',
+      keys: ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_secure'],
+    },
     { title: '日志', keys: ['log_level'] },
-    { title: '界面', keys: ['menu_overrides'] },
+    { title: '运维', keys: ['grafana_url'] },
   ];
 
   // 配置加载后回填表单（数字项转 number 便于 InputNumber 展示；布尔/脱敏键按契约适配）
@@ -295,7 +305,7 @@ export default function SettingsPage() {
   const saveConfigGroup = async (
     form: typeof configForm,
     setSaving: (saving: boolean) => void,
-    keys?: string[],
+    keys?: string[]
   ) => {
     const values = keys ? await form.validateFields(keys) : await form.validateFields();
     const changed = diffChanged(values).filter(([key]) => !keys || keys.includes(key));
@@ -332,19 +342,49 @@ export default function SettingsPage() {
     if (key.startsWith('smtp_')) {
       if (key === 'smtp_pass') {
         // 密码脱敏：输入框恒为空起填，留空提交时跳过该键（服务端写空会被 400 拒绝）
-        return <Input.Password style={{ maxWidth: 260 }} placeholder="留空保持不变" autoComplete="new-password" />;
+        return (
+          <Input.Password
+            style={{ maxWidth: 260 }}
+            placeholder="留空保持不变"
+            autoComplete="new-password"
+          />
+        );
       }
       return <Input style={{ maxWidth: 260 }} />;
     }
     return <InputNumber style={{ width: 260 }} min={1} precision={0} />;
   };
 
+  // AN-09：暂未接入的配置项（consumer 为空 = 改了不生效），用于「未接入」角标与顶部汇总
+  const unconsumedCount = editableConfigs.filter((c) => !c.consumer).length;
+
   const renderConfigItem = (config: SystemConfig) => (
     <Form.Item
       key={config.key}
       name={config.key}
-      label={config.name}
-      extra={config.key === 'smtp_pass' ? `${config.description ?? ''}（当前：${config.value}）` : config.description}
+      label={
+        <span>
+          {config.name}
+          {config.consumer ? (
+            // AN-09：有消费方的键，鼠标悬停可看消费方文件
+            <Tooltip title={`消费方：${config.consumer}`}>
+              <QuestionCircleOutlined
+                style={{ marginLeft: 4, color: 'var(--text-3)', fontSize: 12 }}
+              />
+            </Tooltip>
+          ) : (
+            // AN-09：无消费方的键打「未接入」角标——改了不生效，运营可分辨
+            <Tag color="red" style={{ marginLeft: 6, marginInlineEnd: 0 }}>
+              未接入
+            </Tag>
+          )}
+        </span>
+      }
+      extra={
+        config.key === 'smtp_pass'
+          ? `${config.description ?? ''}（当前：${config.value}）`
+          : config.description
+      }
       rules={configRules(config.key)}
       valuePropName={config.key === 'rate_limit_disabled' ? 'checked' : undefined}
       className={styles.paramItem}
@@ -359,60 +399,54 @@ export default function SettingsPage() {
 
       <div className={styles.stack}>
         {/* 功能开关 */}
-        <Card
-          title="功能开关"
-          extra={<span className={styles.cardSub}>影响全部客户端</span>}
-        >
+        <Card title="功能开关" extra={<span className={styles.cardSub}>影响全部客户端</span>}>
           <div className={styles.cardSub} style={{ marginBottom: 14, lineHeight: 1.7 }}>
             开关持久化保存于数据库并写入审计日志；服务端约 5 秒内强制生效（重启不丢失），并通过
-            WebSocket 向全部在线客户端广播，客户端也可经 /api/app/feature-flags 拉取；未适配的客户端由服务端兜底拦截。
-            每个开关的生效范围见条目右侧说明。
+            WebSocket 向全部在线客户端广播，客户端也可经 /api/app/feature-flags
+            拉取；未适配的客户端由服务端兜底拦截。 每个开关的生效范围见条目右侧说明。
           </div>
           {(flags ?? []).map((flag) => {
             const meta = FLAG_META[flag.key];
             return (
-            <div className={styles.flagRow} key={flag.key}>
-              <div className={styles.flagInfo}>
-                <b className={styles.flagName}>
-                  {flag.name}
-                  {meta ? (
-                    <Tooltip
-                      title={
-                        <div style={{ lineHeight: 1.7 }}>
-                          <div>
-                            <b>生效范围：</b>
-                            {meta.scope}
+              <div className={styles.flagRow} key={flag.key}>
+                <div className={styles.flagInfo}>
+                  <b className={styles.flagName}>
+                    {flag.name}
+                    {meta ? (
+                      <Tooltip
+                        title={
+                          <div style={{ lineHeight: 1.7 }}>
+                            <div>
+                              <b>生效范围：</b>
+                              {meta.scope}
+                            </div>
+                            <div style={{ marginTop: 6 }}>
+                              <b>生效方式：</b>
+                              {meta.priority}
+                            </div>
                           </div>
-                          <div style={{ marginTop: 6 }}>
-                            <b>生效方式：</b>
-                            {meta.priority}
-                          </div>
-                        </div>
-                      }
-                    >
-                      <QuestionCircleOutlined
-                        style={{ marginLeft: 6, color: 'var(--text-3)', fontSize: 12 }}
-                      />
-                    </Tooltip>
-                  ) : null}
-                </b>
-                <span className={styles.flagDesc}>{flag.description}</span>
+                        }
+                      >
+                        <QuestionCircleOutlined
+                          style={{ marginLeft: 6, color: 'var(--text-3)', fontSize: 12 }}
+                        />
+                      </Tooltip>
+                    ) : null}
+                  </b>
+                  <span className={styles.flagDesc}>{flag.description}</span>
+                </div>
+                <Switch
+                  checked={flag.enabled}
+                  loading={flagMutation.isPending && flagMutation.variables?.key === flag.key}
+                  onChange={(enabled) => flagMutation.mutate({ key: flag.key, enabled })}
+                />
               </div>
-              <Switch
-                checked={flag.enabled}
-                loading={flagMutation.isPending && flagMutation.variables?.key === flag.key}
-                onChange={(enabled) => flagMutation.mutate({ key: flag.key, enabled })}
-              />
-            </div>
             );
           })}
         </Card>
 
         {/* 维护模式 */}
-        <Card
-          title="维护模式"
-          extra={<span className={styles.cardSub}>仅超级管理员可操作</span>}
-        >
+        <Card title="维护模式" extra={<span className={styles.cardSub}>仅超级管理员可操作</span>}>
           <div className={styles.maintRow}>
             <Switch
               checked={maintenanceOn}
@@ -429,14 +463,15 @@ export default function SettingsPage() {
               <div className={styles.maintHint}>{MAINTENANCE_HINT}</div>
             </div>
             {maintenanceOn ? (
-              <Button
-                disabled={!canManageConfigs}
-                onClick={() => setMaintenanceTarget(false)}
-              >
+              <Button disabled={!canManageConfigs} onClick={() => setMaintenanceTarget(false)}>
                 恢复运行
               </Button>
             ) : (
-              <Button danger disabled={!canManageConfigs} onClick={() => setMaintenanceTarget(true)}>
+              <Button
+                danger
+                disabled={!canManageConfigs}
+                onClick={() => setMaintenanceTarget(true)}
+              >
                 开启维护
               </Button>
             )}
@@ -446,7 +481,11 @@ export default function SettingsPage() {
         {/* 限流配置（CO-11） */}
         <Card
           title="限流配置"
-          extra={<span className={styles.cardSub}>运行时可调 · 约 5 秒内生效 · 关闭限流仅限开发环境</span>}
+          extra={
+            <span className={styles.cardSub}>
+              运行时可调 · 约 5 秒内生效 · 关闭限流仅限开发环境
+            </span>
+          }
         >
           <Form form={rateLimitForm} requiredMark={false} labelWrap>
             {rateLimitConfigs.map(renderConfigItem)}
@@ -520,7 +559,7 @@ export default function SettingsPage() {
             <div className={styles.recentTitle}>最近发送</div>
             {(announcements ?? []).slice(0, 3).map((item) => (
               <div className={styles.recentLine} key={item.id}>
-                {item.sentAt.slice(5, 10)}「{item.title}」→ {AUDIENCE_LABEL[item.audience]} · 送达{' '}
+                {item.sentAt.slice(5, 10)}「{item.title}」→ {AUDIENCE_LABEL[item.audience]} · 受众{' '}
                 {(item.deliveredCount ?? 0).toLocaleString('zh-CN')} · 已读{' '}
                 {(item.readCount ?? 0).toLocaleString('zh-CN')} · 点击{' '}
                 {(item.clickedCount ?? 0).toLocaleString('zh-CN')}
@@ -532,46 +571,65 @@ export default function SettingsPage() {
           </div>
         </Card>
 
-        {/* 系统参数（按用途分组为多卡，每卡独立保存，与限流配置卡交互口径一致） */}
-        {PARAM_GROUPS.map((group) => {
-          const items = group.keys
-            .map((key) => systemConfigs.find((c) => c.key === key))
-            .filter((c): c is SystemConfig => Boolean(c));
-          if (items.length === 0) return null;
-          return (
-            <Card
-              key={group.title}
-              title={group.title}
-              extra={
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {/* CO-30：仅 SMTP 卡提供测试邮件入口（未配置/失败提示由拦截器统一 toast） */}
-                  {group.keys.includes('smtp_host') ? (
+        {/* 系统参数（按用途分组为多卡，每卡独立保存，与限流配置卡交互口径一致）
+            ⚠️ AF-01：所有参数卡必须包在同一个 <Form form={configForm}> 内——
+            Form.Item 脱离 FormContext 会导致回填失效、validateFields 取不到值、
+            保存恒提示「内容未变化」。新增参数卡时不要把这个 Form 拆开。 */}
+        <Form form={configForm} requiredMark={false} labelWrap className={styles.paramForm}>
+          {/* AN-09：未接入配置项汇总（consumer 为空的键改了不生效，以条目旁角标为准） */}
+          {unconsumedCount > 0 ? (
+            <div style={{ color: 'var(--text-3)', fontSize: 12, lineHeight: 1.8 }}>
+              <Tag color="red">未接入 {unconsumedCount} 项</Tag>
+              {unconsumedCount} 项配置暂未接入（改了不生效），以未接入角标为准
+            </div>
+          ) : null}
+          {PARAM_GROUPS.map((group) => {
+            const items = group.keys
+              .map((key) => systemConfigs.find((c) => c.key === key))
+              .filter((c): c is SystemConfig => Boolean(c));
+            if (items.length === 0) return null;
+            return (
+              <Card
+                key={group.title}
+                title={group.title}
+                extra={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {/* CO-30：仅 SMTP 卡提供测试邮件入口（未配置/失败提示由拦截器统一 toast） */}
+                    {group.keys.includes('smtp_host') ? (
+                      <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
+                        <span>
+                          <Button
+                            size="small"
+                            disabled={!canManageConfigs}
+                            onClick={openTestEmailModal}
+                          >
+                            发送测试邮件
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    ) : null}
                     <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
                       <span>
-                        <Button size="small" disabled={!canManageConfigs} onClick={openTestEmailModal}>
-                          发送测试邮件
+                        <Button
+                          type="primary"
+                          size="small"
+                          loading={savingGroup === group.title}
+                          disabled={!canManageConfigs}
+                          onClick={() =>
+                            void saveConfigGroup(
+                              configForm,
+                              (s) => setSavingGroup(s ? group.title : null),
+                              group.keys
+                            )
+                          }
+                        >
+                          保存（记入审计）
                         </Button>
                       </span>
                     </Tooltip>
-                  ) : null}
-                  <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
-                    <span>
-                      <Button
-                        type="primary"
-                        size="small"
-                        loading={savingGroup === group.title}
-                        disabled={!canManageConfigs}
-                        onClick={() =>
-                          void saveConfigGroup(configForm, (s) => setSavingGroup(s ? group.title : null), group.keys)
-                        }
-                      >
-                        保存（记入审计）
-                      </Button>
-                    </span>
-                  </Tooltip>
-                </div>
-              }
-            >
+                  </div>
+                }
+              >
                 {items.map(renderConfigItem)}
               </Card>
             );
@@ -582,24 +640,21 @@ export default function SettingsPage() {
           {systemConfigs.some((c) => c.key === 'smtp_host') ? (
             <Card title="第三方登录" extra={<Tag>规划中 · 未实现</Tag>}>
               <div style={{ color: 'var(--text-3)', fontSize: 12, lineHeight: 1.9 }}>
-                预留位：GitHub / 微信 / Apple 等第三方 OAuth 登录的接入配置（client_id / 密钥 / 回调域）
-                将在功能立项实现后在此处提供。
+                预留位：GitHub / 微信 / Apple 等第三方 OAuth 登录的接入配置（client_id / 密钥 /
+                回调域） 将在功能立项实现后在此处提供。
                 <br />
                 当前尚未对接任何第三方登录——登录页对应按钮为「敬请期待」占位，此卡仅作功能备忘。
               </div>
             </Card>
           ) : null}
-        {/* 未归组键兜底（目录新增键忘记归类时不至于消失） */}
-        {(() => {
-          const grouped = new Set(PARAM_GROUPS.flatMap((g) => g.keys));
-          const rest = systemConfigs.filter((c) => !grouped.has(c.key));
-          if (rest.length === 0) return null;
-          return (
-            <Card title="其它">
-              {rest.map(renderConfigItem)}
-            </Card>
-          );
-        })()}
+          {/* 未归组键兜底（目录新增键忘记归类时不至于消失） */}
+          {(() => {
+            const grouped = new Set(PARAM_GROUPS.flatMap((g) => g.keys));
+            const rest = systemConfigs.filter((c) => !grouped.has(c.key));
+            if (rest.length === 0) return null;
+            return <Card title="其它">{rest.map(renderConfigItem)}</Card>;
+          })()}
+        </Form>
       </div>
 
       <ConfirmReasonModal

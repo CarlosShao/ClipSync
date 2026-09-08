@@ -183,7 +183,7 @@ function buildOrderFilters(query, params) {
  * GET /api/admin/orders?status=&channel=&dateFrom=&dateTo=&q=&page=&pageSize=
  * 订单分页列表（状态 Tabs + 渠道/时间筛选 + 关键字搜订单号/商户单号/第三方流水号）。
  */
-router.get('/', async (req, res) => {
+router.get('/', requirePerm('admin.orders.view'), async (req, res) => {
   try {
     const { page, pageSize, offset } = parsePaging(req.query);
     const params = [];
@@ -216,7 +216,7 @@ router.get('/', async (req, res) => {
  * GET /api/admin/orders/:orderNo
  * 订单全字段详情（详情弹窗）。
  */
-router.get('/:orderNo', async (req, res) => {
+router.get('/:orderNo', requirePerm('admin.orders.view'), async (req, res) => {
   try {
     const { orderNo } = req.params;
     if (!orderNo || typeof orderNo !== 'string') {

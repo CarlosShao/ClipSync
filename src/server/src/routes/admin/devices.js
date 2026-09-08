@@ -20,6 +20,7 @@
 //   DeviceStats：{ total, online, byPlatform: [{ platform, count }] }
 // =============================================
 
+import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
@@ -204,6 +205,70 @@ router.get('/', requirePerm('admin.devices.view'), async (req, res) => {
   } catch (err) {
     logger.error('[admin/devices] list failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '获取设备列表失败' });
+  }
+});
+
+// ───────────────────────── 密钥摘要（AF-43 / RB-02）─────────────────────────
+
+/**
+ * GET /api/admin/devices/:id/keys
+ * 设备公钥脱敏摘要（requirePerm('admin.keys.view')，RB-02 承载端点）：
+ *  - 仅返回公钥 SHA-256 指纹（前 16 位 hex），严禁返回公钥原文或任何私钥；
+ *  - 无 public_key 的设备返回 { hasPublicKey: false, fingerprint: null }；
+ *  - 查看动作写审计 admin.device.keys_view（敏感信息访问）。
+ */
+router.get('/:id/keys', requirePerm('admin.keys.view'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '设备 ID 不合法' });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT d.id, d.device_name, d.public_key
+       FROM devices d WHERE d.id::text = $1`,
+      [id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ code: 40404, message: '设备不存在' });
+    }
+    const device = rows[0];
+
+    const publicKey = typeof device.public_key === 'string' ? device.public_key : '';
+    const hasPublicKey = publicKey.length > 0;
+    const fingerprint = hasPublicKey
+      ? createHash('sha256').update(publicKey, 'utf8').digest('hex').slice(0, 16)
+      : null;
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.device.keys_view',
+      resourceType: 'device',
+      resourceId: String(device.id),
+      details: {
+        device: device.device_name,
+        hasPublicKey,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    logger.info('[admin/devices] device keys viewed', {
+      deviceId: device.id,
+      operator: req.user?.userId,
+    });
+
+    return res.json({
+      code: 0,
+      data: {
+        deviceId: device.id,
+        hasPublicKey,
+        fingerprint,
+      },
+    });
+  } catch (err) {
+    logger.error('[admin/devices] keys view failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '获取设备密钥摘要失败' });
   }
 });
 

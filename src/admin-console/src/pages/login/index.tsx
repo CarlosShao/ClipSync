@@ -6,7 +6,7 @@ import { useMutation } from '@tanstack/react-query';
 import { loginByCode, loginByPassword, sendLoginCode } from '@/api/auth';
 import { useAuthStore } from '@/stores/authStore';
 import type { LoginResp } from '@/api/types';
-import styles from './login.module.css';
+import styles from '@/styles/login-brand.module.css';
 
 type LoginMode = 'password' | 'code';
 

@@ -68,6 +68,7 @@ const USER_SELECT = `
       WHERE po.user_id = u.id AND po.status IN ('paid', 'refunded')) AS total_spent,
     us.status AS sub_status,
     us.billing_cycle AS sub_billing_cycle,
+    us.id AS sub_id,
     us.current_period_end AS sub_current_period_end,
     us.auto_renew AS sub_auto_renew,
     sp.name AS sub_plan_name
@@ -219,6 +220,8 @@ function mapUserRow(row) {
     status: row.is_active ? 'active' : 'disabled',
     subscription: {
       plan,
+      // AF-10：订阅行 id（user_subscriptions.id），供抽屉赠期定位；无订阅行为 undefined
+      id: row.sub_id || undefined,
       billingCycle: row.sub_billing_cycle || null,
       status: subStatusRaw,
       currentPeriodEnd: formatDateOnly(row.sub_current_period_end),
@@ -723,6 +726,9 @@ router.post('/:id/force-logout', requirePerm('admin.users.manage'), async (req, 
     );
     const revokedSessions = rowCount || 0;
 
+    // AF-11：前端弹窗要求填原因，随 body.reason 落审计
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
     await logAuditEvent({
       userId: req.user?.userId,
       action: 'admin.user.force_logout',
@@ -732,6 +738,7 @@ router.post('/:id/force-logout', requirePerm('admin.users.manage'), async (req, 
         targetUserId: user.id,
         nickname: user.nickname || '',
         sessionsRevoked: revokedSessions,
+        ...(reason ? { reason } : {}),
       },
       ipAddress: req.ip,
       userAgent: req.headers ? req.headers['user-agent'] : undefined,
@@ -845,6 +852,10 @@ router.delete('/:id', requirePerm('admin.users.delete'), async (req, res) => {
       [user.id]
     );
 
+    // AF-12：前端弹窗要求填原因；deactivation_reason 保持 'deleted_by_admin' 供列表风险标记识别，
+    // 运营填写的原因落到审计 details.reason
+    const deleteReason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
     await logAuditEvent({
       userId: req.user?.userId,
       action: 'user.delete',
@@ -853,7 +864,7 @@ router.delete('/:id', requirePerm('admin.users.delete'), async (req, res) => {
       details: {
         targetUserId: user.id,
         nickname: user.nickname || '',
-        reason: 'deleted_by_admin',
+        reason: deleteReason || 'deleted_by_admin',
       },
       ipAddress: req.ip,
       userAgent: req.headers ? req.headers['user-agent'] : undefined,

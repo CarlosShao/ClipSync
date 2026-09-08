@@ -28,6 +28,7 @@
 import { Router } from 'express';
 import fs from 'fs/promises';
 import path from 'path';
+import { getMetricsSnapshot, getMetricsSeries } from '../../middleware/metrics.js';
 import { performance } from 'perf_hooks';
 import pool from '../../db/pool.js';
 import { getRedisClient } from '../../utils/redis-client.js';
@@ -74,23 +75,33 @@ async function probeRedis() {
 }
 
 /**
- * 应用层指标快照：按约定 import { getMetricsSnapshot } from '../../middleware/metrics.js'。
- * 该导出由并行工单提供；此处用动态 import + try/catch 兜底：
- *  - 模块/导出尚未就绪 → metrics 返回 null（运维页该卡片显示「不可用」）；
- *  - 已就绪但形态不含 requests/errors/p95 → 逐字段兜底 null。
+ * AF-30：读 system_configs.grafana_url（运维页跳转）。缺行/查库失败 → 空串（前端置灰）。
  */
-async function readMetricsSnapshot() {
+async function readGrafanaUrl() {
   try {
-    const mod = await import('../../middleware/metrics.js');
-    const getSnapshot = mod.getMetricsSnapshot;
-    if (typeof getSnapshot !== 'function') {
-      return null; // getMetricsSnapshot 尚未由并行代理 A 提供，降级为 null
-    }
-    const snap = getSnapshot();
+    const { rows } = await pool.query(
+      `SELECT config_value FROM system_configs WHERE config_key = 'grafana_url' LIMIT 1`
+    );
+    const raw = rows[0]?.config_value;
+    return typeof raw === 'string' ? raw.trim() : '';
+  } catch (err) {
+    logger.warn('[admin/ops] grafana_url read failed', { error: err.message });
+    return '';
+  }
+}
+
+/**
+ * 应用层指标快照：AF-02 落地——middleware/metrics.js 已导出 getMetricsSnapshot，
+ * 这里直接同步调用（保留 try/catch 兜底：异常时降级 null，不阻塞概览）。
+ */
+function readMetricsSnapshot() {
+  try {
+    const snap = getMetricsSnapshot();
     return {
-      requests: snap?.requests?.total ?? snap?.requests ?? null,
-      errors: snap?.errors?.total ?? snap?.errors ?? null,
-      p95: snap?.responseTime?.p95 ?? snap?.p95 ?? null,
+      requests: snap?.requests?.total ?? null,
+      errors: snap?.errors?.total ?? null,
+      p95: snap?.responseTime?.p95 ?? null,
+      sampledAt: snap?.sampledAt ?? null,
     };
   } catch (err) {
     logger.warn('[admin/ops] metrics snapshot unavailable', { error: err.message });
@@ -125,12 +136,13 @@ async function detectDeployment() {
  */
 router.get('/overview', requirePerm('admin.ops.view'), async (_req, res) => {
   try {
-    const [version, db, redis, metrics, deployment] = await Promise.all([
+    const [version, db, redis, metrics, deployment, grafanaUrl] = await Promise.all([
       readVersion(),
       probeDb(),
       probeRedis(),
       readMetricsSnapshot(),
       detectDeployment(),
+      readGrafanaUrl(),
     ]);
 
     const status = !db.ok ? 'error' : !redis.ok ? 'degraded' : 'ok';
@@ -149,6 +161,8 @@ router.get('/overview', requirePerm('admin.ops.view'), async (_req, res) => {
           heapUsed: mem.heapUsed,
         },
         metrics,
+        series: getMetricsSeries(), // AF-21：近 10 分钟趋势（30s 增量桶），重启后从空逐步累积
+        grafanaUrl, // AF-30：system_configs.grafana_url，空串表示未配置（前端按钮置灰）
         deployment,
       },
     });

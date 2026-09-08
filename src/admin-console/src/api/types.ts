@@ -50,6 +50,8 @@ export type BillingCycle = 'monthly' | 'yearly';
 
 export interface Subscription {
   plan: PlanKey;
+  /** AF-10：订阅行 id（user_subscriptions.id）；无订阅行为 undefined */
+  id?: string;
   billingCycle: BillingCycle | null;
   status: SubscriptionStatus;
   /** YYYY-MM-DD */
@@ -230,6 +232,8 @@ export interface SystemConfig {
   value: string;
   description?: string;
   updatedAt?: string;
+  /** AN-09 消费方登记：null/缺省 = 暂无消费方（UI 打「未接入」角标，改了不生效） */
+  consumer?: string | null;
 }
 
 export interface Announcement {
@@ -287,8 +291,19 @@ export interface OpsOverview {
   /** 进程内存（字节） */
   memory: { rss: number; heapUsed: number };
   metrics: OpsMetrics | null;
+  /** AF-21：近 10 分钟趋势（服务端 30s 增量桶，最多 20 点；进程重启后为空数组，渲染须判空） */
+  series?: OpsTrendPoint[];
+  /** AF-30：Grafana 跳转地址（system_configs.grafana_url；空串 = 未配置，前端按钮置灰） */
+  grafanaUrl?: string;
   /** CO-42：部署形态（后端探测；旧版本后端可能不返回，渲染须判空） */
   deployment?: OpsDeployment | null;
+}
+
+/** AF-21：趋势采样点（30s 窗口增量） */
+export interface OpsTrendPoint {
+  t: number;
+  requests: number;
+  errors: number;
 }
 
 /** CO-42：部署形态探测结果 */
@@ -375,7 +390,7 @@ export interface ChannelShare {
   percent: number;
 }
 
-export type PendingItemType = 'payment' | 'subscription' | 'reconcile' | 'security';
+export type PendingItemType = 'payment' | 'subscription' | 'reconcile' | 'security' | 'approval';
 
 export interface PendingItem {
   id: string;
@@ -514,14 +529,7 @@ export interface UpdateRolePermissionsPayload {
  * 与 web 同义——真实后端返回 browser，映射表两者都提供）。
  */
 export type DevicePlatform =
-  | 'windows'
-  | 'macos'
-  | 'android'
-  | 'ios'
-  | 'linux'
-  | 'ipados'
-  | 'web'
-  | 'browser';
+  'windows' | 'macos' | 'android' | 'ios' | 'linux' | 'ipados' | 'web' | 'browser';
 
 /** 设备形态 */
 export type DeviceKind = 'desktop' | 'mobile' | 'tablet' | 'browser';
@@ -565,6 +573,17 @@ export interface DeviceStats {
  */
 export interface DeviceOfflinePayload {
   reason: string;
+}
+
+/**
+ * GET /api/admin/devices/:id/keys：设备公钥脱敏摘要（AF-43 / RB-02，admin.keys.view）。
+ * 服务端只返回公钥 SHA-256 指纹，不含公钥原文或任何私钥。
+ */
+export interface DeviceKeysSummary {
+  deviceId: string;
+  hasPublicKey: boolean;
+  /** public_key 的 SHA-256 前 16 位 hex；设备未上传公钥时为 null */
+  fingerprint: string | null;
 }
 
 /** 管理端订阅行（GET /api/admin/subscriptions，与后端 mapSubscriptionRow 逐字段对齐） */
@@ -611,4 +630,52 @@ export interface GrantSubscriptionPayload {
   /** 延长月数 1–12 */
   months: number;
   reason: string;
+}
+
+// ─────────────── AN-01 追加：套餐与价格管理（只增不改） ───────────────
+
+/**
+ * 管理端套餐行（GET /api/admin/plans，与后端 mapPlanRow 逐字段对齐）。
+ * 数值列（integer）在库中可为 NULL → 类型标 number | null，渲染须判空。
+ * features 为 JSONB 对象：当前仅 ai_classify、team_management 在服务端有强制点。
+ */
+export interface AdminPlan {
+  id: string;
+  /** 套餐英文标识（Free / Pro / Enterprise，唯一键） */
+  name: string;
+  /** 套餐显示名（免费版 / 专业版 / 企业版） */
+  displayName: string;
+  description: string;
+  priceMonthly: number | null;
+  priceYearly: number | null;
+  maxDevices: number | null;
+  maxClipboardItems: number | null;
+  maxFileSizeMb: number | null;
+  maxStorageMb: number | null;
+  /** 单次多文件数量上限（042 文件同步限额） */
+  maxFilesPerClip: number | null;
+  /** 文件条目保留天数（042 文件同步限额） */
+  fileRetentionDays: number | null;
+  features: Record<string, unknown>;
+  isActive: boolean;
+  createdAt: string;
+}
+
+/**
+ * PATCH /api/admin/plans/:id 请求体：仅白名单字段，snake_case 与后端 FIELD_VALIDATORS 一致。
+ * 只传出现变更的键；空 body 后端返回 400。
+ */
+export interface PlanPatchPayload {
+  display_name?: string;
+  description?: string | null;
+  price_monthly?: number | null;
+  price_yearly?: number | null;
+  max_devices?: number;
+  max_clipboard_items?: number;
+  max_file_size_mb?: number;
+  max_storage_mb?: number;
+  max_files_per_clip?: number;
+  file_retention_days?: number;
+  features?: Record<string, unknown>;
+  is_active?: boolean;
 }

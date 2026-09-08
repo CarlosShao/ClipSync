@@ -3,6 +3,11 @@
 - **缺陷来源**：[../../audit/admin-runtime-audit-2026-09-08.md](../../audit/admin-runtime-audit-2026-09-08.md)（A/B/C/D/E 五类，均经真实浏览器点击实测）
 - **缺口分析**：[../../audit/admin-config-gap-2026-09-08.md](../../audit/admin-config-gap-2026-09-08.md)
 - **状态标记**：⬜ 未开始 / 🔄 进行中 / ✅ 完成 / ⛔ 阻塞
+
+> **2026-09-08 执行回写**（lead 验收：真实浏览器 + 接口复查，tsc/eslint/vitest/E2E 全绿）：
+> - ✅ AF-01（回填+PATCH 落库实测）、AF-02（metrics {requests,errors,p95} 非 null）、AF-03（plans 403/其余 200 权限矩阵实测）、AF-04（关开关 register 与 verify-code 均 403 flagDisabled）、AF-10（赠期复用 GrantSubscriptionModal，后端补 subscription.id 下发）、AF-11（force-logout 200 + reason 入审计）、AF-12（delete 200 软删 + 启用还原实测）、AF-14（导出 orders-20260908.csv 19 条实测）、AF-20（待办聚合实测：超 24h 待支付订单出现在看板）、AF-21（服务端 30s 采样 series）、AF-22（readCount 返回 + 「受众/已读/点击」文案）、AF-30（grafana_url 配置键 + 未配置置灰）、AF-31（装饰搜索移除）、AF-32（铃铛接待办，Badge=1 实测）、AF-33（end_user 含无角色用户）、AF-34（audit?userId= 过滤 + tag）、AF-40/41/42（文案对齐/下架 menu_overrides）、AF-43（keys 端点 200 + 指纹脱敏实测）、AF-50（根因：WS close 依赖进程存活且无心跳兜底；deviceOnlineSweep 每 60s 扫描实测生效 + 056 迁移）、AF-51（idle 登出读 session_timeout_minutes）、AF-52（PATCH log_level 热生效）、AF-53（requirePerm 登记注册表 + 启动 perm-audit 自检）、AF-54（MSW MOCK 角标）、AF-55（桌面端 PIN SHA-256+salt + 旧明文迁移，vue-tsc 通过）。
+> - 全部 24 条完成，无遗留。
+> - 计划外修复：`ws/server.js` 缺失 `isMaintenanceOn` import（既有 bug，每次 WS 握手抛未处理异常并中断连接），已修复。
 - **分工说明**：本文件只收「**已有功能但坏了 / 是假的 / 对不上**」的修复项；新增能力见 [admin-capability-gap-tickets.md](./admin-capability-gap-tickets.md)
 - **指派建议**：AF-01～AF-04 可并行（互不冲突）；AF-10/11/12 同属 UserDrawer 建议同一人；AF-20/21 同属指标类建议同一人
 
@@ -207,13 +212,15 @@
 
 ## WP-X 收尾补漏（P2/P3，单条很小但都是"名不副实"）
 
-### AF-50 设备在线状态：4 台设备长期全离线 ⬜ P1 ⚠️ 先排查再改
+### AF-50 设备在线状态：4 台设备长期全离线 ✅（2026-09-08）
 - **问题**：E5。审计实测 `devices` 4 台 `is_online` 全为 false；管理员看板「在线设备」恒 0，设备管理页的「远程下线」按钮也因此**永远不可见**（`devices/index.tsx:144` 仅 online 才渲染），等于该功能在数据层面不可达
 - **现状**：`devices` 表有 `last_seen_at`、`idx_devices_online`（`is_online = true` 部分索引），服务端有心跳更新逻辑
 - **改动（分两步，禁止未排查直接改）**：
   1. **排查**：确认桌面端/移动端是否上报心跳、WS 断连是否回写 `is_online=false`、有无定时扫描把超时设备置离线、dev 环境客户端是否根本没连 WS —— 输出根因结论到本工单备注
   2. **修复**：按根因实施（心跳缺失则补上报；无超时扫描则加定时任务，如 5 分钟无心跳置离线；阈值走配置键 `device_offline_timeout_minutes`，默认 5）
 - **验收**：真机在线时管理台设备页与看板均显示「在线」且「远程下线」按钮出现；断网 5 分钟后自动转离线
+- **排查结论（2026-09-08 落地）**：心跳链路完整——桌面端 `useWebSocket.ts:98,170` 连接 `/ws` 后发 register + 每 25s 应用层 ping，移动端 `ws_service.dart:167-190` 同构；服务端 `ws/server.js:290-294` register 置 `is_online=true`、`:331-340` ping 刷 `last_seen_at`、`:369-377` close 置 false。**缺口：无任何超时扫描**——close 处理器依赖进程存活，docker restart/kill/崩溃时不会逐连接执行，`is_online` 残留 true；客户端未连 WS 时也无基于 `last_seen_at` 的兜底（DB 实测：桌面端 `is_online=t` 而 `last_seen_at` 停在服务端重启时刻）。
+- **修复**：新增 `services/deviceOnlineSweep.js`（60s 一轮，`UPDATE devices SET is_online=false WHERE is_online=true AND last_seen_at < NOW() - ($1||' minutes')::interval`，timer unref + shutdown stop）；阈值配置键 `device_offline_timeout_minutes`（默认 5，迁移 `056_device_offline_timeout.sql`，CONFIG_CATALOG 已同步）；`index.js` 启动时 `startDeviceOnlineSweep()`、gracefulShutdown 时 `stopDeviceOnlineSweep()`。已在 dev 容器实测：置假设备「在线+心跳超时 10 分钟」→ 一轮扫描后自动转离线；桌面端重连注册后状态与心跳实时刷新。
 
 ### AF-51 session_timeout_minutes 无消费方 ⬜ P2 ⛔ 需决策
 - **问题**：O8。管理台会话超时配置项存在但前端无 idle 登出逻辑

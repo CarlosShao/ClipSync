@@ -1,7 +1,7 @@
-import { Button, Card, Empty, Spin, Table, Tag } from 'antd';
+import { Button, Card, Empty, Spin, Table, Tag, Tooltip } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { PageHeader } from '@/components/PageHeader';
 import { getOpsBackups, getOpsOverview, getSlowQueries } from '@/api/ops';
 import { ApiError } from '@/api/client';
@@ -12,14 +12,6 @@ import styles from './ops.module.css';
 
 /** 自动刷新间隔（CO-41：30s 轮询，卸载清理） */
 const REFRESH_INTERVAL_MS = 30_000;
-
-/** 趋势采样窗口：20 个点 × 30s ≈ 近 10 分钟 */
-const MAX_SAMPLES = 20;
-
-/** CO-42：Grafana 容器总览地址。grafana_url 配置键尚未进后端 CONFIG_CATALOG，
- *  退化为环境变量 → monitoring 栈端口映射兜底（docker-compose.monitoring.yml: 3001:3000）。
- *  纯只读跳转，无连接探测。 */
-const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3001';
 
 /** 状态徽标：ok 绿 / degraded 黄 / error 红 */
 const STATUS_META: Record<'ok' | 'degraded' | 'error', { label: string; color: string }> = {
@@ -127,16 +119,9 @@ const SLOW_QUERY_COLUMNS = [
   },
 ];
 
-/** 趋势采样点（本页本地保留，不落库） */
-interface TrendSample {
-  t: number;
-  requests: number;
-  errors: number;
-}
-
 /**
  * 运维监控页（CO-41）：状态徽标 + DB/Redis 探针 + 请求/错误/p95 指标 +
- * 近 10 分钟趋势（本页采样，CO-41）+ 部署形态/Grafana 跳转（CO-42）+
+ * 近 10 分钟趋势（AF-21：消费服务端 30s 采样序列）+ 部署形态/Grafana 跳转（AF-30）+
  * 备份概览（CO-33）+ 慢查询 TOP（CO-41，需 admin.audit.view）。
  * 数据源 GET /api/admin/ops/overview 等，30s 自动刷新。
  */
@@ -168,21 +153,11 @@ export default function OpsPage() {
     return () => window.clearInterval(timer);
   }, [refetch]);
 
-  // CO-41：本页采样趋势——每次 overview 刷新成功 push 一个采样点，本地保留最近 20 个
-  const [samples, setSamples] = useState<TrendSample[]>([]);
-  useEffect(() => {
-    if (!data?.metrics) return;
-    setSamples((prev) => {
-      const last = prev[prev.length - 1];
-      // 5 秒去重窗口：避免 StrictMode 双挂载导致首点重复采样
-      if (last && Date.now() - last.t < 5_000) return prev;
-      const next: TrendSample[] = [
-        ...prev,
-        { t: Date.now(), requests: data.metrics!.requests, errors: data.metrics!.errors },
-      ];
-      return next.slice(-MAX_SAMPLES);
-    });
-  }, [data]);
+  // AF-21：趋势改为消费服务端 30s 增量序列（进程内环形缓冲，重启清零）
+  const samples = data?.series ?? [];
+
+  // AF-30：Grafana 地址由后台配置（system_configs.grafana_url），未配置则置灰
+  const grafanaUrl = (data?.grafanaUrl ?? '').trim();
 
   const statusMeta = data ? STATUS_META[data.status] : null;
   const maxRequests = Math.max(1, ...samples.map((s) => s.requests));
@@ -217,7 +192,9 @@ export default function OpsPage() {
               <div className={styles.kvRow}>
                 <span className={styles.kvLabel}>进程内存</span>
                 <span className={styles.kvValue}>
-                  {data ? `RSS ${formatBytes(data.memory?.rss)} · Heap ${formatBytes(data.memory?.heapUsed)}` : '—'}
+                  {data
+                    ? `RSS ${formatBytes(data.memory?.rss)} · Heap ${formatBytes(data.memory?.heapUsed)}`
+                    : '—'}
                 </span>
               </div>
             </div>
@@ -248,7 +225,11 @@ export default function OpsPage() {
             <MetricCard
               label="请求数"
               value={data?.metrics ? data.metrics.requests.toLocaleString('zh-CN') : '不可用'}
-              sub={data?.metrics?.wsConnections != null ? `WS 在线连接 ${data.metrics.wsConnections.toLocaleString('zh-CN')}` : undefined}
+              sub={
+                data?.metrics?.wsConnections != null
+                  ? `WS 在线连接 ${data.metrics.wsConnections.toLocaleString('zh-CN')}`
+                  : undefined
+              }
             />
           </div>
           <div className={styles.spanThird}>
@@ -270,15 +251,15 @@ export default function OpsPage() {
             />
           </div>
 
-          {/* 近 10 分钟趋势（CO-41：本页 30s 采样，非 Prometheus 全量） */}
+          {/* 近 10 分钟趋势（AF-21：服务端 30s 增量采样，非 Prometheus 全量） */}
           <Card
             size="small"
-            title="近 10 分钟趋势（本页采样）"
+            title="近 10 分钟趋势"
             className={styles.spanAll}
-            extra={<span className={styles.metricSub}>页面本地每 30s 采样，非 Prometheus 全量数据</span>}
+            extra={<span className={styles.metricSub}>服务端每 30s 采样 · 进程重启后重新累积</span>}
           >
             {samples.length === 0 ? (
-              <div className={styles.emptyHint}>等待下一次轮询采样…</div>
+              <div className={styles.emptyHint}>进程启动后不足 30 秒，等待首个采样点…</div>
             ) : (
               <>
                 <div className={styles.trendWrap}>
@@ -290,11 +271,17 @@ export default function OpsPage() {
                     >
                       <div
                         className={styles.trendBar}
-                        style={{ height: `${(s.requests / maxRequests) * 100}%`, background: 'var(--blue)' }}
+                        style={{
+                          height: `${(s.requests / maxRequests) * 100}%`,
+                          background: 'var(--blue)',
+                        }}
                       />
                       <div
                         className={styles.trendBar}
-                        style={{ height: `${(s.errors / maxErrors) * 100}%`, background: 'var(--red)' }}
+                        style={{
+                          height: `${(s.errors / maxErrors) * 100}%`,
+                          background: 'var(--red)',
+                        }}
                       />
                     </div>
                   ))}
@@ -314,15 +301,23 @@ export default function OpsPage() {
             )}
           </Card>
 
-          {/* 部署形态（CO-42：overview.data.deployment）+ Grafana 只读跳转 */}
+          {/* 部署形态（CO-42：overview.data.deployment）+ Grafana 只读跳转（AF-30：地址后台可配） */}
           <Card
             size="small"
             title="部署形态"
             className={styles.spanHalf}
             extra={
-              <a href={GRAFANA_URL} target="_blank" rel="noreferrer">
-                <Button size="small">打开 Grafana 容器总览</Button>
-              </a>
+              grafanaUrl ? (
+                <a href={grafanaUrl} target="_blank" rel="noreferrer">
+                  <Button size="small">打开 Grafana 容器总览</Button>
+                </a>
+              ) : (
+                <Tooltip title="未配置 Grafana 地址：系统设置 → 运维 → Grafana 地址">
+                  <Button size="small" disabled>
+                    打开 Grafana 容器总览
+                  </Button>
+                </Tooltip>
+              )
             }
           >
             <div className={styles.kv}>
@@ -341,7 +336,9 @@ export default function OpsPage() {
               {data?.deployment?.type === 'k8s' ? (
                 <div className={styles.kvRow}>
                   <span className={styles.kvLabel}>副本数</span>
-                  <span className={styles.kvValue}>{data.deployment.replicas ?? '副本数不可用'}</span>
+                  <span className={styles.kvValue}>
+                    {data.deployment.replicas ?? '副本数不可用'}
+                  </span>
                 </div>
               ) : null}
             </div>
@@ -350,21 +347,31 @@ export default function OpsPage() {
           {/* 备份概览（CO-33） */}
           <Card size="small" title="备份概览" className={styles.spanHalf}>
             {backupsData == null ? null : backupsData.items.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无备份文件" />
+              // AF-23：无备份任务产出时如实说明，不再使用「暂无备份文件」的歧义文案
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="未启用备份：当前 backups 目录无备份任务产出文件"
+              />
             ) : (
               <>
                 <div className={styles.kv}>
                   <div className={styles.kvRow}>
                     <span className={styles.kvLabel}>备份份数</span>
-                    <span className={styles.kvValue}>{backupsData.summary.total.toLocaleString('zh-CN')}</span>
+                    <span className={styles.kvValue}>
+                      {backupsData.summary.total.toLocaleString('zh-CN')}
+                    </span>
                   </div>
                   <div className={styles.kvRow}>
                     <span className={styles.kvLabel}>总大小</span>
-                    <span className={styles.kvValue}>{humanBytes(backupsData.summary.totalBytes)}</span>
+                    <span className={styles.kvValue}>
+                      {humanBytes(backupsData.summary.totalBytes)}
+                    </span>
                   </div>
                   <div className={styles.kvRow}>
                     <span className={styles.kvLabel}>最近备份</span>
-                    <span className={styles.kvValue}>{formatDateTime(backupsData.summary.lastBackupAt)}</span>
+                    <span className={styles.kvValue}>
+                      {formatDateTime(backupsData.summary.lastBackupAt)}
+                    </span>
                   </div>
                 </div>
                 <div className={styles.backupList}>

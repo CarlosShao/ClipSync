@@ -1,6 +1,7 @@
 import { apiGet, apiPost } from '@/api/client';
 import type {
   AdminDevice,
+  DeviceKeysSummary,
   DeviceListParams,
   DeviceOfflinePayload,
   DeviceStats,
@@ -29,4 +30,9 @@ export function getDeviceStats(): Promise<DeviceStats> {
 /** 远程下线（原因必填，写入审计 admin.device.offline；仅在线设备可下线） */
 export function offlineDevice(id: string, payload: DeviceOfflinePayload): Promise<AdminDevice> {
   return apiPost<AdminDevice>(`/admin/devices/${id}/offline`, payload);
+}
+
+/** 设备公钥脱敏摘要（AF-43：仅 admin.keys.view 角色可见；服务端只回指纹，不回公钥原文/私钥） */
+export function getDeviceKeys(id: string): Promise<DeviceKeysSummary> {
+  return apiGet<DeviceKeysSummary>(`/admin/devices/${id}/keys`);
 }

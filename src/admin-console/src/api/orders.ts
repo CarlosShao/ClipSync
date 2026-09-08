@@ -26,3 +26,27 @@ export function refundOrder(orderNo: string, payload: RefundPayload): Promise<Or
 export function getReconciliation(): Promise<ReconciliationReport> {
   return apiGet<ReconciliationReport>('/admin/reconciliation');
 }
+
+/** 单次导出分页大小（对齐审计导出惯例） */
+const EXPORT_PAGE_SIZE = 200;
+
+/** 导出条数上限（1 万条，防误操作全量拉爆） */
+const EXPORT_CAP = 10_000;
+
+/**
+ * AF-14：按当前筛选条件拉取全部订单（分页循环，pageSize=200，上限 1 万条）。
+ * 用于「导出」CSV；与审计页 fetchAllAuditLogs 同模式。
+ */
+export async function fetchAllOrders(params: OrderListQuery): Promise<Order[]> {
+  const all: Order[] = [];
+  const total = (await getOrders({ ...params, page: 1, pageSize: 1 })).total;
+  const pages = Math.min(
+    Math.ceil(total / EXPORT_PAGE_SIZE),
+    Math.ceil(EXPORT_CAP / EXPORT_PAGE_SIZE)
+  );
+  for (let page = 1; page <= pages; page++) {
+    const { list } = await getOrders({ ...params, page, pageSize: EXPORT_PAGE_SIZE });
+    all.push(...list);
+  }
+  return all;
+}

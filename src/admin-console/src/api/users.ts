@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost } from '@/api/client';
+import { apiDelete, apiGet, apiPatch, apiPost } from '@/api/client';
 import type {
   AdminUser,
   PageData,
@@ -25,4 +25,23 @@ export function updateUserStatus(id: string, payload: UpdateUserStatusPayload): 
 /** 审批通过等待名单用户（signup_waitlist 开关落地），写入审计日志 */
 export function approveUser(id: string): Promise<AdminUser> {
   return apiPost<AdminUser>(`/admin/users/${id}/approve`, {});
+}
+
+/** AF-11：强制下线（吊销全部活跃会话；原因写审计 admin.user.force_logout） */
+export function forceLogoutUser(
+  id: string,
+  payload: { reason: string }
+): Promise<{ id: string; revokedSessions: number }> {
+  return apiPost<{ id: string; revokedSessions: number }>(
+    `/admin/users/${id}/force-logout`,
+    payload
+  );
+}
+
+/** AF-12：删除账户（软删 is_active=false；原因写审计 user.delete；非物理删除，可重新启用） */
+export function deleteUser(
+  id: string,
+  payload: { reason: string }
+): Promise<{ id: string; deleted: boolean }> {
+  return apiDelete<{ id: string; deleted: boolean }>(`/admin/users/${id}`, payload);
 }

@@ -70,9 +70,10 @@ export const orderStatusLabel: Record<OrderStatus, string> = {
  * 订单行展示状态：已发起退款但资金未退回（status='refunded' 且 refundAmount=null）
  * 显示为「退款处理中」，其余按原生状态（约定见 types.ts OrderStatusFilter）。
  */
-export function orderDisplayStatus(
-  order: Pick<Order, 'status' | 'refundAmount'>,
-): { label: string; tone: StatusTone } {
+export function orderDisplayStatus(order: Pick<Order, 'status' | 'refundAmount'>): {
+  label: string;
+  tone: StatusTone;
+} {
   if (order.status === 'refunded' && order.refundAmount === null) {
     return { label: '退款处理中', tone: 'amber' };
   }
@@ -90,6 +91,7 @@ export const pendingItemTypeTone: Record<PendingItemType, StatusTone> = {
   subscription: 'amber',
   reconcile: 'amber',
   security: 'blue',
+  approval: 'amber',
 };
 
 export const pendingItemTypeLabel: Record<PendingItemType, string> = {
@@ -97,6 +99,7 @@ export const pendingItemTypeLabel: Record<PendingItemType, string> = {
   subscription: '订阅',
   reconcile: '对账',
   security: '安全',
+  approval: '审批',
 };
 
 export const operatorRoleLabel: Record<'super_admin' | 'admin' | 'user', string> = {

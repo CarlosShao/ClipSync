@@ -35,7 +35,8 @@ const router = Router();
 
 // 13 项权限目录的展示元数据（顺序/分组/名称与前端 mocks/data.ts 契约一致）。
 // DB permissions 表只存 perm_key/category/description；这里补齐「展示分类 + 展示名 + superAdminOnly」。
-const PERM_CATALOG = [
+// AF-53：导出目录供 index.js 启动自检与 getRegisteredPermKeys() 比对
+export const PERM_CATALOG = [
   { permKey: 'admin.users.view', name: '查看用户列表与详情', category: 'users_devices' },
   { permKey: 'admin.users.manage', name: '停用 / 启用 / 强制下线', category: 'users_devices' },
   { permKey: 'admin.users.delete', name: '删除账户（高危）', category: 'users_devices', superAdminOnly: true },
@@ -130,7 +131,7 @@ async function loadRoles() {
  * GET /api/admin/roles
  * 角色数组（含每个角色的权限键集合与成员数统计）。
  */
-router.get('/', async (_req, res) => {
+router.get('/', requirePerm('admin.roles.view'), async (_req, res) => {
   try {
     const roles = await loadRoles();
     return res.json({ code: 0, data: roles });

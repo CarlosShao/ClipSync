@@ -97,6 +97,47 @@ export function getMetrics() {
   };
 }
 
+/**
+ * AF-02：应用层指标快照（`GET /api/admin/ops/overview` 消费）。
+ * 与 getMetrics() 同源，仅附加窗口起点与采样时间，供运维页标注统计口径。
+ */
+export function getMetricsSnapshot() {
+  return {
+    ...getMetrics(),
+    windowStart: new Date(metrics.startTime).toISOString(),
+    sampledAt: new Date().toISOString(),
+  };
+}
+
+/* ── AF-21：近 10 分钟趋势（20 个 30s 桶，进程内环形缓冲，重启清零） ── */
+const SERIES_INTERVAL_MS = 30_000;
+const SERIES_MAX_POINTS = 20;
+const seriesBuckets = [];
+
+function pushSeriesPoint() {
+  seriesBuckets.push({ t: Date.now(), requests: metrics.requests.total, errors: metrics.errors.total });
+  // 多留一个桶作为差分基线
+  if (seriesBuckets.length > SERIES_MAX_POINTS + 1) seriesBuckets.shift();
+}
+
+pushSeriesPoint();
+const seriesTimer = setInterval(pushSeriesPoint, SERIES_INTERVAL_MS);
+// 不阻止进程退出
+if (typeof seriesTimer.unref === 'function') seriesTimer.unref();
+
+/** 近 10 分钟每 30s 的增量序列（首个桶仅作基线，不输出） */
+export function getMetricsSeries() {
+  const out = [];
+  for (let i = 1; i < seriesBuckets.length; i++) {
+    out.push({
+      t: seriesBuckets[i].t,
+      requests: Math.max(0, seriesBuckets[i].requests - seriesBuckets[i - 1].requests),
+      errors: Math.max(0, seriesBuckets[i].errors - seriesBuckets[i - 1].errors),
+    });
+  }
+  return out;
+}
+
 export function getPrometheusMetrics() {
   const m = getMetrics();
   const lines = [];

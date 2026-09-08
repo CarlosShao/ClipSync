@@ -13,13 +13,17 @@
 //   GET /configs、GET /flags → requirePerm('admin.configs.view')（RB-06 读侧细粒度校验）
 //
 // 响应契约（src/admin-console/src/api/types.ts SystemConfig / FeatureFlag 逐字段对齐）：
-//   SystemConfig: { key, name, value, description?, updatedAt? }  —— value 为字符串
+//   SystemConfig: { key, name, value, description?, updatedAt?, consumer? }  —— value 为字符串；
+//     consumer 为消费方登记（AN-09）：字符串 = 消费方文件路径说明；null = 暂无消费方
+//     （管理台对该键显示「未接入」角标——改了不生效，运营可分辨）
 //   FeatureFlag:  { key, name, description, enabled }
 //   GET 返回数组（前端设置页一次性渲染，无分页）；PATCH 返回更新后的单条 + message
 //
 // 展示目录（name/描述文案）与前端设置页契约（admin-console/src/mocks/data.ts
 // mockConfigs / mockFlags）逐键对齐；DB（038/044 种子）只存键值与布尔值，
 // 展示元数据在此补齐（与 roles.js PERM_CATALOG 同一模式）。
+// consumer（AN-09）：每键登记真实消费方文件，禁止臆造——新增键时必须先 grep
+// 查证消费点再填；查无消费点一律填 null，由管理台打「未接入」角标。
 //
 // 语义契约（src/admin-console/src/mocks/handlers.ts / handlers.test.ts 固化）：
 //   - PATCH 未知配置键/开关键 → 404 { code: 40404 }
@@ -38,7 +42,7 @@ import { broadcastToAllClients } from '../../ws/server.js';
 import { invalidateFlagsCache, getFeatureFlags } from '../../utils/featureFlags.js';
 import { encryptField } from '../../utils/encryption.js';
 import { invalidateMaintenanceCache } from '../../middleware/maintenance.js';
-import { logger } from '../../utils/logger.js';
+import { logger, setLogLevel } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
 import { sendTestMail } from '../../utils/email.js';
@@ -52,107 +56,142 @@ const CONFIG_CATALOG = [
     key: 'maintenance_mode',
     name: '维护模式',
     description: '开启后客户端暂停同步并显示维护公告',
+    // AN-09 查证：maintenanceGuard 挂载于 index.js 同步链路（363-382），isMaintenanceOn 供 ws/server.js
+    consumer: 'src/server/src/middleware/maintenance.js（maintenanceGuard，index.js 挂载）+ ws/server.js',
   },
   {
     key: 'ai_max_tokens',
     name: 'AI 单次最大 Token 数',
     description: 'AI 助手单次对话 / 补全的 token 上限',
+    // AN-09 查证：AI 链路 max_tokens 全为硬编码字面量（aiChat/aiProviders/aiOcr），无读取点；
+    // aiTools.js update_system_config 白名单只是写入端非消费方（见 AN-03）
+    consumer: null,
   },
   {
     key: 'ai_default_provider',
     name: 'AI 默认服务商',
     description: 'AI 助手默认模型路由（openrouter / openai / anthropic / deepseek）',
+    // AN-09 查证：服务端供应商路由读 per-user ai_providers，未读此键（见 AN-03）
+    consumer: null,
   },
   {
     key: 'session_timeout_minutes',
     name: '管理台会话超时（分钟）',
     description: '管理员无操作自动登出时间',
+    // AN-09 查证：AdminLayout.tsx 空闲登出计时器读取（AF-51 方案 a 已接线，前端消费）
+    consumer: 'src/admin-console/src/layouts/AdminLayout.tsx（空闲自动登出，前端消费）',
   },
   {
     key: 'audit_log_retention_days',
     name: '审计日志保留天数',
     description: '审计日志的保留时长，超期归档后删除',
+    consumer: 'src/server/src/db/cleanup.js（审计归档任务 readAuditRetentionDays）',
   },
   // —— 收藏 / 审计（038 种子键补录展示目录，CO-36：此前键已入库但不在目录，管理台不可见不可改）——
   {
     key: 'max_collection_depth',
     name: '收藏层级最大深度',
     description: '收藏夹允许的最大嵌套层级（number，超出后禁止继续嵌套）',
+    // AN-09 查证：collections 链路无任何 depth 读取点，硬编码校验或无校验
+    consumer: null,
   },
   {
     key: 'enable_audit_log',
     name: '审计日志开关',
     description: '是否启用审计日志（boolean，关闭后新操作不再写入审计）',
+    // AN-09 查证：utils/audit.js logAuditEvent 无条件写库，无此键读取点
+    consumer: null,
   },
   // —— 限流配置（050，方案三 WP-A：运行时可调，rateLimiter.js 经 runtimeLimits 消费）——
   {
     key: 'rate_limit_api_per_min',
     name: '全局 API 限流（次/分钟）',
     description: '滑动窗口限流阈值，按用户计数（匿名按 IP）',
+    consumer: 'src/server/src/middleware/rateLimiter.js（经 utils/runtimeLimits.js 读取）',
   },
   {
     key: 'rate_limit_send_code_per_hour',
     name: '验证码发送限流（次/小时）',
     description: '单手机号验证码发送上限，短信成本保护',
+    consumer: 'src/server/src/middleware/rateLimiter.js（经 utils/runtimeLimits.js 读取）',
   },
   {
     key: 'rate_limit_login_failed_per_15min',
     name: '登录失败锁定（次/15分钟）',
     description: '单手机号登录失败锁定阈值',
+    consumer: 'src/server/src/middleware/rateLimiter.js（经 utils/runtimeLimits.js 读取）',
   },
   {
     key: 'rate_limit_upload_per_min',
     name: '上传接口限流（次/分钟）',
     description: '上传与大文件分片接口的独立限流',
+    consumer: 'src/server/src/middleware/rateLimiter.js（经 utils/runtimeLimits.js 读取）',
   },
   {
     key: 'rate_limit_disabled',
     name: '关闭限流（生产禁用）',
     description: '总开关：开启后全部限流失效；生产环境后端拒绝写入 true',
+    consumer: 'src/server/src/middleware/rateLimiter.js（经 utils/runtimeLimits.js 读取）',
   },
   // —— 运维（050，CO-41：日志级别热调）——
   {
     key: 'log_level',
     name: '运行时日志级别',
     description: 'debug / info / warn / error，保存后热生效（debug/info/warn/error）',
+    consumer: 'src/server/src/utils/logger.js（setLogLevel，configs PATCH 后热生效）',
+  },
+  // —— 运维（055，AF-30：Grafana 跳转地址，ops/overview 下发，空则前端置灰）——
+  {
+    key: 'grafana_url',
+    name: 'Grafana 地址',
+    description: '运维页「打开 Grafana 容器总览」跳转地址，如 http://127.0.0.1:3004；为空则按钮置灰',
+    consumer: 'src/server/src/routes/admin/ops.js（readGrafanaUrl，ops/overview 下发）',
+  },
+  // —— 设备（056，AF-50：在线判定超时，deviceOnlineSweep 每 60s 扫描）——
+  {
+    key: 'device_offline_timeout_minutes',
+    name: '设备离线判定阈值（分钟）',
+    description: '在线设备超过该时长未上报心跳（WS ping）将被定时扫描置为离线，默认 5',
   },
   // —— 邮件 SMTP（050，CO-30：smtp_pass 由管理台加密写入、脱敏展示）——
   {
     key: 'smtp_host',
     name: 'SMTP 服务器地址',
     description: '为空时邮件走控制台兜底（不真实发送）',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
   },
   {
     key: 'smtp_port',
     name: 'SMTP 端口',
     description: '465=SSL 直连 / 587=STARTTLS',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
   },
   {
     key: 'smtp_user',
     name: 'SMTP 用户名',
     description: '邮箱账号或 API 用户',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
   },
   {
     key: 'smtp_pass',
     name: 'SMTP 密码/授权码',
     description: '加密存储，保存后仅显示是否已配置',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
   },
   {
     key: 'smtp_from',
     name: '发件人地址',
     description: '如 no-reply@example.com',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
   },
   {
     key: 'smtp_secure',
     name: 'SMTP SSL 直连',
     description: 'true=SSL(465) / false=STARTTLS(587)',
+    consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
   },
-  // —— 菜单覆盖（050，方案一 MA-07：运行时可调菜单可见性）——
-  {
-    key: 'menu_overrides',
-    name: '菜单可见性覆盖',
-    description: 'JSON 对象：{"nav.ai":{"minPlan":"Pro"}} 深合并进菜单注册表',
-  },
+  // AF-42：menu_overrides 已从管理台目录移除——客户端无读取通道（setOverrides 预留未调用），
+  // 属"可改不生效"。库中行保留，待客户端下发通道立项后恢复（见 docs/plans/tickets AN-02）。
 ];
 
 const CONFIG_CATALOG_MAP = new Map(CONFIG_CATALOG.map((c) => [c.key, c]));
@@ -225,6 +264,8 @@ function mapConfigRow(meta, row) {
     value,
     description: meta.description || row?.description || undefined,
     updatedAt: formatDateTimeMinute(row?.updated_at),
+    // AN-09：消费方登记（null = 未接入，管理台打角标）；缺省兜底 null 保证契约字段稳定
+    consumer: meta.consumer ?? null,
   };
 }
 
@@ -315,6 +356,14 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
       invalidateMaintenanceCache();
       const mode = valueStr.trim().toLowerCase() === 'on' ? 'on' : 'off';
       broadcastToAllClients({ type: 'maintenance.updated', mode });
+    }
+
+    // AF-52：log_level 写库后热生效（CO-41 承诺的「保存后热生效」此前未接线）
+    if (key === 'log_level') {
+      const applied = setLogLevel(valueStr);
+      if (!applied) {
+        logger.warn('[admin/configs] log_level setLogLevel rejected', { value: valueStr });
+      }
     }
 
     // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason；

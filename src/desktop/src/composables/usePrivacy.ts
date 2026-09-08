@@ -2,6 +2,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
 
 const PIN_KEY = 'clipsync-privacy-pin'
+const PIN_SALT_KEY = 'clipsync-privacy-pin-salt'
 const PIN_TIMEOUT_KEY = 'clipsync-privacy-timeout'
 const CLEAR_CLIPBOARD_KEY = 'clipsync-privacy-clear-clipboard'
 const DEFAULT_PIN_TIMEOUT = 30000 // 30 seconds
@@ -18,6 +19,41 @@ const _clearClipboardAfterCopy = ref(false)
 let _peekTimer: ReturnType<typeof setTimeout> | null = null
 let _clipboardTimer: ReturnType<typeof setTimeout> | null = null
 
+// ── PIN hashing (Web Crypto) ──
+// 存储格式：PIN_KEY 存 SHA-256(salt + pin) 的 hex，PIN_SALT_KEY 存随机 16 字节 hex salt。
+// 兼容旧版：若 PIN_KEY 有值但无 salt，则为旧明文，校验通过后立即迁移为哈希。
+function randomSaltHex(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function hashPin(salt: string, pin: string): Promise<string> {
+  return sha256Hex(salt + pin)
+}
+
+// 旧明文 PIN → 哈希+salt 迁移（校验成功或启动时执行）
+async function migratePlaintextPin(pin: string): Promise<void> {
+  try {
+    const salt = randomSaltHex()
+    const hash = await hashPin(salt, pin)
+    localStorage.setItem(PIN_SALT_KEY, salt)
+    localStorage.setItem(PIN_KEY, hash)
+  } catch {
+    /* crypto 不可用时保持明文原样，下次再试 */
+  }
+}
+
 function loadClearClipboardPref() {
   try {
     _clearClipboardAfterCopy.value = localStorage.getItem(CLEAR_CLIPBOARD_KEY) === '1'
@@ -33,23 +69,42 @@ export function usePrivacy() {
   // Load PIN from localStorage — NO default PIN
   function loadPin() {
     const saved = localStorage.getItem(PIN_KEY)
-    _pinSet.value = !!saved && saved.length >= 4
+    _pinSet.value = !!saved
+    // 旧明文迁移：启动时若检测到明文且无 salt，立即哈希化覆写（无需用户校验，明文本身即凭据）
+    const salt = localStorage.getItem(PIN_SALT_KEY)
+    if (saved && !salt) {
+      void migratePlaintextPin(saved)
+    }
   }
 
-  // Set a new PIN (4-6 digits)
-  function setPin(pin: string): boolean {
+  // Set a new PIN (4-6 digits) — stores SHA-256(salt + pin), never plaintext
+  async function setPin(pin: string): Promise<boolean> {
     if (!/^\d{4,6}$/.test(pin)) return false
-    localStorage.setItem(PIN_KEY, pin)
+    const salt = randomSaltHex()
+    const hash = await hashPin(salt, pin)
+    localStorage.setItem(PIN_SALT_KEY, salt)
+    localStorage.setItem(PIN_KEY, hash)
     _pinSet.value = true
     _pinVerified.value = true
     _pinExpiresAt.value = Date.now() + getPinTimeout()
     return true
   }
 
-  // Verify PIN
-  function verifyPin(pin: string): boolean {
+  // Verify PIN (async — Web Crypto hashing). Legacy plaintext fallback: on the
+  // last plaintext check that succeeds, immediately migrate to hash + salt.
+  async function verifyPin(pin: string): Promise<boolean> {
     const saved = localStorage.getItem(PIN_KEY)
-    const ok = saved !== null && saved === pin
+    if (saved === null) return false
+    const salt = localStorage.getItem(PIN_SALT_KEY)
+    let ok = false
+    if (salt) {
+      const hash = await hashPin(salt, pin)
+      ok = hash === saved
+    } else {
+      // legacy plaintext mode (migration pending/raced)
+      ok = saved === pin
+      if (ok) await migratePlaintextPin(pin)
+    }
     if (ok) {
       _pinVerified.value = true
       _pinExpiresAt.value = Date.now() + getPinTimeout()
@@ -57,10 +112,11 @@ export function usePrivacy() {
     return ok
   }
 
-  // Reset PIN
+  // Reset PIN (clears hash and salt)
   function resetPin() {
     const oldPinSet = _pinSet.value
     localStorage.removeItem(PIN_KEY)
+    localStorage.removeItem(PIN_SALT_KEY)
     _pinSet.value = false
     _pinVerified.value = false
     _peekItemId.value = null
