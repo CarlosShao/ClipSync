@@ -50,7 +50,7 @@
     "updater": {
       "active": true,
       "dangerousDisablePluginAutostart": false,
-      "endpoints": ["https://updates.clipsync.app/api/app/update.json"],
+      "endpoints": ["https://updates.clipsync.app/api/app/updates/latest?target={{target}}&current_version={{current_version}}"],
       "pubkey": "placeholder_pubkey_replace_in_production"
     }
   }

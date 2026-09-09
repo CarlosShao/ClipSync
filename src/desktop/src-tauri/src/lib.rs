@@ -1042,6 +1042,31 @@ fn encode_rgba_to_png_data_url(rgba: &[u8], w: u32, h: u32) -> Result<String, St
 /// **尚未配置**——此时必须明确报错，而不是继续谎报"已是最新版本"（A7）。
 const PLACEHOLDER_UPDATER_PUBKEY: &str = "placeholder_pubkey_replace_in_production";
 
+/// AN-04：更新端点环境变量覆盖。
+/// 设置 `CLIPSYNC_UPDATER_ENDPOINT` 时用它替换 tauri.conf.json 里的 endpoints
+/// （如本地开发指向 dev 后端 http://localhost:3001/api/app/updates/latest?...）；
+/// 未设置/非法时回落 conf 配置。注意：非 https 端点仅 debug 构建允许，release 包必须 https。
+#[cfg(not(mobile))]
+fn updater_with_override(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    // updater_builder() 直接返回 UpdaterBuilder（非 Result）
+    let builder = app.updater_builder();
+    let builder = match std::env::var("CLIPSYNC_UPDATER_ENDPOINT") {
+        Ok(endpoint) => {
+            let url = endpoint
+                .trim()
+                .parse::<url::Url>()
+                .map_err(|e| format!("CLIPSYNC_UPDATER_ENDPOINT 非法 URL: {}", e))?;
+            builder
+                .endpoints(vec![url])
+                .map_err(|e| format!("更新端点校验失败: {}", e))?
+        }
+        Err(_) => builder,
+    };
+    builder.build().map_err(|e| e.to_string())
+}
+
 /// 从已解析的 Tauri 插件配置里读取 updater 的 pubkey。
 fn updater_pubkey(app: &tauri::AppHandle) -> Option<String> {
     app.config()
@@ -1065,8 +1090,6 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<serde_json::Value, S
 
     #[cfg(not(mobile))]
     {
-        use tauri_plugin_updater::UpdaterExt;
-
         // A7：pubkey 缺失或仍是占位值 → 明确告知"更新服务未配置"
         let pubkey = updater_pubkey(&app).unwrap_or_default();
         if pubkey.trim().is_empty() || pubkey == PLACEHOLDER_UPDATER_PUBKEY {
@@ -1074,9 +1097,8 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<serde_json::Value, S
             return Err("UPDATER_NOT_CONFIGURED".to_string());
         }
 
-        let updater = app
-            .updater()
-            .map_err(|e| format!("更新服务未配置或初始化失败: {}", e))?;
+        // AN-04：经 updater_builder 构建，支持 CLIPSYNC_UPDATER_ENDPOINT 覆盖端点
+        let updater = updater_with_override(&app)?;
 
         match updater.check().await {
             Ok(Some(update)) => {
@@ -1108,9 +1130,8 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 
     #[cfg(not(mobile))]
     {
-        use tauri_plugin_updater::UpdaterExt;
-
-        let updater = app.updater().map_err(|e| e.to_string())?;
+        // AN-04：与检查同源（环境变量覆盖后同一端点，避免 check/install 漂移）
+        let updater = updater_with_override(&app)?;
         let update = match updater.check().await {
             Ok(Some(u)) => u,
             Ok(None) => return Err("没有可用更新".to_string()),

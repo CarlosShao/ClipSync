@@ -37,6 +37,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clipboard-win = { version = "5", features = ["std", "monitor"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+# AN-04：updater 端点环境变量覆盖（CLIPSYNC_UPDATER_ENDPOINT）需要 url::Url 解析
+url = "2"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "bmp", "jpeg", "webp"] }
 chrono = { version = "0.4", features = ["serde"] }
