@@ -98,9 +98,22 @@
 - **依赖**：AF-30（Grafana 地址先修对）
 - **验收**：人为触发一次 500 → 告警在运维页出现；Prometheus 不可达时卡片显示「告警服务不可用」而非报错
 
----
-
-## WP-S 安全与合规（P2）
+### AN-16 邮件多通道（多 SMTP 账号 + 按用途路由 + failover）⬜ P2 ⛔ 需决策
+- **问题**：用户提出。当前 SMTP 为单套全局配置（`system_configs.smtp_*` 6 键，050 迁移），`utils/email.js` 全站唯一 transporter、无路由概念。单通道的 3 个真实缺陷：
+  1. **送达率/信誉**：验证码（事务）与公告（批量）混用同一发件人，信誉互相拖累；QQ 个人邮箱对国外邮箱送达率一般
+  2. **量级**：QQ 免费邮箱每日约数百封上限，超限暂时封禁 → 验证码服务整体不可用
+  3. **无容灾**：授权码过期/服务商限流时邮件全断，无备用通道
+  - 注意澄清：技术上**一个 SMTP 账号即可向任意邮箱（含 Gmail）发信**，"用户用 Gmail 注册"不构成多配置的必要理由；真正驱动是上面 3 点
+- **方案（推荐 A）**：
+  - 新表 `email_channels`：`id / name / purpose(transactional|marketing) / provider(smtp，预留 aliyun_dm、sendgrid) / host / port / secure / username / password(AES-GCM，沿用 encryption.js) / from_addr / enabled / priority / created_at / updated_at`
+  - 迁移：把现有 `system_configs.smtp_*` 自动导入为「默认事务通道」，原键保留只读兼容一个版本后废弃
+  - `email.js`：transporter 按 channelId 缓存（现按连接参数串）；`sendEmail({ channel/purpose })` 按用途选通道；主通道失败自动按 priority 降级一次
+  - 管理台「邮件 (SMTP)」卡改造：通道列表（新增/编辑/删除/启用/发送测试邮件/设默认），操作记审计
+  - 权限：新增 `admin.email_channels.manage`，挂到 configs 相关角色
+- **备选方案 B（最小改）**：维持单套 SMTP，仅加一个「备用 SMTP」键 + 主失败切备。成本低，但解决不了信誉隔离与用途路由
+- **依赖**：AF-01（系统参数 Form 修复，通道 UI 才有承载）、CO-30（现有 SMTP 配置化基础）
+- **验收**：配置两个 SMTP 通道 → 用「发送测试邮件」分别测试通过；停用主通道后验证码自动走备用通道发出；审计日志可查通道变更与测试记录
+- **建议时机**：P2；若上线后用专业邮件服务商（阿里云邮件推送/Resend 等）可直接按本表结构接入，不必再迁移
 
 ### AN-11 超管操作审计视图 ⬜ P2
 - **问题**：S1。`super_admin_action` 表只写不读
@@ -170,4 +183,4 @@
 | 第 2 批 | AN-02、AN-03、AN-05 | 三条下发/配置通道，均依赖 AN-09 的目录规范 |
 | 第 3 批 | AN-04、AN-06、AN-07、AN-15 | 发版与运维（AN-15 依赖 AF-30） |
 | 第 4 批 | AN-10、AN-21、AN-22 | 防复发机制 |
-| 第 5 批 | AN-08、AN-11～AN-14 | 存储、安全合规 |
+| 第 5 批 | AN-08、AN-11～AN-14、AN-16 | 存储、安全合规、邮件多通道（AN-16 依赖 AF-01；可先按备选 B 最小改） |
