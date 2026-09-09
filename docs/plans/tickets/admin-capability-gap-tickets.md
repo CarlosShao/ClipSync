@@ -37,7 +37,7 @@
 - **边界**：本期只做全局策略，不做按用户/按套餐分组
 - **验收**：后台关闭「允许用户修改同步间隔」并设为 15 分钟 → 桌面端设置项置灰且实际按 15 分钟同步；改回允许用户改后本地值恢复生效
 
-### AN-03 AI 平台设置页 ⬜ P1
+### AN-03 AI 平台设置页 ✅（2026-09-09 第二波落地） P1
 - **问题**：G4。`ai_providers`（含加密 API Key）、`ai_settings` 无管理视图；`ai_max_tokens` / `ai_default_provider` 两个配置项**无消费方**（配了不生效）
 - **改动**：
   1. 后端 `GET/POST/PATCH/DELETE /api/admin/ai-providers`（Key 写库加密、读取脱敏；`admin.configs.view/manage`）+ 全局默认供应商/模型切换
@@ -45,7 +45,7 @@
   3. 管理台新页面 `/ai`：供应商列表（名称 / baseUrl / 模型 / Key 脱敏 / 启用状态）+ 全局参数
 - **验收**：后台禁用某供应商 → 桌面端该供应商不可选；改全局 token 上限 → AI 调用实际受限
 
-### AN-04 版本与发布管理 ⬜ P1
+### AN-04 版本与发布管理 ✅（2026-09-09 第二波落地） P1
 - **问题**：G6。`GET /api/app/version` 硬编码 `releaseDate='2026-06-24'`、`notes='Bug fixes...'`；`update.json` 硬编码 `hasUpdate=false` → 无法发版、无法灰度/强制更新
 - **改动**：
   1. 迁移：新表 `app_releases(id, version, name, release_date, notes, platforms JSONB, force_update, rollout_percent, published_at)`
@@ -63,7 +63,7 @@
 
 ## WP-O 运维能力（P1/P2）
 
-### AN-06 运维动作区 + 备份管理 ⬜ P1
+### AN-06 运维动作区 + 备份管理 ✅（2026-09-09 第二波落地） P1
 - **问题**：O3/O5。运维页纯只读，无任何运维动作；备份无任务
 - **改动**（全部走 `ConfirmReasonModal` + 审计 + `admin.ops.view`）：
   1. `POST /api/admin/ops/actions` 支持 `clear_cache`（清 flags/limits 缓存）、`reload_configs`、`force_logout_all`（全员下线）、`trigger_backup`
@@ -76,7 +76,7 @@
 - **改动**：`/api/admin` 挂 `apiLimiter`（阈值走 `rate_limit_api_per_min`）；`POST /api/admin/*` 高危写操作（退款 / 删除 / 关维护 / 全员下线）额外挂 `strictLimiter`
 - **验收**：短时间高频调管理接口触发 429；正常操作不受影响
 
-### AN-08 存储用量与清理归档 ⬜ P2
+### AN-08 存储用量与清理归档 ✅（2026-09-09 第二波落地） P2
 - **问题**：O10。只见个人用量，无全局视图与回收能力
 - **改动**：`GET /api/admin/storage/top`（用户 × 用量 TopN + 总计）；配置键 `storage_cleanup_enabled` / 全局 `file_retention_days`；`db/cleanup.js` 增加过期文件清理任务
 - **验收**：TopN 与 `SUM(content_size)` 交叉一致；开启清理后过期文件被回收且用量下降
@@ -91,7 +91,7 @@
 - **改动**：`GET /api/admin/flags` 增 `enforced: boolean`（该键是否存在 `requireFlag/isFlagEnabled` 调用点，可用构建期生成的清单或启动时扫描源码缓存）；运维/设置页显示「DB 值 / 进程缓存值 / 是否强制」三列，不一致即告警
 - **验收**：人为在库中改 flag 绕过管理台 → 页面显示 DB 与缓存不一致
 
-### AN-15 告警接入（只读）⬜ P2
+### AN-15 告警接入（只读）✅（2026-09-09 第二波落地） P2
 - **问题**：O4。`monitoring/` 已有 Prometheus + Grafana + 飞书 webhook 告警规则，但管理台无告警视图，排查必须自行开 Grafana（而 AF-30 之前跳转还是错的）
 - **改动**：`GET /api/admin/ops/alerts` 代理 Prometheus `/api/v1/alerts`（地址走新增配置键 `prometheus_url`，超时 3s 降级）；运维页新增「活跃告警」列表（级别 / 名称 / 触发时间 / 跳转 Grafana 对应面板）
 - **边界**：只读，不做规则编辑与静默
@@ -115,17 +115,17 @@
 - **验收**：配置两个 SMTP 通道 → 用「发送测试邮件」分别测试通过；停用主通道后验证码自动走备用通道发出；审计日志可查通道变更与测试记录
 - **建议时机**：P2；若上线后用专业邮件服务商（阿里云邮件推送/Resend 等）可直接按本表结构接入，不必再迁移
 
-### AN-11 超管操作审计视图 ⬜ P2
+### AN-11 超管操作审计视图 ✅（2026-09-09 第二波落地） P2
 - **问题**：S1。`super_admin_action` 表只写不读
 - **改动**：审计页增加「超管操作」页签（筛选 + 详情），或在筛选器增「操作者级别=super_admin」
 - **验收**：执行退款/维护模式后，该页签能查到对应记录（含 reason）
 
-### AN-12 管理员安全策略 ⬜ P2
+### AN-12 管理员安全策略 ✅（2026-09-09 第二波落地） P2
 - **问题**：S2。管理员账号无强制 2FA、无会话管理、无登录地/IP 限制
 - **改动**：新增开关 `force_2fa_for_admin`（管理台登录时若为管理角色且未开 2FA → 引导强制开启）；管理台「管理员会话」列表（复用 `user_sessions`，可强制下线）
 - **验收**：开启强制 2FA 后，未绑 2FA 的管理员登录被拦截并引导绑定
 
-### AN-13 数据主体请求（导出 / 删除）⬜ P2
+### AN-13 数据主体请求（导出 / 删除）✅（2026-09-09 第二波落地） P2
 - **问题**：S4。无用户数据导出（可携权）与彻底删除能力
 - **改动**：管理台用户抽屉增「导出用户数据」（打包剪贴板/文件清单/订阅/订单为 JSON）与「彻底删除」（硬删 + 关联清理，需二次确认 + reason + 超管权限）
 - **验收**：导出文件字段完整；彻底删除后该用户所有关联数据不可恢复（审计仍留痕）

@@ -69,13 +69,14 @@ async function validateProviderBaseUrl(input) {
 }
 
 // GET /api/ai/providers - 列出当前用户的供应商（不返回密钥明文，仅 hasKey 标记）
+// AN-03：管理台禁用（enabled=FALSE）的供应商不返回 → 桌面端不可选（聊天/OCR 链路同步过滤）
 router.get('/providers', apiLimiter, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, provider, name, base_url, model, models, is_default, context_window, api_format, created_at, updated_at,
+      `SELECT id, provider, name, base_url, model, models, is_default, context_window, api_format, enabled, created_at, updated_at,
               (api_key_encrypted IS NOT NULL AND api_key_encrypted <> '') AS has_key
        FROM ai_providers
-       WHERE user_id = $1
+       WHERE user_id = $1 AND enabled = TRUE
        ORDER BY is_default DESC, created_at ASC`,
       [req.userId]
     )

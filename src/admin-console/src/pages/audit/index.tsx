@@ -12,7 +12,7 @@ import { queryKeys } from '@/queryKeys';
 import { buildAuditCsv, buildAuditCsvFilename, downloadTextFile } from './auditCsv';
 import { isSensitiveAction } from './sensitive';
 import { AuditDetailModal } from './AuditDetailModal';
-import type { AuditActionFilter, AuditLog, AuditOperatorFilter, AuditResult } from '@/api/types';
+import type { AuditActionFilter, AuditActorLevel, AuditLog, AuditOperatorFilter, AuditResult } from '@/api/types';
 import styles from './audit.module.css';
 
 /** CSS Modules + noUncheckedIndexedAccess：索引类名可能 undefined，兜底空串 */
@@ -21,6 +21,8 @@ const sensitiveRowClass = styles.sensitiveRow ?? '';
 interface AuditFilters {
   action: AuditActionFilter;
   operator: AuditOperatorFilter;
+  /** AN-11：操作者级别（super_admin / admin / user），all=不过滤 */
+  actorLevel: AuditActorLevel | 'all';
   result: AuditResult | 'all';
   ip?: string;
   /** AF-34：按用户过滤（用户抽屉「查看审计日志」跳转带入） */
@@ -33,6 +35,7 @@ interface AuditFilters {
 const DEFAULT_FILTERS: AuditFilters = {
   action: 'all',
   operator: 'all',
+  actorLevel: 'all',
   result: 'all',
   dateFrom: dayjs().subtract(7, 'day').format('YYYY-MM-DD'),
   dateTo: dayjs().format('YYYY-MM-DD'),
@@ -50,6 +53,14 @@ const OPERATOR_OPTIONS: { value: AuditOperatorFilter; label: string }[] = [
   { value: 'Carlos', label: 'Carlos（超管）' },
   { value: 'Yuki', label: 'Yuki（管理员）' },
   { value: 'end_user', label: '终端用户' },
+];
+
+// AN-11：操作者级别筛选（超管操作审计：superAdminAudit 写入的 super_admin_action 行可按此过滤）
+const ACTOR_LEVEL_OPTIONS: { value: AuditActorLevel | 'all'; label: string }[] = [
+  { value: 'all', label: '级别：全部' },
+  { value: 'super_admin', label: '超管（super_admin）' },
+  { value: 'admin', label: '管理员（admin）' },
+  { value: 'user', label: '终端用户（user）' },
 ];
 
 const RESULT_OPTIONS: { value: AuditResult | 'all'; label: string }[] = [
@@ -240,6 +251,12 @@ export default function AuditPage() {
             value={draft.operator}
             onChange={(value) => setDraft((prev) => ({ ...prev, operator: value }))}
             options={OPERATOR_OPTIONS}
+          />
+          <Select<AuditActorLevel | 'all'>
+            style={{ width: 168 }}
+            value={draft.actorLevel}
+            onChange={(value) => setDraft((prev) => ({ ...prev, actorLevel: value }))}
+            options={ACTOR_LEVEL_OPTIONS}
           />
           <Select<AuditResult | 'all'>
             style={{ width: 122 }}

@@ -50,6 +50,7 @@ export const PERM_CATALOG = [
   { permKey: 'admin.keys.view', name: '设备密钥细节（仅超管）', category: 'audit_security', superAdminOnly: true },
   { permKey: 'admin.configs.manage', name: '系统参数与功能开关', category: 'operations', superAdminOnly: true },
   { permKey: 'admin.announce.send', name: '公告与通知下发', category: 'operations' },
+  { permKey: 'admin.release.manage', name: '版本发布管理（发布/编辑/撤回/删除）', category: 'operations', superAdminOnly: true }, // 065/AN-04
 ];
 
 const PERM_CATALOG_MAP = new Map(PERM_CATALOG.map((p) => [p.permKey, p]));

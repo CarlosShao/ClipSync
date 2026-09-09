@@ -31,6 +31,8 @@ const router = Router();
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const VALID_RESULTS = new Set(['success', 'failed']);
+// AN-11：操作者级别筛选（audit_logs JOIN roles.role_key），覆盖 super_admin_action 审计行的读取缺口
+const VALID_ACTOR_LEVELS = new Set(['super_admin', 'admin', 'user']);
 // 敏感操作判定（与前端 pages/audit/sensitive.ts 同一份规则）
 const SENSITIVE_EXACT_ACTIONS = new Set(['user.deactivate', 'role.assign', 'user.delete']);
 // 摘要字符串最大长度（超长截断，防止大对象 details 撑爆表格/CSV）
@@ -123,7 +125,7 @@ function parsePaging(query) {
  */
 function buildAuditFilters(query, params) {
   const where = [];
-  const { action, operator, result, ip, dateFrom, dateTo, q, userId } = query;
+  const { action, operator, actorLevel, result, ip, dateFrom, dateTo, q, userId } = query;
 
   if (action && action !== 'all') {
     if (action === 'auth') {
@@ -155,6 +157,16 @@ function buildAuditFilters(query, params) {
   if (userId && String(userId).trim()) {
     params.push(String(userId).trim());
     where.push(`al.user_id = $${params.length}`);
+  }
+
+  // AN-11：按操作者级别过滤（super_admin / admin / user）。
+  // 典型用途：读取 superAdminAudit 中间件写入的 action='super_admin_action' 审计行
+  //（超管退款/维护模式等敏感 HTTP 写操作），此前只写不读。
+  if (actorLevel && actorLevel !== 'all') {
+    const level = String(actorLevel);
+    if (!VALID_ACTOR_LEVELS.has(level)) return null;
+    params.push(level);
+    where.push(`r.role_key = $${params.length}`);
   }
 
   if (result && result !== 'all') {
@@ -240,8 +252,8 @@ function mapAuditRow(row) {
 
 /**
  * GET /api/admin/audit-logs
- *   ?action=&operator=&result=&ip=&dateFrom=&dateTo=&q=&page=&pageSize=
- * 审计日志分页列表（动作组/操作者/结果/IP/日期筛选），按时间倒序。
+ *   ?action=&operator=&actorLevel=&result=&ip=&dateFrom=&dateTo=&q=&page=&pageSize=
+ * 审计日志分页列表（动作组/操作者/操作者级别/结果/IP/日期筛选），按时间倒序。
  */
 router.get('/', requirePerm('admin.audit.view'), async (req, res) => {
   try {

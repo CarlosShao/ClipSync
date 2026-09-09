@@ -41,6 +41,12 @@ import policiesAdminRoutes from './policies.js';
 import opsAdminRoutes from './ops.js';
 // AN-16：邮件多通道管理（多 SMTP 账号 + 按用途路由 + failover）
 import emailChannelsAdminRoutes from './emailChannels.js';
+// AN-12：管理员安全策略 —— 管理员会话列表 + 单会话强制下线
+import sessionsAdminRoutes from './sessions.js';
+// AN-03：AI 平台管理（供应商启停/编辑 + 全局参数经 configs 键消费）
+import aiProvidersAdminRoutes from './aiProviders.js';
+// AN-04：版本发布管理（admin.release.manage，065 迁移仅授 super_admin）
+import releasesAdminRoutes from './releases.js';
 
 const adminRouter = Router();
 
@@ -56,6 +62,7 @@ const ADMIN_STRICT_WRITE_PATTERNS = [
   /^\/users\/[^/]+$/,               // 删除账号（DELETE）
   /^\/devices\/[^/]+\/offline$/,    // 设备远程下线
   /^\/ops\/actions$/,               // 运维动作区（clear_cache / force_logout_all 等）
+  /^\/sessions\/[^/]+\/revoke$/,    // AN-12：管理员单会话强制下线
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&
@@ -135,6 +142,21 @@ adminRouter.use('/ops', opsAdminRoutes);
 // 权限：全部端点 requirePerm('admin.email_channels.manage')（列表/新建/编辑/删除/发送测试）。
 // password 加密落库、GET 脱敏为 has_password；操作写审计 admin.email_channel.*。
 adminRouter.use('/email-channels', emailChannelsAdminRoutes);
+
+// ---- AN-12：管理员会话（复用 admin.users.view/manage，不新增权限键）----
+// 权限：列表 requirePerm('admin.users.view')、单会话下线 requirePerm('admin.users.manage')；
+// 数据源 user_sessions JOIN roles（仅 level>=50 管理角色）；下线写审计 admin.session.revoke。
+adminRouter.use('/sessions', sessionsAdminRoutes);
+
+// ---- AN-03：AI 平台管理（admin.ai.manage，062 迁移仅授 super_admin）----
+// 权限：全部端点 requirePerm('admin.ai.manage')（供应商列表/启停/编辑）。
+// api_key 不解密不回传（仅 has_key 布尔）；禁用行在用户端列表/聊天/OCR 全链路过滤。
+adminRouter.use('/ai-providers', aiProvidersAdminRoutes);
+
+// ---- AN-04：版本发布管理（admin.release.manage，065 迁移仅授 super_admin）----
+// 权限：全部端点 requirePerm('admin.release.manage')（列表/新建/编辑/发布撤回/删除）。
+// 消费方：routes/app.js 公开端点（/version、/update.json、/updates/latest）。
+adminRouter.use('/releases', releasesAdminRoutes);
 
 // ---- RB-08：慢查询归位 RBAC（原游离端点在 src/index.js 用 users.is_admin 判权，已删除）----
 // 权限：admin.audit.view（慢查询属数据库运维观测，与审计同受众）

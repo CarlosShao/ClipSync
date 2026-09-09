@@ -12,9 +12,15 @@ const DevicesPage = lazy(() => import('@/pages/devices'));
 const OrdersPage = lazy(() => import('@/pages/orders'));
 const SubscriptionsPage = lazy(() => import('@/pages/subscriptions'));
 const PlansPage = lazy(() => import('@/pages/plans'));
+// AN-04：版本发布管理页（admin.release.manage，065 迁移仅授 super_admin）
+const ReleasesPage = lazy(() => import('@/pages/releases'));
+// AN-03：AI 平台设置页（admin.ai.manage，062 迁移仅授 super_admin，前端通配放行）
+const AiPage = lazy(() => import('@/pages/ai'));
 // AN-02：客户端策略下发页（复用 configs.view/manage 权限键，不新增权限）
 const PoliciesPage = lazy(() => import('@/pages/policies'));
 const AuditPage = lazy(() => import('@/pages/audit'));
+// AN-12：管理员安全策略 —— 管理员会话页（复用 admin.users.view，不新增权限）
+const SecurityPage = lazy(() => import('@/pages/security'));
 const RolesPage = lazy(() => import('@/pages/roles'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
 const OpsPage = lazy(() => import('@/pages/ops'));
@@ -99,6 +105,14 @@ export function AppRoutes() {
           )}
         />
         <Route
+          path="/releases"
+          element={lazyNode(
+            <RequireRole permission="admin.release.manage">
+              <ReleasesPage />
+            </RequireRole>,
+          )}
+        />
+        <Route
           path="/policies"
           element={lazyNode(
             <RequireRole permission="admin.configs.view">
@@ -115,6 +129,14 @@ export function AppRoutes() {
           )}
         />
         <Route
+          path="/security"
+          element={lazyNode(
+            <RequireRole permission="admin.users.view">
+              <SecurityPage />
+            </RequireRole>,
+          )}
+        />
+        <Route
           path="/roles"
           element={lazyNode(
             <RequireRole permission="admin.roles.view">
@@ -127,6 +149,14 @@ export function AppRoutes() {
           element={lazyNode(
             <RequireRole permission={['admin.configs.view', 'admin.announce.send']}>
               <SettingsPage />
+            </RequireRole>,
+          )}
+        />
+        <Route
+          path="/ai"
+          element={lazyNode(
+            <RequireRole permission="admin.ai.manage">
+              <AiPage />
             </RequireRole>,
           )}
         />

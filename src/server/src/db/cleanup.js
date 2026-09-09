@@ -2,6 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import pool from './pool.js';
 import { logger } from '../utils/logger.js';
+// AN-08：手动清理复用文件保留期清理（文件条目 DB 行 + 磁盘文件 + 遗留物清扫）
+import { runFileRetentionCleanup } from '../services/fileRetentionCleanup.js';
 
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
 
@@ -12,6 +14,14 @@ export function startCleanupScheduler() {
 }
 
 async function cleanupExpiredItems() {
+  // AN-08：返回统计（管理台「存储清理」手动触发需要可展示的执行结果）
+  const stats = {
+    expiredItems: 0, // 过期剪贴板条目
+    oldVerificationCodes: 0, // 超 24h 验证码
+    notificationHistory: 0, // 超保留期通知历史
+    tombstones: 0, // 超保留期删除墓碑
+    error: null, // 整轮失败时的错误摘要（不抛出，由调用方展示）
+  };
   try {
     // Delete expired clipboard items
     const result = await pool.query(
@@ -23,6 +33,7 @@ async function cleanupExpiredItems() {
     if (result.rowCount > 0) {
       logger.info(`[Cleanup] Deleted ${result.rowCount} expired clipboard items`);
     }
+    stats.expiredItems = result.rowCount || 0; // AN-08 统计
 
     // Clean up old verification codes (older than 24 hours)
     const vcResult = await pool.query(
@@ -34,6 +45,7 @@ async function cleanupExpiredItems() {
     if (vcResult.rowCount > 0) {
       logger.info(`[Cleanup] Deleted ${vcResult.rowCount} old verification codes`);
     }
+    stats.oldVerificationCodes = vcResult.rowCount || 0;
 
     // Clean up old notification history (retention, default 90 days) —— P6 修复
     const NOTIFICATION_RETENTION_DAYS = parseInt(process.env.NOTIFICATION_RETENTION_DAYS) || 90;
@@ -46,6 +58,7 @@ async function cleanupExpiredItems() {
     if (nhResult.rowCount > 0) {
       logger.info(`[Cleanup] Deleted ${nhResult.rowCount} old notification history records (retention ${NOTIFICATION_RETENTION_DAYS}d)`);
     }
+    stats.notificationHistory = nhResult.rowCount || 0;
 
     // Clean up old deletion tombstones (retention, default 30 days)
     // 墓碑仅服务于"断线窗口内删除感知"，保留 30 天足够；防止表无限增长
@@ -58,13 +71,42 @@ async function cleanupExpiredItems() {
     if (tbResult.rowCount > 0) {
       logger.info(`[Cleanup] Deleted ${tbResult.rowCount} old deletion tombstones (retention ${TOMBSTONE_RETENTION_DAYS}d)`);
     }
+    stats.tombstones = tbResult.rowCount || 0;
 
     // 审计日志先归档后删除（CO-32）：保留天数读 system_configs.audit_log_retention_days
     // （管理台系统参数卡片可调），默认 365；归档失败则跳过删除，宁可超期保留不丢数据。
     await archiveAndDeleteExpiredAuditLogs();
+    return stats;
   } catch (err) {
     logger.error('[Cleanup] Error:', { error: err.message });
+    stats.error = err.message; // AN-08：手动触发的调用方可感知失败原因
+    return stats;
   }
+}
+
+// ───────────────────────── AN-08：手动清理入口（管理台触发） ─────────────────────────
+
+/**
+ * 手动执行一轮完整清理（管理台「存储清理」动作触发，工单 AN-08）：
+ *  1. cleanupExpiredItems() —— 过期剪贴板 / 验证码 / 通知历史 / 删除墓碑 + 审计归档；
+ *  2. runFileRetentionCleanup() —— 文件保留期过期条目（DB 行 + 磁盘文件）+ 磁盘遗留物清扫。
+ * 绝不抛出：失败信息收敛到返回值（error / fileRetention=null），由端点写入审计与响应。
+ */
+export async function runManualCleanup() {
+  const expired = await cleanupExpiredItems();
+  let fileRetention = null;
+  let fileRetentionError = null;
+  try {
+    fileRetention = await runFileRetentionCleanup();
+  } catch (err) {
+    fileRetentionError = err.message;
+    logger.error('[Cleanup] file retention manual run failed', { error: err.message });
+  }
+  return {
+    expired, // { expiredItems, oldVerificationCodes, notificationHistory, tombstones, error? }
+    fileRetention, // { db: {...}, disk: {...} } | null（null = 本轮有失败，见 fileRetentionError）
+    fileRetentionError,
+  };
 }
 
 // ───────────────────────── 审计日志归档（CO-32） ─────────────────────────

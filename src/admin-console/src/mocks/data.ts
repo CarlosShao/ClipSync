@@ -1,6 +1,7 @@
 import type {
   AdminDevice,
   AdminPlan,
+  AdminSession,
   AdminSubscription,
   AdminUser,
   Announcement,
@@ -13,6 +14,7 @@ import type {
   Role,
   SystemConfig,
 } from '@/api/types';
+import type { AdminAiProvider } from '@/api/ai';
 
 /**
  * MSW mock 数据 —— 全部取自视觉基线 design/mockups/admin-v2-light.html
@@ -835,6 +837,8 @@ export const mockPermissions: Permission[] = [
   { permKey: 'admin.keys.view', name: '设备密钥细节（仅超管）', category: 'audit_security', superAdminOnly: true },
   { permKey: 'admin.configs.manage', name: '系统参数与功能开关', category: 'operations', superAdminOnly: true },
   { permKey: 'admin.announce.send', name: '公告与通知下发', category: 'operations' },
+  // —— 版本发布管理（065，AN-04；仅授 super_admin）——
+  { permKey: 'admin.release.manage', name: '版本发布管理（发布/编辑/撤回/删除）', category: 'operations', superAdminOnly: true },
   // —— 读侧 view 键（049，RB-06）——
   { permKey: 'admin.devices.view', name: '查看设备列表与统计', category: 'users_devices' },
   { permKey: 'admin.orders.view', name: '查看订单与退款流水', category: 'subscriptions_orders' },
@@ -889,6 +893,7 @@ export const mockRoles: Role[] = [
           'admin.configs.manage',
           'admin.keys.view',
           'admin.ops.view',
+          'admin.release.manage', // 065/AN-04：仅 super_admin，与迁移授予策略一致
         ].includes(k) && (!k.startsWith('ai.') || k === 'ai.manage_devices'),
     ),
   },
@@ -994,7 +999,8 @@ export const mockConfigs: SystemConfig[] = [
     name: 'AI 单次最大 Token 数',
     value: '4096',
     description: 'AI 助手单次对话 / 补全的 token 上限',
-    consumer: null,
+    // AN-03 已接线：与后端 CONFIG_CATALOG 逐键对齐（buildUpstreamChat 统一钳制 max_tokens）
+    consumer: 'src/server/src/utils/aiProviders.js（buildUpstreamChat 经 utils/aiRuntimeConfig.js 统一钳制 max_tokens）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -1002,7 +1008,8 @@ export const mockConfigs: SystemConfig[] = [
     name: 'AI 默认服务商',
     value: 'openrouter',
     description: 'AI 助手默认模型路由（openrouter / openai / anthropic / deepseek）',
-    consumer: null,
+    // AN-03 已接线：与后端 CONFIG_CATALOG 逐键对齐（resolveUserProvider 兜底路由）
+    consumer: 'src/server/src/utils/aiRuntimeConfig.js（resolveUserProvider 兜底路由，aiChat.js 各端点消费）',
     updatedAt: '2026-08-12 10:20',
   },
   {
@@ -1258,5 +1265,115 @@ export const mockPlans: AdminPlan[] = [
     features: { ai_classify: true, team_management: true },
     isActive: true,
     createdAt: '2026-01-01',
+  },
+];
+
+// ─────────────── AN-03 追加：AI 平台（ai_providers 管理台脱敏视图） ───────────────
+
+export const mockAiProviders: AdminAiProvider[] = [
+  {
+    id: 'aip_0a1b2c3d-0001-4a5b-8c6d-000000000001',
+    user_id: 'usr_7c2f9e41-88d2-4b3a-a1c4',
+    user_label: '林清和',
+    provider: 'openai',
+    name: 'OpenAI 主力',
+    base_url: 'https://api.openai.com/v1',
+    model: 'gpt-4o',
+    has_key: true,
+    enabled: true,
+    is_default: true,
+    updated_at: '2026-09-08 11:20',
+  },
+  {
+    id: 'aip_0a1b2c3d-0002-4a5b-8c6d-000000000002',
+    user_id: 'usr_7c2f9e41-88d2-4b3a-a1c4',
+    user_label: '林清和',
+    provider: 'deepseek',
+    name: 'DeepSeek 备用',
+    base_url: 'https://api.deepseek.com/v1',
+    model: 'deepseek-chat',
+    has_key: true,
+    enabled: true,
+    is_default: false,
+    updated_at: '2026-09-07 09:12',
+  },
+  {
+    id: 'aip_0a1b2c3d-0003-4a5b-8c6d-000000000003',
+    user_id: 'usr_2b8d4e77-33c1-4f22-9a55-000000000002',
+    user_label: '138****4291',
+    provider: 'anthropic',
+    name: 'Claude 写作',
+    base_url: '',
+    model: 'claude-sonnet-4-5',
+    has_key: true,
+    enabled: false,
+    is_default: true,
+    updated_at: '2026-09-09 15:40',
+  },
+  {
+    id: 'aip_0a1b2c3d-0004-4a5b-8c6d-000000000004',
+    user_id: 'usr_9e3a5c10-77aa-4d31-b0c2-000000000003',
+    user_label: '沈砚',
+    provider: 'custom',
+    name: '自建网关',
+    base_url: 'https://llm.internal.example.com/v1',
+    model: 'qwen-max',
+    has_key: false,
+    enabled: true,
+    is_default: false,
+    updated_at: '2026-09-05 18:03',
+  },
+];
+
+/**
+ * AN-12：管理员活跃会话种子（GET /api/admin/sessions 契约镜像）。
+ * 仅管理角色（super_admin / admin）会话；请求者自己的会话由 handler 按
+ * Authorization 头标记 isCurrent（mock 环境恒为 'mock-admin-access-token-20260905' 对应 usr_carlos）。
+ */
+export const mockAdminSessions: AdminSession[] = [
+  {
+    id: 'ses_20260905_2011_carlos',
+    userId: 'usr_carlos',
+    nickname: 'Carlos',
+    phone: '138****2765',
+    roleKey: 'super_admin',
+    deviceName: 'Carlos-MacBook-Pro',
+    deviceType: 'desktop',
+    platform: 'macos',
+    ipAddress: '116.24.*.*',
+    userAgent: 'ClipSync Desktop 1.4.2 · macOS',
+    createdAt: '2026-09-05 20:11:40',
+    lastActiveAt: '2026-09-05 20:33:02',
+    isCurrent: false,
+  },
+  {
+    id: 'ses_20260905_1436_yuki',
+    userId: 'usr_yuki_admin',
+    nickname: 'Yuki',
+    phone: '137****5521',
+    roleKey: 'admin',
+    deviceName: 'yuki-win',
+    deviceType: 'desktop',
+    platform: 'windows',
+    ipAddress: '117.136.*.*',
+    userAgent: 'Chrome/140 · Windows',
+    createdAt: '2026-09-05 14:36:12',
+    lastActiveAt: '2026-09-05 19:58:03',
+    isCurrent: false,
+  },
+  {
+    id: 'ses_20260904_0915_yuki2',
+    userId: 'usr_yuki_admin',
+    nickname: 'Yuki',
+    phone: '137****5521',
+    roleKey: 'admin',
+    deviceName: 'iPad Air',
+    deviceType: 'tablet',
+    platform: 'ipados',
+    ipAddress: '223.104.*.*',
+    userAgent: 'ClipSync iPad 1.4.1 · iPadOS',
+    createdAt: '2026-09-04 09:15:55',
+    lastActiveAt: '2026-09-04 11:19:03',
+    isCurrent: false,
   },
 ];

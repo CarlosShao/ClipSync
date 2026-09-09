@@ -24,12 +24,18 @@ const NAV_ITEMS: NavItem[] = [
   { key: '/orders', label: '订单与支付', perm: 'admin.orders.view' },
   { key: '/subscriptions', label: '订阅管理', perm: 'admin.subscriptions.view' },
   { key: '/plans', label: '套餐与价格', perm: 'admin.plans.view' },
+  // AN-04：版本发布管理（admin.release.manage，065 迁移仅授 super_admin）
+  { key: '/releases', label: '版本发布', perm: 'admin.release.manage' },
   { key: '/audit', label: '审计日志', perm: 'admin.audit.view' },
+  // AN-12：管理员安全策略 —— 管理员会话（复用 admin.users.view，不新增权限键）
+  { key: '/security', label: '管理员会话', perm: 'admin.users.view' },
   { key: '/roles', label: '角色权限', perm: 'admin.roles.view' },
   { key: '/settings', label: '系统设置', perm: ['admin.configs.view', 'admin.announce.send'] },
   // AN-02：客户端策略下发（与系统设置同权限域，仅新增不改既有项）
   { key: '/policies', label: '客户端策略', perm: 'admin.configs.view' },
   { key: '/ops', label: '运维监控', perm: 'admin.ops.view' },
+  // AN-03：AI 平台设置（admin.ai.manage，062 迁移仅授 super_admin）
+  { key: '/ai', label: 'AI 平台', perm: 'admin.ai.manage' },
 ];
 
 function LogoMark() {

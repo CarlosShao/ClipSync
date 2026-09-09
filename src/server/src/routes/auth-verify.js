@@ -8,6 +8,8 @@ import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed } from '../middle
 import { sendVerificationCodeEmail } from '../utils/email.js';
 import { issueRefreshToken } from '../utils/refreshToken.js';
 import { isFlagEnabled } from '../utils/featureFlags.js';
+// AN-12：管理员安全策略（force_2fa_for_admin 登录强制点）
+import { shouldForceTwoFactorForAdmin, FORCE_2FA_MESSAGE } from '../utils/adminSecurity.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -192,6 +194,10 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
           pendingReview: true,
         });
       }
+      // AN-12：强制管理员两步验证（force_2fa_for_admin）——管理角色未绑定 2FA 时拦截登录
+      if (await shouldForceTwoFactorForAdmin(user)) {
+        return res.status(403).json({ error: FORCE_2FA_MESSAGE, forceTwoFactorSetup: true });
+      }
     }
 
     // 创建会话并生成token
@@ -289,6 +295,10 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
           error: '账号待管理员审核，通过后即可登录',
           pendingReview: true,
         });
+      }
+      // AN-12：强制管理员两步验证（force_2fa_for_admin）——管理角色未绑定 2FA 时拦截登录
+      if (await shouldForceTwoFactorForAdmin(user)) {
+        return res.status(403).json({ error: FORCE_2FA_MESSAGE, forceTwoFactorSetup: true });
       }
     }
 

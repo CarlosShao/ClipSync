@@ -34,6 +34,7 @@ import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
+import { decryptField } from '../../utils/encryption.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
 
 const router = Router();
@@ -879,6 +880,215 @@ router.delete('/:id', requirePerm('admin.users.delete'), async (req, res) => {
   } catch (err) {
     logger.error('[admin/users] delete failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '删除账户失败' });
+  }
+});
+
+// ───────────────────── AN-13 数据主体请求：用户数据导出 ─────────────────────
+
+// 导出硬上限（大数据防护：分页拉取 + 截断，meta 中标注 total 与 exported）。
+// 剪贴板正文 content_encrypted 为端到端加密密文，服务端无法解密，
+// 导出仅含服务端可见的 content_preview 与元数据（导出 JSON meta 中注明）。
+const EXPORT_CLIPBOARD_LIMIT = 1000;
+const EXPORT_ORDER_LIMIT = 500;
+const EXPORT_AUDIT_LIMIT = 200;
+
+/**
+ * GET /api/admin/users/:id/export?reason=
+ * 数据主体数据可携权导出（requirePerm admin.users.view + 越级防护）：
+ * 打包资料（解密手机号/邮箱）/设备/订阅/订单/剪贴板元数据/相关审计为 JSON 下载；
+ * reason 写入审计 admin.users.export（数据主体请求留痕）。
+ */
+router.get('/:id/export', requirePerm('admin.users.view'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '用户 ID 不合法' });
+    }
+
+    const user = await fetchUserById(id);
+    if (!user) {
+      return res.status(404).json({ code: 40404, message: '用户不存在' });
+    }
+    // 越级防护：不可导出同级/更高级账号（与停用/删除同口径）
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
+    }
+
+    const reason = typeof req.query.reason === 'string' ? req.query.reason.trim() : '';
+
+    // 1) 资料（可携权导出：解密后的手机号/邮箱仅写入本次响应体，不落日志明文）
+    const profile = {
+      id: user.id,
+      phone: decryptField(user.phone_encrypted) || user.phone || null,
+      email: decryptField(user.email_encrypted) || user.email || null,
+      nickname: user.nickname || null,
+      isActive: Boolean(user.is_active),
+      registrationStatus: user.registration_status || 'approved',
+      roleKey: user.role_key || null,
+      deactivationReason: user.deactivation_reason || null,
+      createdAt: formatDateTime(user.created_at),
+    };
+
+    // 2) 设备清单
+    const { rows: deviceRows } = await pool.query(
+      `SELECT id, device_name, device_type, platform, platform_version, is_online, last_seen_at
+       FROM devices WHERE user_id = $1::uuid`,
+      [id]
+    );
+    const devices = deviceRows.map((d) => ({
+      id: d.id,
+      name: d.device_name,
+      type: d.device_type,
+      platform: d.platform,
+      osVersion: d.platform_version || null,
+      isOnline: Boolean(d.is_online),
+      lastSeenAt: formatDateTime(d.last_seen_at),
+    }));
+
+    // 3) 订阅（含历史订阅行）
+    const { rows: subRows } = await pool.query(
+      `SELECT us.id, us.status, us.billing_cycle, us.current_period_start, us.current_period_end,
+              us.auto_renew, us.created_at, sp.name AS plan_name
+       FROM user_subscriptions us
+       LEFT JOIN subscription_plans sp ON sp.id = us.plan_id
+       WHERE us.user_id = $1::uuid
+       ORDER BY us.created_at DESC`,
+      [id]
+    );
+    const subscriptions = subRows.map((s) => ({
+      id: s.id,
+      plan: s.plan_name || null,
+      status: s.status,
+      billingCycle: s.billing_cycle || null,
+      currentPeriodStart: formatDateTime(s.current_period_start),
+      currentPeriodEnd: formatDateTime(s.current_period_end),
+      autoRenew: Boolean(s.auto_renew),
+      createdAt: formatDateTime(s.created_at),
+    }));
+
+    // 4) 订单（上限内全量，超出截断）
+    const { rows: orderTotalRows } = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM payment_orders WHERE user_id = $1::uuid`,
+      [id]
+    );
+    const { rows: orderRows } = await pool.query(
+      `SELECT id, order_no, amount, currency, payment_method, status, paid_at, created_at
+       FROM payment_orders WHERE user_id = $1::uuid
+       ORDER BY created_at DESC LIMIT ${EXPORT_ORDER_LIMIT}`,
+      [id]
+    );
+    const ordersTotal = orderTotalRows[0] ? Number(orderTotalRows[0].total) : 0;
+    const orders = orderRows.map((o) => ({
+      id: o.id,
+      orderNo: o.order_no,
+      amount: Number(o.amount),
+      currency: o.currency || 'CNY',
+      paymentMethod: o.payment_method || null,
+      status: o.status,
+      paidAt: formatDateTime(o.paid_at),
+      createdAt: formatDateTime(o.created_at),
+    }));
+
+    // 5) 剪贴板条目元数据（不含端到端加密正文，meta 注明）
+    const { rows: clipTotalRows } = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM clipboard_items WHERE user_id = $1::uuid`,
+      [id]
+    );
+    const { rows: clipRows } = await pool.query(
+      `SELECT id, content_type, content_preview, content_size, metadata, is_favorite, created_at, updated_at
+       FROM clipboard_items WHERE user_id = $1::uuid
+       ORDER BY created_at DESC LIMIT ${EXPORT_CLIPBOARD_LIMIT}`,
+      [id]
+    );
+    const clipboardTotal = clipTotalRows[0] ? Number(clipTotalRows[0].total) : 0;
+    const clipboardItems = clipRows.map((c) => ({
+      id: c.id,
+      contentType: c.content_type,
+      preview: c.content_preview || '',
+      size: Number(c.content_size) || 0,
+      isFavorite: Boolean(c.is_favorite),
+      metadata: c.metadata ?? {},
+      createdAt: formatDateTime(c.created_at),
+      updatedAt: formatDateTime(c.updated_at),
+    }));
+
+    // 6) 该用户相关审计日志（上限内全量，超出截断）
+    const { rows: auditTotalRows } = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM audit_logs WHERE user_id = $1::uuid`,
+      [id]
+    );
+    const { rows: auditRows } = await pool.query(
+      `SELECT id, action, resource_type, resource_id, details, ip_address, status, created_at
+       FROM audit_logs WHERE user_id = $1::uuid
+       ORDER BY created_at DESC LIMIT ${EXPORT_AUDIT_LIMIT}`,
+      [id]
+    );
+    const auditTotal = auditTotalRows[0] ? Number(auditTotalRows[0].total) : 0;
+    const auditLogs = auditRows.map((a) => ({
+      id: a.id,
+      action: a.action,
+      resourceType: a.resource_type || '',
+      resourceId: a.resource_id ? String(a.resource_id) : '',
+      details: serializeDetails(a.details),
+      ipAddress: a.ip_address ? String(a.ip_address) : '',
+      status: a.status,
+      createdAt: formatDateTime(a.created_at),
+    }));
+
+    const payload = {
+      meta: {
+        exportedAt: new Date().toISOString(),
+        requestedBy: req.user?.userId ?? null,
+        reason: reason || '未填写',
+        notes:
+          '剪贴板正文为端到端加密（content_encrypted），服务端不可解密，本导出仅含服务端可见的预览与元数据；各数据域超出上限部分已截断（total 为库中总量）。',
+        limits: {
+          clipboardItems: EXPORT_CLIPBOARD_LIMIT,
+          orders: EXPORT_ORDER_LIMIT,
+          auditLogs: EXPORT_AUDIT_LIMIT,
+        },
+        counts: {
+          clipboardItems: { exported: clipboardItems.length, total: clipboardTotal },
+          orders: { exported: orders.length, total: ordersTotal },
+          auditLogs: { exported: auditLogs.length, total: auditTotal },
+        },
+      },
+      profile,
+      devices,
+      subscriptions,
+      orders,
+      clipboardItems,
+      auditLogs,
+    };
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.users.export',
+      resourceType: 'user',
+      resourceId: String(user.id),
+      details: {
+        targetUserId: user.id,
+        nickname: user.nickname || '',
+        reason: reason || '未填写',
+        clipboardItemsExported: clipboardItems.length,
+        ordersExported: orders.length,
+        auditLogsExported: auditLogs.length,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    // JSON 附件下载（非 { code, data } 壳——导出产物直接是数据文件）
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="clipsync-user-export-${id}.json"`
+    );
+    return res.status(200).send(JSON.stringify(payload, null, 2));
+  } catch (err) {
+    logger.error('[admin/users] export failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '导出用户数据失败' });
   }
 });
 

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { App as AntdApp, Avatar, Button, Drawer, Skeleton, Table, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { deleteUser, forceLogoutUser, getUserDetail, updateUserStatus } from '@/api/users';
+import { deleteUser, exportUserData, forceLogoutUser, getUserDetail, updateUserStatus } from '@/api/users';
 import { grantSubscription } from '@/api/subscriptions';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { GrantSubscriptionModal } from '@/pages/subscriptions/GrantSubscriptionModal';
@@ -64,6 +64,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   const [forceLogoutOpen, setForceLogoutOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [grantOpen, setGrantOpen] = useState(false);
+  // AN-13：数据主体数据导出（原因写入审计 admin.users.export）
+  const [exportOpen, setExportOpen] = useState(false);
   // AF-13：每次抽屉打开只自动弹出一次赠期弹窗（用户手动关掉后不反复打扰）
   const autoGrantDoneRef = useRef(false);
 
@@ -106,6 +108,24 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
     },
   });
 
+  // AN-13：数据主体数据导出（拉取 JSON 附件并触发浏览器下载）
+  const exportMutation = useMutation({
+    mutationFn: (payload: { id: string; reason: string }) =>
+      exportUserData(payload.id, payload.reason),
+    onSuccess: (blob, variables) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `clipsync-user-export-${variables.id}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      void message.success('用户数据已导出');
+      setExportOpen(false);
+    },
+  });
+
   // AF-10：赠期 / 调整套餐（复用订阅页 GrantSubscriptionModal；无订阅行则提示）
   const grantMutation = useMutation({
     mutationFn: (payload: {
@@ -135,6 +155,7 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
       setForceLogoutOpen(false);
       setDeleteOpen(false);
       setGrantOpen(false);
+      setExportOpen(false);
       autoGrantDoneRef.current = false;
     }
   }, [open]);
@@ -293,6 +314,10 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
               </Button>
             </span>
           </Tooltip>
+          {/* AN-13：数据主体数据导出（可携权；原因写审计 admin.users.export） */}
+          <Tooltip title="导出资料 / 设备 / 订阅 / 订单 / 剪贴板元数据为 JSON">
+            <Button onClick={() => setExportOpen(true)}>导出数据</Button>
+          </Tooltip>
           <Button type="link" onClick={() => void navigate(`/audit?userId=${user.id}`)}>
             查看审计日志
           </Button>
@@ -343,6 +368,24 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
           confirmLoading={deleteMutation.isPending}
           onCancel={() => setDeleteOpen(false)}
           onConfirm={(reason) => deleteMutation.mutateAsync({ id: user.id, reason })}
+        />
+
+        {/* AN-13：数据主体数据导出确认（原因写入审计 admin.users.export） */}
+        <ConfirmReasonModal
+          open={exportOpen}
+          title="导出用户数据"
+          description={
+            <>
+              将导出 <b>{user.nickname || user.phone}</b> 的资料、设备、订阅、订单、
+              剪贴板元数据与相关审计为 JSON 文件（剪贴板正文为端到端加密，不在导出范围）。
+              导出行为将写入审计日志。
+            </>
+          }
+          danger={false}
+          confirmText="确认导出"
+          confirmLoading={exportMutation.isPending}
+          onCancel={() => setExportOpen(false)}
+          onConfirm={(reason) => exportMutation.mutateAsync({ id: user.id, reason })}
         />
 
         <GrantSubscriptionModal

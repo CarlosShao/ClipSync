@@ -626,9 +626,9 @@ async function phaseSettingsForm() {
   check(P, '每项 name 非空（卡片标签可渲染）', emptyName.length === 0,
     emptyName.length ? `空 name: ${emptyName.map((i) => i.key).join(',')}` : '全部非空');
 
-  // AF-01 表现即输入框空白：value 空串即 FAIL。豁免两类键：smtp_pass（未配置时 DB 缺行回显空串，
-  // 脱敏态由后端兜底）、grafana_url（AF-30 可选键，空=运维页按钮置灰，属合法未配置态）。
-  const OPTIONAL_EMPTY_KEYS = ['smtp_pass', 'grafana_url'];
+  // AF-01 表现即输入框空白：value 空串即 FAIL。豁免可选键（空=合法未配置态，前端降级处理）：
+  // smtp_pass（脱敏兜底）、grafana_url（AF-30，空=按钮置灰）、prometheus_url（AN-15，空=告警卡显示不可用）。
+  const OPTIONAL_EMPTY_KEYS = ['smtp_pass', 'grafana_url', 'prometheus_url'];
   const emptyVal = items.filter((i) => String(i.value ?? '').trim() === '' && !OPTIONAL_EMPTY_KEYS.includes(i.key));
   check(P, '输入框初值非空（value 不为空串）', emptyVal.length === 0,
     emptyVal.length ? `空 value: ${emptyVal.map((i) => i.key).join(',')}` : '全部非空');

@@ -73,6 +73,7 @@ export function requireFlag(key, message) {
 //   enable_2fa          → two-factor.js:54,71
 //   signup_waitlist     → auth.js:360,589,943 / auth-verify.js:165,263
 //   enable_signup       → auth.js:330,559,862 / auth-verify.js:158,256
+//   force_2fa_for_admin → utils/adminSecurity.js（assertForceTwoFactorForAdmin，auth.js /login、auth-verify.js /verify-code 调用）
 export const ENFORCED_FLAG_KEYS = [
   'enable_subscription',
   'enable_ai_agent',
@@ -80,6 +81,7 @@ export const ENFORCED_FLAG_KEYS = [
   'enable_2fa',
   'signup_waitlist',
   'enable_signup',
+  'force_2fa_for_admin',
 ];
 
 /** 该开关是否登记了服务端强制点（清单外键一律 false） */

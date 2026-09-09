@@ -48,6 +48,8 @@ import { logger, setLogLevel } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
 import { sendTestMail } from '../../utils/email.js';
+// AN-03：AI 全局参数（ai_max_tokens/ai_default_provider）写库后失效 AI 运行时缓存
+import { invalidateAiRuntimeConfigCache } from '../../utils/aiRuntimeConfig.js';
 
 const router = Router();
 
@@ -65,16 +67,17 @@ const CONFIG_CATALOG = [
     key: 'ai_max_tokens',
     name: 'AI 单次最大 Token 数',
     description: 'AI 助手单次对话 / 补全的 token 上限',
-    // AN-09 查证：AI 链路 max_tokens 全为硬编码字面量（aiChat/aiProviders/aiOcr），无读取点；
-    // aiTools.js update_system_config 白名单只是写入端非消费方（见 AN-03）
-    consumer: null,
+    // AN-03 已接线：utils/aiProviders.js buildUpstreamChat 三协议分支统一 clampMaxTokens，
+    // 覆盖 chat/summarize/dedup/refactor/suggest/OCR/压缩全链路（经 aiRuntimeConfig.js 5s TTL 读取）
+    consumer: 'src/server/src/utils/aiProviders.js（buildUpstreamChat 经 utils/aiRuntimeConfig.js 统一钳制 max_tokens）',
   },
   {
     key: 'ai_default_provider',
     name: 'AI 默认服务商',
     description: 'AI 助手默认模型路由（openrouter / openai / anthropic / deepseek）',
-    // AN-09 查证：服务端供应商路由读 per-user ai_providers，未读此键（见 AN-03）
-    consumer: null,
+    // AN-03 已接线：客户端请求未传 providerId 时的服务端兜底路由
+    //（用户 is_default 行 → 按该键供应商族选该用户已配置供应商，见 aiRuntimeConfig.js resolveUserProvider）
+    consumer: 'src/server/src/utils/aiRuntimeConfig.js（resolveUserProvider 兜底路由，aiChat.js 各端点消费）',
   },
   {
     key: 'session_timeout_minutes',
@@ -137,6 +140,27 @@ const CONFIG_CATALOG = [
     name: 'Grafana 地址',
     description: '运维页「打开 Grafana 容器总览」跳转地址，如 http://127.0.0.1:3004；为空则按钮置灰',
     consumer: 'src/server/src/routes/admin/ops.js（readGrafanaUrl，ops/overview 下发）',
+  },
+  // —— 运维（063，AN-15：Prometheus 告警只读代理地址，ops/alerts 消费）——
+  {
+    key: 'prometheus_url',
+    name: 'Prometheus 地址',
+    description: '运维页「活跃告警」数据源，如 http://127.0.0.1:9090；为空或不可达时告警卡显示「告警服务不可用」',
+    consumer: 'src/server/src/routes/admin/ops.js（readConfigString，ops/alerts 代理 /api/v1/alerts）',
+  },
+  // —— 运维（063，AN-06：手动备份保留策略，trigger_backup 落盘后清理超期文件）——
+  {
+    key: 'backup_retention_days',
+    name: '备份保留天数',
+    description: '手动/定时备份文件的保留天数（默认 7），触发备份后自动清理超期文件',
+    consumer: 'src/server/src/routes/admin/ops.js（runManualBackup 保留策略清理）',
+  },
+  // —— 运维（063，AN-08：存储清理总开关，ops/cleanup 手动触发闸门）——
+  {
+    key: 'storage_cleanup_enabled',
+    name: '存储清理开关',
+    description: '关闭后管理台「存储清理」动作拒绝执行（定时清理任务不受影响）',
+    consumer: 'src/server/src/routes/admin/ops.js（ops/cleanup 端点 readConfigBool 闸门）',
   },
   // —— 设备（056，AF-50：在线判定超时，deviceOnlineSweep 每 60s 扫描）——
   {
@@ -220,6 +244,12 @@ const FLAG_CATALOG = [
     key: 'enable_signup',
     name: '注册总开关',
     description: '关闭后完全禁止新用户注册（与注册审核正交：关闭 > 审核 > 开放），客户端注册入口同步隐藏',
+  },
+  // AN-12：管理员安全策略 —— 强制管理角色绑定两步验证
+  {
+    key: 'force_2fa_for_admin',
+    name: '强制管理员两步验证',
+    description: '开启后管理角色（admin/super_admin）未绑定 2FA 时登录被拦截，需先在客户端绑定两步验证',
   },
 ];
 
@@ -357,6 +387,11 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
       if (!applied) {
         logger.warn('[admin/configs] log_level setLogLevel rejected', { value: valueStr });
       }
+    }
+
+    // AN-03：AI 全局参数写库后失效 aiRuntimeConfig 5s TTL 缓存（下次 AI 调用直连库读取）
+    if (key === 'ai_max_tokens' || key === 'ai_default_provider') {
+      invalidateAiRuntimeConfigCache();
     }
 
     // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason；

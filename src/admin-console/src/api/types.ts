@@ -179,11 +179,39 @@ export interface AuditLog {
 export interface AuditLogListParams extends ListParams {
   action?: string;
   operator?: string;
+  /** AN-11：操作者级别筛选（super_admin / admin / user），all=不过滤 */
+  actorLevel?: AuditActorLevel | 'all';
   result?: AuditResult | 'all';
   ip?: string;
   dateFrom?: string;
   dateTo?: string;
 }
+
+// ─────────────────────── AN-12 管理员会话域 ───────────────────────
+
+/** 管理角色（roles.level >= 50）活跃会话（user_sessions JOIN users + roles） */
+export interface AdminSession {
+  id: string;
+  userId: string;
+  nickname: string;
+  /** 打码手机号 */
+  phone: string;
+  roleKey: 'super_admin' | 'admin' | 'user' | null;
+  deviceName: string;
+  deviceType: string;
+  platform: string;
+  ipAddress: string;
+  userAgent?: string | null;
+  /** YYYY-MM-DD HH:mm:ss（登录时间） */
+  createdAt: string | null;
+  /** YYYY-MM-DD HH:mm:ss（最近活跃，取 updated_at） */
+  lastActiveAt: string | null;
+  /** 请求者自己的会话（前端禁用「下线」防自锁） */
+  isCurrent: boolean;
+}
+
+export interface AdminSessionListParams extends ListParams {}
+
 
 // ─────────────────────── 角色权限域 ───────────────────────
 
@@ -364,6 +392,99 @@ export interface OpsBackups {
   summary: BackupsSummary;
 }
 
+// ─────────────── AN-06/AN-15/AN-08：运维动作区 + 告警 + 存储用量 ───────────────
+
+/** POST /api/admin/ops/actions 支持的动作键（AN-06） */
+export type OpsActionKey = 'clear_cache' | 'reload_configs' | 'force_logout_all' | 'trigger_backup';
+
+/** 手动备份结果（AN-06 trigger_backup） */
+export interface OpsBackupResult {
+  file: string;
+  sizeBytes: number;
+  retentionDays: number;
+  prunedOld: number;
+}
+
+/** POST /api/admin/ops/actions 响应 data（各动作 result 结构不同，前端按动作判型消费） */
+export interface OpsActionResult {
+  cleared?: string[];
+  reloaded?: boolean;
+  flagCount?: number;
+  limitKeys?: number;
+  revokedSessions?: number;
+  /** trigger_backup：其余字段为 OpsBackupResult 形态 */
+  file?: string;
+  sizeBytes?: number;
+  retentionDays?: number;
+  prunedOld?: number;
+}
+
+/** AN-15：活跃告警条目（Prometheus /api/v1/alerts 代理） */
+export interface OpsAlertItem {
+  id: string;
+  name: string;
+  severity: string;
+  state: string;
+  description: string;
+  /** 触发时间（Prometheus activeAt，ISO 字符串） */
+  activeAt: string | null;
+  value: string | number | null;
+}
+
+/** GET /api/admin/ops/alerts 响应（AN-15，只读；降级时 unavailable=true） */
+export interface OpsAlerts {
+  unavailable: boolean;
+  /** 降级原因：未配置 prometheus_url / Prometheus 不可达（超时或 HTTP 非 2xx） */
+  reason?: 'not_configured' | 'unreachable';
+  items: OpsAlertItem[];
+  grafanaUrl?: string;
+}
+
+/** AN-08：主要业务表体积行 */
+export interface OpsStorageTable {
+  table: string;
+  totalBytes: number;
+}
+
+/** AN-08：用户存储用量 TOP 行 */
+export interface OpsStorageTopUser {
+  id: string;
+  nickname: string;
+  itemCount: number;
+  totalBytes: number;
+  fileCount: number;
+  fileBytes: number;
+}
+
+/** GET /api/admin/ops/storage 响应（AN-08） */
+export interface OpsStorage {
+  totals: {
+    itemCount: number;
+    totalBytes: number;
+    fileCount: number;
+    fileBytes: number;
+    dbBytes: number;
+  };
+  tables: OpsStorageTable[];
+  topUsers: OpsStorageTopUser[];
+}
+
+/** POST /api/admin/ops/cleanup 响应 data（AN-08，转发 cleanup.js / fileRetentionCleanup 统计） */
+export interface OpsCleanupResult {
+  expired: {
+    expiredItems: number;
+    oldVerificationCodes: number;
+    notificationHistory: number;
+    tombstones: number;
+    error?: string | null;
+  };
+  fileRetention: {
+    db: { dbDeleted: number; filesDeleted: number; fileErrors: number; batches: number } | null;
+    disk: { chunkDirsRemoved: number; tmpFilesRemoved: number; tmpErrors: number } | null;
+  } | null;
+  fileRetentionError?: string | null;
+}
+
 /** 慢查询行（pg_stat_statements 聚合；query 服务端已截断至 200 字符） */
 export interface SlowQueryRow {
   query: string;
@@ -530,6 +651,12 @@ export type AuditActionFilter = 'all' | 'auth' | 'sensitive' | 'payment';
 
 /** 审计操作者筛选项：end_user=终端用户（operatorRole=user，含打码手机号） */
 export type AuditOperatorFilter = 'all' | 'Carlos' | 'Yuki' | 'end_user';
+
+/**
+ * AN-11：操作者级别筛选项（对应后端 GET /audit-logs?actorLevel=）。
+ * 典型场景：读取 superAdminAudit 写入的 action='super_admin_action' 行（超管敏感写操作）。
+ */
+export type AuditActorLevel = 'super_admin' | 'admin' | 'user';
 
 /** POST /api/admin/roles：创建自定义角色（roleKey 必须 custom_ 前缀，level 1–99） */
 export interface CreateRolePayload {

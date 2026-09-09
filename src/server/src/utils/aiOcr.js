@@ -30,10 +30,11 @@ export function providerSupportsVision(row) {
 }
 
 // 取用户「默认 / 第一个带密钥」且支持视觉的供应商；没有则回 null（OCR 静默跳过）
+// AN-03：管理台禁用（enabled=FALSE）的供应商不参与 OCR（与聊天链路同口径）
 export async function getOcrProvider(userId) {
   const result = await pool.query(
     `SELECT * FROM ai_providers
-     WHERE user_id = $1 AND api_key_encrypted IS NOT NULL AND api_key_encrypted <> ''
+     WHERE user_id = $1 AND api_key_encrypted IS NOT NULL AND api_key_encrypted <> '' AND enabled = TRUE
      ORDER BY is_default DESC, created_at ASC
      LIMIT 1`,
     [userId]

@@ -17,6 +17,8 @@ import { isFlagEnabled, requireFlag } from '../utils/featureFlags.js';
 /** AF-04：注册总开关关闭时的统一响应（enable_signup=false → 注册 403，登录不受影响） */
 const SIGNUP_DISABLED_MESSAGE = '注册已由管理员关闭，如有疑问请联系客服';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
+// AN-12：管理员安全策略（force_2fa_for_admin 登录强制点）
+import { shouldForceTwoFactorForAdmin, FORCE_2FA_MESSAGE } from '../utils/adminSecurity.js';
 import { sendNotification, detectAndNotifyNewLogin } from '../ws/server.js';
 import crypto from 'crypto';
 
@@ -414,6 +416,11 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
       return res.json({ twoFactorRequired: true, challengeToken });
     }
 
+    // AN-12：强制管理员两步验证（force_2fa_for_admin）——管理角色未绑定 2FA 时拦截登录
+    if (await shouldForceTwoFactorForAdmin(user)) {
+      return res.status(403).json({ error: FORCE_2FA_MESSAGE, forceTwoFactorSetup: true });
+    }
+
     const { token, refreshToken } = await createSessionAndGenerateToken(user, req);
 
     // ========= P1-4: 审计日志（登录成功）=========
@@ -631,6 +638,11 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
       platform: req.body.platform,
       ip: req.ip || req.connection.remoteAddress,
     });
+
+    // AN-12：强制管理员两步验证（force_2fa_for_admin）——管理角色未绑定 2FA 时拦截登录
+    if (await shouldForceTwoFactorForAdmin(user)) {
+      return res.status(403).json({ error: FORCE_2FA_MESSAGE, forceTwoFactorSetup: true });
+    }
 
     // 创建会话并生成JWT
     const { token, refreshToken } = await createSessionAndGenerateToken(user, req);
@@ -1213,6 +1225,11 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
         { expiresIn: '5m' }
       );
       return res.json({ twoFactorRequired: true, challengeToken });
+    }
+
+    // AN-12：强制管理员两步验证（force_2fa_for_admin）——管理角色未绑定 2FA 时拦截登录
+    if (await shouldForceTwoFactorForAdmin(user)) {
+      return res.status(403).json({ error: FORCE_2FA_MESSAGE, forceTwoFactorSetup: true });
     }
 
     // 创建会话并生成JWT

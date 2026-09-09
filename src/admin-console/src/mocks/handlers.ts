@@ -22,10 +22,17 @@ import type {
   SlowQueriesResp,
   SubscriptionStats,
   UserDetail,
+  OpsActionKey,
+  OpsActionResult,
+  OpsAlerts,
+  OpsCleanupResult,
+  OpsStorage,
 } from '@/api/types';
 import { isSensitiveAction } from '@/pages/audit/sensitive';
 import {
+  mockAdminSessions,
   mockAnnouncements,
+  mockAiProviders,
   mockAuditLogs,
   mockConfigs,
   mockDeviceKeySummaries,
@@ -462,6 +469,12 @@ function matchAuditOperator(log: AuditLog, operator: string): boolean {
   return log.operator === operator;
 }
 
+/** AN-11：操作者级别筛选（super_admin / admin / user），与后端 r.role_key 语义一致 */
+function matchAuditActorLevel(log: AuditLog, actorLevel: string): boolean {
+  if (!actorLevel || actorLevel === 'all') return true;
+  return log.operatorRole === actorLevel;
+}
+
 const auditHandlers = [
   http.get('/api/admin/audit-logs', async ({ request }) => {
     await delay(200);
@@ -470,6 +483,7 @@ const auditHandlers = [
     const pageSize = numParam(url, 'pageSize', 10);
     const action = url.searchParams.get('action')?.trim() ?? '';
     const operator = url.searchParams.get('operator')?.trim() ?? '';
+    const actorLevel = url.searchParams.get('actorLevel')?.trim() ?? '';
     const result = url.searchParams.get('result');
     const ip = url.searchParams.get('ip')?.trim() ?? '';
     const dateFrom = url.searchParams.get('dateFrom') ?? '';
@@ -478,6 +492,7 @@ const auditHandlers = [
     const filtered = mockAuditLogs.filter((a) => {
       if (!matchAuditAction(a, action)) return false;
       if (!matchAuditOperator(a, operator)) return false;
+      if (!matchAuditActorLevel(a, actorLevel)) return false;
       if (result && result !== 'all' && a.status !== result) return false;
       if (ip && !a.ipAddress.includes(ip)) return false;
       if (dateFrom && a.createdAt.slice(0, 10) < dateFrom) return false;
@@ -487,7 +502,7 @@ const auditHandlers = [
 
     // 无任何筛选时对齐草图：total = 2,431,088（保留 1 年量级）
     const noFilter =
-      !action && !operator && (!result || result === 'all') && !ip && !dateFrom && !dateTo;
+      !action && !operator && !actorLevel && (!result || result === 'all') && !ip && !dateFrom && !dateTo;
     return ok(pageOf(filtered, page, pageSize, noFilter ? 2431088 : filtered.length));
   }),
 ];
@@ -832,6 +847,105 @@ const opsHandlers = [
     };
     return ok(data);
   }),
+
+  // ── AN-06：运维动作区（reason 必填 → 审计；语义与后端 ops.js POST /ops/actions 对齐）──
+  http.post('/api/admin/ops/actions', async ({ request }) => {
+    await delay(200);
+    const body = (await request.json()) as { action?: string; reason?: string };
+    const action = body.action?.trim() ?? '';
+    const reason = body.reason?.trim() ?? '';
+    if (!reason) return fail(400, 40003, '原因必填（将写入审计日志）');
+    const allowed: OpsActionKey[] = ['clear_cache', 'reload_configs', 'force_logout_all', 'trigger_backup'];
+    if (!allowed.includes(action as OpsActionKey)) return fail(400, 4000, '未知的运维动作');
+
+    const results: Record<OpsActionKey, OpsActionResult> = {
+      clear_cache: { cleared: ['feature_flags', 'runtime_limits', 'maintenance_mode'] },
+      reload_configs: { reloaded: true, flagCount: 6, limitKeys: 5 },
+      force_logout_all: { revokedSessions: 42 },
+      trigger_backup: {
+        file: 'clipsync_manual_20260909_153000.sql.gz',
+        sizeBytes: 48_234_496,
+        retentionDays: 7,
+        prunedOld: 1,
+      },
+    };
+    pushAudit('admin.ops.action', 'ops', action, `action=${action}, reason="${reason}"`);
+    return ok(results[action as OpsActionKey], '已执行');
+  }),
+
+  // ── AN-15：活跃告警（Prometheus /api/v1/alerts 只读代理，降级契约 unavailable=true）──
+  http.get('/api/admin/ops/alerts', async () => {
+    await delay(150);
+    const data: OpsAlerts = {
+      unavailable: false,
+      items: [
+        {
+          id: 'HighErrorRate@2026-09-09T06:12:00Z',
+          name: 'HighErrorRate',
+          severity: 'critical',
+          state: 'firing',
+          description: '5 分钟内 API 5xx 比率超过 5%（当前 7.2%）',
+          activeAt: '2026-09-09T06:12:00Z',
+          value: '0.072',
+        },
+        {
+          id: 'RedisDown@2026-09-09T05:40:00Z',
+          name: 'RedisDown',
+          severity: 'warning',
+          state: 'pending',
+          description: 'Redis exporter 探测失败超过 1 分钟',
+          activeAt: '2026-09-09T05:40:00Z',
+          value: null,
+        },
+      ],
+      grafanaUrl: 'http://127.0.0.1:3004',
+    };
+    return ok(data);
+  }),
+
+  // ── AN-08：存储用量统计（总量 + 按表 + 用户 TOP10）──
+  http.get('/api/admin/ops/storage', async () => {
+    await delay(150);
+    const data: OpsStorage = {
+      totals: {
+        itemCount: 18_204,
+        totalBytes: 2_469_606_195,
+        fileCount: 312,
+        fileBytes: 1_509_949_440,
+        dbBytes: 5_368_709_120,
+      },
+      tables: [
+        { table: 'clipboard_items', totalBytes: 3_221_225_472 },
+        { table: 'audit_logs', totalBytes: 1_073_741_824 },
+        { table: 'file_versions', totalBytes: 536_870_912 },
+        { table: 'ai_messages', totalBytes: 268_435_456 },
+        { table: 'users', totalBytes: 33_554_432 },
+      ],
+      topUsers: [
+        { id: 'u-001', nickname: '陈明远', itemCount: 4_218, totalBytes: 812_546_048, fileCount: 86, fileBytes: 545_258_496 },
+        { id: 'u-002', nickname: 'Yuki Tanaka', itemCount: 3_507, totalBytes: 415_236_096, fileCount: 41, fileBytes: 268_435_456 },
+        { id: 'u-003', nickname: '刘思齐', itemCount: 2_931, totalBytes: 301_989_888, fileCount: 28, fileBytes: 188_743_680 },
+      ],
+    };
+    return ok(data);
+  }),
+
+  // ── AN-08：存储清理手动触发（reason 必填 → 审计）──
+  http.post('/api/admin/ops/cleanup', async ({ request }) => {
+    await delay(300);
+    const body = (await request.json()) as { reason?: string };
+    if (!body.reason?.trim()) return fail(400, 40003, '原因必填（将写入审计日志）');
+    const data: OpsCleanupResult = {
+      expired: { expiredItems: 12, oldVerificationCodes: 5, notificationHistory: 0, tombstones: 3 },
+      fileRetention: {
+        db: { dbDeleted: 7, filesDeleted: 9, fileErrors: 0, batches: 1 },
+        disk: { chunkDirsRemoved: 1, tmpFilesRemoved: 4, tmpErrors: 0 },
+      },
+      fileRetentionError: null,
+    };
+    pushAudit('admin.ops.storage.cleanup', 'ops', 'storage_cleanup', `reason="${body.reason.trim()}"`);
+    return ok(data, '清理任务已执行');
+  }),
 ];
 
 // ─────────────── T-A6 追加：设备管理 ───────────────
@@ -1059,6 +1173,93 @@ const plansHandlers = [
   }),
 ];
 
+// ─────────────── AN-03 追加：AI 平台管理 ───────────────
+
+const aiProvidersHandlers = [
+  // 全量供应商列表（脱敏：user_label 打码手机号/昵称，密钥仅 has_key 布尔）——与后端 admin/aiProviders.js GET 契约一致
+  http.get('/api/admin/ai-providers', async () => {
+    await delay(150);
+    return ok(mockAiProviders);
+  }),
+
+  // 部分更新（启停/名称/模型/base_url 白名单）：未知 id 404、空更新 400；写审计 admin.ai_provider.update
+  http.patch('/api/admin/ai-providers/:id', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const provider = mockAiProviders.find((p) => p.id === id);
+    if (!provider) return fail(404, 40404, 'AI 供应商不存在');
+    const body = (await request.json()) as Record<string, unknown>;
+    const changed: string[] = [];
+    if (body.enabled !== undefined) {
+      provider.enabled = Boolean(body.enabled);
+      changed.push('enabled');
+    }
+    if (body.name !== undefined) {
+      const name = String(body.name).trim();
+      if (!name) return fail(400, 40002, '供应商名称不能为空');
+      provider.name = name;
+      changed.push('name');
+    }
+    if (body.model !== undefined) {
+      const model = String(body.model).trim();
+      if (!model) return fail(400, 40002, '模型标识不能为空');
+      provider.model = model;
+      changed.push('model');
+    }
+    if (body.base_url !== undefined) {
+      provider.base_url = String(body.base_url).trim();
+      changed.push('base_url');
+    }
+    if (changed.length === 0) return fail(400, 40002, '没有需要更新的字段');
+    pushAudit('admin.ai_provider.update', 'ai_provider', provider.id, `provider="${provider.name}", changed=${changed.join('|')}`);
+    return ok(provider, 'AI 供应商已更新');
+  }),
+];
+
+// ─────────────── AN-12 追加：管理员会话（安全策略） ───────────────
+
+/** AN-12 mock 语义：请求者身份取 Authorization 头（演示 token 对应 usr_carlos），用于 isCurrent 标记 */
+const MOCK_CURRENT_ADMIN_ID = 'usr_carlos';
+
+const adminSessionHandlers = [
+  // 管理角色活跃会话列表（q 按昵称/ID 过滤 + 分页；isCurrent = 请求者自己的会话）
+  http.get('/api/admin/sessions', async ({ request }) => {
+    await delay(180);
+    const url = new URL(request.url);
+    const page = numParam(url, 'page', 1);
+    const pageSize = numParam(url, 'pageSize', 10);
+    const q = url.searchParams.get('q')?.trim() ?? '';
+    const auth = request.headers.get('Authorization') ?? '';
+    const currentId = auth.includes('mock-admin-access-token-20260905') ? MOCK_CURRENT_ADMIN_ID : '';
+
+    const filtered = mockAdminSessions.filter((s) => {
+      if (!q) return true;
+      return s.nickname.includes(q) || s.userId === q;
+    });
+    const list = filtered
+      .slice((page - 1) * pageSize, page * pageSize)
+      .map((s) => ({ ...s, isCurrent: s.userId === currentId }));
+    return ok({ list, total: filtered.length, page, pageSize });
+  }),
+
+  // 单会话强制下线：原因必填；当前会话不可下线（防自锁）；被下线会话从列表移除；写审计
+  http.post('/api/admin/sessions/:id/revoke', async ({ request, params }) => {
+    await delay(280);
+    const id = params['id'] as string;
+    const session = mockAdminSessions.find((s) => s.id === id);
+    if (!session) return fail(404, 40404, '会话不存在或已下线');
+    if (session.userId === MOCK_CURRENT_ADMIN_ID) {
+      return fail(400, 4000, '不能下线自己当前的会话');
+    }
+    const body = (await request.json()) as { reason?: string };
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) return fail(400, 4000, '强制下线必须填写原因（写入审计日志）');
+    mockAdminSessions.splice(mockAdminSessions.indexOf(session), 1);
+    pushAudit('admin.session.revoke', 'user_session', session.id, `target="${session.nickname}", reason="${reason}"`);
+    return ok({ id: session.id, revoked: true }, '该会话已强制下线');
+  }),
+];
+
 export const handlers = [
   ...authHandlers,
   ...overviewHandlers,
@@ -1072,4 +1273,6 @@ export const handlers = [
   ...devicesHandlers,
   ...subscriptionsHandlers,
   ...plansHandlers,
+  ...aiProvidersHandlers,
+  ...adminSessionHandlers,
 ];

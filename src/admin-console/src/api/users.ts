@@ -45,3 +45,16 @@ export function deleteUser(
 ): Promise<{ id: string; deleted: boolean }> {
   return apiDelete<{ id: string; deleted: boolean }>(`/admin/users/${id}`, payload);
 }
+
+/**
+ * AN-13：数据主体数据导出（可携权）——拉取 JSON 产物 Blob（后端 Content-Disposition 附件）。
+ * 后端：GET /admin/users/:id/export?reason=（审计 admin.users.export）；
+ * 响应为裸 JSON 文件（非 { code, data } 壳），拦截器对 Blob 原样放行。
+ */
+export async function exportUserData(id: string, reason: string): Promise<Blob> {
+  const resp = await apiGet<Blob>(`/admin/users/${id}/export`, {
+    params: { reason },
+    responseType: 'blob',
+  });
+  return resp;
+}

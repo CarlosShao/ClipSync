@@ -1,12 +1,24 @@
-import { Button, Card, Empty, Spin, Table, Tag, Tooltip } from 'antd';
-import { useQuery } from '@tanstack/react-query';
+import { App as AntdApp, Button, Card, Empty, Spin, Table, Tag, Tooltip } from 'antd';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { DownloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/PageHeader';
-import { getOpsBackups, getOpsOverview, getSlowQueries } from '@/api/ops';
+import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
+import {
+  downloadBackupFile,
+  getOpsAlerts,
+  getOpsBackups,
+  getOpsOverview,
+  getOpsStorage,
+  getSlowQueries,
+  postOpsAction,
+  postOpsCleanup,
+} from '@/api/ops';
 import { ApiError } from '@/api/client';
 import { queryKeys } from '@/queryKeys';
 import { hasPerm } from '@/utils/permissions';
+import type { OpsActionKey } from '@/api/types';
 import type { OpsProbe } from '@/api/types';
 import styles from './ops.module.css';
 
@@ -86,6 +98,110 @@ function ProbeRow({ label, probe }: { label: string; probe: OpsProbe | undefined
   );
 }
 
+// ─────────────── AN-06：运维动作区 ───────────────
+
+/** 运维动作元信息：按钮文案 + 确认弹窗说明（全部走 ConfirmReasonModal + 后端审计） */
+const ACTION_META: Record<OpsActionKey, { label: string; danger: boolean; description: string }> = {
+  clear_cache: {
+    label: '清理缓存',
+    danger: false,
+    description: '清空功能开关 / 限流阈值 / 维护模式进程缓存，下次读取自动回源数据库。',
+  },
+  reload_configs: {
+    label: '重载配置',
+    danger: false,
+    description: '失效进程缓存后立即回读数据库，用于验证系统配置可达并生效。',
+  },
+  force_logout_all: {
+    label: '全员下线',
+    danger: true,
+    description: '吊销除你之外的全部活跃会话，所有客户端将需要重新登录。',
+  },
+  trigger_backup: {
+    label: '立即备份',
+    danger: false,
+    description: '执行 pg_dump 备份到 backups 目录，并按「备份保留天数」清理超期备份文件。',
+  },
+};
+
+// ─────────────── AN-15：活跃告警 ───────────────
+
+/** 告警级别 → antd Tag 颜色（critical 红 / warning 金 / 其余蓝） */
+function severityColor(severity: string): string {
+  const key = severity.toLowerCase();
+  if (key === 'critical') return 'red';
+  if (key === 'warning') return 'gold';
+  return 'blue';
+}
+
+/** AN-15 活跃告警表格列 */
+const ALERT_COLUMNS = [
+  {
+    title: '级别',
+    dataIndex: 'severity',
+    key: 'severity',
+    width: 90,
+    render: (v: string) => <Tag color={severityColor(v ?? '')}>{v ?? 'info'}</Tag>,
+  },
+  {
+    title: '告警名称',
+    dataIndex: 'name',
+    key: 'name',
+    render: (v: string, row: { description?: string }) => (
+      <Tooltip title={row.description || undefined}>
+        <span className={styles.stmtCell}>{v}</span>
+      </Tooltip>
+    ),
+  },
+  {
+    title: '触发时间',
+    dataIndex: 'activeAt',
+    key: 'activeAt',
+    width: 160,
+    render: (v: string | null) => formatDateTime(v),
+  },
+];
+
+// ─────────────── AN-08：存储用量 ───────────────
+
+/** AN-08 用户存储用量 TOP 表格列 */
+const STORAGE_TOP_COLUMNS = [
+  {
+    title: '用户',
+    dataIndex: 'nickname',
+    key: 'nickname',
+    render: (v: string) => v || '（未设置昵称）',
+  },
+  {
+    title: '条目数',
+    dataIndex: 'itemCount',
+    key: 'itemCount',
+    width: 90,
+    render: (v: number) => v.toLocaleString('zh-CN'),
+  },
+  {
+    title: '占用体积',
+    dataIndex: 'totalBytes',
+    key: 'totalBytes',
+    width: 110,
+    render: (v: number) => humanBytes(v),
+  },
+  {
+    title: '文件数',
+    dataIndex: 'fileCount',
+    key: 'fileCount',
+    width: 90,
+    render: (v: number) => v.toLocaleString('zh-CN'),
+  },
+  {
+    title: '文件体积',
+    dataIndex: 'fileBytes',
+    key: 'fileBytes',
+    width: 110,
+    render: (v: number) => humanBytes(v),
+  },
+];
+
 function MetricCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <Card size="small" title={label}>
@@ -146,6 +262,70 @@ export default function OpsPage() {
     enabled: canViewSlowQueries,
     refetchInterval: REFRESH_INTERVAL_MS,
   });
+
+  // ── AN-15 活跃告警：60s 轮询（Prometheus 代理，降级时卡片显示「告警服务不可用」）──
+  const { data: alertsData, isLoading: alertsLoading } = useQuery({
+    queryKey: queryKeys.opsAlerts(),
+    queryFn: getOpsAlerts,
+    refetchInterval: 60_000,
+  });
+
+  // ── AN-08 存储用量：60s 轮询 ──
+  const { data: storageData } = useQuery({
+    queryKey: queryKeys.opsStorage(),
+    queryFn: getOpsStorage,
+    refetchInterval: 60_000,
+  });
+
+  // ── AN-06 运维动作区：统一 ConfirmReasonModal → POST /ops/actions ──
+  const [actionModal, setActionModal] = useState<{ open: boolean; action: OpsActionKey | null }>({
+    open: false,
+    action: null,
+  });
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
+  const { message } = AntdApp.useApp();
+  const queryClient = useQueryClient();
+
+  const actionMutation = useMutation({
+    mutationFn: ({ action, reason }: { action: OpsActionKey; reason: string }) =>
+      postOpsAction(action, reason),
+    onSuccess: (result, variables) => {
+      void message.success(`${ACTION_META[variables.action].label}完成`);
+      if (variables.action === 'trigger_backup') {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.opsBackups() });
+      }
+      if (variables.action === 'clear_cache' || variables.action === 'reload_configs') {
+        // 缓存/配置重载可能影响概览指标口径，顺手刷新
+        void queryClient.invalidateQueries({ queryKey: queryKeys.opsOverview() });
+      }
+      setActionModal({ open: false, action: null });
+      // 未尽消费字段（revokedSessions / file 等）当前仅在审计中展示
+      void result;
+    },
+    // 失败 toast 由 client 拦截器统一提示，弹窗保持打开可重试
+  });
+
+  const cleanupMutation = useMutation({
+    mutationFn: (reason: string) => postOpsCleanup(reason),
+    onSuccess: () => {
+      void message.success('清理任务已执行');
+      void queryClient.invalidateQueries({ queryKey: queryKeys.opsStorage() });
+      setCleanupOpen(false);
+    },
+  });
+
+  // AN-06：备份文件下载（axios blob → createObjectURL，携带鉴权头）
+  const handleDownloadBackup = async (file: string) => {
+    setDownloadingFile(file);
+    try {
+      await downloadBackupFile(file);
+    } catch {
+      // 失败 toast 由拦截器统一提示
+    } finally {
+      setDownloadingFile(null);
+    }
+  };
 
   // 30s 自动刷新；卸载时清理定时器
   useEffect(() => {
@@ -344,6 +524,64 @@ export default function OpsPage() {
             </div>
           </Card>
 
+          {/* 运维动作区（AN-06）：全部动作走 ConfirmReasonModal 收集原因 → 后端审计 */}
+          <Card size="small" title="运维动作区" className={styles.spanHalf}>
+            <div className={styles.actionGrid}>
+              {(Object.keys(ACTION_META) as OpsActionKey[]).map((key) => (
+                <Button
+                  key={key}
+                  size="small"
+                  danger={ACTION_META[key].danger}
+                  onClick={() => setActionModal({ open: true, action: key })}
+                >
+                  {ACTION_META[key].label}
+                </Button>
+              ))}
+            </div>
+            <div className={styles.metricSub} style={{ marginTop: 12 }}>
+              所有动作均要求填写原因并写入审计日志；全员下线不影响你当前会话。
+            </div>
+          </Card>
+
+          {/* 活跃告警（AN-15，只读）：Prometheus 不可达/未配置时显示「告警服务不可用」而非报错 */}
+          <Card
+            size="small"
+            title="活跃告警"
+            className={styles.spanHalf}
+            extra={
+              (alertsData?.grafanaUrl ?? '').trim() ? (
+                <a href={(alertsData?.grafanaUrl ?? '').trim()} target="_blank" rel="noreferrer">
+                  <Button size="small">跳转 Grafana</Button>
+                </a>
+              ) : undefined
+            }
+          >
+            {alertsData == null ? (
+              <Spin size="small" />
+            ) : alertsData.unavailable ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  alertsData.reason === 'not_configured'
+                    ? '告警服务不可用：未配置 Prometheus 地址（系统设置 → 运维 → Prometheus 地址）'
+                    : '告警服务不可用：Prometheus 未响应或超时（3s）'
+                }
+              />
+            ) : alertsData.items.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前无活跃告警" />
+            ) : (
+              <Table
+                size="small"
+                loading={alertsLoading}
+                rowKey="id"
+                columns={ALERT_COLUMNS}
+                dataSource={alertsData.items}
+                pagination={false}
+                locale={{ emptyText: '当前无活跃告警' }}
+              />
+            )}
+          </Card>
+
           {/* 备份概览（CO-33） */}
           <Card size="small" title="备份概览" className={styles.spanHalf}>
             {backupsData == null ? null : backupsData.items.length === 0 ? (
@@ -384,10 +622,78 @@ export default function OpsPage() {
                         <Tag style={{ marginInlineEnd: 0 }}>{item.kind}</Tag>
                         <span>{humanBytes(item.sizeBytes)}</span>
                         <span>{formatDateTime(item.mtime)}</span>
+                        {/* AN-06：备份文件下载（blob 拉取，携带鉴权头） */}
+                        <Tooltip title="下载备份文件">
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<DownloadOutlined />}
+                            loading={downloadingFile === item.file}
+                            onClick={() => void handleDownloadBackup(item.file)}
+                          />
+                        </Tooltip>
                       </span>
                     </div>
                   ))}
                 </div>
+              </>
+            )}
+          </Card>
+
+          {/* 存储用量与清理归档（AN-08）：总量 + 按表体积 + 用户 TOP + 清理入口 */}
+          <Card
+            size="small"
+            title="存储用量"
+            className={styles.spanAll}
+            extra={
+              <Button size="small" danger onClick={() => setCleanupOpen(true)}>
+                清理归档
+              </Button>
+            }
+          >
+            {storageData == null ? (
+              <div className={styles.emptyHint}>存储用量加载中…</div>
+            ) : (
+              <>
+                <div className={styles.kv}>
+                  <div className={styles.kvRow}>
+                    <span className={styles.kvLabel}>数据库总大小</span>
+                    <span className={styles.kvValue}>{humanBytes(storageData.totals.dbBytes)}</span>
+                  </div>
+                  <div className={styles.kvRow}>
+                    <span className={styles.kvLabel}>剪贴板条目</span>
+                    <span className={styles.kvValue}>
+                      {storageData.totals.itemCount.toLocaleString('zh-CN')} 条 ·{' '}
+                      {humanBytes(storageData.totals.totalBytes)}
+                    </span>
+                  </div>
+                  <div className={styles.kvRow}>
+                    <span className={styles.kvLabel}>文件条目</span>
+                    <span className={styles.kvValue}>
+                      {storageData.totals.fileCount.toLocaleString('zh-CN')} 个 ·{' '}
+                      {humanBytes(storageData.totals.fileBytes)}
+                    </span>
+                  </div>
+                  <div className={styles.kvRow}>
+                    <span className={styles.kvLabel}>表体积 TOP</span>
+                    <span className={styles.kvValue}>
+                      {storageData.tables.slice(0, 3).map((t) => (
+                        <Tag key={t.table} style={{ marginInlineEnd: 6 }}>
+                          {t.table} · {humanBytes(t.totalBytes)}
+                        </Tag>
+                      ))}
+                    </span>
+                  </div>
+                </div>
+                <Table
+                  size="small"
+                  style={{ marginTop: 12 }}
+                  rowKey="id"
+                  columns={STORAGE_TOP_COLUMNS}
+                  dataSource={storageData.topUsers}
+                  pagination={false}
+                  locale={{ emptyText: '暂无数据' }}
+                />
               </>
             )}
           </Card>
@@ -426,6 +732,34 @@ export default function OpsPage() {
           ) : null}
         </div>
       </Spin>
+
+      {/* AN-06：运维动作确认（原因必填 → 审计） */}
+      <ConfirmReasonModal
+        open={actionModal.open && actionModal.action != null}
+        title={`确认${actionModal.action ? ACTION_META[actionModal.action].label : ''}`}
+        description={actionModal.action ? ACTION_META[actionModal.action].description : undefined}
+        danger={actionModal.action ? ACTION_META[actionModal.action].danger : true}
+        confirmText="执行"
+        confirmLoading={actionMutation.isPending}
+        onCancel={() => setActionModal({ open: false, action: null })}
+        onConfirm={(reason) =>
+          actionMutation.mutateAsync({
+            action: actionModal.action as OpsActionKey,
+            reason,
+          })
+        }
+      />
+
+      {/* AN-08：存储清理确认（原因必填 → 审计；受 storage_cleanup_enabled 闸门控制） */}
+      <ConfirmReasonModal
+        open={cleanupOpen}
+        title="确认清理归档"
+        description="将立即执行一轮清理：过期剪贴板/验证码/通知历史/删除墓碑、超保留期文件（DB 行 + 磁盘文件）及磁盘遗留物。清理不可恢复。"
+        confirmText="执行清理"
+        confirmLoading={cleanupMutation.isPending}
+        onCancel={() => setCleanupOpen(false)}
+        onConfirm={(reason) => cleanupMutation.mutateAsync(reason)}
+      />
     </>
   );
 }

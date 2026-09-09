@@ -18,6 +18,11 @@ import type {
   Role,
   SlowQueriesResp,
   SystemConfig,
+  OpsActionResult,
+  OpsActionKey,
+  OpsAlerts,
+  OpsCleanupResult,
+  OpsStorage,
 } from '@/api/types';
 
 /**
@@ -221,9 +226,9 @@ describe('功能开关与系统参数（设置页契约）', () => {
     expect(smtpPass?.value).toBe('未配置');
 
     // AN-09：消费方登记随配置下发；无消费方的键 consumer 为 null（UI 打「未接入」角标）
+    // AN-03：ai_max_tokens 已接线（buildUpstreamChat 经 aiRuntimeConfig 统一钳制），consumer 为消费方说明
     const aiMaxTokens = data.find((c) => c.key === 'ai_max_tokens');
-    expect(aiMaxTokens?.consumer).toBeNull();
-    expect(aiMaxTokens?.consumer).not.toBe('');
+    expect(aiMaxTokens?.consumer).toContain('aiRuntimeConfig.js');
     const rateLimit = data.find((c) => c.key === 'rate_limit_api_per_min');
     expect(rateLimit?.consumer).toContain('rateLimiter.js');
     const smtpHost = data.find((c) => c.key === 'smtp_host');
@@ -382,6 +387,24 @@ describe('GET /api/admin/audit-logs（审计页契约 T-A6）', () => {
     for (const log of yuki.list) expect(log.operator).toBe('Yuki');
   });
 
+  test('AN-11：actorLevel 筛选仅命中对应级别操作者', async () => {
+    const superAdmin = expectOk(
+      await get<PageData<AuditLog>>('/api/admin/audit-logs?actorLevel=super_admin&pageSize=50'),
+    ).data;
+    expect(superAdmin.list.length).toBeGreaterThan(0);
+    for (const log of superAdmin.list) expect(log.operatorRole).toBe('super_admin');
+
+    const admin = expectOk(
+      await get<PageData<AuditLog>>('/api/admin/audit-logs?actorLevel=admin&pageSize=50'),
+    ).data;
+    for (const log of admin.list) expect(log.operatorRole).toBe('admin');
+
+    const user = expectOk(
+      await get<PageData<AuditLog>>('/api/admin/audit-logs?actorLevel=user&pageSize=50'),
+    ).data;
+    for (const log of user.list) expect(log.operatorRole).toBe('user');
+  });
+
   test('结果 / IP / 日期范围筛选生效', async () => {
     const failed = expectOk(
       await get<PageData<AuditLog>>('/api/admin/audit-logs?result=failed&pageSize=50'),
@@ -404,6 +427,41 @@ describe('GET /api/admin/audit-logs（审计页契约 T-A6）', () => {
       expect(log.createdAt.slice(0, 10) >= '2026-08-19').toBe(true);
       expect(log.createdAt.slice(0, 10) <= '2026-08-20').toBe(true);
     }
+  });
+});
+
+describe('AN-12 /api/admin/sessions（管理员会话契约）', () => {
+  test('列表仅含管理角色活跃会话，支持 q 过滤', async () => {
+    const { data } = expectOk(
+      await get<PageData<{ id: string; roleKey: string | null; nickname: string }>>('/api/admin/sessions?page=1&pageSize=10'),
+    );
+    expect(data.list.length).toBeGreaterThan(0);
+    for (const s of data.list) {
+      expect(['super_admin', 'admin']).toContain(s.roleKey);
+    }
+
+    const filtered = expectOk(
+      await get<PageData<{ id: string; nickname: string }>>('/api/admin/sessions?q=Yuki&pageSize=10'),
+    ).data;
+    expect(filtered.list.length).toBeGreaterThan(0);
+    for (const s of filtered.list) expect(s.nickname).toBe('Yuki');
+  });
+
+  test('单会话下线：缺 reason 400；带 reason 成功且列表移除；重复下线 404', async () => {
+    const noReason = expectFail(
+      await post('/api/admin/sessions/ses_20260905_1436_yuki/revoke', {}),
+    );
+    expect(noReason.code).toBe(4000);
+
+    const okResp = expectOk<{ id: string; revoked: boolean }>(
+      await post('/api/admin/sessions/ses_20260905_1436_yuki/revoke', { reason: '离职交接，回收登录态' }),
+    );
+    expect(okResp.data.revoked).toBe(true);
+
+    const repeat = expectFail(
+      await post('/api/admin/sessions/ses_20260905_1436_yuki/revoke', { reason: '重复下线' }),
+    );
+    expect(repeat.code).toBe(40404);
   });
 });
 
@@ -456,6 +514,88 @@ describe('CO-33/CO-41：备份概览与慢查询', () => {
   });
 });
 
+describe('AN-06/AN-15/AN-08：运维动作区、活跃告警与存储用量', () => {
+  test('AN-15：GET /ops/alerts 返回活跃告警 + grafanaUrl', async () => {
+    const { data } = expectOk(await get<OpsAlerts>('/api/admin/ops/alerts'));
+    expect(data.unavailable).toBe(false);
+    expect(data.items.length).toBeGreaterThan(0);
+    for (const item of data.items) {
+      expect(['firing', 'pending']).toContain(item.state);
+      expect(item.name).toBeTruthy();
+      expect(['critical', 'warning', 'info']).toContain(item.severity);
+    }
+    expect(data.grafanaUrl).toBeTruthy();
+  });
+
+  test('AN-06：POST /ops/actions 缺原因返回 400 错误壳', async () => {
+    const resp = await post<OpsActionResult>('/api/admin/ops/actions', { action: 'clear_cache' });
+    expect(resp.status).toBe(400);
+    expect(expectFail(resp).code).toBe(40003);
+  });
+
+  test('AN-06：POST /ops/actions 未知动作返回 400；全员下线写审计', async () => {
+    const bad = await post<OpsActionResult>('/api/admin/ops/actions', {
+      action: 'reboot_server',
+      reason: '边界外动作（测试）',
+    });
+    expect(bad.status).toBe(400);
+    expect(expectFail(bad).code).toBe(4000);
+
+    const auditBefore = mockAuditLogs.length;
+    const { data } = expectOk(
+      await post<OpsActionResult>('/api/admin/ops/actions', {
+        action: 'force_logout_all' satisfies OpsActionKey,
+        reason: '安全事件演练（测试）',
+      }),
+    );
+    expect(data.revokedSessions).toBeGreaterThan(0);
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.ops.action');
+  });
+
+  test('AN-06：POST /ops/actions trigger_backup 返回备份文件与保留策略结果', async () => {
+    const { data } = expectOk(
+      await post<OpsActionResult>('/api/admin/ops/actions', {
+        action: 'trigger_backup',
+        reason: '发布前手动备份（测试）',
+      }),
+    );
+    expect(data.file).toContain('clipsync_manual_');
+    expect(data.sizeBytes).toBeGreaterThan(0);
+    expect(data.retentionDays).toBeGreaterThan(0);
+  });
+
+  test('AN-08：GET /ops/storage 返回总量 / 按表体积 / 用户 TOP', async () => {
+    const { data } = expectOk(await get<OpsStorage>('/api/admin/ops/storage'));
+    expect(data.totals.itemCount).toBeGreaterThan(0);
+    expect(data.totals.dbBytes).toBeGreaterThan(0);
+    expect(data.tables.length).toBeGreaterThan(0);
+    for (const t of data.tables) {
+      expect(t.table).toBeTruthy();
+      expect(t.totalBytes).toBeGreaterThan(0);
+    }
+    expect(data.topUsers.length).toBeGreaterThan(0);
+    // TopN 交叉口径：各用户 totalBytes 之和不大于全局总字节
+    const sumTop = data.topUsers.reduce((s, u) => s + u.totalBytes, 0);
+    expect(sumTop).toBeLessThanOrEqual(data.totals.totalBytes);
+  });
+
+  test('AN-08：POST /ops/cleanup 缺原因 400；带原因返回清理统计并写审计', async () => {
+    const bad = await post<OpsCleanupResult>('/api/admin/ops/cleanup', {});
+    expect(bad.status).toBe(400);
+    expect(expectFail(bad).code).toBe(40003);
+
+    const auditBefore = mockAuditLogs.length;
+    const { data } = expectOk(
+      await post<OpsCleanupResult>('/api/admin/ops/cleanup', { reason: '例行清理（测试）' }),
+    );
+    expect(data.expired.expiredItems).toBeGreaterThanOrEqual(0);
+    expect(data.fileRetention).not.toBeNull();
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.ops.storage.cleanup');
+  });
+});
+
 describe('POST /api/admin/configs/smtp/test（CO-30 SMTP 测试邮件）', () => {
   test('未配置 SMTP 返回 409/4090 错误壳', async () => {
     const resp = await post<{ messageId: string }>('/api/admin/configs/smtp/test', {
@@ -483,14 +623,14 @@ describe('POST /api/admin/configs/smtp/test（CO-30 SMTP 测试邮件）', () =>
 });
 
 describe('角色权限写路径（T-A6）', () => {
-  test('GET /roles 返回 4 角色（含权限集合与人数），GET /permissions 返回 30 项目录（RB-06/RB-11 扩充）', async () => {
+  test('GET /roles 返回 4 角色（含权限集合与人数），GET /permissions 返回 31 项目录（RB-06/RB-11 扩充 + 065/AN-04 release 键）', async () => {
     const roles = expectOk(await get<Role[]>('/api/admin/roles')).data;
     expect(roles).toHaveLength(4);
     const superAdmin = roles.find((r) => r.roleKey === 'super_admin');
-    expect(superAdmin?.permissions.length).toBe(30);
+    expect(superAdmin?.permissions.length).toBe(31);
 
     const permissions = expectOk(await get<Permission[]>('/api/admin/permissions')).data;
-    expect(permissions).toHaveLength(30);
+    expect(permissions).toHaveLength(31);
 
     // RB-06：读侧 view 键 7 项 + admin.ops.view 均在目录内
     const permKeys = permissions.map((p) => p.permKey);

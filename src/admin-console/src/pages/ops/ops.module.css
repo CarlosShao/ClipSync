@@ -140,6 +140,13 @@
   color: var(--text-2);
 }
 
+/* AN-06：运维动作区按钮网格（2×2，紧凑框体） */
+.actionGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 @media (max-width: 900px) {
   .grid {
     grid-template-columns: 1fr;

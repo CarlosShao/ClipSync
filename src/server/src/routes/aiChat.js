@@ -7,6 +7,8 @@ import { logger } from '../utils/logger.js'
 import { logAuditEvent } from '../utils/audit.js'
 import { TOOLS, approveToolRequest, respondAskUserRequest, cancelPendingForUser } from './aiTools.js'
 import { runChatLoop } from './aiChatCore.js'
+// AN-03：providerId 缺省兜底路由（ai_default_provider）+ 禁用供应商统一过滤
+import { resolveUserProvider } from '../utils/aiRuntimeConfig.js'
 import { runOrchestration } from './aiOrchestrator.js'
 import { updateConversationUsage } from './aiConversations.js'
 import {
@@ -25,14 +27,14 @@ router.post('/chat', apiLimiter, async (req, res) => {
   try {
     const { providerId, messages, options } = req.body || {}
     const conversationId = options?.conversationId
-    if (!providerId) return res.status(400).json({ error: 'providerId is required' })
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'messages is required' })
     }
 
-    const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found' })
-    const providerRow = result.rows[0]
+    // AN-03：providerId 缺省时兜底路由（用户 is_default → 全局 ai_default_provider 供应商族）；
+    // 管理台禁用的供应商（enabled=FALSE）在此统一视为不存在
+    const providerRow = await resolveUserProvider(req.userId, providerId)
+    if (!providerRow) return res.status(404).json({ error: 'Provider not found' })
     if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
@@ -321,12 +323,12 @@ router.post('/chat', apiLimiter, async (req, res) => {
 router.post('/summarize', apiLimiter, async (req, res) => {
   try {
     const { providerId, content } = req.body || {}
-    if (!providerId) return res.status(400).json({ error: 'providerId is required' })
     if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content is required' })
 
-    const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found' })
-    const providerRow = result.rows[0]
+    // AN-03：providerId 缺省时兜底路由（用户 is_default → 全局 ai_default_provider 供应商族）；
+    // 管理台禁用的供应商（enabled=FALSE）在此统一视为不存在
+    const providerRow = await resolveUserProvider(req.userId, providerId)
+    if (!providerRow) return res.status(404).json({ error: 'Provider not found' })
     if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
@@ -361,7 +363,6 @@ router.post('/summarize', apiLimiter, async (req, res) => {
 router.post('/similarity', apiLimiter, async (req, res) => {
   try {
     const { providerId, content, candidates = [] } = req.body || {}
-    if (!providerId) return res.status(400).json({ error: 'providerId is required' })
     if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content is required' })
     if (!Array.isArray(candidates) || candidates.length === 0) {
       return res.json({ duplicates: [], checked: 0 })
@@ -373,9 +374,9 @@ router.post('/similarity', apiLimiter, async (req, res) => {
       .map((c) => ({ id: c.id.slice(0, 64), text: c.text.slice(0, 200) }))
     if (limited.length === 0) return res.json({ duplicates: [], checked: 0 })
 
-    const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found' })
-    const providerRow = result.rows[0]
+    // AN-03：providerId 缺省时兜底路由 + 禁用供应商统一过滤（见 utils/aiRuntimeConfig.js）
+    const providerRow = await resolveUserProvider(req.userId, providerId)
+    if (!providerRow) return res.status(404).json({ error: 'Provider not found' })
     if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
@@ -453,20 +454,15 @@ router.post('/similarity', apiLimiter, async (req, res) => {
 router.post('/refactor-prompt', apiLimiter, async (req, res) => {
   try {
     const { providerId, content } = req.body || {}
-    if (!providerId) return res.status(400).json({ error: 'providerId is required' })
     if (!content || typeof content !== 'string' || !content.trim()) {
       return res.status(400).json({ error: 'content is required' })
     }
 
-    // 用 providerId 查对应 ai_providers 行（带 user_id 隔离）
-    const providerRowRes = await pool.query(
-      'SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2',
-      [providerId, req.userId]
-    )
-    if (providerRowRes.rowCount === 0) {
+    // AN-03：providerId 缺省时兜底路由 + 禁用供应商统一过滤（见 utils/aiRuntimeConfig.js）
+    const providerRow = await resolveUserProvider(req.userId, providerId)
+    if (!providerRow) {
       return res.status(404).json({ error: 'provider not found' })
     }
-    const providerRow = providerRowRes.rows[0]
     if (!providerRow.api_key_encrypted) {
       return res.status(400).json({ error: 'Provider has no API key' })
     }
@@ -588,7 +584,6 @@ router.post('/refactor-prompt', apiLimiter, async (req, res) => {
 router.post('/suggest', apiLimiter, async (req, res) => {
   try {
     const { providerId, content, collections = [], items } = req.body || {}
-    if (!providerId) return res.status(400).json({ error: 'providerId is required' })
 
     const collectionNames = Array.isArray(collections) ? collections.filter((x) => typeof x === 'string' && x.trim()).slice(0, 30) : []
     const collectionHint = collectionNames.length
@@ -604,9 +599,9 @@ router.post('/suggest', apiLimiter, async (req, res) => {
       return res.status(400).json({ error: '批量建议最多 20 条，请减少勾选数' })
     }
 
-    const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found' })
-    const providerRow = result.rows[0]
+    // AN-03：providerId 缺省时兜底路由 + 禁用供应商统一过滤（见 utils/aiRuntimeConfig.js）
+    const providerRow = await resolveUserProvider(req.userId, providerId)
+    if (!providerRow) return res.status(404).json({ error: 'Provider not found' })
     if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
 
     const apiKey = decrypt(providerRow.api_key_encrypted)

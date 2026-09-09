@@ -13,6 +13,8 @@
 import { logger } from './logger.js'
 import dns from 'node:dns'
 import { convertMessagesForAnthropic } from './messageConverter.js'
+// AN-03：ai_max_tokens 全链路统一钳制点（system_configs 5s TTL 缓存，fail-open 默认 4096）
+import { clampMaxTokens } from './aiRuntimeConfig.js'
 
 /**
  * 协议族：
@@ -581,7 +583,8 @@ export function buildUpstreamChat(cfg) {
     const body = {
       model,
       messages: chatMessages,
-      max_tokens: options.maxTokens || 1024,
+      // AN-03：max_tokens 经全局 ai_max_tokens 钳制（缺省 1024 兜底后取 min）
+      max_tokens: clampMaxTokens(options.maxTokens),
       stream,
     }
     // 原生 Anthropic thinking 参数（OpenAI 兼容族不支持该字段，由 reasoning_content 自动下发）
@@ -682,7 +685,8 @@ export function buildUpstreamChat(cfg) {
       model,
       input,
       stream,
-      max_output_tokens: options.maxTokens || 1024,
+      // AN-03：max_output_tokens 经全局 ai_max_tokens 钳制（缺省 1024 兜底后取 min）
+      max_output_tokens: clampMaxTokens(options.maxTokens),
     }
     if (typeof options.temperature === 'number') {
       body.temperature = options.temperature
@@ -723,9 +727,9 @@ export function buildUpstreamChat(cfg) {
   if (typeof options.temperature === 'number') {
     body.temperature = options.temperature
   }
-  if (options.maxTokens) {
-    body.max_tokens = options.maxTokens
-  }
+  // AN-03：max_tokens 恒发送并经全局 ai_max_tokens 钳制
+  //（原先缺省不发送 = 上游默认上限；现统一受后台 ai_max_tokens 约束，可在管理台调大）
+  body.max_tokens = clampMaxTokens(options.maxTokens)
   // 支持工具定义
   if (options.tools) {
     body.tools = options.tools

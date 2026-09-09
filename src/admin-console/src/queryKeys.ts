@@ -1,4 +1,5 @@
 import type {
+  AdminSessionListParams,
   AuditLogListParams,
   OrderListParams,
   UserListParams,
@@ -18,6 +19,9 @@ export const queryKeys = {
 
   auditLogs: (params: AuditLogListParams) => ['audit-logs', params] as const,
 
+  // AN-12：管理员会话（安全策略）
+  adminSessions: (params: AdminSessionListParams) => ['admin-sessions', params] as const,
+
   roles: () => ['roles'] as const,
   permissions: () => ['permissions'] as const,
 
@@ -28,4 +32,7 @@ export const queryKeys = {
   opsOverview: () => ['ops-overview'] as const,
   opsBackups: () => ['ops-backups'] as const,
   slowQueries: () => ['slow-queries'] as const,
+  // AN-15 / AN-08：活跃告警 + 存储用量
+  opsAlerts: () => ['ops-alerts'] as const,
+  opsStorage: () => ['ops-storage'] as const,
 };
