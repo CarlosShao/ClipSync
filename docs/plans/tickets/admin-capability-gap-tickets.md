@@ -16,7 +16,7 @@
 
 ## WP-P 平台核心能力（P0/P1）
 
-### AN-01 套餐与价格管理页 ⬜ P0
+### AN-01 套餐与价格管理页 ✅（2026-09-08 b840631 落地） P0
 - **问题**：G1。桌面端整套能力矩阵由 `subscription_plans` 驱动（单文件大小 / 总容量 / 单次文件数 / 保留天数 / features），**后端 `GET /`、`PATCH /:id` 已实现**（`src/server/src/routes/admin/plans.js:132,150`），但管理台 `src/api/` 无 `plans.ts`、9 个菜单无入口 → 改套餐只能改库
 - **改动**：
   1. `src/admin-console/src/api/plans.ts`：`getPlans()` / `patchPlan(id, patch)`
@@ -81,7 +81,7 @@
 - **改动**：`GET /api/admin/storage/top`（用户 × 用量 TopN + 总计）；配置键 `storage_cleanup_enabled` / 全局 `file_retention_days`；`db/cleanup.js` 增加过期文件清理任务
 - **验收**：TopN 与 `SUM(content_size)` 交叉一致；开启清理后过期文件被回收且用量下降
 
-### AN-09 配置键治理：消费方登记与「未接入」角标 ⬜ P1
+### AN-09 配置键治理：消费方登记与「未接入」角标 ✅（2026-09-08 b840631 落地） P1
 - **问题**：C1。`session_timeout_minutes`、`ai_max_tokens`、`ai_default_provider`、`max_collection_depth`、`enable_audit_log`、`menu_overrides`、`log_level` 等均可改但**无消费方**，运营无法分辨"改了没用"
 - **改动**：`CONFIG_CATALOG`（`configs.js:42-150`）每键增 `consumer` 字段（消费方文件或 `null`）；管理台对 `consumer === null` 的键显示「未接入」角标并在卡片顶部汇总数量
 - **验收**：无消费方的键在 UI 上一眼可见；有消费方的键点击可看消费方文件
@@ -139,7 +139,7 @@
 
 ## WP-Q 质量防护（防止假功能再犯）
 
-### AN-20 E2E 冒烟放开 + 真实数据断言 ⬜ P1
+### AN-20 E2E 冒烟放开 + 真实数据断言 ✅（2026-09-08 b840631 落地） P1
 - **问题**：C4。`src/admin-console/tests/e2e/smoke.spec.ts` 顶部 `SMOKE_ENABLED = false`，全部用例 `test.skip`；且断言写死 mock 数据（「12,847 用户」「¥41,286」「退款申请待审核 × 2」），真跑也必然失败 → 后台长期无任何自动化回归保护
 - **改动**：
   1. `SMOKE_ENABLED = true`；断言改为**相对断言**（KPI 非 null、表格行数 > 0、URL 变化），不写死业务数值
