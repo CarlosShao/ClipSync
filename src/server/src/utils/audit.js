@@ -254,6 +254,8 @@ export const AUDIT_ACTIONS = {
   PAYMENT_COMPLETE: 'payment_complete',
   PAYMENT_FAILED: 'payment_failed',
   PAYMENT_REFUND: 'payment_refund',
+  // AF-15：超时未支付订单自动关单（services/orderCloseSweep.js 定时任务逐单写入）
+  PAYMENT_AUTO_CLOSE: 'payment_auto_close',
   SUBSCRIPTION_CREATE: 'subscription_create',
   SUBSCRIPTION_CANCEL: 'subscription_cancel',
   SUBSCRIPTION_RENEW: 'subscription_renew',

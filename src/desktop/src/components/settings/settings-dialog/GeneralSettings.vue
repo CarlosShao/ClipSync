@@ -4,6 +4,8 @@ import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useConfigStore } from '@/stores/configStore'
 import { useMenuAccess } from '@/composables/useMenuAccess'
+// AN-02：客户端策略下发——同步间隔下限 / 历史上限，越界选项置灰
+import { minSyncIntervalMinutes, maxHistoryCeiling } from '@/composables/usePolicy'
 import Switch from '@/components/ui/switch/Switch.vue'
 import CustomSelect from '@/components/ui/select/CustomSelect.vue'
 import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
@@ -75,6 +77,19 @@ watch(syncIntervalModel, (v) => {
   configStore.savePrefs()
 })
 watch(maxHistoryModel, () => onMaxHistoryChange())
+
+// ── AN-02：策略边界 → 越界选项置灰 + 当前选择自动钳到边界 ──
+// 同步间隔：低于服务端下限的选项不可选（下限 0 = 未配置，不干预）
+const intervalDisabled = (v: number) => minSyncIntervalMinutes.value > 0 && v < minSyncIntervalMinutes.value
+// 历史：高于服务端上限的选项不可选（上限 0 = 未配置，不干预）
+const historyDisabled = (v: number) => maxHistoryCeiling.value > 0 && v > maxHistoryCeiling.value
+// 策略到达/变更时把当前选择钳到合法区间（走既有 watcher 落回 configStore，实际值同步收敛）
+watch(minSyncIntervalMinutes, (floor) => {
+  if (floor > 0 && Number(syncIntervalModel.value) < floor) syncIntervalModel.value = String(floor)
+})
+watch(maxHistoryCeiling, (ceiling) => {
+  if (ceiling > 0 && Number(maxHistoryModel.value) > ceiling) maxHistoryModel.value = String(ceiling)
+})
 </script>
 
 <template>
@@ -180,18 +195,21 @@ watch(maxHistoryModel, () => onMaxHistoryChange())
           <CustomSelectOption
             value="0"
             :selected="syncIntervalModel === '0'"
+            :disabled="intervalDisabled(0)"
             @select="(v) => (syncIntervalModel = v)"
             >{{ t('int_rt') }}</CustomSelectOption
           >
           <CustomSelectOption
             value="5"
             :selected="syncIntervalModel === '5'"
+            :disabled="intervalDisabled(5)"
             @select="(v) => (syncIntervalModel = v)"
             >{{ t('int_5m') }}</CustomSelectOption
           >
           <CustomSelectOption
             value="15"
             :selected="syncIntervalModel === '15'"
+            :disabled="intervalDisabled(15)"
             @select="(v) => (syncIntervalModel = v)"
             >{{ t('int_15m') }}</CustomSelectOption
           >
@@ -217,25 +235,28 @@ watch(maxHistoryModel, () => onMaxHistoryChange())
           <CustomSelectOption
             value="100"
             :selected="maxHistoryModel === '100'"
+            :disabled="historyDisabled(100)"
             @select="(v) => (maxHistoryModel = v)"
             >{{ t('hist_100') }}</CustomSelectOption
           >
           <CustomSelectOption
             value="500"
             :selected="maxHistoryModel === '500'"
+            :disabled="historyDisabled(500)"
             @select="(v) => (maxHistoryModel = v)"
             >{{ t('hist_500') }}</CustomSelectOption
           >
           <CustomSelectOption
             value="1000"
             :selected="maxHistoryModel === '1000'"
+            :disabled="historyDisabled(1000)"
             @select="(v) => (maxHistoryModel = v)"
             >{{ t('hist_1k') }}</CustomSelectOption
           >
           <CustomSelectOption
             value="999999"
             :selected="maxHistoryModel === '999999'"
-            :disabled="!canUnlimitedHistory"
+            :disabled="!canUnlimitedHistory || historyDisabled(999999)"
             @select="(v) => (maxHistoryModel = v)"
             >{{ t('hist_unl')
             }}{{

@@ -57,3 +57,32 @@ export function requireFlag(key, message) {
     res.status(403).json({ error: message, flagDisabled: key });
   };
 }
+
+// ───────────────────────── AN-10：强制点清单 ─────────────────────────
+// 静态清单：登记每个 feature_flags 键在服务端的真实强制点（requireFlag / isFlagEnabled 调用），
+// GET /api/admin/flags 据此返回 enforced 字段（「DB 值 / 进程缓存值 / 是否强制」自检口径，
+// 防 AF-04「UI 有开关、后端无强制点」复发）。
+//
+// ⚠️ 维护方式（手动 grep，新增/删除开关时必须同步本清单）：
+//   grep -rn "requireFlag(\|isFlagEnabled(" src/server/src
+// 查到调用点 → 键入列；查无调用点 → 不得入列（flags 接口会如实返回 enforced:false 告警）。
+// 当前登记（2026-09-09 逐点查证）：
+//   enable_subscription → subscriptionCheck.js:53 / planFeature.js:79
+//   enable_ai_agent     → index.js:449（aiFlagGuard，AI 四挂载点统一强制）
+//   enable_public_sharing → sharedLinks.js:156,182
+//   enable_2fa          → two-factor.js:54,71
+//   signup_waitlist     → auth.js:360,589,943 / auth-verify.js:165,263
+//   enable_signup       → auth.js:330,559,862 / auth-verify.js:158,256
+export const ENFORCED_FLAG_KEYS = [
+  'enable_subscription',
+  'enable_ai_agent',
+  'enable_public_sharing',
+  'enable_2fa',
+  'signup_waitlist',
+  'enable_signup',
+];
+
+/** 该开关是否登记了服务端强制点（清单外键一律 false） */
+export function isFlagEnforced(key) {
+  return ENFORCED_FLAG_KEYS.includes(key);
+}

@@ -16,7 +16,9 @@
 //   SystemConfig: { key, name, value, description?, updatedAt?, consumer? }  —— value 为字符串；
 //     consumer 为消费方登记（AN-09）：字符串 = 消费方文件路径说明；null = 暂无消费方
 //     （管理台对该键显示「未接入」角标——改了不生效，运营可分辨）
-//   FeatureFlag:  { key, name, description, enabled }
+//   FeatureFlag:  { key, name, description, enabled, enforced }
+//     enforced（AN-10）：该键是否存在服务端强制点（requireFlag/isFlagEnabled 调用），
+//     清单见 utils/featureFlags.js ENFORCED_FLAG_KEYS；false = UI 有开关但改了不生效（AF-04 告警口径）
 //   GET 返回数组（前端设置页一次性渲染，无分页）；PATCH 返回更新后的单条 + message
 //
 // 展示目录（name/描述文案）与前端设置页契约（admin-console/src/mocks/data.ts
@@ -39,7 +41,7 @@
 import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { broadcastToAllClients } from '../../ws/server.js';
-import { invalidateFlagsCache, getFeatureFlags } from '../../utils/featureFlags.js';
+import { invalidateFlagsCache, getFeatureFlags, isFlagEnforced } from '../../utils/featureFlags.js';
 import { encryptField } from '../../utils/encryption.js';
 import { invalidateMaintenanceCache } from '../../middleware/maintenance.js';
 import { logger, setLogLevel } from '../../utils/logger.js';
@@ -87,21 +89,10 @@ const CONFIG_CATALOG = [
     description: '审计日志的保留时长，超期归档后删除',
     consumer: 'src/server/src/db/cleanup.js（审计归档任务 readAuditRetentionDays）',
   },
-  // —— 收藏 / 审计（038 种子键补录展示目录，CO-36：此前键已入库但不在目录，管理台不可见不可改）——
-  {
-    key: 'max_collection_depth',
-    name: '收藏层级最大深度',
-    description: '收藏夹允许的最大嵌套层级（number，超出后禁止继续嵌套）',
-    // AN-09 查证：collections 链路无任何 depth 读取点，硬编码校验或无校验
-    consumer: null,
-  },
-  {
-    key: 'enable_audit_log',
-    name: '审计日志开关',
-    description: '是否启用审计日志（boolean，关闭后新操作不再写入审计）',
-    // AN-09 查证：utils/audit.js logAuditEvent 无条件写库，无此键读取点
-    consumer: null,
-  },
+  // AN-14（第二轮死配置清理）：max_collection_depth / enable_audit_log 已从目录移除——
+  // AN-09 查证两者均无任何消费方（collections 无 depth 读取点；audit.js 无条件写库），
+  // 且无任何工单规划接线。库中行保留（057 迁移仅标注废弃，不删历史数据）；
+  // ai_max_tokens / ai_default_provider 虽然 consumer=null 但 AN-03 已规划接线，暂不移除。
   // —— 限流配置（050，方案三 WP-A：运行时可调，rateLimiter.js 经 runtimeLimits 消费）——
   {
     key: 'rate_limit_api_per_min',
@@ -152,6 +143,8 @@ const CONFIG_CATALOG = [
     key: 'device_offline_timeout_minutes',
     name: '设备离线判定阈值（分钟）',
     description: '在线设备超过该时长未上报心跳（WS ping）将被定时扫描置为离线，默认 5',
+    // AN-14 复查补录：056 迁移落地时漏登记消费方（实为已接线键）
+    consumer: 'src/server/src/services/deviceOnlineSweep.js（deviceOnlineSweep 每 60s 扫描读取）',
   },
   // —— 邮件 SMTP（050，CO-30：smtp_pass 由管理台加密写入、脱敏展示）——
   {
@@ -472,6 +465,8 @@ flagsRouter.get('/', requirePerm('admin.configs.view'), async (_req, res) => {
         name: meta.name,
         description: row?.description || meta.description,
         enabled: row ? Boolean(row.enabled) : false,
+        // AN-10：是否存在服务端强制点（ENFORCED_FLAG_KEYS 静态清单，防 AF-04 复发）
+        enforced: isFlagEnforced(meta.key),
       };
     });
     return res.json({ code: 0, data });
@@ -537,6 +532,8 @@ flagsRouter.patch('/:key', requirePerm('admin.configs.manage'), async (req, res)
         name: meta.name,
         description: row.description || meta.description,
         enabled: Boolean(row.enabled),
+        // AN-10：与 GET 列表契约对齐（前端切换后单条回显同样带强制点标记）
+        enforced: isFlagEnforced(key),
       },
       message: '开关已切换并写入审计',
     });

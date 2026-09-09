@@ -24,6 +24,10 @@ const memoryStores = {
   loginFailed: new Map(),
   upload: new Map(),
   strict: new Map(),
+  // AN-07：管理台专用桶——adminLimiter / adminStrictLimiter 与客户端 API 的 apiLimiter/strictLimiter
+  // 完全隔离计数，避免管理台高频巡检与客户端流量互相挤兑（CO-51 同原则）
+  admin: new Map(),
+  adminStrict: new Map(),
 };
 
 /**
@@ -335,6 +339,48 @@ export const strictLimiter = createRateLimiter({
 });
 
 /**
+ * AN-07：管理台专用限流（/api/admin 全量挂载，见 index.js）
+ * 比公共 API 更严的敏感口径：按 IP 100 次/分钟（固定阈值，不走 runtimeLimits 动态键——
+ * 防止管理台误操作把自己的防线调高/关闭；rate_limit_disabled 总开关仍生效）。
+ * 与 apiLimiter 的 store 隔离，不影响客户端 API 现有限流；按 IP 而非用户计数，
+ * 避免单个被盗管理员凭据在多出口 IP 下绕过阈值。
+ */
+export const adminLimiter = process.env.NODE_ENV === 'test'
+  ? (req, res, next) => next()
+  : createRateLimiter({
+      windowMs: 60 * 1000,
+      max: 100,
+      message: 'Admin API rate limit exceeded, please try again later',
+      keyGenerator: (req) =>
+        req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+        req.ip ||
+        req.connection?.remoteAddress,
+      storeName: 'admin',
+    });
+
+/**
+ * AN-07：管理台高危写操作限流（退款 / 强制下线 / 运维动作等，挂载见 routes/admin/index.js）。
+ * 每 IP + URL 首段资源分桶 10 次/分钟：单类高危端点保持 strict 级别 10 次/分钟上限，
+ * 分桶是为了同一管理员在多类高危操作间不互相挤兑（工单 AN-07：POST /api/admin/* 高危写操作额外挂更严限流）。
+ */
+export const adminStrictLimiter = process.env.NODE_ENV === 'test'
+  ? (req, res, next) => next()
+  : createRateLimiter({
+      windowMs: 60 * 1000,
+      max: 10,
+      message: 'Sensitive admin operation rate limit exceeded, please try again later',
+      keyGenerator: (req) => {
+        const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+          req.ip ||
+          req.connection?.remoteAddress || 'unknown';
+        // 按 URL 首段资源分桶：/orders/xxx/refund → 'orders'、/ops/actions → 'ops'
+        const segment = req.path.split('/').filter(Boolean)[0] || 'root';
+        return `${ip}:${segment}`;
+      },
+      storeName: 'adminStrict',
+    });
+
+/**
  * 文件上传限流
  * 默认：每分钟20次
  */
@@ -424,6 +470,8 @@ export default {
   removeWsConnection,
   strictLimiter,
   uploadLimiter,
+  adminLimiter,
+  adminStrictLimiter,
   getRateLimitStatus,
   resetRateLimit,
 };

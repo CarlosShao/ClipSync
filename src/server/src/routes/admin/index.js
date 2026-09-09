@@ -18,6 +18,8 @@ import { logger } from '../../utils/logger.js';
 import { authenticateToken } from '../../middleware/auth.js';
 import { requireRole, requirePerm } from '../../middleware/adminAuth.js';
 import superAdminAudit from '../../middleware/superAdminAudit.js';
+// AN-07：管理台高危写操作限流（adminLimiter 全量限流挂载在 index.js 的 /api/admin 挂载点）
+import { adminStrictLimiter } from '../../middleware/rateLimiter.js';
 import { getSlowQueries, getPoolStatus } from '../../utils/query-monitor.js';
 import { getRedisClient } from '../../utils/redis-client.js';
 // T-A1.5：数据看板 + 用户管理 + 设备管理
@@ -33,13 +35,35 @@ import auditAdminRoutes from './audit.js';
 import rolesAdminRoutes, { permissionsRouter as permissionsAdminRoutes } from './roles.js';
 import configsAdminRoutes, { flagsRouter as flagsAdminRoutes } from './configs.js';
 import announcementsAdminRoutes from './announcements.js';
+// AN-02：客户端策略下发（读 admin.configs.view / 写 admin.configs.manage）
+import policiesAdminRoutes from './policies.js';
 // CO-40：运维监控概览
 import opsAdminRoutes from './ops.js';
+// AN-16：邮件多通道管理（多 SMTP 账号 + 按用途路由 + failover）
+import emailChannelsAdminRoutes from './emailChannels.js';
 
 const adminRouter = Router();
 
 // ---- 顶层中间件：认证 → 等级门槛 → 超管审计 ----
 adminRouter.use(authenticateToken, requireRole(50), superAdminAudit);
+
+// ---- AN-07：高危写操作叠加更严限流（adminStrictLimiter：每 IP+资源段 10 次/分钟）----
+// 命中工单列举的高危口径：退款 / 强制下线（用户/设备）/ 账号删除 / 运维动作区（全员下线等）。
+// req.path 为相对 /api/admin 的子路径；未命中模式直接放行，不影响普通管理操作。
+const ADMIN_STRICT_WRITE_PATTERNS = [
+  /^\/orders\/[^/]+\/refund$/,      // 退款
+  /^\/users\/[^/]+\/force-logout$/, // 强制下线用户
+  /^\/users\/[^/]+$/,               // 删除账号（DELETE）
+  /^\/devices\/[^/]+\/offline$/,    // 设备远程下线
+  /^\/ops\/actions$/,               // 运维动作区（clear_cache / force_logout_all 等）
+];
+adminRouter.use((req, res, next) => {
+  if ((req.method === 'POST' || req.method === 'DELETE') &&
+      ADMIN_STRICT_WRITE_PATTERNS.some((re) => re.test(req.path))) {
+    return adminStrictLimiter(req, res, next);
+  }
+  next();
+});
 
 // 当前角色全部权限点（whoami 用；role_id 为空的用户 INNER JOIN 后自然返回空数组）。
 // RB-10：按 category='admin' 过滤——028 的 ai.* / platform.* 死键保留在库但不再下发给前端；
@@ -102,9 +126,15 @@ adminRouter.use('/permissions', permissionsAdminRoutes);
 adminRouter.use('/configs', configsAdminRoutes);
 adminRouter.use('/flags', flagsAdminRoutes);
 adminRouter.use('/announcements', announcementsAdminRoutes);
+adminRouter.use('/policies', policiesAdminRoutes);
 
 // ---- CO-40：运维监控概览（admin.ops.view，052 仅授 super_admin）----
 adminRouter.use('/ops', opsAdminRoutes);
+
+// ---- AN-16：邮件多通道管理（admin.email_channels.manage，059 迁移仅授 super_admin）----
+// 权限：全部端点 requirePerm('admin.email_channels.manage')（列表/新建/编辑/删除/发送测试）。
+// password 加密落库、GET 脱敏为 has_password；操作写审计 admin.email_channel.*。
+adminRouter.use('/email-channels', emailChannelsAdminRoutes);
 
 // ---- RB-08：慢查询归位 RBAC（原游离端点在 src/index.js 用 users.is_admin 判权，已删除）----
 // 权限：admin.audit.view（慢查询属数据库运维观测，与审计同受众）

@@ -5,6 +5,7 @@ import type {
   AdminUser,
   Announcement,
   AuditLog,
+  ClientPolicy,
   Device,
   FeatureFlag,
   Order,
@@ -916,6 +917,47 @@ export const mockRoles: Role[] = [
 
 // ─────────────────────── 开关与配置 ───────────────────────
 
+// AN-02：客户端策略（与 src/server/src/utils/clientPolicies.js POLICY_CATALOG 三个键逐键对齐；
+// 默认值 = 「不干预」语义，未配置策略时客户端零行为变化）
+export const mockPolicies: ClientPolicy[] = [
+  {
+    key: 'sync_interval_min_minutes',
+    name: '同步间隔下限（分钟）',
+    description: '客户端自动同步间隔不得低于该值（0/5/15，0 = 不干预；用于企业强制降频省流量）',
+    group: 'sync',
+    value: 0,
+    allowUserOverride: true,
+    defaultValue: 0,
+    min: 0,
+    max: 15,
+    consumer: 'src/desktop/src/views/HomeView.vue（setPollInterval 下限钳制）+ GeneralSettings.vue',
+  },
+  {
+    key: 'max_history_items',
+    name: '剪贴板历史上限（条）',
+    description: '客户端本地历史保留条数不得高于该值（0 = 不干预；100/500/1000）',
+    group: 'sync',
+    value: 0,
+    allowUserOverride: true,
+    defaultValue: 0,
+    min: 0,
+    max: 100000,
+    consumer: 'src/desktop/src/views/HomeView.vue（setMaxHistory 上限钳制）+ GeneralSettings.vue',
+  },
+  {
+    key: 'pin_min_length',
+    name: 'PIN 最小长度',
+    description: '客户端设置/修改隐私 PIN 的最小位数（4-6，默认 4）',
+    group: 'privacy',
+    value: 4,
+    allowUserOverride: true,
+    defaultValue: 4,
+    min: 4,
+    max: 6,
+    consumer: 'src/desktop/src/composables/usePrivacy.ts（setPin 最小位数校验）',
+  },
+];
+
 export const mockFlags: FeatureFlag[] = [
   {
     key: 'enable_subscription',
@@ -1098,6 +1140,8 @@ export const mockAnnouncements: Announcement[] = [
     displayMode: 'once',
     sentAt: '2026-09-01 10:00',
     deliveredCount: 12102,
+    // AN-05：真实送达（WS 推送成功 ∪ 上线拉取，057 触达表）
+    reachedCount: 10328,
     readCount: 8941,
     clickedCount: 3847,
   },

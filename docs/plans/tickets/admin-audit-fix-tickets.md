@@ -96,7 +96,7 @@
 - **改动**：接 `ConfirmReasonModal`（标题「删除账户」，danger）→ `DELETE /users/:id`；`hasPerm('admin.users.delete')` 守卫保留
 - **验收**：删除后列表状态变「已删除/停用」，可再次启用；无权限角色按钮置灰并提示
 
-### AF-13 「改套餐 / 调整套餐」处置 ⬜ P1 ⛔ 需产品决策
+### AF-13 「改套餐 / 调整套餐」处置 ✅（2026-09-09 第一波落地） P1 ⛔ 需产品决策
 - **问题**：A1/A2。用户列表「改套餐」与抽屉「调整套餐」均为占位
 - **证据**：`pages/users/index.tsx`（行操作改套餐）、`UserDrawer/index.tsx:150`
 - **推荐方案（a，与 AN-01 联动）**：实现 `PATCH /api/admin/users/:id/plan`（直接改 `user_subscriptions.plan_id`，原因必填 + 审计），两处共用；依赖 AN-01 的套餐页存在（否则无套餐可选）
@@ -109,7 +109,7 @@
 - **改动**：复用 `auditCsv.ts` 的下拉工具函数，导出当前筛选条件下的订单（订单号/用户/套餐/渠道/金额/退款/支付时间/状态），文件名 `orders-{YYYYMMDD}.csv`
 - **验收**：导出文件列数与表头一致、条数与当前筛选 total 一致、中文不乱码（BOM）
 
-### AF-15 订单「关闭」按钮处置 ⬜ P2 ⛔ 需产品决策
+### AF-15 订单「关闭」按钮处置 ✅（2026-09-09 第一波落地） P2 ⛔ 需产品决策
 - **问题**：A7。待支付订单行有 `disabled` 的「关闭」按钮，title 写「自动关单将在后续版本提供」
 - **证据**：`pages/orders/index.tsx:196-200`
 - **方案 a**：实现「手动关单」`POST /api/admin/orders/:orderNo/close`（`admin.orders.manage`）—— 需新增权限键或复用 `admin.orders.refund` 之外的新键

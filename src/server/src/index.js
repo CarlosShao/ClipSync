@@ -13,7 +13,7 @@ import { setupWebSocket, gracefulShutdown as gracefulShutdownWs } from './ws/ser
 import { authenticateToken } from './middleware/auth.js';
 import { requireRole, getRegisteredPermKeys } from './middleware/adminAuth.js';
 import superAdminAudit from './middleware/superAdminAudit.js';
-import { apiLimiter, uploadLimiter } from './middleware/rateLimiter.js';
+import { apiLimiter, uploadLimiter, adminLimiter } from './middleware/rateLimiter.js';
 import { maintenanceGuard } from './middleware/maintenance.js';
 import { metricsMiddleware, getMetrics, getPrometheusMetrics } from './middleware/metrics.js';
 import { requireFlag } from './utils/featureFlags.js';
@@ -36,6 +36,7 @@ import { startCleanupScheduler } from './db/cleanup.js';
 import { startVersionCleanupScheduler } from './utils/versionManager.js';
 import { startFileRetentionCleanup } from './services/fileRetentionCleanup.js';
 import { startDeviceOnlineSweep, stopDeviceOnlineSweep } from './services/deviceOnlineSweep.js';
+import { startOrderCloseSweep, stopOrderCloseSweep } from './services/orderCloseSweep.js';
 import pool from './db/pool.js';
 import migrate from './db/migrate.js';
 import { csrfProtection, handleGetCsrfToken } from './middleware/csrf.js';
@@ -481,7 +482,9 @@ app.use('/api/ai/settings', authenticateToken, apiLimiter, csrfProtection, aiFla
 app.use('/api/shared-links', apiLimiter, sharedLinksRoutes);
 
 // 后台管理 API（Admin Console · T-A1）：authenticateToken/requireRole(50)/superAdminAudit 由 router 内部统一挂载
-app.use('/api/admin', adminRoutes);
+// AN-07：/api/admin 此前未挂任何限流（管理面裸奔）——现挂 adminLimiter（按 IP 100 次/分钟，
+// 与客户端 apiLimiter 独立计数互不影响）；高危写操作在 routes/admin/index.js 内再叠加 adminStrictLimiter。
+app.use('/api/admin', adminLimiter, adminRoutes);
 
 // ============================================
 // 404 Handler
@@ -608,6 +611,10 @@ if (!isClusteredPrimary) {
     // is_online 残留 true；每 60s 将心跳超过 device_offline_timeout_minutes 的设备置离线
     startDeviceOnlineSweep();
 
+    // 订单超时自动关单（AF-15）：每小时把创建超过 24h 仍 pending 的订单置 cancelled，
+    // metadata.auto_closed='timeout_unpaid' 留痕 + 逐单写审计日志
+    startOrderCloseSweep();
+
     // 启用查询性能监控（非生产环境或明确启用时）
     if (config.nodeEnv !== 'production' || process.env.ENABLE_QUERY_MONITORING === 'true') {
       enableQueryMonitoring();
@@ -635,8 +642,9 @@ async function gracefulShutdown(signal) {
     logger.info('HTTP server closed (no longer accepting connections)');
   });
 
-  // 1.5 停止后台定时任务（设备离线扫描，AF-50），避免 shutdown 期间 timer 挂住进程
+  // 1.5 停止后台定时任务（设备离线扫描 AF-50 / 订单超时关单 AF-15），避免 shutdown 期间 timer 挂住进程
   stopDeviceOnlineSweep();
+  stopOrderCloseSweep();
 
   // 2. 通知所有 WebSocket 客户端准备重连
   try {

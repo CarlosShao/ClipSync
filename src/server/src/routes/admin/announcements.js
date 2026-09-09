@@ -10,7 +10,8 @@
 //
 // 响应契约（src/admin-console/src/api/types.ts Announcement / SendAnnouncementPayload 逐字段对齐）：
 //   Announcement: { id, title, content, audience: 'all'|'pro_plus'|'free',
-//                   displayMode: 'once'|'persistent', sentAt, deliveredCount?, clickedCount? }
+//                   displayMode: 'once'|'persistent', sentAt,
+//                   deliveredCount?, reachedCount?, readCount?, clickedCount? }
 //   sentAt 形态 'YYYY-MM-DD HH:mm'（前端设置页记录列表按 sentAt.slice(5,10) 展示日期）
 //
 // 语义契约（src/admin-console/src/mocks/handlers.test.ts 固化）：
@@ -30,7 +31,8 @@ import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
-import { broadcastToAllClients } from '../../ws/server.js';
+import { broadcastToAllClientsDetailed } from '../../ws/server.js';
+import { recordDeliveries } from '../../services/announcementDelivery.js';
 
 const router = Router();
 
@@ -57,8 +59,10 @@ function mapAnnouncementRow(row) {
     audience: row.audience,
     displayMode: row.display_mode,
     sentAt: formatDateTimeMinute(row.created_at),
-    // AF-22 口径：deliveredCount = 受众人数（非真实触达）；readCount = 真实已读（052 回执表）；clickCount = 点击
+    // AF-22 口径：deliveredCount = 受众人数（非真实触达）；readCount = 真实已读（052 回执表）；
+    // reachedCount = 真实送达（057 触达表：WS 推送成功 ∪ 上线拉取）；clickCount = 点击
     deliveredCount: Number(row.delivered_count ?? 0),
+    reachedCount: Number(row.reached_count ?? 0),
     readCount: Number(row.read_count ?? 0),
     clickedCount: Number(row.click_count ?? 0),
   };
@@ -167,8 +171,28 @@ router.post('/', requirePerm('admin.announce.send'), async (req, res) => {
       operator: req.user?.userId,
     });
 
-    // AN-05：全端实时推送（此前只落库，在线客户端要等下次拉取才可见——用户感知为"发了没反应"）
-    broadcastToAllClients({ type: 'announcement.new', announcementId: created.id });
+    // AN-05：全端实时推送（此前只落库，在线客户端要等下次拉取才可见——用户感知为"发了没反应"）+
+    // 真实触达记录（057 表）：WS 推送成功的用户按受众过滤后写入触达表（channel='ws'）；
+    // 失败只 warn，不阻塞下发响应。在线客户端随后会拉取公告 → app.js 以 channel='pull' 幂等兜底。
+    try {
+      const { userIds } = broadcastToAllClientsDetailed({
+        type: 'announcement.new',
+        announcementId: created.id,
+      });
+      if (userIds.length > 0) {
+        await recordDeliveries({
+          announcementId: created.id,
+          audience,
+          userIds,
+          channel: 'ws',
+        });
+      }
+    } catch (pushErr) {
+      logger.warn('[admin/announcements] ws push / delivery record failed', {
+        id: created.id,
+        error: pushErr.message,
+      });
+    }
 
     return res.status(201).json({
       code: 0,
@@ -192,6 +216,9 @@ router.get('/', requirePerm('admin.announce.view'), async (_req, res) => {
     const { rows } = await pool.query(
       `SELECT a.id, a.title, a.content, a.audience, a.display_mode, a.sent_by,
               a.delivered_count, a.click_count, a.created_at,
+              -- AN-05：真实送达 = 057 触达表去重用户数（WS 推送成功 ∪ 上线拉取）
+              (SELECT COUNT(*)::int FROM admin_announcement_deliveries d
+                WHERE d.announcement_id = a.id) AS reached_count,
               (SELECT COUNT(*)::int FROM admin_announcement_reads r
                 WHERE r.announcement_id = a.id) AS read_count
        FROM admin_announcements a

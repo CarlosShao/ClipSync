@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useConfigStore } from '@/stores/configStore'
 import { usePrivacy } from '@/composables/usePrivacy'
+import { pinMinLength } from '@/composables/usePolicy' // AN-02：PIN 最小位数走服务端策略
 import { useSonner } from '@/composables/useSonner'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -64,7 +65,9 @@ function resetPinForm() {
 
 function handleSetPin() {
   pinError.value = ''
-  if (!/^\d{4,6}$/.test(pinNew.value)) {
+  // AN-02：最小位数由服务端策略 pin_min_length 下发（默认 4 = 原行为）
+  const min = pinMinLength.value
+  if (!new RegExp(`^\\d{${min},6}$`).test(pinNew.value)) {
     pinError.value = t('pin_format_error')
     return
   }

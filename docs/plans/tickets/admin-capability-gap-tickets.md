@@ -27,7 +27,7 @@
 - **前置核对**：`plans.js:150` 的 PATCH 白名单（9 字段）是否含 `max_files_per_clip`、`file_retention_days`、`features`、`max_devices`、`max_clipboard_items`；不含则先扩白名单
 - **验收**：改 Free 的 `max_file_size_mb` 20→10 → 桌面端 `GET /api/subscriptions/current` 立即反映新值；无 `admin.plans.manage` 的角色保存按钮置灰
 
-### AN-02 客户端策略下发 ⬜ P1
+### AN-02 客户端策略下发 ✅（2026-09-09 第一波落地） P1
 - **问题**：G3。桌面端 20 项配置（语言 / 主题 / 字号 / 自动同步 / 同步间隔 / 历史条数 / 图片压缩 / 开机自启 / 快捷键 / 隐私模式 / 失焦模糊 / 复制后清空 / PIN 策略 / 通知偏好）全部 `localStorage` 或 Tauri 本地存储，**服务端零管控**，企业客户无法统一策略
 - **改动**：
   1. 迁移：新表 `client_policies(id, scope, payload JSONB, updated_by, updated_at)`，`scope` 先支持 `global`
@@ -53,7 +53,7 @@
   3. 管理台新页面 `/releases`：发布列表 + 新建/编辑 + 发布/回滚
 - **验收**：后台发布 v1.2.0 并设强制更新 → 桌面端 About 与更新检查均返回新版本；回滚后客户端不再提示
 
-### AN-05 公告真实触达（WS 推送）⬜ P1
+### AN-05 公告真实触达（WS 推送）✅（2026-09-09 第一波落地） P1
 - **问题**：G7。公告只落库，用户端靠轮询 `GET /api/app/announcements` 才可见，运营以为"已下发"
 - **改动**：`POST /api/admin/announcements` 成功后 `broadcastToAllClients({ type:'announcement.new', announcement })`（复用 `feature_flags.updated` 的广播通道）；两端监听即弹横幅；回执写 052 表
 - **依赖**：AF-22（口径先修对再谈触达）
@@ -71,7 +71,7 @@
 - **边界**：不做容器重启、扩缩容、部署触发
 - **验收**：每项动作执行后返回明确结果并落审计；`force_logout_all` 后所有客户端需重新登录
 
-### AN-07 管理台接口限流 ⬜ P1
+### AN-07 管理台接口限流 ✅（2026-09-09 第一波落地） P1
 - **问题**：O6。`src/server/src/index.js:482` 挂载 `/api/admin` 时**未挂 `apiLimiter`**，管理面无限流
 - **改动**：`/api/admin` 挂 `apiLimiter`（阈值走 `rate_limit_api_per_min`）；`POST /api/admin/*` 高危写操作（退款 / 删除 / 关维护 / 全员下线）额外挂 `strictLimiter`
 - **验收**：短时间高频调管理接口触发 429；正常操作不受影响
@@ -86,7 +86,7 @@
 - **改动**：`CONFIG_CATALOG`（`configs.js:42-150`）每键增 `consumer` 字段（消费方文件或 `null`）；管理台对 `consumer === null` 的键显示「未接入」角标并在卡片顶部汇总数量
 - **验收**：无消费方的键在 UI 上一眼可见；有消费方的键点击可看消费方文件
 
-### AN-10 开关全链路自检显示 ⬜ P2
+### AN-10 开关全链路自检显示 ✅（2026-09-09 第一波落地） P2
 - **问题**：`enable_signup` 这类"UI 有、后端无强制点"的开关缺乏自检手段（AF-04 修完后仍可能再犯）
 - **改动**：`GET /api/admin/flags` 增 `enforced: boolean`（该键是否存在 `requireFlag/isFlagEnabled` 调用点，可用构建期生成的清单或启动时扫描源码缓存）；运维/设置页显示「DB 值 / 进程缓存值 / 是否强制」三列，不一致即告警
 - **验收**：人为在库中改 flag 绕过管理台 → 页面显示 DB 与缓存不一致
@@ -98,7 +98,7 @@
 - **依赖**：AF-30（Grafana 地址先修对）
 - **验收**：人为触发一次 500 → 告警在运维页出现；Prometheus 不可达时卡片显示「告警服务不可用」而非报错
 
-### AN-16 邮件多通道（多 SMTP 账号 + 按用途路由 + failover）⬜ P2 ✅ 已拍板：方案 A（2026-09-09 用户确认）
+### AN-16 邮件多通道（多 SMTP 账号 + 按用途路由 + failover）✅（2026-09-09 第一波落地） P2 ✅ 已拍板：方案 A（2026-09-09 用户确认）
 - **问题**：用户提出。当前 SMTP 为单套全局配置（`system_configs.smtp_*` 6 键，050 迁移），`utils/email.js` 全站唯一 transporter、无路由概念。单通道的 3 个真实缺陷：
   1. **送达率/信誉**：验证码（事务）与公告（批量）混用同一发件人，信誉互相拖累；QQ 个人邮箱对国外邮箱送达率一般
   2. **量级**：QQ 免费邮箱每日约数百封上限，超限暂时封禁 → 验证码服务整体不可用
@@ -130,7 +130,7 @@
 - **改动**：管理台用户抽屉增「导出用户数据」（打包剪贴板/文件清单/订阅/订单为 JSON）与「彻底删除」（硬删 + 关联清理，需二次确认 + reason + 超管权限）
 - **验收**：导出文件字段完整；彻底删除后该用户所有关联数据不可恢复（审计仍留痕）
 
-### AN-14 死变量 / 死配置清理（第二轮）⬜ P2
+### AN-14 死变量 / 死配置清理（第二轮）✅（2026-09-09 第一波落地） P2
 - **问题**：O7/C1。09-07 报告的 `ALLOWED_ORIGINS`、`MAX_FILE_SIZE`、`DISABLE_RATE_LIMIT` 已清一轮；本轮继续清理无消费方配置键（与 AN-09 联动）
 - **改动**：AN-09 完成后，对 `consumer === null` 且产品确认无规划的键：从 CONFIG_CATALOG 移除 + 迁移标注废弃（不删历史数据）
 - **验收**：管理台配置项总数下降且无「未接入」项残留
@@ -148,7 +148,7 @@
 - **依赖**：AF-01（否则"系统参数保存"用例必挂）
 - **验收**：`npm run e2e` 全绿且可重复执行（写操作必须自带还原）
 
-### AN-21 占位功能登记机制 + lint 约束 ⬜ P2
+### AN-21 占位功能登记机制 + lint 约束 ✅（2026-09-09 第一波落地） P2
 - **问题**：C6。占位按钮 `onClick={() => message.info('xxx将在后续版本提供')}` 与真实按钮代码形态相同，无法静态识别
 - **改动**：
   1. 新增常量 `src/admin-console/src/constants/plannedFeatures.ts` 集中登记所有未实现功能（标题 + 预期版本 + 关联工单号）
@@ -156,7 +156,7 @@
   3. ESLint 规则：禁止在业务代码中出现 `message.info('...后续版本')` 字面量
 - **验收**：全仓无占位 toast 字面量；所有规划中功能可在设置页「规划中功能」清单查看
 
-### AN-22 run-audit 新增阶段断言 ⬜ P2
+### AN-22 run-audit 新增阶段断言 ✅（2026-09-09 第一波落地） P2
 - **问题**：现有 `scripts/admin-full-audit/run-audit.mjs` 阶段未覆盖本轮发现的问题类型
 - **改动**：新增阶段
   - `settings-form`：断言系统参数 5 卡输入框非空且保存能触发 PATCH（防 AF-01 复发）

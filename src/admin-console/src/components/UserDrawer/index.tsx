@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { App as AntdApp, Avatar, Button, Drawer, Skeleton, Table, Tooltip } from 'antd';
@@ -19,6 +19,8 @@ interface UserDrawerProps {
   open: boolean;
   userId: string | null;
   onClose: () => void;
+  /** AF-13：打开抽屉后自动定位到套餐操作（直接弹出赠期/调整套餐弹窗），供列表页「改套餐」入口使用 */
+  autoOpenGrant?: boolean;
 }
 
 interface DeviceRow {
@@ -54,7 +56,7 @@ const DEVICE_COLUMNS: ColumnsType<DeviceRow> = [
  * 用户详情抽屉（对照草图 B）：资料 kv + 设备表 + 最近审计时间线 + 管理操作。
  * 「停用账号」走 ConfirmReasonModal（原因必填）→ PATCH /admin/users/:id/status。
  */
-export function UserDrawer({ open, userId, onClose }: UserDrawerProps) {
+export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerProps) {
   const { message } = AntdApp.useApp();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -62,6 +64,8 @@ export function UserDrawer({ open, userId, onClose }: UserDrawerProps) {
   const [forceLogoutOpen, setForceLogoutOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [grantOpen, setGrantOpen] = useState(false);
+  // AF-13：每次抽屉打开只自动弹出一次赠期弹窗（用户手动关掉后不反复打扰）
+  const autoGrantDoneRef = useRef(false);
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.user(userId ?? ''),
@@ -131,8 +135,18 @@ export function UserDrawer({ open, userId, onClose }: UserDrawerProps) {
       setForceLogoutOpen(false);
       setDeleteOpen(false);
       setGrantOpen(false);
+      autoGrantDoneRef.current = false;
     }
   }, [open]);
+
+  // AF-13：列表页「改套餐/转正套餐」入口 → 抽屉打开且订阅行就绪后自动弹出赠期/调整套餐弹窗
+  // （free 用户无订阅行 → grantTarget 为 null，不自动弹出，抽屉内赠期按钮有 Tooltip 说明）
+  useEffect(() => {
+    if (open && autoOpenGrant && grantTarget && !autoGrantDoneRef.current) {
+      setGrantOpen(true);
+      autoGrantDoneRef.current = true;
+    }
+  }, [open, autoOpenGrant, grantTarget]);
 
   const user = data?.user;
   const disabled = user?.status === 'disabled';

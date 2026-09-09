@@ -34,8 +34,16 @@ export default function UsersPage() {
   const { message } = AntdApp.useApp();
   const queryClient = useQueryClient();
   const [drawerUserId, setDrawerUserId] = useState<string | null>(null);
+  // AF-13：列表「改套餐/转正套餐」入口标记，抽屉打开后自动定位到套餐操作
+  const [drawerAutoGrant, setDrawerAutoGrant] = useState(false);
   const [deactivateUser, setDeactivateUser] = useState<AdminUser | null>(null);
   const [draft, setDraft] = useState<UserFilters>(DEFAULT_FILTERS);
+
+  // AF-13：统一抽屉打开入口；autoGrant=true 时抽屉自动弹出赠期/调整套餐弹窗
+  const openDrawer = (id: string, autoGrant = false) => {
+    setDrawerUserId(id);
+    setDrawerAutoGrant(autoGrant);
+  };
 
   const { tableProps, setFilters } = useTableQuery<AdminUser, UserFilters>({
     buildKey: (params) => queryKeys.users(params),
@@ -180,18 +188,20 @@ export default function UsersPage() {
           {record.status === 'active' ? (
             <>
               {record.subscription.status === 'trialing' ? (
+                // AF-13：转正套餐 → 打开抽屉并自动定位套餐操作（复用 GrantSubscriptionModal）
                 <Button
                   size="small"
                   style={{ marginLeft: 6 }}
-                  onClick={() => void message.info('转正套餐将在后续版本提供')}
+                  onClick={() => openDrawer(record.id, true)}
                 >
                   转正套餐
                 </Button>
               ) : (
+                // AF-13：改套餐 → 打开抽屉并自动定位套餐操作（此前为「后续版本提供」占位）
                 <Button
                   size="small"
                   style={{ marginLeft: 6 }}
-                  onClick={() => void message.info('改套餐将在后续版本提供')}
+                  onClick={() => openDrawer(record.id, true)}
                 >
                   改套餐
                 </Button>
@@ -225,6 +235,7 @@ export default function UsersPage() {
                   </Button>
                 </span>
               </Tooltip>
+              {/* AF-12/AN-21：删除入口改为打开抽屉（删除操作在抽屉内，原因必填），替换「后续版本提供」占位 */}
               <Tooltip title={canDelete ? '' : '缺少权限'}>
                 <span>
                   <Button
@@ -232,7 +243,7 @@ export default function UsersPage() {
                     danger
                     style={{ marginLeft: 6 }}
                     disabled={!canDelete}
-                    onClick={() => void message.info('删除账户将在后续版本提供')}
+                    onClick={() => openDrawer(record.id)}
                   >
                     删除
                   </Button>
@@ -318,7 +329,11 @@ export default function UsersPage() {
       <UserDrawer
         open={Boolean(drawerUserId)}
         userId={drawerUserId}
-        onClose={() => setDrawerUserId(null)}
+        autoOpenGrant={drawerAutoGrant}
+        onClose={() => {
+          setDrawerUserId(null);
+          setDrawerAutoGrant(false);
+        }}
       />
 
       <ConfirmReasonModal

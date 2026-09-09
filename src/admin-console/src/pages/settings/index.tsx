@@ -23,8 +23,17 @@ import {
   patchConfig,
   patchFlag,
   sendAnnouncement,
-  testSmtp,
 } from '@/api/configs';
+// AN-16：邮件通道管理（多 SMTP 账号 + 按用途路由 + failover，替代原「邮件 (SMTP)」参数卡）
+import {
+  createEmailChannel,
+  deleteEmailChannel,
+  getEmailChannels,
+  patchEmailChannel,
+  testEmailChannel,
+  type EmailChannel,
+  type EmailChannelPayload,
+} from '@/api/emailChannels';
 import { queryKeys } from '@/queryKeys';
 import { hasPerm } from '@/utils/permissions';
 import type { Announcement, FeatureFlag, SendAnnouncementPayload, SystemConfig } from '@/api/types';
@@ -53,6 +62,17 @@ const AI_PROVIDER_OPTIONS = ['openrouter', 'openai', 'anthropic', 'deepseek'].ma
 }));
 
 const LOG_LEVEL_OPTIONS = ['debug', 'info', 'warn', 'error'].map((v) => ({ value: v, label: v }));
+
+// AN-16：邮件通道用途（与 email_channels.purpose CHECK 约束一致）
+const CHANNEL_PURPOSE_OPTIONS = [
+  { value: 'transactional', label: '事务邮件（验证码 / 账户通知）' },
+  { value: 'marketing', label: '营销邮件（批量，预留）' },
+];
+
+const CHANNEL_PURPOSE_LABEL: Record<EmailChannel['purpose'], string> = {
+  transactional: '事务',
+  marketing: '营销',
+};
 
 const MAINTENANCE_HINT =
   '开启后剪贴板/同步/媒体/上传接口返回维护提示，登录与管理台不受影响；客户端即时收到 WS 推送并显示维护横幅';
@@ -159,13 +179,19 @@ export default function SettingsPage() {
   const [announceForm] = Form.useForm<AnnouncementFormValues>();
   const [configForm] = Form.useForm<Record<string, number | string | boolean>>();
   const [rateLimitForm] = Form.useForm<Record<string, number | string | boolean>>();
-  // CO-30：SMTP 测试邮件弹窗
-  const [testEmailOpen, setTestEmailOpen] = useState(false);
+  // AN-16：邮件通道管理状态（新增/编辑弹窗、测试邮件弹窗、删除确认）
+  const [channelModalOpen, setChannelModalOpen] = useState(false);
+  const [editingChannel, setEditingChannel] = useState<EmailChannel | null>(null);
+  const [testChannel, setTestChannel] = useState<EmailChannel | null>(null);
+  const [deleteChannelTarget, setDeleteChannelTarget] = useState<EmailChannel | null>(null);
+  const [channelForm] = Form.useForm<EmailChannelPayload>();
   const [testEmailForm] = Form.useForm<{ to?: string }>();
 
   // RB-07：设置页对 admin.configs.view 只读可见，写操作按 admin.configs.manage 裁剪
   const canManageConfigs = hasPerm('admin.configs.manage');
   const canSendAnnouncement = hasPerm('admin.announce.send');
+  // AN-16：邮件通道卡按 admin.email_channels.manage 裁剪（059 迁移仅授 super_admin）
+  const canManageChannels = hasPerm('admin.email_channels.manage');
 
   const { data: flags } = useQuery({
     queryKey: queryKeys.flags(),
@@ -180,6 +206,12 @@ export default function SettingsPage() {
   const { data: announcements } = useQuery({
     queryKey: queryKeys.announcements(),
     queryFn: getAnnouncements,
+    staleTime: SETTINGS_STALE_TIME,
+  });
+  // AN-16：邮件通道列表
+  const { data: channels } = useQuery({
+    queryKey: emailChannelKeys.list(),
+    queryFn: getEmailChannels,
     staleTime: SETTINGS_STALE_TIME,
   });
 
@@ -228,38 +260,120 @@ export default function SettingsPage() {
     },
   });
 
-  // CO-30：SMTP 测试邮件。未配置 SMTP（4090）/发送失败的提示由 client.ts 拦截器统一 toast，此处只管成功
-  const smtpTestMutation = useMutation({
-    mutationFn: (to?: string) => testSmtp(to),
-    onSuccess: () => {
-      void message.success('测试邮件已发送');
-      setTestEmailOpen(false);
+  // ── AN-16：邮件通道 mutations ──
+  // 错误提示（4090 凭据不完整 / 发送失败 / 权限）由 client.ts 拦截器统一 toast，此处只管成功侧
+  const invalidateChannels = () => {
+    void queryClient.invalidateQueries({ queryKey: emailChannelKeys.list() });
+  };
+
+  // 新建 / 编辑（编辑为部分更新；password 留空 = 保持不变，与 smtp_pass 交互口径一致）
+  const saveChannelMutation = useMutation({
+    mutationFn: ({ id, ...patch }: EmailChannelPayload & { id?: string }) =>
+      id ? patchEmailChannel(id, patch) : createEmailChannel(patch),
+    onSuccess: (_data, variables) => {
+      invalidateChannels();
+      void message.success(variables.id ? '邮件通道已更新' : '邮件通道已创建');
+      setChannelModalOpen(false);
     },
   });
 
-  /** 打开测试邮件弹窗：收件邮箱默认取表单里 smtp_user 的当前值（以未保存的编辑态为准，可改） */
-  const openTestEmailModal = () => {
-    const smtpUser = configForm.getFieldValue('smtp_user') as string | undefined;
-    testEmailForm.setFieldsValue({ to: smtpUser ?? '' });
-    setTestEmailOpen(true);
+  // 启停
+  const toggleChannelMutation = useMutation({
+    mutationFn: (payload: { channel: EmailChannel; enabled: boolean }) =>
+      patchEmailChannel(payload.channel.id, { enabled: payload.enabled }),
+    onSuccess: () => {
+      invalidateChannels();
+      void message.success('通道状态已更新');
+    },
+  });
+
+  // 设为默认：priority 调至当前所有通道最小值之前（purpose 路由时最先选中）
+  const setDefaultChannelMutation = useMutation({
+    mutationFn: (channel: EmailChannel) => {
+      const samePurpose = (channels ?? []).filter((c) => c.purpose === channel.purpose);
+      const min = samePurpose.length ? Math.min(...samePurpose.map((c) => c.priority)) : 0;
+      const nextPriority = Math.max(0, min - 1);
+      if (nextPriority === channel.priority) {
+        return Promise.resolve(channel);
+      }
+      return patchEmailChannel(channel.id, { priority: nextPriority });
+    },
+    onSuccess: (channel) => {
+      invalidateChannels();
+      void message.success(
+        `「${channel.name}」已是「${CHANNEL_PURPOSE_LABEL[channel.purpose]}」用途的默认通道`
+      );
+    },
+  });
+
+  // 删除（ConfirmReasonModal，原因写入审计）
+  const deleteChannelMutation = useMutation({
+    mutationFn: (payload: { channel: EmailChannel; reason: string }) =>
+      deleteEmailChannel(payload.channel.id, payload.reason),
+    onSuccess: () => {
+      invalidateChannels();
+      void message.success('邮件通道已删除');
+      setDeleteChannelTarget(null);
+    },
+  });
+
+  // 通道测试邮件（指定通道，不路由不降级）
+  const channelTestMutation = useMutation({
+    mutationFn: (payload: { id: string; to?: string }) => testEmailChannel(payload.id, payload.to),
+    onSuccess: () => {
+      void message.success('测试邮件已发送');
+      setTestChannel(null);
+    },
+  });
+
+  /** 打开新增通道弹窗（Form initialValues 生效） */
+  const openChannelModal = () => {
+    setEditingChannel(null);
+    channelForm.resetFields();
+    setChannelModalOpen(true);
+  };
+
+  /** 打开编辑通道弹窗：回填现有值（password 恒为空起填，留空 = 保持不变） */
+  const openEditChannelModal = (channel: EmailChannel) => {
+    setEditingChannel(channel);
+    channelForm.setFieldsValue({
+      name: channel.name,
+      purpose: channel.purpose,
+      provider: channel.provider,
+      host: channel.host,
+      port: channel.port,
+      secure: channel.secure,
+      username: channel.username,
+      password: '',
+      from_addr: channel.from_addr,
+      enabled: channel.enabled,
+      priority: channel.priority,
+    });
+    setChannelModalOpen(true);
+  };
+
+  /** 打开通道测试邮件弹窗：收件邮箱默认取通道 username（可改） */
+  const openChannelTestModal = (channel: EmailChannel) => {
+    testEmailForm.setFieldsValue({ to: channel.username || '' });
+    setTestChannel(channel);
   };
 
   const maintenanceConfig = configs?.find((c) => c.key === 'maintenance_mode');
   const maintenanceOn = maintenanceConfig?.value === 'on';
-  const editableConfigs = (configs ?? []).filter((c) => c.key !== 'maintenance_mode');
+  // AN-16：smtp_* 键已迁移为「邮件通道」卡管理（原键仅只读兼容，不再出现在系统参数表单）
+  const editableConfigs = (configs ?? []).filter(
+    (c) => c.key !== 'maintenance_mode' && !c.key.startsWith('smtp_')
+  );
   const rateLimitConfigs = RATE_LIMIT_KEYS.map((key) =>
     editableConfigs.find((c) => c.key === key)
   ).filter((c): c is SystemConfig => Boolean(c));
   const systemConfigs = editableConfigs.filter((c) => !isRateLimitKey(c.key));
 
   // 系统参数分组（UI 归组；服务端 CONFIG_CATALOG 为键的事实来源，未归组键走「其它」兜底）
+  // AN-16：原「邮件 (SMTP)」组已迁出——改由上方独立的「邮件通道」卡管理
   const PARAM_GROUPS: { title: string; keys: string[] }[] = [
     { title: 'AI 能力', keys: ['ai_max_tokens', 'ai_default_provider'] },
     { title: '安全与会话', keys: ['session_timeout_minutes', 'audit_log_retention_days'] },
-    {
-      title: '邮件（SMTP）',
-      keys: ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_secure'],
-    },
     { title: '日志', keys: ['log_level'] },
     { title: '运维', keys: ['grafana_url'] },
   ];
@@ -560,7 +674,8 @@ export default function SettingsPage() {
             {(announcements ?? []).slice(0, 3).map((item) => (
               <div className={styles.recentLine} key={item.id}>
                 {item.sentAt.slice(5, 10)}「{item.title}」→ {AUDIENCE_LABEL[item.audience]} · 受众{' '}
-                {(item.deliveredCount ?? 0).toLocaleString('zh-CN')} · 已读{' '}
+                {(item.deliveredCount ?? 0).toLocaleString('zh-CN')} · 触达{' '}
+                {(item.reachedCount ?? 0).toLocaleString('zh-CN')} · 已读{' '}
                 {(item.readCount ?? 0).toLocaleString('zh-CN')} · 点击{' '}
                 {(item.clickedCount ?? 0).toLocaleString('zh-CN')}
               </div>
@@ -569,6 +684,116 @@ export default function SettingsPage() {
               <div className={styles.recentLine}>暂无发送记录</div>
             ) : null}
           </div>
+        </Card>
+
+        {/* AN-16：邮件通道管理（多 SMTP 账号 + 按用途路由 + priority failover，
+            替代原「邮件 (SMTP)」系统参数卡；独立于 configForm，不影响 AF-01 修复的参数卡结构） */}
+        <Card
+          title="邮件通道"
+          extra={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className={styles.cardSub}>按用途路由 · 优先级 failover</span>
+              <Tooltip title={canManageChannels ? '' : '缺少权限'}>
+                <span>
+                  <Button
+                    type="primary"
+                    size="small"
+                    disabled={!canManageChannels}
+                    onClick={openChannelModal}
+                  >
+                    新增通道
+                  </Button>
+                </span>
+              </Tooltip>
+            </div>
+          }
+        >
+          <div className={styles.cardSub} style={{ marginBottom: 14, lineHeight: 1.7 }}>
+            发送时按用途选择启用通道中 priority 最小者，失败自动按 priority 顺延降级（最多 2
+            次）；事务与营销通道互不混用发件人，避免信誉互相拖累。原「邮件
+            (SMTP)」系统参数已自动导入为默认事务通道，smtp_* 键仅作只读兼容。
+          </div>
+          {(channels ?? []).map((channel) => (
+            <div className={styles.flagRow} key={channel.id}>
+              <div className={styles.flagInfo}>
+                <b className={styles.flagName}>
+                  {channel.name}
+                  <Tag
+                    color={channel.purpose === 'transactional' ? 'blue' : 'purple'}
+                    style={{ marginLeft: 8, marginInlineEnd: 0 }}
+                  >
+                    {CHANNEL_PURPOSE_LABEL[channel.purpose]}
+                  </Tag>
+                  {channel.secure ? (
+                    <Tag style={{ marginInlineEnd: 0 }}>SSL</Tag>
+                  ) : null}
+                  {!channel.has_password ? (
+                    <Tooltip title="缺少密码/授权码，发送将走控制台兜底（测试接口返回 4090）">
+                      <Tag color="orange" style={{ marginInlineEnd: 0 }}>
+                        凭据不全
+                      </Tag>
+                    </Tooltip>
+                  ) : null}
+                </b>
+                <span className={styles.flagDesc}>
+                  {channel.host}:{channel.port} · {channel.username || '未配置用户名'} · 发件人{' '}
+                  {channel.from_addr || '未配置'} · 优先级 {channel.priority}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Switch
+                  checked={channel.enabled}
+                  loading={
+                    toggleChannelMutation.isPending &&
+                    toggleChannelMutation.variables?.channel.id === channel.id
+                  }
+                  disabled={!canManageChannels}
+                  onChange={(enabled) => toggleChannelMutation.mutate({ channel, enabled })}
+                />
+                <Tooltip title="设为该用途默认通道（priority 调至最小，路由时最先选中）">
+                  <Button
+                    size="small"
+                    disabled={!canManageChannels}
+                    loading={
+                      setDefaultChannelMutation.isPending &&
+                      setDefaultChannelMutation.variables?.id === channel.id
+                    }
+                    onClick={() => setDefaultChannelMutation.mutate(channel)}
+                  >
+                    设为默认
+                  </Button>
+                </Tooltip>
+                <Button
+                  size="small"
+                  disabled={!canManageChannels}
+                  onClick={() => openEditChannelModal(channel)}
+                >
+                  编辑
+                </Button>
+                <Button
+                  size="small"
+                  disabled={!canManageChannels}
+                  onClick={() => openChannelTestModal(channel)}
+                >
+                  发送测试
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  disabled={!canManageChannels}
+                  onClick={() => setDeleteChannelTarget(channel)}
+                >
+                  删除
+                </Button>
+              </div>
+            </div>
+          ))}
+          {(channels ?? []).length === 0 ? (
+            <div className={styles.maintHint}>
+              暂无邮件通道（发送将走控制台兜底）——请新增，或确认后端已执行 059 迁移以导入原 SMTP
+              配置
+            </div>
+          ) : null}
         </Card>
 
         {/* 系统参数（按用途分组为多卡，每卡独立保存，与限流配置卡交互口径一致）
@@ -637,7 +862,8 @@ export default function SettingsPage() {
           {/* 第三方登录预留口（用户要求防遗忘）：仅占位声明，不做任何配置项——
               OAuth 功能立项前配置不会生效，避免出现"填了没反应"的空头支票。
               功能立项后本卡替换为 GitHub/微信/Apple 的 client_id/密钥/回调域配置。 */}
-          {systemConfigs.some((c) => c.key === 'smtp_host') ? (
+          {/* AN-16：smtp_* 已移出表单，改用原始 configs 判断（保持该占位卡原样显示） */}
+          {configs?.some((c) => c.key === 'smtp_host') ? (
             <Card title="第三方登录" extra={<Tag>规划中 · 未实现</Tag>}>
               <div style={{ color: 'var(--text-3)', fontSize: 12, lineHeight: 1.9 }}>
                 预留位：GitHub / 微信 / Apple 等第三方 OAuth 登录的接入配置（client_id / 密钥 /
@@ -677,30 +903,146 @@ export default function SettingsPage() {
         }
       />
 
-      {/* CO-30：SMTP 测试邮件（真实发送一封，用于验证 SMTP 配置连通性） */}
+      {/* AN-16：新增/编辑邮件通道（password 编辑时留空 = 保持不变，与 smtp_pass 交互口径一致） */}
       <Modal
-        title="发送测试邮件"
-        open={testEmailOpen}
+        title={editingChannel ? `编辑通道：${editingChannel.name}` : '新增邮件通道'}
+        open={channelModalOpen}
+        okText={editingChannel ? '保存' : '创建'}
+        cancelText="取消"
+        confirmLoading={saveChannelMutation.isPending}
+        onCancel={() => setChannelModalOpen(false)}
+        onOk={() => channelForm.submit()}
+      >
+        <Form
+          form={channelForm}
+          layout="vertical"
+          requiredMark={false}
+          initialValues={{
+            purpose: 'transactional',
+            provider: 'smtp',
+            host: '',
+            port: 587,
+            secure: false,
+            username: '',
+            password: '',
+            from_addr: '',
+            enabled: true,
+            priority: 10,
+          }}
+          onFinish={(values) => saveChannelMutation.mutate({ ...values, id: editingChannel?.id })}
+        >
+          <Form.Item
+            name="name"
+            label="通道名称"
+            rules={[{ required: true, whitespace: true, message: '请输入通道名称' }]}
+          >
+            <Input maxLength={100} placeholder="如：QQ 事务通道 / 阿里云营销通道" />
+          </Form.Item>
+          <Form.Item
+            name="purpose"
+            label="用途"
+            rules={[{ required: true, message: '请选择用途' }]}
+          >
+            <Select options={CHANNEL_PURPOSE_OPTIONS} />
+          </Form.Item>
+          <Form.Item
+            name="provider"
+            label="服务商"
+            tooltip="本期仅实现 SMTP；aliyun_dm / sendgrid 为预留枚举"
+            rules={[{ required: true, message: '请选择服务商' }]}
+          >
+            <Select options={[{ value: 'smtp', label: 'SMTP' }]} />
+          </Form.Item>
+          <Form.Item
+            name="host"
+            label="SMTP 服务器地址"
+            rules={[{ required: true, whitespace: true, message: '请输入服务器地址' }]}
+          >
+            <Input placeholder="如 smtp.qq.com" />
+          </Form.Item>
+          <Form.Item name="port" label="端口" rules={[{ required: true, message: '请输入端口' }]}>
+            <InputNumber min={1} max={65535} precision={0} style={{ width: 200 }} />
+          </Form.Item>
+          <Form.Item name="secure" label="SSL 直连" valuePropName="checked">
+            <Switch checkedChildren="SSL(465)" unCheckedChildren="STARTTLS(587)" />
+          </Form.Item>
+          <Form.Item name="username" label="用户名">
+            <Input placeholder="邮箱账号或 API 用户" autoComplete="off" />
+          </Form.Item>
+          <Form.Item
+            name="password"
+            label="密码 / 授权码"
+            extra={
+              editingChannel
+                ? '加密存储，仅显示是否已配置；留空 = 保持不变'
+                : '加密存储，任何界面不回传明文'
+            }
+          >
+            <Input.Password
+              placeholder={editingChannel ? '留空保持不变' : '授权码 / 密码'}
+              autoComplete="new-password"
+            />
+          </Form.Item>
+          <Form.Item
+            name="from_addr"
+            label="发件人地址"
+            rules={[{ type: 'email', message: '请输入合法的邮箱地址' }]}
+          >
+            <Input placeholder="如 no-reply@example.com（缺省用 username）" />
+          </Form.Item>
+          <Form.Item name="priority" label="优先级" tooltip="数值越小越优先；发送失败按优先级顺延降级（最多 2 次）">
+            <InputNumber min={0} precision={0} style={{ width: 200 }} />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch checkedChildren="启用" unCheckedChildren="停用" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* AN-16：通道测试邮件（真实发送一封；指定通道，不按用途路由不降级，复用 CO-30 弹窗交互） */}
+      <Modal
+        title={testChannel ? `发送测试邮件（${testChannel.name}）` : '发送测试邮件'}
+        open={testChannel !== null}
         okText="发送"
         cancelText="取消"
-        confirmLoading={smtpTestMutation.isPending}
-        onCancel={() => setTestEmailOpen(false)}
+        confirmLoading={channelTestMutation.isPending}
+        onCancel={() => setTestChannel(null)}
         onOk={() => testEmailForm.submit()}
       >
         <Form
           form={testEmailForm}
           layout="vertical"
-          onFinish={(values) => smtpTestMutation.mutate(values.to?.trim() || undefined)}
+          onFinish={(values) => {
+            if (testChannel) {
+              channelTestMutation.mutate({ id: testChannel.id, to: values.to?.trim() || undefined });
+            }
+          }}
         >
           <Form.Item
             name="to"
             label="收件邮箱"
             rules={[{ type: 'email', message: '请输入合法的邮箱地址' }]}
           >
-            <Input placeholder="留空则使用服务端默认收件人" autoComplete="off" />
+            <Input placeholder="留空则使用通道用户名" autoComplete="off" />
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* AN-16：删除通道确认（原因必填，写入审计日志；与维护模式同一交互口径） */}
+      <ConfirmReasonModal
+        open={deleteChannelTarget !== null}
+        title={`删除邮件通道：${deleteChannelTarget?.name ?? ''}`}
+        description="删除后该用途的发送自动顺延到剩余通道；若该用途已无可用通道，将回退原 SMTP 配置或控制台兜底。操作写入审计日志。"
+        reasonLabel="操作原因（必填，写入审计日志）"
+        confirmText="确认删除"
+        confirmLoading={deleteChannelMutation.isPending}
+        onCancel={() => setDeleteChannelTarget(null)}
+        onConfirm={(reason) => {
+          if (deleteChannelTarget) {
+            deleteChannelMutation.mutate({ channel: deleteChannelTarget, reason });
+          }
+        }}
+      />
     </>
   );
 }

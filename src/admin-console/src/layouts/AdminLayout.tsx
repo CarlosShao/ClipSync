@@ -27,6 +27,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: '/audit', label: '审计日志', perm: 'admin.audit.view' },
   { key: '/roles', label: '角色权限', perm: 'admin.roles.view' },
   { key: '/settings', label: '系统设置', perm: ['admin.configs.view', 'admin.announce.send'] },
+  // AN-02：客户端策略下发（与系统设置同权限域，仅新增不改既有项）
+  { key: '/policies', label: '客户端策略', perm: 'admin.configs.view' },
   { key: '/ops', label: '运维监控', perm: 'admin.ops.view' },
 ];
 

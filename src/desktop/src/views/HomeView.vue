@@ -46,6 +46,13 @@ import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
 import { perfFirstDataLoad } from '@/utils/perfMonitor'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useMenuAccess } from '@/composables/useMenuAccess'
+// AN-02：客户端策略下发（启动拉取 + WS policies.updated + 同步间隔/历史上限钳制）
+import {
+  refreshPolicies,
+  applyPolicySnapshot,
+  minSyncIntervalMinutes,
+  maxHistoryCeiling,
+} from '@/composables/usePolicy'
 import { api, toggleSensitive } from '@/api/client'
 import { ensureDeviceId } from '@/composables/clipboardUpload'
 import { Lock, AlertTriangle, Megaphone, X } from 'lucide-vue-next'
@@ -110,18 +117,30 @@ watch(
   },
 )
 
-// === 死设置接线（B8）===
+// === 死设置接线（B8）+ 客户端策略钳制（AN-02）===
 // syncInterval 的单位是「分钟」（GeneralSettings 选项：0 实时 / 5 / 15），
 // 0 = 纯事件驱动，不再兜底轮询。
+// AN-02：服务端策略 sync_interval_min_minutes 为下限（未配置 = 0 = 不干预，原行为）。
+const effectiveSyncInterval = computed(() =>
+  Math.max(Number(configStore.syncInterval) || 0, minSyncIntervalMinutes.value)
+)
 watch(
-  () => configStore.syncInterval,
+  effectiveSyncInterval,
   (v) => clip.setPollInterval(Number(v) * 60_000),
   { immediate: true },
 )
 // maxHistory：本地列表保留上限。999999 表示「无限」（Pro 专属），归一为 0 = 不裁剪。
+// AN-02：服务端策略 max_history_items 为上限（未配置 = 0 = 不干预，原行为）；
+// 策略生效时「无限」也被钳制到上限（企业管控语义优先于套餐「无限」）。
+const effectiveMaxHistory = computed(() => {
+  const ceiling = maxHistoryCeiling.value
+  const v = Number(configStore.maxHistory) || 0
+  const capped = ceiling > 0 ? Math.min(v, ceiling) : v
+  return capped >= 999999 ? 0 : capped
+})
 watch(
-  () => configStore.maxHistory,
-  (v) => clip.setMaxHistory(Number(v) >= 999999 ? 0 : Number(v)),
+  effectiveMaxHistory,
+  (v) => clip.setMaxHistory(Number(v)),
   { immediate: true },
 )
 
@@ -387,6 +406,8 @@ onMounted(async () => {
   notif.loadHistory()
   // CO-35：公告快照（optionalAuth，未登录也能拉 audience='all'，失败静默）
   ann.fetchAnnouncements()
+  // AN-02：客户端策略快照（公开端点 + ETag 短缓存，失败静默按默认语义）
+  void refreshPolicies()
   // CO-21：维护模式初始快照（公开端点，无需 token）；后续变化走 WS maintenance.updated
   api('GET', '/api/app/maintenance')
     .then((res) => {
@@ -439,6 +460,10 @@ onMounted(async () => {
     if (data?.type === 'feature_flags.updated') {
       // 管理台切换功能开关的全端广播：直接写快照，AI/分享等入口即时显隐
       applyFeatureFlags(data.flags)
+    }
+    if (data?.type === 'policies.updated') {
+      // AN-02：管理台更新客户端策略的全端广播 → 直接写快照，钳制/置灰即时生效
+      applyPolicySnapshot(data.policies)
     }
     if (data?.type === 'maintenance.updated') {
       // CO-21：管理台切换维护模式的全端广播（mode: 'on' | 'off'）→ 横幅 + 同步暂停即时切换

@@ -1,5 +1,6 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
+import { pinMinLength } from '@/composables/usePolicy' // AN-02：PIN 最小位数走服务端策略
 
 const PIN_KEY = 'clipsync-privacy-pin'
 const PIN_SALT_KEY = 'clipsync-privacy-pin-salt'
@@ -79,7 +80,9 @@ export function usePrivacy() {
 
   // Set a new PIN (4-6 digits) — stores SHA-256(salt + pin), never plaintext
   async function setPin(pin: string): Promise<boolean> {
-    if (!/^\d{4,6}$/.test(pin)) return false
+    // AN-02：最小位数由服务端策略 pin_min_length 下发（默认 4 = 原行为），上限仍 6 位
+    const min = pinMinLength.value
+    if (!new RegExp(`^\\d{${min},6}$`).test(pin)) return false
     const salt = randomSaltHex()
     const hash = await hashPin(salt, pin)
     localStorage.setItem(PIN_SALT_KEY, salt)

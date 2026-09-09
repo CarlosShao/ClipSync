@@ -12,6 +12,8 @@ const DevicesPage = lazy(() => import('@/pages/devices'));
 const OrdersPage = lazy(() => import('@/pages/orders'));
 const SubscriptionsPage = lazy(() => import('@/pages/subscriptions'));
 const PlansPage = lazy(() => import('@/pages/plans'));
+// AN-02：客户端策略下发页（复用 configs.view/manage 权限键，不新增权限）
+const PoliciesPage = lazy(() => import('@/pages/policies'));
 const AuditPage = lazy(() => import('@/pages/audit'));
 const RolesPage = lazy(() => import('@/pages/roles'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
@@ -93,6 +95,14 @@ export function AppRoutes() {
           element={lazyNode(
             <RequireRole permission="admin.plans.view">
               <PlansPage />
+            </RequireRole>,
+          )}
+        />
+        <Route
+          path="/policies"
+          element={lazyNode(
+            <RequireRole permission="admin.configs.view">
+              <PoliciesPage />
             </RequireRole>,
           )}
         />

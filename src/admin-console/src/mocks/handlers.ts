@@ -8,6 +8,8 @@ import type {
   ApiResp,
   AuditLog,
   BackupFile,
+  ClientPolicy,
+  ClientPolicyPatchPayload,
   CreateRolePayload,
   DeviceStats,
   GrantSubscriptionPayload,
@@ -32,6 +34,7 @@ import {
   mockOrders,
   mockPermissions,
   mockPlans,
+  mockPolicies,
   mockRoles,
   mockSubscriptions,
   mockUserDevices,
@@ -575,6 +578,23 @@ const roleHandlers = [
 
 // ─────────────────────── 配置 / 开关 / 公告 ───────────────────────
 
+// AN-10：强制点静态清单——与后端 utils/featureFlags.js ENFORCED_FLAG_KEYS 保持一致
+// （当前 6 个目录开关全部存在 requireFlag/isFlagEnabled 强制点；后端新增开关未接线时此清单不收录）
+// ⚠️ 修复记录（AN-02 协作）：原稿误将这两个 const 写在 configHandlers 数组字面量内（语法错误，
+// esbuild 全挂）；提升到模块层，逻辑零改动。
+const ENFORCED_FLAG_KEYS = [
+  'enable_subscription',
+  'enable_ai_agent',
+  'enable_public_sharing',
+  'enable_2fa',
+  'signup_waitlist',
+  'enable_signup',
+];
+const withEnforced = <T extends { key: string }>(flag: T) => ({
+  ...flag,
+  enforced: ENFORCED_FLAG_KEYS.includes(flag.key),
+});
+
 const configHandlers = [
   http.get('/api/admin/configs', async () => {
     await delay(120);
@@ -611,7 +631,7 @@ const configHandlers = [
 
   http.get('/api/admin/flags', async () => {
     await delay(120);
-    return ok(mockFlags);
+    return ok(mockFlags.map(withEnforced));
   }),
 
   http.patch('/api/admin/flags/:key', async ({ request, params }) => {
@@ -623,7 +643,7 @@ const configHandlers = [
     if (typeof body.enabled !== 'boolean') return fail(400, 40002, 'enabled 必须为布尔值');
     flag.enabled = body.enabled;
     pushAudit('admin.flag.update', 'feature_flag', key, `enabled=${body.enabled}`);
-    return ok(flag, '开关已切换并写入审计');
+    return ok(withEnforced(flag), '开关已切换并写入审计');
   }),
 
   http.get('/api/admin/announcements', async () => {
@@ -674,6 +694,66 @@ const configHandlers = [
     }
     const to = body.to?.trim() || 'admin@clipstream.work';
     return ok({ messageId: `<${Date.now()}@clipstream.work>` }, `测试邮件已发送至 ${to}`);
+  }),
+];
+
+// ─────────────── AN-02：客户端策略下发 ───────────────
+
+// 策略值校验/夹取（与 utils/clientPolicies.js normalizePolicyEntry 同口径：数字整数 + min/max）
+function normalizePolicyValue(
+  meta: ClientPolicy,
+  entry: ClientPolicyPatchPayload[string]
+): { ok: true; value: number; allowUserOverride: boolean } | { ok: false; message: string } {
+  if (entry === null || typeof entry !== 'object') {
+    return { ok: false, message: `策略 ${meta.key} 的值格式非法` };
+  }
+  const num = Number(entry.value);
+  if (!Number.isFinite(num)) {
+    return { ok: false, message: `策略 ${meta.key} 必须为数字` };
+  }
+  const clamped = Math.min(meta.max, Math.max(meta.min, Math.round(num)));
+  return { ok: true, value: clamped, allowUserOverride: entry.allowUserOverride === undefined ? true : Boolean(entry.allowUserOverride) };
+}
+
+const policiesHandlers = [
+  // 全局策略快照（目录顺序，含 consumer/defaultValue/min/max 展示元数据）——与后端 policies.js GET 契约一致
+  http.get('/api/admin/policies', async () => {
+    await delay(150);
+    return ok({ scope: 'global', updatedAt: '2026-09-09T14:58:31.000Z', policies: mockPolicies });
+  }),
+
+  // 部分更新（合并写入未提及键不变）：未知键 404、值校验 400/夹取；写审计 admin.policy.update
+  http.patch('/api/admin/policies', async ({ request }) => {
+    await delay(300);
+    const body = (await request.json()) as {
+      policies?: ClientPolicyPatchPayload;
+      reason?: string;
+    };
+    const patch = body.policies;
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch) || Object.keys(patch).length === 0) {
+      return fail(400, 40002, 'policies 不能为空');
+    }
+    const normalized: Record<string, { value: number; allowUserOverride: boolean }> = {};
+    for (const [key, entry] of Object.entries(patch)) {
+      const meta = mockPolicies.find((p) => p.key === key);
+      if (!meta) return fail(404, 40404, `策略键不存在：${key}`);
+      const norm = normalizePolicyValue(meta, entry);
+      if (!norm.ok) return fail(400, 40002, norm.message);
+      normalized[key] = { value: norm.value, allowUserOverride: norm.allowUserOverride };
+    }
+    for (const [key, next] of Object.entries(normalized)) {
+      const meta = mockPolicies.find((p) => p.key === key)!;
+      meta.value = next.value;
+      meta.allowUserOverride = next.allowUserOverride;
+    }
+    const reason = body.reason?.trim();
+    pushAudit(
+      'admin.policy.update',
+      'client_policy',
+      'global',
+      `policies=${JSON.stringify(normalized)}${reason ? `, reason="${reason}"` : ''}`
+    );
+    return ok({ scope: 'global', policies: mockPolicies }, '客户端策略已更新并写入审计');
   }),
 ];
 
@@ -987,6 +1067,7 @@ export const handlers = [
   ...auditHandlers,
   ...roleHandlers,
   ...configHandlers,
+  ...policiesHandlers,
   ...opsHandlers,
   ...devicesHandlers,
   ...subscriptionsHandlers,

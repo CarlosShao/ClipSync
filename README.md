@@ -160,6 +160,10 @@ cp .env.production .env
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 创建 Pull Request
 
+## 管理台占位功能登记（AN-21）
+
+admin-console 禁止在业务代码里裸写「后续版本」类占位文案（ESLint `no-restricted-syntax` 规则强制，见 `src/admin-console/eslint.config.js`）。未实现、需要占位展示的功能统一登记在 `src/admin-console/src/placeholders.ts` 的 `PLACEHOLDER_FEATURES`（id / 位置 / 原因 / 登记日期），并以占位组件形式渲染（disabled + Tooltip「规划中 · 见工单 xxx」）。功能落地后同步删除登记项与占位代码。静态守卫：`node scripts/admin-full-audit/run-audit.mjs placeholders` 断言占位文案为 0 处。
+
 ## 许可证
 
 MIT License

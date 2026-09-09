@@ -236,6 +236,27 @@ export interface SystemConfig {
   consumer?: string | null;
 }
 
+/** AN-02：客户端策略键（GET /api/admin/policies data.policies[]，字段与 utils/clientPolicies.js 目录对齐） */
+export interface ClientPolicy {
+  key: string;
+  name: string;
+  description: string;
+  /** 分组：sync=同步 / privacy=隐私（分组表单渲染顺序依据） */
+  group: string;
+  value: number;
+  allowUserOverride: boolean;
+  defaultValue: number;
+  min: number;
+  max: number;
+  /** AN-09 机制：null = 未接入（UI 打角标） */
+  consumer: string | null;
+}
+
+/** AN-02：策略 PATCH body（value/allowUserOverride 部分更新，reason 写入审计） */
+export interface ClientPolicyPatchPayload {
+  [key: string]: { value?: number; allowUserOverride?: boolean };
+}
+
 export interface Announcement {
   id: string;
   title: string;
@@ -244,6 +265,8 @@ export interface Announcement {
   displayMode: 'once' | 'persistent';
   sentAt: string;
   deliveredCount?: number;
+  /** AN-05：真实送达数（057 触达表：WS 推送成功 ∪ 上线拉取，按受众去重） */
+  reachedCount?: number;
   clickedCount?: number;
   /** CO-35：真实已读触达数（admin_announcement_reads 回执聚合） */
   readCount?: number;

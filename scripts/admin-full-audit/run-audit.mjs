@@ -1,13 +1,15 @@
 // =============================================================
 // ClipSync 后台管理系统全链路审计脚本（test/admin-full-audit 分支）
-// 用法: node run-audit.mjs <phase...>   phase = auth|overview|users|devices|subs|orders|plans|audit|roles|configs|announce|rbac|rb06|ailevel|all
+// 用法: node run-audit.mjs <phase...>   phase = auth|overview|users|devices|subs|orders|plans|audit|roles|configs|announce|rbac|rb06|ailevel|placeholders|settings-form|opsmetrics|perm-matrix|flags-enforced|all
 // 依赖: 运行中的 dev 后端 http://127.0.0.1:3001（docker-compose.dev.yml）
 // 说明: dev 环境验证码固定 888888（src/routes/auth.js send-code）；
 //       验证码限流 5 次/小时/手机号（进程内存态，docker restart clipsync 可清零）
 //       ⚠️ 127.0.0.1 而非 localhost：wslrelay 抢占 [::1]:3001，localhost 会进转发黑洞挂起（CO-52）
 // =============================================================
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 // RB-01 函数级断言用：levelKeyForRole 未导出，assertToolAllowed 为其等价导出探针
 import { assertToolAllowed } from '../../src/server/src/utils/aiSystemPrompt.js';
 
@@ -610,9 +612,169 @@ async function phaseAiLevel() {
   check(P, 'RB-01: roleLevel=50 触达 L3 工具 list_users → 拒绝', deny.allowed === false, JSON.stringify(deny));
 }
 
+// AN-22：settings-form 阶段——防 AF-01 复发：系统参数各卡输入框初值非空，且保存能真实触发 PATCH。
+// API 口径：GET /admin/configs 每项 name/value 非空（value 为空串 = 前端输入框空白）；
+// 取非维护模式第一项回写原值（值不变幂等），断言 PATCH 链路可用。
+async function phaseSettingsForm() {
+  const P = 'settings-form';
+  const rl = await req('GET', '/admin/configs', { token: adminToken });
+  check(P, 'GET /admin/configs → 200 code=0', rl.status === 200 && rl.json?.code === 0, `status=${rl.status}`);
+  const items = Array.isArray(rl.json?.data) ? rl.json.data : [];
+  check(P, '系统参数 ≥ 5 项（对应设置页 5 张卡片）', items.length >= 5, `count=${items.length}`);
+
+  const emptyName = items.filter((i) => !String(i.name || '').trim());
+  check(P, '每项 name 非空（卡片标签可渲染）', emptyName.length === 0,
+    emptyName.length ? `空 name: ${emptyName.map((i) => i.key).join(',')}` : '全部非空');
+
+  // AF-01 表现即输入框空白：value 空串即 FAIL。豁免两类键：smtp_pass（未配置时 DB 缺行回显空串，
+  // 脱敏态由后端兜底）、grafana_url（AF-30 可选键，空=运维页按钮置灰，属合法未配置态）。
+  const OPTIONAL_EMPTY_KEYS = ['smtp_pass', 'grafana_url'];
+  const emptyVal = items.filter((i) => String(i.value ?? '').trim() === '' && !OPTIONAL_EMPTY_KEYS.includes(i.key));
+  check(P, '输入框初值非空（value 不为空串）', emptyVal.length === 0,
+    emptyVal.length ? `空 value: ${emptyVal.map((i) => i.key).join(',')}` : '全部非空');
+
+  const first = items.find((i) => i.key !== 'maintenance_mode' && String(i.value ?? '').trim() !== '');
+  if (first) {
+    const rup = await req('PATCH', `/admin/configs/${first.key}`, { token: adminToken, body: { value: String(first.value) } });
+    check(P, `保存回写 ${first.key}（原值）触发 PATCH → 200`, rup.status === 200 && rup.json?.code === 0, `status=${rup.status} msg=${rup.json?.message}`);
+  } else {
+    check(P, '存在可回写的非维护模式配置项', false, `items=${JSON.stringify(items)?.slice(0, 150)}`);
+  }
+}
+
+// AN-22：opsmetrics 阶段——防 AF-02 复发：运维概览应用层指标快照非 null。
+async function phaseOpsMetrics() {
+  const P = 'opsmetrics';
+  const r = await req('GET', '/admin/ops/overview', { token: adminToken });
+  check(P, 'GET /admin/ops/overview → 200 code=0', r.status === 200 && r.json?.code === 0, `status=${r.status}`);
+  const metrics = r.json?.data?.metrics;
+  check(P, 'ops/overview.metrics 非 null（AF-02 回归）', metrics != null && typeof metrics === 'object',
+    JSON.stringify(metrics)?.slice(0, 140));
+  if (metrics) {
+    const missing = ['requests', 'errors', 'p95'].filter((k) => !(k in metrics));
+    check(P, 'metrics.requests/errors/p95 字段就绪', missing.length === 0,
+      missing.length ? `缺字段: ${missing.join(',')}` : `keys=${Object.keys(metrics).join(',')}`);
+  }
+}
+
+// AN-22：perm-matrix 阶段——防 AF-03 复发：7 个 view 读端点 权限归零 403 / 授权后 200。
+// 幂等：复用角色 custom_audit_permmatrix + 探针账号 13900001115（与 rb06 同模式；
+// roles PATCH permissions 后服务端权限缓存立即清空，可先拒后准顺序断言）。
+const PERM_MATRIX_VIEW_ENDPOINTS = [
+  ['/admin/users', 'admin.users.view'],
+  ['/admin/devices', 'admin.devices.view'],
+  ['/admin/orders', 'admin.orders.view'],
+  ['/admin/subscriptions', 'admin.subscriptions.view'],
+  ['/admin/plans', 'admin.plans.view'],
+  ['/admin/roles', 'admin.roles.view'],
+  ['/admin/configs', 'admin.configs.view'],
+];
+
+async function phasePermMatrix() {
+  const P = 'perm-matrix';
+  const ROLE_KEY = 'custom_audit_permmatrix';
+  const PROBE_PHONE = '13900001115';
+
+  let roleId = psql(`SELECT id FROM roles WHERE role_key='${ROLE_KEY}'`);
+  if (!roleId) {
+    const rc = await req('POST', '/admin/roles', { token: adminToken, body: { roleKey: ROLE_KEY, name: '权限矩阵角色', description: 'audit perm-matrix', level: 50 } });
+    check(P, '创建权限矩阵角色 → 201', rc.status === 201 && rc.json?.code === 0, `status=${rc.status} body=${JSON.stringify(rc.json)?.slice(0, 120)}`);
+    roleId = rc.json?.data?.id;
+  }
+  check(P, '权限矩阵角色 ID 就绪', /^[0-9a-f-]{36}$/.test(roleId || ''), `id=${roleId}`);
+
+  const u1 = psql(`SELECT id FROM users WHERE phone='${PROBE_PHONE}'`);
+  if (!u1) await loginByCode(PROBE_PHONE);
+  const userId1 = psql(`SELECT id FROM users WHERE phone='${PROBE_PHONE}'`);
+  const ra = await req('PATCH', `/admin/users/${userId1}/role`, { token: adminToken, body: { roleId } });
+  check(P, '指派矩阵角色 → 200', ra.status === 200 && ra.json?.code === 0, `status=${ra.status}`);
+  const t1 = await getUserToken(PROBE_PHONE);
+
+  // ① 权限归零 → 7 个 view 端点全 403
+  const rclr = await req('PATCH', `/admin/roles/${roleId}/permissions`, { token: adminToken, body: { permissions: [] } });
+  check(P, '角色权限归零 → 200', rclr.status === 200 && rclr.json?.code === 0, `status=${rclr.status}`);
+  const denied403 = [];
+  for (const [ep] of PERM_MATRIX_VIEW_ENDPOINTS) {
+    const r = await req('GET', ep, { token: t1 });
+    if (r.status !== 403) denied403.push(`${ep}=${r.status}`);
+  }
+  check(P, '空权限角色访问 7 个 view 端点全部 403（AF-03 回归）', denied403.length === 0,
+    denied403.length ? `未拦截: ${denied403.join(',')}` : '7/7 全部 403');
+
+  // ② 授予全部 7 个 view 权限 → 全部 200
+  const perms = PERM_MATRIX_VIEW_ENDPOINTS.map(([, perm]) => perm);
+  const rg = await req('PATCH', `/admin/roles/${roleId}/permissions`, { token: adminToken, body: { permissions: perms } });
+  check(P, `授予 7 个 view 权限 → 200`, rg.status === 200 && rg.json?.code === 0, `status=${rg.status}`);
+  const not200 = [];
+  for (const [ep] of PERM_MATRIX_VIEW_ENDPOINTS) {
+    const r = await req('GET', ep, { token: t1 });
+    if (r.status !== 200) not200.push(`${ep}=${r.status}`);
+  }
+  check(P, '授权后 7 个 view 端点全部 200', not200.length === 0,
+    not200.length ? `非200: ${not200.join(',')}` : '7/7 全部 200');
+
+  // 还原：探针账号回普通角色（角色权限保留，供下次运行幂等归零）
+  const userRoleId = psql(`SELECT id FROM roles WHERE role_key='user'`);
+  await req('PATCH', `/admin/users/${userId1}/role`, { token: adminToken, body: { roleId: userRoleId } });
+  check(P, '还原探针账号为普通角色', true, psql(`SELECT r.role_key FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id='${userId1}'`));
+}
+
+// AN-22：flags-enforced 阶段——防 AF-04 复发：每个开关都存在服务端强制点。
+// 口径：GET /admin/flags 每项返回 enforced 布尔（AN-10 字段）；enforced=false 即「UI 有开关、后端无强制点」。
+async function phaseFlagsEnforced() {
+  const P = 'flags-enforced';
+  const r = await req('GET', '/admin/flags', { token: adminToken });
+  check(P, 'GET /admin/flags → 200 code=0', r.status === 200 && r.json?.code === 0, `status=${r.status}`);
+  const flags = Array.isArray(r.json?.data) ? r.json.data : [];
+  check(P, '开关目录非空', flags.length > 0, `count=${flags.length}`);
+
+  const noField = flags.filter((f) => typeof f.enforced !== 'boolean');
+  check(P, '每个开关均返回 enforced 字段（AN-10 契约）', noField.length === 0,
+    noField.length ? `缺 enforced: ${noField.map((f) => f.key).join(',')}` : '全部返回');
+
+  const unenforced = flags.filter((f) => f.enforced === false);
+  check(P, '所有开关均存在 requireFlag/isFlagEnabled 强制点（AF-04 回归）', unenforced.length === 0,
+    unenforced.length ? `无强制点: ${unenforced.map((f) => f.key).join(',')}` : '全部已强制');
+}
+
 // ---------- 主流程 ----------
+// ---------- AN-21 占位登记守卫（静态扫描，不依赖后端，可单独运行） ----------
+const ADMIN_SRC = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../src/admin-console/src'
+);
+
+function listTsFiles(dir, acc = []) {
+  for (const name of readdirSync(dir)) {
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) listTsFiles(full, acc);
+    else if (/\.(ts|tsx)$/.test(name)) acc.push(full);
+  }
+  return acc;
+}
+
+// AN-21：admin-console 源码禁止裸写「后续版本」占位文案（唯一登记点 src/placeholders.ts 除外）。
+// 只匹配代码字面量，剥离 // 与 //** 注释——工单回写注释里提到历史占位不算违规（ESLint 规则同样只拦字面量）。
+async function phasePlaceholders() {
+  const files = listTsFiles(ADMIN_SRC).filter((f) => path.basename(f) !== 'placeholders.ts');
+  const offenders = files.filter((f) =>
+    readFileSync(f, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+      .includes('后续版本')
+  );
+  check(
+    'placeholders',
+    'admin-console 源码无裸写占位文案（AN-21）',
+    offenders.length === 0,
+    offenders.length
+      ? `发现 ${offenders.length} 处：${offenders.map((f) => path.relative(ADMIN_SRC, f)).join(', ')}`
+      : '0 处'
+  );
+}
+
 const phases = process.argv.slice(2);
-const ALL = ['auth', 'overview', 'users', 'devices', 'subs', 'orders', 'plans', 'audit', 'roles', 'configs', 'announce', 'rbac'];
+const ALL = ['auth', 'overview', 'users', 'devices', 'subs', 'orders', 'plans', 'audit', 'roles', 'configs', 'announce', 'rbac', 'placeholders', 'settings-form', 'opsmetrics', 'perm-matrix', 'flags-enforced'];
 const run = phases.length && phases[0] !== 'all' ? phases : ALL;
 
 if (!run.includes('auth')) {
@@ -624,7 +786,7 @@ if (!run.includes('auth')) {
   }
 }
 
-const runners = { auth: phaseAuth, overview: phaseOverview, users: phaseUsers, devices: phaseDevices, subs: phaseSubs, orders: phaseOrders, plans: phasePlans, audit: phaseAudit, roles: phaseRoles, configs: phaseConfigs, announce: phaseAnnounce, rbac: phaseRbac, rb06: phaseRb06, ailevel: phaseAiLevel };
+const runners = { auth: phaseAuth, overview: phaseOverview, users: phaseUsers, devices: phaseDevices, subs: phaseSubs, orders: phaseOrders, plans: phasePlans, audit: phaseAudit, roles: phaseRoles, configs: phaseConfigs, announce: phaseAnnounce, rbac: phaseRbac, rb06: phaseRb06, ailevel: phaseAiLevel, placeholders: phasePlaceholders, 'settings-form': phaseSettingsForm, opsmetrics: phaseOpsMetrics, 'perm-matrix': phasePermMatrix, 'flags-enforced': phaseFlagsEnforced };
 for (const p of run) {
   console.log(`\n===== PHASE ${p.toUpperCase()} =====`);
   try {

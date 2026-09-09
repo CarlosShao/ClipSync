@@ -212,16 +212,9 @@ export default function OrdersPage() {
               </span>
             </Tooltip>
           ) : null}
-          {record.status === 'pending' ? (
-            <Button
-              size="small"
-              disabled
-              style={{ marginLeft: 6 }}
-              title="自动关单将在后续版本提供"
-            >
-              关闭
-            </Button>
-          ) : null}
+          {/* AF-15：人工关单口径取消——已支付订单不允许人工关单，
+              超时未支付订单由服务端定时任务自动关闭（src/server/src/services/orderCloseSweep.js），
+              状态列展示「已关闭」，订单详情 metadata.auto_closed 可溯源 */}
         </span>
       ),
     },
