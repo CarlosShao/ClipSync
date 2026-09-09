@@ -16,6 +16,7 @@ import {
   Archive,
   Sparkles,
   ExternalLink,
+  Megaphone,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useI18n } from '@/composables/useI18n'
@@ -25,9 +26,12 @@ import { useUser } from '@/composables/useUser'
 import { useConfigStore } from '@/stores/configStore'
 import { api } from '@/api/client'
 import { openUrl } from '@/lib/tauri'
+import { useAnnouncements } from '@/composables/useAnnouncements'
 
 const { t } = useI18n()
 const { unreadCount } = useNotifications()
+// 公告未读数（横幅之外的第二触达：once 公告不弹常驻横幅，靠此徽标提示）
+const { unreadCount: announcementUnreadCount } = useAnnouncements()
 // 菜单访问控制（MA-01/02）：开关关闭的入口直接隐藏（服务端 403 兜底依然存在）
 const { can } = useMenuAccess()
 // MA-06：管理控制台外链仅超管可见（roleKey === 'super_admin'，决策记录 2026-09-07）
@@ -65,6 +69,11 @@ function toggleUserMenu() {
 }
 function closeUserMenu() {
   showUserMenu.value = false
+}
+/** AF-57 补充：公告入口——派发全局事件，由 HomeView 打开公告列表弹窗（模块级单例总线模式） */
+function openAnnouncements() {
+  window.dispatchEvent(new CustomEvent('clipsync:open-announcements'))
+  closeUserMenu()
 }
 // Template ref for the footer container (used for click-outside detection)
 let footerEl: HTMLElement | null = null
@@ -292,6 +301,13 @@ async function openAdminConsole() {
             <Bell :size="14" />
             <span>{{ t('nav_notifications') || '通知' }}</span>
             <span v-if="unreadCount > 0" class="user-menu-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+          </button>
+          <button class="user-menu-item" @click="openAnnouncements">
+            <Megaphone :size="14" />
+            <span>公告</span>
+            <span v-if="announcementUnreadCount > 0" class="user-menu-badge">
+              {{ announcementUnreadCount > 99 ? '99+' : announcementUnreadCount }}
+            </span>
           </button>
           <div class="user-menu-divider" />
           <button

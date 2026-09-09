@@ -88,7 +88,18 @@ window.addEventListener('clipsync:avatar-changed', syncAvatarFromStorage)
 window.addEventListener('storage', (e) => {
   if (e.key === 'clipsync-avatar') syncAvatarFromStorage()
 })
-onUnmounted(() => window.removeEventListener('clipsync:avatar-changed', syncAvatarFromStorage))
+// 侧栏「公告」入口（AppSidebar）→ 打开公告列表弹窗（模块级单例状态，跨组件总线模式）
+function openAnnouncementsFromSidebar() {
+  showAnnouncementList.value = true
+  ann.announcements.value.forEach((a) => {
+    if (!ann.isRead(a.id)) ann.markRead(a.id)
+  })
+}
+window.addEventListener('clipsync:open-announcements', openAnnouncementsFromSidebar)
+onUnmounted(() => {
+  window.removeEventListener('clipsync:avatar-changed', syncAvatarFromStorage)
+  window.removeEventListener('clipsync:open-announcements', openAnnouncementsFromSidebar)
+})
 
 // Sync route param to currentSub (both initial load and runtime navigation)
 if (route.params.sub) currentSub.value = route.params.sub as string
@@ -256,7 +267,9 @@ watch([maintenanceOn, () => configStore.autoSync], ([on, autoSync]) => {
 })
 
 // === CO-35 公告横幅 + 全部公告弹窗 ===
-// 横幅只展示最新一条「persistent 且未读且未关闭」的公告；once 类只进列表。
+// 横幅展示最新一条「未读且未关闭」的公告（2026-09-09 修复：此前只认 persistent，
+// 而管理台默认下发的是 once——once 公告完全静默、无任何触达，用户验收打回）。
+// once 语义 = 「显示 1 次」：点「我知道了」即 markRead 永不再弹；persistent 关闭后仅当次隐藏。
 // 关闭记忆走 localStorage 键 dismissed-announcement-{id}（useAnnouncements 内读写），
 // 会话内用 ref 同步驱动响应式（isDismissed 读 localStorage 不具备响应性）。
 const bannerDismissedId = ref('')
@@ -264,7 +277,6 @@ const bannerAnnouncement = computed<Announcement | null>(
   () =>
     ann.announcements.value.find(
       (a) =>
-        a.displayMode === 'persistent' &&
         !ann.isRead(a.id) &&
         bannerDismissedId.value !== a.id &&
         !ann.isDismissed(a.id),
