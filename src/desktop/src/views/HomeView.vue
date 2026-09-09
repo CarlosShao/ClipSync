@@ -693,7 +693,14 @@ function confirmAction() {
       <div v-if="bannerAnnouncement" class="announcement-banner" role="status">
         <Megaphone :size="16" :stroke-width="2" class="announcement-banner-icon" />
         <span class="announcement-banner-title">{{ bannerAnnouncement.title }}</span>
-        <span class="announcement-banner-content">{{ bannerAnnouncement.content }}</span>
+        <span class="announcement-banner-content">
+          <span class="announcement-marquee">
+            <span class="announcement-marquee-track">
+              <span class="announcement-marquee-text">{{ bannerAnnouncement.content }}</span>
+              <span class="announcement-marquee-text" aria-hidden="true">{{ bannerAnnouncement.content }}</span>
+            </span>
+          </span>
+        </span>
         <button class="announcement-btn" @click="openAnnouncementList">
           {{ t('ann_view_all', '查看全部') }}
         </button>
@@ -914,9 +921,41 @@ function confirmAction() {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-secondary);
+}
+/* AF-57 跑马灯：内容复制两份无缝循环滚动，比静态省略号醒目；
+   悬停暂停便于阅读；reduce-motion（设置页「减少动画」）下静止显示 */
+.announcement-marquee {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+}
+.announcement-marquee-track {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: announcement-marquee 16s linear infinite;
+  will-change: transform;
+}
+.announcement-marquee-text {
+  padding-right: 72px;
+}
+.announcement-marquee-track:hover {
+  animation-play-state: paused;
+}
+@keyframes announcement-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+:global(html.reduce-motion) .announcement-marquee-track {
+  animation: none;
+  /* 静止时仍完整展示首份内容（不滚动也不省略） */
 }
 .announcement-btn {
   flex-shrink: 0;
