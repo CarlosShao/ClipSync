@@ -936,7 +936,7 @@ function confirmAction() {
 .announcement-marquee-track {
   display: inline-flex;
   white-space: nowrap;
-  animation: announcement-marquee 16s linear infinite;
+  animation: announcement-marquee 32s linear infinite;
   will-change: transform;
 }
 .announcement-marquee-text {
