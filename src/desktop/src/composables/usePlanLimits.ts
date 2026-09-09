@@ -249,3 +249,45 @@ export async function getUpgradePlanBenefits(
   plansCache = { at: Date.now(), plans }
   return plans.find((p) => p.name.toLowerCase() === name.toLowerCase()) ?? null
 }
+
+// ------------------------------------------------------------------------
+// 套餐价格（订阅/支付页渲染源：管理台 subscription_plans 实时数据，杜绝硬编码）
+// ------------------------------------------------------------------------
+
+export interface PricingPlan {
+  id: string
+  /** 套餐英文标识：Free / Pro / Enterprise */
+  name: string
+  displayName: string
+  /** 月付价格（元），来自管理台可编辑的 price_monthly */
+  priceMonthly: number
+  /** 年付价格（元） */
+  priceYearly: number
+}
+
+let pricingCache: { at: number; plans: PricingPlan[] } | null = null
+
+/**
+ * 套餐价格列表（GET /api/subscriptions/plans，公开端点）。
+ * PricingSubPage / PricingPaymentModals 渲染源——此前两处硬编码 ¥9.9/¥29
+ * 与管理台套餐表（19.9/199）不一致（用户验收实测），统一改走本接口。
+ * 失败返回空数组，调用方显示「—」占位而非虚构价格。
+ */
+export async function getPricingPlans(): Promise<PricingPlan[]> {
+  if (pricingCache && Date.now() - pricingCache.at < CACHE_TTL_MS) {
+    return pricingCache.plans
+  }
+  const res = await api('GET', '/api/subscriptions/plans')
+  if (!res.ok || !Array.isArray(res.data?.plans)) return []
+  const plans: PricingPlan[] = (res.data.plans as any[])
+    .map((p) => ({
+      id: String(p?.id || ''),
+      name: String(p?.name || ''),
+      displayName: String(p?.displayName || p?.name || ''),
+      priceMonthly: Number(p?.price ?? p?.priceMonthly ?? 0),
+      priceYearly: Number(p?.priceYearly ?? 0),
+    }))
+    .filter((p) => p.id && p.name)
+  pricingCache = { at: Date.now(), plans }
+  return plans
+}

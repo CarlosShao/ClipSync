@@ -52,11 +52,20 @@ class WsService {
   /// home_screen 维护横幅即时出现/消失。
   static void Function(Map<String, dynamic> msg)? globalMaintenanceHook;
 
+  /// AF-41：全局 force_logout 钩子——管理台「远程下线」本设备。
+  /// 由 main.dart 挂载：清登录态（TokenStore/Provider）并回登录页；
+  /// 服务端已同时以 4003 关闭本连接，须先停自动重连再断开，避免立刻重连复活。
+  static void Function(Map<String, dynamic> msg)? globalForceLogoutHook;
+  bool _forceLoggedOut = false;
+
   bool get isConnected => _isConnected;
 
   void connect({required String token, required String deviceId}) {
     _token = token;
     _deviceId = deviceId;
+    // AF-41：重新登录（connect 被重新调用）即重新信任设备，解除远程下线防重连标记
+    _forceLoggedOut = false;
+    _reconnectAttempts = 0;
     _connect();
   }
 
@@ -230,6 +239,16 @@ class WsService {
         // （模式照抄 feature_flags.updated：钩子由 main.dart 挂载，未挂载时空操作）
         globalMaintenanceHook?.call(msg);
         break;
+      case 'force_logout':
+        // AF-41：管理台「远程下线」本设备——服务端紧随其后以 4003 关闭连接。
+        // 置防重连标记（避免 onDone 的指数退避把设备立刻"复活"），
+        // 断开通道后交由 main.dart 挂载的全局钩子清登录态回登录页。
+        _forceLoggedOut = true;
+        globalForceLogoutHook?.call(msg);
+        _channel?.sink.close(4003, 'Force offline by admin');
+        _channel = null;
+        _isConnected = false;
+        break;
       case 'error':
         print('[WsDebug] server error: ${msg['message']}');
         break;
@@ -266,6 +285,12 @@ class WsService {
   }
 
   void _scheduleReconnect() {
+    // AF-41：被管理台远程下线后禁止自动重连（否则设备立刻"复活"继续同步）；
+    // 用户重新登录时 connect() 会被重新调用，届时重置标记。
+    if (_forceLoggedOut) {
+      print('[WsDebug] force logged out — reconnect suppressed');
+      return;
+    }
     if (_reconnectAttempts >= _maxReconnectAttempts) return;
     _reconnectAttempts++;
 

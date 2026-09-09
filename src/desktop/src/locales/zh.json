@@ -140,6 +140,7 @@
   "tpl_vars_edit": "编辑",
   "tpl_vars_delete": "删除",
   "app_name": "ClipSync",
+  "kicked_by_admin": "您的账号在此设备上已被管理员远程下线",
   "nav_collapse": "收起侧边栏",
   "nav_expand": "展开侧边栏",
   "new_clip": "新建剪贴",

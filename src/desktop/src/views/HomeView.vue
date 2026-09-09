@@ -432,6 +432,17 @@ onMounted(async () => {
       // CO-21：管理台切换维护模式的全端广播（mode: 'on' | 'off'）→ 横幅 + 同步暂停即时切换
       setMaintenanceMode(data.mode)
     }
+    if (data?.type === 'force_logout') {
+      // AF-41：管理台「远程下线」——服务端已推送指令并断开本设备连接，
+      // 清除本地登录态回登录页（重新登录即重新信任设备）
+      void notifyNative(t('app_name'), data.reason || t('kicked_by_admin'))
+      handleLogout()
+      return
+    }
+    if (data?.type === 'announcement.new') {
+      // AN-05：管理台下发公告的全端广播 → 立即拉取（横幅/未读数自动响应）
+      ann.fetchAnnouncements().catch(() => {})
+    }
     if (data?.type === 'notification') {
       notif.pushRealtime(data)
       // Also push native notification for server-initiated alerts

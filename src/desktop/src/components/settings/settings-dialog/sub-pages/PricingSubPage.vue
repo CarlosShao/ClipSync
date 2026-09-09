@@ -1,14 +1,62 @@
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
+import { getPricingPlans, type PricingPlan } from '@/composables/usePlanLimits'
 
 const { t } = useI18n()
 const toast = useSonner()
 const emit = defineEmits<{ back: [] }>()
 
+// ===== 真实套餐价格（管理台 subscription_plans 实时数据）=====
+// 此前此处硬编码 ¥9.9/¥29，与管理台改价脱节（用户验收实测打回），
+// 统一改走 GET /api/subscriptions/plans；加载失败显示「—」而非虚构价格。
+const plans = ref<PricingPlan[]>([])
+const loaded = ref(false)
+
+const FEATURE_KEYS: Record<string, string[]> = {
+  free: ['feat_3dev', 'feat_100hist', 'feat_community'],
+  pro: ['feat_unlimited_dev', 'feat_unlimited_hist', 'feat_priority'],
+  enterprise: ['feat_team', 'feat_api', 'feat_priority'],
+}
+
+const PLAN_NAME_KEYS: Record<string, string> = {
+  free: 'price_free',
+  pro: 'price_pro',
+  enterprise: 'price_enterprise',
+}
+
+const orderedPlans = ref<{ key: string; plan: PricingPlan | null }[]>([])
+
+function buildOrdered() {
+  const byKey = new Map(plans.value.map((p) => [p.name.toLowerCase(), p]))
+  orderedPlans.value = ['free', 'pro', 'enterprise'].map((key) => ({
+    key,
+    plan: byKey.get(key) ?? null,
+  }))
+}
+
+onMounted(async () => {
+  plans.value = await getPricingPlans()
+  loaded.value = true
+  buildOrdered()
+})
+
+function planName(key: string): string {
+  return t(PLAN_NAME_KEYS[key] ?? key)
+}
+
+function planPrice(plan: PricingPlan | null): string {
+  return plan ? `¥${plan.priceMonthly}` : '—'
+}
+
 // ===== Plan selection =====
-function selectPlan(planId: string, planName: string, price: number) {
-  if (price === 0) {
+function selectPlan(plan: PricingPlan | null) {
+  if (!plan) {
+    toast.show(t('ft_building'), 'info')
+    return
+  }
+  if (plan.name.toLowerCase() === 'free' || plan.priceMonthly === 0) {
     toast.show(t('already_free'), 'info')
     return
   }
@@ -23,43 +71,22 @@ function selectPlan(planId: string, planName: string, price: number) {
     <p class="sp-desc">{{ t('sg_current_plan_h_free') }}</p>
 
     <div class="pricing-grid">
-      <!-- Free plan -->
-      <div class="price-card" @click="selectPlan('free', t('price_free'), 0)">
-        <div class="pc-name">{{ t('price_free') }}</div>
+      <div
+        v-for="entry in orderedPlans"
+        :key="entry.key"
+        class="price-card"
+        :class="{ popular: entry.key === 'pro' }"
+        @click="selectPlan(entry.plan)"
+      >
+        <div v-if="entry.key === 'pro'" class="pc-tag">{{ t('price_popular') }}</div>
+        <div class="pc-name">{{ planName(entry.key) }}</div>
         <div class="pc-price">
-          &yen;0<span class="pc-period">{{ t('price_per_mo') }}</span>
+          {{ planPrice(entry.plan) }}<span class="pc-period">{{ t('price_per_mo') }}</span>
         </div>
         <div class="pc-feats">
-          &#10003; {{ t('feat_3dev') }}<br />
-          &#10003; {{ t('feat_100hist') }}<br />
-          &#10003; {{ t('feat_community') }}
-        </div>
-      </div>
-
-      <!-- Pro plan (popular) -->
-      <div class="price-card popular" @click="selectPlan('pro', t('price_pro'), 9.9)">
-        <div class="pc-tag">{{ t('price_popular') }}</div>
-        <div class="pc-name">{{ t('price_pro') }}</div>
-        <div class="pc-price">
-          &yen;9.9<span class="pc-period">{{ t('price_per_mo') }}</span>
-        </div>
-        <div class="pc-feats">
-          &#10003; {{ t('feat_unlimited_dev') }}<br />
-          &#10003; {{ t('feat_unlimited_hist') }}<br />
-          &#10003; {{ t('feat_priority') }}
-        </div>
-      </div>
-
-      <!-- Enterprise plan -->
-      <div class="price-card" @click="selectPlan('enterprise', t('price_enterprise'), 29)">
-        <div class="pc-name">{{ t('price_enterprise') }}</div>
-        <div class="pc-price">
-          &yen;29<span class="pc-period">{{ t('price_per_mo') }}</span>
-        </div>
-        <div class="pc-feats">
-          &#10003; {{ t('feat_team') }}<br />
-          &#10003; {{ t('feat_api') }}<br />
-          &#10003; {{ t('feat_priority') }}
+          <template v-for="feat in FEATURE_KEYS[entry.key]" :key="feat">
+            &#10003; {{ t(feat) }}<br />
+          </template>
         </div>
       </div>
     </div>

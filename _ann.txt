@@ -1,0 +1,3 @@
+{"step":"announcement.new-received","ok":true,"id":"53fec98d-491d-439d-a0ba-f43114879c8a"}
+RESULT {"registered":true,"announcementNew":"53fec98d-491d-439d-a0ba-f43114879c8a"}
+{"step":"announce-api","status":201}

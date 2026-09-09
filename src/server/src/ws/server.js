@@ -6,6 +6,29 @@ import { logger } from '../utils/logger.js';
 import { getRedisClient, checkWsConnectionLimit, removeWsConnection } from '../middleware/rateLimiter.js';
 import { setWsConnections } from '../middleware/metrics.js';
 import { isMaintenanceOn } from '../middleware/maintenance.js';
+
+/**
+ * AF-41：按设备强制断开（管理台「远程下线」消费）。
+ * 找到该用户名下目标设备的活跃 WS 连接 → 推送 force_logout 指令 → 以 4003 关闭。
+ * 客户端收到 force_logout 后清除本地登录态并回登录页；连接表由 close 处理器统一摘除。
+ * @returns {boolean} 是否找到并断开了活跃连接
+ */
+export function forceDisconnectDevice(userId, deviceId, reason) {
+  const ws = connections.get(userId)?.get(deviceId);
+  if (!ws) return false;
+  try {
+    ws.send(JSON.stringify({ type: 'force_logout', reason: reason || '' }));
+  } catch {
+    /* 发送失败不阻塞关闭 */
+  }
+  try {
+    ws.close(4003, 'Force offline by admin');
+  } catch {
+    /* ignore */
+  }
+  logger.info(`Force disconnect requested for device ${deviceId} (user ${userId})`);
+  return true;
+}
 import { createNotification } from '../services/notificationService.js';
 import {
   initWsRedisPubSub,

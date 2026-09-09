@@ -159,6 +159,17 @@ void main() async {
     final mode = msg['mode'];
     featureFlagsProvider.applyMaintenance(mode is String ? mode : null);
   };
+  // AF-41：管理台「远程下线」本设备 → 清登录态回登录页（WS 层已停自动重连）；
+  // 用户重新登录后 WsService.connect() 重置防重连标记，设备恢复正常同步。
+  WsService.globalForceLogoutHook = (msg) {
+    final reason = msg['reason'];
+    authProvider
+        .logout()
+        .then((_) => appRouter.go(AppRoutes.login))
+        .catchError((_) => appRouter.go(AppRoutes.login));
+    // ignore: avoid_print
+    print('[WsDebug] force logout by admin${reason is String ? ": $reason" : ""}');
+  };
   featureFlagsProvider.addListener(() {
     SyncService.instance
         .setMaintenancePaused(featureFlagsProvider.maintenanceMode);

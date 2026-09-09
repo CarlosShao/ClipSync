@@ -1,8 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App as AntdApp, Button, Card, Descriptions, Empty, Input, Modal, Select, Spin, Table } from 'antd';
+import {
+  App as AntdApp,
+  Button,
+  Card,
+  Descriptions,
+  Empty,
+  Input,
+  Modal,
+  Select,
+  Spin,
+  Table,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
-import { deviceKeys, getDeviceKeys, getDevices, getDeviceStats, offlineDevice } from '@/api/devices';
+import {
+  deviceKeys,
+  getDeviceKeys,
+  getDevices,
+  getDeviceStats,
+  offlineDevice,
+} from '@/api/devices';
 import type { AdminDevice, DeviceKind, DevicePlatform } from '@/api/types';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { PageHeader } from '@/components/PageHeader';
@@ -51,7 +68,8 @@ export default function DevicesPage() {
   });
 
   const offlineMutation = useMutation({
-    mutationFn: (payload: { id: string; reason: string }) => offlineDevice(payload.id, { reason: payload.reason }),
+    mutationFn: (payload: { id: string; reason: string }) =>
+      offlineDevice(payload.id, { reason: payload.reason }),
     onSuccess: (updated) => {
       // 失效 ['devices'] 前缀：列表与页头统计（在线数/徽章）同时刷新
       void queryClient.invalidateQueries({ queryKey: ['devices'] });
@@ -199,7 +217,8 @@ export default function DevicesPage() {
             总设备 <b>{stats ? stats.total.toLocaleString('zh-CN') : '—'}</b>
           </span>
           <span className={styles.statItem}>
-            在线 <b className={styles.onlineNum}>{stats ? stats.online.toLocaleString('zh-CN') : '—'}</b>
+            在线{' '}
+            <b className={styles.onlineNum}>{stats ? stats.online.toLocaleString('zh-CN') : '—'}</b>
           </span>
           <span className={styles.statDivider} />
           {platformChips}
@@ -272,7 +291,8 @@ export default function DevicesPage() {
           </Descriptions>
         ) : null}
         <p style={{ marginTop: 12, marginBottom: 0, color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>
-          指纹为设备公钥 SHA-256 的前 16 位十六进制字符，仅用于核对设备身份；出于安全考虑，此处不提供公钥原文与任何私钥。
+          指纹为设备公钥 SHA-256 的前 16
+          位十六进制字符，仅用于核对设备身份；出于安全考虑，此处不提供公钥原文与任何私钥。
         </p>
       </Modal>
 
@@ -284,8 +304,8 @@ export default function DevicesPage() {
             <>
               即将下线设备 <b>{offlineTarget.name}</b>（{offlineTarget.os} · 应用{' '}
               {offlineTarget.appVersion}，属主 {offlineTarget.ownerNickname}）。
-              {/* AF-41：如实描述——当前为标记离线，客户端下次心跳时退出登录，非实时断开 */}
-              该设备将被标记为离线并拒绝后续同步，客户端在下次心跳时退出登录（非实时断开）。
+              {/* AF-41：真实下线——服务端已推送 force_logout 并断开该设备 WS 连接 */}
+              该设备将被**立即断开连接并退出登录**，需重新登录才能恢复同步；原因写入审计日志。
             </>
           ) : null
         }

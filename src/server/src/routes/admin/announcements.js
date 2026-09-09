@@ -30,6 +30,7 @@ import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
+import { broadcastToAllClients } from '../../ws/server.js';
 
 const router = Router();
 
@@ -165,6 +166,9 @@ router.post('/', requirePerm('admin.announce.send'), async (req, res) => {
       deliveredCount,
       operator: req.user?.userId,
     });
+
+    // AN-05：全端实时推送（此前只落库，在线客户端要等下次拉取才可见——用户感知为"发了没反应"）
+    broadcastToAllClients({ type: 'announcement.new', announcementId: created.id });
 
     return res.status(201).json({
       code: 0,

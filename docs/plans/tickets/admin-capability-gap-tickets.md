@@ -9,6 +9,7 @@
 > - ✅ AN-09 配置键 consumer 登记（逐键 grep 查证后登记，ai_max_tokens/ai_default_provider 等如实标 null）+ settings「未接入」角标
 > - ✅ AN-20 E2E 冒烟放开（smoke 4 例 + settings 写操作闭环 3 例，真实后端 7/7 passed；playwright 指定本机 chromium-1234）
 > - 其余（AN-02~AN-08、AN-10~AN-15、AN-21~AN-22）⬜ 未开始，按文末批次表推进。
+> - **2026-09-09 更新**：AN-05（公告 WS 实时推送）因用户验收打回提前落地——announcements POST 后 `broadcastToAllClients({type:'announcement.new'})`，桌面端 HomeView 收到即拉取；实测在线客户端实时收到。移动端公告消费待后续。
 - **范围说明**：本文件只收「**后台现在管不到 / 根本没有**」的新增能力；每条给出表结构、接口与 UI 草案，可直接指派
 
 ---

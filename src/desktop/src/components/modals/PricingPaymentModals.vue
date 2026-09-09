@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
 import Button from '@/components/ui/button/Button.vue'
 import { MessageCircle, Landmark, CircleCheck, Clock } from 'lucide-vue-next'
+import { getPricingPlans, type PricingPlan } from '@/composables/usePlanLimits'
 import './modal-shared.css'
 
 defineProps<{ showModalType: string }>()
@@ -13,18 +14,52 @@ const emit = defineEmits<{ close: []; 'switch-modal': [type: string] }>()
 const { t } = useI18n()
 const toast = useSonner()
 
+// ===== 真实套餐价格（与管理台 subscription_plans 对齐，此前硬编码 ¥9.9/¥29 已移除）=====
+const plans = ref<PricingPlan[]>([])
+const FEATURE_KEYS: Record<string, string[]> = {
+  free: ['feat_3dev', 'feat_100hist', 'feat_community'],
+  pro: ['feat_unlimited_dev', 'feat_unlimited_hist', 'feat_priority'],
+  enterprise: ['feat_team', 'feat_api', 'feat_priority'],
+}
+const PLAN_NAME_KEYS: Record<string, string> = {
+  free: 'price_free',
+  pro: 'price_pro',
+  enterprise: 'price_enterprise',
+}
+const orderedPlans = ref<{ key: string; plan: PricingPlan | null }[]>([])
+
+onMounted(async () => {
+  plans.value = await getPricingPlans()
+  const byKey = new Map(plans.value.map((p) => [p.name.toLowerCase(), p]))
+  orderedPlans.value = ['free', 'pro', 'enterprise'].map((key) => ({
+    key,
+    plan: byKey.get(key) ?? null,
+  }))
+})
+
+function planName(key: string): string {
+  return t(PLAN_NAME_KEYS[key] ?? key)
+}
+function planPrice(plan: PricingPlan | null): string {
+  return plan ? `¥${plan.priceMonthly}` : '—'
+}
+
 // Plan selection state (for pricing → payment flow)
 const selectedPlan = ref<{ id: string; name: string; price: number } | null>(null)
 const paymentSending = ref(false)
 const paymentResult = ref<{ kind: 'success' | 'fail' | 'pending'; message: string } | null>(null)
 
 // ===== Plan Selection → Payment Flow =====
-function selectPlan(planId: string, planName: string, price: number) {
-  if (price === 0) {
+function selectPlan(plan: PricingPlan | null) {
+  if (!plan) {
+    toast.show(t('ft_building'), 'info')
+    return
+  }
+  if (plan.name.toLowerCase() === 'free' || plan.priceMonthly === 0) {
     toast.show(t('already_free'), 'info')
     return
   }
-  selectedPlan.value = { id: planId, name: planName, price }
+  selectedPlan.value = { id: plan.id, name: plan.displayName || plan.name, price: plan.priceMonthly }
   emit('switch-modal', 'payment')
 }
 
@@ -44,31 +79,23 @@ function selectPaymentMethod(_method: string) {
   <!-- Pricing -->
   <ModalDialog :open="showModalType === 'pricing'" :title="t('modal_pricing')" max-width="560px" @close="emit('close')">
     <div class="pricing-grid">
-      <div class="price-card" @click="selectPlan('free', t('price_free'), 0)">
-        <div class="pc-name">{{ t('price_free') }}</div>
+      <div
+        v-for="entry in orderedPlans"
+        :key="entry.key"
+        class="price-card"
+        :class="{ popular: entry.key === 'pro' }"
+        @click="selectPlan(entry.plan)"
+      >
+        <div v-if="entry.key === 'pro'" class="pc-tag">{{ t('price_popular') }}</div>
+        <div class="pc-name">{{ planName(entry.key) }}</div>
         <div class="pc-price">
-          ¥0<span class="pc-period">{{ t('price_per_mo') }}</span>
+          {{ planPrice(entry.plan) }}<span class="pc-period">{{ t('price_per_mo') }}</span>
         </div>
         <div class="pc-feats">
-          ✓ {{ t('feat_3dev') }}<br />✓ {{ t('feat_100hist') }}<br />✓ {{ t('feat_community') }}
+          <template v-for="feat in FEATURE_KEYS[entry.key]" :key="feat">
+            ✓ {{ t(feat) }}<br />
+          </template>
         </div>
-      </div>
-      <div class="price-card popular" @click="selectPlan('pro', t('price_pro'), 9.9)">
-        <div class="pc-tag">{{ t('price_popular') }}</div>
-        <div class="pc-name">{{ t('price_pro') }}</div>
-        <div class="pc-price">
-          ¥9.9<span class="pc-period">{{ t('price_per_mo') }}</span>
-        </div>
-        <div class="pc-feats">
-          ✓ {{ t('feat_unlimited_dev') }}<br />✓ {{ t('feat_unlimited_hist') }}<br />✓ {{ t('feat_priority') }}
-        </div>
-      </div>
-      <div class="price-card" @click="selectPlan('enterprise', t('price_enterprise'), 29)">
-        <div class="pc-name">{{ t('price_enterprise') }}</div>
-        <div class="pc-price">
-          ¥29<span class="pc-period">{{ t('price_per_mo') }}</span>
-        </div>
-        <div class="pc-feats">✓{{ t('feat_team') }}<br />✓ {{ t('feat_api') }}<br />✓ {{ t('feat_priority') }}</div>
       </div>
     </div>
   </ModalDialog>

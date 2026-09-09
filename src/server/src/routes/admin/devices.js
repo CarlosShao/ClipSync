@@ -26,6 +26,7 @@ import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
+import { forceDisconnectDevice } from '../../ws/server.js';
 
 const router = Router();
 
@@ -279,11 +280,9 @@ router.get('/:id/keys', requirePerm('admin.keys.view'), async (req, res) => {
  * 远程下线（requirePerm('admin.devices.manage')）：
  *  - 仅在线设备可下线（离线设备重复下线无意义，400 拦截）；
  *  - 原因必填，写审计 admin.device.offline（敏感）；
- *  - 落库口径：is_online=false + last_seen_at=NOW()（模拟强制离线）。
- *
- * TODO(T-A1.6+)：真实端到端下线还需吊销设备同步凭证并断开长连接
- *  （devices.public_key 吊销 / WebSocket 推送断连指令 / Redis 在线态清理），
- *  当前仅做 DB 状态标记，客户端下次心跳即按离线处理。
+ *  - 落库口径：is_online=false + last_seen_at=NOW()；
+ *  - AF-41：同时对该设备活跃 WS 连接推送 force_logout 并以 4003 断开，
+ *    客户端清除登录态回登录页（重新登录即恢复），不再是"仅改标志位"。
  */
 router.post('/:id/offline', requirePerm('admin.devices.manage'), async (req, res) => {
   try {
@@ -311,6 +310,16 @@ router.post('/:id/offline', requirePerm('admin.devices.manage'), async (req, res
       [device.id]
     );
 
+    // AF-41：真实下线——立即断开该设备的活跃 WS 连接并推送 force_logout，
+    // 客户端清除本地登录态回登录页（重新登录即重新信任设备）。连接未找到（客户端
+    // 恰好掉线）也不影响：is_online=false + 心跳超时扫描保证状态最终一致。
+    let wsKicked = false;
+    try {
+      wsKicked = forceDisconnectDevice(device.owner_id, device.id, reason);
+    } catch (err) {
+      logger.warn('[admin/devices] force disconnect failed', { error: err.message });
+    }
+
     await logAuditEvent({
       userId: req.user?.userId,
       action: 'admin.device.offline',
@@ -328,6 +337,7 @@ router.post('/:id/offline', requirePerm('admin.devices.manage'), async (req, res
 
     logger.info('[admin/devices] device offline executed', {
       deviceId: device.id,
+      wsKicked,
       operator: req.user?.userId,
     });
 

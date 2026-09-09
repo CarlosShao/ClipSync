@@ -8,6 +8,11 @@
 > - ✅ AF-01（回填+PATCH 落库实测）、AF-02（metrics {requests,errors,p95} 非 null）、AF-03（plans 403/其余 200 权限矩阵实测）、AF-04（关开关 register 与 verify-code 均 403 flagDisabled）、AF-10（赠期复用 GrantSubscriptionModal，后端补 subscription.id 下发）、AF-11（force-logout 200 + reason 入审计）、AF-12（delete 200 软删 + 启用还原实测）、AF-14（导出 orders-20260908.csv 19 条实测）、AF-20（待办聚合实测：超 24h 待支付订单出现在看板）、AF-21（服务端 30s 采样 series）、AF-22（readCount 返回 + 「受众/已读/点击」文案）、AF-30（grafana_url 配置键 + 未配置置灰）、AF-31（装饰搜索移除）、AF-32（铃铛接待办，Badge=1 实测）、AF-33（end_user 含无角色用户）、AF-34（audit?userId= 过滤 + tag）、AF-40/41/42（文案对齐/下架 menu_overrides）、AF-43（keys 端点 200 + 指纹脱敏实测）、AF-50（根因：WS close 依赖进程存活且无心跳兜底；deviceOnlineSweep 每 60s 扫描实测生效 + 056 迁移）、AF-51（idle 登出读 session_timeout_minutes）、AF-52（PATCH log_level 热生效）、AF-53（requirePerm 登记注册表 + 启动 perm-audit 自检）、AF-54（MSW MOCK 角标）、AF-55（桌面端 PIN SHA-256+salt + 旧明文迁移，vue-tsc 通过）。
 > - 全部 24 条完成，无遗留。
 > - 计划外修复：`ws/server.js` 缺失 `isMaintenanceOn` import（既有 bug，每次 WS 握手抛未处理异常并中断连接），已修复。
+>
+> **2026-09-09 用户验收打回 → 二次修复（全部端到端实测通过）**：
+> - **AF-41 升级为"真踢"**：用户实测下线后桌面端仍在线。根因=此前只改 DB 标志位、不踢连接。现 `ws/server.js` 导出 `forceDisconnectDevice(userId, deviceId, reason)`（推送 `force_logout` + close 4003），`devices.js` offline 接口下线即踢；桌面端 `HomeView.vue` 处理 `force_logout` → 清登录态回登录页（i18n 新增 kicked_by_admin）；移动端 `ws_service.dart` + `main.dart` 同构处理（_forceLoggedOut 防自动重连，重新登录重置）。实测：WS register → offline 200 → 客户端实时收到 force_logout → close 4003。
+> - **新增 AF-57 套餐价格对齐**（用户验收打回）：桌面端 `PricingSubPage.vue` / `PricingPaymentModals.vue` 硬编码 ¥9.9/¥29，与管理台套餐表（19.9/199）不一致。现统一走 `usePlanLimits.getPricingPlans()`（GET /api/subscriptions/plans），价格随管理台改价实时一致；加载失败显示「—」不虚构。
+> - **AN-05 提前落地**（用户验收打回"公告发了没反应"）：`announcements.js` POST 成功后 `broadcastToAllClients({type:'announcement.new'})`；桌面端收到即拉取公告（横幅/未读数即时出现）。实测：WS 在线 → 发公告 201 → 客户端实时收到 announcement.new。
 - **分工说明**：本文件只收「**已有功能但坏了 / 是假的 / 对不上**」的修复项；新增能力见 [admin-capability-gap-tickets.md](./admin-capability-gap-tickets.md)
 - **指派建议**：AF-01～AF-04 可并行（互不冲突）；AF-10/11/12 同属 UserDrawer 建议同一人；AF-20/21 同属指标类建议同一人
 

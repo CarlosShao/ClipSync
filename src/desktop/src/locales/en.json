@@ -57,6 +57,7 @@
   "tpl_vars_edit": "Edit",
   "tpl_vars_delete": "Delete",
   "app_name": "ClipSync",
+  "kicked_by_admin": "Your account has been remotely signed out from this device by an administrator",
   "nav_collapse": "Collapse sidebar",
   "nav_expand": "Expand sidebar",
   "new_clip": "New Clip",
