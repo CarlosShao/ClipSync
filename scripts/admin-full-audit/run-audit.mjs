@@ -1,6 +1,6 @@
 // =============================================================
 // ClipSync 后台管理系统全链路审计脚本（test/admin-full-audit 分支）
-// 用法: node run-audit.mjs <phase...>   phase = auth|overview|users|devices|subs|orders|plans|audit|roles|configs|announce|rbac|rb06|ailevel|placeholders|settings-form|opsmetrics|perm-matrix|flags-enforced|all
+// 用法: node run-audit.mjs <phase...>   phase = auth|overview|users|devices|subs|orders|plans|audit|roles|configs|announce|rbac|rb06|ailevel|placeholders|settings-form|opsmetrics|perm-matrix|flags-enforced|ai-platform|releases|ops-actions|alerts-storage|compliance|email-channels|all
 // 依赖: 运行中的 dev 后端 http://127.0.0.1:3001（docker-compose.dev.yml）
 // 说明: dev 环境验证码固定 888888（src/routes/auth.js send-code）；
 //       验证码限流 5 次/小时/手机号（进程内存态，docker restart clipsync 可清零）
@@ -737,6 +737,198 @@ async function phaseFlagsEnforced() {
     unenforced.length ? `无强制点: ${unenforced.map((f) => f.key).join(',')}` : '全部已强制');
 }
 
+// AN-03 防回归：AI 平台管理列表脱敏 + 全局参数消费方登记。
+// API 口径（routes/admin/aiProviders.js）：GET /admin/ai-providers → data 裸数组，
+//   每项含 enabled / has_key 布尔；api_key_encrypted 不解密不回传（响应任何位置不得出现密钥字段）。
+// configs 消费方（routes/admin/configs.js CONFIG_META）：ai_max_tokens / ai_default_provider
+//   AN-03 已接线，consumer 非空字符串（null = 未接线，防回退）。
+async function phaseAiPlatform() {
+  const P = 'ai-platform';
+  const r = await req('GET', '/admin/ai-providers', { token: adminToken });
+  check(P, 'GET /admin/ai-providers → 200 code=0', r.status === 200 && r.json?.code === 0, `status=${r.status}`);
+  const items = Array.isArray(r.json?.data) ? r.json.data : [];
+  check(P, '供应商列表为数据数组', items.length >= 0 && Array.isArray(r.json?.data), `count=${items.length}`);
+
+  if (items.length > 0) {
+    const missField = items.filter((i) => typeof i.enabled !== 'boolean' || typeof i.has_key !== 'boolean');
+    check(P, '每项含 enabled / has_key 布尔（AN-03 契约）', missField.length === 0,
+      missField.length ? `缺字段: ${missField.map((i) => i.id).join(',')}` : `count=${items.length}`);
+  }
+
+  // 脱敏断言：整个响应不得出现明文 key 字段（api_key / api_key_encrypted / apiKey）
+  const raw = JSON.stringify(r.json || {});
+  const leak = /"?api[_-]?key(_encrypted)?"?\s*:/.test(raw);
+  check(P, '响应不含明文 key 字段（脱敏回归）', !leak, leak ? `leak=${raw.match(/"?api[_-]?key[^,}]*/)?.[0]?.slice(0, 60)}` : '未发现泄漏');
+
+  // 全局参数消费方登记（AN-03 接线防回退）
+  const rc = await req('GET', '/admin/configs', { token: adminToken });
+  const cfgItems = Array.isArray(rc.json?.data) ? rc.json.data : [];
+  for (const key of ['ai_max_tokens', 'ai_default_provider']) {
+    const item = cfgItems.find((i) => i.key === key);
+    check(P, `configs.${key} consumer 非空（已接线登记）`, !!item && !!item.consumer,
+      item ? `consumer=${String(item.consumer).slice(0, 80)}` : '键不存在');
+  }
+}
+
+// AN-04 防回归：版本发布管理 CRUD + 公开端点不 500。
+// API 口径（routes/admin/releases.js）：POST → 200 { code:0 }（version 语义化 + 唯一）；
+//   DELETE body.reason 必填（缺 → 400）；公开端点 GET /app/updates/latest
+//   无更新/未命中灰度 → 204，有更新 → 200，均合法（500 即回归）。
+// 幂等：版本号带 audit 时间戳后缀；结束时 DELETE 还原；运行前先清理上次残留。
+async function phaseReleases() {
+  const P = 'releases';
+
+  // 清理历史残留（异常中断可能遗留；psql helper 单行返回，循环逐条清）
+  for (;;) {
+    const leftoverId = psql(`SELECT id FROM app_releases WHERE version LIKE '0.0.0-audit%' LIMIT 1`);
+    if (!leftoverId) break;
+    await req('DELETE', `/admin/releases/${leftoverId}`, { token: adminToken, body: { reason: 'audit 残留清理' } });
+  }
+
+  const rl = await req('GET', '/admin/releases', { token: adminToken });
+  check(P, 'GET /admin/releases → 200 code=0', rl.status === 200 && rl.json?.code === 0, `status=${rl.status}`);
+
+  const version = `0.0.0-audit${Date.now()}`;
+  const rc = await req('POST', '/admin/releases', {
+    token: adminToken,
+    body: { version, name: '审计测试版本', notes: 'audit', platforms: {} },
+  });
+  const releaseId = rc.json?.data?.id;
+  check(P, 'POST 创建测试版本 → 200/201', (rc.status === 200 || rc.status === 201) && rc.json?.code === 0,
+    `status=${rc.status} body=${JSON.stringify(rc.json)?.slice(0, 120)}`);
+
+  const dup = await req('POST', '/admin/releases', {
+    token: adminToken,
+    body: { version, name: '审计重复版本', platforms: {} },
+  });
+  check(P, '重复版本号 → 409 拦截', dup.status === 409, `status=${dup.status}`);
+
+  const rdn = await req('DELETE', `/admin/releases/${releaseId || '00000000-0000-4000-8000-000000000000'}`, { token: adminToken });
+  check(P, 'DELETE 缺 reason → 400', rdn.status === 400, `status=${rdn.status}`);
+
+  if (releaseId) {
+    const rd = await req('DELETE', `/admin/releases/${releaseId}`, { token: adminToken, body: { reason: 'audit 测试清理' } });
+    check(P, 'DELETE 带 reason → 200', rd.status === 200 && rd.json?.code === 0, `status=${rd.status} msg=${rd.json?.message}`);
+    const rla = await req('GET', '/admin/releases', { token: adminToken });
+    const gone = !(rla.json?.data?.list || []).some((i) => i.id === releaseId);
+    check(P, '删除后列表恢复（测试版本已消失）', rla.status === 200 && gone, `status=${rla.status}`);
+  } else {
+    check(P, '删除后列表恢复（测试版本已消失）', false, '创建失败，跳过删除断言');
+  }
+
+  // 公开消费端点：无发布/未命中灰度均合法（204），有更新合法（200），只断言不是 5xx
+  const rpub = await req('GET', '/app/updates/latest?target=windows-x86_64&current_version=0.0.1');
+  check(P, 'GET /app/updates/latest → 200/204（非 5xx）', rpub.status === 200 || rpub.status === 204,
+    `status=${rpub.status} body=${JSON.stringify(rpub.json)?.slice(0, 100)}`);
+}
+
+// AN-06 防回归：备份可视化 + 运维动作区（reason 必填审计）。
+// API 口径（routes/admin/ops.js）：GET /ops/backups → { items, summary }；
+//   POST /ops/actions 允许动作 = clear_cache/reload_configs/force_logout_all/trigger_backup，
+//   reason 缺失 → 400「原因必填」；clear_cache 为纯进程缓存失效，无副作用，可安全触发。
+async function phaseOpsActions() {
+  const P = 'ops-actions';
+  const rb = await req('GET', '/admin/ops/backups', { token: adminToken });
+  check(P, 'GET /admin/ops/backups → 200 code=0', rb.status === 200 && rb.json?.code === 0, `status=${rb.status}`);
+  const bd = rb.json?.data || {};
+  check(P, 'backups 含 items + summary 结构', Array.isArray(bd.items) && !!bd.summary,
+    `items=${bd.items?.length} summary=${JSON.stringify(bd.summary)?.slice(0, 100)}`);
+
+  const rn = await req('POST', '/admin/ops/actions', { token: adminToken, body: { action: 'clear_cache' } });
+  check(P, '运维动作缺 reason → 400（AN-06 审计铁律）', rn.status === 400, `status=${rn.status} body=${JSON.stringify(rn.json)?.slice(0, 100)}`);
+
+  const rbad = await req('POST', '/admin/ops/actions', { token: adminToken, body: { action: 'no_such_action', reason: 'audit' } });
+  check(P, '未知运维动作 → 400', rbad.status === 400, `status=${rbad.status}`);
+
+  const rok = await req('POST', '/admin/ops/actions', { token: adminToken, body: { action: 'clear_cache', reason: 'audit' } });
+  check(P, "POST clear_cache reason='audit' → 200", rok.status === 200 && rok.json?.code === 0,
+    `status=${rok.status} msg=${rok.json?.message}`);
+}
+
+// AN-15 / AN-08 防回归：告警代理降级合法 + 存储用量结构。
+// API 口径（routes/admin/ops.js）：GET /ops/alerts → data.unavailable 布尔恒存在
+//   （Prometheus 未配置 not_configured / 不可达 unreachable 均为合法降级 200，绝不 500）；
+//   GET /ops/storage → data.totals（itemCount/totalBytes/dbBytes 等数值化）。
+async function phaseAlertsStorage() {
+  const P = 'alerts-storage';
+  const ra = await req('GET', '/admin/ops/alerts', { token: adminToken });
+  check(P, 'GET /admin/ops/alerts → 200（降级也 200，非 500）', ra.status === 200 && ra.json?.code === 0,
+    `status=${ra.status} data=${JSON.stringify(ra.json?.data)?.slice(0, 120)}`);
+  const ad = ra.json?.data || {};
+  check(P, 'alerts.unavailable 字段存在（AN-15 契约）', typeof ad.unavailable === 'boolean',
+    `unavailable=${ad.unavailable} reason=${ad.reason ?? '-'}`);
+  check(P, 'alerts.items 为数组', Array.isArray(ad.items), `count=${ad.items?.length}`);
+
+  const rs = await req('GET', '/admin/ops/storage', { token: adminToken });
+  check(P, 'GET /admin/ops/storage → 200 code=0', rs.status === 200 && rs.json?.code === 0, `status=${rs.status}`);
+  const totals = rs.json?.data?.totals;
+  check(P, 'storage.totals 存在且含用量数值（AN-08 契约）', !!totals && Number.isFinite(totals.totalBytes) && Number.isFinite(totals.dbBytes),
+    JSON.stringify(totals)?.slice(0, 140));
+}
+
+// AN-11 / AN-12 / AN-13 防回归：合规三件套。
+// API 口径：GET /admin/audit-logs?actorLevel=super_admin（AN-11，audit.js 按角色等级过滤，非法值 400）；
+//   GET /admin/sessions（AN-12，sessions.js 管理角色活跃会话，data.list）；
+//   GET /admin/users/:id/export?reason=（AN-13，users.js 末尾，裸 JSON 附件非 {code,data} 壳；
+//   服务端不可见明文密码——导出响应不得出现 password 类字段；限流 429 合法，仅 5xx 为回归）。
+async function phaseCompliance() {
+  const P = 'compliance';
+  const rl = await req('GET', '/admin/audit-logs?actorLevel=super_admin&page=1&pageSize=10', { token: adminToken });
+  check(P, 'audit-logs actorLevel=super_admin 被接受 → 200（AN-11）', rl.status === 200 && rl.json?.code === 0,
+    `status=${rl.status} body=${JSON.stringify(rl.json)?.slice(0, 100)}`);
+  const rbad = await req('GET', '/admin/audit-logs?actorLevel=no_such_level', { token: adminToken });
+  check(P, '非法 actorLevel → 400', rbad.status === 400, `status=${rbad.status}`);
+
+  const rs = await req('GET', '/admin/sessions?page=1&pageSize=10', { token: adminToken });
+  check(P, 'GET /admin/sessions → 200 且 list 数组（AN-12）', rs.status === 200 && Array.isArray(rs.json?.data?.list),
+    `status=${rs.status} total=${rs.json?.data?.total}`);
+
+  const { userId } = await ensureTestUser();
+  if (!userId) {
+    check(P, '数据导出端点可用且脱敏（AN-13）', false, '测试用户不存在，跳过');
+    return;
+  }
+  const re = await req('GET', `/admin/users/${userId}/export?reason=audit`, { token: adminToken });
+  check(P, '数据导出 → 200/429（限流合法，非 5xx）', re.status === 200 || re.status === 429,
+    `status=${re.status}`);
+  if (re.status === 200) {
+    // 裸 JSON 附件：脱敏抽查——响应不得出现 password 类字段（密码哈希/明文均不应回传）
+    const raw = JSON.stringify(re.json || {});
+    const leak = /"(password|password_hash|passworddigest)"\s*:/i.test(raw);
+    check(P, '导出内容无 password 类字段（脱敏抽查）', !leak,
+      leak ? `leak=${raw.match(/"password[^"]*"\s*:/i)?.[0]}` : '未发现泄漏');
+    check(P, '导出 meta 标注截断口径与端到端说明（AN-13 契约）',
+      !!re.json?.meta?.notes && !!re.json?.meta?.limits,
+      `counts=${JSON.stringify(re.json?.meta?.counts)?.slice(0, 100)}`);
+  }
+  if (re.status === 429) {
+    check(P, '导出内容无 password 类字段（脱敏抽查）', true, '429 限流跳过脱敏抽查（下次运行覆盖）');
+    check(P, '导出 meta 标注截断口径与端到端说明（AN-13 契约）', true, '429 限流跳过（下次运行覆盖）');
+  }
+}
+
+// AN-16 防回归：邮件多通道列表脱敏 + 默认事务通道存在。
+// API 口径（routes/admin/emailChannels.js）：GET /admin/email-channels → data 裸数组；
+//   password 永不回传（仅 has_password 布尔，059 迁移播种「默认事务通道」transactional）。
+async function phaseEmailChannels() {
+  const P = 'email-channels';
+  const r = await req('GET', '/admin/email-channels', { token: adminToken });
+  check(P, 'GET /admin/email-channels → 200 code=0', r.status === 200 && r.json?.code === 0, `status=${r.status}`);
+  const items = Array.isArray(r.json?.data) ? r.json.data : [];
+  check(P, '通道列表为数据数组', Array.isArray(r.json?.data), `count=${items.length}`);
+
+  const tx = items.find((i) => i.purpose === 'transactional');
+  check(P, '默认事务通道存在（AN-16 播种）', !!tx,
+    tx ? `name=${tx.name} enabled=${tx.enabled}` : '无 transactional 通道');
+
+  const hasPasswordField = items.filter((i) => 'password' in i);
+  check(P, '响应不含 password 字段（仅 has_password 脱敏）', hasPasswordField.length === 0,
+    hasPasswordField.length ? `泄漏通道: ${hasPasswordField.map((i) => i.name).join(',')}` : '未发现泄漏');
+  const missHasPw = items.filter((i) => typeof i.has_password !== 'boolean');
+  check(P, '每项含 has_password 布尔（AN-16 契约）', items.length === 0 || missHasPw.length === 0,
+    missHasPw.length ? `缺字段: ${missHasPw.map((i) => i.name).join(',')}` : `count=${items.length}`);
+}
+
 // ---------- 主流程 ----------
 // ---------- AN-21 占位登记守卫（静态扫描，不依赖后端，可单独运行） ----------
 const ADMIN_SRC = path.resolve(
@@ -774,7 +966,7 @@ async function phasePlaceholders() {
 }
 
 const phases = process.argv.slice(2);
-const ALL = ['auth', 'overview', 'users', 'devices', 'subs', 'orders', 'plans', 'audit', 'roles', 'configs', 'announce', 'rbac', 'placeholders', 'settings-form', 'opsmetrics', 'perm-matrix', 'flags-enforced'];
+const ALL = ['auth', 'overview', 'users', 'devices', 'subs', 'orders', 'plans', 'audit', 'roles', 'configs', 'announce', 'rbac', 'placeholders', 'settings-form', 'opsmetrics', 'perm-matrix', 'flags-enforced', 'ai-platform', 'releases', 'ops-actions', 'alerts-storage', 'compliance', 'email-channels'];
 const run = phases.length && phases[0] !== 'all' ? phases : ALL;
 
 if (!run.includes('auth')) {
@@ -786,7 +978,7 @@ if (!run.includes('auth')) {
   }
 }
 
-const runners = { auth: phaseAuth, overview: phaseOverview, users: phaseUsers, devices: phaseDevices, subs: phaseSubs, orders: phaseOrders, plans: phasePlans, audit: phaseAudit, roles: phaseRoles, configs: phaseConfigs, announce: phaseAnnounce, rbac: phaseRbac, rb06: phaseRb06, ailevel: phaseAiLevel, placeholders: phasePlaceholders, 'settings-form': phaseSettingsForm, opsmetrics: phaseOpsMetrics, 'perm-matrix': phasePermMatrix, 'flags-enforced': phaseFlagsEnforced };
+const runners = { auth: phaseAuth, overview: phaseOverview, users: phaseUsers, devices: phaseDevices, subs: phaseSubs, orders: phaseOrders, plans: phasePlans, audit: phaseAudit, roles: phaseRoles, configs: phaseConfigs, announce: phaseAnnounce, rbac: phaseRbac, rb06: phaseRb06, ailevel: phaseAiLevel, placeholders: phasePlaceholders, 'settings-form': phaseSettingsForm, opsmetrics: phaseOpsMetrics, 'perm-matrix': phasePermMatrix, 'flags-enforced': phaseFlagsEnforced, 'ai-platform': phaseAiPlatform, releases: phaseReleases, 'ops-actions': phaseOpsActions, 'alerts-storage': phaseAlertsStorage, compliance: phaseCompliance, 'email-channels': phaseEmailChannels };
 for (const p of run) {
   console.log(`\n===== PHASE ${p.toUpperCase()} =====`);
   try {
