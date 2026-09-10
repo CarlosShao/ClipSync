@@ -449,6 +449,9 @@ onMounted(() => {
               </CustomSelectOption>
             </template>
           </CustomSelect>
+          <!-- AN-03：桌面端供应商选项非硬编码，由服务端 GET /api/ai/presets 动态下发
+               （load() 里 getPresets()），管理台 AI 平台预设扩充后此处自动同步 -->
+          <div class="ai-format-hint">{{ t('ai_provider_admin_hint') }}</div>
         </div>
 
         <!-- 自定义供应商：多协议格式（OpenAI 兼容 / Anthropic 兼容 / OpenAI Responses） -->

@@ -15,6 +15,7 @@ import type {
   SystemConfig,
 } from '@/api/types';
 import type { AdminAiProvider } from '@/api/ai';
+import type { AppRelease } from '@/api/releases';
 
 /**
  * MSW mock 数据 —— 全部取自视觉基线 design/mockups/admin-v2-light.html
@@ -1375,5 +1376,53 @@ export const mockAdminSessions: AdminSession[] = [
     createdAt: '2026-09-04 09:15:55',
     lastActiveAt: '2026-09-04 11:19:03',
     isCurrent: false,
+  },
+];
+
+/**
+ * AN-04：版本发布种子（GET /api/admin/releases 契约镜像，AppRelease）。
+ * 1 条已发布（v0.3.0，客户端 /api/app/updates/latest 会下发）+ 1 条草稿（v0.3.1）；
+ * platforms 键名与 Tauri updater target 一致（windows-x86_64 / darwin-aarch64 / linux-x86_64）。
+ */
+export const mockReleases: AppRelease[] = [
+  {
+    id: 'rel_0a1b2c3d-0001-4a5b-8c6d-000000000001',
+    version: '0.3.0',
+    name: 'v0.3.0 正式版',
+    releaseDate: '2026-09-02',
+    notes: '新增版本发布管理、客户端策略下发与维护模式；修复多设备同步竞态。',
+    platforms: {
+      'windows-x86_64': {
+        url: 'https://dl.clipstream.work/clipsync_0.3.0_x64_en-US.msi',
+        signature: 'dW50cnVzdGVkIGNvbW1lbnQ6c2lnbmF0dXJlIGZyb20gdGF1cmk=',
+      },
+      'darwin-aarch64': {
+        url: 'https://dl.clipstream.work/clipsync_0.3.0_aarch64.app.tar.gz',
+      },
+    },
+    forceUpdate: false,
+    rolloutPercent: 100,
+    isPublished: true,
+    publishedAt: '2026-09-02T10:00:00.000Z',
+    createdAt: '2026-09-01 18:20:00',
+    updatedAt: '2026-09-02 10:00:00',
+  },
+  {
+    id: 'rel_0a1b2c3d-0002-4a5b-8c6d-000000000002',
+    version: '0.3.1',
+    name: '',
+    releaseDate: null,
+    notes: '（草稿）修复文档预览页码显示；暂未发布。',
+    platforms: {
+      'windows-x86_64': {
+        url: 'https://dl.clipstream.work/clipsync_0.3.1_x64_en-US.msi',
+      },
+    },
+    forceUpdate: true,
+    rolloutPercent: 20,
+    isPublished: false,
+    publishedAt: null,
+    createdAt: '2026-09-09 16:40:00',
+    updatedAt: '2026-09-09 16:40:00',
   },
 ];

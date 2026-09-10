@@ -28,6 +28,7 @@ import type {
   OpsCleanupResult,
   OpsStorage,
 } from '@/api/types';
+import type { AppRelease } from '@/api/releases';
 import { isSensitiveAction } from '@/pages/audit/sensitive';
 import {
   mockAdminSessions,
@@ -40,6 +41,7 @@ import {
   mockFlags,
   mockOrders,
   mockPermissions,
+  mockReleases,
   mockPlans,
   mockPolicies,
   mockRoles,
@@ -1260,6 +1262,149 @@ const adminSessionHandlers = [
   }),
 ];
 
+// ─────────────── AN-04 追加：版本发布管理 ───────────────
+
+/** 版本号格式（与服务端 releases.js validateVersion 同口径：semver 三段） */
+const VERSION_RE = /^\d+\.\d+\.\d+$/;
+
+/** 发布/撤回共用：is_published=true 时补 publishedAt（建单时由 handler 决定，编辑时保持原值语义） */
+const releasesHandlers = [
+  // 发布全量列表（含未发布草稿，管理页需要完整视图）——与后端 releases.js GET 契约一致
+  http.get('/api/admin/releases', async () => {
+    await delay(150);
+    return ok({ list: mockReleases });
+  }),
+
+  // 新建版本：version 必填且 semver、同版本号 409；可选字段缺省走默认值；写审计 admin.release.create（敏感）
+  http.post('/api/admin/releases', async ({ request }) => {
+    await delay(300);
+    const body = (await request.json()) as {
+      version?: string;
+      name?: string;
+      release_date?: string | null;
+      notes?: string;
+      platforms?: Record<string, { url: string; signature?: string }>;
+      force_update?: boolean;
+      rollout_percent?: number;
+      is_published?: boolean;
+    };
+    const version = body.version?.trim() ?? '';
+    if (!version) return fail(400, 4000, 'version version 不能为空');
+    if (!VERSION_RE.test(version)) return fail(400, 4000, 'version 必须为 semver 三段（如 0.3.1）');
+    if (mockReleases.some((r) => r.version === version)) {
+      return fail(409, 4090, '该版本号已存在');
+    }
+    const rollout = Number(body.rollout_percent ?? 100);
+    if (!Number.isInteger(rollout) || rollout < 0 || rollout > 100) {
+      return fail(400, 4000, 'rollout_percent 必须为 0–100 的整数');
+    }
+    const isPublished = body.is_published === true;
+    const created: AppRelease = {
+      id: `rel_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      version,
+      name: body.name?.trim() ?? '',
+      releaseDate: body.release_date ?? new Date().toISOString().slice(0, 10),
+      notes: body.notes ?? '',
+      platforms: body.platforms ?? {},
+      forceUpdate: Boolean(body.force_update),
+      rolloutPercent: rollout,
+      isPublished,
+      publishedAt: isPublished ? new Date().toISOString() : null,
+      createdAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
+      updatedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
+    };
+    mockReleases.unshift(created);
+    pushAudit(
+      'admin.release.create',
+      'app_release',
+      created.id,
+      `version="${created.version}", published=${created.isPublished}, rollout=${created.rolloutPercent}`,
+    );
+    return ok(created, '版本已创建');
+  }),
+
+  // 部分更新（编辑 / 发布 / 撤回）：version 建单后不可改；未知 id 404；写审计 admin.release.update（敏感）
+  http.patch('/api/admin/releases/:id', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const release = mockReleases.find((r) => r.id === id);
+    if (!release) return fail(404, 40404, '版本不存在');
+    const body = (await request.json()) as Record<string, unknown>;
+    if (body.version !== undefined && body.version !== release.version) {
+      return fail(400, 4000, 'version 建单后不可修改');
+    }
+    const changed: string[] = [];
+    if (body.name !== undefined) {
+      release.name = String(body.name).trim();
+      changed.push('name');
+    }
+    if (body.release_date !== undefined) {
+      release.releaseDate = (body.release_date as string | null) ?? null;
+      changed.push('release_date');
+    }
+    if (body.notes !== undefined) {
+      release.notes = String(body.notes);
+      changed.push('notes');
+    }
+    if (body.platforms !== undefined) {
+      if (body.platforms === null || typeof body.platforms !== 'object' || Array.isArray(body.platforms)) {
+        return fail(400, 4000, 'platforms 必须为对象（{ target: { url, signature? } }）');
+      }
+      release.platforms = body.platforms as AppRelease['platforms'];
+      changed.push('platforms');
+    }
+    if (body.force_update !== undefined) {
+      release.forceUpdate = Boolean(body.force_update);
+      changed.push('force_update');
+    }
+    if (body.rollout_percent !== undefined) {
+      const rollout = Number(body.rollout_percent);
+      if (!Number.isInteger(rollout) || rollout < 0 || rollout > 100) {
+        return fail(400, 4000, 'rollout_percent 必须为 0–100 的整数');
+      }
+      release.rolloutPercent = rollout;
+      changed.push('rollout_percent');
+    }
+    if (body.is_published !== undefined) {
+      const next = Boolean(body.is_published);
+      // 首次发布时落 publishedAt；撤回（true→false）保留历史时间戳，重新发布不覆盖
+      if (next && !release.isPublished && !release.publishedAt) {
+        release.publishedAt = new Date().toISOString();
+      }
+      release.isPublished = next;
+      changed.push('is_published');
+    }
+    if (changed.length === 0) return fail(400, 4000, '没有需要更新的字段');
+    release.updatedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    pushAudit(
+      'admin.release.update',
+      'app_release',
+      release.id,
+      `version="${release.version}", changed=${changed.join('|')}`,
+    );
+    return ok(release, '版本已更新');
+  }),
+
+  // 删除版本：原因必填（写审计）；草稿/已发布均可删，已发布删除后客户端立即不再提示更新
+  http.delete('/api/admin/releases/:id', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const release = mockReleases.find((r) => r.id === id);
+    if (!release) return fail(404, 40404, '版本不存在');
+    const body = (await request.json().catch(() => ({}))) as { reason?: string };
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) return fail(400, 4000, '删除版本必须填写原因（写入审计日志）');
+    mockReleases.splice(mockReleases.indexOf(release), 1);
+    pushAudit(
+      'admin.release.delete',
+      'app_release',
+      release.id,
+      `version="${release.version}", reason="${reason}"`,
+    );
+    return ok({ id: release.id }, '版本已删除');
+  }),
+];
+
 export const handlers = [
   ...authHandlers,
   ...overviewHandlers,
@@ -1275,4 +1420,5 @@ export const handlers = [
   ...plansHandlers,
   ...aiProvidersHandlers,
   ...adminSessionHandlers,
+  ...releasesHandlers,
 ];

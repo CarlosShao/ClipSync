@@ -4,6 +4,7 @@ import { getVersion } from '@tauri-apps/api/app'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import Button from '@/components/ui/button/Button.vue'
+import { api } from '@/api/client'
 import * as tauri from '@/lib/tauri'
 import { Github, ExternalLink, RefreshCw } from 'lucide-vue-next'
 
@@ -14,8 +15,8 @@ const toast = useSonner()
 const appVersion = ref('…')
 const checkingUpdate = ref(false)
 const installingUpdate = ref(false)
-/** 有待安装的新版本 → 就地展示"发现新版本 vX + 立即安装/稍后" */
-const pendingUpdate = ref<{ version: string } | null>(null)
+/** 有待安装的新版本 → 就地展示"发现新版本 vX + 立即安装/稍后"；forceUpdate=true 时不可跳过（无"稍后"） */
+const pendingUpdate = ref<{ version: string; forceUpdate: boolean } | null>(null)
 const lastChecked = ref('')
 
 onMounted(async () => {
@@ -43,7 +44,16 @@ async function checkForUpdates() {
     lastChecked.value = new Date().toLocaleDateString()
     if (res?.hasUpdate && res.version) {
       // A7：有更新 → 先确认，用户点了"立即安装"才下载
-      pendingUpdate.value = { version: res.version }
+      pendingUpdate.value = { version: res.version, forceUpdate: false }
+      // AN-04：Rust check_for_updates 只回传 hasUpdate/version/notes/date，不透传 force_update；
+      // 前端另查公开端点 /api/app/version 补齐强更标记。失败静默按普通更新处理，不阻塞更新流程。
+      api<{ forceUpdate?: boolean }>('GET', '/api/app/version')
+        .then((r) => {
+          if (pendingUpdate.value && r.ok && r.data) {
+            pendingUpdate.value.forceUpdate = !!r.data.forceUpdate
+          }
+        })
+        .catch(() => {})
     } else {
       toast.show(t('sg_update_latest'), 'success')
     }
@@ -112,16 +122,25 @@ async function installUpdate() {
       </Button>
     </div>
 
-    <!-- A7：发现新版本 → 就地确认；确认后才 download_and_install + relaunch -->
-    <div v-if="pendingUpdate" class="about-update">
+    <!-- A7：发现新版本 → 就地确认；确认后才 download_and_install + relaunch。
+         AN-04：force_update=true → 危险色强更条，不提供"稍后"（不可跳过） -->
+    <div v-if="pendingUpdate" class="about-update" :class="{ 'about-update--force': pendingUpdate.forceUpdate }">
       <div class="about-update-text">
         {{ t('sg_update_found', { v: pendingUpdate.version }) }}
+        <span v-if="pendingUpdate.forceUpdate" class="about-update-force-hint">{{
+          t('sg_update_force_hint')
+        }}</span>
       </div>
       <div class="about-update-actions">
         <Button size="sm" :disabled="installingUpdate" @click="installUpdate">{{ t('btn_install') }}</Button>
-        <Button variant="outline" size="sm" :disabled="installingUpdate" @click="pendingUpdate = null">{{
-          t('btn_later')
-        }}</Button>
+        <Button
+          v-if="!pendingUpdate.forceUpdate"
+          variant="outline"
+          size="sm"
+          :disabled="installingUpdate"
+          @click="pendingUpdate = null"
+          >{{ t('btn_later') }}</Button
+        >
       </div>
     </div>
 
@@ -261,6 +280,21 @@ async function installUpdate() {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* AN-04：强制更新 → 危险色强更条（颜色一律走 token） */
+.about-update--force {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.about-update--force .about-update-text {
+  color: var(--danger);
+}
+.about-update-force-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 @keyframes spin {
