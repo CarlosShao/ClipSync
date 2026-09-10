@@ -367,6 +367,27 @@ router.post(
 
       const { sourceDeviceId, expiresAt } = req.body;
 
+      // 客户端可选传 paths（JSON 数组字符串，multipart 文本字段）：上传文件在本机的
+      // 绝对路径。落库进 metadata.paths，供桌面端「在资源管理器中显示」/ 复制到剪贴板
+      // 等本机操作使用（与剪贴板自动捕获条目的 metadata.paths 同口径）。
+      // 防御：仅接受 ≤50 项、每项 ≤1024 字符的字符串数组；路径只在客户端本机消费，
+      // 服务端绝不打开该路径，无注入面。
+      let clientPaths = null;
+      if (typeof req.body.paths === 'string' && req.body.paths.trim()) {
+        try {
+          const parsed = JSON.parse(req.body.paths);
+          if (
+            Array.isArray(parsed) &&
+            parsed.length > 0 &&
+            parsed.length <= 50 &&
+            parsed.every((p) => typeof p === 'string' && p.length > 0 && p.length <= 1024)
+          ) {
+            clientPaths = parsed;
+          }
+        } catch {
+          /* 非法 paths 忽略，不影响上传主流程 */
+        }
+      }
       if (!sourceDeviceId || !isValidUUID(sourceDeviceId)) {
         return res.status(400).json({ error: 'Invalid sourceDeviceId' });
       }
@@ -415,11 +436,13 @@ router.post(
       // metadata：单文件保持旧字段（originalName/mimeType/extension，与现状逐字段一致）；
       // 多文件聚合 files/totalSize/totalCount/fileEncoding，并保留 originalName/
       // mimeType/extension（首文件口径，兼容 text-preview / download 等现有消费方）。
+      // paths：客户端上传时携带的本机绝对路径（可选），与文件顺序一一对应（数量一致时）。
       const metadata = isSingle
         ? {
             originalName: first.file.originalname,
             mimeType: first.file.mimetype,
             extension: first.ext,
+            ...(clientPaths ? { paths: clientPaths } : {}),
           }
         : {
             files: saved.map((s) => ({
@@ -434,6 +457,7 @@ router.post(
             originalName: first.file.originalname,
             mimeType: first.file.mimetype,
             extension: first.ext,
+            ...(clientPaths ? { paths: clientPaths } : {}),
           };
 
       // Save to database

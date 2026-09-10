@@ -750,6 +750,9 @@ export async function uploadFileToServer(payload: string) {
       formData.append('files', new File([bytes], f.name, { type: f.mime }), f.name)
     }
     formData.append('sourceDeviceId', deviceId)
+    // 本机绝对路径随 multipart 落进服务端 metadata.paths，上传条目与
+    // localOnly 条目口径一致，均可「在资源管理器中显示」
+    formData.append('paths', JSON.stringify(probes.map((f) => f.path)))
     const res = await apiForm('/api/media/file', formData)
     if (res.ok && res.data?.id) {
       const localItem = items.value.find((i) => i.id === localId)

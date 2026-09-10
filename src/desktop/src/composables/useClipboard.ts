@@ -908,7 +908,7 @@ export function useClipboard() {
     if (!batchMode.value) clearSelection()
   }
 
-  /** 从文件选择器上传文件到剪贴板 */
+  /** 从文件选择器上传文件到剪贴板（本机路径不可得，条目不带 metadata.paths） */
   async function uploadFileItem(file: File): Promise<void> {
     // 套餐上传上限由后端 /api/subscriptions/current 下发（F0.4），
     // 桌面端不再维护 Free/Pro/Enterprise 硬编码表。

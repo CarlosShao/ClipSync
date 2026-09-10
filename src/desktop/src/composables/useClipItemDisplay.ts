@@ -151,8 +151,10 @@ export function useClipItemDisplay() {
     if (/\b[A-Za-z]:[\\/][\w\s\\/.]+\.\w{1,5}\b/.test(content)) return true
 
     // Strategy C: check metadata directly (useClipboard.ts may not have reconstructed content)
+    // metadata 可能是对象（pg jsonb 直出）或 JSON 字符串（旧 API 兼容），两种都要支持
     try {
-      const meta = JSON.parse((item as any).metadata || '{}')
+      const raw: unknown = (item as any).metadata
+      const meta: any = raw && typeof raw === 'object' ? raw : JSON.parse((raw as string) || '{}')
       if (Array.isArray(meta.paths) && meta.paths.length > 0 && typeof meta.paths[0] === 'string') return true
     } catch {
       /* no metadata */
