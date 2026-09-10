@@ -12,6 +12,8 @@ import { issueRefreshToken } from '../utils/refreshToken.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
 import { EMAILS } from '../../../shared/domains.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
+// A4 短信：生产环境真实下发验证码，取代固定码 888888
+import { sendVerificationCodeSms, generateCode } from '../utils/sms.js';
 import { logger } from '../utils/logger.js';
 import { isFlagEnabled, requireFlag } from '../utils/featureFlags.js';
 
@@ -149,7 +151,10 @@ async function mergeDuplicateAccounts(canonicalUserId, canonicalUser) {
   return { mergedCount: duplicates.length, movedClips: totalMovedClips };
 }
 
-// 发送验证码（手机：MVP 固定 888888）
+// 发送验证码（手机）
+// A4：固定码 888888 已移除——生产环境任何人输 888888 可登录任意手机号。
+// 与 auth-verify.js 的 /send-code 保持一致行为：生产环境随机码 + 真实短信下发，
+// 未配置短信返回 503 而非静默降级为固定码。
 router.post('/send-code', sendCodeLimiter, async (req, res) => {
   try {
     const { phone } = req.body;
@@ -165,10 +170,25 @@ router.post('/send-code', sendCodeLimiter, async (req, res) => {
 
     // 清理输入
     const cleanPhone = sanitizeString(phone);
-
-    // MVP: use fixed code 888888
-    const code = '888888';
+    const isProd = process.env.NODE_ENV === 'production';
+    const code = isProd ? generateCode() : '888888';
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    if (isProd) {
+      const sent = await sendVerificationCodeSms(cleanPhone, code);
+      if (!sent.ok) {
+        logger.error('[send-code] 短信下发失败，拒绝发送验证码', {
+          phone: cleanPhone,
+          reason: sent.reason,
+        });
+        return res.status(503).json({
+          error: '短信服务暂不可用，请稍后重试或联系客服',
+          reason: sent.reason,
+        });
+      }
+    } else {
+      logger.debug(`[MVP] Verification code for ${cleanPhone}: ${code}`);
+    }
 
     await pool.query(
       `INSERT INTO verification_codes (phone, code, expires_at)
@@ -176,12 +196,10 @@ router.post('/send-code', sendCodeLimiter, async (req, res) => {
       [cleanPhone, code, expiresAt.toISOString()]
     );
 
-    // Only log verification code in development environment
-    if (process.env.NODE_ENV !== 'production') {
-      logger.debug(`[MVP] Verification code for ${cleanPhone}: ${code}`);
-    }
-
-    res.json({ message: 'Verification code sent (MVP: 888888)' });
+    res.json({
+      message: 'Verification code sent',
+      devCode: isProd ? undefined : code,
+    });
   } catch (err) {
     logger.error('Send code error:', { error: err.message });
     res.status(500).json({ error: 'Failed to send verification code' });
@@ -206,9 +224,19 @@ router.post('/send-email-code', sendCodeLimiter, async (req, res) => {
     // 清理输入
     const cleanEmail = sanitizeString(email.toLowerCase());
 
-    // MVP: use fixed code 888888 (in production, send email)
-    const code = '888888';
+    // A4 同批修正：原实现**生产环境也用固定码 888888 且从不发邮件**——
+    // 任何邮箱输 888888 即可登录，且用户永远收不到真实验证码。
+    // 现对齐 auth-verify.js 的 /send-email-code：生产随机码 + 真实邮件下发。
+    const code = process.env.NODE_ENV === 'production'
+      ? generateCode()
+      : '888888';
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    if (process.env.NODE_ENV === 'production') {
+      await sendVerificationCodeEmail(cleanEmail, code, 'login');
+    } else {
+      logger.debug(`[MVP] Email verification code for ${cleanEmail}: ${code}`);
+    }
 
     // 存储验证码（使用 phone 字段存储 email，因为表结构复用）
     await pool.query(
@@ -217,12 +245,10 @@ router.post('/send-email-code', sendCodeLimiter, async (req, res) => {
       [cleanEmail, code, expiresAt.toISOString()]
     );
 
-    // Only log verification code in development environment
-    if (process.env.NODE_ENV !== 'production') {
-      logger.debug(`[MVP] Email verification code for ${cleanEmail}: ${code}`);
-    }
-
-    res.json({ message: 'Email verification code sent (MVP: 888888)' });
+    res.json({
+      message: 'Email verification code sent',
+      devCode: process.env.NODE_ENV === 'production' ? undefined : code,
+    });
   } catch (err) {
     logger.error('Send email code error:', { error: err.message });
     res.status(500).json({ error: 'Failed to send email verification code' });

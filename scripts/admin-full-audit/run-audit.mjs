@@ -628,8 +628,18 @@ async function phaseSettingsForm() {
 
   // AF-01 表现即输入框空白：value 空串即 FAIL。豁免可选键（空=合法未配置态，前端降级处理）：
   // smtp_pass（脱敏兜底）、grafana_url（AF-30，空=按钮置灰）、prometheus_url（AN-15，空=告警卡显示不可用）、
-  // release_download_base_url（067/GH-01，空=未配置下载地址，更新端点返回 410 而非伪造链接）。
-  const OPTIONAL_EMPTY_KEYS = ['smtp_pass', 'grafana_url', 'prometheus_url', 'release_download_base_url'];
+  // release_download_base_url（067/GH-01，空=未配置下载地址，更新端点返回 410 而非伪造链接）、
+  // sms_*（068/A4，空=未开通短信；provider 默认 console，生产环境发码返回 503 而非降级为固定码）。
+  const OPTIONAL_EMPTY_KEYS = [
+    'smtp_pass',
+    'grafana_url',
+    'prometheus_url',
+    'release_download_base_url',
+    'sms_access_key_id',
+    'sms_sign_name',
+    'sms_template_code',
+    'sms_access_key_secret',
+  ];
   const emptyVal = items.filter((i) => String(i.value ?? '').trim() === '' && !OPTIONAL_EMPTY_KEYS.includes(i.key));
   check(P, '输入框初值非空（value 不为空串）', emptyVal.length === 0,
     emptyVal.length ? `空 value: ${emptyVal.map((i) => i.key).join(',')}` : '全部非空');

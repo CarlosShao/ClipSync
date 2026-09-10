@@ -52,8 +52,19 @@ import { sendTestMail } from '../../utils/email.js';
 import { invalidateAiRuntimeConfigCache } from '../../utils/aiRuntimeConfig.js';
 // GH-01：release_download_base_url 写库后失效下载地址解析缓存
 import { invalidateReleaseArtifactCache } from '../../utils/releaseArtifacts.js';
+// A4：sms_* 写库后失效短信配置缓存（管理台改完 ≤5s 生效）
+import { invalidateSmsConfigCache } from '../../utils/sms.js';
 
 const router = Router();
+
+// A4：短信配置键集合——写库后需失效 sms.js 的 5s TTL 缓存
+const SMS_CONFIG_KEYS = new Set([
+  'sms_provider',
+  'sms_access_key_id',
+  'sms_access_key_secret',
+  'sms_sign_name',
+  'sms_template_code',
+]);
 
 // ───────────────────────── 展示目录 ─────────────────────────
 
@@ -211,6 +222,37 @@ const CONFIG_CATALOG = [
   },
   // AF-42：menu_overrides 已从管理台目录移除——客户端无读取通道（setOverrides 预留未调用），
   // 属"可改不生效"。库中行保留，待客户端下发通道立项后恢复（见 docs/plans/tickets AN-02）。
+  // —— 短信（A4）：生产环境验证码真实下发，取代固定码 888888 ——
+  {
+    key: 'sms_provider',
+    name: '短信服务商',
+    description: 'aliyun / tencent；console 表示未开通（生产环境将拒绝发送验证码）',
+    consumer: 'src/server/src/utils/sms.js（getSmsConfig 读取）',
+  },
+  {
+    key: 'sms_access_key_id',
+    name: '短信 AccessKeyId',
+    description: '阿里云 AccessKeyId 或腾讯云 SecretId',
+    consumer: 'src/server/src/utils/sms.js（sendViaAliyun / sendViaTencent）',
+  },
+  {
+    key: 'sms_access_key_secret',
+    name: '短信 AccessKeySecret',
+    description: '加密存储；阿里云 AccessKeySecret 或腾讯云 SecretKey',
+    consumer: 'src/server/src/utils/sms.js（发送前 decryptField 解密）',
+  },
+  {
+    key: 'sms_sign_name',
+    name: '短信签名',
+    description: '需服务商审核通过（如 ClipSync）；未审核通过只能发测试签名',
+    consumer: 'src/server/src/utils/sms.js（sendViaAliyun / sendViaTencent）',
+  },
+  {
+    key: 'sms_template_code',
+    name: '短信模板 CODE',
+    description: '验证码模板 ID（阿里云 SMS_xxxx / 腾讯云模板 ID），模板变量为 code',
+    consumer: 'src/server/src/utils/sms.js（sendViaAliyun / sendViaTencent）',
+  },
   // —— 发布（067，GH-01：更新包下载地址来源，routes/app.js /update.json 消费）——
   {
     key: 'release_download_base_url',
@@ -288,7 +330,8 @@ function formatDateTimeMinute(value) {
 function mapConfigRow(meta, row) {
   let value = jsonbValueToString(row?.config_value);
   // CO-30：smtp_pass 加密存储，任何读取路径（GET 列表 / PATCH 回显）只暴露配置状态，不回传密文
-  if (meta.key === 'smtp_pass') {
+  // A4：sms_access_key_secret 同口径（短信 AccessKeySecret 亦为密文）
+  if (meta.key === 'smtp_pass' || meta.key === 'sms_access_key_secret') {
     value = value ? '已配置' : '未配置';
   }
   return {
@@ -370,7 +413,11 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
     }
 
     // CO-30：smtp_pass 落库前加密（AES-256-GCM），其余键原样写入
-    const valueToStore = key === 'smtp_pass' ? encryptField(valueStr) : valueStr;
+    // A4：sms_access_key_secret 同口径加密（sms.js 发送前 decryptField 解密）
+    const valueToStore =
+      key === 'smtp_pass' || key === 'sms_access_key_secret'
+        ? encryptField(valueStr)
+        : valueStr;
 
     const { rows } = await pool.query(
       `UPDATE system_configs
@@ -409,9 +456,15 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
       invalidateReleaseArtifactCache();
     }
 
+    // A4：短信配置写库后失效 sms 5s 缓存（下次发码直连库读取，改完即时生效）
+    if (SMS_CONFIG_KEYS.has(key)) {
+      invalidateSmsConfigCache();
+    }
+
     // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason；
-    // smtp_pass 不落明文——审计流水常驻库中，只记录「已更新」占位符）
-    const auditValue = key === 'smtp_pass' ? '***' : valueStr;
+    // smtp_pass / sms_access_key_secret 不落明文——审计流水常驻库中，只记录「已更新」占位符）
+    const auditValue =
+      key === 'smtp_pass' || key === 'sms_access_key_secret' ? '***' : valueStr;
     await logAuditEvent({
       userId: req.user?.userId,
       action: 'admin.config.update',

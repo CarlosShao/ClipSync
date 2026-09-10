@@ -6,6 +6,8 @@ import config from '../config.js';
 import { isValidPhone, isValidCode, sanitizeString } from '../validation/validator.js';
 import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed } from '../middleware/rateLimiter.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
+// A4 短信：生产环境真实下发验证码，取代固定码 888888
+import { sendVerificationCodeSms, generateCode } from '../utils/sms.js';
 import { issueRefreshToken } from '../utils/refreshToken.js';
 import { isFlagEnabled } from '../utils/featureFlags.js';
 // AN-12：管理员安全策略（force_2fa_for_admin 登录强制点）
@@ -40,7 +42,11 @@ async function createSessionAndGenerateToken(user, req) {
   return { token, sessionId, refreshToken };
 }
 
-// 发送验证码（手机：MVP 固定 888888）
+// 发送验证码（手机）
+// A4：固定码 888888 已移除——生产环境任何人输 888888 可登录任意手机号，
+// 是文档 external-dependency-audit 第 1 节「脏状态」第 1 条。
+// 现行为：生产环境强制随机码 + 真实短信下发；未配置短信时返回 503 明确报错，
+// 绝不静默降级为固定码（那等于保留后门）。非生产环境允许固定码便于本地开发。
 router.post('/send-code', sendCodeLimiter, async (req, res) => {
   try {
     const { phone } = req.body;
@@ -54,8 +60,28 @@ router.post('/send-code', sendCodeLimiter, async (req, res) => {
     }
 
     const cleanPhone = sanitizeString(phone);
-    const code = '888888'; // MVP: fixed code
+    const isProd = process.env.NODE_ENV === 'production';
+
+    // 生产环境：随机码；非生产：固定码（开发便利）
+    const code = isProd ? generateCode() : '888888';
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    if (isProd) {
+      // 真实下发。未配置短信 → 明确 503，不写库、不返回固定码
+      const sent = await sendVerificationCodeSms(cleanPhone, code);
+      if (!sent.ok) {
+        logger.error('[send-code] 短信下发失败，拒绝发送验证码', {
+          phone: cleanPhone,
+          reason: sent.reason,
+        });
+        return res.status(503).json({
+          error: '短信服务暂不可用，请稍后重试或联系客服',
+          reason: sent.reason,
+        });
+      }
+    } else {
+      logger.debug(`[MVP] Verification code for ${cleanPhone}: ${code}`);
+    }
 
     await pool.query(
       `INSERT INTO verification_codes (phone, code, expires_at)
@@ -63,11 +89,11 @@ router.post('/send-code', sendCodeLimiter, async (req, res) => {
       [cleanPhone, code, expiresAt.toISOString()]
     );
 
-    // Only log verification code in development environment
-    if (process.env.NODE_ENV !== 'production') {
-      logger.debug(`[MVP] Verification code for ${cleanPhone}: ${code}`);
-    }
-    res.json({ message: 'Verification code sent (MVP: 888888)' });
+    res.json({
+      message: 'Verification code sent',
+      // 非生产环境回显，方便本地开发联调（生产恒为 false）
+      devCode: isProd ? undefined : code,
+    });
   } catch (err) {
     logger.error('Send code error:', { error: err.message });
     res.status(500).json({ error: 'Failed to send verification code' });
@@ -324,18 +350,32 @@ router.post('/send-reset-pin-code', sendCodeLimiter, async (req, res) => {
     if (!isValidPhone(phone)) return res.status(400).json({ error: 'Invalid phone number format' });
 
     const cleanPhone = sanitizeString(phone);
-    const code = '888888'; // MVP: fixed code
+    const isProd = process.env.NODE_ENV === 'production';
+    const code = isProd ? generateCode() : '888888';
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    if (isProd) {
+      const sent = await sendVerificationCodeSms(cleanPhone, code);
+      if (!sent.ok) {
+        logger.error('[send-reset-pin-code] 短信下发失败', {
+          phone: cleanPhone,
+          reason: sent.reason,
+        });
+        return res.status(503).json({
+          error: '短信服务暂不可用，请稍后重试或联系客服',
+          reason: sent.reason,
+        });
+      }
+    } else {
+      logger.debug(`[MVP] PIN reset code for ${cleanPhone}: ${code}`);
+    }
 
     await pool.query(
       `INSERT INTO verification_codes (phone, code, expires_at) VALUES ($1, $2, $3)`,
       [cleanPhone, code, expiresAt.toISOString()]
     );
 
-    if (process.env.NODE_ENV !== 'production') {
-      logger.debug(`[MVP] PIN reset code for ${cleanPhone}: ${code}`);
-    }
-    res.json({ message: 'Verification code sent (MVP: 888888)' });
+    res.json({ message: 'Verification code sent' });
   } catch (err) {
     logger.error('Send reset pin code error:', { error: err.message });
     res.status(500).json({ error: 'Failed to send verification code' });

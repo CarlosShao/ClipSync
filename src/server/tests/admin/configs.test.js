@@ -121,6 +121,12 @@ describe('GET /api/admin/configs —— 系统参数列表', () => {
       'smtp_pass',
       'smtp_from',
       'smtp_secure',
+      // 068（A4 短信）：provider / ak / ak secret / 签名 / 模板，utils/sms.js 消费
+      'sms_provider',
+      'sms_access_key_id',
+      'sms_access_key_secret',
+      'sms_sign_name',
+      'sms_template_code',
       // 067（GH-01）：更新包下载地址来源，routes/app.js 经 releaseArtifacts.js 消费
       'release_download_base_url',
     ]);
