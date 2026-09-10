@@ -949,7 +949,7 @@ function confirmAction() {
   white-space: nowrap;
   color: var(--text-secondary);
 }
-/* AF-57 跑马灯：内容复制两份无缝循环滚动，比静态省略号醒目；
+/* AN-05 跑马灯：内容复制两份无缝循环滚动，比静态省略号醒目；
    悬停暂停便于阅读；reduce-motion（设置页「减少动画」）下静止显示 */
 .announcement-marquee {
   display: block;

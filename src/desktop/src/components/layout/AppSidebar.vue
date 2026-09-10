@@ -70,7 +70,7 @@ function toggleUserMenu() {
 function closeUserMenu() {
   showUserMenu.value = false
 }
-/** AF-57 补充：公告入口——派发全局事件，由 HomeView 打开公告列表弹窗（模块级单例总线模式） */
+/** AN-05 补充：公告入口——派发全局事件，由 HomeView 打开公告列表弹窗（模块级单例总线模式） */
 function openAnnouncements() {
   window.dispatchEvent(new CustomEvent('clipsync:open-announcements'))
   closeUserMenu()
