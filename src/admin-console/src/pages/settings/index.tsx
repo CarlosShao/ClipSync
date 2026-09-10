@@ -28,6 +28,7 @@ import {
 import {
   createEmailChannel,
   deleteEmailChannel,
+  emailChannelKeys,
   getEmailChannels,
   patchEmailChannel,
   testEmailChannel,
@@ -819,20 +820,8 @@ export default function SettingsPage() {
                 title={group.title}
                 extra={
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {/* CO-30：仅 SMTP 卡提供测试邮件入口（未配置/失败提示由拦截器统一 toast） */}
-                    {group.keys.includes('smtp_host') ? (
-                      <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
-                        <span>
-                          <Button
-                            size="small"
-                            disabled={!canManageConfigs}
-                            onClick={openTestEmailModal}
-                          >
-                            发送测试邮件
-                          </Button>
-                        </span>
-                      </Tooltip>
-                    ) : null}
+                    {/* CO-30/AN-16：SMTP 单卡测试邮件入口已废弃——smtp_* 键退出系统参数目录，
+                        测试邮件统一走「邮件通道」卡（openChannelTestModal，按通道发送） */}
                     <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
                       <span>
                         <Button

@@ -301,7 +301,7 @@ export default function ReleasesPage() {
       </Card>
 
       <Modal
-        title={editing === 'new' ? '新建版本' : `编辑版本 · v${editing && editing !== 'new' ? editing.version : ''}`}
+        title={editing === 'new' ? '新建版本' : editing ? `编辑版本 · v${editing.version}` : ''}
         open={editing !== null}
         onOk={() => void handleSave()}
         onCancel={() => setEditing(null)}

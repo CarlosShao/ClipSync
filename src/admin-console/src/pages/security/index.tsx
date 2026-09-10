@@ -29,7 +29,7 @@ export default function SecurityPage() {
   const [revokeTarget, setRevokeTarget] = useState<AdminSession | null>(null);
   const canManage = hasPerm('admin.users.manage');
 
-  const { tableProps, data, isLoading, filters, setFilters } = useTableQuery<
+  const { tableProps, data, filters, setFilters } = useTableQuery<
     AdminSession,
     SecurityFilters
   >({

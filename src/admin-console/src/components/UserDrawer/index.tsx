@@ -160,15 +160,6 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
     }
   }, [open]);
 
-  // AF-13：列表页「改套餐/转正套餐」入口 → 抽屉打开且订阅行就绪后自动弹出赠期/调整套餐弹窗
-  // （free 用户无订阅行 → grantTarget 为 null，不自动弹出，抽屉内赠期按钮有 Tooltip 说明）
-  useEffect(() => {
-    if (open && autoOpenGrant && grantTarget && !autoGrantDoneRef.current) {
-      setGrantOpen(true);
-      autoGrantDoneRef.current = true;
-    }
-  }, [open, autoOpenGrant, grantTarget]);
-
   const user = data?.user;
   const disabled = user?.status === 'disabled';
 
@@ -192,6 +183,16 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
       createdAt: user.createdAt,
     };
   }, [user]);
+
+  // AF-13：列表页「改套餐/转正套餐」入口 → 抽屉打开且订阅行就绪后自动弹出赠期/调整套餐弹窗
+  // （free 用户无订阅行 → grantTarget 为 null，不自动弹出，抽屉内赠期按钮有 Tooltip 说明）
+  // 位置说明：必须位于 grantTarget 声明之后（tsc -b 的 TDZ 检查），勿上移。
+  useEffect(() => {
+    if (open && autoOpenGrant && grantTarget && !autoGrantDoneRef.current) {
+      setGrantOpen(true);
+      autoGrantDoneRef.current = true;
+    }
+  }, [open, autoOpenGrant, grantTarget]);
 
   // RB-07：管理操作按钮按权限键裁剪（对齐 devices 页 canOffline 模式）
   const canManage = hasPerm('admin.users.manage');

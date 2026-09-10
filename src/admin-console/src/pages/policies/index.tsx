@@ -118,7 +118,8 @@ export default function PoliciesPage() {
   const unconsumedCount = policies.filter((p) => !p.consumer).length;
 
   const updateDraft = (key: string, next: Partial<PolicyDraft>) => {
-    setDraft((prev) => ({ ...prev, [key]: { ...prev[key], ...next } }));
+    // prev[key] 理论上恒存在（draft 由 policies 派生填齐）；断言兜底 TS noUncheckedIndexedAccess 的 undefined 联合
+    setDraft((prev) => ({ ...prev, [key]: { ...(prev[key] as PolicyDraft), ...next } }));
   };
 
   const handleConfirm = async (reason: string) => {
