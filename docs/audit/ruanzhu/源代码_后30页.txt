@@ -1,0 +1,1529 @@
+ClipSync 剪贴板同步软件  V1.0.0  第 714 页
+    [retentionDays]
+  );
+
+  return result.rowCount;
+}
+
+/**
+ * 限制每个项的版本数量
+ * @param {number} maxVersions - 每个项最大版本数（可选，默认使用配置值）
+ * @returns {number} 清理的版本数量
+ */
+export async function limitVersionsPerItem(maxVersions = VERSION_CONFIG.maxVersionsPerItem) {
+  const result = await pool.query(
+    `DELETE FROM file_versions
+     WHERE id IN (
+       SELECT id FROM (
+         SELECT id,
+                ROW_NUMBER() OVER (PARTITION BY clipboard_item_id ORDER BY version_number DESC) as rn
+         FROM file_versions
+       ) t
+       WHERE rn > $1
+     )`,
+    [maxVersions]
+  );
+
+  return result.rowCount;
+}
+
+/**
+ * 获取版本统计信息
+ * @param {string} userId - 用户ID
+ * @returns {Object} 统计信息
+ */
+export async function getVersionStats(userId) {
+  const result = await pool.query(
+    `SELECT
+       COUNT(*) as total_versions,
+       COUNT(DISTINCT clipboard_item_id) as items_with_versions,
+       COALESCE(SUM(content_size), 0) as total_size,
+       COALESCE(AVG(content_size), 0) as avg_size,
+       MIN(created_at) as oldest_version,
+       MAX(created_at) as newest_version
+     FROM file_versions
+     WHERE user_id = $1`,
+    [userId]
+  );
+
+  return result.rows[0];
+}
+
+ClipSync 剪贴板同步软件  V1.0.0  第 715 页
+/**
+ * 启动版本自动清理调度器（应用启动时调用一次）。
+ *
+ * 背景：服务端已在 `PUT /api/clipboard/:id` 覆盖内容前自动落版本快照，
+ * 从此每次内容变更都会往 file_versions 写一行。而 cleanupOldVersions /
+ * limitVersionsPerItem 此前只挂在手动端点 `POST /api/versions/cleanup` 上，
+ * VERSION_CONFIG.autoCleanupInterval 全仓库零引用 —— 表会无上限膨胀。
+ * 本函数把这个配置真正用起来（默认每 1h 跑一次：超 90 天的、以及每条目超 50 版的）。
+ *
+ * 注意：测试环境不要调用，否则 setInterval 会挂住 jest 进程。
+ */
+export function startVersionCleanupScheduler() {
+  const runCleanup = async () => {
+    try {
+      const byAge = await cleanupOldVersions();
+      const byCount = await limitVersionsPerItem();
+      if (byAge || byCount) {
+        logger.info('[Versions] auto cleanup done', { byAge, byCount });
+      }
+    } catch (err) {
+      // 清理是附属能力，失败绝不能影响主流程
+      logger.error('[Versions] auto cleanup failed (non-fatal):', { error: err.message });
+    }
+  };
+
+  // 启动时先跑一次，避免长期未重启的实例积攒历史脏数据
+  runCleanup();
+  const timer = setInterval(runCleanup, VERSION_CONFIG.autoCleanupInterval);
+  // 不阻止进程退出
+  if (typeof timer.unref === 'function') timer.unref();
+  return timer;
+}
+
+export default {
+  createVersion,
+  getVersionHistory,
+  getVersionDetail,
+  restoreVersion,
+  cleanupOldVersions,
+  limitVersionsPerItem,
+  getVersionStats,
+  startVersionCleanupScheduler,
+  VERSION_CONFIG,
+};
+// ===== file: utils/ws-redis-pubsub.js =====
+/**
+ * WebSocket Redis Pub/Sub 工具
+ * 用于多实例部署时，通过 Redis 频道在实例间广播 WebSocket 消息
+ *
+ * 架构：
+ClipSync 剪贴板同步软件  V1.0.0  第 716 页
+ * - 每个实例保留本地 connections Map（存储实际 WebSocket 连接）
+ * - 当需要向用户广播消息时，发布到 Redis 频道 `ws:user:{userId}`
+ * - 所有实例订阅 `ws:user:*` 通配符，收到消息后转发给本地连接的设备
+ * - 实例 ID 用于避免自己发给自己（虽然无害，但浪费）
+ */
+
+import redis from 'redis';
+import config from '../config.js';
+import { logger } from './logger.js';
+
+let subscriberClient = null; // Redis Pub/Sub 订阅客户端（独立连接）
+let publisherClient = null;  // Redis 发布客户端（复用主连接或独立）
+let isRedisEnabled = false;
+let instanceId = null;       // 当前实例唯一 ID
+let localConnections = null; // 引用本地 connections Map
+
+/**
+ * 初始化 WebSocket Redis Pub/Sub
+ * @param {Map} connections - 本地 connections Map 的引用
+ * @returns {Promise<boolean>} 是否成功初始化
+ */
+export async function initWsRedisPubSub(connections) {
+  // 检查 Redis 是否配置
+  if (!config.redis?.host) {
+    logger.info('[WS Redis Pub/Sub] Redis not configured, using local broadcast only');
+    return false;
+  }
+
+  try {
+    localConnections = connections;
+    instanceId = `instance:${process.pid}:${Date.now()}`;
+
+    // 创建独立的订阅客户端（Redis Pub/Sub 需要专用连接）
+    subscriberClient = redis.createClient({
+      socket: {
+        host: config.redis.host,
+        port: config.redis.port,
+      },
+      password: config.redis.password || undefined,
+      database: config.redis.database || 0,
+    });
+
+    subscriberClient.on('error', (err) => {
+      logger.error('[WS Redis Pub/Sub] Subscriber error:', { error: err.message });
+    });
+
+    subscriberClient.on('connect', () => {
+      logger.info('[WS Redis Pub/Sub] Subscriber connected');
+    });
+
+ClipSync 剪贴板同步软件  V1.0.0  第 717 页
+    await subscriberClient.connect();
+
+    // 订阅通配符频道：接收所有用户的消息
+    await subscriberClient.pSubscribe('ws:user:*', (message, channel) => {
+      handleRedisMessage(message, channel);
+    });
+
+    isRedisEnabled = true;
+    logger.info(`[WS Redis Pub/Sub] Initialized, instanceId=${instanceId}`);
+    return true;
+  } catch (err) {
+    logger.error('[WS Redis Pub/Sub] Failed to initialize:', { error: err.message });
+    isRedisEnabled = false;
+    return false;
+  }
+}
+
+/**
+ * 处理从 Redis 收到的消息
+ * @param {string} message - JSON 字符串消息
+ * @param {string} channel - 频道名，格式：ws:user:{userId}
+ */
+function handleRedisMessage(message, channel) {
+  try {
+    const parsed = JSON.parse(message);
+    const { userId, data, sourceInstanceId } = parsed;
+
+    // 跳过自己发出的消息（避免重复发送）
+    if (sourceInstanceId === instanceId) {
+      return;
+    }
+
+    // 转发给本地连接的该用户设备
+    const userDevices = localConnections.get(userId);
+    if (!userDevices) {
+      return;
+    }
+
+    for (const [deviceId, ws] of userDevices) {
+      if (ws.readyState === 1) { // WebSocket.OPEN
+        ws.send(JSON.stringify(data));
+      }
+    }
+  } catch (err) {
+    logger.error('[WS Redis Pub/Sub] Error handling message:', { error: err.message });
+  }
+}
+
+/**
+ * 向指定用户发布消息（通过 Redis Pub/Sub）
+ClipSync 剪贴板同步软件  V1.0.0  第 718 页
+ * @param {string} userId - 用户 ID
+ * @param {object} data - 要广播的消息对象
+ * @returns {Promise<void>}
+ */
+export async function publishToUser(userId, data) {
+  if (!isRedisEnabled) {
+    return; // Redis 未启用，调用方会本地广播
+  }
+
+  try {
+    // 复用主 Redis 客户端进行发布
+    const { getRedisClient } = await import('./redis-client.js');
+    const client = await getRedisClient();
+
+    const message = {
+      userId,
+      data,
+      sourceInstanceId: instanceId,
+      timestamp: Date.now(),
+    };
+
+    const channel = `ws:user:${userId}`;
+    await client.publish(channel, JSON.stringify(message));
+  } catch (err) {
+    logger.error('[WS Redis Pub/Sub] Failed to publish:', { error: err.message });
+  }
+}
+
+/**
+ * 向所有在线用户发布系统通知（通过 Redis Pub/Sub）
+ * @param {object} notification - 通知对象
+ * @returns {Promise<void>}
+ */
+export async function publishSystemNotification(notification) {
+  if (!isRedisEnabled) {
+    return;
+  }
+
+  try {
+    const { getRedisClient } = await import('./redis-client.js');
+    const client = await getRedisClient();
+
+    const message = {
+      type: 'system_notification',
+      notification,
+      sourceInstanceId: instanceId,
+      timestamp: Date.now(),
+    };
+
+    // 发布到系统通知频道
+ClipSync 剪贴板同步软件  V1.0.0  第 719 页
+    await client.publish('ws:system', JSON.stringify(message));
+  } catch (err) {
+    logger.error('[WS Redis Pub/Sub] Failed to publish system notification:', { error: err.message });
+  }
+}
+
+/**
+ * 初始化系统通知订阅
+ * @param {Function} onSystemNotification - 系统通知回调
+ */
+export async function initSystemNotificationSubscriber(onSystemNotification) {
+  if (!subscriberClient) {
+    return false;
+  }
+
+  try {
+    await subscriberClient.subscribe('ws:system', (message) => {
+      try {
+        const parsed = JSON.parse(message);
+        if (parsed.sourceInstanceId !== instanceId) {
+          onSystemNotification(parsed.notification);
+        }
+      } catch (err) {
+        logger.error('[WS Redis Pub/Sub] Error handling system notification:', { error: err.message });
+      }
+    });
+    return true;
+  } catch (err) {
+    logger.error('[WS Redis Pub/Sub] Failed to subscribe to system notifications:', { error: err.message });
+    return false;
+  }
+}
+
+/**
+ * 关闭 WebSocket Redis Pub/Sub 连接
+ */
+export async function closeWsRedisPubSub() {
+  if (subscriberClient) {
+    try {
+      await subscriberClient.quit();
+      subscriberClient = null;
+      isRedisEnabled = false;
+      logger.info('[WS Redis Pub/Sub] Closed');
+    } catch (err) {
+      logger.error('[WS Redis Pub/Sub] Error closing:', { error: err.message });
+    }
+  }
+}
+
+/**
+ClipSync 剪贴板同步软件  V1.0.0  第 720 页
+ * 检查 Redis Pub/Sub 是否启用
+ */
+export function isWsRedisEnabled() {
+  return isRedisEnabled;
+}
+
+/**
+ * 获取当前实例 ID
+ */
+export function getInstanceId() {
+  return instanceId;
+}
+
+// ===== file: validation/validator.js =====
+/**
+ * 输入验证与防护模块
+ * 
+ * 功能：
+ * 1. API参数验证
+ * 2. SQL注入防护
+ * 3. XSS防护
+ * 4. 通用数据清理
+ */
+
+/**
+ * 验证手机号格式
+ * @param {string} phone 
+ * @returns {boolean}
+ */
+export function isValidPhone(phone) {
+  // 中国大陆手机号：1开头，11位数字
+  const phoneRegex = /^1[3-9]\d{9}$/;
+  return phoneRegex.test(phone);
+}
+
+/**
+ * 验证验证码格式
+ * @param {string} code 
+ * @returns {boolean}
+ */
+export function isValidCode(code) {
+  // 6位数字验证码
+  const codeRegex = /^\d{6}$/;
+  return codeRegex.test(code);
+}
+
+/**
+ * 验证UUID格式
+ * @param {string} uuid 
+ * @returns {boolean}
+ClipSync 剪贴板同步软件  V1.0.0  第 721 页
+ */
+export function isValidUUID(uuid) {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+}
+
+/**
+ * 验证内容类型
+ * @param {string} contentType 
+ * @returns {boolean}
+ */
+export function isValidContentType(contentType) {
+  const validTypes = ['text', 'image', 'file', 'link', 'code'];
+  return validTypes.includes(contentType);
+}
+
+/**
+ * 验证设备类型
+ * @param {string} deviceType 
+ * @returns {boolean}
+ */
+export function isValidDeviceType(deviceType) {
+  const validTypes = ['desktop', 'mobile', 'tablet', 'browser'];
+  return validTypes.includes(deviceType);
+}
+
+/**
+ * 验证平台类型
+ * @param {string} platform 
+ * @returns {boolean}
+ */
+export function isValidPlatform(platform) {
+  const validPlatforms = ['windows', 'macos', 'linux', 'ios', 'android', 'browser'];
+  return validPlatforms.includes(platform);
+}
+
+/**
+ * 清理字符串输入（防XSS）
+ * 
+ * 使用OWASP推荐的HTML实体转义防止XSS攻击
+ * 适用于HTML上下文的输出转义
+ * 
+ * @param {string} input - 输入字符串
+ * @returns {string} - 转义后的安全字符串
+ */
+export function sanitizeString(input) {
+  if (typeof input !== 'string') return '';
+  
+  // OWASP推荐的HTML实体转义
+  // 转义顺序很重要：必须先转义&，否则其他转义会被二次转义
+ClipSync 剪贴板同步软件  V1.0.0  第 722 页
+  return input
+    .replace(/&/g, '&amp;')   // & 必须第一个转义
+    .replace(/</g, '&lt;')    // < 标签开始
+    .replace(/>/g, '&gt;')    // > 标签结束
+    .replace(/"/g, '&quot;')  // " 属性引号
+    .replace(/'/g, '&#x27;')  // ' 属性引号（十六进制）
+    .replace(/\//g, '&#x2F;'); // / 防止关闭标签
+}
+
+/**
+ * 清理HTML内容（保留安全的HTML标签）
+ * 
+ * 如果需要允许某些HTML标签（如<b>、<i>），使用此函数
+ * 当前实现：移除所有HTML标签（保守做法）
+ * 
+ * 注意：对于生产环境，建议使用专门的HTML清理库（如xss）
+ * 
+ * @param {string} html - 输入HTML字符串
+ * @returns {string} - 清理后的字符串
+ */
+export function sanitizeHtml(html) {
+  if (typeof html !== 'string') return '';
+  
+  // 保守做法：移除所有HTML标签
+  // 如需保留某些标签，应使用DOM解析+白名单
+  return html.replace(/<[^>]*>/g, '');
+}
+
+/**
+ * 上下文感知的XSS防护
+ * 
+ * 根据不同的输出上下文使用不同的转义策略
+ */
+
+/**
+ * 用于HTML正文上下文的转义
+ * 例：<div>此处是用户输入</div>
+ */
+export function escapeHtmlContext(input) {
+  return sanitizeString(input);
+}
+
+/**
+ * 用于HTML属性上下文的转义
+ * 例：<div attr="此处是用户输入"> </>
+ */
+export function escapeAttributeContext(input) {
+  if (typeof input !== 'string') return '';
+  
+  // 属性上下文需要转义引号和其他特殊字符
+ClipSync 剪贴板同步软件  V1.0.0  第 723 页
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/=/g, '&#x3D;')
+    .replace(/`/g, '&#x60;');
+}
+
+/**
+ * 用于JavaScript字符串上下文的转义
+ * 例：<script>var x = "此处是用户输入";</script>
+ */
+export function escapeJsContext(input) {
+  if (typeof input !== 'string') return '';
+  
+  // JS字符串上下文：转义反斜杠、引号和换行
+  return input
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/`/g, '\\`');
+}
+
+/**
+ * 用于URL上下文的转义
+ * 例：<a href="此处是用户输入">
+ */
+export function escapeUrlContext(input) {
+  if (typeof input !== 'string') return '';
+  
+  // URL编码：使用encodeURIComponent
+  try {
+    return encodeURIComponent(input);
+  } catch (err) {
+    return '';
+  }
+}
+
+/**
+ * 防SQL注入：转义特殊字符
+ * 注意：使用参数化查询时不需要这个
+ * @param {string} input 
+ * @returns {string}
+ */
+export function escapeSql(input) {
+  if (typeof input !== 'string') return '';
+ClipSync 剪贴板同步软件  V1.0.0  第 724 页
+  
+  return input
+    .replace(/'/g, "''")
+    .replace(/\\/g, '\\\\')
+    .replace(/\0/g, '\\0');
+}
+
+/**
+ * 验证并清理分页参数
+ * @param {any} page 
+ * @param {any} limit 
+ * @returns {{page: number, limit: number}}
+ */
+export function validatePagination(page, limit, opts = {}) {
+  const { all } = opts
+  if (all) return { page: 1, limit: Infinity }
+  let pageNum = parseInt(page) || 1;
+  let limitNum = parseInt(limit) || 50;
+
+  // 限制范围
+  pageNum = Math.max(1, Math.min(1000, pageNum));
+  limitNum = Math.max(1, Math.min(100, limitNum));
+
+  return { page: pageNum, limit: limitNum };
+}
+
+/**
+ * 验证并清理搜索参数
+ * @param {string} search 
+ * @param {number} maxLength 
+ * @returns {string}
+ */
+export function validateSearch(search, maxLength = 100) {
+  if (typeof search !== 'string') return '';
+  
+  // 清理并限制长度
+  return sanitizeString(search.trim()).substring(0, maxLength);
+}
+
+/**
+ * 验证JSON数据
+ * @param {any} data 
+ * @returns {boolean}
+ */
+export function isValidJson(data) {
+  try {
+    if (typeof data === 'string') {
+      JSON.parse(data);
+    }
+    return true;
+ClipSync 剪贴板同步软件  V1.0.0  第 725 页
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 验证URL格式
+ * @param {string} url 
+ * @returns {boolean}
+ */
+export function isValidUrl(url) {
+  try {
+    new URL(url);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 验证邮箱格式
+ * @param {string} email 
+ * @returns {boolean}
+ */
+export function isValidEmail(email) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+/**
+ * 验证昵称
+ * @param {string} nickname 
+ * @returns {{valid: boolean, error?: string}}
+ */
+export function validateNickname(nickname) {
+  if (!nickname || typeof nickname !== 'string') {
+    return { valid: false, error: 'Nickname cannot be empty' };
+  }
+
+  const trimmed = nickname.trim();
+  
+  if (trimmed.length === 0) {
+    return { valid: false, error: 'Nickname cannot be empty' };
+  }
+
+  if (trimmed.length > 50) {
+    return { valid: false, error: 'Nickname cannot exceed 50 characters' };
+  }
+
+  // 检查是否包含特殊字符
+ClipSync 剪贴板同步软件  V1.0.0  第 726 页
+  const invalidChars = /[<>"'&]/;
+  if (invalidChars.test(trimmed)) {
+    return { valid: false, error: 'Nickname contains invalid characters' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * 验证设备名称
+ * @param {string} name 
+ * @returns {{valid: boolean, error?: string}}
+ */
+export function validateDeviceName(name) {
+  if (!name || typeof name !== 'string') {
+    return { valid: false, error: 'Device name cannot be empty' };
+  }
+
+  const trimmed = name.trim();
+  
+  if (trimmed.length === 0) {
+    return { valid: false, error: 'Device name cannot be empty' };
+  }
+
+  if (trimmed.length > 100) {
+    return { valid: false, error: 'Device name cannot exceed 100 characters' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * 验证剪贴板内容
+ * @param {object} data 
+ * @returns {{valid: boolean, error?: string}}
+ */
+export function validateClipboardData(data) {
+  const { sourceDeviceId, contentType, contentEncrypted } = data;
+
+  if (!sourceDeviceId) {
+    return { valid: false, error: 'sourceDeviceId is required' };
+  }
+
+  if (!isValidUUID(sourceDeviceId)) {
+    return { valid: false, error: 'Invalid sourceDeviceId format' };
+  }
+
+  if (!contentType) {
+    return { valid: false, error: 'contentType is required' };
+  }
+ClipSync 剪贴板同步软件  V1.0.0  第 727 页
+
+  if (!isValidContentType(contentType)) {
+    return { valid: false, error: 'Invalid contentType' };
+  }
+
+  if (!contentEncrypted) {
+    return { valid: false, error: 'contentEncrypted is required' };
+  }
+
+  if (typeof contentEncrypted !== 'string') {
+    return { valid: false, error: 'contentEncrypted must be a string' };
+  }
+
+  if (contentEncrypted.length > 10 * 1024 * 1024) { // 10MB limit
+    return { valid: false, error: 'Content too large' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * 验证设备注册数据
+ * @param {object} data 
+ * @returns {{valid: boolean, error?: string}}
+ */
+export function validateDeviceData(data) {
+  const { deviceName, deviceType, platform } = data;
+
+  const nameValidation = validateDeviceName(deviceName);
+  if (!nameValidation.valid) {
+    return nameValidation;
+  }
+
+  if (!deviceType) {
+    return { valid: false, error: 'deviceType is required' };
+  }
+
+  if (!isValidDeviceType(deviceType)) {
+    return { valid: false, error: 'Invalid deviceType' };
+  }
+
+  if (!platform) {
+    return { valid: false, error: 'platform is required' };
+  }
+
+  if (!isValidPlatform(platform)) {
+    return { valid: false, error: 'Invalid platform' };
+  }
+
+  return { valid: true };
+ClipSync 剪贴板同步软件  V1.0.0  第 728 页
+}
+
+/**
+ * 验证中间件工厂
+ * @param {Function} validator 
+ * @param {Function} extractor 
+ * @returns {Function}
+ */
+export function validationMiddleware(validator, extractor = (req) => req.body) {
+  return (req, res, next) => {
+    const data = extractor(req);
+    const result = validator(data);
+
+    if (!result.valid) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    next();
+  };
+}
+
+/**
+ * 常用验证中间件
+ */
+export const validators = {
+  // 验证登录数据
+  login: validationMiddleware((data) => {
+    const { phone, code } = data;
+
+    if (!phone) {
+      return { valid: false, error: 'Phone number is required' };
+    }
+
+    if (!isValidPhone(phone)) {
+      return { valid: false, error: 'Invalid phone number format' };
+    }
+
+    if (!code) {
+      return { valid: false, error: 'Verification code is required' };
+    }
+
+    if (!isValidCode(code)) {
+      return { valid: false, error: 'Invalid verification code format' };
+    }
+
+    return { valid: true };
+  }),
+
+  // 验证发送验证码
+  sendCode: validationMiddleware((data) => {
+ClipSync 剪贴板同步软件  V1.0.0  第 729 页
+    const { phone } = data;
+
+    if (!phone) {
+      return { valid: false, error: 'Phone number is required' };
+    }
+
+    if (!isValidPhone(phone)) {
+      return { valid: false, error: 'Invalid phone number format' };
+    }
+
+    return { valid: true };
+  }),
+
+  // 验证设备注册
+  registerDevice: validationMiddleware(validateDeviceData),
+
+  // 验证剪贴板数据
+  createClipboard: validationMiddleware(validateClipboardData),
+};
+
+export default {
+  isValidPhone,
+  isValidCode,
+  isValidUUID,
+  isValidContentType,
+  isValidDeviceType,
+  isValidPlatform,
+  sanitizeString,
+  sanitizeHtml,
+  escapeSql,
+  validatePagination,
+  validateSearch,
+  isValidJson,
+  isValidUrl,
+  isValidEmail,
+  validateNickname,
+  validateDeviceName,
+  validateClipboardData,
+  validateDeviceData,
+  validationMiddleware,
+  validators,
+};
+
+// ===== file: ws/server.js =====
+import { WebSocketServer } from 'ws';
+import jwt from 'jsonwebtoken';
+import pool from '../db/pool.js';
+import config from '../config.js';
+import { logger } from '../utils/logger.js';
+import { getRedisClient, checkWsConnectionLimit, removeWsConnection } from '../middleware/rateLimiter.js';
+ClipSync 剪贴板同步软件  V1.0.0  第 730 页
+import { setWsConnections } from '../middleware/metrics.js';
+import { isMaintenanceOn } from '../middleware/maintenance.js';
+
+/**
+ * AF-41：按设备强制断开（管理台「远程下线」消费）。
+ * 找到该用户名下目标设备的活跃 WS 连接 → 推送 force_logout 指令 → 以 4003 关闭。
+ * 客户端收到 force_logout 后清除本地登录态并回登录页；连接表由 close 处理器统一摘除。
+ * @returns {boolean} 是否找到并断开了活跃连接
+ */
+export function forceDisconnectDevice(userId, deviceId, reason) {
+  const ws = connections.get(userId)?.get(deviceId);
+  if (!ws) return false;
+  try {
+    ws.send(JSON.stringify({ type: 'force_logout', reason: reason || '' }));
+  } catch {
+    /* 发送失败不阻塞关闭 */
+  }
+  try {
+    ws.close(4003, 'Force offline by admin');
+  } catch {
+    /* ignore */
+  }
+  logger.info(`Force disconnect requested for device ${deviceId} (user ${userId})`);
+  return true;
+}
+import { createNotification } from '../services/notificationService.js';
+import {
+  initWsRedisPubSub,
+  publishToUser,
+  closeWsRedisPubSub,
+  isWsRedisEnabled,
+} from '../utils/ws-redis-pubsub.js';
+
+// Map<userId, Map<deviceId, WebSocket>>
+const connections = new Map();
+
+// CO-02: 当前实例活跃 WS 连接数（含尚未注册/被拒的连接），经 setWsConnections 上报 Prometheus gauge
+let liveWsConnections = 0;
+
+// 防止同一 server 实例被多次调用（测试环境会导致内存泄漏）
+const _setupServers = new WeakMap();
+
+// 未注册连接的超时时间（毫秒）
+const UNREGISTERED_TIMEOUT = 10000; // 10秒
+
+// WebSocket消息速率限制
+const WS_RATE_LIMIT = 50; // 每秒最多50条消息
+const WS_RATE_WINDOW = 1000; // 1秒窗口
+
+// 单连接发送缓冲上限（P5 背压）：超过则丢弃该消息，避免慢客户端导致服务端内存无限增长
+ClipSync 剪贴板同步软件  V1.0.0  第 731 页
+const WS_MAX_BUFFERED = 1024 * 1024; // 1MB
+
+// 带背压保护的发送：慢客户端（bufferedAmount 过高）直接丢弃，保护服务端内存
+function safeSend(ws, payload) {
+  if (ws.readyState !== 1) return false; // 仅 OPEN 状态
+  if (typeof ws.bufferedAmount === 'number' && ws.bufferedAmount > WS_MAX_BUFFERED) {
+    logger.warn('[WebSocket] backpressure: dropping message, bufferedAmount too high', {
+      bufferedAmount: ws.bufferedAmount,
+    });
+    return false;
+  }
+  try {
+    ws.send(payload);
+    return true;
+  } catch (err) {
+    logger.error('[WebSocket] send error:', { error: err.message });
+    return false;
+  }
+}
+
+export function setupWebSocket(server) {
+  // 幂等性检查：同一个 server 只创建一次 WebSocket 服务
+  if (_setupServers.has(server)) {
+    return _setupServers.get(server);
+  }
+
+  // WebSocket 服务（限制消息大小为 1MB，防止内存耗尽）
+  const wss = new WebSocketServer({ 
+    server, 
+    path: '/ws',
+    maxPayload: 1024 * 1024 // 1MB
+  });
+  _setupServers.set(server, wss);
+
+  // 测试环境大幅提升 listener 上限，避免 MaxListenersExceededWarning
+  const maxListeners = process.env.NODE_ENV === 'test' ? 500 : 100;
+  wss.setMaxListeners(maxListeners);
+  if (server.setMaxListeners) server.setMaxListeners(maxListeners);
+
+  // 初始化 WebSocket Redis Pub/Sub（如果 Redis 已配置）
+  initWsRedisPubSub(connections).then((enabled) => {
+    if (enabled) {
+      logger.info('[WebSocket] Redis Pub/Sub enabled for multi-instance deployment');
+    } else {
+      logger.info('[WebSocket] Redis Pub/Sub disabled, using local broadcast only');
+    }
+  });
+
+  wss.on('connection', async (ws, req) => {
+    // CO-02: 连接建立即计数，close 时递减；close 监听必须最先挂载，
+ClipSync 剪贴板同步软件  V1.0.0  第 732 页
+    // 否则 origin/token/CSRF 校验被提前 return 拒绝的连接只增不减导致 gauge 泄漏
+    liveWsConnections++;
+    setWsConnections(liveWsConnections);
+    ws.on('close', () => {
+      liveWsConnections = Math.max(0, liveWsConnections - 1);
+      setWsConnections(liveWsConnections);
+    });
+
+    logger.info('WebSocket connection attempt');
+
+    // ========== CO-20: 维护模式拦截（仅握手阶段查一次，带 5s 缓存，不逐消息检查） ==========
+    // upgrade 不经 Express 中间件链，故在 connection 入口拒绝；isMaintenanceOn 读库失败内部兜底为放行
+    if (await isMaintenanceOn()) {
+      logger.warn('WebSocket connection rejected: Maintenance mode');
+      ws.close(4003, 'Maintenance mode');
+      return;
+    }
+
+    // ========== 安全增强 #1: Origin 验证 ==========
+    const origin = req.headers.origin;
+    if (config.nodeEnv === 'production' && origin) {
+      const allowedOrigins = config.cors?.origins || [];
+      if (!allowedOrigins.includes(origin)) {
+        logger.warn('WebSocket connection rejected: Invalid origin', { origin });
+        ws.close(4003, 'Invalid origin');
+        return;
+      }
+    }
+
+    // ========== 安全增强 #2: 解析并验证 Token ==========
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const token = url.searchParams.get('token') || req.headers['authorization']?.split(' ')[1];
+
+    if (!token) {
+      ws.close(4001, 'Authentication required');
+      return;
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, config.jwt.secret);
+    } catch (err) {
+      ws.close(4002, 'Invalid token');
+      return;
+    }
+
+    // Redis 客户端必须在 CSRF 校验之前获取：
+    // 此前声明位于下方黑名单检查处，CSRF 块引用时触发 TDZ ReferenceError，
+    // 导致任何携带 csrf_token 的连接（含生产环境全部连接）fail-closed 被拒。
+    const redis = await getRedisClient();
+ClipSync 剪贴板同步软件  V1.0.0  第 733 页
+
+    // ========== 安全增强 #2.5: WebSocket CSRF 保护 ==========
+    const csrfToken = url.searchParams.get('csrf_token');
+    if (config.nodeEnv === 'production' || csrfToken) {
+      // 生产环境必须验证CSRF token
+      if (!csrfToken) {
+        logger.warn('WebSocket connection rejected: Missing CSRF token', { userId: decoded.userId });
+        ws.close(4006, 'CSRF token required');
+        return;
+      }
+      
+      // 格式检查
+      if (!/^[a-f0-9]{64}$/.test(csrfToken)) {
+        logger.warn('WebSocket connection rejected: Invalid CSRF token format', { userId: decoded.userId });
+        ws.close(4006, 'Invalid CSRF token');
+        return;
+      }
+      
+      // Redis验证：检查token是否存在且属于该用户
+      if (redis) {
+        try {
+          const tokenData = await redis.get(`csrf:${csrfToken}`);
+          if (!tokenData) {
+            logger.warn('WebSocket connection rejected: CSRF token not found in Redis', { userId: decoded.userId });
+            ws.close(4006, 'Invalid CSRF token');
+            return;
+          }
+          
+          const parsed = JSON.parse(tokenData);
+          if (parsed.userId !== decoded.userId) {
+            logger.warn('WebSocket connection rejected: CSRF token user mismatch', { 
+              userId: decoded.userId,
+              tokenUserId: parsed.userId 
+            });
+            ws.close(4006, 'Invalid CSRF token');
+            return;
+          }
+          
+          // 验证通过，使用后删除token（单次使用）
+          await redis.del(`csrf:${csrfToken}`);
+        } catch (err) {
+          logger.error('CSRF token validation error', { error: err.message });
+          // Redis错误时拒绝连接（ fail-closed）
+          ws.close(4006, 'CSRF validation error');
+          return;
+        }
+      } else {
+        // Redis不可用时，如果是最佳环境则拒绝连接
+        if (config.nodeEnv === 'production') {
+          logger.error('WebSocket CSRF validation failed: Redis unavailable in production');
+ClipSync 剪贴板同步软件  V1.0.0  第 734 页
+          ws.close(4006, 'Service temporarily unavailable');
+          return;
+        }
+      }
+    }
+
+    // ========== 安全增强 #3: 检查 Token 是否在黑名单中 ==========
+    if (redis && decoded.jti) {
+      const blacklisted = await redis.get(`bl:${decoded.jti}`);
+      if (blacklisted) {
+        logger.warn('WebSocket connection rejected: Token revoked', { userId: decoded.userId });
+        ws.close(4004, 'Token revoked');
+        return;
+      }
+    }
+
+    const userId = decoded.userId;
+    let deviceId = null;
+    let isRegistered = false;
+    let messageCount = 0;
+    let lastMessageTime = Date.now();
+
+    // ========== 安全增强 #4: 未注册连接超时 ==========
+    const unregisteredTimeout = setTimeout(() => {
+      if (!isRegistered) {
+        logger.warn('WebSocket connection timeout: Not registered', { userId });
+        ws.close(4005, 'Registration timeout');
+      }
+    }, UNREGISTERED_TIMEOUT);
+
+    // ========== 安全增强 #5: 消息速率限制 ==========
+    function checkRateLimit() {
+      const now = Date.now();
+      if (now - lastMessageTime > WS_RATE_WINDOW) {
+        // 新窗口
+        messageCount = 1;
+        lastMessageTime = now;
+        return true;
+      }
+      
+      if (messageCount >= WS_RATE_LIMIT) {
+        logger.warn('WebSocket rate limit exceeded', { userId, deviceId });
+        return false;
+      }
+      
+      messageCount++;
+      return true;
+    }
+
+    ws.on('message', async (data) => {
+ClipSync 剪贴板同步软件  V1.0.0  第 735 页
+      // 速率限制检查
+      if (!checkRateLimit()) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }));
+        return;
+      }
+
+      try {
+        const message = JSON.parse(data.toString());
+
+        switch (message.type) {
+          case 'register':
+            deviceId = message.deviceId;
+            if (!deviceId) {
+              ws.send(JSON.stringify({ type: 'error', message: 'deviceId required' }));
+              return;
+            }
+
+            // Verify device belongs to user
+            const deviceCheck = await pool.query(
+              'SELECT id FROM devices WHERE id = $1 AND user_id = $2',
+              [deviceId, userId]
+            );
+
+            if (deviceCheck.rows.length === 0) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Device not found' }));
+              return;
+            }
+
+            // 连接数限制（H6 修复：此前 checkWsConnectionLimit 定义但未调用，限制形同虚设）
+            if (!checkWsConnectionLimit(userId, deviceId)) {
+              logger.warn('[WebSocket] connection limit exceeded', { userId, deviceId });
+              ws.send(JSON.stringify({ type: 'error', message: 'Connection limit exceeded (max 5 per user)' }));
+              ws.close(4007, 'Connection limit exceeded');
+              return;
+            }
+
+            // Store connection
+            if (!connections.has(userId)) {
+              connections.set(userId, new Map());
+            }
+
+            // 重连场景：同一 deviceId 的旧连接若仍挂在广播表中，先移除并关闭，
+            // 避免重连风暴期间旧连接未及时清理而累积到每用户 5 连接上限被误杀（4007）
+            const userConns = connections.get(userId);
+            const oldWs = userConns.get(deviceId);
+            if (oldWs && oldWs !== ws) {
+              userConns.delete(deviceId);
+              try { oldWs.close(4000, 'Replaced by new connection'); } catch { /* ignore */ }
+            }
+
+ClipSync 剪贴板同步软件  V1.0.0  第 736 页
+            connections.get(userId).set(deviceId, ws);
+
+            // 标记已注册并清除超时计时器
+            isRegistered = true;
+            clearTimeout(unregisteredTimeout);
+
+            // Update device online status
+            await pool.query(
+              'UPDATE devices SET is_online = TRUE, last_seen_at = NOW() WHERE id = $1',
+              [deviceId]
+            );
+
+            ws.send(JSON.stringify({ type: 'registered', deviceId }));
+            logger.info(`Device ${deviceId} registered for user ${userId}`);
+            break;
+
+          case 'clipboard':
+            // Broadcast clipboard content to other devices of the same user
+            if (!deviceId) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Register device first' }));
+              return;
+            }
+
+            const clipboardMessage = {
+              type: 'clipboard',
+              sourceDeviceId: deviceId,
+              content: message.content,
+              contentType: message.contentType,
+              timestamp: Date.now(),
+            };
+
+            // 本地广播（同一实例内的其他设备）
+            const userDevices = connections.get(userId);
+            if (userDevices) {
+              for (const [otherDeviceId, otherWs] of userDevices) {
+                if (otherDeviceId !== deviceId) {
+                  safeSend(otherWs, JSON.stringify(clipboardMessage));
+                }
+              }
+            }
+
+            // Redis Pub/Sub 广播（其他实例的设备）
+            if (isWsRedisEnabled()) {
+              await publishToUser(userId, clipboardMessage);
+            }
+            break;
+
+          case 'ping':
+            ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+
+ClipSync 剪贴板同步软件  V1.0.0  第 737 页
+            // Update heartbeat
+            if (deviceId) {
+              await pool.query(
+                'UPDATE devices SET last_seen_at = NOW() WHERE id = $1',
+                [deviceId]
+              );
+            }
+            break;
+
+          default:
+            ws.send(JSON.stringify({ type: 'error', message: `Unknown message type: ${message.type}` }));
+        }
+      } catch (err) {
+        logger.error('WebSocket message error:', { error: err.message });
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
+      }
+    });
+
+    ws.on('close', async () => {
+      // 清除未注册超时计时器
+      clearTimeout(unregisteredTimeout);
+
+      if (deviceId) {
+        // Remove from connection-limit tracker (H6 修复)
+        removeWsConnection(userId, deviceId);
+
+        // Remove from connections
+        const userDevices = connections.get(userId);
+        if (userDevices) {
+          userDevices.delete(deviceId);
+          if (userDevices.size === 0) {
+            connections.delete(userId);
+          }
+        }
+
+        // Update device offline status
+        try {
+          await pool.query(
+            'UPDATE devices SET is_online = FALSE WHERE id = $1',
+            [deviceId]
+          );
+        } catch (err) {
+          logger.error('Failed to update device offline status:', { error: err.message });
+        }
+
+        logger.info(`Device ${deviceId} disconnected`);
+      }
+    });
+
+    ws.on('error', (err) => {
+ClipSync 剪贴板同步软件  V1.0.0  第 738 页
+      logger.error('WebSocket error:', { error: err.message });
+    });
+
+    // Start heartbeat check
+    startHeartbeatCheck(ws, deviceId);
+  });
+
+  // Heartbeat check: close connections that haven't sent ping
+  function startHeartbeatCheck(ws, deviceId) {
+    const interval = setInterval(() => {
+      if (ws.readyState !== 1) {
+        clearInterval(interval);
+        return;
+      }
+
+      ws.isAlive = false;
+      ws.ping();
+
+      const timeout = setTimeout(() => {
+        if (!ws.isAlive) {
+          ws.terminate();
+        }
+      }, config.ws.heartbeatTimeout);
+
+      ws.once('pong', () => {
+        ws.isAlive = true;
+        clearTimeout(timeout);
+      });
+    }, config.ws.heartbeatInterval);
+
+    ws.on('close', () => clearInterval(interval));
+  }
+
+  return wss;
+}
+
+// Broadcast to all devices of a user
+export function broadcastToUser(userId, message) {
+  // 本地广播（当前实例内的设备）
+  const userDevices = connections.get(userId);
+  if (userDevices) {
+    for (const [deviceId, ws] of userDevices) {
+      safeSend(ws, JSON.stringify(message));
+    }
+  }
+
+  // Redis Pub/Sub 广播（其他实例的设备）
+  if (isWsRedisEnabled()) {
+    publishToUser(userId, message).catch((err) => {
+      logger.error('[WebSocket] Redis Pub/Sub broadcast failed:', { error: err.message });
+ClipSync 剪贴板同步软件  V1.0.0  第 739 页
+    });
+  }
+}
+
+// Broadcast to every connected client on this instance（多实例部署时配合客户端轮询兜底）。
+// 用于全局配置变更广播，如 feature_flags.updated——开关类消息允许最终一致（客户端 5s TTL 兜底）。
+export function broadcastToAllClients(message) {
+  let count = 0;
+  const payload = JSON.stringify(message);
+  for (const [, devices] of connections) {
+    for (const [, ws] of devices) {
+      if (ws.readyState === 1) {
+        try {
+          ws.send(payload);
+          count++;
+        } catch {
+          // 忽略发送失败
+        }
+      }
+    }
+  }
+  logger.info(`[WebSocket] broadcastToAllClients: ${message?.type || 'unknown'} → ${count} clients`);
+  return count;
+}
+
+// Send notification to all devices of a user
+// 同时持久化到 notification_history（此前只推 WS 不落库，导致 GET /history 永远为空）
+export async function sendNotification(userId, notification) {
+  const notificationType = notification.notificationType || 'sync_complete';
+
+  // 1) 落库（UPSERT 风格：createNotification 已处理写入）
+  let persistedId = null;
+  try {
+    const saved = await createNotification({
+      userId,
+      notificationType,
+      title: notification.title,
+      content: notification.body,
+      metadata: notification.data || {},
+    });
+    persistedId = saved?.id ?? null;
+  } catch (err) {
+    logger.error('[WS] 通知落库失败（仍继续推送）:', { error: err?.message, userId });
+  }
+
+  // 2) 推送 WS（携带真实 id + type，供前端映射分类与去重）
+  const message = {
+    type: 'notification',
+    id: persistedId != null ? String(persistedId) : `notif_${Date.now()}`,
+    notificationType,
+ClipSync 剪贴板同步软件  V1.0.0  第 740 页
+    title: notification.title,
+    body: notification.body,
+    data: notification.data || {},
+    timestamp: new Date().toISOString(),
+  };
+
+  broadcastToUser(userId, message);
+
+  logger.info('Notification sent', {
+    userId,
+    notificationType,
+    title: notification.title,
+    onlineDevices: getOnlineDeviceCount(userId),
+  });
+}
+
+/**
+ * 登录时检测是否为「新设备 / 新登录地点」登录；若是则推送 security_alert。
+ * 必须在 createSessionAndGenerateToken 之前调用（此时本次会话尚未入库，历史会话数不含本次）。
+ * @param {string} userId
+ * @param {{ deviceName?: string, platform?: string, ip?: string }} ctx
+ */
+export async function detectAndNotifyNewLogin(userId, ctx = {}) {
+  const deviceName = (ctx.deviceName || 'Unknown Device').toString();
+  const platform = (ctx.platform || 'unknown').toString();
+  const ip = ctx.ip || '';
+  try {
+    const prior = await pool.query('SELECT COUNT(*)::bigint AS cnt FROM user_sessions WHERE user_id = $1', [userId]);
+    const priorCount = Number(prior.rows[0]?.cnt || 0);
+    if (priorCount === 0) return; // 首次登录（新注册）不报警
+    const seen = await pool.query(
+      'SELECT 1 FROM user_sessions WHERE user_id = $1 AND device_name = $2 AND platform = $3 LIMIT 1',
+      [userId, deviceName, platform]
+    );
+    if (seen.rows.length > 0) return; // 已知设备，不报警
+    await sendNotification(userId, {
+      notificationType: 'security_alert',
+      title: 'New login detected',
+      body: `A new device (${deviceName} · ${platform})${ip ? ` from ${ip}` : ''} just signed in to your account.`,
+      data: { deviceName, platform, ip },
+    });
+  } catch (err) {
+    logger.error('[WS] 新登录安全警报检测失败（已忽略）:', { error: err?.message, userId });
+  }
+}
+
+// Get online device count for a user
+export function getOnlineDeviceCount(userId) {
+  const userDevices = connections.get(userId);
+  return userDevices ? userDevices.size : 0;
+ClipSync 剪贴板同步软件  V1.0.0  第 741 页
+}
+
+// Check if a user has any online devices
+export function hasOnlineDevices(userId) {
+  return getOnlineDeviceCount(userId) > 0;
+}
+
+// Get all online users (for admin/monitoring)
+export function getOnlineUsers() {
+  const onlineUsers = [];
+  for (const [userId, devices] of connections) {
+    if (devices.size > 0) {
+      onlineUsers.push({
+        userId,
+        deviceCount: devices.size,
+        devices: Array.from(devices.keys()),
+      });
+    }
+  }
+  return onlineUsers;
+}
+
+export { connections };
+
+/**
+ * 优雅关闭 WebSocket 服务器
+ * 1. 通知所有连接的客户端准备重启（发送 reconnect 消息）
+ * 2. 等待客户端断开连接（设置超时）
+ * 3. 返回 Promise，关闭完成后 resolve
+ * @param {number} timeout - 等待客户端断开的超时时间（毫秒），默认 10 秒
+ * @returns {Promise<void>}
+ */
+export async function gracefulShutdown(timeout = 10000) {
+  logger.info('[WebSocket] Starting graceful shutdown...');
+  
+  // 1. 通知所有客户端重连
+  const reconnectMessage = JSON.stringify({
+    type: 'server_shutdown',
+    message: 'Server is restarting, please reconnect in 5 seconds',
+    reconnectAfter: 5000,
+    timestamp: Date.now(),
+  });
+
+  let clientCount = 0;
+  for (const [userId, devices] of connections) {
+    for (const [deviceId, ws] of devices) {
+      if (ws.readyState === 1) { // WebSocket.OPEN
+        try {
+          ws.send(reconnectMessage);
+          clientCount++;
+ClipSync 剪贴板同步软件  V1.0.0  第 742 页
+        } catch (err) {
+          // 忽略发送失败
+        }
+      }
+    }
+  }
+
+  logger.info(`[WebSocket] Notified ${clientCount} clients to reconnect`);
+
+  // 2. 等待客户端断开（设置超时）
+  return new Promise((resolve) => {
+    const startTime = Date.now();
+    
+    const checkInterval = setInterval(() => {
+      let remainingClients = 0;
+      for (const [userId, devices] of connections) {
+        for (const [deviceId, ws] of devices) {
+          if (ws.readyState === 1) { // WebSocket.OPEN
+            remainingClients++;
+          }
+        }
+      }
+
+      if (remainingClients === 0) {
+        clearInterval(checkInterval);
+        logger.info('[WebSocket] All clients disconnected, shutdown complete');
+        resolve();
+      } else if (Date.now() - startTime > timeout) {
+        clearInterval(checkInterval);
+        logger.warn(`[WebSocket] Graceful shutdown timeout, ${remainingClients} clients still connected`);
+        resolve(); // 超时后强制退出
+      }
+    }, 500);
+
+    // 3. 同时设置超时保护
+    setTimeout(() => {
+      clearInterval(checkInterval);
+      logger.warn('[WebSocket] Graceful shutdown forced timeout');
+      resolve();
+    }, timeout);
+  });
+}
+
+// 进程退出时清理 Redis Pub/Sub 连接
+process.on('exit', () => {
+  closeWsRedisPubSub();
+});
+
+process.on('SIGINT', () => {
+  closeWsRedisPubSub();
+ClipSync 剪贴板同步软件  V1.0.0  第 743 页
+  process.exit(0);
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

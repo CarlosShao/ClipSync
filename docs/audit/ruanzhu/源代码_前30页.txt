@@ -1,0 +1,1530 @@
+ClipSync 剪贴板同步软件  V1.0.0  第 1 页
+// ===== file: config/development.js =====
+// Development environment configuration
+// Overrides base config for local development
+
+export default {
+  port: 3000,
+  host: '0.0.0.0',
+  nodeEnv: 'development',
+  logLevel: 'debug',
+
+  db: {
+    host: 'localhost',
+    port: 5433,
+    name: 'clipsync_dev',
+    user: 'clipsync',
+    password: 'dev_password_change_me',
+    poolMin: 2,
+    poolMax: 10,
+  },
+
+  redis: {
+    host: 'localhost',
+    port: 6380,
+    password: undefined,
+  },
+
+  jwt: {
+    secret: 'clipsync-dev-secret',
+    expiresIn: '7d',
+  },
+
+  cors: {
+    origins: '*',
+  },
+
+  ws: {
+    heartbeatInterval: 30000,
+    heartbeatTimeout: 5000,
+  },
+
+  rateLimit: {
+    api: { windowMs: 15 * 60 * 1000, max: 200 },
+    sendCode: { windowMs: 60 * 60 * 1000, max: 10 },
+    loginFailed: { windowMs: 15 * 60 * 1000, max: 20 },
+  },
+
+  encryption: {
+    algorithm: 'aes-256-gcm',
+  },
+
+ClipSync 剪贴板同步软件  V1.0.0  第 2 页
+  upload: {
+    maxImageSize: 20 * 1024 * 1024,
+    maxFileSize: 50 * 1024 * 1024,
+  },
+};
+
+// ===== file: config/production.js =====
+// Production environment configuration
+// All sensitive values should come from environment variables (.env.production)
+// This file only provides defaults and production-specific overrides
+
+export default {
+  port: parseInt(process.env.PORT || '3000', 10),
+  host: process.env.HOST || '0.0.0.0',
+  nodeEnv: 'production',
+  logLevel: process.env.LOG_LEVEL || 'info',
+
+  db: {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    name: process.env.DB_NAME || 'clipsync',
+    user: process.env.DB_USER || 'clipsync_app',
+    password: process.env.DB_PASSWORD, // NO default - must be set in .env.production
+    poolMin: 5,
+    poolMax: 20,
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : false,
+  },
+
+  redis: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    password: process.env.REDIS_PASSWORD, // NO default - must be set
+  },
+
+  jwt: {
+    secret: process.env.JWT_SECRET, // NO default - must be set
+    expiresIn: process.env.JWT_EXPIRES_IN || '24h',
+  },
+
+  cors: {
+    origins: process.env.CORS_ORIGINS || '', // Must whitelist specific origins
+  },
+
+  ws: {
+    heartbeatInterval: parseInt(process.env.WS_HEARTBEAT_INTERVAL || '30000', 10),
+    heartbeatTimeout: parseInt(process.env.WS_HEARTBEAT_TIMEOUT || '5000', 10),
+  },
+
+  rateLimit: {
+    api: { windowMs: 15 * 60 * 1000, max: 100 },
+ClipSync 剪贴板同步软件  V1.0.0  第 3 页
+    sendCode: { windowMs: 60 * 60 * 1000, max: 5 },
+    loginFailed: { windowMs: 15 * 60 * 1000, max: 5 },
+  },
+
+  encryption: {
+    algorithm: process.env.ENCRYPTION_ALGORITHM || 'aes-256-gcm',
+  },
+
+  upload: {
+    maxImageSize: 20 * 1024 * 1024,
+    maxFileSize: 50 * 1024 * 1024,
+  },
+};
+
+// ===== file: config/test.js =====
+// Test environment configuration
+// Used for automated testing (vitest, e2e tests)
+
+export default {
+  port: 3001, // Different port to avoid conflict with dev server
+  host: '0.0.0.0',
+  nodeEnv: 'test',
+  logLevel: 'warn', // Less verbose during tests
+
+  db: {
+    host: 'localhost',
+    port: 5433,
+    name: 'clipsync_test',
+    user: 'clipsync',
+    password: 'dev_password_change_me',
+    poolMin: 1,
+    poolMax: 5,
+  },
+
+  redis: {
+    host: 'localhost',
+    port: 6380, // Different Redis port for test isolation
+    password: 'dev_redis_password',
+  },
+
+  jwt: {
+    secret: 'clipsync-test-secret',
+    expiresIn: '1h',
+  },
+
+  cors: {
+    origins: '*',
+  },
+
+  ws: {
+ClipSync 剪贴板同步软件  V1.0.0  第 4 页
+    heartbeatInterval: 5000, // Faster for test speed
+    heartbeatTimeout: 2000,
+  },
+
+  rateLimit: {
+    api: { windowMs: 15 * 60 * 1000, max: 500 }, // More lenient for tests
+    sendCode: { windowMs: 60 * 60 * 1000, max: 50 },
+    loginFailed: { windowMs: 15 * 60 * 1000, max: 50 },
+  },
+
+  encryption: {
+    algorithm: 'aes-256-gcm',
+  },
+
+  upload: {
+    maxImageSize: 20 * 1024 * 1024,
+    maxFileSize: 50 * 1024 * 1024,
+  },
+};
+
+// ===== file: config.js =====
+import 'dotenv/config';
+import developmentConfig from './config/development.js';
+import testConfig from './config/test.js';
+import productionConfig from './config/production.js';
+
+// Select config based on NODE_ENV
+const envConfigs = {
+  development: developmentConfig,
+  test: testConfig,
+  production: productionConfig,
+};
+
+const nodeEnv = process.env.NODE_ENV || 'development';
+const envConfig = envConfigs[nodeEnv] || developmentConfig;
+
+// Deep merge: env vars override config files
+function deepMerge(base, override) {
+  const result = { ...base };
+  for (const key of Object.keys(override)) {
+    if (
+      typeof base[key] === 'object' && base[key] !== null && !Array.isArray(base[key]) &&
+      typeof override[key] === 'object' && override[key] !== null && !Array.isArray(override[key])
+    ) {
+      result[key] = deepMerge(base[key], override[key]);
+    } else if (override[key] !== undefined) {
+      result[key] = override[key];
+    }
+  }
+  return result;
+ClipSync 剪贴板同步软件  V1.0.0  第 5 页
+}
+
+// Environment variable overrides (highest priority)
+// NOTE: only include keys when the env var is actually set,
+// otherwise leave them out so deepMerge doesn't overwrite with undefined.
+const envOverrides = {};
+
+if (process.env.PORT) envOverrides.port = parseInt(process.env.PORT, 10);
+if (process.env.HOST) envOverrides.host = process.env.HOST;
+if (process.env.LOG_LEVEL) envOverrides.logLevel = process.env.LOG_LEVEL;
+
+// 测试环境强制使用 testConfig 的独立测试库（clipsync_test），
+// 避免 .env 中的 DB_NAME=clipsync_dev 等覆盖把整套测试拉到共享 dev 库，
+// 造成用例间数据污染与随机失败。其余环境保持原有 env 覆盖行为。
+if (nodeEnv !== 'test' && (process.env.DB_HOST || process.env.DB_PORT || process.env.DB_NAME || process.env.DB_USER || process.env.DB_PASSWORD)) {
+  envOverrides.db = {};
+  if (process.env.DB_HOST) envOverrides.db.host = process.env.DB_HOST;
+  if (process.env.DB_PORT) envOverrides.db.port = parseInt(process.env.DB_PORT, 10);
+  if (process.env.DB_NAME) envOverrides.db.name = process.env.DB_NAME;
+  if (process.env.DB_USER) envOverrides.db.user = process.env.DB_USER;
+  if (process.env.DB_PASSWORD) envOverrides.db.password = process.env.DB_PASSWORD;
+}
+
+if (process.env.REDIS_HOST || process.env.REDIS_PORT || process.env.REDIS_PASSWORD) {
+  envOverrides.redis = {};
+  if (process.env.REDIS_HOST) envOverrides.redis.host = process.env.REDIS_HOST;
+  if (process.env.REDIS_PORT) envOverrides.redis.port = parseInt(process.env.REDIS_PORT, 10);
+  if (process.env.REDIS_PASSWORD) envOverrides.redis.password = process.env.REDIS_PASSWORD;
+}
+
+if (process.env.JWT_SECRET) {
+  envOverrides.jwt = { ...(envOverrides.jwt || {}), secret: process.env.JWT_SECRET };
+}
+if (process.env.JWT_EXPIRES_IN) {
+  envOverrides.jwt = { ...(envOverrides.jwt || {}), expiresIn: process.env.JWT_EXPIRES_IN };
+}
+
+if (process.env.CORS_ORIGINS) {
+  envOverrides.cors = { origins: process.env.CORS_ORIGINS.split(',') };
+}
+
+if (process.env.WS_HEARTBEAT_INTERVAL || process.env.WS_HEARTBEAT_TIMEOUT) {
+  envOverrides.ws = {};
+  if (process.env.WS_HEARTBEAT_INTERVAL) envOverrides.ws.heartbeatInterval = parseInt(process.env.WS_HEARTBEAT_INTERVAL, 10);
+  if (process.env.WS_HEARTBEAT_TIMEOUT) envOverrides.ws.heartbeatTimeout = parseInt(process.env.WS_HEARTBEAT_TIMEOUT, 10);
+}
+
+if (process.env.ENCRYPTION_ALGORITHM) {
+  envOverrides.encryption = { algorithm: process.env.ENCRYPTION_ALGORITHM };
+}
+ClipSync 剪贴板同步软件  V1.0.0  第 6 页
+
+// Final config: envConfig (base) ← envOverrides (highest priority)
+const config = Object.keys(envOverrides).length > 0 ? deepMerge(envConfig, envOverrides) : envConfig;
+
+// Validate critical production settings
+if (nodeEnv === 'production') {
+  const warnings = [];
+  if (!config.jwt.secret || config.jwt.secret === 'clipsync-dev-secret') {
+    warnings.push('JWT_SECRET must be set in production (not using dev default)');
+  }
+  if (!config.db.password) {
+    warnings.push('DB_PASSWORD must be set in production');
+  }
+  if (!config.redis || !config.redis.password) {
+    warnings.push('REDIS_PASSWORD should be set in production');
+  }
+  if (!config.cors || !config.cors.origins || config.cors.origins === '*') {
+    warnings.push('CORS_ORIGINS must be explicitly whitelisted in production');
+  }
+  if (warnings.length > 0) {
+    // eslint-disable-next-line no-console
+    console.warn('⚠️  Production configuration warnings:');
+    // eslint-disable-next-line no-console
+    warnings.forEach(w => console.warn(`  - ${w}`));
+  }
+}
+
+// 默认 JSON / urlencoded body 解析上限（P1 修复：原 50mb 单请求可吃光内存）
+// 文件上传走 multer（diskStorage），不经由 express.json，故不受此限制。
+if (!config.jsonBodyLimit) {
+  config.jsonBodyLimit = process.env.JSON_BODY_LIMIT || '10mb';
+}
+
+export default config;
+
+// ===== file: crypto/keyExchange.js =====
+import crypto from 'crypto';
+import { promisify } from 'util';
+
+const generateKeyPairAsync = promisify(crypto.generateKeyPair);
+
+/**
+ * ECDH Key Exchange for ClipSync
+ * 
+ * 流程：
+ * 1. 客户端生成 ECDH 密钥对
+ * 2. 客户端发送公钥到服务器
+ * 3. 服务器存储公钥
+ * 4. 两个客户端通过对方公钥计算共享密钥
+ * 5. 从共享密钥派生加密密钥
+ClipSync 剪贴板同步软件  V1.0.0  第 7 页
+ */
+
+const CURVE = 'prime256v1'; // NIST P-256
+const KEY_LENGTH = 32; // 256 bits
+const IV_LENGTH = 12; // 96 bits for AES-GCM
+const AUTH_TAG_LENGTH = 16; // 128 bits for AES-GCM
+const SALT_LENGTH = 16; // 128 bits for PBKDF2
+const PBKDF2_ITERATIONS = 100000;
+
+/**
+ * 生成 ECDH 密钥对
+ * @returns {Promise<{publicKey: string, privateKey: string}>}
+ */
+export async function generateKeyPair() {
+  const { publicKey, privateKey } = await generateKeyPairAsync('ec', {
+    namedCurve: CURVE,
+  });
+
+  return {
+    publicKey: publicKey.export({ type: 'spki', format: 'pem' }),
+    privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }),
+  };
+}
+
+/**
+ * 从两个公钥计算共享密钥
+ * @param {string} privateKey - 本方私钥 (PEM)
+ * @param {string} otherPublicKey - 对方公钥 (PEM)
+ * @returns {Buffer} 共享密钥
+ */
+export function computeSharedSecret(privateKey, otherPublicKey) {
+  // Use crypto.diffieHellman which correctly handles ECDH key exchange
+  return crypto.diffieHellman({
+    privateKey: crypto.createPrivateKey(privateKey),
+    publicKey: crypto.createPublicKey(otherPublicKey),
+  });
+}
+
+/**
+ * 从共享密钥派生加密密钥 (PBKDF2)
+ * @param {Buffer} sharedSecret - 共享密钥
+ * @param {Buffer} salt - 盐值
+ * @returns {Promise<Buffer>} 派生密钥
+ */
+export async function deriveKey(sharedSecret, salt) {
+  const deriveKeyAsync = promisify(crypto.pbkdf2);
+  return deriveKeyAsync(sharedSecret, salt, PBKDF2_ITERATIONS, KEY_LENGTH, 'sha512');
+}
+
+/**
+ClipSync 剪贴板同步软件  V1.0.0  第 8 页
+ * 生成随机盐值
+ * @returns {Buffer}
+ */
+export function generateSalt() {
+  return crypto.randomBytes(SALT_LENGTH);
+}
+
+/**
+ * 生成随机 IV
+ * @returns {Buffer}
+ */
+export function generateIV() {
+  return crypto.randomBytes(IV_LENGTH);
+}
+
+/**
+ * AES-256-GCM 加密
+ * @param {Buffer|string} plaintext - 明文
+ * @param {Buffer} key - 256位密钥
+ * @param {Buffer} iv - 初始化向量
+ * @returns {{ciphertext: Buffer, authTag: Buffer}}
+ */
+export function encrypt(plaintext, key, iv) {
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv, {
+    authTagLength: AUTH_TAG_LENGTH,
+  });
+
+  const plaintextBuffer = Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(plaintext, 'utf8');
+  const ciphertext = Buffer.concat([cipher.update(plaintextBuffer), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return { ciphertext, authTag };
+}
+
+/**
+ * AES-256-GCM 解密
+ * @param {Buffer} ciphertext - 密文
+ * @param {Buffer} key - 256位密钥
+ * @param {Buffer} iv - 初始化向量
+ * @param {Buffer} authTag - 认证标签
+ * @returns {Buffer} 明文
+ */
+export function decrypt(ciphertext, key, iv, authTag) {
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv, {
+    authTagLength: AUTH_TAG_LENGTH,
+  });
+  decipher.setAuthTag(authTag);
+
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return plaintext;
+ClipSync 剪贴板同步软件  V1.0.0  第 9 页
+}
+
+/**
+ * 完整的加密流程：生成密钥 -> 加密数据
+ * @param {string} plaintext - 明文
+ * @param {Buffer} key - 加密密钥
+ * @returns {{encrypted: string, iv: string, authTag: string, salt: string}}
+ */
+export function encryptData(plaintext, key) {
+  const iv = generateIV();
+  const { ciphertext, authTag } = encrypt(plaintext, key, iv);
+
+  return {
+    encrypted: ciphertext.toString('base64'),
+    iv: iv.toString('base64'),
+    authTag: authTag.toString('base64'),
+  };
+}
+
+/**
+ * 完整的解密流程：解密数据
+ * @param {string} encrypted - 密文 (base64)
+ * @param {Buffer} key - 加密密钥
+ * @param {string} iv - 初始化向量 (base64)
+ * @param {string} authTag - 认证标签 (base64)
+ * @returns {string} 明文
+ */
+export function decryptData(encrypted, key, iv, authTag) {
+  const ciphertext = Buffer.from(encrypted, 'base64');
+  const ivBuffer = Buffer.from(iv, 'base64');
+  const authTagBuffer = Buffer.from(authTag, 'base64');
+
+  const plaintext = decrypt(ciphertext, key, ivBuffer, authTagBuffer);
+  return plaintext.toString('utf8');
+}
+
+/**
+ * 生成设备密钥对并存储
+ * 用于设备间的端到端加密
+ */
+export class DeviceKeyManager {
+  constructor() {
+    // 内存存储（生产环境应使用安全存储）
+    this.deviceKeys = new Map(); // deviceId -> { publicKey, privateKey }
+  }
+
+  /**
+   * 为设备生成密钥对
+   */
+  async generateDeviceKeys(deviceId) {
+ClipSync 剪贴板同步软件  V1.0.0  第 10 页
+    const keyPair = await generateKeyPair();
+    this.deviceKeys.set(deviceId, keyPair);
+    return keyPair;
+  }
+
+  /**
+   * 获取设备公钥
+   */
+  getPublicKey(deviceId) {
+    const keys = this.deviceKeys.get(deviceId);
+    return keys ? keys.publicKey : null;
+  }
+
+  /**
+   * 获取设备私钥
+   */
+  getPrivateKey(deviceId) {
+    const keys = this.deviceKeys.get(deviceId);
+    return keys ? keys.privateKey : null;
+  }
+
+  /**
+   * 计算两个设备间的共享密钥
+   */
+  computeSharedKey(deviceId1, deviceId2) {
+    const keys1 = this.deviceKeys.get(deviceId1);
+    const keys2 = this.deviceKeys.get(deviceId2);
+
+    if (!keys1 || !keys2) {
+      return null;
+    }
+
+    return computeSharedSecret(keys1.privateKey, keys2.publicKey);
+  }
+
+  /**
+   * 加密数据（从设备1到设备2）
+   */
+  encryptForDevice(plaintext, deviceId1, deviceId2) {
+    const sharedKey = this.computeSharedKey(deviceId1, deviceId2);
+    if (!sharedKey) {
+      return null;
+    }
+
+    const salt = generateSalt();
+    const iv = generateIV();
+    const { ciphertext, authTag } = encrypt(plaintext, sharedKey, iv);
+
+    return {
+      encrypted: ciphertext.toString('base64'),
+ClipSync 剪贴板同步软件  V1.0.0  第 11 页
+      iv: iv.toString('base64'),
+      authTag: authTag.toString('base64'),
+      salt: salt.toString('base64'),
+      senderDeviceId: deviceId1,
+    };
+  }
+
+  /**
+   * 解密数据（从设备2接收）
+   */
+  decryptFromDevice(encryptedData, deviceId1, deviceId2) {
+    const sharedKey = this.computeSharedKey(deviceId1, deviceId2);
+    if (!sharedKey) {
+      return null;
+    }
+
+    const ciphertext = Buffer.from(encryptedData.encrypted, 'base64');
+    const iv = Buffer.from(encryptedData.iv, 'base64');
+    const authTag = Buffer.from(encryptedData.authTag, 'base64');
+
+    return decrypt(ciphertext, sharedKey, iv, authTag).toString('utf8');
+  }
+}
+
+// 导出单例
+export const keyManager = new DeviceKeyManager();
+
+export default {
+  generateKeyPair,
+  computeSharedSecret,
+  deriveKey,
+  generateSalt,
+  generateIV,
+  encrypt,
+  decrypt,
+  encryptData,
+  decryptData,
+  keyManager,
+};
+
+// ===== file: db/cleanup.js =====
+import fs from 'fs/promises';
+import path from 'path';
+import pool from './pool.js';
+import { logger } from '../utils/logger.js';
+
+const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
+
+export function startCleanupScheduler() {
+  // Run cleanup immediately, then every hour
+ClipSync 剪贴板同步软件  V1.0.0  第 12 页
+  cleanupExpiredItems();
+  setInterval(cleanupExpiredItems, CLEANUP_INTERVAL);
+}
+
+async function cleanupExpiredItems() {
+  try {
+    // Delete expired clipboard items
+    const result = await pool.query(
+      `DELETE FROM clipboard_items
+       WHERE expires_at IS NOT NULL AND expires_at < NOW()
+       RETURNING id`
+    );
+
+    if (result.rowCount > 0) {
+      logger.info(`[Cleanup] Deleted ${result.rowCount} expired clipboard items`);
+    }
+
+    // Clean up old verification codes (older than 24 hours)
+    const vcResult = await pool.query(
+      `DELETE FROM verification_codes
+       WHERE created_at < NOW() - INTERVAL '24 hours'
+       RETURNING id`
+    );
+
+    if (vcResult.rowCount > 0) {
+      logger.info(`[Cleanup] Deleted ${vcResult.rowCount} old verification codes`);
+    }
+
+    // Clean up old notification history (retention, default 90 days) —— P6 修复
+    const NOTIFICATION_RETENTION_DAYS = parseInt(process.env.NOTIFICATION_RETENTION_DAYS) || 90;
+    const nhResult = await pool.query(
+      `DELETE FROM notification_history
+       WHERE created_at < NOW() - make_interval(days => $1)
+       RETURNING id`,
+      [NOTIFICATION_RETENTION_DAYS]
+    );
+    if (nhResult.rowCount > 0) {
+      logger.info(`[Cleanup] Deleted ${nhResult.rowCount} old notification history records (retention ${NOTIFICATION_RETENTION_DAYS}d)`);
+    }
+
+    // Clean up old deletion tombstones (retention, default 30 days)
+    // 墓碑仅服务于"断线窗口内删除感知"，保留 30 天足够；防止表无限增长
+    const TOMBSTONE_RETENTION_DAYS = parseInt(process.env.TOMBSTONE_RETENTION_DAYS) || 30;
+    const tbResult = await pool.query(
+      `DELETE FROM clipboard_deletions
+       WHERE deleted_at < NOW() - make_interval(days => $1)`,
+      [TOMBSTONE_RETENTION_DAYS]
+    );
+    if (tbResult.rowCount > 0) {
+      logger.info(`[Cleanup] Deleted ${tbResult.rowCount} old deletion tombstones (retention ${TOMBSTONE_RETENTION_DAYS}d)`);
+ClipSync 剪贴板同步软件  V1.0.0  第 13 页
+    }
+
+    // 审计日志先归档后删除（CO-32）：保留天数读 system_configs.audit_log_retention_days
+    // （管理台系统参数卡片可调），默认 365；归档失败则跳过删除，宁可超期保留不丢数据。
+    await archiveAndDeleteExpiredAuditLogs();
+  } catch (err) {
+    logger.error('[Cleanup] Error:', { error: err.message });
+  }
+}
+
+// ───────────────────────── 审计日志归档（CO-32） ─────────────────────────
+
+const AUDIT_ARCHIVE_DIR = path.resolve('logs', 'audit-archive');
+const AUDIT_CSV_HEADER =
+  'id,created_at,user_id,action,resource_type,resource_id,status,ip_address,user_agent,error_message,details';
+
+/** 单元格转 CSV：全字段加引号，内部引号翻倍（details 为 JSON 文本，天然含逗号/引号） */
+function csvCell(value) {
+  if (value === null || value === undefined) return '';
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+/** Date → 'YYYYMMDD'（本地时区，按归档当天分文件） */
+function formatArchiveDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
+/** 读 system_configs.audit_log_retention_days（JSONB 数字或字符串；非法值回退 365） */
+async function readAuditRetentionDays() {
+  const { rows } = await pool.query(
+    `SELECT config_value FROM system_configs WHERE config_key = 'audit_log_retention_days'`
+  );
+  const days = parseInt(rows[0]?.config_value, 10);
+  return Number.isFinite(days) && days > 0 ? days : 365;
+}
+
+/**
+ * 归档并删除超期 audit_logs 行：
+ *  1. 读保留天数（system_configs.audit_log_retention_days，默认 365）
+ *  2. 捞出超期行 → 追加导出 CSV（logs/audit-archive/audit-YYYYMMDD.csv，logs 目录容器内已挂载）
+ *  3. 按 id 精确删除已归档行（CSV 写失败时抛错 → 上层跳过删除，不丢审计数据）
+ */
+async function archiveAndDeleteExpiredAuditLogs() {
+  let retentionDays;
+  try {
+    retentionDays = await readAuditRetentionDays();
+  } catch (err) {
+ClipSync 剪贴板同步软件  V1.0.0  第 14 页
+    // system_configs 不可达：跳过本轮（cleanup 整体已有 error 日志，这里补充语义）
+    logger.warn('[Cleanup] audit retention read failed, skip archive this round', { error: err.message });
+    return;
+  }
+
+  const { rows } = await pool.query(
+    `SELECT id, created_at, user_id, action, resource_type, resource_id, status,
+            ip_address::text AS ip_address, user_agent, error_message, details
+     FROM audit_logs
+     WHERE created_at < NOW() - make_interval(days => $1)
+     ORDER BY created_at ASC`,
+    [retentionDays]
+  );
+  if (rows.length === 0) return;
+
+  const csvFile = path.join(AUDIT_ARCHIVE_DIR, `audit-${formatArchiveDate(new Date())}.csv`);
+  const lines = rows.map((row) =>
+    [
+      row.id,
+      row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+      row.user_id,
+      row.action,
+      row.resource_type,
+      row.resource_id,
+      row.status,
+      row.ip_address,
+      row.user_agent,
+      row.error_message,
+      row.details == null ? '' : JSON.stringify(row.details),
+    ]
+      .map(csvCell)
+      .join(',')
+  );
+
+  try {
+    await fs.mkdir(AUDIT_ARCHIVE_DIR, { recursive: true });
+    let content = lines.join('\n') + '\n';
+    try {
+      const existing = await fs.stat(csvFile);
+      if (existing.size === 0) content = AUDIT_CSV_HEADER + '\n' + content;
+    } catch {
+      // 文件不存在：本文件首个数据块，写表头
+      content = AUDIT_CSV_HEADER + '\n' + content;
+    }
+    await fs.appendFile(csvFile, content);
+  } catch (err) {
+    logger.error('[Cleanup] audit archive CSV write failed, skip delete', {
+      file: csvFile,
+      error: err.message,
+    });
+ClipSync 剪贴板同步软件  V1.0.0  第 15 页
+    return;
+  }
+
+  const ids = rows.map((r) => r.id);
+  const delResult = await pool.query(`DELETE FROM audit_logs WHERE id = ANY($1)`, [ids]);
+  logger.info(
+    `[Cleanup] Archived ${rows.length} expired audit logs to ${csvFile} and deleted ${delResult.rowCount} rows (retention ${retentionDays}d)`
+  );
+}
+
+// ===== file: db/migrate-manager.js =====
+import pool from './pool.js';
+import { logger } from '../utils/logger.js';
+
+/**
+ * ClipSync Database Migration Manager
+ * Handles schema version upgrades and data migrations
+ */
+
+const SCHEMA_VERSIONS = [
+  {
+    version: 1,
+    description: 'Initial schema - users, devices, clipboard_items, device_sync_state, verification_codes',
+    migrations: [], // Initial schema is created by migrate.js
+  },
+  {
+    version: 2,
+    description: 'Add updated_at column to clipboard_items, add file_versions table',
+    migrations: [
+      'ALTER TABLE clipboard_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()',
+      // file_versions already in migrate.js, but this handles existing deployments
+      `CREATE TABLE IF NOT EXISTS file_versions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        clipboard_item_id UUID NOT NULL REFERENCES clipboard_items(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        version_number INTEGER NOT NULL DEFAULT 1,
+        content_encrypted TEXT NOT NULL,
+        content_preview TEXT DEFAULT '',
+        content_size INTEGER DEFAULT 0,
+        metadata JSONB DEFAULT '{}',
+        source_device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+        change_description TEXT DEFAULT '',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(clipboard_item_id, version_number)
+      )`,
+    ],
+  },
+  {
+    version: 3,
+    description: 'Add browser device_type support, add search_vector for full-text search',
+ClipSync 剪贴板同步软件  V1.0.0  第 16 页
+    migrations: [
+      // Update devices CHECK constraint to include 'browser'
+      `ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_device_type_check`,
+      `ALTER TABLE devices ADD CONSTRAINT devices_device_type_check CHECK (device_type IN ('desktop', 'mobile', 'tablet', 'browser'))`,
+      `ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_platform_check`,
+      `ALTER TABLE devices ADD CONSTRAINT devices_platform_check CHECK (platform IN ('windows', 'macos', 'linux', 'ios', 'android', 'browser'))`,
+      // Add search_vector tsvector column
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'clipboard_items' AND column_name = 'search_vector') THEN
+          ALTER TABLE clipboard_items ADD COLUMN search_vector tsvector;
+        END IF;
+      END $$`,
+      // Create trigger for auto-updating search_vector
+      `CREATE OR REPLACE FUNCTION clipsync_update_search_vector() RETURNS trigger AS $$ BEGIN
+        NEW.search_vector := setweight(to_tsvector('simple', coalesce(NEW.content_type, '')), 'A') || setweight(to_tsvector('simple', coalesce(NEW.content_preview, '')), 'B') || setweight(to_tsvector('simple', coalesce(NEW.ocr_text, '')), 'C');
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS clipsync_search_vector_update ON clipboard_items`,
+      `CREATE TRIGGER clipsync_search_vector_update BEFORE INSERT OR UPDATE OF content_preview, content_type, ocr_text ON clipboard_items FOR EACH ROW EXECUTE FUNCTION clipsync_update_search_vector()`,
+      // GIN index for search_vector
+      `CREATE INDEX IF NOT EXISTS idx_clipboard_search ON clipboard_items USING GIN(search_vector)`,
+    ],
+  },
+  {
+    version: 4,
+    description: 'Add content_diff column for incremental sync',
+    migrations: [
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'clipboard_items' AND column_name = 'content_diff') THEN
+          ALTER TABLE clipboard_items ADD COLUMN content_diff TEXT DEFAULT NULL;
+        END IF;
+      END $$`,
+    ],
+  },
+    {
+    version: 5,
+    description: 'Add payment & subscription tables (subscription_plans, user_subscriptions, payment_orders, invoices) + extend users table',
+    migrations: [
+      // Extend users table
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'subscription_status') THEN
+          ALTER TABLE users ADD COLUMN subscription_status VARCHAR(20) DEFAULT 'free';
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'current_subscription_id') THEN
+          ALTER TABLE users ADD COLUMN current_subscription_id UUID;
+        END IF;
+      END $$`,
+
+ClipSync 剪贴板同步软件  V1.0.0  第 17 页
+      // Create subscription_plans table
+      `CREATE TABLE IF NOT EXISTS subscription_plans (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(50) NOT NULL,
+        price DECIMAL(10,2) NOT NULL DEFAULT 0,
+        currency VARCHAR(10) DEFAULT 'CNY',
+        billing_cycle VARCHAR(20) DEFAULT 'monthly',
+        max_devices INTEGER DEFAULT 2,
+        max_clipboard_items INTEGER DEFAULT 50,
+        max_file_size_mb INTEGER DEFAULT 1,
+        max_storage_mb INTEGER DEFAULT 100,
+        features JSONB DEFAULT '{}',
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )`,
+
+      // Create user_subscriptions table
+      `CREATE TABLE IF NOT EXISTS user_subscriptions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        plan_id UUID NOT NULL REFERENCES subscription_plans(id),
+        status VARCHAR(20) DEFAULT 'active',
+        current_period_start TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        current_period_end TIMESTAMP WITH TIME ZONE,
+        cancel_at_period_end BOOLEAN DEFAULT false,
+        trial_end TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )`,
+
+      // Create payment_orders table
+      `CREATE TABLE IF NOT EXISTS payment_orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        subscription_id UUID REFERENCES user_subscriptions(id) ON DELETE SET NULL,
+        order_no VARCHAR(100) UNIQUE NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        currency VARCHAR(10) DEFAULT 'CNY',
+        payment_method VARCHAR(50),
+        status VARCHAR(20) DEFAULT 'pending',
+        paid_at TIMESTAMP WITH TIME ZONE,
+        transaction_id VARCHAR(200),
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )`,
+
+      // Create invoices table
+      `CREATE TABLE IF NOT EXISTS invoices (
+ClipSync 剪贴板同步软件  V1.0.0  第 18 页
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        order_id UUID REFERENCES payment_orders(id) ON DELETE SET NULL,
+        invoice_no VARCHAR(100) UNIQUE NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        tax DECIMAL(10,2) DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'draft',
+        invoice_url TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )`,
+
+      // Add foreign key for users.current_subscription_id
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'users_current_subscription_id_fkey') THEN
+          ALTER TABLE users ADD CONSTRAINT users_current_subscription_id_fkey 
+            FOREIGN KEY (current_subscription_id) REFERENCES user_subscriptions(id) ON DELETE SET NULL;
+        END IF;
+      END $$`,
+
+      // Insert default subscription plans
+      `INSERT INTO subscription_plans (name, display_name, description, price_monthly, price_yearly, max_devices, max_clipboard_items, max_file_size_mb, max_storage_mb, features)
+       SELECT 'Free', '免费版', '基础功能', 0, 0, 2, 50, 1, 100, '{"ai_classify": true, "offline_queue": true, "e2e_encryption": true, "push_notification": false, "full_text_search": false, "version_history_days": 3}'::jsonb
+       WHERE NOT EXISTS (SELECT 1 FROM subscription_plans WHERE name = 'Free')`,
+      
+      `INSERT INTO subscription_plans (name, display_name, description, price_monthly, price_yearly, max_devices, max_clipboard_items, max_file_size_mb, max_storage_mb, features)
+       SELECT 'Pro', '专业版', '高级功能', 9.9, 99, 5, 999999, 20, 5120, '{"ai_classify": true, "offline_queue": true, "e2e_encryption": true, "push_notification": true, "full_text_search": true, "version_history_days": 30}'::jsonb
+       WHERE NOT EXISTS (SELECT 1 FROM subscription_plans WHERE name = 'Pro')`,
+      
+      `INSERT INTO subscription_plans (name, display_name, description, price_monthly, price_yearly, max_devices, max_clipboard_items, max_file_size_mb, max_storage_mb, features)
+            SELECT 'Enterprise', '企业版', '企业级功能', 29.9, 299, 999999, 999999, 100, 51200, '{"ai_classify": true, "offline_queue": true, "e2e_encryption": true, "push_notification": true, "full_text_search": true, "version_history_days": -1}'::jsonb
+       WHERE NOT EXISTS (SELECT 1 FROM subscription_plans WHERE name = 'Enterprise')`,
+
+      // Create indexes
+      `CREATE INDEX IF NOT EXISTS idx_user_subscriptions_user_id ON user_subscriptions(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_user_subscriptions_status ON user_subscriptions(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_payment_orders_user_id ON payment_orders(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_payment_orders_order_no ON payment_orders(order_no)`,
+      `CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_invoices_invoice_no ON invoices(invoice_no)`
+    ],
+  },
+  {
+    version: 6,
+    description: 'Add encryption fields for sensitive data (phone, email, payment tokens)',
+    migrations: [
+      // Add encrypted fields to users table
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'phone_encrypted') THEN
+          ALTER TABLE users ADD COLUMN phone_encrypted TEXT DEFAULT NULL;
+ClipSync 剪贴板同步软件  V1.0.0  第 19 页
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email_encrypted') THEN
+          ALTER TABLE users ADD COLUMN email_encrypted TEXT DEFAULT NULL;
+        END IF;
+      END $$`,
+
+      // Add encrypted fields to payment_orders table
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'payment_orders' AND column_name = 'payment_token_encrypted') THEN
+          ALTER TABLE payment_orders ADD COLUMN payment_token_encrypted TEXT DEFAULT NULL;
+        END IF;
+      END $$`,
+
+      // Add encrypted fields to user_subscriptions table
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_subscriptions' AND column_name = 'subscription_token_encrypted') THEN
+          ALTER TABLE user_subscriptions ADD COLUMN subscription_token_encrypted TEXT DEFAULT NULL;
+        END IF;
+      END $$`,
+
+      // Create encryption_keys table for key management
+      `CREATE TABLE IF NOT EXISTS encryption_keys (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        key_name VARCHAR(100) NOT NULL UNIQUE,
+        key_value TEXT NOT NULL,
+        iv TEXT NOT NULL,
+        algorithm VARCHAR(50) DEFAULT 'AES-256-GCM',
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )`,
+
+      // Create index for encryption_keys
+      `CREATE INDEX IF NOT EXISTS idx_encryption_keys_active ON encryption_keys(is_active)`,
+    ],
+  },
+  {
+    version: 7,
+    description: 'Add user_sessions table for session management',
+    migrations: [
+      // Create user_sessions table
+      `CREATE TABLE IF NOT EXISTS user_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+        session_token_hash TEXT NOT NULL,
+        ip_address INET,
+        user_agent TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        last_active_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+ClipSync 剪贴板同步软件  V1.0.0  第 20 页
+        is_active BOOLEAN DEFAULT true
+      )`,
+      
+      // Create index for user_sessions
+      `CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_user_sessions_is_active ON user_sessions(is_active)`,
+    ],
+  },
+  {
+    version: 8,
+    description: 'Add ocr_text to clipboard_items and include it in search_vector (OCR preprocessing for images, #224)',
+    migrations: [
+      // 1) 新增可搜索的文字层列（图片 OCR 提取结果）
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'clipboard_items' AND column_name = 'ocr_text') THEN
+          ALTER TABLE clipboard_items ADD COLUMN ocr_text TEXT DEFAULT NULL;
+        END IF;
+      END $$`,
+
+      // 2) 触发器函数纳入 ocr_text（权重 C），CREATE OR REPLACE 幂等
+      `CREATE OR REPLACE FUNCTION clipsync_update_search_vector() RETURNS trigger AS $$
+      BEGIN
+        NEW.search_vector :=
+          setweight(to_tsvector('simple', coalesce(NEW.content_type, '')), 'A') ||
+          setweight(to_tsvector('simple', coalesce(NEW.content_preview, '')), 'B') ||
+          setweight(to_tsvector('simple', coalesce(NEW.ocr_text, '')), 'C');
+        RETURN NEW;
+      END
+      $$ LANGUAGE plpgsql`,
+
+      // 3) 重建触发器，把 ocr_text 纳入触发列（否则仅更新 ocr_text 不会刷新 search_vector）
+      `DROP TRIGGER IF EXISTS clipsync_search_vector_update ON clipboard_items`,
+      `CREATE TRIGGER clipsync_search_vector_update BEFORE INSERT OR UPDATE OF content_preview, content_type, ocr_text ON clipboard_items FOR EACH ROW EXECUTE FUNCTION clipsync_update_search_vector()`,
+
+      // 4) 回填：把已有（当前为空）ocr_text 纳入 search_vector；列为 NULL 时等价于补空，无副作用
+      `UPDATE clipboard_items
+       SET search_vector = setweight(to_tsvector('simple', coalesce(content_type, '')), 'A') ||
+                           setweight(to_tsvector('simple', coalesce(content_preview, '')), 'B') ||
+                           setweight(to_tsvector('simple', coalesce(ocr_text, '')), 'C')
+       WHERE ocr_text IS NOT NULL`,
+    ],
+  },
+  {
+    version: 9,
+    description: 'Persist AI conversation token usage (prompt/completion/cache/thinking)',
+    migrations: [
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_conversations' AND column_name = 'prompt_tokens') THEN
+          ALTER TABLE ai_conversations ADD COLUMN prompt_tokens INTEGER DEFAULT 0;
+        END IF;
+ClipSync 剪贴板同步软件  V1.0.0  第 21 页
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_conversations' AND column_name = 'completion_tokens') THEN
+          ALTER TABLE ai_conversations ADD COLUMN completion_tokens INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_conversations' AND column_name = 'total_tokens') THEN
+          ALTER TABLE ai_conversations ADD COLUMN total_tokens INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_conversations' AND column_name = 'cache_read_tokens') THEN
+          ALTER TABLE ai_conversations ADD COLUMN cache_read_tokens INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_conversations' AND column_name = 'cache_write_tokens') THEN
+          ALTER TABLE ai_conversations ADD COLUMN cache_write_tokens INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_conversations' AND column_name = 'cache_hit_rate') THEN
+          ALTER TABLE ai_conversations ADD COLUMN cache_hit_rate NUMERIC(5,2) DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_conversations' AND column_name = 'thinking_tokens') THEN
+          ALTER TABLE ai_conversations ADD COLUMN thinking_tokens INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_conversations' AND column_name = 'reply_tokens') THEN
+          ALTER TABLE ai_conversations ADD COLUMN reply_tokens INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_conversations' AND column_name = 'context_window') THEN
+          ALTER TABLE ai_conversations ADD COLUMN context_window INTEGER DEFAULT 0;
+        END IF;
+      END $$`,
+    ],
+  },
+  {
+    version: 10,
+    description: 'Image content hash for cross-copy dedup and AI duplicate detection (#225)',
+    migrations: [
+      `ALTER TABLE clipboard_items ADD COLUMN IF NOT EXISTS image_hash VARCHAR(64);`,
+      `CREATE INDEX IF NOT EXISTS idx_clipboard_user_image_hash ON clipboard_items (user_id, image_hash) WHERE image_hash IS NOT NULL;`,
+    ],
+  },
+];
+
+// Create schema_versions tracking table if not exists
+async function ensureVersionTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS schema_versions (
+      version INTEGER PRIMARY KEY,
+      description TEXT NOT NULL,
+      applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+}
+
+// Get current schema version
+async function getCurrentVersion() {
+ClipSync 剪贴板同步软件  V1.0.0  第 22 页
+  const result = await pool.query('SELECT MAX(version) as version FROM schema_versions');
+  return result.rows[0]?.version || 0;
+}
+
+// Mark a version as applied
+async function markVersionApplied(version, description) {
+  await pool.query(
+    'INSERT INTO schema_versions (version, description) VALUES ($1, $2) ON CONFLICT (version) DO NOTHING',
+    [version, description]
+  );
+}
+
+// Run migrations from current version to target version
+async function runMigrations(targetVersion = null) {
+  await ensureVersionTable();
+  const currentVersion = await getCurrentVersion();
+  const maxVersion = SCHEMA_VERSIONS[SCHEMA_VERSIONS.length - 1].version;
+  const target = targetVersion || maxVersion;
+
+  logger.info('Migration manager starting', { currentVersion, targetVersion: target });
+
+  if (currentVersion >= target) {
+    logger.info('No migrations needed', { currentVersion, targetVersion: target });
+    return { applied: 0, currentVersion };
+  }
+
+  let applied = 0;
+  const client = await pool.connect();
+
+  try {
+    for (const schemaVersion of SCHEMA_VERSIONS) {
+      if (schemaVersion.version <= currentVersion) continue;
+      if (schemaVersion.version > target) break;
+
+      logger.info(`Applying schema version ${schemaVersion.version}: ${schemaVersion.description}`);
+
+      for (const migration of schemaVersion.migrations) {
+        try {
+          await client.query(migration);
+          logger.info(`  Migration applied: ${migration.substring(0, 80)}...`);
+        } catch (err) {
+          logger.error(`  Migration failed: ${err.message}`, { migration: migration.substring(0, 100) });
+          // Rollback this version's migrations
+          throw new Error(`Schema version ${schemaVersion.version} migration failed: ${err.message}`);
+        }
+      }
+
+      await markVersionApplied(schemaVersion.version, schemaVersion.description);
+      applied++;
+      logger.info(`Schema version ${schemaVersion.version} applied successfully`);
+ClipSync 剪贴板同步软件  V1.0.0  第 23 页
+    }
+  } catch (err) {
+    logger.error('Migration failed, rolling back', { error: err.message });
+    // Re-apply previous version marker
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  logger.info('All migrations completed', { applied, newVersion: await getCurrentVersion() });
+  return { applied, currentVersion: await getCurrentVersion() };
+}
+
+// Backfill search_vector for existing rows
+async function backfillSearchVector() {
+  logger.info('Backfilling search_vector for existing clipboard items...');
+  const result = await pool.query(`
+    UPDATE clipboard_items
+    SET search_vector = setweight(to_tsvector('simple', coalesce(content_type, '')), 'A') ||
+                        setweight(to_tsvector('simple', coalesce(content_preview, '')), 'B') ||
+                        setweight(to_tsvector('simple', coalesce(ocr_text, '')), 'C')
+    WHERE search_vector IS NULL OR ocr_text IS NOT NULL
+  `);
+  logger.info(`Backfill completed: ${result.rowCount} rows updated`);
+  return result.rowCount;
+}
+
+// Export migration manager
+export { runMigrations, getCurrentVersion, backfillSearchVector, SCHEMA_VERSIONS };
+
+// Run directly from command line
+if (process.argv[1] && process.argv[1].includes('migrate-manager')) {
+  const command = process.argv[2] || 'migrate';
+
+  switch (command) {
+    case 'migrate':
+      runMigrations()
+        .then(result => {
+          logger.info(`Migrations applied: ${result.applied}, current version: ${result.currentVersion}`);
+          // Backfill search_vector if needed
+          return backfillSearchVector();
+        })
+        .then(count => {
+          logger.info(`Search vector backfill: ${count} rows`);
+          process.exit(0);
+        })
+        .catch(err => {
+          logger.error('Migration failed:', { error: err.message });
+          process.exit(1);
+        });
+ClipSync 剪贴板同步软件  V1.0.0  第 24 页
+      break;
+
+    case 'status':
+      ensureVersionTable()
+        .then(() => getCurrentVersion())
+        .then(version => {
+          logger.info(`Current schema version: ${version}`);
+          logger.info(`Available versions: ${SCHEMA_VERSIONS.map(v => `${v.version}: ${v.description}`).join('\n')}`);
+          process.exit(0);
+        })
+        .catch(err => {
+          logger.error('Status check failed:', { error: err.message });
+          process.exit(1);
+        });
+      break;
+
+    case 'backfill':
+      backfillSearchVector()
+        .then(count => {
+          logger.info(`Backfill completed: ${count} rows updated`);
+          process.exit(0);
+        })
+        .catch(err => {
+          logger.error('Backfill failed:', { error: err.message });
+          process.exit(1);
+        });
+      break;
+
+    default:
+      logger.info('Usage: node migrate-manager.js [migrate|status|backfill]');
+      process.exit(0);
+  }
+}
+
+// ===== file: db/migrate.js =====
+import pool from './pool.js';
+import { logger } from '../utils/logger.js';
+import fs from 'fs';
+import path from 'path';
+
+const migrations = [
+  // 1. Users table (complete schema with all fields required by auth/subscription routes)
+  `CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    phone VARCHAR(20) UNIQUE NOT NULL,
+    email VARCHAR(255),
+    nickname VARCHAR(100) DEFAULT '',
+    avatar_url TEXT DEFAULT '',
+    password_hash VARCHAR(255),
+    phone_encrypted TEXT,
+ClipSync 剪贴板同步软件  V1.0.0  第 25 页
+    email_encrypted TEXT,
+    phone_hash VARCHAR(128),
+    email_hash VARCHAR(128),
+    tos_accepted_at TIMESTAMPTZ,
+    privacy_accepted_at TIMESTAMPTZ,
+    marketing_consent BOOLEAN DEFAULT FALSE,
+    birth_date DATE,
+    age_verified BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    deactivated_at TIMESTAMPTZ,
+    deactivation_reason TEXT,
+    analytics_consent BOOLEAN,
+    functional_consent BOOLEAN,
+    consent_updated_at TIMESTAMPTZ,
+    subscription_status VARCHAR(20) DEFAULT 'free',
+    current_subscription_id UUID,
+    is_admin BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )`,
+
+  // 2. Devices table
+  `CREATE TABLE IF NOT EXISTS devices (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_name VARCHAR(100) NOT NULL,
+    device_type VARCHAR(20) NOT NULL CHECK (device_type IN ('desktop', 'mobile', 'tablet', 'browser')),
+    platform VARCHAR(20) NOT NULL CHECK (platform IN ('windows', 'macos', 'linux', 'ios', 'android', 'browser')),
+    platform_version VARCHAR(50) DEFAULT '',
+    app_version VARCHAR(20) DEFAULT '0.1.0',
+    public_key TEXT,
+    is_online BOOLEAN DEFAULT FALSE,
+    last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id, device_name)
+  )`,
+
+  // 3. Clipboard items table
+  `CREATE TABLE IF NOT EXISTS clipboard_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    source_device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    content_type VARCHAR(20) NOT NULL CHECK (content_type IN ('text', 'image', 'file', 'link', 'code')),
+    content_encrypted TEXT NOT NULL,
+    content_preview TEXT DEFAULT '',
+    content_size INTEGER DEFAULT 0,
+    metadata JSONB DEFAULT '{}',
+    is_favorite BOOLEAN DEFAULT FALSE,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+ClipSync 剪贴板同步软件  V1.0.0  第 26 页
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )`,
+
+  // 4. Device sync state table
+  `CREATE TABLE IF NOT EXISTS device_sync_state (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    device_id UUID UNIQUE NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    last_synced_item_id UUID,
+    last_sync_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )`,
+
+  // 5. Verification codes table
+  `CREATE TABLE IF NOT EXISTS verification_codes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    phone VARCHAR(20) NOT NULL,
+    code VARCHAR(10) NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )`,
+
+  // 6. User sessions table (auth login requires)
+  `CREATE TABLE IF NOT EXISTS user_sessions (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_name VARCHAR(100) DEFAULT 'Unknown Device',
+    device_type VARCHAR(20) DEFAULT 'browser',
+    platform VARCHAR(20) DEFAULT 'unknown',
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    revoked_at TIMESTAMP WITH TIME ZONE
+  )`,
+
+  // 7. Subscription plans table (subscriptionCheck middleware requires)
+  `CREATE TABLE IF NOT EXISTS subscription_plans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(50) UNIQUE NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    price_monthly DECIMAL(10,2),
+    price_yearly DECIMAL(10,2),
+    max_devices INTEGER DEFAULT 2,
+    max_clipboard_items INTEGER DEFAULT 50,
+    max_file_size_mb INTEGER DEFAULT 1,
+    max_storage_mb INTEGER DEFAULT 100,
+    features JSONB DEFAULT '{}',
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ClipSync 剪贴板同步软件  V1.0.0  第 27 页
+  )`,
+
+  // 8. User subscriptions table (subscriptionCheck middleware requires)
+  `CREATE TABLE IF NOT EXISTS user_subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id UUID NOT NULL REFERENCES subscription_plans(id),
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active','canceled','past_due','expired')),
+    billing_cycle VARCHAR(10) DEFAULT 'monthly' CHECK (billing_cycle IN ('monthly','yearly')),
+    current_period_start TIMESTAMP WITH TIME ZONE NOT NULL,
+    current_period_end TIMESTAMP WITH TIME ZONE NOT NULL,
+    start_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    end_date TIMESTAMP WITH TIME ZONE,
+    stripe_subscription_id VARCHAR(255),
+    alipay_agreement_id VARCHAR(255),
+    wechat_pay_prepay_id VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )`,
+
+  // 6. File versions table
+  `CREATE TABLE IF NOT EXISTS file_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    clipboard_item_id UUID NOT NULL REFERENCES clipboard_items(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL DEFAULT 1,
+    content_encrypted TEXT NOT NULL,
+    content_preview TEXT DEFAULT '',
+    content_size INTEGER DEFAULT 0,
+    metadata JSONB DEFAULT '{}',
+    source_device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+    change_description TEXT DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(clipboard_item_id, version_number)
+  )`,
+
+  // 7. Indexes
+  `CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_devices_online ON devices(is_online) WHERE is_online = TRUE`,
+  `CREATE INDEX IF NOT EXISTS idx_clipboard_items_user_id ON clipboard_items(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_clipboard_items_created_at ON clipboard_items(created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_clipboard_items_content_type ON clipboard_items(content_type)`,
+  `CREATE INDEX IF NOT EXISTS idx_clipboard_items_favorites ON clipboard_items(is_favorite) WHERE is_favorite = TRUE`,
+  `CREATE INDEX IF NOT EXISTS idx_verification_codes_phone ON verification_codes(phone, used) WHERE used = FALSE`,
+  `CREATE INDEX IF NOT EXISTS idx_file_versions_item ON file_versions(clipboard_item_id, version_number)`,
+  `CREATE INDEX IF NOT EXISTS idx_file_versions_user ON file_versions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_user_sessions_active ON user_sessions(user_id, is_active) WHERE is_active = TRUE`,
+  // User lookup indexes (O(1) dedup + login)
+  `CREATE INDEX IF NOT EXISTS idx_users_phone_hash ON users(phone_hash) WHERE phone_hash IS NOT NULL`,
+ClipSync 剪贴板同步软件  V1.0.0  第 28 页
+  `CREATE INDEX IF NOT EXISTS idx_users_email_hash ON users(email_hash) WHERE email_hash IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email IS NOT NULL AND email != ''`,
+  // Identity merge: track merged-into canonical user id
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS merged_into UUID REFERENCES users(id) ON DELETE SET NULL`,
+];
+
+// Post-migration: add tsvector column and trigger if not exists
+const postMigrations = [
+  // Add search_vector column to clipboard_items (safe for existing tables)
+  `DO $$
+  BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'clipboard_items' AND column_name = 'search_vector') THEN
+      ALTER TABLE clipboard_items ADD COLUMN search_vector tsvector;
+    END IF;
+  END$$`,
+
+  // Create trigger function to auto-update search_vector from content_preview
+  `CREATE OR REPLACE FUNCTION clipsync_update_search_vector() RETURNS trigger AS $$
+  BEGIN
+    NEW.search_vector :=
+      setweight(to_tsvector('simple', coalesce(NEW.content_type, '')), 'A') ||
+      setweight(to_tsvector('simple', coalesce(NEW.content_preview, '')), 'B') ||
+      setweight(to_tsvector('simple', coalesce(NEW.ocr_text, '')), 'C');
+    RETURN NEW;
+  END
+  $$ LANGUAGE plpgsql`,
+
+  // Create GIN index (must be after column and trigger are created)
+  `CREATE INDEX IF NOT EXISTS idx_clipboard_search ON clipboard_items USING GIN(search_vector)`,
+
+  // Seed subscription plans if empty
+  `INSERT INTO subscription_plans (name, display_name, description, price_monthly, price_yearly, max_devices, max_clipboard_items, max_file_size_mb, max_storage_mb, features)
+   VALUES
+    ('Free', '免费版', '基础剪贴板同步功能', 0, 0, 2, 50, 1, 100,
+     '{"ai_classify":true,"offline_queue":true,"e2e_encryption":true,"push_notification":false,"full_text_search":false,"version_history_days":3}'),
+    ('Pro', '专业版', '完整功能解锁', 9.9, 99, 10, 500, 10, 1024,
+     '{"ai_classify":true,"offline_queue":true,"e2e_encryption":true,"push_notification":true,"full_text_search":true,"version_history_days":30}')
+   ON CONFLICT (name) DO NOTHING`,
+
+  // Archive feature: add archived flag (idempotent, additive column)
+  `ALTER TABLE clipboard_items ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE`,
+  `CREATE INDEX IF NOT EXISTS idx_clipboard_items_archived ON clipboard_items(archived, created_at DESC)`,
+];
+
+async function migrate() {
+  logger.info('Running database migrations...');
+  const client = await pool.connect();
+  try {
+    // 创建 schema_migrations 表（如果不存在）
+    await client.query(`
+ClipSync 剪贴板同步软件  V1.0.0  第 29 页
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version VARCHAR(50) PRIMARY KEY,
+        applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+
+    // 执行内嵌迁移
+    for (let i = 0; i < migrations.length; i++) {
+      logger.info(`  Migration ${i + 1}/${migrations.length}...`);
+      await client.query(migrations[i]);
+    }
+
+    // 执行 migrations/ 目录中的 SQL 文件
+    const migrationsDir = path.resolve('./src/db/migrations');
+    
+    if (fs.existsSync(migrationsDir)) {
+      const files = fs.readdirSync(migrationsDir)
+        .filter(f => f.endsWith('.sql'))
+        .sort(); // 按文件名排序（004, 005, 006...）
+      
+      for (const file of files) {
+        const version = file.split('_')[0]; // 提取版本号（如 "004"）
+        
+        // 检查是否已执行
+        const result = await client.query(
+          'SELECT 1 FROM schema_migrations WHERE version = $1',
+          [version]
+        );
+        
+        if (result.rows.length === 0) {
+          logger.info(`  SQL Migration ${file}...`);
+          const sql = fs.readFileSync(`${migrationsDir}/${file}`, 'utf8');
+          
+          // 执行 SQL（可能包含多个语句）
+          await client.query(sql);
+          
+          // 记录已执行
+          await client.query(
+            'INSERT INTO schema_migrations (version, applied_at) VALUES ($1, NOW()) ON CONFLICT DO NOTHING',
+            [version]
+          );
+          
+          logger.info(`    ✓ ${file} applied successfully`);
+        } else {
+          logger.info(`  SQL Migration ${file} (skipped, already applied)`);
+        }
+      }
+    }
+
+    // 执行后迁移
+ClipSync 剪贴板同步软件  V1.0.0  第 30 页
+    logger.info('Running post-migrations (tsvector)...');
+    for (let i = 0; i < postMigrations.length; i++) {
+      logger.info(`  Post-migration ${i + 1}/${postMigrations.length}...`);
+      await client.query(postMigrations[i]);
+    }
+
+    logger.info('All migrations completed successfully.');
+  } finally {
+    client.release();
+  }
+}
+
+// Run directly
+if (process.argv[1] && process.argv[1].includes('migrate')) {
+  migrate()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      logger.error('Migration failed:', { error: err.message });
+      process.exit(1);
+    });
+}
+
+export default migrate;
+
+// ===== file: db/pool.js =====
+import pg from 'pg';
+import config from '../config.js';
+import { logger } from '../utils/logger.js';
+
+const { Pool } = pg;
+
+const pool = new Pool({
+  host: config.db.host,
+  port: config.db.port,
+  database: config.db.name,
+  user: config.db.user,
+  password: config.db.password,
+  max: parseInt(process.env.DB_POOL_MAX) || 50,                      // 最大连接数（可配置，默认 50，P3 修复）
+  idleTimeoutMillis: parseInt(process.env.DB_POOL_IDLE_TIMEOUT) || 30000,     // 空闲连接超时（30秒）
+  connectionTimeoutMillis: parseInt(process.env.DB_POOL_CONNECT_TIMEOUT) || 2000, // 连接超时（2秒）
+  query_timeout: parseInt(process.env.DB_QUERY_TIMEOUT) || 30000,          // 查询超时（30秒）
+  keepAlive: true,               // 保持连接活跃
+  // 注意：statement_timeout 不在 Pool 配置中，移到 connect 事件中
+});
+
+// 连接级错误不应杀死进程（H4 修复）：短暂的 DB 抖动若触发全实例自杀会造成整体不可用。
+// 改为只记录告警，依赖 pg Pool 自动重建连接；真正的持续故障交给编排器（k8s/docker）重启。
+pool.on('error', (err) => {
+  logger.error('[db] Unexpected error on idle client (auto-recovering):', {
+    message: err.message,

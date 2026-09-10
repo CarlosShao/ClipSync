@@ -1,0 +1,151 @@
+{
+  "results": [
+    {
+      "id": "login",
+      "status": "PASS",
+      "detail": "验证码登录成功，进入 /dashboard"
+    },
+    {
+      "id": "ai-list",
+      "status": "PASS",
+      "detail": "供应商表格行数=5"
+    },
+    {
+      "id": "ai-provider-toggle",
+      "status": "PASS",
+      "detail": "PATCH /api/admin/ai-providers → 200（禁用→启用）"
+    },
+    {
+      "id": "ai-provider-revert",
+      "status": "PASS",
+      "detail": "开关已还原"
+    },
+    {
+      "id": "ai-max-tokens-save",
+      "status": "PASS",
+      "detail": "PATCH /api/admin/configs/ai_max_tokens → 200（16384→16640）"
+    },
+    {
+      "id": "ai-max-tokens-revert",
+      "status": "PASS",
+      "detail": "已还原为 16384"
+    },
+    {
+      "id": "releases-latest-endpoint",
+      "status": "PASS",
+      "detail": "GET /api/app/updates/latest → 204"
+    },
+    {
+      "id": "releases-create",
+      "status": "PASS",
+      "detail": "POST /api/admin/releases → 200"
+    },
+    {
+      "id": "releases-publish",
+      "status": "PASS",
+      "detail": "PATCH 发布 → 200，列表状态「已发布」=true"
+    },
+    {
+      "id": "releases-withdraw",
+      "status": "PASS",
+      "detail": "PATCH 撤回 → 200，列表状态「草稿」=true"
+    },
+    {
+      "id": "releases-delete",
+      "status": "PASS",
+      "detail": "DELETE → 200，列表残留行=0"
+    },
+    {
+      "id": "policies-groups",
+      "status": "PASS",
+      "detail": "分组卡渲染（同步策略可见=true）"
+    },
+    {
+      "id": "policies-patch",
+      "status": "PASS",
+      "detail": "PATCH /api/admin/policies → 200（首键 0→1）"
+    },
+    {
+      "id": "policies-revert",
+      "status": "PASS",
+      "detail": "已还原为 0"
+    },
+    {
+      "id": "ops-action-btn-清理缓存",
+      "status": "PASS",
+      "detail": "按钮「清理缓存」可见=true"
+    },
+    {
+      "id": "ops-action-btn-重载配置",
+      "status": "PASS",
+      "detail": "按钮「重载配置」可见=true"
+    },
+    {
+      "id": "ops-action-btn-全员下线",
+      "status": "PASS",
+      "detail": "按钮「全员下线」可见=true"
+    },
+    {
+      "id": "ops-action-btn-立即备份",
+      "status": "PASS",
+      "detail": "按钮「立即备份」可见=true"
+    },
+    {
+      "id": "ops-clear-cache",
+      "status": "PASS",
+      "detail": "POST /api/admin/ops/actions clear_cache → 200；toast=清理缓存完成"
+    },
+    {
+      "id": "ops-backups",
+      "status": "PASS",
+      "detail": "备份概览卡可见=true，下载按钮数=0"
+    },
+    {
+      "id": "ops-alerts",
+      "status": "PASS",
+      "detail": "告警卡可见=true，服务不可用提示=true，无告警/列表=false"
+    },
+    {
+      "id": "ops-storage",
+      "status": "PASS",
+      "detail": "存储卡可见=true，数据库总大小行=true"
+    },
+    {
+      "id": "security-page",
+      "status": "PASS",
+      "detail": "标题可见=true，会话行数=10，强制下线按钮数=10（只看不点）"
+    },
+    {
+      "id": "audit-actor-level",
+      "status": "PASS",
+      "detail": "GET /api/admin/audit-logs?...actorLevel=super_admin → 200"
+    },
+    {
+      "id": "users-export",
+      "status": "PASS",
+      "detail": "GET export → 200；敏感字段=无"
+    },
+    {
+      "id": "settings-channels",
+      "status": "PASS",
+      "detail": "邮件通道卡可见=true，设为默认按钮=1，发送测试按钮=1"
+    },
+    {
+      "id": "settings-test-modal",
+      "status": "PASS",
+      "detail": "测试邮件弹窗打开=true（未真实发送，已取消）"
+    }
+  ],
+  "consoleErrors": [
+    {
+      "url": "http://localhost:5273/releases",
+      "text": "Warning: Instance created by `useForm` is not connected to any Form element. Forget to pass `form` prop?"
+    },
+    {
+      "url": "http://localhost:5273/ops",
+      "text": "Warning: [antd: Table] `index` parameter of `rowKey` function is deprecated. There is no guarantee that it will work as expected."
+    }
+  ],
+  "pageErrors": [],
+  "badResponses": []
+}
