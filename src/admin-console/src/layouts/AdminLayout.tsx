@@ -8,6 +8,7 @@ import { hasPerm } from '@/utils/permissions';
 import { getOverview } from '@/api/overview';
 import { getConfigs } from '@/api/configs';
 import { queryKeys } from '@/queryKeys';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import styles from './AdminLayout.module.css';
 
 /** 导航项权限点（RB-07）：perm 缺省 = 有 token 即可（如数据看板）；数组 = 任一满足即显示 */
@@ -128,6 +129,7 @@ export default function AdminLayout() {
   };
 
   return (
+    <ErrorBoundary>
     <div style={{ minHeight: '100vh' }}>
       <header className={styles.topnav}>
         <div className={styles.brand}>
@@ -186,5 +188,6 @@ export default function AdminLayout() {
         <Outlet />
       </main>
     </div>
+    </ErrorBoundary>
   );
 }
