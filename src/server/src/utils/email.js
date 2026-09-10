@@ -186,7 +186,12 @@ function isChannelComplete(channel) {
  * 密码为 email_channels 存的密文（legacy 伪通道除外，已是明文），发送前解密。
  */
 async function getTransporterForChannel(channel) {
-  const pass = toTrimmedString(channel.password);
+  // email_channels.password 落库为 AES-256-GCM 密文（iv:authTag:ciphertext），
+  // 发送前必须解密——否则会把密文当授权码送给 SMTP，得到 535 Login Fail。
+  // legacy 伪通道（legacyConfigToChannel）已是明文：decryptField 解不开会原样返回，
+  // 故两种来源可统一走这里，无需分支。
+  const rawPass = toTrimmedString(channel.password);
+  const pass = rawPass ? toTrimmedString(decryptField(rawPass)) : '';
   // 配置变更时重建 transporter（缓存 key 含全部连接参数 + updated_at）
   const key = [
     channel.host,
