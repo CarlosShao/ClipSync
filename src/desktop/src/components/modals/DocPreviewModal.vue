@@ -209,6 +209,31 @@ function formatDocSize(chars: number): string {
   return `${(chars / 1024).toFixed(1)} KB`
 }
 
+// ===== 头部类型徽标 / 大小展示 =====
+// PDF/Word/Excel/PPT/图片是二进制渲染（不走 previewContent，恒为空），
+// 走 detectDocType 会误显示 "Text" + "0 chars"，观感像"预览是空的"。
+const FILE_TYPE_LABELS: Record<string, string> = {
+  pdf: 'PDF',
+  docx: 'Word',
+  excel: 'Excel',
+  pptx: 'PPT',
+  image: 'Image',
+}
+const badgeLabel = computed(() => {
+  const ft = detectFileType(previewFileName.value)
+  if (FILE_TYPE_LABELS[ft]) return FILE_TYPE_LABELS[ft]
+  return detectDocType(previewContent.value, previewFileName.value)
+})
+const sizeLabel = computed(() => {
+  const ft = detectFileType(previewFileName.value)
+  if (ft === 'pdf' && pdfTotalPages.value > 0) return t('preview_page_count', { n: pdfTotalPages.value })
+  if (FILE_TYPE_LABELS[ft]) {
+    const size = Number(props.previewItem?.contentSize || 0)
+    return size > 0 ? formatDocSize(size) : ''
+  }
+  return formatDocSize(previewContent.value.length)
+})
+
 // ===== Word (.docx) rendering =====
 const docxHtml = ref('')
 const docxToc = ref<TocItem[]>([])
@@ -809,8 +834,8 @@ watch(() => props.previewItem, handlePreviewItemChange, { immediate: true })
       <!-- Content type indicator -->
       <div class="doc-type-bar">
         <div class="doc-type-left">
-          <Badge variant="outline" class="doc-type-badge">{{ detectDocType(previewContent, previewFileName) }}</Badge>
-          <span class="doc-size">{{ formatDocSize(previewContent.length) }}</span>
+          <Badge variant="outline" class="doc-type-badge">{{ badgeLabel }}</Badge>
+          <span class="doc-size">{{ sizeLabel }}</span>
         </div>
         <div class="doc-type-right">
           <Popover>
