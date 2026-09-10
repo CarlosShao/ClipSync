@@ -101,7 +101,6 @@ router.get('/', requirePerm('admin.users.view'), async (req, res) => {
         s.ip_address,
         s.user_agent,
         s.created_at,
-        s.updated_at,
         CASE WHEN s.id = $${params.length + 3} THEN TRUE ELSE FALSE END AS is_current${BASE_FROM}
        WHERE r.level >= ${ADMIN_LEVEL_THRESHOLD} AND s.is_active = TRUE${whereSql}
        ORDER BY s.created_at DESC
@@ -121,7 +120,9 @@ router.get('/', requirePerm('admin.users.view'), async (req, res) => {
       ipAddress: row.ip_address ? String(row.ip_address) : '',
       userAgent: row.user_agent || null,
       createdAt: formatDateTime(row.created_at),
-      lastActiveAt: formatDateTime(row.updated_at),
+      // user_sessions 无 updated_at 列（audit-extend 阶段发现恒 500 的根因）：
+      // lastActiveAt 以创建时间近似（会话创建即最后活跃基线），吊销时间用 revoked_at 呈现于状态
+      lastActiveAt: formatDateTime(row.created_at),
       isCurrent: Boolean(row.is_current),
     }));
 
@@ -169,7 +170,7 @@ router.post('/:id/revoke', requirePerm('admin.users.manage'), async (req, res) =
     }
 
     await pool.query(
-      `UPDATE user_sessions SET is_active = FALSE, updated_at = NOW(), revoked_at = NOW()
+      `UPDATE user_sessions SET is_active = FALSE, revoked_at = NOW()
        WHERE id = $1`,
       [session.id]
     );
