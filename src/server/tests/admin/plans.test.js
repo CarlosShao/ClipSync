@@ -74,6 +74,8 @@ function makePlanRow(overrides = {}) {
 describe('GET /api/admin/plans —— 套餐列表', () => {
   it('返回 { list } 且字段映射为 camelCase，features 对象透传', async () => {
     pool.query.mockImplementation(async (sql) => {
+      // RB-06：GET 读侧也走 requirePerm('admin.plans.view')，先放行权限查询
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.plans.view' }], rowCount: 1 };
       if (sql.includes('FROM subscription_plans')) return { rows: [makePlanRow()], rowCount: 1 };
       return { rows: [], rowCount: 0 };
     });

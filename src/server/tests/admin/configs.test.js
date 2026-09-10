@@ -72,7 +72,7 @@ function findAuditCall(action) {
 // ───────────────────────── 系统配置 ─────────────────────────
 
 describe('GET /api/admin/configs —— 系统参数列表', () => {
-  it('展示目录全键按目录顺序输出（CO-36 补录两键），JSONB 值转字符串', async () => {
+  it('展示目录全键按目录顺序输出（AN-14 移除死键 / AF-42 移除 menu_overrides / 055-063 运维键补录），JSONB 值转字符串', async () => {
     pool.query.mockImplementation(async (sql) => {
       // RB-06：GET 读侧也走 requirePerm('admin.configs.view')，先放行权限查询
       if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.configs.view' }], rowCount: 1 };
@@ -100,22 +100,27 @@ describe('GET /api/admin/configs —— 系统参数列表', () => {
       'ai_default_provider',
       'session_timeout_minutes',
       'audit_log_retention_days',
-      // CO-36：038 种子键补录目录（此前已入库但管理台不可见）
-      'max_collection_depth',
-      'enable_audit_log',
+      // AN-14（第二轮死配置清理）：max_collection_depth / enable_audit_log 已从目录移除（无消费方）；
+      // AF-42：menu_overrides 同步移除（客户端无读取通道）
+      // 055/056/063 运维键补录：grafana_url / prometheus_url / backup_retention_days /
+      // storage_cleanup_enabled / device_offline_timeout_minutes（消费方均已登记）
       'rate_limit_api_per_min',
       'rate_limit_send_code_per_hour',
       'rate_limit_login_failed_per_15min',
       'rate_limit_upload_per_min',
       'rate_limit_disabled',
       'log_level',
+      'grafana_url',
+      'prometheus_url',
+      'backup_retention_days',
+      'storage_cleanup_enabled',
+      'device_offline_timeout_minutes',
       'smtp_host',
       'smtp_port',
       'smtp_user',
       'smtp_pass',
       'smtp_from',
       'smtp_secure',
-      'menu_overrides',
     ]);
 
     const maintenance = configs[0];
@@ -236,7 +241,7 @@ describe('PATCH /api/admin/configs/:key —— 更新系统参数', () => {
 // ───────────────────────── 功能开关 ─────────────────────────
 
 describe('GET /api/admin/flags —— 功能开关列表', () => {
-  it('功能开关目录按目录顺序输出（首个 enable_subscription，含 enable_signup）', async () => {
+  it('功能开关目录按目录顺序输出（首个 enable_subscription，含 enable_signup；AN-12 增 force_2fa_for_admin、AN-10 增 enforced 字段）', async () => {
     pool.query.mockImplementation(async (sql) => {
       if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.configs.view' }], rowCount: 1 };
       if (sql.includes('FROM feature_flags')) {
@@ -255,7 +260,7 @@ describe('GET /api/admin/flags —— 功能开关列表', () => {
 
     expect(res.status).toBe(200);
     const flags = res.body.data;
-    expect(flags).toHaveLength(6);
+    expect(flags).toHaveLength(7);
     expect(flags.map((f) => f.key)).toEqual([
       'enable_subscription',
       'enable_ai_agent',
@@ -263,10 +268,15 @@ describe('GET /api/admin/flags —— 功能开关列表', () => {
       'enable_2fa',
       'signup_waitlist',
       'enable_signup',
+      // AN-12：管理员安全策略开关（强制管理角色绑定 2FA）
+      'force_2fa_for_admin',
     ]);
     expect(flags[0]).toMatchObject({ key: 'enable_subscription', enabled: true });
     // DB 缺行的开关兜底 enabled=false，不阻塞设置页渲染
     expect(flags[2].enabled).toBe(false);
+    // AN-10：enforced = 服务端是否存在强制点（ENFORCED_FLAG_KEYS 清单口径）；
+    // 目录 7 键当前均已登记强制点
+    expect(flags.every((f) => f.enforced === true)).toBe(true);
   });
 });
 
@@ -437,6 +447,8 @@ describe('POST /api/admin/announcements —— 下发公告', () => {
 describe('GET /api/admin/announcements —— 发送历史', () => {
   it('新记录在前（ORDER BY created_at DESC），行映射符合 Announcement 契约', async () => {
     pool.query.mockImplementation(async (sql) => {
+      // RB-06：GET 读侧也走 requirePerm('admin.announce.view')，先放行权限查询
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.announce.view' }], rowCount: 1 };
       if (sql.includes('FROM admin_announcements')) {
         return {
           rows: [

@@ -3,6 +3,9 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# AN-06：postgresql-client（pg_dump）——手动备份 trigger_backup 依赖
+RUN apk add --no-cache postgresql-client
+
 # Copy package files
 COPY package*.json ./
 
@@ -15,8 +18,8 @@ COPY . .
 # Production stage
 FROM node:22-alpine
 
-# Install wget for healthcheck
-RUN apk add --no-cache wget
+# Install wget for healthcheck + postgresql-client (AN-06: pg_dump for trigger_backup)
+RUN apk add --no-cache wget postgresql-client
 
 # Create non-root user
 RUN addgroup -g 1001 -S clipsync && \

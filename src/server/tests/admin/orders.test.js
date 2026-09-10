@@ -82,6 +82,8 @@ function makeOrderRow(overrides = {}) {
 describe('GET /api/admin/orders —— 订单分页列表', () => {
   it('返回分页壳 { list, total, page, pageSize }，行字段符合 Order 契约', async () => {
     pool.query.mockImplementation(async (sql) => {
+      // RB-06：GET 读侧也走 requirePerm('admin.orders.view')，先放行权限查询
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.view' }], rowCount: 1 };
       if (sql.includes('COUNT(*)')) return { rows: [{ total: 3 }], rowCount: 1 };
       if (sql.includes('FROM payment_orders po')) {
         return { rows: [makeOrderRow(), makeOrderRow({ order_no: 'CS20260905184402' })], rowCount: 2 };
@@ -120,6 +122,7 @@ describe('GET /api/admin/orders —— 订单分页列表', () => {
 
   it('status=refunding 伪状态：过滤口径为 refunded 且 metadata 无 refund_amount', async () => {
     pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.view' }], rowCount: 1 };
       if (sql.includes('COUNT(*)')) return { rows: [{ total: 0 }], rowCount: 1 };
       if (sql.includes('FROM payment_orders po')) return { rows: [], rowCount: 0 };
       return { rows: [], rowCount: 0 };
@@ -135,6 +138,7 @@ describe('GET /api/admin/orders —— 订单分页列表', () => {
 
   it('status=refunded 过滤口径为 refunded 且 metadata 有 refund_amount；status=paid 走参数化等值', async () => {
     pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.view' }], rowCount: 1 };
       if (sql.includes('COUNT(*)')) return { rows: [{ total: 0 }], rowCount: 1 };
       if (sql.includes('FROM payment_orders po')) return { rows: [], rowCount: 0 };
       return { rows: [], rowCount: 0 };
@@ -152,6 +156,12 @@ describe('GET /api/admin/orders —— 订单分页列表', () => {
   });
 
   it('非法筛选参数返回 400 { code: 4000 }', async () => {
+    // RB-06：读侧 requirePerm 需先放行（参数校验在路由 handler 内）
+    pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.view' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+
     const res = await request(buildApp()).get('/api/admin/orders?status=bogus');
     expect(res.status).toBe(400);
     expect(res.body.code).toBe(4000);
@@ -163,11 +173,13 @@ describe('GET /api/admin/orders —— 订单分页列表', () => {
     const res3 = await request(buildApp()).get('/api/admin/orders?dateFrom=not-a-date');
     expect(res3.status).toBe(400);
     expect(res3.body.code).toBe(4000);
-    expect(pool.query).not.toHaveBeenCalled();
+    // 权限查询之外不得有任何订单查询（参数校验先于 DB）
+    expect(pool.query.mock.calls.some(([sql]) => !sql.includes('perm_key'))).toBe(false);
   });
 
   it('q 关键字匹配订单号/商户单号/第三方流水号（ILIKE）', async () => {
     pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.view' }], rowCount: 1 };
       if (sql.includes('COUNT(*)')) return { rows: [{ total: 0 }], rowCount: 1 };
       if (sql.includes('FROM payment_orders po')) return { rows: [], rowCount: 0 };
       return { rows: [], rowCount: 0 };
@@ -186,6 +198,7 @@ describe('GET /api/admin/orders —— 订单分页列表', () => {
 describe('GET /api/admin/orders/:orderNo —— 订单详情', () => {
   it('命中订单返回 Order 全字段', async () => {
     pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.view' }], rowCount: 1 };
       if (sql.includes('FROM payment_orders po')) return { rows: [makeOrderRow()], rowCount: 1 };
       return { rows: [], rowCount: 0 };
     });
@@ -199,6 +212,12 @@ describe('GET /api/admin/orders/:orderNo —— 订单详情', () => {
   });
 
   it('订单不存在返回 404 { code: 40404 }', async () => {
+    // RB-06：读侧 requirePerm 先放行，DB 空行 → 404
+    pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.view' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+
     const res = await request(buildApp()).get('/api/admin/orders/CS99999999999999');
 
     expect(res.status).toBe(404);

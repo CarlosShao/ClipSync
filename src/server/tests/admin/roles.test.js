@@ -77,6 +77,10 @@ function grantPerm() {
 describe('GET /api/admin/roles —— 角色列表', () => {
   it('返回 Role 契约数组：memberCount 统计、permissions 按角色分组', async () => {
     pool.query.mockImplementation(async (sql) => {
+      // RB-06：GET 读侧也走 requirePerm('admin.roles.view')，先放行权限查询。
+      // 判据用 requirePerm SQL 专属的 "p.perm_key = $2"——GET /roles 的角色权限查询
+      // 同样含 "perm_key"（ORDER BY p.perm_key），宽匹配会误截
+      if (sql.includes('p.perm_key = $2')) return { rows: [{ perm_key: 'admin.roles.view' }], rowCount: 1 };
       if (sql.includes('GROUP BY r.id')) {
         return {
           rows: [
@@ -128,6 +132,8 @@ describe('GET /api/admin/roles —— 角色列表', () => {
 
   it('无成员角色 memberCount=0、无权限角色 permissions=[]', async () => {
     pool.query.mockImplementation(async (sql) => {
+      // RB-06：GET 读侧也走 requirePerm('admin.roles.view')，判据同上（p.perm_key = $2 防误截）
+      if (sql.includes('p.perm_key = $2')) return { rows: [{ perm_key: 'admin.roles.view' }], rowCount: 1 };
       if (sql.includes('GROUP BY r.id')) {
         return {
           rows: [

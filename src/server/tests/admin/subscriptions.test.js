@@ -78,6 +78,8 @@ function makeSubscriptionRow(overrides = {}) {
 describe('GET /api/admin/subscriptions —— 订阅分页列表', () => {
   it('返回分页壳，行含用户摘要与套餐名（displayName 优先）', async () => {
     pool.query.mockImplementation(async (sql) => {
+      // RB-06：GET 读侧也走 requirePerm('admin.subscriptions.view')，先放行权限查询
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.subscriptions.view' }], rowCount: 1 };
       if (sql.includes('COUNT(*)')) return { rows: [{ total: 1 }], rowCount: 1 };
       if (sql.includes('FROM user_subscriptions us')) {
         return { rows: [makeSubscriptionRow()], rowCount: 1 };
@@ -105,6 +107,8 @@ describe('GET /api/admin/subscriptions —— 订阅分页列表', () => {
 
   it('无昵称用户回退打码手机号；status 词表归一化（trial→trialing）', async () => {
     pool.query.mockImplementation(async (sql) => {
+      // RB-06：GET 读侧也走 requirePerm('admin.subscriptions.view')，先放行权限查询
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.subscriptions.view' }], rowCount: 1 };
       if (sql.includes('COUNT(*)')) return { rows: [{ total: 1 }], rowCount: 1 };
       if (sql.includes('FROM user_subscriptions us')) {
         return {
