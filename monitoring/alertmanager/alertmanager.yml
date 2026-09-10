@@ -9,8 +9,8 @@
 global:
   # 邮件配置（需配置 SMTP）
   smtp_smarthost: 'smtp.gmail.com:587'
-  smtp_from: 'clipsync-alert@example.com'
-  smtp_auth_username: 'clipsync-alert@example.com'
+  smtp_from: 'clipsync-alert@clipchain.top'
+  smtp_auth_username: 'clipsync-alert@clipchain.top'
   smtp_auth_password: 'YOUR_APP_PASSWORD'
 
 # 告警路由
@@ -38,7 +38,7 @@ receivers:
   - name: 'default-receiver'
     # 邮件通知
     email_configs:
-      - to: 'ops-team@example.com'
+      - to: 'ops-team@clipchain.top'
         subject: '[ClipSync告警] {{ .GroupLabels.alertname }}'
         body: |
           {{ range .Alerts }}
@@ -53,7 +53,7 @@ receivers:
 
   - name: 'critical-receiver'
     email_configs:
-      - to: 'ops-team@example.com,oncall@example.com'
+      - to: 'ops-team@clipchain.top,oncall@clipchain.top'
         subject: '🚨 [紧急] ClipSync告警: {{ .GroupLabels.alertname }}'
         body: |
           {{ range .Alerts }}
@@ -68,7 +68,7 @@ receivers:
 
   - name: 'warning-receiver'
     email_configs:
-      - to: 'ops-team@example.com'
+      - to: 'ops-team@clipchain.top'
         subject: '⚠️ [警告] ClipSync告警: {{ .GroupLabels.alertname }}'
         body: |
           {{ range .Alerts }}
@@ -89,3 +89,4 @@ inhibit_rules:
     target_match:
       severity: 'warning'
     equal: ['alertname', 'instance']
+

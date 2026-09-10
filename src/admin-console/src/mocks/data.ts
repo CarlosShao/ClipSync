@@ -101,7 +101,7 @@ export const mockUsers: AdminUser[] = [
     id: 'usr_yuki77e1-4a20-4bfe-8d33-77',
     phone: '137****5521',
     nickname: 'yuki_dev',
-    email: 'yuki***@clipstream.work',
+    email: 'yuki***@clipchain.top',
     isActive: true,
     registrationStatus: 'approved',
     status: 'active',
@@ -1116,7 +1116,7 @@ export const mockConfigs: SystemConfig[] = [
     key: 'smtp_from',
     name: '发件人地址',
     value: '',
-    description: '如 no-reply@example.com',
+    description: '如 no-reply@clipchain.top',
     consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
     updatedAt: '2026-08-12 10:20',
   },
@@ -1393,11 +1393,11 @@ export const mockReleases: AppRelease[] = [
     notes: '新增版本发布管理、客户端策略下发与维护模式；修复多设备同步竞态。',
     platforms: {
       'windows-x86_64': {
-        url: 'https://dl.clipstream.work/clipsync_0.3.0_x64_en-US.msi',
+        url: 'https://updates.clipchain.top/downloads/clipsync_0.3.0_x64_en-US.msi',
         signature: 'dW50cnVzdGVkIGNvbW1lbnQ6c2lnbmF0dXJlIGZyb20gdGF1cmk=',
       },
       'darwin-aarch64': {
-        url: 'https://dl.clipstream.work/clipsync_0.3.0_aarch64.app.tar.gz',
+        url: 'https://updates.clipchain.top/downloads/clipsync_0.3.0_aarch64.app.tar.gz',
       },
     },
     forceUpdate: false,
@@ -1415,7 +1415,7 @@ export const mockReleases: AppRelease[] = [
     notes: '（草稿）修复文档预览页码显示；暂未发布。',
     platforms: {
       'windows-x86_64': {
-        url: 'https://dl.clipstream.work/clipsync_0.3.1_x64_en-US.msi',
+        url: 'https://updates.clipchain.top/downloads/clipsync_0.3.1_x64_en-US.msi',
       },
     },
     forceUpdate: true,

@@ -10,6 +10,7 @@ import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter, g
 import { blacklistJti, parseDurationToSeconds } from '../utils/redis-client.js';
 import { issueRefreshToken } from '../utils/refreshToken.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
+import { EMAILS } from '../../../shared/domains.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 import { logger } from '../utils/logger.js';
 import { isFlagEnabled, requireFlag } from '../utils/featureFlags.js';
@@ -1623,7 +1624,7 @@ router.put('/deactivate', authenticateToken, async (req, res) => {
       },
       reactivationInfo: {
         message: 'To reactivate your account, please contact the support team',
-        contactEmail: 'support@clipsync.example.com',
+        contactEmail: EMAILS.support,
       },
     });
   } catch (err) {

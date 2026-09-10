@@ -599,23 +599,23 @@ describe('AN-06/AN-15/AN-08：运维动作区、活跃告警与存储用量', ()
 describe('POST /api/admin/configs/smtp/test（CO-30 SMTP 测试邮件）', () => {
   test('未配置 SMTP 返回 409/4090 错误壳', async () => {
     const resp = await post<{ messageId: string }>('/api/admin/configs/smtp/test', {
-      to: 'carlos@clipstream.work',
+      to: 'carlos@clipchain.top',
     });
     expect(resp.status).toBe(409);
     expect(expectFail(resp).code).toBe(4090);
   });
 
   test('配置 smtp_host + smtp_pass 后发送成功返回 messageId', async () => {
-    await patch('/api/admin/configs/smtp_host', { value: 'smtp.clipstream.work' });
+    await patch('/api/admin/configs/smtp_host', { value: 'smtp.clipchain.top' });
     await patch('/api/admin/configs/smtp_pass', { value: 'mock-auth-code' });
     const resp = await post<{ messageId: string }>('/api/admin/configs/smtp/test', {});
     expect(resp.status).toBe(200);
-    expect(expectOk(resp).data.messageId).toContain('@clipstream.work');
+    expect(expectOk(resp).data.messageId).toContain('@clipchain.top');
   });
 
   test('发送失败（收件人含 fail）返回 5xx 错误壳', async () => {
     const resp = await post<{ messageId: string }>('/api/admin/configs/smtp/test', {
-      to: 'fail@clipstream.work',
+      to: 'fail@clipchain.top',
     });
     expect(resp.status).toBe(500);
     expect(expectFail(resp).code).toBe(5001);

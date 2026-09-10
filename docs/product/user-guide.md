@@ -775,9 +775,9 @@ ClipSync 使用端到端加密技术保护您的数据：
 
 如果您在测试过程中遇到任何问题，或者有建议想要反馈，请通过以下方式联系我们：
 
-- **官方邮箱**：support@clipsync.com
-- **官方网站**：https://clipsync.com
-- **用户社区**：https://community.clipsync.com
+- **官方邮箱**：support@clipchain.top
+- **官方网站**：https://clipchain.top
+- **用户社区**：https://community.clipchain.top
 
 感谢您使用 ClipSync！我们希望这款产品能帮助您提高工作效率，实现真正的跨设备无缝体验。
 

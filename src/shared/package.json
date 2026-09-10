@@ -1,0 +1,20 @@
+{
+  "name": "@clipsync/shared-domains",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ClipSync 域名单一事实源（跨端共享，零依赖 ESM）",
+  "type": "module",
+  "main": "domains.js",
+  "types": "domains.d.ts",
+  "exports": {
+    ".": {
+      "types": "./domains.d.ts",
+      "default": "./domains.js"
+    },
+    "./domains.js": {
+      "types": "./domains.d.ts",
+      "default": "./domains.js"
+    }
+  },
+  "sideEffects": false
+}

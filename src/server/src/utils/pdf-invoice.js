@@ -5,6 +5,7 @@
 
 import PDFDocument from 'pdfkit';
 import { logger } from './logger.js';
+import { EMAILS } from '../../../shared/domains.js';
 
 /**
  * 生成发票 PDF
@@ -185,7 +186,7 @@ function _generateInvoiceContent(doc, invoice, user, order) {
   );
   
   doc.text(
-    '如有疑问，请联系客服: support@clipsync.com',
+    `如有疑问，请联系客服: ${EMAILS.support}`,
     50,
     doc.y + 5,
     { align: 'center', width: contentWidth }

@@ -40,13 +40,16 @@
 
     <div class="highlight">
       <p><strong>摘要</strong>：我们重视您的隐私。我们仅收集提供服务所必需的数据，采用端到端加密保护您的数据，且不会出售您的数据给第三方。您有权访问、更正、删除您的数据（GDPR 权利）。</p>
+      <p><strong>请注意两项例外：</strong>（1）您<b>主动使用 AI 功能</b>时，相关内容会发送给第三方 AI 供应商（见第 6 节）；
+         （2）Android 客户端使用<b>无障碍服务</b>读取系统剪贴板以实现自动同步（见第 7 节）。
+         不使用 AI 功能时，您的剪贴板内容始终处于端到端加密保护之下。</p>
     </div>
 
     <h2>1. 数据控制者</h2>
     <p>ClipSync（"我们"）是您数据的控制者。我们的联系方式：</p>
     <ul>
-      <li>邮箱：<a href="mailto:privacy@clipsync.example.com">privacy@clipsync.example.com</a></li>
-      <li>地址：中国北京市海淀区（示例地址）</li>
+      <li>邮箱：<a href="mailto:privacy@clipchain.top">privacy@clipchain.top</a></li>
+      <li>地址：如需邮寄书面请求，请先通过上述邮箱联系我们获取当前通信地址</li>
     </ul>
 
     <h2>2. 我们收集的数据</h2>
@@ -78,20 +81,49 @@
     <h2>4. 数据共享与披露</h2>
     <p>我们<strong>不会</strong>出售您的数据。仅在以下情况下共享数据：</p>
     <ul>
-      <li><strong>服务提供商</strong>：我们使用第三方服务提供商（云服务器、短信服务、邮件服务）。这些提供商仅按照我们的指示处理数据，并有严格的保密义务。</li>
+      <li><strong>服务提供商</strong>：我们使用第三方服务提供商（云服务器、短信服务、邮件服务、支付渠道）。这些提供商仅按照我们的指示处理数据，并有严格的保密义务。</li>
+      <li><strong>第三方 AI 服务提供商</strong>：仅在您主动使用 AI 功能时共享，详见第 6 节。</li>
       <li><strong>法律要求</strong>：如果法律要求，我们可能会披露您的数据（例如法院命令）。</li>
       <li><strong>保护权利</strong>：如果我们认为有必要保护 ClipSync、我们的用户或公众的权利、财产或安全，我们可能会披露数据。</li>
     </ul>
 
     <h2>5. 数据存储与安全</h2>
     <ul>
-      <li><strong>加密</strong>：所有剪贴板数据在传输和存储时均使用端到端加密（AES-256-GCM）。</li>
+      <li><strong>加密</strong>：剪贴板文本、图片与文件在您的设备上完成加密后才上传，服务端以密文形式存储（AES-256-GCM，密钥仅存于您的设备）。</li>
       <li><strong>服务器位置</strong>：您的数据存储在中国境内的服务器上（遵守数据本地化要求）。</li>
       <li><strong>访问控制</strong>：只有授权人员才能访问用户数据，且需要多重身份验证。</li>
       <li><strong>数据备份</strong>：我们定期备份数据，备份也经过加密。</li>
     </ul>
+    <p><strong>端到端加密的例外：</strong>当您主动使用 AI 功能时，相关内容需在服务端解密后转发给第三方 AI 供应商才能完成推理，
+       该部分内容在该环节不再受端到端加密保护（见第 6 节）。</p>
 
-    <h2>6. 您的权利（GDPR）</h2>
+    <h2>6. AI 功能与第三方 AI 服务（重要披露）</h2>
+    <p>ClipSync 提供可选的 AI 辅助功能（如内容摘要、文本改写、智能标签、AI 对话助手等）。
+       这些功能<strong>默认不启用</strong>，仅当您在客户端主动触发时才会运行。</p>
+    <p><strong>数据流向：</strong>使用 AI 功能时，被处理的内容（可能是您的剪贴板文本全文或片段，最长约 4000 字符）
+       会通过加密传输（HTTPS/TLS）发送至您或我们在设置中选定的<strong>第三方 AI 服务提供商</strong>的服务器。
+       可选供应商包括但不限于 OpenAI、Anthropic、DeepSeek、阿里通义千问、腾讯混元、MiniMax、阶跃星辰等（以客户端内实际可选项为准）。</p>
+    <ul>
+      <li>这属于对端到端加密的<strong>例外</strong>：该部分内容在服务端需解密后才能用于推理，因此<strong>不再受端到端加密保护</strong>。</li>
+      <li>AI 供应商对该等内容的处理受其自身隐私政策约束，我们无法控制其留存与二次使用行为。</li>
+      <li>我们<strong>不会</strong>使用您的剪贴板内容训练自有模型。</li>
+      <li>如您不希望剪贴板内容离开端到端加密范围，请<strong>不要使用 AI 功能</strong>；不使用不影响剪贴板同步等核心功能。</li>
+    </ul>
+
+    <h2>7. Android 无障碍服务与剪贴板采集（重要披露）</h2>
+    <p>为实现 Android 端在后台的剪贴板自动同步，ClipSync 的 Android 客户端会请求启用
+       <strong>无障碍服务（AccessibilityService）</strong>权限。</p>
+    <ul>
+      <li><strong>用途有限</strong>：仅用于在系统剪贴板发生变化时读取<strong>剪贴板文本内容</strong>，以便同步到您的其他设备；
+          我们<strong>不</strong>读取您的屏幕内容、输入内容、界面控件文本或任何其他应用的信息。</li>
+      <li><strong>不消费事件</strong>：无障碍服务只用于获取读取剪贴板的系统信任豁免，不拦截、不修改、不阻断任何无障碍事件。</li>
+      <li><strong>用户可控</strong>：您可以随时在 Android「设置 → 无障碍」中关闭该服务；关闭后仅影响后台自动同步，您仍可手动触发同步。</li>
+      <li><strong>数据保护</strong>：采集到的剪贴板内容按本政策第 5 节所述进行端到端加密后再上传，我们无法读取其明文。</li>
+      <li>Android 客户端还会使用通知使用权（NotificationListenerService）与前台服务，仅用于维持同步连接的稳定性；
+          除上述剪贴板文本外，不会采集其他应用的通知内容用于同步。</li>
+    </ul>
+
+    <h2>8. 您的权利（GDPR）</h2>
     <p>根据 GDPR 和适用隐私法律，您享有以下权利：</p>
     <ul>
       <li><strong>访问权</strong>：您有权知道我们收集了您的哪些数据。</li>
@@ -103,15 +135,15 @@
       <li><strong>撤销同意权</strong>：如果处理基于同意，您可以随时撤销同意。</li>
     </ul>
 
-    <h2>7. 如何行使您的权利</h2>
+    <h2>9. 如何行使您的权利</h2>
     <ul>
       <li><strong>访问/更正数据</strong>：登录应用 → 设置 → 个人资料</li>
       <li><strong>导出数据（数据可移植性）</strong>：登录应用 → 设置 → 隐私 → 导出我的数据</li>
       <li><strong>删除账户（被遗忘权）</strong>：登录应用 → 设置 → 隐私 → 删除账户</li>
-      <li><strong>其他请求</strong>：发送邮件至 <a href="mailto:privacy@clipsync.example.com">privacy@clipsync.example.com</a>，我们将在30天内回复。</li>
+      <li><strong>其他请求</strong>：发送邮件至 <a href="mailto:privacy@clipchain.top">privacy@clipchain.top</a>，我们将在30天内回复。</li>
     </ul>
 
-    <h2>8. Cookie 政策</h2>
+    <h2>10. Cookie 政策</h2>
     <ul>
       <li>我们使用必要的 Cookie 来维持您的登录会话。</li>
       <li>我们使用分析 Cookie 来改进服务（仅汇总数据，不识别个人）。</li>
@@ -119,25 +151,26 @@
       <li>详细 Cookie 政策，请参阅我们的 <a href="cookie-policy.html">Cookie 政策</a>。</li>
     </ul>
 
-    <h2>9. 儿童隐私</h2>
+    <h2>11. 儿童隐私</h2>
     <p>我们的服务不适用于16岁以下的儿童。如果我们发现收集了儿童的个人数据，将立即删除。</p>
 
-    <h2>10. 国际数据传输</h2>
-    <p>如果您在欧洲经济区（EEA）之外使用我们的服务，您的数据可能会被传输到 EEA 之外的国家。我们将确保适当的保护措施（例如标准合同条款）到位。</p>
+    <h2>12. 国际数据传输</h2>
+    <p>如果您在欧洲经济区（EEA）之外使用我们的服务，您的数据可能会被传输到 EEA 之外的国家。我们将确保适当的保护措施（例如标准合同条款）到位。
+       特别地，当您使用 AI 功能时（见第 6 节），相关内容会被传输至您所选 AI 供应商所在的国家/地区（可能位于境外）。</p>
 
-    <h2>11. 隐私政策更新</h2>
+    <h2>13. 隐私政策更新</h2>
     <ul>
       <li>我们可能会不时更新本隐私政策。</li>
       <li>重大变更将通过应用内通知或邮件通知您。</li>
       <li>更新后的政策将在本页面上公布，并注明"最后更新"日期。</li>
     </ul>
 
-    <h2>12. 联系我们</h2>
+    <h2>14. 联系我们</h2>
     <div class="contact">
       <p>如果您对本隐私政策有任何疑问或想要行使您的权利，请通过以下方式联系我们：</p>
-      <p>邮箱：<a href="mailto:privacy@clipsync.example.com">privacy@clipsync.example.com</a></p>
-      <p>数据保护官（DPO）：<a href="mailto:dpo@clipsync.example.com">dpo@clipsync.example.com</a></p>
-      <p>地址：中国北京市海淀区（示例地址）</p>
+      <p>邮箱：<a href="mailto:privacy@clipchain.top">privacy@clipchain.top</a></p>
+      <p>数据保护官（DPO）：<a href="mailto:dpo@clipchain.top">dpo@clipchain.top</a></p>
+      <p>地址：如需邮寄书面请求，请先通过上述邮箱联系我们获取当前通信地址。</p>
     </div>
 
     <hr style="margin-top:40px; border:none; border-top:1px solid #ddd;">

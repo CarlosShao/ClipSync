@@ -50,8 +50,8 @@
     "updater": {
       "active": true,
       "dangerousDisablePluginAutostart": false,
-      "endpoints": ["https://updates.clipsync.app/api/app/updates/latest?target={{target}}&current_version={{current_version}}"],
-      "pubkey": "placeholder_pubkey_replace_in_production"
+      "endpoints": ["https://updates.clipchain.top/api/app/updates/latest?target={{target}}&current_version={{current_version}}"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI1MzZGN0NFQjI3ODJGMjIKUldRaUwzaXl6dmMydFRjNXBYajh4MnlKZWZMeXo4akw3a2lvN3ljS05ObGpvUlhzWGtoY1VVM1gK"
     }
   }
 }

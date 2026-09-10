@@ -125,25 +125,17 @@ patches:
         path: /spec/resources/requests/storage
         value: 10Gi
 
-configMapGenerator:
-  - name: clipsync-config
-    behavior: merge
-    literals:
-      - NODE_ENV=staging
-      - LOG_LEVEL=debug
-      - ALLOWED_ORIGINS=*
-
 # HPA: 缩小范围
-- target:
-    kind: HorizontalPodAutoscaler
-    name: clipsync-api-hpa
-  patch: |-
-    - op: replace
-      path: /spec/minReplicas
-      value: 1
-    - op: replace
-      path: /spec/maxReplicas
-      value: 3
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: clipsync-api-hpa
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
 
 # Ingress: 使用 staging 域名（注释掉，需按实际环境修改）
 # - target:
@@ -152,7 +144,15 @@ configMapGenerator:
 #   patch: |-
 #     - op: replace
 #       path: /spec/tls/0/hosts
-#       value: ["staging-api.clipsync.app"]
+#       value: ["staging-api.clipchain.top"]
 #     - op: replace
 #       path: /spec/rules/0/host
-#       value: "staging-api.clipsync.app"
+#       value: "staging-api.clipchain.top"
+
+configMapGenerator:
+  - name: clipsync-config
+    behavior: merge
+    literals:
+      - NODE_ENV=staging
+      - LOG_LEVEL=debug
+      - ALLOWED_ORIGINS=*

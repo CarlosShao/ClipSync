@@ -232,7 +232,11 @@ const __dirname = path.dirname(__filename);
 // ============================================
 // Static Files (Terms of Service, Privacy Policy)
 // ============================================
-app.use(express.static(path.join(__dirname, '../../views')));
+// __dirname = <server 根>/src，法务页在 <server 根>/views 与 <server 根>/public，
+// 均只需上溯一级。原 `../../views` 会解析到仓库根的 src/views（该目录从不存在），
+// 导致 /privacy-policy.html 等**全部 404**（商店上架要求隐私政策必须有可访问 URL）。
+app.use(express.static(path.join(__dirname, '../views')));
+app.use(express.static(path.join(__dirname, '../public')));
 
 // ============================================
 // Health Check（增强版 - 符合 Kubernetes 标准）

@@ -8,7 +8,7 @@
 ## 任务 1：HTTPS/TLS 配置
 
 ### 前置条件
-- ✅ 已拥有域名（如 `clipstream.work`）
+- ✅ 已拥有域名（如 `clipchain.top`）
 - ✅ 域名 DNS 已解析到服务器公网 IP
 - ✅ 服务器已部署 ClipSync 后端（HTTP 可访问）
 - ✅ 服务器开放 80/443 端口
@@ -39,8 +39,8 @@ pkill -f "node.*3000" 2>/dev/null || true
 
 # 申请证书（需先停止占用 80 端口的服务）
 sudo certbot certonly --standalone \
-  -d clipstream.work \
-  -d www.clipstream.work \
+  -d clipchain.top \
+  -d www.clipchain.top \
   --email your-email@example.com \
   --agree-tos \
   --no-eff-email
@@ -49,8 +49,8 @@ sudo certbot certonly --standalone \
 **预期结果**：
 ```
 Successfully received certificate.
-Certificate is saved at: /etc/letsencrypt/live/clipstream.work/fullchain.pem
-Key is saved at: /etc/letsencrypt/live/clipstream.work/privkey.pem
+Certificate is saved at: /etc/letsencrypt/live/clipchain.top/fullchain.pem
+Key is saved at: /etc/letsencrypt/live/clipchain.top/privkey.pem
 ```
 
 **失败处理**：
@@ -65,16 +65,16 @@ Key is saved at: /etc/letsencrypt/live/clipstream.work/privkey.pem
 ```nginx
 server {
     listen 80;
-    server_name clipstream.work www.clipstream.work;
+    server_name clipchain.top www.clipchain.top;
     return 301 https://$server_name$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name clipstream.work www.clipstream.work;
+    server_name clipchain.top www.clipchain.top;
 
-    ssl_certificate /etc/letsencrypt/live/clipstream.work/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/clipstream.work/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/clipchain.top/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/clipchain.top/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
@@ -112,7 +112,7 @@ sudo nginx -t  # 验证配置语法
 sudo systemctl restart nginx
 ```
 
-**预期结果**：访问 `https://clipstream.work/api/health` 返回 `{"status":"ok"}`
+**预期结果**：访问 `https://clipchain.top/api/health` 返回 `{"status":"ok"}`
 
 **失败处理**：
 - 若 `nginx -t` 报错：检查配置文件语法，确认证书路径正确
@@ -136,9 +136,9 @@ sudo crontab -e
 ---
 
 ### 验证清单
-- [ ] `https://clipstream.work` 可访问（浏览器显示绿锁）
+- [ ] `https://clipchain.top` 可访问（浏览器显示绿锁）
 - [ ] HTTP 自动跳转 HTTPS
-- [ ] WebSocket 连接正常（`wss://clipstream.work/ws`）
+- [ ] WebSocket 连接正常（`wss://clipchain.top/ws`）
 - [ ] SSL Labs 测试评分 A 以上（https://www.ssllabs.com/ssltest/）
 
 ---
@@ -603,7 +603,7 @@ curl -X POST http://admin:admin@localhost:3000/api/alert-notifications \
     "name": "email-alerts",
     "type": "email",
     "settings": {
-      "addresses": "admin@clipsync.com"
+      "addresses": "admin@clipchain.top"
     }
   }'
 ```
@@ -663,7 +663,7 @@ groups:
 ```yaml
 global:
   smtp_smarthost: 'smtp.gmail.com:587'
-  smtp_from: 'alerts@clipsync.com'
+  smtp_from: 'alerts@clipchain.top'
 
 route:
   group_by: ['alertname', 'severity']
@@ -675,7 +675,7 @@ route:
 receivers:
   - name: 'email-notifications'
     email_configs:
-      - to: 'admin@clipsync.com'
+      - to: 'admin@clipchain.top'
         send_resolved: true
 
   - name: 'slack-notifications'

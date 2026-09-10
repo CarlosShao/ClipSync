@@ -7,6 +7,12 @@ import { getFeatureFlags } from '../utils/featureFlags.js';
 import { getClientPolicies } from '../utils/clientPolicies.js';
 import { logger } from '../utils/logger.js';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
+// GH-01：下载地址解析（发布单 url > RELEASE_DOWNLOAD_BASE_URL > system_configs），
+// 取代此前的虚构域名占位回退。
+// ⚠️ 合并提示：原 `import { ORIGINS } from '../../../shared/domains.js'`（域名统一子代理所加）
+// 在本次改动后已无消费方——本文件唯一用处就是那个被删掉的 example.com 式兜底，
+// 故一并移除。若域名统一分支另有需要，按需恢复该 import。
+import { resolvePlatformDownload } from '../utils/releaseArtifacts.js';
 
 const router = Router();
 
@@ -330,16 +336,36 @@ router.get('/update.json', async (req, res) => {
   }
 
   const windowsEntry = release.platforms?.['windows-x86_64'];
+  // GH-01：该平台无产物时不再伪造下载链接。
+  // /updates/latest 对同场景返回 204（Tauri 视为最新），但本端点契约要求带 platforms.url，
+  // 旧实现回退到一个虚构域名——客户端会真去请求并 404/超时，运维侧看不出根因。
+  // 现在改为显式表达「服务器未配置下载地址」：410 Gone + 机器可读标记。
+  // 下载地址来源优先级见 utils/releaseArtifacts.js（发布单 url > 环境变量 > system_configs）。
+  const artifact = await resolvePlatformDownload(
+    'windows-x86_64',
+    release.version,
+    windowsEntry
+  );
+  if (!artifact.url) {
+    logger.warn('[app/update.json] windows-x86_64 artifact url unconfigured', {
+      version: release.version,
+      reason: artifact.unconfigured,
+    });
+    return res.status(410).json({
+      error: '下载地址未配置',
+      unconfigured: artifact.unconfigured,
+      version: release.version,
+      notes: release.notes || 'New version available',
+    });
+  }
+
   res.json({
     version: release.version,
     notes: release.notes || 'New version available',
     pubDate: release.published_at?.toISOString?.() ?? new Date().toISOString(),
     forceUpdate: Boolean(release.force_update),
     platforms: {
-      'windows-x86_64': {
-        // 该平台无产物时回退 example.com 占位（与旧行为一致，避免 url 缺失）
-        url: windowsEntry?.url || `https://example.com/downloads/clipsync_${release.version}_x64_en-US.msi`,
-      },
+      'windows-x86_64': { ...windowsEntry, url: artifact.url },
     },
   });
 });

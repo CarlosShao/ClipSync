@@ -110,7 +110,8 @@ jobs:
     needs: build-and-push
     environment:
       name: production
-      url: https://api.clipsync.app
+      # 域名与 src/shared/domains.js 保持一致
+      url: https://api.clipchain.top
     if: success()
 
     steps:

@@ -36,6 +36,12 @@ RUN npm ci --only=production && npm cache clean --force
 # Copy source from builder
 COPY --from=builder /app/src ./src
 
+# 静态法务页（隐私政策/服务协议等）——index.js 以 ../views 与 ../public 挂载。
+# 不 COPY 则生产镜像内这两个目录不存在，法务页全部 404
+# （国内应用商店上架要求隐私政策必须有可访问 URL）。
+COPY --from=builder /app/views ./views
+COPY --from=builder /app/public ./public
+
 # Create upload directories
 RUN mkdir -p uploads/images/thumbnails uploads/files && \
     chown -R clipsync:clipsync /app

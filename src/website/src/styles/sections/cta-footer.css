@@ -8,3 +8,8 @@ footer{border-top:1px solid var(--line);padding:36px 0 48px}
 .foot-links{display:flex;gap:40px}
 .foot-links a{display:block;font-size:12.5px;color:var(--ink-2);padding:3px 0}
 .foot-links a:hover{color:var(--ink)}
+/* 备案号行（T-W3）：仅当构建期配置了 VITE_ICP_LICENSE 时才有 <a> 子元素，
+   未配置时为纯文本版权行，不产生任何空占位。 */
+.beian-line{margin-top:18px;font-size:12px;color:var(--ink-3);line-height:1.9}
+.beian{color:var(--ink-3);margin-left:8px}
+.beian:hover{color:var(--ink)}

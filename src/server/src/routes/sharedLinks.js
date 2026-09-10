@@ -59,7 +59,8 @@ function getRequestOrigin(req) {
 }
 
 function buildShareUrl(req, token) {
-  // 生产环境可配置干净的短域名，如 https://clipsync.example.com/s/
+  // 生产环境可配置干净的短域名，如 https://s.clipchain.top/s/
+  // （域名事实源：src/shared/domains.js）
   const configuredBase = process.env.SHARE_LINK_BASE_URL;
   if (configuredBase) return configuredBase + token;
   // 默认使用本机服务地址 + 公开端点路径

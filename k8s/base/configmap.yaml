@@ -17,7 +17,9 @@ data:
   REDIS_PORT: "6379"
   LOG_LEVEL: "info"
   TZ: "Asia/Shanghai"
-  ALLOWED_ORIGINS: "https://app.clipsync.com,https://clipsync.com"
+  # ⚠️ 域名与 src/shared/domains.js 的 ALLOWED_ORIGINS 保持一致
+  # （生产覆盖值见 k8s/overlays/production/kustomization.yaml）
+  ALLOWED_ORIGINS: "https://www.clipchain.top,https://admin.clipchain.top,https://clipchain.top"
   CSRF_SECRET: "CHANGE_ME_32chars_min!!"
   JWT_SECRET: "CHANGE_ME_32chars_min!!"
   ENCRYPTION_KEY: "CHANGE_ME_32chars_min!!"

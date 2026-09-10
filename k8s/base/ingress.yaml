@@ -15,13 +15,14 @@ metadata:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
   ingressClassName: nginx
+  # ⚠️ 域名与 src/shared/domains.js 保持一致（YAML 无法 import）
   tls:
     - hosts:
-        - api.clipsync.com
-        - app.clipsync.com
+        - api.clipchain.top
+        - ws.clipchain.top
       secretName: clipsync-tls
   rules:
-    - host: api.clipsync.com
+    - host: api.clipchain.top
       http:
         paths:
           - path: /
@@ -31,7 +32,7 @@ spec:
                 name: clipsync-api
                 port:
                   number: 80
-    - host: app.clipsync.com
+    - host: ws.clipchain.top
       http:
         paths:
           - path: /
@@ -53,7 +54,9 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: health.clipsync.com
+    # 健康检查复用 api 子域；不再单独占用 health.<domain>
+    # 域名与 src/shared/domains.js 保持一致
+    - host: api.clipchain.top
       http:
         paths:
           - path: /health

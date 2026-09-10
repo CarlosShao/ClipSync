@@ -166,7 +166,7 @@ kubectl get pods -n clipsync
 kubectl logs -f deployment/clipsync-api -n clipsync
 
 # 测试 API
-curl -H "Authorization: Bearer $TEST_TOKEN" https://api.clipsync.com/api/health
+curl -H "Authorization: Bearer $TEST_TOKEN" https://api.clipchain.top/api/health
 ```
 
 #### 步骤 5: 清理旧密钥
@@ -206,7 +206,7 @@ tail -f /var/log/clipsync/*.log | grep -i "unauthorized\|forbidden"
 git log --all --full-history -- .env.development
 
 # 2. 检查服务器访问日志
-grep -i "api.clipsync.com" /var/log/nginx/access.log | tail -100
+grep -i "api.clipchain.top" /var/log/nginx/access.log | tail -100
 
 # 3. 检查数据库异常查询
 # PostgreSQL 日志

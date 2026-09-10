@@ -45,7 +45,7 @@
 
 | 依赖 | 说明 | 获取方式 |
 |------|------|----------|
-| 域名 | api.clipsync.app 等 | 域名注册商购买 |
+| 域名 | api.clipchain.top 等 | 域名注册商购买 |
 | SSL 证书 | Let's Encrypt 免费 | cert-manager 自动签发 |
 | 云服务器 | 阿里云/AWS/GCP | 按需选择 |
 | 数据库密码等密钥 | 必须强随机 | `openssl rand -base64 32` |

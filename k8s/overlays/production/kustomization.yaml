@@ -115,5 +115,5 @@ configMapGenerator:
     literals:
       - NODE_ENV=production
       - LOG_LEVEL=warn
-      # ⚠️ 生产环境必须替换为真实域名
-      - ALLOWED_ORIGINS=https://app.clipsync.app,https://sync.clipsync.app
+      # ⚠️ 生产环境域名与 src/shared/domains.js 的 ALLOWED_ORIGINS 保持一致
+      - ALLOWED_ORIGINS=https://www.clipchain.top,https://admin.clipchain.top,https://clipchain.top

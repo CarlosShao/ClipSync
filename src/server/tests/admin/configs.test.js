@@ -121,6 +121,8 @@ describe('GET /api/admin/configs —— 系统参数列表', () => {
       'smtp_pass',
       'smtp_from',
       'smtp_secure',
+      // 067（GH-01）：更新包下载地址来源，routes/app.js 经 releaseArtifacts.js 消费
+      'release_download_base_url',
     ]);
 
     const maintenance = configs[0];

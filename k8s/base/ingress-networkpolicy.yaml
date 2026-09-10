@@ -29,13 +29,14 @@ metadata:
     # cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
   ingressClassName: nginx  # 根据集群的 IngressClass 调整
+  # ⚠️ 域名与 src/shared/domains.js 保持一致（YAML 无法 import）
   tls:
     - hosts:
-        - api.clipsync.app       # 替换为你的域名
-        - ws.clipsync.app        # WebSocket 域名（如需要）
+        - api.clipchain.top       # 替换为你的域名
+        - ws.clipchain.top        # WebSocket 域名（如需要）
       secretName: clipsync-tls-cert  # cert-manager 自动创建或手动导入
   rules:
-    - host: api.clipsync.app
+    - host: api.clipchain.top
       http:
         paths:
           - path: /
@@ -45,7 +46,7 @@ spec:
                 name: clipsync-api
                 port:
                   number: 80
-    - host: ws.clipsync.app
+    - host: ws.clipchain.top
       http:
         paths:
           - path: /

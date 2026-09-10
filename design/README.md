@@ -27,7 +27,7 @@
 1. ✅ 官网创意方向已定稿：**V2「Paper 极简」**（`mockups/website-v2-minimal.html`），工程方案见 [04-官网开发工程方案.md](./04-官网开发工程方案.md)
 2. ✅ 后台视觉方案已定稿：**B「Daylight」亮色**（`mockups/admin-v2-light.html`）→ 技术栈随之确定为 **Ant Design 5 + ECharts**
 3. 📋 后台开发工程方案已产出待审：[03-后台开发工程方案.md](./03-后台开发工程方案.md)（选型/结构/规范/工程化/联调/部署/里程碑）
-4. ⏳ 后台部署形态：`admin.clipstream.work` 子域 vs 路径 `/admin/`（见 03 §8 / §10）
+4. ⏳ 后台部署形态：`admin.clipchain.top` 子域 vs 路径 `/admin/`（见 03 §8 / §10）
 5. ⏳ 里程碑排序：后台 M0-M4 与官网并行开发（同分支不同目录），先后无强依赖
 
 > **当前状态：阻塞中 —— 等待对 03/04 两份工程方案的审核，通过后才开始编码。**
@@ -37,5 +37,5 @@
 1. 后台视觉方案：A 深色 / B 亮色（或 A+B 混合：如亮色为主+深色模式）
 2. 官网创意方向：V1 / V2 / V3（或组合，如 V1 的 Hero + V3 的 Bento）
 3. 后台技术栈确认：shadcn/ui vs Ant Design 5
-4. 后台部署形态：`admin.clipstream.work` 子域是否可行（涉及证书/DNS）
+4. 后台部署形态：`admin.clipchain.top` 子域是否可行（涉及证书/DNS）
 5. 里程碑排序：后台 M1 先行，还是官网先行

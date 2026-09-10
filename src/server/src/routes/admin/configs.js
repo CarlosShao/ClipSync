@@ -50,6 +50,8 @@ import { requirePerm } from '../../middleware/adminAuth.js';
 import { sendTestMail } from '../../utils/email.js';
 // AN-03：AI 全局参数（ai_max_tokens/ai_default_provider）写库后失效 AI 运行时缓存
 import { invalidateAiRuntimeConfigCache } from '../../utils/aiRuntimeConfig.js';
+// GH-01：release_download_base_url 写库后失效下载地址解析缓存
+import { invalidateReleaseArtifactCache } from '../../utils/releaseArtifacts.js';
 
 const router = Router();
 
@@ -198,7 +200,7 @@ const CONFIG_CATALOG = [
   {
     key: 'smtp_from',
     name: '发件人地址',
-    description: '如 no-reply@example.com',
+    description: '如 no-reply@clipchain.top',
     consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
   },
   {
@@ -209,6 +211,14 @@ const CONFIG_CATALOG = [
   },
   // AF-42：menu_overrides 已从管理台目录移除——客户端无读取通道（setOverrides 预留未调用），
   // 属"可改不生效"。库中行保留，待客户端下发通道立项后恢复（见 docs/plans/tickets AN-02）。
+  // —— 发布（067，GH-01：更新包下载地址来源，routes/app.js /update.json 消费）——
+  {
+    key: 'release_download_base_url',
+    name: '更新包下载地址',
+    description:
+      'GitHub Releases 仓库地址（如 https://github.com/CarlosShao/ClipSync）或自建 CDN 前缀；为空时更新端点返回「下载地址未配置」而不伪造链接',
+    consumer: 'src/server/src/utils/releaseArtifacts.js（routes/app.js /update.json 经它解析）',
+  },
 ];
 
 const CONFIG_CATALOG_MAP = new Map(CONFIG_CATALOG.map((c) => [c.key, c]));
@@ -392,6 +402,11 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
     // AN-03：AI 全局参数写库后失效 aiRuntimeConfig 5s TTL 缓存（下次 AI 调用直连库读取）
     if (key === 'ai_max_tokens' || key === 'ai_default_provider') {
       invalidateAiRuntimeConfigCache();
+    }
+
+    // GH-01：下载地址来源写库后失效 releaseArtifacts 60s 缓存（下次更新检查直连库读取）
+    if (key === 'release_download_base_url') {
+      invalidateReleaseArtifactCache();
     }
 
     // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason；

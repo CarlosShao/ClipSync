@@ -28,7 +28,8 @@ data:
   MAX_FILE_SIZE: "10485760"
   UPLOAD_DIR: "/app/uploads"
   LOG_LEVEL: "info"
-  ALLOWED_ORIGINS: "https://sync.clipsync.app"
+  # ⚠️ 域名与 src/shared/domains.js 的 ALLOWED_ORIGINS 保持一致
+  ALLOWED_ORIGINS: "https://www.clipchain.top,https://admin.clipchain.top,https://clipchain.top"
   # CORS 白名单（生产环境必须配置）
   # ALLOWED_ORIGINS: "https://app1.example.com,https://app2.example.com"
 ---

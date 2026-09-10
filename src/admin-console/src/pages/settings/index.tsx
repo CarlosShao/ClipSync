@@ -977,7 +977,7 @@ export default function SettingsPage() {
             label="发件人地址"
             rules={[{ type: 'email', message: '请输入合法的邮箱地址' }]}
           >
-            <Input placeholder="如 no-reply@example.com（缺省用 username）" />
+            <Input placeholder="如 no-reply@clipchain.top（缺省用 username）" />
           </Form.Item>
           <Form.Item name="priority" label="优先级" tooltip="数值越小越优先；发送失败按优先级顺延降级（最多 2 次）">
             <InputNumber min={0} precision={0} style={{ width: 200 }} />

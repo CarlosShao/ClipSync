@@ -1,10 +1,11 @@
 # ClipSync 官网 robots
-# 域名假设值：https://www.clipstream.work（工程方案 §5 待拍板）。
-# 域名定稿后如改根域或其他域名，需同步以下 3 处：
+# 域名定稿值：https://www.clipchain.top
+# 根域名单一事实源：src/shared/domains.js（本文件为静态资源，无法 import，保持字面量）。
+# 如改根域，需同步以下 3 处：
 #   1) 本文件下方 Sitemap 行
 #   2) sitemap.xml 的 <loc>
 #   3) index.html 的 og:image / twitter:image（当前为相对路径，改绝对地址时才涉及）
 User-agent: *
 Allow: /
 
-Sitemap: https://www.clipstream.work/sitemap.xml
+Sitemap: https://www.clipchain.top/sitemap.xml

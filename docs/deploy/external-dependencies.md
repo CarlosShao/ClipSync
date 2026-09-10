@@ -15,7 +15,7 @@
 - WebSocket 加密（WSS）
 
 **所需外部条件**：
-- ✅ 域名（已选：clipstream.work）
+- ✅ 域名（已选：clipchain.top）
 - ❌ 域名 DNS 配置（需要域名注册商配置）
 - ❌ Let's Encrypt 证书申请（需要公网服务器）
 

@@ -108,6 +108,10 @@ services:
     volumes:
       # 代码热重载（开发环境）
       - ./src/server/src:/app/src:ro
+      # 共享模块：src/shared/domains.js 是跨端域名的唯一事实源。
+      # server 侧以 ../../../shared/domains.js 引用，从 /app/src/routes/ 上溯三层解析为
+      # /shared/domains.js，因此必须挂到容器根 /shared（挂 /app/shared 无效）。
+      - ./src/shared:/shared:ro
       # 测试文件热重载（开发环境）
       - ./src/server/tests:/app/tests:ro
       - ./src/server/uploads:/app/uploads

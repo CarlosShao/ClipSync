@@ -117,7 +117,7 @@
 ## 七、Wave 5 — 集成验收（编排者主导）
 
 ### T-A7 [P0][集成] 关 MSW 真联调 + 修复 + 部署配置
-- 切 `VITE_ENABLE_MSW=false` 起后端（docker dev）逐页联调；修复字段/契约偏差；nginx `admin.clipstream.work`（或 /admin，待用户确认 DNS）配置草案；E2E 全绿；交付验收清单
+- 切 `VITE_ENABLE_MSW=false` 起后端（docker dev）逐页联调；修复字段/契约偏差；nginx `admin.clipchain.top`（或 /admin，待用户确认 DNS）配置草案；E2E 全绿；交付验收清单
 
 ---
 

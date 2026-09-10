@@ -71,7 +71,7 @@ const VALID_TOTP = '482917';
 const DEMO_ADMIN: LoginResp = {
   accessToken: 'mock-admin-access-token-20260905',
   refreshToken: 'mock-admin-refresh-token-20260905',
-  account: 'carlos@clipstream.work',
+  account: 'carlos@clipchain.top',
   nickname: 'Carlos',
   roleKey: 'super_admin',
   permissions: ['*'],
@@ -709,8 +709,8 @@ const configHandlers = [
     if (body.to?.includes('fail')) {
       return fail(500, 5001, 'SMTP 服务器连接超时，请检查端口与授权码');
     }
-    const to = body.to?.trim() || 'admin@clipstream.work';
-    return ok({ messageId: `<${Date.now()}@clipstream.work>` }, `测试邮件已发送至 ${to}`);
+    const to = body.to?.trim() || 'admin@clipchain.top';
+    return ok({ messageId: `<${Date.now()}@clipchain.top>` }, `测试邮件已发送至 ${to}`);
   }),
 ];
 

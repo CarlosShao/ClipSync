@@ -1040,7 +1040,23 @@ fn encode_rgba_to_png_data_url(rgba: &[u8], w: u32, h: u32) -> Result<String, St
 }
 /// tauri.conf.json 里出厂自带的占位 pubkey。只要它还在，就说明更新服务
 /// **尚未配置**——此时必须明确报错，而不是继续谎报"已是最新版本"（A7）。
+///
+/// AN-04 第三波：本常量仅作「未配置」判定用；真实公钥（`npx tauri signer generate`
+/// 产出的 .pub）写入 tauri.conf.json 的 plugins.updater.pubkey 后，判定自然落空，
+/// 更新流程走正常路径。
 const PLACEHOLDER_UPDATER_PUBKEY: &str = "placeholder_pubkey_replace_in_production";
+
+/// AN-04 第三波：updater 配置是否已就绪（pubkey 非空且非占位值）。
+///
+/// 与 `updater_with_override` 的分工：本函数只回答"公钥配了吗"，
+/// 端点覆盖（`CLIPSYNC_UPDATER_ENDPOINT`）与端点校验留在 builder 链路里——
+/// 这样即使公钥已配置但端点被环境变量写坏，报出的仍是端点错误而非误报"未配置"。
+#[cfg(not(mobile))]
+fn updater_is_configured(app: &tauri::AppHandle) -> bool {
+    let pubkey = updater_pubkey(app).unwrap_or_default();
+    let trimmed = pubkey.trim();
+    !trimmed.is_empty() && trimmed != PLACEHOLDER_UPDATER_PUBKEY
+}
 
 /// AN-04：更新端点环境变量覆盖。
 /// 设置 `CLIPSYNC_UPDATER_ENDPOINT` 时用它替换 tauri.conf.json 里的 endpoints
@@ -1091,8 +1107,8 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<serde_json::Value, S
     #[cfg(not(mobile))]
     {
         // A7：pubkey 缺失或仍是占位值 → 明确告知"更新服务未配置"
-        let pubkey = updater_pubkey(&app).unwrap_or_default();
-        if pubkey.trim().is_empty() || pubkey == PLACEHOLDER_UPDATER_PUBKEY {
+        // （AN-04 第三波：公钥已真实配置时此闸门放行，走下面的 updater_with_override 正常流程）
+        if !updater_is_configured(&app) {
             // 前端按此标记映射为 i18n 文案（详见 AboutView errMessage）
             return Err("UPDATER_NOT_CONFIGURED".to_string());
         }

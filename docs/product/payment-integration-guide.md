@@ -70,7 +70,7 @@
    WXPAY_SERIAL_NO=your_cert_serial_no
    WXPAY_PRIVATE_KEY_PATH=./certs/wxpay_private_key.pem
    WXPAY_CERTIFICATE_PATH=./certs/wxpay_certificate.pem
-   WXPAY_NOTIFY_URL=https://api.clipstream.work/api/webhooks/wechat-pay
+   WXPAY_NOTIFY_URL=https://api.clipchain.top/api/webhooks/wechat-pay
    ```
 
 3. **更新 `src/routes/payments.js`**
@@ -136,8 +136,8 @@
    ALIPAY_APP_ID=your_app_id
    ALIPAY_PRIVATE_KEY_PATH=./certs/alipay_private_key.pem
    ALIPAY_PUBLIC_KEY_PATH=./certs/alipay_public_key.pem
-   ALIPAY_NOTIFY_URL=https://api.clipstream.work/api/webhooks/alipay
-   ALIPAY_RETURN_URL=https://clipstream.work/payment/result
+   ALIPAY_NOTIFY_URL=https://api.clipchain.top/api/webhooks/alipay
+   ALIPAY_RETURN_URL=https://clipchain.top/payment/result
    ```
 
 3. **更新 `src/routes/payments.js`**
@@ -187,7 +187,7 @@
 
 4. **配置Webhook**
    - 在Dashboard → Developers → Webhooks
-   - 添加端点：https://api.clipstream.work/api/webhooks/stripe
+   - 添加端点：https://api.clipchain.top/api/webhooks/stripe
    - 选择事件：checkout.session.completed, invoice.payment_failed等
    - 获取"Signing secret"
 

@@ -148,7 +148,7 @@ export default function LoginPage() {
                 name="account"
                 rules={[{ required: true, message: '请输入管理员账号' }]}
               >
-                <Input placeholder="carlos@clipstream.work" autoComplete="username" />
+                <Input placeholder="carlos@clipchain.top" autoComplete="username" />
               </Form.Item>
               <Form.Item
                 label={<span className={styles.fieldLabel}>密码</span>}
