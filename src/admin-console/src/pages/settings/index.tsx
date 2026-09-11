@@ -137,7 +137,12 @@ function isNumericConfigKey(key: string): boolean {
     key !== 'log_level' &&
     key !== 'menu_overrides' &&
     key !== 'rate_limit_disabled' &&
-    !key.startsWith('smtp_')
+    !key.startsWith('smtp_') &&
+    // 字符串域键（068/A4 短信、运维地址/发布源）：非数字，允许留空
+    !key.startsWith('sms_') &&
+    !key.endsWith('_url') &&
+    key !== 'storage_cleanup_enabled' &&
+    key !== 'release_download_base_url'
   );
 }
 
@@ -376,7 +381,32 @@ export default function SettingsPage() {
     { title: 'AI 能力', keys: ['ai_max_tokens', 'ai_default_provider'] },
     { title: '安全与会话', keys: ['session_timeout_minutes', 'audit_log_retention_days'] },
     { title: '日志', keys: ['log_level'] },
-    { title: '运维', keys: ['grafana_url'] },
+    // 运维域：可观测（Prometheus/Grafana）、备份保留、存储清理、设备在线判定、
+    // 对象存储控制台入口、更新包下载源——同属"服务端运维"语义
+    {
+      title: '运维',
+      keys: [
+        'grafana_url',
+        'prometheus_url',
+        'backup_retention_days',
+        'storage_cleanup_enabled',
+        'device_offline_timeout_minutes',
+        'minio_console_url',
+        'release_download_base_url',
+      ],
+    },
+    // 短信验证码（068/A4）：独立成卡——它是完整的发码链路配置（服务商 + 凭据 + 签名 + 模板），
+    // 与邮件通道卡对等的独立外部服务，不应混入运维兜底
+    {
+      title: '短信验证码',
+      keys: [
+        'sms_provider',
+        'sms_access_key_id',
+        'sms_access_key_secret',
+        'sms_sign_name',
+        'sms_template_code',
+      ],
+    },
   ];
 
   // 配置加载后回填表单（数字项转 number 便于 InputNumber 展示；布尔/脱敏键按契约适配）
@@ -386,12 +416,13 @@ export default function SettingsPage() {
     const rateLimitValues: Record<string, number | string | boolean> = {};
     for (const config of editableConfigs) {
       const target = isRateLimitKey(config.key) ? rateLimitValues : systemValues;
-      if (config.key === 'smtp_pass') {
+      if (config.key === 'smtp_pass' || config.key === 'sms_access_key_secret') {
         // 服务端脱敏回显（已配置/未配置）不回填输入框：留空 = 保持不变，避免把脱敏串当新密码提交
+        // （sms_access_key_secret 与 smtp_pass 同为加密落库 + 脱敏回显键，068/A4）
         target[config.key] = '';
         continue;
       }
-      if (config.key === 'rate_limit_disabled') {
+      if (config.key === 'rate_limit_disabled' || config.key === 'storage_cleanup_enabled') {
         target[config.key] = config.value === 'true';
         continue;
       }
@@ -448,11 +479,39 @@ export default function SettingsPage() {
     if (key === 'log_level') {
       return <Select style={{ maxWidth: 260 }} options={LOG_LEVEL_OPTIONS} />;
     }
+    // 短信服务商（068/A4）：枚举值，用 Select 而非自由文本，防止拼错导致发码 503
+    if (key === 'sms_provider') {
+      return (
+        <Select
+          style={{ maxWidth: 260 }}
+          options={[
+            { value: 'console', label: 'console（未开通，生产环境拒绝发码）' },
+            { value: 'aliyun', label: 'aliyun（阿里云短信）' },
+            { value: 'tencent', label: 'tencent（腾讯云短信）' },
+          ]}
+        />
+      );
+    }
+    if (key === 'sms_access_key_secret') {
+      // 凭据脱敏：恒空起填，留空提交时跳过（服务端加密落库，回显只有 已配置/未配置）
+      return (
+        <Input.Password
+          style={{ maxWidth: 260 }}
+          placeholder="留空保持不变"
+          autoComplete="new-password"
+        />
+      );
+    }
     if (key === 'menu_overrides') {
       return <Input.TextArea rows={2} style={{ maxWidth: 420 }} />;
     }
-    if (key === 'rate_limit_disabled') {
+    if (key === 'rate_limit_disabled' || key === 'storage_cleanup_enabled') {
       return <Switch checkedChildren="开启" unCheckedChildren="关闭" />;
+    }
+    // URL / 文本域键（grafana_url / prometheus_url / minio_console_url /
+    // release_download_base_url 等）：文本输入而非数字
+    if (key.endsWith('_url') || key === 'release_download_base_url' || key.startsWith('sms_')) {
+      return <Input style={{ maxWidth: 260 }} />;
     }
     if (key.startsWith('smtp_')) {
       if (key === 'smtp_pass') {
@@ -496,12 +555,16 @@ export default function SettingsPage() {
         </span>
       }
       extra={
-        config.key === 'smtp_pass'
+        config.key === 'smtp_pass' || config.key === 'sms_access_key_secret'
           ? `${config.description ?? ''}（当前：${config.value}）`
           : config.description
       }
       rules={configRules(config.key)}
-      valuePropName={config.key === 'rate_limit_disabled' ? 'checked' : undefined}
+      valuePropName={
+        config.key === 'rate_limit_disabled' || config.key === 'storage_cleanup_enabled'
+          ? 'checked'
+          : undefined
+      }
       className={styles.paramItem}
     >
       {renderConfigControl(config.key)}
@@ -725,9 +788,7 @@ export default function SettingsPage() {
                   >
                     {CHANNEL_PURPOSE_LABEL[channel.purpose]}
                   </Tag>
-                  {channel.secure ? (
-                    <Tag style={{ marginInlineEnd: 0 }}>SSL</Tag>
-                  ) : null}
+                  {channel.secure ? <Tag style={{ marginInlineEnd: 0 }}>SSL</Tag> : null}
                   {!channel.has_password ? (
                     <Tooltip title="缺少密码/授权码，发送将走控制台兜底（测试接口返回 4090）">
                       <Tag color="orange" style={{ marginInlineEnd: 0 }}>
@@ -979,7 +1040,11 @@ export default function SettingsPage() {
           >
             <Input placeholder="如 no-reply@clipchain.top（缺省用 username）" />
           </Form.Item>
-          <Form.Item name="priority" label="优先级" tooltip="数值越小越优先；发送失败按优先级顺延降级（最多 2 次）">
+          <Form.Item
+            name="priority"
+            label="优先级"
+            tooltip="数值越小越优先；发送失败按优先级顺延降级（最多 2 次）"
+          >
             <InputNumber min={0} precision={0} style={{ width: 200 }} />
           </Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked">
@@ -1003,7 +1068,10 @@ export default function SettingsPage() {
           layout="vertical"
           onFinish={(values) => {
             if (testChannel) {
-              channelTestMutation.mutate({ id: testChannel.id, to: values.to?.trim() || undefined });
+              channelTestMutation.mutate({
+                id: testChannel.id,
+                to: values.to?.trim() || undefined,
+              });
             }
           }}
         >
