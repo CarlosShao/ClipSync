@@ -43,48 +43,95 @@ interface NavItem {
 }
 
 /**
- * 主导航（图标 + 文案）。仅图片标（不建子菜单）——分组留给后续真实需求，
- * 避免过早引入层级导致折叠态/权限裁剪逻辑复杂化。
+ * 主导航（图标 + 文案），按「业务 → 配置 → 系统」三段分组。
+ *
+ * 排序依据（而非历史追加顺序）：
+ *   1. 概览 —— 看板只此一项，置于最顶
+ *   2. 业务 —— 日常运营高频：用户 / 设备 / 订单 / 订阅
+ *   3. 配置 —— 低频、影响面大：套餐定价、客户端策略
+ *   4. 系统 —— 管理自身：权限、会话、审计、发布、运维、AI、设置
+ *      · 系统设置置于末位（管理台惯例：设置不放业务区）
+ *      · 超管专属项（release/ops/ai）集中在系统段尾部，普通 admin 看不到它们，
+ *        其菜单自然只剩「系统设置」，不会出现空组
+ *
+ * 分组用 antd Menu 的 type:'group'——折叠态下分组标题自动隐藏、只留图标，
+ * 无需额外分支判断。
  */
-const NAV_ITEMS: NavItem[] = [
-  { key: '/dashboard', label: '数据看板', icon: <DashboardOutlined /> },
-  { key: '/users', label: '用户管理', icon: <TeamOutlined />, perm: 'admin.users.view' },
-  { key: '/devices', label: '设备管理', icon: <MobileOutlined />, perm: 'admin.devices.view' },
+interface NavGroup {
+  key: string;
+  /** 分组标题（仅展开态显示；折叠态由 antd 自动隐藏） */
+  label: string;
+  children: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
   {
-    key: '/orders',
-    label: '订单与支付',
-    icon: <ShoppingCartOutlined />,
-    perm: 'admin.orders.view',
+    key: 'g-overview',
+    // 单组仅一项：不显示组标题（靠间距与下方业务区分隔即可）
+    label: '',
+    children: [{ key: '/dashboard', label: '数据看板', icon: <DashboardOutlined /> }],
   },
   {
-    key: '/subscriptions',
-    label: '订阅管理',
-    icon: <CreditCardOutlined />,
-    perm: 'admin.subscriptions.view',
+    key: 'g-business',
+    label: '业务运营',
+    children: [
+      { key: '/users', label: '用户管理', icon: <TeamOutlined />, perm: 'admin.users.view' },
+      { key: '/devices', label: '设备管理', icon: <MobileOutlined />, perm: 'admin.devices.view' },
+      {
+        key: '/orders',
+        label: '订单与支付',
+        icon: <ShoppingCartOutlined />,
+        perm: 'admin.orders.view',
+      },
+      {
+        key: '/subscriptions',
+        label: '订阅管理',
+        icon: <CreditCardOutlined />,
+        perm: 'admin.subscriptions.view',
+      },
+    ],
   },
-  { key: '/plans', label: '套餐与价格', icon: <TagsOutlined />, perm: 'admin.plans.view' },
-  // AN-04：版本发布管理（admin.release.manage，065 迁移仅授 super_admin）
   {
-    key: '/releases',
-    label: '版本发布',
-    icon: <CloudUploadOutlined />,
-    perm: 'admin.release.manage',
+    key: 'g-config',
+    label: '配置',
+    children: [
+      { key: '/plans', label: '套餐与价格', icon: <TagsOutlined />, perm: 'admin.plans.view' },
+      // AN-02：客户端策略下发（与系统设置同权限域，仅新增不改既有项）
+      {
+        key: '/policies',
+        label: '客户端策略',
+        icon: <ControlOutlined />,
+        perm: 'admin.configs.view',
+      },
+    ],
   },
-  { key: '/audit', label: '审计日志', icon: <FileSearchOutlined />, perm: 'admin.audit.view' },
-  // AN-12：管理员安全策略 —— 管理员会话（复用 admin.users.view，不新增权限键）
-  { key: '/security', label: '管理员会话', icon: <SafetyOutlined />, perm: 'admin.users.view' },
-  { key: '/roles', label: '角色权限', icon: <UserSwitchOutlined />, perm: 'admin.roles.view' },
   {
-    key: '/settings',
-    label: '系统设置',
-    icon: <SettingOutlined />,
-    perm: ['admin.configs.view', 'admin.announce.send'],
+    key: 'g-system',
+    label: '系统',
+    children: [
+      { key: '/roles', label: '角色权限', icon: <UserSwitchOutlined />, perm: 'admin.roles.view' },
+      // AN-12：管理员安全策略 —— 管理员会话（复用 admin.users.view，不新增权限键）
+      { key: '/security', label: '管理员会话', icon: <SafetyOutlined />, perm: 'admin.users.view' },
+      { key: '/audit', label: '审计日志', icon: <FileSearchOutlined />, perm: 'admin.audit.view' },
+      // AN-04：版本发布管理（admin.release.manage，065 迁移仅授 super_admin）
+      {
+        key: '/releases',
+        label: '版本发布',
+        icon: <CloudUploadOutlined />,
+        perm: 'admin.release.manage',
+      },
+      { key: '/ops', label: '运维监控', icon: <MonitorOutlined />, perm: 'admin.ops.view' },
+      // AN-03：AI 平台设置（admin.ai.manage，062 迁移仅授 super_admin）
+      { key: '/ai', label: 'AI 平台', icon: <RobotOutlined />, perm: 'admin.ai.manage' },
+      // 系统设置置末（管理台惯例）
+      {
+        key: '/settings',
+        label: '系统设置',
+        icon: <SettingOutlined />,
+        perm: ['admin.configs.view', 'admin.announce.send'],
+      },
+    ],
   },
-  // AN-02：客户端策略下发（与系统设置同权限域，仅新增不改既有项）
-  { key: '/policies', label: '客户端策略', icon: <ControlOutlined />, perm: 'admin.configs.view' },
-  { key: '/ops', label: '运维监控', icon: <MonitorOutlined />, perm: 'admin.ops.view' },
-  // AN-03：AI 平台设置（admin.ai.manage，062 迁移仅授 super_admin）
-  { key: '/ai', label: 'AI 平台', icon: <RobotOutlined />, perm: 'admin.ai.manage' },
 ];
 
 /** 侧边栏宽度约束（展开态） */
@@ -188,17 +235,29 @@ export default function AdminLayout() {
     void navigate('/login', { replace: true });
   };
 
-  // RB-07：按权限裁剪菜单项
-  const visibleItems = NAV_ITEMS.filter(
-    (item) =>
-      !item.perm ||
-      (Array.isArray(item.perm) ? item.perm.some((p) => hasPerm(p)) : hasPerm(item.perm))
-  );
+  // RB-07：按权限裁剪——逐组过滤子项，整组无可见项时该组不渲染
+  // （否则普通 admin 会看到只剩标题的空组）
+  const canSee = (item: NavItem) =>
+    !item.perm ||
+    (Array.isArray(item.perm) ? item.perm.some((p) => hasPerm(p)) : hasPerm(item.perm));
 
-  const menuItems: MenuProps['items'] = visibleItems.map((item) => ({
-    key: item.key,
-    icon: item.icon,
-    label: item.label,
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    children: group.children.filter(canSee),
+  })).filter((group) => group.children.length > 0);
+
+  const visibleItems = visibleGroups.flatMap((g) => g.children);
+
+  const menuItems: MenuProps['items'] = visibleGroups.map((group) => ({
+    key: group.key,
+    type: 'group' as const,
+    // 空 label 的分组不渲染标题（见 NAV_GROUPS.g-overview 注释）
+    label: group.label || undefined,
+    children: group.children.map((item) => ({
+      key: item.key,
+      icon: item.icon,
+      label: item.label,
+    })),
   }));
 
   // 选中项：取匹配度最高的前缀（/subscriptions 与 /subscriptions-x 不应互相误判）

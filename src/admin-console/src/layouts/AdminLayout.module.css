@@ -68,6 +68,38 @@
   border-inline-end: none !important;
 }
 
+/*
+ * 分组标题：antd 默认字号偏大且行高偏高，14 项 + 4 组会明显变长。
+ * 收窄为上标式小字，并与上组拉开间距形成段落感（4px → 14px）。
+ */
+.menu :global(.ant-menu-item-group-title) {
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 14px 16px 4px;
+  color: var(--text-3);
+  letter-spacing: 0.4px;
+}
+
+/* 首组（数据看板，无标题）紧贴 logo 区分隔线，不留过大上方间距 */
+.menu :global(.ant-menu-item-group:first-child .ant-menu-item-group-title) {
+  padding-top: 6px;
+}
+
+/* 分组内菜单项不额外缩进（保持与未分组时一致的左对齐，图标列对齐） */
+.menu :global(.ant-menu-item-group-list) {
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * 折叠态：隐藏分组标题。
+ * antd 在 inlineCollapsed 下仅把标题宽度压到 0，元素仍占纵向空间，
+ * 会在图标之间留下无意义空隙——这里显式移除。
+ */
+.sider[class*='ant-layout-sider-collapsed'] .menu :global(.ant-menu-item-group-title) {
+  display: none;
+}
+
 /* 拖拽手柄：贴侧边栏右缘，命中区放宽到 6px（视觉 2px），但不动 antd 内部结构 */
 .resizeHandle {
   position: absolute;
