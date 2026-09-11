@@ -1,14 +1,23 @@
-.topnav {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  height: 52px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+/* 后台主布局：侧边栏（可折叠 + 可拖拽调宽） + 顶栏工具条 + 内容区 */
+
+.root {
+  min-height: 100vh;
+}
+
+/* ===== 侧边栏 ===== */
+
+.sider {
+  position: relative;
+  border-right: 1px solid var(--border);
+  /* 侧边栏自身滚动（菜单项多时不撑高整页，顶栏保持可见） */
+  overflow: auto;
+}
+
+/* antd Sider 内部容器需撑满高度，否则折叠时 logo 区会被压缩 */
+.sider :global(.ant-layout-sider-children) {
   display: flex;
-  align-items: center;
-  padding: 0 24px;
-  gap: 12px;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 .brand {
@@ -17,7 +26,23 @@
   gap: 9px;
   font-weight: 600;
   font-size: 14px;
+  height: 52px;
+  padding: 0 16px;
+  flex-shrink: 0;
   white-space: nowrap;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+/* 折叠态：logo 居中（padding 归零由 antd 自行处理，这里只收窄内边距） */
+.sider[class*='ant-layout-sider-collapsed'] .brand {
+  padding: 0 18px;
+}
+
+.brandName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .logoMark {
@@ -38,49 +63,66 @@
   margin-left: 2px;
 }
 
-.divider {
-  width: 1px;
-  height: 20px;
-  background: var(--border);
-  flex-shrink: 0;
+.menu {
+  flex: 1 1 auto;
+  border-inline-end: none !important;
 }
 
-.nav {
-  display: flex;
-  gap: 4px;
-  min-width: 0;
-  overflow-x: auto;
-}
-
-.navBtn {
-  appearance: none;
-  border: 1px solid transparent;
+/* 拖拽手柄：贴侧边栏右缘，命中区放宽到 6px（视觉 2px），但不动 antd 内部结构 */
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 20;
+  /* 视觉上是一条 1px 线，鼠标悬停/聚焦时才高亮 */
   background: transparent;
-  border-radius: 7px;
-  padding: 5px 13px;
-  font-size: 12.5px;
-  font-family: inherit;
+  transition: background 0.15s;
+  /* 触控设备禁用浏览器默认手势，避免拖拽被当成滚动 */
+  touch-action: none;
+}
+
+.resizeHandle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.resizeHandle:hover::after,
+.resizeHandle:focus-visible::after {
+  background: var(--brand);
+}
+
+.resizeHandle:focus-visible {
+  outline: none;
+}
+
+/* ===== 顶栏 ===== */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: 52px;
+  line-height: normal; /* 覆盖 antd Header 默认 64px 行高 */
+  padding: 0 24px 0 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.collapseBtn {
   color: var(--text-2);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
-}
-
-.navBtn:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-.navBtnActive {
-  background: var(--brand-soft);
-  color: var(--brand);
-  border-color: var(--brand-border);
-  font-weight: 550;
-}
-
-.navBtnActive:hover {
-  background: var(--brand-soft);
-  color: var(--brand);
+  flex-shrink: 0;
 }
 
 .right {
@@ -102,40 +144,10 @@
   white-space: nowrap;
 }
 
-.search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 6px 12px;
-  /* 顶栏空间自适应：1280 视口下避免右侧退出按钮被挤出视口 */
-  width: clamp(130px, 14vw, 220px);
-  color: var(--text-3);
-  font-size: 12px;
-  user-select: none;
-}
-
-.searchIcon {
-  color: var(--text-3);
-  font-size: 13px;
-}
-
 .bell {
   position: relative;
   padding: 6px;
   color: var(--text-2);
-}
-
-.bellDot {
-  position: absolute;
-  top: 4px;
-  right: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--red);
 }
 
 .avatar {
@@ -156,12 +168,17 @@
   color: var(--text-2);
 }
 
+/* ===== 内容区 ===== */
+
 .content {
   padding: 14px 24px 32px;
+  /* 内容超宽时横向滚动收敛在内容区，不撑破整页 */
+  overflow-x: auto;
 }
 
-@media (max-width: 960px) {
-  .search {
-    display: none;
+/* 窄视口：自动收起侧边栏（antd Sider breakpoint 的 CSS 兜底，避免遮挡内容） */
+@media (max-width: 768px) {
+  .content {
+    padding: 12px 14px 24px;
   }
 }
