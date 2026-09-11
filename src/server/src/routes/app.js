@@ -61,9 +61,15 @@ router.get('/policies', optionalAuth, async (req, res) => {
 
 // ───────────────────────── 版本与发布（AN-04） ─────────────────────────
 
-// 已发布版本 60s 进程内缓存：管理台发布/回滚后最多延迟 60s 对客户端生效，
-// 避免每次 About/更新检查都打库（app_releases 行数极小，缓存只为削查询频次）。
+// 已发布版本 60s 进程内缓存：削查询频次（app_releases 行数极小）。
+// ⚠️ 管理台发布/撤回/编辑/删除后必须调用 invalidateReleaseCache()（admin/releases.js），
+// 否则撤回等紧急操作最长延迟 60s 才对客户端生效——审计实测发现过此缺陷并已修复。
 let releaseCache = { data: null, expiresAt: 0 };
+
+/** 管理台写操作后失效发布缓存：下次更新检查直连库读取（撤回/改灰度即时生效） */
+export function invalidateReleaseCache() {
+  releaseCache = { data: null, expiresAt: 0 };
+}
 
 /**
  * 取最新已发布版本（is_published=true 按 published_at 倒序第一条）。

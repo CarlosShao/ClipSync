@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import pool from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 
@@ -58,33 +60,67 @@ export function requireFlag(key, message) {
   };
 }
 
-// ───────────────────────── AN-10：强制点清单 ─────────────────────────
-// 静态清单：登记每个 feature_flags 键在服务端的真实强制点（requireFlag / isFlagEnabled 调用），
-// GET /api/admin/flags 据此返回 enforced 字段（「DB 值 / 进程缓存值 / 是否强制」自检口径，
-// 防 AF-04「UI 有开关、后端无强制点」复发）。
+// ───────────────────────── AN-10：强制点自检 ─────────────────────────
+// 目标：防 AF-04「UI 有开关、后端无强制点」复发——GET /api/admin/flags 的
+// enforced 字段必须反映**事实**，而非一份靠人肉纪律维护的清单。
 //
-// ⚠️ 维护方式（手动 grep，新增/删除开关时必须同步本清单）：
-//   grep -rn "requireFlag(\|isFlagEnabled(" src/server/src
-// 查到调用点 → 键入列；查无调用点 → 不得入列（flags 接口会如实返回 enforced:false 告警）。
-// 当前登记（2026-09-09 逐点查证）：
-//   enable_subscription → subscriptionCheck.js:53 / planFeature.js:79
-//   enable_ai_agent     → index.js:449（aiFlagGuard，AI 四挂载点统一强制）
-//   enable_public_sharing → sharedLinks.js:156,182
-//   enable_2fa          → two-factor.js:54,71
-//   signup_waitlist     → auth.js:360,589,943 / auth-verify.js:165,263
-//   enable_signup       → auth.js:330,559,862 / auth-verify.js:158,256
-//   force_2fa_for_admin → utils/adminSecurity.js（assertForceTwoFactorForAdmin，auth.js /login、auth-verify.js /verify-code 调用）
-export const ENFORCED_FLAG_KEYS = [
-  'enable_subscription',
-  'enable_ai_agent',
-  'enable_public_sharing',
-  'enable_2fa',
-  'signup_waitlist',
-  'enable_signup',
-  'force_2fa_for_admin',
-];
+// 历史：曾用手写 ENFORCED_FLAG_KEYS 数组，要求新增开关时手动 grep 同步，
+// 漏登则 enforced 静默失真（审计发现的结构性隐患）。现改为**启动时扫描
+// 已加载模块的源码**，自动发现 requireFlag('<key>') / isFlagEnabled('<key>')
+// 调用点，人工同步环节归零。
+//
+// 口径说明：扫描的是磁盘源码而非运行时栈，因此：
+//   - 能发现所有「写了字面量键名」的强制点（本项目全部如此，无动态拼接键）
+//   - 测试文件（tests/）不计入——它们不构成生产强制点
+export const ENFORCED_FLAG_KEYS = scanEnforcedFlagKeys();
 
-/** 该开关是否登记了服务端强制点（清单外键一律 false） */
+function scanEnforcedFlagKeys() {
+  try {
+    // 本文件位于 src/server/src/utils/，源码根为其上一级
+    const srcRoot = path.resolve(import.meta.dirname, '..');
+    const found = new Set();
+    const pattern = /(?:requireFlag|isFlagEnabled)\(\s*'([a-z0-9_]+)'/g;
+
+    const walk = (dir) => {
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          // node_modules / 测试不构成生产强制点
+          if (e.name === 'node_modules' || e.name === 'tests' || e.name === '__tests__') continue;
+          walk(full);
+        } else if (e.name.endsWith('.js')) {
+          let code;
+          try {
+            code = fs.readFileSync(full, 'utf8');
+          } catch {
+            continue;
+          }
+          for (const m of code.matchAll(pattern)) found.add(m[1]);
+        }
+      }
+    };
+
+    walk(srcRoot);
+    const keys = [...found].sort();
+    logger.info('[featureFlags] enforced keys scanned at startup', { keys });
+    return keys;
+  } catch (err) {
+    // 扫描失败不阻断启动：退回空清单，flags 接口会如实返回 enforced:false
+    // （宁可信其无，不可谎报有——这正是本机制要防的）
+    logger.warn('[featureFlags] enforced scan failed, enforced will report false', {
+      error: err.message,
+    });
+    return [];
+  }
+}
+
+/** 该开关是否存在服务端强制点（启动时源码扫描所得，清单外键一律 false） */
 export function isFlagEnforced(key) {
   return ENFORCED_FLAG_KEYS.includes(key);
 }

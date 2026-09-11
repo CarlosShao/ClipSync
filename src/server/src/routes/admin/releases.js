@@ -22,6 +22,9 @@ import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
+// 发布缓存失效：写操作后公开更新端点（app.js /updates/latest）须立即读库，
+// 否则撤回/改灰度最长延迟 60s 才生效（审计发现的缺陷，已修复）
+import { invalidateReleaseCache } from '../app.js';
 
 const router = Router();
 
@@ -223,6 +226,8 @@ router.post('/', requirePerm('admin.release.manage'), async (req, res) => {
       operator: req.user?.userId,
     });
 
+    // 直接以 is_published=true 建单时，新版本须立即可被客户端发现
+    invalidateReleaseCache();
     return res.json({ code: 0, data: mapReleaseRow(created) });
   } catch (err) {
     logger.error('[admin/releases] create failed', { error: err.message });
@@ -311,6 +316,8 @@ router.patch('/:id', requirePerm('admin.release.manage'), async (req, res) => {
       operator: req.user?.userId,
     });
 
+    // 发布/撤回/改灰度均走 PATCH——撤回与灰度收紧是紧急操作，必须即时生效
+    invalidateReleaseCache();
     return res.json({ code: 0, data: mapReleaseRow(updated) });
   } catch (err) {
     logger.error('[admin/releases] update failed', { error: err.message });
@@ -361,6 +368,8 @@ router.delete('/:id', requirePerm('admin.release.manage'), async (req, res) => {
       operator: req.user?.userId,
     });
 
+    // 删除已发布版本 = 紧急下线，客户端更新端点须立即不再返回
+    invalidateReleaseCache();
     return res.json({ code: 0, data: { id } });
   } catch (err) {
     logger.error('[admin/releases] delete failed', { error: err.message });
