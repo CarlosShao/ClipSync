@@ -103,6 +103,18 @@ services:
 
       # /compact 等长任务需要更长的响应超时（默认 30s 太短，50+ 条消息压缩会超）
       REQUEST_TIMEOUT: "180000"
+
+      # 对象存储（D1）：默认仍为 local（保持既有行为不变）。
+      # 要切 MinIO，把下面 STORAGE_TYPE 改为 s3 并重启：
+      #   docker compose -p clipsync -f docker-compose.dev.yml up -d --no-deps clipsync
+      # 说明：endpoint 用容器内服务名 minio:9000（API 与 MinIO 同网络），
+      # 不用 localhost——容器内 localhost 指向自己。
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      S3_BUCKET: ${S3_BUCKET:-clipsync-uploads}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-clipsync}
+      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-clipsync_dev_minio_pw}
     ports:
       - "${API_PORT:-3001}:3001"
     volumes:
@@ -130,6 +142,58 @@ services:
     # 开发环境直接运行（不使用nodemon，避免Windows Docker Desktop文件监控导致重启循环）
     # 改完代码后手动执行：docker restart clipsync
     command: node src/index.js
+
+  # 对象存储（D1）：MinIO —— S3 兼容，纯自托管无需任何外部账号
+  # 用途：解除「文件存储本地磁盘多实例不可共享」架构债（多实例部署时
+  # A 实例上传的文件 B 实例读不到）。storage.js 的 s3 分支无需改动。
+  minio:
+    image: minio/minio:latest
+    container_name: clipsync-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      # 开发环境默认值；生产必须改（见 .env.example）
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-clipsync}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-clipsync_dev_minio_pw}
+    ports:
+      # 宿主用 9010/9011：9000/9001 已被同机另一项目的 MinIO（wordflow-minio）占用。
+      # 容器内仍是 9000/9001，API 通过服务名 minio:9000 访问，不受宿主端口影响。
+      - "${MINIO_PORT:-9010}:9000"    # S3 API
+      - "${MINIO_CONSOLE_PORT:-9011}:9001"  # Web 控制台
+    volumes:
+      - ./data/minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - clipsync-net
+    labels:
+      - "com.clipsync.service=minio"
+
+  # MinIO 初始化：建 bucket（幂等）。依赖 minio 健康后执行一次即退出。
+  minio-init:
+    image: minio/mc:latest
+    container_name: clipsync-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
+      mc mb --ignore-existing local/clipsync-uploads &&
+      echo '[minio-init] bucket clipsync-uploads ready' &&
+      exit 0
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-clipsync}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-clipsync_dev_minio_pw}
+    networks:
+      - clipsync-net
+    labels:
+      - "com.clipsync.service=minio-init"
 
 networks:
   clipsync-net:

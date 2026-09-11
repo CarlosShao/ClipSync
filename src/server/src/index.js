@@ -29,6 +29,8 @@ import deviceRoutes, { pairingRouter } from './routes/device.js';
 import clipboardRoutes from './routes/clipboard.js';
 import mediaRoutes from './routes/media.js';
 import storageRoutes from './routes/storage.js';
+// D1：存储后端初始化（local / s3-MinIO），启动期显式调用
+import { initStorage } from './utils/storage.js';
 import syncRoutes from './routes/sync.js';
 import wsRoutes from './routes/ws.js';
 import authRefreshRoutes from './routes/auth-refresh.js';
@@ -316,15 +318,29 @@ app.get('/api/ready', async (req, res) => {
 // Metrics (JSON + Prometheus)
 // CO-03: 端点鉴权 —— Prometheus 抓取用 Bearer METRICS_TOKEN 直通；
 // 其余请求要求 authenticateToken + requireRole(50)（admin 及以上）。
-// 注意：docker-compose.dev.yml 的 clipsync 服务需同步注入 METRICS_TOKEN，
-// 未注入时使用下方 dev 默认值；生产环境必须覆盖默认值。
+// 安全修正（原「脏状态」第 3 条）：此前未注入 METRICS_TOKEN 时回退到写死在代码里的
+// 'clipsync-metrics-dev-token'，生产环境等同于公开口令。现改为 fail-closed ——
+// 生产环境缺失该变量时禁用 metrics 端点并返回 503，绝不静默使用默认值。
 // ============================================
-const METRICS_TOKEN = process.env.METRICS_TOKEN || 'clipsync-metrics-dev-token';
+const METRICS_TOKEN = (() => {
+  const fromEnv = process.env.METRICS_TOKEN;
+  if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV === 'production') {
+    logger.error('[metrics] METRICS_TOKEN 未配置，生产环境已禁用 /api/metrics');
+    return null;
+  }
+  // 非生产环境保留 dev 默认值，便于本地开发
+  return 'clipsync-metrics-dev-token';
+})();
 
 function metricsAuth(req, res, next) {
   // 测试环境跳过鉴权（与 authenticateToken 的测试旁路保持一致，e2e 用例依赖匿名访问）
   if (process.env.NODE_ENV === 'test') {
     return next();
+  }
+  // 生产环境未配置 token：直接拒绝，不放行也不回退默认值
+  if (!METRICS_TOKEN) {
+    return res.status(503).json({ error: 'metrics disabled: METRICS_TOKEN not configured' });
   }
   const header = req.headers.authorization || '';
   if (header === `Bearer ${METRICS_TOKEN}`) {
@@ -557,6 +573,18 @@ if (!isClusteredPrimary) {
       logger.info('[migration] Database migrations completed successfully');
     } catch (err) {
       logger.error('[migration] Database migration failed:', { error: err.message, stack: err.stack });
+      process.exit(1);
+    }
+
+    // ============================================
+    // D1 存储后端初始化（此前 initStorage 全仓零调用点，
+    // 导致设 STORAGE_TYPE=s3 时 s3Client 为 null，首次上传才崩）。
+    // 放在迁移之后、监听之前：配置错误（如缺 bucket/凭据）在启动期暴露。
+    // ============================================
+    try {
+      await initStorage();
+    } catch (err) {
+      logger.error('[storage] 存储后端初始化失败:', { error: err.message, stack: err.stack });
       process.exit(1);
     }
 

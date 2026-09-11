@@ -80,7 +80,7 @@ curl http://localhost:9115/health
 - 打开浏览器，访问 http://localhost:3001
 - 登录凭据：
   - 用户名：`admin`
-  - 密码：`clipsync2024`
+  - 密码：`.env` 中 `GRAFANA_ADMIN_PASSWORD` 的值（需自行设置，**无默认值**）
 - 进入 **Dashboards** → **ClipSync** → **ClipSync 概览**
 
 ## 🔧 配置说明
@@ -275,14 +275,20 @@ docker compose -f docker-compose.monitoring.yml down -v
 ## 🔒 安全建议
 
 1. **Grafana 密码**
-   - 默认密码是 `clipsync2024`，生产环境请修改
-   - 修改方式：更新 `docker-compose.monitoring.yml` 中的 `GF_SECURITY_ADMIN_PASSWORD` 环境变量
+   - 已移除硬编码默认值（原 `clipsync2024`）。现从 `.env` 的 `GRAFANA_ADMIN_PASSWORD` 读取，**未设置时 docker compose 直接报错拒绝启动**（fail-closed）
+   - 设置方式：项目根目录 `.env` 中加一行 `GRAFANA_ADMIN_PASSWORD=<强密码>`
 
-2. **Prometheus 访问**
+2. **METRICS_TOKEN 与 Prometheus 凭据文件**
+   - 后端 `/api/metrics` 的 Bearer 口令来自环境变量 `METRICS_TOKEN`；**生产环境未设置时端点直接返回 503**（fail-closed，不再回退代码里的公开默认值）
+   - Prometheus 侧通过 `monitoring/prometheus/prometheus.yml` 的 `authorization.credentials_file` 读取 `monitoring/prometheus/metrics-token`
+   - ⚠️ **两者必须一致**：生产环境设置 `METRICS_TOKEN` 后，必须把 `monitoring/prometheus/metrics-token` 文件内容改成同一个值，否则 Prometheus 抓取会一直 401
+   - 本地开发（非 production）不设 `METRICS_TOKEN` 时，后端回退 `clipsync-metrics-dev-token`，与该文件的默认值一致，开箱可用
+
+3. **Prometheus 访问**
    - 默认没有认证，生产环境请配置
    - 可以使用 Nginx 反向代理 + 基本认证
 
-3. **网络隔离**
+4. **网络隔离**
    - 监控栈应该只在内部网络安全访问
    - 不要将 Prometheus 和 Grafana 端口暴露到公网
 

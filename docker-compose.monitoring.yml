@@ -90,8 +90,10 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=clipsync2024
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      # 原为硬编码 clipsync2024（脏状态第 4 条）。改用 .env 注入且强制必填：
+      # 未设置时 docker compose 直接报错退出，避免线上监控后台用公开默认密码裸奔。
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?请在 .env 中设置 GRAFANA_ADMIN_PASSWORD（禁止使用默认密码）}
       - GF_SERVER_ROOT_URL=http://localhost:3001
       - GF_INSTALL_PLUGINS=grafana-piechart-panel
     volumes:
