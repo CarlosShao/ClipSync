@@ -799,6 +799,17 @@ const opsHandlers = [
       },
       // CO-42：部署形态（与 monitoring 栈 docker-compose 部署一致）
       deployment: { type: 'docker-compose', replicas: null },
+      // D1：对象存储（MinIO，与 docker-compose.dev.yml 的 minio 服务端口一致）
+      objectStorage: {
+        configured: true,
+        storageType: 's3',
+        ok: true,
+        endpoint: 'http://minio:9000',
+        bucket: 'clipsync-uploads',
+        consoleUrl: 'http://127.0.0.1:9011',
+        consoleConfigured: true,
+        message: '',
+      },
     });
   }),
 

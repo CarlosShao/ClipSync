@@ -875,6 +875,22 @@ async function phaseAlertsStorage() {
   const totals = rs.json?.data?.totals;
   check(P, 'storage.totals 存在且含用量数值（AN-08 契约）', !!totals && Number.isFinite(totals.totalBytes) && Number.isFinite(totals.dbBytes),
     JSON.stringify(totals)?.slice(0, 140));
+
+  // D1：对象存储状态（overview.objectStorage）。configured=false（local）与
+  // configured=true（s3）均为合法态，但字段契约必须稳定——防「卡片静默空白」。
+  const ro = await req('GET', '/admin/ops/overview', { token: adminToken });
+  check(P, 'GET /admin/ops/overview → 200（D1 对象存储契约）', ro.status === 200 && ro.json?.code === 0, `status=${ro.status}`);
+  const os = ro.json?.data?.objectStorage;
+  check(P, 'overview.objectStorage.configured 为布尔（D1）', typeof os?.configured === 'boolean',
+    `objectStorage=${JSON.stringify(os)?.slice(0, 160)}`);
+  if (os?.configured) {
+    check(P, '对象存储已启用时下发 endpoint / bucket / ok（D1）',
+      typeof os.endpoint === 'string' && typeof os.bucket === 'string' && typeof os.ok === 'boolean',
+      `endpoint=${os.endpoint} bucket=${os.bucket} ok=${os.ok} msg=${os.message ?? ''}`);
+    check(P, 'consoleUrl 与 consoleConfigured 同时存在（D1 按钮置灰判据）',
+      typeof os.consoleUrl === 'string' && typeof os.consoleConfigured === 'boolean',
+      `consoleUrl=${os.consoleUrl || '(空)'} consoleConfigured=${os.consoleConfigured}`);
+  }
 }
 
 // AN-11 / AN-12 / AN-13 防回归：合规三件套。

@@ -339,6 +339,9 @@ export default function OpsPage() {
   // AF-30：Grafana 地址由后台配置（system_configs.grafana_url），未配置则置灰
   const grafanaUrl = (data?.grafanaUrl ?? '').trim();
 
+  // D1：对象存储状态（旧版本后端不返回该字段 → undefined，卡片显示占位）
+  const os = data?.objectStorage;
+
   const statusMeta = data ? STATUS_META[data.status] : null;
   const maxRequests = Math.max(1, ...samples.map((s) => s.requests));
   const maxErrors = Math.max(1, ...samples.map((s) => s.errors));
@@ -522,6 +525,57 @@ export default function OpsPage() {
                 </div>
               ) : null}
             </div>
+          </Card>
+
+          {/* D1：对象存储（MinIO/OSS/COS/S3）——状态 + 直连控制台，免手敲网址 */}
+          <Card
+            size="small"
+            title="对象存储"
+            className={styles.spanHalf}
+            extra={
+              os?.consoleConfigured ? (
+                <a href={os.consoleUrl} target="_blank" rel="noreferrer">
+                  <Button size="small">打开 MinIO 控制台</Button>
+                </a>
+              ) : (
+                <Tooltip title="未配置控制台地址：系统设置 → minio_console_url">
+                  <Button size="small" disabled>
+                    打开 MinIO 控制台
+                  </Button>
+                </Tooltip>
+              )
+            }
+          >
+            {os == null ? (
+              <div className={styles.metricSub}>—</div>
+            ) : !os.configured ? (
+              <div className={styles.metricSub}>
+                当前使用本地磁盘存储（STORAGE_TYPE=local）。
+                多实例部署前须切换为对象存储，否则 A 实例上传的文件 B 实例读不到。
+              </div>
+            ) : (
+              <div className={styles.kv}>
+                <div className={styles.kvRow}>
+                  <span className={styles.kvLabel}>状态</span>
+                  <span className={styles.kvValue}>
+                    {os.ok ? <Tag color="green">可用</Tag> : <Tag color="red">不可用</Tag>}
+                  </span>
+                </div>
+                <div className={styles.kvRow}>
+                  <span className={styles.kvLabel}>端点</span>
+                  <span className={styles.kvValue}>{os.endpoint || '—'}</span>
+                </div>
+                <div className={styles.kvRow}>
+                  <span className={styles.kvLabel}>桶</span>
+                  <span className={styles.kvValue}>{os.bucket || '—'}</span>
+                </div>
+                {!os.ok && os.message ? (
+                  <div className={styles.metricSub} style={{ marginTop: 8 }}>
+                    {os.message}
+                  </div>
+                ) : null}
+              </div>
+            )}
           </Card>
 
           {/* 运维动作区（AN-06）：全部动作走 ConfirmReasonModal 收集原因 → 后端审计 */}

@@ -261,6 +261,14 @@ const CONFIG_CATALOG = [
       'GitHub Releases 仓库地址（如 https://github.com/CarlosShao/ClipSync）或自建 CDN 前缀；为空时更新端点返回「下载地址未配置」而不伪造链接',
     consumer: 'src/server/src/utils/releaseArtifacts.js（routes/app.js /update.json 经它解析）',
   },
+  // —— 对象存储（D1）：管理台运维页直连控制台入口 ——
+  {
+    key: 'minio_console_url',
+    name: 'MinIO 控制台地址',
+    description:
+      '对象存储 Web 控制台（如 http://localhost:9011）；为空时运维页按钮置灰。仅用于跳转，不参与存储读写',
+    consumer: 'src/server/src/routes/admin/ops.js（probeObjectStorage 下发 consoleUrl）',
+  },
 ];
 
 const CONFIG_CATALOG_MAP = new Map(CONFIG_CATALOG.map((c) => [c.key, c]));

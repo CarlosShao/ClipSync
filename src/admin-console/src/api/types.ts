@@ -348,6 +348,24 @@ export interface OpsOverview {
   grafanaUrl?: string;
   /** CO-42：部署形态（后端探测；旧版本后端可能不返回，渲染须判空） */
   deployment?: OpsDeployment | null;
+  /** D1：对象存储状态（configured=false 表示 STORAGE_TYPE=local，未启用对象存储） */
+  objectStorage?: OpsObjectStorage | null;
+}
+
+/** D1：对象存储（MinIO/OSS/COS/S3）状态探测结果 */
+export interface OpsObjectStorage {
+  /** false = 仍用本地磁盘（STORAGE_TYPE=local），后端不返回其余字段 */
+  configured: boolean;
+  storageType?: string;
+  /** 桶可达性（HeadBucket 探测结果） */
+  ok?: boolean;
+  endpoint?: string;
+  bucket?: string;
+  /** 控制台地址（system_configs.minio_console_url；空串 = 未配置，按钮置灰） */
+  consoleUrl?: string;
+  consoleConfigured?: boolean;
+  /** 探测失败原因（ok=false 时非空） */
+  message?: string;
 }
 
 /** AF-21：趋势采样点（30s 窗口增量） */

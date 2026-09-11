@@ -146,19 +146,89 @@ async function detectDeployment() {
 }
 
 /**
+ * D1：对象存储（MinIO/OSS/COS/S3）状态探测。
+ *
+ * 目标：管理台运维页直接看到对象存储是否可用 + 一键进控制台，
+ * 免去每次手敲 http://localhost:9011。
+ *
+ * 返回：
+ *   { configured: false }                      —— STORAGE_TYPE=local，未启用对象存储
+ *   { configured: true, ok, endpoint, bucket, consoleUrl, consoleConfigured, message }
+ *
+ * consoleUrl 读 system_configs.minio_console_url（管理台可配）。
+ * 探测失败一律降级（不抛错、不阻塞 overview）——与 alerts/grafana 同口径。
+ */
+async function probeObjectStorage() {
+  const storageType = (process.env.STORAGE_TYPE || 'local').toLowerCase();
+  if (storageType !== 's3') {
+    return { configured: false, storageType };
+  }
+
+  const endpoint = (process.env.S3_ENDPOINT || '').trim();
+  const bucket = (process.env.S3_BUCKET || '').trim();
+
+  let consoleUrl = '';
+  try {
+    const { rows } = await pool.query(
+      `SELECT config_value FROM system_configs WHERE config_key = 'minio_console_url' LIMIT 1`
+    );
+    const raw = rows[0]?.config_value;
+    consoleUrl = typeof raw === 'string' ? raw.trim() : '';
+  } catch (err) {
+    logger.warn('[admin/ops] minio_console_url read failed', { error: err.message });
+  }
+
+  // 探测：HEAD bucket（复用已初始化的 S3 客户端，不新建连接）
+  let ok = false;
+  let message = '';
+  try {
+    if (!endpoint || !bucket) {
+      message = '未配置 S3_ENDPOINT / S3_BUCKET';
+    } else {
+      const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
+      const { getStorageClient } = await import('../../utils/storage.js');
+      const client = await getStorageClient();
+      if (!client) {
+        message = '存储客户端未初始化（initStorage 未执行）';
+      } else {
+        await client.send(new HeadBucketCommand({ Bucket: bucket }));
+        ok = true;
+      }
+    }
+  } catch (err) {
+    message = err?.name === 'NotFound'
+      ? `桶不存在：${bucket}`
+      : err?.message || '探测失败';
+    logger.warn('[admin/ops] object storage probe degraded', { error: err.message });
+  }
+
+  return {
+    configured: true,
+    storageType,
+    ok,
+    endpoint,
+    bucket,
+    consoleUrl, // 空串 = 未配置（前端按钮置灰，与 grafanaUrl 同口径）
+    consoleConfigured: Boolean(consoleUrl),
+    message: ok ? '' : message,
+  };
+}
+
+/**
  * GET /api/admin/ops/overview
  * 运维概览聚合（requirePerm('admin.ops.view')）：健康探针 + 版本/运行时长 +
  * 进程内存 + 近端请求/错误指标 + 部署形态（CO-42），全部来自既有组件，不新增采集器。
  */
 router.get('/overview', requirePerm('admin.ops.view'), async (_req, res) => {
   try {
-    const [version, db, redis, metrics, deployment, grafanaUrl] = await Promise.all([
+    const [version, db, redis, metrics, deployment, grafanaUrl, objectStorage] = await Promise.all([
       readVersion(),
       probeDb(),
       probeRedis(),
       readMetricsSnapshot(),
       detectDeployment(),
       readGrafanaUrl(),
+      probeObjectStorage(),
     ]);
 
     const status = !db.ok ? 'error' : !redis.ok ? 'degraded' : 'ok';
@@ -180,6 +250,7 @@ router.get('/overview', requirePerm('admin.ops.view'), async (_req, res) => {
         series: getMetricsSeries(), // AF-21：近 10 分钟趋势（30s 增量桶），重启后从空逐步累积
         grafanaUrl, // AF-30：system_configs.grafana_url，空串表示未配置（前端按钮置灰）
         deployment,
+        objectStorage, // D1：对象存储状态 + 控制台地址（configured=false 表示仍用 local）
       },
     });
   } catch (err) {

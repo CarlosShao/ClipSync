@@ -1128,6 +1128,15 @@ export const mockConfigs: SystemConfig[] = [
     consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
     updatedAt: '2026-08-12 10:20',
   },
+  // —— 069（D1）：对象存储控制台地址 ——
+  {
+    key: 'minio_console_url',
+    name: 'MinIO 控制台地址',
+    value: 'http://127.0.0.1:9011',
+    description: '对象存储 Web 控制台；为空时运维页按钮置灰',
+    consumer: 'src/server/src/routes/admin/ops.js（probeObjectStorage 下发 consoleUrl）',
+    updatedAt: '2026-09-11 10:00',
+  },
   // —— 菜单覆盖（050，方案一 MA-07；AF-42：客户端无读取通道，未接入）——
   {
     key: 'menu_overrides',

@@ -236,3 +236,17 @@ export async function getFileSize(filePath) {
 export async function getFilePath(filename) {
   return storage.getFilePath(filename);
 }
+
+/**
+ * D1：暴露已初始化的 S3 客户端（供管理台运维页探测对象存储状态）。
+ * local 后端或未初始化时返回 null——调用方需自行判空，不做隐式初始化。
+ */
+export async function getStorageClient() {
+  if (STORAGE_TYPE !== 's3') return null;
+  return s3Client;
+}
+
+/** 当前存储后端类型（'local' | 's3'），供状态展示 */
+export function getStorageType() {
+  return STORAGE_TYPE;
+}
