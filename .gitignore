@@ -112,7 +112,10 @@ tmp_tsc237.log
 
 # Local exploration / prototype artifacts (not project source)
 documents/
-ui-prototype/
+ui-prototype/*
+# 桌面端 UI 重构设计稿需要入库（kimi k3 / minimax 两套方案）
+!ui-prototype/glm
+!ui-prototype/minimax
 
 NUL
 

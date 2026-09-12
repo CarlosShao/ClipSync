@@ -1,0 +1,1687 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>Playground · Pulse 组件交互演示</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="pulse.css" />
+  <style>
+    body { background: var(--surface-0); }
+    .pg-shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    .pg-side { background: var(--surface-0); border-right: 1px solid var(--hairline); padding: 24px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+    .pg-side h1 { font-size: 18px; font-weight: 700; color: var(--text-strong); padding: 0 12px 16px; display: flex; align-items: center; gap: 8px; }
+    .pg-side h1 .dot { width: 12px; height: 12px; border-radius: 999px; background: linear-gradient(135deg, var(--accent-400), var(--accent-600)); }
+    .pg-side a { display: block; padding: 6px 12px; font-size: var(--type-sm); color: var(--text-muted); border-radius: 6px; transition: all 160ms; }
+    .pg-side a:hover { background: var(--surface-2); color: var(--text-strong); }
+    .pg-side .grp { font-size: 10.5px; color: var(--text-faint); padding: 14px 12px 4px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+
+    .pg-main { padding: 48px 56px; max-width: 1200px; }
+    .pg-main h2 { font-size: 28px; font-weight: 700; color: var(--text-strong); letter-spacing: -0.01em; margin: 0 0 4px; }
+    .pg-main h2 .num { color: var(--text-faint); font-family: 'Geist Mono', monospace; margin-right: 8px; font-size: 16px; }
+    .pg-main h3 { font-size: var(--type-md); color: var(--text-strong); font-weight: 600; margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--hairline); }
+    .pg-main p { color: var(--text-muted); font-size: var(--type-sm); margin-bottom: 16px; line-height: 1.6; }
+
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+    .demo-block { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+    .demo-block h4 { font-size: var(--type-sm); color: var(--text-muted); margin-bottom: 12px; font-weight: 500; }
+
+    /* === Dialog === */
+    .overlay {
+      position: fixed; inset: 0;
+      background: var(--bg-modal-overlay, oklch(20% 0.02 270 / 0.45));
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center; justify-content: center;
+      z-index: 100;
+      animation: fade 160ms var(--ease-out);
+    }
+    .overlay.is-open { display: flex; }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    .dialog {
+      background: var(--surface-0);
+      border: 1px solid var(--hairline);
+      border-radius: 18px;
+      box-shadow: var(--shadow-3);
+      width: 480px; max-width: 92vw;
+      max-height: 88vh;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      animation: pop 200ms var(--ease-spring);
+    }
+    @keyframes pop { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    .dialog-head { padding: 18px 20px 12px; display: flex; align-items: start; gap: 12px; }
+    .dialog-head .ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0; }
+    .dialog-head .ico.danger { background: oklch(60% 0.20 25 / 0.12); color: oklch(40% 0.20 25); }
+    .dialog-head .ico.info { background: var(--accent-tint); color: var(--accent-600); }
+    .dialog-head .ico.success { background: oklch(64% 0.16 150 / 0.12); color: oklch(40% 0.16 150); }
+    .dialog-head h3 { font-size: var(--type-md); color: var(--text-strong); font-weight: 600; margin-bottom: 2px; padding: 0; border: 0; }
+    .dialog-head p { font-size: var(--type-sm); color: var(--text-muted); margin: 0; }
+    .dialog-head .x { margin-left: auto; flex-shrink: 0; }
+    .dialog-body { padding: 8px 20px 16px; overflow-y: auto; }
+    .dialog-foot { padding: 12px 20px 16px; display: flex; gap: 8px; justify-content: end; border-top: 1px solid var(--hairline); background: var(--surface-0); }
+
+    /* === Sheet (right slide-in) === */
+    .sheet {
+      position: fixed; top: 0; right: 0; bottom: 0;
+      width: 420px; max-width: 92vw;
+      background: var(--surface-0);
+      border-left: 1px solid var(--hairline);
+      box-shadow: -16px 0 48px oklch(20% 0.02 270 / 0.16);
+      transform: translateX(100%);
+      transition: transform 240ms var(--ease-out);
+      z-index: 100;
+      display: flex; flex-direction: column;
+    }
+    .sheet.is-open { transform: translateX(0); }
+    .sheet-head { padding: 18px 20px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; gap: 8px; }
+    .sheet-head h3 { font-size: var(--type-md); color: var(--text-strong); font-weight: 600; flex: 1; }
+    .sheet-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .sheet-foot { padding: 12px 20px; border-top: 1px solid var(--hairline); display: flex; gap: 8px; }
+
+    /* === Popover (anchored floating) === */
+    .popover {
+      position: absolute; z-index: 90;
+      background: var(--surface-0);
+      border: 1px solid var(--hairline-strong);
+      border-radius: 12px;
+      box-shadow: var(--shadow-2);
+      padding: 8px;
+      min-width: 200px;
+      display: none;
+      animation: pop 160ms var(--ease-out);
+    }
+    .popover.is-open { display: block; }
+    .popover .item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; font-size: var(--type-sm); color: var(--text-default); cursor: pointer; }
+    .popover .item:hover { background: var(--surface-2); }
+    .popover .item .k { margin-left: auto; font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--text-faint); }
+    .popover .sep { height: 1px; background: var(--hairline); margin: 4px 0; }
+    .popover .item.danger { color: oklch(40% 0.20 25); }
+
+    /* === Tooltip === */
+    .tt-wrap { position: relative; display: inline-block; }
+    .tooltip {
+      position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+      background: oklch(20% 0.02 270);
+      color: oklch(98% 0 0);
+      padding: 5px 9px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0; transition: opacity 160ms;
+    }
+    .tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 4px solid transparent; border-top-color: oklch(20% 0.02 270); }
+    .tt-wrap:hover .tooltip { opacity: 1; }
+
+    /* === Context menu === */
+    .ctx-card { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 10px; padding: 14px; cursor: context-menu; user-select: none; }
+
+    /* === Toast (sonner-like) === */
+    .toaster {
+      position: fixed; top: 20px; right: 20px;
+      z-index: 200;
+      display: flex; flex-direction: column; gap: 8px;
+      width: 360px; max-width: 90vw;
+      pointer-events: none;
+    }
+    .toast {
+      background: var(--surface-0);
+      border: 1px solid var(--hairline);
+      border-radius: 12px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow-2);
+      display: flex; align-items: start; gap: 10px;
+      pointer-events: auto;
+      animation: slidein 240ms var(--ease-spring);
+    }
+    @keyframes slidein { from { transform: translateX(120%); } to { transform: translateX(0); } }
+    .toast .ico { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; flex-shrink: 0; }
+    .toast .body { flex: 1; min-width: 0; }
+    .toast .b { font-size: var(--type-sm); color: var(--text-strong); font-weight: 500; }
+    .toast .s { font-size: var(--type-xs); color: var(--text-muted); margin-top: 2px; }
+    .toast .x { color: var(--text-muted); }
+    .toast.success { border-left: 3px solid var(--status-success); }
+    .toast.error { border-left: 3px solid var(--status-danger); }
+    .toast.warn { border-left: 3px solid var(--status-warn); }
+    .toast.info { border-left: 3px solid var(--status-info); }
+    .toast .ico.success { background: oklch(64% 0.16 150 / 0.12); color: oklch(40% 0.16 150); }
+    .toast .ico.error { background: oklch(60% 0.20 25 / 0.12); color: oklch(40% 0.20 25); }
+    .toast .ico.warn { background: oklch(72% 0.15 70 / 0.14); color: oklch(45% 0.15 70); }
+    .toast .ico.info { background: oklch(64% 0.14 230 / 0.12); color: oklch(40% 0.14 230); }
+
+    /* === Tabs === */
+    .tabs { display: flex; gap: 2px; background: var(--surface-inset); border-radius: 10px; padding: 3px; width: fit-content; }
+    .tab { padding: 6px 14px; font-size: var(--type-sm); color: var(--text-muted); border-radius: 7px; cursor: pointer; }
+    .tab.is-on { background: var(--surface-0); color: var(--text-strong); box-shadow: var(--shadow-1); }
+
+    /* === Segmented control === */
+    .seg { display: flex; background: var(--surface-inset); border-radius: 10px; padding: 3px; gap: 2px; }
+    .seg button { padding: 6px 14px; font-size: var(--type-sm); color: var(--text-muted); border-radius: 7px; }
+    .seg button.is-on { background: var(--surface-0); color: var(--text-strong); box-shadow: var(--shadow-1); }
+
+    /* === Accordion === */
+    .acc { border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; background: var(--surface-1); }
+    .acc-item { border-bottom: 1px solid var(--hairline); }
+    .acc-item:last-child { border-bottom: 0; }
+    .acc-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; }
+    .acc-head b { color: var(--text-strong); font-weight: 500; flex: 1; font-size: var(--type-sm); }
+    .acc-head .chev { transition: transform 200ms; }
+    .acc-item.is-open .acc-head .chev { transform: rotate(90deg); }
+    .acc-body { max-height: 0; overflow: hidden; transition: max-height 240ms var(--ease-out); padding: 0 16px; }
+    .acc-item.is-open .acc-body { max-height: 200px; padding: 0 16px 12px; }
+
+    /* === Slider === */
+    input[type="range"] { -webkit-appearance: none; appearance: none; height: 4px; background: var(--surface-3); border-radius: 2px; outline: none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: var(--accent-500); border-radius: 50%; cursor: pointer; box-shadow: var(--shadow-1); }
+
+    /* === Skeleton === */
+    .skel { background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; border-radius: 6px; animation: shimmer 1.4s infinite; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* === Empty state === */
+    .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+    .empty .ico { width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 14px; background: var(--surface-2); display: grid; place-items: center; color: var(--text-faint); }
+    .empty h4 { color: var(--text-strong); margin-bottom: 6px; font-size: var(--type-md); font-weight: 600; }
+
+    /* === Banner === */
+    .banner { display: flex; align-items: start; gap: 10px; padding: 12px 14px; border-radius: 12px; font-size: var(--type-sm); }
+    .banner.info { background: oklch(64% 0.14 230 / 0.10); color: oklch(35% 0.14 230); border: 1px solid oklch(64% 0.14 230 / 0.20); }
+    .banner.warn { background: oklch(72% 0.15 70 / 0.10); color: oklch(45% 0.15 70); border: 1px solid oklch(72% 0.15 70 / 0.20); }
+    .banner.danger { background: oklch(60% 0.20 25 / 0.08); color: oklch(40% 0.20 25); border: 1px solid oklch(60% 0.20 25 / 0.18); }
+
+    /* === Combobox === */
+    .cb { position: relative; }
+    .cb-pop {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      background: var(--surface-0);
+      border: 1px solid var(--hairline-strong);
+      border-radius: 10px;
+      box-shadow: var(--shadow-2);
+      max-height: 240px; overflow-y: auto;
+      padding: 4px;
+      display: none;
+      z-index: 50;
+    }
+    .cb.is-open .cb-pop { display: block; }
+    .cb-pop .opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; font-size: var(--type-sm); color: var(--text-default); cursor: pointer; }
+    .cb-pop .opt:hover, .cb-pop .opt.is-on { background: var(--accent-tint); color: var(--accent-700); }
+
+    /* === Bottom sheet === */
+    .bsheet {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      background: var(--surface-0);
+      border-top: 1px solid var(--hairline);
+      border-radius: 18px 18px 0 0;
+      box-shadow: 0 -16px 48px oklch(20% 0.02 270 / 0.18);
+      transform: translateY(100%);
+      transition: transform 280ms var(--ease-spring);
+      z-index: 100;
+      max-height: 70vh;
+      display: flex; flex-direction: column;
+    }
+    .bsheet.is-open { transform: translateY(0); }
+    .bsheet-handle { width: 36px; height: 4px; background: var(--hairline-strong); border-radius: 2px; margin: 8px auto 0; }
+    .bsheet-head { padding: 16px 20px 4px; font-size: var(--type-md); font-weight: 600; color: var(--text-strong); }
+
+    /* === Code block === */
+    .code {
+      background: var(--surface-inset);
+      border: 1px solid var(--hairline);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: 'Geist Mono', monospace;
+      font-size: 11.5px;
+      line-height: 1.6;
+      color: var(--text-default);
+      overflow-x: auto;
+    }
+
+    /* === Mode toggle === */
+    .mode-toggle { display: flex; align-items: center; gap: 8px; }
+    .mode-toggle button { padding: 4px 10px; border-radius: 6px; font-size: 11px; color: var(--text-muted); }
+    .mode-toggle button.is-on { background: var(--surface-1); box-shadow: var(--shadow-1); color: var(--text-strong); }
+
+    /* === Focus state demo === */
+    .focus-demo { padding: 10px 14px; border: 2px solid var(--accent-500); border-radius: 10px; box-shadow: var(--shadow-glow); }
+
+    /* === AI extras === */
+    @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+    .demo-block h4 { font-size: var(--type-sm); color: var(--text-muted); margin-bottom: 12px; font-weight: 500; }
+
+    /* === Demo block: state switcher === */
+    .demo-block { position: relative; padding-top: 16px; }
+    .demo-block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .demo-block-head h4 { margin: 0; flex: 1; }
+    .state-switcher { display: inline-flex; background: var(--surface-2); border-radius: 8px; padding: 2px; gap: 2px; }
+    .state-switcher button { padding: 3px 8px; font-size: 10.5px; color: var(--text-muted); border-radius: 5px; font-family: 'Geist Mono', monospace; }
+    .state-switcher button.is-on { background: var(--surface-0); color: var(--text-strong); box-shadow: var(--shadow-1); }
+    .ctrl-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .ctrl-row label { font-size: 11px; color: var(--text-muted); }
+    .ctrl-row input[type="text"], .ctrl-row input[type="number"] { padding: 4px 8px; border: 1px solid var(--hairline); border-radius: 6px; font-size: 11.5px; background: var(--surface-1); color: var(--text-strong); width: 100px; }
+    .ctrl-row input[type="range"] { width: 140px; }
+
+    /* Hover state demo */
+    .hover-target {
+      padding: 12px 14px; border: 1px solid var(--hairline);
+      border-radius: 10px; cursor: pointer;
+      background: var(--surface-1);
+      transition: all 200ms var(--ease-out);
+    }
+    .hover-target:hover {
+      background: var(--surface-2);
+      border-color: var(--accent-500);
+      box-shadow: var(--shadow-glow);
+      transform: translateY(-2px);
+    }
+    .hover-target.is-active {
+      background: var(--surface-2);
+      border-color: var(--accent-500);
+      box-shadow: var(--shadow-glow);
+    }
+
+    /* Tool call: status state */
+    .tool-call.is-status-running { border-color: oklch(72% 0.15 70 / 0.3); }
+    .tool-call.is-status-running .name { color: oklch(45% 0.15 70); }
+    .tool-call.is-status-error { border-color: oklch(60% 0.20 25 / 0.3); }
+    .tool-call.is-status-error .name { color: oklch(40% 0.20 25); }
+    .tool-call.is-status-needs { border-left: 3px solid oklch(60% 0.20 25); }
+
+    /* Streaming cursor */
+    .stream-text { display: inline; }
+    .stream-text .caret { display: inline-block; width: 2px; height: 14px; background: var(--accent-500); margin-left: 1px; vertical-align: text-bottom; animation: blink 1s infinite; }
+    .is-paused .stream-text .caret { display: none; }
+    .is-done .stream-text .caret { display: none; }
+
+    /* Usage bar */
+    .usage-bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; position: relative; }
+    .usage-bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-400), var(--accent-600)); border-radius: 4px; transition: width 300ms var(--ease-out); }
+    .usage-bar.is-warn > i { background: linear-gradient(90deg, oklch(72% 0.15 70), oklch(60% 0.20 25)); }
+    .usage-bar.is-danger > i { background: var(--status-danger); }
+
+    /* Switch demo - click to toggle */
+    .switch-toggle { cursor: pointer; }
+
+    /* Slider with live label */
+    .slider-row { display: flex; align-items: center; gap: 10px; }
+    .slider-row input[type="range"] { width: 200px; }
+    .slider-row .v { font-family: 'Geist Mono', monospace; font-size: var(--type-sm); color: var(--text-strong); min-width: 50px; text-align: right; }
+
+    /* Radio group */
+    .radio-group { display: flex; flex-direction: column; gap: 6px; }
+    .radio-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer; transition: all 160ms; }
+    .radio-row:hover { background: var(--surface-2); }
+    .radio-row.is-on { border-color: var(--accent-500); background: var(--accent-tint); }
+    .radio-row .r { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--hairline-strong); display: grid; place-items: center; flex-shrink: 0; }
+    .radio-row.is-on .r { border-color: var(--accent-500); }
+    .radio-row.is-on .r::after { content: ''; width: 8px; height: 8px; background: var(--accent-500); border-radius: 50%; }
+    .radio-row .lbl { font-size: var(--type-sm); color: var(--text-strong); }
+    .radio-row .sub { font-size: var(--type-xs); color: var(--text-muted); }
+
+    /* Checkbox */
+    .checkbox { width: 16px; height: 16px; border: 2px solid var(--hairline-strong); border-radius: 4px; display: inline-grid; place-items: center; cursor: pointer; transition: all 160ms; flex-shrink: 0; }
+    .checkbox.is-on { background: var(--accent-500); border-color: var(--accent-500); }
+    .checkbox.is-on::after { content: ''; width: 8px; height: 4px; border-left: 2px solid white; border-bottom: 2px solid white; transform: rotate(-45deg) translate(1px, -1px); }
+    .check-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; }
+    .check-row .lbl { font-size: var(--type-sm); color: var(--text-strong); }
+
+    /* Toast container position */
+    .toaster { z-index: 9999; }
+
+    /* Status pulse for live tool call */
+    .live-pulse { width: 6px; height: 6px; border-radius: 50%; background: oklch(72% 0.15 70); animation: shimmer 1.4s infinite; }
+  </style>
+</head>
+<body>
+  <!-- Toast container -->
+  <div class="toaster" id="toaster"></div>
+
+  <!-- Dialog 1: Confirm -->
+  <div class="overlay" id="dlg-confirm" data-overlay>
+    <div class="dialog" onclick="event.stopPropagation()">
+      <div class="dialog-head">
+        <div class="ico danger">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg>
+        </div>
+        <div>
+          <h3>确认删除这条剪贴板？</h3>
+          <p>删除后不可恢复，且其他设备的同步副本也将被移除。</p>
+        </div>
+        <button class="btn btn-icon btn-ghost btn-sm x" data-close>×</button>
+      </div>
+      <div class="dialog-body">
+        <div style="background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-size: var(--type-sm); color: var(--text-default); font-family: 'Geist Mono', monospace;">
+          https://linear.app/inbox/issue/ENG-4821/quill-mvp-shipping-plan
+        </div>
+      </div>
+      <div class="dialog-foot">
+        <button class="btn btn-ghost" data-close>取消</button>
+        <button class="btn btn-danger" data-close>删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dialog 2: Info / 模板变量 -->
+  <div class="overlay" id="dlg-vars" data-overlay>
+    <div class="dialog" onclick="event.stopPropagation()">
+      <div class="dialog-head">
+        <div class="ico info">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        </div>
+        <div>
+          <h3>填写模板变量</h3>
+          <p>周报模板 · 共 3 个变量</p>
+        </div>
+        <button class="btn btn-icon btn-ghost btn-sm x" data-close>×</button>
+      </div>
+      <div class="dialog-body" style="display: flex; flex-direction: column; gap: 14px;">
+        <div>
+          <label class="label" style="font-size: var(--type-sm); font-weight: 500; color: var(--text-strong); display: block; margin-bottom: 6px;">本周成果</label>
+          <textarea class="input" rows="3" style="font-family: 'Geist Mono', monospace; font-size: 12.5px;" placeholder="- 完成 Pulse 原型设计&#10;- 修复同步边缘 case 3 个&#10;- 启动设备配对 QR"></textarea>
+        </div>
+        <div>
+          <label class="label" style="font-size: var(--type-sm); font-weight: 500; color: var(--text-strong); display: block; margin-bottom: 6px;">关键指标</label>
+          <input class="input" placeholder="DAU 12.4k (+8%) · 同步成功率 99.2%" />
+        </div>
+        <div>
+          <label class="label" style="font-size: var(--type-sm); font-weight: 500; color: var(--text-strong); display: block; margin-bottom: 6px;">下周目标</label>
+          <input class="input" placeholder="1. 启动内测  2. 完成 Halo 重构  3. 数据迁移" />
+        </div>
+      </div>
+      <div class="dialog-foot">
+        <button class="btn btn-ghost" data-close>取消</button>
+        <button class="btn btn-secondary" data-close>预览</button>
+        <button class="btn btn-primary" data-close>插入剪贴板</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dialog 3: Success -->
+  <div class="overlay" id="dlg-success" data-overlay>
+    <div class="dialog" onclick="event.stopPropagation()">
+      <div style="padding: 32px 24px 24px; text-align: center;">
+        <div style="width: 64px; height: 64px; border-radius: 50%; background: oklch(64% 0.16 150 / 0.15); color: oklch(40% 0.16 150); margin: 0 auto 16px; display: grid; place-items: center;">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        </div>
+        <h3 style="font-size: 20px; color: var(--text-strong); font-weight: 600; margin-bottom: 6px;">已配对</h3>
+        <p style="font-size: var(--type-sm); color: var(--text-muted); margin-bottom: 24px;">iPad Air 已成功添加到你的账户</p>
+        <div style="background: var(--surface-2); border-radius: 12px; padding: 14px; display: flex; align-items: center; gap: 12px; text-align: left;">
+          <div style="width: 40px; height: 40px; border-radius: 10px; background: var(--surface-3); display: grid; place-items: center;">
+            <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">iPad Air</div>
+            <div style="font-size: var(--type-xs); color: var(--text-muted);">iPadOS 17 · 设备 ID dev_8d2a</div>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-foot" style="justify-content: center; border-top: 0; padding-top: 8px;">
+        <button class="btn btn-primary" data-close style="width: 100%;">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: Detail inspector -->
+  <aside class="sheet" id="sheet-detail">
+    <div class="sheet-head">
+      <button class="btn btn-icon btn-ghost btn-sm"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
+      <h3>条目详情</h3>
+      <button class="btn btn-icon btn-ghost btn-sm" data-close><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="sheet-body">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+        <span class="tag tag-info">URL</span>
+        <span class="tag tag-warn">建议模板</span>
+        <span style="font-size: var(--type-xs); color: var(--text-muted); margin-left: auto;" class="mono">12s ago</span>
+      </div>
+      <div style="background: var(--surface-2); border-radius: 10px; padding: 14px; font-family: 'Geist Mono', monospace; font-size: 12.5px; color: var(--text-strong); line-height: 1.6; margin-bottom: 16px;">
+        https://linear.app/inbox/issue/ENG-4821/quill-mvp-shipping-plan
+      </div>
+
+      <h4 style="font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 8px;">元数据</h4>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: var(--type-sm); margin-bottom: 16px;">
+        <div><div style="color: var(--text-muted); font-size: var(--type-xs);">来源设备</div><div style="color: var(--text-strong);">MacBook Pro</div></div>
+        <div><div style="color: var(--text-muted); font-size: var(--type-xs);">创建时间</div><div style="color: var(--text-strong);" class="mono">08:18:42</div></div>
+        <div><div style="color: var(--text-muted); font-size: var(--type-xs);">字符长度</div><div style="color: var(--text-strong);" class="mono">62</div></div>
+        <div><div style="color: var(--text-muted); font-size: var(--type-xs);">MIME</div><div style="color: var(--text-strong);" class="mono">text/uri-list</div></div>
+      </div>
+
+      <h4 style="font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 8px;">同步副本</h4>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 8px; font-size: var(--type-sm);">
+          <span class="status-dot ok"></span>
+          <span style="flex: 1;">iPhone 15 Pro</span>
+          <span class="mono" style="color: var(--text-faint); font-size: 11px;">已同步</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 8px; font-size: var(--type-sm);">
+          <span class="status-dot ok"></span>
+          <span style="flex: 1;">Desktop Office</span>
+          <span class="mono" style="color: var(--text-faint); font-size: 11px;">已同步</span>
+        </div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn btn-secondary" style="flex: 1;"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>收藏</button>
+      <button class="btn btn-secondary" style="flex: 1;"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>分享</button>
+      <button class="btn btn-primary" style="flex: 1;"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>复制</button>
+    </div>
+  </aside>
+
+  <!-- Bottom sheet -->
+  <div class="bsheet" id="bsheet" style="display:none;">
+    <div class="bsheet-handle"></div>
+    <div class="bsheet-head">选择操作</div>
+    <div class="sheet-body" style="padding-top: 8px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <div class="popover-item" style="padding: 12px 14px; border-radius: 8px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all 160ms;" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='transparent'">
+          <svg class="icon" viewBox="0 0 24 24" style="color: var(--text-muted);"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <div style="flex: 1;">
+            <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">复制到剪贴板</div>
+            <div style="font-size: var(--type-xs); color: var(--text-muted);">Ctrl+C 等价</div>
+          </div>
+        </div>
+        <div class="popover-item" style="padding: 12px 14px; border-radius: 8px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all 160ms;" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='transparent'">
+          <svg class="icon" viewBox="0 0 24 24" style="color: var(--text-muted);"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          <div style="flex: 1;">
+            <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">加入收藏夹</div>
+            <div style="font-size: var(--type-xs); color: var(--text-muted);">Ctrl+D</div>
+          </div>
+        </div>
+        <div class="popover-item" style="padding: 12px 14px; border-radius: 8px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all 160ms;" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='transparent'">
+          <svg class="icon" viewBox="0 0 24 24" style="color: var(--text-muted);"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/></svg>
+          <div style="flex: 1;">
+            <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">让 AI 处理</div>
+            <div style="font-size: var(--type-xs); color: var(--text-muted);">Ctrl+Shift+A</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pg-shell">
+    <aside class="pg-side">
+      <h1><span class="dot"></span> Playground</h1>
+      <div class="mode-toggle" style="margin: 0 12px 16px;">
+        <button id="lightBtn" class="is-on">Light</button>
+        <button id="darkBtn">Dark</button>
+      </div>
+      <a href="index.html">← 返回主原型</a>
+      <div class="grp">反馈类</div>
+      <a href="#dialogs">01 Dialog</a>
+      <a href="#sheets">02 Sheet</a>
+      <a href="#popovers">03 Popover</a>
+      <a href="#tooltips">04 Tooltip</a>
+      <a href="#toast">05 Toast</a>
+      <a href="#ctx">06 Context Menu</a>
+      <div class="grp">容器类</div>
+      <a href="#tabs">07 Tabs / Segmented</a>
+      <a href="#accordion">08 Accordion</a>
+      <a href="#combobox">09 Combobox</a>
+      <a href="#bsheet">10 Bottom Sheet</a>
+      <div class="grp">状态类</div>
+      <a href="#empty">11 Empty State</a>
+      <a href="#loading">12 Loading / Skeleton</a>
+      <a href="#banner">13 Banner</a>
+      <a href="#form">14 Form / 校验</a>
+      <div class="grp">动效</div>
+      <a href="#motion">15 动效展示</a>
+      <div class="grp">AI 模块</div>
+      <a href="#ai-thinking">16 AI 思考链</a>
+      <a href="#ai-tool">17 AI 工具调用</a>
+      <a href="#ai-streaming">18 AI 流式输出</a>
+      <a href="#ai-context">19 AI 上下文选择</a>
+      <a href="#ai-usage">20 AI 用量计费</a>
+      <a href="#ai-error">21 AI 错误状态</a>
+      <a href="#ai-perm">22 AI 权限确认</a>
+      <div class="grp">表单控件</div>
+      <a href="#ctrl-switch">23 Switch</a>
+      <a href="#ctrl-checkbox">24 Checkbox</a>
+      <a href="#ctrl-radio">25 Radio</a>
+      <a href="#ctrl-slider">26 Slider</a>
+      <a href="#ctrl-hover">27 Hover / Focus</a>
+      <a href="#ctrl-empty">28 Empty State</a>
+    </aside>
+
+    <main class="pg-main">
+      <h2><span class="num">00</span>Pulse 组件交互演示</h2>
+      <p>所有按钮都可点 · 弹窗可拖动 / ESC / 点击遮罩关闭 · Toast 自动消失 · Hover / Focus 状态全部用真 CSS 驱动</p>
+
+      <h3 id="dialogs">01 · Dialog（3 种典型）</h3>
+      <p>居中模态 · 遮罩 4px 模糊 · spring 弹入 · ESC 关闭 · 危险 / 信息 / 成功 三种头部配色</p>
+      <div class="row">
+        <button class="btn btn-danger" onclick="openDlg('dlg-confirm')">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          打开：确认删除（危险）
+        </button>
+        <button class="btn btn-primary" onclick="openDlg('dlg-vars')">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+          打开：填写模板变量（信息）
+        </button>
+        <button class="btn btn-secondary" onclick="openDlg('dlg-success')">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+          打开：操作成功（庆祝）
+        </button>
+      </div>
+
+      <h3 id="sheets">02 · Sheet（右侧抽屉）</h3>
+      <p>详情面板 / 临时表单 / 上下文操作。420px 宽，可承载 1~2 屏内容。</p>
+      <div class="row">
+        <button class="btn btn-primary" onclick="document.getElementById('sheet-detail').classList.add('is-open')">打开 Sheet：条目详情</button>
+      </div>
+
+      <h3 id="popovers">03 · Popover（菜单 / 选择器）</h3>
+      <p>相对锚点的小浮层。点击展开，再次点击或外部点击关闭。</p>
+      <div class="row">
+        <div class="tt-wrap" style="position: relative;">
+          <button class="btn btn-secondary" id="pop-anchor" onclick="togglePopover(event, 'pop-actions')">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            操作菜单
+          </button>
+          <div class="popover" id="pop-actions" style="top: calc(100% + 6px); left: 0;">
+            <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> 复制 <span class="k">⌘ C</span></div>
+            <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg> 收藏 <span class="k">⌘ D</span></div>
+            <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/></svg> 分享</div>
+            <div class="sep"></div>
+            <div class="item danger"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/></svg> 删除</div>
+          </div>
+        </div>
+
+        <div class="tt-wrap" style="position: relative;">
+          <button class="btn btn-secondary" onclick="togglePopover(event, 'pop-sort')">排序方式</button>
+          <div class="popover" id="pop-sort" style="top: calc(100% + 6px); left: 0;">
+            <div class="item is-on"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> 时间倒序</div>
+            <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/></svg> 时间正序</div>
+            <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg> 收藏优先</div>
+            <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h12"/></svg> 按设备</div>
+            <div class="sep"></div>
+            <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg> 按内容类型</div>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="tooltips">04 · Tooltip</h3>
+      <p>Hover 出现，160ms 淡入。默认上方，可换方向。</p>
+      <div class="row">
+        <span class="tt-wrap">
+          <button class="btn btn-secondary">悬停我（上）</button>
+          <span class="tooltip">添加到收藏夹 ⌘ D</span>
+        </span>
+        <span class="tt-wrap" style="position: relative;">
+          <button class="btn btn-primary">悬停我</button>
+          <span class="tooltip" style="top: calc(100% + 8px); bottom: auto;">
+            让 AI 总结今天的内容
+            <style>.tt-wrap:hover .tooltip[style*="top: calc(100%"]::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: oklch(20% 0.02 270); }</style>
+          </span>
+        </span>
+      </div>
+
+      <h3 id="toast">05 · Toast（Sonner 风格）</h3>
+      <p>右上角堆叠 · 4 种状态色 · 自动消失 · 可关闭</p>
+      <div class="row">
+        <button class="btn btn-secondary" onclick="toast('已复制到剪贴板', 'success')">成功 toast</button>
+        <button class="btn btn-secondary" onclick="toast('同步失败：网络断开', 'error')">错误 toast</button>
+        <button class="btn btn-secondary" onclick="toast('剩余 200MB · 建议清理', 'warn')">警告 toast</button>
+        <button class="btn btn-secondary" onclick="toast('AI 正在分析 47 条剪贴板…', 'info', 5000)">信息 toast</button>
+      </div>
+
+      <h3 id="ctx">06 · Context Menu（卡片右键）</h3>
+      <p>右键或长按触发 · 这是你剪贴板条目上最常用的快捷方式</p>
+      <div class="row">
+        <div class="ctx-card" oncontextmenu="openCtxMenu(event); return false;" style="max-width: 360px;">
+          <div style="display: flex; gap: 10px; align-items: start;">
+            <div style="width: 3px; height: 36px; background: oklch(70% 0.14 200); border-radius: 2px;"></div>
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: var(--type-sm); color: var(--text-strong);">https://linear.app/inbox/issue/ENG-4821/...</div>
+              <div style="font-size: var(--type-xs); color: var(--text-muted); margin-top: 4px;">URL · 12 秒前 · MacBook Pro</div>
+            </div>
+          </div>
+          <div style="margin-top: 10px; font-size: var(--type-xs); color: var(--text-faint);">👉 在卡片上右键试试</div>
+        </div>
+      </div>
+      <div class="popover" id="ctx-menu" style="min-width: 220px;">
+        <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> 复制</div>
+        <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg> 加入收藏</div>
+        <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/></svg> 让 AI 总结</div>
+        <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/></svg> 分享链接</div>
+        <div class="sep"></div>
+        <div class="item"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg> 编辑备注</div>
+        <div class="item danger"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/></svg> 删除</div>
+      </div>
+
+      <h3 id="tabs">07 · Tabs / Segmented Control</h3>
+      <div class="row">
+        <div class="tabs" id="tabs-1">
+          <div class="tab is-on" onclick="selectTab('tabs-1', this)">本周</div>
+          <div class="tab" onclick="selectTab('tabs-1', this)">本月</div>
+          <div class="tab" onclick="selectTab('tabs-1', this)">全部</div>
+        </div>
+        <div class="seg" id="seg-1">
+          <button class="is-on" onclick="selectSeg('seg-1', this)">日</button>
+          <button onclick="selectSeg('seg-1', this)">周</button>
+          <button onclick="selectSeg('seg-1', this)">月</button>
+        </div>
+      </div>
+
+      <h3 id="accordion">08 · Accordion</h3>
+      <div class="acc" style="max-width: 480px;">
+        <div class="acc-item is-open">
+          <div class="acc-head" onclick="toggleAcc(this)">
+            <svg class="icon icon-sm chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            <b>同步策略</b>
+            <span class="tag tag-success">已配置</span>
+          </div>
+          <div class="acc-body">
+            <p style="font-size: var(--type-sm); color: var(--text-muted);">实时事件驱动 + 5 分钟兜底轮询。PIN 加密已启用，本地保留 1000 条历史。</p>
+          </div>
+        </div>
+        <div class="acc-item">
+          <div class="acc-head" onclick="toggleAcc(this)">
+            <svg class="icon icon-sm chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            <b>AI 助手</b>
+            <span class="tag">step-3.7-flash</span>
+          </div>
+          <div class="acc-body">
+            <p style="font-size: var(--type-sm); color: var(--text-muted);">默认模型 step-3.7-flash，每日用量 1000 tokens。已开启上下文自动带入。</p>
+          </div>
+        </div>
+        <div class="acc-item">
+          <div class="acc-head" onclick="toggleAcc(this)">
+            <svg class="icon icon-sm chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            <b>快捷键</b>
+            <span class="tag tag-warn">3 个冲突</span>
+          </div>
+          <div class="acc-body">
+            <p style="font-size: var(--type-sm); color: var(--text-muted);">⌘K 命令面板、⌘⇧A AI 总结、⌘⇧⌫ 清空过期。检测到 3 个快捷键与系统冲突，建议调整。</p>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="combobox">09 · Combobox（带搜索的下拉）</h3>
+      <div style="max-width: 320px;">
+        <div class="cb" id="cb-1" onclick="this.classList.toggle('is-open')">
+          <div class="baton" style="height: 36px; cursor: pointer;">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <span style="flex: 1; color: var(--text-muted);">选择收藏夹…</span>
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div class="cb-pop" onclick="event.stopPropagation()">
+            <div class="opt"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg> 代码片段</div>
+            <div class="opt is-on"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M3 3h7v7H3z"/></svg> 设计参考</div>
+            <div class="opt"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/></svg> 产品链接</div>
+            <div class="opt"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 会议纪要</div>
+            <div class="opt"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> 凭据（加密）</div>
+          </div>
+        </div>
+        <p style="font-size: var(--type-xs); color: var(--text-faint); margin-top: 8px;">👆 点击展开</p>
+      </div>
+
+      <h3 id="bsheet">10 · Bottom Sheet（移动端用 · 这里演示）</h3>
+      <p>从底部滑入 · 把手可拖动 · 桌面端也作为"轻量操作抽屉"</p>
+      <div class="row">
+        <button class="btn btn-primary" onclick="document.getElementById('bsheet').style.display='block'; requestAnimationFrame(()=>document.getElementById('bsheet').classList.add('is-open'))">打开 Bottom Sheet</button>
+      </div>
+
+      <h3 id="empty">11 · Empty State</h3>
+      <div style="background: var(--surface-1); border: 1px dashed var(--hairline-strong); border-radius: 14px; padding: 8px;">
+        <div class="empty">
+          <div class="ico"><svg class="icon" viewBox="0 0 24 24" style="width: 28px; height: 28px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></div>
+          <h4>剪贴板还是空的</h4>
+          <p style="font-size: var(--type-sm);">复制任何内容都会自动出现在这里</p>
+          <div style="margin-top: 16px;">
+            <button class="btn btn-primary btn-sm">了解更多</button>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="loading">12 · Loading / Skeleton</h3>
+      <div class="grid-2">
+        <div class="demo-block">
+          <h4>加载中（spinner）</h4>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 20px; justify-content: center;">
+            <div style="width: 20px; height: 20px; border: 2.5px solid var(--accent-tint); border-top-color: var(--accent-500); border-radius: 50%; animation: spin 800ms linear infinite;"></div>
+            <span style="font-size: var(--type-sm); color: var(--text-muted);">正在加载 47 条剪贴板…</span>
+          </div>
+          <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+        </div>
+        <div class="demo-block">
+          <h4>骨架屏（3 条）</h4>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; gap: 10px;">
+              <div class="skel" style="width: 3px; height: 40px;"></div>
+              <div style="flex: 1;"><div class="skel" style="height: 12px; width: 70%; margin-bottom: 6px;"></div><div class="skel" style="height: 10px; width: 40%;"></div></div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <div class="skel" style="width: 3px; height: 40px;"></div>
+              <div style="flex: 1;"><div class="skel" style="height: 12px; width: 50%; margin-bottom: 6px;"></div><div class="skel" style="height: 10px; width: 60%;"></div></div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <div class="skel" style="width: 3px; height: 40px;"></div>
+              <div style="flex: 1;"><div class="skel" style="height: 12px; width: 85%; margin-bottom: 6px;"></div><div class="skel" style="height: 10px; width: 30%;"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="banner">13 · Banner（顶/底通知条）</h3>
+      <div style="display: flex; flex-direction: column; gap: 10px; max-width: 720px;">
+        <div class="banner info">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+          <div style="flex: 1;"><b style="font-weight: 600;">新版本已就绪</b> · v2.3.0 包含 6 项修复和 2 项新功能。<a style="color: inherit; text-decoration: underline; margin-left: 6px;" href="#">查看更新</a></div>
+          <button class="btn btn-icon btn-ghost btn-sm">×</button>
+        </div>
+        <div class="banner warn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg>
+          <div style="flex: 1;"><b style="font-weight: 600;">PIN 30 秒后过期</b> · 解锁一次后可继续访问 5 分钟。<a style="color: inherit; text-decoration: underline; margin-left: 6px;" href="#">立即解锁</a></div>
+        </div>
+        <div class="banner danger">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+          <div style="flex: 1;"><b style="font-weight: 600;">同步失败</b> · 服务端 503。已暂停自动同步，恢复后自动重试。</div>
+        </div>
+      </div>
+
+      <h3 id="form">14 · Form（带校验）</h3>
+      <div class="demo-block" style="max-width: 480px;">
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div>
+            <label style="font-size: var(--type-sm); font-weight: 500; color: var(--text-strong); display: block; margin-bottom: 6px;">设备名称</label>
+            <input class="input" value="MacBook Pro 16" />
+            <div style="font-size: var(--type-xs); color: var(--text-faint); margin-top: 4px;">其他设备看到的显示名</div>
+          </div>
+          <div>
+            <label style="font-size: var(--type-sm); font-weight: 500; color: var(--text-strong); display: block; margin-bottom: 6px;">设备名称（错误态）</label>
+            <input class="input" value="" style="border-color: oklch(60% 0.20 25); box-shadow: 0 0 0 3px oklch(60% 0.20 25 / 0.12);" placeholder="请输入名称" />
+            <div style="font-size: var(--type-xs); color: oklch(40% 0.20 25); margin-top: 4px; display: flex; align-items: center; gap: 4px;">
+              <svg class="icon" style="width: 12px; height: 12px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+              名称不能为空，且不能超过 32 字符
+            </div>
+          </div>
+          <div>
+            <label style="font-size: var(--type-sm); font-weight: 500; color: var(--text-strong); display: block; margin-bottom: 6px;">设备名称（成功态）</label>
+            <div style="position: relative;">
+              <input class="input" value="iPhone 15 Pro" style="padding-right: 36px; border-color: oklch(64% 0.16 150);" />
+              <svg class="icon" viewBox="0 0 24 24" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: oklch(40% 0.16 150); width: 16px; height: 16px;"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+          </div>
+          <div>
+            <label style="font-size: var(--type-sm); font-weight: 500; color: var(--text-strong); display: block; margin-bottom: 6px;">同步间隔（分钟）</label>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <input type="range" min="0" max="60" value="5" style="flex: 1;" />
+              <span class="mono" style="width: 40px; text-align: right; color: var(--text-strong); font-size: var(--type-sm);">5</span>
+            </div>
+            <div style="font-size: var(--type-xs); color: var(--text-faint); margin-top: 4px;">0 = 实时事件驱动，不再兜底轮询</div>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="motion">15 · 动效展示</h3>
+      <p>所有过渡都是真 CSS：spring 弹性 / 160ms 缓出 / 240ms 标准</p>
+      <div class="grid-3">
+        <div class="demo-block" style="text-align: center;">
+          <div style="width: 60px; height: 60px; background: linear-gradient(135deg, var(--accent-400), var(--accent-600)); border-radius: 14px; margin: 0 auto 12px; box-shadow: var(--shadow-glow);"></div>
+          <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">Pulse Dot</div>
+          <div style="font-size: var(--type-xs); color: var(--text-muted);">pulse 2.4s 持续</div>
+        </div>
+        <div class="demo-block" style="text-align: center;">
+          <div style="width: 60px; height: 60px; border: 2.5px solid var(--accent-tint); border-top-color: var(--accent-500); border-radius: 50%; margin: 0 auto 12px; animation: spin 800ms linear infinite;"></div>
+          <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">Spinner</div>
+          <div style="font-size: var(--type-xs); color: var(--text-muted);">800ms 线性</div>
+        </div>
+        <div class="demo-block" style="text-align: center;">
+          <div class="skel" style="width: 120px; height: 60px; border-radius: 14px; margin: 0 auto 12px;"></div>
+          <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">Shimmer</div>
+          <div style="font-size: var(--type-xs); color: var(--text-muted);">1.4s 持续</div>
+        </div>
+      </div>
+
+      <h3 id="ai-thinking">16 · AI 思考链（折叠 / 展开 / 重跑）</h3>
+      <p>AI 不是"魔术"，让用户看到推理过程能建立信任。点击展开看完整思考。</p>
+      <div class="demo-block" style="max-width: 720px;">
+        <div class="demo-block-head">
+          <h4>折叠态 vs 展开态</h4>
+          <div class="state-switcher">
+            <button class="is-on" data-think-state="collapsed">折叠</button>
+            <button data-think-state="expanded">展开</button>
+            <button data-think-state="running">运行中</button>
+          </div>
+        </div>
+
+        <div id="think-collapsed" data-think="collapsed">
+          <div class="hover-target" onclick="setThink('expanded')" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" style="color: var(--text-faint);"><path d="M9 18l6-6-6-6"/></svg>
+            <span style="flex: 1;">💭 思考过程（4 步 · 1.2s）</span>
+            <span class="mono" style="font-size: 10.5px; color: var(--text-faint);">点击展开</span>
+          </div>
+        </div>
+
+        <div id="think-expanded" data-think="expanded" style="display: none;">
+          <div class="hover-target" onclick="setThink('collapsed')" style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-bottom: 8px;">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" style="color: var(--text-faint); transform: rotate(90deg);"><path d="M9 18l6-6-6-6"/></svg>
+            <span style="flex: 1;">💭 思考过程（4 步 · 1.2s）</span>
+            <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); setThink('running')" style="font-size: 10.5px; padding: 2px 6px;">🔄 重跑</button>
+          </div>
+          <div style="background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; padding: 12px 16px; font-size: 12.5px; line-height: 1.7; color: var(--text-default);">
+            <ol style="margin: 0; padding-left: 20px;">
+              <li style="margin-bottom: 6px;"><b style="color: var(--text-strong);">理解需求：</b>用户要"总结今天的剪贴板"，按主题分组。</li>
+              <li style="margin-bottom: 6px;"><b style="color: var(--text-strong);">数据收集：</b>读取 47 条剪贴板元数据 + 摘要（不读完整内容，节省 token）。</li>
+              <li style="margin-bottom: 6px;"><b style="color: var(--text-strong);">聚类：</b>用 embedding 模型分成 5 组。</li>
+              <li style="margin-bottom: 6px;"><b style="color: var(--text-strong);">生成：</b>每组提取 3 个关键要点，按时间顺序输出。</li>
+            </ol>
+          </div>
+        </div>
+
+        <div id="think-running" data-think="running" style="display: none;">
+          <div style="background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 12px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; font-size: var(--type-sm); color: var(--text-muted);">
+            <div style="display: inline-flex; gap: 3px;">
+              <span class="live-pulse" style="animation-delay: 0s;"></span>
+              <span class="live-pulse" style="animation-delay: 0.2s;"></span>
+              <span class="live-pulse" style="animation-delay: 0.4s;"></span>
+            </div>
+            <span style="flex: 1;" id="think-running-text">正在分析 47 条剪贴板...</span>
+            <button class="btn btn-sm btn-ghost" onclick="stopThink()" style="color: oklch(40% 0.20 25); font-size: 10.5px;">⏹ 停止</button>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="ai-tool">17 · AI 工具调用（时间线 / 4 种状态）</h3>
+      <p>每个工具调用：状态色 · 耗时 · 输入输出可展开 · 4 种状态可切换演示</p>
+      <div class="demo-block" style="max-width: 720px;">
+        <div class="demo-block-head">
+          <h4>工具状态演示（点击切换）</h4>
+          <div class="state-switcher">
+            <button data-tool-state="ok" class="is-on">✓ 成功</button>
+            <button data-tool-state="running">⏳ 运行中</button>
+            <button data-tool-state="error">✗ 失败</button>
+            <button data-tool-state="needs">⚠ 需确认</button>
+          </div>
+        </div>
+
+        <div id="tool-1" data-tool-id="1">
+          <div onclick="toggleToolBody(1)" style="background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 10px; margin-bottom: 6px; overflow: hidden; cursor: pointer; transition: border-color 160ms;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px;">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" style="color: var(--accent-500);"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              <span class="tool-name" style="font-family: 'Geist Mono', monospace; font-size: 12px; color: var(--text-strong);">read_clipboard</span>
+              <span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--text-muted); flex: 1;">{ since: "2026-09-12", limit: 100 }</span>
+              <span class="tool-badge" style="font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: oklch(64% 0.16 150 / 0.12); color: oklch(40% 0.16 150); font-family: 'Geist Mono', monospace;">✓ 47 条 · 142ms</span>
+            </div>
+            <div class="tool-body" style="max-height: 0; overflow: hidden; transition: max-height 240ms var(--ease-out);">
+              <div style="padding: 10px 12px; border-top: 1px solid var(--hairline); font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--text-default);">
+                <div style="color: var(--text-faint); margin-bottom: 4px;">// 返回</div>
+                { items: 47, devices: ["mac", "iphone", "windows"], bytes: 12_482 }
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tool-2" data-tool-id="2">
+          <div onclick="toggleToolBody(2)" style="background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 10px; margin-bottom: 6px; overflow: hidden; cursor: pointer;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px;">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" style="color: var(--accent-500);"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 21V9"/></svg>
+              <span class="tool-name" style="font-family: 'Geist Mono', monospace; font-size: 12px; color: var(--text-strong);">cluster_by_topic</span>
+              <span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--text-muted); flex: 1;">{ method: "embedding", k: 5 }</span>
+              <span class="tool-badge" style="font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: oklch(64% 0.16 150 / 0.12); color: oklch(40% 0.16 150); font-family: 'Geist Mono', monospace;">✓ 5 组 · 380ms</span>
+            </div>
+            <div class="tool-body" style="max-height: 0; overflow: hidden; transition: max-height 240ms var(--ease-out);">
+              <div style="padding: 10px 12px; border-top: 1px solid var(--hairline); font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--text-default);">
+                技术调研 (12) · 数据回顾 (8) · 会议准备 (11) · 设计参考 (9) · 杂项 (7)
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tool-3" data-tool-id="3">
+          <div style="background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 10px; margin-bottom: 6px; overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px;">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" style="color: var(--accent-500);"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+              <span class="tool-name" style="font-family: 'Geist Mono', monospace; font-size: 12px; color: var(--text-strong);">summarize_group</span>
+              <span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--text-muted); flex: 1;">{ group: "技术调研", depth: "deep" }</span>
+              <span class="tool-badge" style="font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: oklch(64% 0.16 150 / 0.12); color: oklch(40% 0.16 150); font-family: 'Geist Mono', monospace;">✓ 完成</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="tool-4" data-tool-id="4">
+          <div style="background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px;">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" style="color: oklch(40% 0.20 25);"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+              <span class="tool-name" style="font-family: 'Geist Mono', monospace; font-size: 12px; color: var(--text-strong);">delete_clipboard</span>
+              <span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--text-muted); flex: 1;">{ id: "c-2847" }</span>
+              <span class="tool-badge" style="font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: oklch(60% 0.20 25 / 0.10); color: oklch(40% 0.20 25); font-family: 'Geist Mono', monospace;">⚠ 需用户确认</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="ai-streaming">18 · AI 流式输出（打字机 + 中断 / 重置）</h3>
+      <p>点"启动"开始打字 · 中途可点"停止" · 可"重置"重新开始</p>
+      <div class="demo-block" style="max-width: 720px;">
+        <div class="demo-block-head">
+          <h4>流式状态机</h4>
+          <div class="state-switcher" style="pointer-events: none;">
+            <button id="stream-state-badge" class="is-on">就绪</button>
+          </div>
+        </div>
+
+        <div id="stream-header" style="background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; font-size: var(--type-sm); color: var(--text-muted);">
+          <span id="stream-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint);"></span>
+          <span id="stream-status-text" style="flex: 1;">就绪 · 点击"启动"开始生成</span>
+          <button class="btn btn-sm btn-primary" id="stream-start" onclick="startStream()">▶ 启动</button>
+          <button class="btn btn-sm btn-ghost" id="stream-stop" onclick="stopStream()" style="color: oklch(40% 0.20 25); display: none;">⏹ 停止</button>
+          <button class="btn btn-sm btn-ghost" id="stream-reset" onclick="resetStream()" style="display: none;">↺ 重置</button>
+        </div>
+        <div id="stream-body" style="background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; padding: 14px 16px; font-size: var(--type-sm); line-height: 1.7; color: var(--text-strong); min-height: 60px;">
+          <span class="stream-text" id="stream-output"><span class="caret"></span></span>
+        </div>
+        <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--text-faint); font-family: 'Geist Mono', monospace;">
+          <span>已输出 <span id="stream-tokens">0</span> tokens</span>
+          <span>·</span>
+          <span>速度 <span id="stream-speed">0</span> t/s</span>
+        </div>
+      </div>
+
+      <h3 id="ai-context">19 · AI 上下文选择器（chip 可加可减）</h3>
+      <p>点"+"添加 · 点"×"移除 · 实时看 token 成本</p>
+      <div class="demo-block" style="max-width: 720px;">
+        <div class="demo-block-head">
+          <h4>当前上下文</h4>
+          <button class="btn btn-sm btn-ghost" onclick="resetContext()">↺ 重置</button>
+        </div>
+        <div id="context-chips" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 10px; min-height: 48px; margin-bottom: 8px;">
+          <!-- chips injected by JS -->
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;">
+          <button class="btn btn-sm btn-secondary" onclick="addCtx('3 条剪贴板', 3, 120)">+ 3 条剪贴板</button>
+          <button class="btn btn-sm btn-secondary" onclick="addCtx('技术调研', '📁', 80)">+ 技术调研收藏夹</button>
+          <button class="btn btn-sm btn-secondary" onclick="addCtx('使用记忆', '🧠', 50)">+ 使用记忆</button>
+          <button class="btn btn-sm btn-secondary" onclick="addCtx('截图', '🖼', 200)">+ 截图</button>
+          <button class="btn btn-sm btn-secondary" onclick="addCtx('PDF 文档', '📄', 400)">+ PDF 文档</button>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; color: var(--text-muted); font-family: 'Geist Mono', monospace;">
+          <span>预填：<span id="ctx-tokens" style="color: var(--text-strong); font-weight: 600;">324 tokens</span></span>
+          <span>·</span>
+          <span>预计输出：<span style="color: var(--text-strong); font-weight: 600;">~600 tokens</span></span>
+          <span>·</span>
+          <span>总计：<span id="ctx-total" style="color: var(--accent-600); font-weight: 600;">~924 tokens</span></span>
+        </div>
+      </div>
+
+      <h3 id="ai-usage">20 · AI 用量计费（拖动 / 点 +/- 调整）</h3>
+      <p>调消耗量 → 进度条颜色自动变（绿/橙/红），95% 弹告警</p>
+      <div class="grid-2">
+        <div class="demo-block">
+          <div class="demo-block-head">
+            <h4>本月用量</h4>
+          </div>
+          <div style="display: flex; align-items: end; gap: 4px; margin-bottom: 6px;">
+            <span id="usage-num" style="font-family: 'Geist Mono', monospace; font-size: 28px; font-weight: 700; color: var(--text-strong);">1,247</span>
+            <span style="color: var(--text-muted); font-size: var(--type-sm); margin-bottom: 4px;">/ 5,000 tokens</span>
+          </div>
+          <div id="usage-bar" class="usage-bar" style="margin-bottom: 8px;"><i id="usage-fill" style="width: 25%;"></i></div>
+          <div id="usage-sub" style="font-size: var(--type-xs); color: var(--text-faint);">25% 已用 · 预计可再撑 23 天</div>
+          <div class="slider-row" style="margin-top: 12px;">
+            <input type="range" id="usage-slider" min="0" max="100" value="25" oninput="setUsage(this.value)">
+            <span class="v" id="usage-v">25%</span>
+          </div>
+          <div style="display: flex; gap: 4px; margin-top: 8px;">
+            <button class="btn btn-sm btn-ghost" onclick="setUsage(0)">0</button>
+            <button class="btn btn-sm btn-ghost" onclick="setUsage(50)">50</button>
+            <button class="btn btn-sm btn-ghost" onclick="setUsage(95)">95</button>
+            <button class="btn btn-sm btn-ghost" onclick="setUsage(100)">100</button>
+          </div>
+        </div>
+        <div class="demo-block">
+          <div class="demo-block-head">
+            <h4>按模型分布（点 +/- 调整）</h4>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: var(--type-sm);">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span>step-3.7-flash</span>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <button class="btn btn-sm btn-ghost btn-icon" onclick="adjModel(0, -20)" style="width:20px; height:20px; padding:0; font-size:11px;">−</button>
+                  <span class="mono" id="m0-v" style="color: var(--text-muted); min-width: 36px; text-align: right;">982</span>
+                  <button class="btn btn-sm btn-ghost btn-icon" onclick="adjModel(0, 20)" style="width:20px; height:20px; padding:0; font-size:11px;">+</button>
+                </div>
+              </div>
+              <div class="usage-bar"><i id="m0" style="width: 79%;"></i></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span>step-1-thinking</span>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <button class="btn btn-sm btn-ghost btn-icon" onclick="adjModel(1, -20)" style="width:20px; height:20px; padding:0; font-size:11px;">−</button>
+                  <span class="mono" id="m1-v" style="color: var(--text-muted); min-width: 36px; text-align: right;">198</span>
+                  <button class="btn btn-sm btn-ghost btn-icon" onclick="adjModel(1, 20)" style="width:20px; height:20px; padding:0; font-size:11px;">+</button>
+                </div>
+              </div>
+              <div class="usage-bar"><i id="m1" style="width: 16%;"></i></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span>本地 ollama</span>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <button class="btn btn-sm btn-ghost btn-icon" onclick="adjModel(2, -20)" style="width:20px; height:20px; padding:0; font-size:11px;">−</button>
+                  <span class="mono" id="m2-v" style="color: var(--text-muted); min-width: 36px; text-align: right;">67</span>
+                  <button class="btn btn-sm btn-ghost btn-icon" onclick="adjModel(2, 20)" style="width:20px; height:20px; padding:0; font-size:11px;">+</button>
+                </div>
+              </div>
+              <div class="usage-bar"><i id="m2" style="width: 5%;"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="usage-warn" style="display: none; margin-top: 12px; max-width: 720px;"></div>
+
+      <h3 id="ai-error">21 · AI 错误状态（按钮真的能点）</h3>
+      <div style="display: flex; flex-direction: column; gap: 10px; max-width: 720px;">
+        <div style="background: oklch(60% 0.20 25 / 0.08); color: oklch(40% 0.20 25); border: 1px solid oklch(60% 0.20 25 / 0.18); border-radius: 12px; padding: 14px 16px; display: flex; align-items: start; gap: 12px;">
+          <svg class="icon" viewBox="0 0 24 24" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+          <div style="flex: 1;">
+            <b style="font-weight: 600; display: block; margin-bottom: 2px;">网络断开 · 无法连接 AI 服务</b>
+            <div style="font-size: var(--type-xs); opacity: 0.9;">已重试 3 次 · 最后错误：ERR_NETWORK_TIMEOUT</div>
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+              <button class="btn btn-sm btn-secondary" onclick="simulate('reconnect', '已发起重连')">重新连接</button>
+              <button class="btn btn-sm btn-ghost" style="color: oklch(40% 0.20 25);" onclick="simulate('local', '已切换到本地 ollama')">切换到本地模型</button>
+            </div>
+          </div>
+        </div>
+        <div style="background: oklch(72% 0.15 70 / 0.10); color: oklch(45% 0.15 70); border: 1px solid oklch(72% 0.15 70 / 0.20); border-radius: 12px; padding: 14px 16px; display: flex; align-items: start; gap: 12px;">
+          <svg class="icon" viewBox="0 0 24 24" style="flex-shrink: 0; margin-top: 1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg>
+          <div style="flex: 1;">
+            <b style="font-weight: 600; display: block; margin-bottom: 2px;">本月用量已达 95%</b>
+            <div style="font-size: var(--type-xs); opacity: 0.9;">剩余 250 tokens · 升级到 Pro 可获 10x 用量</div>
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+              <button class="btn btn-sm btn-primary" onclick="simulate('upgrade', '跳转升级页...')">升级到 Pro</button>
+              <button class="btn btn-sm btn-ghost" onclick="simulate('dismiss', '本月再说已记录')">本月再说</button>
+            </div>
+          </div>
+        </div>
+        <div style="background: var(--surface-2); color: var(--text-default); border: 1px solid var(--hairline); border-radius: 12px; padding: 14px 16px; display: flex; align-items: start; gap: 12px;">
+          <svg class="icon" viewBox="0 0 24 24" style="flex-shrink: 0; margin-top: 1px; color: var(--text-muted);"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+          <div style="flex: 1;">
+            <b style="font-weight: 600; color: var(--text-strong); display: block; margin-bottom: 2px;">请求超时（> 30s）</b>
+            <div style="font-size: var(--type-xs); color: var(--text-muted);">已中断。建议拆分为多个小任务，或降低 max_tokens。</div>
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+              <button class="btn btn-sm btn-secondary" onclick="simulate('retry', '重新发起请求...')">重试</button>
+              <button class="btn btn-sm btn-ghost" onclick="simulate('log', '打开调试日志...')">查看日志</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="ai-perm">22 · AI 权限确认（敏感操作）</h3>
+      <p>AI 想执行删除 / 清空 / 分享 / 撤销设备等敏感操作时，必须弹出二次确认 + 显示影响范围</p>
+      <div class="row">
+        <button class="btn btn-danger" onclick="openDlg('dlg-ai-perm')">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+          模拟：AI 请求删除 28 条过期剪贴板
+        </button>
+      </div>
+
+      <h3 id="ctrl-switch">23 · Switch（点击切换）</h3>
+      <div class="demo-block" style="max-width: 480px;">
+        <div class="demo-block-head"><h4>开关 · 点击切换</h4></div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline);">
+            <div style="flex: 1;">
+              <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">自动同步</div>
+              <div style="font-size: var(--type-xs); color: var(--text-muted);">检测到系统剪贴板变化时自动上传</div>
+            </div>
+            <span class="sw-state mono" style="font-size: 11px; color: var(--text-muted); width: 30px; text-align: right;">ON</span>
+            <div class="switch is-on switch-toggle"></div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline);">
+            <div style="flex: 1;">
+              <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">桌面通知</div>
+              <div style="font-size: var(--type-xs); color: var(--text-muted);">其他设备复制时弹出系统通知</div>
+            </div>
+            <span class="sw-state mono" style="font-size: 11px; color: var(--text-muted); width: 30px; text-align: right;">OFF</span>
+            <div class="switch switch-toggle"></div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0;">
+            <div style="flex: 1;">
+              <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">声音提示</div>
+              <div style="font-size: var(--type-xs); color: var(--text-muted);">完成任务时播放音效</div>
+            </div>
+            <span class="sw-state mono" style="font-size: 11px; color: var(--text-muted); width: 30px; text-align: right;">OFF</span>
+            <div class="switch switch-toggle"></div>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="ctrl-checkbox">24 · Checkbox（点击勾选）</h3>
+      <div class="demo-block" style="max-width: 480px;">
+        <div class="demo-block-head"><h4>复选框 · 点击切换</h4></div>
+        <div class="check-row"><div class="checkbox is-on"></div><span class="lbl">记住我的偏好</span></div>
+        <div class="check-row"><div class="checkbox is-on"></div><span class="lbl">启用自动补全</span></div>
+        <div class="check-row"><div class="checkbox"></div><span class="lbl">在搜索中包括已删除项</span></div>
+        <div class="check-row"><div class="checkbox is-on"></div><span class="lbl">开机自启</span></div>
+      </div>
+
+      <h3 id="ctrl-radio">25 · Radio（单选 · 点击切换）</h3>
+      <div class="demo-block" style="max-width: 480px;">
+        <div class="demo-block-head"><h4>同步频率</h4></div>
+        <div class="radio-group">
+          <div class="radio-row is-on" data-radio-group="sync">
+            <div class="r"></div>
+            <div style="flex: 1;">
+              <div class="lbl">实时事件驱动</div>
+              <div class="sub">不轮询 · 最低延迟 · 最省电</div>
+            </div>
+          </div>
+          <div class="radio-row" data-radio-group="sync">
+            <div class="r"></div>
+            <div style="flex: 1;">
+              <div class="lbl">每 5 分钟兜底</div>
+              <div class="sub">事件 + 轮询双保险</div>
+            </div>
+          </div>
+          <div class="radio-row" data-radio-group="sync">
+            <div class="r"></div>
+            <div style="flex: 1;">
+              <div class="lbl">每 30 分钟</div>
+              <div class="sub">省电模式</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="ctrl-slider">26 · Slider（拖动 · 实时显示）</h3>
+      <div class="demo-block" style="max-width: 480px;">
+        <div class="demo-block-head"><h4>数值滑块</h4></div>
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div class="slider-row">
+            <span style="width: 80px; font-size: var(--type-sm); color: var(--text-default);">UI 缩放</span>
+            <input type="range" data-live min="80" max="130" value="100" />
+            <span class="v">100%</span>
+          </div>
+          <div class="slider-row">
+            <span style="width: 80px; font-size: var(--type-sm); color: var(--text-default);">保留条数</span>
+            <input type="range" data-live min="100" max="5000" step="100" value="1000" />
+            <span class="v">1000</span>
+          </div>
+          <div class="slider-row">
+            <span style="width: 80px; font-size: var(--type-sm); color: var(--text-default);">透明度</span>
+            <input type="range" data-live min="0" max="100" value="80" />
+            <span class="v">80%</span>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="ctrl-hover">27 · Hover 状态演示</h3>
+      <p>悬停看效果（已在多处默认实现，这里集中展示 3 种典型）</p>
+      <div class="grid-3">
+        <div class="demo-block">
+          <div class="demo-block-head"><h4>卡片 hover</h4></div>
+          <div class="hover-target" style="text-align: center;">
+            <svg class="icon" viewBox="0 0 24 24" style="color: var(--accent-500); margin-bottom: 6px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">悬停看变化</div>
+            <div style="font-size: var(--type-xs); color: var(--text-muted);">背景 + 边 + 阴影 + 上浮</div>
+          </div>
+        </div>
+        <div class="demo-block">
+          <div class="demo-block-head"><h4>点击激活（点一下试试）</h4></div>
+          <div class="hover-target" onclick="this.classList.toggle('is-active')" style="text-align: center; cursor: pointer;">
+            <svg class="icon" viewBox="0 0 24 24" style="color: var(--accent-500); margin-bottom: 6px;"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+            <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">点击切换激活</div>
+            <div style="font-size: var(--type-xs); color: var(--text-muted);">可作为"收藏"按钮</div>
+          </div>
+        </div>
+        <div class="demo-block">
+          <div class="demo-block-head"><h4>输入框 focus</h4></div>
+          <input class="input" placeholder="点我聚焦看效果" style="margin-bottom: 8px;" />
+          <textarea class="input" rows="2" placeholder="多行输入 · 聚焦时边框变 accent" style="resize: vertical; font-family: 'Geist Mono', monospace; font-size: 12px;"></textarea>
+        </div>
+      </div>
+
+      <h3 id="ctrl-empty">28 · Empty State（空态）</h3>
+      <p>可触发演示（点"重置"恢复 · 点"删除全部"清空）</p>
+      <div class="demo-block">
+        <div class="demo-block-head">
+          <h4>收藏夹为空</h4>
+          <div class="row" style="margin: 0;">
+            <button class="btn btn-sm btn-secondary" onclick="renderItems()">重置</button>
+            <button class="btn btn-sm btn-ghost" onclick="emptyOut()">删除全部</button>
+          </div>
+        </div>
+        <div id="empty-area" style="border: 1px dashed var(--hairline); border-radius: 12px; padding: 8px;">
+          <!-- filled by JS -->
+        </div>
+      </div>
+
+      <div class="overlay" id="dlg-ai-perm" data-overlay>
+        <div class="dialog" onclick="event.stopPropagation()">
+          <div class="dialog-head">
+            <div class="ico danger">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9c0 3-1.5 5-3 6.5L17 21h-4l-.5-2h-1L11 21H7l-1-2.5C4.5 17 3 15 3 12a9 9 0 0 1 9-9z"/></svg>
+            </div>
+            <div>
+              <h3>AI 想执行：清理 28 条过期剪贴板</h3>
+              <p>Pulse AI 申请执行一个批量操作 · 请确认影响范围</p>
+            </div>
+            <button class="btn btn-icon btn-ghost btn-sm x" data-close>×</button>
+          </div>
+          <div class="dialog-body">
+            <div style="background: oklch(72% 0.15 70 / 0.10); border: 1px solid oklch(72% 0.15 70 / 0.25); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; display: flex; align-items: start; gap: 8px; font-size: var(--type-sm); color: oklch(45% 0.15 70);">
+              <svg class="icon icon-sm" style="flex-shrink: 0; margin-top: 1px;" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg>
+              <span>此操作会同步到 <b>所有 3 台在线设备</b>，且删除后不可恢复。</span>
+            </div>
+            <div style="font-size: var(--type-sm); color: var(--text-default); line-height: 1.7;">
+              <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: var(--type-sm);">
+                <span style="color: var(--text-muted);">工具</span><span style="font-family: 'Geist Mono', monospace;">delete_clipboard × 28</span>
+                <span style="color: var(--text-muted);">AI 理由</span><span>"这些剪贴板超过 30 天未访问，释放约 12MB 空间"</span>
+                <span style="color: var(--text-muted);">影响</span><span>3 设备同步删除 · 不可恢复</span>
+                <span style="color: var(--text-muted);">Token 成本</span><span class="mono">~ 80 tokens</span>
+              </div>
+            </div>
+            <div style="margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: 8px; font-size: var(--type-xs); color: var(--text-muted); font-family: 'Geist Mono', monospace; line-height: 1.6;">
+              [1] ✓ read_statistics(usage_by_age) → 28 items found<br>
+              [2] ⏸ awaiting user confirmation for: delete_clipboard
+            </div>
+          </div>
+          <div class="dialog-foot">
+            <button class="btn btn-ghost" data-close>拒绝</button>
+            <button class="btn btn-secondary" data-close>先预览</button>
+            <button class="btn btn-danger" data-close>批准删除</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // Mode toggle
+    document.getElementById('lightBtn').addEventListener('click', () => {
+      document.documentElement.dataset.mode = 'light';
+      document.getElementById('lightBtn').classList.add('is-on');
+      document.getElementById('darkBtn').classList.remove('is-on');
+    });
+    document.getElementById('darkBtn').addEventListener('click', () => {
+      document.documentElement.dataset.mode = 'dark';
+      document.getElementById('darkBtn').classList.add('is-on');
+      document.getElementById('lightBtn').classList.remove('is-on');
+    });
+
+    // Dialog open/close
+    function openDlg(id) { document.getElementById(id).classList.add('is-open'); }
+    function closeAll() { document.querySelectorAll('[data-overlay]').forEach(d => d.classList.remove('is-open')); document.getElementById('sheet-detail').classList.remove('is-open'); document.getElementById('bsheet').classList.remove('is-open'); setTimeout(()=>document.getElementById('bsheet').style.display='none', 300); document.querySelectorAll('.popover').forEach(p => p.classList.remove('is-open')); document.querySelectorAll('.cb').forEach(c => c.classList.remove('is-open')); }
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeAll));
+    document.querySelectorAll('[data-overlay]').forEach(o => o.addEventListener('click', e => { if (e.target === o) closeAll(); }));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+
+    // Popover
+    function togglePopover(e, id) {
+      e.stopPropagation();
+      const p = document.getElementById(id);
+      const isOpen = p.classList.contains('is-open');
+      document.querySelectorAll('.popover').forEach(x => x.classList.remove('is-open'));
+      if (!isOpen) p.classList.add('is-open');
+    }
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.popover') && !e.target.closest('[id^="pop-"]')) {
+        document.querySelectorAll('.popover').forEach(x => x.classList.remove('is-open'));
+      }
+    });
+
+    // Context menu
+    function openCtxMenu(e) {
+      e.preventDefault();
+      const m = document.getElementById('ctx-menu');
+      document.querySelectorAll('.popover').forEach(x => x.classList.remove('is-open'));
+      m.style.left = Math.min(e.clientX, window.innerWidth - 240) + 'px';
+      m.style.top = Math.min(e.clientY, window.innerHeight - 240) + 'px';
+      m.classList.add('is-open');
+    }
+
+    // Toast
+    function toast(msg, type = 'info', duration = 3000) {
+      const t = document.createElement('div');
+      t.className = 'toast ' + type;
+      const icons = {
+        success: '<path d="M20 6L9 17l-5-5"/>',
+        error: '<circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>',
+        warn: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/>',
+        info: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>'
+      };
+      t.innerHTML = `<div class="ico ${type}"><svg class="icon icon-sm" viewBox="0 0 24 24">${icons[type]}</svg></div><div class="body"><div class="b">${msg}</div></div><button class="btn btn-icon btn-ghost btn-sm x" onclick="this.parentElement.remove()">×</button>`;
+      document.getElementById('toaster').appendChild(t);
+      setTimeout(() => t.remove(), duration);
+    }
+
+    // Tabs / Segmented
+    function selectTab(group, el) {
+      el.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('is-on'));
+      el.classList.add('is-on');
+    }
+    function selectSeg(group, el) {
+      el.parentElement.querySelectorAll('button').forEach(t => t.classList.remove('is-on'));
+      el.classList.add('is-on');
+    }
+
+    // Accordion
+    function toggleAcc(head) {
+      const item = head.parentElement;
+      item.classList.toggle('is-open');
+    }
+
+    // === AI demos interactivity ===
+
+    // --- Thinking chain ---
+    function setThink(state) {
+      document.querySelectorAll('[data-think]').forEach(el => el.style.display = 'none');
+      const target = document.querySelector(`[data-think="${state}"]`);
+      if (target) target.style.display = '';
+      // sync switcher
+      document.querySelectorAll('[data-think-state]').forEach(b => b.classList.toggle('is-on', b.dataset.thinkState === state));
+    }
+    document.querySelectorAll('[data-think-state]').forEach(b => {
+      b.addEventListener('click', () => {
+        const s = b.dataset.thinkState;
+        if (s === 'running') { setThink('running'); runThink(); }
+        else { setThink(s); }
+      });
+    });
+    let thinkTimer = null;
+    const thinkMessages = [
+      '正在分析 47 条剪贴板...',
+      '按主题聚类中...',
+      '提取关键要点...',
+      '排序与格式化...',
+      '完成！'
+    ];
+    function runThink() {
+      clearTimeout(thinkTimer);
+      let i = 0;
+      const txt = document.getElementById('think-running-text');
+      const tick = () => {
+        if (i < thinkMessages.length) {
+          txt.textContent = thinkMessages[i];
+          i++;
+          thinkTimer = setTimeout(tick, 700);
+        }
+      };
+      tick();
+    }
+    function stopThink() {
+      clearTimeout(thinkTimer);
+      const txt = document.getElementById('think-running-text');
+      txt.textContent = '已停止 · 用户中断';
+      simulate('停止', '已中断思考过程', 'warn');
+    }
+
+    // --- Tool calls: 4 state demos ---
+    const toolStateMap = {
+      ok: { name: 'read_clipboard', badge: '✓ 47 条 · 142ms', bg: 'oklch(64% 0.16 150 / 0.12)', fg: 'oklch(40% 0.16 150)', icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', iconColor: 'var(--accent-500)', border: 'var(--hairline)' },
+      running: { name: 'read_clipboard', badge: '<svg class="icon icon-sm" style="width:10px;height:10px;animation:spin 800ms linear infinite;display:inline-block;vertical-align:middle" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56" fill="none" stroke="currentColor" stroke-width="3"/></svg> 正在运行 · 0.4s', bg: 'oklch(72% 0.15 70 / 0.15)', fg: 'oklch(45% 0.15 70)', icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', iconColor: 'oklch(45% 0.15 70)', border: 'oklch(72% 0.15 70 / 0.3)' },
+      error: { name: 'read_clipboard', badge: '✗ 失败 · ERR_TIMEOUT', bg: 'oklch(60% 0.20 25 / 0.10)', fg: 'oklch(40% 0.20 25)', icon: '<circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>', iconColor: 'oklch(40% 0.20 25)', border: 'oklch(60% 0.20 25 / 0.3)' },
+      needs: { name: 'delete_clipboard', badge: '⚠ 需用户确认', bg: 'oklch(60% 0.20 25 / 0.10)', fg: 'oklch(40% 0.20 25)', icon: '<circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>', iconColor: 'oklch(40% 0.20 25)', border: 'oklch(60% 0.20 25)' }
+    };
+    function setToolState(state) {
+      const cfg = toolStateMap[state];
+      ['1','2','3','4'].forEach((id, idx) => {
+        const el = document.getElementById('tool-' + id);
+        if (!el) return;
+        const card = el.firstElementChild;
+        const name = card.querySelector('.tool-name');
+        const badge = card.querySelector('.tool-badge');
+        const icon = card.querySelector('svg');
+        name.textContent = cfg.name;
+        badge.innerHTML = cfg.badge;
+        badge.style.background = cfg.bg;
+        badge.style.color = cfg.fg;
+        icon.innerHTML = cfg.icon;
+        icon.style.color = cfg.iconColor;
+        card.style.borderColor = cfg.border;
+        if (state === 'needs') {
+          card.style.borderLeft = '3px solid oklch(60% 0.20 25)';
+        } else {
+          card.style.borderLeft = '';
+        }
+      });
+      document.querySelectorAll('[data-tool-state]').forEach(b => b.classList.toggle('is-on', b.dataset.toolState === state));
+    }
+    document.querySelectorAll('[data-tool-state]').forEach(b => {
+      b.addEventListener('click', () => setToolState(b.dataset.toolState));
+    });
+    function toggleToolBody(id) {
+      const body = document.getElementById('tool-' + id).querySelector('.tool-body');
+      if (!body) return;
+      const open = body.style.maxHeight && body.style.maxHeight !== '0px';
+      body.style.maxHeight = open ? '0' : '200px';
+    }
+
+    // --- Streaming ---
+    const streamFullText = '围绕 <b>多 Agent 上下文传递</b>，最值得读的 3 篇：<br><br><b>1. Anthropic: Building Effective Agents</b><br><a style="color:var(--accent-600)">anthropic.com/research/building-effective-agents</a><br><span style="color:var(--text-muted);font-size:12px">核心：工具调用、上下文窗口、Agent 编排的工程实践。</span><br><br><b>2. Sub-agent Context Sharing in LangGraph</b><br><a style="color:var(--accent-600)">blog.langchain.dev/subagent-context</a><br><br><b>3. Multi-Agent Orchestration Patterns</b><br><a style="color:var(--accent-600)">eugeneyan.com/2025/agents/</a>';
+    let streamTimer = null;
+    let streamPos = 0;
+    let streamRunning = false;
+    let streamStartTime = 0;
+    function startStream() {
+      if (streamRunning) return;
+      if (streamPos >= streamFullText.length) { resetStream(); setTimeout(startStream, 100); return; }
+      streamRunning = true; streamStartTime = Date.now();
+      document.getElementById('stream-start').style.display = 'none';
+      document.getElementById('stream-stop').style.display = '';
+      document.getElementById('stream-status-dot').style.background = 'var(--status-success)';
+      document.getElementById('stream-status-text').textContent = '正在生成 · 速度 18 t/s';
+      document.getElementById('stream-state-badge').textContent = '生成中';
+      document.getElementById('stream-body').classList.remove('is-paused', 'is-done');
+      const tick = () => {
+        if (!streamRunning) return;
+        // advance 2-3 chars at a time
+        const step = streamPos + 3;
+        streamPos = Math.min(step, streamFullText.length);
+        document.getElementById('stream-output').innerHTML = streamFullText.substring(0, streamPos) + '<span class="caret"></span>';
+        const elapsed = (Date.now() - streamStartTime) / 1000;
+        document.getElementById('stream-tokens').textContent = Math.floor(streamPos / 4);
+        document.getElementById('stream-speed').textContent = Math.floor((streamPos / 4) / Math.max(elapsed, 0.1));
+        if (streamPos >= streamFullText.length) {
+          finishStream();
+          return;
+        }
+        streamTimer = setTimeout(tick, 60 + Math.random() * 40);
+      };
+      tick();
+    }
+    function stopStream() {
+      streamRunning = false;
+      clearTimeout(streamTimer);
+      document.getElementById('stream-stop').style.display = 'none';
+      document.getElementById('stream-start').style.display = '';
+      document.getElementById('stream-start').textContent = '▶ 继续';
+      document.getElementById('stream-status-dot').style.background = 'var(--status-warn)';
+      document.getElementById('stream-status-text').textContent = '已暂停 · 可点"继续"或"重置"';
+      document.getElementById('stream-state-badge').textContent = '已暂停';
+      document.getElementById('stream-body').classList.add('is-paused');
+    }
+    function finishStream() {
+      streamRunning = false;
+      clearTimeout(streamTimer);
+      document.getElementById('stream-stop').style.display = 'none';
+      document.getElementById('stream-start').style.display = '';
+      document.getElementById('stream-start').textContent = '▶ 重新生成';
+      document.getElementById('stream-status-dot').style.background = 'var(--text-faint)';
+      document.getElementById('stream-status-text').textContent = '已完成 · ' + Math.floor(streamFullText.length / 4) + ' tokens';
+      document.getElementById('stream-state-badge').textContent = '完成';
+      document.getElementById('stream-body').classList.add('is-done');
+    }
+    function resetStream() {
+      streamRunning = false; clearTimeout(streamTimer); streamPos = 0;
+      document.getElementById('stream-start').textContent = '▶ 启动';
+      document.getElementById('stream-start').style.display = '';
+      document.getElementById('stream-stop').style.display = 'none';
+      document.getElementById('stream-status-dot').style.background = 'var(--text-faint)';
+      document.getElementById('stream-status-text').textContent = '就绪 · 点击"启动"开始生成';
+      document.getElementById('stream-state-badge').textContent = '就绪';
+      document.getElementById('stream-output').innerHTML = '<span class="caret"></span>';
+      document.getElementById('stream-tokens').textContent = '0';
+      document.getElementById('stream-speed').textContent = '0';
+      document.getElementById('stream-body').classList.remove('is-paused', 'is-done');
+    }
+
+    // --- Context chips ---
+    const ctxPool = [
+      { label: '3 条剪贴板', icon: '3', tokens: 120 },
+      { label: '技术调研', icon: '📁', tokens: 80 },
+      { label: '使用记忆', icon: '🧠', tokens: 50 },
+      { label: '截图', icon: '🖼', tokens: 200 },
+      { label: 'PDF 文档', icon: '📄', tokens: 400 },
+      { label: 'GitHub 链接', icon: '🔗', tokens: 60 },
+      { label: '会议录音', icon: '🎙', tokens: 1500 }
+    ];
+    let ctxItems = [
+      { label: '3 条剪贴板', icon: '3', tokens: 120 },
+      { label: '技术调研', icon: '📁', tokens: 80 },
+      { label: '使用记忆', icon: '🧠', tokens: 50 }
+    ];
+    function renderContext() {
+      const box = document.getElementById('context-chips');
+      if (ctxItems.length === 0) {
+        box.innerHTML = '<span style="font-size: 11.5px; color: var(--text-faint);">无上下文 · 点击下方按钮添加</span>';
+      } else {
+        box.innerHTML = ctxItems.map((c, i) => `
+          <span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px 3px 4px; background: var(--accent-tint); color: var(--accent-700); border-radius: 999px; font-size: 11.5px;">
+            <span style="width: 16px; height: 16px; border-radius: 999px; background: var(--accent-500); color: white; display: grid; place-items: center; font-size: 9px; font-weight: 700;">${c.icon}</span>
+            ${c.label}
+            <span style="opacity: 0.6; font-family: 'Geist Mono', monospace; font-size: 10px;">${c.tokens}t</span>
+            <span onclick="removeCtx(${i})" style="opacity: 0.5; cursor: pointer; margin-left: 2px;">×</span>
+          </span>
+        `).join('');
+      }
+      const total = ctxItems.reduce((a, b) => a + b.tokens, 0);
+      document.getElementById('ctx-tokens').textContent = total + ' tokens';
+      document.getElementById('ctx-total').textContent = '~' + (total + 600) + ' tokens';
+    }
+    function addCtx(label, icon, tokens) {
+      // find in pool first
+      const found = ctxPool.find(p => p.label === label);
+      if (found && !ctxItems.find(c => c.label === label)) ctxItems.push({ ...found });
+      else if (!found) ctxItems.push({ label, icon, tokens });
+      renderContext();
+    }
+    function removeCtx(i) {
+      ctxItems.splice(i, 1);
+      renderContext();
+    }
+    function resetContext() {
+      ctxItems = [
+        { label: '3 条剪贴板', icon: '3', tokens: 120 },
+        { label: '技术调研', icon: '📁', tokens: 80 },
+        { label: '使用记忆', icon: '🧠', tokens: 50 }
+      ];
+      renderContext();
+    }
+    renderContext();
+
+    // --- Usage meter ---
+    function setUsage(pct) {
+      pct = Math.max(0, Math.min(100, +pct));
+      const total = Math.floor(pct * 50); // 5000 max
+      document.getElementById('usage-num').textContent = total.toLocaleString();
+      document.getElementById('usage-fill').style.width = pct + '%';
+      document.getElementById('usage-v').textContent = pct + '%';
+      document.getElementById('usage-slider').value = pct;
+      const bar = document.getElementById('usage-bar');
+      bar.classList.remove('is-warn', 'is-danger');
+      const sub = document.getElementById('usage-sub');
+      const warn = document.getElementById('usage-warn');
+      warn.innerHTML = ''; warn.style.display = 'none';
+      if (pct >= 95) {
+        bar.classList.add('is-danger');
+        sub.innerHTML = '<b style="color: var(--status-danger);">⚠ 用量即将耗尽</b> · 剩余 ' + (5000 - total) + ' tokens';
+        warn.style.display = 'block';
+        warn.innerHTML = '<div style="background: oklch(60% 0.20 25 / 0.08); color: oklch(40% 0.20 25); border: 1px solid oklch(60% 0.20 25 / 0.18); border-radius: 12px; padding: 14px 16px; display: flex; align-items: start; gap: 12px;"><svg class="icon" viewBox="0 0 24 24" style="flex-shrink: 0; margin-top: 1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg><div style="flex: 1;"><b style="font-weight: 600; display: block; margin-bottom: 2px;">已达 ' + pct + '% · 下个月 1 号重置</b><div style="font-size: var(--type-xs); opacity: 0.9;">升级 Pro 可获 10x 用量</div><div style="display: flex; gap: 8px; margin-top: 10px;"><button class="btn btn-sm btn-primary" onclick="simulate(\'upgrade\', \'跳转升级页...\')">升级到 Pro</button><button class="btn btn-sm btn-ghost" style="color: oklch(40% 0.20 25);" onclick="setUsage(50)">本月先这样</button></div></div></div>';
+      } else if (pct >= 80) {
+        bar.classList.add('is-warn');
+        sub.innerHTML = '<b style="color: oklch(45% 0.15 70);">⚠ ' + pct + '% 已用</b> · 剩余 ' + (5000 - total) + ' tokens';
+        warn.style.display = 'block';
+        warn.innerHTML = '<div style="background: oklch(72% 0.15 70 / 0.10); color: oklch(45% 0.15 70); border: 1px solid oklch(72% 0.15 70 / 0.20); border-radius: 12px; padding: 12px 14px; display: flex; align-items: start; gap: 12px;"><svg class="icon icon-sm" viewBox="0 0 24 24" style="flex-shrink: 0; margin-top: 2px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg><div style="flex: 1;"><b style="font-weight: 600; display: block; margin-bottom: 2px;">用量接近上限</b><div style="font-size: var(--type-xs); opacity: 0.9;">剩 ' + (5000 - total) + ' tokens · 建议下月升级 Pro</div></div></div>';
+      } else {
+        sub.innerHTML = pct + '% 已用 · 预计可再撑 ' + Math.max(1, Math.floor((100 - pct) / 4)) + ' 天';
+      }
+    }
+
+    const models = [982, 198, 67];
+    const modelMax = 1500;
+    function adjModel(idx, delta) {
+      models[idx] = Math.max(0, Math.min(modelMax, models[idx] + delta));
+      document.getElementById('m' + idx).style.width = (models[idx] / modelMax * 100) + '%';
+      document.getElementById('m' + idx + '-v').textContent = models[idx];
+    }
+
+    // --- Simulate actions ---
+    function simulate(action, msg, type='info') {
+      toast(msg, type);
+    }
+
+    // init streaming badge listeners
+    document.getElementById('stream-reset').onclick = resetStream;
+
+    // === Standard form controls demos ===
+    // Switch
+    document.querySelectorAll('.switch-toggle').forEach(sw => {
+      sw.addEventListener('click', () => {
+        sw.classList.toggle('is-on');
+        const lbl = sw.parentElement.querySelector('.sw-state');
+        if (lbl) lbl.textContent = sw.classList.contains('is-on') ? 'ON' : 'OFF';
+      });
+    });
+    // Checkbox
+    document.querySelectorAll('.check-row .checkbox').forEach(cb => {
+      cb.addEventListener('click', e => {
+        cb.classList.toggle('is-on');
+        const lbl = cb.parentElement.querySelector('.lbl');
+      });
+    });
+    // Radio
+    document.querySelectorAll('.radio-group').forEach(group => {
+      group.querySelectorAll('.radio-row').forEach(row => {
+        row.addEventListener('click', () => {
+          group.querySelectorAll('.radio-row').forEach(r => r.classList.remove('is-on'));
+          row.classList.add('is-on');
+        });
+      });
+    });
+    // Slider
+    document.querySelectorAll('input[type="range"][data-live]').forEach(sl => {
+      const v = sl.parentElement.querySelector('.v');
+      sl.addEventListener('input', () => { if (v) v.textContent = sl.value; });
+    });
+
+    // Empty state demo
+    const items = [
+      { bar: 'oklch(70% 0.14 200)', p: 'https://linear.app/inbox/issue/ENG-4821/quill-mvp-shipping-plan', m: '12s · MacBook Pro' },
+      { bar: 'oklch(70% 0.14 280)', p: 'const stream = await streamClipboard({ device: "all" });', m: '32s · VS Code' },
+      { bar: 'oklch(75% 0.18 80)', p: 'screenshot-2026-09-12_08-15-32.png', m: '1m · iPhone 15' }
+    ];
+    function renderItems() {
+      document.getElementById('empty-area').innerHTML = items.map(it => `
+        <div style="display: flex; align-items: start; gap: 8px; padding: 10px; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 8px; margin: 6px 0;">
+          <div style="width: 3px; align-self: stretch; background: ${it.bar}; border-radius: 2px;"></div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: var(--type-sm); color: var(--text-strong);">${it.p}</div>
+            <div style="font-size: var(--type-xs); color: var(--text-muted); font-family: 'Geist Mono', monospace; margin-top: 2px;">${it.m}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+    function emptyOut() {
+      document.getElementById('empty-area').innerHTML = `
+        <div class="empty">
+          <div class="ico"><svg class="icon" viewBox="0 0 24 24" style="width: 28px; height: 28px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></div>
+          <h4>列表已清空</h4>
+          <p style="font-size: var(--type-sm);">所有条目已删除 · 可点"重置"恢复</p>
+          <div style="margin-top: 16px;">
+            <button class="btn btn-primary btn-sm" onclick="renderItems()">↺ 撤销 / 重置</button>
+          </div>
+        </div>
+      `;
+    }
+    renderItems();
+  </script>
+</body>
+</html>

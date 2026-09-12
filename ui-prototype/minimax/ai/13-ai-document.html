@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>13 · AI Document Workspace — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    /* === Document / Artifacts style (warm tone) === */
+    :root {
+      --accent-hue: 25;
+      --bg-page: oklch(98% 0.005 60);
+      --bg-soft: oklch(96% 0.01 60);
+      --bg-warm: oklch(94% 0.02 50);
+      --border-warm: oklch(90% 0.02 50);
+    }
+    body { background: var(--bg-page); height: 100vh; overflow: hidden;
+      background-image: radial-gradient(800px 400px at 20% 0%, oklch(78% 0.08 30 / 0.10), transparent 60%),
+                        radial-gradient(600px 300px at 80% 100%, oklch(70% 0.10 80 / 0.06), transparent 60%);
+    }
+
+    .doc-shell { display: grid; grid-template-columns: 60px 280px 380px 1fr; height: 100vh; }
+
+    /* === Rail (icons) === */
+    .doc-rail { background: oklch(96% 0.01 60); border-right: 1px solid var(--border-warm); display: flex; flex-direction: column; align-items: center; padding: 16px 0; gap: 4px; }
+    .doc-rail .mark { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(48% 0.18 25)); display: grid; place-items: center; color: white; margin-bottom: 12px; box-shadow: 0 4px 12px oklch(40% 0.15 30 / 0.3); }
+    .doc-rail .btn-rail { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: oklch(40% 0.02 60); cursor: pointer; transition: all 200ms; position: relative; }
+    .doc-rail .btn-rail:hover { background: oklch(92% 0.02 60); }
+    .doc-rail .btn-rail.is-on { background: oklch(95% 0.06 30); color: oklch(40% 0.18 30); }
+    .doc-rail .btn-rail.is-on::before { content: ''; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px; background: oklch(58% 0.18 30); border-radius: 0 3px 3px 0; }
+
+    /* === Projects sidebar === */
+    .doc-projects { background: oklch(97% 0.01 60); border-right: 1px solid var(--border-warm); display: flex; flex-direction: column; }
+    .proj-head { padding: 16px 16px 8px; }
+    .proj-head h2 { font-size: 11px; color: oklch(45% 0.02 60); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+    .proj-head .crumb { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: var(--type-sm); color: oklch(35% 0.02 60); }
+    .proj-head .crumb .arrow { color: oklch(70% 0.02 60); }
+
+    .proj-search { margin: 8px 12px; padding: 7px 10px; background: oklch(99% 0 0); border: 1px solid var(--border-warm); border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: oklch(45% 0.02 60); }
+    .proj-search input { flex: 1; font-size: 12px; color: oklch(25% 0.02 60); }
+    .proj-search .kbd { font-family: 'Geist Mono', monospace; font-size: 10px; padding: 1px 4px; background: oklch(94% 0.02 60); border-radius: 3px; }
+
+    .proj-section { padding: 12px 16px 4px; font-size: 10.5px; color: oklch(55% 0.02 60); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+    .proj-section .add { cursor: pointer; color: oklch(55% 0.18 30); font-size: 14px; padding: 0 4px; }
+    .proj-section .add:hover { color: oklch(45% 0.20 30); }
+
+    .proj-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+    .proj-item { padding: 8px 10px; border-radius: 8px; font-size: 13px; color: oklch(35% 0.02 60); cursor: pointer; display: flex; align-items: center; gap: 8px; margin-bottom: 1px; transition: all 160ms; }
+    .proj-item:hover { background: oklch(94% 0.02 60); }
+    .proj-item.is-on { background: oklch(94% 0.06 30); color: oklch(30% 0.16 30); }
+    .proj-item .ico { color: oklch(55% 0.02 60); flex-shrink: 0; }
+    .proj-item.is-on .ico { color: oklch(50% 0.16 30); }
+    .proj-item .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .proj-item .meta { font-size: 10.5px; color: oklch(55% 0.02 60); font-family: 'Geist Mono', monospace; }
+
+    .proj-foot { border-top: 1px solid var(--border-warm); padding: 12px; }
+    .proj-foot .upgrade { background: linear-gradient(135deg, oklch(78% 0.10 30), oklch(68% 0.14 50)); border-radius: 10px; padding: 12px; color: white; }
+    .proj-foot .upgrade h4 { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+    .proj-foot .upgrade p { font-size: 11px; opacity: 0.9; margin-bottom: 8px; }
+    .proj-foot .upgrade button { background: white; color: oklch(35% 0.16 30); border: none; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer; }
+
+    /* === Artifacts panel === */
+    .doc-artifacts { background: var(--bg-soft); border-right: 1px solid var(--border-warm); display: flex; flex-direction: column; }
+    .art-head { padding: 14px 16px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border-warm); }
+    .art-head h3 { font-size: 13px; color: oklch(30% 0.02 60); font-weight: 600; }
+    .art-head .grow { flex: 1; }
+    .art-head .badge { font-size: 10.5px; padding: 2px 8px; background: oklch(78% 0.10 30 / 0.18); color: oklch(40% 0.16 30); border-radius: 999px; font-family: 'Geist Mono', monospace; font-weight: 500; }
+    .art-head .icon-btn { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; color: oklch(45% 0.02 60); cursor: pointer; }
+    .art-head .icon-btn:hover { background: oklch(92% 0.02 60); color: oklch(25% 0.02 60); }
+
+    .art-tabs { display: flex; gap: 2px; padding: 6px 12px 0; border-bottom: 1px solid var(--border-warm); }
+    .art-tab { padding: 6px 10px; font-size: 11.5px; color: oklch(45% 0.02 60); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+    .art-tab:hover { color: oklch(25% 0.02 60); }
+    .art-tab.is-on { color: oklch(30% 0.16 30); border-bottom-color: oklch(58% 0.18 30); font-weight: 500; }
+    .art-tab .ico { width: 12px; height: 12px; }
+
+    .art-content { flex: 1; overflow-y: auto; padding: 16px; }
+
+    .artifact {
+      background: oklch(99% 0 0);
+      border: 1px solid var(--border-warm);
+      border-radius: 12px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      transition: all 200ms;
+    }
+    .artifact:hover { box-shadow: 0 4px 16px oklch(20% 0.02 60 / 0.06); }
+    .artifact-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-warm); background: oklch(97% 0.01 60); }
+    .artifact-head .ico { color: oklch(50% 0.16 30); }
+    .artifact-head .lbl { font-size: 12px; color: oklch(25% 0.02 60); font-weight: 500; flex: 1; }
+    .artifact-head .meta { font-size: 10.5px; color: oklch(55% 0.02 60); font-family: 'Geist Mono', monospace; }
+    .artifact-head .icon-btn { width: 22px; height: 22px; border-radius: 4px; display: grid; place-items: center; color: oklch(55% 0.02 60); cursor: pointer; }
+    .artifact-head .icon-btn:hover { background: oklch(94% 0.02 60); color: oklch(25% 0.02 60); }
+
+    .artifact-body { padding: 12px 14px; }
+    .artifact-body pre { background: oklch(15% 0.02 60); color: oklch(95% 0 0); padding: 12px; border-radius: 8px; overflow-x: auto; font-family: 'Geist Mono', monospace; font-size: 11.5px; line-height: 1.6; margin: 0; }
+    .artifact-body p { font-size: 13px; line-height: 1.7; color: oklch(30% 0.02 60); margin-bottom: 8px; }
+    .artifact-body p:last-child { margin-bottom: 0; }
+    .artifact-body table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .artifact-body th, .artifact-body td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border-warm); }
+    .artifact-body th { font-weight: 600; color: oklch(30% 0.02 60); background: oklch(96% 0.01 60); }
+
+    /* Code editor (artifact variant) */
+    .code-artifact { background: oklch(15% 0.02 60); color: oklch(95% 0 0); padding: 14px; font-family: 'Geist Mono', monospace; font-size: 12px; line-height: 1.6; }
+    .code-artifact .line { display: flex; }
+    .code-artifact .ln { color: oklch(45% 0.02 60); width: 28px; flex-shrink: 0; user-select: none; }
+    .code-artifact .kw { color: oklch(70% 0.16 350); }
+    .code-artifact .fn { color: oklch(78% 0.14 80); }
+    .code-artifact .str { color: oklch(78% 0.14 150); }
+    .code-artifact .cmt { color: oklch(55% 0.02 60); font-style: italic; }
+
+    /* Live preview */
+    .preview-artifact .preview-frame { border: 2px dashed var(--border-warm); border-radius: 8px; padding: 16px; background: oklch(99% 0 0); }
+    .preview-artifact .preview-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+    .preview-artifact .preview-bar { width: 4px; height: 32px; background: oklch(58% 0.18 30); border-radius: 2px; }
+
+    /* === Chat panel === */
+    .doc-chat { background: var(--bg-page); display: flex; flex-direction: column; min-width: 0; }
+    .chat-head { padding: 12px 20px; border-bottom: 1px solid var(--border-warm); display: flex; align-items: center; gap: 12px; }
+    .chat-head .title { font-size: 14px; color: oklch(25% 0.02 60); font-weight: 600; flex: 1; }
+    .chat-head .model { padding: 4px 10px; background: oklch(96% 0.01 60); border: 1px solid var(--border-warm); border-radius: 999px; font-size: 11.5px; color: oklch(35% 0.02 60); display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .chat-head .model:hover { background: oklch(94% 0.02 60); }
+    .chat-head .icon-btn { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: oklch(45% 0.02 60); cursor: pointer; }
+    .chat-head .icon-btn:hover { background: oklch(94% 0.02 60); }
+
+    .chat-stream { flex: 1; overflow-y: auto; padding: 24px 20px; }
+    .chat-inner { max-width: 720px; margin: 0 auto; }
+
+    .msg { display: flex; gap: 12px; margin-bottom: 24px; animation: msgIn 320ms var(--ease-out); }
+    @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .msg.user { flex-direction: row-reverse; }
+    .msg .av { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; font-weight: 600; font-size: 13px; flex-shrink: 0; }
+    .msg.user .av { background: oklch(92% 0.02 60); color: oklch(30% 0.02 60); }
+    .msg.ai .av { background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(48% 0.18 25)); color: white; }
+    .msg .body { max-width: 80%; }
+    .msg.user .body { text-align: right; }
+    .msg .bubble { padding: 12px 16px; border-radius: 14px; font-size: 14px; line-height: 1.6; }
+    .msg.user .bubble { background: oklch(92% 0.02 60); color: oklch(25% 0.02 60); }
+    .msg.ai .bubble { background: oklch(99% 0 0); border: 1px solid var(--border-warm); color: oklch(30% 0.02 60); }
+    .msg .bubble code { font-family: 'Geist Mono', monospace; font-size: 12.5px; background: oklch(94% 0.02 60); padding: 2px 5px; border-radius: 3px; }
+    .msg .bubble .artifact-ref { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: oklch(78% 0.10 30 / 0.18); color: oklch(40% 0.16 30); border-radius: 6px; font-size: 12px; font-family: 'Geist Mono', monospace; cursor: pointer; }
+    .msg .bubble .artifact-ref:hover { background: oklch(78% 0.10 30 / 0.3); }
+    .msg .meta { font-size: 11px; color: oklch(55% 0.02 60); margin-top: 4px; }
+
+    /* === Composer === */
+    .doc-composer { padding: 16px 20px 20px; border-top: 1px solid var(--border-warm); background: oklch(98% 0.005 60); }
+    .composer-box {
+      max-width: 720px; margin: 0 auto;
+      background: oklch(99% 0 0);
+      border: 1px solid var(--border-warm);
+      border-radius: 16px;
+      padding: 4px 4px 8px;
+      box-shadow: 0 2px 8px oklch(20% 0.02 60 / 0.04);
+      transition: all 200ms;
+    }
+    .composer-box:focus-within { border-color: oklch(58% 0.18 30); box-shadow: 0 2px 12px oklch(58% 0.18 30 / 0.15); }
+    .composer-box textarea { width: 100%; min-height: 44px; max-height: 240px; padding: 12px 16px; font-size: 14.5px; line-height: 1.5; border: none; outline: none; resize: none; font-family: inherit; color: oklch(25% 0.02 60); background: transparent; }
+    .composer-box textarea::placeholder { color: oklch(60% 0.02 60); }
+    .composer-foot { display: flex; align-items: center; gap: 4px; padding: 0 8px; }
+    .composer-foot .left { display: flex; gap: 2px; }
+    .composer-foot .left button { padding: 6px 10px; background: transparent; border: none; color: oklch(50% 0.02 60); font-size: 12px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    .composer-foot .left button:hover { background: oklch(94% 0.02 60); color: oklch(25% 0.02 60); }
+    .composer-foot .grow { flex: 1; }
+    .composer-foot .right { display: flex; gap: 4px; align-items: center; }
+    .composer-foot .right .send { padding: 6px 14px; background: oklch(58% 0.18 30); color: white; border: none; border-radius: 8px; font-size: 12.5px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 160ms; }
+    .composer-foot .right .send:hover { background: oklch(48% 0.18 30); }
+    .composer-foot .right .send:disabled { background: oklch(90% 0.02 60); color: oklch(60% 0.02 60); cursor: not-allowed; }
+    .composer-foot .right .count { font-size: 11px; color: oklch(55% 0.02 60); font-family: 'Geist Mono', monospace; margin-right: 4px; }
+
+    /* Typing */
+    .typing { display: inline-flex; gap: 4px; padding: 4px 0; }
+    .typing span { width: 6px; height: 6px; background: oklch(58% 0.18 30); border-radius: 50%; animation: typing 1.4s infinite; opacity: 0.4; }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+
+    /* Streaming cursor */
+    .stream-caret { display: inline-block; width: 8px; height: 16px; background: oklch(58% 0.18 30); margin-left: 2px; vertical-align: text-bottom; animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* Toast */
+    .toast-stack { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 200; }
+    .toast-x { background: oklch(20% 0.02 60); color: white; padding: 10px 16px; border-radius: 10px; font-size: 13px; animation: slideup 200ms var(--ease-spring); box-shadow: 0 8px 24px oklch(20% 0.02 60 / 0.2); }
+    @keyframes slideup { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Animations */
+    .pulse-ring { animation: pulsering 2s infinite; }
+    @keyframes pulsering { 0%, 100% { box-shadow: 0 0 0 0 oklch(58% 0.18 30 / 0.4); } 50% { box-shadow: 0 0 0 8px oklch(58% 0.18 30 / 0); } }
+  </style>
+</head>
+<body>
+  <div class="doc-shell">
+    <!-- ===== Rail ===== -->
+    <aside class="doc-rail">
+      <div class="mark"><svg viewBox="0 0 24 24" style="width:20px;height:20px;color:white;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><path d="M3 12h3l2-6 4 12 2-6h7"/></svg></div>
+      <div class="btn-rail is-on" title="对话" onclick="setActive(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+      <div class="btn-rail" title="项目" onclick="setActive(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 21V9"/></svg></div>
+      <div class="btn-rail" title="Artifacts" onclick="setActive(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+      <div class="btn-rail" title="记忆" onclick="setActive(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3 4-3 9-3 9 1.34 9 3z"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></div>
+      <div class="btn-rail" title="模板" onclick="setActive(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></div>
+      <div style="flex:1"></div>
+      <div class="btn-rail" title="设置" onclick="setActive(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></div>
+      <div class="btn-rail" title="用户"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+    </aside>
+
+    <!-- ===== Projects ===== -->
+    <aside class="doc-projects">
+      <div class="proj-head">
+        <h2>Workspace</h2>
+        <div class="crumb">ClipSync <span class="arrow">/</span> <b>Pulse 重构</b></div>
+      </div>
+
+      <div class="proj-search">
+        <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;color:oklch(60% 0.02 60);"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input placeholder="搜索项目或 Artifacts..." />
+        <span class="kbd">⌘P</span>
+      </div>
+
+      <div class="proj-section">
+        <span>对话</span>
+        <span class="add" onclick="showToast('新建对话')">+</span>
+      </div>
+      <div class="proj-list">
+        <div class="proj-item is-on">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="lbl">Pulse 视觉重构方案</span>
+          <span class="meta">2m</span>
+        </div>
+        <div class="proj-item">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="lbl">v3 协议调研</span>
+          <span class="meta">1h</span>
+        </div>
+        <div class="proj-item">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="lbl">季度复盘草稿</span>
+          <span class="meta">3h</span>
+        </div>
+        <div class="proj-item">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="lbl">招聘 JD 优化</span>
+          <span class="meta">昨天</span>
+        </div>
+      </div>
+
+      <div class="proj-section">
+        <span>Artifacts</span>
+        <span class="add" onclick="showToast('新建 Artifact')">+</span>
+      </div>
+      <div class="proj-list">
+        <div class="proj-item">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          <span class="lbl">pulse-tokens.css</span>
+          <span class="meta">4.2 KB</span>
+        </div>
+        <div class="proj-item">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 21V9"/></svg>
+          <span class="lbl">design-tokens.json</span>
+          <span class="meta">2.1 KB</span>
+        </div>
+        <div class="proj-item">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          <span class="lbl">对比表.md</span>
+          <span class="meta">1.8 KB</span>
+        </div>
+        <div class="proj-item">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/></svg>
+          <span class="lbl">v3 协议示意</span>
+          <span class="meta">SVG</span>
+        </div>
+        <div class="proj-item">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 12h18M12 3v18"/></svg>
+          <span class="lbl">数据流图</span>
+          <span class="meta">SVG</span>
+        </div>
+      </div>
+
+      <div class="proj-section">
+        <span>项目</span>
+        <span class="add" onclick="showToast('新建项目')">+</span>
+      </div>
+      <div class="proj-list" style="padding-bottom: 8px;">
+        <div class="proj-item" style="background: oklch(94% 0.02 60);">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;fill:oklch(50% 0.16 30);"><path d="M3 12h3l2-6 4 12 2-6h7"/></svg>
+          <span class="lbl">ClipSync</span>
+          <span class="meta">12</span>
+        </div>
+        <div class="proj-item">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span class="lbl">内部工具集</span>
+          <span class="meta">3</span>
+        </div>
+        <div class="proj-item">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M20 7L9 18l-5-5"/></svg>
+          <span class="lbl">Side Projects</span>
+          <span class="meta">7</span>
+        </div>
+      </div>
+
+      <div class="proj-foot">
+        <div class="upgrade">
+          <h4>⚡ 升级到 Pro</h4>
+          <p>解锁更长上下文、Artifacts 协作、优先队列</p>
+          <button onclick="showToast('已打开升级页')">查看方案</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== Artifacts ===== -->
+    <aside class="doc-artifacts">
+      <div class="art-head">
+        <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;color:oklch(50% 0.16 30);"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        <h3>Artifacts</h3>
+        <span class="badge" id="art-count">3</span>
+        <div class="grow"></div>
+        <span class="icon-btn" title="新建" onclick="newArtifact()">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 5v14M5 12h14"/></svg>
+        </span>
+        <span class="icon-btn" title="导出" onclick="showToast('已导出所有 Artifacts')">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        </span>
+        <span class="icon-btn" title="全屏" onclick="showToast('已全屏')">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/></svg>
+        </span>
+      </div>
+
+      <div class="art-tabs">
+        <div class="art-tab is-on" onclick="setArtTab(this, 'doc')">
+          <svg class="icon ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          文档
+        </div>
+        <div class="art-tab" onclick="setArtTab(this, 'code')">
+          <svg class="icon ico" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+          代码
+        </div>
+        <div class="art-tab" onclick="setArtTab(this, 'data')">
+          <svg class="icon ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          表格
+        </div>
+        <div class="art-tab" onclick="setArtTab(this, 'preview')">
+          <svg class="icon ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
+          预览
+        </div>
+      </div>
+
+      <div class="art-content" id="art-content">
+        <!-- Doc artifact -->
+        <div class="artifact" data-type="doc">
+          <div class="artifact-head">
+            <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+            <span class="lbl">Pulse 设计原则</span>
+            <span class="meta">7 章节 · 1.2 KB</span>
+            <span class="icon-btn" title="复制" onclick="showToast('已复制')"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><rect x="9" y="9" width="13" height="13" rx="2"/></svg></span>
+            <span class="icon-btn" title="下载" onclick="showToast('已下载 .md')"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></span>
+          </div>
+          <div class="artifact-body">
+            <p><strong style="color:oklch(30% 0.02 60);"># Pulse 设计原则</strong></p>
+            <p>1. <strong>单一品牌</strong> · 放弃 7 套主题，用 <code>--accent-hue</code> 驱动</p>
+            <p>2. <strong>60px 图标细栏</strong> · 替代 240px 文字侧栏</p>
+            <p>3. <strong>Halo Sidekick</strong> · AI 常驻 4 角色</p>
+            <p>4. <strong>模态收敛</strong> · 10+ → 3 类 (Sheet/Dialog/Popover)</p>
+            <p>5. <strong>oklch</strong> · 单一色彩空间</p>
+          </div>
+        </div>
+
+        <!-- Code artifact -->
+        <div class="artifact" data-type="code">
+          <div class="artifact-head">
+            <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;fill:oklch(70% 0.16 30);"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+            <span class="lbl">pulse-tokens.css</span>
+            <span class="meta">4.2 KB · 312 行</span>
+            <span class="icon-btn" title="复制" onclick="showToast('已复制')"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><rect x="9" y="9" width="13" height="13" rx="2"/></svg></span>
+            <span class="icon-btn" title="在编辑器打开" onclick="showToast('已在 VS Code 打开')"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></span>
+          </div>
+          <div class="code-artifact">
+            <div class="line"><span class="ln">1</span><span class="cmt">/* Pulse Design Tokens */</span></div>
+            <div class="line"><span class="ln">2</span><span class="kw">:root</span> {</div>
+            <div class="line"><span class="ln">3</span>&nbsp;&nbsp;--accent-hue: <span class="str">250</span>;</div>
+            <div class="line"><span class="ln">4</span>&nbsp;&nbsp;--surface-0: <span class="fn">oklch</span>(<span class="str">99% 0 0</span>);</div>
+            <div class="line"><span class="ln">5</span>&nbsp;&nbsp;--surface-1: <span class="fn">oklch</span>(<span class="str">98% 0 0</span>);</div>
+            <div class="line"><span class="ln">6</span>&nbsp;&nbsp;--accent-500: <span class="fn">oklch</span>(<span class="str">58% 0.20 var(--accent-hue)</span>);</div>
+            <div class="line"><span class="ln">7</span>&nbsp;&nbsp;--radius-md: <span class="str">10px</span>;</div>
+            <div class="line"><span class="ln">8</span>&nbsp;&nbsp;--ease-spring: <span class="fn">cubic-bezier</span>(<span class="str">0.34, 1.56, 0.64, 1</span>);</div>
+            <div class="line"><span class="ln">9</span>}</div>
+            <div class="line"><span class="ln">10</span></div>
+            <div class="line"><span class="ln">11</span><span class="cmt">/* 8 档尺寸 4 阶阴影 */</span></div>
+            <div class="line"><span class="ln">12</span>--shadow-1: <span class="str">0 1px 2px oklch(20% 0.02 270 / 0.06)</span>;</div>
+            <div class="line"><span class="ln">13</span>--shadow-2: <span class="str">0 4px 12px oklch(20% 0.02 270 / 0.08)</span>;</div>
+            <div class="line"><span class="ln">14</span>--shadow-3: <span class="str">0 12px 32px oklch(20% 0.02 270 / 0.12)</span>;</div>
+            <div class="line"><span class="ln">15</span>--shadow-glow: <span class="str">0 0 0 1px var(--accent-glow), 0 8px 24px var(--accent-glow)</span>;</div>
+            <div class="line"><span class="ln">16</span></div>
+            <div class="line"><span class="ln">17</span><span class="cmt">/* 动效 · spring + 标准缓出 */</span></div>
+            <div class="line"><span class="ln">18</span>--duration-fast: <span class="str">160ms</span>;</div>
+            <div class="line"><span class="ln">19</span>--duration-base: <span class="str">240ms</span>;</div>
+            <div class="line"><span class="ln">20</span>--duration-slow: <span class="str">400ms</span>;<span class="stream-caret"></span></div>
+          </div>
+        </div>
+
+        <!-- Table artifact -->
+        <div class="artifact" data-type="data">
+          <div class="artifact-head">
+            <svg class="icon ico" viewBox="0 0 24 24" style="width:14px;height:14px;fill:oklch(50% 0.16 150);"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            <span class="lbl">主流 agent 框架对比</span>
+            <span class="meta">5 行 · 自动生成</span>
+            <span class="icon-btn" title="导出 CSV" onclick="showToast('已导出 CSV')"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg></span>
+          </div>
+          <div class="artifact-body">
+            <table>
+              <thead><tr><th>框架</th><th>推理</th><th>工具</th><th>记忆</th></tr></thead>
+              <tbody>
+                <tr><td><b>Manus</b></td><td>★★★★★</td><td>15+</td><td>长期</td></tr>
+                <tr><td><b>Claude Agent</b></td><td>★★★★★</td><td>20+</td><td>长期 + 文件</td></tr>
+                <tr><td><b>Devin</b></td><td>★★★★</td><td>IDE 集成</td><td>会话级</td></tr>
+                <tr><td><b>Cursor Composer</b></td><td>★★★★</td><td>代码工具</td><td>项目级</td></tr>
+                <tr><td><b>Pulse</b></td><td>★★★★★</td><td>剪贴板原生</td><td>本地 + 用户</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== Chat ===== -->
+    <main class="doc-chat">
+      <div class="chat-head">
+        <svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;color:oklch(50% 0.16 30);"><path d="M3 12h3l2-6 4 12 2-6h7"/></svg>
+        <div class="title">Pulse 视觉重构方案</div>
+        <div class="model" onclick="showToast('切换模型')">
+          <span class="status-dot" style="width:6px;height:6px;border-radius:50%;background:oklch(60% 0.16 150);"></span>
+          Claude Sonnet 4.5
+          <svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;color:oklch(55% 0.02 60);"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <span class="icon-btn" onclick="showToast('已分享')" title="分享">
+          <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/></svg>
+        </span>
+        <span class="icon-btn" onclick="showToast('设置')" title="设置">
+          <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+        </span>
+      </div>
+
+      <div class="chat-stream" id="chat-stream">
+        <div class="chat-inner">
+          <div class="msg user">
+            <div class="av">C</div>
+            <div class="body">
+              <div class="bubble">基于我之前的剪贴板历史，给我出一份完整的 Pulse 视觉重构方案 · 包含 7 条设计原则 + 4 列信息架构</div>
+              <div class="meta">10:24 AM</div>
+            </div>
+          </div>
+
+          <div class="msg ai">
+            <div class="av">P</div>
+            <div class="body">
+              <div class="bubble">
+                好的，我看了你之前复制过的 oklch、shadcn-vue、Linear 的设计语言文档。基于这些我做了 3 个 Artifacts 给你：
+                <br><br>
+                📄 <span class="artifact-ref" onclick="showToast('已跳转到 文档 Artifact')">Pulse 设计原则.md</span> · 7 条核心原则
+                <br>
+                💻 <span class="artifact-ref" onclick="showToast('已跳转到 代码 Artifact')">pulse-tokens.css</span> · 完整令牌定义
+                <br>
+                📊 <span class="artifact-ref" onclick="showToast('已跳转到 表格 Artifact')">对比表</span> · 5 个主流 agent 框架
+                <br><br>
+                你看哪个先开始？需要我深入展开某一节也可以直接说。
+              </div>
+              <div class="meta">10:24 AM · 已读取 12 条剪贴板 · 用时 1.8s</div>
+            </div>
+          </div>
+
+          <div class="msg user">
+            <div class="av">C</div>
+            <div class="body">
+              <div class="bubble">先展开 <code>pulse-tokens.css</code>，再讲讲它怎么驱动整个 UI</div>
+              <div class="meta">10:25 AM</div>
+            </div>
+          </div>
+
+          <div class="msg ai">
+            <div class="av">P</div>
+            <div class="body">
+              <div class="bubble">
+                已在右侧 Artifacts 实时展开。看右边的 <code>pulse-tokens.css</code> · 我边写边讲：
+                <br><br>
+                <strong style="color:oklch(30% 0.02 60);">核心：1 个变量驱动整个品牌色</strong>
+                <pre style="background:oklch(15% 0.02 60);color:oklch(95% 0 0);padding:10px;border-radius:8px;margin:8px 0;font-family:'Geist Mono',monospace;font-size:12px;">--accent-hue: 250;  // 改这个数，所有强调色瞬间换色</pre>
+                <strong>8 档 token（300-700）覆盖所有 UI 状态</strong>：
+                <ul style="padding-left:20px;margin:8px 0;">
+                  <li><code>--accent-300</code> · 微弱背景 / hover</li>
+                  <li><code>--accent-500</code> · 主色 · 按钮、链接、focus</li>
+                  <li><code>--accent-700</code> · 高对比文字 / 重要标签</li>
+                </ul>
+                <strong>4 阶阴影</strong> · 1 (微) / 2 (卡片) / 3 (弹层) / glow (AI 强调态)
+              </div>
+              <div class="meta">10:25 AM · 实时写入 Artifact</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="doc-composer">
+        <div class="composer-box">
+          <textarea id="composer-input" placeholder="向 Pulse 提问，或 @ 引用 Artifacts..." rows="1" onkeydown="onKey(event)" oninput="autoResize(this); toggleSend()"></textarea>
+          <div class="composer-foot">
+            <div class="left">
+              <button onclick="attachFile()">
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                附件
+              </button>
+              <button onclick="showToast('引用 Artifacts')">
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+                @引用
+              </button>
+              <button onclick="toggleReasoning(this)" id="reasoning-btn">
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 3a9 9 0 0 1 9 9c0 3-1.5 5-3 6.5L17 21h-4l-.5-2h-1L11 21H7l-1-2.5C4.5 17 3 15 3 12a9 9 0 0 1 9-9z"/></svg>
+                深度推理
+              </button>
+            </div>
+            <div class="grow"></div>
+            <div class="right">
+              <span class="count" id="token-count">0 / 8K</span>
+              <button class="send" id="send-btn" onclick="sendMsg()" disabled>
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M5 12l14 0M12 5l7 7-7 7"/></svg>
+                发送
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast-stack" id="toasts"></div>
+
+  <script>
+    // === Rail active ===
+    function setActive(el) {
+      document.querySelectorAll('.doc-rail .btn-rail').forEach(b => b.classList.remove('is-on'));
+      el.classList.add('is-on');
+    }
+
+    // === Project/Artifact click ===
+    document.querySelectorAll('.proj-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const parent = item.parentElement;
+        parent.querySelectorAll('.proj-item').forEach(i => i.classList.remove('is-on'));
+        item.classList.add('is-on');
+        showToast('已加载', item.querySelector('.lbl').textContent);
+      });
+    });
+
+    // === Artifact tab ===
+    function setArtTab(tab, type) {
+      document.querySelectorAll('.art-tab').forEach(t => t.classList.remove('is-on'));
+      tab.classList.add('is-on');
+      // Filter artifacts
+      document.querySelectorAll('.artifact').forEach(a => {
+        a.style.display = (a.dataset.type === type || type === 'preview') ? '' : 'none';
+      });
+      // Update count
+      const count = document.querySelectorAll(`.artifact[data-type="${type}"]`).length;
+      document.getElementById('art-count').textContent = count;
+    }
+
+    function newArtifact() { showToast('新建 Artifact', '选择一个模板：文档 / 代码 / 表格 / SVG'); }
+
+    // === Composer ===
+    function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 240) + 'px'; }
+    function toggleSend() {
+      const v = document.getElementById('composer-input').value.trim();
+      document.getElementById('send-btn').disabled = !v;
+      document.getElementById('token-count').textContent = Math.floor(v.length / 4) + ' / 8K';
+    }
+    function onKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } }
+    function toggleReasoning(btn) { btn.classList.toggle('is-on'); if (btn.classList.contains('is-on')) { btn.style.background = 'oklch(78% 0.10 30 / 0.18)'; btn.style.color = 'oklch(40% 0.16 30)'; showToast('深度推理已开启', '将花费更多 token 但更准确'); } else { btn.style.background = ''; btn.style.color = ''; } }
+    function attachFile() { showToast('附件', '拖拽文件到此处或点击选择'); }
+
+    function sendMsg() {
+      const input = document.getElementById('composer-input');
+      const text = input.value.trim();
+      if (!text) return;
+      const stream = document.getElementById('chat-stream');
+      const inner = stream.querySelector('.chat-inner');
+      inner.insertAdjacentHTML('beforeend', `
+        <div class="msg user">
+          <div class="av">C</div>
+          <div class="body">
+            <div class="bubble">${escapeHtml(text)}</div>
+            <div class="meta">${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
+          </div>
+        </div>
+      `);
+      input.value = ''; autoResize(input); toggleSend();
+      stream.scrollTop = stream.scrollHeight;
+      // Typing
+      inner.insertAdjacentHTML('beforeend', `
+        <div class="msg ai" id="typing-msg">
+          <div class="av">P</div>
+          <div class="body">
+            <div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>
+          </div>
+        </div>
+      `);
+      stream.scrollTop = stream.scrollHeight;
+      // Response
+      setTimeout(() => {
+        const t = document.getElementById('typing-msg');
+        if (t) t.remove();
+        const replies = [
+          '好的，我看到你的需求。已为你生成新的 Artifact：<span class="artifact-ref" onclick="showToast(\'已展开\')">新文档.md</span>。',
+          '让我深入分析一下。基于你的剪贴板历史，我建议从 <code>oklch</code> 色彩空间开始。',
+          '已更新到 Artifacts 面板的代码区。运行下面命令可立即应用：<br><pre style="background:oklch(15% 0.02 60);color:oklch(95% 0 0);padding:10px;border-radius:6px;margin:6px 0;font-family:Geist Mono,monospace;font-size:11.5px;">npm install @pulse/tokens</pre>',
+          '我建议把 4 列信息架构改成 3 列，去掉那个边栏。我画了张预览图：<br><br>见右侧 <span class="artifact-ref" onclick="showToast(\'已跳转到预览\')">layout-v2.svg</span>'
+        ];
+        inner.insertAdjacentHTML('beforeend', `
+          <div class="msg ai">
+            <div class="av">P</div>
+            <div class="body">
+              <div class="bubble">${replies[Math.floor(Math.random() * replies.length)]}</div>
+              <div class="meta">${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
+            </div>
+          </div>
+        `);
+        stream.scrollTop = stream.scrollHeight;
+      }, 900 + Math.random() * 700);
+    }
+    function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    // === ⌘P ===
+    document.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p') { e.preventDefault(); document.querySelector('.proj-search input').focus(); }
+    });
+
+    // === Toast ===
+    function showToast(title, desc) {
+      const stack = document.getElementById('toasts');
+      const t = document.createElement('div');
+      t.className = 'toast-x';
+      t.innerHTML = (desc ? '<b>' + title + '</b> · ' + desc : title);
+      stack.appendChild(t);
+      setTimeout(() => { t.style.transition = 'all 200ms'; t.style.opacity = '0'; t.style.transform = 'translateY(20px)'; setTimeout(() => t.remove(), 220); }, 2400);
+    }
+
+    // Init
+    toggleSend();
+  </script>
+</body>
+</html>

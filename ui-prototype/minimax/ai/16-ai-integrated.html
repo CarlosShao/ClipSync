@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>16 · ClipSync × AI 融合 — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    :root { --accent-hue: 218; }
+
+    body { background: oklch(98% 0.004 260); color: oklch(28% 0.02 260); height: 100vh; overflow: hidden; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* === Shell === */
+    .app-shell { display: grid; grid-template-rows: 52px 1fr; height: 100vh; }
+
+    /* === Top === */
+    .top { display: flex; align-items: center; gap: 14px; padding: 0 16px; background: oklch(100% 0 0); border-bottom: 1px solid oklch(93% 0.005 260); }
+    .top .logo { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; color: oklch(20% 0.02 260); }
+    .top .logo .mark { width: 24px; height: 24px; border-radius: 7px; background: oklch(58% 0.18 var(--accent-hue)); display: grid; place-items: center; color: white; }
+    .top .app-tabs { display: flex; gap: 2px; padding: 3px; background: oklch(96% 0.004 260); border-radius: 9px; }
+    .top .app-tabs a { padding: 4px 12px; border-radius: 6px; font-size: 12.5px; color: oklch(52% 0.02 260); cursor: pointer; }
+    .top .app-tabs a.is-on { background: oklch(100% 0 0); color: oklch(20% 0.02 260); font-weight: 500; box-shadow: 0 1px 2px oklch(0% 0 0 / 0.06); }
+    .top .search-clip { flex: 1; max-width: 480px; height: 32px; padding: 0 10px 0 32px; background: oklch(96% 0.004 260); border: 1px solid transparent; border-radius: 8px; position: relative; display: flex; align-items: center; transition: all 160ms; cursor: text; }
+    .top .search-clip:focus-within { background: oklch(100% 0 0); border-color: oklch(58% 0.18 var(--accent-hue)); box-shadow: 0 0 0 3px oklch(58% 0.18 var(--accent-hue) / 0.12); }
+    .top .search-clip svg.si { position: absolute; left: 10px; color: oklch(55% 0.02 260); }
+    .top .search-clip input { flex: 1; border: none; outline: none; background: transparent; font-size: 13px; color: oklch(20% 0.02 260); font-family: inherit; }
+    .top .search-clip input::placeholder { color: oklch(60% 0.02 260); }
+    .top .search-clip .kbd { font-family: 'Geist Mono', monospace; font-size: 10.5px; color: oklch(60% 0.02 260); padding: 1px 5px; border: 1px solid oklch(86% 0.012 260); border-radius: 4px; }
+    .top .ai-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 500; background: oklch(58% 0.18 var(--accent-hue) / 0.12); color: oklch(48% 0.18 var(--accent-hue)); border: 1px solid oklch(58% 0.18 var(--accent-hue) / 0.24); cursor: pointer; transition: all 160ms; }
+    .top .ai-toggle:hover { background: oklch(58% 0.18 var(--accent-hue) / 0.18); }
+    .top .ai-toggle.is-on { background: oklch(58% 0.18 var(--accent-hue)); color: white; border-color: oklch(58% 0.18 var(--accent-hue)); }
+    .top .ai-toggle .sparkle { width: 14px; height: 14px; }
+    .top .ic-btn { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: oklch(55% 0.02 260); cursor: pointer; transition: all 160ms; }
+    .top .ic-btn:hover { background: oklch(96% 0.004 260); color: oklch(20% 0.02 260); }
+    .top .av { width: 28px; height: 28px; border-radius: 50%; background: oklch(70% 0.14 var(--accent-hue)); display: grid; place-items: center; color: white; font-size: 11px; font-weight: 600; cursor: pointer; }
+
+    /* === Body (rail + main + ai panel) === */
+    .body { display: grid; grid-template-columns: 60px 1fr 440px; min-height: 0; }
+    .body.no-ai { grid-template-columns: 60px 1fr 0; }
+
+    /* === Rail === */
+    .rail { background: oklch(99% 0.002 260); border-right: 1px solid oklch(93% 0.005 260); display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 4px; }
+    .rail .mark { width: 36px; height: 36px; border-radius: 10px; background: oklch(58% 0.18 var(--accent-hue)); display: grid; place-items: center; color: white; margin-bottom: 8px; }
+    .rail .btn { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: oklch(55% 0.02 260); cursor: pointer; transition: all 160ms; position: relative; }
+    .rail .btn:hover { background: oklch(94% 0.005 260); color: oklch(20% 0.02 260); }
+    .rail .btn.is-on { background: oklch(58% 0.18 var(--accent-hue) / 0.14); color: oklch(48% 0.18 var(--accent-hue)); }
+    .rail .btn .badge { position: absolute; top: 4px; right: 4px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: oklch(58% 0.20 25); color: white; font-size: 9px; font-weight: 600; display: grid; place-items: center; }
+    .rail .spacer { flex: 1; }
+
+    /* === Main (clipboard) === */
+    .main { background: oklch(98% 0.004 260); display: flex; flex-direction: column; min-width: 0; }
+
+    .m-head { padding: 12px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid oklch(93% 0.005 260); background: oklch(100% 0 0); }
+    .m-head h1 { font-size: 16px; color: oklch(20% 0.02 260); font-weight: 600; flex: 1; }
+    .m-head .count { font-size: 12px; color: oklch(55% 0.02 260); font-family: 'Geist Mono', monospace; }
+    .m-head .seg { display: inline-flex; background: oklch(96% 0.004 260); border-radius: 8px; padding: 3px; gap: 2px; }
+    .m-head .seg button { padding: 4px 10px; border-radius: 6px; font-size: 12px; color: oklch(55% 0.02 260); border: none; background: transparent; cursor: pointer; }
+    .m-head .seg button.is-on { background: oklch(100% 0 0); color: oklch(20% 0.02 260); font-weight: 500; box-shadow: 0 1px 2px oklch(0% 0 0 / 0.06); }
+
+    .filters { display: flex; align-items: center; gap: 6px; padding: 10px 20px; border-bottom: 1px solid oklch(93% 0.005 260); }
+    .filters .chip { padding: 4px 10px; border-radius: 999px; font-size: 12px; color: oklch(52% 0.02 260); background: oklch(100% 0 0); border: 1px solid oklch(93% 0.005 260); cursor: pointer; transition: all 160ms; display: inline-flex; align-items: center; gap: 4px; }
+    .filters .chip:hover { border-color: oklch(86% 0.012 260); }
+    .filters .chip.is-on { background: oklch(20% 0.02 260); color: white; border-color: oklch(20% 0.02 260); }
+    .filters .chip .n { font-family: 'Geist Mono', monospace; font-size: 10.5px; opacity: 0.7; }
+    .filters .grow { flex: 1; }
+    .filters .sort { font-size: 12px; color: oklch(55% 0.02 260); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+    .filters .sort:hover { color: oklch(20% 0.02 260); }
+
+    /* === Clipboard items === */
+    .items { flex: 1; overflow-y: auto; padding: 12px 20px 24px; }
+    .items .day { display: flex; align-items: center; gap: 8px; padding: 8px 0 6px; }
+    .items .day .lbl { font-size: 11px; color: oklch(55% 0.02 260); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+    .items .day .line { flex: 1; height: 1px; background: oklch(93% 0.005 260); }
+    .items .day .ct { font-size: 11px; color: oklch(60% 0.02 260); font-family: 'Geist Mono', monospace; }
+
+    .item {
+      display: block; padding: 12px 14px; min-height: 60px;
+      background: oklch(100% 0 0); border: 1px solid oklch(93% 0.005 260); border-radius: 10px;
+      margin-bottom: 8px; cursor: pointer; transition: all 200ms; box-sizing: border-box;
+    }
+    .item .ic { float: left; margin: 0 12px 8px 0; width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; }
+    .item .actions { float: right; margin-left: 8px; display: flex; flex-direction: column; gap: 4px; opacity: 0; transition: opacity 160ms; }
+    .item:hover .actions, .item.is-on .actions { opacity: 1; }
+    .item .ai-suggest { display: inline-block; margin: 2px 0 6px; }
+    .item .body { display: block; overflow: hidden; }
+    .item:hover { border-color: oklch(86% 0.012 260); box-shadow: 0 2px 8px oklch(20% 0.02 260 / 0.04); }
+    .item.is-on { border-color: oklch(58% 0.18 var(--accent-hue)); background: oklch(58% 0.18 var(--accent-hue) / 0.06); box-shadow: 0 0 0 3px oklch(58% 0.18 var(--accent-hue) / 0.14); }
+
+    .item .ic.txt { background: oklch(94% 0.04 220); color: oklch(50% 0.14 220); }
+    .item .ic.code { background: oklch(94% 0.04 280); color: oklch(50% 0.14 280); }
+    .item .ic.link { background: oklch(94% 0.04 30); color: oklch(50% 0.14 30); }
+    .item .ic.img { background: oklch(94% 0.04 150); color: oklch(50% 0.14 150); }
+    .item .ic.mail { background: oklch(94% 0.04 200); color: oklch(50% 0.14 200); }
+
+    .item .body .head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+    .item .body .src { font-size: 11.5px; color: oklch(55% 0.02 260); font-weight: 500; }
+    .item .body .dot { width: 3px; height: 3px; border-radius: 50%; background: oklch(78% 0.005 260); }
+    .item .body .time { font-size: 11.5px; color: oklch(60% 0.02 260); font-family: 'Geist Mono', monospace; }
+    .item .body .pinned { color: oklch(60% 0.16 80); }
+    .item .body .preview { font-size: 13px; color: oklch(28% 0.02 260); line-height: 1.5; word-break: break-word; }
+    .item .body .preview code { font-family: 'Geist Mono', monospace; background: oklch(94% 0.005 260); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; color: oklch(38% 0.06 280); }
+    .item .body .tags { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+    .item .body .tag { font-size: 10.5px; color: oklch(55% 0.02 260); padding: 2px 7px; border-radius: 4px; background: oklch(96% 0.004 260); }
+    .item .body .tag.ai { background: oklch(58% 0.18 var(--accent-hue) / 0.16); color: oklch(48% 0.18 var(--accent-hue)); font-weight: 500; }
+
+    .item .actions button { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: oklch(60% 0.02 260); border: none; background: transparent; cursor: pointer; }
+    .item .actions button:hover { background: oklch(94% 0.005 260); color: oklch(20% 0.02 260); }
+    .item .actions .pin.is-on { color: oklch(60% 0.16 80); }
+
+    /* === AI Panel === */
+    .ai-panel { background: oklch(100% 0 0); border-left: 1px solid oklch(93% 0.005 260); display: flex; flex-direction: column; min-width: 0; overflow: hidden; transition: all 320ms var(--ease-out); }
+    .body.no-ai .ai-panel { transform: translateX(100%); opacity: 0; pointer-events: none; }
+
+    .ai-head { padding: 12px 16px; border-bottom: 1px solid oklch(93% 0.005 260); }
+    .ai-head .row1 { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .ai-head .row1 h2 { font-size: 14px; color: oklch(20% 0.02 260); font-weight: 600; flex: 1; }
+    .ai-head .row1 .close { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: oklch(55% 0.02 260); border: none; background: transparent; cursor: pointer; }
+    .ai-head .row1 .close:hover { background: oklch(94% 0.005 260); color: oklch(20% 0.02 260); }
+    .ai-head .ctx { font-size: 11.5px; color: oklch(55% 0.02 260); padding: 4px 8px; background: oklch(96% 0.004 260); border-radius: 6px; display: inline-flex; align-items: center; gap: 5px; }
+    .ai-head .ctx strong { color: oklch(20% 0.02 260); }
+
+    /* Style tab picker */
+    .ai-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 8px 16px 12px; border-bottom: 1px solid oklch(93% 0.005 260); }
+    .ai-tab {
+      display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px;
+      background: oklch(100% 0 0); border: 1px solid oklch(93% 0.005 260); border-radius: 8px;
+      cursor: pointer; transition: all 160ms; position: relative;
+    }
+    .ai-tab:hover { border-color: oklch(86% 0.012 260); }
+    .ai-tab.is-on { background: oklch(58% 0.18 var(--accent-hue) / 0.10); border-color: oklch(58% 0.18 var(--accent-hue) / 0.32); }
+    .ai-tab.is-on::after { content: ''; position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 16px; height: 2px; background: oklch(58% 0.18 var(--accent-hue)); border-radius: 1px; }
+    .ai-tab .ic { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; }
+    .ai-tab .name { font-size: 11px; color: oklch(28% 0.02 260); font-weight: 500; }
+    .ai-tab.is-on .name { color: oklch(48% 0.18 var(--accent-hue)); font-weight: 600; }
+    .ai-tab .ref { font-size: 9.5px; color: oklch(60% 0.02 260); font-family: 'Geist Mono', monospace; }
+
+    /* AI content area (4 style views) */
+    .ai-body { flex: 1; overflow-y: auto; position: relative; }
+    .ai-view { display: none; height: 100%; }
+    .ai-view.is-on { display: flex; flex-direction: column; }
+
+    /* ===== v1 Classic view ===== */
+    .v1 { padding: 16px; gap: 14px; }
+    .v1 .picks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .v1 .pick { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: oklch(96% 0.004 260); border-radius: 8px; font-size: 12px; color: oklch(28% 0.02 260); }
+    .v1 .pick .ic { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; color: oklch(50% 0.14 220); background: oklch(94% 0.04 220); }
+    .v1 .pick .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .v1 .pick .x { color: oklch(60% 0.02 260); cursor: pointer; }
+
+    .v1 .msg { display: flex; gap: 8px; align-items: start; }
+    .v1 .msg .av { width: 26px; height: 26px; border-radius: 7px; background: oklch(58% 0.18 var(--accent-hue)); color: white; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+    .v1 .msg .bubble { background: oklch(96% 0.004 260); padding: 10px 12px; border-radius: 12px 12px 12px 4px; font-size: 12.5px; color: oklch(20% 0.02 260); line-height: 1.5; }
+    .v1 .msg.user { flex-direction: row-reverse; }
+    .v1 .msg.user .bubble { background: oklch(58% 0.18 var(--accent-hue) / 0.12); color: oklch(20% 0.02 260); border-radius: 12px 12px 4px 12px; }
+    .v1 .msg.user .av { background: oklch(70% 0.14 var(--accent-hue)); }
+
+    /* ===== v2 Artifacts view ===== */
+    .v2 { display: flex; flex-direction: column; }
+    .v2 .head { padding: 10px 16px; border-bottom: 1px solid oklch(93% 0.005 260); display: flex; align-items: center; gap: 6px; }
+    .v2 .head .t { font-size: 12.5px; color: oklch(20% 0.02 260); font-weight: 600; flex: 1; }
+    .v2 .head .t small { display: block; font-size: 10.5px; color: oklch(60% 0.02 260); font-weight: 400; font-family: 'Geist Mono', monospace; }
+    .v2 .head .tabs { display: flex; gap: 2px; }
+    .v2 .head .tabs button { padding: 4px 8px; border-radius: 5px; font-size: 11px; color: oklch(55% 0.02 260); border: none; background: transparent; cursor: pointer; }
+    .v2 .head .tabs button.is-on { background: oklch(96% 0.05 30); color: oklch(45% 0.16 30); font-weight: 500; }
+    .v2 .stream { padding: 14px 16px; background: oklch(99% 0.02 30); flex: 1; }
+    .v2 .stream pre { font-family: 'Geist Mono', monospace; font-size: 11.5px; color: oklch(28% 0.02 260); line-height: 1.6; background: oklch(100% 0 0); border: 1px solid oklch(93% 0.005 260); border-radius: 8px; padding: 12px; overflow-x: auto; }
+    .v2 .stream pre .kw { color: oklch(50% 0.16 280); font-weight: 500; }
+    .v2 .stream pre .fn { color: oklch(50% 0.16 30); }
+    .v2 .stream pre .str { color: oklch(45% 0.16 150); }
+    .v2 .stream pre .cmt { color: oklch(60% 0.02 260); font-style: italic; }
+    .v2 .stream pre .cursor { display: inline-block; width: 7px; height: 13px; background: oklch(58% 0.18 30); vertical-align: -1px; animation: blink 1s infinite; }
+    @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+    .v2 .explain { padding: 12px 16px; background: oklch(100% 0 0); border-top: 1px solid oklch(93% 0.005 260); font-size: 12px; color: oklch(35% 0.02 260); line-height: 1.55; }
+
+    /* ===== v3 Agent view ===== */
+    .v3 { background: oklch(15% 0.012 260); color: oklch(86% 0.01 260); padding: 14px; }
+    .v3 .head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .v3 .head .live { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: oklch(72% 0.16 150); font-weight: 500; }
+    .v3 .head .live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: oklch(58% 0.18 150); animation: livepulse 1.4s infinite; }
+    @keyframes livepulse { 0% { box-shadow: 0 0 0 0 oklch(58% 0.18 150 / 0.6); } 100% { box-shadow: 0 0 0 8px oklch(58% 0.18 150 / 0); } }
+    .v3 .head .t { font-size: 12px; color: oklch(86% 0.01 260); font-weight: 500; flex: 1; }
+    .v3 .head .ctrl { display: flex; gap: 4px; }
+    .v3 .head .ctrl button { width: 22px; height: 22px; border-radius: 5px; border: 1px solid oklch(28% 0.012 260); background: oklch(20% 0.014 260); color: oklch(62% 0.015 260); display: grid; place-items: center; cursor: pointer; }
+    .v3 .head .ctrl button:hover { color: white; }
+    .v3 .steps { display: flex; flex-direction: column; gap: 0; font-size: 12px; }
+    .v3 .step { position: relative; padding-left: 22px; padding-bottom: 10px; }
+    .v3 .step::before { content: ''; position: absolute; left: 8px; top: 16px; bottom: 0; width: 1.5px; background: oklch(28% 0.012 260); }
+    .v3 .step:last-child::before { display: none; }
+    .v3 .step .m { position: absolute; left: 0; top: 2px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: oklch(20% 0.014 260); border: 1.5px solid oklch(38% 0.018 260); font-size: 9.5px; color: oklch(62% 0.015 260); }
+    .v3 .step.done .m { background: oklch(58% 0.18 150); border-color: oklch(58% 0.18 150); color: white; }
+    .v3 .step.run .m { background: oklch(58% 0.18 230); border-color: oklch(58% 0.18 230); color: white; animation: mpulse 1.4s infinite; }
+    .v3 .step.err .m { background: oklch(58% 0.18 25); border-color: oklch(58% 0.18 25); color: white; }
+    @keyframes mpulse { 0% { box-shadow: 0 0 0 0 oklch(58% 0.18 230 / 0.6); } 100% { box-shadow: 0 0 0 6px oklch(58% 0.18 230 / 0); } }
+    .v3 .step .l { font-size: 12px; color: oklch(86% 0.01 260); }
+    .v3 .step.done .l { color: oklch(72% 0.01 260); }
+    .v3 .step .meta { font-size: 10.5px; color: oklch(48% 0.018 260); font-family: 'Geist Mono', monospace; margin-top: 2px; }
+    .v3 .tool { background: oklch(20% 0.014 260); border: 1px solid oklch(28% 0.012 260); border-radius: 6px; padding: 8px; margin-top: 6px; font-family: 'Geist Mono', monospace; font-size: 10.5px; color: oklch(72% 0.06 230); }
+    .v3 .tool .k { color: oklch(58% 0.18 230); }
+    .v3 .tool .v { color: oklch(72% 0.06 150); }
+
+    /* ===== v4 Search view ===== */
+    .v4 { padding: 14px; }
+    .v4 .answer { background: oklch(100% 0 0); border: 1px solid oklch(93% 0.005 260); border-radius: 12px; padding: 14px; }
+    .v4 .answer h3 { font-size: 14px; color: oklch(20% 0.02 260); font-weight: 600; margin-bottom: 8px; line-height: 1.35; }
+    .v4 .answer p { font-size: 12.5px; color: oklch(35% 0.02 260); line-height: 1.6; margin-bottom: 8px; }
+    .v4 .answer .cite { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 3px; margin: 0 1px; border-radius: 3px; background: oklch(58% 0.18 218 / 0.18); color: oklch(58% 0.18 218); font-size: 9.5px; font-weight: 600; font-family: 'Geist Mono', monospace; vertical-align: super; }
+    .v4 .srcs { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid oklch(93% 0.005 260); }
+    .v4 .src { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: oklch(96% 0.004 260); border-radius: 7px; cursor: pointer; }
+    .v4 .src:hover { background: oklch(94% 0.005 260); }
+    .v4 .src .n { width: 18px; height: 18px; border-radius: 4px; background: oklch(58% 0.18 218 / 0.18); color: oklch(58% 0.18 218); display: grid; place-items: center; font-size: 9.5px; font-weight: 600; font-family: 'Geist Mono', monospace; flex-shrink: 0; }
+    .v4 .src .t { font-size: 11.5px; color: oklch(20% 0.02 260); font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .v4 .src .h { font-size: 10.5px; color: oklch(60% 0.02 260); font-family: 'Geist Mono', monospace; }
+
+    /* AI composer */
+    .ai-compose { border-top: 1px solid oklch(93% 0.005 260); padding: 12px 14px; background: oklch(100% 0 0); }
+    .ai-compose .input { position: relative; background: oklch(96% 0.004 260); border: 1px solid oklch(93% 0.005 260); border-radius: 10px; padding: 10px 12px 10px 36px; transition: all 200ms; }
+    .ai-compose .input:focus-within { background: oklch(100% 0 0); border-color: oklch(58% 0.18 var(--accent-hue)); box-shadow: 0 0 0 3px oklch(58% 0.18 var(--accent-hue) / 0.12); }
+    .ai-compose .input svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: oklch(55% 0.02 260); }
+    .ai-compose .input input { width: 100%; border: none; outline: none; background: transparent; font-size: 13px; color: oklch(20% 0.02 260); font-family: inherit; }
+    .ai-compose .input input::placeholder { color: oklch(60% 0.02 260); }
+    .ai-compose .row2 { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+    .ai-compose .row2 .grow { flex: 1; }
+    .ai-compose .row2 .chip { padding: 3px 8px; border-radius: 999px; font-size: 10.5px; color: oklch(55% 0.02 260); background: oklch(96% 0.004 260); border: 1px solid oklch(93% 0.005 260); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+    .ai-compose .row2 .chip:hover { border-color: oklch(86% 0.012 260); color: oklch(20% 0.02 260); }
+    .ai-compose .row2 .send { width: 28px; height: 28px; border-radius: 7px; background: oklch(58% 0.18 var(--accent-hue)); color: white; border: none; display: grid; place-items: center; cursor: pointer; transition: all 160ms; }
+    .ai-compose .row2 .send:hover { transform: scale(1.05); }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); padding: 10px 16px; background: oklch(20% 0.02 260); color: white; font-size: 12.5px; border-radius: 10px; opacity: 0; pointer-events: none; transition: all 280ms var(--ease-out); z-index: 200; box-shadow: 0 8px 24px oklch(0% 0 0 / 0.3); display: flex; align-items: center; gap: 8px; }
+    .toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* Scrollbar slim */
+    .items::-webkit-scrollbar, .ai-body::-webkit-scrollbar { width: 8px; }
+    .items::-webkit-scrollbar-thumb, .ai-body::-webkit-scrollbar-thumb { background: oklch(86% 0.012 260); border-radius: 4px; }
+
+    /* AI badge in item body */
+    .ai-suggest { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; background: oklch(58% 0.18 var(--accent-hue) / 0.12); color: oklch(48% 0.18 var(--accent-hue)); font-size: 10.5px; font-weight: 500; cursor: pointer; }
+    .ai-suggest:hover { background: oklch(58% 0.18 var(--accent-hue) / 0.20); }
+    .ai-suggest svg { width: 11px; height: 11px; }
+
+  </style>
+</head>
+<body>
+
+  <div class="app-shell">
+
+    <!-- ===== Top bar ===== -->
+    <header class="top">
+      <div class="logo">
+        <div class="mark">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="8" y="8" width="12" height="12" rx="3"/>
+            <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>
+          </svg>
+        </div>
+        ClipSync
+      </div>
+      <div class="app-tabs">
+        <a class="is-on">Clipboard</a>
+        <a>Snippets</a>
+        <a>Tags</a>
+        <a>Devices</a>
+      </div>
+      <div class="search-clip" data-acts="search">
+        <svg class="si" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+        <input placeholder="Search clipboard, ⌘K to ask AI…" data-acts="search-input" />
+        <span class="kbd">⌘K</span>
+      </div>
+      <button class="ai-toggle is-on" data-acts="ai-toggle" data-on="1">
+        <svg class="sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+          <path d="M20 3v4M22 5h-4M4 17v2M5 18H3"/>
+        </svg>
+        AI Assistant
+      </button>
+      <div class="ic-btn" data-acts="notif" title="Notifications">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+        </svg>
+      </div>
+      <div class="ic-btn" data-acts="settings" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </div>
+      <div class="av" data-acts="avatar">CL</div>
+    </header>
+
+    <!-- ===== Body ===== -->
+    <div class="body" id="body">
+
+      <!-- Rail -->
+      <aside class="rail">
+        <div class="mark">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="8" y="8" width="12" height="12" rx="3"/>
+            <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>
+          </svg>
+        </div>
+        <div class="btn is-on" title="All clipboard">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="8" y="8" width="12" height="12" rx="3"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>
+          </svg>
+        </div>
+        <div class="btn" title="Text" data-acts="cat" data-cat="text">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 6.1H3M21 12.1H3M15 18.1H3"/>
+          </svg>
+        </div>
+        <div class="btn" title="Code" data-acts="cat" data-cat="code">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+          </svg>
+          <span class="badge">2</span>
+        </div>
+        <div class="btn" title="Links" data-acts="cat" data-cat="link">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+        </div>
+        <div class="btn" title="Images" data-acts="cat" data-cat="img">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+          </svg>
+        </div>
+        <div class="btn" title="Pinned" data-acts="cat" data-cat="pin">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z"/>
+          </svg>
+        </div>
+        <div class="spacer"></div>
+        <div class="btn" title="Add" data-acts="add">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+        </div>
+      </aside>
+
+      <!-- Main (clipboard list) -->
+      <main class="main">
+        <div class="m-head">
+          <h1>All Clipboard</h1>
+          <span class="count" id="item-count">142 items</span>
+          <div style="flex:1"></div>
+          <div class="seg">
+            <button class="is-on" data-acts="view" data-view="list">List</button>
+            <button data-acts="view" data-view="grid">Grid</button>
+          </div>
+        </div>
+        <div class="filters">
+          <span class="chip is-on" data-acts="filter" data-f="all">All <span class="n">142</span></span>
+          <span class="chip" data-acts="filter" data-f="text">Text <span class="n">68</span></span>
+          <span class="chip" data-acts="filter" data-f="code">Code <span class="n">24</span></span>
+          <span class="chip" data-acts="filter" data-f="link">Links <span class="n">31</span></span>
+          <span class="chip" data-acts="filter" data-f="img">Images <span class="n">19</span></span>
+          <div class="grow"></div>
+          <span class="sort" data-acts="sort">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10M11 9h7M11 13h4M3 17l3 3 3-3M6 20V4"/></svg>
+            Newest first
+          </span>
+        </div>
+        <div class="items" id="items">
+
+          <!-- Today -->
+          <div class="day"><span class="lbl">Today</span><div class="line"></div><span class="ct">5</span></div>
+
+          <div class="item" data-id="i1" data-cat="code" data-pick="code" data-ai="v2" data-acts="item">
+            <div class="ic code"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+            <div class="body">
+              <div class="head">
+                <span class="src">VS Code</span>
+                <span class="dot"></span>
+                <span class="time">2 min ago</span>
+                <span class="ai-suggest" data-acts="ask" data-ai="v2">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                  Explain & refactor
+                </span>
+              </div>
+              <div class="preview"><code>async function syncClipboard(deviceId: string) {</code> try { const items = await db.clipboard.where('deviceId').notEqual(deviceId).toArray(); return ws.send(JSON.stringify({ type: 'bulk', items })); } catch (e) { console.error(e); return null; } <code>}</code></div>
+              <div class="tags">
+                <span class="tag">TypeScript</span>
+                <span class="tag ai">★ AI suggested</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="pin is-on" title="Pinned"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 2v6h2v6h-4l-2 8H8l-2-8H2V8h2V2h12z"/></svg></button>
+              <button title="Copy" data-acts="copy-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+              <button title="More"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="item" data-id="i2" data-cat="link" data-pick="link" data-ai="v4" data-acts="item">
+            <div class="ic link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+            <div class="body">
+              <div class="head">
+                <span class="src">Safari</span>
+                <span class="dot"></span>
+                <span class="time">14 min ago</span>
+                <span class="ai-suggest" data-acts="ask" data-ai="v4">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                  Summarize
+                </span>
+              </div>
+              <div class="preview">Tauri 2.0 stable released — what's new for desktop apps, including the new plugin architecture, mobile support, and the migration path from 1.x. The biggest change is the move to a per-window scoped runtime…</div>
+              <div class="tags">
+                <span class="tag">tauri.app</span>
+                <span class="tag">rust</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="pin" title="Pin"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 2v6h2v6h-4l-2 8H8l-2-8H2V8h2V2h12z"/></svg></button>
+              <button title="Copy" data-acts="copy-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+              <button title="More"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="item" data-id="i3" data-cat="text" data-pick="text" data-ai="v3" data-acts="item">
+            <div class="ic txt"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 6.1H3M21 12.1H3M15 18.1H3"/></svg></div>
+            <div class="body">
+              <div class="head">
+                <span class="src">Notion</span>
+                <span class="dot"></span>
+                <span class="time">42 min ago</span>
+                <span class="ai-suggest" data-acts="ask" data-ai="v3">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                  Summarize & tag
+                </span>
+              </div>
+              <div class="preview">Q3 OKR 复盘会议纪要：讨论了 Pulse 设计系统从 v1 到 v2 的迁移路径，确认 10 月底完成桌面端 alpha 发布，技术调研显示 Rust + Tauri 2 在冷启动和内存占用上明显优于 Electron。会议确定 v3 Pulse 设计语言将 oklch 色相作为可调参数…</div>
+              <div class="tags">
+                <span class="tag">会议纪要</span>
+                <span class="tag">Pulse</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="pin" title="Pin"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 2v6h2v6h-4l-2 8H8l-2-8H2V8h2V2h12z"/></svg></button>
+              <button title="Copy" data-acts="copy-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+              <button title="More"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="item" data-id="i4" data-cat="text" data-pick="text" data-ai="v1" data-acts="item">
+            <div class="ic mail"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></div>
+            <div class="body">
+              <div class="head">
+                <span class="src">Mail</span>
+                <span class="dot"></span>
+                <span class="time">1 h ago</span>
+                <span class="ai-suggest" data-acts="ask" data-ai="v1">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                  Reply
+                </span>
+              </div>
+              <div class="preview">carlos@minimaxi.io — Pulse design review tomorrow at 3pm. Please bring the v3 color system spec and the agent task flow demo. We need to align on the AI module integration before sprint planning…</div>
+              <div class="tags">
+                <span class="tag">email</span>
+                <span class="tag">会议</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="pin" title="Pin"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 2v6h2v6h-4l-2 8H8l-2-8H2V8h2V2h12z"/></svg></button>
+              <button title="Copy" data-acts="copy-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+              <button title="More"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            </div>
+          </div>
+
+          <!-- Yesterday -->
+          <div class="day"><span class="lbl">Yesterday</span><div class="line"></div><span class="ct">12</span></div>
+
+          <div class="item" data-id="i5" data-cat="code" data-pick="code" data-ai="v2" data-acts="item">
+            <div class="ic code"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+            <div class="body">
+              <div class="head">
+                <span class="src">Terminal</span>
+                <span class="dot"></span>
+                <span class="time">Yesterday 22:14</span>
+              </div>
+              <div class="preview"><code>pnpm add @tauri-apps/api @tauri-apps/plugin-store @tauri-apps/plugin-fs</code></div>
+              <div class="tags">
+                <span class="tag">shell</span>
+                <span class="tag">Tauri</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="pin" title="Pin"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 2v6h2v6h-4l-2 8H8l-2-8H2V8h2V2h12z"/></svg></button>
+              <button title="Copy" data-acts="copy-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+              <button title="More"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="item" data-id="i6" data-cat="link" data-pick="link" data-ai="v4" data-acts="item">
+            <div class="ic link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+            <div class="body">
+              <div class="head">
+                <span class="src">Arc</span>
+                <span class="dot"></span>
+                <span class="time">Yesterday 18:02</span>
+              </div>
+              <div class="preview">oklch() — CSS function: A new way to define colors. oklch stands for Oklab Lightness Chroma Hue. Unlike HSL or RGB, it is perceptually uniform: a given numerical change produces the same perceived change…</div>
+              <div class="tags">
+                <span class="tag">css-tricks.com</span>
+                <span class="tag">design</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="pin" title="Pin"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 2v6h2v6h-4l-2 8H8l-2-8H2V8h2V2h12z"/></svg></button>
+              <button title="Copy" data-acts="copy-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+              <button title="More"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="item" data-id="i7" data-cat="img" data-pick="text" data-ai="v1" data-acts="item">
+            <div class="ic img"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>
+            <div class="body">
+              <div class="head">
+                <span class="src">Screenshot</span>
+                <span class="dot"></span>
+                <span class="time">Yesterday 16:30</span>
+              </div>
+              <div class="preview">[Image · 1280×720 · "Pulse v3 design exploration: agent task flow with live activity panel"]</div>
+              <div class="tags">
+                <span class="tag">image</span>
+                <span class="tag">design</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="pin" title="Pin"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 2v6h2v6h-4l-2 8H8l-2-8H2V8h2V2h12z"/></svg></button>
+              <button title="Copy" data-acts="copy-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+              <button title="More"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="item" data-id="i8" data-cat="text" data-pick="text" data-ai="v1" data-acts="item">
+            <div class="ic txt"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 6.1H3M21 12.1H3M15 18.1H3"/></svg></div>
+            <div class="body">
+              <div class="head">
+                <span class="src">Slack · #design</span>
+                <span class="dot"></span>
+                <span class="time">Yesterday 14:18</span>
+              </div>
+              <div class="preview">Carlos: 大家看一下 AI 模块的 4 套风格对比 → [link] 我倾向 v3 (Agent 任务流)，因为 ClipSync 的核心场景是跨设备同步 + 自动化，Agent 风格最契合</div>
+              <div class="tags">
+                <span class="tag">Slack</span>
+                <span class="tag">设计</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="pin" title="Pin"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 2v6h2v6h-4l-2 8H8l-2-8H2V8h2V2h12z"/></svg></button>
+              <button title="Copy" data-acts="copy-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+              <button title="More"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+            </div>
+          </div>
+
+        </div>
+      </main>
+
+      <!-- AI Panel -->
+      <aside class="ai-panel" id="ai-panel">
+        <div class="ai-head">
+          <div class="row1">
+            <h2>AI Assistant</h2>
+            <button class="close" data-acts="close-ai" title="Close panel">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div class="ctx" id="ai-ctx">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l2 2"/></svg>
+            Ready · <strong>select a clipboard item</strong>
+          </div>
+        </div>
+
+        <div class="ai-tabs">
+          <div class="ai-tab is-on" data-acts="style-tab" data-style="v1" title="ChatGPT-style">
+            <div class="ic" style="background: oklch(94% 0.04 220); color: oklch(50% 0.14 220)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div class="name">Classic</div>
+            <div class="ref">v1</div>
+          </div>
+          <div class="ai-tab" data-acts="style-tab" data-style="v2" title="Claude Artifacts-style">
+            <div class="ic" style="background: oklch(94% 0.04 30); color: oklch(50% 0.14 30)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <div class="name">Artifacts</div>
+            <div class="ref">v2</div>
+          </div>
+          <div class="ai-tab" data-acts="style-tab" data-style="v3" title="Manus Agent-style">
+            <div class="ic" style="background: oklch(20% 0.014 260); color: oklch(72% 0.16 230)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6M4.22 4.22l4.24 4.24m7.08 7.08 4.24 4.24M1 12h6m10 0h6M4.22 19.78l4.24-4.24m7.08-7.08 4.24-4.24"/></svg>
+            </div>
+            <div class="name">Agent</div>
+            <div class="ref">v3</div>
+          </div>
+          <div class="ai-tab" data-acts="style-tab" data-style="v4" title="Perplexity Search-style">
+            <div class="ic" style="background: oklch(94% 0.04 218); color: oklch(50% 0.14 218)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </div>
+            <div class="name">Search</div>
+            <div class="ref">v4</div>
+          </div>
+        </div>
+
+        <div class="ai-body">
+
+          <!-- v1 Classic -->
+          <div class="ai-view v1 is-on" data-view="v1">
+            <div class="picks">
+              <div class="pick" id="v1-pick">
+                <span class="ic"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 6.1H3M21 12.1H3M15 18.1H3"/></svg></span>
+                <span class="t">Email from carlos@minimaxi.io</span>
+                <span class="x" data-acts="unpick">×</span>
+              </div>
+            </div>
+            <div class="msg user">
+              <div class="av">CL</div>
+              <div class="bubble">帮我起草一封回复：确认明天下午 3 点 design review，我会带上 v3 color system spec 和 agent task flow demo。</div>
+            </div>
+            <div class="msg">
+              <div class="av">P</div>
+              <div class="bubble">好的，已基于你最近的邮件语气起草了回复草稿。基调：简洁、确认、附加准备事项清单。是否要我把它直接复制到剪贴板？</div>
+            </div>
+            <div class="msg user">
+              <div class="av">CL</div>
+              <div class="bubble">复制吧，顺便加上 oklch 调研结果那段。</div>
+            </div>
+            <div class="msg">
+              <div class="av">P</div>
+              <div class="bubble">
+                已加入。<br>
+                <strong>主题：</strong>Re: Pulse design review tomorrow<br>
+                <strong>正文：</strong>Carlos，<br>
+                确认明天下午 3 点。我会准备：<br>
+                1. v3 color system spec (oklch token + 4 hue 适配)<br>
+                2. Agent task flow 实时 demo<br>
+                3. AI 模块 4 套风格对比<br>
+                — Carlos
+              </div>
+            </div>
+          </div>
+
+          <!-- v2 Artifacts -->
+          <div class="ai-view v2" data-view="v2">
+            <div class="head">
+              <div class="t">
+                syncClipboard.ts
+                <small>Refactored · streaming</small>
+              </div>
+              <div class="tabs">
+                <button class="is-on" data-acts="art-tab" data-t="code">Code</button>
+                <button data-acts="art-tab" data-t="explain">Explain</button>
+              </div>
+            </div>
+            <div class="stream">
+<pre><span class="kw">async function</span> <span class="fn">syncClipboard</span>(deviceId: <span class="kw">string</span>) {
+  <span class="kw">try</span> {
+    <span class="kw">const</span> items = <span class="kw">await</span> db.clipboard
+      .<span class="fn">where</span>(<span class="str">'deviceId'</span>)
+      .<span class="fn">notEqual</span>(deviceId)
+      .<span class="fn">toArray</span>();
+    <span class="cmt">// Use a single batched message instead of N</span>
+    <span class="kw">return</span> ws.<span class="fn">send</span>(<span class="kw">JSON</span>.<span class="fn">stringify</span>({
+      type: <span class="str">'bulk'</span>,
+      items
+    }));
+  } <span class="kw">catch</span> (e) {
+    logger.<span class="fn">error</span>(<span class="str">'sync failed'</span>, { deviceId, e });
+    <span class="cmt">// [AI] Add retry with exponential backoff</span>
+    <span class="kw">return null</span>;
+  }
+}<span class="cursor"></span></pre>
+            </div>
+            <div class="explain">
+              <strong>AI 建议：</strong>原函数会一次性拉取所有非本设备的剪贴板条目。优化建议：① 分批发送（每 100 条一帧）避免 WS 消息体过大；② catch 块加 retry with exponential backoff；③ 用 localStorage 缓存 deviceId 避免每次查询。
+            </div>
+          </div>
+
+          <!-- v3 Agent -->
+          <div class="ai-view v3" data-view="v3">
+            <div class="head">
+              <span class="live">Running</span>
+              <span class="t">Auto-tag & organize</span>
+              <div class="ctrl">
+                <button title="Pause"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+                <button title="Stop"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
+              </div>
+            </div>
+            <div class="steps">
+              <div class="step done">
+                <div class="m"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+                <div class="l">Read clipboard item</div>
+                <div class="meta">0.3s · 142 chars</div>
+              </div>
+              <div class="step done">
+                <div class="m"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+                <div class="l">Classify type (meeting notes)</div>
+                <div class="meta">0.8s · 96% confidence</div>
+              </div>
+              <div class="step run">
+                <div class="m"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2" fill="currentColor"/></svg></div>
+                <div class="l">Extract action items & dates</div>
+                <div class="meta">running…</div>
+                <div class="tool">
+                  <div><span class="k">→</span> extract_entities(text, schema=<span class="v">"meeting"</span>)</div>
+                  <div><span class="k">←</span> { actions: <span class="v">3</span>, dates: [<span class="v">"10/31"</span>], owner: <span class="v">"carlos"</span> }</div>
+                </div>
+              </div>
+              <div class="step">
+                <div class="m">4</div>
+                <div class="l">Auto-tag with project</div>
+              </div>
+              <div class="step">
+                <div class="m">5</div>
+                <div class="l">Suggest related snippets</div>
+              </div>
+              <div class="step">
+                <div class="m">6</div>
+                <div class="l">Write back to ClipSync</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- v4 Search -->
+          <div class="ai-view v4" data-view="v4">
+            <div class="answer">
+              <h3>Tauri 2.0 关键更新摘要</h3>
+              <p>Tauri 2.0 stable 标志着从桌面优先扩展到移动端。最重要的架构变化是从全局 runtime 改为<strong> per-window scoped runtime</strong><span class="cite">1</span>，每个窗口独立管理自己的 Webview 和事件循环。这意味着资源占用更低、隔离性更强，但也要求开发者重新设计全局状态管理。</p>
+              <p>插件系统从 1.x 的单一 plugin-api 改为<strong> manifest-based</strong><span class="cite">2</span>，每个插件在 Cargo.toml 中声明 capabilities，前端通过 `@tauri-apps/plugin-*` 命名空间引入。冷启动时间从 1.x 的 ~300ms 降到 ~120ms (Linux, empty window)<span class="cite">3</span>。</p>
+              <div class="srcs">
+                <div class="src" data-acts="src-open">
+                  <span class="n">1</span>
+                  <span class="t">Tauri 2.0 — Window Scoped Runtime</span>
+                  <span class="h">v2.tauri.app</span>
+                </div>
+                <div class="src" data-acts="src-open">
+                  <span class="n">2</span>
+                  <span class="t">Plugin manifest & capabilities</span>
+                  <span class="h">tauri.app/v1/guides</span>
+                </div>
+                <div class="src" data-acts="src-open">
+                  <span class="n">3</span>
+                  <span class="t">Tauri 2.0 benchmarks: cold start</span>
+                  <span class="h">github.com/tauri-apps</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- AI Composer -->
+        <div class="ai-compose">
+          <div class="input">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+            </svg>
+            <input data-acts="ai-input" placeholder="Ask AI to process the selected item…" />
+          </div>
+          <div class="row2">
+            <span class="chip" data-acts="ai-act" data-a="explain">Explain</span>
+            <span class="chip" data-acts="ai-act" data-a="translate">Translate</span>
+            <span class="chip" data-acts="ai-act" data-a="refactor">Refactor</span>
+            <span class="chip" data-acts="ai-act" data-a="summarize">Summarize</span>
+            <div class="grow"></div>
+            <button class="send" data-acts="ai-send" title="Send (Enter)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+      </aside>
+
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    <span id="toast-msg">Copied</span>
+  </div>
+
+  <script>
+    // === Toast ===
+    const toast = document.getElementById('toast');
+    const toastMsg = document.getElementById('toast-msg');
+    let toastT;
+    function showToast(msg) {
+      toastMsg.textContent = msg;
+      toast.classList.add('is-on');
+      clearTimeout(toastT);
+      toastT = setTimeout(() => toast.classList.remove('is-on'), 1800);
+    }
+
+    // === App tabs ===
+    document.querySelectorAll('.app-tabs a').forEach(a => {
+      a.addEventListener('click', () => {
+        document.querySelectorAll('.app-tabs a').forEach(x => x.classList.remove('is-on'));
+        a.classList.add('is-on');
+        showToast(`→ ${a.textContent}`);
+      });
+    });
+
+    // === Rail buttons ===
+    document.querySelectorAll('.rail .btn').forEach(b => {
+      b.addEventListener('click', () => {
+        if (b.dataset.cat) {
+          document.querySelectorAll('.rail .btn').forEach(x => x.classList.remove('is-on'));
+          b.classList.add('is-on');
+          const cat = b.dataset.cat;
+          const chip = document.querySelector(`.filters [data-f="${cat}"]`);
+          if (chip) {
+            document.querySelectorAll('.filters .chip').forEach(x => x.classList.remove('is-on'));
+            chip.classList.add('is-on');
+          }
+          showToast(`Filter → ${cat}`);
+        } else if (b.dataset.acts === 'add') {
+          showToast('+ Add new snippet');
+        } else {
+          document.querySelectorAll('.rail .btn').forEach(x => x.classList.remove('is-on'));
+          b.classList.add('is-on');
+        }
+      });
+    });
+
+    // === Filter chips ===
+    document.querySelectorAll('[data-acts="filter"]').forEach(c => {
+      c.addEventListener('click', () => {
+        document.querySelectorAll('[data-acts="filter"]').forEach(x => x.classList.remove('is-on'));
+        c.classList.add('is-on');
+        showToast(`Filter → ${c.textContent.trim().split(' ')[0]}`);
+      });
+    });
+
+    // === View seg ===
+    document.querySelectorAll('[data-acts="view"]').forEach(b => {
+      b.addEventListener('click', () => {
+        b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('is-on'));
+        b.classList.add('is-on');
+      });
+    });
+
+    // === Style tabs ===
+    document.querySelectorAll('[data-acts="style-tab"]').forEach(t => {
+      t.addEventListener('click', () => {
+        const style = t.dataset.style;
+        document.querySelectorAll('[data-acts="style-tab"]').forEach(x => x.classList.remove('is-on'));
+        t.classList.add('is-on');
+        document.querySelectorAll('.ai-view').forEach(v => v.classList.remove('is-on'));
+        const view = document.querySelector(`.ai-view[data-view="${style}"]`);
+        if (view) view.classList.add('is-on');
+        showToast(`AI style → ${t.querySelector('.name').textContent}`);
+      });
+    });
+
+    // === Item click → select + auto-pick + auto-style ===
+    const aiCtx = document.getElementById('ai-ctx');
+    let selectedId = null;
+    document.querySelectorAll('[data-acts="item"]').forEach(item => {
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return; // ignore button clicks
+        document.querySelectorAll('[data-acts="item"]').forEach(x => x.classList.remove('is-on'));
+        item.classList.add('is-on');
+        selectedId = item.dataset.id;
+        const src = item.querySelector('.src').textContent;
+        const ai = item.dataset.ai;
+        const cat = item.dataset.cat;
+
+        // Update AI context badge
+        const labels = { code: 'Code', link: 'Link', text: 'Text', img: 'Image', mail: 'Email' };
+        aiCtx.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l2 2"/></svg> Processing <strong>${labels[cat] || cat}</strong> from <strong>${src}</strong>`;
+
+        // Auto-switch to recommended AI style
+        document.querySelectorAll('[data-acts="style-tab"]').forEach(x => x.classList.remove('is-on'));
+        const tab = document.querySelector(`[data-acts="style-tab"][data-style="${ai}"]`);
+        if (tab) tab.classList.add('is-on');
+        document.querySelectorAll('.ai-view').forEach(v => v.classList.remove('is-on'));
+        const view = document.querySelector(`.ai-view[data-view="${ai}"]`);
+        if (view) view.classList.add('is-on');
+
+        showToast(`→ Selected: ${src}`);
+      });
+    });
+
+    // === Ask AI suggestion badge ===
+    document.querySelectorAll('[data-acts="ask"]').forEach(b => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const item = b.closest('[data-acts="item"]');
+        if (item) item.click();
+        const ai = b.dataset.ai;
+        const names = { v1: 'Classic', v2: 'Artifacts', v3: 'Agent', v4: 'Search' };
+        showToast(`AI ${names[ai]} → analyzing…`);
+      });
+    });
+
+    // === Unpick ===
+    document.querySelectorAll('[data-acts="unpick"]').forEach(x => {
+      x.addEventListener('click', () => {
+        showToast('× Removed from AI context');
+      });
+    });
+
+    // === AI send ===
+    document.querySelector('[data-acts="ai-send"]').addEventListener('click', () => {
+      const input = document.querySelector('[data-acts="ai-input"]');
+      const q = input.value.trim();
+      if (!q) { showToast('Type something first'); return; }
+      showToast(`→ AI thinking: ${q.substring(0, 30)}…`);
+      input.value = '';
+    });
+
+    document.querySelector('[data-acts="ai-input"]').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.querySelector('[data-acts="ai-send"]').click();
+      }
+    });
+
+    // === AI act chips ===
+    document.querySelectorAll('[data-acts="ai-act"]').forEach(c => {
+      c.addEventListener('click', () => {
+        showToast(`→ ${c.textContent.trim()}…`);
+      });
+    });
+
+    // === Artifacts tab switch ===
+    document.querySelectorAll('[data-acts="art-tab"]').forEach(b => {
+      b.addEventListener('click', () => {
+        b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('is-on'));
+        b.classList.add('is-on');
+        const t = b.dataset.t;
+        const stream = b.closest('.v2').querySelector('.stream');
+        const explain = b.closest('.v2').querySelector('.explain');
+        if (t === 'code') {
+          stream.style.display = '';
+          explain.style.display = '';
+        } else {
+          stream.style.display = 'none';
+          explain.style.display = '';
+          explain.innerHTML = '<strong>代码解释：</strong>本函数负责把本机之外的剪贴板条目通过 WebSocket 批量发送给其他设备。核心要点：① 拉取用 Dexie 索引查询（deviceId 不等于当前）；② 序列化后一次性 WS 发送；③ 错误处理用 try-catch 但没 retry。优化方向：批量 + 指数退避 + 断线重连后的增量同步。';
+        }
+      });
+    });
+
+    // === AI panel toggle ===
+    const aiToggle = document.querySelector('[data-acts="ai-toggle"]');
+    const body = document.getElementById('body');
+    aiToggle.addEventListener('click', () => {
+      const on = aiToggle.dataset.on === '1';
+      if (on) {
+        aiToggle.dataset.on = '0';
+        aiToggle.classList.remove('is-on');
+        body.classList.add('no-ai');
+        showToast('AI Assistant hidden');
+      } else {
+        aiToggle.dataset.on = '1';
+        aiToggle.classList.add('is-on');
+        body.classList.remove('no-ai');
+        showToast('AI Assistant shown');
+      }
+    });
+
+    document.querySelector('[data-acts="close-ai"]').addEventListener('click', () => {
+      aiToggle.click();
+    });
+
+    // === Copy item ===
+    document.querySelectorAll('[data-acts="copy-item"]').forEach(b => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showToast('📋 Copied to clipboard');
+      });
+    });
+
+    // === Source open ===
+    document.querySelectorAll('[data-acts="src-open"]').forEach(s => {
+      s.addEventListener('click', () => {
+        showToast('→ Opening source in browser');
+      });
+    });
+
+    // === ⌘K ===
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        document.querySelector('[data-acts="ai-input"]').focus();
+      }
+      if (e.key === 'Escape') {
+        const input = document.querySelector('[data-acts="ai-input"]');
+        if (document.activeElement === input) input.blur();
+      }
+    });
+
+    // === Init: auto-select first code item (i1) on load to demonstrate ===
+    setTimeout(() => {
+      const firstItem = document.querySelector('[data-acts="item"][data-id="i1"]');
+      if (firstItem) firstItem.click();
+    }, 200);
+
+    // === Notif / settings / avatar / search / sort ===
+    document.querySelector('[data-acts="notif"]').addEventListener('click', () => showToast('🔔 3 new notifications'));
+    document.querySelector('[data-acts="settings"]').addEventListener('click', () => showToast('⚙️ Settings (not in scope)'));
+    document.querySelector('[data-acts="avatar"]').addEventListener('click', () => showToast('👤 Account menu'));
+    document.querySelector('[data-acts="sort"]').addEventListener('click', () => showToast('↕ Sort → Newest first'));
+
+    document.querySelector('[data-acts="search-input"]').addEventListener('focus', () => {
+      if (!selectedId) showToast('💡 Tip: Select a clipboard item, then ask AI');
+    });
+  </script>
+</body>
+</html>

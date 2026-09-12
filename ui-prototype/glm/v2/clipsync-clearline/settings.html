@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · 设置</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="settings">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-left">
+      <span class="brand-mark"><i data-ic="clipboard-list"></i></span>
+      <span class="brand-word">ClipSync</span>
+      <span class="tb-sep"></span>
+      <span class="tb-crumb">设置</span>
+    </div>
+    <button class="cmdk" id="cmdkBtn"><i data-ic="search"></i><span>搜索或命令…</span><kbd>Ctrl K</kbd></button>
+    <div class="tb-right">
+      <button class="tb-btn ai-trigger" id="aiBtn" title="AI 助手 · Ctrl+Shift+A"><i data-ic="sparkles"></i><span>AI</span></button>
+      <button class="tb-btn" id="qpBtn" title="快速粘贴 · Ctrl+Shift+V"><i data-ic="panel-top"></i></button>
+      <button class="tb-btn" id="themeBtn" title="切换明暗"><i data-ic="moon"></i></button>
+      <button class="tb-btn" id="bellBtn" title="通知"><i data-ic="bell"></i><i class="dot" id="bellDot"></i></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn win" data-win="min"><i data-ic="minus"></i></button>
+      <button class="tb-btn win" data-win="max"><i data-ic="square"></i></button>
+      <button class="tb-btn win close" data-win="close"><i data-ic="x"></i></button>
+    </div>
+  </header>
+  <aside class="app-nav">
+    <a class="nav-item" data-nav="clipboard" href="index.html"><i data-ic="clipboard-list"></i><span>剪贴板</span><kbd>Ctrl 1</kbd></a>
+    <a class="nav-item" data-nav="favorites" href="favorites.html"><i data-ic="star"></i><span>收藏</span><kbd>Ctrl 2</kbd></a>
+    <a class="nav-item" data-nav="templates" href="templates.html"><i data-ic="layout-template"></i><span>模板</span><kbd>Ctrl 3</kbd></a>
+    <a class="nav-item" data-nav="devices" href="devices.html"><i data-ic="laptop"></i><span>设备</span><kbd>Ctrl 4</kbd></a>
+    <div class="nav-sec">系统</div>
+    <a class="nav-item" data-nav="settings" href="settings.html"><i data-ic="settings-2"></i><span>设置</span><kbd>Ctrl ,</kbd></a>
+    <div class="nav-foot">
+      <div class="sync-pill"><i class="pulse"></i><span>已同步 · 3 台设备</span></div>
+      <div class="nav-ver">v0.4.2 · clearline</div>
+    </div>
+  </aside>
+  <main class="app-main">
+    <div class="page reveal">
+
+      <div class="page-head">
+        <div>
+          <div class="page-title">设置</div>
+          <div class="page-sub">偏好保存在本机 · 每张卡片独立保存 · 同步类设置将下发到全部设备</div>
+        </div>
+        <div class="page-acts">
+          <button class="btn" data-ai="审查设置" data-ai-target="当前设置页的开关、快捷键与隐私项是否合理"><i data-ic="sparkles"></i>审查设置</button>
+        </div>
+      </div>
+
+      <div class="set-layout">
+        <nav class="set-nav" id="setNav">
+          <a href="#sec-general" class="active"><i data-ic="settings-2" data-size="13"></i>通用</a>
+          <a href="#sec-appearance"><i data-ic="palette" data-size="13"></i>外观</a>
+          <a href="#sec-sync"><i data-ic="refresh-cw" data-size="13"></i>同步</a>
+          <a href="#sec-hotkey"><i data-ic="keyboard" data-size="13"></i>快捷键</a>
+          <a href="#sec-vars"><i data-ic="variable" data-size="13"></i>模板变量</a>
+          <a href="#sec-ai"><i data-ic="sparkles" data-size="13"></i>AI 模型</a>
+          <a href="#sec-aisess"><i data-ic="message-square" data-size="13"></i>AI 会话</a>
+          <a href="#sec-sub"><i data-ic="credit-card" data-size="13"></i>订阅</a>
+          <a href="#sec-data"><i data-ic="database" data-size="13"></i>数据管理</a>
+          <a href="#sec-notify"><i data-ic="bell" data-size="13"></i>通知</a>
+          <a href="#sec-privacy"><i data-ic="shield" data-size="13"></i>隐私安全</a>
+          <a href="#sec-about"><i data-ic="info" data-size="13"></i>关于</a>
+        </nav>
+
+        <div>
+
+          <section class="set-group" id="sec-general">
+            <h3 class="gt">通用</h3>
+            <p class="gd">启动与语言</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt">开机自启</div><div class="rd">登录系统后自动启动 ClipSync 并常驻托盘</div></div>
+              <label class="switch"><input type="checkbox" id="swAutostart" checked><span class="tr"></span><span class="th"></span></label>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">语言</div><div class="rd">界面显示语言 · English 翻译覆盖中</div></div>
+              <select class="input" id="selLang" style="width:150px">
+                <option selected>简体中文</option>
+                <option>English</option>
+              </select>
+            </div>
+            <div class="set-save"><button class="btn btn-acc btn-sm" id="saveGeneral"><i data-ic="check" data-size="13"></i>保存通用设置</button></div>
+          </section>
+
+          <section class="set-group" id="sec-appearance">
+            <h3 class="gt">外观</h3>
+            <p class="gd">主题、字号与紧凑度 · 改动实时预览，保存后全局生效</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt">主题</div><div class="rd">「跟随系统」原型按浅色渲染</div></div>
+              <div class="seg" id="themeSeg">
+                <button class="active" data-t="system">跟随系统</button>
+                <button data-t="light">浅色</button>
+                <button data-t="dark">深色</button>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">界面字号</div><div class="rd">缩放全局正文字号（80% – 140%）</div></div>
+              <div class="slider-wrap">
+                <input type="range" class="ap-slider" id="fontScale" min="80" max="140" step="5" value="100">
+                <span class="ap-slider-val" id="fontScaleVal">100%</span>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">紧凑度</div><div class="rd">紧凑模式压缩列表与卡片间距，适合小屏常驻</div></div>
+              <div class="seg" id="densitySeg">
+                <button class="active" data-d="comfortable">舒适</button>
+                <button data-d="compact">紧凑</button>
+              </div>
+            </div>
+            <div class="set-save"><button class="btn btn-acc btn-sm" id="saveAppearance"><i data-ic="check" data-size="13"></i>保存外观</button></div>
+          </section>
+
+          <section class="set-group" id="sec-sync">
+            <h3 class="gt">同步</h3>
+            <p class="gd">跨设备数据流转策略 · 改动即下发</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt">端到端加密</div><div class="rd">密钥由设备派生，服务端不可读 · 为保障安全不可关闭</div></div>
+              <label class="switch" style="opacity:.55;pointer-events:none" title="端到端加密不可关闭"><input type="checkbox" checked disabled><span class="tr"></span><span class="th"></span></label>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">历史保留天数</div><div class="rd">超期记录将在本机与云端同时清除</div></div>
+              <select class="input" id="selRetention" style="width:150px">
+                <option>7 天</option>
+                <option selected>30 天</option>
+                <option>90 天</option>
+              </select>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">仅 WiFi 同步</div><div class="rd">蜂窝 / 计费网络下暂停上传图片与文件</div></div>
+              <label class="switch"><input type="checkbox" id="swWifiOnly"><span class="tr"></span><span class="th"></span></label>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">立即同步</div><div class="rd">上次完成 · 32 秒前</div></div>
+              <button class="btn" id="btnSync"><i data-ic="refresh-cw" data-size="13"></i>立即同步</button>
+            </div>
+          </section>
+
+          <section class="set-group" id="sec-hotkey">
+            <h3 class="gt">快捷键</h3>
+            <p class="gd">点击键帽进入录制，按下新组合键生效，Esc 取消</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt">快速粘贴面板</div><div class="rd">全局呼出 420px 浮窗，全键盘选择粘贴</div></div>
+              <button class="hotkey-pill" data-hk="quickpaste" data-key="Ctrl+Shift+V">Ctrl+Shift+V</button>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">AI 助手面板</div><div class="rd">呼出右侧全局感知面板，携带当前页上下文</div></div>
+              <button class="hotkey-pill" data-hk="ai" data-key="Ctrl+Shift+A">Ctrl+Shift+A</button>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">命令面板</div><div class="rd">搜索命令与页面跳转</div></div>
+              <button class="hotkey-pill" data-hk="cmdk" data-key="Ctrl+K">Ctrl+K</button>
+            </div>
+          </section>
+
+          <section class="set-group" id="sec-vars">
+            <h3 class="gt">模板变量</h3>
+            <p class="gd">使用模板时勾选「记住此值」的变量保存在这里，作为默认值自动预填</p>
+            <div id="varList"></div>
+            <div class="var-add-form">
+              <div class="input" style="width:170px"><input id="varName" class="mono" placeholder="变量名"></div>
+              <div class="input grow"><input id="varValue" placeholder="默认值"></div>
+              <button class="btn btn-sm" id="varAdd"><i data-ic="plus" data-size="12"></i>添加</button>
+            </div>
+          </section>
+
+          <section class="set-group" id="sec-ai">
+            <h3 class="gt">AI 模型</h3>
+            <p class="gd">默认模型与回复展示偏好</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt">默认模型</div><div class="rd">dock 面板新会话的起步模型，可随时切换</div></div>
+              <select class="input" id="selModel" style="width:170px">
+                <option selected>GPT-5.2</option>
+                <option>Claude 4.5</option>
+                <option>本地模型 · Qwen3-32B</option>
+              </select>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">思考过程默认展开</div><div class="rd">AI 回复中的推理折叠条默认打开</div></div>
+              <label class="switch"><input type="checkbox" id="swThink" checked><span class="tr"></span><span class="th"></span></label>
+            </div>
+          </section>
+
+          <section class="set-group" id="sec-aisess">
+            <h3 class="gt">AI 会话</h3>
+            <p class="gd">历史会话与长期记忆 · 记忆删除后立即生效</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt">历史会话</div><div class="rd" id="convoCount">—</div></div>
+              <button class="btn" id="btnClearConvos"><i data-ic="trash-2" data-size="13"></i>清空历史</button>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">长期记忆</div><div class="rd">允许 AI 在对话中沉淀你的偏好与环境信息</div></div>
+              <label class="switch"><input type="checkbox" id="swMemory" checked><span class="tr"></span><span class="th"></span></label>
+            </div>
+            <div id="memList"></div>
+            <div class="set-save"><button class="btn btn-acc btn-sm" id="saveAiPrefs"><i data-ic="check" data-size="13"></i>保存 AI 偏好</button></div>
+          </section>
+
+          <section class="set-group" id="sec-sub">
+            <h3 class="gt">订阅</h3>
+            <p class="gd">当前套餐与本月额度</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt" style="display:flex;align-items:center;gap:8px">当前套餐 <span class="badge b-ok" id="planBadge">Pro</span></div><div class="rd" id="planDesc">有效期至 2026-10-12 · 自动续费</div></div>
+              <button class="btn" id="btnPlan">管理套餐</button>
+            </div>
+            <div class="set-row">
+              <div class="rl">
+                <div class="rt">本月用量</div>
+                <div class="rd mono" id="usageTxt">—</div>
+                <div class="bar" style="margin-top:8px;max-width:280px"><i id="usageBar" style="width:0%"></i></div>
+              </div>
+              <button class="btn btn-sm" data-ai="优化用量" data-ai-target="本月 tokens 用量与缓存命中情况"><i data-ic="sparkles"></i>优化用量</button>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">账单与发票</div><div class="rd">历史账单查看与发票下载</div></div>
+              <button class="btn" id="btnInvoices">查看</button>
+            </div>
+          </section>
+
+          <section class="set-group" id="sec-data">
+            <h3 class="gt">数据管理</h3>
+            <p class="gd">导出、导入与危险操作</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt">导出数据</div><div class="rd">打包剪贴历史 / 收藏 / 模板 / 设备为 JSON 文件</div></div>
+              <button class="btn" id="btnExport"><i data-ic="download" data-size="13"></i>导出 JSON</button>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">导入数据</div><div class="rd">从 JSON 备份恢复 · 原型环境仅校验文件格式</div></div>
+              <button class="btn" id="btnImport"><i data-ic="upload" data-size="13"></i>导入</button>
+              <input type="file" id="fileImport" accept=".json,application/json" style="display:none">
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt" style="color:var(--danger)">清空全部数据</div><div class="rd">删除本机全部历史、收藏、模板与本地配置，不可恢复</div></div>
+              <button class="btn btn-danger" id="btnWipe"><i data-ic="trash-2" data-size="13"></i>清空全部数据</button>
+            </div>
+          </section>
+
+          <section class="set-group" id="sec-notify">
+            <h3 class="gt">通知</h3>
+            <p class="gd">哪些事件值得打断你</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt">新设备接入</div><div class="rd">有设备完成配对或重新上线时提醒</div></div>
+              <label class="switch"><input type="checkbox" id="swNDevice" checked><span class="tr"></span><span class="th"></span></label>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">AI 任务完成</div><div class="rd">长任务（总结 / 翻译 / 批量处理）结束时提醒</div></div>
+              <label class="switch"><input type="checkbox" id="swNAi" checked><span class="tr"></span><span class="th"></span></label>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">版本更新</div><div class="rd">新版本可用时在通知中心提示</div></div>
+              <label class="switch"><input type="checkbox" id="swNUpdate"><span class="tr"></span><span class="th"></span></label>
+            </div>
+          </section>
+
+          <section class="set-group" id="sec-privacy">
+            <h3 class="gt">隐私安全</h3>
+            <p class="gd">本机数据保护</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt">本地数据加密</div><div class="rd">剪贴历史落盘前使用系统密钥库加密</div></div>
+              <label class="switch"><input type="checkbox" id="swEnc" checked><span class="tr"></span><span class="th"></span></label>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">自动清除 30 天前历史</div><div class="rd">与「同步 · 保留天数」联动，到期静默清理</div></div>
+              <label class="switch"><input type="checkbox" id="swAutoClean" checked><span class="tr"></span><span class="th"></span></label>
+            </div>
+          </section>
+
+          <section class="set-group" id="sec-about">
+            <h3 class="gt">关于</h3>
+            <p class="gd">版本与许可</p>
+            <div class="set-row">
+              <div class="rl"><div class="rt">ClipSync 桌面端</div><div class="rd mono">v0.4.2 · clearline</div></div>
+              <button class="btn" id="btnUpd"><i data-ic="refresh-cw" data-size="13"></i>检查更新</button>
+            </div>
+            <div class="set-row">
+              <div class="rl"><div class="rt">开源许可</div><div class="rd">ClipSync 基于 MIT 协议开源 · 图标库 Lucide（ISC 协议）</div></div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="mock.js"></script>
+<script src="api.js"></script>
+<script src="components.js"></script>
+<script>
+/* ============================================================
+   设置页：12 个分类 · 每卡独立保存/校验 · 全部持久化到 localStorage
+   ============================================================ */
+const store = {
+  read(k, def = {}) { try { return { ...def, ...JSON.parse(localStorage.getItem(k) || '{}') }; } catch (e) { return { ...def }; } },
+  write(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
+};
+
+/* ---------- 锚点导航高亮（点击 + 滚动联动） ---------- */
+const navLinks = document.querySelectorAll('#setNav a');
+function setActiveNav(id) {
+  navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
+}
+navLinks.forEach(a => a.addEventListener('click', () => setActiveNav(a.getAttribute('href').slice(1))));
+const io = new IntersectionObserver(entries => {
+  entries.forEach(en => { if (en.isIntersecting) setActiveNav(en.target.id); });
+}, { root: document.querySelector('.app-main'), rootMargin: '0px 0px -65% 0px' });
+document.querySelectorAll('.set-group').forEach(g => io.observe(g));
+if (location.hash) setActiveNav(location.hash.slice(1));
+
+/* ---------- 通用（独立保存） ---------- */
+const swAutostart = document.getElementById('swAutostart'), selLang = document.getElementById('selLang');
+const general = store.read('cl-general', { autostart: true, lang: '简体中文' });
+swAutostart.checked = !!general.autostart;
+selLang.value = general.lang;
+document.getElementById('saveGeneral').onclick = () => {
+  if (!selLang.value) { toast('请选择界面语言', 'err'); return; }
+  store.write('cl-general', { autostart: swAutostart.checked, lang: selLang.value });
+  toast('通用设置已保存', 'ok');
+};
+
+/* ---------- 外观（主题/字号/紧凑度 · 实时预览 + 独立保存） ---------- */
+const segBtns = document.querySelectorAll('#themeSeg button');
+const densityBtns = document.querySelectorAll('#densitySeg button');
+const fontScale = document.getElementById('fontScale'), fontScaleVal = document.getElementById('fontScaleVal');
+const appearance = store.read('cl-appearance', { theme: localStorage.getItem('cl-theme') === 'dark' ? 'dark' : 'system', fontScale: 1, density: 'comfortable' });
+
+function setSeg(btns, attr, val) { btns.forEach(b => b.classList.toggle('active', b.dataset[attr] === val)); }
+function applyFontScale(v) {
+  fontScale.value = Math.round(v * 100);
+  fontScaleVal.textContent = Math.round(v * 100) + '%';
+  document.body.style.fontSize = (13 * v) + 'px';
+}
+function applyDensity(d) { document.documentElement.classList.toggle('compact', d === 'compact'); }
+
+setSeg(segBtns, 't', appearance.theme);
+setSeg(densityBtns, 'd', appearance.density);
+applyFontScale(appearance.fontScale);
+
+let draftTheme = appearance.theme;
+segBtns.forEach(b => b.onclick = () => {
+  setSeg(segBtns, 't', b.dataset.t);
+  draftTheme = b.dataset.t;
+  /* 仅预览：切 class 不落盘（cl-theme 由保存时统一写入），与字号/紧凑度行为一致 */
+  document.documentElement.classList.toggle('light', draftTheme !== 'dark');
+  document.documentElement.classList.toggle('dark', draftTheme === 'dark');
+});
+fontScale.oninput = () => applyFontScale(+fontScale.value / 100);
+densityBtns.forEach(b => b.onclick = () => { setSeg(densityBtns, 'd', b.dataset.d); applyDensity(b.dataset.d); });
+
+document.getElementById('saveAppearance').onclick = () => {
+  const scale = +fontScale.value / 100;
+  if (scale < 0.8 || scale > 1.4) { toast('字号超出允许范围（80% – 140%）', 'err'); return; }
+  const density = [...densityBtns].find(b => b.classList.contains('active'))?.dataset.d || 'comfortable';
+  store.write('cl-appearance', { theme: draftTheme, fontScale: scale, density });
+  /* 主题落盘到全局 cl-theme（system 原型按浅色渲染，落 light）并同步标题栏图标 */
+  applyTheme(draftTheme === 'dark' ? 'dark' : 'light');
+  toast('外观设置已保存 · ' + (draftTheme === 'system' ? '跟随系统（原型按浅色渲染）' : draftTheme === 'light' ? '浅色（澄明白）' : '深色（柔黑）'), 'ok');
+};
+
+/* ---------- 同步（改动即持久化下发） ---------- */
+const sync = store.read('cl-sync', { retention: '30 天', wifiOnly: false });
+const selRetention = document.getElementById('selRetention'), swWifiOnly = document.getElementById('swWifiOnly');
+selRetention.value = sync.retention;
+swWifiOnly.checked = !!sync.wifiOnly;
+selRetention.onchange = () => { store.write('cl-sync', { ...sync, retention: selRetention.value }); toast(`历史保留天数已更新 · ${selRetention.value}`, 'ok'); };
+swWifiOnly.onchange = () => { store.write('cl-sync', { ...sync, wifiOnly: swWifiOnly.checked }); toast(`仅 WiFi 同步 · 已${swWifiOnly.checked ? '开启' : '关闭'}`, swWifiOnly.checked ? 'ok' : ''); };
+document.getElementById('btnSync').onclick = () => toast('同步完成 · 3 台设备', 'ok');
+
+/* ---------- 快捷键录制（持久化到 cl-hotkeys） ---------- */
+const hotkeys = store.read('cl-hotkeys', {});
+document.querySelectorAll('.hotkey-pill').forEach(pill => {
+  const saved = hotkeys[pill.dataset.hk];
+  if (saved) { pill.dataset.key = saved; pill.textContent = saved; }
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('.hotkey-pill.rec').forEach(p => { p.classList.remove('rec'); p.textContent = p.dataset.key; });
+    pill.classList.add('rec');
+    pill.textContent = '按下新组合键…';
+  });
+});
+document.addEventListener('keydown', e => {
+  const rec = document.querySelector('.hotkey-pill.rec');
+  if (!rec) return;
+  e.preventDefault(); e.stopPropagation();
+  if (e.key === 'Escape') { rec.classList.remove('rec'); rec.textContent = rec.dataset.key; toast('已取消录制'); return; }
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+  const parts = [];
+  if (e.ctrlKey) parts.push('Ctrl');
+  if (e.shiftKey) parts.push('Shift');
+  if (e.altKey) parts.push('Alt');
+  parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+  rec.dataset.key = parts.join('+');
+  rec.classList.remove('rec');
+  rec.textContent = rec.dataset.key;
+  store.write('cl-hotkeys', { ...store.read('cl-hotkeys', {}), [rec.dataset.hk]: rec.dataset.key });
+  const name = rec.closest('.set-row')?.querySelector('.rt')?.textContent || '快捷键';
+  toast(`${name}已更新 · ${rec.dataset.key}`, 'ok');
+}, true);
+
+/* ---------- 模板变量（读取模板页「记住此值」的 cl-tpl-vars，逐条删除 / 手动添加） ---------- */
+function renderTplVars() {
+  const vars = getTplVars();
+  const names = Object.keys(vars);
+  const list = document.getElementById('varList');
+  if (!names.length) {
+    list.innerHTML = `<div class="set-row"><div class="rl"><div class="rd">还没有记住的变量 · 在模板页使用模板时勾选「记住此值」，即可沉淀到这里作为默认值</div></div></div>`;
+    return;
+  }
+  list.innerHTML = names.map(n => `
+    <div class="set-row">
+      <div class="rl">
+        <div class="rt mono" style="color:var(--accent)">{{${esc(n)}}}</div>
+        <div class="rd">${vars[n] ? esc(vars[n]) : '<span class="dimmer">（空值）</span>'}</div>
+      </div>
+      <button class="btn btn-sm btn-danger" data-del="${esc(n)}">删除</button>
+    </div>`).join('');
+  list.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    const mem = getTplVars();
+    delete mem[b.dataset.del];
+    setTplVars(mem);
+    renderTplVars();
+    toast(`变量 {{${b.dataset.del}}} 已删除`);
+  });
+}
+document.getElementById('varAdd').onclick = () => {
+  const nameEl = document.getElementById('varName'), valueEl = document.getElementById('varValue');
+  const name = nameEl.value.trim();
+  if (!name) { toast('请输入变量名', 'err'); nameEl.focus(); return; }
+  if (/[\s{}]/.test(name)) { toast('变量名不能包含空格或花括号', 'err'); nameEl.focus(); return; }
+  const mem = getTplVars();
+  const existed = name in mem;
+  mem[name] = valueEl.value;
+  setTplVars(mem);
+  nameEl.value = ''; valueEl.value = '';
+  renderTplVars();
+  toast(existed ? `变量 {{${name}}} 已更新` : `变量 {{${name}}} 已保存`, 'ok');
+};
+renderTplVars();
+
+/* ---------- AI 模型（改动即持久化） ---------- */
+const ai = store.read('cl-ai', { model: 'GPT-5.2', thinkOpen: true });
+const selModel = document.getElementById('selModel'), swThink = document.getElementById('swThink');
+selModel.value = ai.model;
+swThink.checked = !!ai.thinkOpen;
+selModel.onchange = () => { store.write('cl-ai', { ...ai, model: selModel.value }); toast(`默认模型已更新 · ${selModel.value}`, 'ok'); };
+swThink.onchange = () => { store.write('cl-ai', { ...ai, thinkOpen: swThink.checked }); toast(`思考过程默认展开 · 已${swThink.checked ? '开启' : '关闭'}`, swThink.checked ? 'ok' : ''); };
+
+/* ---------- AI 会话：历史会话清空 + 长期记忆管理 + 偏好保存 ---------- */
+function renderConvos() {
+  document.getElementById('convoCount').textContent = `共 ${DB.convos.length} 条会话 · 保留最近 30 天`;
+}
+document.getElementById('btnClearConvos').onclick = () => {
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.innerHTML = `
+    <div class="modal" style="width:min(400px,92vw)">
+      <div class="modal-title">清空历史会话？</div>
+      <div class="modal-sub">将删除本机全部 ${DB.convos.length} 条 AI 会话记录，长期记忆不受影响。</div>
+      <div class="modal-foot">
+        <button class="btn" id="ccCancel">取消</button>
+        <button class="btn" id="ccOk" style="background:var(--danger);border-color:transparent;color:#fff">确认清空</button>
+      </div>
+    </div>`;
+  document.body.appendChild(mask);
+  mask.querySelector('#ccCancel').onclick = () => mask.remove();
+  mask.onclick = e => { if (e.target === mask) mask.remove(); };
+  mask.querySelector('#ccOk').onclick = () => {
+    DB.convos.length = 0;
+    mask.remove();
+    renderConvos();
+    toast('历史会话已清空', 'ok');
+  };
+};
+
+function renderMems() {
+  const list = document.getElementById('memList');
+  if (!DB.memories.length) {
+    list.innerHTML = `<div class="set-row"><div class="rl"><div class="rd">暂无长期记忆 · 开启上方开关后，AI 会在对话中自动沉淀你的偏好与环境信息</div></div></div>`;
+    return;
+  }
+  list.innerHTML = DB.memories.map(m => `
+    <div class="set-row">
+      <div class="rl">
+        <div class="rt">${esc(m.key)}</div>
+        <div class="rd">${esc(m.value)}</div>
+      </div>
+      <span class="dimmer mono" style="font-size:10.5px;flex:none">${esc(m.updated)}</span>
+      <button class="icon-btn" data-mem="${m.id}" title="删除此条记忆" style="color:var(--danger);flex:none">${iconSvg('trash-2', 13)}</button>
+    </div>`).join('');
+  list.querySelectorAll('[data-mem]').forEach(b => b.onclick = () => {
+    const i = DB.memories.findIndex(m => m.id === b.dataset.mem);
+    if (i > -1) DB.memories.splice(i, 1);
+    renderMems();
+    toast('记忆已删除');
+  });
+}
+
+const swMemory = document.getElementById('swMemory');
+const aiPrefs = store.read('cl-ai-prefs', { memoryEnabled: true });
+swMemory.checked = !!aiPrefs.memoryEnabled;
+document.getElementById('saveAiPrefs').onclick = () => {
+  store.write('cl-ai-prefs', { memoryEnabled: swMemory.checked });
+  toast('AI 偏好已保存', 'ok');
+};
+renderConvos(); renderMems();
+
+/* ---------- 订阅（DB.user.plan + DB.usage；发票对齐真实系统「功能建设中」占位） ---------- */
+document.getElementById('planBadge').textContent = DB.user.plan;
+document.getElementById('planDesc').textContent = `有效期至 2026-10-12 · 自动续费 · ${DB.user.email}`;
+document.getElementById('btnPlan').onclick = () => toast('原型演示 · 套餐管理由 Pricing 页托管');
+document.getElementById('btnInvoices').onclick = () => toast('功能建设中，敬请期待');
+const u = DB.usage;
+const pct = Math.round(u.used / u.total * 100);
+document.getElementById('usageBar').style.width = pct + '%';
+document.getElementById('usageTxt').textContent = `${u.used.toLocaleString()} / ${u.total.toLocaleString()} tokens · ${pct}% · 缓存命中 ${u.cacheHit}% · 预估费用 $${u.cost}`;
+
+/* ---------- 数据管理：导出 JSON / 导入校验 / 清空（危险区二次确认） ---------- */
+document.getElementById('btnExport').onclick = () => {
+  const data = {
+    exportedAt: new Date().toISOString(), app: 'ClipSync', version: 'v0.4.2',
+    user: DB.user, clips: DB.clips,
+    collections: DB.collections, favItems: DB.favItems, favTags: DB.favTags,
+    templates: DB.templates, devices: DB.devices,
+    settings: {
+      theme: localStorage.getItem('cl-theme'),
+      appearance: store.read('cl-appearance', {}),
+      general: store.read('cl-general', {}),
+      sync: store.read('cl-sync', {}),
+      tplVars: getTplVars(),
+    },
+  };
+  const name = 'clipsync-export-' + new Date().toISOString().slice(0, 10) + '.json';
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 800);
+  toast('已导出数据包 · ' + name, 'ok');
+};
+
+const fileImport = document.getElementById('fileImport');
+document.getElementById('btnImport').onclick = () => fileImport.click();
+fileImport.onchange = () => {
+  const f = fileImport.files[0];
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      const j = JSON.parse(rd.result);
+      if (!j || typeof j !== 'object' || j.app !== 'ClipSync') throw new Error('bad backup');
+      toast('备份校验通过 · 原型环境不实际写库', 'ok');
+    } catch (e) {
+      toast('导入失败 · 不是有效的 ClipSync 备份文件', 'err');
+    }
+    fileImport.value = '';
+  };
+  rd.onerror = () => { toast('文件读取失败', 'err'); fileImport.value = ''; };
+  rd.readAsText(f);
+};
+
+document.getElementById('btnWipe').onclick = () => {
+  /* 危险区二次确认：第一重说明影响 → 第二重输入「清空」解锁按钮 */
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  const modal = document.createElement('div');
+  modal.className = 'modal'; modal.style.width = 'min(400px,92vw)';
+  mask.appendChild(modal);
+  document.body.appendChild(mask);
+  mask.onclick = e => { if (e.target === mask) mask.remove(); };
+
+  const renderStep1 = () => {
+    modal.innerHTML = `
+      <div class="modal-title">清空全部数据？</div>
+      <div class="modal-sub">将删除本机的剪贴历史、收藏、模板、模板变量与全部本地配置，<b style="color:var(--danger)">不可恢复</b>。云端副本与其他设备不受影响，主题偏好保留。</div>
+      <div class="modal-foot">
+        <button class="btn" id="wCancel">取消</button>
+        <button class="btn btn-danger" id="wNext">继续</button>
+      </div>`;
+    modal.querySelector('#wCancel').onclick = () => mask.remove();
+    modal.querySelector('#wNext').onclick = renderStep2;
+  };
+  const renderStep2 = () => {
+    modal.innerHTML = `
+      <div class="modal-title">最后确认</div>
+      <div class="modal-sub">在下方输入 <b class="mono" style="color:var(--danger)">清空</b> 二字以解锁确认按钮。</div>
+      <div class="input"><input id="wConfirm" placeholder="输入「清空」" autocomplete="off"></div>
+      <div class="modal-foot">
+        <button class="btn" id="wBack">返回</button>
+        <button class="btn" id="wOk" disabled style="background:var(--danger);border-color:transparent;color:#fff">我已了解，确认清空</button>
+      </div>`;
+    const inp = modal.querySelector('#wConfirm'), ok = modal.querySelector('#wOk');
+    inp.oninput = () => { ok.disabled = inp.value.trim() !== '清空'; };
+    modal.querySelector('#wBack').onclick = renderStep1;
+    ok.onclick = () => {
+      ['cl-general', 'cl-appearance', 'cl-sync', 'cl-hotkeys', 'cl-tpl-vars', 'cl-ai', 'cl-ai-prefs', 'cl-notify', 'cl-privacy'].forEach(k => localStorage.removeItem(k));
+      mask.remove();
+      toast('已清空本机全部数据与本地配置', 'ok');
+    };
+    setTimeout(() => inp.focus(), 60);
+  };
+  renderStep1();
+};
+
+/* ---------- 通知 / 隐私（改动即持久化） ---------- */
+function wireSwitch(id, key, field, label) {
+  const el = document.getElementById(id);
+  const cfg = store.read(key, {});
+  if (field in cfg) el.checked = !!cfg[field];
+  el.onchange = () => {
+    store.write(key, { ...store.read(key, {}), [field]: el.checked });
+    toast(`${label} · 已${el.checked ? '开启' : '关闭'}`, el.checked ? 'ok' : '');
+  };
+}
+wireSwitch('swNDevice', 'cl-notify', 'device', '新设备接入提醒');
+wireSwitch('swNAi', 'cl-notify', 'ai', 'AI 任务完成提醒');
+wireSwitch('swNUpdate', 'cl-notify', 'update', '版本更新提醒');
+wireSwitch('swEnc', 'cl-privacy', 'enc', '本地数据加密');
+wireSwitch('swAutoClean', 'cl-privacy', 'autoClean', '自动清除历史');
+
+/* ---------- 关于 ---------- */
+document.getElementById('btnUpd').onclick = () => toast('已是最新版本', 'ok');
+</script>
+</body>
+</html>

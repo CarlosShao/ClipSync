@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · 剪贴板</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="clipboard">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-left">
+      <span class="brand-mark"><i data-ic="clipboard-list"></i></span>
+      <span class="brand-word">ClipSync</span>
+      <span class="tb-sep"></span>
+      <span class="tb-crumb">剪贴板</span>
+    </div>
+    <button class="cmdk" id="cmdkBtn"><i data-ic="search"></i><span>搜索或命令…</span><kbd>Ctrl K</kbd></button>
+    <div class="tb-right">
+      <button class="tb-btn ai-trigger" id="aiBtn" title="AI 助手 · Ctrl+Shift+A"><i data-ic="sparkles"></i><span>AI</span></button>
+      <button class="tb-btn" id="qpBtn" title="快速粘贴 · Ctrl+Shift+V"><i data-ic="panel-top"></i></button>
+      <button class="tb-btn" id="themeBtn" title="切换明暗"><i data-ic="moon"></i></button>
+      <button class="tb-btn" id="bellBtn" title="通知"><i data-ic="bell"></i><i class="dot" id="bellDot"></i></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn win" data-win="min"><i data-ic="minus"></i></button>
+      <button class="tb-btn win" data-win="max"><i data-ic="square"></i></button>
+      <button class="tb-btn win close" data-win="close"><i data-ic="x"></i></button>
+    </div>
+  </header>
+  <aside class="app-nav">
+    <a class="nav-item" data-nav="clipboard" href="index.html"><i data-ic="clipboard-list"></i><span>剪贴板</span><kbd>Ctrl 1</kbd></a>
+    <a class="nav-item" data-nav="favorites" href="favorites.html"><i data-ic="star"></i><span>收藏</span><kbd>Ctrl 2</kbd></a>
+    <a class="nav-item" data-nav="templates" href="templates.html"><i data-ic="layout-template"></i><span>模板</span><kbd>Ctrl 3</kbd></a>
+    <a class="nav-item" data-nav="devices" href="devices.html"><i data-ic="laptop"></i><span>设备</span><kbd>Ctrl 4</kbd></a>
+    <div class="nav-sec">系统</div>
+    <a class="nav-item" data-nav="settings" href="settings.html"><i data-ic="settings-2"></i><span>设置</span><kbd>Ctrl ,</kbd></a>
+    <div class="nav-foot">
+      <div class="sync-pill"><i class="pulse"></i><span>已同步 · 3 台设备</span></div>
+      <div class="nav-ver">v0.4.2 · clearline</div>
+    </div>
+  </aside>
+  <main class="app-main">
+    <div class="page reveal">
+
+      <div class="page-head">
+        <div>
+          <div class="page-title">剪贴板</div>
+          <div class="page-sub">跨设备实时同步 · 本地加密存储 · 保留 30 天</div>
+        </div>
+        <div class="page-acts">
+          <button class="btn" data-ai="总结" data-ai-target="今日剪贴板动态"><i data-ic="sparkles"></i>总结今日动态</button>
+          <button class="btn btn-acc" id="btnClear"><i data-ic="trash-2"></i>清理历史</button>
+        </div>
+      </div>
+
+      <div class="hintbar">
+        <i data-ic="sparkles" data-size="14"></i>
+        <span>试试全局 AI 感知：按 <kbd>Ctrl Shift A</kbd> 呼出右侧面板，直接问「当前是什么页面」——切到收藏页再问，答案会跟着变。</span>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <div class="search" style="flex:0 1 260px"><i data-ic="search" data-size="14"></i><input id="q" placeholder="搜索剪贴内容…"></div>
+        <button class="chip active" data-type="all">全部</button>
+        <button class="chip" data-type="text"><i data-ic="type" data-size="12"></i>文本</button>
+        <button class="chip" data-type="link"><i data-ic="link-2" data-size="12"></i>链接</button>
+        <button class="chip" data-type="code"><i data-ic="code-2" data-size="12"></i>代码</button>
+        <button class="chip" data-type="image"><i data-ic="image" data-size="12"></i>图片</button>
+        <button class="chip" data-type="file"><i data-ic="file" data-size="12"></i>文件</button>
+        <div class="seg" style="margin-left:auto">
+          <button class="active" data-view="all">时间流</button>
+          <button data-view="pinned">仅置顶</button>
+          <button data-view="fav">仅收藏</button>
+          <button data-view="archive">已归档</button>
+        </div>
+        <button class="btn btn-sm" id="btnBatch" style="height:28px"><i data-ic="circle-check" data-size="13"></i>批量选择</button>
+      </div>
+
+      <div id="batchBar"></div>
+      <div id="clipList"></div>
+      <div class="empty" id="clipEmpty" style="display:none">
+        <i data-ic="clipboard-list" data-size="30"></i>
+        <div class="t">没有匹配的剪贴记录</div>
+        <div class="d">调整类型过滤或搜索关键词；新复制的内容会实时出现在时间流顶部。</div>
+      </div>
+      <div class="load-more" id="loadMore" style="display:none">
+        <button class="btn" id="btnMore"><i data-ic="chevron-down" data-size="14"></i>加载更多</button>
+        <span class="rem" id="moreRem"></span>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="mock.js"></script>
+<script src="api.js"></script>
+<script src="components.js"></script>
+<script>
+/* ---------- 剪贴板时间流（类型过滤 / 搜索 / 置顶收藏归档视图 / 批量选择 / 分页） ---------- */
+const TYPE_META = {
+  text:  { ic: 'type',     tile: 't-text',  badge: 'b-text',  label: '文本' },
+  link:  { ic: 'link-2',   tile: 't-link',  badge: 'b-link',  label: '链接' },
+  code:  { ic: 'code-2',   tile: 't-code',  badge: 'b-code',  label: '代码' },
+  image: { ic: 'image',    tile: 't-image', badge: 'b-image', label: '图片' },
+  file:  { ic: 'file',     tile: 't-file',  badge: 'b-file',  label: '文件' },
+};
+const PAGE_SIZE = 8; /* mock 分页步长（真实环境由后端游标分页，见 fetchClips 注释） */
+let state = { type: 'all', view: 'all', q: '', shown: PAGE_SIZE, selecting: false, sel: new Set() };
+let lastBase = []; /* 当前筛选下的完整结果集（分页前的总量，供全选/加载更多使用） */
+
+/* 归档：真实系统为独立子视图（HomeView currentSub==='archive'），原型合并为 seg 第 4 项。
+   归档/恢复直接改本地数组（POST /api/clips/:id/archive | /unarchive），api.js 无需加存根。 */
+function setArchived(c, flag) { c.archived = flag; }
+
+function confirmModal({ title, msg, okText = '确认', danger = false }) {
+  return new Promise(resolve => {
+    document.getElementById('pageModal')?.remove();
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask'; mask.id = 'pageModal';
+    mask.innerHTML = `<div class="modal" style="width:min(380px,92vw)">
+      <div class="modal-title">${esc(title)}</div>
+      <div class="modal-sub">${esc(msg)}</div>
+      <div class="modal-foot">
+        <button class="btn" data-m="no">取消</button>
+        <button class="btn ${danger ? 'btn-danger' : 'btn-acc'}" data-m="ok">${esc(okText)}</button>
+      </div></div>`;
+    mask.addEventListener('click', e => { if (e.target === mask) { mask.remove(); resolve(false); } });
+    document.body.appendChild(mask);
+    mask.querySelector('[data-m="no"]').onclick = () => { mask.remove(); resolve(false); };
+    mask.querySelector('[data-m="ok"]').onclick = () => { mask.remove(); resolve(true); };
+  });
+}
+
+async function renderList() {
+  const { data } = await fetchClips({ type: state.type, q: state.q });
+  const inArchive = state.view === 'archive';
+  let base = data.filter(c => inArchive ? c.archived : !c.archived);
+  if (!inArchive) {
+    if (state.view === 'pinned') base = base.filter(c => c.pinned);
+    if (state.view === 'fav') base = base.filter(c => c.fav);
+    base = base.slice().sort((a, b) => (b.pinned - a.pinned));
+  }
+  lastBase = base;
+  /* 清理选择集里已不存在的条目（删除/归档后） */
+  state.sel.forEach(id => { if (!DB.clips.some(c => c.id === id)) state.sel.delete(id); });
+  const list = base.slice(0, state.shown);
+
+  const root = document.getElementById('clipList');
+  const empty = document.getElementById('clipEmpty');
+  empty.style.display = list.length ? 'none' : '';
+  if (!list.length) {
+    empty.querySelector('.t').textContent = inArchive ? '归档区是空的' : '没有匹配的剪贴记录';
+    empty.querySelector('.d').textContent = inArchive
+      ? '条目菜单里的「归档」会把不常用但想保留的内容收进来，随时可恢复。'
+      : '调整类型过滤或搜索关键词；新复制的内容会实时出现在时间流顶部。';
+  }
+  root.innerHTML = list.map(c => {
+    const m = TYPE_META[c.type];
+    const thumb = c.type === 'image'
+      ? `<div class="clip-thumb" style="background:linear-gradient(135deg,hsl(${c.hue},45%,52%),hsl(${c.hue + 40},50%,38%))"><span>${c.content} · ${c.dims}</span></div>` : '';
+    const fileRow = c.type === 'file'
+      ? `<div class="clip-thumb" style="height:auto;background:var(--bg-hover);color:var(--text-2);text-shadow:none;align-items:center;gap:8px">${iconSvg('file', 15)}<span>${c.content}</span><span class="dimmer mono" style="margin-left:auto;font-size:10.5px">${c.size}</span></div>` : '';
+    const cbx = state.selecting
+      ? `<input type="checkbox" class="cbx" data-cbx ${state.sel.has(c.id) ? 'checked' : ''} title="选择此条">` : '';
+    return `
+    <div class="clip-item ${c.pinned && !inArchive ? 'pinned' : ''} ${state.selecting ? 'selecting' : ''} ${state.sel.has(c.id) ? 'sel' : ''}" data-id="${c.id}">
+      ${cbx}
+      <div class="type-tile ${m.tile}">${iconSvg(m.ic, 16)}</div>
+      <div class="clip-body">
+        ${c.type === 'image' || c.type === 'file' ? (thumb || fileRow) : `<div class="clip-text ${c.type === 'code' ? 'code' : ''}">${esc(c.content)}</div>`}
+        <div class="clip-meta">
+          <span class="badge ${m.badge}">${m.label}</span>
+          ${c.title ? `<span class="dim">${esc(c.title)}</span>` : ''}
+          <span>${c.source}</span>
+          <span class="mono">${c.time}</span>
+          ${c.size && c.type !== 'file' ? `<span class="mono">${c.size}</span>` : ''}
+          ${c.pinned && !inArchive ? `<span class="badge b-gray"><i data-ic="pin" data-size="10"></i>置顶</span>` : ''}
+          ${inArchive ? `<span class="badge b-gray"><i data-ic="archive" data-size="10"></i>已归档</span>` : ''}
+        </div>
+      </div>
+      ${state.selecting ? '' : `
+      <div class="clip-acts">
+        ${inArchive ? `<button class="icon-btn" data-act="unarch" title="恢复到时间流">${iconSvg('archive-restore', 14)}</button>` : `
+        <button class="icon-btn ${c.fav ? 'on' : ''}" data-act="fav" title="收藏">${iconSvg('star', 14)}</button>
+        <button class="icon-btn ${c.pinned ? 'on' : ''}" data-act="pin" title="置顶">${iconSvg('pin', 14)}</button>`}
+        <button class="icon-btn" data-act="ai" title="用 AI 处理这条">${iconSvg('sparkles', 14)}</button>
+        <button class="icon-btn" data-act="more" title="更多">${iconSvg('more-horizontal', 14)}</button>
+      </div>`}
+    </div>`;
+  }).join('');
+  hydrateIcons(root);
+
+  root.querySelectorAll('.clip-item').forEach(el => {
+    const id = el.dataset.id;
+    const clip = DB.clips.find(x => x.id === id);
+    if (!clip) return;
+    /* 批量选择模式：点击条目 / 勾选框 = 切换选择 */
+    if (state.selecting) {
+      const toggle = () => { state.sel.has(id) ? state.sel.delete(id) : state.sel.add(id); renderList(); };
+      el.addEventListener('click', e => { if (!e.target.closest('.icon-btn')) toggle(); });
+      el.querySelector('[data-cbx]').onclick = e => { e.stopPropagation(); toggle(); };
+      return;
+    }
+    el.addEventListener('click', e => { if (!e.target.closest('.icon-btn')) openDrawer(clip); });
+    const bind = (act, fn) => { const b = el.querySelector(`[data-act="${act}"]`); if (b) b.onclick = fn; };
+    bind('fav', async () => { const r = await toggleFav(id); toast(r.fav ? '已加入收藏' : '已取消收藏', 'ok'); renderList(); });
+    bind('pin', async () => { const r = await togglePin(id); toast(r.pinned ? '已置顶' : '已取消置顶'); renderList(); });
+    bind('unarch', () => { setArchived(clip, false); toast('已恢复到时间流', 'ok'); renderList(); });
+    bind('ai', () => openAiDock({ prefill: `处理这条${TYPE_META[clip.type].label}：${clip.content.slice(0, 40)}${clip.content.length > 40 ? '…' : ''}` }));
+    bind('more', e => {
+      const pop = openPop(e.currentTarget, inArchive ? `
+        <div class="pop-item" data-m="copy">${iconSvg('copy', 14)}<span class="grow">复制到系统剪贴板</span></div>
+        <div class="pop-item" data-m="raw">${iconSvg('eye', 14)}<span class="grow">查看完整内容</span></div>
+        <div class="pop-item" data-m="unarch">${iconSvg('archive-restore', 14)}<span class="grow">恢复到时间流</span></div>
+        <div class="pop-sep"></div>
+        <div class="pop-item" data-m="purge" style="color:var(--danger)">${iconSvg('trash-2', 14)}<span class="grow">彻底删除</span></div>` : `
+        <div class="pop-item" data-m="copy">${iconSvg('copy', 14)}<span class="grow">复制到系统剪贴板</span></div>
+        <div class="pop-item" data-m="raw">${iconSvg('eye', 14)}<span class="grow">查看完整内容</span></div>
+        <div class="pop-item" data-m="arch">${iconSvg('archive', 14)}<span class="grow">归档</span></div>
+        <div class="pop-sep"></div>
+        <div class="pop-item" data-m="del" style="color:var(--danger)">${iconSvg('trash-2', 14)}<span class="grow">删除此条</span></div>`);
+      pop.querySelector('[data-m="copy"]').onclick = async () => { await copyItem(id); pop.remove(); toast('已复制，可粘贴到任意应用', 'ok'); };
+      pop.querySelector('[data-m="raw"]').onclick = () => { pop.remove(); openDrawer(clip); };
+      const archBtn = pop.querySelector('[data-m="arch"]');
+      if (archBtn) archBtn.onclick = () => { setArchived(clip, true); pop.remove(); toast('已归档，可在「已归档」视图找回', 'ok'); renderList(); };
+      const unBtn = pop.querySelector('[data-m="unarch"]');
+      if (unBtn) unBtn.onclick = () => { setArchived(clip, false); pop.remove(); toast('已恢复到时间流', 'ok'); renderList(); };
+      const purgeBtn = pop.querySelector('[data-m="purge"]');
+      if (purgeBtn) purgeBtn.onclick = async () => {
+        pop.remove();
+        const ok = await confirmModal({ title: '彻底删除', msg: '归档条目彻底删除后不可恢复，确认继续？', okText: '彻底删除', danger: true });
+        if (!ok) return;
+        await removeClip(id); toast('已彻底删除'); renderList();
+      };
+      const delBtn = pop.querySelector('[data-m="del"]');
+      if (delBtn) delBtn.onclick = async () => { await removeClip(id); pop.remove(); toast('已删除'); renderList(); };
+    });
+  });
+
+  renderBatchBar();
+  renderMore();
+}
+
+/* ---------- 加载更多（mock 分页） ---------- */
+function renderMore() {
+  const box = document.getElementById('loadMore');
+  const rem = lastBase.length - Math.min(state.shown, lastBase.length);
+  box.style.display = rem > 0 ? '' : 'none';
+  if (rem > 0) document.getElementById('moreRem').textContent = `还有 ${rem} 条 · 共 ${lastBase.length} 条`;
+}
+document.getElementById('btnMore').onclick = () => { state.shown += PAGE_SIZE; renderList(); };
+
+/* ---------- 批量选择模式 ---------- */
+function renderBatchBar() {
+  const bar = document.getElementById('batchBar');
+  if (!state.selecting) { bar.innerHTML = ''; return; }
+  const n = state.sel.size;
+  const inArchive = state.view === 'archive';
+  bar.innerHTML = `
+    <div class="batch-bar">
+      <label><input type="checkbox" class="cbx" id="selAll" ${n > 0 && n === lastBase.length ? 'checked' : ''}>全选</label>
+      <span class="sel-info">已选 ${n} 项</span>
+      <span class="grow"></span>
+      ${inArchive ? `
+        <button class="btn btn-sm" data-ba="unarch" ${n ? '' : 'disabled'}>${iconSvg('archive-restore', 12)}恢复</button>
+        <button class="btn btn-sm btn-danger" data-ba="purge" ${n ? '' : 'disabled'}>${iconSvg('trash-2', 12)}彻底删除</button>` : `
+        <button class="btn btn-sm" data-ba="pin" ${n ? '' : 'disabled'}>${iconSvg('pin', 12)}置顶</button>
+        <button class="btn btn-sm" data-ba="fav" ${n ? '' : 'disabled'}>${iconSvg('star', 12)}收藏</button>
+        <button class="btn btn-sm" data-ba="arch" ${n ? '' : 'disabled'}>${iconSvg('archive', 12)}归档</button>
+        <button class="btn btn-sm" data-ba="ai" ${n ? '' : 'disabled'}>${iconSvg('sparkles', 12)}AI 建议</button>
+        <button class="btn btn-sm btn-danger" data-ba="del" ${n ? '' : 'disabled'}>${iconSvg('trash-2', 12)}删除</button>`}
+      <button class="btn btn-ghost btn-sm" data-ba="cancel">${iconSvg('x', 12)}取消</button>
+    </div>`;
+  const sel = () => DB.clips.filter(c => state.sel.has(c.id));
+  bar.querySelector('#selAll').onchange = e => {
+    state.sel = e.target.checked ? new Set(lastBase.map(c => c.id)) : new Set();
+    renderList();
+  };
+  const bind = (act, fn) => { const b = bar.querySelector(`[data-ba="${act}"]`); if (b) b.onclick = fn; };
+  bind('cancel', exitSelect);
+  bind('pin', async () => {
+    for (const c of sel()) if (!c.pinned) await togglePin(c.id);
+    toast(`已置顶 ${n} 条`, 'ok'); state.sel.clear(); renderList();
+  });
+  bind('fav', async () => {
+    /* 对齐真实系统 handleBatchFavorite：全部已收藏才取消，否则全部设为收藏 */
+    const items = sel();
+    const target = !items.every(c => c.fav);
+    for (const c of items) if (c.fav !== target) await toggleFav(c.id);
+    toast(target ? `已收藏 ${n} 条` : `已取消收藏 ${n} 条`, 'ok'); state.sel.clear(); renderList();
+  });
+  bind('arch', () => {
+    sel().forEach(c => setArchived(c, true));
+    toast(`已归档 ${n} 条`, 'ok'); state.sel.clear(); renderList();
+  });
+  bind('ai', () => {
+    const items = sel();
+    openAiDock({ prefill: `针对选中的 ${n} 条剪贴内容给出收藏 / 分类 / 清理建议：\n${items.map(c => '· ' + c.content.slice(0, 30)).join('\n')}` });
+  });
+  bind('del', async () => {
+    const ok = await confirmModal({ title: '批量删除', msg: `确认删除选中的 ${n} 条剪贴记录？此操作不可恢复。`, okText: '删除', danger: true });
+    if (!ok) return;
+    for (const c of sel()) await removeClip(c.id);
+    toast(`已删除 ${n} 条`); state.sel.clear(); renderList();
+  });
+  bind('unarch', () => {
+    sel().forEach(c => setArchived(c, false));
+    toast(`已恢复 ${n} 条到时间流`, 'ok'); state.sel.clear(); renderList();
+  });
+  bind('purge', async () => {
+    const ok = await confirmModal({ title: '彻底删除', msg: `归档条目彻底删除后不可恢复，确认删除选中的 ${n} 条？`, okText: '彻底删除', danger: true });
+    if (!ok) return;
+    for (const c of sel()) await removeClip(c.id);
+    toast(`已彻底删除 ${n} 条`); state.sel.clear(); renderList();
+  });
+}
+function exitSelect() {
+  state.selecting = false; state.sel.clear();
+  document.getElementById('btnBatch').classList.remove('btn-acc');
+  renderList();
+}
+document.getElementById('btnBatch').onclick = () => {
+  state.selecting = !state.selecting;
+  state.sel.clear();
+  document.getElementById('btnBatch').classList.toggle('btn-acc', state.selecting);
+  renderList();
+};
+
+/* ---------- 详情抽屉 ---------- */
+function openDrawer(c) {
+  closeDrawer();
+  const m = TYPE_META[c.type];
+  const d = document.createElement('aside');
+  d.className = 'drawer'; d.id = 'clipDrawer';
+  d.innerHTML = `
+    <div class="drawer-head">
+      <div class="type-tile ${m.tile}">${iconSvg(m.ic, 16)}</div>
+      <div><div style="font-weight:600;font-size:13.5px">${m.label}详情</div>
+      <div class="dimmer" style="font-size:11px">来自 ${c.source} · ${c.time}</div></div>
+      <button class="icon-btn" style="margin-left:auto" id="drawerX">${iconSvg('x', 15)}</button>
+    </div>
+    <div class="drawer-body">
+      <div class="panel" style="padding:13px 14px;margin-bottom:12px">
+        <div class="clip-text ${c.type === 'code' ? 'code' : ''}" style="-webkit-line-clamp:unset;font-size:12.5px">${esc(c.content)}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <span class="badge ${m.badge}">${m.label}</span>
+        ${c.size ? `<span class="badge b-gray mono">${c.size}</span>` : ''}
+        ${c.dims ? `<span class="badge b-gray mono">${c.dims}</span>` : ''}
+        ${c.fav ? `<span class="badge b-ok">已收藏</span>` : ''}
+      </div>
+      <div class="page-sub" style="margin-bottom:8px">原位 AI 操作（打开右侧面板并携带本条内容）</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" data-ai="总结" data-ai-target="${esc(c.content.slice(0, 40))}"><i data-ic="sparkles"></i>总结</button>
+        <button class="btn btn-sm" data-ai="翻译为英文" data-ai-target="${esc(c.content.slice(0, 40))}"><i data-ic="sparkles"></i>翻译</button>
+        <button class="btn btn-sm" data-ai="提取关键信息" data-ai-target="${esc(c.content.slice(0, 40))}"><i data-ic="sparkles"></i>提取要点</button>
+      </div>
+    </div>
+    <div class="drawer-foot">
+      <button class="btn btn-acc grow" id="drawerCopy">${iconSvg('copy', 14)}<span>复制</span></button>
+      <button class="btn" id="drawerFav">${iconSvg('star', 14)}</button>
+      <button class="btn btn-danger" id="drawerDel">${iconSvg('trash-2', 14)}</button>
+    </div>`;
+  document.body.appendChild(d);
+  d.querySelector('#drawerX').onclick = closeDrawer;
+  d.querySelector('#drawerCopy').onclick = async () => { await copyItem(c.id); toast('已复制', 'ok'); };
+  d.querySelector('#drawerFav').onclick = async () => { const r = await toggleFav(c.id); toast(r.fav ? '已加入收藏' : '已取消收藏', 'ok'); renderList(); };
+  d.querySelector('#drawerDel').onclick = async () => { await removeClip(c.id); closeDrawer(); toast('已删除'); renderList(); };
+  wireInlineAi(d);
+}
+function closeDrawer() {
+  const d = document.getElementById('clipDrawer'); if (!d) return;
+  d.classList.add('out'); setTimeout(() => d.remove(), 260);
+}
+
+/* ---------- 过滤交互（切换过滤/视图时重置分页；切视图退出批量选择） ---------- */
+document.querySelectorAll('[data-type]').forEach(ch => ch.onclick = () => {
+  document.querySelectorAll('[data-type]').forEach(x => x.classList.remove('active'));
+  ch.classList.add('active'); state.type = ch.dataset.type; state.shown = PAGE_SIZE; renderList();
+});
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('[data-view]').forEach(x => x.classList.remove('active'));
+  b.classList.add('active'); state.view = b.dataset.view; state.shown = PAGE_SIZE;
+  if (state.selecting) { state.selecting = false; state.sel.clear(); document.getElementById('btnBatch').classList.remove('btn-acc'); }
+  renderList();
+});
+let qt; document.getElementById('q').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { state.q = e.target.value.trim(); state.shown = PAGE_SIZE; renderList(); }, 200); };
+document.getElementById('btnClear').onclick = () => toast('原型演示 · 清理历史需二次确认', '');
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (state.selecting) exitSelect(); closeDrawer(); }
+});
+
+renderList();
+</script>
+</body>
+</html>

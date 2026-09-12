@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>10 · AI 记忆 — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    body { background: var(--surface-0); }
+    .mem-shell { display: grid; grid-template-columns: 60px 280px 1fr; height: 100vh; }
+
+    .mem-nav { background: var(--surface-0); border-right: 1px solid var(--hairline); padding: 16px 12px; overflow-y: auto; }
+    .mem-nav h2 { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; padding: 8px 12px 4px; }
+    .mem-nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; font-size: var(--type-sm); color: var(--text-muted); cursor: pointer; margin-bottom: 2px; }
+    .mem-nav-item:hover { background: var(--surface-2); color: var(--text-strong); }
+    .mem-nav-item.is-on { background: var(--accent-tint); color: var(--accent-700); font-weight: 500; }
+    .mem-nav-item .count { margin-left: auto; font-size: 10.5px; padding: 1px 6px; background: var(--surface-2); border-radius: 999px; font-family: 'Geist Mono', monospace; color: var(--text-muted); }
+    .mem-nav-item.is-on .count { background: var(--surface-0); color: var(--accent-700); }
+
+    .mem-main { display: flex; flex-direction: column; min-width: 0; }
+    .mem-header { padding: 24px 32px 16px; border-bottom: 1px solid var(--hairline); display: flex; align-items: end; gap: 16px; }
+    .mem-header h1 { font-size: 28px; color: var(--text-strong); font-weight: 700; letter-spacing: -0.01em; }
+    .mem-header p { font-size: var(--type-sm); color: var(--text-muted); margin-top: 2px; }
+    .mem-header .grow { flex: 1; }
+    .mem-content { flex: 1; overflow-y: auto; padding: 24px 32px; }
+
+    .mem-card { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: start; gap: 12px; transition: all 160ms; }
+    .mem-card:hover { border-color: var(--hairline-strong); }
+    .mem-card .ico-wrap { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; }
+    .mem-card .body { flex: 1; min-width: 0; }
+    .mem-card .body .lbl { font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+    .mem-card .body .v { font-size: var(--type-sm); color: var(--text-strong); line-height: 1.5; }
+    .mem-card .body .src { font-size: 11px; color: var(--text-faint); margin-top: 6px; font-family: 'Geist Mono', monospace; }
+    .mem-card .actions { display: flex; gap: 4px; opacity: 0; transition: opacity 160ms; }
+    .mem-card:hover .actions { opacity: 1; }
+    .mem-card .actions button { padding: 4px; color: var(--text-muted); border-radius: 4px; }
+    .mem-card .actions button:hover { background: var(--surface-2); color: var(--text-strong); }
+
+    .mem-empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+    .mem-empty .ico { width: 48px; height: 48px; margin: 0 auto 12px; border-radius: 12px; background: var(--surface-2); display: grid; place-items: center; }
+
+    .mem-banner { background: linear-gradient(135deg, var(--accent-tint), oklch(70% 0.16 200 / 0.08)); border: 1px solid var(--accent-300); border-radius: 12px; padding: 16px 20px; display: flex; align-items: start; gap: 14px; margin-bottom: 20px; }
+    .mem-banner h3 { font-size: var(--type-md); color: var(--text-strong); font-weight: 600; margin-bottom: 4px; }
+    .mem-banner p { font-size: var(--type-sm); color: var(--text-default); line-height: 1.6; }
+
+    .mem-stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .mem-stat { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 12px; padding: 14px; }
+    .mem-stat .lbl { font-size: var(--type-xs); color: var(--text-muted); margin-bottom: 6px; }
+    .mem-stat .v { font-family: 'Geist Mono', monospace; font-size: 22px; color: var(--text-strong); font-weight: 600; }
+    .mem-stat .sub { font-size: 10.5px; color: var(--text-faint); margin-top: 4px; }
+
+    .mem-source { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; padding: 1px 6px; background: var(--surface-2); border-radius: 999px; color: var(--text-muted); }
+    .mem-nav-item { cursor: pointer; }
+    .mem-card.is-disabled { opacity: 0.5; filter: grayscale(0.5); }
+    .mem-card.is-disabled .v { text-decoration: line-through; }
+    .mem-card .actions button { background: none; border: none; cursor: pointer; display: grid; place-items: center; }
+
+    .toast-stack { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 200; }
+    .toast-x { background: var(--surface-0); border: 1px solid var(--hairline); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; box-shadow: var(--shadow-2); min-width: 280px; font-size: var(--type-sm); animation: slidein 200ms var(--ease-spring); }
+    .toast-x .t { color: var(--text-strong); font-weight: 500; }
+    .toast-x .d { color: var(--text-muted); font-size: var(--type-xs); margin-top: 2px; }
+    .toast-x.success { border-left: 3px solid var(--status-success); }
+    .toast-x.info { border-left: 3px solid var(--status-info); }
+    .toast-x.warn { border-left: 3px solid var(--status-warn); }
+    @keyframes slidein { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+    .modal-overlay { position: fixed; inset: 0; background: oklch(20% 0.02 270 / 0.4); display: none; align-items: center; justify-content: center; z-index: 100; }
+    .modal-overlay.is-open { display: flex; animation: fadein 160ms; }
+    @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+    .modal { background: var(--surface-0); border-radius: 16px; width: 480px; max-width: 92vw; padding: 24px; box-shadow: var(--shadow-3); animation: pop 200ms var(--ease-spring); }
+    @keyframes pop { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    .modal h3 { font-size: var(--type-lg); color: var(--text-strong); font-weight: 600; margin-bottom: 6px; }
+    .modal p { color: var(--text-muted); margin-bottom: 16px; font-size: var(--type-sm); line-height: 1.5; }
+    .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+    .modal textarea, .modal input[type="text"] { width: 100%; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 8px; font-size: var(--type-sm); color: var(--text-strong); font-family: inherit; resize: vertical; }
+    .modal textarea:focus, .modal input:focus { outline: none; border-color: var(--accent-500); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+    .retrain-progress { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; margin-top: 12px; }
+    .retrain-progress > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-400), var(--accent-600)); border-radius: 2px; width: 0; transition: width 2400ms linear; }
+    .retrain-progress.is-done > i { width: 100% !important; }
+
+    .mem-banner.is-hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="mem-shell">
+    <aside class="app-rail">
+      <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l2 -6l4 12l2 -6h7"/></svg></div>
+      <a class="rail-btn2" title="Stream"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h12M4 18h8"/></svg></a>
+      <a class="rail-btn2" title="Collections"><svg class="icon" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></a>
+      <a class="rail-btn2" title="Templates"><svg class="icon" viewBox="0 0 24 24"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></a>
+      <a class="rail-btn2" title="Devices"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="10" rx="1.5"/></svg></a>
+      <a class="rail-btn2 is-active" title="AI" style="background: var(--accent-tint); color: var(--accent-700);"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9c0 3-1.5 5-3 6.5L17 21h-4l-.5-2h-1L11 21H7l-1-2.5C4.5 17 3 15 3 12a9 9 0 0 1 9-9z"/></svg></a>
+      <a class="rail-btn2" title="Settings"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg></a>
+      <div class="rail-spacer"></div>
+      <button class="rail-mode2"><svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></button>
+    </aside>
+
+    <aside class="mem-nav">
+      <h2>AI 知识库</h2>
+      <div class="mem-nav-item is-on" data-filter="all">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/></svg>
+        全部
+        <span class="count">24</span>
+      </div>
+      <h2>类别</h2>
+      <div class="mem-nav-item" data-filter="preference">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        用户偏好
+        <span class="count">6</span>
+      </div>
+      <div class="mem-nav-item" data-filter="project">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        项目背景
+        <span class="count">5</span>
+      </div>
+      <div class="mem-nav-item" data-filter="task">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        任务与目标
+        <span class="count">4</span>
+      </div>
+      <div class="mem-nav-item" data-filter="term">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+        术语与缩写
+        <span class="count">5</span>
+      </div>
+      <div class="mem-nav-item" data-filter="dont">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M20 7L9 18l-5-5"/></svg>
+        偏好与禁忌
+        <span class="count">4</span>
+      </div>
+
+      <h2>数据源</h2>
+      <div class="mem-nav-item" data-source="clipboard">
+        <svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        从剪贴板推断
+        <span class="count">14</span>
+      </div>
+      <div class="mem-nav-item" data-source="chat">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        对话中明确告知
+        <span class="count">7</span>
+      </div>
+      <div class="mem-nav-item" data-source="manual">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9M12 4h9M3 12h18"/></svg>
+        手动添加
+        <span class="count">3</span>
+      </div>
+
+      <h2>工具</h2>
+      <div class="mem-nav-item" style="color: oklch(40% 0.20 25);" onclick="openExportWipe()">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        导出 / 清除
+      </div>
+    </aside>
+
+    <main class="mem-main">
+      <div class="mem-header">
+        <div>
+          <h1>AI 记忆</h1>
+          <p>Pulse 长期记得的关于你的事 · 可查看 · 编辑 · 删除</p>
+        </div>
+        <div class="grow"></div>
+        <div class="baton" style="width: 240px;">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input placeholder="搜索记忆…" />
+        </div>
+        <button class="btn btn-secondary">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12a9 9 0 0 1 9-9"/></svg>
+          重新训练
+        </button>
+        <button class="btn btn-primary">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          添加
+        </button>
+      </div>
+
+      <div class="mem-content">
+        <div class="mem-banner">
+          <div style="width: 36px; height: 36px; border-radius: 10px; background: var(--accent-500); color: white; display: grid; place-items: center; flex-shrink: 0;">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/></svg>
+          </div>
+          <div style="flex: 1;">
+            <h3>Pulse 正在自动学习你的偏好</h3>
+            <p>AI 从你最近的对话和剪贴板中学习 · 每月 1 号会提示你回顾这些记忆。点击任一条目可编辑或关闭该记忆。</p>
+          </div>
+          <button class="btn btn-icon btn-ghost btn-sm">×</button>
+        </div>
+
+        <div class="mem-stat-row">
+          <div class="mem-stat">
+            <div class="lbl">总记忆数</div>
+            <div class="v">24</div>
+            <div class="sub">+3 本周新增</div>
+          </div>
+          <div class="mem-stat">
+            <div class="lbl">使用率</div>
+            <div class="v">87%</div>
+            <div class="sub">近 30 天调用</div>
+          </div>
+          <div class="mem-stat">
+            <div class="lbl">Token 占用</div>
+            <div class="v">312</div>
+            <div class="sub">每次对话</div>
+          </div>
+          <div class="mem-stat">
+            <div class="lbl">数据本地化</div>
+            <div class="v">100%</div>
+            <div class="sub">不上传服务器</div>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+          <h2 style="font-size: var(--type-md); color: var(--text-strong); font-weight: 600; flex: 1;">用户偏好</h2>
+          <span class="mem-source">6 条</span>
+        </div>
+
+        <div class="mem-card" data-category="preference" data-source="chat">
+          <div class="ico-wrap" style="background: oklch(70% 0.14 280 / 0.12); color: oklch(40% 0.14 280);">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/></svg>
+          </div>
+          <div class="body">
+            <div class="lbl">回复语言 <span class="mem-source">对话告知</span></div>
+            <div class="v">默认中文回复 · 保留英文技术术语和代码块</div>
+            <div class="src">来源：3 次对话确认 · 最后更新 9/8</div>
+          </div>
+          <div class="actions">
+            <button title="编辑" onclick="editCard('回复语言', '默认中文回复 · 保留英文技术术语和代码块')"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+            <button title="禁用" onclick="toggleCard(this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg></button>
+          </div>
+        </div>
+
+        <div class="mem-card" data-category="preference" data-source="clipboard">
+          <div class="ico-wrap" style="background: oklch(64% 0.14 230 / 0.12); color: oklch(40% 0.14 230);">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+          </div>
+          <div class="body">
+            <div class="lbl">回答风格 <span class="mem-source">剪贴板推断</span></div>
+            <div class="v">简洁、结构化、bullet 优先 · 不要客套话</div>
+            <div class="src">来源：12 次对话 · 最后调用 2 小时前</div>
+          </div>
+          <div class="actions">
+            <button title="编辑" onclick="editCard('回答风格', '简洁、结构化、bullet 优先 · 不要客套话')"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+            <button title="禁用" onclick="toggleCard(this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg></button>
+          </div>
+        </div>
+
+        <div class="mem-card" data-category="preference" data-source="chat">
+          <div class="ico-wrap" style="background: oklch(64% 0.16 150 / 0.12); color: oklch(40% 0.16 150);">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <div class="body">
+            <div class="lbl">回复长度 <span class="mem-source">对话告知</span></div>
+            <div class="v">中等长度（100-300 字）· 复杂任务才用长回复</div>
+            <div class="src">来源：1 次对话确认</div>
+          </div>
+          <div class="actions">
+            <button title="编辑" onclick="editCard('回复长度', '中等长度（100-300 字）· 复杂任务才用长回复')"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+            <button title="禁用" onclick="toggleCard(this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg></button>
+          </div>
+        </div>
+
+        <div class="mem-card" data-category="preference" data-source="clipboard">
+          <div class="ico-wrap" style="background: oklch(72% 0.15 70 / 0.14); color: oklch(45% 0.15 70);">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <div class="body">
+            <div class="lbl">代码习惯 <span class="mem-source">剪贴板推断</span></div>
+            <div class="v">TypeScript 优先 · 偏好函数式 · 用 Geist Mono · 引号统一用双引号</div>
+            <div class="src">来源：48 个代码片段 · 置信度 92%</div>
+          </div>
+          <div class="actions">
+            <button title="编辑" onclick="editCard('代码习惯', 'TypeScript 优先 · 偏好函数式 · 用 Geist Mono · 引号统一用双引号')"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+            <button title="禁用" onclick="toggleCard(this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg></button>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px; margin: 24px 0 16px;">
+          <h2 style="font-size: var(--type-md); color: var(--text-strong); font-weight: 600; flex: 1;">项目背景</h2>
+          <span class="mem-source">5 条</span>
+        </div>
+
+        <div class="mem-card" data-category="project" data-source="chat">
+          <div class="ico-wrap" style="background: var(--accent-tint); color: var(--accent-600);">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 12h3l2 -6l4 12l2 -6h7"/></svg>
+          </div>
+          <div class="body">
+            <div class="lbl">当前项目 <span class="mem-source">对话告知</span></div>
+            <div class="v">ClipSync · 跨设备剪贴板同步工具 · Tauri + Vue 3 + Tailwind v4 + shadcn-vue</div>
+            <div class="src">来源：5 次对话 · 持续更新中</div>
+          </div>
+          <div class="actions">
+            <button title="编辑" onclick="editCard('当前项目', 'ClipSync · 跨设备剪贴板同步工具 · Tauri + Vue 3 + Tailwind v4 + shadcn-vue')"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+            <button title="禁用" onclick="toggleCard(this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg></button>
+          </div>
+        </div>
+
+        <div class="mem-card" data-category="task" data-source="clipboard">
+          <div class="ico-wrap" style="background: var(--accent-tint); color: var(--accent-600);">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M20 7L9 18l-5-5"/></svg>
+          </div>
+          <div class="body">
+            <div class="lbl">进行中的任务 <span class="mem-source">剪贴板推断</span></div>
+            <div class="v">Pulse 视觉重构 · Phase 1（令牌 + 主题切换 + IconRail）· 截止 9/19</div>
+            <div class="src">来源：本周剪贴板 + 任务列表</div>
+          </div>
+          <div class="actions">
+            <button title="编辑" onclick="editCard('进行中的任务', 'Pulse 视觉重构 · Phase 1（令牌 + 主题切换 + IconRail）· 截止 9/19')"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+            <button title="禁用" onclick="toggleCard(this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg></button>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px; margin: 24px 0 16px;">
+          <h2 style="font-size: var(--type-md); color: var(--text-strong); font-weight: 600; flex: 1;">偏好与禁忌</h2>
+          <span class="mem-source">4 条</span>
+        </div>
+
+        <div class="mem-card" data-category="dont" data-source="chat" style="border-left: 3px solid oklch(60% 0.20 25);">
+          <div class="ico-wrap" style="background: oklch(60% 0.20 25 / 0.10); color: oklch(40% 0.20 25);">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+          </div>
+          <div class="body">
+            <div class="lbl" style="color: oklch(40% 0.20 25);">明确不要做 <span class="mem-source">对话告知</span></div>
+            <div class="v">不要在自动写入剪贴板前先弹确认 · 不要 emoji · 不要 Markdown 表格转图片</div>
+            <div class="src">来源：2 次对话 · 用户明确表达</div>
+          </div>
+          <div class="actions">
+            <button title="编辑" onclick="editCard('明确不要做', '不要在自动写入剪贴板前先弹确认 · 不要 emoji · 不要 Markdown 表格转图片')"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+            <button title="禁用" onclick="toggleCard(this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg></button>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px; margin: 24px 0 16px;">
+          <h2 style="font-size: var(--type-md); color: var(--text-strong); font-weight: 600; flex: 1;">手动添加</h2>
+          <span class="mem-source">3 条</span>
+        </div>
+
+        <div class="mem-card" data-category="preference" data-source="manual">
+          <div class="ico-wrap" style="background: oklch(70% 0.20 340 / 0.10); color: oklch(40% 0.20 340);">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <div class="body">
+            <div class="lbl">重要提示 <span class="mem-source">手动</span></div>
+            <div class="v">回答技术问题时，优先推荐 2025 年以后的资料；引用论文要给完整引用（作者/会议/年）</div>
+            <div class="src">你 · 9/5 手动添加</div>
+          </div>
+          <div class="actions">
+            <button title="编辑" onclick="editCard('重要提示', '回答技术问题时，优先推荐 2025 年以后的资料；引用论文要给完整引用（作者/会议/年）')"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+            <button title="禁用" onclick="toggleCard(this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Edit memory modal -->
+  <div class="modal-overlay" id="modal-edit" onclick="if(event.target===this) closeModal('modal-edit')">
+    <div class="modal">
+      <h3>编辑记忆</h3>
+      <p>修改此项记忆的描述 · AI 将立即使用新版本</p>
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; font-size: var(--type-xs); color: var(--text-muted); margin-bottom: 4px;">标题</label>
+        <input type="text" id="edit-title" />
+      </div>
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; font-size: var(--type-xs); color: var(--text-muted); margin-bottom: 4px;">内容</label>
+        <textarea id="edit-value" rows="4"></textarea>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 10px; background: var(--surface-1); border-radius: 8px;">
+        <svg class="icon" viewBox="0 0 24 24" style="width: 16px; height: 16px; color: var(--text-muted);"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+        <span style="font-size: var(--type-xs); color: var(--text-muted);">修改后所有相关对话会立即生效</span>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-edit')">取消</button>
+        <button class="btn btn-danger" onclick="deleteCard()">删除</button>
+        <button class="btn btn-primary" onclick="saveEdit()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add memory modal -->
+  <div class="modal-overlay" id="modal-add" onclick="if(event.target===this) closeModal('modal-add')">
+    <div class="modal">
+      <h3>添加新记忆</h3>
+      <p>手动添加一条 Pulse 永久记住的偏好或上下文</p>
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; font-size: var(--type-xs); color: var(--text-muted); margin-bottom: 4px;">类别</label>
+        <select id="add-cat" style="width: 100%; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 8px; font-size: var(--type-sm); color: var(--text-strong);">
+          <option value="preference">用户偏好</option>
+          <option value="project">项目背景</option>
+          <option value="task">任务与目标</option>
+          <option value="term">术语与缩写</option>
+          <option value="dont">偏好与禁忌</option>
+        </select>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; font-size: var(--type-xs); color: var(--text-muted); margin-bottom: 4px;">标题</label>
+        <input type="text" id="add-title" placeholder="例如：沟通风格" />
+      </div>
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; font-size: var(--type-xs); color: var(--text-muted); margin-bottom: 4px;">内容</label>
+        <textarea id="add-value" rows="3" placeholder="描述越具体 AI 用得越准"></textarea>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-add')">取消</button>
+        <button class="btn btn-primary" onclick="saveAdd()">添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export / Wipe modal -->
+  <div class="modal-overlay" id="modal-export-wipe" onclick="if(event.target===this) closeModal('modal-export-wipe')">
+    <div class="modal">
+      <h3>导出 / 清除记忆</h3>
+      <p>所有 24 条记忆存储在本机加密缓存，导出为 JSON 或永久清除。</p>
+      <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+        <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="showToast('success', '导出中', '24 条记忆 → downloads/clipsync-memory-2026-09-12.json')">
+          <svg class="icon" viewBox="0 0 24 24" style="margin-right: 8px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          导出全部为 JSON
+        </button>
+        <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="showToast('success', '导出中', '24 条记忆 → downloads/clipsync-memory-2026-09-12.csv')">
+          <svg class="icon" viewBox="0 0 24 24" style="margin-right: 8px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          导出为 CSV
+        </button>
+      </div>
+      <div style="padding: 12px; background: oklch(60% 0.20 25 / 0.05); border: 1px solid oklch(60% 0.20 25 / 0.2); border-radius: 8px;">
+        <div style="color: oklch(40% 0.20 25); font-weight: 500; margin-bottom: 4px;">⚠ 危险操作</div>
+        <div style="font-size: var(--type-xs); color: var(--text-muted); margin-bottom: 10px;">清除所有 24 条记忆将不可恢复 · AI 之后会重新学习但需要时间</div>
+        <button class="btn btn-danger" onclick="confirmWipeAll()" style="background: var(--status-danger); color: white; border-color: var(--status-danger); width: 100%; justify-content: center;">清除全部记忆</button>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-export-wipe')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wipe confirm -->
+  <div class="modal-overlay" id="modal-wipe-all" onclick="if(event.target===this) closeModal('modal-wipe-all')">
+    <div class="modal">
+      <h3 style="color: var(--status-danger);">⚠ 确认清除全部记忆？</h3>
+      <p>将永久删除 <b>24 条</b>长期记忆。<br>此操作不可撤销 · 备份已导出？</p>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface-2); border-radius: 8px; margin-bottom: 12px;">
+        <input type="checkbox" id="wipe-confirm" style="width: 16px; height: 16px;" />
+        <label for="wipe-confirm" style="font-size: var(--type-sm); color: var(--text-default);">我已备份 · 了解此操作不可恢复</label>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-wipe-all')">取消</button>
+        <button class="btn btn-danger" id="wipe-btn" disabled style="background: var(--status-danger); color: white; border-color: var(--status-danger); opacity: 0.5;" onclick="executeWipeAll()">永久清除</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toasts"></div>
+
+  <script>
+    let currentEditCard = null;
+    let currentFilter = 'all';
+    let currentSource = null;
+    let currentSearch = '';
+
+    // === Nav filter ===
+    document.querySelectorAll('.mem-nav-item[data-filter]').forEach(nav => {
+      nav.addEventListener('click', () => {
+        currentFilter = nav.dataset.filter;
+        currentSource = null;
+        document.querySelectorAll('.mem-nav-item').forEach(n => n.classList.remove('is-on'));
+        nav.classList.add('is-on');
+        applyFilter();
+      });
+    });
+    document.querySelectorAll('.mem-nav-item[data-source]').forEach(nav => {
+      nav.addEventListener('click', () => {
+        currentSource = nav.dataset.source;
+        currentFilter = 'all';
+        document.querySelectorAll('.mem-nav-item').forEach(n => n.classList.remove('is-on'));
+        nav.classList.add('is-on');
+        applyFilter();
+      });
+    });
+    function applyFilter() {
+      document.querySelectorAll('.mem-card').forEach(c => {
+        const matchCat = currentFilter === 'all' || c.dataset.category === currentFilter;
+        const matchSrc = !currentSource || c.dataset.source === currentSource;
+        const matchSearch = !currentSearch || c.textContent.toLowerCase().includes(currentSearch);
+        c.style.display = (matchCat && matchSrc && matchSearch) ? '' : 'none';
+      });
+    }
+
+    // === Search ===
+    document.querySelector('.baton input').addEventListener('input', e => {
+      currentSearch = e.target.value.toLowerCase();
+      applyFilter();
+    });
+
+    // === Card disable ===
+    function toggleCard(btn) {
+      const card = btn.closest('.mem-card');
+      const wasDisabled = card.classList.contains('is-disabled');
+      card.classList.toggle('is-disabled');
+      const lbl = card.querySelector('.lbl').textContent.split(' ')[0];
+      showToast(wasDisabled ? 'success' : 'warn', wasDisabled ? '记忆已启用' : '记忆已禁用', lbl + ' 将' + (wasDisabled ? '恢复使用' : '不再被 AI 调用'));
+    }
+
+    // === Edit modal ===
+    function editCard(title, value) {
+      currentEditCard = { title, value };
+      document.getElementById('edit-title').value = title;
+      document.getElementById('edit-value').value = value;
+      openModal('modal-edit');
+    }
+    function saveEdit() {
+      const newTitle = document.getElementById('edit-title').value;
+      const newValue = document.getElementById('edit-value').value;
+      if (currentEditCard && currentEditCard.cardEl) {
+        currentEditCard.cardEl.querySelector('.lbl').firstChild.textContent = newTitle;
+        currentEditCard.cardEl.querySelector('.v').textContent = newValue;
+      }
+      closeModal('modal-edit');
+      showToast('success', '记忆已更新', 'AI 将立即使用新版本');
+    }
+    function deleteCard() {
+      if (currentEditCard && currentEditCard.cardEl) {
+        currentEditCard.cardEl.style.transition = 'all 200ms';
+        currentEditCard.cardEl.style.opacity = '0';
+        currentEditCard.cardEl.style.transform = 'scale(0.96)';
+        setTimeout(() => currentEditCard.cardEl.remove(), 220);
+      }
+      closeModal('modal-edit');
+      showToast('warn', '记忆已删除', 'AI 不再使用此偏好');
+    }
+
+    // === Add modal ===
+    function openAdd() { openModal('modal-add'); }
+    function saveAdd() {
+      const cat = document.getElementById('add-cat').value;
+      const title = document.getElementById('add-title').value || '新记忆';
+      const value = document.getElementById('add-value').value;
+      if (!value) { showToast('warn', '内容不能为空', '请填写记忆描述'); return; }
+      // Insert into appropriate section
+      const sectionHeaders = {
+        preference: '用户偏好',
+        project: '项目背景',
+        task: '任务与目标',
+        term: '术语与缩写',
+        dont: '偏好与禁忌'
+      };
+      const sectionName = sectionHeaders[cat];
+      // Find existing section by h2 text
+      const headers = document.querySelectorAll('.mem-content h2');
+      let targetSection = null;
+      headers.forEach(h => { if (h.textContent.includes(sectionName)) targetSection = h.parentElement.nextElementSibling; });
+      // For simplicity append to end of mem-content
+      const html = `
+        <div class="mem-card" data-category="${cat}" data-source="manual" style="background: oklch(78% 0.16 var(--accent-hue) / 0.06); border-color: var(--accent-300);">
+          <div class="ico-wrap" style="background: var(--accent-tint); color: var(--accent-600);">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+          <div class="body">
+            <div class="lbl">${title} <span class="mem-source">手动</span></div>
+            <div class="v">${value}</div>
+            <div class="src">你 · 刚刚添加</div>
+          </div>
+          <div class="actions">
+            <button title="编辑" onclick="editCard('${title}', '${value.replace(/'/g, "\\'")}')"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+            <button title="禁用" onclick="toggleCard(this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg></button>
+          </div>
+        </div>
+      `;
+      // Insert before the last section's header (or just append at the end)
+      const memContent = document.querySelector('.mem-content');
+      memContent.insertAdjacentHTML('beforeend', html);
+      closeModal('modal-add');
+      document.getElementById('add-title').value = '';
+      document.getElementById('add-value').value = '';
+      showToast('success', '记忆已添加', '"' + title + '" 已加入长期记忆');
+    }
+
+    // === Retrain ===
+    function retrain() {
+      const btn = document.querySelector('.mem-header .btn-secondary');
+      const oldHtml = btn.innerHTML;
+      btn.innerHTML = '<span class="retrain-progress" style="width: 80px; margin: 0;"><i style="width: 0%"></i></span>';
+      const bar = btn.querySelector('i');
+      setTimeout(() => { bar.style.width = '100%'; }, 50);
+      setTimeout(() => {
+        btn.innerHTML = '<svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg> 完成';
+        showToast('success', '重新训练完成', '24 条记忆已重建索引 · Token 占用 312');
+        setTimeout(() => { btn.innerHTML = oldHtml; }, 2000);
+      }, 2500);
+    }
+    document.querySelector('.mem-header .btn-secondary').onclick = retrain;
+
+    // === Banner close ===
+    document.querySelector('.mem-banner .btn-icon').onclick = () => {
+      document.querySelector('.mem-banner').classList.add('is-hidden');
+    };
+
+    // === Add button ===
+    document.querySelector('.mem-header .btn-primary').onclick = openAdd;
+
+    // === Edit card open ===
+    document.querySelectorAll('.mem-card .actions button[title="编辑"]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const card = btn.closest('.mem-card');
+        const title = card.querySelector('.lbl').firstChild.textContent.trim();
+        const value = card.querySelector('.v').textContent;
+        currentEditCard = { title, value, cardEl: card };
+        document.getElementById('edit-title').value = title;
+        document.getElementById('edit-value').value = value;
+        openModal('modal-edit');
+      });
+    });
+
+    // === Export / wipe ===
+    function openExportWipe() { openModal('modal-export-wipe'); }
+    function confirmWipeAll() {
+      closeModal('modal-export-wipe');
+      openModal('modal-wipe-all');
+      const cb = document.getElementById('wipe-confirm');
+      const btn = document.getElementById('wipe-btn');
+      cb.checked = false;
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      cb.onchange = () => { btn.disabled = !cb.checked; btn.style.opacity = cb.checked ? '1' : '0.5'; };
+    }
+    function executeWipeAll() {
+      document.querySelectorAll('.mem-card').forEach((c, i) => {
+        setTimeout(() => {
+          c.style.transition = 'all 200ms';
+          c.style.opacity = '0';
+          c.style.transform = 'scale(0.96)';
+          setTimeout(() => c.remove(), 220);
+        }, i * 40);
+      });
+      closeModal('modal-wipe-all');
+      showToast('warn', '记忆已清除', '24 条记忆已永久删除 · AI 将重新学习');
+    }
+
+    // === Modal helpers ===
+    function openModal(id) { document.getElementById(id).classList.add('is-open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('is-open'); }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.is-open').forEach(m => m.classList.remove('is-open'));
+    });
+
+    // === Toast ===
+    function showToast(type, title, desc) {
+      const stack = document.getElementById('toasts');
+      const t = document.createElement('div');
+      t.className = 'toast-x ' + type;
+      t.innerHTML = '<div><div class="t">' + title + '</div><div class="d">' + (desc || '') + '</div></div>';
+      stack.appendChild(t);
+      setTimeout(() => {
+        t.style.transition = 'all 200ms'; t.style.opacity = '0'; t.style.transform = 'translateX(20px)';
+        setTimeout(() => t.remove(), 220);
+      }, 3200);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pulse · Design System</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="pulse.css" />
+  <style>
+    body { background: var(--surface-0); }
+    .ds-shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    .ds-side {
+      background: var(--surface-0);
+      border-right: 1px solid var(--hairline);
+      padding: 24px 12px;
+      position: sticky; top: 0; height: 100vh;
+      overflow-y: auto;
+    }
+    .ds-side h1 {
+      font-size: 18px; font-weight: 700;
+      color: var(--text-strong);
+      padding: 0 12px 16px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .ds-side h1 .dot { width: 12px; height: 12px; border-radius: 999px; background: linear-gradient(135deg, var(--accent-400), var(--accent-600)); }
+    .ds-side a {
+      display: block;
+      padding: 6px 12px;
+      font-size: var(--type-sm);
+      color: var(--text-muted);
+      border-radius: 6px;
+      transition: all 160ms;
+    }
+    .ds-side a:hover { background: var(--surface-2); color: var(--text-strong); }
+    .ds-side .grp { font-size: 10.5px; color: var(--text-faint); padding: 14px 12px 4px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+
+    .ds-main { padding: 48px 56px; max-width: 100%; overflow-x: hidden; }
+    .ds-main h2 {
+      font-size: 28px; font-weight: 700; color: var(--text-strong);
+      letter-spacing: -0.01em;
+      margin: 0 0 4px;
+    }
+    .ds-main h2 .num { color: var(--text-faint); font-family: 'Geist Mono', monospace; margin-right: 8px; font-size: 16px; }
+    .ds-main h3 {
+      font-size: var(--type-md); color: var(--text-strong);
+      font-weight: 600; margin: 32px 0 12px;
+      padding-bottom: 8px; border-bottom: 1px solid var(--hairline);
+    }
+    .ds-main p { color: var(--text-muted); font-size: var(--type-sm); margin-bottom: 20px; line-height: 1.6; }
+
+    .swatch-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .swatch {
+      width: 100px; height: 80px;
+      border-radius: 10px;
+      display: flex; align-items: end;
+      padding: 8px;
+      font-size: 10.5px;
+      color: white;
+      font-family: 'Geist Mono', monospace;
+    }
+    .swatch.light { color: var(--text-strong); }
+    .swatch.s0 { background: var(--surface-0); border: 1px solid var(--hairline); }
+    .swatch.s1 { background: var(--surface-1); border: 1px solid var(--hairline); }
+    .swatch.s2 { background: var(--surface-2); border: 1px solid var(--hairline); }
+    .swatch.s3 { background: var(--surface-3); }
+    .swatch.a3 { background: var(--accent-300); color: var(--text-strong); }
+    .swatch.a4 { background: var(--accent-400); }
+    .swatch.a5 { background: var(--accent-500); }
+    .swatch.a6 { background: var(--accent-600); }
+    .swatch.a7 { background: var(--accent-700); }
+    .swatch.glow { background: var(--accent-glow); color: var(--text-strong); }
+    .swatch.tint { background: var(--accent-tint); color: var(--accent-700); }
+
+    .type-row { display: flex; align-items: baseline; gap: 24px; padding: 10px 0; border-bottom: 1px dashed var(--hairline); }
+    .type-row .lbl { width: 100px; color: var(--text-faint); font-family: 'Geist Mono', monospace; font-size: 11px; flex-shrink: 0; }
+    .type-row .smp { color: var(--text-strong); }
+    .type-row.xs .smp { font-size: var(--type-xs); }
+    .type-row.sm .smp { font-size: var(--type-sm); }
+    .type-row.base .smp { font-size: var(--type-base); }
+    .type-row.md .smp { font-size: var(--type-md); }
+    .type-row.lg .smp { font-size: var(--type-lg); }
+    .type-row.xl .smp { font-size: var(--type-xl); }
+    .type-row.xxl .smp { font-size: var(--type-2xl); font-weight: 700; letter-spacing: -0.02em; }
+
+    .demo-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+    .comp-card { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 18px; }
+    .comp-card h4 { font-size: var(--type-sm); color: var(--text-muted); margin-bottom: 12px; }
+
+    .shadow-demo { display: flex; gap: 16px; flex-wrap: wrap; }
+    .shadow-box {
+      width: 100px; height: 100px;
+      background: var(--surface-1);
+      border-radius: var(--radius-lg);
+      display: grid; place-items: center;
+      font-size: 10.5px;
+      color: var(--text-muted);
+      font-family: 'Geist Mono', monospace;
+    }
+    .shadow-box.s1 { box-shadow: var(--shadow-1); }
+    .shadow-box.s2 { box-shadow: var(--shadow-2); }
+    .shadow-box.s3 { box-shadow: var(--shadow-3); }
+    .shadow-box.glow { box-shadow: var(--shadow-glow); }
+
+    .radius-demo { display: flex; gap: 12px; align-items: end; }
+    .radius-box { width: 80px; height: 80px; background: var(--accent-tint); display: grid; place-items: center; font-family: 'Geist Mono', monospace; font-size: 10.5px; color: var(--accent-700); }
+    .radius-box.sm { border-radius: var(--radius-sm); }
+    .radius-box.md { border-radius: var(--radius-md); }
+    .radius-box.lg { border-radius: var(--radius-lg); }
+    .radius-box.xl { border-radius: var(--radius-xl); }
+    .radius-box.full { border-radius: 999px; width: 80px; height: 80px; }
+
+    .specimen {
+      background: var(--surface-2);
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      font-family: 'Geist Mono', monospace;
+      font-size: 12px;
+      color: var(--text-default);
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+    .specimen .k { color: var(--accent-600); }
+    .specimen .v { color: var(--text-strong); }
+    .specimen .c { color: var(--text-faint); }
+
+    .mode-toggle { display: flex; align-items: center; gap: 8px; }
+    .mode-toggle button {
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .mode-toggle button.is-on { background: var(--surface-1); box-shadow: var(--shadow-1); color: var(--text-strong); }
+  </style>
+</head>
+<body>
+  <div class="ds-shell">
+    <aside class="ds-side">
+      <h1><span class="dot"></span> Pulse DS</h1>
+      <div class="mode-toggle" style="margin: 0 12px 16px;">
+        <button id="lightBtn" class="is-on">Light</button>
+        <button id="darkBtn">Dark</button>
+      </div>
+      <div class="grp">基础</div>
+      <a href="#colors">01 色彩</a>
+      <a href="#type">02 字体</a>
+      <a href="#space">03 间距</a>
+      <a href="#radius">04 圆角</a>
+      <a href="#shadow">05 阴影</a>
+      <a href="#motion">06 动效</a>
+      <div class="grp">组件</div>
+      <a href="#card">07 Pulse Card</a>
+      <a href="#button">08 Button</a>
+      <a href="#input">09 Input</a>
+      <a href="#tag">10 Tag</a>
+      <a href="#avatar">11 Avatar</a>
+      <a href="#switch">12 Switch</a>
+      <a href="#halo">13 Halo Sidekick</a>
+    </aside>
+
+    <main class="ds-main">
+      <h2><span class="num">00</span>Pulse Design System</h2>
+      <p>剪贴板应用的视觉语言 · 单一品牌 + 用户可调强调色相 · 8 档尺寸 / 4 档圆角 / 4 阶阴影 / 1 套弹性动效</p>
+
+      <h3 id="colors">01 · 色彩</h3>
+      <p>基于 oklch 的感知一致色彩系统。Surface 5 阶，Accent 跟随用户色相。状态色（成功/警告/危险/信息）固定不随强调色相变化。</p>
+      <div class="swatch-row">
+        <div class="swatch s0 light">--surface-0</div>
+        <div class="swatch s1 light">--surface-1</div>
+        <div class="swatch s2 light">--surface-2</div>
+        <div class="swatch s3 light">--surface-3</div>
+        <div class="swatch a3">--accent-300</div>
+        <div class="swatch a4">--accent-400</div>
+        <div class="swatch a5">--accent-500</div>
+        <div class="swatch a6">--accent-600</div>
+        <div class="swatch a7">--accent-700</div>
+        <div class="swatch tint">tint</div>
+        <div class="swatch glow">glow</div>
+      </div>
+
+      <h3 id="type">02 · 字体</h3>
+      <p>7 档字号（11 / 12.5 / 14 / 15.5 / 18 / 22 / 32），UI 用 Inter，代码用 Geist Mono。</p>
+      <div class="type-row xs"><span class="lbl">type-xs · 11</span><span class="smp">The quick brown fox · 小标签 / 时间</span></div>
+      <div class="type-row sm"><span class="lbl">type-sm · 12.5</span><span class="smp">The quick brown fox · 次要文本 / 列表项</span></div>
+      <div class="type-row base"><span class="lbl">type-base · 14</span><span class="smp">The quick brown fox · 正文 / 按钮</span></div>
+      <div class="type-row md"><span class="lbl">type-md · 15.5</span><span class="smp">The quick brown fox · 卡片标题</span></div>
+      <div class="type-row lg"><span class="lbl">type-lg · 18</span><span class="smp">The quick brown fox · 段落标题</span></div>
+      <div class="type-row xl"><span class="lbl">type-xl · 22</span><span class="smp">The quick brown fox · 区块标题</span></div>
+      <div class="type-row xxl"><span class="lbl">type-2xl · 32</span><span class="smp mono">47</span></div>
+
+      <h3 id="space">03 · 间距</h3>
+      <p>4px 基线 8 档 + 2 档呼吸间距。布局使用 16/24/32/48，组件内部 8/12/16。</p>
+      <div class="demo-row" style="align-items: end;">
+        <div style="text-align: center;"><div style="width: 4px; height: 4px; background: var(--accent-500); border-radius: 1px;"></div><div style="font-size: 10px; color: var(--text-faint); font-family: 'Geist Mono', monospace; margin-top: 6px;">1·4</div></div>
+        <div style="text-align: center;"><div style="width: 8px; height: 8px; background: var(--accent-500); border-radius: 1px;"></div><div style="font-size: 10px; color: var(--text-faint); font-family: 'Geist Mono', monospace; margin-top: 6px;">2·8</div></div>
+        <div style="text-align: center;"><div style="width: 12px; height: 12px; background: var(--accent-500); border-radius: 1px;"></div><div style="font-size: 10px; color: var(--text-faint); font-family: 'Geist Mono', monospace; margin-top: 6px;">3·12</div></div>
+        <div style="text-align: center;"><div style="width: 16px; height: 16px; background: var(--accent-500); border-radius: 1px;"></div><div style="font-size: 10px; color: var(--text-faint); font-family: 'Geist Mono', monospace; margin-top: 6px;">4·16</div></div>
+        <div style="text-align: center;"><div style="width: 24px; height: 24px; background: var(--accent-500); border-radius: 1px;"></div><div style="font-size: 10px; color: var(--text-faint); font-family: 'Geist Mono', monospace; margin-top: 6px;">6·24</div></div>
+        <div style="text-align: center;"><div style="width: 32px; height: 32px; background: var(--accent-500); border-radius: 1px;"></div><div style="font-size: 10px; color: var(--text-faint); font-family: 'Geist Mono', monospace; margin-top: 6px;">8·32</div></div>
+        <div style="text-align: center;"><div style="width: 48px; height: 48px; background: var(--accent-500); border-radius: 1px;"></div><div style="font-size: 10px; color: var(--text-faint); font-family: 'Geist Mono', monospace; margin-top: 6px;">12·48</div></div>
+        <div style="text-align: center;"><div style="width: 64px; height: 64px; background: var(--accent-500); border-radius: 1px;"></div><div style="font-size: 10px; color: var(--text-faint); font-family: 'Geist Mono', monospace; margin-top: 6px;">16·64</div></div>
+      </div>
+
+      <h3 id="radius">04 · 圆角</h3>
+      <p>4 档 + 1 全圆。标签 6、按钮 10、卡片 14、弹层 20。</p>
+      <div class="radius-demo">
+        <div class="radius-box sm">sm·6</div>
+        <div class="radius-box md">md·10</div>
+        <div class="radius-box lg">lg·14</div>
+        <div class="radius-box xl">xl·20</div>
+        <div class="radius-box full">∞</div>
+      </div>
+
+      <h3 id="shadow">05 · 阴影</h3>
+      <p>4 阶。Shadow 1/2/3 是 oklch 紫调灰，避免纯黑；Shadow glow 是带强调色的"光环"。</p>
+      <div class="shadow-demo">
+        <div class="shadow-box s1">shadow-1</div>
+        <div class="shadow-box s2">shadow-2</div>
+        <div class="shadow-box s3">shadow-3</div>
+        <div class="shadow-box glow" style="background: var(--surface-0);">glow</div>
+      </div>
+
+      <h3 id="motion">06 · 动效</h3>
+      <p>两套曲线：ease-out（标准缓出）用于内容过渡，spring（弹性）用于抽屉/侧栏。3 档时长：160ms（hover）、240ms（标准）、380ms（显著）。</p>
+      <div class="specimen">
+<span class="c">/* 标准过渡 */</span>
+<span class="k">transition</span>: all <span class="v">160ms</span> <span class="k">var</span>(--ease-out);
+
+<span class="c">/* 弹性动效（侧栏/抽屉）*/</span>
+<span class="k">transition</span>: all <span class="v">240ms</span> <span class="k">var</span>(--ease-spring);
+      </div>
+
+      <h3 id="card">07 · Pulse Card</h3>
+      <p>剪贴板条目的核心载体。14 圆角，左侧 3px 类型色条，hover 上浮 -1px + shadow-1，选中加 accent 边 + glow。</p>
+      <div style="display: flex; flex-direction: column; gap: 6px; max-width: 480px;">
+        <article class="pcard"><div class="type-bar url"></div><div class="pcard-body">
+          <div class="pcard-preview">https://linear.app/inbox/issue/ENG-4821</div>
+          <div class="pcard-meta"><span class="tag tag-info">URL</span><span>·</span><span class="mono">12s</span></div>
+        </div></article>
+        <article class="pcard is-selected"><div class="type-bar code"></div><div class="pcard-body">
+          <div class="pcard-preview code">const stream = await streamClipboard(...);</div>
+          <div class="pcard-meta"><span class="tag">代码</span><span>·</span><span class="mono">32s</span></div>
+        </div></article>
+        <article class="pcard"><div class="type-bar password"></div><div class="pcard-body">
+          <div class="pcard-preview" style="letter-spacing: 0.1em;">••••••••••••••••</div>
+          <div class="pcard-meta"><span class="tag tag-danger">密码</span><span>·</span><span class="mono">8m</span></div>
+        </div></article>
+      </div>
+
+      <h3 id="button">08 · Button</h3>
+      <p>主操作（accent + glow）、次操作（surface + hairline）、文字按钮、危险按钮、图标按钮、尺寸变体。</p>
+      <div class="demo-row">
+        <button class="btn btn-primary">主操作</button>
+        <button class="btn btn-secondary">次操作</button>
+        <button class="btn btn-ghost">文字按钮</button>
+        <button class="btn btn-danger">危险</button>
+        <button class="btn btn-primary btn-sm">小号</button>
+        <button class="btn btn-icon btn-secondary"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      </div>
+
+      <h3 id="input">09 · Input / Baton</h3>
+      <p>Baton 是 Pulse 的招牌输入控件：居中、inset 背景、⌘K 提示，聚焦时白底 + accent 边 + glow。</p>
+      <div class="demo-row" style="max-width: 480px;">
+        <div class="baton" style="flex: 1;">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input placeholder="搜索剪贴板、模板、设备…" />
+          <span class="kbd"><kbd>⌘</kbd><kbd>K</kbd></span>
+        </div>
+      </div>
+      <div class="demo-row" style="max-width: 480px;">
+        <input class="input" placeholder="普通输入框" />
+      </div>
+
+      <h3 id="tag">10 · Tag</h3>
+      <div class="demo-row">
+        <span class="tag">默认</span>
+        <span class="tag tag-accent">强调</span>
+        <span class="tag tag-info">信息</span>
+        <span class="tag tag-success">成功</span>
+        <span class="tag tag-warn">警告</span>
+        <span class="tag tag-danger">危险</span>
+      </div>
+
+      <h3 id="avatar">11 · Avatar</h3>
+      <div class="demo-row">
+        <div class="av av-24" style="background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(60% 0.20 0))">C</div>
+        <div class="av av-32" style="background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(60% 0.20 0))">C</div>
+        <div class="av av-40" style="background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(60% 0.20 0))">Carlos</div>
+        <div class="av av-56" style="background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(60% 0.20 0))">Carlos</div>
+        <div class="av av-32 is-offline" style="background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(60% 0.20 0))">C</div>
+      </div>
+
+      <h3 id="switch">12 · Switch</h3>
+      <div class="demo-row">
+        <div class="switch"></div>
+        <div class="switch is-on"></div>
+      </div>
+
+      <h3 id="halo">13 · Halo Sidekick</h3>
+      <p>右侧 280px 常驻面板，4 种角色：Companion（默认）/ Assistant / Inspector / Library。</p>
+      <div style="display: grid; grid-template-columns: 1fr 280px; gap: 16px; max-width: 720px; height: 360px; background: var(--surface-0); border: 1px solid var(--hairline); border-radius: 16px; overflow: hidden;">
+        <div style="background: linear-gradient(135deg, var(--surface-1), var(--surface-2));"></div>
+        <div class="halo" style="border-left: 1px solid var(--hairline);">
+          <div class="halo-head">
+            <div class="halo-seg">
+              <button class="is-active">Companion</button>
+              <button>Assistant</button>
+              <button>Inspector</button>
+            </div>
+          </div>
+          <div class="halo-body">
+            <p style="font-size: var(--type-sm); color: var(--text-muted); line-height: 1.6;">Halo 是 Pulse 的右侧环境面板。它跟当前页面共享状态，会根据上下文自动切换角色。</p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    document.getElementById('lightBtn').addEventListener('click', () => {
+      document.documentElement.dataset.mode = 'light';
+      document.getElementById('lightBtn').classList.add('is-on');
+      document.getElementById('darkBtn').classList.remove('is-on');
+    });
+    document.getElementById('darkBtn').addEventListener('click', () => {
+      document.documentElement.dataset.mode = 'dark';
+      document.getElementById('darkBtn').classList.add('is-on');
+      document.getElementById('lightBtn').classList.remove('is-on');
+    });
+  </script>
+</body>
+</html>

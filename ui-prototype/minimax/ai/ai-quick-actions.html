@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI · Quick Actions 广场 — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    body { background: var(--surface-0); }
+    .qa-shell { display: grid; grid-template-columns: 60px 1fr; height: 100vh; }
+    .qa-main { display: flex; flex-direction: column; min-width: 0; }
+    .qa-content { flex: 1; padding: 28px 40px 40px; overflow-y: auto; }
+
+    .qa-hero { display: flex; align-items: end; gap: 16px; margin-bottom: 28px; }
+    .qa-hero h1 { font-size: 32px; font-weight: 700; color: var(--text-strong); letter-spacing: -0.02em; }
+    .qa-hero p { color: var(--text-muted); font-size: var(--type-md); margin-top: 4px; }
+
+    .qa-tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--hairline); }
+    .qa-tab { padding: 10px 16px; font-size: var(--type-sm); color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
+    .qa-tab.is-on { color: var(--text-strong); border-bottom-color: var(--accent-500); font-weight: 500; }
+    .qa-tab .count { display: inline-block; margin-left: 6px; padding: 1px 6px; background: var(--surface-2); border-radius: 999px; font-size: 10.5px; color: var(--text-muted); font-family: 'Geist Mono', monospace; }
+
+    .qa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+    .qa-card {
+      background: var(--surface-1);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      padding: 18px;
+      cursor: pointer;
+      transition: all 200ms var(--ease-out);
+      position: relative;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .qa-card:hover { background: var(--surface-2); border-color: var(--hairline-strong); transform: translateY(-2px); box-shadow: var(--shadow-2); }
+    .qa-card.is-popular { border-color: var(--accent-300); }
+    .qa-card.is-popular::before { content: '🔥 热门'; position: absolute; top: 10px; right: 12px; font-size: 10.5px; color: oklch(45% 0.15 70); background: oklch(72% 0.15 70 / 0.12); padding: 1px 6px; border-radius: 999px; }
+    .qa-card-head { display: flex; align-items: start; gap: 12px; }
+    .qa-ico {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      display: grid; place-items: center;
+      flex-shrink: 0;
+    }
+    .qa-ico.summary { background: oklch(64% 0.14 230 / 0.12); color: oklch(40% 0.14 230); }
+    .qa-ico.translate { background: oklch(64% 0.16 150 / 0.12); color: oklch(40% 0.16 150); }
+    .qa-ico.rewrite { background: oklch(70% 0.14 280 / 0.12); color: oklch(40% 0.14 280); }
+    .qa-ico.code { background: oklch(70% 0.14 30 / 0.12); color: oklch(40% 0.14 30); }
+    .qa-ico.extract { background: oklch(72% 0.15 70 / 0.12); color: oklch(45% 0.15 70); }
+    .qa-ico.tag { background: oklch(60% 0.20 25 / 0.10); color: oklch(40% 0.20 25); }
+    .qa-ico.todo { background: oklch(70% 0.16 200 / 0.14); color: oklch(40% 0.16 200); }
+    .qa-ico.draft { background: oklch(70% 0.20 340 / 0.10); color: oklch(40% 0.20 340); }
+    .qa-meta { flex: 1; min-width: 0; }
+    .qa-meta h3 { font-size: var(--type-md); color: var(--text-strong); font-weight: 600; margin-bottom: 2px; }
+    .qa-meta p { font-size: var(--type-xs); color: var(--text-muted); }
+    .qa-body { font-size: var(--type-sm); color: var(--text-default); line-height: 1.55; }
+    .qa-foot { display: flex; align-items: center; gap: 6px; font-size: var(--type-xs); color: var(--text-faint); margin-top: auto; padding-top: 8px; }
+    .qa-foot .kbd { font-family: 'Geist Mono', monospace; font-size: 10.5px; padding: 1px 5px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 3px; }
+    .qa-foot .used { margin-left: auto; }
+
+    .qa-custom {
+      background: linear-gradient(135deg, var(--accent-tint), var(--surface-1));
+      border: 1px dashed var(--accent-400);
+      border-radius: 14px;
+      padding: 18px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center;
+      min-height: 160px;
+      gap: 8px;
+      cursor: pointer;
+      transition: all 200ms;
+    }
+    .qa-custom:hover { background: linear-gradient(135deg, var(--accent-tint), var(--accent-tint)); }
+    .qa-custom .ico { color: var(--accent-600); }
+
+    .qa-running { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--accent-tint); border: 1px solid var(--accent-300); border-radius: 999px; font-size: var(--type-xs); color: var(--accent-700); }
+    .qa-running .pulse { width: 6px; height: 6px; border-radius: 999px; background: var(--accent-500); animation: pulse 1.2s infinite; }
+
+    /* Right side: result preview */
+    .qa-with-preview { display: grid; grid-template-columns: 1fr 380px; gap: 20px; }
+    .qa-preview { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px; padding: 20px; height: fit-content; position: sticky; top: 20px; }
+    .qa-preview h4 { font-size: var(--type-sm); color: var(--text-muted); margin-bottom: 12px; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="qa-shell">
+    <aside class="app-rail">
+      <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l2 -6l4 12l2 -6h7"/></svg></div>
+      <a class="rail-btn2" title="Stream"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h12M4 18h8"/></svg></a>
+      <a class="rail-btn2" title="Collections"><svg class="icon" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></a>
+      <a class="rail-btn2" title="Templates"><svg class="icon" viewBox="0 0 24 24"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></a>
+      <a class="rail-btn2" title="Devices"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M17 9h2.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H17"/></svg></a>
+      <a class="rail-btn2" title="Settings"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></a>
+      <div class="rail-spacer"></div>
+      <button class="rail-mode2"><svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></button>
+    </aside>
+
+    <main class="qa-main">
+      <div class="baton-bar">
+        <div class="crumb">AI · <b>快捷指令广场</b></div>
+        <div class="grow"></div>
+        <div class="baton" style="width: 320px;">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input placeholder="搜索指令或描述你的需求…" />
+          <span class="kbd"><kbd>⌘</kbd><kbd>K</kbd></span>
+        </div>
+        <div class="stat"><span class="status-dot ok"></span> 1,247 / 5,000 tokens</div>
+        <button class="btn btn-secondary">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/></svg>
+          AI 设置
+        </button>
+      </div>
+
+      <div class="qa-content">
+        <div class="qa-with-preview">
+          <div>
+            <div class="qa-hero">
+              <div style="flex: 1;">
+                <h1>🤖 AI 快捷指令</h1>
+                <p>16 个为剪贴板场景专门调教的预定义动作 · 一键即用</p>
+              </div>
+              <div class="qa-running">
+                <span class="pulse"></span>
+                <span>正在分析今天的 47 条</span>
+              </div>
+            </div>
+
+            <div class="qa-tabs">
+              <div class="qa-tab is-on" data-cat="all">全部 <span class="count">16</span></div>
+              <div class="qa-tab" data-cat="clipboard">剪贴板 <span class="count">6</span></div>
+              <div class="qa-tab" data-cat="text">文本 <span class="count">5</span></div>
+              <div class="qa-tab" data-cat="code">代码 <span class="count">2</span></div>
+              <div class="qa-tab" data-cat="organize">整理 <span class="count">3</span></div>
+            </div>
+
+            <div class="qa-grid">
+              <div class="qa-card is-popular" data-cat="clipboard" data-name="总结今天的剪贴板" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico summary"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>总结今天的剪贴板</h3>
+                    <p>按主题聚合 · 自动提炼要点</p>
+                  </div>
+                </div>
+                <div class="qa-body">把今天 47 条剪贴板按主题（调研/工作/生活）分组，每个主题 3 个要点，1 分钟理解今天干了啥。</div>
+                <div class="qa-foot">
+                  <span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">A</span>
+                  <span class="used">已用 23 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card is-popular" data-cat="text" data-name="翻译选中文本" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico translate"><svg class="icon" viewBox="0 0 24 24"><path d="M4 5h7M9 3v2c0 4.42-2.46 8.19-6 9.83M13 19l4-9 4 9M14 16h6"/><path d="M5 8c0 6 4 9 9 10"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>翻译选中文本</h3>
+                    <p>自动检测语言 · 保留格式</p>
+                  </div>
+                </div>
+                <div class="qa-body">自动识别源语言（中/英/日/韩/法/德/西），译为目标语言，保留 Markdown 格式、代码块、链接。</div>
+                <div class="qa-foot">
+                  <span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">T</span>
+                  <span class="used">已用 89 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card" data-cat="text" data-name="改写为更专业" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico rewrite"><svg class="icon" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>改写为更专业 / 更友好</h3>
+                    <p>支持 4 种语气调节</p>
+                  </div>
+                </div>
+                <div class="qa-body">把口语化的文字改写为正式邮件，或反之。4 种语气：专业 / 友好 / 简洁 / 详细。</div>
+                <div class="qa-foot">
+                  <span class="used">已用 12 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card is-popular" data-cat="clipboard" data-name="提取 TODO 到收藏夹" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico extract"><svg class="icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>提取 TODO 到收藏夹</h3>
+                    <p>从任意文本中识别任务</p>
+                  </div>
+                </div>
+                <div class="qa-body">扫描当前选中的文本，识别所有 TODO 关键词（"下周要..."/"记得..."/"TODO"），自动加入「任务」收藏夹。</div>
+                <div class="qa-foot">
+                  <span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">L</span>
+                  <span class="used">已用 31 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card" data-cat="code" data-name="解释这段代码" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico code"><svg class="icon" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>解释这段代码</h3>
+                    <p>支持 20+ 语言</p>
+                  </div>
+                </div>
+                <div class="qa-body">逐行解释选中的代码块，指出潜在 bug 和优化建议。可输出为 Markdown 笔记。</div>
+                <div class="qa-foot">
+                  <span class="used">已用 18 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card" data-cat="organize" data-name="智能打标签" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico tag"><svg class="icon" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><path d="M7 7h.01"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>智能打标签</h3>
+                    <p>基于内容推荐 3 个标签</p>
+                  </div>
+                </div>
+                <div class="qa-body">根据剪贴板内容自动建议 3 个最匹配的标签（从你的标签库中选），按一次确认。</div>
+                <div class="qa-foot">
+                  <span class="used">已用 7 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card is-popular" data-cat="organize" data-name="把这段存为模板" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico todo"><svg class="icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>把这段存为模板</h3>
+                    <p>自动识别变量</p>
+                  </div>
+                </div>
+                <div class="qa-body">把当前剪贴板识别为可复用模板，自动高亮变量（如日期、姓名），可立刻使用。</div>
+                <div class="qa-foot">
+                  <span class="used">已用 14 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card" data-cat="text" data-name="起草一封邮件" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico draft"><svg class="icon" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>起草一封邮件</h3>
+                    <p>基于上下文生成</p>
+                  </div>
+                </div>
+                <div class="qa-body">根据收件人、主题、过往沟通风格生成邮件草稿。一键复制或直接发送到你的邮件客户端。</div>
+                <div class="qa-foot">
+                  <span class="used">已用 9 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card" data-cat="clipboard" data-name="把这个存为表格" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico summary"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>把这个存为表格</h3>
+                    <p>自动识别列 · 预览</p>
+                  </div>
+                </div>
+                <div class="qa-body">从非结构化文本（订单 / 名单 / 日志）抽取字段生成 CSV/Excel 表。预览后导出。</div>
+                <div class="qa-foot">
+                  <span class="used">已用 5 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card" data-cat="clipboard" data-name="提取所有链接" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico extract"><svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>提取所有链接</h3>
+                    <p>从长文 / PDF / 笔记中</p>
+                  </div>
+                </div>
+                <div class="qa-body">从当前剪贴板或选中区域提取所有 URL，自动去重并按域名分组。可一键加入「链接」收藏夹。</div>
+                <div class="qa-foot">
+                  <span class="used">已用 11 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card" data-cat="organize" data-name="清理过期剪贴板" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico tag"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>清理过期剪贴板</h3>
+                    <p>建议保留 / 删除</p>
+                  </div>
+                </div>
+                <div class="qa-body">扫描超过 30 天的剪贴板，按访问频率分类（高/中/低），给出删除建议，二次确认后才执行。</div>
+                <div class="qa-foot">
+                  <span class="used">已用 4 次</span>
+                </div>
+              </div>
+
+              <div class="qa-card" data-cat="clipboard" data-name="回答关于剪贴板的问题" onclick="runAction(this)">
+                <div class="qa-card-head">
+                  <div class="qa-ico translate"><svg class="icon" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
+                  <div class="qa-meta">
+                    <h3>回答关于剪贴板的问题</h3>
+                    <p>自由对话</p>
+                  </div>
+                </div>
+                <div class="qa-body">直接问"我上周复制过 GitHub 上的什么项目？"、"我的信用卡号是多少？"——AI 从本地历史中查找。</div>
+                <div class="qa-foot">
+                  <span class="used">已用 67 次</span>
+                </div>
+              </div>
+
+              <div class="qa-custom" onclick="openCustomEditor()">
+                <svg class="icon" viewBox="0 0 24 24" style="width: 32px; height: 32px;"><path d="M12 5v14M5 12h14"/></svg>
+                <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">自定义指令</div>
+                <div style="font-size: var(--type-xs); color: var(--text-muted); max-width: 200px;">用自然语言描述需求，AI 自动转成可复用的快捷指令</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right preview / running task panel -->
+          <aside class="qa-preview">
+            <h4 style="display: flex; align-items: center; gap: 6px;">
+              <span class="status-dot" style="background: var(--status-success);"></span>
+              最近一次运行
+            </h4>
+            <div style="background: var(--surface-2); border-radius: 10px; padding: 12px; margin-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                <span class="tag tag-accent">总结今天的剪贴板</span>
+                <span class="mono" style="font-size: 10.5px; color: var(--text-faint); margin-left: auto;">刚刚</span>
+              </div>
+              <div style="font-size: var(--type-xs); color: var(--text-muted);">已读 47 条 · 跨 3 设备 · 耗时 1.2s</div>
+            </div>
+
+            <div style="font-size: var(--type-sm); color: var(--text-default); line-height: 1.7;">
+              上午主要在 <b style="color: var(--text-strong);">技术调研</b>（GitHub issue、AI Agent 讨论）和 <b style="color: var(--text-strong);">数据回顾</b>（季度复盘、用户增长），下午偏向 <b style="color: var(--text-strong);">会议准备</b>。建议把 <code class="mono" style="background: var(--surface-2); padding: 1px 5px; border-radius: 3px; font-size: 11px;">"next 1:1 准备清单"</code> 存为模板。
+            </div>
+
+            <div style="display: flex; gap: 6px; margin-top: 16px;">
+              <button class="btn btn-sm btn-secondary" style="flex: 1;">复制</button>
+              <button class="btn btn-sm btn-secondary" style="flex: 1;">收藏</button>
+              <button class="btn btn-sm btn-primary" style="flex: 1;">再生成</button>
+            </div>
+
+            <h4 style="margin-top: 24px;">使用统计</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: var(--type-sm);">
+              <div><div style="color: var(--text-faint); font-size: var(--type-xs);">本月调用</div><div class="mono" style="color: var(--text-strong); font-size: 18px; font-weight: 600;">428</div></div>
+              <div><div style="color: var(--text-faint); font-size: var(--type-xs);">节省时间</div><div class="mono" style="color: var(--text-strong); font-size: 18px; font-weight: 600;">~6.2h</div></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast-stack" id="toasts" style="position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 200;"></div>
+
+  <div class="modal-overlay" id="modal-custom" onclick="if(event.target===this) closeModal('modal-custom')" style="position: fixed; inset: 0; background: oklch(20% 0.02 270 / 0.4); display: none; align-items: center; justify-content: center; z-index: 100;">
+    <div class="modal" style="background: var(--surface-0); border-radius: 16px; width: 520px; max-width: 92vw; padding: 24px; box-shadow: var(--shadow-3);">
+      <h3 style="font-size: var(--type-lg); color: var(--text-strong); font-weight: 600; margin-bottom: 6px;">自定义指令</h3>
+      <p style="color: var(--text-muted); margin-bottom: 16px; font-size: var(--type-sm); line-height: 1.5;">用自然语言描述你想要的快捷指令，AI 会自动生成可复用的版本</p>
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; font-size: var(--type-xs); color: var(--text-muted); margin-bottom: 4px;">描述你的需求</label>
+        <textarea id="custom-desc" rows="3" placeholder="例如：把最近一周的剪贴板整理成周报格式，标题用日期，自动按主题分组" style="width: 100%; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 8px; font-size: var(--type-sm); color: var(--text-strong); font-family: inherit; resize: vertical;"></textarea>
+      </div>
+      <div style="background: var(--surface-2); border-radius: 8px; padding: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: var(--type-xs); color: var(--text-muted);">💡 示例：</span>
+        <span class="example-chip" style="padding: 4px 10px; background: var(--surface-0); border: 1px solid var(--hairline); border-radius: 999px; font-size: 11px; color: var(--text-default); cursor: pointer; margin: 2px;" onclick="document.getElementById('custom-desc').value='把每条剪贴板自动改写成更专业的语气'">语气改写</span>
+        <span class="example-chip" style="padding: 4px 10px; background: var(--surface-0); border: 1px solid var(--hairline); border-radius: 999px; font-size: 11px; color: var(--text-default); cursor: pointer; margin: 2px;" onclick="document.getElementById('custom-desc').value='扫描所有包含 URL 的剪贴板，提取并按日期排序'">URL 提取</span>
+        <span class="example-chip" style="padding: 4px 10px; background: var(--surface-0); border: 1px solid var(--hairline); border-radius: 999px; font-size: 11px; color: var(--text-default); cursor: pointer; margin: 2px;" onclick="document.getElementById('custom-desc').value='从最近的对话中提取我承诺过的所有 deadline'">Deadline 提取</span>
+      </div>
+      <div class="modal-actions" style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button class="btn btn-ghost" onclick="closeModal('modal-custom')">取消</button>
+        <button class="btn btn-primary" onclick="generateCustom()">生成指令</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .toast-x { background: var(--surface-0); border: 1px solid var(--hairline); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; box-shadow: var(--shadow-2); min-width: 280px; font-size: var(--type-sm); animation: slidein 200ms var(--ease-spring); }
+    .toast-x .t { color: var(--text-strong); font-weight: 500; }
+    .toast-x .d { color: var(--text-muted); font-size: var(--type-xs); margin-top: 2px; }
+    .toast-x.success { border-left: 3px solid var(--status-success); }
+    .toast-x.info { border-left: 3px solid var(--status-info); }
+    @keyframes slidein { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+    .qa-card.is-running { border-color: var(--accent-500); background: var(--accent-tint); transform: translateY(-2px); box-shadow: var(--shadow-glow); }
+    .qa-card.is-running::after { content: '⏳'; position: absolute; top: 10px; right: 12px; font-size: 11px; }
+    @keyframes cardpulse { 0%, 100% { box-shadow: var(--shadow-glow); } 50% { box-shadow: 0 0 0 6px var(--accent-glow); } }
+    .qa-card.is-running { animation: cardpulse 1.4s infinite; }
+    .modal-overlay.is-open { display: flex !important; animation: fadein 160ms; }
+    @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+  </style>
+
+  <script>
+    let currentTab = 'all';
+    let currentSearch = '';
+
+    // === Tab filtering ===
+    document.querySelectorAll('.qa-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        currentTab = tab.dataset.cat;
+        document.querySelectorAll('.qa-tab').forEach(t => t.classList.remove('is-on'));
+        tab.classList.add('is-on');
+        applyFilter();
+      });
+    });
+
+    // === Search ===
+    document.querySelector('.baton input').addEventListener('input', e => {
+      currentSearch = e.target.value.toLowerCase();
+      applyFilter();
+    });
+
+    function applyFilter() {
+      document.querySelectorAll('.qa-card').forEach(c => {
+        const matchCat = currentTab === 'all' || c.dataset.cat === currentTab;
+        const matchSearch = !currentSearch || (c.textContent || '').toLowerCase().includes(currentSearch);
+        c.style.display = (matchCat && matchSearch) ? '' : 'none';
+      });
+    }
+
+    // === Run action ===
+    function runAction(card) {
+      if (card.classList.contains('is-running')) return;
+      const name = card.dataset.name;
+      // Visual: mark as running
+      document.querySelectorAll('.qa-card').forEach(c => c.classList.remove('is-running'));
+      card.classList.add('is-running');
+      showToast('info', '执行中', 'AI 正在分析 · ' + name);
+      // Mock result
+      setTimeout(() => {
+        card.classList.remove('is-running');
+        const used = card.querySelector('.used');
+        if (used) {
+          const m = used.textContent.match(/(\d+)/);
+          if (m) used.textContent = '已用 ' + (parseInt(m[1]) + 1) + ' 次';
+        }
+        // Update preview
+        updatePreview(name);
+        showToast('success', '完成', '"' + name + '" 已生成 · 可在右侧查看');
+      }, 1200);
+    }
+
+    function updatePreview(name) {
+      const preview = document.querySelector('.qa-preview');
+      const tag = preview.querySelector('.tag');
+      const time = preview.querySelector('.mono');
+      if (tag) tag.textContent = name;
+      if (time) time.textContent = '刚刚';
+    }
+
+    // === Custom command editor ===
+    function openCustomEditor() { openModal('modal-custom'); }
+    function generateCustom() {
+      const desc = document.getElementById('custom-desc').value.trim();
+      if (!desc) { showToast('warn', '请填写描述', '描述越具体生成的指令越准'); return; }
+      closeModal('modal-custom');
+      showToast('success', '正在生成', 'AI 正在将你的描述转成可复用的指令 · 完成后会通知');
+      setTimeout(() => {
+        showToast('success', '已添加', '新指令「' + desc.slice(0, 18) + '…」已加入广场 · 可立即使用');
+      }, 2200);
+    }
+
+    // === Modal helpers ===
+    function openModal(id) { document.getElementById(id).classList.add('is-open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('is-open'); }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.is-open').forEach(m => m.classList.remove('is-open'));
+    });
+
+    // === Preview buttons ===
+    document.querySelectorAll('.qa-preview .btn-secondary').forEach((btn, i) => {
+      btn.onclick = () => {
+        if (i === 0) showToast('success', '已复制', '结果已复制到剪贴板');
+        else showToast('info', '已收藏', '可在收藏夹中找到该结果');
+      };
+    });
+    document.querySelectorAll('.qa-preview .btn-primary').forEach(btn => {
+      btn.onclick = () => {
+        showToast('info', '再生成', '已使用相同输入重新生成 · 1.2s');
+      };
+    });
+
+    // === Search focus ===
+    document.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        document.querySelector('.baton input').focus();
+      }
+    });
+
+    // === Toast ===
+    function showToast(type, title, desc) {
+      const stack = document.getElementById('toasts');
+      const t = document.createElement('div');
+      t.className = 'toast-x ' + type;
+      t.innerHTML = '<div><div class="t">' + title + '</div><div class="d">' + (desc || '') + '</div></div>';
+      stack.appendChild(t);
+      setTimeout(() => { t.style.transition = 'all 200ms'; t.style.opacity = '0'; t.style.transform = 'translateX(20px)'; setTimeout(() => t.remove(), 220); }, 3000);
+    }
+  </script>
+</body>
+</html>

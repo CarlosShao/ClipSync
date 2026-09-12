@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>01 · Stream — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    /* page-specific bits only */
+    .pcard .pcard-preview.text-snippet { font-family: 'Geist Mono', monospace; font-size: 12.5px; }
+    .sync-bar {
+      position: sticky; bottom: 0;
+      background: var(--surface-0);
+      border-top: 1px solid var(--hairline);
+      padding: 8px 32px;
+      display: flex; align-items: center; gap: 16px;
+      font-size: var(--type-xs); color: var(--text-muted);
+    }
+    .sync-bar .grow { flex: 1; }
+    .sync-bar kbd {
+      font-family: 'Geist Mono', monospace;
+      font-size: 10.5px;
+      padding: 1px 5px;
+      background: var(--surface-1);
+      border: 1px solid var(--hairline);
+      border-radius: 4px;
+    }
+    .halo-section { margin-bottom: 18px; }
+    .halo-section h4 {
+      font-size: var(--type-xs); color: var(--text-faint);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      font-weight: 600; margin-bottom: 8px;
+    }
+    .halo-card {
+      background: var(--surface-2);
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      display: flex; align-items: start; gap: 8px;
+      transition: all 160ms;
+      cursor: pointer;
+    }
+    .halo-card:hover { background: var(--surface-3); }
+    .halo-card .ico { color: var(--accent-500); margin-top: 1px; }
+    .halo-card .body { flex: 1; min-width: 0; }
+    .halo-card .body b { color: var(--text-strong); font-weight: 500; font-size: var(--type-sm); display: block; margin-bottom: 2px; }
+    .halo-card .body p { font-size: var(--type-xs); color: var(--text-muted); }
+    .halo-stats { display: flex; gap: 8px; }
+    .halo-stat {
+      flex: 1; background: var(--surface-2);
+      border-radius: var(--radius-md);
+      padding: 8px 10px;
+      border: 1px solid var(--hairline);
+    }
+    .halo-stat .num { font-family: 'Geist Mono', monospace; font-size: 18px; font-weight: 600; color: var(--text-strong); }
+    .halo-stat .lbl { font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+
+    /* ===== Halo Assistant view ===== */
+    .halo-view { display: flex; flex-direction: column; gap: 12px; }
+    .halo-ctx {
+      display: flex; align-items: center; gap: 6px; padding: 7px 10px;
+      background: var(--surface-2); border: 1px solid var(--hairline);
+      border-radius: 8px; font-size: var(--type-xs); color: var(--text-muted);
+    }
+    .halo-ctx svg { color: var(--text-faint); flex-shrink: 0; }
+    .halo-ctx b { color: var(--text-strong); font-weight: 500; }
+    .halo-ctx .ctx-refresh {
+      margin-left: auto; width: 20px; height: 20px; border-radius: 5px;
+      border: none; background: transparent; color: var(--text-muted);
+      display: grid; place-items: center; cursor: pointer; transition: all 160ms;
+    }
+    .halo-ctx .ctx-refresh:hover { background: var(--surface-3); color: var(--text-strong); }
+    .halo-ctx .ctx-refresh.is-on svg { animation: spin 0.6s linear; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .halo-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .halo-chip {
+      padding: 4px 10px; border-radius: 999px; font-size: var(--type-xs);
+      background: var(--surface-0); color: var(--text-default);
+      border: 1px solid var(--hairline); cursor: pointer; transition: all 160ms;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .halo-chip:hover { border-color: var(--accent-400); color: var(--text-strong); }
+    .halo-chip.is-on { background: var(--accent-tint); color: var(--accent-700); border-color: var(--accent-300); font-weight: 500; }
+    .halo-chip.add { color: var(--text-muted); }
+    .halo-chip.add:hover { color: var(--accent-600); }
+
+    .halo-thread { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+    .halo-msg { display: flex; gap: 8px; align-items: start; animation: haloIn 280ms var(--ease-out); }
+    .halo-msg.user { flex-direction: row-reverse; }
+    @keyframes haloIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    .halo-avatar {
+      width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center;
+      font-size: 11px; font-weight: 600; flex-shrink: 0;
+    }
+    .user-av { background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(60% 0.20 0)); color: white; }
+    .ai-av { background: var(--accent-500); color: white; }
+    .halo-bubble {
+      max-width: 86%; padding: 10px 12px; border-radius: 12px;
+      font-size: var(--type-sm); line-height: 1.6;
+    }
+    .user-bubble {
+      background: var(--accent-500); color: white;
+      border-top-right-radius: 4px; border-top-left-radius: 12px;
+    }
+    .ai-bubble {
+      background: var(--surface-1); color: var(--text-strong);
+      border: 1px solid var(--hairline);
+      border-top-left-radius: 4px; border-top-right-radius: 12px;
+    }
+    .halo-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+    .halo-meta b { font-size: var(--type-xs); color: var(--text-strong); font-weight: 600; }
+    .halo-meta .model-badge {
+      font-family: 'Geist Mono', monospace; font-size: 10px;
+      padding: 1px 6px; background: var(--accent-tint); color: var(--accent-700);
+      border-radius: 4px; font-weight: 500; cursor: pointer;
+    }
+    .halo-meta .model-badge:hover { background: var(--accent-200, var(--accent-tint)); }
+    .halo-meta .halo-time { font-size: 10.5px; color: var(--text-faint); font-family: 'Geist Mono', monospace; }
+    .halo-meta .halo-gen { font-size: 10.5px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; }
+    .halo-gen-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-500); animation: genpulse 1.2s infinite; }
+    @keyframes genpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .halo-content p { margin-bottom: 6px; }
+    .halo-content p:last-child { margin-bottom: 0; }
+    .halo-content ol, .halo-content ul { margin: 4px 0 4px 20px; }
+    .halo-content li { margin-bottom: 4px; }
+    .halo-content b { color: var(--text-strong); font-weight: 600; }
+    .halo-content code { font-family: 'Geist Mono', monospace; font-size: 11.5px; background: var(--surface-2); padding: 1px 4px; border-radius: 3px; }
+
+    .halo-stat-row {
+      display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; padding: 4px 8px;
+      background: var(--surface-2); border-radius: 6px;
+      font-size: 10.5px; color: var(--text-muted); font-family: 'Geist Mono', monospace;
+    }
+    .halo-stat-row svg { color: var(--text-faint); }
+    .halo-stat-saved { background: var(--accent-tint); color: var(--accent-700); }
+    .halo-stat-saved svg { color: var(--accent-600); }
+    .halo-stat-saved b { color: var(--accent-700); }
+
+    .halo-msg-actions { display: flex; gap: 2px; margin-top: 6px; }
+    .halo-msg-actions button {
+      width: 22px; height: 22px; border-radius: 5px; border: none; background: transparent;
+      color: var(--text-faint); display: grid; place-items: center; cursor: pointer; transition: all 160ms;
+    }
+    .halo-msg-actions button:hover { background: var(--surface-2); color: var(--text-strong); }
+    .halo-msg-actions button.is-on { background: var(--accent-tint); color: var(--accent-700); }
+
+    /* Halo foot composer */
+    .baton { display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--hairline); border-radius: 8px; }
+    .baton input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--type-sm); color: var(--text-strong); font-family: inherit; height: 100%; }
+    .baton input::placeholder { color: var(--text-faint); }
+    .baton-ic { width: 26px; height: 26px; border-radius: 6px; border: none; background: transparent; color: var(--text-muted); display: grid; place-items: center; cursor: pointer; transition: all 160ms; }
+    .baton-ic:hover { background: var(--surface-2); color: var(--text-strong); }
+    .halo-count { font-size: 10.5px; color: var(--text-faint); font-family: 'Geist Mono', monospace; padding: 0 4px; }
+    .halo-send {
+      width: 26px; height: 26px; border-radius: 6px; border: none;
+      background: var(--accent-500); color: white; display: grid; place-items: center;
+      cursor: pointer; transition: all 160ms; flex-shrink: 0;
+    }
+    .halo-send:hover { transform: scale(1.06); background: var(--accent-600, var(--accent-500)); }
+    .halo-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Toast */
+    .halo-toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
+      padding: 9px 14px; background: var(--text-strong, oklch(20% 0.02 260));
+      color: var(--surface-0, white); font-size: var(--type-sm); border-radius: 8px;
+      opacity: 0; pointer-events: none; transition: all 240ms var(--ease-out); z-index: 200;
+      box-shadow: var(--shadow-2); display: flex; align-items: center; gap: 6px;
+    }
+    .halo-toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Icon rail -->
+    <aside class="app-rail">
+      <div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12h3l2 -6l4 12l2 -6h7"/>
+        </svg>
+      </div>
+      <a class="rail-btn2 is-active" title="Stream">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h12M4 18h8"/></svg>
+      </a>
+      <a class="rail-btn2" title="Collections">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
+      </a>
+      <a class="rail-btn2" title="Templates">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg>
+      </a>
+      <a class="rail-btn2" title="Devices">
+        <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M17 9h2.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H17"/><path d="M7 19h6"/></svg>
+      </a>
+      <a class="rail-btn2" title="Settings">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg>
+      </a>
+      <div class="rail-spacer"></div>
+      <button class="rail-mode2" title="主题">
+        <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg>
+      </button>
+    </aside>
+
+    <!-- Main -->
+    <main class="app-main">
+      <!-- Baton bar -->
+      <div class="baton-bar">
+        <div class="crumb">Workspace · <b>个人空间</b></div>
+        <div class="grow"></div>
+        <div class="baton">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" placeholder="搜索剪贴板、模板、设备…" />
+          <span class="kbd"><kbd>⌘</kbd><kbd>K</kbd></span>
+        </div>
+        <div class="stat">
+          <span class="status-dot ok"></span>
+          <span>iPhone 15 · 同步中</span>
+        </div>
+        <button class="btn btn-icon btn-ghost" title="通知">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+        </button>
+        <div class="av av-32" style="background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(60% 0.20 0))">C</div>
+      </div>
+
+      <div class="app-content">
+        <!-- Stream area -->
+        <section class="stream-area">
+          <div class="page-head">
+            <div>
+              <h1>Stream</h1>
+              <p>今天 47 条 · 跨 3 台设备 · 上次同步 12 秒前</p>
+            </div>
+            <div class="grow"></div>
+            <button class="btn btn-secondary">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M6 12h12M9 18h6"/></svg>
+              过滤
+            </button>
+            <button class="btn btn-primary">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              新建
+            </button>
+          </div>
+
+          <!-- Group: just now -->
+          <div class="stream-group">
+            <div class="stream-group-head">
+              <span class="ts-dot pulse"></span>
+              <span class="time mono">刚刚</span>
+              <span class="count">3</span>
+              <span class="line"></span>
+            </div>
+            <div class="stream-list">
+              <article class="pcard is-selected">
+                <div class="type-bar url"></div>
+                <div class="pcard-body">
+                  <div class="pcard-preview">https://linear.app/inbox/issue/ENG-4821/quill-mvp-shipping-plan</div>
+                  <div class="pcard-meta">
+                    <span class="tag tag-info">URL</span>
+                    <span>·</span>
+                    <span>来自 <b style="color: var(--text-strong)">MacBook Pro</b></span>
+                    <span>·</span>
+                    <span class="mono">12s</span>
+                    <div class="grow" style="flex:1"></div>
+                    <div class="pcard-actions">
+                      <button class="btn btn-sm btn-ghost btn-icon" title="复制"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                      <button class="btn btn-sm btn-ghost btn-icon" title="收藏"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+                      <button class="btn btn-sm btn-ghost btn-icon" title="AI 处理"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/><path d="M19 14l.7 2.1L22 17l-2.3.9L19 20l-.7-2.1L16 17l2.3-.9z"/></svg></button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="pcard">
+                <div class="type-bar code"></div>
+                <div class="pcard-body">
+                  <div class="pcard-preview code">const stream = await streamClipboard({ device: "all", since: ts });</div>
+                  <div class="pcard-meta">
+                    <span class="tag">代码</span>
+                    <span>·</span>
+                    <span>来自 <b style="color: var(--text-strong)">VS Code</b></span>
+                    <span>·</span>
+                    <span class="mono">32s</span>
+                    <span class="tag tag-warn">建议模板</span>
+                  </div>
+                </div>
+              </article>
+
+              <article class="pcard">
+                <div class="type-bar image"></div>
+                <div class="pcard-body" style="flex-direction: row; gap: 14px;">
+                  <div style="width: 64px; height: 48px; border-radius: 8px; background: linear-gradient(135deg, #f59e0b, #ec4899); flex-shrink: 0;"></div>
+                  <div style="flex:1; display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+                    <div class="pcard-preview" style="-webkit-line-clamp:1;">screenshot-2026-09-12_08-15-32.png</div>
+                    <div class="pcard-meta">
+                      <span class="tag tag-warn">图片</span>
+                      <span>·</span>
+                      <span>来自 <b style="color: var(--text-strong)">iPhone 15</b></span>
+                      <span>·</span>
+                      <span class="mono">1m</span>
+                      <span class="tag tag-info">420 KB</span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <!-- Group: 5 minutes ago -->
+          <div class="stream-group">
+            <div class="stream-group-head">
+              <span class="ts-dot"></span>
+              <span class="time mono">5 分钟前</span>
+              <span class="count">2</span>
+              <span class="line"></span>
+            </div>
+            <div class="stream-list">
+              <article class="pcard">
+                <div class="type-bar text"></div>
+                <div class="pcard-body">
+                  <div class="pcard-preview">季度复盘：用户增长 38%，留存在第二周开始下滑，需要关注 onboarding 第二步的流失原因。</div>
+                  <div class="pcard-meta">
+                    <span class="tag">文本</span>
+                    <span>·</span>
+                    <span>来自 <b style="color: var(--text-strong)">Notion</b></span>
+                    <span>·</span>
+                    <span class="mono">6m</span>
+                    <span class="tag tag-accent">AI 已摘要</span>
+                  </div>
+                </div>
+              </article>
+
+              <article class="pcard">
+                <div class="type-bar password"></div>
+                <div class="pcard-body">
+                  <div class="pcard-preview" style="letter-spacing: 0.1em;">••••••••••••••••</div>
+                  <div class="pcard-meta">
+                    <span class="tag tag-danger">密码</span>
+                    <span>·</span>
+                    <span>来自 <b style="color: var(--text-strong)">Chrome</b></span>
+                    <span>·</span>
+                    <span class="mono">8m</span>
+                    <span class="tag">已加密</span>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <!-- Group: 30 minutes ago -->
+          <div class="stream-group">
+            <div class="stream-group-head">
+              <span class="ts-dot"></span>
+              <span class="time mono">30 分钟前</span>
+              <span class="count">5</span>
+              <span class="line"></span>
+            </div>
+            <div class="stream-list">
+              <article class="pcard">
+                <div class="type-bar file"></div>
+                <div class="pcard-body">
+                  <div class="pcard-preview">Q3-财务模型-v3.xlsx</div>
+                  <div class="pcard-meta">
+                    <span class="tag">文件</span>
+                    <span>·</span>
+                    <span>来自 <b style="color: var(--text-strong)">Finder</b></span>
+                    <span>·</span>
+                    <span class="mono">32m</span>
+                    <span class="tag tag-info">2.4 MB</span>
+                  </div>
+                </div>
+              </article>
+              <article class="pcard">
+                <div class="type-bar color"></div>
+                <div class="pcard-body" style="flex-direction: row; gap: 14px;">
+                  <div style="width: 32px; height: 32px; border-radius: 8px; background: oklch(62% 0.20 270); border: 1px solid var(--hairline); flex-shrink: 0;"></div>
+                  <div style="flex:1; min-width: 0;">
+                    <div class="pcard-preview mono" style="font-size: 12.5px;">#5B4FE9 · oklch(62% 0.20 270)</div>
+                    <div class="pcard-meta"><span class="tag">颜色</span><span>·</span><span class="mono">35m</span></div>
+                  </div>
+                </div>
+              </article>
+              <article class="pcard">
+                <div class="type-bar url"></div>
+                <div class="pcard-body">
+                  <div class="pcard-preview">https://github.com/anthropics/claude-code/issues/1242 — 关于 subagent context 的讨论</div>
+                  <div class="pcard-meta">
+                    <span class="tag tag-info">URL</span><span>·</span>
+                    <span>来自 <b style="color: var(--text-strong)">Safari</b></span>
+                    <span>·</span>
+                    <span class="mono">38m</span>
+                    <span class="tag tag-success">已收藏</span>
+                  </div>
+                </div>
+              </article>
+              <article class="pcard">
+                <div class="type-bar text"></div>
+                <div class="pcard-body">
+                  <div class="pcard-preview">下次会议准备：1) 上线节奏 2) 流量来源 3) 海外合规</div>
+                  <div class="pcard-meta">
+                    <span class="tag">文本</span><span>·</span>
+                    <span>来自 <b style="color: var(--text-strong)">备忘录</b></span>
+                    <span>·</span>
+                    <span class="mono">41m</span>
+                  </div>
+                </div>
+              </article>
+              <article class="pcard">
+                <div class="type-bar code"></div>
+                <div class="pcard-body">
+                  <div class="pcard-preview code">SELECT * FROM users WHERE onboarded = false AND created_at < now() - interval '7 days';</div>
+                  <div class="pcard-meta">
+                    <span class="tag">SQL</span><span>·</span>
+                    <span>来自 <b style="color: var(--text-strong)">DataGrip</b></span>
+                    <span>·</span>
+                    <span class="mono">47m</span>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <!-- More groups collapsed -->
+          <div class="stream-group">
+            <div class="stream-group-head">
+              <span class="ts-dot"></span>
+              <span class="time mono">今早</span>
+              <span class="count">12</span>
+              <span class="line"></span>
+              <button class="btn btn-sm btn-ghost">展开</button>
+            </div>
+          </div>
+
+          <div class="stream-group">
+            <div class="stream-group-head">
+              <span class="ts-dot"></span>
+              <span class="time mono">昨天</span>
+              <span class="count">28</span>
+              <span class="line"></span>
+            </div>
+          </div>
+
+          <!-- Sync bar -->
+          <div class="sync-bar">
+            <span class="status-dot ok"></span>
+            <span>3 台设备在线 · 同步中</span>
+            <span>·</span>
+            <span class="mono">12s</span>
+            <span>·</span>
+            <span>iPhone 15 · MacBook Pro · Windows 11</span>
+            <div class="grow"></div>
+            <span><kbd>↑</kbd><kbd>↓</kbd> 浏览</span>
+            <span><kbd>↵</kbd> 复制</span>
+            <span><kbd>⌘</kbd><kbd>⇧</kbd><kbd>A</kbd> AI 总结</span>
+          </div>
+        </section>
+
+        <!-- Halo Sidekick -->
+        <aside class="halo">
+          <div class="halo-head">
+            <div class="halo-seg" data-acts="halo-seg">
+              <button data-tab="companion">Companion</button>
+              <button class="is-active" data-tab="assistant">Assistant</button>
+              <button data-tab="inspector">Inspector</button>
+            </div>
+            <button class="btn btn-icon btn-ghost btn-sm" title="折叠" data-acts="halo-collapse">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </div>
+
+          <div class="halo-body" id="halo-body">
+
+            <!-- ===== Companion view (stats / suggestions) ===== -->
+            <div class="halo-view" data-view="companion" style="display:none">
+              <div class="halo-section">
+                <div class="halo-stats">
+                  <div class="halo-stat">
+                    <div class="num mono">47</div>
+                    <div class="lbl">今天</div>
+                  </div>
+                  <div class="halo-stat">
+                    <div class="num mono">12</div>
+                    <div class="lbl">本周</div>
+                  </div>
+                  <div class="halo-stat">
+                    <div class="num mono">3</div>
+                    <div class="lbl">设备</div>
+                  </div>
+                </div>
+              </div>
+              <div class="halo-section">
+                <h4>今日活跃度</h4>
+                <div style="background: var(--surface-2); border-radius: 10px; padding: 10px;">
+                  <svg class="spark" viewBox="0 0 200 36" preserveAspectRatio="none">
+                    <path class="area" d="M0,30 L20,22 L40,26 L60,18 L80,20 L100,12 L120,16 L140,8 L160,14 L180,6 L200,10 L200,36 L0,36 Z"/>
+                    <path d="M0,30 L20,22 L40,26 L60,18 L80,20 L100,12 L120,16 L140,8 L160,14 L180,6 L200,10"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="halo-section">
+                <h4>建议操作</h4>
+                <div class="halo-card">
+                  <svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M20 7L9 18l-5-5"/></svg>
+                  <div class="body">
+                    <b>为这条加标签</b>
+                    <p>GitHub issue · 已识别主题：AI Agent</p>
+                  </div>
+                </div>
+                <div class="halo-card">
+                  <svg class="icon icon-sm ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+                  <div class="body">
+                    <b>3 分钟前未粘贴</b>
+                    <p>上次复制的 URL 还在剪贴板</p>
+                  </div>
+                </div>
+              </div>
+              <div class="halo-section">
+                <h4>今日摘要</h4>
+                <div style="background: var(--accent-tint); border: 1px solid var(--accent-300); border-radius: 10px; padding: 10px 12px; font-size: var(--type-sm); color: var(--text-strong);">
+                  上午主要在 <b>技术调研</b> 和 <b>数据回顾</b>，下午偏向 <b>会议准备</b>。
+                </div>
+              </div>
+            </div>
+
+            <!-- ===== Assistant view (AI chat) ===== -->
+            <div class="halo-view" data-view="assistant" style="display: flex; flex-direction: column; gap: 10px;">
+
+              <!-- Context line -->
+              <div class="halo-ctx" data-acts="ctx-line">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l2 2"/></svg>
+                <span>上下文：<b data-acts="ctx-count">3 条最近的剪贴板</b>（最近 10 分钟）</span>
+                <button class="ctx-refresh" data-acts="ctx-refresh" title="重新拉取上下文">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/></svg>
+                </button>
+              </div>
+
+              <!-- Quick prompts -->
+              <div class="halo-chips" data-acts="quick-chips">
+                <button class="halo-chip is-on" data-q="本周回顾">本周回顾</button>
+                <button class="halo-chip" data-q="SQL 优化">SQL 优化</button>
+                <button class="halo-chip" data-q="周报总结">周报总结</button>
+                <button class="halo-chip" data-q="1:1 准备">1:1 准备</button>
+                <button class="halo-chip add" data-acts="new-chat" title="新对话">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                  新对话
+                </button>
+              </div>
+
+              <!-- Chat thread -->
+              <div class="halo-thread" id="halo-thread">
+
+                <!-- User 1 -->
+                <div class="halo-msg user">
+                  <div class="halo-avatar user-av">C</div>
+                  <div class="halo-bubble user-bubble">
+                    帮我把今天剪过的内容做一份「技术调研」主题的总结，列出我主要在研究什么。
+                  </div>
+                </div>
+
+                <!-- AI 1 -->
+                <div class="halo-msg ai">
+                  <div class="halo-avatar ai-av">P</div>
+                  <div class="halo-bubble ai-bubble">
+                    <div class="halo-meta">
+                      <b>Pulse AI</b>
+                      <span class="model-badge" data-acts="model-pill">step-3.7-flash</span>
+                      <span class="halo-time">10:42</span>
+                    </div>
+                    <div class="halo-content">
+                      <p>我读了你今天 <b>47</b> 条剪贴板，技术调研主题主要集中在 <b>3 个方向</b>：</p>
+                      <ol>
+                        <li><b>AI Agent 协作模式</b> — GitHub issue、Anthropic 文档、subagent context 讨论</li>
+                        <li><b>实时数据流</b> — 看了 streamClipboard 的 API 设计，引用了 2 个代码片段</li>
+                        <li><b>SQL 性能</b> — 查询最近活跃用户的 SQL，保存为模板</li>
+                      </ol>
+                    </div>
+                    <div class="halo-stat-row">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4v6h6M22 20v-6h-6M3.51 15a9 9 0 0 0 14.85 3.36M20.49 9A9 9 0 0 0 5.64 5.64"/></svg>
+                      已读 47 条 · 跨 3 设备 · 耗时 1.2s
+                    </div>
+                    <div class="halo-msg-actions">
+                      <button data-acts="copy-msg" title="复制"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                      <button data-acts="like-msg" title="有用"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg></button>
+                      <button data-acts="dislike-msg" title="没用"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17"/></svg></button>
+                      <button data-acts="share-msg" title="分享"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51 8.59 10.49"/></svg></button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- User 2 -->
+                <div class="halo-msg user">
+                  <div class="halo-avatar user-av">C</div>
+                  <div class="halo-bubble user-bubble">
+                    把第 1 项再深入一点，列出 3 个我应该继续看的方向。
+                  </div>
+                </div>
+
+                <!-- AI 2 -->
+                <div class="halo-msg ai">
+                  <div class="halo-avatar ai-av">P</div>
+                  <div class="halo-bubble ai-bubble">
+                    <div class="halo-meta">
+                      <b>Pulse AI</b>
+                      <span class="model-badge" data-acts="model-pill">step-3.7-flash</span>
+                      <span class="halo-time">10:44</span>
+                      <span class="halo-gen"><span class="halo-gen-dot"></span>正在生成</span>
+                    </div>
+                    <div class="halo-content">
+                      <p>围绕 <b>AI Agent 协作</b>，建议继续看这 3 个方向：</p>
+                      <ol>
+                        <li><b>多 Agent 上下文传递机制</b> — 你的剪贴板里两次引用了 subagent context 讨论</li>
+                        <li><b>工具调用可观测性</b> — 复制了 Antd 风格的 timeline 组件，准备做监控面板？</li>
+                        <li><b>Token 成本模型</b> — 你今天复制了一段 pricing 计算公式，应该是为客户报价</li>
+                      </ol>
+                    </div>
+                    <div class="halo-stat-row halo-stat-saved">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                      已自动收藏 3 条相关剪贴板到「<b>AI 调研</b>」收藏夹
+                    </div>
+                    <div class="halo-msg-actions">
+                      <button data-acts="copy-msg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                      <button data-acts="like-msg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg></button>
+                      <button data-acts="dislike-msg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17"/></svg></button>
+                      <button data-acts="share-msg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51 8.59 10.49"/></svg></button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ===== Inspector view (placeholder) ===== -->
+            <div class="halo-view" data-view="inspector" style="display:none">
+              <div class="halo-section">
+                <h4>选中的剪贴板</h4>
+                <div class="halo-card">
+                  <svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  <div class="body">
+                    <b>linear.app/.../ENG-4821</b>
+                    <p>URL · 来自 MacBook Pro · 12s</p>
+                  </div>
+                </div>
+              </div>
+              <div class="halo-section">
+                <h4>元数据</h4>
+                <div style="font-size: var(--type-xs); color: var(--text-muted); line-height: 1.8; padding: 8px 12px; background: var(--surface-2); border-radius: 8px;">
+                  <div>长度：<b class="mono">62 字符</b></div>
+                  <div>类型：<b>URL</b></div>
+                  <div>应用：<b>Chrome</b></div>
+                  <div>标签：<b>AI Agent</b> <b>ENG-4821</b></div>
+                  <div>TTL：<b>30 天</b></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="halo-foot">
+            <div class="baton" style="height: 38px; background: var(--surface-0);">
+              <button class="baton-ic" data-acts="attach" title="附加剪贴板">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+              <input id="halo-input" placeholder="问 Pulse 任何关于你剪贴板的问题…" />
+              <button class="baton-ic" data-acts="mic" title="语音">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
+              </button>
+              <button class="baton-ic" data-acts="menu" title="工具">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+              </button>
+              <span class="halo-count mono" id="halo-count">324 / 1000</span>
+              <button class="halo-send" data-acts="send" title="发送 (↵)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <div class="halo-toast" id="halo-toast">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    <span id="halo-toast-msg">Done</span>
+  </div>
+
+  <script>
+  (function(){
+    const haloBody = document.getElementById('halo-body');
+    const haloThread = document.getElementById('halo-thread');
+    const haloInput = document.getElementById('halo-input');
+    const haloCount = document.getElementById('halo-count');
+    const haloSeg = document.querySelector('[data-acts="halo-seg"]');
+    const haloViews = haloBody.querySelectorAll('.halo-view');
+    const ctxCount = document.querySelector('[data-acts="ctx-count"]');
+    const toast = document.getElementById('halo-toast');
+    const toastMsg = document.getElementById('halo-toast-msg');
+    let toastT;
+    function showToast(msg) {
+      toastMsg.textContent = msg;
+      toast.classList.add('is-on');
+      clearTimeout(toastT);
+      toastT = setTimeout(() => toast.classList.remove('is-on'), 1800);
+    }
+
+    // === Tab switch ===
+    haloSeg.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        haloSeg.querySelectorAll('button').forEach(b => b.classList.remove('is-active'));
+        btn.classList.add('is-active');
+        const tab = btn.dataset.tab;
+        haloViews.forEach(v => v.style.display = v.dataset.view === tab ? '' : 'none');
+        showToast(`→ ${btn.textContent.trim()}`);
+      });
+    });
+
+    // === Quick chips ===
+    document.querySelectorAll('.halo-chip[data-q]').forEach(c => {
+      c.addEventListener('click', () => {
+        document.querySelectorAll('.halo-chip').forEach(x => x.classList.remove('is-on'));
+        c.classList.add('is-on');
+        const q = c.dataset.q;
+        appendUserMsg(q);
+        simulateAIReply(q);
+      });
+    });
+
+    // === New chat ===
+    document.querySelector('[data-acts="new-chat"]').addEventListener('click', () => {
+      haloThread.innerHTML = '';
+      showToast('+ 新对话已开启');
+    });
+
+    // === Send ===
+    function sendMessage() {
+      const q = haloInput.value.trim();
+      if (!q) { showToast('⚠️ 输入点什么吧'); return; }
+      appendUserMsg(q);
+      haloInput.value = '';
+      updateCount();
+      simulateAIReply(q);
+    }
+    document.querySelector('[data-acts="send"]').addEventListener('click', sendMessage);
+    haloInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+
+    // === Composer tools ===
+    document.querySelector('[data-acts="attach"]').addEventListener('click', () => showToast('📎 已附加 3 条剪贴板到上下文'));
+    document.querySelector('[data-acts="mic"]').addEventListener('click', () => showToast('🎙️ 录音中…'));
+    document.querySelector('[data-acts="menu"]').addEventListener('click', () => showToast('⚙️ 工具菜单'));
+
+    // === Char count ===
+    function updateCount() {
+      const len = haloInput.value.length;
+      haloCount.textContent = `${len} / 1000`;
+      haloCount.style.color = len > 900 ? 'var(--accent-500)' : 'var(--text-faint)';
+    }
+    haloInput.addEventListener('input', updateCount);
+
+    // === Context refresh ===
+    document.querySelector('[data-acts="ctx-refresh"]').addEventListener('click', (e) => {
+      e.currentTarget.classList.add('is-on');
+      showToast('🔄 重新拉取上下文…');
+      setTimeout(() => {
+        const n = 3 + Math.floor(Math.random() * 5);
+        ctxCount.textContent = `${n} 条最近的剪贴板`;
+        e.currentTarget.classList.remove('is-on');
+        showToast(`✓ 已加载 ${n} 条`);
+      }, 800);
+    });
+
+    // === Per-msg actions ===
+    haloThread.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-acts]');
+      if (!btn) return;
+      const act = btn.dataset.acts;
+      if (act === 'copy-msg') showToast('📋 已复制到剪贴板');
+      if (act === 'like-msg') { btn.classList.toggle('is-on'); showToast('👍 感谢反馈'); }
+      if (act === 'dislike-msg') { btn.classList.toggle('is-on'); showToast('👎 已记录'); }
+      if (act === 'share-msg') showToast('🔗 分享链接已生成');
+    });
+
+    // === Model pill ===
+    document.querySelectorAll('[data-acts="model-pill"]').forEach(p => {
+      p.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const models = ['step-3.7-flash', 'claude-3.5-sonnet', 'gpt-4o', 'pulse-r1-pro'];
+        const cur = p.textContent;
+        const next = models[(models.indexOf(cur) + 1) % models.length];
+        p.textContent = next;
+        showToast(`→ Model: ${next}`);
+      });
+    });
+
+    // === Collapse ===
+    document.querySelector('[data-acts="halo-collapse"]').addEventListener('click', () => {
+      haloBody.style.display = haloBody.style.display === 'none' ? '' : 'none';
+      showToast(haloBody.style.display === 'none' ? '← Halo 已折叠' : '→ Halo 已展开');
+    });
+
+    // === Append msg helpers ===
+    function appendUserMsg(text) {
+      const div = document.createElement('div');
+      div.className = 'halo-msg user';
+      div.innerHTML = `<div class="halo-avatar user-av">C</div><div class="halo-bubble user-bubble">${escapeHtml(text)}</div>`;
+      haloThread.appendChild(div);
+      scrollDown();
+    }
+    function appendAIMsg(text) {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2,'0');
+      const mm = String(now.getMinutes()).padStart(2,'0');
+      const div = document.createElement('div');
+      div.className = 'halo-msg ai';
+      div.innerHTML = `<div class="halo-avatar ai-av">P</div><div class="halo-bubble ai-bubble">
+        <div class="halo-meta"><b>Pulse AI</b><span class="model-badge">step-3.7-flash</span><span class="halo-time">${hh}:${mm}</span></div>
+        <div class="halo-content"><p>${text}</p></div>
+        <div class="halo-msg-actions">
+          <button data-acts="copy-msg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          <button data-acts="like-msg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg></button>
+          <button data-acts="dislike-msg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17"/></svg></button>
+          <button data-acts="share-msg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51 8.59 10.49"/></svg></button>
+        </div>
+      </div>`;
+      haloThread.appendChild(div);
+      scrollDown();
+    }
+    function scrollDown() { haloBody.scrollTop = haloBody.scrollHeight; }
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // === Simulate AI reply ===
+    const replies = {
+      '本周回顾': '本周（9/6–9/12）你累计复制了 <b>312 条</b> 剪贴板，主要集中：<br>· <b>技术调研</b>：Anthropic docs、Claude Agent SDK、Subagent context 协议<br>· <b>数据回顾</b>：留存曲线、付费转化漏斗、SQL 查询优化<br>· <b>会议准备</b>：5 次 1:1 提纲 + 2 次周会要点<br>建议把高频出现的「Anthropic Agent」相关 18 条剪贴板归到「<b>调研库</b>」收藏夹。',
+      'SQL 优化': '你今天复制的 SQL 片段：<br><code>SELECT * FROM events WHERE user_id IN (?) AND created_at &gt; ?</code><br>优化建议：① user_id 加索引（已有）；② created_at 加复合索引；③ LIMIT 100 + OFFSET 改 cursor-based 分页。预期查询从 ~800ms 降到 ~80ms。已为你保存为 <b>SQL 优化模板</b>。',
+      '周报总结': '本周工作产出（基于剪贴板时间线）：<br>1. Pulse 设计系统 v2 → v3 视觉重构方案（oklch token）<br>2. AI 模块 4 套风格对比 + 总览页（已完成 5 个 HTML）<br>3. ClipSync 桌面端 AI 助手融合方案（Stream + Halo Assistant）<br>4. 2 次技术调研笔记（Agent 协作 / SQL 性能）<br><br>建议直接粘贴到 Notion 周报模板。',
+      '1:1 准备': '明天的 1:1 准备清单：<br>· <b>回顾</b>：上次提到 Pulse v2 颜色系统反馈<br>· <b>本周期望</b>：把 AI 屏从 4 套收敛到 1-2 套<br>· <b>阻塞项</b>：真机调试需要等用户桌面端重启<br>· <b>问对方</b>：对 v3 Agent 流风格的具体反馈？<br>已添加为模板。',
+      'default': '我已读取你刚才选中的剪贴板，正在分析上下文。需要我深入哪一块？<br>· <b>总结</b> 关键结论<br>· <b>展开</b> 第 1 项细节<br>· <b>翻译</b> 整段文本<br>· <b>另存</b> 到收藏夹'
+    };
+    function simulateAIReply(query) {
+      const gen = document.createElement('div');
+      gen.className = 'halo-msg ai';
+      gen.innerHTML = `<div class="halo-avatar ai-av">P</div><div class="halo-bubble ai-bubble"><div class="halo-meta"><b>Pulse AI</b><span class="model-badge">step-3.7-flash</span><span class="halo-gen"><span class="halo-gen-dot"></span>正在生成</span></div></div>`;
+      haloThread.appendChild(gen);
+      scrollDown();
+      setTimeout(() => {
+        gen.remove();
+        const text = replies[query] || replies['default'];
+        appendAIMsg(text);
+        showToast('✓ Pulse AI 已回复');
+      }, 900 + Math.random() * 600);
+    }
+
+    // === ⌘⇧A to focus input ===
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        haloInput.focus();
+      }
+      if (e.key === 'Escape' && document.activeElement === haloInput) haloInput.blur();
+    });
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>09 · AI 全屏 — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    body { background: var(--surface-0); }
+    .ai-shell { display: grid; grid-template-columns: 60px 260px 1fr 320px; height: 100vh; }
+
+    /* Sessions sidebar */
+    .ai-sess { background: var(--surface-0); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; }
+    .ai-sess-head { padding: 16px; border-bottom: 1px solid var(--hairline); }
+    .ai-sess-list { flex: 1; overflow-y: auto; padding: 8px; }
+    .ai-sess-item { display: flex; gap: 10px; padding: 10px; border-radius: 10px; cursor: pointer; position: relative; }
+    .ai-sess-item:hover { background: var(--surface-2); }
+    .ai-sess-item.is-on { background: var(--accent-tint); }
+    .ai-sess-item .body { flex: 1; min-width: 0; }
+    .ai-sess-item h4 { font-size: var(--type-sm); color: var(--text-strong); font-weight: 500; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ai-sess-item p { font-size: var(--type-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ai-sess-item .time { font-size: 10.5px; color: var(--text-faint); font-family: 'Geist Mono', monospace; flex-shrink: 0; }
+    .ai-sess-pin { position: absolute; top: 8px; right: 8px; color: var(--accent-500); }
+
+    .ai-sess-foot { padding: 12px; border-top: 1px solid var(--hairline); }
+
+    /* Main chat */
+    .ai-main { display: flex; flex-direction: column; min-width: 0; background: var(--surface-0); }
+    .ai-baton { padding: 12px 20px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .ai-baton h2 { font-size: var(--type-md); color: var(--text-strong); font-weight: 600; flex: 1; }
+    .ai-baton .crumb { font-size: var(--type-xs); color: var(--text-muted); }
+    .ai-baton .model { display: flex; align-items: center; gap: 6px; font-size: var(--type-xs); padding: 4px 10px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 999px; color: var(--text-default); }
+
+    .ai-msgs { flex: 1; overflow-y: auto; padding: 24px 32px; display: flex; flex-direction: column; gap: 20px; }
+    .ai-msg { display: flex; gap: 12px; max-width: 88%; }
+    .ai-msg.user { align-self: flex-end; flex-direction: row-reverse; }
+    .ai-msg .body { flex: 1; min-width: 0; }
+    .ai-msg .who { font-size: var(--type-xs); color: var(--text-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+    .ai-msg.user .who { justify-content: flex-end; }
+    .ai-msg .who b { color: var(--text-strong); font-weight: 600; }
+    .ai-msg .bubble {
+      background: var(--surface-1);
+      border: 1px solid var(--hairline);
+      padding: 12px 16px;
+      border-radius: 14px;
+      border-top-left-radius: 4px;
+      font-size: var(--type-sm);
+      line-height: 1.7;
+      color: var(--text-strong);
+    }
+    .ai-msg.user .bubble {
+      background: var(--accent-500);
+      color: white;
+      border-color: transparent;
+      border-top-left-radius: 14px;
+      border-top-right-radius: 4px;
+    }
+
+    /* Markdown content in bubble */
+    .bubble p { margin-bottom: 8px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble h1, .bubble h2, .bubble h3 { font-weight: 600; color: var(--text-strong); margin: 12px 0 6px; }
+    .bubble h1 { font-size: 18px; }
+    .bubble h2 { font-size: 16px; }
+    .bubble h3 { font-size: 14px; }
+    .bubble ul, .bubble ol { margin: 6px 0 6px 20px; }
+    .bubble li { margin-bottom: 4px; }
+    .bubble code { font-family: 'Geist Mono', monospace; font-size: 12.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 3px; }
+    .bubble pre { background: var(--surface-inset); border: 1px solid var(--hairline); border-radius: 8px; padding: 12px 14px; margin: 8px 0; overflow-x: auto; position: relative; }
+    .bubble pre code { background: none; padding: 0; font-size: 12.5px; }
+    .bubble pre .lang { position: absolute; top: 8px; right: 10px; font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; }
+    .bubble blockquote { border-left: 3px solid var(--accent-400); padding-left: 12px; color: var(--text-muted); margin: 8px 0; }
+    .bubble table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12.5px; }
+    .bubble th, .bubble td { border: 1px solid var(--hairline); padding: 6px 10px; text-align: left; }
+    .bubble th { background: var(--surface-2); font-weight: 600; }
+    .bubble.user pre, .bubble.user code { background: rgba(255,255,255,0.15); color: white; }
+
+    /* Thinking chain */
+    .thinking { background: var(--surface-2); border: 1px dashed var(--hairline-strong); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; font-size: var(--type-sm); color: var(--text-muted); display: flex; align-items: center; gap: 10px; }
+    .thinking .dots { display: inline-flex; gap: 3px; }
+    .thinking .dots span { width: 4px; height: 4px; border-radius: 50%; background: var(--text-faint); animation: blink 1.4s infinite; }
+    .thinking .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking .dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
+
+    /* Tool call cards */
+    .tool-call {
+      background: var(--surface-2);
+      border: 1px solid var(--hairline);
+      border-radius: 10px;
+      margin: 8px 0;
+      overflow: hidden;
+    }
+    .tool-call-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; }
+    .tool-call-head .ico { color: var(--accent-500); }
+    .tool-call-head .name { font-family: 'Geist Mono', monospace; font-size: 12px; color: var(--text-strong); }
+    .tool-call-head .args { font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--text-muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-call-head .status { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; font-family: 'Geist Mono', monospace; }
+    .tool-call-head .status.running { background: oklch(72% 0.15 70 / 0.15); color: oklch(45% 0.15 70); }
+    .tool-call-head .status.ok { background: oklch(64% 0.16 150 / 0.12); color: oklch(40% 0.16 150); }
+    .tool-call-head .status.err { background: oklch(60% 0.20 25 / 0.10); color: oklch(40% 0.20 25); }
+    .tool-call-body { padding: 0 12px 10px; font-size: 12px; color: var(--text-default); border-top: 1px solid var(--hairline); }
+    .tool-call-body pre { background: var(--surface-0); padding: 8px; border-radius: 6px; margin-top: 6px; }
+
+    /* Action bar under bubble */
+    .msg-actions { display: flex; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity 160ms; }
+    .ai-msg:hover .msg-actions { opacity: 1; }
+    .msg-actions button { padding: 4px 8px; font-size: 11px; color: var(--text-muted); border-radius: 6px; }
+    .msg-actions button:hover { background: var(--surface-2); color: var(--text-strong); }
+
+    /* Composer */
+    .ai-composer-wrap { padding: 16px 32px 24px; border-top: 1px solid var(--hairline); flex-shrink: 0; background: var(--surface-0); }
+    .ai-context-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .ctx-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px 3px 4px;
+      background: var(--accent-tint);
+      color: var(--accent-700);
+      border-radius: 999px;
+      font-size: 11.5px;
+    }
+    .ctx-chip .ico { width: 16px; height: 16px; border-radius: 999px; background: var(--accent-500); color: white; display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+    .ctx-chip .x { opacity: 0.5; cursor: pointer; }
+
+    .ai-composer {
+      background: var(--surface-1);
+      border: 1px solid var(--hairline);
+      border-radius: 16px;
+      padding: 10px 12px;
+      transition: all 200ms;
+    }
+    .ai-composer:focus-within { background: var(--surface-0); border-color: var(--accent-500); box-shadow: var(--shadow-glow); }
+    .ai-composer textarea { width: 100%; min-height: 40px; max-height: 200px; resize: none; padding: 4px 0; font-size: var(--type-sm); line-height: 1.5; }
+    .ai-composer-bar { display: flex; align-items: center; gap: 4px; padding-top: 6px; border-top: 1px dashed var(--hairline); margin-top: 8px; }
+    .ai-composer-bar .grow { flex: 1; }
+    .ai-composer-bar .usage { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-faint); font-family: 'Geist Mono', monospace; }
+    .ai-composer-bar .usage .bar { width: 60px; height: 3px; background: var(--surface-3); border-radius: 2px; overflow: hidden; }
+    .ai-composer-bar .usage .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-400), var(--accent-600)); width: 24%; }
+    .tool-btn { width: 28px; height: 28px; display: grid; place-items: center; color: var(--text-muted); border-radius: 6px; }
+    .tool-btn:hover { background: var(--surface-2); color: var(--text-strong); }
+    .send-btn { padding: 4px 12px; background: var(--accent-500); color: white; border-radius: 8px; font-size: var(--type-xs); font-weight: 500; display: flex; align-items: center; gap: 4px; }
+
+    /* Right context panel */
+    .ai-ctx { background: var(--surface-1); border-left: 1px solid var(--hairline); display: flex; flex-direction: column; }
+    .ai-ctx-tabs { display: flex; padding: 8px; border-bottom: 1px solid var(--hairline); gap: 4px; }
+    .ai-ctx-tab { flex: 1; padding: 6px 0; font-size: 11.5px; color: var(--text-muted); border-radius: 6px; text-align: center; }
+    .ai-ctx-tab.is-on { background: var(--surface-2); color: var(--text-strong); }
+    .ai-ctx-body { flex: 1; overflow-y: auto; padding: 12px; }
+
+    .ctx-section { margin-bottom: 16px; }
+    .ctx-section h4 { font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 4px; }
+    .ctx-section .count { background: var(--surface-2); padding: 1px 6px; border-radius: 999px; font-family: 'Geist Mono', monospace; }
+
+    .ctx-item { display: flex; align-items: start; gap: 8px; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px; margin-bottom: 6px; font-size: 12px; }
+    .ctx-item .bar { width: 3px; align-self: stretch; border-radius: 2px; flex-shrink: 0; background: oklch(70% 0.14 200); }
+    .ctx-item .body { flex: 1; min-width: 0; }
+    .ctx-item .body .p { color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .ctx-item .body .m { color: var(--text-faint); font-size: 10.5px; margin-top: 2px; font-family: 'Geist Mono', monospace; }
+
+    .mem-card { padding: 10px 12px; background: linear-gradient(135deg, var(--surface-2), var(--surface-1)); border: 1px solid var(--hairline); border-radius: 10px; margin-bottom: 6px; font-size: 12px; }
+    .mem-card .lbl { font-size: 10.5px; color: var(--accent-600); font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .mem-card .v { color: var(--text-strong); }
+
+    /* AI hero on empty */
+    .ai-hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center; }
+    .ai-hero .orb {
+      width: 80px; height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent-400), var(--accent-600));
+      display: grid; place-items: center;
+      color: white;
+      font-size: 32px; font-weight: 700;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow-glow);
+      position: relative;
+    }
+    .ai-hero .orb::after { content: ''; position: absolute; inset: -8px; border-radius: 50%; background: var(--accent-glow); animation: pulse 2.4s infinite; }
+    .ai-hero h2 { font-size: 28px; color: var(--text-strong); font-weight: 700; margin-bottom: 6px; letter-spacing: -0.01em; }
+    .ai-hero p { color: var(--text-muted); margin-bottom: 32px; }
+    .ai-suggest-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 520px; width: 100%; }
+    .ai-suggest { padding: 12px 14px; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 10px; text-align: left; cursor: pointer; transition: all 160ms; }
+    .ai-suggest:hover { background: var(--surface-2); border-color: var(--accent-300); }
+    .ai-suggest b { color: var(--text-strong); font-size: var(--type-sm); font-weight: 500; display: block; margin-bottom: 2px; }
+    .ai-suggest p { font-size: 11.5px; color: var(--text-muted); margin: 0; text-align: left; }
+  </style>
+</head>
+<body>
+  <div class="ai-shell">
+    <!-- Icon rail -->
+    <aside class="app-rail">
+      <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l2 -6l4 12l2 -6h7"/></svg></div>
+      <a class="rail-btn2" title="Stream"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h12M4 18h8"/></svg></a>
+      <a class="rail-btn2" title="Collections"><svg class="icon" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></a>
+      <a class="rail-btn2" title="Templates"><svg class="icon" viewBox="0 0 24 24"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></a>
+      <a class="rail-btn2" title="Devices"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M17 9h2.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H17"/></svg></a>
+      <a class="rail-btn2 is-active" title="AI" style="background: var(--accent-tint); color: var(--accent-700);"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9c0 3-1.5 5-3 6.5L17 21h-4l-.5-2h-1L11 21H7l-1-2.5C4.5 17 3 15 3 12a9 9 0 0 1 9-9z"/><circle cx="9" cy="11" r="1"/><circle cx="15" cy="11" r="1"/><path d="M9 15c1 1 2 1.5 3 1.5s2-.5 3-1.5"/></svg></a>
+      <a class="rail-btn2" title="Settings"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></a>
+      <div class="rail-spacer"></div>
+      <button class="rail-mode2"><svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></button>
+    </aside>
+
+    <!-- Sessions list -->
+    <aside class="ai-sess">
+      <div class="ai-sess-head">
+        <button class="btn btn-primary" style="width: 100%;">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          新对话
+        </button>
+        <div style="display: flex; gap: 4px; margin-top: 8px; font-size: 11px; color: var(--text-muted);">
+          <span style="cursor: pointer; color: var(--text-strong); font-weight: 500;">全部 · 24</span>
+          <span>·</span>
+          <span style="cursor: pointer;">置顶 · 3</span>
+          <span>·</span>
+          <span style="cursor: pointer;">已分享 · 2</span>
+        </div>
+      </div>
+      <div class="ai-sess-list">
+        <div class="ai-sess-item is-on">
+          <div class="ai-sess-pin">★</div>
+          <div class="body">
+            <h4>技术调研 · AI Agent 协作</h4>
+            <p>围绕 subagent context 传递机制继续看这 3 个方向：多 Agent 上下文传递...</p>
+          </div>
+          <div class="time">10:44</div>
+        </div>
+        <div class="ai-sess-item">
+          <div class="ai-sess-pin">★</div>
+          <div class="body">
+            <h4>本周回顾</h4>
+            <p>上午主要在技术调研和数据回顾，下午偏向会议准备...</p>
+          </div>
+          <div class="time">昨天</div>
+        </div>
+        <div class="ai-sess-item">
+          <div class="body">
+            <h4>周报草稿 v3</h4>
+            <p>本周完成：Pulse 原型设计 / 修复同步 case 3 个...</p>
+          </div>
+          <div class="time">昨天</div>
+        </div>
+        <div class="ai-sess-item">
+          <div class="body">
+            <h4>1:1 准备 · 与张总</h4>
+            <p>上次回顾：Q3 复盘；这次想聊：Q4 规划...</p>
+          </div>
+          <div class="time">3 天前</div>
+        </div>
+        <div class="ai-sess-item">
+          <div class="body">
+            <h4>SQL 优化 · 用户活跃查询</h4>
+            <p>建议加复合索引 (created_at, user_id)...</p>
+          </div>
+          <div class="time">3 天前</div>
+        </div>
+        <div class="ai-sess-item">
+          <div class="body">
+            <h4>客户回信 · 退款咨询</h4>
+            <p>Hi David, 感谢你的来信。关于退款流程...</p>
+          </div>
+          <div class="time">5 天前</div>
+        </div>
+        <div class="ai-sess-item">
+          <div class="body">
+            <h4>设计参考 · Linear 风格</h4>
+            <p>主要借鉴了 Linear 的 inbox 设计，列表项 hover 状态...</p>
+          </div>
+          <div class="time">1 周前</div>
+        </div>
+        <div class="ai-sess-item">
+          <div class="body">
+            <h4>读书笔记 · 《持续交付》</h4>
+            <p>第一章核心：部署流水线是核心实践，应该尽早引入...</p>
+          </div>
+          <div class="time">1 周前</div>
+        </div>
+        <div class="ai-sess-item">
+          <div class="body">
+            <h4>代码审查 · PR #482</h4>
+            <p>整体结构清晰，建议在 useEffect 依赖项...</p>
+          </div>
+          <div class="time">2 周前</div>
+        </div>
+      </div>
+      <div class="ai-sess-foot">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 11px; color: var(--text-muted); background: var(--surface-2); border-radius: 8px;">
+          <span class="status-dot ok"></span>
+          <span>本地知识库 · 2,134 条</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main chat -->
+    <main class="ai-main">
+      <div class="ai-baton">
+        <div class="crumb">AI · 本周回顾</div>
+        <h2>技术调研 · AI Agent 协作</h2>
+        <div class="model">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/></svg>
+          step-3.7-flash
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <button class="btn btn-icon btn-ghost btn-sm" title="分享"><svg class="icon" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51L8.59 10.49"/></svg></button>
+        <button class="btn btn-icon btn-ghost btn-sm" title="更多"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+      </div>
+
+      <div class="ai-msgs">
+        <!-- USER MESSAGE 1 -->
+        <div class="ai-msg user">
+          <div class="av av-32" style="background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(60% 0.20 0))">C</div>
+          <div class="body">
+            <div class="who"><b>你</b><span class="mono">10:42</span></div>
+            <div class="bubble">帮我把今天剪过的内容做一份「技术调研」主题的总结，列出我主要在研究什么。</div>
+            <div class="msg-actions">
+              <button>✏️ 编辑</button>
+              <button>🔄 重发</button>
+              <button>📋 复制</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- THINKING CHAIN -->
+        <div class="ai-msg">
+          <div class="av av-32" style="background: linear-gradient(135deg, var(--accent-400), var(--accent-600));">P</div>
+          <div class="body">
+            <div class="who"><b>Pulse AI</b><span class="mono">10:42</span> · 正在分析</div>
+
+            <div class="thinking">
+              <div class="dots"><span></span><span></span><span></span></div>
+              <span>正在分析 47 条剪贴板 · 跨 3 设备 · 按主题聚合中…</span>
+            </div>
+
+            <!-- Tool call -->
+            <div class="tool-call">
+              <div class="tool-call-head">
+                <svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <span class="name">read_clipboard</span>
+                <span class="args">{ since: "2026-09-12T00:00", limit: 100 }</span>
+                <span class="status ok">✓ 47 条</span>
+              </div>
+            </div>
+
+            <div class="tool-call">
+              <div class="tool-call-head">
+                <svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 21V9"/></svg>
+                <span class="name">cluster_by_topic</span>
+                <span class="args">{ method: "embedding", k: 5 }</span>
+                <span class="status ok">✓ 5 组</span>
+              </div>
+              <div class="tool-call-body">
+                <pre>技术调研 (12) · 数据回顾 (8) · 会议准备 (11) · 设计参考 (9) · 杂项 (7)</pre>
+              </div>
+            </div>
+
+            <div class="tool-call">
+              <div class="tool-call-head">
+                <svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+                <span class="name">summarize_group</span>
+                <span class="args">{ group: "技术调研", depth: "deep" }</span>
+                <span class="status running">
+                  <svg class="icon icon-sm" style="width: 10px; height: 10px; animation: spin 800ms linear infinite; display: inline-block; vertical-align: middle;" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+                  正在生成
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI REPLY 1 -->
+        <div class="ai-msg">
+          <div class="av av-32" style="background: linear-gradient(135deg, var(--accent-400), var(--accent-600));">P</div>
+          <div class="body">
+            <div class="who"><b>Pulse AI</b><span class="mono">10:42</span> · step-3.7-flash</div>
+            <div class="bubble">
+              <p>我读了你今天 47 条剪贴板，技术调研主题主要集中在 <b>3 个方向</b>：</p>
+              <ol>
+                <li><b>AI Agent 协作模式</b> — GitHub issue、Anthropic 文档、subagent context 讨论</li>
+                <li><b>实时数据流</b> — 看了 <code>streamClipboard</code> 的 API 设计，引用了 2 个代码片段</li>
+                <li><b>SQL 性能</b> — 查询最近活跃用户的 SQL、保存为模板</li>
+              </ol>
+              <h3>重点引用</h3>
+              <blockquote>
+                "subagent context 传递机制是当前 AI 编排的核心难点，没有银弹"
+              </blockquote>
+              <p>需要我深入哪个方向？</p>
+            </div>
+            <div class="msg-actions">
+              <button>👍</button>
+              <button>👎</button>
+              <button>📋 复制</button>
+              <button>🔄 重新生成</button>
+              <button>📌 加入收藏</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- USER 2 -->
+        <div class="ai-msg user">
+          <div class="av av-32" style="background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(60% 0.20 0))">C</div>
+          <div class="body">
+            <div class="who"><b>你</b><span class="mono">10:44</span></div>
+            <div class="bubble">把第 1 项再深入一点，列出 3 个我应该继续看的方向。</div>
+            <div class="msg-actions">
+              <button>✏️ 编辑</button>
+              <button>🔄 重发</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI 2 - with code block + tool call -->
+        <div class="ai-msg">
+          <div class="av av-32" style="background: linear-gradient(135deg, var(--accent-400), var(--accent-600));">P</div>
+          <div class="body">
+            <div class="who"><b>Pulse AI</b><span class="mono">10:44</span> · step-3.7-flash</div>
+
+            <div class="tool-call">
+              <div class="tool-call-head">
+                <svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M21 21l-6-6 6-6M3 21l6-6-6-6M9 3h12"/></svg>
+                <span class="name">web_search</span>
+                <span class="args">"AI Agent context passing 2026"</span>
+                <span class="status ok">✓ 12 结果</span>
+              </div>
+            </div>
+
+            <div class="bubble">
+              <p>围绕 <b>AI Agent 协作</b>，建议继续看这 3 个方向：</p>
+              <h3>1️⃣ 多 Agent 上下文传递机制</h3>
+              <p>你的剪贴板里两次引用了 subagent context 讨论，这是当前研究热点。推荐看 Anthropic 最新发布的 <code>multi-agent-spawn</code> 设计模式。</p>
+
+              <h3>2️⃣ 工具调用可观测性</h3>
+              <p>复制了 Antd 风格的 timeline 组件，准备做监控面板？</p>
+              <pre><code class="lang">typescript
+// 推荐的事件结构
+interface ToolCall {
+  id: string;
+  agent: string;
+  tool: string;
+  args: Record<string, unknown>;
+  result: unknown;
+  duration_ms: number;
+  tokens: number;
+}</code><span class="lang">typescript</span></pre>
+
+              <h3>3️⃣ Token 成本模型</h3>
+              <p>你今天复制了一段 pricing 计算公式，应该是为客户报价。可以用 <code>~/.clipsync/ai-budget.json</code> 跟踪每 Agent 每日成本。</p>
+
+              <h3>📊 数据可视化</h3>
+              <table>
+                <thead><tr><th>方向</th><th>你的引用</th><th>推荐阅读</th><th>成本</th></tr></thead>
+                <tbody>
+                  <tr><td>1. Context 传递</td><td>2 处</td><td>3 篇</td><td>$$</td></tr>
+                  <tr><td>2. 可观测性</td><td>1 处</td><td>5 篇</td><td>$</td></tr>
+                  <tr><td>3. 成本模型</td><td>1 处</td><td>2 篇</td><td>$$$</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="msg-actions">
+              <button>👍</button>
+              <button>👎</button>
+              <button>📋 复制</button>
+              <button>🔄 重新生成</button>
+              <button>💾 存为笔记</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- USER 3 - currently streaming AI response -->
+        <div class="ai-msg user">
+          <div class="av av-32" style="background: linear-gradient(135deg, oklch(60% 0.18 30), oklch(60% 0.20 0))">C</div>
+          <div class="body">
+            <div class="who"><b>你</b><span class="mono">10:46</span></div>
+            <div class="bubble">把第 1 个方向的具体论文 / 文章链接列出来</div>
+          </div>
+        </div>
+
+        <!-- AI 3 - streaming -->
+        <div class="ai-msg">
+          <div class="av av-32" style="background: linear-gradient(135deg, var(--accent-400), var(--accent-600));">P</div>
+          <div class="body">
+            <div class="who">
+              <b>Pulse AI</b>
+              <span class="mono">10:46</span>
+              <span class="status-dot" style="background: var(--status-success); width: 6px; height: 6px; display: inline-block;"></span>
+              <span style="color: var(--text-faint); font-size: 11px;">正在生成 · 点击</span>
+              <button class="btn btn-sm btn-ghost" style="padding: 1px 8px; font-size: 10.5px; color: oklch(40% 0.20 25);">⏹ 停止</button>
+            </div>
+
+            <div class="tool-call">
+              <div class="tool-call-head">
+                <svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M21 21l-6-6 6-6M3 21l6-6-6-6"/></svg>
+                <span class="name">fetch_url</span>
+                <span class="args">["anthropic.com/multi-agent", "arxiv.org/..."]</span>
+                <span class="status running">⏳ 1/3</span>
+              </div>
+            </div>
+
+            <div class="bubble">
+              <p>围绕 <b>多 Agent 上下文传递</b>，最值得读的 3 篇：</p>
+              <ol>
+                <li>
+                  <b>Anthropic: Building Effective Agents</b><br>
+                  <a style="color: var(--accent-600);">anthropic.com/research/building-effective-agents</a><br>
+                  <span style="color: var(--text-muted); font-size: 12px;">核心：工具调用、上下文窗口、Agent 编排的工程实践。</span>
+                </li>
+                <li>
+                  <b>Sub-agent Context Sharing in LangGraph</b><br>
+                  <a style="color: var(--accent-600);">blog.langchain.dev/subagent-context</a>
+                </li>
+                <li>
+                  <b>《M</b>
+                  <span style="border-right: 2px solid var(--accent-500); animation: blink 1s infinite;">|</span>
+                </li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Composer -->
+      <div class="ai-composer-wrap">
+        <div class="ai-context-chips">
+          <span class="ctx-chip">
+            <span class="ico">3</span>
+            <span>3 条剪贴板</span>
+            <span class="x">×</span>
+          </span>
+          <span class="ctx-chip">
+            <span class="ico">📁</span>
+            <span>技术调研</span>
+            <span class="x">×</span>
+          </span>
+          <span class="ctx-chip">
+            <span class="ico">🧠</span>
+            <span>使用记忆</span>
+            <span class="x">×</span>
+          </span>
+          <span class="ctx-chip" style="background: var(--surface-2); color: var(--text-muted); border: 1px dashed var(--hairline-strong); cursor: pointer; padding: 3px 8px;">
+            <span>+</span>
+            <span>添加上下文</span>
+          </span>
+        </div>
+
+        <div class="ai-composer">
+          <textarea placeholder="问 Pulse 任何问题…  Shift+Enter 换行"></textarea>
+          <div class="ai-composer-bar">
+            <button class="tool-btn" title="附件"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+            <button class="tool-btn" title="图片"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
+            <button class="tool-btn" title="语音"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg></button>
+            <button class="tool-btn" title="插入变量"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button>
+            <button class="tool-btn" title="快捷指令"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/></svg></button>
+            <button class="tool-btn" title="深度思考"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></button>
+            <div class="grow"></div>
+            <div class="usage">
+              <div class="bar"><i></i></div>
+              <span>324 / 5000 tokens</span>
+            </div>
+            <button class="send-btn">
+              发送
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Right context panel -->
+    <aside class="ai-ctx">
+      <div class="ai-ctx-tabs">
+        <div class="ai-ctx-tab is-on">上下文 <span class="count mono">3</span></div>
+        <div class="ai-ctx-tab">记忆 <span class="count mono">8</span></div>
+        <div class="ai-ctx-tab">引用 <span class="count mono">5</span></div>
+      </div>
+      <div class="ai-ctx-body">
+        <div class="ctx-section">
+          <h4>选中的剪贴板 <span class="count mono">3</span></h4>
+          <div class="ctx-item">
+            <div class="bar" style="background: oklch(70% 0.14 200);"></div>
+            <div class="body">
+              <div class="p">https://linear.app/inbox/issue/ENG-4821/quill-mvp-shipping-plan</div>
+              <div class="m">12s · MacBook Pro</div>
+            </div>
+          </div>
+          <div class="ctx-item">
+            <div class="bar" style="background: oklch(70% 0.14 280);"></div>
+            <div class="body">
+              <div class="p">const stream = await streamClipboard({ device: "all", since: ts });</div>
+              <div class="m">32s · VS Code</div>
+            </div>
+          </div>
+          <div class="ctx-item">
+            <div class="bar" style="background: oklch(75% 0.18 80);"></div>
+            <div class="body">
+              <div class="p">screenshot-2026-09-12_08-15-32.png</div>
+              <div class="m">1m · iPhone 15 · 420 KB</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ctx-section">
+          <h4>自动带入的记忆 <span class="count mono">3</span></h4>
+          <div class="mem-card">
+            <div class="lbl">用户偏好</div>
+            <div class="v">回复时优先用中文，代码用英文</div>
+          </div>
+          <div class="mem-card">
+            <div class="lbl">项目背景</div>
+            <div class="v">ClipSync · 跨设备剪贴板 · Tauri + Vue 3</div>
+          </div>
+          <div class="mem-card">
+            <div class="lbl">当前任务</div>
+            <div class="v">Pulse 视觉重构 · 9 月 12 日</div>
+          </div>
+        </div>
+
+        <div class="ctx-section">
+          <h4>工具调用 <span class="count mono">4</span></h4>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-size: 11.5px;">
+            <div style="display: flex; align-items: center; gap: 6px; color: var(--text-muted); padding: 4px 8px;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--status-success);"></span>
+              <span class="mono" style="flex: 1;">read_clipboard</span>
+              <span class="mono" style="color: var(--text-faint);">142ms</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; color: var(--text-muted); padding: 4px 8px;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--status-success);"></span>
+              <span class="mono" style="flex: 1;">cluster_by_topic</span>
+              <span class="mono" style="color: var(--text-faint);">380ms</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; color: var(--text-muted); padding: 4px 8px;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--status-warn);"></span>
+              <span class="mono" style="flex: 1;">summarize_group</span>
+              <span class="mono" style="color: var(--text-faint);">运行中</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; color: var(--text-muted); padding: 4px 8px;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint);"></span>
+              <span class="mono" style="flex: 1;">fetch_url</span>
+              <span class="mono" style="color: var(--text-faint);">等待</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

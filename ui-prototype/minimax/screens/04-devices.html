@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>04 · Devices — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    .device-overview {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .overview-card {
+      background: var(--surface-1);
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-lg);
+      padding: 14px 16px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .overview-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--surface-inset);
+      display: grid; place-items: center;
+      color: var(--text-muted);
+    }
+    .overview-num { font-family: 'Geist Mono', monospace; font-size: 20px; font-weight: 600; color: var(--text-strong); line-height: 1; }
+    .overview-lbl { font-size: var(--type-xs); color: var(--text-muted); margin-top: 4px; }
+
+    .device-card {
+      background: var(--surface-1);
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      transition: all 200ms;
+    }
+    .device-card:hover { box-shadow: var(--shadow-1); }
+    .device-card.is-self { border-color: var(--accent-300); background: linear-gradient(135deg, var(--surface-1), var(--accent-tint)); }
+    .device-head { display: flex; align-items: start; gap: 12px; margin-bottom: 14px; }
+    .device-ico {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      display: grid; place-items: center;
+      flex-shrink: 0;
+    }
+    .device-meta { flex: 1; min-width: 0; }
+    .device-name { display: flex; align-items: center; gap: 6px; font-size: var(--type-md); color: var(--text-strong); font-weight: 600; margin-bottom: 2px; }
+    .device-sub { font-size: var(--type-xs); color: var(--text-muted); }
+    .device-status { display: flex; align-items: center; gap: 6px; font-size: var(--type-xs); }
+    .device-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); margin: 12px 0; }
+    .ds-stat { text-align: center; }
+    .ds-stat .v { font-family: 'Geist Mono', monospace; font-size: 14px; color: var(--text-strong); font-weight: 600; }
+    .ds-stat .l { font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+    .device-foot { display: flex; align-items: center; gap: 8px; }
+    .device-foot .grow { flex: 1; }
+    .device-foot .last { font-size: var(--type-xs); color: var(--text-muted); }
+
+    .pair-card {
+      background: linear-gradient(135deg, var(--accent-tint), var(--surface-1));
+      border: 1px dashed var(--accent-400);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .qr {
+      width: 96px; height: 96px;
+      background: white;
+      border-radius: 8px;
+      padding: 6px;
+      display: grid; place-items: center;
+      box-shadow: var(--shadow-1);
+    }
+    .pair-card .grow { flex: 1; min-width: 0; }
+    .pair-card h3 { font-size: var(--type-md); color: var(--text-strong); font-weight: 600; margin-bottom: 4px; }
+    .pair-card p { font-size: var(--type-sm); color: var(--text-muted); }
+
+    /* === Interactive additions === */
+    .device-card { position: relative; cursor: default; }
+    .device-menu-pop {
+      position: absolute; right: 14px; bottom: 60px;
+      background: var(--surface-0); border: 1px solid var(--hairline);
+      border-radius: 10px; padding: 4px; min-width: 160px;
+      box-shadow: var(--shadow-3);
+      display: none; z-index: 50;
+    }
+    .device-menu-pop.is-open { display: block; animation: pop 160ms var(--ease-spring); }
+    .device-menu-pop .item { padding: 8px 10px; border-radius: 6px; font-size: var(--type-sm); color: var(--text-default); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .device-menu-pop .item:hover { background: var(--surface-2); }
+    .device-menu-pop .item.danger { color: var(--status-danger); }
+    .device-menu-pop .item .k { margin-left: auto; font-family: 'Geist Mono', monospace; font-size: 10.5px; color: var(--text-faint); }
+    .device-menu-pop .sep { height: 1px; background: var(--hairline); margin: 4px 0; }
+
+    .modal-overlay {
+      position: fixed; inset: 0; background: oklch(20% 0.02 270 / 0.4);
+      display: none; align-items: center; justify-content: center; z-index: 100;
+      animation: fadein 160ms;
+    }
+    .modal-overlay.is-open { display: flex; }
+    @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+    .modal {
+      background: var(--surface-0); border-radius: 16px;
+      width: 440px; max-width: 92vw; padding: 24px;
+      box-shadow: var(--shadow-3);
+      animation: pop 200ms var(--ease-spring);
+    }
+    .modal h3 { font-size: var(--type-lg); color: var(--text-strong); font-weight: 600; margin-bottom: 6px; }
+    .modal p { color: var(--text-muted); margin-bottom: 16px; font-size: var(--type-sm); line-height: 1.5; }
+    .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+    .toast-stack {
+      position: fixed; bottom: 24px; right: 24px;
+      display: flex; flex-direction: column; gap: 8px; z-index: 200;
+    }
+    .toast-x {
+      background: var(--surface-0); border: 1px solid var(--hairline);
+      border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px;
+      box-shadow: var(--shadow-2);
+      min-width: 280px; font-size: var(--type-sm);
+      animation: slidein 200ms var(--ease-spring);
+    }
+    .toast-x .t { color: var(--text-strong); font-weight: 500; }
+    .toast-x .d { color: var(--text-muted); font-size: var(--type-xs); margin-top: 2px; }
+    .toast-x.success { border-left: 3px solid var(--status-success); }
+    .toast-x.info { border-left: 3px solid var(--status-info); }
+    .toast-x.warn { border-left: 3px solid var(--status-warn); }
+    @keyframes slidein { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+    .refresh-spin { animation: spin 600ms linear; }
+    @keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+    .halo-panel { display: none; }
+    .halo-panel.is-on { display: block; animation: fadein 200ms; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="app-rail">
+      <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l2 -6l4 12l2 -6h7"/></svg></div>
+      <a class="rail-btn2" title="Stream"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h12M4 18h8"/></svg></a>
+      <a class="rail-btn2" title="Collections"><svg class="icon" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></a>
+      <a class="rail-btn2" title="Templates"><svg class="icon" viewBox="0 0 24 24"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></a>
+      <a class="rail-btn2 is-active" title="Devices"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M17 9h2.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H17"/><path d="M7 19h6"/></svg></a>
+      <a class="rail-btn2" title="Settings"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></a>
+      <div class="rail-spacer"></div>
+      <button class="rail-mode2"><svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></button>
+    </aside>
+
+    <main class="app-main">
+      <div class="baton-bar">
+        <div class="crumb">Devices · <b>我的设备</b></div>
+        <div class="grow"></div>
+        <div class="stat" id="online-stat"><span class="status-dot ok"></span> <span id="online-text">3 / 5 在线</span></div>
+        <button class="btn btn-primary" onclick="openAddDevice()">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          添加设备
+        </button>
+      </div>
+
+      <div class="app-content">
+        <section class="stream-area" style="padding: 24px 32px;">
+          <div class="page-head">
+            <div>
+              <h1>Devices</h1>
+              <p>5 台设备 · 3 在线 · 同步协议 v3</p>
+            </div>
+          </div>
+
+          <div class="device-overview">
+            <div class="overview-card">
+              <div class="overview-icon" style="background: oklch(64% 0.16 150 / 0.12); color: oklch(40% 0.16 150);">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>
+              </div>
+              <div>
+                <div class="overview-num mono">3</div>
+                <div class="overview-lbl">在线</div>
+              </div>
+            </div>
+            <div class="overview-card">
+              <div class="overview-icon" style="background: var(--accent-tint); color: var(--accent-600);">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9M12 4h9M3 12h18"/></svg>
+              </div>
+              <div>
+                <div class="overview-num mono">2</div>
+                <div class="overview-lbl">离线</div>
+              </div>
+            </div>
+            <div class="overview-card">
+              <div class="overview-icon" style="background: oklch(72% 0.15 70 / 0.12); color: oklch(45% 0.15 70);">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 5-5"/></svg>
+              </div>
+              <div>
+                <div class="overview-num mono">1.2 GB</div>
+                <div class="overview-lbl">本月同步</div>
+              </div>
+            </div>
+            <div class="overview-card">
+              <div class="overview-icon" style="background: oklch(60% 0.20 25 / 0.10); color: oklch(40% 0.20 25);">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+              </div>
+              <div>
+                <div class="overview-num mono">38ms</div>
+                <div class="overview-lbl">平均延迟</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pair new device -->
+          <div class="pair-card" style="margin-bottom: 24px;">
+            <div class="qr">
+              <svg viewBox="0 0 84 84" width="84" height="84">
+                <rect width="84" height="84" fill="white"/>
+                <g fill="black">
+                  <rect x="4" y="4" width="20" height="20"/>
+                  <rect x="8" y="8" width="12" height="12" fill="white"/>
+                  <rect x="12" y="12" width="4" height="4"/>
+                  <rect x="60" y="4" width="20" height="20"/>
+                  <rect x="64" y="8" width="12" height="12" fill="white"/>
+                  <rect x="68" y="12" width="4" height="4"/>
+                  <rect x="4" y="60" width="20" height="20"/>
+                  <rect x="8" y="64" width="12" height="12" fill="white"/>
+                  <rect x="12" y="68" width="4" height="4"/>
+                  <rect x="28" y="4" width="4" height="4"/><rect x="36" y="4" width="4" height="4"/><rect x="48" y="4" width="4" height="4"/>
+                  <rect x="28" y="12" width="4" height="4"/><rect x="40" y="12" width="4" height="4"/><rect x="52" y="12" width="4" height="4"/>
+                  <rect x="32" y="20" width="4" height="4"/><rect x="44" y="20" width="4" height="4"/>
+                  <rect x="4" y="28" width="4" height="4"/><rect x="12" y="28" width="4" height="4"/><rect x="24" y="28" width="4" height="4"/><rect x="36" y="28" width="4" height="4"/><rect x="48" y="28" width="4" height="4"/><rect x="60" y="28" width="4" height="4"/><rect x="72" y="28" width="4" height="4"/>
+                  <rect x="8" y="36" width="4" height="4"/><rect x="20" y="36" width="4" height="4"/><rect x="32" y="36" width="4" height="4"/><rect x="44" y="36" width="4" height="4"/><rect x="56" y="36" width="4" height="4"/><rect x="68" y="36" width="4" height="4"/>
+                  <rect x="4" y="44" width="4" height="4"/><rect x="16" y="44" width="4" height="4"/><rect x="28" y="44" width="4" height="4"/><rect x="40" y="44" width="4" height="4"/><rect x="52" y="44" width="4" height="4"/><rect x="64" y="44" width="4" height="4"/><rect x="76" y="44" width="4" height="4"/>
+                  <rect x="12" y="52" width="4" height="4"/><rect x="24" y="52" width="4" height="4"/><rect x="36" y="52" width="4" height="4"/><rect x="48" y="52" width="4" height="4"/><rect x="60" y="52" width="4" height="4"/><rect x="72" y="52" width="4" height="4"/>
+                  <rect x="28" y="60" width="4" height="4"/><rect x="40" y="60" width="4" height="4"/><rect x="52" y="60" width="4" height="4"/><rect x="64" y="60" width="4" height="4"/><rect x="76" y="60" width="4" height="4"/>
+                  <rect x="32" y="68" width="4" height="4"/><rect x="44" y="68" width="4" height="4"/><rect x="56" y="68" width="4" height="4"/><rect x="68" y="68" width="4" height="4"/>
+                  <rect x="28" y="76" width="4" height="4"/><rect x="40" y="76" width="4" height="4"/><rect x="52" y="76" width="4" height="4"/><rect x="64" y="76" width="4" height="4"/><rect x="76" y="76" width="4" height="4"/>
+                </g>
+              </svg>
+            </div>
+            <div class="grow">
+              <h3>扫码添加新设备</h3>
+              <p>用手机或平板的 ClipSync App 扫描此二维码 · 配对码 <code class="mono" style="background: var(--surface-0); padding: 1px 5px; border-radius: 3px; color: var(--text-strong);">8F2K-9X</code> · 10 分钟内有效</p>
+            </div>
+            <button class="btn btn-secondary" id="refresh-pair" onclick="refreshPair()">
+              <svg class="icon" viewBox="0 0 24 24" id="refresh-icon"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+              刷新
+            </button>
+            <button class="btn btn-ghost btn-icon" onclick="openPairHelp()"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+          </div>
+
+          <h2 style="font-size: var(--type-md); color: var(--text-strong); font-weight: 600; margin-bottom: 12px;">已连接设备</h2>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px;">
+            <!-- This device -->
+            <div class="device-card is-self" data-device="macbook">
+              <div class="device-head">
+                <div class="device-ico" style="background: var(--accent-500); color: white;">
+                  <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M17 9h2.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H17"/><path d="M7 19h6"/></svg>
+                </div>
+                <div class="device-meta">
+                  <div class="device-name">
+                    MacBook Pro 16"
+                    <span class="tag tag-accent" style="font-size: 10px;">本机</span>
+                  </div>
+                  <div class="device-sub">macOS 15.0 · 设备 ID <code class="mono">dev_a7f3</code></div>
+                </div>
+                <div class="device-status">
+                  <span class="status-dot ok"></span>
+                  <span style="color: var(--text-default);">在线</span>
+                </div>
+              </div>
+              <div class="device-stats">
+                <div class="ds-stat"><div class="v">2.4K</div><div class="l">条目</div></div>
+                <div class="ds-stat"><div class="v">410 MB</div><div class="l">同步</div></div>
+                <div class="ds-stat"><div class="v">12ms</div><div class="l">延迟</div></div>
+              </div>
+              <div class="device-foot">
+                <span class="last">刚刚活跃</span>
+                <div class="grow"></div>
+                <button class="btn btn-sm btn-ghost" onclick="openDevicePref('MacBook Pro 16&quot;', 'dev_a7f3')">偏好</button>
+                <button class="btn btn-sm btn-ghost" onclick="toggleDeviceMenu('macbook', event)">⋯</button>
+              </div>
+              <div class="device-menu-pop" id="menu-macbook">
+                <div class="item" onclick="openDevicePref('MacBook Pro 16&quot;', 'dev_a7f3'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg> 设备偏好 <span class="k">⌘,</span></div>
+                <div class="item" onclick="copyDeviceId('dev_a7f3'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> 复制设备 ID</div>
+                <div class="item" onclick="toggleStatus('macbook'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.58 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg> 切换上线状态</div>
+                <div class="sep"></div>
+                <div class="item" onclick="restartSync('MacBook Pro 16&quot;'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg> 重启同步服务</div>
+              </div>
+            </div>
+
+            <div class="device-card" data-device="iphone" style="position: relative;">
+              <div class="device-head">
+                <div class="device-ico" style="background: var(--surface-2); color: var(--text-default);">
+                  <svg class="icon" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
+                </div>
+                <div class="device-meta">
+                  <div class="device-name">iPhone 15 Pro</div>
+                  <div class="device-sub">iOS 18.1 · 设备 ID <code class="mono">dev_3c9e</code></div>
+                </div>
+                <div class="device-status">
+                  <span class="status-dot ok"></span>
+                  <span style="color: var(--text-default);">在线</span>
+                </div>
+              </div>
+              <div class="device-stats">
+                <div class="ds-stat"><div class="v">1.8K</div><div class="l">条目</div></div>
+                <div class="ds-stat"><div class="v">280 MB</div><div class="l">同步</div></div>
+                <div class="ds-stat"><div class="v">28ms</div><div class="l">延迟</div></div>
+              </div>
+              <div class="device-foot">
+                <span class="last">12 秒前</span>
+                <div class="grow"></div>
+                <button class="btn btn-sm btn-ghost" onclick="openDevicePref('iPhone 15 Pro', 'dev_3c9e')">偏好</button>
+                <button class="btn btn-sm btn-ghost" onclick="toggleDeviceMenu('iphone', event)">⋯</button>
+              </div>
+              <div class="device-menu-pop" id="menu-iphone">
+                <div class="item" onclick="openDevicePref('iPhone 15 Pro', 'dev_3c9e'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><circle cx="12" cy="12" r="3"/></svg> 设备偏好</div>
+                <div class="item" onclick="copyDeviceId('dev_3c9e'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><rect x="9" y="9" width="13" height="13" rx="2"/></svg> 复制设备 ID</div>
+                <div class="item" onclick="toggleStatus('iphone'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.58 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/></svg> 切换上线状态</div>
+                <div class="sep"></div>
+                <div class="item danger" onclick="confirmRemove('iPhone 15 Pro', 'iphone'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg> 移除此设备</div>
+              </div>
+            </div>
+
+            <div class="device-card" data-device="desktop">
+              <div class="device-head">
+                <div class="device-ico" style="background: var(--surface-2); color: var(--text-default);">
+                  <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+                </div>
+                <div class="device-meta">
+                  <div class="device-name">Desktop Office</div>
+                  <div class="device-sub">Windows 11 · 设备 ID <code class="mono">dev_f21b</code></div>
+                </div>
+                <div class="device-status">
+                  <span class="status-dot ok"></span>
+                  <span style="color: var(--text-default);">在线</span>
+                </div>
+              </div>
+              <div class="device-stats">
+                <div class="ds-stat"><div class="v">942</div><div class="l">条目</div></div>
+                <div class="ds-stat"><div class="v">510 MB</div><div class="l">同步</div></div>
+                <div class="ds-stat"><div class="v">44ms</div><div class="l">延迟</div></div>
+              </div>
+              <div class="device-foot">
+                <span class="last">3 分钟前</span>
+                <div class="grow"></div>
+                <button class="btn btn-sm btn-ghost" onclick="openDevicePref('Desktop Office', 'dev_f21b')">偏好</button>
+                <button class="btn btn-sm btn-ghost" onclick="toggleDeviceMenu('desktop', event)">⋯</button>
+              </div>
+              <div class="device-menu-pop" id="menu-desktop">
+                <div class="item" onclick="openDevicePref('Desktop Office', 'dev_f21b'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><circle cx="12" cy="12" r="3"/></svg> 设备偏好</div>
+                <div class="item" onclick="copyDeviceId('dev_f21b'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><rect x="9" y="9" width="13" height="13" rx="2"/></svg> 复制设备 ID</div>
+                <div class="item" onclick="toggleStatus('desktop'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/></svg> 切换上线状态</div>
+                <div class="sep"></div>
+                <div class="item danger" onclick="confirmRemove('Desktop Office', 'desktop'); closeAllMenus();"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> 移除此设备</div>
+              </div>
+            </div>
+
+            <div class="device-card" data-device="ipad" style="opacity: 0.7;">
+              <div class="device-head">
+                <div class="device-ico" style="background: var(--surface-2); color: var(--text-faint);">
+                  <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+                </div>
+                <div class="device-meta">
+                  <div class="device-name">iPad Air</div>
+                  <div class="device-sub">iPadOS 17 · 设备 ID <code class="mono">dev_8d2a</code></div>
+                </div>
+                <div class="device-status">
+                  <span class="status-dot idle"></span>
+                  <span style="color: var(--text-muted);">离线</span>
+                </div>
+              </div>
+              <div class="device-stats">
+                <div class="ds-stat"><div class="v">312</div><div class="l">条目</div></div>
+                <div class="ds-stat"><div class="v">86 MB</div><div class="l">同步</div></div>
+                <div class="ds-stat"><div class="v">—</div><div class="l">延迟</div></div>
+              </div>
+              <div class="device-foot">
+                <span class="last">3 天前离线</span>
+                <div class="grow"></div>
+                <button class="btn btn-sm btn-ghost" onclick="openDevicePref('iPad Air', 'dev_8d2a')">偏好</button>
+                <button class="btn btn-sm btn-ghost" onclick="confirmRemove('iPad Air', 'ipad')">移除</button>
+              </div>
+            </div>
+
+            <div class="device-card" data-device="thinkpad" style="opacity: 0.7;">
+              <div class="device-head">
+                <div class="device-ico" style="background: var(--surface-2); color: var(--text-faint);">
+                  <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M17 9h2.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H17"/></svg>
+                </div>
+                <div class="device-meta">
+                  <div class="device-name">Old ThinkPad</div>
+                  <div class="device-sub">Ubuntu 22.04 · 设备 ID <code class="mono">dev_44a1</code></div>
+                </div>
+                <div class="device-status">
+                  <span class="status-dot idle"></span>
+                  <span style="color: var(--text-muted);">离线</span>
+                </div>
+              </div>
+              <div class="device-stats">
+                <div class="ds-stat"><div class="v">128</div><div class="l">条目</div></div>
+                <div class="ds-stat"><div class="v">24 MB</div><div class="l">同步</div></div>
+                <div class="ds-stat"><div class="v">—</div><div class="l">延迟</div></div>
+              </div>
+              <div class="device-foot">
+                <span class="last">12 天前</span>
+                <div class="grow"></div>
+                <button class="btn btn-sm btn-ghost" onclick="openDevicePref('Old ThinkPad', 'dev_44a1')">偏好</button>
+                <button class="btn btn-sm btn-ghost" onclick="confirmRemove('Old ThinkPad', 'thinkpad')">移除</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="halo">
+          <div class="halo-head">
+            <div class="halo-seg">
+              <button class="is-active" onclick="switchHaloPanel('network', this)">Network</button>
+              <button onclick="switchHaloPanel('sessions', this)">Sessions</button>
+            </div>
+          </div>
+          <div class="halo-body">
+            <div class="halo-panel is-on" id="panel-network">
+            <div class="halo-section">
+              <h4>实时事件流</h4>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <div class="halo-card">
+                  <span class="status-dot ok"></span>
+                  <div class="body">
+                    <b>iPhone 15 · 推送 1 条</b>
+                    <p class="mono">12s</p>
+                  </div>
+                </div>
+                <div class="halo-card">
+                  <span class="status-dot ok"></span>
+                  <div class="body">
+                    <b>Desktop · 同步完成</b>
+                    <p class="mono">3m</p>
+                  </div>
+                </div>
+                <div class="halo-card">
+                  <span class="status-dot warn"></span>
+                  <div class="body">
+                    <b>iPad · 离线 3 天</b>
+                    <p>将在 30 天后自动注销</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="halo-section">
+              <h4>同步协议</h4>
+              <div style="background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-family: 'Geist Mono', monospace; font-size: 12px; line-height: 1.6; color: var(--text-default);">
+                v3 · E2E 加密<br/>
+                X25519 + ChaCha20<br/>
+                校验：SHA-256
+              </div>
+            </div>
+            </div><!-- /panel-network -->
+            <div class="halo-panel" id="panel-sessions">
+              <div class="halo-section">
+                <h4>活跃会话</h4>
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                  <div class="halo-card">
+                    <span class="status-dot ok"></span>
+                    <div class="body">
+                      <b>MacBook Pro · 当前</b>
+                      <p class="mono">Chrome 128 · 本机</p>
+                    </div>
+                  </div>
+                  <div class="halo-card">
+                    <span class="status-dot ok"></span>
+                    <div class="body">
+                      <b>iPhone 15 Pro</b>
+                      <p class="mono">ClipSync iOS 4.2 · 移动网络</p>
+                    </div>
+                  </div>
+                  <div class="halo-card">
+                    <span class="status-dot warn"></span>
+                    <div class="body">
+                      <b>Desktop Office</b>
+                      <p class="mono">ClipSync Win 1.8 · 7 天未活跃</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="halo-section">
+                <h4>会话统计</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <div style="background: var(--surface-2); border-radius: 8px; padding: 8px 10px;">
+                    <div class="mono" style="font-size: 16px; color: var(--text-strong); font-weight: 600;">2.3 GB</div>
+                    <div style="font-size: 10.5px; color: var(--text-muted);">本月上行</div>
+                  </div>
+                  <div style="background: var(--surface-2); border-radius: 8px; padding: 8px 10px;">
+                    <div class="mono" style="font-size: 16px; color: var(--text-strong); font-weight: 600;">486</div>
+                    <div style="font-size: 10.5px; color: var(--text-muted);">同步次数</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modals & overlays -->
+  <div class="modal-overlay" id="modal-pref" onclick="if(event.target===this) closeModal('modal-pref')">
+    <div class="modal">
+      <h3 id="pref-title">设备偏好</h3>
+      <p id="pref-sub">配置此设备的同步行为、通知与限制</p>
+      <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px; background: var(--surface-1); border-radius: 10px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="flex: 1;">
+            <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">允许后台同步</div>
+            <div style="font-size: var(--type-xs); color: var(--text-muted);">关闭后仅在打开应用时同步</div>
+          </div>
+          <div class="pref-switch is-on" onclick="this.classList.toggle('is-on')"></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="flex: 1;">
+            <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">蜂窝网络同步</div>
+            <div style="font-size: var(--type-xs); color: var(--text-muted);">仅在 Wi-Fi 下默认开启</div>
+          </div>
+          <div class="pref-switch" onclick="this.classList.toggle('is-on')"></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="flex: 1;">
+            <div style="font-size: var(--type-sm); color: var(--text-strong); font-weight: 500;">图片/文件同步</div>
+            <div style="font-size: var(--type-xs); color: var(--text-muted);">大于 5 MB 自动跳过</div>
+          </div>
+          <div class="pref-switch is-on" onclick="this.classList.toggle('is-on')"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-pref')">取消</button>
+        <button class="btn btn-primary" onclick="closeModal('modal-pref'); showToast('success', '偏好已保存', '设备 <span id="saved-device"></span> 配置已更新')">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-remove" onclick="if(event.target===this) closeModal('modal-remove')">
+    <div class="modal">
+      <h3 style="color: var(--status-danger);">⚠ 确认移除设备</h3>
+      <p id="remove-desc">移除后该设备将立即断开与 ClipSync 的同步。已同步的内容不会删除，但不会再接收新的更新。</p>
+      <div style="background: var(--surface-2); border-radius: 8px; padding: 10px 12px; font-size: var(--type-xs); color: var(--text-muted); margin-bottom: 12px;">
+        <div>· 该设备的 <b style="color: var(--text-strong);">312 条</b>历史条目将保留在云端</div>
+        <div>· 撤销将需在 30 天内重新配对</div>
+        <div>· 加密密钥 <code class="mono">dev_3c9e</code> 将被吊销</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-remove')">取消</button>
+        <button class="btn btn-danger" id="remove-confirm" onclick="executeRemove()">确认移除</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-add" onclick="if(event.target===this) closeModal('modal-add')">
+    <div class="modal">
+      <h3>添加新设备</h3>
+      <p>选择设备类型，按提示在目标设备上打开 ClipSync 完成配对</p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
+        <button class="add-type" onclick="selectAddType('macos')">
+          <svg class="icon" viewBox="0 0 24 24" style="width:28px;height:28px;color:var(--text-muted);"><rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M7 19h6"/></svg>
+          <div>macOS</div>
+        </button>
+        <button class="add-type" onclick="selectAddType('windows')">
+          <svg class="icon" viewBox="0 0 24 24" style="width:28px;height:28px;color:var(--text-muted);"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8"/></svg>
+          <div>Windows</div>
+        </button>
+        <button class="add-type" onclick="selectAddType('ios')">
+          <svg class="icon" viewBox="0 0 24 24" style="width:28px;height:28px;color:var(--text-muted);"><rect x="6" y="2" width="12" height="20" rx="2"/></svg>
+          <div>iOS / iPadOS</div>
+        </button>
+        <button class="add-type" onclick="selectAddType('android')">
+          <svg class="icon" viewBox="0 0 24 24" style="width:28px;height:28px;color:var(--text-muted);"><rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="18" r="1"/></svg>
+          <div>Android</div>
+        </button>
+      </div>
+      <div id="add-help" style="display:none; padding: 12px; background: var(--surface-1); border-radius: 8px; font-size: var(--type-sm); color: var(--text-default); margin-bottom: 12px;"></div>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-add')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toasts"></div>
+
+  <style>
+    .pref-switch { width: 36px; height: 20px; background: var(--surface-3); border-radius: 999px; position: relative; cursor: pointer; transition: all 200ms; border: 1px solid var(--hairline); flex-shrink: 0; }
+    .pref-switch::after { content:''; position:absolute; left:2px; top:50%; transform: translateY(-50%); width: 14px; height: 14px; background: var(--surface-0); border-radius: 999px; box-shadow: var(--shadow-1); transition: all 200ms var(--ease-spring); }
+    .pref-switch.is-on { background: var(--accent-500); border-color: var(--accent-500); }
+    .pref-switch.is-on::after { left: 18px; }
+    .btn-danger { background: var(--status-danger); color: white; border-color: var(--status-danger); }
+    .btn-danger:hover { filter: brightness(0.92); }
+    .add-type { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 10px; padding: 16px 8px; cursor: pointer; transition: all 160ms; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: var(--type-sm); color: var(--text-default); }
+    .add-type:hover { border-color: var(--accent-400); background: var(--accent-tint); }
+    .add-type.is-on { border-color: var(--accent-500); background: var(--accent-tint); color: var(--accent-700); }
+  </style>
+
+  <script>
+    // === Device menu popover ===
+    function toggleDeviceMenu(id, e) {
+      e.stopPropagation();
+      closeAllMenus();
+      const m = document.getElementById('menu-' + id);
+      if (m) m.classList.add('is-open');
+    }
+    function closeAllMenus() {
+      document.querySelectorAll('.device-menu-pop').forEach(m => m.classList.remove('is-open'));
+    }
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.device-menu-pop') && !e.target.matches('.btn-ghost')) closeAllMenus();
+    });
+
+    // === Halo panel switch ===
+    function switchHaloPanel(name, btn) {
+      btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      document.querySelectorAll('.halo-panel').forEach(p => p.classList.remove('is-on'));
+      document.getElementById('panel-' + name).classList.add('is-on');
+    }
+
+    // === Refresh pair code ===
+    function refreshPair() {
+      const icon = document.getElementById('refresh-icon');
+      icon.classList.add('refresh-spin');
+      const codes = ['8F2K-9X', 'A3M7-2P', '4JK9-7Q', 'X2B5-1F', '9R4D-6N', 'K7P3-8C'];
+      const newCode = codes[Math.floor(Math.random() * codes.length)];
+      setTimeout(() => {
+        icon.classList.remove('refresh-spin');
+        document.querySelector('.pair-card code').textContent = newCode;
+        showToast('success', '配对码已刷新', '新码 <b>' + newCode + '</b> · 10 分钟内有效');
+      }, 600);
+    }
+
+    function openPairHelp() {
+      showToast('info', '如何配对', '在手机/平板上打开 ClipSync → 设置 → 添加设备 → 扫描此二维码');
+    }
+
+    // === Device preference modal ===
+    function openDevicePref(name, id) {
+      document.getElementById('pref-title').textContent = '设备偏好 · ' + name;
+      document.getElementById('pref-sub').textContent = '设备 ID ' + id + ' · 配置同步行为、通知与限制';
+      openModal('modal-pref');
+    }
+
+    // === Remove confirmation ===
+    let pendingRemove = null;
+    function confirmRemove(name, key) {
+      pendingRemove = { name, key };
+      document.getElementById('remove-desc').innerHTML = '移除 <b>' + name + '</b> 后该设备将立即断开与 ClipSync 的同步。已同步的内容不会删除，但不会再接收新的更新。';
+      openModal('modal-remove');
+    }
+    function executeRemove() {
+      if (!pendingRemove) return;
+      const card = document.querySelector('[data-device="' + pendingRemove.key + '"]');
+      if (card) card.style.transition = 'all 240ms', card.style.opacity = '0', card.style.transform = 'scale(0.96)';
+      closeModal('modal-remove');
+      showToast('warn', '设备已移除', pendingRemove.name + ' 已断开同步 · 可在 30 天内重新配对');
+      setTimeout(() => {
+        if (card) card.remove();
+        updateOnlineCount();
+        pendingRemove = null;
+      }, 280);
+    }
+
+    // === Status toggle ===
+    function toggleStatus(key) {
+      const card = document.querySelector('[data-device="' + key + '"]');
+      if (!card) return;
+      const dot = card.querySelector('.status-dot');
+      const txt = card.querySelector('.device-status span:last-child');
+      const isOnline = dot.classList.contains('ok');
+      dot.classList.toggle('ok', !isOnline);
+      dot.classList.toggle('idle', isOnline);
+      txt.textContent = isOnline ? '离线' : '在线';
+      txt.style.color = isOnline ? 'var(--text-muted)' : 'var(--text-default)';
+      card.style.opacity = isOnline ? '0.7' : '1';
+      showToast(isOnline ? 'warn' : 'success', isOnline ? '设备已离线' : '设备已上线', txt.parentElement.parentElement.querySelector('.device-name').textContent.trim());
+      updateOnlineCount();
+    }
+
+    // === Copy device id ===
+    function copyDeviceId(id) {
+      showToast('info', '已复制', '设备 ID <b>' + id + '</b> 已复制到剪贴板');
+    }
+
+    // === Restart sync ===
+    function restartSync(name) {
+      showToast('success', '同步服务重启中', name + ' 将在 5 秒内重新连接');
+    }
+
+    // === Add device ===
+    function openAddDevice() { openModal('modal-add'); }
+    function selectAddType(t) {
+      document.querySelectorAll('.add-type').forEach(b => b.classList.remove('is-on'));
+      event.currentTarget.classList.add('is-on');
+      const help = {
+        macos: '1. 在 Mac 上打开 ClipSync Desktop<br>2. 设置 → 设备 → "已有账号? 登录"<br>3. 扫描此页面顶部的二维码',
+        windows: '1. 在 Windows 上安装 ClipSync Desktop<br>2. 启动后选择"登录到现有账号"<br>3. 输入配对码 <b>' + document.querySelector('.pair-card code').textContent + '</b>',
+        ios: '1. App Store 下载 "ClipSync"<br>2. 登录同一账号<br>3. 弹出 "新设备请求" → 确认',
+        android: '1. Google Play 下载 "ClipSync"<br>2. 登录同一账号<br>3. 设置 → 设备管理 → 添加'
+      };
+      const el = document.getElementById('add-help');
+      el.style.display = 'block';
+      el.innerHTML = help[t];
+    }
+
+    // === Modal helpers ===
+    function openModal(id) { document.getElementById(id).classList.add('is-open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('is-open'); }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.is-open').forEach(m => m.classList.remove('is-open'));
+        closeAllMenus();
+      }
+    });
+
+    // === Toast ===
+    function showToast(type, title, desc) {
+      const stack = document.getElementById('toasts');
+      const t = document.createElement('div');
+      t.className = 'toast-x ' + type;
+      t.innerHTML = '<div><div class="t">' + title + '</div><div class="d">' + (desc || '') + '</div></div>';
+      stack.appendChild(t);
+      setTimeout(() => {
+        t.style.transition = 'all 200ms';
+        t.style.opacity = '0';
+        t.style.transform = 'translateX(20px)';
+        setTimeout(() => t.remove(), 220);
+      }, 3200);
+    }
+
+    // === Online count ===
+    function updateOnlineCount() {
+      const cards = document.querySelectorAll('.device-card');
+      const online = document.querySelectorAll('.device-card .status-dot.ok').length;
+      const total = cards.length;
+      document.getElementById('online-text').textContent = online + ' / ' + total + ' 在线';
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · 快速粘贴</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="qp-body">
+<div class="qp-win">
+  <div class="qp-search">
+    <i data-ic="search" data-size="15"></i>
+    <input id="qpInput" placeholder="搜索剪贴内容…" autocomplete="off">
+    <kbd>Esc</kbd>
+  </div>
+  <div class="qp-list" id="qpList"></div>
+  <div class="qp-foot">
+    <span><kbd>↑</kbd> <kbd>↓</kbd> 选择</span>
+    <span><kbd>Enter</kbd> 粘贴</span>
+    <span><kbd>1-8</kbd> 直选</span>
+    <span style="margin-left:auto"><kbd>Esc</kbd> 关闭</span>
+  </div>
+</div>
+
+<script src="mock.js"></script>
+<script src="components.js"></script>
+<script>
+/* ---------- QuickPaste 浮窗：全键盘快速粘贴（原型） ---------- */
+const TYPE_ICON = { text: 'type', link: 'link-2', code: 'code-2', image: 'image', file: 'file' };
+const TYPE_TILE = { text: 't-text', link: 't-link', code: 't-code', image: 't-image', file: 't-file' };
+let q = '', sel = 0, view = [];
+
+function render() {
+  view = DB.clips.filter(c => !q || c.content.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
+  if (sel > view.length - 1) sel = Math.max(0, view.length - 1);
+  const root = document.getElementById('qpList');
+  root.innerHTML = view.length ? view.map((c, i) => `
+    <div class="qp-item ${i === sel ? 'sel' : ''}" data-i="${i}">
+      <span class="qn">${i + 1}</span>
+      <span class="type-tile ${TYPE_TILE[c.type]}" style="width:26px;height:26px;border-radius:7px">${iconSvg(TYPE_ICON[c.type], 13)}</span>
+      <span class="qt">${esc(c.content.replace(/\n/g, ' '))}</span>
+      <span class="dimmer mono" style="font-size:10px;flex:none">${c.time}</span>
+    </div>`).join('')
+    : `<div class="empty" style="padding:32px 16px"><div class="t">没有匹配的剪贴记录</div><div class="d">换个关键词试试</div></div>`;
+  root.querySelectorAll('.qp-item').forEach(el => {
+    el.addEventListener('mousemove', () => { const i = +el.dataset.i; if (sel !== i) { sel = i; paint(); } });
+    el.addEventListener('click', () => paste(+el.dataset.i));
+  });
+}
+function paint() {
+  document.querySelectorAll('#qpList .qp-item').forEach(el => el.classList.toggle('sel', +el.dataset.i === sel));
+  document.querySelector('#qpList .qp-item.sel')?.scrollIntoView({ block: 'nearest' });
+}
+function paste(i) {
+  const c = view[i]; if (!c) return;
+  /* 真实环境：await copyItem(c.id); 回冲目标窗口; window.close(); */
+  toast('已粘贴 · 回冲目标窗口', 'ok');
+}
+
+const input = document.getElementById('qpInput');
+input.addEventListener('input', () => { q = input.value.trim(); sel = 0; render(); });
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); sel = Math.min(sel + 1, view.length - 1); paint(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(sel - 1, 0); paint(); }
+  else if (e.key === 'Enter') { e.preventDefault(); paste(sel); }
+  else if (e.key === 'Escape') { toast('原型演示 · 真实环境将关闭浮窗'); }
+  else if (/^[1-8]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const i = +e.key - 1;
+    if (i < view.length) { e.preventDefault(); paste(i); }
+  }
+});
+
+render();
+input.focus();
+</script>
+</body>
+</html>

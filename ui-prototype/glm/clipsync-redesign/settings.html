@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · 设置</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="settings">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-left">
+      <span class="brand-stamp"><i data-ic="scissors"></i></span>
+      <span class="brand-word">ClipSync</span>
+      <span class="tb-sep"></span>
+      <span class="tb-crumb">设置</span>
+    </div>
+    <button class="cmdk" id="cmdkBtn" title="命令面板">
+      <i data-ic="search"></i><span>搜索或命令…</span><kbd>Ctrl K</kbd>
+    </button>
+    <div class="tb-right">
+      <button class="tb-btn" id="qpBtn" title="快速粘贴面板 · Ctrl+Shift+V"><i data-ic="panel-top"></i></button>
+      <button class="tb-btn" id="themeBtn" title="切换明暗"><i data-ic="moon"></i></button>
+      <button class="tb-btn" id="bellBtn" title="通知"><i data-ic="bell"></i><i class="dot" id="bellDot"></i></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn win" data-win="min"><i data-ic="minus"></i></button>
+      <button class="tb-btn win" data-win="max"><i data-ic="square"></i></button>
+      <button class="tb-btn win close" data-win="close"><i data-ic="x"></i></button>
+    </div>
+  </header>
+  <aside class="app-nav">
+    <div class="nav-sec">工作台</div>
+    <a class="nav-item" data-nav="clipboard" href="index.html"><i data-ic="clipboard-list"></i><span>剪贴板</span><kbd>Ctrl 1</kbd></a>
+    <a class="nav-item" data-nav="favorites" href="favorites.html"><i data-ic="star"></i><span>收藏</span><kbd>Ctrl 2</kbd></a>
+    <a class="nav-item" data-nav="templates" href="templates.html"><i data-ic="layout-template"></i><span>模板</span><kbd>Ctrl 3</kbd></a>
+    <a class="nav-item" data-nav="devices" href="devices.html"><i data-ic="laptop"></i><span>设备</span><kbd>Ctrl 4</kbd></a>
+    <a class="nav-item" data-nav="ai" href="ai.html"><i data-ic="sparkles"></i><span>AI 助手</span><kbd>Ctrl 5</kbd></a>
+    <div class="nav-sec">系统</div>
+    <a class="nav-item" data-nav="settings" href="settings.html"><i data-ic="settings-2"></i><span>设置</span><kbd>Ctrl ,</kbd></a>
+    <div class="nav-foot">
+      <div class="sync-pill"><i class="pulse"></i><span>已同步 · 3 台设备</span></div>
+      <div class="nav-ver">v0.4.2 · ink-bench</div>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="page reveal">
+
+      <div class="page-head">
+        <div>
+          <div class="page-eyebrow">Preferences</div>
+          <h1 class="page-title">设置</h1>
+          <div class="page-desc">本机行为、外观与同步策略 · 所有设置即时保存</div>
+        </div>
+      </div>
+
+      <div class="set-layout">
+        <nav class="set-nav" id="setNav"></nav>
+        <div id="setContent"></div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="mock.js"></script>
+<script src="api.js"></script>
+<script src="components.js"></script>
+<script>
+const CATS = [
+  { id: 'general',    n: '通用',   ic: 'settings-2' },
+  { id: 'appearance', n: '外观',   ic: 'palette' },
+  { id: 'hotkeys',    n: '快捷键', ic: 'keyboard' },
+  { id: 'sync',       n: '同步',   ic: 'refresh-cw' },
+  { id: 'ai',         n: 'AI',     ic: 'sparkles' },
+  { id: 'storage',    n: '存储',   ic: 'hard-drive' },
+  { id: 'about',      n: '关于',   ic: 'info' },
+];
+
+/* switch 默认值（localStorage key 前缀 ib-set-） */
+const DEF = { autostart: '1', watch: '1', e2e: '1', lan: '0', img: '1' };
+const getSet = k => localStorage.getItem('ib-set-' + k) ?? DEF[k] ?? '';
+const setSet = (k, v) => localStorage.setItem('ib-set-' + k, v);
+const sw = k => `<label class="switch"><input type="checkbox" data-k="${k}" ${getSet(k) === '1' ? 'checked' : ''}><i></i></label>`;
+
+/* 快捷键 */
+const HK_DEF = { qp: 'Ctrl+Shift+V', main: 'Ctrl+Alt+Space', ai: 'Ctrl+Shift+A' };
+const getHk = k => localStorage.getItem('ib-set-hk-' + k) || HK_DEF[k];
+const hkPill = k => `<button class="hotkey-pill" data-hk="${k}">${getHk(k).split('+').map(p => `<kbd>${p}</kbd>`).join('')}</button>`;
+
+const group = (t, d, rows) => `<div class="set-group"><h3 class="set-group-t">${t}</h3><p class="set-group-d">${d}</p>${rows.join('')}</div>`;
+const row = (t, d, ctl) => `<div class="set-row"><div class="grow"><div class="r-t">${t}</div><div class="r-d">${d}</div></div><div class="r-ctl">${ctl}</div></div>`;
+
+const CONTENT = {
+  general: () => group('通用', '启动与基础行为', [
+    row('开机自启', '登录系统后自动启动 ClipSync', sw('autostart')),
+    row('语言', '界面显示语言', `<select class="input" id="setLang" style="width:140px;height:30px"><option value="zh">中文</option><option value="en">English</option></select>`),
+    row('剪贴板监听', '后台监听系统剪贴板变化并记录', sw('watch')),
+  ]),
+  appearance: () => group('外观', '主题与强调色', [
+    row('主题模式', '与全局明暗主题联动', `<div class="seg" id="themeSeg"><button data-t="dark">墨色</button><button data-t="light">纸墨</button></div>`),
+    row('强调色', '荧光琥珀 · 用于标记、选中与高亮', `<span style="width:22px;height:22px;border-radius:6px;background:var(--accent);display:inline-block"></span><span class="mono dim" style="font-size:11px">#F5A524</span>`),
+  ]),
+  hotkeys: () => group('快捷键', '点击键帽录制新组合，Esc 取消', [
+    row('快速粘贴面板', '全局唤起浮窗并粘贴选中项', hkPill('qp')),
+    row('主窗口', '全局显示 / 隐藏主窗口', hkPill('main')),
+    row('AI 面板', '全局唤起 AI 助手', hkPill('ai')),
+  ]),
+  sync: () => group('同步', '设备间数据同步策略', [
+    row('端到端加密', 'AES-256-GCM，密钥不出本机', sw('e2e')),
+    row('仅局域网同步', '禁止流量经过公网中继', sw('lan')),
+    row('同步图片与文件', '关闭后仅同步文本类剪贴', sw('img')),
+  ]),
+  ai: () => group('AI', '模型与额度', [
+    row('默认模型', '新会话使用的模型', `<select class="input" id="setModel" style="width:150px;height:30px"><option>GPT-5.2</option><option>Claude 4.5</option><option>Qwen3-Max</option></select>`),
+    row('思考强度', '影响推理深度与 token 消耗', `<div class="seg" id="thinkSeg"><button data-v="低">低</button><button data-v="中">中</button><button data-v="高">高</button></div>`),
+    row('月度额度', '18.4k / 32k tokens · 缓存命中 62%', `<div style="width:180px"><div class="bar"><i style="width:57%"></i></div></div><span class="mono dim" style="font-size:11px">57%</span>`),
+  ]),
+  storage: () => group('存储', '本地加密数据库与缓存', [
+    row('本地占用', '加密数据库与缓存合计', `<div style="width:180px"><div class="bar ok"><i style="width:24%"></i></div></div><span class="mono dim" style="font-size:11px">238 MB</span>`),
+    row('清理缓存', '清除图片缩略图与临时文件', `<button class="btn btn-sm" id="cleanBtn">清理缓存</button>`),
+  ]),
+  about: () => group('关于', '版本与更新', [
+    row('ClipSync 桌面端', 'ink-bench 重构原型', `<span class="mono dim" style="font-size:12px">v0.4.2</span>`),
+    row('检查更新', '当前渠道 · stable', `<button class="btn btn-sm" id="updBtn">检查更新</button>`),
+  ]),
+};
+
+/* ---------- 快捷键录制 ---------- */
+function bindHotkeys(box) {
+  box.querySelectorAll('.hotkey-pill').forEach(p => {
+    p.onclick = () => {
+      if (p.classList.contains('rec')) return;
+      p.classList.add('rec');
+      const old = p.innerHTML;
+      p.innerHTML = '<span>按下新组合键…</span>';
+      const done = html => { p.classList.remove('rec'); p.innerHTML = html; document.removeEventListener('keydown', h, true); };
+      const h = e => {
+        e.preventDefault(); e.stopPropagation();
+        if (e.key === 'Escape') { done(old); return; }
+        if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+        const parts = [];
+        if (e.ctrlKey) parts.push('Ctrl');
+        if (e.altKey) parts.push('Alt');
+        if (e.shiftKey) parts.push('Shift');
+        if (e.metaKey) parts.push('Meta');
+        parts.push(e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key);
+        const combo = parts.join('+');
+        localStorage.setItem('ib-set-hk-' + p.dataset.hk, combo);
+        toast('快捷键已更新 · ' + combo, 'ok');
+        done(combo.split('+').map(x => `<kbd>${x}</kbd>`).join(''));
+      };
+      document.addEventListener('keydown', h, true);
+    };
+  });
+}
+
+/* ---------- 分类渲染与绑定 ---------- */
+function renderCat(id) {
+  const cat = CATS.find(c => c.id === id) || CATS[0];
+  document.querySelectorAll('#setNav button').forEach(b => b.classList.toggle('active', b.dataset.cat === cat.id));
+  const box = document.getElementById('setContent');
+  box.innerHTML = CONTENT[cat.id]();
+  hydrateIcons(box);
+
+  box.querySelectorAll('.switch input').forEach(i =>
+    i.onchange = () => { setSet(i.dataset.k, i.checked ? '1' : '0'); toast('设置已保存', 'ok'); });
+
+  if (cat.id === 'general') {
+    const s = box.querySelector('#setLang');
+    s.value = localStorage.getItem('ib-set-lang') || 'zh';
+    s.onchange = () => { localStorage.setItem('ib-set-lang', s.value); toast('语言已切换 · 重启后生效', 'ok'); };
+  }
+  if (cat.id === 'appearance') {
+    const seg = box.querySelector('#themeSeg');
+    const cur = localStorage.getItem('ib-theme') || 'dark';
+    seg.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('active', b.dataset.t === cur);
+      b.onclick = () => {
+        applyTheme(b.dataset.t);
+        seg.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+        toast(b.dataset.t === 'light' ? '已切换 · 纸墨（浅色）' : '已切换 · 墨色（深色）', 'ok');
+      };
+    });
+  }
+  if (cat.id === 'hotkeys') bindHotkeys(box);
+  if (cat.id === 'ai') {
+    const m = box.querySelector('#setModel');
+    m.value = localStorage.getItem('ib-set-model') || 'GPT-5.2';
+    m.onchange = () => { localStorage.setItem('ib-set-model', m.value); toast('默认模型 · ' + m.value, 'ok'); };
+    const seg = box.querySelector('#thinkSeg');
+    const cur = localStorage.getItem('ib-set-think') || '中';
+    seg.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('active', b.dataset.v === cur);
+      b.onclick = () => {
+        localStorage.setItem('ib-set-think', b.dataset.v);
+        seg.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+        toast('思考强度 · ' + b.dataset.v, 'ok');
+      };
+    });
+  }
+  if (cat.id === 'storage') box.querySelector('#cleanBtn').onclick = () => toast('已清理 42 MB 缓存', 'ok');
+  if (cat.id === 'about') box.querySelector('#updBtn').onclick = () => toast('已是最新版本', 'ok');
+}
+
+function route() {
+  renderCat((location.hash || '#general').slice(1));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const nav = document.getElementById('setNav');
+  nav.innerHTML = CATS.map(c => `<button data-cat="${c.id}"><i data-ic="${c.ic}"></i>${c.n}</button>`).join('');
+  hydrateIcons(nav);
+  nav.querySelectorAll('button').forEach(b => b.onclick = () => { location.hash = b.dataset.cat; });
+  window.addEventListener('hashchange', route);
+  route();
+});
+</script>
+</body>
+</html>

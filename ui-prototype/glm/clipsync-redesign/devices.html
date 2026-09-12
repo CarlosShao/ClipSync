@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · 设备</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="devices">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-left">
+      <span class="brand-stamp"><i data-ic="scissors"></i></span>
+      <span class="brand-word">ClipSync</span>
+      <span class="tb-sep"></span>
+      <span class="tb-crumb">设备</span>
+    </div>
+    <button class="cmdk" id="cmdkBtn" title="命令面板">
+      <i data-ic="search"></i><span>搜索或命令…</span><kbd>Ctrl K</kbd>
+    </button>
+    <div class="tb-right">
+      <button class="tb-btn" id="qpBtn" title="快速粘贴面板 · Ctrl+Shift+V"><i data-ic="panel-top"></i></button>
+      <button class="tb-btn" id="themeBtn" title="切换明暗"><i data-ic="moon"></i></button>
+      <button class="tb-btn" id="bellBtn" title="通知"><i data-ic="bell"></i><i class="dot" id="bellDot"></i></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn win" data-win="min"><i data-ic="minus"></i></button>
+      <button class="tb-btn win" data-win="max"><i data-ic="square"></i></button>
+      <button class="tb-btn win close" data-win="close"><i data-ic="x"></i></button>
+    </div>
+  </header>
+  <aside class="app-nav">
+    <div class="nav-sec">工作台</div>
+    <a class="nav-item" data-nav="clipboard" href="index.html"><i data-ic="clipboard-list"></i><span>剪贴板</span><kbd>Ctrl 1</kbd></a>
+    <a class="nav-item" data-nav="favorites" href="favorites.html"><i data-ic="star"></i><span>收藏</span><kbd>Ctrl 2</kbd></a>
+    <a class="nav-item" data-nav="templates" href="templates.html"><i data-ic="layout-template"></i><span>模板</span><kbd>Ctrl 3</kbd></a>
+    <a class="nav-item" data-nav="devices" href="devices.html"><i data-ic="laptop"></i><span>设备</span><kbd>Ctrl 4</kbd></a>
+    <a class="nav-item" data-nav="ai" href="ai.html"><i data-ic="sparkles"></i><span>AI 助手</span><kbd>Ctrl 5</kbd></a>
+    <div class="nav-sec">系统</div>
+    <a class="nav-item" data-nav="settings" href="settings.html"><i data-ic="settings-2"></i><span>设置</span><kbd>Ctrl ,</kbd></a>
+    <div class="nav-foot">
+      <div class="sync-pill"><i class="pulse"></i><span>已同步 · 3 台设备</span></div>
+      <div class="nav-ver">v0.4.2 · ink-bench</div>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="page reveal">
+
+      <div class="page-head">
+        <div>
+          <div class="page-eyebrow">Device Mesh</div>
+          <h1 class="page-title">设备</h1>
+          <div class="page-desc">局域网直连 · 端到端加密 · 剪贴板在所有设备间自由流动</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" id="refreshBtn"><i data-ic="refresh-cw"></i>刷新日志</button>
+          <button class="btn btn-acc" id="addBtn"><i data-ic="plus"></i>添加设备</button>
+        </div>
+      </div>
+
+      <div class="panel panel-pad" id="selfCard"></div>
+
+      <div class="sec-head">
+        <span class="sec-title">已配对设备</span>
+        <span class="sec-count" id="devCount"></span>
+        <span class="sec-line"></span>
+      </div>
+      <div class="clip-list" id="devList"></div>
+      <div class="empty" id="devEmpty" style="display:none">
+        <i data-ic="laptop" data-size="36"></i>
+        <div class="t">还没有配对其他设备</div>
+        <div class="d">点右上角「添加设备」，用手机扫码即可把剪贴板延伸过去。</div>
+        <button class="btn btn-sm" id="emptyAdd">添加设备</button>
+      </div>
+
+      <div class="sec-head">
+        <span class="sec-title">同步日志</span>
+        <span class="sec-count" id="logCount"></span>
+        <span class="sec-line"></span>
+      </div>
+      <div class="panel panel-pad">
+        <div class="toolline" id="syncLog"></div>
+      </div>
+
+      <div class="panel" style="margin-top:16px;padding:12px 16px;display:flex;align-items:center;gap:10px">
+        <span style="color:var(--success);display:inline-flex"><i data-ic="shield"></i></span>
+        <span class="dim" style="font-size:12px">所有剪贴内容经 AES-256-GCM 端到端加密后走局域网直连；云端仅同步元数据，密钥不出设备。</span>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="mock.js"></script>
+<script src="api.js"></script>
+<script src="components.js"></script>
+<script>
+const KIND_ICON = { desktop: 'monitor', laptop: 'laptop', phone: 'smartphone' };
+const KIND_TILE = { desktop: 't-code', laptop: 't-text', phone: 't-image' };
+let pairTimer = null;
+
+function selfHtml(d) {
+  return `<div class="row gap16" style="flex-wrap:wrap">
+    <div class="type-tile t-code" style="width:48px;height:48px;border-radius:var(--r-md)">${iconSvg('monitor', 22)}</div>
+    <div class="grow">
+      <div class="row gap8" style="flex-wrap:wrap">
+        <span style="font-size:16px;font-weight:600">${esc(d.name)}</span>
+        <span class="badge b-ok">在线 · 本机</span>
+      </div>
+      <div class="clip-meta" style="margin-top:4px">
+        <span>${esc(d.os)}</span><span>·</span><span class="mono">${d.ip}</span><span>·</span>
+        <span class="src">${iconSvg('shield', 11)}AES-256-GCM 加密通道</span>
+      </div>
+    </div>
+    <div class="col" style="align-items:flex-end;gap:2px">
+      <span class="stat-num" style="font-size:24px">12<small>ms</small></span>
+      <span class="dimmer mono" style="font-size:10px">MESH 延迟</span>
+    </div>
+  </div>`;
+}
+
+function devHtml(d) {
+  const badge = d.status === 'online' ? '<span class="badge b-ok">在线</span>'
+    : d.status === 'paused' ? '<span class="badge b-gray">已暂停</span>'
+    : '<span class="badge b-gray">离线</span>';
+  const act = d.status === 'online' ? '<button class="btn btn-sm" data-act="pause">暂停同步</button>'
+    : d.status === 'paused' ? '<button class="btn btn-sm" data-act="resume">恢复同步</button>'
+    : '';
+  return `<div class="clip-item" style="cursor:default" data-id="${d.id}">
+    <div class="type-tile ${KIND_TILE[d.kind]}">${iconSvg(KIND_ICON[d.kind], 16)}</div>
+    <div class="clip-body">
+      <div class="row gap8"><span style="font-weight:600;font-size:13px">${esc(d.name)}</span>${badge}</div>
+      <div class="clip-meta">
+        <span>${esc(d.os)}</span><span>·</span><span class="mono">${d.ip}</span><span>·</span>
+        <span>最后同步 <span class="mono">${d.lastSync}</span></span>
+      </div>
+    </div>
+    <div class="row gap8" style="flex:none">
+      ${act}
+      <button class="icon-btn danger" data-act="remove" title="移除设备">${iconSvg('trash-2', 14)}</button>
+    </div>
+  </div>`;
+}
+
+async function renderDevices() {
+  const { data } = await fetchDevices();
+  const self = data.find(d => d.self);
+  const peers = data.filter(d => !d.self);
+  if (self) document.getElementById('selfCard').innerHTML = selfHtml(self);
+  document.getElementById('devCount').textContent = `${peers.length} 台对端`;
+  const list = document.getElementById('devList');
+  document.getElementById('devEmpty').style.display = peers.length ? 'none' : '';
+  list.innerHTML = peers.map(devHtml).join('');
+  list.querySelectorAll('.clip-item').forEach(el => {
+    const id = el.dataset.id;
+    const d = DB.devices.find(x => x.id === id);
+    el.querySelector('[data-act="pause"]')?.addEventListener('click', async () => {
+      await toggleDevice(id, 'pause');
+      toast(`已暂停与「${d.name}」的同步`);
+      renderDevices();
+    });
+    el.querySelector('[data-act="resume"]')?.addEventListener('click', async () => {
+      await toggleDevice(id, 'resume');
+      toast(`已恢复与「${d.name}」的同步`, 'ok');
+      renderDevices();
+    });
+    el.querySelector('[data-act="remove"]')?.addEventListener('click', () => confirmRemove(d));
+  });
+}
+
+function confirmRemove(d) {
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.innerHTML = `<div class="modal" style="width:min(400px,92vw)">
+    <div class="modal-head">
+      <span style="color:var(--danger);display:inline-flex">${iconSvg('alert-triangle', 16)}</span>
+      <span class="modal-title">移除设备</span>
+    </div>
+    <div class="modal-body" style="font-size:13px">
+      确定移除「<b>${esc(d.name)}</b>」吗？移除后该设备需重新扫码配对才能继续同步，本机不再向其推送剪贴内容。
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-x="cancel">取消</button>
+      <button class="btn btn-danger" data-x="ok">确认移除</button>
+    </div>
+  </div>`;
+  document.body.appendChild(mask);
+  const close = () => mask.remove();
+  mask.querySelector('[data-x="cancel"]').onclick = close;
+  mask.onclick = e => { if (e.target === mask) close(); };
+  mask.querySelector('[data-x="ok"]').onclick = async () => {
+    await toggleDevice(d.id, 'remove');
+    close();
+    toast(`已移除「${d.name}」`, 'ok');
+    renderDevices();
+  };
+}
+
+/* 21×21 伪二维码：三个定位角 + 种子伪随机数据区，全部用 token 色 */
+function qrHtml() {
+  const N = 21;
+  let s = 8842;
+  const rnd = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+  let cells = '';
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const fx = x >= N - 7 ? x - (N - 7) : x;
+    const fy = y >= N - 7 ? y - (N - 7) : y;
+    const inFinder = (x < 7 && y < 7) || (x >= N - 7 && y < 7) || (x < 7 && y >= N - 7);
+    let on;
+    if (inFinder) on = fx === 0 || fx === 6 || fy === 0 || fy === 6 || (fx >= 2 && fx <= 4 && fy >= 2 && fy <= 4);
+    else on = rnd() > 0.52;
+    cells += `<i style="display:block;border-radius:1px;${on ? 'background:var(--accent)' : ''}"></i>`;
+  }
+  return `<div style="display:grid;grid-template-columns:repeat(${N},1fr);width:168px;height:168px;gap:1px">${cells}</div>`;
+}
+
+async function openPairModal() {
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.innerHTML = `<div class="modal" style="width:min(400px,92vw)">
+    <div class="modal-head">
+      ${iconSvg('qrcode', 16)}
+      <span class="modal-title">添加设备</span>
+      <span class="grow"></span>
+      <button class="icon-btn" data-x="close">${iconSvg('x', 15)}</button>
+    </div>
+    <div class="modal-body col" style="align-items:center;gap:14px" id="pairBody">
+      <div class="row gap8 dimmer" style="font-size:12px;padding:24px 0">
+        <span class="spin" style="display:inline-flex">${iconSvg('loader', 14)}</span>正在生成配对码…
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-x="cancel">取消</button></div>
+  </div>`;
+  document.body.appendChild(mask);
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  const close = () => {
+    clearInterval(pairTimer);
+    document.removeEventListener('keydown', onKey);
+    mask.remove();
+  };
+  document.addEventListener('keydown', onKey);
+  mask.querySelector('[data-x="close"]').onclick = close;
+  mask.querySelector('[data-x="cancel"]').onclick = close;
+  mask.onclick = e => { if (e.target === mask) close(); };
+
+  const r = await pairDevice();
+  let left = r.expires;
+  mask.querySelector('#pairBody').innerHTML = `
+    <div style="padding:12px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md)">${qrHtml()}</div>
+    <div class="mono" style="font-size:24px;font-weight:700;letter-spacing:.12em">${r.pairCode}</div>
+    <div class="row gap8 dimmer" style="font-size:12px">
+      <span class="spin" style="display:inline-flex">${iconSvg('loader', 13)}</span>
+      <span>等待手机扫码… 配对码 <span class="mono acc" id="pairLeft">${left}s</span> 后过期</span>
+    </div>
+    <div class="dimmer" style="font-size:11px;text-align:center">手机上打开 ClipSync → 设备 → 扫码配对，或手动输入配对码</div>`;
+  pairTimer = setInterval(() => {
+    left--;
+    const t = mask.querySelector('#pairLeft');
+    if (t) t.textContent = left + 's';
+    if (left <= 0) { close(); toast('配对码已过期，请重新打开', 'err'); }
+  }, 1000);
+}
+
+async function renderLog() {
+  const { data } = await fetchSyncLog();
+  document.getElementById('logCount').textContent = `${data.length} 条记录`;
+  document.getElementById('syncLog').innerHTML = data.map(s => {
+    const up = s.dir === 'up';
+    const arrow = `<span style="display:inline-flex;color:var(--${up ? 'accent2' : 'success'});${up ? 'transform:rotate(180deg)' : ''}">${iconSvg('download', 13)}</span>`;
+    return `<div class="tool-step done">${arrow}
+      <span class="tn">${esc(s.summary)}</span>
+      <span class="dimmer" style="font-size:11px">${up ? '上行至' : '来自'} ${esc(s.device)}</span>
+      <span class="tt">${s.time}</span>
+    </div>`;
+  }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderDevices();
+  renderLog();
+  document.getElementById('addBtn').onclick = openPairModal;
+  document.getElementById('emptyAdd').onclick = openPairModal;
+  document.getElementById('refreshBtn').onclick = async () => {
+    await renderLog();
+    toast('同步日志已刷新', 'ok');
+  };
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · 剪贴板</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="clipboard">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-left">
+      <span class="brand-stamp"><i data-ic="scissors"></i></span>
+      <span class="brand-word">ClipSync</span>
+      <span class="tb-sep"></span>
+      <span class="tb-crumb">剪贴板</span>
+    </div>
+    <button class="cmdk" id="cmdkBtn" title="命令面板">
+      <i data-ic="search"></i><span>搜索或命令…</span><kbd>Ctrl K</kbd>
+    </button>
+    <div class="tb-right">
+      <button class="tb-btn" id="qpBtn" title="快速粘贴面板 · Ctrl+Shift+V"><i data-ic="panel-top"></i></button>
+      <button class="tb-btn" id="themeBtn" title="切换明暗"><i data-ic="moon"></i></button>
+      <button class="tb-btn" id="bellBtn" title="通知"><i data-ic="bell"></i><i class="dot" id="bellDot"></i></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn win" data-win="min"><i data-ic="minus"></i></button>
+      <button class="tb-btn win" data-win="max"><i data-ic="square"></i></button>
+      <button class="tb-btn win close" data-win="close"><i data-ic="x"></i></button>
+    </div>
+  </header>
+  <aside class="app-nav">
+    <div class="nav-sec">工作台</div>
+    <a class="nav-item" data-nav="clipboard" href="index.html"><i data-ic="clipboard-list"></i><span>剪贴板</span><kbd>Ctrl 1</kbd></a>
+    <a class="nav-item" data-nav="favorites" href="favorites.html"><i data-ic="star"></i><span>收藏</span><kbd>Ctrl 2</kbd></a>
+    <a class="nav-item" data-nav="templates" href="templates.html"><i data-ic="layout-template"></i><span>模板</span><kbd>Ctrl 3</kbd></a>
+    <a class="nav-item" data-nav="devices" href="devices.html"><i data-ic="laptop"></i><span>设备</span><kbd>Ctrl 4</kbd></a>
+    <a class="nav-item" data-nav="ai" href="ai.html"><i data-ic="sparkles"></i><span>AI 助手</span><kbd>Ctrl 5</kbd></a>
+    <div class="nav-sec">系统</div>
+    <a class="nav-item" data-nav="settings" href="settings.html"><i data-ic="settings-2"></i><span>设置</span><kbd>Ctrl ,</kbd></a>
+    <div class="nav-foot">
+      <div class="sync-pill"><i class="pulse"></i><span>已同步 · 3 台设备</span></div>
+      <div class="nav-ver">v0.4.2 · ink-bench</div>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="page reveal">
+
+      <div class="page-head">
+        <div>
+          <div class="page-eyebrow">Clipboard Stream</div>
+          <h1 class="page-title">剪贴板</h1>
+          <div class="page-desc">每一次复制都是一条时间流 · 跨 3 台设备实时同步</div>
+        </div>
+        <div class="page-actions">
+          <div class="search" style="width:240px">
+            <i data-ic="search"></i>
+            <input class="input" id="q" placeholder="搜索内容…">
+          </div>
+          <div class="seg" id="typeSeg">
+            <button class="active" data-type="all">全部</button>
+            <button data-type="text"><i data-ic="type"></i>文本</button>
+            <button data-type="link"><i data-ic="link-2"></i>链接</button>
+            <button data-type="code"><i data-ic="code-2"></i>代码</button>
+            <button data-type="image"><i data-ic="image"></i>图片</button>
+            <button data-type="file"><i data-ic="file"></i>文件</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-row">
+        <div class="panel stat">
+          <span class="stat-label"><i data-ic="clipboard-list"></i>今日新增</span>
+          <span class="stat-num">23<small>条</small></span>
+          <span class="stat-delta"><span class="up">+6</span> 较昨日</span>
+        </div>
+        <div class="panel stat">
+          <span class="stat-label"><i data-ic="history"></i>本周累计</span>
+          <span class="stat-num">147<small>条</small></span>
+          <span class="stat-delta">峰值 周二 · 41 条</span>
+        </div>
+        <div class="panel stat">
+          <span class="stat-label"><i data-ic="star"></i>收藏</span>
+          <span class="stat-num">5<small>条</small></span>
+          <span class="stat-delta">4 个合集</span>
+        </div>
+        <div class="panel stat">
+          <span class="stat-label"><i data-ic="wifi"></i>同步延迟</span>
+          <span class="stat-num">12<small>ms</small></span>
+          <span class="stat-delta"><span class="up">局域网直连</span></span>
+        </div>
+      </div>
+
+      <div id="listWrap">
+        <div class="clip-list" id="clipList"></div>
+        <div class="empty" id="emptyState" style="display:none;margin-top:20px">
+          <i data-ic="clipboard-list" data-size="36"></i>
+          <div class="t">没有匹配的剪贴记录</div>
+          <div class="d">换个关键词，或清除类型过滤试试。新复制的内容会自动出现在这里。</div>
+          <button class="btn btn-sm" id="resetFilter">清除过滤</button>
+        </div>
+      </div>
+
+      <div class="hintbar" style="margin-top:24px">
+        <span class="h"><kbd>Ctrl Shift V</kbd> 快速粘贴面板</span>
+        <span class="h"><kbd>Enter</kbd> 粘贴选中项</span>
+        <span class="h"><kbd>Ctrl D</kbd> 删除</span>
+        <span class="h"><kbd>Space</kbd> 预览详情</span>
+        <span class="h grow"></span>
+        <span class="h dimmer">本地加密存储 · 同步走局域网直连</span>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- 详情抽屉 -->
+<div class="drawer-mask" id="drawerMask" style="display:none"></div>
+<aside class="drawer" id="clipDrawer" style="display:none">
+  <div class="drawer-head">
+    <span class="badge b-text" id="dBadge">文本</span>
+    <span class="dimmer mono" style="font-size:11px" id="dMeta"></span>
+    <span class="grow"></span>
+    <button class="icon-btn" id="dClose"><i data-ic="x"></i></button>
+  </div>
+  <div class="drawer-body">
+    <div class="panel panel-pad mono" id="dContent" style="font-size:12.5px;line-height:1.7;white-space:pre-wrap;word-break:break-all"></div>
+    <div class="sec-head"><span class="sec-title">原位 AI</span><span class="sec-line"></span></div>
+    <div class="row gap8" style="flex-wrap:wrap">
+      <button class="btn btn-sm" data-ai="总结"><i data-ic="sparkles"></i>总结</button>
+      <button class="btn btn-sm" data-ai="翻译"><i data-ic="globe"></i>翻译</button>
+      <button class="btn btn-sm" data-ai="格式化"><i data-ic="code-2"></i>格式化</button>
+      <button class="btn btn-sm" data-ai="脱敏"><i data-ic="shield"></i>脱敏</button>
+    </div>
+    <div class="sec-head"><span class="sec-title">信息</span><span class="sec-line"></span></div>
+    <div id="dInfo"></div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-acc grow" id="dCopy"><i data-ic="copy"></i>复制到剪贴板</button>
+    <button class="btn" id="dFav"><i data-ic="star"></i></button>
+    <button class="btn btn-danger" id="dDel"><i data-ic="trash-2"></i></button>
+  </div>
+</aside>
+
+<script src="mock.js"></script>
+<script src="api.js"></script>
+<script src="components.js"></script>
+<script>
+const TYPE_META = {
+  text:  { tile: 't-text',  icon: 'type',      label: '文本', badge: 'b-text' },
+  link:  { tile: 't-link',  icon: 'link-2',    label: '链接', badge: 'b-link' },
+  code:  { tile: 't-code',  icon: 'code-2',    label: '代码', badge: 'b-code' },
+  image: { tile: 't-image', icon: 'image',     label: '图片', badge: 'b-image' },
+  file:  { tile: 't-file',  icon: 'file',      label: '文件', badge: 'b-file' },
+};
+let curType = 'all', curQ = '', selId = null;
+
+function groupOf(time) {
+  if (/刚刚|分钟前|小时前/.test(time)) return '今天';
+  if (/昨天/.test(time)) return '昨天';
+  return '更早';
+}
+
+async function renderList() {
+  const { data } = await fetchClips({ type: curType, q: curQ });
+  const list = document.getElementById('clipList');
+  document.getElementById('emptyState').style.display = data.length ? 'none' : '';
+  // 置顶区
+  const pinned = data.filter(c => c.pinned), rest = data.filter(c => !c.pinned);
+  let html = '';
+  if (pinned.length) {
+    html += `<div class="clip-group"><b>置顶</b><span class="n">${pinned.length}</span></div>`;
+    html += pinned.map(itemHtml).join('');
+  }
+  let lastGroup = '';
+  for (const c of rest) {
+    const g = groupOf(c.time);
+    if (g !== lastGroup) { html += `<div class="clip-group"><b>${g}</b><span class="n">${rest.filter(x => groupOf(x.time) === g).length}</span></div>`; lastGroup = g; }
+    html += itemHtml(c);
+  }
+  list.innerHTML = html;
+  hydrateIcons(list);
+  list.querySelectorAll('.clip-item').forEach(el => {
+    el.onclick = () => openDrawer(el.dataset.id);
+    el.querySelector('[data-act="copy"]').onclick = e => { e.stopPropagation(); doCopy(el.dataset.id); };
+    el.querySelector('[data-act="pin"]').onclick = async e => { e.stopPropagation(); const r = await togglePin(el.dataset.id); toast(r.pinned ? '已置顶' : '已取消置顶'); renderList(); };
+    el.querySelector('[data-act="fav"]').onclick = async e => { e.stopPropagation(); const r = await toggleFav(el.dataset.id); toast(r.fav ? '已加入收藏' : '已移出收藏'); renderList(); };
+    el.querySelector('[data-act="del"]').onclick = async e => { e.stopPropagation(); await removeClip(el.dataset.id); toast('已删除', 'ok'); renderList(); };
+  });
+}
+
+function itemHtml(c) {
+  const m = TYPE_META[c.type];
+  const thumb = c.type === 'image'
+    ? `<div class="clip-thumb" style="background:linear-gradient(135deg,hsl(${c.hue} 40% 32%),hsl(${c.hue + 40} 45% 18%))"></div>` : '';
+  const flags = `${c.pinned ? '<span class="flag-ic">' + iconSvg('pin', 12) + '</span>' : ''}${c.fav ? '<span class="flag-ic">' + iconSvg('star', 12) + '</span>' : ''}`;
+  return `<div class="clip-item ${c.pinned ? 'pinned' : ''}" data-id="${c.id}">
+    <div class="type-tile ${m.tile}">${iconSvg(m.icon, 16)}</div>
+    <div class="clip-body">
+      <div class="clip-text ${c.type === 'code' || c.type === 'link' ? 'mono' : ''}">${esc(c.title || c.content)}</div>
+      <div class="clip-meta">
+        <span class="src">${iconSvg(c.source.includes('iPhone') ? 'smartphone' : c.source.includes('Mac') ? 'laptop' : 'monitor', 11)}${esc(c.source)}</span>
+        <span>·</span><span>${iconSvg('clock', 11)}${c.time}</span>
+        <span>·</span><span class="mono">${c.dims ? c.dims + ' · ' : ''}${c.size}</span>
+        ${c.lang ? `<span class="badge b-gray">${c.lang}</span>` : ''}
+        <span class="clip-flags">${flags}</span>
+      </div>
+    </div>
+    ${thumb}
+    <div class="clip-acts">
+      <button class="icon-btn" data-act="copy" title="复制">${iconSvg('copy', 14)}</button>
+      <button class="icon-btn ${c.pinned ? 'on' : ''}" data-act="pin" title="置顶">${iconSvg('pin', 14)}</button>
+      <button class="icon-btn ${c.fav ? 'on' : ''}" data-act="fav" title="收藏">${iconSvg('star', 14)}</button>
+      <button class="icon-btn danger" data-act="del" title="删除">${iconSvg('trash-2', 14)}</button>
+    </div>
+  </div>`;
+}
+
+async function doCopy(id) {
+  await copyItem(id);
+  toast('已复制 · 回冲系统剪贴板', 'ok');
+}
+
+function openDrawer(id) {
+  const c = DB.clips.find(x => x.id === id); if (!c) return;
+  selId = id;
+  const m = TYPE_META[c.type];
+  document.querySelectorAll('.clip-item').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
+  const badge = document.getElementById('dBadge');
+  badge.className = 'badge ' + m.badge; badge.textContent = m.label;
+  document.getElementById('dMeta').textContent = `${c.source} · ${c.time} · ${c.size}`;
+  document.getElementById('dContent').textContent = c.content;
+  document.getElementById('dInfo').innerHTML = [
+    ['类型', m.label], ['来源设备', c.source], ['复制时间', c.time], ['大小', c.size],
+    ['同步状态', '已同步 3 台设备'], ['加密', 'AES-256-GCM 端到端'],
+  ].map(([k, v]) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`).join('');
+  document.getElementById('drawerMask').style.display = '';
+  document.getElementById('clipDrawer').style.display = '';
+}
+function closeDrawer() {
+  document.getElementById('drawerMask').style.display = 'none';
+  document.getElementById('clipDrawer').style.display = 'none';
+  document.querySelectorAll('.clip-item.sel').forEach(el => el.classList.remove('sel'));
+  selId = null;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderList();
+  // 类型分段器
+  document.querySelectorAll('#typeSeg button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('#typeSeg button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active'); curType = b.dataset.type; renderList();
+  });
+  // 搜索（防抖）
+  let t; document.getElementById('q').oninput = e => {
+    clearTimeout(t); t = setTimeout(() => { curQ = e.target.value.trim(); renderList(); }, 200);
+  };
+  document.getElementById('resetFilter').onclick = () => {
+    curType = 'all'; curQ = ''; document.getElementById('q').value = '';
+    document.querySelectorAll('#typeSeg button').forEach(x => x.classList.toggle('active', x.dataset.type === 'all'));
+    renderList();
+  };
+  // 抽屉
+  document.getElementById('dClose').onclick = closeDrawer;
+  document.getElementById('drawerMask').onclick = closeDrawer;
+  document.getElementById('dCopy').onclick = () => { if (selId) doCopy(selId); };
+  document.getElementById('dFav').onclick = async () => { if (!selId) return; const r = await toggleFav(selId); toast(r.fav ? '已加入收藏' : '已移出收藏'); renderList(); };
+  document.getElementById('dDel').onclick = async () => { if (!selId) return; await removeClip(selId); closeDrawer(); toast('已删除', 'ok'); renderList(); };
+  // 原位 AI（mock：跳转 AI 页并提示）
+  document.querySelectorAll('[data-ai]').forEach(b => b.onclick = () => {
+    toast(`已发送「${b.dataset.ai}」请求到 AI 助手`, 'ok');
+    setTimeout(() => location.href = 'ai.html', 600);
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+});
+</script>
+</body>
+</html>

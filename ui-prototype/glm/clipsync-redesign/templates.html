@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · 模板</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="templates">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-left">
+      <span class="brand-stamp"><i data-ic="scissors"></i></span>
+      <span class="brand-word">ClipSync</span>
+      <span class="tb-sep"></span>
+      <span class="tb-crumb">模板</span>
+    </div>
+    <button class="cmdk" id="cmdkBtn" title="命令面板">
+      <i data-ic="search"></i><span>搜索或命令…</span><kbd>Ctrl K</kbd>
+    </button>
+    <div class="tb-right">
+      <button class="tb-btn" id="qpBtn" title="快速粘贴面板 · Ctrl+Shift+V"><i data-ic="panel-top"></i></button>
+      <button class="tb-btn" id="themeBtn" title="切换明暗"><i data-ic="moon"></i></button>
+      <button class="tb-btn" id="bellBtn" title="通知"><i data-ic="bell"></i><i class="dot" id="bellDot"></i></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn win" data-win="min"><i data-ic="minus"></i></button>
+      <button class="tb-btn win" data-win="max"><i data-ic="square"></i></button>
+      <button class="tb-btn win close" data-win="close"><i data-ic="x"></i></button>
+    </div>
+  </header>
+  <aside class="app-nav">
+    <div class="nav-sec">工作台</div>
+    <a class="nav-item" data-nav="clipboard" href="index.html"><i data-ic="clipboard-list"></i><span>剪贴板</span><kbd>Ctrl 1</kbd></a>
+    <a class="nav-item" data-nav="favorites" href="favorites.html"><i data-ic="star"></i><span>收藏</span><kbd>Ctrl 2</kbd></a>
+    <a class="nav-item" data-nav="templates" href="templates.html"><i data-ic="layout-template"></i><span>模板</span><kbd>Ctrl 3</kbd></a>
+    <a class="nav-item" data-nav="devices" href="devices.html"><i data-ic="laptop"></i><span>设备</span><kbd>Ctrl 4</kbd></a>
+    <a class="nav-item" data-nav="ai" href="ai.html"><i data-ic="sparkles"></i><span>AI 助手</span><kbd>Ctrl 5</kbd></a>
+    <div class="nav-sec">系统</div>
+    <a class="nav-item" data-nav="settings" href="settings.html"><i data-ic="settings-2"></i><span>设置</span><kbd>Ctrl ,</kbd></a>
+    <div class="nav-foot">
+      <div class="sync-pill"><i class="pulse"></i><span>已同步 · 3 台设备</span></div>
+      <div class="nav-ver">v0.4.2 · ink-bench</div>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="page reveal">
+
+      <div class="page-head">
+        <div>
+          <div class="page-eyebrow">Template Library</div>
+          <h1 class="page-title">模板</h1>
+          <div class="page-desc">把重复文字铸成模板 · {{变量}} 占位 · 一键套用并回冲剪贴板</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" id="newBtn"><i data-ic="plus"></i>新建模板</button>
+          <button class="btn" id="useBtn"><i data-ic="corner-down-left"></i>使用模板</button>
+          <button class="btn btn-acc" id="saveBtn"><i data-ic="check"></i>保存</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start">
+        <div class="clip-list" id="tplList"></div>
+
+        <div class="panel panel-pad">
+          <div class="row gap8" style="margin-bottom:12px;flex-wrap:wrap">
+            <input class="input" id="tTitle" placeholder="模板标题…" style="width:260px">
+            <span class="dimmer" style="font-size:11px">标签</span>
+            <div class="row gap4" id="tagRow"></div>
+          </div>
+          <textarea class="input mono" id="tBody" rows="10" placeholder="模板正文，用 {{变量}} 占位，例如 {{date}}…" style="font-size:12.5px"></textarea>
+          <div class="row gap8" style="margin-top:10px;flex-wrap:wrap">
+            <span class="dimmer" style="font-size:11px">插入变量</span>
+            <div class="row gap4" id="varRow" style="flex-wrap:wrap"></div>
+          </div>
+          <div class="sec-head">
+            <span class="sec-title">实时预览</span>
+            <span class="sec-count" id="varCount"></span>
+            <span class="sec-line"></span>
+            <span class="dimmer" style="font-size:11px">示例值以琥珀色标出</span>
+          </div>
+          <div class="panel panel-pad" id="preview" style="background:var(--bg-nav);font-size:13px;line-height:1.8;white-space:pre-wrap;word-break:break-word;min-height:120px;box-shadow:none"></div>
+        </div>
+      </div>
+
+      <div class="hintbar" style="margin-top:24px">
+        <span class="h"><kbd>Ctrl 3</kbd> 模板页</span>
+        <span class="h"><kbd>Ctrl S</kbd> 保存当前模板</span>
+        <span class="h"><kbd>{{ }}</kbd> 双花括号声明变量</span>
+        <span class="h grow"></span>
+        <span class="h dimmer">模板随账号同步 · 使用计数跨设备累计</span>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="mock.js"></script>
+<script src="api.js"></script>
+<script src="components.js"></script>
+<script>
+const TAGS = ['工作', '研发', '生活', '行政'];
+const today = new Date();
+const DATE_STR = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+const SAMPLE = {
+  date: DATE_STR, 会议主题: 'Q3 设计评审', 参会人: '沈望桥 · 小林', 行动项: '输出设计契约', 负责人: '沈望桥',
+  建议: '补充异常分支的单测', 模块: 'AiConfirmCard', os: 'Windows 11 24H2', version: 'v0.4.2',
+  log: 'error: linker `link.exe` not found', 完成项: 'AI 前端七个工作包', 进行中: '确认门控联调',
+  风险: '无', 计划: '联调验收', 取件码: '8-3-4417', 驿站: '创智天地菜鸟驿站', 截止时间: '今天 20:00',
+  主管: '王姐', 事由: '家中有事', 时长: '1 天', 同事: '小林',
+};
+const VAR_BTNS = ['date', '会议主题', '参会人', '行动项', '负责人', '模块', 'version', '取件码'];
+let tpls = [], selId = null, curTag = '工作';
+
+async function renderList() {
+  const { data } = await fetchTemplates();
+  tpls = data;
+  const max = Math.max(...tpls.map(t => t.usage), 1);
+  const list = document.getElementById('tplList');
+  list.innerHTML = tpls.map(t => {
+    const pct = Math.round(t.usage / max * 100);
+    return `<div class="clip-item ${t.id === selId ? 'sel' : ''}" style="flex-direction:column;align-items:stretch;gap:8px" data-id="${t.id}">
+      <div class="row gap8">
+        <span style="font-weight:600;font-size:13px">${esc(t.title)}</span>
+        <span class="grow"></span>
+        <span class="badge b-gray">${esc(t.tag)}</span>
+      </div>
+      <div class="row gap8 dimmer" style="font-size:11px">
+        <span class="mono">用量 ${t.usage}</span><span>·</span><span>${t.updated}更新</span>
+        <span class="grow"></span><span class="mono">${pct}%</span>
+      </div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.clip-item').forEach(el => el.onclick = () => selectTpl(el.dataset.id));
+}
+
+function selectTpl(id) {
+  const t = tpls.find(x => x.id === id);
+  if (!t) return;
+  selId = id;
+  curTag = t.tag;
+  document.getElementById('tTitle').value = t.title;
+  document.getElementById('tBody').value = t.body.replace(/\\n/g, '\n');
+  renderTags();
+  renderPreview();
+  document.querySelectorAll('#tplList .clip-item').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
+}
+
+function renderTags() {
+  const row = document.getElementById('tagRow');
+  row.innerHTML = TAGS.map(t => `<button class="chip ${t === curTag ? 'active' : ''}" data-tag="${t}">${t}</button>`).join('');
+  row.querySelectorAll('.chip').forEach(c => c.onclick = () => { curTag = c.dataset.tag; renderTags(); });
+}
+
+function renderVarBtns() {
+  const row = document.getElementById('varRow');
+  row.innerHTML = VAR_BTNS.map(v =>
+    `<button class="chip" data-var="${v}" title="插入 {{${v}}}">${iconSvg('hash', 12)}{{${v}}}</button>`).join('');
+  row.querySelectorAll('.chip').forEach(c => c.onclick = () => insertVar(c.dataset.var));
+}
+
+function insertVar(v) {
+  const ta = document.getElementById('tBody');
+  const ins = '{{' + v + '}}';
+  const s = ta.selectionStart ?? ta.value.length, e = ta.selectionEnd ?? ta.value.length;
+  ta.value = ta.value.slice(0, s) + ins + ta.value.slice(e);
+  ta.focus();
+  ta.selectionStart = ta.selectionEnd = s + ins.length;
+  renderPreview();
+}
+
+function renderPreview() {
+  const text = document.getElementById('tBody').value;
+  const box = document.getElementById('preview');
+  const vars = text.match(/\{\{[^}]+\}\}/g) || [];
+  document.getElementById('varCount').textContent = vars.length ? `${vars.length} 个变量` : '';
+  if (!text.trim()) {
+    box.innerHTML = '<span class="dimmer">在上方编辑正文，{{变量}} 会被替换为示例值并以琥珀色高亮。</span>';
+    return;
+  }
+  box.innerHTML = esc(text).replace(/\{\{([^}]+)\}\}/g, (m, k) => {
+    const key = k.trim();
+    const val = SAMPLE[key] ?? ('示例·' + key);
+    return `<span style="background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:0 5px;font-family:var(--font-mono);font-size:11.5px">${esc(val)}</span>`;
+  });
+}
+
+async function doSave() {
+  const title = document.getElementById('tTitle').value.trim();
+  const body = document.getElementById('tBody').value;
+  if (!title || !body.trim()) { toast('标题与正文不能为空', 'err'); return; }
+  const isNew = !selId;
+  const payload = { title, tag: curTag, body: body.replace(/\n/g, '\\n'), updated: '刚刚' };
+  if (selId) payload.id = selId;
+  await saveTemplate(payload);
+  toast(isNew ? '已创建新模板' : '模板已保存', 'ok');
+  await renderList();
+  selectTpl(isNew ? tpls[0].id : selId);
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  renderVarBtns();
+  renderTags();
+  renderPreview();
+  await renderList();
+  if (tpls.length) selectTpl(tpls[0].id);
+
+  document.getElementById('tBody').addEventListener('input', renderPreview);
+  document.getElementById('newBtn').onclick = () => {
+    selId = null;
+    curTag = '工作';
+    document.getElementById('tTitle').value = '';
+    document.getElementById('tBody').value = '';
+    renderTags();
+    renderPreview();
+    document.querySelectorAll('#tplList .clip-item.sel').forEach(el => el.classList.remove('sel'));
+    document.getElementById('tTitle').focus();
+    toast('已清空编辑区 · 填写后点保存');
+  };
+  document.getElementById('saveBtn').onclick = doSave;
+  document.getElementById('useBtn').onclick = async () => {
+    if (!selId) { toast('请先在左侧选择一个模板', 'err'); return; }
+    const r = await useTemplate(selId, SAMPLE);
+    if (r.code !== 0) { toast('模板不存在', 'err'); return; }
+    toast('已套用模板 · 渲染结果已回冲剪贴板', 'ok');
+    renderList();
+  };
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); doSave(); }
+  });
+});
+</script>
+</body>
+</html>

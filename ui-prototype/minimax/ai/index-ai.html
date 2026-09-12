@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="dark">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI 风格总览 — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    :root { --accent-hue: 218; }
+    [data-mode="dark"] {
+      --bg-page: oklch(15% 0.012 260);
+      --bg-card: oklch(20% 0.014 260);
+      --bg-elevated: oklch(24% 0.016 260);
+      --line-soft: oklch(28% 0.012 260);
+      --line-strong: oklch(38% 0.018 260);
+      --text-strong: oklch(96% 0.005 260);
+      --text-default: oklch(86% 0.01 260);
+      --text-muted: oklch(62% 0.015 260);
+      --text-subtle: oklch(48% 0.018 260);
+    }
+    [data-mode="light"] {
+      --bg-page: oklch(98.5% 0.004 260);
+      --bg-card: oklch(100% 0 0);
+      --bg-elevated: oklch(99% 0.002 260);
+      --line-soft: oklch(93% 0.005 260);
+      --line-strong: oklch(86% 0.012 260);
+      --text-strong: oklch(18% 0.02 260);
+      --text-default: oklch(28% 0.018 260);
+      --text-muted: oklch(52% 0.018 260);
+      --text-subtle: oklch(68% 0.014 260);
+    }
+    body { background: var(--bg-page); color: var(--text-default); min-height: 100vh; margin: 0; transition: background 240ms, color 240ms; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* === Top === */
+    .top {
+      height: 60px; padding: 0 28px;
+      display: flex; align-items: center; gap: 18px;
+      border-bottom: 1px solid var(--line-soft);
+      background: var(--bg-card);
+      position: sticky; top: 0; z-index: 50;
+      transition: background 240ms;
+    }
+    .top .back {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px;
+      font-size: 12.5px; color: var(--text-muted); cursor: pointer; border: 1px solid var(--line-soft); background: transparent; transition: all 160ms;
+    }
+    .top .back:hover { background: var(--line-soft); color: var(--text-strong); }
+    .top .title { font-size: 15px; color: var(--text-strong); font-weight: 600; }
+    .top .sub { font-size: 12px; color: var(--text-muted); margin-left: -8px; }
+    .top .grow { flex: 1; }
+    .top .chip {
+      display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 999px;
+      background: oklch(58% 0.18 var(--accent-hue) / 0.18); color: oklch(72% 0.16 var(--accent-hue));
+      font-size: 11.5px; font-weight: 600;
+    }
+    .top .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: oklch(58% 0.18 var(--accent-hue)); animation: pulse 1.4s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .mode-toggle {
+      display: inline-flex; background: var(--bg-elevated); border: 1px solid var(--line-soft);
+      border-radius: 9px; padding: 3px; gap: 2px;
+    }
+    .mode-toggle button {
+      padding: 4px 10px; border-radius: 6px; font-size: 11.5px; color: var(--text-muted); border: none; background: transparent; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 5px; transition: all 160ms;
+    }
+    .mode-toggle button.is-on { background: var(--bg-card); color: var(--text-strong); box-shadow: 0 1px 3px oklch(0% 0 0 / 0.08); }
+    .mode-toggle button:hover:not(.is-on) { color: var(--text-strong); }
+
+    /* === Layout === */
+    .container { max-width: 1440px; margin: 0 auto; padding: 28px; }
+
+    .hero {
+      text-align: center; padding: 24px 0 32px;
+    }
+    .hero .eyebrow { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--bg-elevated); border: 1px solid var(--line-soft); font-size: 11.5px; color: var(--text-muted); margin-bottom: 14px; }
+    .hero .eyebrow svg { color: oklch(72% 0.16 var(--accent-hue)); }
+    .hero h1 { font-size: 36px; color: var(--text-strong); font-weight: 700; letter-spacing: -0.025em; margin-bottom: 12px; }
+    .hero h1 .acc { color: oklch(72% 0.16 var(--accent-hue)); }
+    .hero p { font-size: 15px; color: var(--text-muted); max-width: 640px; margin: 0 auto; line-height: 1.6; }
+    .hero .actions { display: flex; gap: 10px; justify-content: center; margin-top: 22px; }
+    .hero .actions .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 9px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--line-soft); background: var(--bg-card); color: var(--text-strong); transition: all 160ms; }
+    .hero .actions .btn:hover { background: var(--line-soft); }
+    .hero .actions .btn.primary { background: var(--text-strong); color: var(--bg-card); border-color: var(--text-strong); }
+    .hero .actions .btn.primary:hover { background: oklch(82% 0.005 260); }
+
+    /* === Filter tabs === */
+    .filters { display: flex; align-items: center; gap: 6px; margin: 8px 0 18px; flex-wrap: wrap; }
+    .filters .label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-right: 4px; }
+    .filters .fbtn { padding: 5px 12px; border-radius: 8px; font-size: 12.5px; color: var(--text-muted); border: 1px solid var(--line-soft); background: var(--bg-card); cursor: pointer; transition: all 160ms; }
+    .filters .fbtn:hover { color: var(--text-strong); border-color: var(--line-strong); }
+    .filters .fbtn.is-on { background: var(--text-strong); color: var(--bg-card); border-color: var(--text-strong); }
+    .filters .spacer { width: 1px; height: 20px; background: var(--line-soft); margin: 0 6px; }
+
+    /* === Card grid === */
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+
+    .ai-card {
+      background: var(--bg-card); border: 1px solid var(--line-soft); border-radius: 16px; overflow: hidden;
+      display: flex; flex-direction: column; transition: all 240ms var(--ease-out);
+    }
+    .ai-card:hover { border-color: var(--line-strong); transform: translateY(-2px); box-shadow: 0 12px 40px oklch(0% 0 0 / 0.18); }
+    .ai-card.is-on { border-color: oklch(58% 0.18 var(--accent-hue)); box-shadow: 0 0 0 3px oklch(58% 0.18 var(--accent-hue) / 0.16); }
+
+    .ai-card .preview {
+      position: relative; aspect-ratio: 16 / 9.5; background: var(--bg-elevated); overflow: hidden; border-bottom: 1px solid var(--line-soft);
+    }
+    .ai-card .preview iframe { width: 100%; height: 100%; border: none; display: block; pointer-events: auto; }
+    .ai-card .preview .badge {
+      position: absolute; top: 12px; left: 12px; padding: 4px 10px; border-radius: 999px;
+      background: oklch(0% 0 0 / 0.7); backdrop-filter: blur(8px); color: white; font-size: 11px; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 5px; z-index: 5;
+    }
+    .ai-card .preview .badge .num { font-family: 'Geist Mono', monospace; opacity: 0.7; }
+    .ai-card .preview .hud {
+      position: absolute; top: 12px; right: 12px; display: flex; gap: 4px; z-index: 5;
+    }
+    .ai-card .preview .hud button {
+      width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; cursor: pointer;
+      background: oklch(0% 0 0 / 0.7); backdrop-filter: blur(8px); color: white; border: none; transition: all 160ms;
+    }
+    .ai-card .preview .hud button:hover { background: oklch(0% 0 0 / 0.9); }
+
+    .ai-card .meta { padding: 18px 20px; }
+    .ai-card .meta .row1 { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .ai-card .meta .row1 .num {
+      width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+      background: oklch(58% 0.18 var(--accent-hue) / 0.18); color: oklch(72% 0.16 var(--accent-hue));
+      font-size: 12px; font-weight: 700; font-family: 'Geist Mono', monospace;
+    }
+    .ai-card .meta .row1 h3 { font-size: 17px; color: var(--text-strong); font-weight: 600; margin: 0; flex: 1; letter-spacing: -0.01em; }
+    .ai-card .meta .row1 .ref { font-size: 11px; color: var(--text-muted); padding: 3px 8px; border-radius: 999px; background: var(--line-soft); font-family: 'Geist Mono', monospace; }
+    .ai-card .meta .desc { font-size: 13px; color: var(--text-default); line-height: 1.55; margin-bottom: 12px; }
+    .ai-card .meta .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+    .ai-card .meta .tags .t { font-size: 11px; color: var(--text-muted); padding: 2px 8px; border-radius: 5px; background: var(--line-soft); }
+
+    .ai-card .meta .row2 { display: flex; align-items: center; gap: 8px; }
+    .ai-card .meta .row2 .stats { display: flex; gap: 14px; font-size: 11.5px; color: var(--text-muted); margin-right: auto; }
+    .ai-card .meta .row2 .stats .s { display: inline-flex; align-items: center; gap: 4px; }
+    .ai-card .meta .row2 .stats .s strong { color: var(--text-strong); font-weight: 600; font-family: 'Geist Mono', monospace; }
+    .ai-card .meta .row2 .open {
+      display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 7px;
+      font-size: 12.5px; font-weight: 500; background: oklch(58% 0.18 var(--accent-hue)); color: white; border: none; cursor: pointer;
+      transition: all 160ms;
+    }
+    .ai-card .meta .row2 .open:hover { transform: scale(1.04); box-shadow: 0 4px 12px oklch(58% 0.18 var(--accent-hue) / 0.4); }
+    .ai-card .meta .row2 .vote {
+      display: inline-flex; gap: 4px; padding: 4px; border-radius: 7px; background: var(--line-soft);
+    }
+    .ai-card .meta .row2 .vote button {
+      width: 28px; height: 28px; border-radius: 5px; border: none; background: transparent; color: var(--text-muted);
+      display: grid; place-items: center; cursor: pointer; transition: all 160ms;
+    }
+    .ai-card .meta .row2 .vote button:hover { background: var(--bg-card); color: var(--text-strong); }
+    .ai-card .meta .row2 .vote button.is-on { background: oklch(58% 0.18 150 / 0.18); color: oklch(72% 0.16 150); }
+    .ai-card .meta .row2 .vote button.down.is-on { background: oklch(58% 0.18 25 / 0.18); color: oklch(72% 0.16 25); }
+
+    /* === Comparison table === */
+    .compare {
+      margin-top: 36px; background: var(--bg-card); border: 1px solid var(--line-soft); border-radius: 16px; overflow: hidden;
+    }
+    .compare h2 { padding: 20px 24px 0; font-size: 18px; color: var(--text-strong); font-weight: 600; margin: 0; }
+    .compare .sub { padding: 0 24px 16px; font-size: 12.5px; color: var(--text-muted); }
+    .compare .table-wrap { overflow-x: auto; }
+    .compare table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .compare th, .compare td { padding: 12px 18px; text-align: left; border-bottom: 1px solid var(--line-soft); }
+    .compare th { font-weight: 600; color: var(--text-muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.06em; background: var(--bg-elevated); }
+    .compare th.col { color: var(--text-strong); text-transform: none; font-size: 13px; letter-spacing: 0; font-weight: 600; }
+    .compare th.col small { display: block; font-weight: 400; color: var(--text-muted); font-size: 11px; font-family: 'Geist Mono', monospace; margin-top: 2px; }
+    .compare td { color: var(--text-default); vertical-align: top; }
+    .compare td.lbl { font-weight: 600; color: var(--text-strong); white-space: nowrap; }
+    .compare tr:hover td { background: var(--bg-elevated); }
+    .compare .check { color: oklch(72% 0.16 150); }
+    .compare .x { color: oklch(58% 0.18 25); }
+
+    /* === Decision helper === */
+    .decision {
+      margin-top: 24px; padding: 18px 22px; background: linear-gradient(135deg, oklch(28% 0.04 var(--accent-hue)), oklch(20% 0.04 var(--accent-hue)));
+      border: 1px solid oklch(40% 0.08 var(--accent-hue) / 0.4); border-radius: 14px; display: flex; align-items: center; gap: 18px;
+    }
+    .decision .ic { width: 44px; height: 44px; border-radius: 11px; background: oklch(58% 0.18 var(--accent-hue)); color: white; display: grid; place-items: center; flex-shrink: 0; }
+    .decision .t { flex: 1; }
+    .decision h3 { font-size: 14px; color: var(--text-strong); font-weight: 600; margin: 0 0 4px; }
+    .decision p { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; margin: 0; }
+    .decision button {
+      padding: 8px 16px; border-radius: 8px; background: oklch(72% 0.16 var(--accent-hue)); color: oklch(18% 0.02 var(--accent-hue));
+      border: none; font-size: 12.5px; font-weight: 600; cursor: pointer; flex-shrink: 0;
+    }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px); padding: 10px 18px; background: oklch(20% 0.02 260); color: white; font-size: 12.5px; border-radius: 10px; opacity: 0; pointer-events: none; transition: all 280ms var(--ease-out); z-index: 100; box-shadow: 0 8px 24px oklch(0% 0 0 / 0.4); display: flex; align-items: center; gap: 8px; }
+    .toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* Hide preview during load */
+    .ai-card .preview.loading::before { content: ''; position: absolute; inset: 0; background: var(--bg-elevated); z-index: 4; }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <header class="top">
+    <a class="back" href="../index.html">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      Back to Pulse
+    </a>
+    <span class="title">AI Module · 风格对比</span>
+    <span class="sub">v1.0 · 4 variants</span>
+    <div class="grow"></div>
+    <span class="chip"><span class="dot"></span> Live preview</span>
+    <div class="mode-toggle">
+      <button class="is-on" data-mode="dark">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        Dark
+      </button>
+      <button data-mode="light">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        Light
+      </button>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Hero -->
+    <section class="hero">
+      <span class="eyebrow">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 14.39 8.42 21 9.27l-5 4.87L17.18 21 12 17.77 6.82 21 8 14.14l-5-4.87 6.61-.85L12 2z"/></svg>
+        AI 屏设计方案 · Pulse
+      </span>
+      <h1>选一个 AI 屏的<span class="acc">灵魂</span></h1>
+      <p>参考当下主流 Agent 产品（ChatGPT · Claude · Manus · Perplexity）做了 4 套高保真方案。每套都可点击交互，iframe 实时预览。</p>
+      <div class="actions">
+        <button class="btn primary" data-acts="open-all">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+          Open all 4 in tabs
+        </button>
+        <button class="btn" data-acts="export">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Export comparison PDF
+        </button>
+        <button class="btn" data-acts="reset-vote">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/></svg>
+          Reset votes
+        </button>
+      </div>
+    </section>
+
+    <!-- Filters -->
+    <div class="filters">
+      <span class="label">Filter</span>
+      <button class="fbtn is-on" data-filter="all">All · 4</button>
+      <button class="fbtn" data-filter="chat">Chat-first</button>
+      <button class="fbtn" data-filter="doc">Document/Code</button>
+      <button class="fbtn" data-filter="agent">Multi-step Agent</button>
+      <button class="fbtn" data-filter="search">Search/Research</button>
+      <div class="spacer"></div>
+      <span class="label">Sort</span>
+      <button class="fbtn is-on">Recommended</button>
+      <button class="fbtn">Most voted</button>
+    </div>
+
+    <!-- 4 card grid -->
+    <div class="grid" id="grid">
+
+      <!-- Card 1: Classic -->
+      <article class="ai-card" data-cat="chat" data-acts="card" data-page="12-ai-classic.html">
+        <div class="preview loading">
+          <div class="badge"><span class="num">v1</span> Chat-first · Simple</div>
+          <div class="hud">
+            <button title="Reload" data-acts="reload">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/></svg>
+            </button>
+            <button title="Open standalone" data-acts="open">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+          </div>
+          <iframe src="12-ai-classic.html" loading="lazy"></iframe>
+        </div>
+        <div class="meta">
+          <div class="row1">
+            <div class="num">1</div>
+            <h3>极简经典 Classic</h3>
+            <span class="ref">12-ai-classic</span>
+          </div>
+          <p class="desc">参考 ChatGPT 的设计语言：单侧栏 + 中央对话 + 圆角 Composer + 模型 pill 切换。最常见的 AI 屏形态，零学习成本，跨场景适用。</p>
+          <div class="tags">
+            <span class="t">Light mode</span>
+            <span class="t">单列对话</span>
+            <span class="t">模型 pill</span>
+            <span class="t">⌘K 搜索</span>
+            <span class="t">Mic 录音</span>
+            <span class="t">暖白底</span>
+          </div>
+          <div class="row2">
+            <div class="stats">
+              <span class="s">📐 <strong>2 列</strong></span>
+              <span class="s">⚡ <strong>3 actions</strong></span>
+              <span class="s">🎯 <strong>通用</strong></span>
+            </div>
+            <div class="vote">
+              <button data-acts="vote" data-v="up" title="Love this">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg>
+              </button>
+              <button class="down" data-acts="vote" data-v="down" title="Nope">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17"/></svg>
+              </button>
+            </div>
+            <button class="open" data-acts="open">
+              Open
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Card 2: Document / Artifacts -->
+      <article class="ai-card" data-cat="doc" data-acts="card" data-page="13-ai-document.html">
+        <div class="preview loading">
+          <div class="badge"><span class="num">v2</span> Doc-first · Artifacts</div>
+          <div class="hud">
+            <button title="Reload" data-acts="reload">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/></svg>
+            </button>
+            <button title="Open standalone" data-acts="open">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+          </div>
+          <iframe src="13-ai-document.html" loading="lazy"></iframe>
+        </div>
+        <div class="meta">
+          <div class="row1">
+            <div class="num">2</div>
+            <h3>文档驱动 Artifacts</h3>
+            <span class="ref">13-ai-document</span>
+          </div>
+          <p class="desc">参考 Claude Artifacts：4 列布局 + 暖橙色调（hue=25）+ 实时流式生成右侧 Artifacts + 引用语法。创作者的最爱，写长文/代码/表格的体验拉到顶。</p>
+          <div class="tags">
+            <span class="t">Light mode</span>
+            <span class="t">4 列</span>
+            <span class="t">流式 Artifacts</span>
+            <span class="t">Tab 切换</span>
+            <span class="t">暖橙调</span>
+            <span class="t">引用语法</span>
+          </div>
+          <div class="row2">
+            <div class="stats">
+              <span class="s">📐 <strong>4 列</strong></span>
+              <span class="s">⚡ <strong>6 actions</strong></span>
+              <span class="s">🎯 <strong>创作/编码</strong></span>
+            </div>
+            <div class="vote">
+              <button data-acts="vote" data-v="up">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg>
+              </button>
+              <button class="down" data-acts="vote" data-v="down">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17"/></svg>
+              </button>
+            </div>
+            <button class="open" data-acts="open">
+              Open
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Card 3: Agent -->
+      <article class="ai-card" data-cat="agent" data-acts="card" data-page="14-ai-agent.html">
+        <div class="preview loading">
+          <div class="badge"><span class="num">v3</span> Agent · Multi-step</div>
+          <div class="hud">
+            <button title="Reload" data-acts="reload">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/></svg>
+            </button>
+            <button title="Open standalone" data-acts="open">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+          </div>
+          <iframe src="14-ai-agent.html" loading="lazy"></iframe>
+        </div>
+        <div class="meta">
+          <div class="row1">
+            <div class="num">3</div>
+            <h3>Agent 多步任务</h3>
+            <span class="ref">14-ai-agent</span>
+          </div>
+          <p class="desc">参考 Manus + Claude Agent：4 列布局 + 深色 Live Activity 控制台 + 步骤 timeline + 实时日志 push + 工具调用可视化。让用户看着 AI 自己干活，安全感拉满。</p>
+          <div class="tags">
+            <span class="t">Dark console</span>
+            <span class="t">4 列</span>
+            <span class="t">7 步 timeline</span>
+            <span class="t">工具调用</span>
+            <span class="t">实时日志</span>
+            <span class="t">进度条</span>
+          </div>
+          <div class="row2">
+            <div class="stats">
+              <span class="s">📐 <strong>4 列</strong></span>
+              <span class="s">⚡ <strong>9 actions</strong></span>
+              <span class="s">🎯 <strong>复杂任务</strong></span>
+            </div>
+            <div class="vote">
+              <button data-acts="vote" data-v="up">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg>
+              </button>
+              <button class="down" data-acts="vote" data-v="down">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17"/></svg>
+              </button>
+            </div>
+            <button class="open" data-acts="open">
+              Open
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Card 4: Search / Citations -->
+      <article class="ai-card" data-cat="search" data-acts="card" data-page="15-ai-search.html">
+        <div class="preview loading">
+          <div class="badge"><span class="num">v4</span> Search · Citations</div>
+          <div class="hud">
+            <button title="Reload" data-acts="reload">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/></svg>
+            </button>
+            <button title="Open standalone" data-acts="open">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+          </div>
+          <iframe src="15-ai-search.html" loading="lazy"></iframe>
+        </div>
+        <div class="meta">
+          <div class="row1">
+            <div class="num">4</div>
+            <h3>搜索引用 Citations</h3>
+            <span class="ref">15-ai-search</span>
+          </div>
+          <p class="desc">参考 Perplexity：居中单列 + 内联引用 [1][2] + 来源卡片网格 + Related Questions + Pro/Focus toggle。深色/亮色双模可切，可信度和探索感最强。</p>
+          <div class="tags">
+            <span class="t">Dark + Light</span>
+            <span class="t">单列居中</span>
+            <span class="t">内联引用</span>
+            <span class="t">来源卡片</span>
+            <span class="t">Related</span>
+            <span class="t">Pro 模式</span>
+          </div>
+          <div class="row2">
+            <div class="stats">
+              <span class="s">📐 <strong>1+1 列</strong></span>
+              <span class="s">⚡ <strong>12 actions</strong></span>
+              <span class="s">🎯 <strong>研究/查证</strong></span>
+            </div>
+            <div class="vote">
+              <button data-acts="vote" data-v="up">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg>
+              </button>
+              <button class="down" data-acts="vote" data-v="down">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17"/></svg>
+              </button>
+            </div>
+            <button class="open" data-acts="open">
+              Open
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </article>
+
+    </div>
+
+    <!-- Decision helper -->
+    <div class="decision">
+      <div class="ic">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7l5 5v9a2 2 0 0 1-2 2z"/><path d="M14 4v5h5"/></svg>
+      </div>
+      <div class="t">
+        <h3>不知道选哪个？</h3>
+        <p><strong>v1 Classic</strong> 给日常用户 + 快速上手，<strong>v2 Artifacts</strong> 给创作者，<strong>v3 Agent</strong> 给自动化任务，<strong>v4 Search</strong> 给查证研究。可以同时做 v1 + v3 双模式（简单问答走 v1，长任务走 v3）。</p>
+      </div>
+      <button data-acts="recommend">Show me the best combo →</button>
+    </div>
+
+    <!-- Comparison table -->
+    <section class="compare">
+      <h2>横向对比</h2>
+      <p class="sub">同样的查询："克隆我的桌面剪贴板" — 各风格的呈现差异</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th class="col">v1 Classic<small>12-ai-classic</small></th>
+              <th class="col">v2 Artifacts<small>13-ai-document</small></th>
+              <th class="col">v3 Agent<small>14-ai-agent</small></th>
+              <th class="col">v4 Search<small>15-ai-search</small></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="lbl">主参考</td>
+              <td>ChatGPT</td>
+              <td>Claude Artifacts</td>
+              <td>Manus / Claude Agent</td>
+              <td>Perplexity</td>
+            </tr>
+            <tr>
+              <td class="lbl">核心场景</td>
+              <td>快速问答 / 日常助手</td>
+              <td>写文档 / 写代码 / 制表</td>
+              <td>多步任务 / 自动化</td>
+              <td>查证 / 研究 / 探索</td>
+            </tr>
+            <tr>
+              <td class="lbl">布局</td>
+              <td>2 列（侧栏 + 对话）</td>
+              <td>4 列（rail/项目/产物/对话）</td>
+              <td>4 列（rail/队列/详情/控制台）</td>
+              <td>1 + 1 列（对话 + 侧栏）</td>
+            </tr>
+            <tr>
+              <td class="lbl">色相 / 调性</td>
+              <td>中性灰 + 暖白</td>
+              <td>暖橙 (hue 25)</td>
+              <td>蓝 + 深炭</td>
+              <td>蓝灰 (hue 218) + 双模</td>
+            </tr>
+            <tr>
+              <td class="lbl">核心交付物</td>
+              <td>对话文本</td>
+              <td>可编辑的 Artifacts</td>
+              <td>实时执行轨迹</td>
+              <td>带来源的答案</td>
+            </tr>
+            <tr>
+              <td class="lbl">关键交互</td>
+              <td>模型 pill / 语音输入</td>
+              <td>流式编辑 / tab 切换</td>
+              <td>暂停/继续 / 步骤展开</td>
+              <td>引文 [1] hover / 追问</td>
+            </tr>
+            <tr>
+              <td class="lbl">学习成本</td>
+              <td><span class="check">●</span> 极低</td>
+              <td><span class="check">●</span> 低</td>
+              <td><span class="check">●</span> 中</td>
+              <td><span class="check">●</span> 低</td>
+            </tr>
+            <tr>
+              <td class="lbl">屏幕信息密度</td>
+              <td>低</td>
+              <td>高</td>
+              <td>极高</td>
+              <td>中</td>
+            </tr>
+            <tr>
+              <td class="lbl">适合 ClipSync 吗</td>
+              <td><span class="check">●</span> 通用兜底</td>
+              <td><span class="check">●</span> 写同步脚本</td>
+              <td><span class="check">●</span> 复杂自动化</td>
+              <td><span class="x">●</span> 偏研究向</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    <span id="toast-msg">Saved</span>
+  </div>
+
+  <script>
+    const toast = document.getElementById('toast');
+    const toastMsg = document.getElementById('toast-msg');
+    let toastTimer;
+    function showToast(msg) {
+      toastMsg.textContent = msg;
+      toast.classList.add('is-on');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('is-on'), 1800);
+    }
+
+    // === Mode toggle ===
+    document.querySelectorAll('.mode-toggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.mode;
+        document.documentElement.dataset.mode = mode;
+        btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('is-on'));
+        btn.classList.add('is-on');
+      });
+    });
+
+    // === Card click → highlight + open page ===
+    const cards = document.querySelectorAll('[data-acts="card"]');
+    cards.forEach(card => {
+      card.addEventListener('click', (e) => {
+        // ignore clicks on buttons (vote/open/reload) and iframe area
+        if (e.target.closest('button') || e.target.tagName === 'IFRAME') return;
+        cards.forEach(c => c.classList.remove('is-on'));
+        card.classList.add('is-on');
+        showToast(`→ ${card.querySelector('h3').textContent} selected`);
+      });
+    });
+
+    // === Open button + HUD open button → open in new tab ===
+    document.querySelectorAll('[data-acts="open"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const card = btn.closest('[data-acts="card"]');
+        const page = card.dataset.page;
+        window.open(page, '_blank');
+        showToast(`Opening ${page}…`);
+      });
+    });
+
+    // === Reload iframe ===
+    document.querySelectorAll('[data-acts="reload"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const card = btn.closest('[data-acts="card"]');
+        const iframe = card.querySelector('iframe');
+        iframe.src = iframe.src;
+        showToast('↻ Reloading preview…');
+      });
+    });
+
+    // === Vote buttons ===
+    document.querySelectorAll('[data-acts="vote"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const v = btn.dataset.v;
+        const vote = btn.parentElement;
+        const up = vote.querySelector('[data-v="up"]');
+        const down = vote.querySelector('[data-v="down"]');
+        if (v === 'up') {
+          if (up.classList.contains('is-on')) { up.classList.remove('is-on'); showToast('Vote cleared'); }
+          else { up.classList.add('is-on'); down.classList.remove('is-on'); showToast('👍 Voted for this style'); }
+        } else {
+          if (down.classList.contains('is-on')) { down.classList.remove('is-on'); showToast('Vote cleared'); }
+          else { down.classList.add('is-on'); up.classList.remove('is-on'); showToast('👎 Noted'); }
+        }
+      });
+    });
+
+    // === Filter ===
+    document.querySelectorAll('[data-filter]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('is-on'));
+        btn.classList.add('is-on');
+        const f = btn.dataset.filter;
+        cards.forEach(c => {
+          if (f === 'all' || c.dataset.cat === f) {
+            c.style.display = '';
+          } else {
+            c.style.display = 'none';
+          }
+        });
+        showToast(`Filter → ${btn.textContent.trim()}`);
+      });
+    });
+
+    // === Sort buttons (visual only) ===
+    document.querySelectorAll('.filters .fbtn:not([data-filter])').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.parentElement.querySelectorAll('.fbtn:not([data-filter])').forEach(b => b.classList.remove('is-on'));
+        btn.classList.add('is-on');
+        showToast(`Sort → ${btn.textContent.trim()}`);
+      });
+    });
+
+    // === Open all ===
+    document.querySelector('[data-acts="open-all"]').addEventListener('click', () => {
+      ['12-ai-classic.html','13-ai-document.html','14-ai-agent.html','15-ai-search.html'].forEach((p, i) => {
+        setTimeout(() => window.open(p, '_blank'), i * 120);
+      });
+      showToast('Opening all 4 in tabs…');
+    });
+
+    // === Export PDF (placeholder) ===
+    document.querySelector('[data-acts="export"]').addEventListener('click', () => {
+      showToast('📄 PDF export queued (use browser print for now)');
+      setTimeout(() => window.print(), 600);
+    });
+
+    // === Reset votes ===
+    document.querySelector('[data-acts="reset-vote"]').addEventListener('click', () => {
+      document.querySelectorAll('[data-acts="vote"]').forEach(b => b.classList.remove('is-on'));
+      showToast('Votes reset');
+    });
+
+    // === Recommend button ===
+    document.querySelector('[data-acts="recommend"]').addEventListener('click', () => {
+      cards.forEach(c => c.classList.remove('is-on'));
+      document.querySelector('[data-acts="card"][data-page="12-ai-classic.html"]').classList.add('is-on');
+      showToast('Recommended: v1 + v3 combo (highlighting v1)');
+    });
+
+    // === Iframe load → remove loading overlay ===
+    document.querySelectorAll('iframe').forEach(iframe => {
+      iframe.addEventListener('load', () => {
+        iframe.parentElement.classList.remove('loading');
+      });
+      // fallback: remove loading after 1.5s in case load event is missed
+      setTimeout(() => iframe.parentElement.classList.remove('loading'), 1500);
+    });
+  </script>
+</body>
+</html>

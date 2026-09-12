@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · 收藏</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="favorites">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-left">
+      <span class="brand-mark"><i data-ic="clipboard-list"></i></span>
+      <span class="brand-word">ClipSync</span>
+      <span class="tb-sep"></span>
+      <span class="tb-crumb">收藏</span>
+    </div>
+    <button class="cmdk" id="cmdkBtn"><i data-ic="search"></i><span>搜索或命令…</span><kbd>Ctrl K</kbd></button>
+    <div class="tb-right">
+      <button class="tb-btn ai-trigger" id="aiBtn" title="AI 助手 · Ctrl+Shift+A"><i data-ic="sparkles"></i><span>AI</span></button>
+      <button class="tb-btn" id="qpBtn" title="快速粘贴 · Ctrl+Shift+V"><i data-ic="panel-top"></i></button>
+      <button class="tb-btn" id="themeBtn" title="切换明暗"><i data-ic="moon"></i></button>
+      <button class="tb-btn" id="bellBtn" title="通知"><i data-ic="bell"></i><i class="dot" id="bellDot"></i></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn win" data-win="min"><i data-ic="minus"></i></button>
+      <button class="tb-btn win" data-win="max"><i data-ic="square"></i></button>
+      <button class="tb-btn win close" data-win="close"><i data-ic="x"></i></button>
+    </div>
+  </header>
+  <aside class="app-nav">
+    <a class="nav-item" data-nav="clipboard" href="index.html"><i data-ic="clipboard-list"></i><span>剪贴板</span><kbd>Ctrl 1</kbd></a>
+    <a class="nav-item" data-nav="favorites" href="favorites.html"><i data-ic="star"></i><span>收藏</span><kbd>Ctrl 2</kbd></a>
+    <a class="nav-item" data-nav="templates" href="templates.html"><i data-ic="layout-template"></i><span>模板</span><kbd>Ctrl 3</kbd></a>
+    <a class="nav-item" data-nav="devices" href="devices.html"><i data-ic="laptop"></i><span>设备</span><kbd>Ctrl 4</kbd></a>
+    <div class="nav-sec">系统</div>
+    <a class="nav-item" data-nav="settings" href="settings.html"><i data-ic="settings-2"></i><span>设置</span><kbd>Ctrl ,</kbd></a>
+    <div class="nav-foot">
+      <div class="sync-pill"><i class="pulse"></i><span>已同步 · 3 台设备</span></div>
+      <div class="nav-ver">v0.4.2 · clearline</div>
+    </div>
+  </aside>
+  <main class="app-main">
+    <div class="page reveal">
+
+      <div class="page-head">
+        <div>
+          <div class="page-title">收藏</div>
+          <div class="page-sub">树形合集归档 + 全局标签体系 · 把常用片段沉淀为可复用资产</div>
+        </div>
+        <div class="page-acts">
+          <button class="btn" data-ai="整理收藏" data-ai-target="当前合集下的全部收藏条目"><i data-ic="sparkles"></i>AI 整理收藏</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:212px 1fr;gap:16px;align-items:start">
+        <!-- 左：树形合集侧栏 -->
+        <div class="panel" style="padding:6px;position:sticky;top:0">
+          <div class="col-tree" id="colTree"></div>
+          <div class="pop-sep"></div>
+          <button class="btn btn-ghost btn-sm" id="btnNewCol" style="width:100%;justify-content:flex-start">
+            <i data-ic="plus" data-size="13"></i>新建收藏夹
+          </button>
+        </div>
+
+        <!-- 右：标签筛选条 + 条目列表 -->
+        <div>
+          <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+            <div class="search" style="flex:1"><i data-ic="search" data-size="14"></i><input id="q" placeholder="搜索收藏内容…"></div>
+            <button class="btn" id="btnAiCol" data-ai="总结这个合集" data-ai-target="当前筛选下的收藏条目"><i data-ic="sparkles"></i>总结这个合集</button>
+          </div>
+          <div id="tagBar" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px"></div>
+          <div class="dimmer" id="favWhere" style="font-size:11.5px;margin-bottom:10px"></div>
+          <div id="favList"></div>
+          <div class="empty" id="favEmpty" style="display:none">
+            <i data-ic="star" data-size="30"></i>
+            <div class="t">这里没有收藏条目</div>
+            <div class="d">在剪贴板时间流里点星标即可把片段收进来；或调整合集 / 标签 / 搜索筛选。</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="mock.js"></script>
+<script src="api.js"></script>
+<script src="components.js"></script>
+<script>
+/* ---------- 收藏：树形合集 + 标签体系 + 条目列表 ---------- */
+const TYPE_META = {
+  text:  { ic: 'type',   tile: 't-text',  badge: 'b-text',  label: '文本' },
+  link:  { ic: 'link-2', tile: 't-link',  badge: 'b-link',  label: '链接' },
+  code:  { ic: 'code-2', tile: 't-code',  badge: 'b-code',  label: '代码' },
+  image: { ic: 'image',  tile: 't-image', badge: 'b-image', label: '图片' },
+  file:  { ic: 'file',   tile: 't-file',  badge: 'b-file',  label: '文件' },
+};
+/* 新建/重命名收藏夹可选图标（均为 ICONS 已有项） */
+const ICON_CHOICES = ['folder', 'file-text', 'message-square', 'user', 'code-2', 'star'];
+/* 新建标签时的默认取色板（按序轮转） */
+const TAG_PALETTE = ['#3A6BE0', '#2E9E6B', '#0D9488', '#D97706', '#D94A3A', '#6E93FF', '#7A8494'];
+
+let state = { cid: 'all', q: '', tag: '', expanded: new Set(['work']) };
+const unlocked = new Set(); /* 敏感条目：本次会话内已解锁查看的 id */
+const tagColorCache = {}; /* 编辑标签 modal 里新建标签的预分配颜色（保存时随 tagColors 提交） */
+
+/* ---------- 小工具 ---------- */
+function openModal(inner, width = 440) {
+  document.getElementById('pageModal')?.remove();
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask'; mask.id = 'pageModal';
+  mask.innerHTML = `<div class="modal" style="width:min(${width}px,92vw)">${inner}</div>`;
+  mask.addEventListener('click', e => { if (e.target === mask) mask.remove(); });
+  document.body.appendChild(mask);
+  return mask;
+}
+function confirmModal({ title, msg, okText = '确认', danger = false }) {
+  return new Promise(resolve => {
+    const mask = openModal(`
+      <div class="modal-title">${esc(title)}</div>
+      <div class="modal-sub">${esc(msg)}</div>
+      <div class="modal-foot">
+        <button class="btn" data-m="no">取消</button>
+        <button class="btn ${danger ? 'btn-danger' : 'btn-acc'}" data-m="ok">${esc(okText)}</button>
+      </div>`, 380);
+    mask.querySelector('[data-m="no"]').onclick = () => { mask.remove(); resolve(false); };
+    mask.querySelector('[data-m="ok"]').onclick = () => { mask.remove(); resolve(true); };
+  });
+}
+function findNode(list, id) {
+  for (const n of list) {
+    if (n.id === id) return n;
+    const f = n.children && findNode(n.children, id);
+    if (f) return f;
+  }
+  return null;
+}
+function countChildrenDeep(n) {
+  return (n.children || []).reduce((s, c) => s + 1 + countChildrenDeep(c), 0);
+}
+function countItemsDeep(n) {
+  let s = DB.favItems.filter(f => f.cid === n.id).length;
+  (n.children || []).forEach(c => s += countItemsDeep(c));
+  return s;
+}
+const tagColor = name => (DB.favTags.find(t => t.name === name) || {}).color || '#6E93FF';
+const tagPill = (name, extra = '') =>
+  `<span class="tag-pill ${extra}" style="--tagc:${tagColor(name)}"><i class="td"></i>${esc(name)}</span>`;
+
+/* ---------- 树形合集侧栏 ---------- */
+async function renderTree() {
+  await fetchCollections();
+  const root = document.getElementById('colTree');
+  const all = `
+    <div class="col-node ${state.cid === 'all' ? 'active' : ''}" data-cid="all">
+      <span class="tw"></span>${iconSvg('star', 14)}<span>全部收藏</span>
+      <span class="cnt">${DB.favItems.length}</span>
+    </div>`;
+  root.innerHTML = all + DB.collections.map(n => nodeHtml(n)).join('');
+
+  root.querySelectorAll('.col-node').forEach(el => {
+    el.onclick = () => { state.cid = el.dataset.cid; renderTree(); renderItems(); renderWhere(); };
+    const tw = el.querySelector('[data-tw]');
+    if (tw) tw.onclick = e => {
+      e.stopPropagation();
+      const id = el.dataset.cid;
+      state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id);
+      renderTree();
+    };
+    const act = (name, fn) => {
+      const b = el.querySelector(`[data-act="${name}"]`);
+      if (b) b.onclick = e => { e.stopPropagation(); fn(el.dataset.cid); };
+    };
+    act('sub', id => openColModal({ parentId: id }));
+    act('ren', id => openColModal({ edit: findNode(DB.collections, id) }));
+    act('del', id => confirmDeleteCol(findNode(DB.collections, id)));
+  });
+}
+function nodeHtml(n) {
+  const kids = n.children || [];
+  const open = state.expanded.has(n.id);
+  const cnt = DB.favItems.filter(f => f.cid === n.id).length;
+  return `
+    <div class="col-node ${state.cid === n.id ? 'active' : ''}" data-cid="${n.id}">
+      ${kids.length
+        ? `<span class="tw ${open ? 'open' : ''}" data-tw title="展开 / 折叠">${iconSvg('chevron-right', 12)}</span>`
+        : '<span class="tw"></span>'}
+      ${iconSvg(n.icon || 'folder', 14)}<span>${esc(n.name)}</span>
+      <span class="node-acts">
+        <span class="icon-btn" data-act="sub" title="新建子收藏夹" style="width:22px;height:22px">${iconSvg('plus', 12)}</span>
+        <span class="icon-btn" data-act="ren" title="重命名 / 换图标" style="width:22px;height:22px">${iconSvg('pencil', 12)}</span>
+        <span class="icon-btn" data-act="del" title="删除收藏夹" style="width:22px;height:22px">${iconSvg('trash-2', 12)}</span>
+      </span>
+      <span class="cnt">${cnt}</span>
+    </div>
+    ${kids.length ? `<div class="col-children ${open ? 'open' : ''}">${kids.map(nodeHtml).join('')}</div>` : ''}`;
+}
+
+/* 新建 / 重命名收藏夹 modal（名称 + 图标选择） */
+function openColModal({ parentId = null, edit = null } = {}) {
+  let icon = edit?.icon || 'folder';
+  const parent = parentId ? findNode(DB.collections, parentId) : null;
+  const title = edit ? '重命名收藏夹' : parent ? `新建子收藏夹 · 于「${parent.name}」` : '新建收藏夹';
+  const mask = openModal(`
+    <div class="modal-title">${esc(title)}</div>
+    <div class="modal-sub">${edit ? '修改名称或图标，合集内条目不受影响' : '树形合集支持多级嵌套，条目按直接归属计数'}</div>
+    <label class="fm-label">名称</label>
+    <div class="input">${iconSvg('folder', 14)}<input id="colName" placeholder="例如：会议纪要" value="${edit ? esc(edit.name) : ''}"></div>
+    <label class="fm-label">图标</label>
+    <div class="icon-pick" id="colIcons">
+      ${ICON_CHOICES.map(ic => `<button class="icon-btn ${ic === icon ? 'on' : ''}" data-icon="${ic}" style="width:30px;height:30px">${iconSvg(ic, 15)}</button>`).join('')}
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-m="no">取消</button>
+      <button class="btn btn-acc" data-m="ok">${edit ? '保存' : '创建'}</button>
+    </div>`);
+  const input = mask.querySelector('#colName');
+  input.focus(); input.select();
+  mask.querySelectorAll('[data-icon]').forEach(b => b.onclick = () => {
+    icon = b.dataset.icon;
+    mask.querySelectorAll('[data-icon]').forEach(x => x.classList.toggle('on', x === b));
+  });
+  const submit = async () => {
+    const name = input.value.trim();
+    if (!name) { toast('请输入收藏夹名称', 'err'); return; }
+    if (edit) {
+      await updateCollection(edit.id, { name, icon });
+      toast('收藏夹已更新', 'ok');
+    } else {
+      await createCollection({ name, icon, parentId });
+      if (parentId) state.expanded.add(parentId); /* 新建子级后自动展开父节点 */
+      toast(parentId ? '子收藏夹已创建' : '收藏夹已创建', 'ok');
+    }
+    mask.remove(); renderTree();
+  };
+  mask.querySelector('[data-m="no"]').onclick = () => mask.remove();
+  mask.querySelector('[data-m="ok"]').onclick = submit;
+  input.onkeydown = e => { if (e.key === 'Enter') submit(); };
+}
+
+/* 删除收藏夹：二次确认（含子级与条目统计，对齐真实系统） */
+async function confirmDeleteCol(node) {
+  if (!node) return;
+  const childCount = countChildrenDeep(node);
+  const itemCount = countItemsDeep(node);
+  const msg = childCount > 0
+    ? `确认删除收藏夹「${node.name}」及其下 ${childCount} 个子收藏夹（共 ${itemCount} 项）？条目将移入未分组。`
+    : `确认删除收藏夹「${node.name}」（共 ${itemCount} 项）？条目将移入未分组。`;
+  const ok = await confirmModal({ title: '删除收藏夹', msg, okText: '删除', danger: true });
+  if (!ok) return;
+  await deleteCollection(node.id);
+  /* 子收藏夹条目在 mock 中会失去归属，统一归入"全部收藏"可见的未分组 */
+  const alive = new Set();
+  (function walk(list) { list.forEach(n => { alive.add(n.id); n.children && walk(n.children); }); })(DB.collections);
+  DB.favItems.forEach(f => { if (f.cid !== 'all' && !alive.has(f.cid)) f.cid = 'all'; });
+  if (state.cid !== 'all' && !alive.has(state.cid)) state.cid = 'all';
+  toast('收藏夹已删除，条目已移入未分组');
+  renderTree(); renderItems(); renderWhere();
+}
+
+/* ---------- 标签筛选条 ---------- */
+async function renderTags() {
+  const { data: tags } = await fetchFavTags();
+  const bar = document.getElementById('tagBar');
+  bar.innerHTML = `
+    <span class="dimmer" style="font-size:11px;flex:none">标签</span>
+    ${tags.map(t => `
+      <span class="tag-pill ${state.tag === t.name ? 'on' : ''}" data-tag="${esc(t.name)}" style="--tagc:${t.color}">
+        <i class="td"></i>${esc(t.name)}
+      </span>`).join('')}
+    <button class="btn btn-ghost btn-sm" id="btnTagMgr" style="margin-left:auto">${iconSvg('tag', 12)}管理标签</button>`;
+  bar.querySelectorAll('[data-tag]').forEach(p => p.onclick = () => {
+    state.tag = state.tag === p.dataset.tag ? '' : p.dataset.tag; /* 再点取消 */
+    renderTags(); renderItems(); renderWhere();
+  });
+  bar.querySelector('#btnTagMgr').onclick = openTagMgr;
+}
+
+/* 管理标签 modal：颜色编辑 / 删除 / 新建 */
+function openTagMgr() {
+  const rows = DB.favTags.map(t => {
+    const usage = DB.favItems.filter(f => (f.tags || []).includes(t.name)).length;
+    return `
+      <div class="tag-row" data-name="${esc(t.name)}">
+        <input type="color" value="${t.color}" title="修改标签颜色">
+        <span class="tag-pill" style="--tagc:${t.color}"><i class="td"></i>${esc(t.name)}</span>
+        <span class="dimmer mono" style="font-size:10.5px">${usage} 条在用</span>
+        <span class="icon-btn" data-rm title="删除标签" style="margin-left:auto;width:24px;height:24px">${iconSvg('trash-2', 13)}</span>
+      </div>`;
+  }).join('') || '<div class="dimmer" style="padding:12px 2px;font-size:12px">还没有标签，先在下方新建一个。</div>';
+  const mask = openModal(`
+    <div class="modal-title">管理标签</div>
+    <div class="modal-sub">标签为全局共享，可挂在任意收藏条目上；颜色修改即时生效</div>
+    <div id="tagRows">${rows}</div>
+    <label class="fm-label">新建标签</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="color" id="newTagColor" value="${TAG_PALETTE[DB.favTags.length % TAG_PALETTE.length]}" title="标签颜色"
+        style="width:30px;height:30px;padding:0;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer;flex:none">
+      <div class="input" style="flex:1">${iconSvg('tag', 14)}<input id="newTagName" placeholder="标签名，例如：灵感"></div>
+      <button class="btn btn-acc" id="newTagBtn">新建</button>
+    </div>
+    <div class="modal-foot"><button class="btn" data-m="close">完成</button></div>`, 460);
+
+  mask.querySelectorAll('.tag-row').forEach(row => {
+    const name = row.dataset.name;
+    row.querySelector('input[type="color"]').onchange = async e => {
+      await updateFavTag(name, { color: e.target.value });
+      toast(`标签「${name}」颜色已更新`, 'ok');
+      mask.remove(); openTagMgr(); renderTags(); renderItems();
+    };
+    row.querySelector('[data-rm]').onclick = async () => {
+      const ok = await confirmModal({
+        title: '删除标签',
+        msg: `确认删除标签「${name}」？将从所有收藏条目上摘除。`,
+        okText: '删除', danger: true,
+      });
+      if (!ok) return;
+      await deleteFavTag(name);
+      if (state.tag === name) state.tag = '';
+      toast('标签已删除');
+      mask.remove(); openTagMgr(); renderTags(); renderItems();
+    };
+  });
+  const create = async () => {
+    const name = mask.querySelector('#newTagName').value.trim();
+    if (!name) { toast('请输入标签名', 'err'); return; }
+    if (DB.favTags.some(t => t.name === name)) { toast('标签已存在', 'err'); return; }
+    await createFavTag({ name, color: mask.querySelector('#newTagColor').value });
+    toast(`标签「${name}」已创建`, 'ok');
+    mask.remove(); openTagMgr(); renderTags();
+  };
+  mask.querySelector('#newTagBtn').onclick = create;
+  mask.querySelector('#newTagName').onkeydown = e => { if (e.key === 'Enter') create(); };
+  mask.querySelector('[data-m="close"]').onclick = () => mask.remove();
+}
+
+/* ---------- 条目列表 ---------- */
+async function renderItems() {
+  const { data: list } = await fetchFavItems(state.cid, state.q, state.tag);
+  const root = document.getElementById('favList');
+  document.getElementById('favEmpty').style.display = list.length ? 'none' : '';
+  root.innerHTML = list.map(f => {
+    const m = TYPE_META[f.type] || TYPE_META.text;
+    const locked = f.sensitive && !unlocked.has(f.id);
+    const tags = (f.tags || []).map(t => tagPill(t)).join('');
+    return `
+    <div class="clip-item" data-id="${f.id}">
+      <div class="type-tile ${m.tile}">${iconSvg(m.ic, 16)}</div>
+      <div class="clip-body">
+        <div class="clip-text ${f.type === 'code' && !locked ? 'code' : ''}">${locked ? '••••••••••••••••' : esc(f.content)}</div>
+        <div class="clip-meta">
+          <span class="badge ${m.badge}">${m.label}</span>
+          <span>来源 ${esc(f.source)}</span>
+          <span class="mono">${f.time}</span>
+          ${f.sensitive ? `<span class="badge b-gray" style="color:var(--warning)">${iconSvg('shield', 10)}敏感</span>` : ''}
+          ${tags}
+        </div>
+      </div>
+      <div class="clip-acts">
+        ${f.sensitive ? `<button class="icon-btn" data-act="lock" title="${locked ? '解锁查看' : '重新掩码'}">${iconSvg('eye', 14)}</button>` : ''}
+        <button class="icon-btn" data-act="copy" title="复制">${iconSvg('copy', 14)}</button>
+        <button class="icon-btn" data-act="tags" title="编辑标签">${iconSvg('tag', 14)}</button>
+        <button class="icon-btn" data-act="ai" title="用 AI 处理这条">${iconSvg('sparkles', 14)}</button>
+        <button class="icon-btn" data-act="del" title="移出收藏">${iconSvg('trash-2', 14)}</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  root.querySelectorAll('.clip-item').forEach(el => {
+    const id = el.dataset.id;
+    const item = DB.favItems.find(x => x.id === id);
+    const isLocked = () => item.sensitive && !unlocked.has(id);
+    const doCopy = async () => {
+      if (isLocked()) { toast('敏感内容已掩码，先点击眼睛图标解锁', 'err'); return; }
+      await copyItem(id); /* POST /api/clips/:id/copy —— 原型环境仅模拟 */
+      toast('已复制，可粘贴到任意应用', 'ok');
+    };
+    el.addEventListener('click', e => { if (!e.target.closest('.icon-btn') && !e.target.closest('.tag-pill')) doCopy(); });
+    el.querySelector('[data-act="copy"]').onclick = doCopy;
+    const lockBtn = el.querySelector('[data-act="lock"]');
+    if (lockBtn) lockBtn.onclick = () => {
+      unlocked.has(id) ? unlocked.delete(id) : unlocked.add(id);
+      toast(unlocked.has(id) ? '已解锁查看（本次会话有效）' : '已重新掩码');
+      renderItems();
+    };
+    el.querySelector('[data-act="tags"]').onclick = () => openItemTags(item);
+    el.querySelector('[data-act="ai"]').onclick = () =>
+      openAiDock({ prefill: `处理这条收藏：${item.content.slice(0, 40)}${item.content.length > 40 ? '…' : ''}` });
+    el.querySelector('[data-act="del"]').onclick = async () => {
+      await removeFav(id);
+      toast('已移出收藏');
+      renderTree(); renderItems(); renderWhere();
+    };
+  });
+}
+
+/* 当前位置提示行 */
+function renderWhere() {
+  const node = state.cid === 'all' ? null : findNode(DB.collections, state.cid);
+  const parts = [`当前：${node ? node.name : '全部收藏'}`];
+  if (state.tag) parts.push(`标签「${state.tag}」`);
+  if (state.q) parts.push(`搜索「${state.q}」`);
+  document.getElementById('favWhere').textContent = parts.join(' · ');
+}
+
+/* 编辑条目标签 modal：复选现有标签 + 输入新建（对齐真实系统 setItemTags） */
+function openItemTags(item) {
+  const selected = new Set(item.tags || []);
+  const custom = []; /* 本次会话新建、尚未入库的标签名 */
+  const mask = openModal(`
+    <div class="modal-title">编辑标签</div>
+    <div class="modal-sub">点击标签进行勾选 / 取消；也可以输入新标签名回车创建</div>
+    <div id="tagPick" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+    <div class="input">${iconSvg('plus', 14)}<input id="tagNew" placeholder="新建标签名，回车添加"></div>
+    <div class="modal-foot">
+      <button class="btn" data-m="no">取消</button>
+      <button class="btn btn-acc" data-m="ok">保存</button>
+    </div>`, 420);
+
+  const renderPick = () => {
+    const names = [...DB.favTags.map(t => t.name), ...custom];
+    mask.querySelector('#tagPick').innerHTML = names.map(n => `
+      <span class="tag-pill ${selected.has(n) ? 'on' : ''}" data-t="${esc(n)}" style="--tagc:${tagColorCache[n] || tagColor(n)};font-size:11.5px;padding:3px 10px">
+        <i class="td"></i>${esc(n)}
+      </span>`).join('') || '<span class="dimmer" style="font-size:11.5px">暂无标签，输入上方新建</span>';
+    mask.querySelectorAll('[data-t]').forEach(p => p.onclick = () => {
+      selected.has(p.dataset.t) ? selected.delete(p.dataset.t) : selected.add(p.dataset.t);
+      renderPick();
+    });
+  };
+  renderPick();
+
+  mask.querySelector('#tagNew').onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    const name = e.target.value.trim();
+    if (!name) return;
+    if (!selected.has(name) && !DB.favTags.some(t => t.name === name) && !custom.includes(name)) {
+      custom.push(name);
+      /* 新标签按取色板预分配颜色，入库时随 tagColors 一起提交 */
+      tagColorCache[name] = TAG_PALETTE[(DB.favTags.length + custom.length) % TAG_PALETTE.length];
+    }
+    selected.add(name);
+    e.target.value = '';
+    renderPick();
+  };
+
+  mask.querySelector('[data-m="no"]').onclick = () => mask.remove();
+  mask.querySelector('[data-m="ok"]').onclick = async () => {
+    const tags = [...selected];
+    const tagColors = {};
+    tags.forEach(n => { tagColors[n] = tagColorCache[n] || tagColor(n); });
+    await setItemTags(item.id, tags, tagColors);
+    toast('标签已保存', 'ok');
+    mask.remove();
+    renderTags(); renderItems();
+  };
+}
+
+/* ---------- 搜索 ---------- */
+let qt;
+document.getElementById('q').oninput = e => {
+  clearTimeout(qt);
+  qt = setTimeout(() => { state.q = e.target.value.trim(); renderItems(); renderWhere(); }, 200);
+};
+
+/* ---------- 底部「新建收藏夹」 ---------- */
+document.getElementById('btnNewCol').onclick = () => openColModal({});
+
+renderTree(); renderTags(); renderItems(); renderWhere();
+</script>
+</body>
+</html>

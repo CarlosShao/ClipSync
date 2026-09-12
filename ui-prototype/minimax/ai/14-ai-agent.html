@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>14 · AI Agent Task Flow — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    /* === Agent Task Flow (Manus-style) === */
+    :root {
+      --bg-page: oklch(98% 0.005 270);
+      --bg-card: oklch(99% 0 0);
+      --line-soft: oklch(93% 0.005 270);
+      --line-strong: oklch(86% 0.01 270);
+    }
+    body { background: var(--bg-page); height: 100vh; overflow: hidden; }
+
+    .agent-shell { display: grid; grid-template-columns: 60px 320px 1fr 360px; height: 100vh; }
+
+    /* === Rail === */
+    .agent-rail { background: oklch(99% 0 0); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; align-items: center; padding: 16px 0; }
+    .agent-rail .mark { width: 36px; height: 36px; border-radius: 10px; background: var(--text-strong); display: grid; place-items: center; color: white; margin-bottom: 16px; }
+    .agent-rail .btn-r { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: oklch(50% 0.02 270); cursor: pointer; transition: all 200ms; }
+    .agent-rail .btn-r:hover { background: var(--line-soft); color: oklch(20% 0.02 270); }
+    .agent-rail .btn-r.is-on { background: var(--text-strong); color: white; }
+    .agent-rail .spacer { flex: 1; }
+
+    /* === Task queue === */
+    .agent-queue { background: oklch(99% 0 0); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; }
+    .q-head { padding: 16px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; gap: 8px; }
+    .q-head h2 { font-size: 14px; color: oklch(20% 0.02 270); font-weight: 600; flex: 1; }
+    .q-head .new { padding: 6px 12px; background: var(--text-strong); color: white; border: none; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    .q-head .new:hover { background: oklch(20% 0.02 270); }
+
+    .q-tabs { display: flex; gap: 0; padding: 0 12px; border-bottom: 1px solid var(--line-soft); }
+    .q-tab { padding: 10px 12px; font-size: 12.5px; color: oklch(50% 0.02 270); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
+    .q-tab.is-on { color: oklch(20% 0.02 270); border-bottom-color: var(--text-strong); font-weight: 500; }
+    .q-tab .count { font-size: 10.5px; color: oklch(55% 0.02 270); margin-left: 4px; font-family: 'Geist Mono', monospace; }
+
+    .q-list { flex: 1; overflow-y: auto; padding: 12px; }
+    .q-section { font-size: 10.5px; color: oklch(55% 0.02 270); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; padding: 8px 4px 4px; }
+    .q-card {
+      padding: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: all 160ms;
+      position: relative;
+    }
+    .q-card:hover { border-color: var(--line-strong); box-shadow: 0 2px 8px oklch(20% 0.02 270 / 0.04); }
+    .q-card.is-on { border-color: var(--text-strong); background: oklch(98% 0.005 270); }
+    .q-card .title { font-size: 13px; color: oklch(20% 0.02 270); font-weight: 500; margin-bottom: 4px; line-height: 1.4; }
+    .q-card .meta { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: oklch(55% 0.02 270); }
+    .q-card .meta .status { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 4px; font-weight: 500; }
+    .q-card .meta .status.running { background: oklch(78% 0.16 230 / 0.16); color: oklch(40% 0.14 230); }
+    .q-card .meta .status.done { background: oklch(78% 0.16 150 / 0.16); color: oklch(40% 0.16 150); }
+    .q-card .meta .status.pending { background: oklch(90% 0.02 270); color: oklch(45% 0.02 270); }
+    .q-card .meta .status.error { background: oklch(78% 0.16 25 / 0.16); color: oklch(45% 0.20 25); }
+
+    /* Pulse ring on running card */
+    .q-card .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: oklch(58% 0.18 230); position: relative; }
+    .q-card .pulse-dot::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; background: oklch(58% 0.18 230); opacity: 0.4; animation: pulsering 1.6s infinite; }
+    @keyframes pulsering { 0% { transform: scale(0.8); opacity: 0.4; } 100% { transform: scale(2.2); opacity: 0; } }
+
+    /* Progress bar */
+    .q-card .progress { height: 3px; background: var(--line-soft); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+    .q-card .progress > i { display: block; height: 100%; background: oklch(58% 0.18 230); border-radius: 2px; transition: width 400ms; }
+
+    /* === Main task detail === */
+    .agent-main { display: flex; flex-direction: column; min-width: 0; background: var(--bg-page); }
+
+    /* Task header */
+    .task-head { padding: 20px 24px; border-bottom: 1px solid var(--line-soft); background: var(--bg-card); }
+    .task-head .crumb { font-size: 12px; color: oklch(55% 0.02 270); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+    .task-head h1 { font-size: 22px; color: oklch(20% 0.02 270); font-weight: 700; margin-bottom: 12px; letter-spacing: -0.01em; }
+    .task-head .controls { display: flex; align-items: center; gap: 8px; }
+    .task-head .controls .stat { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--line-soft); border-radius: 8px; font-size: 12px; color: oklch(35% 0.02 270); }
+    .task-head .controls .stat .v { font-weight: 600; font-family: 'Geist Mono', monospace; }
+    .task-head .controls .stat .lbl { color: oklch(55% 0.02 270); }
+    .task-head .controls .grow { flex: 1; }
+    .task-head .controls button { padding: 6px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500; cursor: pointer; border: 1px solid var(--line-soft); background: var(--bg-card); color: oklch(20% 0.02 270); display: flex; align-items: center; gap: 5px; transition: all 160ms; }
+    .task-head .controls button:hover { background: var(--line-soft); }
+    .task-head .controls button.primary { background: var(--text-strong); color: white; border-color: var(--text-strong); }
+    .task-head .controls button.primary:hover { background: oklch(20% 0.02 270); }
+    .task-head .controls button.danger { color: oklch(50% 0.20 25); border-color: oklch(78% 0.16 25 / 0.4); }
+    .task-head .controls button.danger:hover { background: oklch(78% 0.16 25 / 0.1); }
+
+    /* Step timeline + content */
+    .task-body { flex: 1; overflow-y: auto; padding: 24px; }
+    .step-stream { max-width: 800px; margin: 0 auto; }
+    .step-stream .intro {
+      background: var(--bg-card);
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 12px;
+      align-items: start;
+    }
+    .step-stream .intro .av { width: 32px; height: 32px; border-radius: 8px; background: var(--text-strong); color: white; display: grid; place-items: center; flex-shrink: 0; }
+    .step-stream .intro .body { flex: 1; }
+    .step-stream .intro .body .who { font-size: 12px; color: oklch(55% 0.02 270); margin-bottom: 4px; }
+    .step-stream .intro .body .what { font-size: 14px; color: oklch(20% 0.02 270); line-height: 1.6; }
+
+    /* Each step */
+    .step { position: relative; padding-left: 36px; margin-bottom: 24px; animation: stepIn 320ms var(--ease-out); }
+    @keyframes stepIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+    .step::before { content: ''; position: absolute; left: 13px; top: 28px; bottom: -16px; width: 2px; background: var(--line-soft); }
+    .step:last-child::before { display: none; }
+    .step .marker { position: absolute; left: 0; top: 4px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--bg-card); border: 2px solid var(--line-strong); z-index: 1; }
+    .step.pending .marker { background: var(--line-soft); color: oklch(55% 0.02 270); }
+    .step.running .marker { background: oklch(58% 0.18 230); color: white; border-color: oklch(58% 0.18 230); animation: markerpulse 1.6s infinite; }
+    @keyframes markerpulse { 0%, 100% { box-shadow: 0 0 0 0 oklch(58% 0.18 230 / 0.4); } 50% { box-shadow: 0 0 0 8px oklch(58% 0.18 230 / 0); } }
+    .step.done .marker { background: oklch(58% 0.18 150); color: white; border-color: oklch(58% 0.18 150); }
+    .step.error .marker { background: oklch(58% 0.20 25); color: white; border-color: oklch(58% 0.20 25); }
+
+    .step .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .step .head .num { font-size: 11px; color: oklch(55% 0.02 270); font-family: 'Geist Mono', monospace; }
+    .step .head .title { font-size: 14.5px; color: oklch(20% 0.02 270); font-weight: 600; flex: 1; }
+    .step .head .time { font-size: 11px; color: oklch(55% 0.02 270); font-family: 'Geist Mono', monospace; }
+    .step .head .badge { padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 500; }
+    .step.running .head .badge { background: oklch(78% 0.16 230 / 0.16); color: oklch(40% 0.14 230); }
+    .step.done .head .badge { background: oklch(78% 0.16 150 / 0.16); color: oklch(40% 0.16 150); }
+    .step.pending .head .badge { background: var(--line-soft); color: oklch(50% 0.02 270); }
+    .step.error .head .badge { background: oklch(78% 0.16 25 / 0.16); color: oklch(45% 0.20 25); }
+
+    .step .body { background: var(--bg-card); border: 1px solid var(--line-soft); border-radius: 10px; padding: 12px 16px; font-size: 13.5px; line-height: 1.6; color: oklch(30% 0.02 270); }
+    .step .body .code { background: oklch(15% 0.02 270); color: oklch(95% 0 0); padding: 10px 12px; border-radius: 8px; font-family: 'Geist Mono', monospace; font-size: 12px; line-height: 1.6; margin-top: 8px; overflow-x: auto; }
+    .step .body .io { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .step .body .io .io-block { padding: 8px 10px; background: var(--line-soft); border-radius: 6px; }
+    .step .body .io .io-block .lbl { font-size: 10.5px; color: oklch(55% 0.02 270); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 4px; }
+    .step .body .io .io-block pre { font-family: 'Geist Mono', monospace; font-size: 11.5px; color: oklch(30% 0.02 270); white-space: pre-wrap; word-break: break-all; }
+
+    .step .body .img-result { margin-top: 8px; padding: 8px; background: var(--line-soft); border-radius: 6px; display: flex; align-items: center; gap: 10px; }
+    .step .body .img-result .ico { width: 32px; height: 32px; border-radius: 6px; background: oklch(78% 0.16 150 / 0.18); color: oklch(40% 0.16 150); display: grid; place-items: center; }
+    .step .body .img-result .name { font-size: 12.5px; color: oklch(20% 0.02 270); font-weight: 500; }
+
+    /* === Right: live activity === */
+    .agent-activity { background: oklch(15% 0.01 270); color: oklch(90% 0.01 270); display: flex; flex-direction: column; }
+    .act-head { padding: 12px 16px; border-bottom: 1px solid oklch(25% 0.01 270); display: flex; align-items: center; gap: 8px; }
+    .act-head .dot { width: 8px; height: 8px; border-radius: 50%; background: oklch(64% 0.16 150); animation: blink 1.6s infinite; }
+    @keyframes blink { 50% { opacity: 0.3; } }
+    .act-head h3 { font-size: 13px; color: white; font-weight: 600; flex: 1; }
+    .act-head .badge { padding: 2px 8px; background: oklch(64% 0.18 150 / 0.18); color: oklch(78% 0.18 150); border-radius: 4px; font-size: 10.5px; font-family: 'Geist Mono', monospace; font-weight: 500; }
+    .act-head .icon-btn { width: 24px; height: 24px; border-radius: 4px; display: grid; place-items: center; color: oklch(60% 0.02 270); cursor: pointer; }
+    .act-head .icon-btn:hover { background: oklch(25% 0.01 270); color: white; }
+
+    .act-tabs { display: flex; padding: 0 12px; border-bottom: 1px solid oklch(25% 0.01 270); }
+    .act-tab { padding: 8px 12px; font-size: 11.5px; color: oklch(60% 0.02 270); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+    .act-tab.is-on { color: white; border-bottom-color: oklch(64% 0.18 150); }
+    .act-tab .count { padding: 1px 5px; background: oklch(25% 0.01 270); border-radius: 4px; font-size: 10px; font-family: 'Geist Mono', monospace; }
+
+    .act-stream { flex: 1; overflow-y: auto; padding: 12px; font-family: 'Geist Mono', monospace; font-size: 11.5px; line-height: 1.7; }
+    .log-line { display: flex; gap: 8px; padding: 2px 0; animation: logIn 200ms var(--ease-out); }
+    @keyframes logIn { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: translateX(0); } }
+    .log-line .ts { color: oklch(45% 0.02 270); flex-shrink: 0; }
+    .log-line .lvl { flex-shrink: 0; width: 50px; }
+    .log-line .lvl.info { color: oklch(64% 0.14 230); }
+    .log-line .lvl.tool { color: oklch(70% 0.16 80); }
+    .log-line .lvl.ok { color: oklch(64% 0.16 150); }
+    .log-line .lvl.err { color: oklch(64% 0.20 25); }
+    .log-line .lvl.think { color: oklch(70% 0.14 280); }
+    .log-line .msg { color: oklch(80% 0.02 270); word-break: break-word; }
+    .log-line .msg .em { color: oklch(78% 0.16 80); }
+    .log-line .msg .num { color: oklch(64% 0.16 230); }
+
+    .act-foot { padding: 8px 12px; border-top: 1px solid oklch(25% 0.01 270); display: flex; align-items: center; gap: 8px; font-size: 11px; color: oklch(60% 0.02 270); font-family: 'Geist Mono', monospace; }
+
+    /* === Toast === */
+    .toast-stack { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 200; }
+    .toast-x { background: var(--text-strong); color: white; padding: 10px 16px; border-radius: 10px; font-size: 13px; animation: slideup 200ms var(--ease-spring); box-shadow: 0 8px 24px oklch(20% 0.02 270 / 0.2); }
+    @keyframes slideup { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* === Highlighted tool call === */
+    .step .body .tool-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--line-soft); border-radius: 6px; margin-top: 6px; }
+    .step .body .tool-row .ico { width: 24px; height: 24px; border-radius: 6px; background: oklch(78% 0.16 80 / 0.18); color: oklch(45% 0.16 80); display: grid; place-items: center; flex-shrink: 0; }
+    .step .body .tool-row .name { font-family: 'Geist Mono', monospace; font-size: 12px; color: oklch(20% 0.02 270); flex: 1; }
+    .step .body .tool-row .status { font-size: 10.5px; color: oklch(45% 0.16 150); font-family: 'Geist Mono', monospace; }
+    .step .body .tool-row .status.running { color: oklch(45% 0.14 230); }
+    .step .body .tool-row .status.err { color: oklch(45% 0.20 25); }
+
+    /* Composer inline */
+    .task-input { padding: 12px 24px 20px; border-top: 1px solid var(--line-soft); background: var(--bg-card); }
+    .task-input .box { max-width: 800px; margin: 0 auto; display: flex; align-items: end; gap: 8px; padding: 8px 12px; background: var(--bg-page); border: 1px solid var(--line-soft); border-radius: 12px; transition: all 200ms; }
+    .task-input .box:focus-within { border-color: var(--text-strong); }
+    .task-input .box textarea { flex: 1; min-height: 24px; max-height: 100px; padding: 6px 4px; font-size: 14px; line-height: 1.5; border: none; outline: none; resize: none; font-family: inherit; color: oklch(20% 0.02 270); background: transparent; }
+    .task-input .box .send { width: 32px; height: 32px; border-radius: 8px; background: var(--text-strong); color: white; border: none; display: grid; place-items: center; cursor: pointer; flex-shrink: 0; }
+    .task-input .box .send:hover { background: oklch(20% 0.02 270); }
+    .task-input .box .send:disabled { background: var(--line-soft); color: oklch(60% 0.02 270); cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="agent-shell">
+    <!-- Rail -->
+    <aside class="agent-rail">
+      <div class="mark"><svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:white;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><path d="M3 12h3l2-6 4 12 2-6h7"/></svg></div>
+      <div class="btn-r is-on" title="任务" onclick="setRail(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+      <div class="btn-r" title="历史" onclick="setRail(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
+      <div class="btn-r" title="模板" onclick="setRail(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></div>
+      <div class="btn-r" title="记忆" onclick="setRail(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3 4-3 9-3 9 1.34 9 3z"/></svg></div>
+      <div class="spacer"></div>
+      <div class="btn-r" title="设置" onclick="setRail(this)"><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></div>
+    </aside>
+
+    <!-- Task queue -->
+    <aside class="agent-queue">
+      <div class="q-head">
+        <h2>任务列表</h2>
+        <button class="new" onclick="newTask()">
+          <svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><path d="M12 5v14M5 12h14"/></svg>
+          新建
+        </button>
+      </div>
+      <div class="q-tabs">
+        <div class="q-tab is-on" onclick="setQTab(this)">进行中 <span class="count">1</span></div>
+        <div class="q-tab" onclick="setQTab(this)">已完成 <span class="count">12</span></div>
+        <div class="q-tab" onclick="setQTab(this)">队列 <span class="count">2</span></div>
+      </div>
+      <div class="q-list" id="q-list">
+        <div class="q-card is-on" data-task="1" onclick="selectTask(this)">
+          <div class="title">调研 v3 同步协议的 E2E 实现</div>
+          <div class="meta">
+            <span class="status running"><span class="pulse-dot"></span>运行中</span>
+            <span>4 / 7 步</span>
+            <span>·</span>
+            <span>1m 12s</span>
+          </div>
+          <div class="progress"><i style="width: 57%;"></i></div>
+        </div>
+        <div class="q-section">接下来</div>
+        <div class="q-card" data-task="2" onclick="selectTask(this)">
+          <div class="title">重构 Pulse token 系统为 oklch</div>
+          <div class="meta">
+            <span class="status pending">⏸ 队列</span>
+            <span>~6 步</span>
+          </div>
+        </div>
+        <div class="q-card" data-task="3" onclick="selectTask(this)">
+          <div class="title">生成 Pulse 设计系统文档</div>
+          <div class="meta">
+            <span class="status pending">⏸ 队列</span>
+            <span>~4 步</span>
+          </div>
+        </div>
+        <div class="q-section">今天</div>
+        <div class="q-card" data-task="4" onclick="selectTask(this)">
+          <div class="title">调研 5 个主流 agent 框架</div>
+          <div class="meta">
+            <span class="status done">✓ 完成</span>
+            <span>2m 14s</span>
+          </div>
+        </div>
+        <div class="q-card" data-task="5" onclick="selectTask(this)">
+          <div class="title">写季度复盘 markdown 草稿</div>
+          <div class="meta">
+            <span class="status done">✓ 完成</span>
+            <span>1m 48s</span>
+          </div>
+        </div>
+        <div class="q-card" data-task="6" onclick="selectTask(this)">
+          <div class="title">提取 9 月所有 TODO 任务</div>
+          <div class="meta">
+            <span class="status done">✓ 完成</span>
+            <span>32s</span>
+          </div>
+        </div>
+        <div class="q-section">昨天</div>
+        <div class="q-card" data-task="7" onclick="selectTask(this)">
+          <div class="title">把 12 个代码片段翻译成 Rust</div>
+          <div class="meta">
+            <span class="status done">✓ 完成</span>
+            <span>3m 02s</span>
+          </div>
+        </div>
+        <div class="q-card" data-task="8" onclick="selectTask(this)">
+          <div class="title">分析用户增长曲线</div>
+          <div class="meta">
+            <span class="status done">✓ 完成</span>
+            <span>4m 16s</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main task detail -->
+    <main class="agent-main">
+      <div class="task-head">
+        <div class="crumb">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M9 11l3 3L22 4"/></svg>
+          任务 #1847 · <span style="color:oklch(40% 0.02 270);">自动创建于 10:24 AM</span>
+        </div>
+        <h1>调研 v3 同步协议的 E2E 实现</h1>
+        <div class="controls">
+          <div class="stat"><span class="lbl">步骤</span> <span class="v">4 / 7</span></div>
+          <div class="stat"><span class="lbl">耗时</span> <span class="v">1m 12s</span></div>
+          <div class="stat"><span class="lbl">Token</span> <span class="v">8.2k</span></div>
+          <div class="stat"><span class="lbl">工具调用</span> <span class="v">12</span></div>
+          <div class="grow"></div>
+          <button onclick="pauseTask()">
+            <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            暂停
+          </button>
+          <button class="danger" onclick="stopTask()">
+            <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            停止
+          </button>
+        </div>
+      </div>
+
+      <div class="task-body">
+        <div class="step-stream" id="step-stream">
+          <div class="intro">
+            <div class="av"><svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M9 11l3 3L22 4"/></svg></div>
+            <div class="body">
+              <div class="who">用户 · Carlos</div>
+              <div class="what">帮我调研下 v3 同步协议的 E2E 实现，对比 X25519+ChaCha20 和 Signal 协议的差异，输出 markdown 笔记到「ClipSync」项目</div>
+            </div>
+          </div>
+
+          <div class="step done">
+            <div class="marker"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M5 12l5 5L20 7"/></svg></div>
+            <div class="head">
+              <span class="num">01</span>
+              <span class="title">理解任务并制定计划</span>
+              <span class="badge">完成</span>
+              <span class="time">2.1s</span>
+            </div>
+            <div class="body">
+              任务已拆解为 7 步 · 预计 6-8 分钟完成 · 涉及工具：<code>web_search</code> · <code>read_clipboard</code> · <code>write_note</code> · <code>format_md</code>
+            </div>
+          </div>
+
+          <div class="step done">
+            <div class="marker"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M5 12l5 5L20 7"/></svg></div>
+            <div class="head">
+              <span class="num">02</span>
+              <span class="title">读取相关剪贴板历史</span>
+              <span class="badge">完成</span>
+              <span class="time">0.8s</span>
+            </div>
+            <div class="body">
+              已读取 23 条相关剪贴板（最近 7 天），识别关键信息：
+              <div class="io">
+                <div class="io-block"><div class="lbl">📋 关键来源</div><pre>github.com/clipsync/v3-spec
+docs.rs/x25519-dalek
+signal.org/docs</pre></div>
+                <div class="io-block"><div class="lbl">🔗 关联条目</div><pre>E2E 加密对比 (3)
+Signal 协议论文 (2)
+X25519 实现 (5)</pre></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="step done">
+            <div class="marker"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M5 12l5 5L20 7"/></svg></div>
+            <div class="head">
+              <span class="num">03</span>
+              <span class="title">搜索 v3 协议官方文档</span>
+              <span class="badge">完成</span>
+              <span class="time">18.4s</span>
+            </div>
+            <div class="body">
+              <div class="tool-row">
+                <div class="ico"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+                <div class="name">web_search</div>
+                <div class="status">✓ 12 results</div>
+              </div>
+              已从 GitHub 拉取 v3-protocol.md (8.4 KB) · 重点章节：密钥派生、握手流程、加密层
+            </div>
+          </div>
+
+          <div class="step running">
+            <div class="marker"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg></div>
+            <div class="head">
+              <span class="num">04</span>
+              <span class="title">对比 X25519+ChaCha20 vs Signal 协议</span>
+              <span class="badge">执行中</span>
+              <span class="time">32.6s</span>
+            </div>
+            <div class="body">
+              正在分析两个协议在以下维度的差异：
+              <div class="tool-row">
+                <div class="ico"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 21V9"/></svg></div>
+                <div class="name">compute_diff</div>
+                <div class="status running">运行中 · 64%</div>
+              </div>
+              <div class="io">
+                <div class="io-block"><div class="lbl">对比维度</div><pre>密钥交换
+前向保密
+握手往返
+性能
+抗量子</pre></div>
+                <div class="io-block"><div class="lbl">初步结论</div><pre>X25519+ChaCha20 更轻量
+Signal 协议支持 PFS
+v3 应该增加 PFS 优化</pre></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="step pending">
+            <div class="marker"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 6v6l4 2"/></svg></div>
+            <div class="head">
+              <span class="num">05</span>
+              <span class="title">查找相关学术论文</span>
+              <span class="badge">待执行</span>
+            </div>
+          </div>
+
+          <div class="step pending">
+            <div class="marker"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 6v6l4 2"/></svg></div>
+            <div class="head">
+              <span class="num">06</span>
+              <span class="title">生成 markdown 笔记</span>
+              <span class="badge">待执行</span>
+            </div>
+          </div>
+
+          <div class="step pending">
+            <div class="marker"><svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 6v6l4 2"/></svg></div>
+            <div class="head">
+              <span class="num">07</span>
+              <span class="title">保存到「ClipSync」项目</span>
+              <span class="badge">待执行</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="task-input">
+        <div class="box">
+          <textarea id="input" placeholder="给 Agent 下一步指令，或 ⌘K 插入已有 Artifact..." rows="1" oninput="autoResize(this); toggleSend()" onkeydown="onKey(event)"></textarea>
+          <button class="send" id="send-btn" onclick="interrupt()" disabled title="发送 (⌘↩)">
+            <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M5 12l14 0M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Live activity stream -->
+    <aside class="agent-activity">
+      <div class="act-head">
+        <span class="dot"></span>
+        <h3>Live Activity</h3>
+        <span class="badge">RUNNING</span>
+        <span class="icon-btn" onclick="showToast('暂停日志流')" title="暂停"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><rect x="6" y="4" width="4" height="16"/></svg></span>
+        <span class="icon-btn" onclick="showToast('已清空日志')" title="清空"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
+      </div>
+      <div class="act-tabs">
+        <div class="act-tab is-on" onclick="setActTab(this)">日志 <span class="count">47</span></div>
+        <div class="act-tab" onclick="setActTab(this)">工具 <span class="count">12</span></div>
+        <div class="act-tab" onclick="setActTab(this)">网络 <span class="count">8</span></div>
+      </div>
+      <div class="act-stream" id="act-stream">
+        <div class="log-line"><span class="ts">10:24:02</span><span class="lvl info">[INFO]</span><span class="msg">任务创建 · <span class="em">id=1847</span></span></div>
+        <div class="log-line"><span class="ts">10:24:02</span><span class="lvl think">[PLAN]</span><span class="msg">已加载长期记忆 <span class="num">23</span> 条相关偏好</span></div>
+        <div class="log-line"><span class="ts">10:24:04</span><span class="lvl info">[INFO]</span><span class="msg">TaskAnalyzer: 拆解为 7 步 · 预计 6-8 分钟</span></div>
+        <div class="log-line"><span class="ts">10:24:04</span><span class="lvl ok">[OK]</span><span class="msg">Step 1 完成 · <span class="em">理解任务并制定计划</span> · 2.1s</span></div>
+        <div class="log-line"><span class="ts">10:24:05</span><span class="lvl tool">[TOOL]</span><span class="msg"><span class="em">read_clipboard</span>({ since: "7d", keywords: ["v3", "E2E", "X25519"] })</span></div>
+        <div class="log-line"><span class="ts">10:24:06</span><span class="lvl ok">[OK]</span><span class="msg">Step 2 完成 · <span class="em">读取剪贴板</span> · 23 条 · 0.8s</span></div>
+        <div class="log-line"><span class="ts">10:24:24</span><span class="lvl tool">[TOOL]</span><span class="msg"><span class="em">web_search</span>({ query: "clipsync v3 E2E protocol", limit: 12 })</span></div>
+        <div class="log-line"><span class="ts">10:24:42</span><span class="lvl ok">[OK]</span><span class="msg">Step 3 完成 · <span class="em">搜索官方文档</span> · 18.4s · 12 results</span></div>
+        <div class="log-line"><span class="ts">10:24:42</span><span class="lvl think">[THINK]</span><span class="msg">分析 v3-spec.md 章节结构：密钥派生 / 握手 / 加密层 / 错误处理</span></div>
+        <div class="log-line"><span class="ts">10:24:43</span><span class="lvl tool">[TOOL]</span><span class="msg"><span class="em">read_url</span>({ url: "github.com/clipsync/v3-spec/blob/main/README.md" })</span></div>
+        <div class="log-line"><span class="ts">10:24:48</span><span class="lvl ok">[OK]</span><span class="msg">loaded 8.4 KB · 4 sections</span></div>
+        <div class="log-line"><span class="ts">10:24:49</span><span class="lvl think">[THINK]</span><span class="msg">对比 X25519+ChaCha20 vs Signal 协议 — 5 个维度</span></div>
+        <div class="log-line"><span class="ts">10:24:49</span><span class="lvl tool">[TOOL]</span><span class="msg"><span class="em">compute_diff</span>({ a: "x25519-chacha20", b: "signal", dimensions: 5 })</span></div>
+        <div class="log-line"><span class="ts">10:24:53</span><span class="lvl info">[INFO]</span><span class="msg">analyzing dimension 1/5: <span class="em">key_exchange</span> ...</span></div>
+        <div class="log-line"><span class="ts">10:24:58</span><span class="lvl info">[INFO]</span><span class="msg">analyzing dimension 2/5: <span class="em">forward_secrecy</span> ...</span></div>
+        <div class="log-line"><span class="ts">10:25:04</span><span class="lvl info">[INFO]</span><span class="msg">analyzing dimension 3/5: <span class="em">handshake_rtt</span> ...</span></div>
+        <div class="log-line"><span class="ts">10:25:11</span><span class="lvl info">[INFO]</span><span class="msg">analyzing dimension 4/5: <span class="em">performance</span> ...</span></div>
+        <div class="log-line"><span class="ts">10:25:14</span><span class="lvl info">[INFO]</span><span class="msg">analyzing dimension 5/5: <span class="em">quantum_resistance</span> ...</span></div>
+        <div class="log-line"><span class="ts">10:25:15</span><span class="lvl think">[THINK]</span><span class="msg">生成初步对比矩阵 · 发现 v3 缺 PFS</span></div>
+        <div class="log-line"><span class="ts">10:25:16</span><span class="lvl tool">[TOOL]</span><span class="msg"><span class="em">search_papers</span>({ query: "post-quantum X25519 alternatives 2024-2025" })</span></div>
+        <div class="log-line"><span class="ts">10:25:20</span><span class="lvl ok">[OK]</span><span class="msg">found 4 papers</span></div>
+        <div class="log-line"><span class="ts">10:25:21</span><span class="lvl info">[INFO]</span><span class="msg">Step 4 running · 32.6s</span></div>
+        <div class="log-line"><span class="ts">10:25:22</span><span class="lvl think">[THINK]</span><span class="msg">准备生成最终对比表格 ...</span></div>
+      </div>
+      <div class="act-foot">
+        <span>已运行 1m 12s</span>
+        <span style="flex:1"></span>
+        <span>47 events · 12 tools</span>
+      </div>
+    </aside>
+  </div>
+
+  <div class="toast-stack" id="toasts"></div>
+
+  <script>
+    // === Rail ===
+    function setRail(el) { document.querySelectorAll('.agent-rail .btn-r').forEach(b => b.classList.remove('is-on')); el.classList.add('is-on'); }
+    // === Task select ===
+    function selectTask(card) {
+      document.querySelectorAll('.q-card').forEach(c => c.classList.remove('is-on'));
+      card.classList.add('is-on');
+      showToast('已加载任务', card.querySelector('.title').textContent);
+    }
+    function setQTab(t) { document.querySelectorAll('.q-tab').forEach(x => x.classList.remove('is-on')); t.classList.add('is-on'); }
+    function newTask() { showToast('新建任务', '请描述你想让 Agent 自动完成的事'); }
+    function pauseTask() { showToast('任务已暂停', '点击继续恢复'); }
+    function stopTask() { if (confirm('确定要停止这个任务吗？已完成的步骤会保留。')) showToast('任务已停止'); }
+
+    // === Activity tab ===
+    function setActTab(t) { document.querySelectorAll('.act-tab').forEach(x => x.classList.remove('is-on')); t.classList.add('is-on'); }
+
+    // === Log streaming demo ===
+    let logIndex = 0;
+    const logTemplates = [
+      ['info', 'processing next chunk ...'],
+      ['think', 'reasoning about edge cases'],
+      ['tool', 'analyze_text({ length: 1247 })'],
+      ['ok', 'tool returned 3 matches'],
+      ['info', 'Step 4 progress: 78%'],
+      ['think', 'considering best format for output'],
+      ['tool', 'format_table({ rows: 5, cols: 4 })'],
+    ];
+    function pushLog() {
+      const tmpl = logTemplates[logIndex % logTemplates.length];
+      logIndex++;
+      const now = new Date();
+      const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+      const stream = document.getElementById('act-stream');
+      stream.insertAdjacentHTML('beforeend', `
+        <div class="log-line">
+          <span class="ts">${ts}</span>
+          <span class="lvl ${tmpl[0]}">[${tmpl[0].toUpperCase()}]</span>
+          <span class="msg">${tmpl[1]}</span>
+        </div>
+      `);
+      stream.scrollTop = stream.scrollHeight;
+    }
+    setInterval(pushLog, 2200);
+
+    // === Composer ===
+    function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 100) + 'px'; }
+    function toggleSend() { document.getElementById('send-btn').disabled = !document.getElementById('input').value.trim(); }
+    function onKey(e) { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') interrupt(); }
+    function interrupt() { showToast('指令已发送', 'Agent 将在当前步骤完成后处理'); }
+
+    // === Toast ===
+    function showToast(title, desc) {
+      const stack = document.getElementById('toasts');
+      const t = document.createElement('div');
+      t.className = 'toast-x';
+      t.innerHTML = (desc ? '<b>' + title + '</b> · ' + desc : title);
+      stack.appendChild(t);
+      setTimeout(() => { t.style.transition = 'all 200ms'; t.style.opacity = '0'; t.style.transform = 'translateY(20px)'; setTimeout(() => t.remove(), 220); }, 2400);
+    }
+    toggleSend();
+  </script>
+</body>
+</html>

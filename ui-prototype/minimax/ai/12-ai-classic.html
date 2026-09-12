@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>12 · AI Classic — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    /* === Classic ChatGPT-style === */
+    :root {
+      --bg-page: oklch(99% 0 0);
+      --bg-sidebar: oklch(98% 0 0);
+      --bg-msg-user: oklch(58% 0.18 var(--accent-hue));
+      --bg-msg-ai: oklch(96% 0 0);
+      --border-faint: oklch(94% 0 0);
+    }
+    body { background: var(--bg-page); height: 100vh; overflow: hidden; }
+
+    .classic-shell { display: grid; grid-template-columns: 260px 1fr; height: 100vh; }
+
+    /* === Sidebar === */
+    .classic-side {
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-faint);
+      display: flex; flex-direction: column;
+    }
+    .side-head { padding: 12px; display: flex; align-items: center; gap: 8px; }
+    .side-head .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--accent-500); display: grid; place-items: center; color: white; font-weight: 700; }
+    .side-head .title { font-size: var(--type-sm); color: var(--text-strong); font-weight: 600; }
+    .side-head .ver { font-size: 10px; color: var(--text-faint); margin-left: auto; padding: 2px 6px; background: var(--surface-2); border-radius: 4px; font-family: 'Geist Mono', monospace; }
+
+    .new-chat {
+      margin: 4px 12px 12px;
+      padding: 10px 14px;
+      background: var(--accent-500);
+      color: white;
+      border-radius: 10px;
+      font-size: var(--type-sm);
+      font-weight: 500;
+      display: flex; align-items: center; gap: 8px;
+      cursor: pointer;
+      transition: all 200ms;
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+    .new-chat:hover { background: var(--accent-600); transform: translateY(-1px); }
+    .new-chat svg { width: 16px; height: 16px; }
+
+    .side-search {
+      margin: 0 12px 8px;
+      padding: 8px 12px;
+      background: var(--surface-0);
+      border: 1px solid var(--border-faint);
+      border-radius: 8px;
+      display: flex; align-items: center; gap: 8px;
+      font-size: var(--type-xs);
+      color: var(--text-muted);
+      transition: all 160ms;
+    }
+    .side-search:hover { border-color: var(--hairline-strong); }
+    .side-search input { flex: 1; font-size: var(--type-sm); color: var(--text-strong); }
+    .side-search .kbd { font-family: 'Geist Mono', monospace; font-size: 10px; padding: 1px 5px; background: var(--surface-2); border-radius: 3px; color: var(--text-faint); }
+
+    .side-section { padding: 12px 12px 4px; font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+
+    .side-list { flex: 1; overflow-y: auto; padding: 0 6px 8px; }
+    .side-list .item {
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: var(--type-sm);
+      color: var(--text-default);
+      cursor: pointer;
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 1px;
+      transition: all 160ms;
+      position: relative;
+    }
+    .side-list .item:hover { background: var(--surface-2); color: var(--text-strong); }
+    .side-list .item.is-on { background: var(--accent-tint); color: var(--accent-700); }
+    .side-list .item .ico { color: var(--text-faint); flex-shrink: 0; }
+    .side-list .item.is-on .ico { color: var(--accent-600); }
+    .side-list .item .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .side-list .item .more { opacity: 0; transition: opacity 160ms; color: var(--text-faint); padding: 2px; }
+    .side-list .item:hover .more { opacity: 1; }
+
+    .side-foot {
+      border-top: 1px solid var(--border-faint);
+      padding: 8px 12px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .user-av { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--accent-400), var(--accent-600)); display: grid; place-items: center; color: white; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+    .user-info { flex: 1; min-width: 0; }
+    .user-info .n { font-size: var(--type-sm); color: var(--text-strong); font-weight: 500; }
+    .user-info .p { font-size: 10.5px; color: var(--text-faint); }
+    .side-foot .icon-btn { color: var(--text-faint); padding: 4px; border-radius: 4px; cursor: pointer; }
+    .side-foot .icon-btn:hover { background: var(--surface-2); color: var(--text-strong); }
+
+    /* === Main === */
+    .classic-main { display: flex; flex-direction: column; min-width: 0; background: var(--bg-page); }
+
+    .top-bar {
+      padding: 10px 20px;
+      display: flex; align-items: center; gap: 12px;
+      border-bottom: 1px solid var(--border-faint);
+    }
+    .top-bar .title { font-size: var(--type-sm); color: var(--text-strong); font-weight: 500; flex: 1; text-align: center; max-width: 360px; margin: 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .top-bar .icon-btn { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; color: var(--text-muted); transition: all 160ms; }
+    .top-bar .icon-btn:hover { background: var(--surface-2); color: var(--text-strong); }
+    .model-pill {
+      padding: 6px 10px 6px 8px;
+      background: var(--surface-1);
+      border: 1px solid var(--border-faint);
+      border-radius: 999px;
+      display: flex; align-items: center; gap: 6px;
+      font-size: var(--type-xs);
+      color: var(--text-default);
+      cursor: pointer;
+      transition: all 160ms;
+    }
+    .model-pill:hover { border-color: var(--hairline-strong); }
+    .model-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-success); }
+    .model-pill .chev { color: var(--text-faint); }
+
+    .chat-area { flex: 1; overflow-y: auto; padding: 24px 0; scroll-behavior: smooth; }
+    .chat-inner { max-width: 760px; margin: 0 auto; padding: 0 20px; }
+
+    .msg { margin-bottom: 28px; display: flex; gap: 14px; animation: msgIn 320ms var(--ease-out); }
+    @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    .msg .av { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; font-weight: 600; font-size: 13px; }
+    .msg.user .av { background: oklch(94% 0 0); color: var(--text-strong); }
+    .msg.ai .av { background: linear-gradient(135deg, var(--accent-400), var(--accent-600)); color: white; }
+    .msg .body { flex: 1; min-width: 0; }
+    .msg .name { font-size: var(--type-sm); color: var(--text-strong); font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+    .msg .name .time { font-size: 11px; color: var(--text-faint); font-weight: 400; }
+    .msg .content { font-size: 15px; line-height: 1.7; color: var(--text-default); }
+    .msg .content p { margin-bottom: 12px; }
+    .msg .content p:last-child { margin-bottom: 0; }
+    .msg .content strong { color: var(--text-strong); font-weight: 600; }
+    .msg .content code { font-family: 'Geist Mono', monospace; font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+    .msg .content pre { background: var(--text-strong); color: var(--surface-0); padding: 16px; border-radius: 12px; overflow-x: auto; font-family: 'Geist Mono', monospace; font-size: 13px; line-height: 1.6; margin: 12px 0; }
+    .msg .content pre code { background: none; color: inherit; padding: 0; }
+    .msg .content ul { padding-left: 24px; margin-bottom: 12px; }
+    .msg .content li { list-style: disc; margin-bottom: 4px; }
+
+    .msg .actions { display: flex; gap: 4px; margin-top: 8px; opacity: 0; transition: opacity 200ms; }
+    .msg:hover .actions { opacity: 1; }
+    .msg .actions button { padding: 4px 8px; background: transparent; border: none; color: var(--text-faint); font-size: 11.5px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    .msg .actions button:hover { background: var(--surface-2); color: var(--text-strong); }
+
+    /* Code block with copy */
+    .code-block { position: relative; }
+    .code-block .copy-btn { position: absolute; top: 8px; right: 8px; padding: 4px 8px; background: oklch(100% 0 0 / 0.1); color: oklch(95% 0 0); border: 1px solid oklch(100% 0 0 / 0.2); border-radius: 6px; font-size: 11px; cursor: pointer; opacity: 0; transition: opacity 200ms; }
+    .code-block:hover .copy-btn { opacity: 1; }
+    .code-block .copy-btn:hover { background: oklch(100% 0 0 / 0.2); }
+
+    /* === Composer === */
+    .composer-wrap { padding: 12px 20px 20px; background: linear-gradient(to top, var(--bg-page) 80%, transparent); }
+    .composer {
+      max-width: 760px;
+      margin: 0 auto;
+      background: var(--surface-0);
+      border: 1px solid var(--border-faint);
+      border-radius: 24px;
+      box-shadow: 0 4px 24px oklch(20% 0.02 270 / 0.06);
+      padding: 12px 12px 8px;
+      transition: all 200ms;
+    }
+    .composer:focus-within { border-color: var(--accent-400); box-shadow: 0 4px 24px var(--accent-glow); }
+
+    .composer-tools { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
+    .composer-tools button { padding: 4px 10px; background: var(--surface-2); border: 1px solid transparent; color: var(--text-muted); font-size: 12px; border-radius: 999px; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 160ms; }
+    .composer-tools button:hover { background: var(--surface-3); color: var(--text-strong); }
+    .composer-tools button.is-on { background: var(--accent-tint); color: var(--accent-700); border-color: var(--accent-300); }
+
+    .composer-input { width: 100%; min-height: 24px; max-height: 200px; padding: 8px 12px; font-size: 15px; line-height: 1.5; border: none; outline: none; resize: none; font-family: inherit; color: var(--text-strong); background: transparent; }
+    .composer-input::placeholder { color: var(--text-faint); }
+
+    .composer-foot { display: flex; align-items: center; gap: 4px; padding: 0 4px; margin-top: 4px; }
+    .composer-foot .left { display: flex; gap: 2px; }
+    .composer-foot .left button, .composer-foot .right button { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: transparent; border: none; color: var(--text-faint); cursor: pointer; transition: all 160ms; }
+    .composer-foot .left button:hover, .composer-foot .right button:hover { background: var(--surface-2); color: var(--text-strong); }
+    .composer-foot .grow { flex: 1; }
+    .composer-foot .send-btn { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-500); color: white; display: grid; place-items: center; border: none; cursor: pointer; transition: all 160ms; }
+    .composer-foot .send-btn:hover { background: var(--accent-600); transform: scale(1.05); }
+    .composer-foot .send-btn:disabled { background: var(--surface-3); color: var(--text-faint); cursor: not-allowed; transform: none; }
+    .composer-foot .send-btn.recording { background: var(--status-danger); }
+
+    .composer-hint { max-width: 760px; margin: 8px auto 0; font-size: 11px; color: var(--text-faint); text-align: center; }
+    .composer-hint kbd { font-family: 'Geist Mono', monospace; font-size: 10.5px; padding: 1px 5px; background: var(--surface-2); border-radius: 3px; color: var(--text-muted); margin: 0 2px; }
+
+    /* === Welcome state === */
+    .welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; padding: 40px 20px; }
+    .welcome h1 { font-size: 28px; font-weight: 700; color: var(--text-strong); margin-bottom: 8px; letter-spacing: -0.02em; }
+    .welcome p { color: var(--text-muted); font-size: var(--type-md); margin-bottom: 32px; }
+    .welcome .suggest { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 540px; width: 100%; }
+    .welcome .suggest button { padding: 12px 14px; background: var(--surface-1); border: 1px solid var(--border-faint); border-radius: 12px; text-align: left; font-size: var(--type-sm); color: var(--text-default); cursor: pointer; transition: all 200ms; }
+    .welcome .suggest button:hover { background: var(--surface-2); border-color: var(--accent-300); }
+    .welcome .suggest button .ico { color: var(--text-faint); margin-bottom: 4px; }
+    .welcome .suggest button .lbl { display: block; color: var(--text-strong); font-weight: 500; margin-bottom: 2px; font-size: var(--type-sm); }
+
+    /* === Typing indicator === */
+    .typing { display: inline-flex; gap: 4px; padding: 4px 0; }
+    .typing span { width: 6px; height: 6px; background: var(--text-muted); border-radius: 50%; animation: typing 1.4s infinite; opacity: 0.4; }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+
+    /* === Toast === */
+    .toast-stack { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 200; }
+    .toast-x { background: var(--text-strong); color: white; padding: 10px 16px; border-radius: 10px; font-size: var(--type-sm); animation: slideup 200ms var(--ease-spring); box-shadow: 0 8px 24px oklch(20% 0.02 270 / 0.2); }
+    @keyframes slideup { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* === Popover for model picker === */
+    .model-pop {
+      position: absolute; top: 56px; right: 20px;
+      background: var(--surface-0); border: 1px solid var(--border-faint);
+      border-radius: 12px; padding: 6px; min-width: 280px;
+      box-shadow: 0 12px 40px oklch(20% 0.02 270 / 0.12);
+      display: none; z-index: 50;
+    }
+    .model-pop.is-open { display: block; animation: popin 200ms var(--ease-spring); }
+    @keyframes popin { from { opacity: 0; transform: scale(0.96) translateY(-4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    .model-pop .item { padding: 10px 12px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: all 160ms; }
+    .model-pop .item:hover { background: var(--surface-2); }
+    .model-pop .item.is-on { background: var(--accent-tint); }
+    .model-pop .item .ico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; }
+    .model-pop .item .body { flex: 1; }
+    .model-pop .item .body .n { font-size: var(--type-sm); color: var(--text-strong); font-weight: 500; }
+    .model-pop .item .body .d { font-size: 11px; color: var(--text-muted); }
+    .model-pop .item .check { color: var(--accent-500); opacity: 0; }
+    .model-pop .item.is-on .check { opacity: 1; }
+
+    .popover-menu {
+      position: absolute; background: var(--surface-0); border: 1px solid var(--border-faint);
+      border-radius: 8px; padding: 4px; min-width: 160px;
+      box-shadow: 0 8px 24px oklch(20% 0.02 270 / 0.12);
+      display: none; z-index: 60;
+    }
+    .popover-menu.is-open { display: block; animation: popin 160ms var(--ease-spring); }
+    .popover-menu .item { padding: 7px 10px; border-radius: 6px; font-size: var(--type-sm); color: var(--text-default); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .popover-menu .item:hover { background: var(--surface-2); }
+    .popover-menu .item.danger { color: var(--status-danger); }
+    .popover-menu .sep { height: 1px; background: var(--border-faint); margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="classic-shell">
+    <!-- ===== Sidebar ===== -->
+    <aside class="classic-side">
+      <div class="side-head">
+        <div class="logo">P</div>
+        <div class="title">Pulse AI</div>
+        <div class="ver">v2.4</div>
+      </div>
+
+      <div class="new-chat" onclick="newChat()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        新对话
+      </div>
+
+      <div class="side-search">
+        <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;color:var(--text-faint);"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input placeholder="搜索对话..." />
+        <span class="kbd">⌘K</span>
+      </div>
+
+      <div class="side-list" id="side-list">
+        <div class="side-section">今天</div>
+        <div class="item is-on" data-id="1">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="lbl">总结今天复制的所有内容</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+        <div class="item" data-id="2">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M4 5h7M9 3v2c0 4.42-2.46 8.19-6 9.83"/></svg>
+          <span class="lbl">把这段 SQL 翻译成 TypeScript</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+        <div class="item" data-id="3">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M9 11l3 3L22 4"/></svg>
+          <span class="lbl">提取这周的 TODO 列表</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+
+        <div class="side-section">昨天</div>
+        <div class="item" data-id="4">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+          <span class="lbl">解释这段 Rust 代码</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+        <div class="item" data-id="5">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/></svg>
+          <span class="lbl">帮我起草会议邀请</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+
+        <div class="side-section">本周早些时候</div>
+        <div class="item" data-id="6">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+          <span class="lbl">Pulse 设计系统调研</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+        <div class="item" data-id="7">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          <span class="lbl">把对话整理成周报格式</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+        <div class="item" data-id="8">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M20 7L9 18l-5-5"/></svg>
+          <span class="lbl">GitHub issue 翻译成中文</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+        <div class="item" data-id="9">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span class="lbl">分析用户增长数据</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+        <div class="item" data-id="10">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M12 2L4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
+          <span class="lbl">端到端加密协议对比</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+
+        <div class="side-section">上月</div>
+        <div class="item" data-id="11">
+          <svg class="icon ico" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/></svg>
+          <span class="lbl">Tauri vs Electron 性能</span>
+          <span class="more" onclick="event.stopPropagation(); showItemMenu(event, this)">⋯</span>
+        </div>
+      </div>
+
+      <div class="side-foot">
+        <div class="user-av">C</div>
+        <div class="user-info">
+          <div class="n">Carlos</div>
+          <div class="p">Pro · 428 calls</div>
+        </div>
+        <span class="icon-btn" onclick="showToast('设置面板即将打开')" title="设置">
+          <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg>
+        </span>
+        <span class="icon-btn" onclick="showToast('已退出登录')" title="登出">
+          <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        </span>
+      </div>
+    </aside>
+
+    <!-- ===== Main ===== -->
+    <main class="classic-main">
+      <div class="top-bar">
+        <div class="model-pill" id="model-pill" onclick="toggleModelPop()">
+          <span class="dot"></span>
+          <span id="model-name">Claude Sonnet 4.5</span>
+          <svg class="icon chev" viewBox="0 0 24 24" style="width:12px;height:12px;"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="grow"></div>
+        <div class="title">总结今天复制的所有内容</div>
+        <div class="grow"></div>
+        <span class="icon-btn" onclick="showToast('已分享')" title="分享">
+          <svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+        </span>
+        <span class="icon-btn" onclick="showToast('历史记录')" title="更多">
+          <svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px;"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+        </span>
+      </div>
+
+      <div class="model-pop" id="model-pop">
+        <div class="item is-on" onclick="selectModel(this, 'Claude Sonnet 4.5', '推理强 · 适合复杂任务')">
+          <div class="ico" style="background:oklch(70% 0.14 30 / 0.12);color:oklch(40% 0.14 30);">
+            <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/></svg>
+          </div>
+          <div class="body"><div class="n">Claude Sonnet 4.5</div><div class="d">推理强 · 适合复杂任务</div></div>
+          <svg class="icon check" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M5 12l5 5L20 7"/></svg>
+        </div>
+        <div class="item" onclick="selectModel(this, 'GPT-5', '通用 · 速度快')">
+          <div class="ico" style="background:oklch(64% 0.16 150 / 0.12);color:oklch(40% 0.16 150);">
+            <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3 4-3 9-3 9 1.34 9 3z"/></svg>
+          </div>
+          <div class="body"><div class="n">GPT-5</div><div class="d">通用 · 速度快</div></div>
+          <svg class="icon check" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M5 12l5 5L20 7"/></svg>
+        </div>
+        <div class="item" onclick="selectModel(this, 'step-3.7-flash', '云端 · 80 t/s')">
+          <div class="ico" style="background:oklch(64% 0.14 230 / 0.12);color:oklch(40% 0.14 230);">
+            <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg>
+          </div>
+          <div class="body"><div class="n">step-3.7-flash</div><div class="d">云端 · 80 t/s · 300ms 延迟</div></div>
+          <svg class="icon check" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M5 12l5 5L20 7"/></svg>
+        </div>
+        <div class="item" onclick="selectModel(this, 'Ollama qwen2.5', '本地 · 离线免费')">
+          <div class="ico" style="background:oklch(70% 0.14 280 / 0.12);color:oklch(40% 0.14 280);">
+            <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><rect x="3" y="6" width="18" height="12" rx="2"/></svg>
+          </div>
+          <div class="body"><div class="n">Ollama qwen2.5-7b</div><div class="d">本地 · 离线 · 免费</div></div>
+          <svg class="icon check" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M5 12l5 5L20 7"/></svg>
+        </div>
+      </div>
+
+      <div class="popover-menu" id="item-menu">
+        <div class="item" onclick="itemAction('分享')">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+          分享
+        </div>
+        <div class="item" onclick="itemAction('重命名')">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+          重命名
+        </div>
+        <div class="item" onclick="itemAction('固定到顶部')">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 2L4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
+          固定到顶部
+        </div>
+        <div class="sep"></div>
+        <div class="item danger" onclick="itemAction('删除')">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          删除
+        </div>
+      </div>
+
+      <div class="chat-area" id="chat-area">
+        <div class="chat-inner">
+          <!-- Message 1: User -->
+          <div class="msg user">
+            <div class="av">C</div>
+            <div class="body">
+              <div class="name">Carlos <span class="time">10:24 AM</span></div>
+              <div class="content"><p>总结一下我今天复制的所有内容，按主题分一下组</p></div>
+            </div>
+          </div>
+
+          <!-- Message 2: AI -->
+          <div class="msg ai">
+            <div class="av">P</div>
+            <div class="body">
+              <div class="name">Pulse <span class="time">10:24 AM</span></div>
+              <div class="content">
+                <p>今天你一共复制了 <strong>47 条</strong>内容，跨 3 台设备。我按主题分成了 3 组：</p>
+                <ul>
+                  <li><strong>技术调研 (14 条)</strong> · GitHub issue、AI Agent 论文、Tauri 性能对比</li>
+                  <li><strong>数据回顾 (8 条)</strong> · 季度复盘、用户增长曲线、留存分析</li>
+                  <li><strong>会议准备 (11 条)</strong> · 1:1 议程、产品评审、Q4 OKR</li>
+                </ul>
+                <p>建议把 <code>next 1:1 准备清单</code> 存为模板，这样下次直接调用。</p>
+                <pre><code>📊 今日摘要
+━━━━━━━━━━━━━━━━━━━
+技术调研  14 条  ███████░░░░  30%
+数据回顾   8 条  ████░░░░░░░  17%
+会议准备  11 条  █████░░░░░░  23%
+其他杂项  14 条  ██████░░░░░  30%</code></pre>
+              </div>
+              <div class="actions">
+                <button onclick="showToast('已复制')"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><rect x="9" y="9" width="13" height="13" rx="2"/></svg> 复制</button>
+                <button onclick="showToast('👍 反馈已记录')">👍 有用</button>
+                <button onclick="showToast('👎 反馈已记录')">👎 不准</button>
+                <button onclick="showToast('已重新生成')">↻ 重新生成</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Message 3: User -->
+          <div class="msg user">
+            <div class="av">C</div>
+            <div class="body">
+              <div class="name">Carlos <span class="time">10:26 AM</span></div>
+              <div class="content"><p>把会议准备那 11 条展开看看，每条给我一句话要点</p></div>
+            </div>
+          </div>
+
+          <!-- Message 4: AI -->
+          <div class="msg ai">
+            <div class="av">P</div>
+            <div class="body">
+              <div class="name">Pulse <span class="time">10:26 AM</span></div>
+              <div class="content">
+                <p>好嘞。11 条会议准备：</p>
+                <ol style="padding-left:24px;">
+                  <li><strong>1:1 with @lily</strong> — 讨论 Q3 review 反馈与下一步目标</li>
+                  <li><strong>产品评审</strong> — Halo 侧栏 v2 改版方案走查</li>
+                  <li><strong>Q4 OKR 校准</strong> — 与 @mike 对齐用户增长指标</li>
+                  <li><strong>设计师周会</strong> — IconRail 动效风格定调</li>
+                  <li><strong>招聘复盘</strong> — 高级前端候选人评估</li>
+                  <li><strong>客户访谈</strong> — 大客户 反馈整理</li>
+                </ol>
+                <p>想看全部 11 条 → 我可以导出成 1Password 笔记格式。</p>
+              </div>
+              <div class="actions">
+                <button onclick="showToast('已复制')"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><rect x="9" y="9" width="13" height="13" rx="2"/></svg> 复制</button>
+                <button onclick="showToast('👍 反馈已记录')">👍 有用</button>
+                <button onclick="showToast('👎 反馈已记录')">👎 不准</button>
+                <button onclick="showToast('已展开 11 条')">↻ 全部展开</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer-wrap">
+        <div class="composer">
+          <div class="composer-tools">
+            <button class="is-on" onclick="this.classList.toggle('is-on')" title="附件">
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              附件
+            </button>
+            <button onclick="this.classList.toggle('is-on')" title="搜索">
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              搜索
+            </button>
+            <button onclick="this.classList.toggle('is-on')" title="推理">
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 3a9 9 0 0 1 9 9c0 3-1.5 5-3 6.5L17 21h-4l-.5-2h-1L11 21H7l-1-2.5C4.5 17 3 15 3 12a9 9 0 0 1 9-9z"/></svg>
+              推理
+            </button>
+            <button onclick="this.classList.toggle('is-on')" title="记忆">
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3 4-3 9-3 9 1.34 9 3z"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+              记忆
+            </button>
+          </div>
+          <textarea class="composer-input" id="composer-input" placeholder="问 Pulse 任何事... (Shift+Enter 换行)" rows="1" onkeydown="onComposerKey(event)" oninput="autoResize(this); toggleSend()"></textarea>
+          <div class="composer-foot">
+            <div class="left">
+              <button onclick="showToast('已打开图片上传')" title="上传图片">
+                <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+              </button>
+              <button onclick="showToast('已打开画布')" title="画布">
+                <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="2"/></svg>
+              </button>
+              <button id="mic-btn" onclick="toggleMic()" title="语音">
+                <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+              </button>
+            </div>
+            <div class="grow"></div>
+            <div class="right">
+              <span style="font-size:11px;color:var(--text-faint);margin-right:8px;font-family:'Geist Mono',monospace;">128 / 8192 tokens</span>
+              <button class="send-btn" id="send-btn" onclick="sendMsg()" disabled title="发送 (Enter)">
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M5 12l14 0M12 5l7 7-7 7"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="composer-hint">
+          <kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行 · <kbd>/</kbd> 召唤指令
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast-stack" id="toasts"></div>
+
+  <script>
+    // === Sidebar item click ===
+    document.querySelectorAll('.side-list .item').forEach(item => {
+      item.addEventListener('click', e => {
+        if (e.target.classList.contains('more')) return;
+        document.querySelectorAll('.side-list .item').forEach(i => i.classList.remove('is-on'));
+        item.classList.add('is-on');
+        const title = item.querySelector('.lbl').textContent;
+        document.querySelector('.top-bar .title').textContent = title;
+      });
+    });
+
+    // === Item menu ===
+    function showItemMenu(e, el) {
+      e.stopPropagation();
+      const menu = document.getElementById('item-menu');
+      const rect = el.getBoundingClientRect();
+      menu.style.top = (rect.bottom + 4) + 'px';
+      menu.style.left = (rect.left - 140) + 'px';
+      menu.classList.add('is-open');
+    }
+    function itemAction(name) {
+      document.getElementById('item-menu').classList.remove('is-open');
+      showToast('已' + (name === '删除' ? '删除' : name === '固定到顶部' ? '固定' : name), name + '成功');
+    }
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#item-menu')) document.getElementById('item-menu').classList.remove('is-open');
+    });
+
+    // === Model picker ===
+    function toggleModelPop() {
+      document.getElementById('model-pop').classList.toggle('is-open');
+    }
+    function selectModel(el, name, desc) {
+      document.querySelectorAll('#model-pop .item').forEach(i => i.classList.remove('is-on'));
+      el.classList.add('is-on');
+      document.getElementById('model-name').textContent = name;
+      document.getElementById('model-pop').classList.remove('is-open');
+      showToast('已切换模型', name);
+    }
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#model-pop') && !e.target.closest('#model-pill')) document.getElementById('model-pop').classList.remove('is-open');
+    });
+
+    // === New chat ===
+    function newChat() {
+      document.querySelectorAll('.side-list .item').forEach(i => i.classList.remove('is-on'));
+      const chatArea = document.getElementById('chat-area');
+      chatArea.innerHTML = `
+        <div class="chat-inner">
+          <div class="welcome">
+            <h1>👋 你好, Carlos</h1>
+            <p>今天能帮你做什么？</p>
+            <div class="suggest">
+              <button onclick="setSuggest('总结今天复制的所有内容')">
+                <svg class="icon ico" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span class="lbl">总结今天</span>
+                <span>把今天的剪贴板聚成要点</span>
+              </button>
+              <button onclick="setSuggest('把这段 SQL 翻译成 TypeScript')">
+                <svg class="icon ico" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+                <span class="lbl">代码转换</span>
+                <span>把 SQL 翻译成 TypeScript</span>
+              </button>
+              <button onclick="setSuggest('帮我起草一封会议邀请')">
+                <svg class="icon ico" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/></svg>
+                <span class="lbl">起草邮件</span>
+                <span>基于收件人画像生成</span>
+              </button>
+              <button onclick="setSuggest('提取这周的 TODO 列表')">
+                <svg class="icon ico" viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <span class="lbl">提取 TODO</span>
+                <span>扫描对话识别任务</span>
+              </button>
+            </div>
+          </div>
+        </div>`;
+      document.querySelector('.top-bar .title').textContent = '新对话';
+      showToast('已新建对话', '空白画布就绪');
+    }
+
+    function setSuggest(text) {
+      const input = document.getElementById('composer-input');
+      input.value = text;
+      autoResize(input);
+      toggleSend();
+      input.focus();
+    }
+
+    // === Composer ===
+    function autoResize(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    }
+    function toggleSend() {
+      const v = document.getElementById('composer-input').value.trim();
+      document.getElementById('send-btn').disabled = !v;
+    }
+    function onComposerKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMsg();
+      }
+    }
+    function sendMsg() {
+      const input = document.getElementById('composer-input');
+      const text = input.value.trim();
+      if (!text) return;
+      const chat = document.getElementById('chat-area');
+      // If welcome state, clear it
+      if (chat.querySelector('.welcome')) chat.querySelector('.chat-inner').innerHTML = '';
+      // Add user msg
+      const chatInner = chat.querySelector('.chat-inner');
+      chatInner.insertAdjacentHTML('beforeend', `
+        <div class="msg user">
+          <div class="av">C</div>
+          <div class="body">
+            <div class="name">Carlos <span class="time">${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</span></div>
+            <div class="content"><p>${escapeHtml(text)}</p></div>
+          </div>
+        </div>
+      `);
+      input.value = '';
+      autoResize(input);
+      toggleSend();
+      chat.scrollTop = chat.scrollHeight;
+      // AI typing
+      chatInner.insertAdjacentHTML('beforeend', `
+        <div class="msg ai" id="typing-msg">
+          <div class="av">P</div>
+          <div class="body">
+            <div class="name">Pulse</div>
+            <div class="content"><div class="typing"><span></span><span></span><span></span></div></div>
+          </div>
+        </div>
+      `);
+      chat.scrollTop = chat.scrollHeight;
+      // AI response
+      setTimeout(() => {
+        const t = document.getElementById('typing-msg');
+        if (t) t.remove();
+        const responses = [
+          '好的，我来处理这个。基于你的剪贴板历史，我找到 3 条相关内容...',
+          '我分析了一下你的需求，建议这样做：<br><br>1. 先用 `/extract-todo` 提取任务<br>2. 再用 `/format` 转成 markdown<br>3. 最后保存到收藏夹',
+          '我看到你最近 3 天有 12 条相关剪贴板。要不要我帮你聚成一个概览？',
+          '好的，已识别为 SQL → TypeScript 转换。生成代码中...<br><br>```ts<br>const result = items.map(x => x.id);<br>```<br>需要我同时生成测试用例吗？'
+        ];
+        chatInner.insertAdjacentHTML('beforeend', `
+          <div class="msg ai">
+            <div class="av">P</div>
+            <div class="body">
+              <div class="name">Pulse <span class="time">${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</span></div>
+              <div class="content"><p>${responses[Math.floor(Math.random() * responses.length)]}</p></div>
+              <div class="actions">
+                <button onclick="showToast('已复制')"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><rect x="9" y="9" width="13" height="13" rx="2"/></svg> 复制</button>
+                <button onclick="showToast('👍 反馈已记录')">👍 有用</button>
+                <button onclick="showToast('👎 反馈已记录')">👎 不准</button>
+                <button onclick="showToast('已重新生成')">↻ 重新生成</button>
+              </div>
+            </div>
+          </div>
+        `);
+        chat.scrollTop = chat.scrollHeight;
+      }, 1000 + Math.random() * 600);
+    }
+    function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    // === Mic ===
+    function toggleMic() {
+      const btn = document.getElementById('mic-btn');
+      const sendBtn = document.getElementById('send-btn');
+      btn.classList.toggle('recording');
+      if (btn.classList.contains('recording')) {
+        sendBtn.classList.add('recording');
+        showToast('正在录音...', '再次点击停止');
+      } else {
+        sendBtn.classList.remove('recording');
+        showToast('录音完成', '已转写为文本');
+      }
+    }
+
+    // === Search sidebar ===
+    document.querySelector('.side-search input').addEventListener('input', e => {
+      const q = e.target.value.toLowerCase();
+      document.querySelectorAll('.side-list .item').forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = text.includes(q) ? '' : 'none';
+      });
+    });
+
+    // === ⌘K ===
+    document.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        document.querySelector('.side-search input').focus();
+      }
+    });
+
+    // === Toast ===
+    function showToast(title, desc) {
+      const stack = document.getElementById('toasts');
+      const t = document.createElement('div');
+      t.className = 'toast-x';
+      t.innerHTML = (desc ? '<b>' + title + '</b> · ' + desc : title);
+      stack.appendChild(t);
+      setTimeout(() => { t.style.transition = 'all 200ms'; t.style.opacity = '0'; t.style.transform = 'translateY(20px)'; setTimeout(() => t.remove(), 220); }, 2400);
+    }
+
+    // Init
+    toggleSend();
+  </script>
+</body>
+</html>

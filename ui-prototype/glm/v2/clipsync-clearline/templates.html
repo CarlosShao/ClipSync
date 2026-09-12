@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · 模板</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="templates">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-left">
+      <span class="brand-mark"><i data-ic="clipboard-list"></i></span>
+      <span class="brand-word">ClipSync</span>
+      <span class="tb-sep"></span>
+      <span class="tb-crumb">模板</span>
+    </div>
+    <button class="cmdk" id="cmdkBtn"><i data-ic="search"></i><span>搜索或命令…</span><kbd>Ctrl K</kbd></button>
+    <div class="tb-right">
+      <button class="tb-btn ai-trigger" id="aiBtn" title="AI 助手 · Ctrl+Shift+A"><i data-ic="sparkles"></i><span>AI</span></button>
+      <button class="tb-btn" id="qpBtn" title="快速粘贴 · Ctrl+Shift+V"><i data-ic="panel-top"></i></button>
+      <button class="tb-btn" id="themeBtn" title="切换明暗"><i data-ic="moon"></i></button>
+      <button class="tb-btn" id="bellBtn" title="通知"><i data-ic="bell"></i><i class="dot" id="bellDot"></i></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn win" data-win="min"><i data-ic="minus"></i></button>
+      <button class="tb-btn win" data-win="max"><i data-ic="square"></i></button>
+      <button class="tb-btn win close" data-win="close"><i data-ic="x"></i></button>
+    </div>
+  </header>
+  <aside class="app-nav">
+    <a class="nav-item" data-nav="clipboard" href="index.html"><i data-ic="clipboard-list"></i><span>剪贴板</span><kbd>Ctrl 1</kbd></a>
+    <a class="nav-item" data-nav="favorites" href="favorites.html"><i data-ic="star"></i><span>收藏</span><kbd>Ctrl 2</kbd></a>
+    <a class="nav-item" data-nav="templates" href="templates.html"><i data-ic="layout-template"></i><span>模板</span><kbd>Ctrl 3</kbd></a>
+    <a class="nav-item" data-nav="devices" href="devices.html"><i data-ic="laptop"></i><span>设备</span><kbd>Ctrl 4</kbd></a>
+    <div class="nav-sec">系统</div>
+    <a class="nav-item" data-nav="settings" href="settings.html"><i data-ic="settings-2"></i><span>设置</span><kbd>Ctrl ,</kbd></a>
+    <div class="nav-foot">
+      <div class="sync-pill"><i class="pulse"></i><span>已同步 · 3 台设备</span></div>
+      <div class="nav-ver">v0.4.2 · clearline</div>
+    </div>
+  </aside>
+  <main class="app-main">
+    <div class="page reveal">
+
+      <div class="page-head">
+        <div>
+          <div class="page-title">模板</div>
+          <div class="page-sub">带 {{变量}} 的文本骨架 · 填充变量后一键渲染复制</div>
+        </div>
+        <div class="page-acts">
+          <button class="btn" data-ai="生成模板" data-ai-target="根据我的高频使用场景起草新模板"><i data-ic="sparkles"></i>AI 生成模板</button>
+          <button class="btn btn-acc" id="btnNew"><i data-ic="plus"></i>新建模板</button>
+        </div>
+      </div>
+
+      <div class="tpl-grid" id="tplGrid"></div>
+      <div class="empty" id="tplEmpty" style="display:none">
+        <i data-ic="layout-template" data-size="30"></i>
+        <div class="t">还没有模板</div>
+        <div class="d">创建带 {{变量}} 占位的文本骨架，使用时填充变量一键渲染；也可以让 AI 按场景起草。</div>
+        <button class="btn btn-acc" id="btnNewEmpty" style="margin-top:6px"><i data-ic="plus"></i>新建模板</button>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="mock.js"></script>
+<script src="api.js"></script>
+<script src="components.js"></script>
+<script>
+/* ============================================================
+   模板页：卡片网格 + 新建/编辑 modal + 删除确认 + 变量填充 + 渲染结果
+   功能对齐真实系统 TemplatesView / TemplateEditorDialog / VariableFillDialog
+   ============================================================ */
+const TAG_BADGE = { 工作: 'b-text', 研发: 'b-code', 生活: 'b-link', 行政: 'b-gray' };
+/* 内置变量（渲染时自动替换，无需用户输入）——对齐真实系统 templateStore.BUILTIN_VARS */
+const BUILTIN_VARS = ['date', 'time', 'datetime', 'clipboard'];
+/* 变量语法与 api.js useTemplate 同形：支持中文名与 {{name:default}} 默认值 */
+const VAR_SRC = '\\{\\{\\s*([^{}:]+?)\\s*(?::\\s*([^{}]*?))?\\s*\\}\\}';
+let tplList = [];
+
+/* 提取变量定义（去重、保序），标记内置/自定义 */
+function extractVarDefs(body) {
+  const re = new RegExp(VAR_SRC, 'g');
+  const defs = [], seen = new Set();
+  let m;
+  while ((m = re.exec(body))) {
+    const name = m[1].trim();
+    if (seen.has(name)) continue;
+    seen.add(name);
+    defs.push({ name, defaultValue: m[2] !== undefined ? m[2] : '', builtin: BUILTIN_VARS.includes(name) });
+  }
+  return defs;
+}
+/* {{var}} 高亮渲染（列表预览用；body 内 \n 转真实换行） */
+function hlVars(raw) {
+  return esc(String(raw).replace(/\\n/g, '\n')).replace(new RegExp(VAR_SRC, 'g'),
+    (m, k) => `<span class="var-hl">{{${k.trim()}}}</span>`);
+}
+
+/* ---------- 通用 modal 挂载 ---------- */
+function mountModal(inner, { width } = {}) {
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.innerHTML = `<div class="modal"${width ? ` style="width:${width}"` : ''}></div>`;
+  const modal = mask.firstElementChild;
+  modal.innerHTML = inner;
+  document.body.appendChild(mask);
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  const close = () => { mask.remove(); document.removeEventListener('keydown', onKey); };
+  mask.onclick = e => { if (e.target === mask) close(); };
+  return { mask, modal, close };
+}
+
+/* ---------- 卡片网格 ---------- */
+async function renderGrid() {
+  const { data } = await fetchTemplates();
+  tplList = data;
+  const grid = document.getElementById('tplGrid');
+  document.getElementById('tplEmpty').style.display = data.length ? 'none' : '';
+  grid.innerHTML = data.map(t => `
+    <div class="tpl-card" data-id="${t.id}" title="点击编辑">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="grow" style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title)}</span>
+        <span class="badge ${TAG_BADGE[t.tag] || 'b-gray'}">${esc(t.tag)}</span>
+      </div>
+      <div class="tpl-body">${hlVars(t.body)}</div>
+      <div class="tpl-foot">
+        <span class="dimmer" style="font-size:11px">使用 ${t.usage} 次 · 更新于 ${t.updated}</span>
+        <span style="margin-left:auto;display:flex;gap:4px;align-items:center;flex:none">
+          <button class="btn btn-acc btn-sm" data-act="use">${iconSvg('zap', 12)}使用</button>
+          <button class="icon-btn" data-act="edit" title="编辑模板">${iconSvg('pencil', 13)}</button>
+          <button class="icon-btn" data-act="del" title="删除模板" style="color:var(--danger)">${iconSvg('trash-2', 13)}</button>
+        </span>
+      </div>
+    </div>`).join('');
+  grid.querySelectorAll('.tpl-card').forEach(el => {
+    const t = tplList.find(x => x.id === el.dataset.id);
+    if (!t) return;
+    el.onclick = () => openEditor(t);
+    el.querySelector('[data-act="use"]').onclick = e => { e.stopPropagation(); openUse(t); };
+    el.querySelector('[data-act="edit"]').onclick = e => { e.stopPropagation(); openEditor(t); };
+    el.querySelector('[data-act="del"]').onclick = e => { e.stopPropagation(); openDelete(t); };
+  });
+}
+
+/* ---------- 新建 / 编辑（复用同一编辑器 modal，对齐 TemplateEditorDialog） ---------- */
+function openEditor(t) {
+  const isEdit = !!t;
+  const remembered = getTplVars();
+  const memNames = Object.keys(remembered);
+  const { close, modal } = mountModal(`
+    <div class="modal-title">${isEdit ? '编辑模板' : '新建模板'}</div>
+    <div class="modal-sub">正文中用 <span class="var-hl">{{变量名}}</span> 作占位符，支持 {{变量名:默认值}} 写法</div>
+    <div class="dimmer" style="font-size:11.5px;margin-bottom:5px">标题</div>
+    <div class="input" style="margin-bottom:12px"><input id="eTitle" placeholder="如：会议纪要骨架" value="${isEdit ? esc(t.title) : ''}"></div>
+    <div class="dimmer" style="font-size:11.5px;margin-bottom:5px">分组标签</div>
+    <div class="input" style="margin-bottom:12px"><input id="eTag" placeholder="如：工作 / 研发 / 生活" value="${isEdit ? esc(t.tag) : ''}"></div>
+    <div class="dimmer" style="font-size:11.5px;margin-bottom:5px">正文</div>
+    <textarea class="input mono" id="eBody" style="min-height:150px;font-size:12px" placeholder="## {{会议主题}}&#10;日期：{{date}}&#10;参会：{{参会人}}">${isEdit ? esc(t.body) : ''}</textarea>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px">
+      <span class="dimmer" style="font-size:11px">插入内置变量（渲染时自动替换）：</span>
+      ${BUILTIN_VARS.map(v => `<button class="var-insert" data-var="${v}">{{${v}}}</button>`).join('')}
+    </div>
+    ${memNames.length ? `
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
+      <span class="dimmer" style="font-size:11px">插入已记住的变量：</span>
+      ${memNames.map(v => `<button class="var-insert" data-var="${esc(v)}">{{${esc(v)}}}</button>`).join('')}
+    </div>` : ''}
+    <div id="eVars" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px"></div>
+    <div class="modal-foot">
+      <button class="btn" id="eCancel">取消</button>
+      <button class="btn btn-acc" id="eSave">${iconSvg('check', 13)}保存模板</button>
+    </div>`, { width: 'min(600px,94vw)' });
+
+  const body = modal.querySelector('#eBody');
+  const updVars = () => {
+    const defs = extractVarDefs(body.value);
+    modal.querySelector('#eVars').innerHTML = defs.length
+      ? '<span class="dimmer" style="font-size:11px">检测到的变量：</span>' +
+        defs.map(d => `<span class="var-chip ${d.builtin ? 'builtin' : 'user'}" title="${d.builtin ? '内置变量 · 自动替换' : '自定义变量 · 使用时填充'}">{{${esc(d.name)}}}</span>`).join('')
+      : '';
+  };
+  body.addEventListener('input', updVars);
+  updVars();
+
+  /* 点击插入变量：写入光标处（对齐真实系统 insertVar） */
+  modal.querySelectorAll('.var-insert').forEach(b => b.onclick = () => {
+    const v = `{{${b.dataset.var}}}`;
+    const s = body.selectionStart ?? body.value.length;
+    const e = body.selectionEnd ?? s;
+    body.value = body.value.slice(0, s) + v + body.value.slice(e);
+    body.focus();
+    body.selectionStart = body.selectionEnd = s + v.length;
+    updVars();
+  });
+
+  modal.querySelector('#eCancel').onclick = close;
+  modal.querySelector('#eSave').onclick = async () => {
+    const title = modal.querySelector('#eTitle').value.trim();
+    const tag = modal.querySelector('#eTag').value.trim() || '未分组';
+    if (!title) { toast('请输入模板标题', 'err'); modal.querySelector('#eTitle').focus(); return; }
+    if (!body.value.trim()) { toast('请输入正文内容', 'err'); body.focus(); return; }
+    await saveTemplate({ ...(isEdit ? { id: t.id } : {}), title, tag, body: body.value, updated: '刚刚' });
+    close();
+    toast(isEdit ? '模板已保存' : '模板已创建', 'ok');
+    renderGrid();
+  };
+  setTimeout(() => modal.querySelector('#eTitle').focus(), 60);
+}
+
+/* ---------- 删除（confirm 确认后调 deleteTemplate） ---------- */
+function openDelete(t) {
+  const { close, modal } = mountModal(`
+    <div class="modal-title">删除模板？</div>
+    <div class="modal-sub">「<b>${esc(t.title)}</b>」删除后不可恢复，使用记录将一并清除。</div>
+    <div class="modal-foot">
+      <button class="btn" id="dCancel">取消</button>
+      <button class="btn" id="dOk" style="background:var(--danger);border-color:transparent;color:#fff">${iconSvg('trash-2', 13)}确认删除</button>
+    </div>`, { width: 'min(400px,92vw)' });
+  modal.querySelector('#dCancel').onclick = close;
+  modal.querySelector('#dOk').onclick = async () => {
+    await deleteTemplate(t.id);
+    close();
+    toast('模板已删除');
+    renderGrid();
+  };
+}
+
+/* ---------- 使用模板：变量填充表单（对齐 VariableFillDialog） ---------- */
+function builtinValues() {
+  const n = new Date(), p = x => String(x).padStart(2, '0');
+  const d = `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())}`, tm = `${p(n.getHours())}:${p(n.getMinutes())}`;
+  return { date: d, time: tm, datetime: `${d} ${tm}`, clipboard: '（剪贴板当前内容）' };
+}
+
+function openUse(t) {
+  const defs = extractVarDefs(t.body);
+  const userDefs = defs.filter(d => !d.builtin);
+  /* 无自定义变量：跳过填充表单，直接渲染（对齐真实系统 onInsert 分支） */
+  if (!userDefs.length) { renderResult(t, {}); return; }
+
+  const remembered = getTplVars();
+  const prefillCount = userDefs.filter(d => (remembered[d.name] ?? '') !== '').length;
+  const { close, modal } = mountModal(`
+    <div class="modal-title">使用模板 · ${esc(t.title)}</div>
+    <div class="modal-sub">为模板中的变量填充内容，确认后渲染并生成可复制文本</div>
+    ${prefillCount ? `<div class="hintbar">${iconSvg('info', 13)}<span>已按「记住的值」预填 ${prefillCount} 个变量，可直接修改</span></div>` : ''}
+    <div style="max-height:46vh;overflow-y:auto;padding-right:2px">
+      ${userDefs.map((d, i) => `
+      <div class="fill-row">
+        <label class="fill-label" for="fv${i}">{{${esc(d.name)}}}</label>
+        <div class="input"><input id="fv${i}" data-name="${esc(d.name)}" value="${esc(remembered[d.name] ?? d.defaultValue)}" placeholder="输入 ${esc(d.name)}${d.defaultValue ? `（默认：${esc(d.defaultValue)}）` : ''}"></div>
+        <label class="fill-remember"><input type="checkbox" class="chk" id="fr${i}" checked><span>记住此值，下次自动预填</span></label>
+      </div>`).join('')}
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="fCancel">取消</button>
+      <button class="btn btn-acc" id="fOk">${iconSvg('zap', 13)}渲染模板</button>
+    </div>`, { width: 'min(480px,94vw)' });
+
+  modal.querySelector('#fCancel').onclick = close;
+  modal.querySelector('#fOk').onclick = async () => {
+    const vars = {}, mem = getTplVars();
+    let memChanged = false;
+    modal.querySelectorAll('input[data-name]').forEach((inp, i) => {
+      vars[inp.dataset.name] = inp.value;
+      const chk = modal.querySelector('#fr' + i);
+      if (chk && chk.checked && inp.value !== '') { mem[inp.dataset.name] = inp.value; memChanged = true; }
+    });
+    if (memChanged) setTplVars(mem);
+    close();
+    renderResult(t, { ...builtinValues(), ...vars });
+  };
+  setTimeout(() => modal.querySelector('input[data-name]')?.focus(), 60);
+}
+
+/* ---------- 渲染结果：展示 + 复制 ---------- */
+async function renderResult(t, vars) {
+  const r = await useTemplate(t.id, vars);
+  if (r.code !== 0) { toast('模板不存在或已被删除', 'err'); renderGrid(); return; }
+  const { close, modal } = mountModal(`
+    <div class="modal-title">渲染结果 · ${esc(t.title)}</div>
+    <div class="modal-sub">已按变量渲染完成 · 模板使用次数 +1</div>
+    <div class="tpl-result">${esc(r.text)}</div>
+    <div class="modal-foot">
+      <button class="btn" id="rClose">关闭</button>
+      <button class="btn btn-acc" id="rCopy">${iconSvg('copy', 13)}复制结果</button>
+    </div>`, { width: 'min(520px,94vw)' });
+  modal.querySelector('#rClose').onclick = close;
+  modal.querySelector('#rCopy').onclick = async () => {
+    const ok = await copyText(r.text);
+    toast(ok ? '已复制渲染结果，可粘贴到任意应用' : '复制失败，请手动选择文本', ok ? 'ok' : 'err');
+  };
+  renderGrid();
+}
+
+async function copyText(s) {
+  try { await navigator.clipboard.writeText(s); return true; }
+  catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = s; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) { }
+    ta.remove();
+    return ok;
+  }
+}
+
+document.getElementById('btnNew').onclick = () => openEditor(null);
+document.getElementById('btnNewEmpty').onclick = () => openEditor(null);
+
+renderGrid();
+</script>
+</body>
+</html>

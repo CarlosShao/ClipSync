@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · 收藏</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="favorites">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-left">
+      <span class="brand-stamp"><i data-ic="scissors"></i></span>
+      <span class="brand-word">ClipSync</span>
+      <span class="tb-sep"></span>
+      <span class="tb-crumb">收藏</span>
+    </div>
+    <button class="cmdk" id="cmdkBtn" title="命令面板">
+      <i data-ic="search"></i><span>搜索或命令…</span><kbd>Ctrl K</kbd>
+    </button>
+    <div class="tb-right">
+      <button class="tb-btn" id="qpBtn" title="快速粘贴面板 · Ctrl+Shift+V"><i data-ic="panel-top"></i></button>
+      <button class="tb-btn" id="themeBtn" title="切换明暗"><i data-ic="moon"></i></button>
+      <button class="tb-btn" id="bellBtn" title="通知"><i data-ic="bell"></i><i class="dot" id="bellDot"></i></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn win" data-win="min"><i data-ic="minus"></i></button>
+      <button class="tb-btn win" data-win="max"><i data-ic="square"></i></button>
+      <button class="tb-btn win close" data-win="close"><i data-ic="x"></i></button>
+    </div>
+  </header>
+  <aside class="app-nav">
+    <div class="nav-sec">工作台</div>
+    <a class="nav-item" data-nav="clipboard" href="index.html"><i data-ic="clipboard-list"></i><span>剪贴板</span><kbd>Ctrl 1</kbd></a>
+    <a class="nav-item" data-nav="favorites" href="favorites.html"><i data-ic="star"></i><span>收藏</span><kbd>Ctrl 2</kbd></a>
+    <a class="nav-item" data-nav="templates" href="templates.html"><i data-ic="layout-template"></i><span>模板</span><kbd>Ctrl 3</kbd></a>
+    <a class="nav-item" data-nav="devices" href="devices.html"><i data-ic="laptop"></i><span>设备</span><kbd>Ctrl 4</kbd></a>
+    <a class="nav-item" data-nav="ai" href="ai.html"><i data-ic="sparkles"></i><span>AI 助手</span><kbd>Ctrl 5</kbd></a>
+    <div class="nav-sec">系统</div>
+    <a class="nav-item" data-nav="settings" href="settings.html"><i data-ic="settings-2"></i><span>设置</span><kbd>Ctrl ,</kbd></a>
+    <div class="nav-foot">
+      <div class="sync-pill"><i class="pulse"></i><span>已同步 · 3 台设备</span></div>
+      <div class="nav-ver">v0.4.2 · ink-bench</div>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="page reveal">
+
+      <div class="page-head">
+        <div>
+          <div class="page-eyebrow">Favorite Collections</div>
+          <h1 class="page-title">收藏</h1>
+          <div class="page-desc">把高频片段钉在手边 · 按合集归类 · 随剪贴板跨设备同步</div>
+        </div>
+        <div class="page-actions">
+          <div class="search" style="width:240px">
+            <i data-ic="search"></i>
+            <input class="input" id="q" placeholder="搜索收藏内容…">
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-row">
+        <div class="panel stat">
+          <span class="stat-label"><i data-ic="star"></i>收藏总数</span>
+          <span class="stat-num" id="statTotal">–</span>
+          <span class="stat-delta" id="statCols">–</span>
+        </div>
+        <div class="panel stat">
+          <span class="stat-label"><i data-ic="history"></i>本月新增</span>
+          <span class="stat-num">2<small>条</small></span>
+          <span class="stat-delta"><span class="up">+2</span> 较上月</span>
+        </div>
+        <div class="panel stat">
+          <span class="stat-label"><i data-ic="zap"></i>最常引用</span>
+          <span class="stat-num" style="font-size:20px">代码速记</span>
+          <span class="stat-delta">2 条 · 近 7 天引用 9 次</span>
+        </div>
+        <div class="panel stat">
+          <span class="stat-label"><i data-ic="wifi"></i>同步状态</span>
+          <span class="stat-num">3<small>台</small></span>
+          <span class="stat-delta"><span class="up">全部已同步</span></span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start;margin-top:20px">
+        <div class="panel" style="padding:10px">
+          <div class="nav-sec" style="padding:4px 10px 8px">合集</div>
+          <div class="set-nav" id="colList"></div>
+        </div>
+        <div>
+          <div id="favGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px"></div>
+          <div class="empty" id="favEmpty" style="display:none">
+            <i data-ic="star" data-size="36"></i>
+            <div class="t">该合集暂无收藏</div>
+            <div class="d">在剪贴板里点亮星标，片段就会收进这里，并同步到所有设备。</div>
+            <button class="btn btn-sm" id="goClip">去剪贴板看看</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="hintbar" style="margin-top:24px">
+        <span class="h"><kbd>Ctrl 2</kbd> 收藏页</span>
+        <span class="h">悬停卡片显示快捷操作</span>
+        <span class="h grow"></span>
+        <span class="h dimmer">收藏与合集结构随剪贴板一并端到端同步</span>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="mock.js"></script>
+<script src="api.js"></script>
+<script src="components.js"></script>
+<script>
+const TYPE_META = {
+  text:  { badge: 'b-text',  label: '文本' },
+  link:  { badge: 'b-link',  label: '链接' },
+  code:  { badge: 'b-code',  label: '代码' },
+  image: { badge: 'b-image', label: '图片' },
+  file:  { badge: 'b-file',  label: '文件' },
+};
+let curCid = 'all', curQ = '';
+
+async function renderCollections() {
+  const { data } = await fetchCollections();
+  const counts = { all: DB.favItems.length };
+  DB.favItems.forEach(f => { counts[f.cid] = (counts[f.cid] || 0) + 1; });
+  const list = document.getElementById('colList');
+  list.innerHTML = data.map(c =>
+    `<button class="${c.id === curCid ? 'active' : ''}" data-cid="${c.id}">
+      ${iconSvg(c.icon, 15)}<span class="grow">${esc(c.name)}</span>
+      <span class="mono dimmer" style="font-size:11px">${counts[c.id] || 0}</span>
+    </button>`).join('');
+  list.querySelectorAll('button').forEach(b => b.onclick = () => {
+    curCid = b.dataset.cid;
+    renderCollections();
+    renderGrid();
+  });
+  document.getElementById('statTotal').innerHTML = `${DB.favItems.length}<small>条</small>`;
+  document.getElementById('statCols').textContent = `跨 ${data.length - 1} 个合集`;
+}
+
+function cardHtml(f) {
+  const m = TYPE_META[f.type];
+  return `<div class="clip-item" style="flex-direction:column;align-items:stretch;gap:10px" data-id="${f.id}">
+    <div class="row gap8">
+      <span class="badge ${m.badge}">${m.label}</span>
+      ${f.lang ? `<span class="badge b-gray">${esc(f.lang)}</span>` : ''}
+      <span class="grow"></span>
+      <span class="dimmer mono" style="font-size:10px">${f.time}</span>
+    </div>
+    <div class="clip-text ${f.type === 'code' ? 'mono' : ''}" style="-webkit-line-clamp:4">${esc(f.content)}</div>
+    <div class="clip-meta">
+      <span class="src">${iconSvg(f.source.includes('iPhone') ? 'smartphone' : f.source.includes('Mac') ? 'laptop' : 'monitor', 11)}${esc(f.source)}</span>
+    </div>
+    <div class="clip-acts">
+      <button class="icon-btn" data-act="copy" title="复制">${iconSvg('copy', 14)}</button>
+      <button class="icon-btn" data-act="unfav" title="移出收藏">${iconSvg('x', 14)}</button>
+      <button class="icon-btn" data-act="detail" title="详情">${iconSvg('more-horizontal', 14)}</button>
+    </div>
+  </div>`;
+}
+
+async function renderGrid() {
+  const { data } = await fetchFavItems(curCid, curQ);
+  const grid = document.getElementById('favGrid');
+  document.getElementById('favEmpty').style.display = data.length ? 'none' : '';
+  grid.innerHTML = data.map(cardHtml).join('');
+  grid.querySelectorAll('.clip-item').forEach(el => {
+    const id = el.dataset.id;
+    el.querySelector('[data-act="copy"]').onclick = async e => {
+      e.stopPropagation();
+      await copyItem(id);
+      toast('已复制 · 回冲系统剪贴板', 'ok');
+    };
+    el.querySelector('[data-act="unfav"]').onclick = async e => {
+      e.stopPropagation();
+      await removeFav(id);
+      toast('已移出收藏', 'ok');
+      renderCollections();
+      renderGrid();
+    };
+    el.querySelector('[data-act="detail"]').onclick = e => {
+      e.stopPropagation();
+      toast('原型演示 · 完整详情抽屉请在剪贴板页查看');
+    };
+    el.onclick = () => toast('原型演示 · 完整详情抽屉请在剪贴板页查看');
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderCollections();
+  renderGrid();
+  let t;
+  document.getElementById('q').oninput = e => {
+    clearTimeout(t);
+    t = setTimeout(() => { curQ = e.target.value.trim(); renderGrid(); }, 200);
+  };
+  document.getElementById('goClip').onclick = () => { location.href = 'index.html'; };
+});
+</script>
+</body>
+</html>

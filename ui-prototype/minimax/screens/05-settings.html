@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>05 · Settings — Pulse</title>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" />
+  <link rel="stylesheet" href="../pulse.css" />
+  <style>
+    .settings-layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 32px;
+      height: 100%;
+    }
+    .settings-nav { display: flex; flex-direction: column; gap: 2px; }
+    .settings-nav .nav-section {
+      font-size: 10.5px; color: var(--text-faint);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      font-weight: 600;
+      padding: 12px 12px 6px;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      color: var(--text-default);
+      font-size: var(--type-sm);
+      transition: all 160ms;
+    }
+    .nav-item:hover { background: var(--surface-2); }
+    .nav-item.is-active { background: var(--accent-tint); color: var(--accent-700); font-weight: 500; }
+    .nav-item .ico { color: var(--text-muted); }
+    .nav-item.is-active .ico { color: var(--accent-600); }
+    .nav-item .grow { flex: 1; }
+    .nav-item .shortcut { font-size: 11px; color: var(--text-faint); font-family: 'Geist Mono', monospace; }
+
+    .settings-content { overflow-y: auto; padding-bottom: 40px; }
+    .settings-content h1 { font-size: var(--type-xl); color: var(--text-strong); font-weight: 700; margin-bottom: 4px; }
+    .settings-content .sub { color: var(--text-muted); font-size: var(--type-sm); margin-bottom: 24px; }
+    .setting-section { margin-bottom: 28px; }
+    .setting-section h3 {
+      font-size: var(--type-md); color: var(--text-strong);
+      font-weight: 600; margin-bottom: 12px;
+    }
+    .setting-section .desc { font-size: var(--type-sm); color: var(--text-muted); margin-top: -4px; margin-bottom: 12px; }
+
+    .setting-row {
+      display: flex; align-items: center; gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .setting-row:last-child { border-bottom: 0; }
+    .setting-row .grow { flex: 1; min-width: 0; }
+    .setting-row .label { font-size: var(--type-base); color: var(--text-strong); font-weight: 500; margin-bottom: 2px; }
+    .setting-row .help { font-size: var(--type-xs); color: var(--text-muted); }
+    .setting-row .ctrl { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+    .hue-ring {
+      width: 240px; height: 240px;
+      border-radius: 50%;
+      background: conic-gradient(
+        hsl(0 70% 60%), hsl(30 70% 60%), hsl(60 70% 60%), hsl(90 70% 60%),
+        hsl(120 70% 60%), hsl(150 70% 60%), hsl(180 70% 60%), hsl(210 70% 60%),
+        hsl(240 70% 60%), hsl(270 70% 60%), hsl(300 70% 60%), hsl(330 70% 60%),
+        hsl(360 70% 60%)
+      );
+      position: relative;
+      cursor: pointer;
+    }
+    .hue-ring::after {
+      content: '';
+      position: absolute; inset: 24px;
+      border-radius: 50%;
+      background: var(--surface-0);
+    }
+    .hue-marker {
+      position: absolute; left: 50%; top: 8px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--surface-0);
+      border: 3px solid var(--accent-500);
+      transform: translateX(-50%);
+      box-shadow: var(--shadow-1);
+    }
+
+    /* === Interactive additions === */
+    .settings-panel { display: none; animation: fadein 200ms; }
+    .settings-panel.is-on { display: block; }
+    @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .nav-item { cursor: pointer; }
+    .switch.s2 { cursor: pointer; }
+    .hue-ring { transition: all 200ms; }
+    .hue-ring:hover { transform: scale(1.02); }
+    .hue-marker { transition: transform 300ms var(--ease-spring), border-color 200ms; }
+
+    .toast-stack { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 200; }
+    .toast-x { background: var(--surface-0); border: 1px solid var(--hairline); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; box-shadow: var(--shadow-2); min-width: 280px; font-size: var(--type-sm); animation: slidein 200ms var(--ease-spring); }
+    .toast-x .t { color: var(--text-strong); font-weight: 500; }
+    .toast-x .d { color: var(--text-muted); font-size: var(--type-xs); margin-top: 2px; }
+    .toast-x.success { border-left: 3px solid var(--status-success); }
+    .toast-x.warn { border-left: 3px solid var(--status-warn); }
+    @keyframes slidein { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+    .theme-tag { font-size: 10px; padding: 2px 6px; background: var(--accent-tint); color: var(--accent-700); border-radius: 4px; margin-left: 6px; font-family: 'Geist Mono', monospace; }
+
+    .modal-overlay { position: fixed; inset: 0; background: oklch(20% 0.02 270 / 0.4); display: none; align-items: center; justify-content: center; z-index: 100; }
+    .modal-overlay.is-open { display: flex; animation: fadein 160ms; }
+    .modal { background: var(--surface-0); border-radius: 16px; width: 440px; max-width: 92vw; padding: 24px; box-shadow: var(--shadow-3); animation: pop 200ms var(--ease-spring); }
+    @keyframes pop { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    .modal h3 { font-size: var(--type-lg); color: var(--text-strong); font-weight: 600; margin-bottom: 6px; }
+    .modal p { color: var(--text-muted); margin-bottom: 16px; font-size: var(--type-sm); line-height: 1.5; }
+    .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="app-rail">
+      <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l2 -6l4 12l2 -6h7"/></svg></div>
+      <a class="rail-btn2" title="Stream"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h12M4 18h8"/></svg></a>
+      <a class="rail-btn2" title="Collections"><svg class="icon" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></a>
+      <a class="rail-btn2" title="Templates"><svg class="icon" viewBox="0 0 24 24"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></a>
+      <a class="rail-btn2" title="Devices"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M17 9h2.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H17"/></svg></a>
+      <a class="rail-btn2 is-active" title="Settings"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></a>
+      <div class="rail-spacer"></div>
+      <button class="rail-mode2"><svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></button>
+    </aside>
+
+    <main class="app-main">
+      <div class="baton-bar">
+        <div class="crumb">Settings · <b id="crumb-name">外观</b></div>
+        <div class="grow"></div>
+        <div class="tag tag-warn" id="dirty-tag" style="padding: 5px 10px; display: none;"><span id="dirty-count">0</span> 项未保存</div>
+        <button class="btn btn-ghost" onclick="discardChanges()">放弃</button>
+        <button class="btn btn-primary" onclick="saveChanges()">保存</button>
+      </div>
+
+      <div class="app-content">
+        <section class="stream-area" style="padding: 0;">
+          <div class="settings-layout" style="padding: 24px 32px;">
+            <!-- Left nav -->
+            <nav class="settings-nav">
+              <div class="nav-section">个人</div>
+              <a class="nav-item" data-pane="account"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>账户</a>
+              <a class="nav-item" data-pane="sub"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>订阅</a>
+              <a class="nav-item is-active" data-pane="appearance"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>外观 <span class="shortcut">⌘ ,</span></a>
+
+              <div class="nav-section">工作</div>
+              <a class="nav-item" data-pane="general"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>通用</a>
+              <a class="nav-item" data-pane="shortcuts"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><circle cx="6" cy="18" r="1"/></svg>快捷键</a>
+              <a class="nav-item" data-pane="sync"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>同步</a>
+              <a class="nav-item" data-pane="data"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/></svg>数据</a>
+
+              <div class="nav-section">智能</div>
+              <a class="nav-item" data-pane="ai"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9c0 3-1.5 5-3 6.5L17 21h-4l-.5-2h-1L11 21H7l-1-2.5C4.5 17 3 15 3 12a9 9 0 0 1 9-9z"/></svg>AI 助手</a>
+              <a class="nav-item" data-pane="workflow"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/><path d="M9 9h6v6H9z"/></svg>工作流</a>
+              <a class="nav-item" data-pane="privacy"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M12 2L4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>隐私与安全</a>
+
+              <div class="nav-section">系统</div>
+              <a class="nav-item" data-pane="about"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>关于</a>
+              <a class="nav-item" data-pane="logout"><svg class="icon icon-sm ico" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>退出登录</a>
+            </nav>
+
+            <!-- Right content -->
+            <div class="settings-content">
+              <div class="settings-panel is-on" data-pane="appearance">
+              <h1>外观</h1>
+              <p class="sub">调整 ClipSync 的视觉与交互偏好</p>
+
+              <div class="setting-section">
+                <h3>主题</h3>
+                <div class="setting-row">
+                  <div class="grow">
+                    <div class="label">颜色模式</div>
+                    <div class="help">跟随系统 / 始终浅色 / 始终深色</div>
+                  </div>
+                  <div class="ctrl">
+                    <div style="display:flex; background: var(--surface-inset); border-radius: 10px; padding: 2px; gap: 2px;">
+                      <button class="btn btn-sm theme-btn is-on" data-theme="light" onclick="setTheme('light', this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4"/></svg> 浅色</button>
+                      <button class="btn btn-sm btn-ghost theme-btn" data-theme="dark" onclick="setTheme('dark', this)"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg> 深色</button>
+                      <button class="btn btn-sm btn-ghost theme-btn" data-theme="auto" onclick="setTheme('auto', this)">跟随</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div class="grow">
+                    <div class="label">强调色相 <span class="theme-tag" id="hue-tag">hue 250 · 紫蓝</span></div>
+                    <div class="help">选择你喜欢的色相，所有强调元素会相应变化</div>
+                  </div>
+                  <div class="ctrl">
+                    <div class="hue-ring" id="hue-ring" onclick="pickHue(event)">
+                      <div class="hue-marker" id="hue-marker" style="transform: translateX(-50%) rotate(250deg); transform-origin: 50% 112px;"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div class="grow">
+                    <div class="label">强调饱和度</div>
+                    <div class="help">更高饱和度更鲜明，更低更柔和</div>
+                  </div>
+                  <div class="ctrl">
+                    <input type="range" min="0" max="100" value="55" id="sat-slider" oninput="setSaturation(this.value)" style="width: 160px;" />
+                    <span class="mono" id="sat-text" style="width: 36px; text-align: right;">55%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="setting-section">
+                <h3>字体</h3>
+                <div class="setting-row">
+                  <div class="grow">
+                    <div class="label">UI 字体</div>
+                    <div class="help">界面文字与按钮的字体</div>
+                  </div>
+                  <div class="ctrl">
+                    <select class="input" style="width: 180px;">
+                      <option>Inter（默认）</option>
+                      <option>Geist Sans</option>
+                      <option>SF Pro</option>
+                      <option>系统默认</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="setting-row">
+                  <div class="grow">
+                    <div class="label">等宽字体</div>
+                    <div class="help">用于代码、SQL、时间数字</div>
+                  </div>
+                  <div class="ctrl">
+                    <select class="input" style="width: 180px;">
+                      <option>Geist Mono（默认）</option>
+                      <option>JetBrains Mono</option>
+                      <option>SF Mono</option>
+                      <option>Consolas</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="setting-row">
+                  <div class="grow">
+                    <div class="label">UI 缩放 <span class="theme-tag" id="scale-tag">100%</span></div>
+                    <div class="help">90% ~ 120% 调整界面密度</div>
+                  </div>
+                  <div class="ctrl">
+                    <input type="range" min="90" max="120" step="5" value="100" id="scale-slider" oninput="setScale(this.value)" style="width: 160px;" />
+                    <span class="mono" id="scale-text" style="width: 36px; text-align: right;">100%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="setting-section">
+                <h3>动效</h3>
+                <div class="setting-row">
+                  <div class="grow">
+                    <div class="label">启用弹性动效</div>
+                    <div class="help">侧栏展开、抽屉滑入等使用 spring 曲线</div>
+                  </div>
+                  <div class="ctrl"><div class="switch is-on s2" onclick="toggleSwitch(this)"></div></div>
+                </div>
+                <div class="setting-row">
+                  <div class="grow">
+                    <div class="label">降低动效</div>
+                    <div class="help">为敏感用户减少界面动效</div>
+                  </div>
+                  <div class="ctrl"><div class="switch s2" onclick="toggleSwitch(this)"></div></div>
+                </div>
+              </div>
+
+              <div class="setting-section" style="background: oklch(60% 0.20 25 / 0.05); border: 1px solid oklch(60% 0.20 25 / 0.2); border-radius: 14px; padding: 16px;">
+                <h3 style="color: oklch(40% 0.20 25);">重置外观</h3>
+                <p style="font-size: var(--type-sm); color: var(--text-muted); margin-bottom: 12px;">将所有外观相关设置恢复为默认值，包括色相、字体、缩放和动效偏好。</p>
+                <button class="btn btn-secondary" onclick="confirmReset()">恢复默认</button>
+              </div>
+              </div><!-- /panel appearance -->
+
+              <div class="settings-panel" data-pane="general">
+                <h1>通用</h1>
+                <p class="sub">启动行为、系统集成与剪贴板处理</p>
+                <div class="setting-section">
+                  <h3>启动</h3>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">开机自启</div><div class="help">系统登录后自动运行 ClipSync</div></div>
+                    <div class="ctrl"><div class="switch is-on s2" onclick="toggleSwitch(this)"></div></div>
+                  </div>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">启动时显示主窗口</div><div class="help">关闭后只静默运行在系统托盘</div></div>
+                    <div class="ctrl"><div class="switch s2" onclick="toggleSwitch(this)"></div></div>
+                  </div>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">剪贴板监听</div><div class="help">关闭后只能手动触发同步</div></div>
+                    <div class="ctrl"><div class="switch is-on s2" onclick="toggleSwitch(this)"></div></div>
+                  </div>
+                </div>
+                <div class="setting-section">
+                  <h3>剪贴板过滤</h3>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">忽略密码管理器</div><div class="help">自动跳过 1Password / Bitwarden 等来源</div></div>
+                    <div class="ctrl"><div class="switch is-on s2" onclick="toggleSwitch(this)"></div></div>
+                  </div>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">忽略临时验证码</div><div class="help">6 位数字 / 短时链接自动跳过</div></div>
+                    <div class="ctrl"><div class="switch is-on s2" onclick="toggleSwitch(this)"></div></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-panel" data-pane="shortcuts">
+                <h1>快捷键</h1>
+                <p class="sub">点击对应快捷键以自定义绑定</p>
+                <div class="setting-section" id="shortcut-list">
+                  <!-- Filled by JS -->
+                </div>
+              </div>
+
+              <div class="settings-panel" data-pane="sync">
+                <h1>同步</h1>
+                <p class="sub">设备间实时同步规则与冲突处理</p>
+                <div class="setting-section">
+                  <h3>策略</h3>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">同步频率</div><div class="help">实时事件驱动 vs 定时轮询</div></div>
+                    <div class="ctrl">
+                      <select class="input" onchange="markDirty()">
+                        <option>实时事件（推荐）</option>
+                        <option>每 5 分钟</option>
+                        <option>每 30 分钟</option>
+                        <option>仅手动</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">冲突解决</div><div class="help">两端同时编辑时的合并策略</div></div>
+                    <div class="ctrl">
+                      <select class="input" onchange="markDirty()">
+                        <option>最新优先（按时间戳）</option>
+                        <option>本机优先</option>
+                        <option>智能合并（AI）</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-panel" data-pane="ai">
+                <h1>AI 助手</h1>
+                <p class="sub">模型选择、上下文来源、记忆与隐私</p>
+                <div class="setting-section">
+                  <h3>模型</h3>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">默认模型</div><div class="help">所有 AI 请求默认走该模型</div></div>
+                    <div class="ctrl">
+                      <select class="input" onchange="markDirty()">
+                        <option>Claude Sonnet 4.5</option>
+                        <option>GPT-5</option>
+                        <option>Gemini 2.5 Pro</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">允许使用剪贴板做上下文</div><div class="help">关闭后 AI 看不到任何剪贴板历史</div></div>
+                    <div class="ctrl"><div class="switch is-on s2" onclick="toggleSwitch(this)"></div></div>
+                  </div>
+                </div>
+                <div class="setting-section">
+                  <h3>记忆</h3>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">长期记忆</div><div class="help">AI 自动归纳用户偏好</div></div>
+                    <div class="ctrl"><div class="switch is-on s2" onclick="toggleSwitch(this)"></div></div>
+                  </div>
+                  <div class="setting-row">
+                    <div class="grow"><div class="label">记忆保留时间</div><div class="help">超过期限的自动归档</div></div>
+                    <div class="ctrl">
+                      <select class="input" onchange="markDirty()">
+                        <option>永不过期</option>
+                        <option>1 年</option>
+                        <option>6 个月</option>
+                        <option>3 个月</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-panel" data-pane="about">
+                <h1>关于</h1>
+                <p class="sub">ClipSync Desktop · Pulse 设计</p>
+                <div style="display: flex; align-items: center; gap: 16px; padding: 20px; background: var(--surface-1); border-radius: 14px; margin-bottom: 16px;">
+                  <div style="width: 56px; height: 56px; border-radius: 14px; background: var(--accent-500); display: grid; place-items: center; color: white;">
+                    <svg class="icon" viewBox="0 0 24 24" style="width: 28px; height: 28px;"><path d="M3 12h3l2 -6l4 12l2 -6h7"/></svg>
+                  </div>
+                  <div>
+                    <div style="font-size: var(--type-md); color: var(--text-strong); font-weight: 600;">ClipSync Desktop</div>
+                    <div class="mono" style="color: var(--text-muted); font-size: var(--type-sm);">v3.2.1 · build 2026-09-12</div>
+                  </div>
+                </div>
+                <div class="setting-section">
+                  <div class="setting-row" style="cursor: pointer;" onclick="showToast('info', '检查更新', '已是最新版本 v3.2.1')">
+                    <div class="grow"><div class="label">检查更新</div><div class="help">当前 v3.2.1</div></div>
+                    <div class="ctrl"><span class="tag tag-ok" style="font-size: 11px;">最新</span></div>
+                  </div>
+                  <div class="setting-row" style="cursor: pointer;" onclick="showToast('info', '已复制', '诊断信息已复制到剪贴板')">
+                    <div class="grow"><div class="label">复制诊断信息</div><div class="help">系统信息 + 日志路径</div></div>
+                    <div class="ctrl"><svg class="icon" viewBox="0 0 24 24" style="color: var(--text-muted);"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></div>
+                  </div>
+                  <div class="setting-row" style="cursor: pointer;" onclick="showToast('info', '许可证', 'Apache 2.0 · 完整许可证已复制')">
+                    <div class="grow"><div class="label">许可证</div><div class="help">Apache 2.0</div></div>
+                    <div class="ctrl"><svg class="icon" viewBox="0 0 24 24" style="color: var(--text-muted);"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-panel" data-pane="logout">
+                <h1>退出登录</h1>
+                <p class="sub">退出当前账号并清空本地缓存</p>
+                <div style="background: oklch(60% 0.20 25 / 0.05); border: 1px solid oklch(60% 0.20 25 / 0.2); border-radius: 14px; padding: 20px; margin-top: 24px;">
+                  <div style="color: oklch(40% 0.20 25); font-weight: 600; margin-bottom: 6px;">⚠ 退出将清空本地数据</div>
+                  <div style="color: var(--text-muted); font-size: var(--type-sm); margin-bottom: 16px;">本地缓存的 4,820 条剪贴板条目将被删除（云端保留）。加密密钥将立即吊销，30 天内可重新登录恢复。</div>
+                  <button class="btn btn-danger" onclick="showToast('warn', '已退出', '本地数据已清空 · 30 天内可恢复')" style="background: var(--status-danger); color: white; border-color: var(--status-danger);">确认退出</button>
+                </div>
+              </div>
+
+              <div class="settings-panel" data-pane="account">
+                <h1>账户</h1>
+                <p class="sub">个人信息与登录方式</p>
+                <div style="display: flex; align-items: center; gap: 16px; padding: 20px; background: var(--surface-1); border-radius: 14px; margin-bottom: 16px;">
+                  <div style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--accent-400), var(--accent-600)); display: grid; place-items: center; color: white; font-size: 24px; font-weight: 600;">C</div>
+                  <div style="flex: 1;">
+                    <div style="font-size: var(--type-md); color: var(--text-strong); font-weight: 600;">Carlos Wei</div>
+                    <div style="color: var(--text-muted); font-size: var(--type-sm);">carlos@clipsync.app · 加入于 2024-03-15</div>
+                  </div>
+                  <button class="btn btn-secondary" onclick="showToast('info', '编辑资料', '打开账户编辑器')">编辑</button>
+                </div>
+                <div class="setting-section">
+                  <h3>登录方式</h3>
+                  <div class="setting-row"><div class="grow"><div class="label">📧 邮箱密码</div><div class="help">carlos@clipsync.app</div></div><div class="ctrl"><span class="tag tag-ok">已绑定</span></div></div>
+                  <div class="setting-row"><div class="grow"><div class="label">🔑 Apple ID</div><div class="help">通过 Sign in with Apple</div></div><div class="ctrl"><button class="btn btn-sm btn-secondary" onclick="bindOAuth('Apple')">绑定</button></div></div>
+                  <div class="setting-row"><div class="grow"><div class="label">🔗 Google</div><div class="help">通过 Google OAuth</div></div><div class="ctrl"><button class="btn btn-sm btn-secondary" onclick="bindOAuth('Google')">绑定</button></div></div>
+                </div>
+              </div>
+
+              <div class="settings-panel" data-pane="sub">
+                <h1>订阅</h1>
+                <p class="sub">当前套餐、付款方式与发票</p>
+                <div style="padding: 20px; background: linear-gradient(135deg, var(--accent-tint), var(--surface-1)); border: 1px solid var(--accent-300); border-radius: 14px; margin-bottom: 16px;">
+                  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;"><span class="tag tag-accent">Pro</span><span style="color: var(--text-muted); font-size: var(--type-sm);">2025-09-12 续费</span></div>
+                  <div style="font-size: var(--type-xl); color: var(--text-strong); font-weight: 700;">¥38 / 月</div>
+                  <div style="color: var(--text-muted); font-size: var(--type-sm); margin-top: 4px;">无限设备 · 30 GB 云端 · 优先 AI 模型</div>
+                </div>
+                <div class="setting-section">
+                  <div class="setting-row" style="cursor: pointer;" onclick="showToast('info', '切换套餐', '已打开套餐对比页')"><div class="grow"><div class="label">切换 / 升级</div></div><div class="ctrl"><span style="color: var(--text-muted);">→</span></div></div>
+                  <div class="setting-row" style="cursor: pointer;" onclick="showToast('warn', '取消订阅', '将在本周期结束后停止续费')"><div class="grow"><div class="label">取消订阅</div></div><div class="ctrl"><span style="color: var(--status-danger);">→</span></div></div>
+                </div>
+              </div>
+
+              <div class="settings-panel" data-pane="data">
+                <h1>数据</h1>
+                <p class="sub">导入、导出与本地存储</p>
+                <div class="setting-section">
+                  <div class="setting-row"><div class="grow"><div class="label">导出全部数据</div><div class="help">JSON 格式 · 4,820 条</div></div><div class="ctrl"><button class="btn btn-secondary" onclick="showToast('success', '导出中', '4,820 条 → downloads/clipsync-export.zip')">导出</button></div></div>
+                  <div class="setting-row"><div class="grow"><div class="label">从其他工具导入</div><div class="help">支持 Raycast / 1Clipboard / Maccy JSON</div></div><div class="ctrl"><button class="btn btn-secondary" onclick="showToast('info', '选择文件', '从文件系统选择 JSON 导入')">导入</button></div></div>
+                  <div class="setting-row"><div class="grow"><div class="label">清空全部本地数据</div><div class="help">不可恢复 · 云端不受影响</div></div><div class="ctrl"><button class="btn btn-secondary" style="color: var(--status-danger);" onclick="confirmWipe()">清空</button></div></div>
+                </div>
+              </div>
+
+              <div class="settings-panel" data-pane="workflow">
+                <h1>工作流</h1>
+                <p class="sub">自动化规则与触发器</p>
+                <div class="setting-section">
+                  <div style="background: var(--surface-1); border: 1px dashed var(--hairline-strong); border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                      <div style="width: 32px; height: 32px; border-radius: 8px; background: var(--accent-tint); display: grid; place-items: center; color: var(--accent-600);">⚡</div>
+                      <div style="flex: 1;"><div style="font-size: var(--type-sm); font-weight: 500; color: var(--text-strong);">URL → 自动归类"链接"</div><div style="font-size: var(--type-xs); color: var(--text-muted);">当检测到 URL 时，自动归类到「链接」并提取标题</div></div>
+                      <div class="switch is-on s2" onclick="toggleSwitch(this)"></div>
+                    </div>
+                  </div>
+                  <div style="background: var(--surface-1); border: 1px dashed var(--hairline-strong); border-radius: 12px; padding: 16px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <div style="width: 32px; height: 32px; border-radius: 8px; background: oklch(72% 0.15 70 / 0.15); display: grid; place-items: center; color: oklch(40% 0.15 70);">🤖</div>
+                      <div style="flex: 1;"><div style="font-size: var(--type-sm); font-weight: 500; color: var(--text-strong);">代码片段 → AI 自动命名</div><div style="font-size: var(--type-xs); color: var(--text-muted);">检测到代码时调用 AI 提取语义并生成名称</div></div>
+                      <div class="switch s2" onclick="toggleSwitch(this)"></div>
+                    </div>
+                  </div>
+                  <button class="btn btn-secondary" style="width: 100%; margin-top: 12px; justify-content: center;" onclick="showToast('info', '工作流编辑器', '即将推出 · 已加入候补名单')">+ 新建工作流</button>
+                </div>
+              </div>
+
+              <div class="settings-panel" data-pane="privacy">
+                <h1>隐私与安全</h1>
+                <p class="sub">数据加密、可见性与合规</p>
+                <div class="setting-section">
+                  <h3>加密</h3>
+                  <div class="setting-row"><div class="grow"><div class="label">端到端加密</div><div class="help">X25519 + ChaCha20 · 服务器零知识</div></div><div class="ctrl"><span class="tag tag-ok" style="font-size: 11px;">已启用</span></div></div>
+                  <div class="setting-row"><div class="grow"><div class="label">本地加密缓存</div><div class="help">MacBook Keychain 保护</div></div><div class="ctrl"><div class="switch is-on s2" onclick="toggleSwitch(this)"></div></div></div>
+                </div>
+                <div class="setting-section">
+                  <h3>遥测</h3>
+                  <div class="setting-row"><div class="grow"><div class="label">发送匿名使用统计</div><div class="help">不包含任何剪贴板内容</div></div><div class="ctrl"><div class="switch s2" onclick="toggleSwitch(this)"></div></div></div>
+                  <div class="setting-row"><div class="grow"><div class="label">崩溃报告</div><div class="help">自动发送给开发团队</div></div><div class="ctrl"><div class="switch is-on s2" onclick="toggleSwitch(this)"></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal-overlay" id="modal-reset" onclick="if(event.target===this) closeModal('modal-reset')">
+    <div class="modal">
+      <h3>恢复默认外观？</h3>
+      <p>所有色相、字体、缩放、动效偏好将恢复为出厂设置。<b>此操作不可撤销</b>。</p>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-reset')">取消</button>
+        <button class="btn btn-primary" onclick="resetAppearance()">确认恢复</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-wipe" onclick="if(event.target===this) closeModal('modal-wipe')">
+    <div class="modal">
+      <h3 style="color: var(--status-danger);">⚠ 清空全部本地数据</h3>
+      <p>将永久删除本机的 4,820 条剪贴板条目 · 36 个收藏 · 28 条 AI 记忆。<br>云端数据不受影响，但下次同步会重新下载所有内容。</p>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface-2); border-radius: 8px; margin-bottom: 16px;">
+        <input type="checkbox" id="wipe-confirm" style="width: 16px; height: 16px;" />
+        <label for="wipe-confirm" style="font-size: var(--type-sm); color: var(--text-default);">我已了解此操作不可恢复</label>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-wipe')">取消</button>
+        <button class="btn btn-danger" id="wipe-btn" disabled style="background: var(--status-danger); color: white; border-color: var(--status-danger); opacity: 0.5;" onclick="executeWipe()">清空</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toasts"></div>
+
+  <script>
+    // === Pane switching ===
+    document.querySelectorAll('.nav-item[data-pane]').forEach(nav => {
+      nav.addEventListener('click', () => {
+        const pane = nav.dataset.pane;
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('is-active'));
+        nav.classList.add('is-active');
+        document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('is-on'));
+        document.querySelector(`.settings-panel[data-pane="${pane}"]`)?.classList.add('is-on');
+        const name = nav.textContent.trim().replace(/⌘.*$/, '').trim();
+        document.getElementById('crumb-name').textContent = name;
+      });
+    });
+
+    // === Theme switch ===
+    function setTheme(t, btn) {
+      document.querySelectorAll('.theme-btn').forEach(b => {
+        b.classList.remove('is-on');
+        b.classList.add('btn-ghost');
+        b.style.background = '';
+        b.style.boxShadow = '';
+      });
+      btn.classList.remove('btn-ghost');
+      btn.classList.add('is-on');
+      btn.style.background = 'var(--surface-0)';
+      btn.style.boxShadow = 'var(--shadow-1)';
+      const map = { light: '浅色', dark: '深色', auto: '跟随系统' };
+      showToast('info', '主题已切换', map[t] + '模式已应用');
+      if (t === 'dark') {
+        document.documentElement.style.setProperty('--surface-0', 'oklch(18% 0.01 270)');
+        document.documentElement.style.setProperty('--text-strong', 'oklch(95% 0 0)');
+        document.documentElement.style.setProperty('--text-default', 'oklch(78% 0.01 270)');
+        document.documentElement.style.setProperty('--hairline', 'oklch(28% 0.01 270)');
+      } else {
+        document.documentElement.style.removeProperty('--surface-0');
+        document.documentElement.style.removeProperty('--text-strong');
+        document.documentElement.style.removeProperty('--text-default');
+        document.documentElement.style.removeProperty('--hairline');
+      }
+      markDirty();
+    }
+
+    // === Hue ring picker ===
+    function pickHue(e) {
+      const ring = document.getElementById('hue-ring');
+      const rect = ring.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const angle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI + 90;
+      const hue = (angle + 360) % 360;
+      const marker = document.getElementById('hue-marker');
+      marker.style.transform = `translateX(-50%) rotate(${hue}deg)`;
+      marker.style.transformOrigin = '50% 112px';
+      document.documentElement.style.setProperty('--accent-hue', hue);
+      const names = { 0: '红', 30: '橙', 60: '黄', 90: '草绿', 120: '绿', 150: '青绿', 180: '青', 210: '天蓝', 240: '蓝', 270: '紫', 300: '品红', 330: '玫红' };
+      const closest = Object.keys(names).reduce((a, b) => Math.abs(b - hue) < Math.abs(a - hue) ? b : a);
+      document.getElementById('hue-tag').textContent = `hue ${Math.round(hue)} · ${names[closest]}`;
+      markDirty();
+    }
+
+    // === Saturation ===
+    function setSaturation(v) {
+      document.getElementById('sat-text').textContent = v + '%';
+      const sat = (v / 100 * 0.20).toFixed(3);
+      const r = document.documentElement;
+      r.style.setProperty('--accent-300', `oklch(78% ${sat} var(--accent-hue))`);
+      r.style.setProperty('--accent-400', `oklch(68% ${sat} var(--accent-hue))`);
+      r.style.setProperty('--accent-500', `oklch(58% ${sat} var(--accent-hue))`);
+      r.style.setProperty('--accent-600', `oklch(50% ${sat} var(--accent-hue))`);
+      r.style.setProperty('--accent-700', `oklch(42% ${sat} var(--accent-hue))`);
+      r.style.setProperty('--accent-glow', `oklch(58% ${sat} var(--accent-hue) / 0.18)`);
+      r.style.setProperty('--accent-tint', `oklch(58% ${sat} var(--accent-hue) / 0.08)`);
+      markDirty();
+    }
+
+    // === Scale ===
+    function setScale(v) {
+      document.getElementById('scale-text').textContent = v + '%';
+      document.getElementById('scale-tag').textContent = v + '%';
+      document.querySelector('.app').style.fontSize = (v / 100 * 14) + 'px';
+      markDirty();
+    }
+
+    // === Switch toggle ===
+    function toggleSwitch(sw) {
+      sw.classList.toggle('is-on');
+      markDirty();
+    }
+
+    // === Save / discard ===
+    let dirtyCount = 0;
+    function markDirty() {
+      dirtyCount++;
+      document.getElementById('dirty-count').textContent = dirtyCount;
+      document.getElementById('dirty-tag').style.display = 'inline-flex';
+    }
+    function saveChanges() {
+      dirtyCount = 0;
+      document.getElementById('dirty-count').textContent = '0';
+      document.getElementById('dirty-tag').style.display = 'none';
+      showToast('success', '设置已保存', '所有改动已应用到 ClipSync');
+    }
+    function discardChanges() {
+      dirtyCount = 0;
+      document.getElementById('dirty-count').textContent = '0';
+      document.getElementById('dirty-tag').style.display = 'none';
+      showToast('warn', '已放弃改动', '所有未保存的修改已恢复');
+    }
+
+    // === Reset ===
+    function confirmReset() { openModal('modal-reset'); }
+    function resetAppearance() {
+      document.documentElement.style.setProperty('--accent-hue', 250);
+      document.getElementById('hue-marker').style.transform = 'translateX(-50%) rotate(250deg)';
+      document.getElementById('hue-tag').textContent = 'hue 250 · 紫蓝';
+      document.getElementById('sat-slider').value = 55;
+      document.getElementById('sat-text').textContent = '55%';
+      setSaturation(55);
+      document.getElementById('scale-slider').value = 100;
+      document.getElementById('scale-text').textContent = '100%';
+      document.getElementById('scale-tag').textContent = '100%';
+      document.querySelector('.app').style.fontSize = '';
+      closeModal('modal-reset');
+      saveChanges();
+      showToast('success', '已恢复默认', '所有外观设置回到出厂值');
+    }
+
+    // === Wipe ===
+    function confirmWipe() {
+      openModal('modal-wipe');
+      const cb = document.getElementById('wipe-confirm');
+      const btn = document.getElementById('wipe-btn');
+      cb.checked = false;
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      cb.onchange = () => {
+        btn.disabled = !cb.checked;
+        btn.style.opacity = cb.checked ? '1' : '0.5';
+      };
+    }
+    function executeWipe() {
+      closeModal('modal-wipe');
+      showToast('warn', '本地数据已清空', '4,820 条 · 36 个收藏 · 28 条 AI 记忆已删除');
+    }
+
+    // === Modal helpers ===
+    function openModal(id) { document.getElementById(id).classList.add('is-open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('is-open'); }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.is-open').forEach(m => m.classList.remove('is-open'));
+    });
+
+    // === Toast ===
+    function showToast(type, title, desc) {
+      const stack = document.getElementById('toasts');
+      const t = document.createElement('div');
+      t.className = 'toast-x ' + type;
+      t.innerHTML = '<div><div class="t">' + title + '</div><div class="d">' + (desc || '') + '</div></div>';
+      stack.appendChild(t);
+      setTimeout(() => {
+        t.style.transition = 'all 200ms'; t.style.opacity = '0'; t.style.transform = 'translateX(20px)';
+        setTimeout(() => t.remove(), 220);
+      }, 3200);
+    }
+
+    function bindOAuth(provider) {
+      showToast('info', '绑定 ' + provider, '正在跳转到 ' + provider + ' 授权页…');
+    }
+
+    // === Shortcuts list (filled dynamically) ===
+    const shortcuts = [
+      { keys: '⌘ ⇧ V', desc: '打开 ClipSync 主窗口', group: '全局' },
+      { keys: '⌘ ⇧ C', desc: '快速复制选中内容', group: '全局' },
+      { keys: '⌘ ,', desc: '打开设置', group: '导航' },
+      { keys: '⌘ K', desc: '命令面板 / 搜索', group: '导航' },
+      { keys: '⌘ /', desc: 'AI 助手', group: 'AI' },
+      { keys: '⌘ ⇧ L', desc: 'AI Library 视图', group: 'AI' },
+      { keys: '⌥ Space', desc: 'AI Composer 浮层', group: 'AI' },
+      { keys: '⌘ 1-5', desc: '切换底部 tab', group: '视图' },
+      { keys: '⌘ D', desc: '收藏当前条目', group: '操作' },
+      { keys: '⌘ ⇧ K', desc: '插入占位符', group: '操作' }
+    ];
+    const groups = {};
+    shortcuts.forEach(s => { (groups[s.group] = groups[s.group] || []).push(s); });
+    const sc = document.getElementById('shortcut-list');
+    sc.innerHTML = Object.keys(groups).map(g => `
+      <h3 style="font-size: var(--type-sm); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin: 16px 0 8px;">${g}</h3>
+      ${groups[g].map(s => `
+        <div class="setting-row" style="cursor: pointer;" onclick="showToast('info', '录制快捷键', '按下新的组合键以替换「${s.desc}」')">
+          <div class="grow"><div class="label">${s.desc}</div></div>
+          <div class="ctrl"><kbd style="font-family: 'Geist Mono', monospace; font-size: 11.5px; padding: 3px 8px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 5px;">${s.keys}</kbd></div>
+        </div>
+      `).join('')}
+    `).join('');
+
+    // === Set initial sat ===
+    setSaturation(55);
+  </script>
+</body>
+</html>

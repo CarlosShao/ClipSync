@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipSync · AI 助手</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="ai">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-left">
+      <span class="brand-stamp"><i data-ic="scissors"></i></span>
+      <span class="brand-word">ClipSync</span>
+      <span class="tb-sep"></span>
+      <span class="tb-crumb">AI 助手</span>
+    </div>
+    <button class="cmdk" id="cmdkBtn" title="命令面板">
+      <i data-ic="search"></i><span>搜索或命令…</span><kbd>Ctrl K</kbd>
+    </button>
+    <div class="tb-right">
+      <button class="tb-btn" id="qpBtn" title="快速粘贴面板 · Ctrl+Shift+V"><i data-ic="panel-top"></i></button>
+      <button class="tb-btn" id="themeBtn" title="切换明暗"><i data-ic="moon"></i></button>
+      <button class="tb-btn" id="bellBtn" title="通知"><i data-ic="bell"></i><i class="dot" id="bellDot"></i></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn win" data-win="min"><i data-ic="minus"></i></button>
+      <button class="tb-btn win" data-win="max"><i data-ic="square"></i></button>
+      <button class="tb-btn win close" data-win="close"><i data-ic="x"></i></button>
+    </div>
+  </header>
+  <aside class="app-nav">
+    <div class="nav-sec">工作台</div>
+    <a class="nav-item" data-nav="clipboard" href="index.html"><i data-ic="clipboard-list"></i><span>剪贴板</span><kbd>Ctrl 1</kbd></a>
+    <a class="nav-item" data-nav="favorites" href="favorites.html"><i data-ic="star"></i><span>收藏</span><kbd>Ctrl 2</kbd></a>
+    <a class="nav-item" data-nav="templates" href="templates.html"><i data-ic="layout-template"></i><span>模板</span><kbd>Ctrl 3</kbd></a>
+    <a class="nav-item" data-nav="devices" href="devices.html"><i data-ic="laptop"></i><span>设备</span><kbd>Ctrl 4</kbd></a>
+    <a class="nav-item" data-nav="ai" href="ai.html"><i data-ic="sparkles"></i><span>AI 助手</span><kbd>Ctrl 5</kbd></a>
+    <div class="nav-sec">系统</div>
+    <a class="nav-item" data-nav="settings" href="settings.html"><i data-ic="settings-2"></i><span>设置</span><kbd>Ctrl ,</kbd></a>
+    <div class="nav-foot">
+      <div class="sync-pill"><i class="pulse"></i><span>已同步 · 3 台设备</span></div>
+      <div class="nav-ver">v0.4.2 · ink-bench</div>
+    </div>
+  </aside>
+
+  <main class="app-main" style="overflow:hidden">
+    <div class="ai-shell">
+
+      <!-- 左栏 · 会话 -->
+      <aside class="ai-rail">
+        <div class="ai-rail-head">
+          <button class="btn btn-acc grow" id="newConvo"><i data-ic="plus"></i>新对话</button>
+        </div>
+        <div class="convo-list" id="convoList"></div>
+        <div style="padding:12px;border-top:1px solid var(--border-sub)">
+          <div class="sync-pill"><i class="pulse"></i><span id="railModel">GPT-5.2 · 思考中</span></div>
+        </div>
+      </aside>
+
+      <!-- 中栏 · 聊天画布 -->
+      <section class="ai-canvas">
+        <div class="chat-scroll" id="chatScroll">
+          <div class="chat-col" id="chatCol"></div>
+        </div>
+        <div class="composer">
+          <div class="composer-box">
+            <textarea id="composerInput" rows="1" placeholder="向 ClipSync AI 提问 · Enter 发送，Shift+Enter 换行"></textarea>
+            <div class="composer-bar">
+              <button class="icon-btn" id="attachBtn" title="添加附件"><i data-ic="paperclip"></i></button>
+              <button class="sel" id="modelSel"><i data-ic="cpu"></i><span>GPT-5.2</span><i data-ic="chevron-down"></i></button>
+              <button class="sel" id="thinkSel"><i data-ic="brain"></i><span>思考 · 中</span><i data-ic="chevron-down"></i></button>
+              <span class="grow"></span>
+              <button class="send-btn" id="sendBtn" title="发送"><i data-ic="send"></i></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏 · 检查器 -->
+      <aside class="ai-insp">
+        <div class="insp-card" id="usageCard"></div>
+        <div class="insp-card">
+          <div class="insp-title"><i data-ic="bot"></i>子代理总览</div>
+          <div class="kv"><span>日志分析子代理</span><span class="badge b-ok">已完成</span></div>
+          <div class="kv"><span>环境修复子代理</span><span class="badge b-file">待确认</span></div>
+        </div>
+        <div class="insp-card" id="memCard"></div>
+      </aside>
+
+    </div>
+  </main>
+</div>
+
+<script src="mock.js"></script>
+<script src="api.js"></script>
+<script src="components.js"></script>
+<script>
+let curConvo = 'v1', curModel = 'GPT-5.2', curThink = '中', sending = false;
+let timers = [];
+const chatCol = document.getElementById('chatCol');
+const chatScroll = document.getElementById('chatScroll');
+
+const scrollBottom = () => { chatScroll.scrollTop = chatScroll.scrollHeight; };
+const spinSvg = () => iconSvg('loader', 14).replace('<svg', '<svg class="spin"');
+
+/* ---------- 会话列表 ---------- */
+function renderConvoList() {
+  const list = document.getElementById('convoList');
+  list.innerHTML = DB.convos.map(c => `<div class="convo ${c.id === curConvo ? 'active' : ''}" data-id="${c.id}">
+    <div class="t">${esc(c.title)}</div>
+    <div class="m"><span>${c.model}</span><span>·</span><span>${c.time}</span><span>·</span><span>${c.count} 条</span></div>
+  </div>`).join('');
+  list.querySelectorAll('.convo').forEach(el => el.onclick = () => loadConvo(el.dataset.id));
+}
+
+/* ---------- 消息渲染 ---------- */
+function msgHtml(m) {
+  if (m.role === 'user') {
+    return `<div class="msg msg-user"><div class="msg-av">${iconSvg('user', 15)}</div>
+      <div class="msg-body"><div class="msg-name">你</div>
+      <div class="msg-text">${m.quote ? `<div class="msg-quote">${esc(m.quote)}</div>` : ''}${esc(m.text)}</div></div></div>`;
+  }
+  let inner = '';
+  if (m.think) inner += `<div class="think">
+    <div class="think-head">${iconSvg('chevron-right', 13).replace('<svg', '<svg class="carrot"')}${iconSvg('sparkles', 13).replace('<svg', '<svg class="spark"')}<span>思考过程</span></div>
+    <div class="think-body">${esc(m.think)}</div></div>`;
+  if (m.tools) inner += `<div class="toolline">${m.tools.map(t => `<div class="tool-step ${t.state}">${iconSvg(t.icon, 13)}<span class="tn">${esc(t.name)}</span>${t.state === 'wait' ? `<span class="st-wait">${esc(t.tt)}</span>` : `<span class="tt">${esc(t.tt)}</span>`}</div>`).join('')}</div>`;
+  if (m.confirm) inner += confirmHtml(m.confirm);
+  if (m.html) inner += `<div class="msg-text">${m.html}</div>`;
+  return `<div class="msg msg-ai"><div class="msg-av">${iconSvg('sparkles', 15)}</div>
+    <div class="msg-body"><div class="msg-name">ClipSync AI · ${esc(curModel)}</div>${inner}</div></div>`;
+}
+
+function confirmHtml(cf) {
+  return `<div class="confirm-card" data-cid="${cf.id}" data-tool="${esc(cf.tool)}">
+    <div class="confirm-head">${iconSvg('shield-alert', 15)}<span>危险操作确认 · ${esc(cf.tool)}</span></div>
+    <div class="confirm-body">${esc(cf.impact)}<div class="confirm-args">${esc(cf.args)}</div></div>
+    <div class="confirm-foot">
+      <button class="btn btn-sm btn-acc" data-act="allow">允许执行</button>
+      <button class="btn btn-sm" data-act="deny">拒绝</button>
+      <span class="timer">120s</span>
+    </div>
+  </div>`;
+}
+
+/* ---------- 确认卡逻辑 ---------- */
+function startTimer(card) {
+  let s = 120;
+  const el = card.querySelector('.timer');
+  const t = setInterval(() => {
+    s--;
+    if (s <= 0) {
+      clearInterval(t);
+      if (!card.dataset.done) {
+        card.dataset.done = '1';
+        card.classList.add('done');
+        const head = card.querySelector('.confirm-head');
+        head.innerHTML = iconSvg('clock', 15) + '<span>已超时 · 未执行</span>';
+        head.style.color = 'var(--text-3)';
+        card.querySelector('.confirm-foot')?.remove();
+      }
+    } else if (el) el.textContent = s + 's';
+  }, 1000);
+  timers.push(t);
+}
+
+async function doResolve(card, allow) {
+  if (card.dataset.done) return;
+  card.dataset.done = '1';
+  const tool = card.dataset.tool;
+  await resolveConfirm(card.dataset.cid, allow);
+  card.classList.add('done');
+  const head = card.querySelector('.confirm-head');
+  head.innerHTML = iconSvg(allow ? 'circle-check' : 'x', 15) + `<span>${allow ? '已批准' : '已拒绝'} · ${esc(tool)}</span>`;
+  if (!allow) head.style.color = 'var(--text-3)';
+  card.querySelector('.confirm-foot')?.remove();
+  if (allow) {
+    const wait = card.closest('.msg-body')?.querySelector('.tool-step.wait');
+    if (wait) {
+      wait.classList.remove('wait'); wait.classList.add('done');
+      const st = wait.querySelector('.st-wait');
+      if (st) { st.className = 'tt'; st.textContent = '0.4s'; }
+    }
+  }
+  toast(allow ? '已批准 · 继续执行 ' + tool : '已拒绝该操作', allow ? 'ok' : '');
+}
+
+function bindChat() {
+  chatCol.querySelectorAll('.think-head').forEach(h => h.onclick = () => h.parentElement.classList.toggle('open'));
+  chatCol.querySelectorAll('.confirm-card').forEach(card => {
+    if (card.dataset.bound) return;
+    card.dataset.bound = '1';
+    startTimer(card);
+    card.querySelector('[data-act="allow"]').onclick = () => doResolve(card, true);
+    card.querySelector('[data-act="deny"]').onclick = () => doResolve(card, false);
+  });
+}
+
+/* ---------- 会话加载 ---------- */
+async function loadConvo(id) {
+  curConvo = id;
+  renderConvoList();
+  timers.forEach(clearInterval); timers = [];
+  chatCol.innerHTML = `<div class="dimmer" style="display:flex;gap:8px;align-items:center;justify-content:center;padding:48px">${spinSvg()}<span>加载会话…</span></div>`;
+  const { data } = await fetchMessages(id);
+  if (curConvo !== id) return;
+  chatCol.innerHTML = data.map(msgHtml).join('');
+  bindChat();
+  scrollBottom();
+}
+
+function newChat() {
+  curConvo = null;
+  renderConvoList();
+  timers.forEach(clearInterval); timers = [];
+  chatCol.innerHTML = `<div class="empty" style="margin-top:64px">
+    <i data-ic="sparkles" data-size="36"></i>
+    <div class="t">开始新对话</div>
+    <div class="d">试试粘贴一段报错日志、一条地址，或直接提问。剪贴板内容可作为上下文引用。</div>
+  </div>`;
+  hydrateIcons(chatCol);
+  document.getElementById('composerInput').focus();
+}
+
+/* ---------- 发送（流式） ---------- */
+async function send() {
+  const ta = document.getElementById('composerInput');
+  const text = ta.value.trim();
+  if (!text || sending) return;
+  sending = true;
+  ta.value = ''; autoGrow(ta);
+  if (!curConvo) chatCol.innerHTML = '';
+  chatCol.insertAdjacentHTML('beforeend', msgHtml({ role: 'user', text }));
+  const aiId = 'ai' + Date.now();
+  chatCol.insertAdjacentHTML('beforeend', `<div class="msg msg-ai" id="${aiId}">
+    <div class="msg-av">${iconSvg('sparkles', 15)}</div>
+    <div class="msg-body"><div class="msg-name">ClipSync AI · ${esc(curModel)}</div>
+    <div class="msg-text dimmer" style="display:flex;gap:8px;align-items:center">${spinSvg()}<span>正在思考…</span></div></div></div>`);
+  scrollBottom();
+  let first = true;
+  await askAI(text, chunk => {
+    const el = document.querySelector(`#${aiId} .msg-text`);
+    if (!el) return;
+    if (first) { el.classList.remove('dimmer'); el.style.cssText = ''; el.innerHTML = ''; first = false; }
+    el.textContent = chunk;
+    scrollBottom();
+  });
+  sending = false;
+}
+
+function autoGrow(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+}
+
+/* ---------- 模型 / 思考强度选择 ---------- */
+function syncModelUi() {
+  document.querySelector('#modelSel span').textContent = curModel;
+  document.querySelector('#thinkSel span').textContent = '思考 · ' + curThink;
+  document.getElementById('railModel').textContent = curModel + ' · 思考' + curThink;
+}
+
+function openSelect(anchor, options, cur, onPick) {
+  const pop = openPop(anchor, options.map(o =>
+    `<div class="pop-item" data-v="${o}">${o === cur ? iconSvg('check', 14) : '<span style="width:14px;flex:none"></span>'}<span class="grow">${o}</span></div>`
+  ).join(''));
+  const r = anchor.getBoundingClientRect();
+  pop.style.right = 'auto'; pop.style.left = r.left + 'px';
+  pop.style.top = 'auto'; pop.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+  pop.querySelectorAll('.pop-item').forEach(el => el.onclick = () => { onPick(el.dataset.v); pop.remove(); });
+}
+
+/* ---------- 右栏检查器 ---------- */
+async function renderInsp() {
+  const { data: u } = await fetchUsage();
+  document.getElementById('usageCard').innerHTML = `
+    <div class="insp-title">${iconSvg('gauge', 12)}上下文用量</div>
+    <div class="row gap12">
+      <div class="ring">${ringSvg(0.57)}</div>
+      <div class="grow">
+        <div class="kv"><span>已用</span><b>18.4k / 32k</b></div>
+        <div class="kv"><span>缓存命中</span><b>${u.cacheHit}%</b></div>
+        <div class="kv"><span>本次费用</span><b>¥${u.cost.toFixed(2)}</b></div>
+      </div>
+    </div>`;
+  document.getElementById('memCard').innerHTML = `
+    <div class="insp-title">${iconSvg('database', 12)}记忆速览</div>` +
+    DB.memories.map(m => `<div class="kv"><span style="flex:none">${esc(m.key)}</span><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:12px" title="${esc(m.value)}">${esc(m.value)}</b></div>`).join('');
+}
+
+/* ---------- 启动 ---------- */
+document.addEventListener('DOMContentLoaded', () => {
+  renderConvoList();
+  loadConvo('v1');
+  renderInsp();
+  syncModelUi();
+
+  const ta = document.getElementById('composerInput');
+  ta.addEventListener('input', () => autoGrow(ta));
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  document.getElementById('sendBtn').onclick = send;
+  document.getElementById('newConvo').onclick = newChat;
+  document.getElementById('attachBtn').onclick = () => toast('原型演示 · 附件暂存为本地引用');
+  document.getElementById('modelSel').onclick = e =>
+    openSelect(e.currentTarget, ['GPT-5.2', 'Claude 4.5', 'Qwen3-Max'], curModel, v => { curModel = v; syncModelUi(); toast('已切换模型 · ' + v, 'ok'); });
+  document.getElementById('thinkSel').onclick = e =>
+    openSelect(e.currentTarget, ['低', '中', '高'], curThink, v => { curThink = v; syncModelUi(); toast('思考强度 · ' + v, 'ok'); });
+});
+</script>
+</body>
+</html>
