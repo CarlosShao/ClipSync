@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { decrypt } from '../utils/encryption.js'
 import { logger } from '../utils/logger.js'
@@ -14,7 +15,19 @@ router.post('/', apiLimiter, async (req, res) => {
     const { providerId, prompt, context, maxTokens } = req.body || {}
     if (!prompt || typeof prompt !== 'string') return res.status(400).json({ error: 'prompt is required' })
 
-    const providerRow = await resolveUserProvider(req.userId, providerId)
+    let providerRow = await resolveUserProvider(req.userId, providerId)
+    if (!providerRow) {
+      // 兜底：账号没有任何 is_default provider 时（resolveUserProvider 返回 null），
+      // 取任一启用且有 key 的 provider——与侧栏聊天 loadProviders 的「无默认取第一个」同语义，
+      // 页内结果卡不应因「没设默认」而整体不可用
+      const { rows } = await pool.query(
+        `SELECT * FROM ai_providers
+         WHERE user_id = $1 AND enabled = TRUE AND api_key_encrypted IS NOT NULL
+         ORDER BY created_at ASC LIMIT 1`,
+        [req.userId]
+      )
+      providerRow = rows[0] || null
+    }
     if (!providerRow) return res.status(404).json({ error: 'Provider not found' })
     if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
 
