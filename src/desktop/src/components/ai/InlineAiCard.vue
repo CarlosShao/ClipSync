@@ -58,7 +58,7 @@ function continueInChat() {
     </div>
 
     <div v-else-if="status === 'error'" class="iac-error">
-      <span>{{ error || tf('inline_ai_failed', 'AI 调用失败') }}</span>
+      <span>{{ tf(error || 'inline_ai_failed', 'AI 调用失败') }}</span>
       <button type="button" class="pl-btn pl-btn--sm" @click="emit('retry')">
         <RefreshCw :size="12" /><span>{{ tf('inline_ai_retry', '重试') }}</span>
       </button>

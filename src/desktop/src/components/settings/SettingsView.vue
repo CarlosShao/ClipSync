@@ -92,7 +92,7 @@ function runReview() {
       'items 必须覆盖快照每一行；key 只能取行首方括号中的分节key；advice 为一句话中文建议，ok 项也给维持现状的肯定建议。',
     ].join('\n'),
     buildReviewContext(),
-    { maxTokens: 2048 },
+    { maxTokens: 4096 },
   ).then(() => {
     if (reviewAi.status.value === 'done') reviewItems.value = parseReview(reviewAi.text.value)
   })

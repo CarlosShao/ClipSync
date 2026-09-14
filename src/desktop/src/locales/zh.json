@@ -1709,6 +1709,7 @@
   "ai_quote_ctx": "引用上下文",
   "inline_ai_no_text": "该条目没有可分析的文本内容",
   "inline_ai_loading": "分析中…",
+  "inline_ai_empty": "AI 未返回内容（模型思考预算耗尽），请重试",
   "inline_ai_failed": "AI 调用失败",
   "inline_ai_retry": "重试",
   "inline_ai_copy": "复制",

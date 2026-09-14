@@ -1709,6 +1709,7 @@
   "ai_quote_ctx": "Quoted context",
   "inline_ai_no_text": "No analyzable text in this item",
   "inline_ai_loading": "Working…",
+  "inline_ai_empty": "AI returned no content (model reasoning budget exhausted), please retry",
   "inline_ai_failed": "AI request failed",
   "inline_ai_retry": "Retry",
   "inline_ai_copy": "Copy",

@@ -25,6 +25,12 @@ export function useInlineAi() {
       const res = await inlineChat(prompt, context, controller.signal, opts?.maxTokens)
       if (my !== seq) return
       if (res.ok && typeof res.data?.text === 'string') {
+        // 防御：done 但正文为空（推理型 provider 预算耗尽等）→ 转错误态，不出白卡
+        if (!res.data.text.trim()) {
+          error.value = 'inline_ai_empty'
+          status.value = 'error'
+          return
+        }
         text.value = res.data.text
         status.value = 'done'
       } else {

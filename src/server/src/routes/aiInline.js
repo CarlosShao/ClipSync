@@ -35,7 +35,9 @@ router.post('/', apiLimiter, async (req, res) => {
     const MAX_INPUT = 24000
     const truncatedPrompt = prompt.slice(0, MAX_INPUT)
     const truncatedContext = typeof context === 'string' && context ? context.slice(0, MAX_INPUT) : ''
-    const maxTokensClamped = Math.min(Math.max(Number(maxTokens) || 1024, 64), 4096)
+    // 默认 4096（服务端钳制上限）：推理型 provider（step-3.7-flash 等）的思维链会消耗
+    // max_tokens 预算，1024 时正文 content 会被吃空（诊断/审查类长输出实测复现）。
+    const maxTokensClamped = Math.min(Math.max(Number(maxTokens) || 4096, 64), 4096)
 
     const messages = []
     if (truncatedContext) {
@@ -45,7 +47,8 @@ router.post('/', apiLimiter, async (req, res) => {
 
     const { finalContent } = await runChatLoop({
       messages,
-      options: { temperature: 0.4, max_tokens: maxTokensClamped },
+      // buildUpstreamChat 读 options.maxTokens（驼峰）；传 max_tokens 会被忽略并兜底 1024
+      options: { temperature: 0.4, maxTokens: maxTokensClamped },
       providerRow,
       apiKey,
       tools: [],
