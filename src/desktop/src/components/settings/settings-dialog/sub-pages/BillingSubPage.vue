@@ -11,11 +11,14 @@ const toast = useSonner()
 const emit = defineEmits<{ back: [] }>()
 
 // ===== State =====
+// 字段对齐后端 GET /api/invoices（routes/invoices.js，camelCase）：
+// { id, invoiceNo, amount, tax, status, invoiceUrl, orderNo, paymentMethod, planName, createdAt }
 interface Invoice {
   id: string
-  invoice_no?: string
+  invoiceNo?: string
   amount?: number
-  created_at?: string
+  createdAt?: string
+  status?: string
 }
 
 const invoices = ref<Invoice[]>([])
@@ -61,13 +64,13 @@ onMounted(() => {
     <div v-else class="invoice-list">
       <div v-for="inv in invoices" :key="inv.id" class="invoice-item">
         <div class="invoice-info">
-          <div class="invoice-no">{{ inv.invoice_no || inv.id }}</div>
+          <div class="invoice-no">{{ inv.invoiceNo || inv.id }}</div>
           <div class="invoice-date">
-            {{ inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '' }}
+            {{ inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : '' }}
           </div>
         </div>
         <div class="invoice-right">
-          <span class="invoice-amount">&yen;{{ inv.amount || 0 }}</span>
+          <span class="invoice-amount">&yen;{{ inv.amount ?? 0 }}</span>
           <!-- 发票下载尚未接入：统一占位文案"功能建设中"（此前误用反馈服务文案） -->
           <Button variant="ghost" size="sm" @click="toast.show(t('ft_building'), 'info')">
             <Download :size="14" />
