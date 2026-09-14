@@ -47,7 +47,7 @@ const REVIEW_SNAPSHOT: { key: string; label: string; value: () => string }[] = [
   { key: 'general', label: '自动同步', value: () => (configStore.autoSync ? '开' : '关') },
   { key: 'general', label: '同步间隔', value: () => (configStore.syncInterval === 0 ? '实时' : configStore.syncInterval + ' 分钟') },
   { key: 'data', label: '历史上限', value: () => (configStore.maxHistory >= 999999 ? '不限' : configStore.maxHistory + ' 条') },
-  { key: 'data', label: '图片压缩', value: () => (configStore.imageCompress ? '开' : '关') },
+  { key: 'general', label: '图片压缩', value: () => (configStore.imageCompress ? '开' : '关') },
   { key: 'privacy', label: '隐私模式', value: () => (configStore.privacyMode ? '开' : '关') },
   { key: 'privacy', label: '失焦自动隐藏敏感内容', value: () => (configStore.autoBlur ? '开' : '关') },
   { key: 'general', label: '界面语言', value: () => (currentLang.value === 'zh' ? '中文' : 'English') },
@@ -239,7 +239,7 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
           <div class="page-eyebrow">Preferences</div>
           <div class="page-title page-title--big">{{ activeSubPage ? subPageLabel : t('sg_title', '设置') }}</div>
           <div class="page-sub">
-            {{ activeSubPage ? '' : t('page_sub_set', '偏好保存在本机 · 同步类设置将下发到全部设备') }}
+            {{ activeSubPage ? '' : t('page_sub_set', '偏好保存在本机 · 仅在当前设备生效') }}
           </div>
         </div>
         <div class="page-acts">
