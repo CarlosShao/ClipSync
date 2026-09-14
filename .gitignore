@@ -98,8 +98,10 @@ data/
 .omo/
 .opencode/
 .reasonix/
+.ua/
 .uploads/
 .workbuddy/
+.yanagent/
 .zcode/
 AGENTS.md
 SOUL.md
