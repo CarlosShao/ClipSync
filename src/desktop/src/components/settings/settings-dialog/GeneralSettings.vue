@@ -11,7 +11,7 @@ import CustomSelect from '@/components/ui/select/CustomSelect.vue'
 import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
 import Button from '@/components/ui/button/Button.vue'
 
-const { t, currentLang, setLang } = useI18n()
+const { t, tf, currentLang, setLang } = useI18n()
 const toast = useSonner()
 const configStore = useConfigStore()
 // MA-03：无限历史的套餐门槛收敛到注册表 'history.unlimited'（minPlan: Pro, mode: disable），
@@ -51,8 +51,14 @@ watch(serverUrl, (v) => {
 async function saveServerUrl() {
   if (serverUrlError.value) return
   const next = serverUrlInput.value.trim()
-  await configStore.save({ server_url: next })
-  toast.show(t('sg_server_url_saved'), 'success')
+  // S7：如实反馈写入结果。失败时 configStore 不会更新 config.server_url，
+  // 因此 serverUrl（已生效地址）与 serverUrlDirty 仍反映旧值，UI 不会假装已生效。
+  const ok = await configStore.save({ server_url: next })
+  if (ok) {
+    toast.show(t('sg_server_url_saved'), 'success')
+  } else {
+    toast.show(tf('profile_save_fail', '保存失败，请稍后重试'), 'error')
+  }
 }
 
 function resetServerUrl() {
