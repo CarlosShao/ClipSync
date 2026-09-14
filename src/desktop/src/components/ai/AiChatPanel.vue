@@ -562,7 +562,11 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
                 class="ai-ctx-chip"
                 :title="t('ai_ctx_chip_tip', 'AI 感知你所在的页面，可直接针对当前页提问')"
               >
-                <span class="ai-ctx-dot" aria-hidden="true" />
+                <span
+                  class="ai-ctx-dot"
+                  :class="{ 'is-streaming': isStreaming }"
+                  aria-hidden="true"
+                />
                 {{ t('ai_ctx_prefix', '当前上下文') }} · {{ viewContextText }}
               </span>
             </div>
@@ -890,21 +894,35 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
   text-overflow: ellipsis;
   cursor: default;
 }
+/* 与侧边栏同步珠同一套"玻璃珠"语言：静态径向高光 + 极轻外发光。
+   常驻无限动画会让浏览器永远无法进入空闲帧（合成器按刷新率持续要帧，
+   165Hz 下 GPU 约 28% 单核全耗在合成/提交），故默认静态、零运行时开销。 */
 .ai-ctx-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent);
   flex-shrink: 0;
-  animation: ai-ctx-breathe 2.4s ease-in-out infinite;
+  background:
+    radial-gradient(circle at 34% 28%, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0) 58%),
+    var(--accent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 13%, transparent),
+    0 0 6px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+/* 仅在 AI 真实生成中呼吸：让动画表达"正在活动"而非常驻装饰。
+   生成期间页面本就在持续更新，不额外引入空闲帧；空闲时完全静态。 */
+.ai-ctx-dot.is-streaming {
+  animation: ai-ctx-breathe 1.8s ease-in-out infinite;
 }
 @keyframes ai-ctx-breathe {
   0%,
   100% {
     opacity: 1;
+    transform: scale(1);
   }
   50% {
-    opacity: 0.35;
+    opacity: 0.45;
+    transform: scale(0.78);
   }
 }
 

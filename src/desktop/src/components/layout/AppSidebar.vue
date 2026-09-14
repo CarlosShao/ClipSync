@@ -535,22 +535,25 @@ async function openAdminConsole() {
   white-space: nowrap;
   overflow: hidden;
 }
+/* 同步状态珠（静态精致态）。
+   这里原本是 2.4s 无限光环动画。实测：只要页面上有持续运行的 CSS 动画，
+   浏览器就永远无法进入空闲帧 —— 合成器按显示器刷新率持续要帧
+   （3440×1440@165Hz 下 BeginImplFrame 恒定 165/s），GPU 进程约 28% 单核
+   全耗在每帧的合成/提交上；动画一停，这些线程立刻归零。
+   故改为静态"玻璃珠"：径向高光给出立体质感、极轻外发光给出存在感，
+   观感比闪烁圆点更沉稳。gradient/box-shadow 都是静态绘制，运行时零开销。
+   （将来若接入真实的"同步中"状态，加 .is-syncing 挂回光环动画即可。） */
 .pulse {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--success);
   flex-shrink: 0;
-  animation: sync-pulse 2.4s ease-in-out infinite;
-}
-@keyframes sync-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 45%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 4px transparent;
-  }
+  background:
+    radial-gradient(circle at 34% 28%, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0) 58%),
+    var(--success);
+  box-shadow:
+    0 0 0 2.5px color-mix(in srgb, var(--success) 13%, transparent),
+    0 0 7px color-mix(in srgb, var(--success) 32%, transparent);
 }
 
 .user-chip {
