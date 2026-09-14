@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import Switch from '@/components/ui/switch/Switch.vue'
@@ -17,32 +17,6 @@ import {
 const { t } = useI18n()
 const toast = useSonner()
 const emit = defineEmits<{ back: [] }>()
-
-const STORAGE_KEY = 'clipsync-sec-notif'
-
-// ===== 登录通知（本地持久化，后端暂无对应接口） =====
-interface SecNotifPrefs {
-  loginNotification: boolean
-}
-const secNotif = reactive<SecNotifPrefs>({
-  loginNotification: true,
-})
-function loadFromStorage() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (typeof parsed.loginNotification === 'boolean') secNotif.loginNotification = parsed.loginNotification
-    }
-  } catch {
-    /* ignore */
-  }
-}
-function saveSecNotif(partial: Partial<SecNotifPrefs>) {
-  Object.assign(secNotif, partial)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...secNotif }))
-  toast.show(t('settings_saved'), 'success')
-}
 
 // ===== 2FA 状态（来自后端，非本地） =====
 const twoFAEnabled = ref(false)
@@ -208,7 +182,6 @@ async function copyBackupCodes() {
 }
 
 onMounted(() => {
-  loadFromStorage()
   load2FAStatus()
 })
 </script>
@@ -230,27 +203,6 @@ onMounted(() => {
           <div class="sec-hint">{{ t('sec_2fa_h') }}</div>
         </div>
         <Switch v-model="twoFAEnabledModel" :disabled="twoFALoading || setupLoading" />
-      </div>
-
-      <!-- 登录通知：本地持久化 -->
-      <div class="sec-item">
-        <div>
-          <div class="sec-label">{{ t('sec_login_notif') }}</div>
-          <div class="sec-hint">{{ t('sec_login_notif_h') }}</div>
-        </div>
-        <Switch
-          :model-value="secNotif.loginNotification"
-          @update:model-value="(v: boolean) => saveSecNotif({ loginNotification: v })"
-        />
-      </div>
-
-      <!-- 端到端加密：待上线 -->
-      <div class="sec-item">
-        <div>
-          <div class="sec-label">{{ t('sec_e2ee') }}</div>
-          <div class="sec-hint">{{ t('sec_e2ee_pending') }}</div>
-        </div>
-        <Switch :model-value="false" disabled />
       </div>
     </div>
 
