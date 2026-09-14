@@ -740,3 +740,15 @@ export interface ConversationSearchResult {
 export function searchConversationHistory(q: string) {
   return api<ConversationSearchResult>('GET', `/api/ai/conversations/search?q=${encodeURIComponent(q)}`)
 }
+
+/** 单轮内联 AI（非流式、不建会话）：页内结果卡直接调用，不进侧栏消息流 */
+export interface InlineAiResult {
+  ok: boolean
+  text?: string
+  error?: string
+}
+
+export function inlineChat(prompt: string, context?: string, signal?: AbortSignal, maxTokens?: number) {
+  // maxTokens 仅透传，钳制在服务端（64-4096）；JSON 类输出（整理/模板/审查）需要放大配额
+  return api<InlineAiResult>('POST', '/api/ai/inline', { prompt, context, maxTokens }, { signal })
+}

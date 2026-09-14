@@ -20,6 +20,10 @@ import { TAG_PRESET_COLORS, getTagDisplayColor, tagColorStyle } from '@/utils/fa
 import { COLLECTION_ICON_MAP, renderCollectionIcon } from '@/utils/favorites/collectionIcons'
 import ClipDetailDrawer from '@/components/clipboard/ClipDetailDrawer.vue'
 import { setKeyboardLayer } from '@/composables/useClipboardKeyboard'
+// A2：页内内联 AI（总结卡 + 整理流程卡），结果直接在收藏页展示，不再跳侧栏
+import InlineAiCard from '@/components/ai/InlineAiCard.vue'
+import FavOrganizeFlow from '@/components/clipboard/FavOrganizeFlow.vue'
+import { useInlineAi } from '@/composables/useInlineAi'
 
 const props = defineProps<{ aiEnabled?: boolean }>()
 const emit = defineEmits<{
@@ -1203,18 +1207,56 @@ function askAi(prompt: string) {
     window.dispatchEvent(new CustomEvent('clipsync:ai-send-message', { detail: { content: prompt } }))
   }, 120)
 }
-// 原型「AI 整理收藏」/「总结这个合集」：交给 AI 给出整理/总结建议
-function aiOrganize() {
-  askAi(
-    `${tf('fav_ai_organize', '整理收藏')}：当前收藏共 ${favoriteItems.value.length} 条。请给出分类归组、标签与合集整理建议。`,
-  )
+// === A2：「AI 整理收藏」/「总结这个合集」改为页内内联出结果（不再跳侧栏）===
+// 总结卡：InlineAiCard 只读输出；整理卡：FavOrganizeFlow 两段式（分析 → 预览/采纳）
+const summarizeAi = useInlineAi()
+const showSummarize = ref(false)
+const showOrganizeFlow = ref(false)
+const summarizeCtx = ref<{ prompt: string; context: string } | null>(null)
+
+/** 收藏条目摘要清单（id + 类型 + 内容前 80 字，最多 60 条），作为内联 AI 的参考上下文 */
+function buildFavoriteDigest(): string {
+  return favoriteItems.value
+    .slice(0, 60)
+    .map((item, i) => {
+      const body =
+        item.type === 'image' ? '（图片）' : String(item.content || '').replace(/\s+/g, ' ').trim()
+      return `#${i} [${item.type}] id=${item.id} ${body.slice(0, 80)}`
+    })
+    .join('\n')
 }
 function aiSummarizeCollection() {
-  const body = favoriteItems.value
-    .slice(0, 40)
-    .map((i, n) => `${n + 1}. [${i.type}] ${(i.content || '').slice(0, 80)}`)
-    .join('\n')
-  askAi(`${tf('fav_ai_summarize_col', '总结这个合集')}：\n${body}`)
+  // 两个卡互斥：开一个关另一个
+  showOrganizeFlow.value = false
+  const context = buildFavoriteDigest()
+  const prompt =
+    `${tf('fav_ai_summarize_col', '总结这个合集')}：以下是当前收藏条目清单（每行 #序号 [类型] id=条目ID 内容前80字）。\n` +
+    `请总结这批收藏的主题分布与要点：\n` +
+    `- 先用 2~3 句话概括整体构成；\n` +
+    `- 再按主题/类型分布列出要点（每条一行，简短）；\n` +
+    `- 如有明显的整理建议（某类内容偏多、可归档等）可附一句。\n` +
+    `不要逐条复述清单。`
+  summarizeCtx.value = { prompt, context }
+  showSummarize.value = true
+  void summarizeAi.run(prompt, context)
+}
+function retrySummarize() {
+  if (!summarizeCtx.value) return
+  void summarizeAi.run(summarizeCtx.value.prompt, summarizeCtx.value.context)
+}
+function closeSummarize() {
+  summarizeAi.reset()
+  showSummarize.value = false
+}
+function aiOrganize() {
+  // 两个卡互斥：开一个关另一个
+  showSummarize.value = false
+  summarizeAi.reset()
+  showOrganizeFlow.value = true
+}
+/** 整理采纳执行成功：关闭卡片 + 刷新收藏/合集树/标签 */
+async function onOrganizeApplied() {
+  await Promise.all([reloadFavorites(), collections.loadCollections(), loadTags()])
 }
 watch(drawerItem, (v) => setKeyboardLayer('modal', !!v))
 onUnmounted(() => setKeyboardLayer('modal', false))
@@ -1285,6 +1327,13 @@ function cancelEditTags() {
   display: flex;
   justify-content: center;
   padding: 16px 0 24px;
+}
+/* A2：页内内联 AI 结果区（总结卡 / 整理流程卡）纵向排布 */
+.fav-ai-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0 2px;
 }
 </style>
 
@@ -1684,6 +1733,26 @@ function cancelEditTags() {
 
       <!-- 原型 favWhere：当前位置提示行 -->
       <div class="fav-where">{{ favWhere }}</div>
+
+      <!-- A2：页内内联 AI 结果区（列表上方）：总结卡 / 整理流程卡 -->
+      <div v-if="showSummarize || showOrganizeFlow" class="fav-ai-zone">
+        <InlineAiCard
+          v-if="showSummarize"
+          :title="tf('fav_ai_summarize_col', '总结这个合集')"
+          :status="summarizeAi.status.value"
+          :text="summarizeAi.text.value"
+          :error="summarizeAi.error.value"
+          closable
+          @close="closeSummarize"
+          @retry="retrySummarize"
+        />
+        <FavOrganizeFlow
+          v-if="showOrganizeFlow"
+          :items="favoriteItems"
+          @close="showOrganizeFlow = false"
+          @applied="onOrganizeApplied"
+        />
+      </div>
 
       <!-- Content -->
       <div ref="favContentRef" class="fav-content">

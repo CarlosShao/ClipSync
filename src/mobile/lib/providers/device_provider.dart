@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/device.dart';
 import '../services/api_service.dart';
+import '../services/e2e_crypto.dart';
 
 class DeviceProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
@@ -31,13 +32,31 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
 
+  /// 注册新设备。
+  ///
+  /// [publicKey]（B8/E2E）：本机 E2E 公钥（65B 未压缩点 base64），可选。
+  ///
+  /// B8 接线说明：本方法经 ApiService.registerDevice 发送注册请求，而该 service
+  /// 的请求体不含 publicKey 字段——api_service.dart 不在 B8 允许改动清单内，
+  /// 不能越界修改。当前真实的注册路径是 AuthProvider._doRegisterDevice
+  /// （自行构造 POST /api/devices 请求体，已接线 publicKey）；这里仅在注册前
+  /// 确保本机 E2E 密钥对已生成（未显式传入 publicKey 时自动 ensure），为后续
+  /// 上传/解密就绪；[publicKey] 参数为预留，待 ApiService.registerDevice
+  /// 支持透传后接线。
   Future<Device?> registerDevice(String token, {
     required String deviceName,
     required String deviceType,
     required String platform,
     String? platformVersion,
     String? appVersion,
+    String? publicKey,
   }) async {
+    try {
+      await E2eCrypto.instance.ensureKeypair();
+    } catch (e) {
+      // 密钥生成失败不阻塞设备注册（服务端按未提供公钥处理，可后续补交）
+      debugPrint('[DeviceProvider] e2e keypair ensure failed: $e');
+    }
     try {
       final device = await _api.registerDevice(
         token,

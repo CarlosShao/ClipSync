@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
+import { isValidDevicePublicKey } from '../crypto/keyExchange.js';
 import pool from '../db/pool.js';
 import { broadcastToUser, sendNotification } from '../ws/server.js';
 import { isValidUUID, isValidDeviceType, isValidPlatform, sanitizeString, validateDeviceName } from '../validation/validator.js';
@@ -13,6 +14,18 @@ import { logger } from '../utils/logger.js';
 
 const router = Router();
 const pairingRouter = Router();
+
+// E2E 协议 v1：校验可选设备公钥（P-256 未压缩点 base64，65 字节且 0x04 开头）
+// 返回 { value: <base64|null> }（null 表示未提供），格式非法时返回 { error: 'Invalid public_key' }
+function parseOptionalPublicKey(publicKey) {
+  if (publicKey === undefined || publicKey === null || publicKey === '') {
+    return { value: null };
+  }
+  if (typeof publicKey !== 'string' || !isValidDevicePublicKey(publicKey)) {
+    return { error: 'Invalid public_key' };
+  }
+  return { value: publicKey };
+}
 
 // 二维码扫码配对：生成一次性配对令牌（本机已登录设备调用）
 // 返回 { token, expiresAt }，token 编码进二维码 clipsync://pair?token=...
@@ -42,7 +55,7 @@ pairingRouter.post('/pairing/init', apiLimiter, authenticateToken, async (req, r
 // 这是「自动同步不可用时的手动兜底方案」：扫码即把本设备登录到对方账号，从而共享剪贴板
 pairingRouter.post('/pairing/redeem', apiLimiter, async (req, res) => {
   try {
-    const { token, deviceName, deviceType, platform, platformVersion } = req.body;
+    const { token, deviceName, deviceType, platform, platformVersion, publicKey } = req.body;
     if (!token || typeof token !== 'string') {
       return res.status(400).json({ error: 'Pairing token is required' });
     }
@@ -96,10 +109,17 @@ pairingRouter.post('/pairing/redeem', apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid platform. Valid values: windows, macos, linux, ios, android, browser' });
     }
     const cleanPlatformVersion = platformVersion ? sanitizeString(String(platformVersion)) : '';
+
+    // E2E：可选公钥，随注册一并落库（格式非法则 400）
+    const pk = parseOptionalPublicKey(publicKey);
+    if (pk.error) {
+      return res.status(400).json({ error: pk.error });
+    }
+
     await pool.query(
-      `INSERT INTO devices (user_id, device_name, device_type, platform, platform_version, app_version)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [userId, cleanDeviceName, cleanDeviceType, cleanPlatform, cleanPlatformVersion, '0.1.0']
+      `INSERT INTO devices (user_id, device_name, device_type, platform, platform_version, app_version, public_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [userId, cleanDeviceName, cleanDeviceType, cleanPlatform, cleanPlatformVersion, '0.1.0', pk.value]
     );
 
     logger.info('[Pairing] redeem success', { userId, deviceType: cleanDeviceType, platform: cleanPlatform });
@@ -141,7 +161,7 @@ router.get('/', apiLimiter, async (req, res) => {
     const userId = req.userId;
     const result = await pool.query(
       `SELECT id, device_name, device_type, platform, platform_version,
-              app_version, is_online, last_seen_at, created_at
+              app_version, is_online, last_seen_at, created_at, public_key
        FROM devices
        WHERE user_id = $1
        ORDER BY last_seen_at DESC`,
@@ -159,7 +179,7 @@ router.get('/', apiLimiter, async (req, res) => {
 router.post('/', apiLimiter, async (req, res) => {
   try {
     const userId = req.userId;
-    const { deviceName, deviceType, platform, platformVersion, appVersion } = req.body;
+    const { deviceName, deviceType, platform, platformVersion, appVersion, publicKey } = req.body;
 
     // 验证必填字段
     if (!deviceName || !deviceType || !platform) {
@@ -182,6 +202,12 @@ router.post('/', apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid platform. Valid values: windows, macos, linux, ios, android, browser' });
     }
 
+    // E2E：可选公钥，提供时校验格式（65 字节未压缩点 base64），非法返回 400
+    const pk = parseOptionalPublicKey(publicKey);
+    if (pk.error) {
+      return res.status(400).json({ error: pk.error });
+    }
+
     // 清理输入
     const cleanDeviceName = sanitizeString(deviceName.trim());
     const cleanPlatformVersion = platformVersion ? sanitizeString(platformVersion) : '';
@@ -201,10 +227,10 @@ router.post('/', apiLimiter, async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO devices (user_id, device_name, device_type, platform, platform_version, app_version)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, device_name, device_type, platform, platform_version, app_version, is_online, created_at`,
-      [userId, cleanDeviceName, deviceType, platform, cleanPlatformVersion, cleanAppVersion]
+      `INSERT INTO devices (user_id, device_name, device_type, platform, platform_version, app_version, public_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, device_name, device_type, platform, platform_version, app_version, is_online, created_at, public_key`,
+      [userId, cleanDeviceName, deviceType, platform, cleanPlatformVersion, cleanAppVersion, pk.value]
     );
 
     const device = result.rows[0];
@@ -227,7 +253,7 @@ router.put('/:deviceId', apiLimiter, async (req, res) => {
   try {
     const userId = req.userId;
     const { deviceId } = req.params;
-    const { deviceName, platformVersion, appVersion } = req.body;
+    const { deviceName, platformVersion, appVersion, publicKey } = req.body;
 
     // 验证 deviceId
     if (!isValidUUID(deviceId)) {
@@ -242,20 +268,28 @@ router.put('/:deviceId', apiLimiter, async (req, res) => {
       }
     }
 
+    // E2E：可选更新公钥，提供时校验格式，非法返回 400
+    const pk = parseOptionalPublicKey(publicKey);
+    if (pk.error) {
+      return res.status(400).json({ error: pk.error });
+    }
+
     // 清理输入
     const cleanDeviceName = deviceName ? sanitizeString(deviceName.trim()) : null;
     const cleanPlatformVersion = platformVersion ? sanitizeString(platformVersion) : null;
     const cleanAppVersion = appVersion ? sanitizeString(appVersion) : null;
 
+    // public_key 已有时允许覆盖（密钥轮换）；未提供时保持原值
     const result = await pool.query(
       `UPDATE devices SET
         device_name = COALESCE($1, device_name),
         platform_version = COALESCE($2, platform_version),
         app_version = COALESCE($3, app_version),
+        public_key = COALESCE($4, public_key),
         last_seen_at = NOW()
-       WHERE id = $4 AND user_id = $5
-       RETURNING id, device_name, device_type, platform, platform_version, app_version, is_online, created_at`,
-      [cleanDeviceName, cleanPlatformVersion, cleanAppVersion, deviceId, userId]
+       WHERE id = $5 AND user_id = $6
+       RETURNING id, device_name, device_type, platform, platform_version, app_version, is_online, created_at, public_key`,
+      [cleanDeviceName, cleanPlatformVersion, cleanAppVersion, pk.value, deviceId, userId]
     );
 
     if (result.rows.length === 0) {

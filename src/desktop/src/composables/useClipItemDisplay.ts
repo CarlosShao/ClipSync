@@ -40,6 +40,10 @@ export function useClipItemDisplay() {
     if (itemPw.isItemProtected(item) && itemPw.isUnlocked(item.id)) {
       return itemPw.getUnlockedPlaintext(item.id) ?? item.content
     }
+    // B7：E2E 条目未解密（列表常态/无密钥）→ 显示锁形占位而不是裸 [E2E]
+    if (String(item.content || '').trim() === '[E2E]') {
+      return t('e2e_list_placeholder', '🔒 端到端加密内容')
+    }
     return item.content
   }
 

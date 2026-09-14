@@ -22,6 +22,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'services/api_service.dart';
 import 'services/cache_service.dart';
 import 'services/clipboard_capture.dart';
+import 'services/e2e_crypto.dart';
 import 'services/error_report_service.dart';
 import 'services/local_notification_service.dart';
 import 'services/server_config.dart';
@@ -206,13 +207,29 @@ void main() async {
           : fileName;
       debugPrint(
           '[ScreenshotCapture] Uploading screenshot: $filename (${bytes.length} bytes) from device $myDevice');
-      final result = await ApiService().uploadImage(
-        null,
-        myDevice,
+      // B9 补线：E2E 开启时图片走端到端加密通道（三态；handled=true 时绝不回退明文）。
+      // 图片密文不能走 /api/media/image（服务端 sharp 解析明文字节会 500），改走 /api/clipboard。
+      final e2eImg = await ClipboardCaptureService.instance.uploadImageMaybeE2e(
+        deviceId: myDevice,
         imageBytes: bytes,
         filename: filename,
         mimeType: mimeType,
       );
+      final Map<String, dynamic>? result;
+      if (e2eImg.handled) {
+        result = e2eImg.response;
+        if (e2eImg.aborted) {
+          debugPrint('[ScreenshotCapture] e2e image upload aborted (fail-closed)');
+        }
+      } else {
+        result = await ApiService().uploadImage(
+          null,
+          myDevice,
+          imageBytes: bytes,
+          filename: filename,
+          mimeType: mimeType,
+        );
+      }
       if (result != null) {
         debugPrint('[ScreenshotCapture] Uploaded screenshot successfully: ${result['id']}');
         await clipboardProvider.refresh(forceRefresh: true);
@@ -240,11 +257,35 @@ void main() async {
     }
   };
 
+  /// B10 补线：E2E 条目解密——组信封（metadata.e2e + content_encrypted 密文）后调密钥库。
+  /// 解密失败 / 无设备 id / 无密钥 → null（调用方回退基础通知，绝不把密文写剪贴板/通知）。
+  Future<String?> decryptE2eContent(
+      Map<String, dynamic> envelope, String? ciphertext, String myDeviceId) async {
+    if (ciphertext == null || ciphertext.isEmpty || myDeviceId.isEmpty) return null;
+    try {
+      final combined = <String, dynamic>{...envelope, 'ciphertext': ciphertext};
+      final bytes = await E2eCrypto.instance.decrypt(combined, myDeviceId);
+      return utf8.decode(bytes);
+    } catch (e) {
+      debugPrint('[E2E] writeback decrypt failed: $e');
+      return null;
+    }
+  }
+
   // 辅助方法：拉取条目图片字节（兼容 PC base64 dataUrl 与服务端媒体文件）
-  Future<Map<String, dynamic>?> fetchItemImage(String itemId) async {
+  Future<Map<String, dynamic>?> fetchItemImage(String itemId, {Map<String, dynamic>? metadata}) async {
     // 1. 优先尝试从 /api/clipboard/:id/content 获取（PC 截图以 base64 dataUrl 存入 content_encrypted）
     try {
-      final content = await ApiService().getItemContent(null, itemId);
+      var content = await ApiService().getItemContent(null, itemId);
+      // B10 补线：E2E 图片条目 content 是密文 b64——先解密还原 dataUrl 再解析
+      final e2e = metadata?['e2e'];
+      if (content != null && e2e is Map) {
+        content = await decryptE2eContent(
+          Map<String, dynamic>.from(e2e),
+          content,
+          authProvider.deviceId ?? '',
+        );
+      }
       if (content != null && content.startsWith('data:')) {
         final comma = content.indexOf(',');
         if (comma > 0) {
@@ -288,7 +329,9 @@ void main() async {
       final sourceDeviceName = item?['sourceDeviceName'] as String?;
       final myDevice = authProvider.deviceId;
       final itemId = item?['id'] as String?;
-      final preview = LocalNotificationService.extractPreview(msg);
+      // B10：E2E 条目通知预览用本地化占位，不显示裸 [E2E]
+      final previewRaw = LocalNotificationService.extractPreview(msg);
+      final preview = previewRaw == '[E2E]' ? '🔒 端到端加密内容' : previewRaw;
       final isRemote =
           sourceDevice == null || sourceDevice.isEmpty || sourceDevice != myDevice;
       final writebackOn = settingsProvider.clipboardWritebackEnabled;
@@ -297,7 +340,7 @@ void main() async {
         // 核心场景：PC 截图/图片 → 自动保存手机相册 + 弹出大图预览通知。
         Future(() async {
           try {
-            final imgData = await fetchItemImage(itemId);
+            final imgData = await fetchItemImage(itemId, metadata: item?['metadata'] as Map<String, dynamic>?);
             if (imgData == null) {
               debugPrint('[AutoSaveImage] no image bytes fetched for item $itemId');
               await LocalNotificationService.instance.handleWsNewClipboard(msg);
@@ -342,7 +385,21 @@ void main() async {
         // 核心场景：文本/链接回写系统剪贴板 + 弹出多行长文本预览通知
         Future(() async {
           try {
-            final content = await ApiService().getItemContent(null, itemId);
+            var content = await ApiService().getItemContent(null, itemId);
+            // B10 补线：E2E 条目先解密——密文绝不写系统剪贴板、不进通知正文
+            final e2e = (item?['metadata'] as Map?)?['e2e'];
+            if (e2e is Map) {
+              content = await decryptE2eContent(
+                Map<String, dynamic>.from(e2e),
+                content,
+                myDevice ?? '',
+              );
+              if (content == null) {
+                // 无密钥/解密失败：只走基础通知，不回写、不展示密文
+                await LocalNotificationService.instance.handleWsNewClipboard(msg);
+                return;
+              }
+            }
             if (content != null && content.isNotEmpty) {
               if (writebackOn) {
                 await Clipboard.setData(ClipboardData(text: content));

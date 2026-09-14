@@ -12,8 +12,9 @@ import { trimToMaxHistory } from './clipboardLoad'
 import { useConfigStore } from '@/stores/configStore'
 import { usePlanLimits } from '@/composables/usePlanLimits'
 import { handleQuotaResponse } from './useUploadLimitNotice'
+import { e2eEnabled, tryEncryptText, tryEncryptBytes, e2eEnsureKeypair, E2E_FILE_MAX_BYTES, E2E_PREVIEW_PLACEHOLDER, type E2eUploadPayload } from '@/utils/e2eCrypto'
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const toast = useSonner()
 
 export function simpleHash(s: string): string {
@@ -264,6 +265,16 @@ function guessPlatform(): string {
  * 离线队列里的 create payload 必须带有效的 deviceId，否则恢复网络后 flush 会 404。
  * 因此登录成功 / 应用启动时就要把 deviceId 准备好，不能等第一次上传时才现取。
  */
+/** B6：确保本机 E2E 密钥对已生成并返回公钥（非 Tauri/失败返回 null，不阻塞注册） */
+async function ensureLocalPublicKey(): Promise<string | null> {
+  try {
+    return await e2eEnsureKeypair()
+  } catch (e) {
+    console.warn('[E2E] ensure keypair failed (non-Tauri env?)', e)
+    return null
+  }
+}
+
 export async function ensureDeviceId(): Promise<string | null> {
   let deviceId = localStorage.getItem(DEVICE_ID_KEY)
   if (deviceId) return deviceId
@@ -276,6 +287,14 @@ export async function ensureDeviceId(): Promise<string | null> {
       deviceId = devList[0].id || devList[0].device_id
       if (deviceId) {
         localStorage.setItem(DEVICE_ID_KEY, deviceId)
+        // B6：老设备一次性回填公钥（注册早于 E2E 上线的设备行没有 public_key）
+        const first = devList[0]
+        if (!(typeof first?.public_key === 'string' && first.public_key)) {
+          const pub = await ensureLocalPublicKey()
+          if (pub) {
+            void api('PUT', `/api/devices/${deviceId}`, { publicKey: pub }).catch(() => {})
+          }
+        }
         return deviceId
       }
     }
@@ -286,12 +305,15 @@ export async function ensureDeviceId(): Promise<string | null> {
   // 没有已有设备：注册本机
   try {
     const platform = guessPlatform()
+    // B6：注册即携带本机 E2E 公钥（服务端 B2 已支持），其他设备才能把本机纳入收件人
+    const pub = await ensureLocalPublicKey()
     const registerRes = await api('POST', '/api/devices', {
       deviceName: 'Desktop',
       deviceType: 'desktop',
       platform,
       platformVersion: '',
       appVersion: '0.1.0',
+      ...(pub ? { publicKey: pub } : {}),
     })
     if (registerRes.ok && registerRes.data?.id) {
       const did = registerRes.data.id
@@ -357,15 +379,33 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
     }
     return
   }
+  // B6：E2E 开启且收件人公钥可得 → 密文入库 + [E2E] 占位；无收件人回退明文（协议 §5）；
+  // Rust 原语失败 fail-closed——中止发送，绝不把用户要加密的内容按明文发出。
+  let e2e: E2eUploadPayload | null = null
+  if (e2eEnabled.value) {
+    try {
+      e2e = await tryEncryptText(content)
+    } catch (err) {
+      console.warn('[E2E] text encrypt failed, abort upload', err)
+      toast.show(tf('e2e_encrypt_failed', '端到端加密失败，本次内容未发送'), 'error')
+      if (!isArchiveView) {
+        items.value = items.value.filter((i) => i.id !== localId)
+        totalItems.value = Math.max(0, totalItems.value - 1)
+        mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+      }
+      return
+    }
+  }
   const uploadPayload: Record<string, any> = {
-    content,
-    contentEncrypted: content,
+    content: e2e ? e2e.contentEncrypted : content,
+    contentEncrypted: e2e ? e2e.contentEncrypted : content,
     sourceDeviceId: deviceId,
     contentType: type,
-    contentPreview: content.slice(0, 5000),
-    contentSize: content.length,
+    contentPreview: e2e ? e2e.contentPreview : content.slice(0, 5000),
+    contentSize: e2e ? e2e.contentEncrypted.length : content.length,
   }
-  if (keptHtml) uploadPayload.metadata = { html: keptHtml }
+  if (e2e) uploadPayload.metadata = { e2e: e2e.e2e, ...(keptHtml ? { html: keptHtml } : {}) }
+  else if (keptHtml) uploadPayload.metadata = { html: keptHtml }
   try {
     const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
     // 上传成功后：用服务器返回的 id 替换本地临时 id，并缓存内容
@@ -444,16 +484,33 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
   // Hash the ORIGINAL image bytes (not the resized upload) so server-side
   // duplicate detection matches the same image when pasted into the AI chat.
   const imageHash = await sha256DataUrl(dataUrl)
+  // B6：E2E 同文本路径——密文入库 + [E2E] 占位；无收件人回退明文；原语失败 fail-closed
+  let e2e: E2eUploadPayload | null = null
+  if (e2eEnabled.value) {
+    try {
+      e2e = await tryEncryptText(resized)
+    } catch (err) {
+      console.warn('[E2E] image encrypt failed, abort upload', err)
+      toast.show(tf('e2e_encrypt_failed', '端到端加密失败，本次内容未发送'), 'error')
+      if (!isArchiveView) {
+        items.value = items.value.filter((i) => i.id !== localId)
+        totalItems.value = Math.max(0, totalItems.value - 1)
+        mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+      }
+      return
+    }
+  }
   const uploadPayload: any = {
     contentType: 'image',
-    contentEncrypted: resized,
+    contentEncrypted: e2e ? e2e.contentEncrypted : resized,
     sourceDeviceId: deviceId,
     // 压缩后可能是 webp，mimeType 必须跟着实际编码，不能继续写死 image/png
     mimeType: dataUrlMime(resized),
-    size: base64?.length || 0,
-    contentPreview: `[Image ${base64?.length || 0} bytes]`,
+    size: e2e ? e2e.contentEncrypted.length : base64?.length || 0,
+    contentPreview: e2e ? e2e.contentPreview : `[Image ${base64?.length || 0} bytes]`,
     imageHash,
   }
+  if (e2e) uploadPayload.metadata = { e2e: e2e.e2e }
   const res = await apiOrEnqueue('POST', '/api/clipboard', uploadPayload, 'create', uploadPayload)
   if (res.ok && res.data?.id) {
     const localItem = items.value.find((i) => i.id === localId)
@@ -637,6 +694,123 @@ export async function uploadFileToServer(payload: string) {
     removeOptimistic()
   }
 
+  // ---- B6：单文件 chunked 上传助手（原 ④ 大文件分支与 E2E 加密路径共用） ----
+  // 自建乐观条目 → 建服务端条目 → 分片上传（e2eEnc 非空时上传密文字节并在 metadata 带信封）→ 转正。
+  // e2eEnc 在调用方完成加密（失败 fail-closed 不进这里），null=按明文字节上传。
+  async function chunkedFileUpload(
+    f: FileProbe,
+    deviceId: string,
+    isArchiveView: boolean,
+    e2eEnc: { e2e: import('@/utils/e2eCrypto').E2eEnvelope; ciphertext: Uint8Array } | null,
+  ): Promise<void> {
+    const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    const meta: Record<string, any> = {
+      originalName: f.name,
+      mimeType: f.mime,
+      extension: f.ext,
+      fileSize: f.size,
+      source: 'auto-sync',
+      paths: [f.path],
+      localOnly: true,
+      fileEncoding: 'server',
+      ...(e2eEnc ? { e2e: e2eEnc.e2e } : {}),
+    }
+    const displayJson = JSON.stringify({ name: f.name, size: formatBytes(f.size), type: f.mime })
+    if (!isArchiveView) {
+      items.value.unshift({
+        id: localId,
+        type: 'file',
+        content: displayJson,
+        source: 'Desktop',
+        timestamp: Date.now(),
+        selected: false,
+        metadata: { ...meta },
+      })
+      totalItems.value += 1
+      mainTotalItems.value += 1
+      trimToMaxHistory()
+    }
+    const removeOne = () => {
+      if (!isArchiveView) {
+        items.value = items.value.filter((i) => i.id !== localId)
+        totalItems.value = Math.max(0, totalItems.value - 1)
+        mainTotalItems.value = Math.max(0, mainTotalItems.value - 1)
+      }
+    }
+    const entryPayload = {
+      contentType: 'file',
+      content: displayJson,
+      contentEncrypted: displayJson,
+      sourceDeviceId: deviceId,
+      contentPreview: e2eEnc ? E2E_PREVIEW_PLACEHOLDER : f.name,
+      contentSize: f.size,
+      metadata: meta,
+    }
+    const createRes = await api('POST', '/api/clipboard', entryPayload)
+    if (!createRes.ok || !createRes.data?.id) {
+      removeOne()
+      toast.show(`${f.name}: ${createRes.error || t('upload_fail')}`, 'error')
+      return
+    }
+    if (createRes.data.duplicate) {
+      removeOne()
+      return
+    }
+    const serverId: string = createRes.data.id
+    const localItem = items.value.find((i) => i.id === localId)
+    if (localItem) {
+      localItem.id = serverId
+      cacheContent(serverId, displayJson)
+    }
+    try {
+      // E2E：上传体是密文字节（服务端磁盘只见密文）；明文路径维持分片读盘组装
+      const file = e2eEnc
+        ? new File([e2eEnc.ciphertext as BlobPart], f.name, { type: f.mime })
+        : await readFileAsFile(f.path, f.name, f.mime, f.size)
+      await chunkedUpload(
+        file,
+        (progress) => {
+          const it = items.value.find((x) => x.id === serverId)
+          if (it && !progress.done) it.content = `${f.name} (${progress.percent}%)`
+        },
+        undefined,
+        { clipboardItemId: serverId },
+      )
+      const fin = items.value.find((x) => x.id === serverId)
+      if (fin) {
+        fin.content = displayJson
+        fin.metadata = { ...meta, localOnly: false }
+      }
+    } catch (e: any) {
+      console.warn('[Clipboard] chunked upload failed, entry stays localOnly', f.name, e?.message || e)
+      if (await handleQuotaResponse(e, { fileName: f.name, sizeBytes: f.size })) return
+      toast.show(`${f.name}: ${e?.message || t('upload_fail')}`, 'error')
+    }
+  }
+
+  /** E2E 单文件加密 + chunked 上传；返回 false = 加密失败已 fail-closed 跳过该文件 */
+  async function encryptAndUploadFile(f: FileProbe, devId: string, isArchiveView: boolean): Promise<boolean> {
+    try {
+      const raw = await readFileAsFile(f.path, f.name, f.mime, f.size)
+      const bytes = new Uint8Array(await raw.arrayBuffer())
+      let enc: Awaited<ReturnType<typeof tryEncryptBytes>> = null
+      try {
+        enc = await tryEncryptBytes(bytes)
+      } catch (err) {
+        console.warn('[E2E] file encrypt failed, abort this file', f.name, err)
+        toast.show(`${f.name}: ${tf('e2e_encrypt_failed', '端到端加密失败，本次内容未发送')}`, 'error')
+        return false
+      }
+      // enc=null = 无收件人公钥：按协议 §5 回退明文（内容仍加密缺失，但这是约定的可用性降级）
+      await chunkedFileUpload(f, devId, isArchiveView, enc)
+      return true
+    } catch (e: any) {
+      console.warn('[E2E] file read/encrypt failed', f.name, e?.message || e)
+      toast.show(`${f.name}: ${e?.message || t('upload_fail')}`, 'error')
+      return false
+    }
+  }
+
   // ---- 路由决策（v1）----
   // ① 有读不到/大小未知的文件 → localOnly 兜底（与旧二进制分支同口径）
   if (unreadable.length > 0) {
@@ -665,6 +839,31 @@ export async function uploadFileToServer(payload: string) {
       await createLocalOnlyEntry()
       return
     }
+  }
+
+  // ---- B6 E2E 路由：放在 ① unreadable 与 ② 套餐预检之后——读不到/超套餐的文件先被拦下，
+  // 开关开启时文件绝不走服务端建条目的 multipart 路径（服务端无法把信封挂上条目）。
+  if (e2eEnabled.value) {
+    if (!isSingleFile) {
+      // 多文件批次：逐文件加密各自成条目；超上限文件提示后明文回退
+      removeOptimistic()
+      for (const f of probes) {
+        if (f.size > E2E_FILE_MAX_BYTES) {
+          toast.show(`${f.name}: ${tf('e2e_file_too_large_fallback', '文件超过端到端加密大小上限，已按明文发送')}`, 'warning')
+          await chunkedFileUpload(f, deviceId, isArchiveView, null)
+          continue
+        }
+        await encryptAndUploadFile(f, deviceId, isArchiveView)
+      }
+      return
+    }
+    if (probes[0].size <= E2E_FILE_MAX_BYTES) {
+      removeOptimistic()
+      await encryptAndUploadFile(probes[0], deviceId, isArchiveView)
+      return
+    }
+    // 单文件超 E2E 上限：提示后落回下方原明文路径（③/④ chunked 明文）
+    toast.show(tf('e2e_file_too_large_fallback', '文件超过端到端加密大小上限，已按明文发送'), 'warning')
   }
 
   const oversize = probes.find((f) => f.size > FILE_MULTIPART_UPLOAD_LIMIT)

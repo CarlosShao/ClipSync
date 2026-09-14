@@ -978,6 +978,15 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+/* A6 抽屉内联 AI 结果卡 + 按钮激活态 */
+.drawer .pl-btn--on {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.drawer .drawer-inline-ai {
+  margin-top: 10px;
+}
 
 /* === 原型 v1 时间线分节头（置顶/今天/昨天/更早） === */
 .clip-group {

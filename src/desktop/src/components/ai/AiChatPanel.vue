@@ -35,6 +35,7 @@ import {
   Check,
   ShieldAlert,
   Pencil,
+  Quote,
 } from 'lucide-vue-next'
 
 /**
@@ -323,18 +324,33 @@ function onSend(text: string, images?: import('@/api/ai').ChatImage[]) {
       console.warn('[AiChatPanel] reedit anchor missing, falling back to normal send')
     }
   }
+  // A7 侧栏兜底：引用块上下文走隐藏 system 通道（不混入用户消息正文），发送后清除
+  const composedCtx = pendingContext.value
+    ? [viewContextText.value, `[引用上下文]\n${pendingContext.value}`].filter(Boolean).join('\n\n')
+    : viewContextText.value
+  pendingContext.value = ''
   send(text, {
     mode: mode.value,
     thinking: thinkingEnabled.value,
     thinkingStrength: thinkingStrength.value,
     images,
-    viewContext: viewContextText.value,
+    viewContext: composedCtx,
   })
 }
 
 provide('aiChatSend', onSend)
 
+// A7 侧栏兜底：外部事件携带 context 时 → 不自动发送，上下文折叠为引用块置于草稿上方，用户可删可改
+const pendingContext = ref('')
+
 const onCustomSendMessage = (e: any) => {
+  if (e?.detail?.context) {
+    // 外部派发不属于"编辑重发"语义，放弃编辑态
+    pendingEdit.value = null
+    pendingContext.value = String(e.detail.context)
+    chatInputRef.value?.setDraft(String(e.detail.content || ''))
+    return
+  }
   if (e?.detail?.content) {
     // 外部派发的发送不属于"编辑重发"语义，放弃编辑态
     pendingEdit.value = null
@@ -734,6 +750,18 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
             </button>
           </div>
 
+          <!-- A7 引用上下文块：从内联 AI 卡「在助手中继续」带入，可删除；发送时走隐藏上下文 -->
+          <div v-if="pendingContext" class="ai-quote-ctx" role="note">
+            <div class="ai-quote-ctx-head">
+              <Quote :size="12" />
+              <span>{{ t('ai_quote_ctx', '引用上下文') }}</span>
+              <button type="button" class="ai-quote-ctx-x" :title="t('delete_btn')" :aria-label="t('delete_btn')" @click="pendingContext = ''">
+                <X :size="13" />
+              </button>
+            </div>
+            <div class="ai-quote-ctx-body">{{ pendingContext }}</div>
+          </div>
+
           <AiChatComposer
             ref="chatInputRef"
             :disabled="!canSend"
@@ -972,6 +1000,53 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
   border-top: 1px solid var(--border-default);
+}
+
+/* ========== A7 引用上下文块 ========== */
+.ai-quote-ctx {
+  margin: 0 10px 4px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+.ai-quote-ctx-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.ai-quote-ctx-head svg {
+  flex: none;
+}
+.ai-quote-ctx-x {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+}
+.ai-quote-ctx-x:hover {
+  color: var(--text-primary);
+  background: var(--border-subtle);
+}
+.ai-quote-ctx-body {
+  padding: 0 10px 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 /* ========== 编辑即回滚提示条 ========== */

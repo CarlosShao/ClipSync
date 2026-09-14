@@ -7,6 +7,7 @@ import type { ClipboardTemplate } from '@/types'
 import { FileText, Plus, SearchX, Search, Sparkles, Pencil, Trash2, Zap } from 'lucide-vue-next'
 import TemplateList from './TemplateList.vue'
 import TemplateEditorDialog from './TemplateEditorDialog.vue'
+import TemplateGenerateDialog from './TemplateGenerateDialog.vue'
 import VariableFillDialog from './VariableFillDialog.vue'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import Button from '@/components/ui/button/Button.vue'
@@ -15,26 +16,18 @@ const { t, tf } = useI18n()
 const store = useTemplateStore()
 const props = defineProps<{ aiEnabled?: boolean }>()
 
-// 原型「AI 生成模板」：呼出 AI 面板按场景起草
-function aiGenerate() {
-  window.dispatchEvent(new CustomEvent('clipsync:toggle-ai'))
-  setTimeout(() => {
-    window.dispatchEvent(
-      new CustomEvent('clipsync:ai-send-message', {
-        detail: {
-          content: tf(
-            'tpl_ai_generate_prompt',
-            '生成模板：根据我的高频使用场景起草新模板，正文用 {{变量}} 作占位符。',
-          ),
-        },
-      }),
-    )
-  }, 120)
-}
+// 工单 A3：「AI 生成模板」改为内联对话框（意图 → AI 生成 → 预览 → 保存为模板），
+// 保存走现有创建路径（对话框内 store.create），成功后刷新列表并选中新模板。
+const genOpen = ref(false)
 
 // v1 原型排版：左列表 + 右详情（选中即看，编辑仍走弹窗）
 const selectedId = ref<string | null>(null)
 const selected = computed(() => store.templates.find((tpl) => tpl.id === selectedId.value) || null)
+
+function onGenerateSaved(created: ClipboardTemplate) {
+  if (created?.id) selectedId.value = created.id
+  genOpen.value = false
+}
 
 /* {{变量}} 高亮预览（原型 .var-hl） */
 function esc(raw: string): string {
@@ -161,7 +154,7 @@ async function confirmDelete() {
             <Search :size="14" />
             <input v-model="search" type="text" :placeholder="t('tpl_search_ph', '搜索模板…')" />
           </div>
-          <button v-if="props.aiEnabled" type="button" class="pl-btn" @click="aiGenerate">
+          <button v-if="props.aiEnabled" type="button" class="pl-btn" @click="genOpen = true">
             <Sparkles :size="14" /><span>{{ tf('tpl_ai_generate', 'AI 生成模板') }}</span>
           </button>
           <button type="button" class="pl-btn pl-btn--acc" @click="onNew">
@@ -235,6 +228,8 @@ async function confirmDelete() {
     </template>
 
     <TemplateEditorDialog :open="editorOpen" :editing="editing" @close="editorOpen = false" @save="onEditorSave" />
+
+    <TemplateGenerateDialog :open="genOpen" @close="genOpen = false" @saved="onGenerateSaved" />
 
     <VariableFillDialog
       :open="fillState.open"

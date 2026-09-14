@@ -24,8 +24,43 @@ import {
 import { getCachedContent, cacheContent } from './clipboardCache'
 import { setItemPreview, releaseRemovedObjectUrls } from './clipboardObjectUrls'
 import { resolveDeviceName } from './useDevice'
+import { isE2eItem, e2eDecryptBytes } from '@/utils/e2eCrypto'
 
 const { tf } = useI18n()
+
+// === B7：E2E 条目按需解密 ===
+
+/**
+ * E2E 条目按需解密：metadata.e2e 存在 → 用本设备私钥解出明文字符串；
+ * 非 E2E 条目原样返回 raw；解密失败/无密钥返回 null（调用方保持占位，绝不渲染密文）。
+ */
+export async function decryptIfE2e(raw: string, metadata: unknown): Promise<string | null> {
+  if (!isE2eItem(metadata)) return raw
+  try {
+    const myDeviceId = localStorage.getItem('clipsync-device-id') || ''
+    if (!myDeviceId) return null
+    const bytes = await e2eDecryptBytes((metadata as any).e2e, myDeviceId)
+    return new TextDecoder().decode(bytes)
+  } catch (e) {
+    console.warn('[E2E] decrypt failed:', e)
+    return null
+  }
+}
+
+/** 详情/抽屉按需取全文：拉 /content →（E2E 则解密）→ 写缓存。返回明文；失败返回 null */
+export async function fetchFullContentDecrypted(item: Pick<ClipItem, 'id' | 'metadata'>): Promise<string | null> {
+  try {
+    const res = await api<{ contentEncrypted: string; metadata?: unknown }>('GET', `/api/clipboard/${item.id}/content`)
+    if (!res.ok || !res.data?.contentEncrypted) return null
+    const plain = await decryptIfE2e(res.data.contentEncrypted, res.data.metadata ?? item.metadata)
+    if (plain === null) return null
+    cacheContent(item.id, plain)
+    return plain
+  } catch (e) {
+    console.warn('[E2E] fetch full content failed:', e)
+    return null
+  }
+}
 
 // 设备列表（用于筛选下拉），懒加载 + 内存缓存，避免每次打开筛选面板都打 /api/devices
 let devicesCache: { id: string; name: string; platform?: string }[] = []
@@ -497,7 +532,14 @@ export async function loadImagesFromQueue(queue: ClipItem[]) {
       }
 
       if (fullRes.ok && fullRes.data?.contentEncrypted) {
-        const raw = fullRes.data.contentEncrypted
+        // B7：E2E 条目先按需解密（密文 b64 → 明文 dataUrl）；失败时保持占位，绝不渲染密文
+        const rawEnc = fullRes.data.contentEncrypted as string
+        const meta = fullRes.data.metadata ?? item.metadata
+        const raw = (await decryptIfE2e(rawEnc, meta)) ?? ''
+        if (!raw && isE2eItem(meta)) {
+          console.warn(`[E2E] image ${item.id} decrypt unavailable (no key / failed) — keep placeholder`)
+          return
+        }
         const isDataUrl = raw.startsWith('data:')
         let renderSrc: string
         if (isDataUrl) {

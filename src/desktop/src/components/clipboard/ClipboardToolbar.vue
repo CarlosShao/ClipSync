@@ -10,7 +10,7 @@ import { Trash2 as TrashIcon } from 'lucide-vue-next'
 import { getClipboardStats, type ClipboardStats } from '@/api/clipboard'
 import { useDevice } from '@/composables/useDevice'
 
-defineProps<{ view: 'timeline' | 'fav' | 'archive'; showFilterPanel: boolean; aiEnabled?: boolean }>()
+defineProps<{ view: 'timeline' | 'fav' | 'archive'; showFilterPanel: boolean; aiEnabled?: boolean; summaryActive?: boolean }>()
 const emit = defineEmits<{
   upload: []
   'new-clip': []
@@ -132,7 +132,14 @@ function clearSearch() {
         <div class="page-sub">{{ t('page_sub_clip', '跨设备实时同步 · 本地加密存储 · 保留 30 天') }}</div>
       </div>
       <div class="page-acts">
-        <button v-if="view !== 'archive' && aiEnabled" type="button" class="pl-btn" @click="emit('summarize-today')">
+        <button
+          v-if="view !== 'archive' && aiEnabled"
+          type="button"
+          class="pl-btn"
+          :class="{ 'pl-btn--on': summaryActive }"
+          :aria-pressed="summaryActive ? 'true' : 'false'"
+          @click="emit('summarize-today')"
+        >
           <Sparkles :size="14" /><span>{{ tf('summarize_today', '总结今日动态') }}</span>
         </button>
         <button v-if="view !== 'archive'" type="button" class="pl-btn" @click="emit('cleanup-history')">
@@ -334,5 +341,11 @@ function clearSearch() {
 .clip-search-clear:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+/* 「总结今日动态」卡片展开中的按钮态 */
+.pl-btn--on {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 </style>

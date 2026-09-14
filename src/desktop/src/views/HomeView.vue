@@ -438,9 +438,11 @@ onMounted(async () => {
       if (isRemote && !document.hasFocus() && now - lastSyncNotifAt > 10_000) {
         lastSyncNotifAt = now
         const dName = device.devices.value.find((d) => d.id === srcDevice)?.name
-        const preview = data.item?.contentPreview || ''
+        const rawPreview = String(data.item?.contentPreview || '')
+        // B7：E2E 条目预览是 [E2E] 占位——通知里换成本地化文案，不显示裸占位符
+        const preview = rawPreview === '[E2E]' ? t('e2e_notif_placeholder', '端到端加密内容') : rawPreview
         const label = dName || t('remote_device', '远端设备')
-        const text = preview ? String(preview).slice(0, 80) : t('empty_action')
+        const text = preview ? preview.slice(0, 80) : t('empty_action')
         try {
           notifyNative(label, text)
         } catch {

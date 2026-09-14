@@ -60,6 +60,7 @@ import sharedLinksRoutes from './routes/sharedLinks.js';
 import searchHistoryRoutes from './routes/searchHistory.js';
 import aiProvidersRoutes from './routes/aiProviders.js';
 import aiChatRoutes from './routes/aiChat.js';
+import aiInlineRoutes from './routes/aiInline.js';
 import aiConversationsRoutes from './routes/aiConversations.js';
 import workflowRulesRoutes from './routes/workflowRules.js';
 import aiMemoriesRoutes from './routes/aiMemories.js';
@@ -478,6 +479,12 @@ app.use('/api/ai/conversations', authenticateToken, apiLimiter, csrfProtection, 
   req.userId = req.user.userId;
   next();
 }, aiConversationsRoutes);
+
+// 内联 AI（单轮非会话非流式）：桌面页内结果卡直接调用，不进侧栏消息流
+app.use('/api/ai/inline', authenticateToken, apiLimiter, csrfProtection, aiFlagGuard, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, aiInlineRoutes);
 
 // 工作流规则引擎路由（任务 #237）：「当…时自动…」
 app.use('/api/workflow-rules', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {

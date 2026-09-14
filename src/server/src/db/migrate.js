@@ -205,6 +205,14 @@ const postMigrations = [
   // Archive feature: add archived flag (idempotent, additive column)
   `ALTER TABLE clipboard_items ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE`,
   `CREATE INDEX IF NOT EXISTS idx_clipboard_items_archived ON clipboard_items(archived, created_at DESC)`,
+
+  // E2E 兼容迁移（B11①）：给存量/新落的明文条目补 e2eLegacy 标记（只加标记，不改内容）。
+  // 判定口径与协议 §2 一致：metadata.e2e 不存在即为明文条目。重复执行幂等（已标记行被 WHERE 排除），
+  // 且服务端每次启动自愈一次——迁移之后由非加密客户端继续写入的明文条目也会被补上标记。
+  `UPDATE clipboard_items
+   SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{e2eLegacy}', 'true'::jsonb, true)
+   WHERE NOT COALESCE(metadata ? 'e2e', false)
+     AND NOT COALESCE((metadata->>'e2eLegacy')::boolean, false)`,
 ];
 
 async function migrate() {

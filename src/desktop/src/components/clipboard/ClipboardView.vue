@@ -28,6 +28,8 @@ import ClipboardTableRow from '@/components/clipboard/ClipboardTableRow.vue'
 import ClipDetailDrawer from '@/components/clipboard/ClipDetailDrawer.vue'
 import ClipboardContextMenu from '@/components/clipboard/ClipboardContextMenu.vue'
 import AiSuggestPopup from '@/components/ai/AiSuggestPopup.vue'
+import InlineAiCard from '@/components/ai/InlineAiCard.vue'
+import { useInlineAi } from '@/composables/useInlineAi'
 import { api } from '@/api/client'
 
 const emit = defineEmits<{
@@ -281,20 +283,41 @@ function onRowAi(item: ClipItem) {
   onDrawerAi(t('ai_act_summary', '总结'), item)
 }
 
-// 原型 v1「总结今日动态」：把今天分组里的内容交给 AI 汇总
-function onSummarizeToday() {
+// A1「总结今日动态」内联结果卡：页内弹出，不进侧栏消息流
+const todaySummary = useInlineAi()
+const showTodaySummary = ref(false)
+
+function runTodaySummary() {
   const startOfToday = new Date()
   startOfToday.setHours(0, 0, 0, 0)
   const todayItems = filteredItems.value.filter((i) => i.timestamp >= startOfToday.getTime())
   const body = todayItems
     .slice(0, 40)
     .map((i, n) => `${n + 1}. [${i.type}] ${(i.content || '').slice(0, 80)}`)
-    .join('\\n')
+    .join('\n')
   if (!body) {
     toast.show(tf('summarize_empty', '今天还没有剪贴记录'), 'info')
     return
   }
-  onDrawerAi(tf('summarize_today', '总结今日动态'), { ...todayItems[0], content: body } as ClipItem)
+  showTodaySummary.value = true
+  todaySummary.run(
+    '请根据以下今日剪贴板条目摘要，总结今天的工作动态：按主题归类列出要点，最后给一句整体小结。中文输出，简明扼要。',
+    body,
+  )
+}
+
+function onSummarizeToday() {
+  // 卡片已展开时再次点击 = 收起
+  if (showTodaySummary.value) {
+    closeTodaySummary()
+    return
+  }
+  runTodaySummary()
+}
+
+function closeTodaySummary() {
+  showTodaySummary.value = false
+  todaySummary.reset()
 }
 
 // 原型 v1「清理历史」：把超过历史上限设置（configStore.maxHistory）的旧记录批量删除。
@@ -477,6 +500,7 @@ onUnmounted(() => {
         :view="viewSeg"
         :show-filter-panel="showFilterPanel"
         :ai-enabled="props.aiEnabled"
+        :summary-active="showTodaySummary"
         @cleanup-history="onCleanupHistory"
         @summarize-today="onSummarizeToday"
         @set-view="(v: 'timeline' | 'fav' | 'archive') => (viewSeg = v)"
@@ -487,6 +511,18 @@ onUnmounted(() => {
         @batch-unarchive="ops.handleBatchUnarchive"
         @batch-favorite="ops.handleBatchFavorite"
         @batch-ai-suggest="openAiSuggest"
+      />
+      <!-- A1 内联结果卡：总结今日动态（页内弹出，不进侧栏消息流） -->
+      <InlineAiCard
+        v-if="showTodaySummary"
+        class="today-summary-card"
+        :title="tf('inline_ai_summarize_today', '总结今日动态')"
+        :status="todaySummary.status.value"
+        :text="todaySummary.text.value"
+        :error="todaySummary.error.value"
+        closable
+        @close="closeTodaySummary"
+        @retry="runTodaySummary"
       />
       <!-- 原型 .batch-bar：批量选择模式吸附条 -->
       <div v-if="batchMode" class="batch-bar clip-batchbar">
@@ -722,6 +758,10 @@ onUnmounted(() => {
 }
 .clip-list {
   display: block;
+}
+/* A1 内联 AI 结果卡：与工具栏留出间距（左右居中由 .clipboard-view > * 统一负责） */
+.today-summary-card {
+  margin-top: 10px;
 }
 /* 与工具栏 page-inner 对齐：同一 1080 栅格 */
 .clipboard-view > *:not(.table-wrapper) {

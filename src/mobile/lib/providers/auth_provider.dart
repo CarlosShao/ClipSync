@@ -10,6 +10,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/api_service.dart';
 import '../services/app_exception.dart';
+import '../services/e2e_crypto.dart';
 import '../services/token_store.dart';
 
 /// login() 的结果：区分「成功」「需要两步验证」「失败」
@@ -289,6 +290,17 @@ class AuthProvider extends ChangeNotifier {
     }
     try {
       final info = await _collectDeviceInfo();
+      // B8（E2E）：注册请求携带本机 E2E 公钥（65B 未压缩点 base64，协议 §4）。
+      // 服务端 B2 在 POST /api/devices 中解析该字段（server device.js
+      // parseOptionalPublicKey，字段名为 publicKey，与其余注册字段同为 camelCase）。
+      // 密钥生成失败不阻塞设备注册——服务端按未提供处理，公钥可后续经
+      // PUT /api/devices/:id 补交。
+      String? e2ePublicKey;
+      try {
+        e2ePublicKey = await E2eCrypto.instance.ensureKeypair();
+      } catch (e) {
+        debugPrint('[AuthProvider] e2e keypair ensure failed: $e');
+      }
       final response = await http
           .post(
             Uri.parse('${ApiService.baseUrl}/api/devices'),
@@ -302,6 +314,7 @@ class AuthProvider extends ChangeNotifier {
               'platform': 'android',
               'platformVersion': info.platformVersion,
               'appVersion': info.appVersion,
+              if (e2ePublicKey != null) 'publicKey': e2ePublicKey,
             }),
           )
           .timeout(const Duration(seconds: 15));

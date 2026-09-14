@@ -116,7 +116,7 @@
 ### Wave B1（B0 完成后并行，文件互斥）
 
 #### B1 服务端·剪贴板存储与广播透传
-- **目标**：`clipboard.js` 接收并原样存储信封（校验 `metadata.e2e` 结构与长度上限）；`content_preview` 接受客户端传来的占位；WS `new_clipboard` 广播透传 `metadata.e2e`（含 keys 映射，仅推给用户自己的设备）；GET 列表/详情原样返回信封；搜索/排序对占位条目不报错；服务端 flag `enable_e2e` 注册（沿用 flags 机制）。
+- **目标**：`clipboard.js` 接收并原样存储信封（校验 `metadata.e2e` 结构与长度上限：keys ≤ 32 项、单 wrapped ≤ 256B，非法 400）；`content_preview` 接受客户端传来的占位；WS `new_clipboard` 广播透传 `metadata.e2e`（仅推给用户自己的设备）；GET 列表/详情原样返回信封；搜索/排序对占位条目不报错。**不引入服务端 flag**（灰度走客户端双闸门：套餐特性位 + 用户设置，见 e2e-protocol.md §5）。
 - **独占文件**：`src/server/src/routes/clipboard.js`、`src/server/src/index.js`（仅 flags 注册处，与 A0 挂载点不同段落）。
 - **依赖**：B0。
 - **验收**：node --check 通过；curl 模拟带 `metadata.e2e` 的 POST → GET 原样返回；不带 e2e 的旧格式行为不变。

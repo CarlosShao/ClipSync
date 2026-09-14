@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useConfigStore } from '@/stores/configStore'
+import { e2eEnabled, setE2eEnabled } from '@/utils/e2eCrypto'
 import { usePrivacy } from '@/composables/usePrivacy'
 import { pinMinLength } from '@/composables/usePolicy' // AN-02：PIN 最小位数走服务端策略
 import { useSonner } from '@/composables/useSonner'
@@ -187,6 +188,15 @@ async function handleChangePassword() {
         <div class="sg-hint">{{ t('sg_privacy_autoblur_h') }}</div>
       </div>
       <Switch :model-value="configStore.autoBlur" @update:model-value="(v: boolean) => configStore.toggleAutoBlur(v)" />
+    </div>
+
+    <!-- B7：端到端加密开关（开启后新上传条目在设备间端到端加密，服务端只见密文） -->
+    <div class="sg-row">
+      <div class="sg-label">
+        <div class="sg-name">{{ t('sg_privacy_e2e', '端到端加密') }}</div>
+        <div class="sg-hint">{{ t('sg_privacy_e2e_h', '开启后新同步的剪贴内容将以端到端加密传输与存储；服务端全文搜索/OCR 等明文能力对该内容失效') }}</div>
+      </div>
+      <Switch :model-value="e2eEnabled" @update:model-value="(v: boolean) => setE2eEnabled(v)" />
     </div>
 
     <!-- 复制后自动清空剪贴板（默认关闭） -->

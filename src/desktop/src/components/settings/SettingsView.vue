@@ -23,6 +23,8 @@ import ExportSubPage from './settings-dialog/sub-pages/ExportSubPage.vue'
 import FeedbackSubPage from './settings-dialog/sub-pages/FeedbackSubPage.vue'
 import PricingSubPage from './settings-dialog/sub-pages/PricingSubPage.vue'
 import BillingSubPage from './settings-dialog/sub-pages/BillingSubPage.vue'
+import InlineAiCard from '@/components/ai/InlineAiCard.vue'
+import { useInlineAi } from '@/composables/useInlineAi'
 
 const { t, tf, currentLang } = useI18n()
 const { can } = useMenuAccess()
@@ -30,26 +32,91 @@ const configStore = useConfigStore()
 
 const props = defineProps<{ aiEnabled?: boolean }>()
 
-// AI 审查设置：把当前客户端设置的真实快照交给 AI 检查（管理台关闭 AI 时入口隐藏）
-function askAi(prompt: string) {
-  window.dispatchEvent(new CustomEvent('clipsync:toggle-ai'))
-  setTimeout(() => {
-    window.dispatchEvent(new CustomEvent('clipsync:ai-send-message', { detail: { content: prompt } }))
-  }, 120)
+// A5「审查设置」内联结果卡：设置快照交给 AI 逐项给风险与建议（结构化 JSON，可跳转分节），不跳侧栏
+const reviewAi = useInlineAi()
+const showReview = ref(false)
+interface ReviewItem {
+  key: string
+  level: 'ok' | 'warn' | 'risk'
+  advice: string
 }
+const reviewItems = ref<ReviewItem[] | null>(null)
+
+// 快照行携带分节 key，供 AI 输出回填与「前往设置」跳转
+const REVIEW_SNAPSHOT: { key: string; label: string; value: () => string }[] = [
+  { key: 'general', label: '自动同步', value: () => (configStore.autoSync ? '开' : '关') },
+  { key: 'general', label: '同步间隔', value: () => (configStore.syncInterval === 0 ? '实时' : configStore.syncInterval + ' 分钟') },
+  { key: 'data', label: '历史上限', value: () => (configStore.maxHistory >= 999999 ? '不限' : configStore.maxHistory + ' 条') },
+  { key: 'data', label: '图片压缩', value: () => (configStore.imageCompress ? '开' : '关') },
+  { key: 'privacy', label: '隐私模式', value: () => (configStore.privacyMode ? '开' : '关') },
+  { key: 'privacy', label: '失焦自动隐藏敏感内容', value: () => (configStore.autoBlur ? '开' : '关') },
+  { key: 'general', label: '界面语言', value: () => (currentLang.value === 'zh' ? '中文' : 'English') },
+]
+
+function buildReviewContext(): string {
+  return REVIEW_SNAPSHOT.map((r) => `- [${r.key}] ${r.label}: ${r.value()}`).join('\n')
+}
+
+/** 容错解析 AI 输出：剥 ```json 围栏 → 取首尾大括号；失败返回 null（降级纯文本） */
+function parseReview(raw: string): ReviewItem[] | null {
+  try {
+    let s = String(raw || '').trim()
+    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/)
+    if (fence) s = fence[1].trim()
+    const start = s.indexOf('{')
+    const end = s.lastIndexOf('}')
+    if (start === -1 || end === -1 || end <= start) return null
+    const obj = JSON.parse(s.slice(start, end + 1))
+    if (!obj || !Array.isArray(obj.items)) return null
+    const out: ReviewItem[] = []
+    for (const it of obj.items) {
+      if (!it || typeof it.key !== 'string' || typeof it.advice !== 'string') continue
+      const level = it.level === 'warn' || it.level === 'risk' ? it.level : 'ok'
+      out.push({ key: it.key, level, advice: it.advice })
+    }
+    return out.length ? out : null
+  } catch {
+    return null
+  }
+}
+
+function runReview() {
+  showReview.value = true
+  reviewItems.value = null
+  reviewAi.run(
+    [
+      '你是桌面端设置审查助手。以下是客户端设置快照，每行格式为「- [分节key] 设置名: 值」。',
+      '请逐项检查是否存在风险或不合理之处（例如历史上限过小、隐私模式未开启但剪贴板常含敏感信息、同步间隔过长等）。',
+      '只输出 JSON，不要任何解释文字或代码围栏，格式：',
+      '{"items":[{"key":"分节key","level":"ok|warn|risk","advice":"一句话中文建议"}]}',
+      'items 必须覆盖快照每一行；key 只能取行首方括号中的分节key；advice 为一句话中文建议，ok 项也给维持现状的肯定建议。',
+    ].join('\n'),
+    buildReviewContext(),
+    { maxTokens: 2048 },
+  ).then(() => {
+    if (reviewAi.status.value === 'done') reviewItems.value = parseReview(reviewAi.text.value)
+  })
+}
+
 function aiReview() {
-  const s = [
-    `- 自动同步: ${configStore.autoSync ? '开' : '关'}`,
-    `- 同步间隔: ${configStore.syncInterval === 0 ? '实时' : configStore.syncInterval + ' 分钟'}`,
-    `- 历史上限: ${configStore.maxHistory >= 999999 ? '不限' : configStore.maxHistory + ' 条'}`,
-    `- 图片压缩: ${configStore.imageCompress ? '开' : '关'}`,
-    `- 隐私模式: ${configStore.privacyMode ? '开' : '关'}`,
-    `- 失焦自动隐藏敏感内容: ${configStore.autoBlur ? '开' : '关'}`,
-    `- 界面语言: ${currentLang.value === 'zh' ? '中文' : 'English'}`,
-  ].join('\n')
-  askAi(
-    `${tf('set_ai_review', '审查设置')}：\n${s}\n请逐项检查以上客户端设置是否存在风险或不合理之处（例如历史上限过小、隐私模式未开启但剪贴板常含敏感信息、同步间隔过长等），给出修改建议。`,
-  )
+  // 卡片已展开时再次点击 = 收起
+  if (showReview.value) {
+    closeReview()
+    return
+  }
+  runReview()
+}
+
+function closeReview() {
+  showReview.value = false
+  reviewItems.value = null
+  reviewAi.reset()
+}
+
+function gotoSection(key: string) {
+  // 只允许跳到已知分节，防止 AI 幻觉 key 打破布局
+  if (!sections.value.some((s) => s.key === key)) return
+  scrollToSection(key)
 }
 
 // v2 原型（settings.html）：设置是「页面」而非弹窗 —— 左侧锚点导航 + 右侧全部分组堆叠滚动。
@@ -176,7 +243,13 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
           </div>
         </div>
         <div class="page-acts">
-          <button v-if="!activeSubPage && props.aiEnabled" type="button" class="pl-btn" @click="aiReview">
+          <button
+            v-if="!activeSubPage && props.aiEnabled"
+            type="button"
+            class="pl-btn"
+            :class="{ 'pl-btn--on': showReview }"
+            @click="aiReview"
+          >
             <Sparkles :size="14" /><span>{{ tf('set_ai_review', '审查设置') }}</span>
           </button>
           <!-- 返回：纯图标即可，无需文案 -->
@@ -192,6 +265,31 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
           </button>
         </div>
       </div>
+
+      <!-- A5 内联结果卡：审查设置（结构化建议，warn/risk 可跳转分节；不进侧栏消息流） -->
+      <InlineAiCard
+        v-if="showReview && !activeSubPage"
+        class="set-review-card"
+        :title="tf('set_ai_review', '审查设置')"
+        :status="reviewAi.status.value"
+        :text="reviewAi.text.value"
+        :error="reviewAi.error.value"
+        closable
+        @close="closeReview"
+        @retry="runReview"
+      >
+        <template v-if="reviewItems" #body>
+          <ul class="review-list">
+            <li v-for="(it, i) in reviewItems" :key="i" class="review-item" :class="'lv-' + it.level">
+              <span class="review-dot" />
+              <span class="review-advice">{{ it.advice }}</span>
+              <button v-if="it.level !== 'ok'" type="button" class="pl-btn pl-btn--sm review-goto" @click="gotoSection(it.key)">
+                {{ tf('inline_ai_goto_setting', '前往设置') }}
+              </button>
+            </li>
+          </ul>
+        </template>
+      </InlineAiCard>
 
       <!-- 子页：页内替换视图（不弹窗） -->
       <template v-if="activeSubPage">
@@ -245,6 +343,56 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
 .settings-page {
   height: 100%;
   overflow-y: auto;
+}
+/* A5 审查设置：按钮激活态 + 结果卡与结构化建议清单 */
+.pl-btn--on {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.set-review-card {
+  margin-bottom: 16px;
+}
+.review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.review-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12.5px;
+}
+.review-item:last-child {
+  border-bottom: none;
+}
+.review-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.lv-warn .review-dot {
+  background: var(--warning);
+}
+.lv-risk .review-dot {
+  background: var(--danger);
+}
+.review-advice {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.review-goto {
+  flex: none;
 }
 /* 子页返回按钮：方形图标钮，明显但不抢眼 */
 .set-back-btn {

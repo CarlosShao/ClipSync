@@ -8,6 +8,26 @@ export interface Device {
   lastActive: string
   online: boolean
   location?: string
+  /** B2/B7：设备静态 E2E 公钥（65B 未压缩点 base64）；未配对密钥的旧设备为 null */
+  publicKey?: string | null
+  /** B7：公钥指纹（sha256 前 16 hex，与管理台一致）；publicKey 为空时为 null */
+  fingerprint?: string | null
+}
+
+/** 公钥指纹（sha256 前 16 hex 大写）——与管理台 devices 页同算法 */
+export async function publicKeyFingerprint(pubB64: string): Promise<string | null> {
+  try {
+    const bin = atob(pubB64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const digest = await crypto.subtle.digest('SHA-256', bytes)
+    return Array.from(new Uint8Array(digest).slice(0, 8))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+      .toUpperCase()
+  } catch {
+    return null
+  }
 }
 
 // 模块级单例：保证 DevicesView 与 ModalManager 共享同一份设备列表，配对成功后能即时刷新
@@ -35,6 +55,14 @@ function pickDeviceList(data: any): any[] {
   return []
 }
 
+/** 为列表里带公钥的设备异步补齐指纹（不阻塞 loadDevices 返回） */
+async function computeFingerprints(): Promise<void> {
+  for (const d of devices.value) {
+    if (!d.publicKey || d.fingerprint) continue
+    d.fingerprint = await publicKeyFingerprint(d.publicKey)
+  }
+}
+
 export function useDevice() {
   async function loadDevices() {
     loading.value = true
@@ -50,7 +78,11 @@ export function useDevice() {
           lastActive: d.lastActive || d.last_seen_at || new Date().toISOString(),
           online: d.online ?? d.is_online ?? false,
           location: d.location,
+          publicKey: typeof d.public_key === 'string' && d.public_key ? d.public_key : null,
+          fingerprint: null, // 指纹异步补齐（见下方 computeFingerprints）
         }))
+        // 指纹计算是异步的：先落列表（不阻塞 UI），算完回填
+        void computeFingerprints()
       } else {
         error.value = res.error || 'Failed to load devices'
       }

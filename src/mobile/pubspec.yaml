@@ -51,6 +51,13 @@ dependencies:
   local_auth: ^2.0.0
   image_picker: ^1.2.3
 
+  # B8: 端到端加密（E2E）——P-256 ECDH / HKDF-SHA256 / AES-256-GCM
+  # 注：cryptography 的 ECDH P-256 在 Dart VM/移动端为 UnimplementedError
+  # （DartEcdh 未实现，仅浏览器 WebCrypto 可用），故 P-256 运算用 pointycastle
+  # （纯 Dart）；AES-256-GCM / HKDF-SHA256 用 cryptography 的纯 Dart 实现。
+  cryptography: ^2.7.0
+  pointycastle: ^3.9.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

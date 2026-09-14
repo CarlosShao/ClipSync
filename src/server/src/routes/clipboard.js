@@ -9,7 +9,7 @@ import { createIdempotencyMiddleware } from '../middleware/idempotency.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { runOcrForClip } from '../utils/aiOcr.js';
-import { hashImageStored } from '../utils/imageHash.js';
+import { hashImageStored, isE2eItem } from '../utils/imageHash.js';
 import { runWorkflowRulesForItem } from '../services/workflowEngine.js';
 import { createVersion } from '../utils/versionManager.js';
 
@@ -478,7 +478,7 @@ router.get('/:id/content', apiLimiter, async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT content_encrypted FROM clipboard_items WHERE id = $1 AND user_id = $2`,
+      `SELECT content_encrypted, metadata FROM clipboard_items WHERE id = $1 AND user_id = $2`,
       [id, req.userId]
     );
 
@@ -486,7 +486,8 @@ router.get('/:id/content', apiLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Clipboard item not found' });
     }
 
-    res.json({ contentEncrypted: result.rows[0].content_encrypted });
+    // metadata 随密文一起返回：E2E 条目（metadata.e2e）接收端必须拿信封才能解密
+    res.json({ contentEncrypted: result.rows[0].content_encrypted, metadata: result.rows[0].metadata });
   } catch (err) {
     logger.error('Get clipboard content error:', { error: err.message });
     res.status(500).json({ error: 'Failed to get clipboard content' });
@@ -540,6 +541,36 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
     savedPreview = cleanPreview;
     savedMetadata = metadata || {};
 
+    // E2E 信封校验（原样透传存储，仅验结构；协议见 docs/plans/e2e-protocol.md §2）
+    if (metadata?.e2e) {
+      const e = metadata.e2e;
+      const b64Len = (s) => (typeof s === 'string' ? Buffer.from(s, 'base64').length : -1);
+      const keyEntries = e.keys && typeof e.keys === 'object' && !Array.isArray(e.keys) ? Object.values(e.keys) : null;
+      const okEnvelope =
+        e.v === 1 &&
+        typeof e.alg === 'string' &&
+        e.alg.length > 0 &&
+        b64Len(e.epk) > 0 &&
+        b64Len(e.epk) <= 128 &&
+        b64Len(e.iv) > 0 &&
+        b64Len(e.iv) <= 32 &&
+        keyEntries &&
+        keyEntries.length > 0 &&
+        keyEntries.length <= 32 &&
+        keyEntries.every(
+          (k) =>
+            k &&
+            typeof k === 'object' &&
+            b64Len(k.w) > 0 &&
+            b64Len(k.w) <= 256 &&
+            b64Len(k.iv) > 0 &&
+            b64Len(k.iv) <= 32,
+        );
+      if (!okEnvelope) {
+        return res.status(400).json({ error: 'Invalid e2e envelope' });
+      }
+    }
+
     // 非文件类型按密文哈希去重；文件类型用路径去重（content_hash 留空）
     const isFile = detectedType === 'file';
     const contentHash = isFile ? null : crypto.createHash('sha256').update(contentEncrypted).digest('hex');
@@ -547,12 +578,13 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
     // 优先使用桌面端上传的「原始字节 SHA-256」(imageHash)，它与 AI 聊天里粘贴的
     // 同一张原图哈希一致；否则回退到服务端对上传体(可能已 resize)计算哈希。
     let imageHash = null;
-    if (detectedType === 'image') {
+    // B4/协议 §2：E2E 条目跳过图片哈希（客户端传来的明文哈希也不落库，不污染查重库）
+    if (detectedType === 'image' && !isE2eItem(metadata)) {
       const provided = req.body.imageHash;
       if (typeof provided === 'string' && /^[a-f0-9]{64}$/i.test(provided)) {
         imageHash = provided.toLowerCase();
       } else {
-        imageHash = await hashImageStored(contentEncrypted);
+        imageHash = await hashImageStored(contentEncrypted, metadata);
       }
     }
     srcDeviceId = sourceDeviceId;
@@ -679,6 +711,8 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
       contentSize: item.content_size,
       createdAt: item.created_at,
       sourceDeviceId: srcDeviceId,
+      // E2E 信封随广播下发（metadata.e2e），接收端据此解密；旧明文条目无 e2e 字段不受影响
+      metadata: item.metadata,
     },
   });
 

@@ -65,7 +65,9 @@ import {
   clearAdvancedFilters,
   syncDeletions,
   trimToMaxHistory,
+  decryptIfE2e,
 } from './clipboardLoad'
+import { isE2eItem } from '@/utils/e2eCrypto'
 
 const { t, tf } = useI18n()
 
@@ -599,6 +601,10 @@ export function useClipboard() {
             const enc = full.data?.contentEncrypted
             if (enc && enc.startsWith('data:')) {
               dataUrl = enc
+            } else if (enc && isE2eItem(full.data?.metadata ?? item.metadata)) {
+              // B7：E2E 图片——密文 b64 → 解密 → dataUrl（走不到 media /download）
+              const plain = await decryptIfE2e(enc, full.data?.metadata ?? item.metadata)
+              if (plain && plain.startsWith('data:')) dataUrl = plain
             }
           } catch {
             /* ignore */
@@ -672,14 +678,23 @@ export function useClipboard() {
         (contentSize === 0 || textContent.length < contentSize)
       if (needsFetch) {
         try {
-          const full = await api<{ contentEncrypted: string }>('GET', `/api/clipboard/${item.id}/content`)
+          const full = await api<{ contentEncrypted: string; metadata?: unknown }>('GET', `/api/clipboard/${item.id}/content`)
           if (full.ok && full.data?.contentEncrypted) {
-            textContent = full.data.contentEncrypted
-            cacheContent(item.id, textContent)
+            // B7：E2E 条目先解密再写剪贴板；解密失败保持占位文本（绝不把密文写进系统剪贴板）
+            const plain = await decryptIfE2e(full.data.contentEncrypted, full.data.metadata ?? item.metadata)
+            if (plain !== null && !(plain === '' && isE2eItem(full.data.metadata ?? item.metadata))) {
+              textContent = plain
+              cacheContent(item.id, plain)
+            }
           }
         } catch (e: any) {
           console.warn('[Clipboard] failed to fetch full text content for copy:', e?.message || e)
         }
+      }
+      // B7：E2E 条目解密失败（无密钥/非成员设备）→ 禁止把占位文本写进系统剪贴板
+      if (isE2eItem(item.metadata) && textContent.trim() === '[E2E]') {
+        lastCopyError.value = tf('e2e_copy_unavailable', '端到端加密内容无法在本设备解密')
+        return false
       }
       // 记录实际写入剪贴板的内容，用于 monitor 去重。
       // 必须在这里重新记录，因为上面可能已经把 item.content（预览）替换成了完整内容；

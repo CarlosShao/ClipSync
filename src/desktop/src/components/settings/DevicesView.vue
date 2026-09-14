@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useDevice } from '@/composables/useDevice'
 import { useSonner } from '@/composables/useSonner'
 import { Monitor, Smartphone, Globe, Trash2, QrCode, Plus, AlertTriangle, RefreshCw, ShieldCheck, ArrowDown, ArrowUp, Sparkles } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useSyncLog } from '@/composables/useSyncLog'
+import InlineAiCard from '@/components/ai/InlineAiCard.vue'
+import { useInlineAi } from '@/composables/useInlineAi'
+import { e2ePublicKey } from '@/utils/e2eCrypto'
+import { publicKeyFingerprint } from '@/composables/useDevice'
 
 const { t, tf } = useI18n()
 const device = useDevice()
@@ -32,16 +36,25 @@ function retryLoad() {
 // 自愈：进入页面时单例列表为空就主动拉一次（此前只依赖外部触发，会一直停在空态）
 onMounted(() => {
   if (deviceList.value.length === 0 && !isLoading.value) void device.loadDevices()
+  // B7：本机公钥指纹（与配对设备核对用，不触发密钥生成）
+  void (async () => {
+    try {
+      const pk = await e2ePublicKey()
+      if (pk) selfFingerprint.value = (await publicKeyFingerprint(pk)) || ''
+    } catch {
+      /* 无密钥/非 Tauri 环境：留空 */
+    }
+  })()
 })
 
-// AI 诊断同步：设备在线情况 + 本机最近同步流水（真实数据）交给 AI 判断链路健康度
-function askAi(prompt: string) {
-  window.dispatchEvent(new CustomEvent('clipsync:toggle-ai'))
-  setTimeout(() => {
-    window.dispatchEvent(new CustomEvent('clipsync:ai-send-message', { detail: { content: prompt } }))
-  }, 120)
-}
-function aiDiagnose() {
+// 本机 E2E 公钥指纹（sha256 前 16 hex）
+const selfFingerprint = ref('')
+
+// A4「AI 诊断同步」内联结果卡：页内出报告（设备在线 + 真实同步流水 + 加密状态），不跳侧栏
+const diagAi = useInlineAi()
+const showDiag = ref(false)
+
+function buildDiagContext(): string {
   const devs =
     deviceList.value.map((d) => `${d.name}（${d.online ? t('dev_online') : t('dev_offline')}）`).join('、') ||
     t('dev_empty')
@@ -50,9 +63,29 @@ function aiDiagnose() {
       .slice(0, 10)
       .map((e) => `${e.dir === 'down' ? '↓' : '↑'} ${e.kind}${e.size ? ' · ' + e.size : ''} · ${e.source} · ${logAgo(e.ts)}`)
       .join('\n') || t('dev_synclog_empty', '暂无同步记录')
-  askAi(
-    `${tf('dev_ai_diagnose', 'AI 诊断同步')}：已配对 ${deviceList.value.length} 台设备：${devs}；端到端加密已开启。本机最近同步流水：\n${lines}\n请判断当前同步链路是否健康（设备在线情况、最近收发是否正常、有无长期未同步的迹象），给出排查与改进建议。`,
+  return `已配对设备（${deviceList.value.length} 台）：${devs}\n端到端加密：已开启\n本机最近同步流水：\n${lines}`
+}
+
+function runDiagnose() {
+  showDiag.value = true
+  diagAi.run(
+    '你是剪贴板同步链路的诊断助手。请根据以下设备与同步流水信息，判断当前同步链路是否健康（设备在线情况、最近收发是否正常、有无长期未同步的迹象），输出：1) 健康度结论；2) 异常点（如有）；3) 排查与改进建议清单。中文输出。',
+    buildDiagContext(),
   )
+}
+
+function aiDiagnose() {
+  // 卡片已展开时再次点击 = 收起
+  if (showDiag.value) {
+    closeDiagnose()
+    return
+  }
+  runDiagnose()
+}
+
+function closeDiagnose() {
+  showDiag.value = false
+  diagAi.reset()
 }
 
 function getDeviceIcon(type: string) {
@@ -88,7 +121,13 @@ async function handleDelete(id: string, name: string) {
           <div class="page-sub">{{ tf('page_sub_dev', '局域网端到端加密同步 · 配对即信任') }}</div>
         </div>
         <div class="page-acts">
-          <button v-if="props.aiEnabled" type="button" class="pl-btn" @click="aiDiagnose">
+          <button
+            v-if="props.aiEnabled"
+            type="button"
+            class="pl-btn"
+            :class="{ 'pl-btn--on': showDiag }"
+            @click="aiDiagnose"
+          >
             <Sparkles :size="14" /><span>{{ tf('dev_ai_diagnose', 'AI 诊断同步') }}</span>
           </button>
           <button type="button" class="pl-btn" @click="emit('open-modal', 'pair-scan')">
@@ -99,6 +138,19 @@ async function handleDelete(id: string, name: string) {
           </button>
         </div>
       </div>
+
+      <!-- A4 内联结果卡：AI 诊断同步（页内弹出，不进侧栏消息流） -->
+      <InlineAiCard
+        v-if="showDiag"
+        class="dev-diag-card"
+        :title="tf('dev_ai_diagnose', 'AI 诊断同步')"
+        :status="diagAi.status.value"
+        :text="diagAi.text.value"
+        :error="diagAi.error.value"
+        closable
+        @close="closeDiagnose"
+        @retry="runDiagnose"
+      />
 
       <!-- 统计面板（仅真实数据：在线数 / 总数 / 端到端加密） -->
       <div class="panel dev-stats">
@@ -199,7 +251,12 @@ async function handleDelete(id: string, name: string) {
       <!-- 端到端加密说明条 -->
       <div class="dev-e2e-hint">
         <ShieldCheck :size="14" />
-        <span>{{ tf('dev_e2e_hint', '剪贴内容在设备间端到端加密传输，服务端不可读。') }}</span>
+        <span>
+          {{ tf('dev_e2e_hint', '剪贴内容在设备间端到端加密传输，服务端不可读。') }}
+          <template v-if="selfFingerprint">
+            {{ tf('dev_e2e_fingerprint', '本机指纹') }} <code class="dev-fp">{{ selfFingerprint }}</code>
+          </template>
+        </span>
       </div>
     </div>
   </div>
@@ -213,6 +270,15 @@ async function handleDelete(id: string, name: string) {
 .dev-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 16px;
+}
+/* A4 诊断结果卡：按钮激活态 + 卡片与页头间距 */
+.pl-btn--on {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.dev-diag-card {
   margin-bottom: 16px;
 }
 .dev-stat-sep {
@@ -267,6 +333,14 @@ async function handleDelete(id: string, name: string) {
 }
 .dev-e2e-hint svg {
   flex: none;
+}
+.dev-e2e-hint .dev-fp {
+  font-family: var(--font-content);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-sm);
 }
 
 .empty-state {

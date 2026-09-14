@@ -46,6 +46,14 @@ chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
 png = "0.17"
 
+# B5：端到端加密（E2E）—— ECDH P-256 + HKDF-SHA256 + AES-256-GCM（协议见 docs/plans/e2e-protocol.md）
+p256 = { version = "0.13", features = ["ecdh", "arithmetic"] }
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+# 私钥/内容密钥/IV 的 CSPRNG（p256 0.13 的 elliptic-curve 同样依赖 rand_core 0.6）
+rand_core = { version = "0.6", features = ["getrandom"] }
+
 # Windows 专用：调用 DWM API 给系统标题栏着色。
 # GetClipboardSequenceNumber 通过直接 extern "system" 导入 user32，不经过 windows-sys。
 [target.'cfg(target_os = "windows")'.dependencies]
