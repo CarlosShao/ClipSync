@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { api } from '@/api/client'
+import { useConfigStore } from '@/stores/configStore'
 import Button from '@/components/ui/button/Button.vue'
 import { Monitor, Smartphone } from 'lucide-vue-next'
 
@@ -11,29 +12,68 @@ const toast = useSonner()
 const emit = defineEmits<{ back: [] }>()
 
 // ===== State =====
+// 与后端 GET /api/sessions 返回的行结构对齐（sessions.js）：设备名/平台/时间用驼峰字段。
 interface SessionItem {
   id: string
   deviceName?: string
-  device_type?: string
-  last_active?: string
-  created_at?: string
+  platform?: string
+  ipAddress?: string
+  createdAt?: string | number
+  lastActiveAt?: string | number
   isCurrent: boolean
 }
 
+const configStore = useConfigStore()
 const sessionItems = ref<SessionItem[]>([])
 const loadingSessions = ref(false)
 const revokingId = ref<string | null>(null)
+
+// 本机会话 id：从 JWT payload 解出（登录令牌携带 sessionId/jti，见服务端 routes/auth-password.js）。
+// 后端 GET /api/sessions 的 isCurrent 依赖请求头/JWT 的会话标识；此处前端自解，
+// 使「当前设备」判定不依赖后端版本（后端未带该标识逻辑时也能正确显示，避免误踢自己）。
+function currentSessionIdFromToken(): string {
+  try {
+    const token = configStore.config.token
+    if (!token) return ''
+    const part = token.split('.')[1]
+    if (!part) return ''
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/')
+    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : ''
+    const bin = atob(b64 + pad)
+    const json = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))))
+    return json?.sessionId || json?.jti || ''
+  } catch {
+    return ''
+  }
+}
 
 // ===== Data loading =====
 async function loadSessions() {
   loadingSessions.value = true
   try {
     const res = await api('GET', '/api/sessions')
-    if (res.ok && Array.isArray(res.data?.sessions)) {
+    // api() 把整个响应体作为 res.data 返回，后端 GET / 的形态是
+    // { success: true, data: { sessions: [...] } }，故 sessions 在 res.data.data 下。
+    // 兼容读取：优先嵌套结构，回退扁平结构（res.data.sessions）。
+    const rows = res.data?.data?.sessions ?? res.data?.sessions
+    if (res.ok && Array.isArray(rows)) {
       const currentDeviceId = localStorage.getItem('clipsync-device-id')
-      sessionItems.value = (res.data.sessions as any[]).map((s: any) => ({
-        ...s,
-        isCurrent: s.device_id === currentDeviceId || s.is_current || s.current,
+      const mySessionId = currentSessionIdFromToken()
+      sessionItems.value = (rows as any[]).map((s: any) => ({
+        id: s.id,
+        deviceName: s.deviceName || s.device_name || '',
+        platform: s.platform || '',
+        ipAddress: s.ipAddress || '',
+        createdAt: s.createdAt ?? s.created_at,
+        lastActiveAt: s.lastActiveAt ?? s.last_active ?? s.createdAt ?? s.created_at,
+        // 后端标记优先；否则用本机 JWT 解出的 sessionId 比对；最后回退设备 id 比对。
+        // 用「或」而非「??」，因为未打补丁的后端会对所有行返回 isCurrent:false。
+        isCurrent:
+          s.isCurrent === true ||
+          s.is_current === true ||
+          s.current === true ||
+          (!!s.id && s.id === mySessionId) ||
+          (!!s.device_id && s.device_id === currentDeviceId),
       }))
     } else {
       sessionItems.value = []
@@ -94,9 +134,9 @@ onMounted(() => {
           <Smartphone v-else :size="20" />
         </div>
         <div class="session-info">
-          <div class="session-name">{{ s.deviceName || s.device_type || 'Unknown Device' }}</div>
+          <div class="session-name">{{ s.deviceName || 'Unknown Device' }}</div>
           <div class="session-detail">
-            {{ s.isCurrent ? t('sess_current') : formatSessionTime(s.last_active || s.created_at) }}
+            {{ s.isCurrent ? t('sess_current') : formatSessionTime(s.lastActiveAt || s.createdAt) }}
           </div>
         </div>
         <span v-if="s.isCurrent" class="session-badge">{{ t('sess_current') }}</span>
